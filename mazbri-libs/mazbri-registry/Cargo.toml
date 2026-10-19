@@ -1,0 +1,28 @@
+[package]
+name = "mazbri-registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+axum = { workspace = true }
+urlencoding = { workspace = true }
+hostname = "0.4"
+toml = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+tokio-util = { workspace = true }
+tarpc = { workspace = true }
+mazbri-rpc = { workspace = true }
+sha2 = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }

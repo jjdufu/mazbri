@@ -1,0 +1,41 @@
+$bg-animation-color-light: #000;
+$bg-animation-color-dark: #fff;
+$bg-animation-duration: 0.25s;
+
+html {
+  --bg-animation-color: $bg-animation-color-light;
+
+  &.dark {
+    --bg-animation-color: $bg-animation-color-dark;
+  }
+
+  &::view-transition-old(root) {
+    animation: fade-out $bg-animation-duration ease-out;
+  }
+
+  &::view-transition-new(root) {
+    animation: fade-in $bg-animation-duration ease-in;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+body {
+  background-color: var(--bg-animation-color);
+}

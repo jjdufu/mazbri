@@ -1,0 +1,275 @@
+openapi: 3.0.3
+info:
+  title: Mazbri Tenant Dataplane
+  version: "1.0.0"
+  description: |
+    租户数据面：API Key 换短 JWT，然后 `POST /api/v1/gateway` 调用产品。
+    鉴权默认 `Authorization: Bearer`。可选 HTTP 请求绑定头（HMAC-SHA256）。
+    HMAC 在 OAS 3.0 没有一等类型；生成器以 Bearer 为主，签名见文档与官方 SDK。
+servers:
+  - url: https://gateway.example.com
+paths:
+  /openapi.yaml:
+    get:
+      summary: 数据面 OpenAPI
+      security: []
+      responses:
+        "200":
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /auth/token:
+    post:
+      summary: 用 API Key 换短 JWT
+      operationId: issueToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "200":
+          description: 换票成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: API Key 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /api/v1/gateway:
+    post:
+      summary: 唯一业务调用入口
+      operationId: invoke
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MazbriTimestamp"
+        - $ref: "#/components/parameters/MazbriNonce"
+        - $ref: "#/components/parameters/MazbriSignature"
+        - $ref: "#/components/parameters/MazbriSignatureInput"
+        - $ref: "#/components/parameters/MazbriKeyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/GatewayRequest"
+                - $ref: "#/components/schemas/TransportEnvelope"
+      responses:
+        "200":
+          description: 调用完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    MazbriTimestamp:
+      name: X-Mazbri-Timestamp
+      in: header
+      required: false
+      description: Unix 秒。打开请求绑定后必填。
+      schema:
+        type: integer
+        format: int64
+    MazbriNonce:
+      name: X-Mazbri-Nonce
+      in: header
+      required: false
+      description: "[A-Za-z0-9._-]{16,128}。打开请求绑定后必填。"
+      schema:
+        type: string
+    MazbriSignature:
+      name: X-Mazbri-Signature
+      in: header
+      required: false
+      description: HMAC-SHA256(key, canonical) 的 Base64。打开请求绑定后必填。
+      schema:
+        type: string
+    MazbriSignatureInput:
+      name: X-Mazbri-Signature-Input
+      in: header
+      required: false
+      description: "hmac-sha256=v1。打开请求绑定后必填。"
+      schema:
+        type: string
+        enum: [hmac-sha256=v1]
+    MazbriKeyId:
+      name: X-Mazbri-Key-Id
+      in: header
+      required: false
+      description: tenant_request_keys.kid。打开请求绑定后必填。
+      schema:
+        type: string
+  responses:
+    Error:
+      description: 业务或平台错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: JWT 无效或请求绑定失败
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    TokenRequest:
+      type: object
+      required: [api_key]
+      properties:
+        api_key:
+          type: string
+        grant_type:
+          type: string
+          default: client_credentials
+    TokenResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+        tenant_info:
+          $ref: "#/components/schemas/TenantInfo"
+        error:
+          type: string
+    TenantInfo:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        tenant_code:
+          type: string
+        tenant_name:
+          type: string
+        account_type:
+          type: string
+    GatewayRequest:
+      type: object
+      additionalProperties: false
+      required: [product_id, path]
+      properties:
+        product_id:
+          type: string
+        path:
+          type: string
+        method:
+          type: string
+          default: POST
+        fingerprint:
+          type: string
+        query:
+          type: object
+          additionalProperties:
+            type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body: {}
+    TransportEnvelope:
+      type: object
+      required:
+        - encrypted
+        - key_version
+        - algorithm
+        - signature_algorithm
+        - timestamp
+        - nonce
+        - iv
+        - ciphertext
+        - tag
+        - signature
+      properties:
+        encrypted:
+          type: boolean
+        keyVersion:
+          type: string
+        algorithm:
+          type: string
+          example: AES-256-GCM
+        signatureAlgorithm:
+          type: string
+          example: HMAC-SHA256
+        timestamp:
+          type: integer
+          format: int64
+        nonce:
+          type: string
+        iv:
+          type: string
+        ciphertext:
+          type: string
+        tag:
+          type: string
+        signature:
+          type: string
+    GatewayResponse:
+      type: object
+      required: [success, status]
+      properties:
+        success:
+          type: boolean
+        data: {}
+        error:
+          type: string
+        status:
+          type: integer
+        request_id:
+          type: string
+        content_type:
+          type: string
+        body_encoding:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required: [success, status]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        status:
+          type: integer
+        request_id:
+          type: string
+        code:
+          type: string
+          description: 绑定失败时的 machine code（40110–40114）
+security:
+  - bearerAuth: []

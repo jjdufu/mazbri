@@ -1,0 +1,11 @@
+[package]
+name = "mazbri-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Mazbri Team"]
+license = "MIT"
+description = "i18n internationalization support for Mazbri API responses"
+
+[dependencies]
+rust-i18n = "3"

@@ -1,0 +1,35 @@
+[package]
+name = "mazbri-billing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+mazbri-auth = { workspace = true }
+mazbri-rpc = { workspace = true }
+
+axum = { workspace = true }
+tower = { workspace = true }
+
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+prometheus = { workspace = true }
+
+moka = { workspace = true, features = ["sync"] }
+
+lru = { workspace = true }
+
+futures = "0.3"
+
+hostname = "0.4"

@@ -1,0 +1,44 @@
+[package]
+name = "mazbri-analytics"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Mazbri Team"]
+license = "MIT"
+
+[[bin]]
+name = "mazbri-analytics"
+path = "src/main.rs"
+
+[dependencies]
+mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
+
+tokio = {version = "1.35", features = ["full"]}
+
+axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
+tower = {version = "0.5.3", features = ["full", "discover", "load"]}
+tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip"]}
+
+serde = {version = "1.0", features = ["derive"]}
+serde_json = {version = "1.0"}
+toml = {version = "0.8"}
+
+chrono = {version = "0.4", features = ["serde"]}
+
+config = {version = "0.15"}
+clap = {version = "4", features = ["derive"]}
+
+tracing = {version = "0.1"}
+tracing-subscriber = {version = "0.3", features = ["env-filter", "json"]}
+
+anyhow = {version = "1.0"}
+thiserror = {version = "2.0"}
+
+prometheus = {version = "0.14"}
+
+reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"]}
+urlencoding = {version = "2.1"}
+clickhouse = { version = "0.12", features = ["lz4"] }
+

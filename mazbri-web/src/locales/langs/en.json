@@ -1,0 +1,3945 @@
+{
+  "dashboard": {
+    "topTenantsChart": {
+      "title": "Top Tenants (by Requests)",
+      "noData": "No data available",
+      "requestCount": "Request Count"
+    }
+  },
+  "api": {
+    "mfa": {
+      "notSetup": "MFA is not set up. Complete binding first.",
+      "alreadyEnabled": "MFA is enabled. Enter the verification code.",
+      "notRequired": "MFA is not required for this user.",
+      "requiredSetupNeeded": "MFA setup is required first.",
+      "alreadyEnabledDisable": "MFA already enabled. Disable first to reconfigure.",
+      "serverNotConfigured": "MFA is not properly configured on server",
+      "failedSetup": "Failed to setup MFA",
+      "failedStore": "Failed to store MFA configuration",
+      "alreadyEnabledSimple": "MFA is already enabled",
+      "failedVerify": "Failed to verify MFA code",
+      "invalidTotp": "Invalid TOTP code",
+      "failedEnable": "Failed to enable MFA",
+      "enabledSuccess": "MFA enabled successfully",
+      "notEnabled": "MFA is not enabled",
+      "requiredCannotDisable": "MFA is required by administrator. Cannot disable.",
+      "invalidTotpOrPassword": "Invalid TOTP code or password",
+      "failedDisable": "Failed to disable MFA",
+      "disabledSuccess": "MFA disabled successfully",
+      "invalidTempToken": "Invalid or expired temporary token",
+      "userNotFound": "User not found",
+      "notEnabledForUser": "MFA is not enabled for this user",
+      "locked": "MFA is locked due to too many failed attempts. Please try again later.",
+      "invalidCode": "Invalid MFA code",
+      "failedGenerateToken": "Failed to generate authentication token",
+      "failedBackupCodes": "Failed to generate backup codes",
+      "failedUpdateBackup": "Failed to update backup codes",
+      "databaseError": "Database error",
+      "internalError": "Internal server error"
+    },
+    "auth": {
+      "missingHeader": "Missing authorization header",
+      "invalidKey": "Invalid API key",
+      "serviceError": "Authentication service error",
+      "serviceUnavailable": "Authentication service unavailable",
+      "tenantNotFound": "Tenant context not found"
+    },
+    "rateLimit": {
+      "denied": "Request denied by rate limiter",
+      "exceeded": "Rate limit exceeded. Retry after {seconds} seconds."
+    }
+  },
+  "httpMsg": {
+    "unauthorized": "Unauthorized access, please login again",
+    "forbidden": "Access to this resource is forbidden",
+    "notFound": "The requested resource does not exist",
+    "methodNotAllowed": "Request method not allowed",
+    "requestTimeout": "Request timeout, please try again later",
+    "internalServerError": "Internal server error, please try again later",
+    "badGateway": "Bad gateway error, please try again later",
+    "serviceUnavailable": "Service temporarily unavailable, please try again later",
+    "gatewayTimeout": "Gateway timeout, please try again later",
+    "requestCancelled": "Request cancelled",
+    "networkError": "Network connection error, please check your connection",
+    "requestFailed": "Request failed",
+    "requestConfigError": "Request configuration error"
+  },
+  "errorPolicy": {
+    "auth": "Authentication failed",
+    "permissionDenied": "Permission denied",
+    "notFound": "The requested resource does not exist",
+    "validation": "Request validation failed",
+    "insufficientBalance": "Insufficient balance, please recharge and try again",
+    "rateLimited": "Rate limit exceeded, please try again later",
+    "quotaExceeded": "Quota exceeded, please adjust usage and try again",
+    "billing": "Billing state is invalid, please review billing settings",
+    "certificate": "Certificate processing failed, please try again later",
+    "network": "Network connection error, please try again later",
+    "serviceUnavailable": "Service temporarily unavailable, please try again later",
+    "config": "Configuration processing failed, please review your input and try again",
+    "internal": "Internal service error, please try again later",
+    "operationFailed": "Operation failed, please try again later"
+  },
+  "topBar": {
+    "search": {
+      "title": "Search"
+    },
+    "user": {
+      "userCenter": "User center",
+      "docs": "Document",
+      "github": "GitHub",
+      "lockScreen": "Lock screen",
+      "logout": "Log out"
+    },
+    "guide": {
+      "title": "Click here to view",
+      "theme": "Theme style",
+      "menu": "Open top menu",
+      "description": "More configurations"
+    }
+  },
+  "common": {
+    "tips": "Prompt",
+    "warning": "Warning",
+    "error": "Error",
+    "errors": {
+      "componentNotFound": "Component not found: {componentPath}"
+    },
+    "languages": {
+      "zh": "Simplified Chinese",
+      "en": "English"
+    },
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "actions": {
+      "add": "Add",
+      "create": "Create",
+      "modify": "Modify",
+      "save": "Save",
+      "close": "Close",
+      "import": "Import",
+      "export": "Export",
+      "exportAll": "Export All",
+      "exportPage": "Export Page",
+      "exportSelected": "Export Selected ({count})",
+      "delete": "Delete",
+      "copy": "Copy",
+      "renew": "Renew",
+      "details": "Details",
+      "next": "Next",
+      "prev": "Previous",
+      "confirm": "OK",
+      "refresh": "Refresh"
+    },
+    "searchPopover": {
+      "tooltip": "Search and filters",
+      "collapse": "Collapse search"
+    },
+    "datePickerPopover": {
+      "tooltip": "Date filter",
+      "collapse": "Collapse date"
+    },
+    "datePicker": {
+      "shortcuts": {
+        "last1Hour": "Last 1h",
+        "last6Hours": "Last 6h",
+        "last24Hours": "Last 24h",
+        "last7Days": "Last 7d",
+        "last30Days": "Last 30d"
+      }
+    },
+    "tableDeleteDropdown": {
+      "label": "Delete",
+      "all": "{label} All",
+      "selected": "{label} Selected ({count})"
+    },
+    "consoleBanner": {
+      "welcome": "Welcome to Mazbri Management Platform!",
+      "subtitle": "API gateway operations console"
+    },
+    "passwordStrength": {
+      "weak": "Weak",
+      "medium": "Medium",
+      "strong": "Strong"
+    },
+    "mfaDialog": {
+      "title": "MFA Confirmation",
+      "placeholder": "Please enter the MFA one-time code",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "inputErrorMessage": "Please enter a 6-8 digit code"
+    },
+    "fields": {
+      "status": "Status",
+      "operations": "Operations",
+      "name": "Name",
+      "createdAt": "Created At",
+      "updatedAt": "Updated At",
+      "search": "Search"
+    },
+    "pagination": {
+      "jumpTo": "Jump to page",
+      "goLast": "Go to last page",
+      "totalCount": "{n} total",
+      "nav": "Pagination",
+      "prev": "Previous page",
+      "next": "Next page"
+    },
+    "status": {
+      "neverExpires": "Never expires",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "active": "Enabled",
+      "suspended": "Disabled",
+      "pending": "Pending"
+    },
+    "units": {
+      "days": "days",
+      "seconds": "seconds"
+    },
+    "currencies": {
+      "cny": "CNY"
+    },
+    "defaults": {
+      "oneYear": "Default 365 days"
+    },
+    "feedback": {
+      "noMatchingData": "No matching data found",
+      "noData": "No data",
+      "unknownError": "Unknown error",
+      "saveSuccess": "Saved successfully",
+      "createSuccess": "Created successfully",
+      "deleteSuccess": "Deleted successfully",
+      "exportSuccess": "Exported successfully",
+      "copyFailed": "Copy failed",
+      "copiedToClipboard": "Copied to clipboard",
+      "renewSuccess": "Renewed successfully",
+      "revokeSuccess": "Revoked successfully",
+      "authorizationGranted": "Granted successfully",
+      "authorizationRevoked": "Authorization revoked",
+      "rechargeSuccess": "Recharged successfully",
+      "refundSuccess": "Refunded successfully",
+      "mfaReset": "MFA reset successfully",
+      "resetPasswordSuccess": "Password reset successfully",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "autoRenewEnabled": "Auto renewal enabled",
+      "autoRenewDisabled": "Auto renewal disabled",
+      "copySuccess": "Copied to clipboard"
+    },
+    "table": {
+      "fetchFailed": "Failed to fetch table data"
+    },
+    "storage": {
+      "localDataCorrupted": "The local data is corrupted. Please log in again to restore access."
+    },
+    "statusLabels": {
+      "active": "Enabled",
+      "enabled": "Enabled",
+      "inactive": "Inactive",
+      "disabled": "Disabled",
+      "unconfigured": "Unconfigured",
+      "suspended": "Disabled",
+      "pending": "Pending Review",
+      "pendingImport": "Pending Import",
+      "imported": "Imported",
+      "deleted": "Deleted",
+      "error": "Error",
+      "failed": "Failed",
+      "success": "Success",
+      "valid": "Valid",
+      "expiringSoon": "Expiring Soon",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "roleLabels": {
+      "admin": "Administrator",
+      "operator": "Operator",
+      "finance": "Finance",
+      "viewer": "Read-only User"
+    },
+    "conflict": {
+      "title": "Configuration Conflict",
+      "updatedByOthers": "{scopeLabel} was updated by someone else; refresh and retry.",
+      "recheckLatest": "{scopeLabel} was updated by someone else; retry with the latest config.",
+      "latestUpdatedAt": "Latest updated at: {updatedAt}",
+      "yourSubmission": "Your submission: {value}",
+      "latestValue": "Latest value: {value}",
+      "rateLimitScope": "Plan rate limits",
+      "rateLimitEnabled": "Enable plan rate limits",
+      "rateLimitDailyLimit": "Daily Call Limit (times)",
+      "rateLimitMaxConcurrent": "Plan rate (req/s)",
+      "rateLimitMaxBandwidthMbps": "Bandwidth cap (Mbps, 0=unlimited)",
+      "rateLimitBurstSize": "Burst",
+      "rateLimitClientIpQps": "Per-client IP rate",
+      "rateLimitClientIpBurst": "Per-IP burst",
+      "rateLimitWindowDurationSecs": "Window (seconds; token bucket refills per second)",
+      "rateLimitApiOverride": "Per-API overrides",
+      "cacheScope": "Global Cache Policy",
+      "cacheDefaultTtlSecs": "Default TTL (seconds)",
+      "cacheMaxCacheSizeBytes": "Max Cache Size (bytes)",
+      "cacheTenantIsolated": "Tenant Isolation",
+      "cacheWarmupEnabled": "Warmup Enabled",
+      "cacheApiTtlOverride": "API TTL Override",
+      "cacheWarmupKeys": "Warmup Key List",
+      "productScope": "Product Authorization Config",
+      "productBillingMode": "Billing Mode",
+      "productUnitPrice": "Unit Price",
+      "productCbProFallback": "CBPRO",
+      "productCodecEnabled": "Payload Codec Enabled",
+      "productRequestCodec": "Request Codec",
+      "productResponseCodec": "Response Codec",
+      "productCodecVersion": "Codec Version",
+      "productCbProPolicy": "CBPRO"
+    },
+    "logOutTips": "Do you want to log out?",
+    "search": "Search",
+    "reset": "Reset",
+    "time": "Time",
+    "user": "User",
+    "timeRange": "Time Range",
+    "to": "To",
+    "startTime": "Start Time",
+    "endTime": "End Time",
+    "lastHour": "Last Hour",
+    "last24Hours": "Last 24 Hours",
+    "last7Days": "Last 7 Days",
+    "last30Days": "Last 30 Days",
+    "importDialog": {
+      "dragToUpload": "Drag the {type} file here, or click to upload",
+      "fileTip": ".{ext} only, ≤{size}",
+      "newItems": "New: {count} items",
+      "duplicateItems": "Duplicate: {count} items (will be skipped)",
+      "invalidItems": "Invalid: {count} items (format error)",
+      "willBeAdded": "These items will be added",
+      "alreadyExists": "These items already exist",
+      "moreItems": "... {count} more items",
+      "previewTitle": "Data to be added (first {count} items)",
+      "back": "Back",
+      "nextStep": "Next",
+      "confirmImport": "Confirm Import"
+    },
+    "filePicker": {
+      "defaultTitle": "Click or drag to select a file",
+      "defaultHint": "Drag a file here, or click to choose",
+      "choose": "Choose File",
+      "change": "Change File",
+      "selected": "Selected",
+      "selectedCount": "{count} file(s) selected",
+      "selectedHint": "A file is selected. Click or drag to choose another one.",
+      "selectedSize": "File size: {size}",
+      "invalidType": "File type is not allowed",
+      "fileTooLarge": "File exceeds the size limit (max {size})",
+      "remove": "Remove"
+    },
+    "save": "Save",
+    "saveSuccess": "Saved"
+  },
+  "config": {
+    "globalComponents": {
+      "screenLock": "Screen Lock",
+      "fireworksEffect": "Fireworks Effect",
+      "watermarkEffect": "Watermark Effect"
+    },
+    "headerBar": {
+      "menuButton": "Toggle the left menu expand/collapse button",
+      "refreshButton": "Page refresh button",
+      "fastEnter": "Fast entry feature for quick access to common apps and links",
+      "breadcrumb": "Breadcrumb navigation showing the current page path",
+      "fullscreen": "Fullscreen toggle feature",
+      "language": "Multi-language switch feature",
+      "themeToggle": "Theme switch feature (light/dark)"
+    }
+  },
+  "operations": {
+    "monitoring": {
+      "ranges": {
+        "oneHour": "1 Hour",
+        "sixHours": "6 Hours",
+        "oneDay": "24 Hours",
+        "sevenDays": "7 Days",
+        "thirtyDays": "30 Days"
+      },
+      "browse": {
+        "cappedTitle": "Too many results; browse depth is limited",
+        "cappedDesc": "{total} rows match; you can page through the first {limit}. Narrow the time range, add filters, search by serial number, or export the filtered set."
+      },
+      "mode": {
+        "latest": "As of {asOf}, latest {size} records",
+        "latestPrefix": "As of {asOf}, latest ",
+        "latestSuffix": " records",
+        "ranged": "Search within time range (all conditions are AND)",
+        "selective": "Exact serial lookup (full history)",
+        "unknownTime": "—"
+      },
+      "sections": {
+        "qps": "QPS",
+        "p95Latency": "P95 Latency",
+        "errorRate5xx": "5xx Error Rate",
+        "targets": "Collection Targets"
+      },
+      "columns": {
+        "service": "Service",
+        "key": "Key",
+        "port": "Port",
+        "endpoint": "Collection Endpoint",
+        "serialNo": "Serial No",
+        "supplier": "Supplier",
+        "tenantName": "Tenant",
+        "channelName": "Channel",
+        "channelNameUpstream": "Upstream / Channel",
+        "responseTime": "Timestamp",
+        "requestIp": "Request IP",
+        "customerLatency": "Duration",
+        "upstreamLatency": "Duration",
+        "statusCode": "Status Code",
+        "responseResult": "Response"
+      },
+      "allServices": "All services",
+      "metrics": {
+        "currentQps": "Current QPS",
+        "errorRate5xx": "5xx Error Rate",
+        "p95Latency": "P95 Latency",
+        "p99Latency": "P99 Latency",
+        "activeConnections": "Active Connections",
+        "proxyConnections": "Proxy Connections",
+        "rateLimitRejections": "Rate Limit Rejections",
+        "billingQueue": "Billing Queue"
+      },
+      "units": {
+        "reqPerSec": "req/s",
+        "percent": "%",
+        "milliseconds": "ms",
+        "connections": "conn",
+        "opsPerSec": "ops/s",
+        "jobs": "jobs"
+      },
+      "noData": "No data available",
+      "customerTitle": "Customer Monitoring",
+      "upstreamTitle": "Upstream Monitoring",
+      "tooltip": {
+        "timeRange": "Time range filter",
+        "collapse": "Collapse time"
+      },
+      "actions": {
+        "export": "Export",
+        "exportPage": "Export Page",
+        "exportSelected": "Export Selected ({count})",
+        "exportFiltered": "Export Filtered Items",
+        "downloadJson": "Download JSON"
+      },
+      "detail": {
+        "title": "Call Log Detail",
+        "summaryTitle": "Call Summary",
+        "rawTitle": "Raw Details",
+        "empty": "-",
+        "labels": {
+          "serialNo": "Serial No",
+          "party": "Tenant / Supplier",
+          "channelName": "Channel Name",
+          "responseTime": "Response Time",
+          "latency": "Latency",
+          "statusCode": "Status Code",
+          "requestIp": "Request IP",
+          "responseResult": "Response Result"
+        }
+      },
+      "placeholders": {
+        "customer": "Serial No / tenant / channel / IP / status code",
+        "upstream": "Serial No / supplier / channel / status code"
+      },
+      "empty": {
+        "noMatch": "No call records matched the filters",
+        "noMatchLatest": "No matches in the latest {size} calls; try adding a time range",
+        "noData": "No call records"
+      },
+      "messages": {
+        "noExport": "No call records available for export",
+        "exportFailed": "Failed to export call records"
+      }
+    }
+  },
+  "setting": {
+    "menuType": {
+      "title": "Menu Layout",
+      "list": [
+        "Vertical",
+        "Horizontal",
+        "Mixed",
+        "Dual"
+      ]
+    },
+    "theme": {
+      "title": "Theme Style",
+      "list": [
+        "Light",
+        "Dark",
+        "System (Follow System)"
+      ]
+    },
+    "menu": {
+      "title": "Menu Style"
+    },
+    "color": {
+      "title": "Theme Color"
+    },
+    "box": {
+      "title": "Box Style",
+      "list": [
+        "Border",
+        "Shadow"
+      ]
+    },
+    "container": {
+      "title": "Container Width",
+      "list": [
+        "Full",
+        "Boxed"
+      ]
+    },
+    "basics": {
+      "title": "Basic Config",
+      "list": {
+        "multiTab": "Show work tab",
+        "accordion": "Sidebar opens accordion",
+        "collapseSidebar": "Show sidebar button",
+        "reloadPage": "Show reload page button",
+        "fastEnter": "Show fast enter",
+        "breadcrumb": "Show crumb navigation",
+        "language": "Show multilingual selection",
+        "progressBar": "Show top progress bar",
+        "weakMode": "Color Weakness Mode",
+        "watermark": "Global watermark",
+        "menuWidth": "Menu width (px)",
+        "tabStyle": "Tab style",
+        "pageTransition": "Page animation",
+        "borderRadius": "Custom radius (rem)"
+      }
+    },
+    "tabStyle": {
+      "default": "Default",
+      "card": "Card",
+      "google": "Chrome"
+    },
+    "transition": {
+      "list": {
+        "none": "None",
+        "fade": "Fade",
+        "slideLeft": "Slide Left",
+        "slideBottom": "Slide Bottom",
+        "slideTop": "Slide Top"
+      }
+    },
+    "actions": {
+      "resetConfig": "Reset Config",
+      "copyConfig": "Copy Config",
+      "copySuccess": "Configuration copied to clipboard.",
+      "copyFailed": "Copy failed, please try again",
+      "resetFailed": "Reset failed, please refresh the page and try again"
+    }
+  },
+  "notice": {
+    "title": "Notice",
+    "btnRead": "Mark as read",
+    "bar": [
+      "Notice",
+      "Message",
+      "Todo"
+    ],
+    "text": [
+      "No"
+    ],
+    "viewAll": "View all"
+  },
+  "chat": {
+    "botName": "AI Assistant",
+    "online": "Online",
+    "offline": "Offline",
+    "inputPlaceholder": "Enter a message",
+    "send": "Send"
+  },
+  "watermark": {
+    "title": "Watermark"
+  },
+  "analytics": {
+    "metrics": {
+      "todayRequests": "Today's Requests",
+      "weekRequests": "This Week's Requests",
+      "totalRequests": "Total Requests",
+      "activeTenants": "Active Tenants"
+    },
+    "requestTrendTitle": "Request Trend",
+    "topEndpointsTitle": "Top Endpoints",
+    "requestCountAxis": "Request Count",
+    "noData": "No data available"
+  },
+  "worktab": {
+    "btn": {
+      "refresh": "Refresh",
+      "fixed": "Fixed",
+      "unfixed": "Unfixed",
+      "closeLeft": "Close left",
+      "closeRight": "Close right",
+      "closeOther": "Close other",
+      "closeAll": "Close all"
+    }
+  },
+  "login": {
+    "leftView": {
+      "title": "Mazbri API Gateway Management Platform",
+      "subTitle": "Secure, efficient and reliable API management solution"
+    },
+    "title": "Welcome back",
+    "subTitle": "Please enter your account and password to login",
+    "roles": {
+      "admin": "Admin",
+      "operator": "Operator",
+      "finance": "Finance",
+      "viewer": "Viewer"
+    },
+    "placeholder": {
+      "username": "Please enter your account",
+      "password": "Please enter your password",
+      "slider": "Please slide to verify"
+    },
+    "sliderText": "Please slide to verify",
+    "sliderSuccessText": "Verification successful",
+    "rememberPwd": "Remember password",
+    "forgetPwd": "Forgot password",
+    "btnText": "Login",
+    "noAccount": "No account yet?",
+    "register": "Register",
+    "success": {
+      "title": "Login successful",
+      "message": "Welcome back",
+      "messageWithUser": "Welcome back, {username}!"
+    },
+    "error": {
+      "unexpected": "Login failed, please try again later"
+    },
+    "mfa": {
+      "title": "Two-Factor Authentication",
+      "subTitle": "Please enter the code from your authenticator",
+      "placeholder": "Enter verification code",
+      "invalidCode": "Invalid verification code format",
+      "btnText": "Verify",
+      "backToLogin": "Back to login"
+    },
+    "mfaSetup": {
+      "title": "Set Up Two-Factor Authentication",
+      "subTitle": "Scan the QR code with your authenticator to set up MFA",
+      "qrPlaceholder": "Scan the QR code with your authenticator app",
+      "secretLabel": "Your secret key (shown only once):",
+      "secretPlaceholder": "Your secret key (shown only once)",
+      "codePlaceholder": "Enter verification code",
+      "codeHint": "Enter the {digits}-digit code",
+      "backupCodesLabel": "Backup codes (save securely):",
+      "backupCodesPlaceholder": "Backup codes (shown after setup)",
+      "copy": "Copy",
+      "copyAll": "Copy all",
+      "copied": "Copied",
+      "getQrCode": "Get QR Code",
+      "gettingQrCode": "Getting QR code...",
+      "secretCopied": "Secret copied to clipboard",
+      "backupCodesCopied": "Backup codes copied to clipboard",
+      "copyFailed": "Copy failed, please copy manually",
+      "btnText": "Enable MFA",
+      "backToLogin": "Back to login"
+    },
+    "changePassword": {
+      "title": "Change Password",
+      "subTitle": "First time login requires password change",
+      "newUsername": "New Username (Optional)",
+      "usernameLengthError": "Username must be between 3 and 50 characters",
+      "currentPassword": "Enter current password",
+      "currentPasswordRequired": "Please enter current password",
+      "newPassword": "Enter new password",
+      "newPasswordRequired": "Please enter new password",
+      "confirmPassword": "Confirm new password",
+      "confirmPasswordRequired": "Please confirm the new password",
+      "passwordMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 8 characters",
+      "passwordMinLength": "Password must be at least 8 characters",
+      "btnText": "Confirm",
+      "success": "Password changed successfully"
+    }
+  },
+  "forgetPassword": {
+    "title": "Forgot password?",
+    "subTitle": "Enter your email to reset your password",
+    "placeholder": "Please enter your email",
+    "submitBtnText": "Submit",
+    "backBtnText": "Back"
+  },
+  "lockScreen": {
+    "pwdError": "Password error",
+    "securityLockActivated": "Security lock activated",
+    "devToolsWarningTitle": "System Locked",
+    "devToolsWarningDesc": "Close developer tools to continue.",
+    "initFailed": "Failed to initialize screen lock, please try again",
+    "lock": {
+      "inputPlaceholder": "Please input lock screen password",
+      "btnText": "Lock"
+    },
+    "unlock": {
+      "inputPlaceholder": "Please input unlock password",
+      "btnText": "Unlock",
+      "backBtnText": "Back to login"
+    }
+  },
+  "greeting": {
+    "dawn": "Good morning!",
+    "morning": "Good morning!",
+    "afternoon": "Good afternoon!",
+    "evening": "Good evening!"
+  },
+  "exceptionPage": {
+    "gohome": "Go Home",
+    "403": "Sorry, you do not have permission to access this page",
+    "404": "Sorry, the page you are trying to access does not exist",
+    "500": "Sorry, there was an error on the server"
+  },
+  "menus": {
+    "login": {
+      "title": "Login"
+    },
+    "forgetPassword": {
+      "title": "Forget Password"
+    },
+    "outside": {
+      "title": "Outside"
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "console": "Console",
+      "analysis": "Analysis"
+    },
+    "widgets": {
+      "title": "Components",
+      "icon": "Icon",
+      "imageCrop": "Image Crop",
+      "excel": "Excel Import Export",
+      "video": "Video Player",
+      "countTo": "Count To",
+      "wangEditor": "Wang Editor",
+      "watermark": "Watermark",
+      "contextMenu": "Context Menu",
+      "qrcode": "QR Code",
+      "drag": "Drag",
+      "textScroll": "Text Scroll",
+      "fireworks": "Fireworks",
+      "elementUI": "Component Overview"
+    },
+    "template": {
+      "title": "Template Center",
+      "chat": "Chat",
+      "cards": "Cards",
+      "banners": "Banners",
+      "charts": "Charts",
+      "map": "Map",
+      "calendar": "Calendar",
+      "pricing": "Pricing"
+    },
+    "article": {
+      "title": "Article",
+      "articleList": "Article List",
+      "articleDetail": "Article Detail",
+      "comment": "Comment",
+      "articlePublish": "Article Publish"
+    },
+    "exception": {
+      "title": "Exception",
+      "forbidden": "403",
+      "notFound": "404",
+      "serverError": "500"
+    },
+    "safeguard": {
+      "title": "Safeguard",
+      "server": "Server"
+    },
+    "plan": {
+      "title": "Version Plan",
+      "log": "Change Log"
+    },
+    "help": {
+      "title": "Help Center",
+      "document": "Document",
+      "liteVersion": "Lite Version",
+      "oldVersion": "v2.6.1 Version"
+    },
+    "mazbri": {
+      "title": "Mazbri Management",
+      "dashboard": "Dashboard",
+      "users": "User Management",
+      "userManagement": "User Management",
+      "userDetail": "User Detail",
+      "tenants": "Tenant Management",
+      "opsManagement": "Operations Center",
+      "tenantList": "Tenant List",
+      "tenantDetail": "Tenant Detail",
+      "authorizationList": "Authorizations / Subscription",
+      "productAuthorization": "Product Governance",
+      "productGovernanceDescription": "Products, grants, and routes",
+      "products": "Product Management",
+      "productManagement": "Product Management",
+      "productList": "Product Catalog",
+      "productDetail": "Product Detail",
+      "supplierManagement": "Supplier Management",
+      "upstreamSupply": "Upstream Supply",
+      "supplierList": "Suppliers",
+      "upstreamChannelList": "Channels",
+      "certificates": "Certificate Management",
+      "certificateList": "Certificate List",
+      "certificateDetail": "Certificate Detail",
+      "certificatePresets": "Preset Templates",
+      "authorizationManagement": "Authorization Management",
+      "billList": "Bills",
+      "usageReconciliation": "Usage Reconciliation",
+      "analytics": "Analytics",
+      "analyticsOverview": "Overview",
+      "rateLimitAnalytics": "Rate Limit",
+      "operations": "Operations",
+      "routeConfig": "Route Rules",
+      "advancedRouteConfig": "Route Strategy",
+      "userRouteGovernance": "Route Strategy",
+      "callbackList": "Callbacks",
+      "opsMonitoring": "Ops Monitoring",
+      "serviceMonitoring": "Service Monitoring",
+      "upstreamCallMonitor": "Upstream Monitor",
+      "customerCallMonitor": "Customer Monitor",
+      "callbackFields": {
+        "url": "Callback URL",
+        "secret": "Signature Secret",
+        "tenantId": "Tenant ID",
+        "productId": "Product ID",
+        "addTitle": "New Callback Subscription"
+      },
+      "auditLogs": "Audit Logs",
+      "settings": "Settings",
+      "systemSettings": "System Settings",
+      "appearanceSettings": "Appearance Settings",
+      "mfaSettings": "MFA Settings",
+      "passwordPolicy": "Security Settings",
+      "controlPanel": "Control Panel",
+      "configCenter": "Config Center",
+      "connectorWorkbench": "Code-free Access"
+    }
+  },
+  "systemSettings": {
+    "page": {
+      "title": "System Settings",
+      "heading": "System and Appearance Settings"
+    },
+    "sections": {
+      "basic": "Basic Settings"
+    },
+    "tabs": {
+      "system": "System Settings",
+      "appearance": "Appearance Settings"
+    },
+    "form": {
+      "siteName": "Site Name",
+      "siteNamePlaceholder": "Enter site name",
+      "siteUrl": "Site URL",
+      "siteUrlPlaceholder": "https://example.com",
+      "adminEmail": "Admin Email",
+      "adminEmailPlaceholder": "admin@example.com",
+      "securitySettings": "Security Settings",
+      "sessionTimeout": "Admin session timeout (min, sets access JWT expiry)",
+      "maxLoginAttempts": "Max Login Attempts (times)",
+      "saveSettings": "Save Settings",
+      "resetToDefault": "Reset to Default",
+      "appearanceSettingsTitle": "Appearance Settings",
+      "tenantGatewayUrl": "Tenant Gateway URL",
+      "tenantGatewayUrlPlaceholder": "http://gateway.mazbri.local:8080",
+      "tenantGatewayUrlHint": "Tenant API gateway base URL (not the admin console)."
+    },
+    "theme": {
+      "title": "Theme Settings",
+      "themeMode": "Theme Mode",
+      "followSystem": "Follow System",
+      "followSystemHint": "(Auto adapts to system light/dark theme)",
+      "systemThemeColor": "System Theme Color",
+      "darkThemeStyle": "Dark Theme Style",
+      "darkThemeObsidian": "Obsidian Minimalist",
+      "darkThemeGraphite": "Graphite Steel",
+      "darkThemeOceanic": "Oceanic Abyss",
+      "darkThemeNordic": "Nordic Pine"
+    },
+    "layout": {
+      "title": "Layout Settings",
+      "containerWidth": "Container Width",
+      "boxStyle": "Box Style"
+    },
+    "display": {
+      "title": "Display Settings",
+      "showBreadcrumb": "Show Breadcrumb",
+      "showProgressBar": "Show Progress Bar",
+      "watermark": "Global Watermark",
+      "weakMode": "Color Weakness Mode",
+      "multiTab": "Show Work Tab",
+      "accordion": "Sidebar Accordion",
+      "collapseSidebar": "Show Sidebar Button",
+      "fastEnter": "Show Fast Enter",
+      "reloadPage": "Show Reload Button",
+      "language": "Show Language"
+    },
+    "style": {
+      "title": "Style Settings",
+      "menuWidth": "Menu Width (px)",
+      "tabStyle": "Tab",
+      "pageTransition": "Transition",
+      "customRadius": "Border Radius (rem)"
+    },
+    "validation": {
+      "siteNameRequired": "Please enter site name",
+      "siteUrlRequired": "Please enter site URL",
+      "siteUrlInvalid": "Please enter a valid URL",
+      "adminEmailRequired": "Please enter admin email",
+      "adminEmailInvalid": "Please enter a valid email",
+      "tenantGatewayUrlInvalid": "Tenant gateway URL must start with http:// or https://"
+    },
+    "messages": {
+      "savedSuccess": "Settings saved successfully",
+      "appearanceSaved": "Appearance settings saved",
+      "appearanceSavedLocally": "Saved locally (server sync failed)",
+      "resetConfirmTitle": "Confirm reset",
+      "resetConfirmMessage": "Reset all appearance settings to defaults?",
+      "appearanceResetSuccess": "Appearance settings reset to defaults"
+    }
+  },
+  "securityPolicy": {
+    "page": {
+      "title": "Security Settings"
+    },
+    "actions": {
+      "saveSettings": "Save Settings"
+    },
+    "sections": {
+      "password": {
+        "title": "Password Policy"
+      },
+      "complexity": {
+        "title": "Complexity Requirements",
+        "description": "Control password length, character types, and special character sets."
+      },
+      "expiration": {
+        "title": "Expiration and Reuse",
+        "description": "Set password validity, reminder timing, and history reuse restrictions."
+      },
+      "loginProtection": {
+        "title": "Login Protection",
+        "description": "Limit consecutive failures and configure account lockout duration."
+      },
+      "mfa": {
+        "title": "MFA Configuration"
+      },
+      "mfaScope": {
+        "title": "Enable MFA",
+        "description": "Default MFA scope."
+      },
+      "totp": {
+        "title": "TOTP Parameters",
+        "description": "Control the authenticator display name, code digits, and refresh interval."
+      },
+      "process": {
+        "title": "Usage Flow",
+        "description": "Help administrators confirm the end-user enablement path."
+      }
+    },
+    "fields": {
+      "minLength": "Minimum Length (chars)",
+      "maxLength": "Maximum Length (chars)",
+      "requireUppercase": "Require Uppercase",
+      "requireLowercase": "Require Lowercase",
+      "requireDigit": "Require Digit",
+      "requireSpecialChar": "Require Special Character",
+      "passwordValidity": "Password Validity (days)",
+      "expirationWarning": "Expiration Warning (days)",
+      "historyCheck": "Password History Check (times)",
+      "lockThreshold": "Lock Threshold (times)",
+      "lockDuration": "Lock Duration (minutes)",
+      "globalMfa": "Enable Scope",
+      "issuerName": "Issuer Name",
+      "totpDigits": "Code Digits (digits)",
+      "totpPeriod": "Code Period (seconds)",
+      "backupCodesCount": "Backup Codes (pcs)"
+    },
+    "placeholders": {
+      "issuerName": "Mazbri"
+    },
+    "options": {
+      "disabled": "Disabled",
+      "adminOnly": "Admin Only",
+      "allUsers": "All Users",
+      "totpDigits6": "6 digits",
+      "totpDigits8": "8 digits",
+      "totpPeriod30": "30 seconds",
+      "totpPeriod60": "60 seconds"
+    },
+    "units": {
+      "chars": "chars",
+      "days": "days",
+      "daysBefore": "days before",
+      "recentPasswords": "recent passwords cannot be reused",
+      "failuresBeforeLock": "failed attempts before lock",
+      "minutes": "minutes",
+      "count": "count"
+    },
+    "steps": {
+      "install": {
+        "title": "Install Authenticator App",
+        "description": "Install a compatible TOTP authenticator app."
+      },
+      "scan": {
+        "title": "Scan QR Code",
+        "description": "Scan the QR code at login."
+      },
+      "enter": {
+        "title": "Enter Code",
+        "description": "Enter the code shown in the authenticator app each time you log in."
+      }
+    },
+    "messages": {
+      "noPermission": "Only admins can configure security settings.",
+      "savedSuccess": "Settings saved"
+    }
+  },
+  "channels": {
+    "page": {
+      "title": "Channel List",
+      "searchPlaceholder": "Channel / Supplier"
+    },
+    "actions": {
+      "add": "Add Channel"
+    },
+    "fields": {
+      "id": "Internal ID",
+      "supplier": "Supplier",
+      "channelCode": "Channel Code",
+      "name": "Channel Name",
+      "pathPrefix": "Path Prefix",
+      "costPrice": "Cost Price",
+      "qpsLimit": "Upstream channel capacity (QPS)",
+      "qpsLimitHint": "0 = unlimited"
+    },
+    "placeholders": {
+      "supplier": "Please select a supplier",
+      "channelCode": "ACME-DEFAULT",
+      "name": "Supplier A - Shanghai Line",
+      "pathPrefix": "/",
+      "costPrice": "0.001000"
+    },
+    "dialog": {
+      "createTitle": "Add Channel",
+      "editTitle": "Edit Channel"
+    },
+    "form": {
+      "saveAndBack": "Save",
+      "cancelBack": "Cancel"
+    },
+    "detail": {
+      "pageTitle": "Channel Detail",
+      "basicInfoTitle": "Basic Information",
+      "loadFailed": "Failed to load channel"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "suspended": "Suspended"
+    },
+    "empty": {
+      "default": "No channels",
+      "filtered": "No matching channels found"
+    },
+    "validation": {
+      "supplierRequired": "Please select a supplier",
+      "channelCodeRequired": "Please enter a channel code",
+      "channelCodePattern": "Must start with an uppercase letter; only A–Z, digits, and hyphens.",
+      "channelCodeDuplicate": "Channel code already exists",
+      "nameRequired": "Please enter a channel name",
+      "pathPrefixRequired": "Please enter a path prefix"
+    },
+    "messages": {
+      "createSupplierFirst": "Please create a supplier before adding a channel",
+      "deleteConfirm": "Are you sure you want to delete channel {name}?"
+    }
+  },
+  "callbacks": {
+    "tabs": {
+      "subscriptions": "Subscriptions",
+      "deliveries": "Deliveries"
+    },
+    "actions": {
+      "addSubscription": "Add Subscription",
+      "retry": "Retry"
+    },
+    "columns": {
+      "tenantCode": "Tenant Code",
+      "tenantAccount": "Tenant Account",
+      "productCode": "Product Code",
+      "callbackUrl": "Callback URL",
+      "eventId": "Event ID",
+      "retryCount": "Retry Count",
+      "responseCode": "Response Code",
+      "failureReason": "Failure Reason"
+    },
+    "form": {
+      "tenantCode": "Tenant Code",
+      "productCode": "Product Code"
+    },
+    "placeholders": {
+      "tenantCode": "e.g. T0000001",
+      "productCode": "e.g. 8000000001",
+      "callbackUrl": "https://...",
+      "secretKey": "Signing secret (Sign secret)"
+    },
+    "validation": {
+      "tenantCodeRequired": "Please enter a tenant code",
+      "productCodeRequired": "Please enter a product code",
+      "callbackUrlRequired": "Please enter a callback URL",
+      "secretKeyRequired": "Please enter a signing secret"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed",
+      "abandoned": "Abandoned",
+      "retrying": "Retrying"
+    },
+    "messages": {
+      "fetchListFailed": "Failed to fetch list",
+      "fetchDeliveriesFailed": "Failed to fetch delivery tasks",
+      "deleteConfirm": "Are you sure you want to delete this subscription?",
+      "retrySuccess": "Requeued successfully",
+      "retryFailed": "Retry failed",
+      "createFailed": "Creation failed"
+    }
+  },
+  "routes": {
+    "embeddedTitle": "Route Strategy",
+    "actions": {
+      "createRoute": "Add Route Strategy",
+      "createProductRoute": "Add Product Route",
+      "bindings": "Candidate Channels",
+      "addBinding": "Add Candidate Channel",
+      "addUpstreamBinding": "Bind Upstream Channel",
+      "emergencySwitch": "Emergency Switch",
+      "confirmSave": "Confirm Save",
+      "backToEdit": "Back to Edit",
+      "confirmSwitch": "Confirm Switch",
+      "exportPage": "Export Page",
+      "exportSelected": "Export Selected ({count})"
+    },
+    "dialogs": {
+      "bindingTitle": "Candidate Channels",
+      "editRouteTitle": "Edit Route Strategy",
+      "createRouteTitle": "Add Route Strategy",
+      "editBindingTitle": "Edit Candidate Channel",
+      "createBindingTitle": "Add Candidate Channel",
+      "editUpstreamBindingTitle": "Edit Upstream Channel Binding",
+      "createUpstreamBindingTitle": "Bind Upstream Channel",
+      "emergencySwitchTitle": "Emergency Switch",
+      "confirmSaveRoute": "Please confirm the route configuration",
+      "confirmSaveBinding": "Please confirm the candidate channel configuration"
+    },
+    "fields": {
+      "scope": "Route Scope",
+      "product": "Product",
+      "tenant": "Tenant",
+      "priority": "Priority",
+      "status": "Status",
+      "routePurpose": "Route purpose (metadata label only; not used for routing)",
+      "changeReason": "Change Reason",
+      "tags": "Tags",
+      "effectiveWindow": "Effective Window",
+      "description": "Description",
+      "bindingChannel": "Channel",
+      "upstreamChannel": "Upstream Channel",
+      "channelOrder": "Order",
+      "timeoutMs": "Timeout (ms)",
+      "maxRetries": "Max Retries (times)",
+      "failoverEnabled": "Failover on Failure",
+      "failureTypes": "Switch Triggers",
+      "targetBinding": "Target Candidate Channel",
+      "switchReason": "Switch Reason"
+    },
+    "placeholders": {
+      "product": "Please select a product",
+      "tenant": "Please select a tenant",
+      "routePurpose": "Please select a route purpose",
+      "changeReason": "Describe why the route is being configured or adjusted",
+      "tags": "Select or enter tags",
+      "description": "Optional description",
+      "bindingChannel": "Please select a channel",
+      "upstreamChannel": "Please select an upstream channel",
+      "switchReason": "Describe the outage, degradation, or supplier switch reason",
+      "search": "Product / tenant name or code"
+    },
+    "scope": {
+      "default": "Product Default",
+      "tenant": "Tenant Override"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "suspended": "Suspended"
+    },
+    "effectiveMode": {
+      "immediate": "Immediate",
+      "window": "Scheduled Window"
+    },
+    "routePurpose": {
+      "standard": "Standard Route",
+      "emergency": "Emergency Route",
+      "costFirst": "Cost First",
+      "backup": "Backup Route"
+    },
+    "routeTags": {
+      "vip": "VIP",
+      "lowCost": "Low Cost",
+      "backup": "Backup",
+      "temp": "Temporary",
+      "emergency": "Emergency"
+    },
+    "failureTypes": {
+      "timeout": "Timeout",
+      "connection": "Connection Failure",
+      "serverError": "Server Error",
+      "rateLimited": "Rate Limited"
+    },
+    "validation": {
+      "productRequired": "Please select a product",
+      "tenantRequired": "Please select a tenant",
+      "priorityRequired": "Please enter a priority",
+      "statusRequired": "Please select a status",
+      "routePurposeRequired": "Please select a route purpose",
+      "changeReasonRequired": "Please enter a change reason",
+      "effectiveWindowRequired": "Please select an effective window",
+      "bindingChannelRequired": "Please select a channel",
+      "channelOrderRequired": "Please enter an order",
+      "timeoutRequired": "Please enter a timeout",
+      "maxRetriesRequired": "Please enter max retries",
+      "switchReasonRequired": "Please enter a switch reason"
+    },
+    "columns": {
+      "tenant": "Tenant",
+      "product": "Product",
+      "priority": "Priority",
+      "status": "Status",
+      "metadata": "Metadata"
+    },
+    "bindingColumns": {
+      "order": "Order",
+      "channel": "Channel Name",
+      "channelId": "Channel Code",
+      "switchCondition": "Switch Condition"
+    },
+    "labels": {
+      "defaultRoute": "Product Default",
+      "defaultFailureTypes": "Default Failure Types",
+      "noSwitch": "No Failover",
+      "unselected": "Unselected",
+      "none": "None",
+      "switchSummary": "Timeout {timeoutMs} ms, max retries {maxRetries}, switch on: {triggerText}",
+      "example": "Example",
+      "emergencySwitch": "Emergency Switch",
+      "configured": "Configured"
+    },
+    "confirm": {
+      "scope": "Route Scope: ",
+      "product": "Product: ",
+      "tenant": "Tenant: ",
+      "priority": "Priority: ",
+      "status": "Status: ",
+      "routePurpose": "Route Purpose: ",
+      "tags": "Tags: ",
+      "effectiveWindow": "Effective Window: ",
+      "effectiveNow": "Immediate",
+      "changeReason": "Change Reason: ",
+      "description": "Description: ",
+      "route": "Route: ",
+      "bindingChannel": "Channel: ",
+      "upstreamChannel": "Upstream Channel: ",
+      "channelOrder": "Order: ",
+      "timeout": "Timeout: ",
+      "maxRetries": "Max Retries: ",
+      "failover": "Failover: ",
+      "failureTypes": "Switch Triggers: "
+    },
+    "units": {
+      "ms": "ms"
+    },
+    "failover": {
+      "activeText": "On",
+      "inactiveText": "Off"
+    },
+    "messages": {
+      "fetchRoutesFailed": "Failed to fetch route strategies",
+      "fetchBindingsFailed": "Failed to fetch candidate channels",
+      "exampleNotEditable": "Example routes cannot be edited",
+      "exampleNotDeletable": "Example routes cannot be deleted",
+      "exampleNotAddBinding": "Example routes cannot add candidate channels",
+      "exampleNotSaveBinding": "Example routes cannot save candidate channels",
+      "saveRouteFailed": "Failed to save route strategy",
+      "deleteRouteConfirm": "Delete route for tenant {tenant} / product {product}?",
+      "deleteRouteFailed": "Failed to delete route strategy",
+      "saveBindingFailed": "Failed to save candidate channel",
+      "deleteBindingConfirm": "Are you sure you want to delete candidate channel {name}?",
+      "deleteBindingFailed": "Failed to delete candidate channel",
+      "exampleNotSwitch": "Example routes cannot switch traffic",
+      "emergencySwitchSuccess": "Switch completed successfully",
+      "emergencySwitchFailed": "Switch failed"
+    },
+    "import": {
+      "title": "Import Route Strategies",
+      "columns": {
+        "productCode": "Product Code",
+        "tenantCode": "Tenant Code",
+        "priority": "Priority",
+        "status": "Status",
+        "routePurpose": "Route Purpose",
+        "tags": "Tags",
+        "changeReason": "Change Reason",
+        "description": "Description"
+      },
+      "formatHintHeader": "The file must contain headers: product_code,tenant_code,channel_code,priority,status,route_purpose",
+      "formatHintExample": "prod_kyc,TENANT001,800000001,100,active,standard",
+      "validation": {
+        "productCodeRequired": "Missing product_code",
+        "tenantCodeRequired": "Missing tenant_code",
+        "priorityNumeric": "priority must be numeric",
+        "statusInvalid": "status must be active / inactive / suspended",
+        "routePurposeInvalid": "route_purpose is invalid"
+      }
+    }
+  },
+  "auditLogs": {
+    "page": {
+      "title": "Audit Logs"
+    },
+    "list": {
+      "title": "Operation Records"
+    },
+    "search": {
+      "label": "Keyword",
+      "placeholder": "Username / Action / Resource Type / Status / IP Address / Time"
+    },
+    "filters": {
+      "action": "Action Type",
+      "resourceType": "Resource Type",
+      "status": "Status",
+      "actionPlaceholder": "All action types",
+      "resourceTypePlaceholder": "All resource types",
+      "statusPlaceholder": "All statuses"
+    },
+    "columns": {
+      "timestamp": "Time",
+      "actorName": "Username",
+      "action": "Action",
+      "resourceType": "Resource Type",
+      "status": "Status",
+      "ipAddress": "IP Address",
+      "details": "Details"
+    },
+    "status": {
+      "success": "Success",
+      "failure": "Failure"
+    },
+    "explicitActions": {
+      "adminLogin": "System User Login",
+      "adminLogout": "System User Logout",
+      "adminCreate": "Create System User",
+      "adminUpdate": "Update System User",
+      "adminDelete": "Delete System User",
+      "adminPasswordReset": "Reset System User Password",
+      "adminStatusChange": "Change System User Status",
+      "tenantCreate": "Create Tenant",
+      "tenantUpdate": "Update Tenant",
+      "tenantDelete": "Delete Tenant",
+      "tenantSuspend": "Suspend Tenant",
+      "tenantActivate": "Activate Tenant",
+      "apiKeyCreate": "Create API Key",
+      "apiKeyUpdate": "Update API Key",
+      "apiKeyRevoke": "Revoke API Key",
+      "userLogin": "Login",
+      "userLogout": "Logout",
+      "userUpdate": "Update User",
+      "userDelete": "Delete User",
+      "userSettingsUpdate": "Update User Settings",
+      "quotaUpdate": "Update Quota Config",
+      "planChange": "Change Plan",
+      "productGrant": "Grant Product",
+      "productRevoke": "Revoke Product",
+      "productCreate": "Create Product",
+      "productUpdate": "Update Product",
+      "productDelete": "Delete Product",
+      "productReservationCreate": "Reserve Product Code",
+      "productReservationRelease": "Release Product Code",
+      "accountRecharge": "Recharge Account",
+      "accountRefund": "Refund Account",
+      "accountAdjustment": "Adjust Account",
+      "reconciliationAudit": "Usage reconciliation audit",
+      "reconciliationDiscrepancyUpdate": "Reconciliation discrepancy update",
+      "billAdjustmentCreate": "Create bill adjustment",
+      "billAdjustmentVoid": "Void bill adjustment",
+      "reconciliationSettingsUpdate": "Update reconciliation settings",
+      "billGenerate": "Generate Bill",
+      "billDelete": "Delete Bill",
+      "certificateIssue": "Issue Certificate",
+      "certificateRenew": "Renew Certificate",
+      "certificateRevoke": "Revoke Certificate",
+      "certificatePresetCreate": "Add Preset Template",
+      "certificatePresetUpdate": "Update Preset Template",
+      "certificatePresetDelete": "Delete Preset Template",
+      "certificatePresetImport": "Import Preset Template",
+      "settingsUpdate": "Update System Settings",
+      "passwordPolicyUpdate": "Update Password Policy",
+      "configCenterCreate": "Create Config",
+      "configCenterUpdate": "Update Config",
+      "configCenterDelete": "Delete Config",
+      "configCenterRollback": "Rollback Config",
+      "configCenterExport": "Export Config",
+      "configCenterImport": "Import Config",
+      "appearanceUpdate": "Update Appearance Settings",
+      "appearanceReset": "Reset Appearance Settings",
+      "mfaSettingsUpdate": "Update MFA Settings",
+      "whitelistAdd": "Add Whitelist",
+      "whitelistRemove": "Remove Whitelist",
+      "tenantCryptoProfileUpdate": "Update Tenant Crypto Config",
+      "tenantCryptoKeyCreate": "Create Tenant Crypto Key",
+      "tenantCryptoKeyRotate": "Rotate Tenant Crypto Key",
+      "tenantCryptoKeyActivate": "Activate Tenant Crypto Key",
+      "tenantCryptoKeyDeprecate": "Deprecate Tenant Crypto Key",
+      "tenantCryptoKeyDisable": "Disable Tenant Crypto Key",
+      "tenantCryptoExport": "Export Tenant Crypto Data",
+      "tenantCryptoVerify": "Verify Tenant Crypto Keys",
+      "passwordFirstLoginChange": "Change Password on First Login",
+      "passwordChange": "Change Password",
+      "tenantRateLimitUpdate": "Update Rate Limit Config",
+      "tenantRateLimitDelete": "Delete Rate Limit Config",
+      "tenantCacheUpdate": "Update Cache Config",
+      "callbackDeliveryRetry": "Retry Callback Delivery",
+      "supplierCreate": "Create Supplier",
+      "supplierUpdate": "Update Supplier",
+      "supplierDelete": "Delete Supplier",
+      "channelCreate": "Create Channel",
+      "channelUpdate": "Update Channel",
+      "channelDelete": "Delete Channel",
+      "routeRuleCreate": "Create Route Rule",
+      "routeRuleUpdate": "Update Route Rule",
+      "routeRuleDelete": "Delete Route Rule",
+      "routeChannelBindingCreate": "Create Route Channel Binding",
+      "routeChannelBindingUpdate": "Update Route Channel Binding",
+      "routeChannelBindingDelete": "Delete Route Channel Binding",
+      "callbackSubscriptionCreate": "Create Callback Subscription",
+      "callbackSubscriptionUpdate": "Update Callback Subscription",
+      "callbackSubscriptionDelete": "Delete Callback Subscription",
+      "routeEmergencySwitch": "Emergency Switch",
+      "authorizationImport": "Import Authorization Package",
+      "authorizationExport": "Export Current Authorization Package",
+      "authorizationRenew": "Renew Authorization Package",
+      "authorizationActivate": "Activate Authorization Package",
+      "authorizationRevoke": "Revoke Authorization Package",
+      "authorizationRotate": "Rotate Authorization Package",
+      "authorizationDisable": "Disable Authorization Package"
+    },
+    "resources": {
+      "admin": "Administrator",
+      "tenant": "Tenant",
+      "product": "Product",
+      "apiKey": "API Key",
+      "certificate": "Certificate",
+      "certificatePreset": "Certificate Preset Template",
+      "system": "System",
+      "user": "User",
+      "quota": "Quota Config",
+      "plan": "Plan",
+      "account": "Account",
+      "configCenter": "Config Center",
+      "supplier": "Supplier",
+      "channel": "Channel",
+      "routeRule": "Route Rule",
+      "routeChannelBinding": "Route Channel Binding",
+      "callback": "Callback"
+    },
+    "verbs": {
+      "login": "Login",
+      "logout": "Logout",
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "revoke": "Revoke",
+      "grant": "Grant",
+      "renew": "Renew",
+      "issue": "Issue",
+      "suspend": "Suspend",
+      "activate": "Activate",
+      "recharge": "Recharge",
+      "refund": "Refund",
+      "rollback": "Rollback",
+      "export": "Export",
+      "import": "Import",
+      "change": "Change",
+      "reset": "Reset"
+    },
+    "detailLabels": {
+      "reason": "Reason",
+      "operator": "Operator",
+      "operatorId": "Operator ID",
+      "ipAddress": "IP Address",
+      "selectedChannelId": "Selected Channel ID",
+      "routeRuleId": "Route Rule ID",
+      "channelId": "Channel ID",
+      "bindingId": "Binding ID",
+      "oldRoute": "Old Route",
+      "newRoute": "New Route",
+      "routeRule": "Route Rule",
+      "bindings": "Candidate Channels",
+      "route": "Route Result",
+      "message": "Message",
+      "status": "Status",
+      "name": "Name",
+      "id": "ID",
+      "createdAt": "Created At",
+      "updatedAt": "Updated At",
+      "expiresAt": "Expires At",
+      "productId": "Product ID",
+      "tenantId": "Tenant ID",
+      "tenantCode": "Tenant Code",
+      "priority": "Priority",
+      "metadata": "Route Config",
+      "switchCondition": "Switch Condition",
+      "channelOrder": "Channel Order",
+      "description": "Description",
+      "enabled": "Enabled",
+      "request": "Request",
+      "product": "Product Info",
+      "reservation": "Reservation",
+      "reservationId": "Reservation ID",
+      "activeReservationId": "Active Reservation ID",
+      "reservedBy": "Reserved By",
+      "reservedAt": "Reserved At",
+      "upstreamUrl": "Upstream URL",
+      "timeoutSecs": "Timeout (s)",
+      "billId": "Bill ID",
+      "billKind": "Bill Kind",
+      "transactionId": "Transaction ID",
+      "amount": "Amount",
+      "direction": "Direction",
+      "ipAddresses": "IP Addresses",
+      "totalAdded": "Total Added",
+      "totalErrors": "Total Errors",
+      "algorithm": "Algorithm",
+      "maxDaily": "Daily Limit (times)",
+      "maxConcurrent": "Plan rate (req/s)",
+      "maxBandwidthMbps": "Bandwidth cap (Mbps)",
+      "apiLimits": "Per-API overrides",
+      "burstSize": "Burst",
+      "clientIpQps": "Per-client IP rate",
+      "clientIpBurst": "Per-IP burst",
+      "windowDurationSecs": "Window Duration (s)",
+      "expectedUpdatedAt": "Expected Updated At",
+      "defaultTtl": "Default TTL (s)",
+      "maxCacheSize": "Max Cache Size (bytes)",
+      "apiTtl": "API TTL (s)",
+      "tenantIsolated": "Tenant Isolated",
+      "warmupEnabled": "Warmup Enabled",
+      "warmupKeys": "Warmup Keys",
+      "scope": "Scope",
+      "changes": "Changes",
+      "siteName": "Site Name",
+      "siteUrl": "Site URL",
+      "enableNotifications": "Enable Notifications",
+      "enableAuditLog": "Enable Audit Logs",
+      "sessionTimeout": "Session Timeout",
+      "maxUploadSize": "Max Upload Size",
+      "username": "Username",
+      "firstLogin": "First Login",
+      "language": "Language",
+      "email": "Email",
+      "encryptionMode": "Encryption Mode",
+      "requireSignature": "Require Signature",
+      "nonceTtlSeconds": "Nonce TTL (s)",
+      "clockSkewSeconds": "Clock Skew Tolerance (s)",
+      "currentKeyVersion": "Current Key Version",
+      "keyVersion": "Key Version",
+      "mode": "Mode",
+      "manifest": "Manifest",
+      "checked": "Checked",
+      "verified": "Verified",
+      "failedCount": "Failed Count",
+      "path": "Path",
+      "operation": "Operation",
+      "authorizationType": "Authorization Type",
+      "activateNow": "Activate Now",
+      "deliveryLogId": "Delivery Log ID",
+      "tenantGatewayUrl": "Tenant Gateway URL"
+    },
+    "values": {
+      "yes": "Yes",
+      "no": "No",
+      "none": "None"
+    },
+    "routeConfig": {
+      "purpose": "Purpose: ",
+      "changeReason": "Change Reason: ",
+      "tags": "Tags: ",
+      "effectiveWindow": "Effective Window: ",
+      "to": "to",
+      "effectiveNow": "Effective Window: immediate",
+      "description": "Description: ",
+      "defaultFailureTypes": "Default failure types",
+      "switchCondition": "{timeoutMs}ms timeout, retry {maxRetries} times, {failoverText} ({failureTypes})",
+      "switchOnFailure": "switch to the next channel on failure",
+      "noSwitch": "no switch on failure"
+    },
+    "routeSnapshot": {
+      "productId": "Product ID: ",
+      "tenantId": "Tenant ID: ",
+      "defaultRoute": "Default Route",
+      "priority": "Priority: ",
+      "status": "Status: ",
+      "candidateCount": "Candidate Channels: ",
+      "firstChannel": "First Channel: "
+    },
+    "empty": {
+      "default": "No audit logs",
+      "filtered": "No matching audit logs found"
+    },
+    "detail": {
+      "title": "Audit Log Details",
+      "moreTitle": "Details",
+      "notRecorded": "Not recorded",
+      "fields": {
+        "timestamp": "Time",
+        "actorName": "Username",
+        "action": "Action Type",
+        "resourceType": "Resource Type",
+        "resourceId": "Resource ID",
+        "status": "Status",
+        "ipAddress": "IP Address",
+        "userAgent": "Client Identifier",
+        "errorMessage": "Error Message"
+      }
+    }
+  },
+  "feedback": {
+    "batch": {
+      "noDataForAction": "No data available to {action}",
+      "selectDataForAction": "Please select data to {action}",
+      "confirmAllAction": "{action} all {count} items?",
+      "confirmSelectedAction": "{action} the selected {count} items?",
+      "confirmActionTitle": "{action} confirmation",
+      "deleteConfirmTitle": "Delete confirmation",
+      "confirmActionButton": "Confirm {action}",
+      "actionSuccess": "Successfully {action}ed {count} items",
+      "actionFailed": "Batch {action} failed"
+    },
+    "import": {
+      "csvFormatHint": "Please ensure the CSV file contains the correct columns",
+      "csvMissingColumn": "CSV format error: missing required column \"{column}\"",
+      "validationFailed": "Validation failed",
+      "noDataToExport": "No data available to export",
+      "exportCountSuccess": "Successfully exported {count} items",
+      "importCountSuccess": "Successfully imported {count} items",
+      "importPartialSuccess": "Successfully imported {imported} items, {failed} failed",
+      "importFailed": "Import failed",
+      "requiredColumns": "Required columns: {columns}"
+    },
+    "validation": {
+      "invalidHexColor": "Invalid hex color value",
+      "invalidRgbColor": "Invalid RGB color value",
+      "fileSizeLimit100kb": "File size cannot exceed 100KB",
+      "csvNeedHeaderAndRow": "CSV format error: at least one header row and one data row are required",
+      "csvNoValidData": "No valid data found in the CSV file",
+      "csvParseFailed": "CSV parsing failed, please check the file format"
+    },
+    "editor": {
+      "imageUploadSuccess": "Image uploaded successfully",
+      "imageUploadFailed": "Image upload failed"
+    }
+  },
+  "configCenter": {
+    "page": {
+      "title": "Config Center",
+      "allServices": "All Services"
+    },
+    "actions": {
+      "import": "Import",
+      "export": "Export",
+      "create": "Create Config",
+      "edit": "Edit",
+      "history": "History"
+    },
+    "columns": {
+      "serviceName": "Service Name",
+      "updatedBy": "Updated By",
+      "updatedAt": "Updated At",
+      "operation": "Operation"
+    },
+    "importDialog": {
+      "title": "Import Config",
+      "confirm": "Import Config",
+      "warning": "Import will overwrite configurations with the same name, please make sure the file contents are correct",
+      "uploadText": "Drop files here, or",
+      "clickToUpload": "click to upload",
+      "tip": "TOML or ZIP; multi-select supported.",
+      "validation": {
+        "fileType": "Please select a TOML file or ZIP archive"
+      },
+      "messages": {
+        "importFailed": "Import failed",
+        "importedCount": "Successfully imported {count}",
+        "failedCount": "{count} failed",
+        "importCompleted": "Import completed: {details}"
+      }
+    },
+    "exportDialog": {
+      "title": "Export Config",
+      "confirm": "Export",
+      "fields": {
+        "services": "Services"
+      },
+      "placeholders": {
+        "services": "All services (leave empty to export all)"
+      },
+      "messages": {
+        "exportSuccess": "Exported successfully"
+      }
+    },
+    "editDialog": {
+      "actions": {
+        "create": "Create Config",
+        "edit": "Edit Config"
+      },
+      "fields": {
+        "serviceName": "Service Name",
+        "content": "Config Content"
+      },
+      "validation": {
+        "serviceNameRequired": "Please select a service name",
+        "contentRequired": "Please enter config content",
+        "tomlError": "Line {line}, column {column}: {message}"
+      },
+      "messages": {
+        "saveSuccess": "Saved successfully"
+      }
+    },
+    "serviceNameSelector": {
+      "label": "Service Name",
+      "placeholder": "Please select a predefined service name",
+      "groups": {
+        "system": "System Presets",
+        "custom": "Custom"
+      },
+      "tags": {
+        "configured": "Configured",
+        "system": "System",
+        "custom": "Custom"
+      },
+      "empty": {
+        "description": "No available service names",
+        "title": "No service names have been defined yet",
+        "subtitle": "Ask an admin to add predefined services first."
+      },
+      "actions": {
+        "manage": "Manage Service Names"
+      },
+      "hint": "Pick a predefined service name."
+    },
+    "historyDrawer": {
+      "title": "Version History",
+      "actions": {
+        "rollback": "Rollback"
+      },
+      "compare": {
+        "title": "Version Comparison",
+        "versionLabel": "Version {version}"
+      },
+      "columns": {
+        "version": "Version",
+        "updatedBy": "Updated By",
+        "createdAt": "Time"
+      },
+      "empty": "Select a version to view details",
+      "confirmTitle": "Confirm Rollback",
+      "confirmMessage": "Are you sure you want to roll back to version {version}?",
+      "messages": {
+        "rollbackSuccess": "Rollback successful"
+      }
+    },
+    "diffViewer": {
+      "version": "Version {version}",
+      "noChanges": "The two versions have identical content"
+    },
+    "nodeStatus": {
+      "onlineNodes": "Online Nodes",
+      "totalNodes": "Total Nodes",
+      "onlineRate": "Online Rate",
+      "collapseDetails": "Collapse node details",
+      "expandDetails": "Click to expand node details",
+      "instances": "instances",
+      "time": {
+        "secondsAgo": "{count} seconds ago",
+        "minutesAgo": "{count} minutes ago",
+        "hoursAgo": "{count} hours ago",
+        "daysAgo": "{count} days ago"
+      }
+    },
+    "messages": {
+      "selectConfigToDelete": "Please select configuration entries to delete",
+      "deleteConfirmTitle": "Delete confirmation",
+      "confirmDelete": "Confirm delete",
+      "deleteManyConfirm": "Delete {count} configuration entries?",
+      "deleteManySuccess": "Successfully deleted {count} configuration entries",
+      "deleteManyFailed": "Batch delete failed",
+      "deleteServiceConfigConfirm": "Delete config for service “{serviceName}”?"
+    }
+  },
+  "certificate": {
+    "page": {
+      "title": "Certificate Management"
+    },
+    "authorizationManagement": {
+      "page": {
+        "title": "Authorization Management",
+        "subtitle": "Import a license or export a request."
+      },
+      "sections": {
+        "import": "License",
+        "detail": "Authorization Details",
+        "emptyDetail": "No authorization file has been imported yet. Use the form on the left first."
+      },
+      "status": {
+        "active": "Activated",
+        "grace": "Grace period",
+        "expired": "Expired",
+        "invalid": "Invalid",
+        "pending": "Not yet effective",
+        "unconfigured": "Not imported"
+      },
+      "license": {
+        "exportRequest": "Export request",
+        "importLicense": "Import license",
+        "exportSuccess": "Request file exported",
+        "importSuccess": "License imported",
+        "sequence": "Sequence",
+        "keyVersion": "Key version",
+        "graceUntil": "Grace ends",
+        "notice": "Notice",
+        "graceNotice": "{count} grace days left. New issuance has stopped.",
+        "expiredNotice": "Import a license with a higher sequence",
+        "status": "Status",
+        "customerId": "Customer",
+        "expiresAt": "Expires",
+        "remaining": "Remaining",
+        "expiredByDays": "Expired {count} days ago",
+        "expiresInDays": "{count} days left",
+        "selectFile": "Select a license file",
+        "disabled": {
+          "expired": "The license has expired. New issuance has stopped.",
+          "pending": "The license is not yet effective.",
+          "invalid": "The license is invalid.",
+          "unconfigured": "No license has been imported."
+        }
+      },
+      "filePicker": {
+        "title": "Click or drag to select a license file",
+        "hint": "Accepts .jws and text files.",
+        "selectedHint": "A file is selected. Click or drag to choose another one.",
+        "sizeHint": "Larger files take longer to import and validate.",
+        "selectedSize": "File size: {size}",
+        "invalidType": "Please select a .jws or text license file",
+        "selected": "Selected",
+        "choose": "Choose File",
+        "change": "Change File"
+      }
+    },
+    "baseAuthorization": {
+      "page": {
+        "title": "Commercial Authorization Gate",
+        "subtitle": "Import, activate, and revoke the commercial base authorization file"
+      },
+      "status": {
+        "unconfigured": {
+          "title": "Base authorization not imported",
+          "description": "Not configured; commercial cert features are off."
+        },
+        "imported": {
+          "title": "Imported; pending activation",
+          "description": "Stored; not yet in runtime."
+        },
+        "active": {
+          "title": "Base authorization active"
+        },
+        "revoked": {
+          "title": "Revoked",
+          "description": "Invalid and no longer in use."
+        },
+        "expired": {
+          "title": "Expired",
+          "description": "Expired; renew to restore CA features."
+        }
+      },
+      "sections": {
+        "status": "Current Status",
+        "page": "Base Authorization Page",
+        "import": "Import File",
+        "actions": "Authorization Actions",
+        "metadata": "File Metadata"
+      },
+      "labels": {
+        "expiresInDays": "Expires in {count} days",
+        "expiredByDays": "Expired {count} days ago"
+      },
+      "fields": {
+        "packageId": "File ID",
+        "packageVersion": "File Version",
+        "packageFormat": "File Format",
+        "purpose": "Purpose",
+        "packageSha256": "SHA-256",
+        "status": "Status",
+        "active": "Active",
+        "createdBy": "Created By",
+        "importedBy": "Imported By",
+        "createdAt": "Created At",
+        "importedAt": "Imported At",
+        "activatedAt": "Activated At",
+        "expiresAt": "Expires At",
+        "expiredAt": "Expired At",
+        "secondsToExpiry": "Remaining Days",
+        "remainingDays": "Remaining Days",
+        "renewable": "Renewable",
+        "renewedFromPackageId": "Renewed From File ID",
+        "supersededByPackageId": "Superseded By File ID",
+        "metadata": "Metadata"
+      },
+      "actions": {
+        "refresh": "Refresh Status",
+        "import": "Import File",
+        "activate": "Activate Authorization",
+        "revoke": "Revoke Authorization",
+        "exportCurrent": "Export Current File",
+        "renew": "Renew Authorization"
+      },
+      "form": {
+        "packageFile": "Authorization File",
+        "noFileSelected": "No file selected",
+        "passphrase": "Authorization Passphrase",
+        "passphrasePlaceholder": "Enter the authorization passphrase"
+      },
+      "messages": {
+        "selectPackageFile": "Please select an authorization file",
+        "enterPassphrase": "Please enter the authorization passphrase",
+        "noRevocablePackage": "There is no file available for revocation",
+        "noRenewablePackage": "There is no authorization available for renewal",
+        "confirmImportAndActivate": "Import and activate base authorization?",
+        "confirmRevoke": "Revoke base authorization? CA-dependent APIs will be gated.",
+        "importSuccess": "Authorization file imported successfully",
+        "activateSuccess": "Commercial base authorization activated",
+        "revokeSuccess": "Commercial base authorization revoked",
+        "confirmRenew": "Renew base authorization and activate it?",
+        "renewSuccess": "Commercial base authorization renewed"
+      },
+      "hints": {
+        "activateWarning": "Activation initializes the CA runtime and immediately affects certificate capabilities.",
+        "revokeWarning": "After revoke, CA-dependent APIs return to the gate."
+      },
+      "disabledReasons": {
+        "unconfigured": "Commercial base authorization has not been imported. Please contact an administrator to add it.",
+        "expired": "Commercial base authorization has expired. Please contact an administrator to renew it.",
+        "revoked": "Commercial base authorization has been revoked. Please contact an administrator to re-import it.",
+        "imported": "Commercial base authorization has been imported but is not active yet.",
+        "activeNotRestored": "Commercial base authorization is active but the runtime has not recovered. Please activate it again."
+      }
+    },
+    "rootPackage": {
+      "page": {
+        "title": "Advanced Authorization",
+        "subtitle": "Import, activate, revoke, and renew the tenant encryption advanced authorization"
+      },
+      "status": {
+        "unconfigured": {
+          "title": "Advanced authorization not imported",
+          "description": "Advanced authorization is not configured."
+        },
+        "pending": {
+          "title": "Pending activation",
+          "description": "Uploaded; pending activation."
+        },
+        "imported": {
+          "title": "Imported",
+          "description": "Stored; not yet in runtime."
+        },
+        "active": {
+          "title": "Active",
+          "description": "Advanced authorization is active."
+        },
+        "expired": {
+          "title": "Expired",
+          "description": "Expired; tenant encryption is paused."
+        },
+        "revoked": {
+          "title": "Revoked",
+          "description": "No longer valid."
+        },
+        "deleted": {
+          "title": "Deleted",
+          "description": "Deleted."
+        }
+      },
+      "sections": {
+        "status": "Current Status",
+        "page": "Advanced Authorization Page",
+        "import": "Import Advanced Authorization",
+        "actions": "Advanced Authorization Actions",
+        "metadata": "File Metadata",
+        "renew": "Renew Advanced Authorization"
+      },
+      "fields": {
+        "packageId": "Authorization ID",
+        "packageVersion": "Authorization Version",
+        "packageFormat": "Authorization Format",
+        "purpose": "Purpose",
+        "packageSha256": "SHA-256",
+        "kdfName": "KDF Algorithm",
+        "kdfParams": "KDF Params",
+        "status": "Status",
+        "available": "Available",
+        "createdBy": "Created By",
+        "importedBy": "Imported By",
+        "revokedBy": "Revoked By",
+        "createdAt": "Created At",
+        "importedAt": "Imported At",
+        "revokedAt": "Revoked At",
+        "expiresAt": "Expires At",
+        "expiredAt": "Expired At",
+        "secondsToExpiry": "Remaining Days",
+        "remainingDays": "Remaining Days",
+        "renewable": "Renewable",
+        "renewedFromPackageId": "Renewed From File ID",
+        "supersededByPackageId": "Superseded By File ID",
+        "currentKeyVersion": "Current Key Version",
+        "wrappingKeyId": "Wrapping Key ID",
+        "activeMaterialCount": "Active Material Count",
+        "deprecatedMaterialCount": "Deprecated Material Count",
+        "disabledMaterialCount": "Disabled Material Count",
+        "latestEventType": "Latest Event Type",
+        "latestEventAt": "Latest Event At"
+      },
+      "actions": {
+        "refresh": "Refresh Status",
+        "exportCurrent": "Export Current Authorization",
+        "disable": "Revoke Authorization",
+        "import": "Import Authorization",
+        "activate": "Activate Authorization",
+        "renew": "Renew Authorization"
+      },
+      "form": {
+        "packageFile": "Authorization File",
+        "noFileSelected": "No file selected",
+        "passphrase": "Authorization Passphrase",
+        "passphrasePlaceholder": "Enter the authorization passphrase"
+      },
+      "messages": {
+        "selectPackageFile": "Please select an authorization file",
+        "enterPassphrase": "Please enter the authorization passphrase",
+        "noRenewablePackage": "There is no authorization available for renewal",
+        "noDisableablePackage": "There is no authorization available for revocation",
+        "activateSuccess": "Advanced authorization activated",
+        "disableSuccess": "Advanced authorization revoked successfully",
+        "renewSuccess": "Advanced authorization renewed successfully",
+        "exportSuccess": "Advanced authorization exported successfully",
+        "confirmRenew": "Renew advanced authorization and activate it?",
+        "confirmDisable": "Revoke advanced authorization? Tenant crypto keys will be cleared."
+      },
+      "labels": {
+        "expiresInDays": "Expires in {count} days",
+        "expiredByDays": "Expired {count} days ago"
+      }
+    },
+    "presets": {
+      "page": {
+        "title": "Certificate Preset Templates"
+      },
+      "list": {
+        "title": "Preset DNS Templates"
+      },
+      "actions": {
+        "import": "Import",
+        "export": "Export",
+        "exportAll": "Export All",
+        "exportSelected": "Export Selected ({count})",
+        "create": "Add Preset"
+      },
+      "columns": {
+        "serviceName": "Service Name",
+        "dnsNames": "DNS Names",
+        "description": "Description",
+        "createdAt": "Created At"
+      },
+      "empty": "No preset templates",
+      "importDialog": {
+        "title": "Import Preset Templates"
+      },
+      "form": {
+        "createTitle": "Add Preset",
+        "editTitle": "Edit Preset",
+        "fields": {
+          "serviceName": "Service Name",
+          "dnsNames": "DNS Names",
+          "description": "Description"
+        },
+        "placeholders": {
+          "serviceName": "e.g. api-gateway",
+          "dnsNames": "One DNS name per line, e.g.\ngateway.local\napi.local\nadmin.local",
+          "description": "Description of usage (optional)"
+        },
+        "validation": {
+          "serviceNameRequired": "Please enter a service name",
+          "dnsNamesRequired": "Please add at least one DNS name"
+        }
+      },
+      "importHint": {
+        "header": "The file must contain headers: service_name,dns_names,description",
+        "example1": "e.g. gateway,\"gateway.local",
+        "example2": "api.local\",Gateway service"
+      },
+      "importValidation": {
+        "missingServiceName": "Missing service_name",
+        "missingDnsNames": "At least one dns_names is required",
+        "missingColumn": "Missing required column {key}",
+        "failed": "Validation failed"
+      }
+    },
+    "list": {
+      "title": "Certificate List",
+      "actions": {
+        "issue": "Issue Certificate",
+        "revoke": "Revoke"
+      },
+      "disabledReasons": {
+        "revoked": "Certificate has been revoked"
+      },
+      "columns": {
+        "subject": "Subject",
+        "dnsNames": "DNS Names",
+        "expiresAt": "Expires At",
+        "status": "Status"
+      }
+    },
+    "detail": {
+      "title": "Certificate Detail",
+      "sections": {
+        "info": "Certificate Info",
+        "files": "Certificate Files",
+        "statusLegend": "Status Legend"
+      },
+      "disabledReasons": {
+        "notLoaded": "Certificate information has not been loaded",
+        "revoked": "Certificate has been revoked"
+      },
+      "actions": {
+        "download": "Download",
+        "renew": "Renew",
+        "autoRenewal": "Auto Renewal",
+        "revoke": "Revoke"
+      },
+      "fields": {
+        "id": "ID",
+        "subject": "Subject",
+        "dnsNames": "DNS Names",
+        "issuedAt": "Issued At",
+        "expiresAt": "Expires At",
+        "status": "Status"
+      },
+      "tabs": {
+        "certPem": "Certificate (cert.pem)",
+        "keyPem": "Private Key (key.pem)",
+        "caPem": "CA Certificate (ca.pem)"
+      },
+      "statusLegend": {
+        "valid": {
+          "label": "Valid",
+          "description": "The certificate is within its validity period"
+        },
+        "expiringSoon": {
+          "label": "Expiring Soon",
+          "description": "The certificate will expire within 30 days"
+        },
+        "expired": {
+          "label": "Expired",
+          "description": "The certificate has passed its validity period"
+        },
+        "revoked": {
+          "label": "Revoked",
+          "description": "The certificate has been revoked and cannot be restored"
+        }
+      }
+    },
+    "issueDialog": {
+      "title": "Issue Certificate",
+      "presetTemplate": "Preset Template",
+      "selectPresetPlaceholder": "Select a preset template (optional)",
+      "unnamed": "Unnamed",
+      "issued": "Issued",
+      "noPresets": "No available preset templates",
+      "serviceName": "Service Name",
+      "serviceNamePlaceholder": "e.g. mazbri-auth-service",
+      "serviceNameTip": "Unique service identifier.",
+      "dnsNames": "DNS Names",
+      "dnsNamesPlaceholder": "Separate multiple DNS names with commas, or choose a preset template",
+      "validity": "Validity",
+      "validityOptions": {
+        "90": "90 days",
+        "180": "180 days",
+        "365": "365 days (1 year)",
+        "730": "730 days (2 years)"
+      },
+      "batchIssue": "Issue All ({count} unissued)",
+      "issue": "Issue",
+      "batchIssueFailed": "{name}: Issue failed",
+      "validation": {
+        "serviceNameRequired": "Please enter a service name",
+        "serviceNameLength": "Service name length must be between 1 and 255 characters",
+        "dnsRequired": "Please enter at least one DNS name"
+      }
+    },
+    "autoRenewalDialog": {
+      "title": "Auto Renewal Configuration",
+      "fields": {
+        "subject": "Certificate Subject",
+        "expiresAt": "Expires At",
+        "enabled": "Enable Auto Renewal",
+        "thresholdDays": "Renewal Threshold Days (days)",
+        "validityDays": "Renewal Validity (days)",
+        "nextRenewalAt": "Next Renewal Time"
+      },
+      "hints": {
+        "thresholdDays": "Automatically renew the certificate a few days before it expires",
+        "validityDays": "Validity period of the renewed certificate"
+      },
+      "options": {
+        "validityDays": {
+          "90": "90 days",
+          "180": "180 days",
+          "365": "365 days (1 year)",
+          "730": "730 days (2 years)",
+          "1095": "1095 days (3 years)"
+        }
+      },
+      "validation": {
+        "thresholdDaysRequired": "Please enter the renewal threshold days",
+        "thresholdDaysRange": "The number of days must be between 1 and 365",
+        "validityDaysRequired": "Please select the renewal validity"
+      }
+    },
+    "messages": {
+      "deletePresetConfirm": "Are you sure you want to delete preset \"{name}\"?",
+      "noPresetToExport": "No data available to export",
+      "selectPresetToExport": "Please select presets to export",
+      "exportPresetCountSuccess": "Successfully exported {count} presets",
+      "serviceNameRequired": "Please enter a service name",
+      "dnsRequired": "Please enter at least one DNS name",
+      "issueSuccess": "Certificate issued successfully",
+      "noPresetToIssue": "No presets need to be issued",
+      "batchIssueSuccess": "Successfully issued {count} certificates",
+      "batchIssuePartial": "Issuance complete: {successCount} succeeded, {failCount} failed",
+      "renewConfirm": "Are you sure you want to renew certificate \"{name}\"?",
+      "revokeConfirm": "Revoke certificate “{name}”?",
+      "confirmRevoke": "Confirm revoke",
+      "renewPromptTitle": "Certificate Renewal",
+      "renewPromptMessage": "Enter renewal days (1-36135 days)",
+      "confirmRenew": "Confirm renewal",
+      "renewPromptError": "Please enter a valid day count (positive integer)",
+      "renewPromptPlaceholder": "For example: 365 means renew for one year",
+      "renewDaysRange": "Renewal days must be between 1 and 36135",
+      "revokeCurrentConfirm": "Are you sure you want to revoke this certificate? This action cannot be undone."
+    }
+  },
+  "userManagement": {
+    "page": {
+      "title": "User Management"
+    },
+    "list": {
+      "title": "System User List",
+      "addUser": "Add User",
+      "resetPassword": "Reset Password",
+      "resetMfa": "Reset MFA",
+      "columns": {
+        "username": "Username",
+        "displayName": "Display Name",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "mfa": "MFA",
+        "lastLogin": "Last Login",
+        "createdAt": "Created At"
+      }
+    },
+    "createDialog": {
+      "title": "Add User",
+      "fields": {
+        "username": "Username",
+        "displayName": "Display Name",
+        "email": "Email",
+        "password": "Password",
+        "role": "Role",
+        "firstLogin": "First Login"
+      },
+      "placeholders": {
+        "username": "Please enter a username",
+        "displayName": "Please enter a display name",
+        "email": "Please enter an email",
+        "password": "Please enter a password",
+        "role": "Please select a role"
+      },
+      "actions": {
+        "regeneratePassword": "Regenerate Password"
+      },
+      "tips": {
+        "passwordGenerated": "Generated automatically based on the password policy",
+        "forcePasswordReset": "Password must be changed on first login"
+      },
+      "validation": {
+        "usernameRequired": "Please enter a username",
+        "usernameLength": "Username length must be between 3 and 50 characters",
+        "usernamePattern": "Username must start with a letter",
+        "displayNameRequired": "Please enter a display name",
+        "displayNameLength": "Display name cannot exceed 100 characters",
+        "emailRequired": "Please enter an email",
+        "emailInvalid": "Please enter a valid email address",
+        "passwordRequired": "Please enter a password",
+        "passwordLength": "Password must be at least 8 characters long",
+        "roleRequired": "Please select a role"
+      },
+      "messages": {
+        "createSuccess": "Created successfully"
+      }
+    },
+    "resetPasswordDialog": {
+      "title": "Reset Password",
+      "alert": "Reset password for administrator {username}",
+      "fields": {
+        "newPassword": "New Password"
+      },
+      "placeholders": {
+        "newPassword": "Please enter a new password"
+      },
+      "forceReset": "Require the user to change the password on next login",
+      "validation": {
+        "newPasswordRequired": "Please enter a new password",
+        "newPasswordLength": "Password must be at least 8 characters long"
+      }
+    },
+    "detail": {
+      "title": "Administrator Details",
+      "userTitle": "User Details",
+      "basicInfo": "Basic Info",
+      "editTitle": "Edit Administrator Info",
+      "editUserTitle": "Edit User Info",
+      "resetPassword": "Reset Password",
+      "deleteAdmin": "Delete Administrator",
+      "deleteUser": "Delete User",
+      "labels": {
+        "id": "ID",
+        "username": "Username",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "mfaStatus": "MFA Status",
+        "forcePasswordReset": "Force Password Reset",
+        "lastLogin": "Last Login"
+      },
+      "validation": {
+        "emailRequired": "Please enter an email",
+        "emailInvalid": "Please enter a valid email address",
+        "roleRequired": "Please select a role"
+      }
+    },
+    "roles": {
+      "admin": "Administrator",
+      "operator": "Operator",
+      "finance": "Finance",
+      "viewer": "Viewer",
+      "operatorWithScope": "Operator (read/write business)",
+      "financeWithScope": "Finance (billing reconciliation)",
+      "viewerWithScope": "Viewer (read-only)"
+    },
+    "messages": {
+      "resetMfaTitle": "Reset MFA",
+      "resetMfaConfirm": "Reset MFA for “{username}”? Re-binding will be required.",
+      "deleteSystemAdminBlocked": "The system administrator account cannot be deleted",
+      "systemAdminDeleteBlocked": "The system administrator account cannot be deleted",
+      "deleteUserConfirm": "Are you sure you want to delete user \"{username}\"?",
+      "deleteAdminConfirm": "Are you sure you want to delete administrator \"{username}\"?"
+    }
+  },
+  "supplier": {
+    "list": {
+      "title": "Supplier List",
+      "searchPlaceholder": "Supplier name / code"
+    },
+    "actions": {
+      "add": "Add Supplier"
+    },
+    "fields": {
+      "code": "Code",
+      "name": "Name",
+      "accessAddress": "Access Address",
+      "status": "Status",
+      "upstreamType": "Integration Type",
+      "targetAddress": "Target Address",
+      "contractId": "Contract ID",
+      "id": "Internal ID"
+    },
+    "placeholders": {
+      "contractId": "A contract_id registered in the gateway"
+    },
+    "form": {
+      "createTitle": "Add Supplier",
+      "editTitle": "Edit Supplier",
+      "codePlaceholder": "SUP_A",
+      "namePlaceholder": "Supplier A",
+      "accessAddressPlaceholder": "127.0.0.1:8088",
+      "targetAddressPlaceholder": "e.g., https://upstream.example.com",
+      "saveAndBack": "Save",
+      "cancelBack": "Cancel",
+      "typeLockedHint": "Integration type is fixed after onboarding and cannot be changed"
+    },
+    "detail": {
+      "pageTitle": "Supplier Detail",
+      "basicInfoTitle": "Basic Information",
+      "advancedInfoTitle": "Integration Config",
+      "authSectionTitle": "Dynamic Auth",
+      "transformSectionTitle": "Transform",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "noCredentials": "No credentials",
+      "loadFailed": "Failed to load supplier",
+      "editingBadge": "Editing"
+    },
+    "empty": {
+      "noMatch": "No matching suppliers found",
+      "noData": "No suppliers"
+    },
+    "validation": {
+      "codeRequired": "Please enter a supplier code",
+      "nameRequired": "Please enter a supplier name",
+      "accessAddressRequired": "Please enter an access address",
+      "contractIdRequired": "Microservice mode requires contract_id"
+    },
+    "messages": {
+      "deleteConfirm": "Are you sure you want to delete supplier {name}?"
+    },
+    "upstreamOptions": {
+      "microservice": "Microservice",
+      "transparent": "Intelligent Gateway"
+    },
+    "config": {
+      "authTitle": "Dynamic Auth",
+      "tokenUrl": "Token URL",
+      "method": "Method",
+      "credentials": "Credentials",
+      "addCredential": "Add credential",
+      "credKey": "Key",
+      "credValue": "Value",
+      "requestBodyTpl": "Login body template",
+      "requestBodyTplHint": "Supports placeholders like {{username}}; empty auto-builds credentials.",
+      "tokenJsonpath": "Token path",
+      "expiryJsonpath": "Expiry path",
+      "injectKey": "Inject field",
+      "injectFormat": "Inject format",
+      "injectPreview": "Inject preview",
+      "injectPreviewTitle": "Inject preview",
+      "injectLocation": "Inject to",
+      "injectPreviewTip": "<DYNAMIC_TOKEN> is a sample; the gateway injects and maintains the real token.",
+      "transformTitle": "Transform",
+      "rewritePath": "Rewrite path",
+      "requestBodyTemplate": "Request body template",
+      "requestBodyTemplateHint": "e.g. {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
+      "responseBodyTemplate": "Response body template",
+      "requestHeadersSet": "Request headers set",
+      "requestHeadersRemove": "Request headers remove",
+      "responseHeadersSet": "Response headers set",
+      "addHeader": "Add header",
+      "authHeaders": "Token request headers"
+    }
+  },
+  "billing": {
+    "list": {
+      "title": "Bills",
+      "searchPlaceholder": "Bill ID / tenant name",
+      "guidePrefix": "This page is bills only. For usage consistency go to",
+      "guideRecon": "Usage Reconciliation",
+      "guideMid": "; top-up / refund balances under",
+      "guideAccount": "Tenants → Account",
+      "guideSuffix": "."
+    },
+    "actions": {
+      "export": "Export",
+      "exportPage": "Export Page",
+      "exportSelected": "Export Selected ({count})",
+      "generate": "Generate Bill",
+      "markPaid": "Mark Paid",
+      "markOverdue": "Mark Overdue"
+    },
+    "status": {
+      "pending": "Pending",
+      "processing": "Processing",
+      "paid": "Paid",
+      "overdue": "Overdue",
+      "cancelled": "Cancelled"
+    },
+    "statusConfirm": {
+      "title": "Update Bill Status",
+      "message": "Mark \"{name}\" as \"{status}\"?"
+    },
+    "reconciliation": {
+      "guide": "Usage consistency: compare billing usage (OLTP) with analytics aggregates (OLAP). Two-sided check, not full three-way settlement.",
+      "listTitle": "Discrepancy ledger",
+      "empty": "No reconciliation rows yet. Pick a date and run an audit.",
+      "emptyNoMatch": "No matching reconciliation rows",
+      "searchPlaceholder": "Date / status / scope / note / ID",
+      "from": "From",
+      "to": "To",
+      "statusFilter": "Status",
+      "runDatePlaceholder": "Audit date",
+      "runDateRequired": "Please pick an audit date",
+      "runAudit": "Run audit",
+      "runSuccess": "Audit finished (status: {status})",
+      "exportCsv": "Export CSV",
+      "exportEmpty": "Nothing to export",
+      "exportSuccess": "CSV exported",
+      "deleteConfirm": {
+        "title": "Delete reconciliation row",
+        "one": "Delete \"{name}\"? This cannot be undone.",
+        "all": "Delete all {count} rows on this page? This cannot be undone.",
+        "selected": "Delete the selected {count} rows? This cannot be undone."
+      },
+      "settingsTitle": "Runtime settings",
+      "settingsHint": "Schedule, threshold and alerts hot-reload — no bootstrap edit or restart",
+      "settingsSaved": "Reconciliation settings saved",
+      "expandSettings": "Click to expand settings",
+      "collapseSettings": "Click to collapse settings",
+      "sectionSchedule": "Schedule",
+      "sectionThreshold": "Threshold & alerts",
+      "sectionScope": "Audit scope",
+      "summaryScheduledOn": "Schedule on",
+      "summaryScheduledOff": "Schedule off",
+      "summaryThreshold": "Threshold {value}",
+      "scheduledEnabled": "Enable scheduled audit",
+      "intervalSecs": "Interval (seconds)",
+      "usePreviousDay": "Audit previous day",
+      "lossRatioThreshold": "Loss ratio threshold",
+      "alertOnFlagged": "Webhook on flagged",
+      "alertWebhook": "Webhook URL",
+      "alertWebhookPlaceholder": "https://hooks.example.com/...",
+      "includeAmount": "Include amount recon",
+      "includeRawLog": "Include gateway request logs",
+      "warnBeforeBill": "Warn open diffs before bill",
+      "lastRunAt": "Last scheduled run",
+      "neverRun": "Never",
+      "viewCustomerCalls": "Customer calls",
+      "viewUpstreamCalls": "Upstream calls",
+      "acknowledge": "Acknowledge",
+      "resolve": "Resolve",
+      "acknowledgeTitle": "Acknowledge discrepancy",
+      "resolveTitle": "Resolve discrepancy",
+      "note": "Resolution note",
+      "notePlaceholder": "Optional note",
+      "detailTitle": "Discrepancy detail",
+      "resolvedAt": "Resolved at",
+      "detail": {
+        "summaryTitle": "Summary",
+        "threshold": "threshold {value}",
+        "vsThreshold": "vs threshold",
+        "overThreshold": "Over threshold",
+        "withinThreshold": "Within threshold",
+        "primaryCompare": "Primary compare",
+        "primaryCompareLine": "Billable usage {billing}  vs  {peerLabel} {peer}",
+        "callDiff": "Call difference",
+        "callDiffMatch": "Match (0)",
+        "callDiffBillingLess": "Billable usage is {count} fewer than {peerLabel}",
+        "callDiffBillingMore": "Billable usage is {count} more than {peerLabel}",
+        "callsTitle": "Call counts",
+        "sourceCol": "Source",
+        "countCol": "Calls",
+        "roleCol": "Role",
+        "sourceBilling": "Billable usage (usage_records)",
+        "sourceUpstream": "Upstream bypass pre-aggregate",
+        "sourceGatewayUnavailable": "Gateway customer calls (not included)",
+        "roleBilling": "Billing side",
+        "rolePrimary": "Primary",
+        "roleGateway": "Customer access",
+        "roleReference": "Reference",
+        "roleUnavailable": "Disabled",
+        "amountTitle": "Amount recon",
+        "usageAmount": "Usage billable amount",
+        "billItemsTotal": "Bill items total",
+        "amountDiff": "Amount difference",
+        "amountMatch": "Match",
+        "methodologyTitle": "Data methodology",
+        "rawSnapshotTitle": "Raw snapshot (for debugging)",
+        "methodBilling": "Billable usage: usage_records for the day (charge basis).",
+        "methodGateway": "Gateway customer calls: mazbri-gateway access logs only, aligned with customer-facing traffic.",
+        "methodUpstream": "Upstream bypass pre-aggregate: upstream_hourly (bypass-only); reference, not primary.",
+        "methodPrimary": "Primary comparison side this run: {peerLabel}.",
+        "methodSources": "Sources used: {list}",
+        "sources": {
+          "unknown": "Unknown source",
+          "oltp_usage_records": "Billable usage (usage_records)",
+          "olap_preagg_bypass": "Upstream bypass pre-aggregate",
+          "olap_preagg": "Upstream pre-aggregate",
+          "request_logs_gateway": "Gateway customer calls",
+          "olap_preagg_compat": "Upstream pre-aggregate (compat fallback)"
+        }
+      },
+      "columns": {
+        "date": "Date",
+        "scope": "Scope",
+        "oltp": "Billable usage",
+        "olap": "Upstream preagg",
+        "ratio": "Loss ratio",
+        "status": "Status"
+      },
+      "statuses": {
+        "ok": "OK",
+        "flagged": "Flagged",
+        "acknowledged": "Acknowledged",
+        "resolved": "Resolved"
+      }
+    },
+    "adjustments": {
+      "title": "Bill adjustments (ledger)",
+      "hint": "Corrections attached to this bill only; does not change account balance",
+      "add": "Add adjustment",
+      "addTitle": "Add bill adjustment",
+      "empty": "No bill adjustments",
+      "type": "Type",
+      "amount": "Amount",
+      "amountPlaceholder": "Enter amount",
+      "reason": "Reason",
+      "reasonPlaceholder": "Enter reason",
+      "status": "Status",
+      "void": "Void",
+      "voidConfirm": "Void this bill adjustment?",
+      "required": "Amount and reason are required",
+      "ledgerOnlyNote": "Policy: ledger only — does not change tenant balance. Use recharge/refund for balances.",
+      "types": {
+        "credit": "Credit",
+        "debit": "Debit",
+        "correction": "Correction",
+        "other": "Other"
+      },
+      "statuses": {
+        "posted": "Posted",
+        "void": "Void"
+      }
+    },
+    "detail": {
+      "title": "Bill Detail",
+      "download": "Download Details",
+      "overview": "Bill Overview",
+      "itemsTitle": "Billing Items",
+      "itemsCount": "This bill has {count} items",
+      "emptyItems": "No items"
+    },
+    "labels": {
+      "billId": "Bill ID",
+      "billKind": "Bill Type",
+      "period": "Billing Period",
+      "periodStart": "Period Start",
+      "periodEnd": "Period End",
+      "dueDate": "Due Date",
+      "total": "Total",
+      "totalCalls": "Calls",
+      "dataVolume": "Data Volume",
+      "tenantName": "Tenant Name",
+      "tenantCode": "Tenant Code",
+      "tenantId": "Tenant ID"
+    },
+    "generateDialog": {
+      "title": "Generate Bill",
+      "confirm": "Generate",
+      "billKind": "Bill Type",
+      "tenant": "Tenant",
+      "tenantPlaceholder": "Please select a tenant",
+      "upstreamScopeType": "Upstream Scope Type",
+      "upstreamScope": "Upstream Scope",
+      "upstreamChannel": "Upstream Channel",
+      "upstreamSupplier": "Upstream Supplier",
+      "upstreamChannelPlaceholder": "Please select an upstream channel",
+      "upstreamSupplierPlaceholder": "Please select an upstream supplier",
+      "periodRange": "Date Range",
+      "periodStartPlaceholder": "Start Date",
+      "periodEndPlaceholder": "End Date"
+    },
+    "columns": {
+      "tenantName": "Name",
+      "tenantCode": "Code",
+      "billKind": "Bill Type",
+      "periodStart": "Period Start",
+      "periodEnd": "Period End",
+      "total": "Amount",
+      "status": "Status"
+    },
+    "itemColumns": {
+      "description": "API",
+      "billingType": "Billing Type",
+      "quantity": "Calls",
+      "totalUnits": "Billable Units",
+      "unitPrice": "Unit Price",
+      "total": "Amount"
+    },
+    "validation": {
+      "billKindRequired": "Please select a bill type",
+      "tenantRequired": "Please select a tenant",
+      "upstreamScopeRequired": "Please select an upstream scope",
+      "periodRangeRequired": "Please select a date range",
+      "periodRangeComplete": "Please select a complete date range"
+    },
+    "empty": {
+      "noMatch": "No bills matched the filters",
+      "noData": "No bills"
+    },
+    "deleteConfirm": {
+      "title": "Delete Bill",
+      "one": "Are you sure you want to delete bill \"{name}\"?",
+      "all": "Are you sure you want to delete all {count} bills on the current page?",
+      "selected": "Are you sure you want to delete the selected {count} bills?"
+    },
+    "billingTypes": {
+      "call": "Per Call"
+    },
+    "billKinds": {
+      "customer": "Customer Bill",
+      "upstream": "Upstream Bill"
+    },
+    "messages": {
+      "noExport": "No bills available for export",
+      "exportDetailFailed": "Failed to export bill details",
+      "loadTenantsFailed": "Failed to load tenant list",
+      "loadChannelsFailed": "Failed to load upstream channels",
+      "loadSuppliersFailed": "Failed to load upstream suppliers",
+      "loadBillDetailFailed": "Failed to load bill detail",
+      "generateSuccess": "Bill generated successfully",
+      "generateFailed": "Failed to generate bill. Please try again later.",
+      "billAlreadyExists": "The bill already exists for this period. Bill data has been refreshed.",
+      "noUpstreamLogs": "No billable upstream request logs found for this billing period.",
+      "invalidPeriod": "Billing period start must be before end."
+    }
+  },
+  "tenant": {
+    "list": {
+      "title": "Tenant List",
+      "searchPlaceholder": "Name / tenant account / code / email"
+    },
+    "detail": {
+      "pageTitle": "Tenant Detail",
+      "tabs": {
+        "basic": "Basic Information",
+        "apiKeys": "API Keys",
+        "whitelist": "IP Whitelist",
+        "accessStrategy": "Access Strategy",
+        "transportEncryption": "Transport Encryption",
+        "account": "Account Balance",
+        "products": "Granted Products"
+      },
+      "basicInfo": {
+        "title": "Basic Information",
+        "editTitle": "Edit Basic Information"
+      },
+      "status": {
+        "active": "Enabled",
+        "suspended": "Disabled"
+      },
+      "validation": {
+        "nameRequired": "Please enter a tenant name",
+        "nameLength": "Name must be between 2 and 100 characters",
+        "email": "Please enter a valid email address"
+      }
+    },
+    "transportEncryption": {
+      "alert": {
+        "title": "The license is not effective, so tenant transport encryption remains disabled.",
+        "currentStatus": "Current platform status: {status}"
+      },
+      "sections": {
+        "strategy": "Transport Encryption Policy",
+        "keyVersions": "Key Versions"
+      },
+      "formSections": {
+        "basicControl": "Basic Control",
+        "security": "Security Options",
+        "codec": "Codec Configuration",
+        "timeParams": "Time Security Parameters"
+      },
+      "fields": {
+        "encryptionMode": "Encryption Mode",
+        "currentKeyVersion": "Current Key Version",
+        "signatureCheck": "Signature Verification",
+        "codecEnabled": "Enable Payload Codec",
+        "requestCodec": "Request Codec",
+        "responseCodec": "Response Codec",
+        "codecVersion": "Codec Version",
+        "nonceTtlSeconds": "Nonce TTL (seconds)",
+        "clockSkewSeconds": "Timestamp Tolerance Window (seconds)"
+      },
+      "placeholders": {
+        "selectActiveKey": "Select an active key"
+      },
+      "modes": {
+        "none": "Off",
+        "request": "Request Encryption",
+        "full": "Bidirectional Encryption"
+      },
+      "actions": {
+        "goRootPackage": "Go to authorization management",
+        "createKey": "Create Key",
+        "rotateKey": "Rotate Key",
+        "activate": "Activate",
+        "deprecate": "Deprecate",
+        "disable": "Disable",
+        "delete": "Delete"
+      },
+      "messages": {
+        "deleteKeyConfirm": "Permanently delete key version {version}?"
+      },
+      "table": {
+        "version": "Version",
+        "status": "Status",
+        "encryptionAlgorithm": "Encryption Algorithm",
+        "signatureAlgorithm": "Signature Algorithm",
+        "createdAt": "Created At",
+        "operations": "Actions"
+      },
+      "secretDialog": {
+        "title": "Tenant Key",
+        "warning": "The plaintext key is shown only once and cannot be viewed again after closing.",
+        "fields": {
+          "keyVersion": "Key Version",
+          "algorithm": "Algorithm",
+          "signatureAlgorithm": "Signature"
+        }
+      }
+    },
+    "account": {
+      "overviewTitle": "Account Overview",
+      "overviewSubtitle": "Balance, status, and quick actions",
+      "balanceLabel": "Account Balance",
+      "status": {
+        "active": "Active",
+        "frozen": "Frozen"
+      },
+      "quickActionsTitle": "Quick Actions",
+      "quickActionsHint": "",
+      "recharge": "Recharge",
+      "refund": "Refund",
+      "transactionsTitle": "Transaction Records (Recharge / Refund)",
+      "transactionsSubtitle": "Recharge / Refund",
+      "filterPlaceholder": "All Types",
+      "filters": {
+        "all": "All",
+        "credit": "Recharge",
+        "refund": "Refund",
+        "charge": "Charge",
+        "adjustment": "Adjustment"
+      },
+      "reasonCode": "Reason code",
+      "reasonCodePlaceholder": "Select a reason code",
+      "reasonCodes": {
+        "compensation": "Compensation",
+        "correction": "Correction",
+        "commercial": "Commercial agreement",
+        "other": "Other"
+      },
+      "rechargeDialogTitle": "Account Recharge",
+      "refundDialogTitle": "Account Refund",
+      "rechargeConfirm": "Confirm Recharge",
+      "refundConfirm": "Confirm Refund",
+      "currentBalance": "Current Balance",
+      "rechargeAmount": "Recharge Amount",
+      "rechargeAmountPlaceholder": "Please enter a recharge amount",
+      "refundAmount": "Refund Amount",
+      "refundAmountPlaceholder": "Please enter a refund amount",
+      "description": "Description",
+      "descriptionPlaceholder": "Please enter a recharge description",
+      "refundReason": "Refund Reason",
+      "refundReasonPlaceholder": "Please enter a refund reason",
+      "balanceAfterRefund": "Balance After Refund",
+      "refundExceedsBalance": "Refund amount cannot exceed the current balance",
+      "columns": {
+        "type": "Type",
+        "amount": "Amount",
+        "balanceChange": "Balance Change",
+        "description": "Description",
+        "paymentMethod": "Payment Method",
+        "operator": "Operator"
+      },
+      "transactionTypes": {
+        "credit": "Recharge",
+        "refund": "Refund",
+        "charge": "Charge",
+        "adjustment": "Adjustment",
+        "payment": "Payment"
+      },
+      "paymentMethods": {
+        "manual": "Manual",
+        "bankTransfer": "Bank Transfer",
+        "alipay": "Alipay",
+        "wechatPay": "WeChat Pay",
+        "creditCard": "Credit Card",
+        "refund": "Refund",
+        "credit": "Credit",
+        "adjustment": "Adjustment"
+      },
+      "validation": {
+        "rechargeAmountRequired": "Please enter a recharge amount",
+        "rechargeAmountPositive": "Recharge amount must be greater than 0",
+        "rechargeDescriptionRequired": "Please enter a recharge description",
+        "refundAmountRequired": "Please enter a refund amount",
+        "refundAmountPositive": "Refund amount must be greater than 0",
+        "refundReasonRequired": "Please enter a refund reason"
+      },
+      "mfaDisabledTitle": "MFA Not Enabled",
+      "mfaDisabledMessage": "Recharge is disabled. Please contact an administrator to enable MFA."
+    },
+    "createDialog": {
+      "placeholders": {
+        "code": "A1B2C3D4",
+        "accountId": "my-company",
+        "name": "Please enter a tenant name",
+        "contactPerson": "Please enter a contact person",
+        "contactPhone": "Please enter a contact phone number",
+        "contactEmail": "Please enter a contact email"
+      },
+      "tips": {
+        "code": "8 uppercase letters and digits.",
+        "accountId": "Unique identifier, lowercase letters, digits, underscores, and hyphens"
+      },
+      "validation": {
+        "codeRequired": "Please enter a tenant code",
+        "codeLength": "Tenant code must be 8 characters long",
+        "codePattern": "Tenant code can only contain uppercase letters and digits",
+        "accountIdRequired": "Please enter a tenant account",
+        "accountIdPattern": "Tenant account can only contain lowercase letters, digits, underscores, and hyphens",
+        "nameRequired": "Please enter a tenant name",
+        "nameLength": "Name must be between 2 and 100 characters",
+        "contactPersonRequired": "Please enter a contact person",
+        "contactPersonLength": "Contact person name cannot exceed 50 characters",
+        "contactPhoneRequired": "Please enter a contact phone number",
+        "contactPhonePattern": "Please enter a valid mobile phone number",
+        "contactEmailRequired": "Please enter a contact email",
+        "contactEmailPattern": "Please enter a valid email address"
+      }
+    },
+    "tabs": {
+      "apiKeys": "API Key Management"
+    },
+    "actions": {
+      "addTenant": "Add Tenant",
+      "addApiKey": "Add API Key",
+      "renewApiKey": "Renew API Key",
+      "disable": "Disable",
+      "enable": "Enable"
+    },
+    "fields": {
+      "code": "Tenant Code",
+      "accountId": "Tenant Account",
+      "contactPerson": "Contact Person",
+      "contactPhone": "Contact Phone",
+      "contactEmail": "Contact Email"
+    },
+    "apiKey": {
+      "key": "Key",
+      "expiry": "Expiry",
+      "expiryDays": "Expiry Days",
+      "currentExpiry": "Current Expiry",
+      "renewDays": "Renew Days",
+      "createTitle": "Add API Key",
+      "validation": {
+        "renewDaysRequired": "Please enter renewal days",
+        "renewDaysRange": "Renewal days must be between 1 and 3650"
+      }
+    },
+    "products": {
+      "title": "Granted Products",
+      "manageGlobalAuth": "Manage Global Authorization",
+      "grantProduct": "Grant Product",
+      "columns": {
+        "productId": "Product Code",
+        "name": "Product Name",
+        "description": "Product Description",
+        "grantedAt": "Granted At",
+        "billingType": "Billing Type",
+        "unitPrice": "Unit Price",
+        "cbProFallback": "CBPRO"
+      },
+      "grantDialog": {
+        "title": "Grant Product",
+        "confirm": "Grant",
+        "product": "Select Product",
+        "productPlaceholder": "Please select or search a product to grant",
+        "billingMode": "Billing Mode",
+        "billingModePlaceholder": "Please select a billing mode",
+        "unitPrice": "Unit Price",
+        "unitPricePlaceholder": "e.g. 0.001",
+        "cbProFallback": "CBPRO",
+        "cbProEnabledHint": "",
+        "cbProDisabledHint": "CBPRO not enabled on product"
+      }
+    },
+    "whitelist": {
+      "title": "IP Whitelist",
+      "ruleSuffix": "rules",
+      "export": "Export",
+      "exportAll": "Export All",
+      "exportSelected": "Export Selected ({count})",
+      "import": "Import",
+      "add": "Add IP",
+      "emptyTitle": "No IP whitelist entries",
+      "emptyHint1": "Empty whitelist: all IPs allowed.",
+      "emptyHint2": "Once set, only listed IPs can access.",
+      "selectedCount": "Selected {count} items",
+      "batchDelete": "Batch Delete",
+      "columns": {
+        "ipAddress": "IP Address",
+        "cidr": "CIDR",
+        "type": "Type",
+        "description": "Description",
+        "status": "Status"
+      },
+      "addDialog": {
+        "title": "Add IP Whitelist",
+        "confirm": "Add",
+        "ipAddresses": "IP Address",
+        "ipAddressesPlaceholder": "One IP or subnet per line, e.g.:\n192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
+        "ipAddressesHint": "One IP or CIDR per line.",
+        "description": "Description",
+        "descriptionPlaceholder": "e.g. office network, IDC room"
+      },
+      "importDialog": {
+        "title": "Import IP Whitelist",
+        "formatTitle": "CSV File Format",
+        "formatHint": "The file must contain the header: ip_address,cidr,description",
+        "formatExample": "e.g. 192.168.1.100,32,office network",
+        "uploadText": "Drag the CSV file here, or",
+        "clickToUpload": "click to upload",
+        "tip": ".csv only, ≤100KB.",
+        "newTitle": "New: {count}",
+        "newHint": "These IPs will be added to the whitelist",
+        "duplicateTitle": "Duplicate: {count} (will be skipped)",
+        "duplicateHint": "These IPs already exist in the whitelist",
+        "invalidTitle": "Invalid: {count} (format errors)",
+        "moreInvalid": "... and {count} more",
+        "previewTitle": "IPs to be added (first {count})",
+        "morePreview": "and {count} more not shown",
+        "back": "Back",
+        "next": "Next",
+        "confirm": "Confirm Import ({count})",
+        "validation": {
+          "fileSize": "File size cannot exceed 100KB",
+          "invalidCsv": "CSV file format is invalid or empty"
+        },
+        "defaultDescription": "Batch import",
+        "importSuccess": "Successfully imported {count} whitelist rules",
+        "importFailedCount": "{count} imports failed"
+      },
+      "validation": {
+        "ipRequired": "Please enter an IP address",
+        "invalidFormat": "Invalid IP address or CIDR format: {entry}",
+        "ipRange": "IP octet out of range: {entry}",
+        "cidrRange": "CIDR prefix out of range (0-32): {entry}",
+        "descriptionRequired": "Please enter a description"
+      },
+      "cidrLabels": {
+        "singleIp": "Single IP",
+        "cSegment": "C subnet /{cidr}",
+        "bSegment": "B subnet /{cidr}",
+        "aSegment": "A subnet /{cidr}"
+      },
+      "deleteConfirmAll": "Delete all {count} whitelist rules?",
+      "deleteConfirmSelected": "Delete the selected {count} whitelist rules?"
+    },
+    "messages": {
+      "apiKeyCreated": "API key created successfully",
+      "apiKeyExists": "This tenant already has an API key. Delete the existing key first.",
+      "apiKeyRenewed": "API key renewed successfully",
+      "deleteApiKeyConfirm": "Are you sure you want to delete this API key?",
+      "apiKeyMissing": "API key does not exist",
+      "selectProductToGrant": "Please select a product to grant",
+      "revokeProductConfirm": "Are you sure you want to revoke access to product \"{name}\"?",
+      "ipRequired": "Please enter at least one IP address",
+      "whitelistAddedCount": "Successfully added {count} whitelist rules",
+      "whitelistPartialFailure": "{count} additions failed:\n{details}",
+      "deleteIpConfirm": "Delete IP {ip}?",
+      "refundExceedsBalance": "Refund amount cannot exceed the current balance",
+      "deleteTenantConfirm": "Permanently delete tenant \"{name}\"? This cannot be undone and will free the tenant code and remove related config.",
+      "disableTenantConfirm": "Disable tenant \"{name}\"? It will not be able to call business APIs until re-enabled.",
+      "enableTenantConfirm": "Enable tenant \"{name}\"?"
+    },
+    "cachePolicy": {
+      "title": "Proxy Response Cache",
+      "globalSettings": "Global Cache Config",
+      "apiOverrides": "API-level Differentiated Config",
+      "warmupList": "Data Preload (Warmup)",
+      "addRule": "Add Rule",
+      "apiPathPlaceholder": "e.g. chat.completions",
+      "newWarmupKeyPlaceholder": "+ New Warmup Key",
+      "seconds": "s",
+      "fields": {
+        "enabled": "Enable cache",
+        "ttl": "Default TTL (s)",
+        "maxSize": "Cache size limit (bytes)",
+        "isolated": "Tenant isolation",
+        "apiPath": "API Path",
+        "overrideTtl": "Custom TTL",
+        "warmupKeys": "Warmup Key Name",
+        "warmupEnabled": "Auto Warmup"
+      },
+      "tips": {
+        "enabled": "",
+        "isolated": "",
+        "warmup": "",
+        "override": ""
+      }
+    },
+    "accessStrategy": {
+      "capabilityMapTitle": "",
+      "capabilityMapLead": "",
+      "cacheName": "Response cache",
+      "cacheSummary": "",
+      "cbproName": "CBPRO",
+      "cbproSummary": "",
+      "openProductsTab": "Granted products"
+    }
+  },
+  "rateLimit": {
+    "title": "Rate limit",
+    "enablePlan": "Enable rate limit",
+    "save": "Save",
+    "window": "Statistics Window",
+    "seconds": "seconds",
+    "basicControl": "Basic Control",
+    "coreThresholds": "Core Thresholds",
+    "planRateSection": "Plan rate",
+    "planQps": "QPS",
+    "planBurst": "Burst",
+    "abuseSection": "Abuse controls",
+    "clientIpQps": "Per-IP QPS",
+    "clientIpBurst": "Per-IP burst",
+    "bandwidthMbps": "Bandwidth (Mbps, 0=unlimited)",
+    "apiOverridesSection": "API overrides",
+    "apiOverridesHint": "",
+    "apiOverridesEmptyHint": "",
+    "apiOverridesEmpty": "No overrides",
+    "fineGrainedOverrides": "Per-API overrides",
+    "addOverride": "Add override",
+    "pathPlaceholder": "e.g. /posts or product:8000000001",
+    "overrideExceedsPlan": "Override for \"{path}\" ({limit} QPS) exceeds plan rate ({planQps}). Lower it before saving.",
+    "overrideInvalidLimit": "Override for \"{path}\" has an invalid limit",
+    "enabledOn": "On",
+    "enabledOff": "Off",
+    "clientIpHint": "",
+    "bandwidthHint": "",
+    "enforcementNotice": "",
+    "opsTitle": "Ops controls",
+    "opsHint": "",
+    "denyForMinutes": "Temporary deny (minutes)",
+    "quotaMultiplier": "Temporary quota multiplier",
+    "expiresInMinutes": "Expires in (minutes)",
+    "reason": "Reason (optional)",
+    "issueDeny": "Issue deny",
+    "issueQuota": "Issue multiplier",
+    "issueRefresh": "Force policy refresh",
+    "activeCommands": "Commands",
+    "cancelCommand": "Cancel",
+    "confirmDeny": "Issue a temporary deny for this tenant?",
+    "confirmQuota": "Issue a temporary quota multiplier for this tenant?",
+    "confirmRefresh": "Force all gateways to refresh this tenant's policy snapshot now?",
+    "confirmCancel": "Cancel this control command?",
+    "noCommands": "No control commands",
+    "upstreamFooter": "Channel capacity is under Upstream → Channels.",
+    "upstreamFooterLink": "Open upstream supply",
+    "templates": {
+      "label": "Plan templates",
+      "hint": "",
+      "applied": "Applied “{name}”",
+      "trial": "Trial (10 QPS)",
+      "standard": "Standard (100 QPS)",
+      "premium": "Premium (1000 QPS)"
+    },
+    "gateSummary": {
+      "title": "Gate summary",
+      "enabled": "Plan limits",
+      "on": "Enabled",
+      "off": "Disabled",
+      "planQps": "Plan QPS",
+      "burst": "Burst",
+      "overrides": "API overrides",
+      "enforcement": "Enforcement model",
+      "toPlan": "Configure plan rate limits",
+      "toUpstream": "Configure upstream channel capacity",
+      "loadFailed": "Failed to load gate summary"
+    },
+    "reasons": {
+      "title": "429 reason → config entry",
+      "hint": "",
+      "goConfig": "Open config",
+      "tenant_qps": {
+        "label": "Plan rate",
+        "talk": "Hit plan total rate → Access strategy · plan QPS/burst"
+      },
+      "api_qps": {
+        "label": "API override",
+        "talk": "Hit per-API override → Access strategy · per-API overrides"
+      },
+      "client_ip_qps": {
+        "label": "Per-IP",
+        "talk": "Client IP too fast → Access strategy · abuse · per-IP"
+      },
+      "bandwidth": {
+        "label": "Bandwidth",
+        "talk": "Bandwidth exceeded → Access strategy · abuse · bandwidth"
+      },
+      "deny_until": {
+        "label": "Temporary deny",
+        "talk": "Ops temporary control → Access strategy · emergency"
+      },
+      "deny_all": {
+        "label": "Deny all",
+        "talk": "Policy deny_all → Access strategy · emergency / refresh"
+      },
+      "snapshot_stale": {
+        "label": "Stale snapshot",
+        "talk": "Policy snapshot stale → force refresh; check ratelimit service"
+      },
+      "channel_qps": {
+        "label": "Channel capacity",
+        "talk": "Upstream channel busy → Upstream supply · channel QPS"
+      },
+      "queue_timeout": {
+        "label": "Queue timeout",
+        "talk": "Channel queue timeout → Upstream supply · capacity/queue"
+      },
+      "queue_full": {
+        "label": "Queue full",
+        "talk": "Channel queue full → Upstream supply · capacity/queue"
+      }
+    },
+    "columns": {
+      "path": "Match key",
+      "limit": "Cap QPS",
+      "operations": "Actions",
+      "type": "Type",
+      "status": "Status",
+      "expires": "Expires",
+      "created": "Created"
+    },
+    "statusActive": "Active",
+    "statusExpired": "Expired",
+    "typeDeny": "Deny until",
+    "typeQuota": "Quota correction",
+    "typeRefresh": "Refresh policy"
+  },
+  "authorization": {
+    "list": {
+      "title": "Authorizations / Subscription",
+      "summary": "Manage tenant access, billing, and subscription relationships for products",
+      "searchPlaceholder": "Search tenants or products",
+      "tenantCode": "Tenant Code",
+      "tenantName": "Tenant Name",
+      "productCode": "Product Code",
+      "productName": "Product Name",
+      "billingType": "Billing Type",
+      "unitPrice": "Unit Price",
+      "createdAt": "Granted At",
+      "revokeConfirm": "Are you sure you want to revoke this authorization?",
+      "revokeSuccess": "Authorization revoked",
+      "actions": {
+        "create": "New Authorization",
+        "modify": "Modify",
+        "revoke": "Revoke",
+        "batchRevoke": "Revoke Authorization"
+      }
+    },
+    "config": {
+      "title": "Authorization / Subscription Config",
+      "billingSection": "Billing Config",
+      "fallbackSection": "CBPRO",
+      "codecSection": "Payload Codec",
+      "billingMode": "Billing Mode",
+      "billingCall": "Per-call Billing",
+      "billingSubscription": "Monthly Subscription",
+      "unitPrice": "Unit Price",
+      "unitPricePlaceholder": "e.g. 0.001",
+      "cbProFallback": "CBPRO",
+      "cbProEnabledHint": "",
+      "cbProDisabledHint": "CBPRO not enabled on product",
+      "codecEnabled": "Enable Payload Codec",
+      "requestCodec": "Request Codec",
+      "responseCodec": "Response Codec",
+      "codecVersion": "Codec Version",
+      "codecEnabledHint": "",
+      "conflictTitle": "Configuration Conflict",
+      "cbProRuntimeHint": "",
+      "saveSuccess": "Saved"
+    },
+    "grantDialog": {
+      "title": "New Authorization",
+      "confirm": "Grant",
+      "tenant": "Tenant",
+      "product": "Product",
+      "selectTenant": "Please select a tenant",
+      "selectProduct": "Please select a product",
+      "billingMode": "Billing Mode",
+      "selectBillingMode": "Please select a billing mode",
+      "billingCall": "Per-call Billing",
+      "billingSubscription": "Monthly Subscription",
+      "unitPrice": "Unit Price",
+      "unitPricePlaceholder": "e.g. 0.001",
+      "cbProFallback": "CBPRO",
+      "cbProEnabledHint": "",
+      "cbProDisabledHint": "CBPRO not enabled on product",
+      "enterUnitPrice": "Please enter the unit price",
+      "success": "Authorization granted successfully"
+    },
+    "fields": {
+      "authorizedProducts": "Authorized Products"
+    },
+    "actions": {
+      "manage": "Manage Auth"
+    }
+  },
+  "product": {
+    "list": {
+      "title": "Product Catalog",
+      "searchPlaceholder": "Product name or code"
+    },
+    "actions": {
+      "add": "Add Product"
+    },
+    "columns": {
+      "productId": "Product Code",
+      "name": "Product Name",
+      "timeoutSecs": "Runtime Timeout (s)",
+      "cbProEnabled": "CBPRO",
+      "enabled": "Enabled Status"
+    },
+    "fields": {
+      "productId": "Product Code",
+      "internalId": "Internal ID",
+      "name": "Product Name",
+      "description": "Product Description",
+      "timeoutSecs": "Runtime Timeout (s)",
+      "upstreamUrl": "Default Upstream URL",
+      "cbProEnabled": "CBPRO",
+      "cbFailureThreshold": "CB Failure Threshold (times)",
+      "cbSuccessThreshold": "CB Recovery Threshold (times)",
+      "cbCooldownSecs": "CB Cooldown Duration (s)",
+      "enabled": "Enabled Status"
+    },
+    "createDialog": {
+      "title": "Add Product",
+      "sections": {
+        "basic": "Basic Info",
+        "advanced": "Advanced Settings"
+      },
+      "hints": {
+        "productId": "Reserved product code; expires if closed or timed out."
+      },
+      "advancedHint": "",
+      "placeholders": {
+        "name": "Please enter a product name",
+        "description": "Product description",
+        "upstreamUrl": "https://127.0.0.1:8088"
+      },
+      "validation": {
+        "productIdReservationFailed": "Failed to reserve a product code. Please close the dialog and try again.",
+        "productIdPattern": "Product code must be 10 digits starting with 8.",
+        "nameRequired": "Please enter a product name",
+        "nameLength": "Name must be between 2 and 100 characters",
+        "timeoutSecsRange": "Runtime timeout must be a number between 1 and 300 seconds",
+        "upstreamUrlRequired": "Please enter a default upstream URL"
+      }
+    },
+    "detail": {
+      "pageTitle": "Product Detail",
+      "basicInfoTitle": "Basic Information",
+      "advancedInfoTitle": "Runtime Info",
+      "editTitle": "Edit Product Basic Information",
+      "quickActionsTitle": "Quick Actions",
+      "authorizationHint": "",
+      "authorizedTenantsTitle": "Authorized Tenants",
+      "tenantCountSuffix": "tenants",
+      "noAuthorizedTenants": "No authorized tenants yet",
+      "lockedHint": "Locked after create",
+      "lockedAlert": "Product code cannot be changed after creation.",
+      "tenantColumns": {
+        "name": "Tenant Name",
+        "tenantId": "Tenant Identifier",
+        "tenantCode": "Tenant Code",
+        "grantedAt": "Granted At"
+      },
+      "validation": {
+        "nameRequired": "Please enter a product name",
+        "nameLength": "Name must be between 2 and 100 characters"
+      }
+    },
+    "empty": {
+      "default": "No products",
+      "filtered": "No matching products found"
+    },
+    "messages": {
+      "deleteProductConfirm": "Are you sure you want to delete product \"{name}\"?"
+    }
+  },
+  "table": {
+    "form": {
+      "reset": "Reset",
+      "submit": "Submit"
+    },
+    "searchBar": {
+      "reset": "Reset",
+      "search": "Search",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "searchInputPlaceholder": "Please enter",
+      "searchSelectPlaceholder": "Please select"
+    },
+    "selection": "Select",
+    "sizeOptions": {
+      "small": "Compact",
+      "default": "Default",
+      "large": "Loose"
+    },
+    "column": {
+      "selection": "Select",
+      "expand": "Expand",
+      "index": "Index"
+    },
+    "zebra": "Zebra",
+    "border": "Border",
+    "headerBackground": "Header BG"
+  },
+  "upstreamOnboarding": {
+    "title": "Quick Access",
+    "steps": {
+      "mode": "Mode",
+      "basic": "Basics",
+      "route": "Routing",
+      "confirm": "Confirm",
+      "done": "Done"
+    },
+    "mode": {
+      "transparent": "Standard Access",
+      "microservice": "Microservice Access",
+      "transparentHint": "HTTP(S) transparent proxy for third-party APIs.",
+      "microserviceHint": "Requires a deployed contract-based upstream service."
+    },
+    "fields": {
+      "supplierCode": "Supplier code",
+      "name": "Name",
+      "upstreamUrl": "Upstream URL",
+      "contractId": "Contract ID",
+      "timeoutMs": "Total timeout (ms)",
+      "channelCode": "Channel code",
+      "channelName": "Channel name",
+      "pathPrefix": "Path prefix",
+      "productId": "Product ID",
+      "weight": "Weight",
+      "priority": "Priority"
+    },
+    "validation": {
+      "basicRequired": "Supplier code, name and upstream URL are required",
+      "httpUrl": "Transparent upstream URL must start with http:// or https://",
+      "channelCode": "Channel code is required",
+      "channelCodePattern": "Channel code must match ^[A-Z][A-Z0-9-]*$",
+      "productRequired": "Product ID is required",
+      "authTokenUrl": "token_url is required when auth is enabled",
+      "authTokenPath": "token_jsonpath is required when auth is enabled",
+      "authInjectKey": "inject_key is required when auth is enabled",
+      "transformEmpty": "Configure at least one transform rule when enabled",
+      "contractIdRequired": "Microservice mode requires contract_id"
+    },
+    "confirm": {
+      "dryRunOk": "Dry-run passed (no writes)",
+      "needDryRun": "Run dry-run first"
+    },
+    "actions": {
+      "dryRun": "Dry-run",
+      "submit": "Submit"
+    },
+    "done": {
+      "title": "Onboarding succeeded",
+      "subtitle": "Platform route_version = {version}",
+      "reloadHint": "Hot-reload typically within ~5s.",
+      "copyCurl": "Copy curl sample",
+      "goSuppliers": "Back to upstream supply"
+    },
+    "useAccessWizard": "Use the Access Upstream wizard to create",
+    "placeholders": {
+      "name": "e.g. ACME Partner",
+      "channelName": "e.g. ACME default channel",
+      "upstreamUrl": "host:port",
+      "contractId": "A contract_id registered in the gateway"
+    }
+  },
+  "upstreamConnector": {
+    "workbenchTitle": "Code-free Access",
+    "codeFreeAccess": "Code-free Access",
+    "draftsTitle": "Drafts",
+    "draftsEmpty": "No drafts yet. Open the workbench from Code-free Access on the supplier list.",
+    "draftsNoMatch": "No matching drafts",
+    "openDraft": "Continue",
+    "continueEdit": "Continue editing",
+    "statusDraft": "Draft",
+    "statusPublished": "Published",
+    "saveDraft": "Save draft",
+    "syncDraftNow": "Sync draft now",
+    "savingDraft": "Saving…",
+    "autosavedAt": "Autosaved {time}",
+    "saveDraftFailed": "Save failed",
+    "leaveUnsavedTitle": "Unsaved changes",
+    "leaveUnsavedMessage": "Current changes have not been written to the draft box.",
+    "leaveSave": "Save and leave",
+    "leaveDiscard": "Leave without saving",
+    "endpointCount": "Endpoints",
+    "deleteDraftConfirm": "Delete draft \"{name}\"?",
+    "editInWorkbench": "Edit in workbench",
+    "modeCreate": "New access",
+    "modeEditSupplier": "Edit supplier",
+    "untitledName": "Untitled access",
+    "import": "Import",
+    "publish": "Publish",
+    "publishNeedRun": "Send successfully before publishing",
+    "sessionActions": "Session actions",
+    "emptyHint": "Could not open this access session. Create a new session, or go back to upstream supply.",
+    "endpoints": "Endpoints",
+    "configPanel": "Auth & Transform",
+    "requestPanel": "Request editor",
+    "trace": "Response",
+    "assertions": "Assertions",
+    "runHistory": "Run history",
+    "send": "Send",
+    "sendCancel": "Cancel waiting",
+    "runCancelled": "Cancelled",
+    "pasteCurlOk": "Filled this endpoint from cURL",
+    "requesting": "Requesting…",
+    "response": {
+      "status": "Status",
+      "time": "Time",
+      "size": "Size"
+    },
+    "jsonTree": "JSON tree",
+    "rawBody": "Raw",
+    "jsonTooLarge": "Too large — switch to raw",
+    "downloadBody": "Download response",
+    "runBusiness": "Business Run",
+    "runAuth": "Auth-only Run",
+    "runProbe": "Connectivity probe",
+    "transformPreview": "Transform Preview",
+    "bodyPlaceholder": "Request body (JSON)",
+    "headersTab": "Headers",
+    "headersList": "Header list",
+    "queryTab": "Query",
+    "queryList": "Query list",
+    "clearKv": "Clear",
+    "varsTab": "Variables",
+    "kvDesc": "Description",
+    "kvHelp": "Enabled rows are sent with the request",
+    "kvHelpDetail": "Checked rows are sent. Description is not sent. Unchecked rows stay in the table but are omitted from the request. Rows without a key are ignored. After clearing all rows, use + to add one.",
+    "kvDupWarn": "Duplicate keys {keys}: last value wins on send",
+    "kvBulk": "Bulk edit",
+    "kvBulkHint": "One per line. Key: Value or Key: Value # Description; prefix disabled rows with # ",
+    "kvEnable": "Enable",
+    "kvDisable": "Disable",
+    "kvDrag": "Drag to reorder",
+    "bodyTab": "Body",
+    "responseHeadersTab": "Response headers",
+    "assertTab": "Assertions",
+    "envVars": "Environment vars",
+    "envVarsHint": "Substitutes {'{'}{'{'}var{'}'}{'}'} in path, headers, query, and body at run time",
+    "unsaved": "Unsaved",
+    "saved": "Saved",
+    "searchEndpoints": "Search endpoints",
+    "noEndpoints": "No endpoints",
+    "gateShort": "Gate",
+    "duplicate": "Duplicate",
+    "paramsTab": "Parameters",
+    "authTab": "Auth",
+    "authType": "Type",
+    "authEnabled": "Enabled",
+    "authClear": "Clear",
+    "authInherit": "Inherit auth_flow",
+    "authNone": "None",
+    "authApiKey": "API Key",
+    "authOauthCc": "OAuth2 client_credentials",
+    "authGettoken": "gettoken",
+    "authBasic": "Basic",
+    "authSignForm": "Sign form",
+    "authGrpcMeta": "gRPC metadata",
+    "authInheritHint": "This endpoint uses session auth_flow.profile; inherit cannot be published until a session profile is set.",
+    "authNoneEmpty": "This endpoint does not attach auth.",
+    "authSessionDefault": "Session default",
+    "authSessionUnset": "Not set",
+    "authSetSessionDefault": "Set as session default",
+    "authBearer": "Bearer",
+    "authJwt": "JWT",
+    "authDigest": "Digest",
+    "authAws": "AWS SigV4",
+    "authHawk": "Hawk",
+    "authUsername": "Username",
+    "authPassword": "Password",
+    "authApiKeyLabel": "API Key",
+    "authTokenLabel": "Token",
+    "authClientId": "Client ID",
+    "authClientSecret": "Client Secret",
+    "authAppId": "App ID",
+    "authSecret": "Secret",
+    "authTokenPath": "Token path (relative to base)",
+    "authRawCredentials": "Advanced: raw credential KV",
+    "authSignAdapterHint": "HMAC is assembled by the sign_form adapter. Change the adapter on the egress tab.",
+    "authJwtAlgo": "Algorithm",
+    "authJwtTtl": "TTL (seconds)",
+    "authJwtKid": "kid",
+    "authJwtClaims": "Claims JSON",
+    "authJwtSecret": "JWT secret",
+    "authJwtPrivateKey": "RSA private key PEM",
+    "authDigestAlgo": "Digest algorithm",
+    "authDigestRealm": "Realm override",
+    "authAwsRegion": "Region",
+    "authAwsService": "Service",
+    "authAwsAccessKey": "Access Key ID",
+    "authAwsSecretKey": "Secret Access Key",
+    "authAwsSession": "Session token (optional)",
+    "authHawkId": "Hawk ID",
+    "authHawkKey": "Hawk Key",
+    "authHawkAlgo": "Algorithm",
+    "authHawkExt": "ext (optional)",
+    "injectToMetadata": "metadata",
+    "injectToFirstFrame": "first_frame",
+    "authAttachHint": "Auth headers/signatures are attached by the engine on send and are not written into the Header List by default.",
+    "transformEnabled": "Enable transform",
+    "bodyContentType": "Tenant body",
+    "bodyTypeNone": "None",
+    "bodyTypeJson": "JSON",
+    "bodyTypeForm": "Form",
+    "bodyNoneEmpty": "This endpoint has no tenant body. The gateway will not send an HTTP body upstream.",
+    "bodyNeedsJsonObject": "Please use a JSON object",
+    "egressContentType": "Outbound Content-Type",
+    "egressBodyEncoding": "Outbound body encoding",
+    "egressEncodingJson": "JSON",
+    "egressEncodingForm": "Form",
+    "egressEncodingNone": "No body",
+    "adapterEncodingForm": "HTTP form",
+    "urlRequired": "Enter an upstream URL",
+    "urlMissingSend": "Not sent: enter an upstream URL",
+    "envChip": "Env · {n}",
+    "sessionRuns": "Session runs",
+    "jsonFilterPlaceholder": "Filter keys / paths",
+    "jsonFilterEmpty": "No matching nodes",
+    "commandPalette": "Command palette",
+    "commandPalettePlaceholder": "Send, save, switch tab or endpoint…",
+    "commandPaletteEmpty": "No matching commands",
+    "shortcutsTitle": "Keyboard shortcuts",
+    "shortcutsAll": "All shortcuts",
+    "shortcutsSearch": "Search shortcuts",
+    "shortcutsClose": "Close panel",
+    "methodInvalid": "Invalid HTTP method",
+    "newSession": "New session",
+    "authHintApiKey": "Enter the API key and inject location / field / format. No token fetch.",
+    "authHintOauth": "client_credentials ticket. Empty template keeps the default form; a non-empty template is the token body.",
+    "authHintGettoken": "GET ticket: app_id / secret as query. Empty jsonpath defaults to $.token.",
+    "authHintBasic": "Username / password become Authorization: Basic (lookup includes username/password).",
+    "authHintSign": "HMAC is assembled by the sign_form adapter; this tab does not fetch or inject.",
+    "authHintGrpc": "The secret is written to metadata and the same header. Location is locked to metadata.",
+    "authHintBearer": "Static token injected with the format (default Authorization: Bearer {}).",
+    "authHintJwt": "Sign a JWT with the key on each request, then inject. Not a ticket-returned JWT.",
+    "authHintDigest": "First outbound has no Digest header; after a 401 challenge the same HTTP call is replayed once.",
+    "authHintAws": "Hand-written SigV4 over the final HTTP call. Requires region, service, and AK/SK.",
+    "authHintHawk": "Hawk MAC over the final method+url (optional body).",
+    "formBody": "Form fields",
+    "transformTab": "Egress spec",
+    "adapter": "Adapter",
+    "adapterChipHint": "Edit adapter in the egress spec tab",
+    "operation": "operation",
+    "operationHint": "envelope method / RPC / SOAP op / GraphQL field",
+    "wrap": "Wrap",
+    "unwrap": "Unwrap path",
+    "adapterNames": {
+      "http_json": "HTTP JSON",
+      "http_envelope": "HTTP envelope",
+      "sign_form": "Sign form",
+      "jsonrpc": "JSON-RPC",
+      "graphql": "GraphQL",
+      "grpc": "gRPC",
+      "soap_xml": "SOAP XML",
+      "ws_unary": "WebSocket unary",
+      "job_poll": "Job poll"
+    },
+    "wrapNames": {
+      "method_biz_content": "method + biz_content",
+      "none": "None"
+    },
+    "authProfile": "Auth profile",
+    "graphqlDocument": "GraphQL document",
+    "graphqlDocumentHint": "query / mutation document; tenant JSON fills variables",
+    "graphqlOperationName": "operationName",
+    "graphqlVariablesMap": "Variable map (tenant field → GraphQL)",
+    "graphqlEnumMap": "Enum value map",
+    "jobSubmitPath": "Submit path",
+    "jobQueryPath": "Query path",
+    "jobIdPath": "job_id JSONPath",
+    "jobStatusPath": "status JSONPath",
+    "jobResultPath": "result JSONPath",
+    "jobMessagePath": "message JSONPath",
+    "jobPollInterval": "Poll interval (ms)",
+    "artifactId": "Artifact ID",
+    "artifactUpload": "Upload FileDescriptorSet",
+    "artifactUploaded": "Artifact uploaded",
+    "artifactHint": "gRPC channels need a FileDescriptorSet (.fds / .pb)",
+    "kvKey": "Key",
+    "kvValue": "Value",
+    "kvPhKey": "Key",
+    "kvPhValue": "Value",
+    "kvPhDesc": "Description",
+    "authTicketSection": "Token request",
+    "authInjectSection": "Inject",
+    "adapterParamsSection": "Adapter params",
+    "transformSection": "Transform",
+    "pipelineSection": "Transform compare",
+    "sectionUnconfigured": "Not configured",
+    "sectionItemCount": "{n} items",
+    "sectionConfigured": "Configured",
+    "sectionFieldCount": "{n} fields",
+    "injectToHeader": "Header",
+    "injectToQuery": "Query",
+    "injectToBody": "Body",
+    "typeTransparent": "Transparent",
+    "typeMicroservice": "Microservice",
+    "addQuery": "Add query",
+    "addHeader": "Add header",
+    "addEnv": "Add variable",
+    "addAssertion": "Add assertion",
+    "assertHelpTitle": "Assertion help",
+    "assertHelp": "Assertions check the response after a send (status, latency, JSONPath, headers). None means send is not gated. Clear removes all; + adds one.",
+    "copyCurl": "Copy curl",
+    "importMerge": "Merge into this session",
+    "importReplace": "Replace with a new session",
+    "importFile": "Load from file",
+    "channelMapping": "Channel mapping",
+    "gateChecklist": "Gate checklist",
+    "productPlaceholder": "Search products",
+    "sampleCurl": "Sample curl",
+    "importedMerge": "Merged {n} endpoints",
+    "keepOneEndpoint": "Keep at least one endpoint",
+    "unresolvedVars": "Unresolved variables: {vars}",
+    "unresolvedVarsBlock": "Unresolved variables {vars}; cannot send or publish",
+    "gateReasonNotRun": "Not run",
+    "gateReasonSpecChanged": "Spec changed — send again",
+    "gateReasonUnresolved": "Unresolved variables",
+    "staticTokenHint": "Static token headers not taken over by auth flow: {headers} (hint, not blocked)",
+    "pipelineEmpty": "After a transform preview or business run, compare tenant request / upstream request / upstream response here",
+    "pipeTenantReq": "Tenant request",
+    "pipeUpstreamReq": "After transform (to upstream)",
+    "pipeUpstreamRes": "Upstream response",
+    "formatJson": "Format JSON",
+    "collapseSidebar": "Collapse endpoint list",
+    "expandSidebar": "Expand endpoint list",
+    "collapseResponse": "Collapse response",
+    "expandResponse": "Expand response",
+    "sendHotkey": "Ctrl+Enter",
+    "responseIdle": "Click Send to run against upstream; the response appears here",
+    "responseIdleHint": "Ctrl+Enter sends this endpoint · Ctrl+S saves the draft",
+    "timelineTab": "Timeline",
+    "noAssertions": "No assertion results",
+    "stepConfig": "Config",
+    "stepAuth": "Auth",
+    "stepAuthOff": "Auth off",
+    "stepGate": "Gate {ok}/{total}",
+    "stepPublish": "Publish",
+    "stage": {
+      "validate": "validate",
+      "ssrf": "SSRF",
+      "auth": "auth",
+      "request_transform": "request transform",
+      "upstream": "upstream",
+      "response_transform": "response transform"
+    },
+    "gate": "Gate",
+    "gateOnHint": "Included in gate — click to exclude",
+    "gateOffHint": "Not in gate — click to include",
+    "writeConfirmTitle": "Confirm write-method run",
+    "writeConfirmMsg": "This method may mutate upstream data. Continue?",
+    "publishMode": "Publish mode",
+    "modeSupplierOnly": "Supplier only",
+    "modeSupplierChannels": "Supplier + channels",
+    "modeFull": "Full onboarding (with route)",
+    "requireGate": "Require gate",
+    "forcePublish": "Force publish",
+    "forceReason": "Force reason",
+    "comment": "Version comment",
+    "publishOk": "Published",
+    "runOk": "Run succeeded",
+    "runFail": "Run failed",
+    "created": "Access session created",
+    "imported": "Imported",
+    "fieldsRequired": "Name and upstream URL are required",
+    "publishFieldsRequired": "Supplier code and name are required to publish",
+    "bootstrapFailed": "Failed to open access session",
+    "transparentOnly": "Code-free access is HTTP transparent only. Use Microservice Access on the supplier list.",
+    "liveRun": "Live run",
+    "versions": "Versions",
+    "versionDiff": "Version diff",
+    "rollback": "Rollback",
+    "rollbackConfirm": "Rollback to this version? Writes live config and creates a new snapshot.",
+    "rollbackOk": "Rollback completed",
+    "opsPanel": "Ops / Versions",
+    "probeNote": "Connectivity probe ≠ business acceptance",
+    "fields": {
+      "name": "Name",
+      "upstreamUrl": "Upstream URL",
+      "upstreamType": "Type",
+      "supplierCode": "Supplier code",
+      "epName": "Endpoint name",
+      "assertType": "Assertion type",
+      "path": "Path",
+      "product": "Product",
+      "channelCode": "Channel code",
+      "pathPrefix": "Path prefix",
+      "contractId": "Contract ID",
+      "envName": "Variable name",
+      "versionNo": "Version"
+    }
+  },
+  "listQueryBar": {
+    "tooltip": "Search & filters",
+    "placeholder": "Serial, path… or field op value",
+    "placeholderSuffix": "or field op value",
+    "placeholderQOnly": "Type keywords to search",
+    "clearAll": "Clear all",
+    "clearInput": "Clear input",
+    "dotAria": "Text search active",
+    "hintTextSearch": "Type text and press Enter to search",
+    "fieldFilterContains": "Filter results containing {field}",
+    "opDetail": {
+      "eq": "Equals a value",
+      "neq": "Does not equal a value",
+      "gt": "Greater than a value",
+      "gte": "Greater than or equal to a value",
+      "lt": "Less than a value",
+      "lte": "Less than or equal to a value",
+      "contains": "Contains a value",
+      "starts_with": "Starts with a value",
+      "ends_with": "Ends with a value",
+      "is_null": "Field is empty",
+      "is_not_null": "Field is not empty",
+      "between": "Between two values",
+      "in": "In a set of values"
+    },
+    "hover": {
+      "activeFilters": "{n} active filter(s)",
+      "activeQ": "Text search",
+      "empty": "Search & filters"
+    },
+    "parse": {
+      "unknown_field": "Unknown field: {field}",
+      "op_not_allowed": "Operator {op} is not allowed for {field}",
+      "invalid_value": "Invalid value",
+      "invalid_number": "Invalid number",
+      "invalid_duration": "Invalid duration (e.g. 100, 100ms, 1.5s)",
+      "invalid_decimal": "Invalid decimal",
+      "invalid_enum": "Invalid enum value: {value}",
+      "invalid_bool": "Invalid boolean",
+      "invalid_uuid": "Invalid UUID",
+      "invalid_datetime": "Invalid datetime (e.g. 2026-08-11 12:00:00)",
+      "empty_value": "Value required",
+      "unsupported_syntax": "Unsupported syntax",
+      "use_builder": "For between / in, split into gte/lte or multiple conditions",
+      "ambiguous_label": "Label “{label}” maps to multiple fields; use the API field name"
+    }
+  },
+  "listFilters": {
+    "tooltip": "Structured filters",
+    "activeTitle": "{n} active filter(s)",
+    "field": "Field",
+    "op": "Operator",
+    "value": "Value",
+    "valueMs": "ms, e.g. 100 or 100ms",
+    "valueDatetime": "e.g. 2026-08-11 12:00:00",
+    "from": "From",
+    "to": "To",
+    "add": "Add filter",
+    "remove": "Remove filter",
+    "clearAll": "Clear all",
+    "empty": "No active filters",
+    "invalidValue": "Enter a valid filter value",
+    "tooMany": "At most {max} filters allowed",
+    "ops": {
+      "eq": "=",
+      "neq": "≠",
+      "contains": "contains",
+      "starts_with": "starts with",
+      "ends_with": "ends with",
+      "gt": ">",
+      "gte": "≥",
+      "lt": "<",
+      "lte": "≤",
+      "between": "between",
+      "in": "in",
+      "is_null": "is null",
+      "is_not_null": "is not null"
+    },
+    "fields": {
+      "requestId": "Serial No",
+      "traceId": "Trace ID",
+      "tenantCode": "Tenant code",
+      "tenantId": "Tenant ID",
+      "tenantName": "Tenant name",
+      "productId": "Product ID",
+      "productCode": "Product code",
+      "productName": "Product name",
+      "supplierCode": "Supplier code",
+      "supplierName": "Supplier name",
+      "channelCode": "Channel code",
+      "path": "Path",
+      "clientIp": "Client IP",
+      "upstreamHost": "Upstream host",
+      "errorCode": "Error code",
+      "statusCode": "Status code",
+      "upstreamStatusCode": "Upstream status",
+      "durationMs": "Latency",
+      "upstreamServiceTimeMs": "Upstream latency",
+      "name": "Name",
+      "contactEmail": "Contact email",
+      "contactPerson": "Contact person",
+      "contactPhone": "Contact phone",
+      "subject": "Subject",
+      "fingerprint": "Fingerprint",
+      "expiresAt": "Expires at",
+      "callbackUrl": "Callback URL",
+      "eventId": "Event ID",
+      "qpsLimit": "QPS limit",
+      "costPrice": "Cost price",
+      "billId": "Bill ID",
+      "party": "Party",
+      "kind": "Kind",
+      "id": "ID",
+      "scope": "Scope",
+      "note": "Note",
+      "username": "Username",
+      "displayName": "Display name",
+      "email": "Email",
+      "code": "Code",
+      "serviceName": "Service name"
+    },
+    "quick": {
+      "latencyGt100": "Latency > 100ms",
+      "latencyGt500": "Latency > 500ms",
+      "statusGte500": "Status ≥ 500",
+      "statusEq0": "Status = 0"
+    }
+  }
+}

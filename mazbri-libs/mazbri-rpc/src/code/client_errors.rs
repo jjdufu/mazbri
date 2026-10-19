@@ -1,0 +1,32 @@
+use super::billing_code::BillingCode;
+impl BillingCode {
+    pub const BAD_REQUEST: Self = Self(1000);
+    pub const INVALID_JSON: Self = Self(1001);
+    pub const INVALID_XML: Self = Self(1002);
+    pub const INVALID_ENCODING: Self = Self(1003);
+    pub const CONTENT_TOO_LARGE: Self = Self(1004);
+    pub const INVALID_PARAMETER: Self = Self(1100);
+    pub const MISSING_PARAMETER: Self = Self(1101);
+    pub const PARAMETER_OUT_OF_RANGE: Self = Self(1102);
+    pub const INVALID_ENUM_VALUE: Self = Self(1103);
+    pub const UNAUTHORIZED: Self = Self(1200);
+    pub const INVALID_API_KEY: Self = Self(1201);
+    pub const TOKEN_EXPIRED: Self = Self(1202);
+    pub const TOKEN_INVALID: Self = Self(1203);
+    pub const SIGNATURE_MISMATCH: Self = Self(1204);
+    pub const FORBIDDEN: Self = Self(1300);
+    pub const ACCESS_DENIED: Self = Self(1301);
+    pub const IP_BLOCKED: Self = Self(1302);
+    pub const TENANT_SUSPENDED: Self = Self(1303);
+    pub const NOT_FOUND: Self = Self(1400);
+    pub const ENDPOINT_NOT_FOUND: Self = Self(1401);
+    pub const PRODUCT_NOT_FOUND: Self = Self(1402);
+    pub const TENANT_NOT_FOUND: Self = Self(1403);
+    pub const RATE_LIMIT_EXCEEDED: Self = Self(1500);
+    pub const QUOTA_EXCEEDED: Self = Self(1501);
+    pub const DAILY_LIMIT_EXCEEDED: Self = Self(1502);
+    pub const CONCURRENT_LIMIT_EXCEEDED: Self = Self(1503);
+    pub const CONFLICT: Self = Self(1600);
+    pub const DUPLICATE_REQUEST: Self = Self(1601);
+    pub const VERSION_CONFLICT: Self = Self(1602);
+}

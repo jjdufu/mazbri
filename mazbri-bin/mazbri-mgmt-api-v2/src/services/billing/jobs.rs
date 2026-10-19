@@ -1,0 +1,625 @@
+use super::*;
+
+pub async fn execute_upstream_billing_job(
+    billing_db: &PgPool,
+    platform_db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+    scope: Option<UpstreamBillScope>,
+) -> Result<BillGenerationSummary, BillingError> {
+    let bill_id = generate_upstream_bill(
+        billing_db,
+        platform_db,
+        analytics_client,
+        period_start,
+        period_end,
+        scope,
+    )
+    .await?;
+
+    let bill = repo::get_bill(billing_db, bill_id)
+        .await
+        .map_err(|e| {
+            error!("Database error fetching generated bill: {}", e);
+            BillingError::Database
+        })?
+        .ok_or(BillingError::BillNotFound(bill_id))?;
+
+    let items = repo::list_bill_items(billing_db, &bill)
+        .await
+        .map_err(|e| {
+            error!("Database error listing items for generated bill: {}", e);
+            BillingError::Database
+        })?;
+
+    Ok(BillGenerationSummary {
+        bill_id,
+        total_channels: items.len(),
+        total_calls: bill.total_calls,
+        total_amount: bill.total,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReconciliationAuditOptions {
+    pub loss_ratio_threshold: Decimal,
+    pub include_amount_recon: bool,
+    pub include_raw_log_source: bool,
+}
+
+pub async fn execute_reconciliation_audit(
+    billing_db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    reconciliation_date: chrono::NaiveDate,
+    scope_type: &str,
+    scope_id: &str,
+    options: ReconciliationAuditOptions,
+) -> Result<ReconciliationAuditResult, BillingError> {
+    let loss_ratio_threshold = options.loss_ratio_threshold;
+    let day_start = reconciliation_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| {
+            BillingError::Validation(format!(
+                "invalid reconciliation day start for date {reconciliation_date}"
+            ))
+        })?
+        .and_utc();
+    let day_end = reconciliation_date
+        .and_hms_opt(23, 59, 59)
+        .ok_or_else(|| {
+            BillingError::Validation(format!(
+                "invalid reconciliation day end for date {reconciliation_date}"
+            ))
+        })?
+        .and_utc();
+
+    let oltp_call_count: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(COUNT(*), 0)::BIGINT FROM usage_records WHERE recorded_at >= $1 AND recorded_at <= $2",
+    )
+    .bind(day_start)
+    .bind(day_end)
+    .fetch_one(billing_db)
+    .await
+    .map_err(|e| {
+        error!("Database error counting usage_records for reconciliation: {}", e);
+        BillingError::Database
+    })?;
+
+    // Upstream pre-aggregation (supplier-side): populated from bypass access logs only
+    // after mv_upstream_hourly_usage filter — one hop per actual upstream call.
+    let summary_val = analytics_client
+        .fetch_upstream_usage_summary(
+            &day_start.to_rfc3339(),
+            &day_end.to_rfc3339(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            error!(
+                "Failed to fetch preagg summary for reconciliation audit: {}",
+                e
+            );
+            BillingError::Database
+        })?;
+
+    let olap_preagg_call_count: i64 = summary_val
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|row| row.get("total_calls").and_then(|v| v.as_i64()))
+                .sum()
+        })
+        .unwrap_or(0);
+
+    // Customer-facing access logs (gateway only). request_logs also contains mazbri-bypass
+    // rows for the same request_id; counting both ~doubles the total and falsely flags recon.
+    // usage_records is written once per billable gateway proxy call → compare to gateway logs.
+    let mut raw_log_source = "olap_preagg_compat";
+    let mut raw_log_call_count = olap_preagg_call_count;
+    let mut comparison_call_count = olap_preagg_call_count;
+    let mut comparison_source = "olap_preagg";
+    if options.include_raw_log_source {
+        match analytics_client
+            .aggregate_requests(
+                &day_start.to_rfc3339(),
+                &day_end.to_rfc3339(),
+                Some("mazbri-gateway"),
+            )
+            .await
+        {
+            Ok(body) => {
+                if let Some(total) = body
+                    .get("total_requests")
+                    .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n as u64)))
+                {
+                    raw_log_call_count = total as i64;
+                    raw_log_source = "request_logs_gateway";
+                    comparison_call_count = raw_log_call_count;
+                    comparison_source = "request_logs_gateway";
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "raw_log gateway request_logs aggregate failed, falling back to OLAP: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    // Primary ratio: billable usage_records vs customer-facing gateway access count
+    // (or upstream preagg when raw_log disabled). Use max(sides, 1) as denominator so a
+    // near-empty OLTP side does not explode the ratio.
+    let oltp_dec = Decimal::from(oltp_call_count);
+    let peer_dec = Decimal::from(comparison_call_count);
+    let diff = if oltp_dec >= peer_dec {
+        oltp_dec - peer_dec
+    } else {
+        peer_dec - oltp_dec
+    };
+    let denominator = if oltp_call_count == 0 && comparison_call_count == 0 {
+        Decimal::ONE
+    } else if oltp_call_count >= comparison_call_count {
+        Decimal::from(oltp_call_count.max(1))
+    } else {
+        Decimal::from(comparison_call_count.max(1))
+    };
+    let loss_ratio = diff / denominator;
+
+    let status = if loss_ratio > loss_ratio_threshold {
+        "flagged"
+    } else {
+        "ok"
+    };
+
+    let mut details = serde_json::json!({
+        "oltp_calls": oltp_call_count,
+        "olap_preagg_calls": olap_preagg_call_count,
+        "raw_log_call_count": raw_log_call_count,
+        "raw_log_source": raw_log_source,
+        "comparison_call_count": comparison_call_count,
+        "comparison_source": comparison_source,
+        "audit_date": reconciliation_date.to_string(),
+        "loss_ratio_threshold": loss_ratio_threshold.to_string(),
+        "sources": ["oltp_usage_records", "olap_preagg_bypass", raw_log_source],
+        "notes": "OLTP=usage_records; OLAP preagg=upstream_hourly (bypass-only); raw_log=gateway access logs for customer-call parity",
+    });
+
+    if options.include_amount_recon {
+        let usage_amount = repo::sum_usage_billable_amount(billing_db, day_start, day_end)
+            .await
+            .map_err(|e| {
+                error!("Database error summing usage billable_amount: {}", e);
+                BillingError::Database
+            })?;
+        let bill_items_amount = repo::sum_bill_items_total_for_day(billing_db, day_start, day_end)
+            .await
+            .map_err(|e| {
+                error!("Database error summing bill_items for day: {}", e);
+                BillingError::Database
+            })?;
+        let amount_diff = if usage_amount >= bill_items_amount {
+            usage_amount - bill_items_amount
+        } else {
+            bill_items_amount - usage_amount
+        };
+        if let Some(obj) = details.as_object_mut() {
+            obj.insert(
+                "amount_recon".to_string(),
+                serde_json::json!({
+                    "usage_billable_amount": usage_amount.to_string(),
+                    "bill_items_total": bill_items_amount.to_string(),
+                    "amount_diff": amount_diff.to_string(),
+                }),
+            );
+        }
+    }
+
+    let discrepancy_id = repo::insert_reconciliation_discrepancy(
+        billing_db,
+        repo::InsertReconciliationDiscrepancyParams {
+            reconciliation_date,
+            scope_type,
+            scope_id,
+            oltp_call_count,
+            olap_preagg_call_count,
+            raw_log_call_count,
+            discrepancy_ratio: loss_ratio,
+            status,
+            details: Some(details),
+        },
+    )
+    .await
+    .map_err(|e| {
+        error!("Database error inserting reconciliation discrepancy: {}", e);
+        BillingError::Database
+    })?;
+
+    Ok(ReconciliationAuditResult {
+        discrepancy_id,
+        reconciliation_date,
+        scope_type: scope_type.to_string(),
+        scope_id: scope_id.to_string(),
+        oltp_call_count,
+        olap_preagg_call_count,
+        raw_log_call_count,
+        raw_log_source: raw_log_source.to_string(),
+        loss_ratio,
+        loss_ratio_threshold,
+        status: status.to_string(),
+    })
+}
+
+const ALLOWED_DISCREPANCY_STATUSES: &[&str] = &["ok", "flagged", "acknowledged", "resolved"];
+
+fn is_allowed_status_transition(from: &str, to: &str) -> bool {
+    if from == to {
+        return true;
+    }
+    match (from, to) {
+        ("ok" | "flagged", "acknowledged" | "resolved") => true,
+        ("acknowledged", "resolved") => true,
+        _ => false,
+    }
+}
+
+pub async fn list_reconciliation_discrepancies(
+    billing_db: &PgPool,
+    from: Option<chrono::NaiveDate>,
+    to: Option<chrono::NaiveDate>,
+    status: Option<String>,
+    scope_type: Option<String>,
+    scope_id: Option<String>,
+    search: Option<String>,
+    filters_json: Option<String>,
+    page: u32,
+    page_size: u32,
+) -> Result<ReconciliationDiscrepancyListResponse, BillingError> {
+    validate_limit(page_size)?;
+    let page = page.max(1);
+    let status = status
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    if let Some(ref s) = status {
+        if !ALLOWED_DISCREPANCY_STATUSES.contains(&s.as_str()) {
+            return Err(BillingError::Validation(format!(
+                "status must be one of: {}",
+                ALLOWED_DISCREPANCY_STATUSES.join(", ")
+            )));
+        }
+    }
+    let scope_type = scope_type
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let scope_id = scope_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let search = search
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let filters = crate::list_query::parse_and_validate_filters(
+        filters_json.as_deref(),
+        &crate::list_query::reconciliation_catalog(),
+    )
+    .map_err(|e| BillingError::Validation(e.message))?;
+    let offset = page.saturating_sub(1).saturating_mul(page_size) as i64;
+    let list_params = repo::ListReconciliationDiscrepanciesParams {
+        from,
+        to,
+        status: status.as_deref(),
+        scope_type: scope_type.as_deref(),
+        scope_id: scope_id.as_deref(),
+        search: search.as_deref(),
+        filters: &filters,
+        limit: page_size as i64,
+        offset,
+    };
+    let total = repo::count_reconciliation_discrepancies(billing_db, &list_params)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error counting reconciliation discrepancies: {}",
+                e
+            );
+            BillingError::Database
+        })?;
+    let items = repo::list_reconciliation_discrepancies(billing_db, list_params)
+        .await
+        .map_err(|e| {
+            error!("Database error listing reconciliation discrepancies: {}", e);
+            BillingError::Database
+        })?;
+    let total_pages = if total == 0 {
+        0
+    } else {
+        (total as f64 / page_size as f64).ceil() as u64
+    };
+    Ok(ReconciliationDiscrepancyListResponse {
+        items,
+        total,
+        page,
+        page_size,
+        total_pages,
+    })
+}
+
+pub async fn update_reconciliation_discrepancy(
+    billing_db: &PgPool,
+    id: uuid::Uuid,
+    new_status: &str,
+    resolution_note: Option<&str>,
+    resolved_by: Option<uuid::Uuid>,
+) -> Result<repo::ReconciliationDiscrepancyRow, BillingError> {
+    let new_status = new_status.trim().to_lowercase();
+    if !ALLOWED_DISCREPANCY_STATUSES.contains(&new_status.as_str()) {
+        return Err(BillingError::Validation(format!(
+            "status must be one of: {}",
+            ALLOWED_DISCREPANCY_STATUSES.join(", ")
+        )));
+    }
+    if new_status != "acknowledged" && new_status != "resolved" {
+        return Err(BillingError::Validation(
+            "PATCH only allows status=acknowledged or status=resolved".to_string(),
+        ));
+    }
+
+    let existing = repo::get_reconciliation_discrepancy(billing_db, id)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error fetching reconciliation discrepancy {}: {}",
+                id, e
+            );
+            BillingError::Database
+        })?
+        .ok_or(BillingError::DiscrepancyNotFound(id))?;
+
+    if existing.status == "resolved" && new_status != "resolved" {
+        return Err(BillingError::Validation(
+            "resolved discrepancies cannot transition to another status".to_string(),
+        ));
+    }
+    if !is_allowed_status_transition(&existing.status, &new_status) {
+        return Err(BillingError::Validation(format!(
+            "invalid status transition from '{}' to '{}'",
+            existing.status, new_status
+        )));
+    }
+
+    let note = resolution_note.map(str::trim).filter(|s| !s.is_empty());
+
+    repo::update_reconciliation_discrepancy(
+        billing_db,
+        repo::UpdateReconciliationDiscrepancyParams {
+            id,
+            status: &new_status,
+            resolution_note: note,
+            resolved_by,
+        },
+    )
+    .await
+    .map_err(|e| {
+        error!(
+            "Database error updating reconciliation discrepancy {}: {}",
+            id, e
+        );
+        BillingError::Database
+    })?
+    .ok_or(BillingError::DiscrepancyNotFound(id))
+}
+
+pub async fn delete_reconciliation_discrepancy(
+    billing_db: &PgPool,
+    id: uuid::Uuid,
+) -> Result<uuid::Uuid, BillingError> {
+    let deleted = repo::delete_reconciliation_discrepancy(billing_db, id)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error deleting reconciliation discrepancy {}: {}",
+                id, e
+            );
+            BillingError::Database
+        })?;
+    deleted.ok_or(BillingError::DiscrepancyNotFound(id))
+}
+
+const ALLOWED_BILL_ADJUSTMENT_TYPES: &[&str] = &["credit", "debit", "correction", "other"];
+
+/// Option A: ledger-only bill adjustment (does NOT change tenant_accounts.balance).
+pub async fn create_bill_adjustment(
+    billing_db: &PgPool,
+    bill_id: uuid::Uuid,
+    adjustment_type: &str,
+    amount: Decimal,
+    reason: &str,
+    operator_id: Option<uuid::Uuid>,
+) -> Result<repo::BillingAdjustmentRow, BillingError> {
+    let adjustment_type = adjustment_type.trim().to_lowercase();
+    if !ALLOWED_BILL_ADJUSTMENT_TYPES.contains(&adjustment_type.as_str()) {
+        return Err(BillingError::Validation(format!(
+            "adjustment_type must be one of: {}",
+            ALLOWED_BILL_ADJUSTMENT_TYPES.join(", ")
+        )));
+    }
+    if amount <= Decimal::ZERO {
+        return Err(BillingError::Validation(
+            "amount must be greater than zero".to_string(),
+        ));
+    }
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err(BillingError::Validation("reason is required".to_string()));
+    }
+
+    let bill = repo::get_bill(billing_db, bill_id)
+        .await
+        .map_err(|e| {
+            error!("Database error fetching bill {}: {}", bill_id, e);
+            BillingError::Database
+        })?
+        .ok_or(BillingError::BillNotFound(bill_id))?;
+
+    let id = repo::insert_billing_adjustment(
+        billing_db,
+        repo::InsertBillingAdjustmentParams {
+            bill_id: Some(bill_id),
+            tenant_id: bill.tenant_id,
+            adjustment_type: &adjustment_type,
+            amount,
+            reason,
+            reference_period_start: bill.period_start,
+            reference_period_end: bill.period_end,
+            status: "posted",
+            operator_id,
+        },
+    )
+    .await
+    .map_err(|e| {
+        error!("Database error inserting billing adjustment: {}", e);
+        BillingError::Database
+    })?;
+
+    repo::get_billing_adjustment(billing_db, id)
+        .await
+        .map_err(|e| {
+            error!("Database error loading billing adjustment {}: {}", id, e);
+            BillingError::Database
+        })?
+        .ok_or(BillingError::AdjustmentNotFound(id))
+}
+
+pub async fn list_bill_adjustments_for_bill(
+    billing_db: &PgPool,
+    bill_id: uuid::Uuid,
+) -> Result<Vec<repo::BillingAdjustmentRow>, BillingError> {
+    // Ensure bill exists
+    let _ = repo::get_bill(billing_db, bill_id)
+        .await
+        .map_err(|e| {
+            error!("Database error fetching bill {}: {}", bill_id, e);
+            BillingError::Database
+        })?
+        .ok_or(BillingError::BillNotFound(bill_id))?;
+
+    repo::list_billing_adjustments_for_bill(billing_db, bill_id)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error listing adjustments for bill {}: {}",
+                bill_id, e
+            );
+            BillingError::Database
+        })
+}
+
+pub async fn list_billing_adjustments(
+    billing_db: &PgPool,
+    bill_id: Option<uuid::Uuid>,
+    tenant_id: Option<uuid::Uuid>,
+    status: Option<String>,
+    page: u32,
+    page_size: u32,
+) -> Result<BillingAdjustmentListResponse, BillingError> {
+    validate_limit(page_size)?;
+    let page = page.max(1);
+    let status = status
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    if let Some(ref s) = status {
+        if s != "posted" && s != "void" {
+            return Err(BillingError::Validation(
+                "status must be posted or void".to_string(),
+            ));
+        }
+    }
+    let offset = page.saturating_sub(1).saturating_mul(page_size) as i64;
+    let params = repo::ListBillingAdjustmentsParams {
+        bill_id,
+        tenant_id,
+        status: status.as_deref(),
+        limit: page_size as i64,
+        offset,
+    };
+    let total = repo::count_billing_adjustments(billing_db, &params)
+        .await
+        .map_err(|e| {
+            error!("Database error counting billing adjustments: {}", e);
+            BillingError::Database
+        })?;
+    let items = repo::list_billing_adjustments(billing_db, params)
+        .await
+        .map_err(|e| {
+            error!("Database error listing billing adjustments: {}", e);
+            BillingError::Database
+        })?;
+    let total_pages = if total == 0 {
+        0
+    } else {
+        (total as f64 / page_size as f64).ceil() as u64
+    };
+    Ok(BillingAdjustmentListResponse {
+        items,
+        total,
+        page,
+        page_size,
+        total_pages,
+    })
+}
+
+pub async fn void_bill_adjustment(
+    billing_db: &PgPool,
+    adjustment_id: uuid::Uuid,
+) -> Result<repo::BillingAdjustmentRow, BillingError> {
+    let existing = repo::get_billing_adjustment(billing_db, adjustment_id)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error fetching billing adjustment {}: {}",
+                adjustment_id, e
+            );
+            BillingError::Database
+        })?
+        .ok_or(BillingError::AdjustmentNotFound(adjustment_id))?;
+
+    if existing.status == "void" {
+        return Ok(existing);
+    }
+
+    repo::void_billing_adjustment(billing_db, adjustment_id)
+        .await
+        .map_err(|e| {
+            error!(
+                "Database error voiding billing adjustment {}: {}",
+                adjustment_id, e
+            );
+            BillingError::Database
+        })?
+        .ok_or(BillingError::AdjustmentNotFound(adjustment_id))
+}
+
+pub async fn open_discrepancy_warning_for_period(
+    billing_db: &PgPool,
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+) -> Result<Option<String>, BillingError> {
+    let from = period_start.date_naive();
+    let to = period_end.date_naive();
+    let count = repo::count_open_discrepancies_in_range(billing_db, from, to)
+        .await
+        .map_err(|e| {
+            error!("Database error counting open discrepancies: {}", e);
+            BillingError::Database
+        })?;
+    if count > 0 {
+        Ok(Some(format!(
+            "{count} open usage-reconciliation discrepancies (flagged/acknowledged) overlap period {from}..{to}"
+        )))
+    } else {
+        Ok(None)
+    }
+}

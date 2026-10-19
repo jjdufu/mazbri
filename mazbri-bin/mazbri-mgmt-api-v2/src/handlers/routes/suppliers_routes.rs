@@ -1,0 +1,76 @@
+use super::super::state::AppState;
+use super::super::{route_management_handlers, supplier_handlers, upstream_onboarding_handlers};
+use axum::{
+    Router,
+    routing::{get, post, put},
+};
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/suppliers",
+            get(supplier_handlers::list_suppliers).post(supplier_handlers::create_supplier),
+        )
+        .route(
+            "/suppliers/{id}",
+            get(supplier_handlers::get_supplier)
+                .put(supplier_handlers::update_supplier)
+                .delete(supplier_handlers::delete_supplier),
+        )
+        .route(
+            "/channels",
+            get(route_management_handlers::list_channels)
+                .post(route_management_handlers::create_channel),
+        )
+        .route(
+            "/channels/next-code",
+            get(route_management_handlers::get_next_channel_code),
+        )
+        .route(
+            "/channels/{id}",
+            get(route_management_handlers::get_channel)
+                .put(route_management_handlers::update_channel)
+                .delete(route_management_handlers::delete_channel),
+        )
+        .route(
+            "/route-rules",
+            get(route_management_handlers::list_route_rules)
+                .post(route_management_handlers::create_route_rule),
+        )
+        .route(
+            "/route-rules/{id}",
+            get(route_management_handlers::get_route_rule)
+                .put(route_management_handlers::update_route_rule)
+                .delete(route_management_handlers::delete_route_rule),
+        )
+        .route(
+            "/route-rules/{id}/emergency-switch",
+            post(route_management_handlers::emergency_switch_route),
+        )
+        .route(
+            "/route-rules/{route_rule_id}/bindings",
+            get(route_management_handlers::list_route_bindings)
+                .post(route_management_handlers::create_route_binding),
+        )
+        .route(
+            "/route-channel-bindings/{id}",
+            put(route_management_handlers::update_route_binding)
+                .delete(route_management_handlers::delete_route_binding),
+        )
+        .route(
+            "/gateway/route-version",
+            get(route_management_handlers::get_gateway_route_version),
+        )
+        .route(
+            "/upstreams/onboarding",
+            post(upstream_onboarding_handlers::onboard_upstream),
+        )
+        .route(
+            "/upstreams/onboarding/dry-run",
+            post(upstream_onboarding_handlers::onboard_upstream_dry_run),
+        )
+        .route(
+            "/suppliers/{id}/validate-config",
+            post(upstream_onboarding_handlers::validate_supplier_config),
+        )
+}

@@ -1,0 +1,65 @@
+# Rust / Cargo
+target/
+.cargo-target/
+**/*.rs.bk
+*.pdb
+
+# Package Cache
+.package-cache
+/registry/
+
+# IDEs and Editors
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.claude/worktrees/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# Coverage and Profiles
+/.nyc_output
+coverage/
+*.profraw
+*.profdata
+
+# Web Caches and Dependencies
+node_modules/
+.pnpm-store/
+dist/
+
+# Web App (mazbri-web) specific
+./mazbri-web/node_modules
+./mazbri-web/pnpm-lock.yaml
+mazbri-web/coverage/
+.auto-import.json
+mazbri-web/src/types/import/*
+!mazbri-web/src/types/import/
+!mazbri-web/src/types/import/*.d.ts
+
+# Project / Runtime Specific
+*.local
+certs/
+run/
+.antigravitycli/
+
+# Vector runtime data (checkpoints / disk buffers; do not commit)
+vector/data/
+**/vector/data/
+.target-build/

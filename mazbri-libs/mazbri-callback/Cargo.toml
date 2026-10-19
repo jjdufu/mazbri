@@ -1,0 +1,34 @@
+[package]
+name = "mazbri-callback"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+mazbri-service = { workspace = true }
+
+tokio = { workspace = true }
+
+sqlx = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+chrono = { workspace = true }
+
+tracing = { workspace = true }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+uuid = { workspace = true }
+
+hex = "0.4"
+
+sha2 = { workspace = true }
+hmac = "0.12"
+
+reqwest = { workspace = true }

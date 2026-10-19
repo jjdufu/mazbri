@@ -1,0 +1,142 @@
+import request from "@/utils/http";
+import type {
+  AdminUser,
+  LoginResponse,
+  FirstLoginChangePasswordRequest,
+  MfaSetupResponse,
+  MfaVerifyRequest,
+  MfaStatus,
+} from "@/types/api";
+import { API_BASE_PATH, API_PATHS } from "@/config/api";
+const AUTH_PATH = `${API_BASE_PATH}${API_PATHS.AUTH}`;
+export { refreshAccessToken as refreshAdminSession } from "@/utils/http";
+export interface LoginParams {
+  username: string;
+  password: string;
+}
+export function fetchLogin(params: LoginParams, signal?: AbortSignal) {
+  return request.post<LoginResponse>({
+    url: `${AUTH_PATH}/login`,
+    params,
+    signal,
+  });
+}
+export const login = fetchLogin;
+export function fetchGetUserInfo(signal?: AbortSignal): Promise<AdminUser> {
+  return request.get<AdminUser>({
+    url: `${AUTH_PATH}/me`,
+    signal,
+  });
+}
+export const getCurrentUser = fetchGetUserInfo;
+export function firstLoginChangePassword(
+  data: FirstLoginChangePasswordRequest,
+  tempToken?: string,
+  signal?: AbortSignal,
+): Promise<LoginResponse> {
+  return request.post<LoginResponse>({
+    url: `${AUTH_PATH}/first-login-change-password`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+    headers: tempToken ? { Authorization: `Bearer ${tempToken}` } : undefined,
+  });
+}
+export function changePassword(
+  data: {
+    current_password: string;
+    new_password: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<void>({
+    url: `${AUTH_PATH}/change-password`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+  });
+}
+export function logout(
+  _data?: { refresh_token?: string },
+  signal?: AbortSignal,
+) {
+
+  return request.post<void>({
+    url: `${AUTH_PATH}/logout`,
+    data: {},
+    signal,
+    showErrorMessage: false,
+  });
+}
+export function getMfaSetup(tempToken: string, signal?: AbortSignal) {
+  return request.post<MfaSetupResponse>({
+    url: `${AUTH_PATH}/mfa/setup`,
+    params: { temp_token: tempToken },
+    signal,
+  });
+}
+export function enableMfa(
+  data: {
+    totp_code: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<void>({
+    url: `${AUTH_PATH}/mfa/enable`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+  });
+}
+export function disableMfa(
+  data: {
+    verification_code: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<void>({
+    url: `${AUTH_PATH}/mfa/disable`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+  });
+}
+export function verifyMfa(data: MfaVerifyRequest, signal?: AbortSignal) {
+  return request.post<LoginResponse>({
+    url: `${AUTH_PATH}/mfa/verify`,
+    params: data,
+    signal,
+  });
+}
+export function getMfaStatus(signal?: AbortSignal) {
+  return request.get<MfaStatus>({
+    url: `${AUTH_PATH}/mfa/status`,
+    signal,
+  });
+}
+export function mfaRequiredSetup(
+  data: {
+    temp_token: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<MfaSetupResponse>({
+    url: `${AUTH_PATH}/mfa/required-setup`,
+    params: data,
+    signal,
+  });
+}
+export function mfaRequiredEnable(
+  data: {
+    temp_token: string;
+    totp_code: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<LoginResponse>({
+    url: `${AUTH_PATH}/mfa/required-enable`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+  });
+}

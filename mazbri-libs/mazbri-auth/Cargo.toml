@@ -1,0 +1,43 @@
+[package]
+name = "mazbri-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+
+tokio = { workspace = true }
+axum = { workspace = true }
+http = { workspace = true }
+async-trait = { workspace = true }
+
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+tracing = { workspace = true }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+argon2 = { workspace = true }
+jsonwebtoken = { workspace = true }
+
+rand = { workspace = true }
+
+subtle = "2.6"
+
+prometheus = { workspace = true }
+
+moka = { workspace = true, features = ["future"] }
+
+tokio-util = { workspace = true }
+
+dashmap = { workspace = true }

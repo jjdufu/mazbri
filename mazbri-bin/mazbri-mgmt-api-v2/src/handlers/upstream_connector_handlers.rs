@@ -1,0 +1,338 @@
+//! HTTP handlers for Upstream Connector Engine.
+
+use crate::audit::extract_client_ip;
+use crate::error::ApiError;
+use crate::handlers::AppState;
+use crate::middleware::auth::{
+    AdminClaims, extract_user_id, is_admin, is_operator_or_above, is_read_only,
+};
+use crate::response::ApiResponse;
+use crate::services::upstream_connector as svc;
+use axum::{
+    Extension, Json,
+    extract::{ConnectInfo, Path, Query, State},
+    http::HeaderMap,
+    response::{IntoResponse, Response},
+};
+use serde::Deserialize;
+use uuid::Uuid;
+
+fn require_operator(claims: &AdminClaims) -> Result<(), ApiError> {
+    if !is_operator_or_above(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+
+fn require_viewer_or_above(claims: &AdminClaims) -> Result<(), ApiError> {
+    // all authenticated admin roles can view
+    let _ = claims;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListDraftsQuery {
+    pub status: Option<String>,
+    pub q: Option<String>,
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+}
+
+pub async fn create_draft(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::CreateDraftRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::create_draft(&state.db, payload, &claims.sub).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn list_drafts(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Query(query): Query<ListDraftsQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::list_drafts(
+        &state.db,
+        query.status.as_deref(),
+        query.q.as_deref(),
+        query.page,
+        query.page_size,
+    )
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn get_draft(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::get_draft(&state.db, id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn update_draft(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<svc::UpdateDraftRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::update_draft(&state.db, id, payload).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn delete_draft(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    svc::delete_draft(&state.db, id).await?;
+    Ok(ApiResponse::ok(serde_json::json!({"deleted": true})))
+}
+
+pub async fn validate_draft(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::validate_draft(&state.db, id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn transform_preview(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::transform_preview(&state.db, id, payload).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn create_run(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    if is_read_only(&claims) {
+        return Err(ApiError::Forbidden);
+    }
+    if let Err(wait) = state.connector_run_limiter.try_acquire() {
+        return Err(ApiError::validation(format!(
+            "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
+            wait.as_secs().max(1)
+        )));
+    }
+    let data = svc::run_draft(
+        &state.db,
+        &state.audit,
+        id,
+        payload,
+        &claims.sub,
+        extract_user_id(&claims)?,
+        extract_client_ip(&headers, Some(addr)),
+        state.config.connector_probe.default_timeout_ms,
+        state.config.connector_probe.max_body_bytes,
+    )
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn list_runs(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::list_runs(&state.db, id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn get_run(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(run_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::get_run(&state.db, run_id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn publish_draft(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<svc::PublishRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::publish_draft(
+        &state.db,
+        &state.audit,
+        id,
+        payload,
+        &claims.sub,
+        extract_user_id(&claims)?,
+        is_admin(&claims),
+        extract_client_ip(&headers, Some(addr)),
+    )
+    .await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn import_curl(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::CurlImportRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::import_curl(&state.db, payload, &claims.sub).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn import_postman(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::PostmanImportRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::import_postman(&state.db, payload, &claims.sub).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn import_openapi(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::OpenApiImportRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::import_openapi(&state.db, payload, &claims.sub).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn draft_from_supplier(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(supplier_id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::draft_from_supplier(&state.db, supplier_id, &claims.sub).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn export_postman(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::export_postman(&state.db, id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn list_versions(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(supplier_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::list_versions(&state.db, supplier_id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn version_diff(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path((supplier_id, vid)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::version_diff(&state.db, supplier_id, vid).await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn rollback(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Path(supplier_id): Path<Uuid>,
+    Json(payload): Json<svc::RollbackRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !is_admin(&claims) {
+        return Err(ApiError::Forbidden);
+    }
+    let data = svc::rollback(
+        &state.db,
+        &state.audit,
+        supplier_id,
+        payload,
+        &claims.sub,
+        extract_user_id(&claims)?,
+        extract_client_ip(&headers, Some(addr)),
+    )
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn live_run(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Path(supplier_id): Path<Uuid>,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&claims)?;
+    if let Err(wait) = state.connector_run_limiter.try_acquire() {
+        return Err(ApiError::validation(format!(
+            "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
+            wait.as_secs().max(1)
+        )));
+    }
+    let data = svc::live_run(
+        &state.db,
+        &state.audit,
+        supplier_id,
+        payload,
+        &claims.sub,
+        extract_user_id(&claims)?,
+        extract_client_ip(&headers, Some(addr)),
+        state.config.connector_probe.default_timeout_ms,
+        state.config.connector_probe.max_body_bytes,
+    )
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+pub async fn create_artifact(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::CreateArtifactRequest>,
+) -> Result<Response, ApiError> {
+    require_operator(&claims)?;
+    let data = svc::create_artifact(&state.db, payload).await?;
+    Ok(crate::response::created(data))
+}
+
+pub async fn get_artifact(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_viewer_or_above(&claims)?;
+    let data = svc::get_artifact(&state.db, id).await?;
+    Ok(ApiResponse::ok(data))
+}

@@ -1,0 +1,22 @@
+
+
+
+
+
+.el-input.expand-on-focus-input {
+  --eof-compact-width: 120px;
+  --eof-expand-width: 360px;
+
+  width: var(--eof-compact-width) !important;
+  max-width: 100%;
+  transition: width 0.18s ease;
+  position: relative;
+  z-index: 1;
+  vertical-align: middle;
+  box-sizing: border-box;
+
+  &:focus-within {
+    width: min(var(--eof-expand-width), 100%) !important;
+    z-index: 40;
+  }
+}

@@ -1,0 +1,39 @@
+[package]
+name = "mazbri-cache-service"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Mazbri Team"]
+license = "MIT"
+
+[[bin]]
+name = "mazbri-cache-service"
+path = "src/main.rs"
+
+[dependencies]
+mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-registry = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-cache = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-rpc = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-tls = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
+
+tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
+tokio-serde = {version = "0.9", features = ["bincode", "json"]}
+futures = "0.3"
+
+tokio = {version = "1.35", features = ["full"]}
+
+sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
+
+serde = {version = "1.0", features = ["derive"]}
+serde_json = {version = "1.0"}
+
+config = {version = "0.15"}
+dotenvy = {version = "0.15"}
+clap = {version = "4", features = ["derive"]}
+
+tracing = {version = "0.1"}
+
+anyhow = {version = "1.0"}

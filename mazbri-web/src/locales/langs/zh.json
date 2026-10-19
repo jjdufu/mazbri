@@ -1,0 +1,3950 @@
+{
+  "dashboard": {
+    "topTenantsChart": {
+      "title": "请求数最多的租户",
+      "noData": "暂无数据",
+      "requestCount": "请求数"
+    }
+  },
+  "api": {
+    "mfa": {
+      "notSetup": "MFA 未设置，请先完成绑定。",
+      "alreadyEnabled": "MFA 已启用，请输入验证码。",
+      "notRequired": "该用户无需 MFA。",
+      "requiredSetupNeeded": "需要先完成 MFA 设置。",
+      "alreadyEnabledDisable": "MFA 已启用。请先禁用以重新配置。",
+      "serverNotConfigured": "服务器未正确配置 MFA",
+      "failedSetup": "设置 MFA 失败",
+      "failedStore": "存储 MFA 配置失败",
+      "alreadyEnabledSimple": "MFA 已启用",
+      "failedVerify": "验证 MFA 代码失败",
+      "invalidTotp": "无效的 TOTP 代码",
+      "failedEnable": "启用 MFA 失败",
+      "enabledSuccess": "MFA 启用成功",
+      "notEnabled": "MFA 未启用",
+      "requiredCannotDisable": "管理员要求启用 MFA，无法禁用。",
+      "invalidTotpOrPassword": "无效的 TOTP 代码或密码",
+      "failedDisable": "禁用 MFA 失败",
+      "disabledSuccess": "MFA 禁用成功",
+      "invalidTempToken": "无效或过期的临时 Token",
+      "userNotFound": "用户不存在",
+      "notEnabledForUser": "此用户未启用 MFA",
+      "locked": "由于失败次数过多，MFA 已锁定。请稍后再试。",
+      "invalidCode": "无效的 MFA 代码",
+      "failedGenerateToken": "生成认证令牌失败",
+      "failedBackupCodes": "生成备用代码失败",
+      "failedUpdateBackup": "更新备用代码失败",
+      "databaseError": "数据库错误",
+      "internalError": "内部服务器错误"
+    },
+    "auth": {
+      "missingHeader": "缺少 authorization 请求头",
+      "invalidKey": "无效的 API 密钥",
+      "serviceError": "认证服务错误",
+      "serviceUnavailable": "认证服务不可用",
+      "tenantNotFound": "未找到租户上下文"
+    },
+    "rateLimit": {
+      "denied": "请求被限流拒绝",
+      "exceeded": "请求频率超限，{seconds} 秒后重试。"
+    }
+  },
+  "httpMsg": {
+    "unauthorized": "未授权访问，请重新登录",
+    "forbidden": "禁止访问该资源",
+    "notFound": "请求的资源不存在",
+    "methodNotAllowed": "请求方法不允许",
+    "requestTimeout": "请求超时，请稍后重试",
+    "internalServerError": "服务器内部错误，请稍后重试",
+    "badGateway": "网关错误，请稍后重试",
+    "serviceUnavailable": "服务暂时不可用，请稍后重试",
+    "gatewayTimeout": "网关超时，请稍后重试",
+    "requestCancelled": "请求已取消",
+    "networkError": "网络连接异常，请检查网络连接",
+    "requestFailed": "请求失败",
+    "requestConfigError": "请求配置错误"
+  },
+  "errorPolicy": {
+    "auth": "认证失败",
+    "permissionDenied": "权限不足",
+    "notFound": "请求的资源不存在",
+    "validation": "请求参数校验失败",
+    "insufficientBalance": "余额不足，请前往充值",
+    "rateLimited": "请求频率超限，请稍后重试",
+    "quotaExceeded": "配额已用尽，请调整后重试",
+    "billing": "计费状态异常，请检查账单设置",
+    "certificate": "证书处理失败，请稍后重试",
+    "network": "网络连接异常，请稍后重试",
+    "serviceUnavailable": "服务暂时不可用，请稍后重试",
+    "config": "配置处理失败，请检查输入后重试",
+    "internal": "内部服务错误，请稍后重试",
+    "operationFailed": "操作失败，请稍后重试"
+  },
+  "topBar": {
+    "search": {
+      "title": "搜索"
+    },
+    "user": {
+      "userCenter": "个人中心",
+      "docs": "使用文档",
+      "github": "代码仓库",
+      "lockScreen": "锁定屏幕",
+      "logout": "退出登录"
+    },
+    "guide": {
+      "title": "点击这里查看",
+      "theme": "主题风格",
+      "menu": "开启顶栏菜单",
+      "description": "等更多配置"
+    }
+  },
+  "common": {
+    "tips": "提示",
+    "warning": "警告",
+    "error": "错误",
+    "errors": {
+      "componentNotFound": "组件未找到：{componentPath}"
+    },
+    "languages": {
+      "zh": "简体中文",
+      "en": "English"
+    },
+    "cancel": "取消",
+    "confirm": "确定",
+    "actions": {
+      "add": "新建",
+      "create": "创建",
+      "modify": "修改",
+      "save": "保存",
+      "close": "关闭",
+      "import": "导入",
+      "export": "导出",
+      "exportAll": "导出全部",
+      "exportPage": "导出本页",
+      "exportSelected": "导出选中 ({count})",
+      "delete": "删除",
+      "copy": "复制",
+      "renew": "续期",
+      "details": "详情",
+      "next": "下一步",
+      "prev": "上一步",
+      "confirm": "确定",
+      "refresh": "刷新"
+    },
+    "searchPopover": {
+      "tooltip": "搜索与筛选",
+      "collapse": "收起搜索"
+    },
+    "datePickerPopover": {
+      "tooltip": "日期筛选",
+      "collapse": "收起日期"
+    },
+    "datePicker": {
+      "shortcuts": {
+        "last1Hour": "近1小时",
+        "last6Hours": "近6小时",
+        "last24Hours": "近24小时",
+        "last7Days": "近7天",
+        "last30Days": "近30天"
+      }
+    },
+    "tableDeleteDropdown": {
+      "label": "删除",
+      "all": "{label}全部",
+      "selected": "{label}选中 ({count})"
+    },
+    "consoleBanner": {
+      "welcome": "欢迎使用 Mazbri 管理平台！",
+      "subtitle": "API 网关运营控制台"
+    },
+    "passwordStrength": {
+      "weak": "弱",
+      "medium": "中",
+      "strong": "强"
+    },
+    "mfaDialog": {
+      "title": "MFA 二次确认",
+      "placeholder": "请输入 MFA 动态口令",
+      "confirm": "确认",
+      "cancel": "取消",
+      "inputErrorMessage": "请输入 6-8 位数字口令"
+    },
+    "fields": {
+      "status": "状态",
+      "operations": "操作",
+      "name": "名称",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间",
+      "search": "搜索"
+    },
+    "pagination": {
+      "jumpTo": "跳转到页码",
+      "goLast": "前往最后一页",
+      "totalCount": "共 {n} 条",
+      "nav": "分页导航",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "units": {
+      "days": "天",
+      "seconds": "秒"
+    },
+    "currencies": {
+      "cny": "元"
+    },
+    "defaults": {
+      "oneYear": "默认 365 天"
+    },
+    "status": {
+      "neverExpires": "永不过期",
+      "enabled": "启用",
+      "disabled": "禁用",
+      "active": "启用",
+      "suspended": "停用",
+      "pending": "待审核"
+    },
+    "feedback": {
+      "noMatchingData": "未找到匹配的数据",
+      "noData": "暂无数据",
+      "unknownError": "未知错误",
+      "saveSuccess": "保存成功",
+      "createSuccess": "创建成功",
+      "deleteSuccess": "删除成功",
+      "exportSuccess": "导出成功",
+      "copyFailed": "复制失败",
+      "copiedToClipboard": "已复制到剪贴板",
+      "renewSuccess": "续期成功",
+      "revokeSuccess": "吊销成功",
+      "authorizationGranted": "授权成功",
+      "authorizationRevoked": "已撤销授权",
+      "rechargeSuccess": "充值成功",
+      "refundSuccess": "退款成功",
+      "mfaReset": "MFA 已重置",
+      "resetPasswordSuccess": "密码重置成功",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "autoRenewEnabled": "已启用自动续期",
+      "autoRenewDisabled": "已禁用自动续期",
+      "copySuccess": "已复制到剪贴板"
+    },
+    "table": {
+      "fetchFailed": "获取表格数据失败"
+    },
+    "storage": {
+      "localDataCorrupted": "系统检测到本地数据异常，请重新登录系统恢复使用！"
+    },
+    "statusLabels": {
+      "active": "启用",
+      "enabled": "启用",
+      "inactive": "停用",
+      "disabled": "禁用",
+      "unconfigured": "未配置",
+      "suspended": "停用",
+      "pending": "待审核",
+      "pendingImport": "待导入",
+      "imported": "已导入",
+      "deleted": "已删除",
+      "error": "错误",
+      "failed": "失败",
+      "success": "成功",
+      "valid": "有效",
+      "expiringSoon": "即将过期",
+      "expired": "已过期",
+      "revoked": "已吊销"
+    },
+    "roleLabels": {
+      "admin": "管理员",
+      "operator": "操作员",
+      "finance": "财务",
+      "viewer": "只读用户"
+    },
+    "conflict": {
+      "title": "配置冲突",
+      "updatedByOthers": "{scopeLabel}已被他人更新，请刷新后重试。",
+      "recheckLatest": "{scopeLabel}已被他人更新，请基于最新配置重试。",
+      "latestUpdatedAt": "最新更新时间：{updatedAt}",
+      "yourSubmission": "你的提交：{value}",
+      "latestValue": "最新值：{value}",
+      "rateLimitScope": "客户套餐 · 限流",
+      "rateLimitEnabled": "启用套餐限流",
+      "rateLimitDailyLimit": "日调用上限（次）",
+      "rateLimitMaxConcurrent": "套餐速率 QPS（次/秒）",
+      "rateLimitMaxBandwidthMbps": "带宽上限（Mbps，0=不限）",
+      "rateLimitBurstSize": "突发容量",
+      "rateLimitClientIpQps": "单客户端 IP 速率",
+      "rateLimitClientIpBurst": "单 IP 突发",
+      "rateLimitWindowDurationSecs": "窗口时长（秒；令牌桶按秒补充）",
+      "rateLimitApiOverride": "接口速率覆盖",
+      "cacheScope": "全局缓存策略",
+      "cacheDefaultTtlSecs": "默认 TTL（秒）",
+      "cacheMaxCacheSizeBytes": "最大缓存容量（字节）",
+      "cacheTenantIsolated": "租户隔离",
+      "cacheWarmupEnabled": "启用预热",
+      "cacheApiTtlOverride": "API TTL 覆盖",
+      "cacheWarmupKeys": "预热 Key 列表",
+      "productScope": "产品授权配置",
+      "productBillingMode": "计费模式",
+      "productUnitPrice": "单价",
+      "productCbProFallback": "CBPRO",
+      "productCodecEnabled": "协议编码开关",
+      "productRequestCodec": "请求编码",
+      "productResponseCodec": "响应编码",
+      "productCodecVersion": "协议版本",
+      "productCbProPolicy": "CBPRO"
+    },
+    "logOutTips": "您是否要退出登录?",
+    "search": "搜索",
+    "reset": "重置",
+    "time": "时间",
+    "user": "用户",
+    "timeRange": "时间范围",
+    "to": "至",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "lastHour": "最近1小时",
+    "last24Hours": "最近24小时",
+    "last7Days": "最近7天",
+    "last30Days": "最近30天",
+    "importDialog": {
+      "dragToUpload": "拖拽 {type} 文件到此处，或点击上传",
+      "fileTip": "仅 .{ext}，≤{size}",
+      "newItems": "新增: {count} 条",
+      "duplicateItems": "重复: {count} 条 (将被跳过)",
+      "invalidItems": "无效: {count} 条 (格式错误)",
+      "willBeAdded": "这些数据将被添加",
+      "alreadyExists": "这些数据已存在",
+      "moreItems": "... 还有 {count} 条",
+      "previewTitle": "将添加的数据 (前 {count} 条)",
+      "back": "返回",
+      "nextStep": "下一步",
+      "confirmImport": "确认导入"
+    },
+    "filePicker": {
+      "defaultTitle": "点击或拖拽选择文件",
+      "defaultHint": "拖拽文件到此处，或点击选择",
+      "choose": "选择文件",
+      "change": "重新选择",
+      "selected": "已选择",
+      "selectedCount": "已选择 {count} 个文件",
+      "selectedHint": "已选择文件，点击或拖拽可重新选择。",
+      "selectedSize": "文件大小：{size}",
+      "invalidType": "文件类型不符合要求",
+      "fileTooLarge": "文件大小超过限制（最大 {size}）",
+      "remove": "移除"
+    },
+    "save": "保存",
+    "saveSuccess": "已保存"
+  },
+  "config": {
+    "globalComponents": {
+      "screenLock": "锁屏",
+      "fireworksEffect": "礼花效果",
+      "watermarkEffect": "水印效果"
+    },
+    "headerBar": {
+      "menuButton": "控制左侧菜单的展开/收起按钮",
+      "refreshButton": "页面刷新按钮",
+      "fastEnter": "快速入口功能，提供常用应用和链接的快速访问",
+      "breadcrumb": "面包屑导航，显示当前页面路径",
+      "fullscreen": "全屏切换功能",
+      "language": "多语言切换功能",
+      "themeToggle": "主题切换功能（明暗主题）"
+    }
+  },
+  "operations": {
+    "monitoring": {
+      "ranges": {
+        "oneHour": "1小时",
+        "sixHours": "6小时",
+        "oneDay": "24小时",
+        "sevenDays": "7天",
+        "thirtyDays": "30天"
+      },
+      "browse": {
+        "cappedTitle": "结果过多，已限制翻页深度",
+        "cappedDesc": "当前匹配共 {total} 条，页面可完整翻阅前 {limit} 条。可缩小时间范围、增加筛选或用流水号精确查找；导出可拉取筛选结果。"
+      },
+      "mode": {
+        "latest": "截至 {asOf} 最近 {size} 条最新数据",
+        "latestPrefix": "截至 {asOf} 最近 ",
+        "latestSuffix": " 条最新数据",
+        "ranged": "时间范围内检索（条件均为 AND）",
+        "selective": "流水号精确查询（全历史）",
+        "unknownTime": "—"
+      },
+      "sections": {
+        "qps": "QPS",
+        "p95Latency": "P95 延迟",
+        "errorRate5xx": "5xx 错误率",
+        "targets": "采集目标"
+      },
+      "columns": {
+        "service": "服务",
+        "key": "标识",
+        "port": "端口",
+        "endpoint": "采集地址",
+        "serialNo": "流水号",
+        "supplier": "供应商",
+        "tenantName": "租户",
+        "channelName": "通道",
+        "channelNameUpstream": "上游/通道",
+        "responseTime": "时间戳",
+        "requestIp": "请求 IP",
+        "customerLatency": "耗时",
+        "upstreamLatency": "耗时",
+        "statusCode": "返回码",
+        "responseResult": "响应"
+      },
+      "allServices": "全部服务",
+      "metrics": {
+        "currentQps": "当前 QPS",
+        "errorRate5xx": "5xx 错误率",
+        "p95Latency": "P95 延迟",
+        "p99Latency": "P99 延迟",
+        "activeConnections": "活跃连接",
+        "proxyConnections": "代理连接",
+        "rateLimitRejections": "限流拒绝",
+        "billingQueue": "计费队列"
+      },
+      "units": {
+        "reqPerSec": "req/s",
+        "percent": "%",
+        "milliseconds": "ms",
+        "connections": "conn",
+        "opsPerSec": "ops/s",
+        "jobs": "jobs"
+      },
+      "noData": "暂无数据",
+      "customerTitle": "客户监控",
+      "upstreamTitle": "上游监控",
+      "tooltip": {
+        "timeRange": "时间范围筛选",
+        "collapse": "收起时间"
+      },
+      "actions": {
+        "export": "导出",
+        "exportPage": "导出本页",
+        "exportSelected": "导出所选 ({count})",
+        "exportFiltered": "导出筛选条目",
+        "downloadJson": "下载 JSON"
+      },
+      "detail": {
+        "title": "采集日志详情",
+        "summaryTitle": "调用概要",
+        "rawTitle": "原始详情",
+        "empty": "-",
+        "labels": {
+          "serialNo": "流水号",
+          "party": "租户 / 供应商",
+          "channelName": "通道名称",
+          "responseTime": "响应时间",
+          "latency": "时延",
+          "statusCode": "返回码",
+          "requestIp": "请求 IP",
+          "responseResult": "响应结果"
+        }
+      },
+      "placeholders": {
+        "customer": "流水号 / 租户 / 通道 / IP / 返回码",
+        "upstream": "流水号 / 供应商 / 通道 / 返回码"
+      },
+      "empty": {
+        "noMatch": "未找到符合筛选条件的调用记录",
+        "noMatchLatest": "未在最近 {size} 条调用中找到匹配，可添加时间范围后重试",
+        "noData": "暂无调用记录"
+      },
+      "messages": {
+        "noExport": "没有可导出的调用记录",
+        "exportFailed": "导出调用记录失败"
+      }
+    }
+  },
+  "setting": {
+    "menuType": {
+      "title": "菜单布局",
+      "list": [
+        "垂直",
+        "水平",
+        "混合",
+        "双列"
+      ]
+    },
+    "theme": {
+      "title": "主题风格",
+      "list": [
+        "浅色",
+        "深色",
+        "系统"
+      ]
+    },
+    "menu": {
+      "title": "菜单风格"
+    },
+    "color": {
+      "title": "系统主题色"
+    },
+    "box": {
+      "title": "盒子样式",
+      "list": [
+        "边框",
+        "阴影"
+      ]
+    },
+    "container": {
+      "title": "容器宽度",
+      "list": [
+        "铺满",
+        "定宽"
+      ]
+    },
+    "basics": {
+      "title": "基础配置",
+      "list": {
+        "multiTab": "开启多标签栏",
+        "accordion": "侧边栏开启手风琴模式",
+        "collapseSidebar": "显示折叠侧边栏按钮",
+        "fastEnter": "显示快速入口",
+        "reloadPage": "显示重载页面按钮",
+        "breadcrumb": "显示全局面包屑导航",
+        "language": "显示多语言选择",
+        "progressBar": "显示顶部进度条",
+        "weakMode": "色弱模式",
+        "watermark": "全局水印",
+        "menuWidth": "菜单宽度（像素）",
+        "tabStyle": "标签页风格",
+        "pageTransition": "页面切换动画",
+        "borderRadius": "自定义圆角（rem）"
+      }
+    },
+    "tabStyle": {
+      "default": "默认",
+      "card": "卡片",
+      "google": "谷歌"
+    },
+    "transition": {
+      "list": {
+        "none": "无动画",
+        "fade": "淡入淡出",
+        "slideLeft": "左侧滑入",
+        "slideBottom": "下方滑入",
+        "slideTop": "上方滑入"
+      }
+    },
+    "actions": {
+      "resetConfig": "重置配置",
+      "copyConfig": "复制配置",
+      "copySuccess": "配置已复制到剪贴板。",
+      "copyFailed": "复制失败，请重试",
+      "resetFailed": "重置失败，请刷新页面后重试"
+    }
+  },
+  "notice": {
+    "title": "通知",
+    "btnRead": "标为已读",
+    "bar": [
+      "通知",
+      "消息",
+      "代办"
+    ],
+    "text": [
+      "暂无"
+    ],
+    "viewAll": "查看全部"
+  },
+  "chat": {
+    "botName": "AI 助手",
+    "online": "在线",
+    "offline": "离线",
+    "inputPlaceholder": "输入消息",
+    "send": "发送"
+  },
+  "watermark": {
+    "title": "水印"
+  },
+  "analytics": {
+    "metrics": {
+      "todayRequests": "今日请求",
+      "weekRequests": "本周请求",
+      "totalRequests": "总请求",
+      "activeTenants": "活跃租户"
+    },
+    "requestTrendTitle": "请求趋势",
+    "topEndpointsTitle": "端点排行",
+    "requestCountAxis": "请求数",
+    "noData": "暂无数据"
+  },
+  "worktab": {
+    "btn": {
+      "refresh": "刷新",
+      "fixed": "固定",
+      "unfixed": "取消固定",
+      "closeLeft": "关闭左侧",
+      "closeRight": "关闭右侧",
+      "closeOther": "关闭其他",
+      "closeAll": "关闭全部"
+    }
+  },
+  "login": {
+    "leftView": {
+      "title": "Mazbri API 网关管理平台",
+      "subTitle": "安全、高效、可靠的 API 管理解决方案"
+    },
+    "title": "欢迎回来",
+    "subTitle": "输入您的账号和密码登录",
+    "roles": {
+      "admin": "管理员",
+      "operator": "操作员",
+      "finance": "财务",
+      "viewer": "只读用户"
+    },
+    "placeholder": {
+      "username": "请输入账号",
+      "password": "请输入密码",
+      "slider": "请拖动滑块完成验证"
+    },
+    "sliderText": "按住滑块拖动",
+    "sliderSuccessText": "验证成功",
+    "rememberPwd": "记住密码",
+    "forgetPwd": "忘记密码",
+    "btnText": "登录",
+    "noAccount": "还没有账号？",
+    "register": "注册",
+    "success": {
+      "title": "登录成功",
+      "message": "欢迎回来",
+      "messageWithUser": "欢迎回来，{username}！"
+    },
+    "error": {
+      "unexpected": "登录失败，请稍后重试"
+    },
+    "mfa": {
+      "title": "两步验证",
+      "subTitle": "请输入验证器中的验证码",
+      "placeholder": "请输入验证码",
+      "invalidCode": "验证码格式不正确",
+      "btnText": "验证",
+      "backToLogin": "返回登录"
+    },
+    "mfaSetup": {
+      "title": "设置两步验证",
+      "subTitle": "请用验证器扫描二维码完成 MFA 设置",
+      "qrPlaceholder": "使用验证器应用扫描二维码",
+      "secretLabel": "您的密钥（仅显示一次）：",
+      "secretPlaceholder": "您的密钥（仅显示一次)",
+      "codePlaceholder": "请输入验证码",
+      "codeHint": "输入 {digits} 位验证码",
+      "backupCodesLabel": "备用码（请妥善保存）：",
+      "backupCodesPlaceholder": "备用码(设置后显示)",
+      "copy": "复制",
+      "copyAll": "全部复制",
+      "copied": "已复制",
+      "getQrCode": "获取二维码",
+      "gettingQrCode": "正在获取二维码...",
+      "secretCopied": "密钥已复制到剪贴板",
+      "backupCodesCopied": "备用码已复制到剪贴板",
+      "copyFailed": "复制失败，请手动复制",
+      "btnText": "启用 MFA",
+      "backToLogin": "返回登录"
+    },
+    "changePassword": {
+      "title": "修改密码",
+      "subTitle": "首次登录需要修改密码",
+      "newUsername": "新用户名（不修改请留空）",
+      "usernameLengthError": "用户名长度必须在 3 到 50 个字符之间",
+      "currentPassword": "请输入当前密码",
+      "currentPasswordRequired": "请输入当前密码",
+      "newPassword": "请输入新密码",
+      "newPasswordRequired": "请输入新密码",
+      "confirmPassword": "请再次输入新密码",
+      "confirmPasswordRequired": "请再次输入新密码",
+      "passwordMismatch": "两次输入的密码不一致",
+      "passwordTooShort": "密码长度不能少于 8 位",
+      "passwordMinLength": "密码长度不能少于 8 位",
+      "btnText": "确认修改",
+      "success": "密码修改成功"
+    }
+  },
+  "forgetPassword": {
+    "title": "忘记密码？",
+    "subTitle": "输入您的电子邮件来重置您的密码",
+    "placeholder": "请输入您的电子邮件",
+    "submitBtnText": "提交",
+    "backBtnText": "返回"
+  },
+  "lockScreen": {
+    "pwdError": "密码错误",
+    "securityLockActivated": "安全锁定已激活",
+    "devToolsWarningTitle": "系统已锁定",
+    "devToolsWarningDesc": "请关闭开发者工具后继续。",
+    "initFailed": "锁屏初始化失败，请重试",
+    "lock": {
+      "inputPlaceholder": "请输入锁屏密码",
+      "btnText": "锁定"
+    },
+    "unlock": {
+      "inputPlaceholder": "请输入解锁密码",
+      "btnText": "解锁",
+      "backBtnText": "返回登录"
+    }
+  },
+  "greeting": {
+    "dawn": "凌晨了！",
+    "morning": "上午好！",
+    "afternoon": "下午好！",
+    "evening": "晚上好！"
+  },
+  "exceptionPage": {
+    "gohome": "返回首页",
+    "403": "抱歉，您无权访问该页面",
+    "404": "抱歉，您访问的页面不存在",
+    "500": "抱歉，服务器出错了"
+  },
+  "menus": {
+    "login": {
+      "title": "登录"
+    },
+    "forgetPassword": {
+      "title": "忘记密码"
+    },
+    "outside": {
+      "title": "内嵌页面"
+    },
+    "dashboard": {
+      "title": "仪表盘",
+      "console": "工作台",
+      "analysis": "分析页"
+    },
+    "widgets": {
+      "title": "组件中心",
+      "icon": "图标",
+      "imageCrop": "图像裁剪",
+      "excel": "Excel 导入导出",
+      "video": "视频播放器",
+      "countTo": "数字滚动",
+      "wangEditor": "富文本编辑器",
+      "watermark": "水印",
+      "contextMenu": "右键菜单",
+      "qrcode": "二维码",
+      "drag": "拖拽",
+      "textScroll": "文字滚动",
+      "fireworks": "礼花",
+      "elementUI": "组件总览"
+    },
+    "template": {
+      "title": "模板中心",
+      "chat": "聊天",
+      "cards": "卡片",
+      "banners": "横幅",
+      "charts": "图表",
+      "map": "地图",
+      "calendar": "日历",
+      "pricing": "定价"
+    },
+    "article": {
+      "title": "文章管理",
+      "articleList": "文章列表",
+      "articleDetail": "文章详情",
+      "comment": "留言管理",
+      "articlePublish": "文章发布"
+    },
+    "exception": {
+      "title": "异常页面",
+      "forbidden": "403",
+      "notFound": "404",
+      "serverError": "500"
+    },
+    "safeguard": {
+      "title": "运维管理",
+      "server": "服务器管理"
+    },
+    "plan": {
+      "title": "版本计划",
+      "log": "更新日志"
+    },
+    "help": {
+      "title": "帮助中心",
+      "document": "官方文档",
+      "liteVersion": "精简版本",
+      "oldVersion": "v2.6.1 版本"
+    },
+    "mazbri": {
+      "title": "Mazbri 管理",
+      "dashboard": "仪表板",
+      "users": "用户管理",
+      "userManagement": "用户管理",
+      "userDetail": "用户详情",
+      "tenants": "租户管理",
+      "opsManagement": "运营中心",
+      "tenantList": "租户列表",
+      "tenantDetail": "租户详情",
+      "authorizationList": "授权/订阅",
+      "productAuthorization": "产品治理",
+      "productGovernanceDescription": "产品、授权与路由",
+      "products": "产品管理",
+      "productManagement": "产品管理",
+      "productList": "产品目录",
+      "productDetail": "产品详情",
+      "supplierManagement": "供应商管理",
+      "upstreamSupply": "上游供给",
+      "supplierList": "供应商列表",
+      "upstreamChannelList": "通道列表",
+      "certificates": "证书管理",
+      "certificateList": "证书列表",
+      "certificateDetail": "证书详情",
+      "certificatePresets": "预置模板",
+      "authorizationManagement": "授权管理",
+      "billList": "账单列表",
+      "usageReconciliation": "用量对账",
+      "analytics": "分析统计",
+      "analyticsOverview": "统计概览",
+      "rateLimitAnalytics": "限流分析",
+      "operations": "运营管理",
+      "routeConfig": "路由规则",
+      "advancedRouteConfig": "路由策略",
+      "userRouteGovernance": "路由策略",
+      "callbackList": "回调订阅",
+      "opsMonitoring": "运维监控",
+      "serviceMonitoring": "服务监控",
+      "upstreamCallMonitor": "上游监控",
+      "customerCallMonitor": "客户监控",
+      "callbackFields": {
+        "url": "回调 URL",
+        "secret": "签名密钥",
+        "tenantId": "租户 ID",
+        "productId": "产品 ID",
+        "addTitle": "新建回调订阅"
+      },
+      "auditLogs": "审计日志",
+      "settings": "系统设置",
+      "systemSettings": "系统配置",
+      "appearanceSettings": "外观设置",
+      "mfaSettings": "MFA 设置",
+      "passwordPolicy": "安全设置",
+      "controlPanel": "控制面板",
+      "configCenter": "配置中心",
+      "connectorWorkbench": "免代码接入"
+    }
+  },
+  "systemSettings": {
+    "page": {
+      "title": "系统设置",
+      "heading": "系统与外观设置"
+    },
+    "sections": {
+      "basic": "基础设置"
+    },
+    "tabs": {
+      "system": "系统设置",
+      "appearance": "外观设置"
+    },
+    "form": {
+      "siteName": "站点名称",
+      "siteNamePlaceholder": "请输入站点名称",
+      "siteUrl": "站点 URL",
+      "siteUrlPlaceholder": "https://example.com",
+      "tenantGatewayUrl": "租户网关地址",
+      "tenantGatewayUrlPlaceholder": "http://gateway.mazbri.local:8080",
+      "tenantGatewayUrlHint": "租户 API 网关根地址（非管理后台）。",
+      "adminEmail": "管理员邮箱",
+      "adminEmailPlaceholder": "admin@example.com",
+      "securitySettings": "安全设置",
+      "sessionTimeout": "管理端会话超时（分钟，写入 JWT 过期时间）",
+      "maxLoginAttempts": "最大登录尝试次数（次）",
+      "saveSettings": "保存设置",
+      "resetToDefault": "重置为默认值",
+      "appearanceSettingsTitle": "外观设置"
+    },
+    "theme": {
+      "title": "主题设置",
+      "themeMode": "主题模式",
+      "followSystem": "跟随系统",
+      "followSystemHint": "（自动适配系统浅色/深色主题）",
+      "systemThemeColor": "配色",
+      "darkThemeStyle": "色调风格",
+      "darkThemeObsidian": "极简主义",
+      "darkThemeGraphite": "石墨灰 (VS Code)",
+      "darkThemeOceanic": "深海蓝 (GitHub)",
+      "darkThemeNordic": "柔和黑 (GitHub Dimmed)"
+    },
+    "layout": {
+      "title": "布局设置",
+      "containerWidth": "容器宽度",
+      "boxStyle": "盒子样式"
+    },
+    "display": {
+      "title": "显示设置",
+      "showBreadcrumb": "显示全局面包屑导航",
+      "showProgressBar": "显示顶部进度条",
+      "watermark": "全局水印",
+      "weakMode": "色弱模式",
+      "multiTab": "开启多标签栏",
+      "accordion": "侧边栏开启手风琴模式",
+      "collapseSidebar": "显示折叠侧边栏按钮",
+      "fastEnter": "显示快速入口",
+      "reloadPage": "显示重载页面按钮",
+      "language": "显示多语言选择"
+    },
+    "style": {
+      "title": "样式设置",
+      "menuWidth": "菜单宽度（像素）",
+      "tabStyle": "标签页",
+      "pageTransition": "切换动画",
+      "customRadius": "圆角（rem）"
+    },
+    "validation": {
+      "siteNameRequired": "请输入站点名称",
+      "siteUrlRequired": "请输入站点 URL",
+      "siteUrlInvalid": "请输入有效的 URL",
+      "adminEmailRequired": "请输入管理员邮箱",
+      "adminEmailInvalid": "请输入有效的邮箱地址",
+      "tenantGatewayUrlInvalid": "租户网关地址必须以 http:// 或 https:// 开头"
+    },
+    "messages": {
+      "savedSuccess": "设置保存成功",
+      "appearanceSaved": "外观设置已保存",
+      "appearanceSavedLocally": "服务器同步失败，已保存到本地",
+      "resetConfirmTitle": "确认重置",
+      "resetConfirmMessage": "确定要将所有外观设置恢复为默认值吗？",
+      "appearanceResetSuccess": "外观设置已恢复默认值"
+    }
+  },
+  "securityPolicy": {
+    "page": {
+      "title": "安全设置"
+    },
+    "actions": {
+      "saveSettings": "保存设置"
+    },
+    "sections": {
+      "password": {
+        "title": "密码策略"
+      },
+      "complexity": {
+        "title": "复杂度要求",
+        "description": "控制密码长度、字符类型与特殊字符集。"
+      },
+      "expiration": {
+        "title": "过期与复用",
+        "description": "设置密码有效期、提醒时机与历史密码复用限制。"
+      },
+      "loginProtection": {
+        "title": "登录保护",
+        "description": "限制连续失败次数并配置账号锁定时长。"
+      },
+      "mfa": {
+        "title": "MFA 配置"
+      },
+      "mfaScope": {
+        "title": "启用MFA",
+        "description": "设置 MFA 默认适用范围。"
+      },
+      "totp": {
+        "title": "TOTP 参数",
+        "description": "控制验证器显示名称、验证码位数与刷新周期。"
+      },
+      "process": {
+        "title": "使用流程",
+        "description": "帮助管理员确认最终用户的启用路径。"
+      }
+    },
+    "fields": {
+      "minLength": "最小长度（位）",
+      "maxLength": "最大长度（位）",
+      "requireUppercase": "要求大写字母",
+      "requireLowercase": "要求小写字母",
+      "requireDigit": "要求数字",
+      "requireSpecialChar": "要求特殊字符",
+      "passwordValidity": "密码有效期（天）",
+      "expirationWarning": "过期警告（天）",
+      "historyCheck": "历史密码检查（次）",
+      "lockThreshold": "锁定阈值（次）",
+      "lockDuration": "锁定时长（分钟）",
+      "globalMfa": "启用范围",
+      "issuerName": "发行者名称",
+      "totpDigits": "验证码位数（位）",
+      "totpPeriod": "验证码周期（秒）",
+      "backupCodesCount": "备用码数量（个）"
+    },
+    "placeholders": {
+      "issuerName": "Mazbri"
+    },
+    "options": {
+      "disabled": "未启用",
+      "adminOnly": "仅管理员",
+      "allUsers": "所有用户",
+      "totpDigits6": "6 位",
+      "totpDigits8": "8 位",
+      "totpPeriod30": "30 秒",
+      "totpPeriod60": "60 秒"
+    },
+    "units": {
+      "chars": "位",
+      "days": "天",
+      "daysBefore": "天前提醒",
+      "recentPasswords": "个最近密码不可重复",
+      "failuresBeforeLock": "次失败后锁定",
+      "minutes": "分钟",
+      "count": "个"
+    },
+    "steps": {
+      "install": {
+        "title": "安装验证器应用",
+        "description": "安装兼容的 TOTP 验证器应用。"
+      },
+      "scan": {
+        "title": "扫描二维码",
+        "description": "登录时用验证器扫描二维码。"
+      },
+      "enter": {
+        "title": "输入验证码",
+        "description": "每次登录时输入验证器应用中显示的验证码。"
+      }
+    },
+    "messages": {
+      "noPermission": "仅管理员可配置安全设置。",
+      "savedSuccess": "设置已保存"
+    }
+  },
+  "channels": {
+    "page": {
+      "title": "通道列表",
+      "searchPlaceholder": "通道 / 供应商"
+    },
+    "actions": {
+      "add": "新增通道"
+    },
+    "fields": {
+      "id": "内部 ID",
+      "supplier": "供应商",
+      "channelCode": "通道编码",
+      "name": "通道名称",
+      "pathPrefix": "路径前缀",
+      "costPrice": "成本价",
+      "qpsLimit": "上游通道容量 QPS",
+      "qpsLimitHint": "0 = 不限"
+    },
+    "placeholders": {
+      "supplier": "请选择供应商",
+      "channelCode": "ACME-DEFAULT",
+      "name": "供应商 A - 上海线路",
+      "pathPrefix": "/",
+      "costPrice": "0.001000"
+    },
+    "dialog": {
+      "createTitle": "新增通道",
+      "editTitle": "编辑通道"
+    },
+    "form": {
+      "saveAndBack": "保存",
+      "cancelBack": "取消"
+    },
+    "detail": {
+      "pageTitle": "通道详情",
+      "basicInfoTitle": "基本信息",
+      "loadFailed": "加载通道失败"
+    },
+    "status": {
+      "active": "启用",
+      "inactive": "禁用",
+      "suspended": "挂起"
+    },
+    "empty": {
+      "default": "暂无通道",
+      "filtered": "未找到匹配的通道"
+    },
+    "validation": {
+      "supplierRequired": "请选择供应商",
+      "channelCodeRequired": "请输入通道编码",
+      "channelCodePattern": "须以大写字母开头，仅含大写字母、数字和连字符。",
+      "channelCodeDuplicate": "通道编码已存在",
+      "nameRequired": "请输入通道名称",
+      "pathPrefixRequired": "请输入路径前缀"
+    },
+    "messages": {
+      "createSupplierFirst": "请先创建供应商后再新增通道",
+      "deleteConfirm": "确认删除通道 {name}？"
+    }
+  },
+  "callbacks": {
+    "tabs": {
+      "subscriptions": "订阅配置",
+      "deliveries": "投递任务"
+    },
+    "actions": {
+      "addSubscription": "新增订阅",
+      "retry": "重试"
+    },
+    "columns": {
+      "tenantCode": "租户编码",
+      "tenantAccount": "租户账号",
+      "productCode": "产品编码",
+      "callbackUrl": "回调地址",
+      "eventId": "事件 ID",
+      "retryCount": "重试次数",
+      "responseCode": "响应码",
+      "failureReason": "失败原因"
+    },
+    "form": {
+      "tenantCode": "租户编码",
+      "productCode": "产品编码"
+    },
+    "placeholders": {
+      "tenantCode": "例如: T0000001",
+      "productCode": "例如: 8000000001",
+      "callbackUrl": "https://...",
+      "secretKey": "签名密钥 (Sign secret)"
+    },
+    "validation": {
+      "tenantCodeRequired": "请输入租户编码",
+      "productCodeRequired": "请输入产品编码",
+      "callbackUrlRequired": "请输入回调 URL",
+      "secretKeyRequired": "请输入签名密钥"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失败",
+      "abandoned": "已放弃",
+      "retrying": "重试中"
+    },
+    "messages": {
+      "fetchListFailed": "获取列表失败",
+      "fetchDeliveriesFailed": "获取投递任务失败",
+      "deleteConfirm": "确定删除该订阅吗？",
+      "retrySuccess": "已重新排队",
+      "retryFailed": "重试失败",
+      "createFailed": "创建失败"
+    }
+  },
+  "routes": {
+    "embeddedTitle": "路由策略",
+    "actions": {
+      "createRoute": "新增路由策略",
+      "createProductRoute": "新增产品路由",
+      "bindings": "候选通道",
+      "addBinding": "添加候选通道",
+      "addUpstreamBinding": "绑定上游通道",
+      "emergencySwitch": "紧急切流",
+      "confirmSave": "确认保存",
+      "backToEdit": "返回编辑",
+      "confirmSwitch": "确认切流",
+      "exportPage": "导出本页",
+      "exportSelected": "导出选中 ({count})"
+    },
+    "dialogs": {
+      "bindingTitle": "候选通道",
+      "editRouteTitle": "编辑路由策略",
+      "createRouteTitle": "新增路由策略",
+      "editBindingTitle": "编辑候选通道",
+      "createBindingTitle": "添加候选通道",
+      "editUpstreamBindingTitle": "编辑上游通道绑定",
+      "createUpstreamBindingTitle": "绑定上游通道",
+      "emergencySwitchTitle": "紧急切流",
+      "confirmSaveRoute": "请确认路由配置",
+      "confirmSaveBinding": "请确认候选通道配置"
+    },
+    "fields": {
+      "scope": "路由范围",
+      "product": "产品",
+      "tenant": "租户",
+      "priority": "优先级",
+      "status": "状态",
+      "routePurpose": "路由用途（仅元数据标签，不参与选路）",
+      "changeReason": "变更原因",
+      "tags": "标签",
+      "effectiveWindow": "生效窗口",
+      "description": "说明",
+      "bindingChannel": "通道",
+      "upstreamChannel": "上游通道",
+      "channelOrder": "顺序",
+      "timeoutMs": "超时时间（毫秒）",
+      "maxRetries": "最大重试次数（次）",
+      "failoverEnabled": "失败后切换",
+      "failureTypes": "切换触发",
+      "targetBinding": "目标候选通道",
+      "switchReason": "切流原因"
+    },
+    "placeholders": {
+      "product": "请选择产品",
+      "tenant": "请选择租户",
+      "routePurpose": "请选择路由用途",
+      "changeReason": "说明本次路由配置或调整原因",
+      "tags": "选择或输入标签",
+      "description": "补充说明，可选",
+      "bindingChannel": "请选择通道",
+      "upstreamChannel": "请选择上游通道",
+      "switchReason": "说明故障、降级或供应商切换原因",
+      "search": "产品 / 租户名称或编码"
+    },
+    "scope": {
+      "default": "产品默认",
+      "tenant": "租户覆盖"
+    },
+    "status": {
+      "active": "启用",
+      "inactive": "停用",
+      "suspended": "挂起"
+    },
+    "effectiveMode": {
+      "immediate": "立即生效",
+      "window": "指定窗口"
+    },
+    "routePurpose": {
+      "standard": "标准路由",
+      "emergency": "应急路由",
+      "costFirst": "低成本优先",
+      "backup": "备用路由"
+    },
+    "routeTags": {
+      "vip": "VIP",
+      "lowCost": "低成本",
+      "backup": "备用",
+      "temp": "临时",
+      "emergency": "应急"
+    },
+    "failureTypes": {
+      "timeout": "超时",
+      "connection": "连接失败",
+      "serverError": "服务错误",
+      "rateLimited": "频率超限"
+    },
+    "validation": {
+      "productRequired": "请选择产品",
+      "tenantRequired": "请选择租户",
+      "priorityRequired": "请输入优先级",
+      "statusRequired": "请选择状态",
+      "routePurposeRequired": "请选择路由用途",
+      "changeReasonRequired": "请填写变更原因",
+      "effectiveWindowRequired": "请选择生效窗口",
+      "bindingChannelRequired": "请选择通道",
+      "channelOrderRequired": "请输入顺序",
+      "timeoutRequired": "请输入超时时间",
+      "maxRetriesRequired": "请输入最大重试次数",
+      "switchReasonRequired": "请填写切流原因"
+    },
+    "columns": {
+      "tenant": "租户",
+      "product": "产品",
+      "priority": "优先级",
+      "status": "状态",
+      "metadata": "配置标签"
+    },
+    "bindingColumns": {
+      "order": "顺序",
+      "channel": "通道名称",
+      "channelId": "通道编码",
+      "switchCondition": "切换条件"
+    },
+    "labels": {
+      "defaultRoute": "产品默认",
+      "defaultFailureTypes": "默认故障类型",
+      "noSwitch": "不切换",
+      "unselected": "未选择",
+      "none": "无",
+      "switchSummary": "超时 {timeoutMs} 毫秒，最大重试 {maxRetries} 次，切换条件：{triggerText}",
+      "example": "示例",
+      "emergencySwitch": "紧急切流",
+      "configured": "已配置"
+    },
+    "confirm": {
+      "scope": "路由范围：",
+      "product": "产品：",
+      "tenant": "租户：",
+      "priority": "优先级：",
+      "status": "状态：",
+      "routePurpose": "路由用途：",
+      "tags": "标签：",
+      "effectiveWindow": "生效窗口：",
+      "effectiveNow": "立即生效",
+      "changeReason": "变更原因：",
+      "description": "说明：",
+      "route": "路由：",
+      "bindingChannel": "通道：",
+      "upstreamChannel": "上游通道：",
+      "channelOrder": "顺序：",
+      "timeout": "超时时间：",
+      "maxRetries": "最大重试次数：",
+      "failover": "失败后切换：",
+      "failureTypes": "切换触发："
+    },
+    "units": {
+      "ms": "毫秒"
+    },
+    "failover": {
+      "activeText": "开启",
+      "inactiveText": "关闭"
+    },
+    "messages": {
+      "fetchRoutesFailed": "获取路由策略列表失败",
+      "fetchBindingsFailed": "获取候选通道失败",
+      "exampleNotEditable": "示例路由不可编辑",
+      "exampleNotDeletable": "示例路由不可删除",
+      "exampleNotAddBinding": "示例路由不可新增候选通道",
+      "exampleNotSaveBinding": "示例路由不可保存候选通道",
+      "saveRouteFailed": "保存路由策略失败",
+      "deleteRouteConfirm": "确定删除租户 {tenant} / 产品 {product} 的路由吗？",
+      "deleteRouteFailed": "删除路由策略失败",
+      "saveBindingFailed": "保存候选通道失败",
+      "deleteBindingConfirm": "确认删除候选通道 {name} 吗？",
+      "deleteBindingFailed": "删除候选通道失败",
+      "exampleNotSwitch": "示例路由不可切流",
+      "emergencySwitchSuccess": "切流成功",
+      "emergencySwitchFailed": "切流失败"
+    },
+    "import": {
+      "title": "导入路由策略",
+      "columns": {
+        "productCode": "产品编码",
+        "tenantCode": "租户编码",
+        "priority": "优先级",
+        "status": "状态",
+        "routePurpose": "路由用途",
+        "tags": "标签",
+        "changeReason": "变更原因",
+        "description": "说明"
+      },
+      "formatHintHeader": "文件需包含表头：product_code,tenant_code,channel_code,priority,status,route_purpose",
+      "formatHintExample": "prod_kyc,TENANT001,800000001,100,active,standard",
+      "validation": {
+        "productCodeRequired": "缺少 product_code",
+        "tenantCodeRequired": "缺少 tenant_code",
+        "priorityNumeric": "priority 必须是数字",
+        "statusInvalid": "status 须为 active / inactive / suspended",
+        "routePurposeInvalid": "route_purpose 不合法"
+      }
+    }
+  },
+  "auditLogs": {
+    "page": {
+      "title": "审计日志"
+    },
+    "list": {
+      "title": "操作记录列表"
+    },
+    "search": {
+      "label": "关键词",
+      "placeholder": "用户名 / 操作 / 资源类型 / 状态 / IP 地址 / 时间"
+    },
+    "filters": {
+      "action": "操作类型",
+      "resourceType": "资源类型",
+      "status": "状态",
+      "actionPlaceholder": "全部操作类型",
+      "resourceTypePlaceholder": "全部资源类型",
+      "statusPlaceholder": "全部状态"
+    },
+    "columns": {
+      "timestamp": "时间",
+      "actorName": "用户名",
+      "action": "操作",
+      "resourceType": "资源类型",
+      "status": "状态",
+      "ipAddress": "IP 地址",
+      "details": "详情"
+    },
+    "status": {
+      "success": "成功",
+      "failure": "失败"
+    },
+    "explicitActions": {
+      "adminLogin": "系统用户登录",
+      "adminLogout": "系统用户登出",
+      "adminCreate": "新增系统用户",
+      "adminUpdate": "更新系统用户",
+      "adminDelete": "删除系统用户",
+      "adminPasswordReset": "重置系统用户密码",
+      "adminStatusChange": "修改系统用户状态",
+      "tenantCreate": "创建租户",
+      "tenantUpdate": "更新租户",
+      "tenantDelete": "删除租户",
+      "tenantSuspend": "暂停租户",
+      "tenantActivate": "激活租户",
+      "apiKeyCreate": "创建 API 密钥",
+      "apiKeyUpdate": "更新 API 密钥",
+      "apiKeyRevoke": "撤销 API 密钥",
+      "userLogin": "登录",
+      "userLogout": "登出",
+      "userUpdate": "更新用户",
+      "userDelete": "删除用户",
+      "userSettingsUpdate": "更新用户设置",
+      "quotaUpdate": "更新授权配置",
+      "planChange": "变更套餐",
+      "productGrant": "授权产品",
+      "productRevoke": "撤销产品授权",
+      "productCreate": "创建产品",
+      "productUpdate": "更新产品",
+      "productDelete": "删除产品",
+      "productReservationCreate": "预留产品编码",
+      "productReservationRelease": "释放产品编码",
+      "accountRecharge": "账户充值",
+      "accountRefund": "账户退款",
+      "accountAdjustment": "账户调整",
+      "reconciliationAudit": "用量对账审计",
+      "reconciliationDiscrepancyUpdate": "对账差异处理",
+      "billAdjustmentCreate": "创建账单更正",
+      "billAdjustmentVoid": "作废账单更正",
+      "reconciliationSettingsUpdate": "更新用量对账设置",
+      "billGenerate": "生成账单",
+      "billDelete": "删除账单",
+      "certificateIssue": "签发证书",
+      "certificateRenew": "续期证书",
+      "certificateRevoke": "吊销证书",
+      "certificatePresetCreate": "添加预置模板",
+      "certificatePresetUpdate": "更新预置模板",
+      "certificatePresetDelete": "删除预置模板",
+      "certificatePresetImport": "导入预置模板",
+      "settingsUpdate": "更新系统设置",
+      "passwordPolicyUpdate": "更新密码策略",
+      "configCenterCreate": "创建配置",
+      "configCenterUpdate": "更新配置",
+      "configCenterDelete": "删除配置",
+      "configCenterRollback": "回滚配置",
+      "configCenterExport": "导出配置",
+      "configCenterImport": "导入配置",
+      "appearanceUpdate": "更新外观设置",
+      "appearanceReset": "重置外观设置",
+      "mfaSettingsUpdate": "更新 MFA 设置",
+      "whitelistAdd": "添加白名单",
+      "whitelistRemove": "删除白名单",
+      "tenantCryptoProfileUpdate": "更新租户加密配置",
+      "tenantCryptoKeyCreate": "创建租户加密密钥",
+      "tenantCryptoKeyRotate": "轮换租户加密密钥",
+      "tenantCryptoKeyActivate": "激活租户加密密钥",
+      "tenantCryptoKeyDeprecate": "废弃租户加密密钥",
+      "tenantCryptoKeyDisable": "禁用租户加密密钥",
+      "tenantCryptoExport": "导出租户加密数据",
+      "tenantCryptoVerify": "校验租户加密密钥",
+      "passwordFirstLoginChange": "首次登录修改密码",
+      "passwordChange": "修改密码",
+      "tenantRateLimitUpdate": "更新限流配置",
+      "tenantRateLimitDelete": "删除限流配置",
+      "tenantCacheUpdate": "更新缓存配置",
+      "callbackDeliveryRetry": "重试回调投递",
+      "supplierCreate": "创建供应商",
+      "supplierUpdate": "更新供应商",
+      "supplierDelete": "删除供应商",
+      "channelCreate": "创建通道",
+      "channelUpdate": "更新通道",
+      "channelDelete": "删除通道",
+      "routeRuleCreate": "创建路由规则",
+      "routeRuleUpdate": "更新路由规则",
+      "routeRuleDelete": "删除路由规则",
+      "routeChannelBindingCreate": "创建路由通道绑定",
+      "routeChannelBindingUpdate": "更新路由通道绑定",
+      "routeChannelBindingDelete": "删除路由通道绑定",
+      "callbackSubscriptionCreate": "创建回调订阅",
+      "callbackSubscriptionUpdate": "更新回调订阅",
+      "callbackSubscriptionDelete": "删除回调订阅",
+      "routeEmergencySwitch": "紧急切流",
+      "authorizationImport": "导入授权包",
+      "authorizationExport": "导出当前授权包",
+      "authorizationRenew": "续期授权包",
+      "authorizationActivate": "激活授权包",
+      "authorizationRevoke": "撤销授权包",
+      "authorizationRotate": "轮换授权包",
+      "authorizationDisable": "禁用授权包"
+    },
+    "resources": {
+      "admin": "管理员",
+      "tenant": "租户",
+      "product": "产品",
+      "apiKey": "API 密钥",
+      "certificate": "证书",
+      "certificatePreset": "证书预置模板",
+      "system": "系统",
+      "user": "用户",
+      "quota": "授权配置",
+      "plan": "套餐",
+      "account": "账户",
+      "configCenter": "配置中心",
+      "supplier": "供应商",
+      "channel": "通道",
+      "routeRule": "路由规则",
+      "routeChannelBinding": "路由通道绑定",
+      "callback": "回调"
+    },
+    "verbs": {
+      "login": "登录",
+      "logout": "登出",
+      "create": "创建",
+      "update": "更新",
+      "delete": "删除",
+      "revoke": "撤销",
+      "grant": "授权",
+      "renew": "续期",
+      "issue": "签发",
+      "suspend": "暂停",
+      "activate": "激活",
+      "recharge": "充值",
+      "refund": "退款",
+      "rollback": "回滚",
+      "export": "导出",
+      "import": "导入",
+      "change": "变更",
+      "reset": "重置"
+    },
+    "detailLabels": {
+      "reason": "原因",
+      "operator": "操作人",
+      "operatorId": "操作人 ID",
+      "ipAddress": "IP 地址",
+      "selectedChannelId": "目标通道 ID",
+      "routeRuleId": "路由规则 ID",
+      "channelId": "通道 ID",
+      "bindingId": "绑定 ID",
+      "oldRoute": "变更前路由",
+      "newRoute": "变更后路由",
+      "routeRule": "路由规则",
+      "bindings": "候选通道",
+      "route": "路由结果",
+      "message": "结果",
+      "status": "状态",
+      "name": "名称",
+      "id": "ID",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间",
+      "expiresAt": "过期时间",
+      "productId": "产品 ID",
+      "tenantId": "租户 ID",
+      "tenantCode": "租户编码",
+      "priority": "优先级",
+      "metadata": "路由配置",
+      "switchCondition": "切换规则",
+      "channelOrder": "通道顺序",
+      "description": "描述",
+      "enabled": "启用状态",
+      "request": "请求参数",
+      "product": "产品信息",
+      "reservation": "预留信息",
+      "reservationId": "预留 ID",
+      "activeReservationId": "活动预留 ID",
+      "reservedBy": "预留人",
+      "reservedAt": "预留时间",
+      "upstreamUrl": "上游地址",
+      "timeoutSecs": "超时时间（秒）",
+      "billId": "账单 ID",
+      "billKind": "账单类型",
+      "transactionId": "交易 ID",
+      "amount": "金额",
+      "direction": "方向",
+      "ipAddresses": "IP 列表",
+      "totalAdded": "新增数量",
+      "totalErrors": "错误数量",
+      "algorithm": "算法",
+      "maxDaily": "每日上限（次）",
+      "maxConcurrent": "套餐速率 QPS（次/秒）",
+      "maxBandwidthMbps": "带宽上限（Mbps）",
+      "apiLimits": "接口速率覆盖",
+      "burstSize": "突发容量",
+      "clientIpQps": "单客户端 IP 速率",
+      "clientIpBurst": "单 IP 突发",
+      "windowDurationSecs": "窗口时长（秒）",
+      "expectedUpdatedAt": "期望更新时间",
+      "defaultTtl": "默认 TTL（秒）",
+      "maxCacheSize": "最大缓存大小（字节）",
+      "apiTtl": "API TTL（秒）",
+      "tenantIsolated": "租户隔离",
+      "warmupEnabled": "预热启用",
+      "warmupKeys": "预热键",
+      "scope": "范围",
+      "changes": "变更内容",
+      "siteName": "站点名称",
+      "siteUrl": "站点地址",
+      "enableNotifications": "启用通知",
+      "enableAuditLog": "启用审计日志",
+      "sessionTimeout": "会话超时",
+      "maxUploadSize": "最大上传大小",
+      "username": "用户名",
+      "firstLogin": "首次登录",
+      "language": "语言",
+      "email": "邮箱",
+      "encryptionMode": "加密模式",
+      "requireSignature": "需要签名",
+      "nonceTtlSeconds": "Nonce 有效期（秒）",
+      "clockSkewSeconds": "时钟偏差容忍（秒）",
+      "currentKeyVersion": "当前密钥版本",
+      "keyVersion": "密钥版本",
+      "mode": "模式",
+      "manifest": "清单",
+      "checked": "检查数",
+      "verified": "已验证",
+      "failedCount": "失败数量",
+      "path": "路径",
+      "operation": "操作",
+      "authorizationType": "授权类型",
+      "activateNow": "立即生效",
+      "deliveryLogId": "投递日志 ID",
+      "tenantGatewayUrl": "租户网关地址"
+    },
+    "values": {
+      "yes": "是",
+      "no": "否",
+      "none": "无"
+    },
+    "routeConfig": {
+      "purpose": "用途：",
+      "changeReason": "变更原因：",
+      "tags": "标签：",
+      "effectiveWindow": "生效窗口：",
+      "to": "至",
+      "effectiveNow": "生效窗口：立即生效",
+      "description": "说明：",
+      "defaultFailureTypes": "默认失败类型",
+      "switchCondition": "{timeoutMs}ms 超时，重试 {maxRetries} 次，{failoverText}（{failureTypes}）",
+      "switchOnFailure": "失败后切换下一通道",
+      "noSwitch": "失败后不切换"
+    },
+    "routeSnapshot": {
+      "productId": "产品 ID：",
+      "tenantId": "租户 ID：",
+      "defaultRoute": "默认路由",
+      "priority": "优先级：",
+      "status": "状态：",
+      "candidateCount": "候选通道数：",
+      "firstChannel": "第一通道："
+    },
+    "empty": {
+      "default": "暂无审计日志",
+      "filtered": "未找到匹配的审计日志"
+    },
+    "detail": {
+      "title": "审计日志详情",
+      "moreTitle": "详细信息",
+      "notRecorded": "未记录",
+      "fields": {
+        "timestamp": "时间",
+        "actorName": "用户名",
+        "action": "操作类型",
+        "resourceType": "资源类型",
+        "resourceId": "资源 ID",
+        "status": "状态",
+        "ipAddress": "IP 地址",
+        "userAgent": "客户端标识",
+        "errorMessage": "错误信息"
+      }
+    }
+  },
+  "feedback": {
+    "batch": {
+      "noDataForAction": "暂无数据可{action}",
+      "selectDataForAction": "请先选择要{action}的数据",
+      "confirmAllAction": "确定{action}全部 {count} 条吗？",
+      "confirmSelectedAction": "确定{action}选中的 {count} 条吗？",
+      "confirmActionTitle": "{action}确认",
+      "deleteConfirmTitle": "删除确认",
+      "confirmActionButton": "确定{action}",
+      "actionSuccess": "成功{action} {count} 条数据",
+      "actionFailed": "批量{action}失败"
+    },
+    "import": {
+      "csvFormatHint": "请确保 CSV 文件包含正确的列",
+      "csvMissingColumn": "CSV 格式错误：缺少必需列 \"{column}\"",
+      "validationFailed": "验证失败",
+      "noDataToExport": "没有数据可导出",
+      "exportCountSuccess": "成功导出 {count} 条数据",
+      "importCountSuccess": "成功导入 {count} 条数据",
+      "importPartialSuccess": "成功导入 {imported} 条数据，失败 {failed} 条",
+      "importFailed": "导入失败",
+      "requiredColumns": "必需列：{columns}"
+    },
+    "validation": {
+      "invalidHexColor": "输入错误的 hex 颜色值",
+      "invalidRgbColor": "输入错误的 RGB 颜色值",
+      "fileSizeLimit100kb": "文件大小不能超过 100KB",
+      "csvNeedHeaderAndRow": "CSV 文件格式错误：至少需要表头和一行数据",
+      "csvNoValidData": "CSV 文件中没有有效数据",
+      "csvParseFailed": "CSV 解析失败，请检查文件格式"
+    },
+    "editor": {
+      "imageUploadSuccess": "图片上传成功",
+      "imageUploadFailed": "图片上传失败"
+    }
+  },
+  "configCenter": {
+    "page": {
+      "title": "配置中心",
+      "allServices": "全部服务"
+    },
+    "actions": {
+      "import": "导入",
+      "export": "导出",
+      "create": "新建配置",
+      "edit": "编辑",
+      "history": "历史"
+    },
+    "columns": {
+      "serviceName": "服务名",
+      "updatedBy": "更新人",
+      "updatedAt": "更新时间",
+      "operation": "操作"
+    },
+    "importDialog": {
+      "title": "导入配置",
+      "confirm": "导入配置",
+      "warning": "导入将覆盖同名配置，请确认文件内容正确",
+      "uploadText": "拖拽文件到此处，或",
+      "clickToUpload": "点击上传",
+      "tip": "TOML 或 ZIP，可多选。",
+      "validation": {
+        "fileType": "请选择 TOML 文件或 ZIP 压缩包"
+      },
+      "messages": {
+        "importFailed": "导入失败",
+        "importedCount": "成功导入 {count} 个",
+        "failedCount": "失败 {count} 个",
+        "importCompleted": "导入完成：{details}"
+      }
+    },
+    "exportDialog": {
+      "title": "导出配置",
+      "confirm": "导出",
+      "fields": {
+        "services": "服务"
+      },
+      "placeholders": {
+        "services": "全部服务（不选则导出全部）"
+      },
+      "messages": {
+        "exportSuccess": "导出成功"
+      }
+    },
+    "editDialog": {
+      "actions": {
+        "create": "新建配置",
+        "edit": "编辑配置"
+      },
+      "fields": {
+        "serviceName": "服务名",
+        "content": "配置内容"
+      },
+      "validation": {
+        "serviceNameRequired": "请选择服务名",
+        "contentRequired": "请输入配置内容",
+        "tomlError": "第 {line} 行, 第 {column} 列: {message}"
+      },
+      "messages": {
+        "saveSuccess": "保存成功"
+      }
+    },
+    "serviceNameSelector": {
+      "label": "服务名称",
+      "placeholder": "请选择预定义的服务名称",
+      "groups": {
+        "system": "系统预置",
+        "custom": "自定义"
+      },
+      "tags": {
+        "configured": "已配置",
+        "system": "系统",
+        "custom": "自定义"
+      },
+      "empty": {
+        "description": "暂无可用服务名称",
+        "title": "系统暂未定义任何服务名称",
+        "subtitle": "请管理员先添加预定义服务。"
+      },
+      "actions": {
+        "manage": "管理服务名称"
+      },
+      "hint": "从预定义服务名中选择。"
+    },
+    "historyDrawer": {
+      "title": "版本历史",
+      "actions": {
+        "rollback": "回滚"
+      },
+      "compare": {
+        "title": "版本对比",
+        "versionLabel": "版本 {version}"
+      },
+      "columns": {
+        "version": "版本",
+        "updatedBy": "操作人",
+        "createdAt": "时间"
+      },
+      "empty": "选择一个版本查看详情",
+      "confirmTitle": "确认回滚",
+      "confirmMessage": "确定要回滚到版本 {version} 吗？",
+      "messages": {
+        "rollbackSuccess": "回滚成功"
+      }
+    },
+    "diffViewer": {
+      "version": "版本 {version}",
+      "noChanges": "两个版本内容相同"
+    },
+    "nodeStatus": {
+      "onlineNodes": "在线节点",
+      "totalNodes": "总节点数",
+      "onlineRate": "在线率",
+      "collapseDetails": "收起节点详情",
+      "expandDetails": "点击展开节点详情",
+      "instances": "实例",
+      "time": {
+        "secondsAgo": "{count}秒前",
+        "minutesAgo": "{count}分钟前",
+        "hoursAgo": "{count}小时前",
+        "daysAgo": "{count}天前"
+      }
+    },
+    "messages": {
+      "selectConfigToDelete": "请先选择要删除的数据",
+      "deleteConfirmTitle": "删除确认",
+      "confirmDelete": "确定删除",
+      "deleteManyConfirm": "确定删除 {count} 条配置吗？",
+      "deleteManySuccess": "成功删除 {count} 条配置",
+      "deleteManyFailed": "批量删除失败",
+      "deleteServiceConfigConfirm": "确定删除服务 “{serviceName}” 的配置吗？"
+    }
+  },
+  "certificate": {
+    "page": {
+      "title": "证书管理"
+    },
+    "authorizationManagement": {
+      "page": {
+        "title": "授权管理",
+        "subtitle": "导入许可证、导出申请。"
+      },
+      "sections": {
+        "import": "许可证",
+        "detail": "授权详情",
+        "emptyDetail": "尚未导入授权文件，请先在左侧完成导入。"
+      },
+      "status": {
+        "active": "已激活",
+        "grace": "宽限期",
+        "expired": "已过期",
+        "invalid": "无效",
+        "pending": "尚未生效",
+        "unconfigured": "未导入"
+      },
+      "license": {
+        "exportRequest": "导出申请",
+        "importLicense": "导入许可证",
+        "exportSuccess": "申请文件已导出",
+        "importSuccess": "许可证已导入",
+        "sequence": "序号",
+        "keyVersion": "密钥版本",
+        "graceUntil": "宽限结束时间",
+        "notice": "提示",
+        "graceNotice": "宽限还剩 {count} 天，新签发已停止",
+        "expiredNotice": "需要导入序号更大的许可证",
+        "status": "状态",
+        "customerId": "客户编号",
+        "expiresAt": "到期时间",
+        "remaining": "剩余时间",
+        "expiredByDays": "已过期 {count} 天",
+        "expiresInDays": "还剩 {count} 天",
+        "selectFile": "请选择许可证文件",
+        "disabled": {
+          "expired": "授权已过期，新签发已停止",
+          "pending": "授权尚未生效",
+          "invalid": "授权无效",
+          "unconfigured": "尚未导入许可证"
+        }
+      },
+      "filePicker": {
+        "title": "点击或拖拽选择许可证文件",
+        "hint": "接受 .jws 和文本文件。",
+        "selectedHint": "已选择文件，点击或拖拽可重新选择。",
+        "sizeHint": "文件越大，导入和校验时间会更长。",
+        "selectedSize": "文件大小：{size}",
+        "invalidType": "请选择 .jws 或文本许可证文件",
+        "selected": "已选择",
+        "choose": "选择文件",
+        "change": "重新选择"
+      }
+    },
+    "baseAuthorization": {
+      "page": {
+        "title": "商业授权门闸",
+        "subtitle": "导入、激活和撤销平台基础授权文件"
+      },
+      "status": {
+        "unconfigured": {
+          "title": "尚未导入基础授权",
+          "description": "未配置，商业证书能力未启用。"
+        },
+        "imported": {
+          "title": "已导入，待激活",
+          "description": "已落库，尚未进入运行态。"
+        },
+        "active": {
+          "title": "基础授权已激活"
+        },
+        "revoked": {
+          "title": "已撤销",
+          "description": "已失效，不再使用。"
+        },
+        "expired": {
+          "title": "已过期",
+          "description": "已过期，需续期后恢复 CA 能力。"
+        }
+      },
+      "sections": {
+        "status": "当前状态",
+        "page": "基础授权页面",
+        "import": "导入授权文件",
+        "actions": "授权操作",
+        "metadata": "文件元数据"
+      },
+      "labels": {
+        "expiresInDays": "剩余 {count} 天过期",
+        "expiredByDays": "已过期 {count} 天"
+      },
+      "fields": {
+        "packageId": "文件 ID",
+        "packageVersion": "文件版本",
+        "packageFormat": "文件格式",
+        "purpose": "用途",
+        "packageSha256": "SHA-256",
+        "status": "状态",
+        "active": "是否生效",
+        "createdBy": "创建者",
+        "importedBy": "导入者",
+        "createdAt": "创建时间",
+        "importedAt": "导入时间",
+        "activatedAt": "激活时间",
+        "expiresAt": "过期时间",
+        "expiredAt": "失效时间",
+        "secondsToExpiry": "剩余天数",
+        "remainingDays": "剩余天数",
+        "renewable": "可续期",
+        "renewedFromPackageId": "续期来源文件 ID",
+        "supersededByPackageId": "被替换文件 ID",
+        "metadata": "元数据"
+      },
+      "actions": {
+        "refresh": "刷新状态",
+        "import": "导入文件",
+        "activate": "激活授权",
+        "revoke": "撤销授权",
+        "exportCurrent": "导出当前文件",
+        "renew": "续期授权"
+      },
+      "form": {
+        "packageFile": "授权文件",
+        "noFileSelected": "未选择文件",
+        "passphrase": "授权口令",
+        "passphrasePlaceholder": "请输入与授权文件配套的口令"
+      },
+      "messages": {
+        "selectPackageFile": "请选择授权文件",
+        "enterPassphrase": "请输入授权口令",
+        "noRevocablePackage": "当前没有可撤销的授权文件",
+        "noRenewablePackage": "当前没有可续期的授权",
+        "confirmImportAndActivate": "确定导入并激活基础授权吗？",
+        "confirmRevoke": "确定撤销基础授权吗？依赖 CA 的接口将门闸。",
+        "importSuccess": "授权文件导入成功",
+        "activateSuccess": "基础授权已激活",
+        "revokeSuccess": "基础授权已撤销",
+        "confirmRenew": "确定续期基础授权并自动激活吗？",
+        "renewSuccess": "基础授权已续期"
+      },
+      "hints": {
+        "activateWarning": "激活会初始化 CA 运行态并立即影响证书能力。",
+        "revokeWarning": "撤销后依赖 CA 的接口将重新门闸。"
+      },
+      "disabledReasons": {
+        "unconfigured": "商业基础授权包未导入，请联系管理员添加授权",
+        "expired": "商业基础授权包已过期，请联系管理员续期",
+        "revoked": "商业基础授权包已撤销，请联系管理员重新导入",
+        "imported": "商业基础授权包已导入但尚未激活",
+        "activeNotRestored": "商业基础授权包已激活但运行态未恢复，请重新激活"
+      }
+    },
+    "rootPackage": {
+      "page": {
+        "title": "高级授权",
+        "subtitle": "导入、激活、撤销和续期租户加密高级授权"
+      },
+      "status": {
+        "unconfigured": {
+          "title": "尚未导入高级授权",
+          "description": "尚未配置高级授权。"
+        },
+        "pending": {
+          "title": "待激活",
+          "description": "已上传，待激活。"
+        },
+        "imported": {
+          "title": "已导入",
+          "description": "已落库，尚未进入运行态。"
+        },
+        "active": {
+          "title": "已激活",
+          "description": "高级授权已生效。"
+        },
+        "expired": {
+          "title": "已过期",
+          "description": "已过期，租户加密已暂停。"
+        },
+        "revoked": {
+          "title": "已撤销",
+          "description": "已失效。"
+        },
+        "deleted": {
+          "title": "已删除",
+          "description": "已删除。"
+        }
+      },
+      "sections": {
+        "status": "当前状态",
+        "page": "高级授权页面",
+        "import": "导入高级授权",
+        "actions": "高级授权操作",
+        "metadata": "文件元数据",
+        "renew": "续期高级授权"
+      },
+      "fields": {
+        "packageId": "授权 ID",
+        "packageVersion": "授权版本",
+        "packageFormat": "授权格式",
+        "purpose": "用途",
+        "packageSha256": "SHA-256",
+        "kdfName": "KDF 算法",
+        "kdfParams": "KDF 参数",
+        "status": "状态",
+        "available": "是否可用",
+        "createdBy": "创建者",
+        "importedBy": "导入者",
+        "revokedBy": "撤销者",
+        "createdAt": "创建时间",
+        "importedAt": "导入时间",
+        "revokedAt": "撤销时间",
+        "expiresAt": "过期时间",
+        "expiredAt": "失效时间",
+        "secondsToExpiry": "剩余天数",
+        "remainingDays": "剩余天数",
+        "renewable": "可续期",
+        "renewedFromPackageId": "续期来源文件 ID",
+        "supersededByPackageId": "被替换文件 ID",
+        "currentKeyVersion": "当前 key version",
+        "wrappingKeyId": "wrapping_key_id",
+        "activeMaterialCount": "活跃材料数",
+        "deprecatedMaterialCount": "废弃材料数",
+        "disabledMaterialCount": "禁用材料数",
+        "latestEventType": "最近事件类型",
+        "latestEventAt": "最近事件时间"
+      },
+      "actions": {
+        "refresh": "刷新状态",
+        "exportCurrent": "导出当前授权",
+        "disable": "撤销授权",
+        "import": "导入授权",
+        "activate": "激活授权",
+        "renew": "续期授权"
+      },
+      "form": {
+        "packageFile": "授权文件",
+        "noFileSelected": "未选择文件",
+        "passphrase": "授权口令",
+        "passphrasePlaceholder": "请输入与授权文件配套的口令"
+      },
+      "messages": {
+        "selectPackageFile": "请选择授权文件",
+        "enterPassphrase": "请输入授权口令",
+        "noRenewablePackage": "当前没有可续期的高级授权",
+        "noDisableablePackage": "当前没有可撤销的高级授权",
+        "activateSuccess": "高级授权已激活",
+        "disableSuccess": "高级授权已撤销",
+        "renewSuccess": "高级授权续期成功",
+        "exportSuccess": "高级授权导出成功",
+        "confirmRenew": "确定续期高级授权并自动激活吗？",
+        "confirmDisable": "确定撤销高级授权吗？租户加密密钥将清除。"
+      },
+      "labels": {
+        "expiresInDays": "剩余 {count} 天过期",
+        "expiredByDays": "已过期 {count} 天"
+      }
+    },
+    "presets": {
+      "page": {
+        "title": "证书预置模板"
+      },
+      "list": {
+        "title": "预置 DNS 模板"
+      },
+      "actions": {
+        "import": "导入",
+        "export": "导出",
+        "exportAll": "导出全部",
+        "exportSelected": "导出选中 ({count})",
+        "create": "新增预置"
+      },
+      "columns": {
+        "serviceName": "服务名称",
+        "dnsNames": "DNS 名称",
+        "description": "描述",
+        "createdAt": "创建时间"
+      },
+      "empty": "暂无预置模板",
+      "importDialog": {
+        "title": "导入预置模板"
+      },
+      "form": {
+        "createTitle": "新增预置",
+        "editTitle": "编辑预置",
+        "fields": {
+          "serviceName": "服务名称",
+          "dnsNames": "DNS 名称",
+          "description": "描述"
+        },
+        "placeholders": {
+          "serviceName": "如: api-gateway",
+          "dnsNames": "每行一个 DNS 名称，例如：\ngateway.local\napi.local\nadmin.local",
+          "description": "用途描述（可选）"
+        },
+        "validation": {
+          "serviceNameRequired": "请输入服务名称",
+          "dnsNamesRequired": "请至少添加一个 DNS 名称"
+        }
+      },
+      "importHint": {
+        "header": "文件需包含表头：service_name,dns_names,description",
+        "example1": "例如：gateway,\"gateway.local",
+        "example2": "api.local\",网关服务"
+      },
+      "importValidation": {
+        "missingServiceName": "缺少 service_name",
+        "missingDnsNames": "至少需要一个 dns_names",
+        "missingColumn": "缺少必需列 {key}",
+        "failed": "验证失败"
+      }
+    },
+    "list": {
+      "title": "证书列表",
+      "actions": {
+        "issue": "签发证书",
+        "revoke": "吊销"
+      },
+      "disabledReasons": {
+        "revoked": "证书已吊销"
+      },
+      "columns": {
+        "subject": "主体",
+        "dnsNames": "DNS 名称",
+        "expiresAt": "过期时间",
+        "status": "状态"
+      }
+    },
+    "detail": {
+      "title": "证书详情",
+      "sections": {
+        "info": "证书信息",
+        "files": "证书文件",
+        "statusLegend": "状态说明"
+      },
+      "disabledReasons": {
+        "notLoaded": "证书信息未加载",
+        "revoked": "证书已吊销"
+      },
+      "actions": {
+        "download": "下载",
+        "renew": "续期",
+        "autoRenewal": "自动续期",
+        "revoke": "吊销"
+      },
+      "fields": {
+        "id": "ID",
+        "subject": "主体",
+        "dnsNames": "DNS 名称",
+        "issuedAt": "生效时间",
+        "expiresAt": "过期时间",
+        "status": "状态"
+      },
+      "tabs": {
+        "certPem": "证书 (cert.pem)",
+        "keyPem": "私钥 (key.pem)",
+        "caPem": "CA 证书 (ca.pem)"
+      },
+      "statusLegend": {
+        "valid": {
+          "label": "有效",
+          "description": "证书在有效期内"
+        },
+        "expiringSoon": {
+          "label": "即将过期",
+          "description": "证书将在 30 天内过期"
+        },
+        "expired": {
+          "label": "已过期",
+          "description": "证书已超过有效期"
+        },
+        "revoked": {
+          "label": "已吊销",
+          "description": "证书已被吊销，无法恢复"
+        }
+      }
+    },
+    "issueDialog": {
+      "title": "签发证书",
+      "presetTemplate": "预置模板",
+      "selectPresetPlaceholder": "选择预置模板（可选）",
+      "unnamed": "未命名",
+      "issued": "已签发",
+      "noPresets": "暂无可用的预置模板",
+      "serviceName": "服务名称",
+      "serviceNamePlaceholder": "例如: mazbri-auth-service",
+      "serviceNameTip": "服务唯一标识。",
+      "dnsNames": "DNS 名称",
+      "dnsNamesPlaceholder": "多个 DNS 名称用逗号分隔，或选择预置模板",
+      "validity": "有效期",
+      "validityOptions": {
+        "90": "90 天",
+        "180": "180 天",
+        "365": "365 天 (1年)",
+        "730": "730 天 (2年)"
+      },
+      "batchIssue": "一键签发 ({count} 个未签发)",
+      "issue": "签发",
+      "batchIssueFailed": "{name}: 签发失败",
+      "validation": {
+        "serviceNameRequired": "请输入服务名称",
+        "serviceNameLength": "服务名称长度必须在 1-255 个字符之间",
+        "dnsRequired": "请输入至少一个 DNS 名称"
+      }
+    },
+    "autoRenewalDialog": {
+      "title": "自动续期配置",
+      "fields": {
+        "subject": "证书主体",
+        "expiresAt": "过期时间",
+        "enabled": "启用自动续期",
+        "thresholdDays": "提前续期天数（天）",
+        "validityDays": "续期有效期（天）",
+        "nextRenewalAt": "下次续期时间"
+      },
+      "hints": {
+        "thresholdDays": "证书过期前几天自动续期",
+        "validityDays": "续期后证书的有效期"
+      },
+      "options": {
+        "validityDays": {
+          "90": "90 天",
+          "180": "180 天",
+          "365": "365 天 (1年)",
+          "730": "730 天 (2年)",
+          "1095": "1095 天 (3年)"
+        }
+      },
+      "validation": {
+        "thresholdDaysRequired": "请输入提前续期天数",
+        "thresholdDaysRange": "天数必须在 1-365 之间",
+        "validityDaysRequired": "请选择续期有效期"
+      }
+    },
+    "messages": {
+      "deletePresetConfirm": "确定要删除预置 \"{name}\" 吗？",
+      "noPresetToExport": "暂无数据可导出",
+      "selectPresetToExport": "请先选择要导出的预置模板",
+      "exportPresetCountSuccess": "成功导出 {count} 个预置模板",
+      "serviceNameRequired": "请输入服务名称",
+      "dnsRequired": "请输入至少一个 DNS 名称",
+      "issueSuccess": "证书签发成功",
+      "noPresetToIssue": "没有需要签发的预置模板",
+      "batchIssueSuccess": "成功签发 {count} 个证书",
+      "batchIssuePartial": "签发完成：成功 {successCount} 个，失败 {failCount} 个",
+      "renewConfirm": "确定要续期证书 \"{name}\" 吗？",
+      "revokeConfirm": "确定吊销证书 “{name}” 吗？",
+      "confirmRevoke": "确定吊销",
+      "renewPromptTitle": "证书续期",
+      "renewPromptMessage": "请输入续期天数（1-36135 天）",
+      "confirmRenew": "确定续期",
+      "renewPromptError": "请输入有效的天数（正整数）",
+      "renewPromptPlaceholder": "例如：365 表示续期一年",
+      "renewDaysRange": "续期天数必须在 1-36135 之间",
+      "revokeCurrentConfirm": "确定要吊销此证书吗？此操作不可逆！"
+    }
+  },
+  "userManagement": {
+    "page": {
+      "title": "用户管理"
+    },
+    "list": {
+      "title": "系统用户列表",
+      "addUser": "新增用户",
+      "resetPassword": "重置密码",
+      "resetMfa": "重置 MFA",
+      "columns": {
+        "username": "用户名",
+        "displayName": "显示名称",
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "mfa": "MFA",
+        "lastLogin": "最后登录",
+        "createdAt": "创建时间"
+      }
+    },
+    "createDialog": {
+      "title": "新增用户",
+      "fields": {
+        "username": "用户名",
+        "displayName": "显示名称",
+        "email": "邮箱",
+        "password": "密码",
+        "role": "角色",
+        "firstLogin": "首次登录"
+      },
+      "placeholders": {
+        "username": "请输入用户名",
+        "displayName": "请输入显示名称",
+        "email": "请输入邮箱",
+        "password": "请输入密码",
+        "role": "请选择角色"
+      },
+      "actions": {
+        "regeneratePassword": "重新生成密码"
+      },
+      "tips": {
+        "passwordGenerated": "已根据密码策略自动生成",
+        "forcePasswordReset": "首次登录需要修改密码"
+      },
+      "validation": {
+        "usernameRequired": "请输入用户名",
+        "usernameLength": "用户名长度在 3 到 50 个字符",
+        "usernamePattern": "用户名必须以字母开头",
+        "displayNameRequired": "请输入显示名称",
+        "displayNameLength": "显示名称最长 100 个字符",
+        "emailRequired": "请输入邮箱",
+        "emailInvalid": "请输入正确的邮箱地址",
+        "passwordRequired": "请输入密码",
+        "passwordLength": "密码长度不能少于 8 位",
+        "roleRequired": "请选择角色"
+      },
+      "messages": {
+        "createSuccess": "创建成功"
+      }
+    },
+    "resetPasswordDialog": {
+      "title": "重置密码",
+      "alert": "为管理员 {username} 重置密码",
+      "fields": {
+        "newPassword": "新密码"
+      },
+      "placeholders": {
+        "newPassword": "请输入新密码"
+      },
+      "forceReset": "要求用户下次登录时修改密码",
+      "validation": {
+        "newPasswordRequired": "请输入新密码",
+        "newPasswordLength": "密码长度不能少于 8 位"
+      }
+    },
+    "detail": {
+      "title": "管理员详情",
+      "userTitle": "用户详情",
+      "basicInfo": "基本信息",
+      "editTitle": "编辑管理员基本信息",
+      "editUserTitle": "编辑用户基本信息",
+      "resetPassword": "重置密码",
+      "deleteAdmin": "删除管理员",
+      "deleteUser": "删除用户",
+      "labels": {
+        "id": "ID",
+        "username": "用户名",
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "mfaStatus": "MFA 状态",
+        "forcePasswordReset": "强制改密",
+        "lastLogin": "最后登录"
+      },
+      "validation": {
+        "emailRequired": "请输入邮箱",
+        "emailInvalid": "请输入正确的邮箱地址",
+        "roleRequired": "请选择角色"
+      }
+    },
+    "roles": {
+      "admin": "管理员",
+      "operator": "操作员",
+      "finance": "财务",
+      "viewer": "只读用户",
+      "operatorWithScope": "操作员 (业务读写)",
+      "financeWithScope": "财务 (账务对账)",
+      "viewerWithScope": "只读用户 (仅查看)"
+    },
+    "messages": {
+      "resetMfaTitle": "重置 MFA",
+      "resetMfaConfirm": "确定重置 “{username}” 的 MFA 吗？需重新绑定。",
+      "deleteSystemAdminBlocked": "无法删除系统管理员账号",
+      "systemAdminDeleteBlocked": "无法删除系统管理员账号",
+      "deleteUserConfirm": "确定要删除用户 \"{username}\" 吗？",
+      "deleteAdminConfirm": "确定要删除管理员 \"{username}\" 吗？"
+    }
+  },
+  "supplier": {
+    "list": {
+      "title": "供应商列表",
+      "searchPlaceholder": "供应商名称 / 编码"
+    },
+    "actions": {
+      "add": "新增供应商"
+    },
+    "fields": {
+      "code": "编码",
+      "name": "名称",
+      "accessAddress": "接入地址",
+      "status": "状态",
+      "upstreamType": "对接类型",
+      "targetAddress": "目标地址",
+      "contractId": "契约 ID",
+      "id": "内部 ID"
+    },
+    "placeholders": {
+      "contractId": "填写 gateway 已登记的契约 ID"
+    },
+    "form": {
+      "createTitle": "新增供应商",
+      "editTitle": "编辑供应商",
+      "codePlaceholder": "SUP_A",
+      "namePlaceholder": "供应商 A",
+      "accessAddressPlaceholder": "127.0.0.1:8088",
+      "targetAddressPlaceholder": "例如: https://upstream.example.com",
+      "saveAndBack": "保存",
+      "cancelBack": "取消",
+      "typeLockedHint": "对接类型在接入时确定，创建后不可更改"
+    },
+    "detail": {
+      "pageTitle": "供应商详情",
+      "basicInfoTitle": "基本信息",
+      "advancedInfoTitle": "集成配置",
+      "authSectionTitle": "动态认证",
+      "transformSectionTitle": "转换引擎",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "noCredentials": "无凭证",
+      "loadFailed": "加载供应商失败",
+      "editingBadge": "编辑中"
+    },
+    "empty": {
+      "noMatch": "未找到匹配的供应商",
+      "noData": "暂无供应商"
+    },
+    "validation": {
+      "codeRequired": "请输入供应商编码",
+      "nameRequired": "请输入供应商名称",
+      "accessAddressRequired": "请输入接入地址",
+      "contractIdRequired": "微服务模式必须填写 contract_id"
+    },
+    "messages": {
+      "deleteConfirm": "确认删除供应商 {name}？"
+    },
+    "upstreamOptions": {
+      "microservice": "微服务",
+      "transparent": "智能网关"
+    },
+    "config": {
+      "authTitle": "动态认证",
+      "tokenUrl": "登录接口",
+      "method": "请求方式",
+      "credentials": "凭证",
+      "addCredential": "添加凭证",
+      "credKey": "键",
+      "credValue": "值",
+      "requestBodyTpl": "登录请求体模板",
+      "requestBodyTplHint": "支持 {{username}} 等占位符；空则自动组凭证。",
+      "tokenJsonpath": "Token 提取",
+      "expiryJsonpath": "有效期提取",
+      "injectKey": "注入字段",
+      "injectFormat": "注入格式",
+      "injectPreview": "注入效果预览",
+      "injectPreviewTitle": "注入效果预览",
+      "injectLocation": "注入位置",
+      "injectPreviewTip": "<DYNAMIC_TOKEN> 仅为示例，网关将自动注入并维护真实令牌。",
+      "transformTitle": "转换引擎",
+      "rewritePath": "路径重写",
+      "requestBodyTemplate": "请求体模板",
+      "requestBodyTemplateHint": "如 {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
+      "responseBodyTemplate": "响应体模板",
+      "requestHeadersSet": "请求头设置",
+      "requestHeadersRemove": "请求头移除",
+      "responseHeadersSet": "响应头设置",
+      "addHeader": "添加请求头",
+      "authHeaders": "换票请求头"
+    }
+  },
+  "billing": {
+    "list": {
+      "title": "账单列表",
+      "searchPlaceholder": "账单 ID / 租户名称",
+      "guidePrefix": "本页仅管理账单。用量一致性请前往",
+      "guideRecon": "用量对账",
+      "guideMid": "；余额充值/退款请到",
+      "guideAccount": "租户 → 账户",
+      "guideSuffix": "。"
+    },
+    "actions": {
+      "export": "导出",
+      "exportPage": "导出本页",
+      "exportSelected": "导出所选 ({count})",
+      "generate": "生成账单",
+      "markPaid": "标记已付",
+      "markOverdue": "标记逾期"
+    },
+    "status": {
+      "pending": "待处理",
+      "processing": "处理中",
+      "paid": "已付",
+      "overdue": "逾期",
+      "cancelled": "已取消"
+    },
+    "statusConfirm": {
+      "title": "更新账单状态",
+      "message": "确认将「{name}」标记为「{status}」？"
+    },
+    "reconciliation": {
+      "guide": "用量一致性对账：对比计费用量（OLTP）与分析聚合（OLAP）。当前为两方对账，不是完整三方清结算。",
+      "listTitle": "历史差异台账",
+      "empty": "暂无对账记录，请选择日期后运行对账",
+      "emptyNoMatch": "无匹配的对账记录",
+      "searchPlaceholder": "日期 / 状态 / 范围 / 备注 / ID",
+      "from": "开始日期",
+      "to": "结束日期",
+      "statusFilter": "状态筛选",
+      "runDatePlaceholder": "对账日期",
+      "runDateRequired": "请选择对账日期",
+      "runAudit": "运行对账",
+      "runSuccess": "对账完成（状态：{status}）",
+      "exportCsv": "导出 CSV",
+      "exportEmpty": "无可导出记录",
+      "exportSuccess": "CSV 已导出",
+      "deleteConfirm": {
+        "title": "删除对账记录",
+        "one": "确认删除「{name}」？此操作不可恢复。",
+        "all": "确认删除本页全部 {count} 条对账记录？此操作不可恢复。",
+        "selected": "确认删除所选 {count} 条对账记录？此操作不可恢复。"
+      },
+      "settingsTitle": "运行设置",
+      "settingsHint": "定时对账、阈值与告警可热更，无需改启动配置或重启",
+      "settingsSaved": "对账设置已保存",
+      "expandSettings": "点击展开配置项",
+      "collapseSettings": "点击收起配置项",
+      "sectionSchedule": "定时调度",
+      "sectionThreshold": "阈值与告警",
+      "sectionScope": "对账范围",
+      "summaryScheduledOn": "定时已开",
+      "summaryScheduledOff": "定时关闭",
+      "summaryThreshold": "阈值 {value}",
+      "scheduledEnabled": "启用定时对账",
+      "intervalSecs": "定时间隔（秒）",
+      "usePreviousDay": "对账昨天",
+      "lossRatioThreshold": "差异阈值",
+      "alertOnFlagged": "异常时 Webhook 告警",
+      "alertWebhook": "Webhook URL",
+      "alertWebhookPlaceholder": "https://hooks.example.com/...",
+      "includeAmount": "写入金额维对账",
+      "includeRawLog": "纳入网关请求日志",
+      "warnBeforeBill": "出账前警告未关闭差异",
+      "lastRunAt": "上次定时跑批",
+      "neverRun": "尚未跑过",
+      "viewCustomerCalls": "客户调用",
+      "viewUpstreamCalls": "上游调用",
+      "acknowledge": "确认",
+      "resolve": "关闭",
+      "acknowledgeTitle": "确认差异",
+      "resolveTitle": "关闭差异",
+      "note": "处理备注",
+      "notePlaceholder": "可选备注说明",
+      "detailTitle": "差异详情",
+      "resolvedAt": "处理时间",
+      "detail": {
+        "summaryTitle": "结论摘要",
+        "threshold": "阈值 {value}",
+        "vsThreshold": "是否超阈值",
+        "overThreshold": "已超阈值",
+        "withinThreshold": "未超阈值",
+        "primaryCompare": "主比对",
+        "primaryCompareLine": "计费用量 {billing} 次  vs  {peerLabel} {peer} 次",
+        "callDiff": "调用差额",
+        "callDiffMatch": "一致（0 次）",
+        "callDiffBillingLess": "计费用量比{peerLabel}少 {count} 次",
+        "callDiffBillingMore": "计费用量比{peerLabel}多 {count} 次",
+        "callsTitle": "调用量对照",
+        "sourceCol": "数据来源",
+        "countCol": "调用次数",
+        "roleCol": "角色",
+        "sourceBilling": "计费用量（usage_records）",
+        "sourceUpstream": "上游旁路预聚合",
+        "sourceGatewayUnavailable": "网关客户请求（本次未纳入）",
+        "roleBilling": "出账侧",
+        "rolePrimary": "主比对",
+        "roleGateway": "客户侧请求",
+        "roleReference": "参考",
+        "roleUnavailable": "未启用",
+        "amountTitle": "金额对账",
+        "usageAmount": "用量应计金额",
+        "billItemsTotal": "账单明细合计",
+        "amountDiff": "金额差额",
+        "amountMatch": "一致",
+        "methodologyTitle": "数据口径说明",
+        "rawSnapshotTitle": "原始快照（技术排障）",
+        "methodBilling": "计费用量：当日写入的 usage_records（可计费调用），作为出账依据。",
+        "methodGateway": "网关客户请求：仅 mazbri-gateway 访问日志，与客户侧调用口径对齐。",
+        "methodUpstream": "上游旁路预聚合：bypass 侧 upstream_hourly，仅作旁证，不是主比对。",
+        "methodPrimary": "本次主比对侧：{peerLabel}。",
+        "methodSources": "参与数据源：{list}",
+        "sources": {
+          "unknown": "未知来源",
+          "oltp_usage_records": "计费用量（usage_records）",
+          "olap_preagg_bypass": "上游旁路预聚合",
+          "olap_preagg": "上游预聚合",
+          "request_logs_gateway": "网关客户请求",
+          "olap_preagg_compat": "上游预聚合（兼容回退）"
+        }
+      },
+      "columns": {
+        "date": "对账日期",
+        "scope": "范围",
+        "oltp": "计费用量",
+        "olap": "上游预聚合",
+        "ratio": "差异率",
+        "status": "状态"
+      },
+      "statuses": {
+        "ok": "正常",
+        "flagged": "异常",
+        "acknowledged": "已确认",
+        "resolved": "已关闭"
+      }
+    },
+    "adjustments": {
+      "title": "账单更正（台账）",
+      "hint": "仅记录挂在本账单上的更正说明，不改账户余额",
+      "add": "添加更正",
+      "addTitle": "添加账单更正",
+      "empty": "暂无账单更正",
+      "type": "类型",
+      "amount": "金额",
+      "amountPlaceholder": "请输入金额",
+      "reason": "原因",
+      "reasonPlaceholder": "请输入更正原因",
+      "status": "状态",
+      "void": "作废",
+      "voidConfirm": "确认作废该账单更正？",
+      "required": "请填写金额与原因",
+      "ledgerOnlyNote": "产品策略：仅台账，不联动 tenant 账户余额。余额请用充值/退款。",
+      "types": {
+        "credit": "贷记/减免",
+        "debit": "借记/补收",
+        "correction": "纠错",
+        "other": "其他"
+      },
+      "statuses": {
+        "posted": "已入账",
+        "void": "已作废"
+      }
+    },
+    "detail": {
+      "title": "账单详情",
+      "download": "下载明细",
+      "overview": "账单概览",
+      "itemsTitle": "计费明细",
+      "itemsCount": "本账单共有 {count} 条明细",
+      "emptyItems": "暂无明细"
+    },
+    "labels": {
+      "billId": "账单 ID",
+      "billKind": "账单类型",
+      "period": "账期",
+      "periodStart": "账期开始",
+      "periodEnd": "账期结束",
+      "dueDate": "到期时间",
+      "total": "总额",
+      "totalCalls": "调用次数",
+      "dataVolume": "数据量",
+      "tenantName": "租户名称",
+      "tenantCode": "租户编码",
+      "tenantId": "租户 ID"
+    },
+    "generateDialog": {
+      "title": "生成账单",
+      "confirm": "生成",
+      "billKind": "账单类型",
+      "tenant": "租户",
+      "tenantPlaceholder": "请选择租户",
+      "upstreamScopeType": "上游范围类型",
+      "upstreamScope": "上游范围",
+      "upstreamChannel": "上游通道",
+      "upstreamSupplier": "上游供应商",
+      "upstreamChannelPlaceholder": "请选择上游通道",
+      "upstreamSupplierPlaceholder": "请选择上游供应商",
+      "periodRange": "日期范围",
+      "periodStartPlaceholder": "开始日期",
+      "periodEndPlaceholder": "结束日期"
+    },
+    "columns": {
+      "tenantName": "名称",
+      "tenantCode": "编码",
+      "billKind": "账单类型",
+      "periodStart": "账期开始",
+      "periodEnd": "账期结束",
+      "total": "金额",
+      "status": "状态"
+    },
+    "itemColumns": {
+      "description": "接口",
+      "billingType": "计费类型",
+      "quantity": "调用次数",
+      "totalUnits": "计费单位",
+      "unitPrice": "单价",
+      "total": "金额"
+    },
+    "validation": {
+      "billKindRequired": "请选择账单类型",
+      "tenantRequired": "请选择租户",
+      "upstreamScopeRequired": "请选择上游范围",
+      "periodRangeRequired": "请选择日期范围",
+      "periodRangeComplete": "请选择完整的日期范围"
+    },
+    "empty": {
+      "noMatch": "未找到符合筛选条件的账单",
+      "noData": "暂无账单"
+    },
+    "deleteConfirm": {
+      "title": "删除账单",
+      "one": "确认删除账单「{name}」吗？",
+      "all": "确认删除当前页全部 {count} 条账单吗？",
+      "selected": "确认删除所选的 {count} 条账单吗？"
+    },
+    "billingTypes": {
+      "call": "按次"
+    },
+    "billKinds": {
+      "customer": "客户账单",
+      "upstream": "上游账单"
+    },
+    "messages": {
+      "noExport": "没有可导出的账单",
+      "exportDetailFailed": "导出账单详情失败",
+      "loadTenantsFailed": "获取租户列表失败",
+      "loadChannelsFailed": "获取上游通道失败",
+      "loadSuppliersFailed": "获取上游供应商失败",
+      "loadBillDetailFailed": "获取账单详情失败",
+      "generateSuccess": "账单生成成功",
+      "generateFailed": "账单生成失败，请稍后重试",
+      "billAlreadyExists": "该账期账单已存在，已刷新账单数据",
+      "noUpstreamLogs": "该账期没有可计费的上游请求日志",
+      "invalidPeriod": "账期开始时间必须早于结束时间"
+    }
+  },
+  "tenant": {
+    "list": {
+      "title": "租户列表",
+      "searchPlaceholder": "名称 / 租户账号 / 编码 / 邮箱"
+    },
+    "detail": {
+      "pageTitle": "租户详情",
+      "tabs": {
+        "basic": "基本信息",
+        "apiKeys": "API 密钥",
+        "whitelist": "IP 白名单",
+        "accessStrategy": "接入策略",
+        "transportEncryption": "传输加密",
+        "account": "账户余额",
+        "products": "已开通产品"
+      },
+      "basicInfo": {
+        "title": "基本信息",
+        "editTitle": "编辑基本信息"
+      },
+      "status": {
+        "active": "启用",
+        "suspended": "停用"
+      },
+      "validation": {
+        "nameRequired": "请输入租户名称",
+        "nameLength": "名称长度在 2 到 100 个字符",
+        "email": "请输入正确的邮箱地址"
+      }
+    },
+    "transportEncryption": {
+      "alert": {
+        "title": "许可证未生效，租户传输加密保持灰态。",
+        "currentStatus": "当前平台状态：{status}"
+      },
+      "sections": {
+        "strategy": "传输加密策略",
+        "keyVersions": "密钥版本"
+      },
+      "formSections": {
+        "basicControl": "基本控制",
+        "security": "安全选项",
+        "codec": "编解码器配置",
+        "timeParams": "时间安全参数"
+      },
+      "fields": {
+        "encryptionMode": "加密模式",
+        "currentKeyVersion": "当前密钥版本",
+        "signatureCheck": "签名校验",
+        "codecEnabled": "启用协议编码",
+        "requestCodec": "请求编码",
+        "responseCodec": "响应编码",
+        "codecVersion": "协议版本",
+        "nonceTtlSeconds": "Nonce 有效期（秒）",
+        "clockSkewSeconds": "时间戳容忍窗口（秒）"
+      },
+      "placeholders": {
+        "selectActiveKey": "选择 active 密钥"
+      },
+      "modes": {
+        "none": "关闭",
+        "request": "请求加密",
+        "full": "双向加密"
+      },
+      "modesDesc": {
+        "none": "不进行数据加密，报文以明文传输",
+        "request": "仅加密客户端发起的上行请求",
+        "full": "对上行请求与下行响应进行双向加密"
+      },
+      "actions": {
+        "goRootPackage": "前往授权管理",
+        "createKey": "创建密钥",
+        "rotateKey": "轮换密钥",
+        "activate": "激活",
+        "deprecate": "废弃",
+        "disable": "禁用",
+        "delete": "删除"
+      },
+      "messages": {
+        "deleteKeyConfirm": "确定永久删除密钥版本 {version} 吗？"
+      },
+      "table": {
+        "version": "版本",
+        "status": "状态",
+        "encryptionAlgorithm": "加密算法",
+        "signatureAlgorithm": "签名算法",
+        "createdAt": "创建时间",
+        "operations": "操作"
+      },
+      "secretDialog": {
+        "title": "租户密钥",
+        "warning": "明文密钥只显示一次，关闭后无法再次查看。",
+        "fields": {
+          "keyVersion": "密钥版本",
+          "algorithm": "加密算法",
+          "signatureAlgorithm": "签名算法"
+        }
+      }
+    },
+    "account": {
+      "overviewTitle": "账户概览",
+      "overviewSubtitle": "余额、状态与快捷操作",
+      "balanceLabel": "账户余额",
+      "status": {
+        "active": "正常",
+        "frozen": "已冻结"
+      },
+      "quickActionsTitle": "快捷操作",
+      "quickActionsHint": "",
+      "recharge": "充值",
+      "refund": "退款",
+      "transactionsTitle": "交易记录（充值/退款）",
+      "transactionsSubtitle": "充值 / 退款",
+      "filterPlaceholder": "全部类型",
+      "filters": {
+        "all": "全部",
+        "credit": "充值",
+        "refund": "退款",
+        "charge": "扣费",
+        "adjustment": "调整"
+      },
+      "reasonCode": "原因码",
+      "reasonCodePlaceholder": "选择原因码",
+      "reasonCodes": {
+        "compensation": "补偿",
+        "correction": "纠错",
+        "commercial": "商务协议",
+        "other": "其他"
+      },
+      "rechargeDialogTitle": "账户充值",
+      "refundDialogTitle": "账户退款",
+      "rechargeConfirm": "确认充值",
+      "refundConfirm": "确认退款",
+      "currentBalance": "当前余额",
+      "rechargeAmount": "充值金额",
+      "rechargeAmountPlaceholder": "请输入充值金额",
+      "refundAmount": "退款金额",
+      "refundAmountPlaceholder": "请输入退款金额",
+      "description": "说明",
+      "descriptionPlaceholder": "请输入充值说明",
+      "refundReason": "退款原因",
+      "refundReasonPlaceholder": "请输入退款原因",
+      "balanceAfterRefund": "退款后余额",
+      "refundExceedsBalance": "退款金额不能超过当前余额",
+      "columns": {
+        "type": "类型",
+        "amount": "金额",
+        "balanceChange": "余额变化",
+        "description": "描述",
+        "paymentMethod": "支付方式",
+        "operator": "操作人"
+      },
+      "transactionTypes": {
+        "credit": "充值",
+        "refund": "退款",
+        "charge": "扣费",
+        "adjustment": "调整",
+        "payment": "支付"
+      },
+      "paymentMethods": {
+        "manual": "人工",
+        "bankTransfer": "银行转账",
+        "alipay": "支付宝",
+        "wechatPay": "微信支付",
+        "creditCard": "信用卡",
+        "refund": "退款",
+        "credit": "信用",
+        "adjustment": "调整"
+      },
+      "validation": {
+        "rechargeAmountRequired": "请输入充值金额",
+        "rechargeAmountPositive": "充值金额必须大于 0",
+        "rechargeDescriptionRequired": "请输入充值说明",
+        "refundAmountRequired": "请输入退款金额",
+        "refundAmountPositive": "退款金额必须大于 0",
+        "refundReasonRequired": "请输入退款原因"
+      },
+      "mfaDisabledTitle": "MFA 未启用",
+      "mfaDisabledMessage": "禁止充值，请联系管理员启用 MFA。"
+    },
+    "createDialog": {
+      "placeholders": {
+        "code": "A1B2C3D4",
+        "accountId": "my-company",
+        "name": "请输入租户名称",
+        "contactPerson": "请输入联系人姓名",
+        "contactPhone": "请输入联系电话",
+        "contactEmail": "请输入联系邮箱"
+      },
+      "tips": {
+        "code": "8 位大写字母与数字。",
+        "accountId": "唯一标识符，小写字母、数字、下划线、连字符"
+      },
+      "validation": {
+        "codeRequired": "请输入租户编码",
+        "codeLength": "租户编码必须为 8 位",
+        "codePattern": "租户编码只能包含大写字母和数字",
+        "accountIdRequired": "请输入租户账号",
+        "accountIdPattern": "租户账号只能包含小写字母、数字、下划线和连字符",
+        "nameRequired": "请输入租户名称",
+        "nameLength": "名称长度在 2 到 100 个字符",
+        "contactPersonRequired": "请输入联系人姓名",
+        "contactPersonLength": "联系人姓名长度不能超过 50 个字符",
+        "contactPhoneRequired": "请输入联系电话",
+        "contactPhonePattern": "请输入正确的手机号码",
+        "contactEmailRequired": "请输入联系邮箱",
+        "contactEmailPattern": "请输入正确的邮箱地址"
+      }
+    },
+    "tabs": {
+      "apiKeys": "API 密钥管理"
+    },
+    "actions": {
+      "addTenant": "新增租户",
+      "addApiKey": "新增 API 密钥",
+      "renewApiKey": "续期 API 密钥",
+      "disable": "停用",
+      "enable": "启用"
+    },
+    "fields": {
+      "code": "租户编码",
+      "accountId": "租户账号",
+      "contactPerson": "联系人",
+      "contactPhone": "联系电话",
+      "contactEmail": "联系邮箱"
+    },
+    "apiKey": {
+      "key": "密钥",
+      "expiry": "过期时间",
+      "expiryDays": "过期天数",
+      "currentExpiry": "当前过期",
+      "renewDays": "续期天数",
+      "createTitle": "新增 API 密钥",
+      "validation": {
+        "renewDaysRequired": "请输入续期天数",
+        "renewDaysRange": "续期天数范围 1-3650"
+      }
+    },
+    "products": {
+      "title": "已开通产品",
+      "manageGlobalAuth": "管理全局授权",
+      "grantProduct": "开通产品",
+      "columns": {
+        "productId": "产品编码",
+        "name": "产品名称",
+        "description": "产品说明",
+        "grantedAt": "授权时间",
+        "billingType": "计费模式",
+        "unitPrice": "单价",
+        "cbProFallback": "CBPRO"
+      },
+      "grantDialog": {
+        "title": "开通产品",
+        "confirm": "开通",
+        "product": "选择产品",
+        "productPlaceholder": "请选择或搜索要开通的产品",
+        "billingMode": "计费模式",
+        "billingModePlaceholder": "请选择计费模式",
+        "unitPrice": "单价",
+        "unitPricePlaceholder": "例如 0.001",
+        "cbProFallback": "CBPRO",
+        "cbProEnabledHint": "",
+        "cbProDisabledHint": "产品未开启 CBPRO"
+      }
+    },
+    "whitelist": {
+      "title": "IP 白名单",
+      "ruleSuffix": "条规则",
+      "export": "导出",
+      "exportAll": "导出全部",
+      "exportSelected": "导出选中 ({count})",
+      "import": "导入",
+      "add": "添加 IP",
+      "emptyTitle": "暂无 IP 白名单",
+      "emptyHint1": "空白名单：允许所有 IP。",
+      "emptyHint2": "添加后仅白名单 IP 可访问。",
+      "selectedCount": "已选择 {count} 项",
+      "batchDelete": "批量删除",
+      "columns": {
+        "ipAddress": "IP 地址",
+        "cidr": "CIDR",
+        "type": "类型",
+        "description": "描述",
+        "status": "状态"
+      },
+      "addDialog": {
+        "title": "添加 IP 白名单",
+        "confirm": "确定添加",
+        "ipAddresses": "IP 地址",
+        "ipAddressesPlaceholder": "每行一个 IP 或网段，例如：\n192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
+        "ipAddressesHint": "每行一个 IP 或 CIDR。",
+        "description": "描述",
+        "descriptionPlaceholder": "例如: 办公网络、IDC 机房"
+      },
+      "importDialog": {
+        "title": "导入 IP 白名单",
+        "formatTitle": "CSV 文件格式",
+        "formatHint": "文件需包含表头：ip_address,cidr,description",
+        "formatExample": "例如：192.168.1.100,32,办公网络",
+        "uploadText": "拖拽 CSV 文件到此处，或",
+        "clickToUpload": "点击上传",
+        "tip": "仅 .csv，≤100KB。",
+        "newTitle": "新增: {count} 条",
+        "newHint": "这些 IP 将被添加到白名单",
+        "duplicateTitle": "重复: {count} 条 (将被跳过)",
+        "duplicateHint": "这些 IP 已存在于白名单中",
+        "invalidTitle": "无效: {count} 条 (格式错误)",
+        "moreInvalid": "... 还有 {count} 条",
+        "previewTitle": "将添加的 IP (前 {count} 条)",
+        "morePreview": "还有 {count} 条未显示",
+        "back": "返回",
+        "next": "下一步",
+        "confirm": "确认导入 ({count} 条)",
+        "validation": {
+          "fileSize": "文件大小不能超过 100KB",
+          "invalidCsv": "CSV 文件格式错误或为空"
+        },
+        "defaultDescription": "批量导入",
+        "importSuccess": "成功导入 {count} 条白名单规则",
+        "importFailedCount": "{count} 条导入失败"
+      },
+      "validation": {
+        "ipRequired": "请输入 IP 地址",
+        "invalidFormat": "无效的 IP 地址或 CIDR 格式: {entry}",
+        "ipRange": "IP 地址段超出范围: {entry}",
+        "cidrRange": "CIDR 前缀超出范围 (0-32): {entry}",
+        "descriptionRequired": "请输入描述"
+      },
+      "cidrLabels": {
+        "singleIp": "单个 IP",
+        "cSegment": "C 段 /{cidr}",
+        "bSegment": "B 段 /{cidr}",
+        "aSegment": "A 段 /{cidr}"
+      },
+      "deleteConfirmAll": "确定删除全部 {count} 条白名单吗？",
+      "deleteConfirmSelected": "确定删除选中的 {count} 条白名单吗？"
+    },
+    "cachePolicy": {
+      "title": "代理响应缓存",
+      "globalSettings": "全局缓存配置",
+      "apiOverrides": "接口差异配置",
+      "warmupList": "数据预热",
+      "addRule": "添加规则",
+      "apiPathPlaceholder": "例如: chat.completions",
+      "newWarmupKeyPlaceholder": "+ 新增预热",
+      "seconds": "秒",
+      "fields": {
+        "enabled": "启用缓存",
+        "ttl": "默认 TTL（秒）",
+        "maxSize": "缓存上限（字节）",
+        "isolated": "租户隔离",
+        "apiPath": "接口请求路径",
+        "overrideTtl": "定制过期时间（秒）",
+        "warmupKeys": "预热键名",
+        "warmupEnabled": "自动预加载"
+      },
+      "tips": {
+        "enabled": "",
+        "isolated": "",
+        "warmup": "",
+        "override": ""
+      }
+    },
+    "messages": {
+      "apiKeyCreated": "API 密钥创建成功",
+      "apiKeyExists": "该租户已存在 API 密钥，请先删除现有密钥",
+      "apiKeyRenewed": "密钥续期成功",
+      "deleteApiKeyConfirm": "确定要删除此 API 密钥吗？",
+      "apiKeyMissing": "密钥不存在",
+      "selectProductToGrant": "请选择要开通的产品",
+      "revokeProductConfirm": "确定要撤销产品 \"{name}\" 的开通吗？",
+      "ipRequired": "请输入至少一个 IP 地址",
+      "whitelistAddedCount": "成功添加 {count} 条白名单规则",
+      "whitelistPartialFailure": "{count} 条添加失败:\n{details}",
+      "deleteIpConfirm": "确定删除 IP {ip} 吗？",
+      "refundExceedsBalance": "退款金额不能超过当前余额",
+      "deleteTenantConfirm": "确定要永久删除租户 \"{name}\" 吗？此操作不可恢复，将释放租户编码并清理关联配置。",
+      "disableTenantConfirm": "确定要停用租户 \"{name}\" 吗？停用后该租户无法调用业务 API，可随时再启用。",
+      "enableTenantConfirm": "确定要启用租户 \"{name}\" 吗？"
+    },
+    "accessStrategy": {
+      "capabilityMapTitle": "",
+      "capabilityMapLead": "",
+      "cacheName": "响应缓存",
+      "cacheSummary": "",
+      "cbproName": "CBPRO",
+      "cbproSummary": "",
+      "openProductsTab": "已开通产品"
+    }
+  },
+  "rateLimit": {
+    "title": "限流",
+    "enablePlan": "启用限流",
+    "save": "保存",
+    "window": "统计窗口",
+    "seconds": "秒",
+    "basicControl": "基础控制",
+    "coreThresholds": "核心阈值",
+    "planRateSection": "套餐速率",
+    "planQps": "QPS",
+    "planBurst": "突发",
+    "abuseSection": "滥用防护",
+    "clientIpQps": "单 IP QPS",
+    "clientIpBurst": "单 IP 突发",
+    "bandwidthMbps": "带宽（Mbps，0=不限）",
+    "apiOverridesSection": "接口覆盖",
+    "apiOverridesHint": "",
+    "apiOverridesEmptyHint": "",
+    "apiOverridesEmpty": "暂无覆盖",
+    "fineGrainedOverrides": "接口速率覆盖",
+    "addOverride": "添加覆盖",
+    "pathPlaceholder": "例如 /posts 或 product:8000000001",
+    "overrideExceedsPlan": "接口覆盖「{path}」的 QPS（{limit}）超过套餐速率（{planQps}），请调低后再保存",
+    "overrideInvalidLimit": "接口覆盖「{path}」的上限无效",
+    "enabledOn": "开",
+    "enabledOff": "关",
+    "clientIpHint": "",
+    "bandwidthHint": "",
+    "enforcementNotice": "",
+    "opsTitle": "应急运维",
+    "opsHint": "",
+    "denyForMinutes": "临时封禁（分钟）",
+    "quotaMultiplier": "临时配额系数",
+    "expiresInMinutes": "有效期（分钟）",
+    "reason": "原因（可选）",
+    "issueDeny": "下发封禁",
+    "issueQuota": "下发系数",
+    "issueRefresh": "强制刷新策略",
+    "activeCommands": "当前指令",
+    "cancelCommand": "撤销",
+    "confirmDeny": "确认对该租户下发临时封禁？",
+    "confirmQuota": "确认对该租户下发临时配额系数？",
+    "confirmRefresh": "确认强制各网关立即刷新该租户策略快照？",
+    "confirmCancel": "确认撤销该控制指令？",
+    "noCommands": "暂无控制指令",
+    "upstreamFooter": "通道容量在「上游供给 → 通道」配置。",
+    "upstreamFooterLink": "前往上游供给",
+    "templates": {
+      "label": "套餐模板",
+      "hint": "",
+      "applied": "已套用「{name}」",
+      "trial": "试用（10 QPS）",
+      "standard": "标准（100 QPS）",
+      "premium": "高阶（1000 QPS）"
+    },
+    "gateSummary": {
+      "title": "闸门摘要",
+      "enabled": "套餐限流",
+      "on": "已启用",
+      "off": "未启用",
+      "planQps": "套餐 QPS",
+      "burst": "突发",
+      "overrides": "接口覆盖条数",
+      "enforcement": "强制模型",
+      "toPlan": "配置客户套餐",
+      "toUpstream": "配置上游通道容量",
+      "loadFailed": "闸门摘要加载失败"
+    },
+    "reasons": {
+      "title": "429 reason → 配置入口",
+      "hint": "",
+      "goConfig": "去配置",
+      "tenant_qps": {
+        "label": "套餐总速率",
+        "talk": "达客户套餐总速率 → 访问策略 · 套餐 QPS/突发"
+      },
+      "api_qps": {
+        "label": "接口覆盖",
+        "talk": "达接口覆盖上限 → 访问策略 · 接口速率覆盖"
+      },
+      "client_ip_qps": {
+        "label": "单 IP",
+        "talk": "单 IP 过快 → 访问策略 · 滥用防护 · 单 IP"
+      },
+      "bandwidth": {
+        "label": "带宽",
+        "talk": "带宽超限 → 访问策略 · 滥用防护 · 带宽"
+      },
+      "deny_until": {
+        "label": "临时拒绝",
+        "talk": "运维临时管制 → 访问策略 · 应急运维"
+      },
+      "deny_all": {
+        "label": "全拒",
+        "talk": "策略 deny_all → 访问策略 · 应急运维 / 刷新策略"
+      },
+      "snapshot_stale": {
+        "label": "快照过期",
+        "talk": "策略快照过期 → 应急运维强制刷新；检查 ratelimit 服务"
+      },
+      "channel_qps": {
+        "label": "通道容量",
+        "talk": "上游通道繁忙 → 上游供给 · 通道 QPS"
+      },
+      "queue_timeout": {
+        "label": "通道排队超时",
+        "talk": "通道排队超时 → 上游供给 · 通道容量/排队"
+      },
+      "queue_full": {
+        "label": "通道排队满",
+        "talk": "通道排队已满 → 上游供给 · 通道容量/排队"
+      }
+    },
+    "columns": {
+      "path": "匹配键",
+      "limit": "上限 QPS",
+      "operations": "操作",
+      "type": "类型",
+      "status": "状态",
+      "expires": "过期时间",
+      "created": "创建时间"
+    },
+    "statusActive": "生效中",
+    "statusExpired": "已过期",
+    "typeDeny": "临时封禁",
+    "typeQuota": "配额系数",
+    "typeRefresh": "刷新策略"
+  },
+  "authorization": {
+    "list": {
+      "title": "授权/订阅",
+      "summary": "管理租户与产品之间的开通、计费和订阅关系",
+      "searchPlaceholder": "搜索租户或产品",
+      "tenantCode": "租户编码",
+      "tenantName": "租户名称",
+      "productCode": "产品编码",
+      "productName": "产品名称",
+      "billingType": "计费模式",
+      "unitPrice": "单价",
+      "createdAt": "授权时间",
+      "revokeConfirm": "确定要撤销此授权吗？",
+      "revokeSuccess": "授权已撤销",
+      "actions": {
+        "create": "新建授权",
+        "modify": "修改",
+        "revoke": "撤销",
+        "batchRevoke": "撤销授权"
+      }
+    },
+    "config": {
+      "title": "授权/订阅配置",
+      "billingSection": "计费配置",
+      "fallbackSection": "CBPRO",
+      "codecSection": "协议编码",
+      "billingMode": "计费模式",
+      "billingCall": "按调用计费",
+      "billingSubscription": "包月订阅",
+      "unitPrice": "单价",
+      "unitPricePlaceholder": "例如 0.001",
+      "cbProFallback": "CBPRO",
+      "cbProEnabledHint": "",
+      "cbProDisabledHint": "产品未开启 CBPRO",
+      "codecEnabled": "启用协议编码",
+      "requestCodec": "请求编码",
+      "responseCodec": "响应编码",
+      "codecVersion": "协议版本",
+      "codecEnabledHint": "",
+      "conflictTitle": "配置冲突",
+      "cbProRuntimeHint": "",
+      "saveSuccess": "已保存"
+    },
+    "grantDialog": {
+      "title": "新建授权",
+      "confirm": "开通",
+      "tenant": "租户",
+      "product": "产品",
+      "selectTenant": "请选择租户",
+      "selectProduct": "请选择产品",
+      "billingMode": "计费模式",
+      "selectBillingMode": "请选择计费模式",
+      "billingCall": "按调用计费",
+      "billingSubscription": "包月订阅",
+      "unitPrice": "单价",
+      "unitPricePlaceholder": "例如 0.001",
+      "cbProFallback": "CBPRO",
+      "cbProEnabledHint": "",
+      "cbProDisabledHint": "产品未开启 CBPRO",
+      "enterUnitPrice": "请输入单价",
+      "success": "授权开通成功"
+    },
+    "fields": {
+      "authorizedProducts": "已授权产品"
+    },
+    "actions": {
+      "manage": "管理授权"
+    }
+  },
+  "product": {
+    "list": {
+      "title": "产品目录",
+      "searchPlaceholder": "产品名称或编码"
+    },
+    "actions": {
+      "add": "新增产品"
+    },
+    "columns": {
+      "productId": "产品编码",
+      "name": "产品名称",
+      "timeoutSecs": "超时时间（秒）",
+      "cbProEnabled": "CBPRO",
+      "enabled": "启用状态"
+    },
+    "fields": {
+      "productId": "产品编码",
+      "internalId": "内部ID",
+      "name": "产品名称",
+      "description": "产品说明",
+      "timeoutSecs": "超时时间（秒）",
+      "upstreamUrl": "默认上游地址",
+      "cbProEnabled": "CBPRO",
+      "cbFailureThreshold": "失败熔断阈值（次）",
+      "cbSuccessThreshold": "成功恢复阈值（次）",
+      "cbCooldownSecs": "熔断冷却时间（秒）",
+      "enabled": "启用状态"
+    },
+    "createDialog": {
+      "title": "新增产品",
+      "sections": {
+        "basic": "基础信息",
+        "advanced": "高级设置"
+      },
+      "hints": {
+        "productId": "预留产品编码，关闭或超时后失效。"
+      },
+      "advancedHint": "",
+      "placeholders": {
+        "name": "请输入产品名称",
+        "description": "产品说明",
+        "upstreamUrl": "https://127.0.0.1:8088"
+      },
+      "validation": {
+        "productIdReservationFailed": "产品编码预留失败，请关闭弹窗重试",
+        "productIdPattern": "产品编码须为 8 开头的 10 位数字。",
+        "nameRequired": "请输入产品名称",
+        "nameLength": "名称长度在 2 到 100 个字符",
+        "timeoutSecsRange": "超时时间需为 1 到 300 秒之间的数字",
+        "upstreamUrlRequired": "请输入默认上游地址"
+      }
+    },
+    "detail": {
+      "pageTitle": "产品详情",
+      "basicInfoTitle": "基本信息",
+      "advancedInfoTitle": "运行时信息",
+      "editTitle": "编辑产品基本信息",
+      "quickActionsTitle": "快捷操作",
+      "authorizationHint": "",
+      "authorizedTenantsTitle": "已开通租户",
+      "tenantCountSuffix": "个租户",
+      "noAuthorizedTenants": "暂无已开通租户",
+      "lockedHint": "创建后不可改",
+      "lockedAlert": "产品编码创建后不可修改。",
+      "tenantColumns": {
+        "name": "租户名称",
+        "tenantId": "租户标识",
+        "tenantCode": "租户编码",
+        "grantedAt": "授权时间"
+      },
+      "validation": {
+        "nameRequired": "请输入产品名称",
+        "nameLength": "名称长度在 2 到 100 个字符"
+      }
+    },
+    "empty": {
+      "default": "暂无产品",
+      "filtered": "未找到匹配的产品"
+    },
+    "messages": {
+      "deleteProductConfirm": "确定要删除产品 \"{name}\" 吗？"
+    }
+  },
+  "table": {
+    "form": {
+      "reset": "重置",
+      "submit": "提交"
+    },
+    "searchBar": {
+      "reset": "重置",
+      "search": "查询",
+      "expand": "展开",
+      "collapse": "收起",
+      "searchInputPlaceholder": "请输入",
+      "searchSelectPlaceholder": "请选择"
+    },
+    "selection": "选择",
+    "sizeOptions": {
+      "small": "紧凑",
+      "default": "默认",
+      "large": "宽松"
+    },
+    "column": {
+      "selection": "勾选",
+      "expand": "展开",
+      "index": "序号"
+    },
+    "zebra": "斑马纹",
+    "border": "边框",
+    "headerBackground": "表头背景"
+  },
+  "upstreamOnboarding": {
+    "title": "快速接入",
+    "steps": {
+      "mode": "模式",
+      "basic": "基础信息",
+      "route": "路由绑定",
+      "confirm": "预检确认",
+      "done": "完成"
+    },
+    "mode": {
+      "transparent": "标准接入",
+      "microservice": "微服务接入",
+      "transparentHint": "HTTP(S) 透传，适合第三方 API。",
+      "microserviceHint": "需已部署契约上游微服务。"
+    },
+    "fields": {
+      "supplierCode": "供应商编码",
+      "name": "名称",
+      "upstreamUrl": "上游地址",
+      "contractId": "契约 ID",
+      "timeoutMs": "总超时(ms)",
+      "channelCode": "通道编码",
+      "channelName": "通道名称",
+      "pathPrefix": "路径前缀",
+      "productId": "产品编码",
+      "weight": "权重",
+      "priority": "优先级"
+    },
+    "validation": {
+      "basicRequired": "请填写供应商编码、名称与上游地址",
+      "httpUrl": "标准上游地址必须以 http:// 或 https:// 开头",
+      "channelCode": "请填写通道编码",
+      "channelCodePattern": "通道编码须匹配 ^[A-Z][A-Z0-9-]*$",
+      "productRequired": "请填写产品编码",
+      "authTokenUrl": "启用动态认证时 token_url 必填",
+      "authTokenPath": "启用动态认证时 token_jsonpath 必填",
+      "authInjectKey": "启用动态认证时 inject_key 必填",
+      "transformEmpty": "启用转换时至少配置一项规则",
+      "contractIdRequired": "微服务模式必须填写 contract_id"
+    },
+    "confirm": {
+      "dryRunOk": "预检通过（未写库）",
+      "needDryRun": "请先执行预检 dry-run"
+    },
+    "actions": {
+      "dryRun": "预检 dry-run",
+      "submit": "确认接入"
+    },
+    "done": {
+      "title": "接入成功",
+      "subtitle": "平台 route_version = {version}",
+      "reloadHint": "约 5 秒内热加载生效。",
+      "copyCurl": "复制联调命令",
+      "goSuppliers": "返回上游供给"
+    },
+    "useAccessWizard": "新建请使用【接入上游】统一向导",
+    "placeholders": {
+      "name": "例如 ACME Partner",
+      "channelName": "例如 ACME 默认通道",
+      "upstreamUrl": "host:port",
+      "contractId": "填写 gateway 已登记的契约 ID"
+    }
+  },
+  "upstreamConnector": {
+    "workbenchTitle": "免代码接入",
+    "codeFreeAccess": "免代码接入",
+    "draftsTitle": "草稿箱",
+    "draftsEmpty": "暂无草稿。从供应商列表点「免代码接入」进入工作台。",
+    "draftsNoMatch": "没有匹配的草稿",
+    "openDraft": "继续编辑",
+    "continueEdit": "继续编辑",
+    "statusDraft": "草稿",
+    "statusPublished": "已发布",
+    "saveDraft": "保存草稿",
+    "syncDraftNow": "立即同步草稿",
+    "savingDraft": "保存中…",
+    "autosavedAt": "已自动保存 {time}",
+    "saveDraftFailed": "保存失败",
+    "leaveUnsavedTitle": "未保存的更改",
+    "leaveUnsavedMessage": "当前修改还没写入草稿箱。",
+    "leaveSave": "保存并离开",
+    "leaveDiscard": "不保存离开",
+    "endpointCount": "接口数",
+    "deleteDraftConfirm": "确定删除草稿「{name}」？",
+    "editInWorkbench": "工作台编辑",
+    "modeCreate": "新建接入",
+    "modeEditSupplier": "编辑供应商",
+    "untitledName": "未命名接入",
+    "import": "导入",
+    "publish": "发布",
+    "publishNeedRun": "先发送成功后再发布",
+    "sessionActions": "会话操作",
+    "emptyHint": "无法打开该接入会话。可新建会话，或返回上游供给后重试",
+    "endpoints": "接口",
+    "configPanel": "鉴权与转换",
+    "requestPanel": "请求编辑",
+    "trace": "响应",
+    "assertions": "断言",
+    "runHistory": "试跑历史",
+    "send": "发送",
+    "sendCancel": "取消等待",
+    "runCancelled": "已取消",
+    "pasteCurlOk": "已从 cURL 填入当前接口",
+    "requesting": "请求中…",
+    "response": {
+      "status": "Status",
+      "time": "Time",
+      "size": "Size"
+    },
+    "jsonTree": "JSON 树",
+    "rawBody": "Raw",
+    "jsonTooLarge": "过大，改用 raw",
+    "downloadBody": "下载响应",
+    "runBusiness": "业务试跑",
+    "runAuth": "鉴权试跑",
+    "runProbe": "连通性探测",
+    "transformPreview": "转换预览",
+    "bodyPlaceholder": "请求报文 (JSON)",
+    "headersTab": "请求头",
+    "headersList": "请求头列表",
+    "queryTab": "查询参数",
+    "queryList": "查询参数列表",
+    "clearKv": "清空",
+    "varsTab": "变量",
+    "kvDesc": "说明",
+    "kvHelp": "勾选后的键值会随请求发送",
+    "kvHelpDetail": "勾选的行会随试跑发送。说明不会发送。取消勾选的行会保留在表中但不会进入请求。无键的行会被忽略。删光后用工具条 + 添加。",
+    "kvDupWarn": "重复键 {keys}：试跑时后者覆盖前者",
+    "kvBulk": "批量编辑",
+    "kvBulkHint": "每行一条。键: 值 或 键: 值 # 说明；未启用的行前加 # ",
+    "kvEnable": "启用",
+    "kvDisable": "禁用",
+    "kvDrag": "拖拽排序",
+    "bodyTab": "请求体",
+    "responseHeadersTab": "响应头",
+    "assertTab": "断言",
+    "envVars": "环境变量",
+    "envVarsHint": "试跑时替换路径、请求头、查询参数、报文中的 {'{'}{'{'}var{'}'}{'}'}",
+    "unsaved": "未保存",
+    "saved": "已保存",
+    "searchEndpoints": "搜索接口",
+    "noEndpoints": "暂无接口",
+    "gateShort": "门禁",
+    "duplicate": "复制",
+    "paramsTab": "参数",
+    "authTab": "鉴权",
+    "authType": "类型",
+    "authEnabled": "启用",
+    "authClear": "清空",
+    "authInherit": "继承会话鉴权",
+    "authNone": "无",
+    "authApiKey": "API Key",
+    "authOauthCc": "OAuth2 client_credentials",
+    "authGettoken": "gettoken",
+    "authBasic": "Basic",
+    "authSignForm": "Sign form",
+    "authGrpcMeta": "gRPC metadata",
+    "authInheritHint": "本接口使用会话 auth_flow.profile；未设置会话鉴权类型则不能发布 inherit。",
+    "authNoneEmpty": "此接口不附加鉴权。",
+    "authSessionDefault": "会话默认",
+    "authSessionUnset": "未设置",
+    "authSetSessionDefault": "设为会话默认",
+    "authBearer": "Bearer",
+    "authJwt": "JWT",
+    "authDigest": "Digest",
+    "authAws": "AWS SigV4",
+    "authHawk": "Hawk",
+    "authUsername": "用户名",
+    "authPassword": "密码",
+    "authApiKeyLabel": "API Key",
+    "authTokenLabel": "Token",
+    "authClientId": "Client ID",
+    "authClientSecret": "Client Secret",
+    "authAppId": "App ID",
+    "authSecret": "Secret",
+    "authTokenPath": "换票路径（相对 base）",
+    "authRawCredentials": "高级：原始凭证 KV",
+    "authSignAdapterHint": "HMAC 在 sign_form 适配器组包。请到出站规格将适配器改为 sign_form。",
+    "authJwtAlgo": "算法",
+    "authJwtTtl": "TTL（秒）",
+    "authJwtKid": "kid",
+    "authJwtClaims": "Claims JSON",
+    "authJwtSecret": "JWT 密钥",
+    "authJwtPrivateKey": "RSA 私钥 PEM",
+    "authDigestAlgo": "Digest 算法",
+    "authDigestRealm": "Realm 覆盖",
+    "authAwsRegion": "Region",
+    "authAwsService": "Service",
+    "authAwsAccessKey": "Access Key ID",
+    "authAwsSecretKey": "Secret Access Key",
+    "authAwsSession": "Session Token（可选）",
+    "authHawkId": "Hawk ID",
+    "authHawkKey": "Hawk Key",
+    "authHawkAlgo": "算法",
+    "authHawkExt": "ext（可选）",
+    "injectToMetadata": "metadata",
+    "injectToFirstFrame": "first_frame",
+    "authAttachHint": "发送时由引擎附加鉴权头/签名，默认不写入请求头列表。",
+    "transformEnabled": "启用转换",
+    "bodyContentType": "租户请求体",
+    "bodyTypeNone": "无",
+    "bodyTypeJson": "JSON",
+    "bodyTypeForm": "Form",
+    "bodyNoneEmpty": "此接口无租户请求体。网关将不向上游发送 HTTP body。",
+    "bodyNeedsJsonObject": "请改为 JSON 对象",
+    "egressContentType": "出站 Content-Type",
+    "egressBodyEncoding": "出站 body 编码",
+    "egressEncodingJson": "JSON",
+    "egressEncodingForm": "Form",
+    "egressEncodingNone": "无 body",
+    "adapterEncodingForm": "HTTP 表单",
+    "urlRequired": "填写上游 URL",
+    "urlMissingSend": "未发送：请填写上游 URL",
+    "envChip": "环境 · {n} 项",
+    "sessionRuns": "本会话试跑",
+    "jsonFilterPlaceholder": "过滤键名 / 路径",
+    "jsonFilterEmpty": "无匹配节点",
+    "commandPalette": "命令盘",
+    "commandPalettePlaceholder": "发送、保存、切 Tab、切接口…",
+    "commandPaletteEmpty": "无匹配命令",
+    "shortcutsTitle": "快捷键",
+    "shortcutsAll": "全部快捷键",
+    "shortcutsSearch": "搜索快捷键",
+    "shortcutsClose": "关闭面板",
+    "methodInvalid": "方法不合法",
+    "newSession": "新建会话",
+    "authHintApiKey": "填写 API Key，并选择注入位置 / 字段 / 格式。不换票。",
+    "authHintOauth": "client_credentials 换票。空模板走默认 form；非空模板作为换票 body。",
+    "authHintGettoken": "GET 换票：app_id / secret 进 query。jsonpath 空则 $.token。",
+    "authHintBasic": "用户名 / 密码写入 Authorization: Basic（查找链含 username/password）。",
+    "authHintSign": "HMAC 由 sign_form 适配器组包；本 Tab 不换票、不 inject。",
+    "authHintGrpc": "secret 同时写入 metadata 与同名 header。位置锁定 metadata。",
+    "authHintBearer": "静态 token，按注入格式写入（默认 Authorization: Bearer {}）。",
+    "authHintJwt": "每次请求用密钥现签 JWT 再注入，不是换票返回的 JWT。",
+    "authHintDigest": "第一次出站无 Digest 头；401 挑战后在同一 HTTP 请求上重放一次。",
+    "authHintAws": "对最终 HTTP 调用手写 SigV4。需要 region、service 与 AK/SK。",
+    "authHintHawk": "对最终 method+url（可选 body）做 Hawk MAC。",
+    "formBody": "表单字段",
+    "transformTab": "出站规格",
+    "adapter": "适配器",
+    "adapterChipHint": "在出站规格中编辑适配器",
+    "operation": "operation",
+    "operationHint": "信封 method / RPC / SOAP 操作名 / GraphQL 字段",
+    "wrap": "组包",
+    "unwrap": "解包路径",
+    "adapterNames": {
+      "http_json": "HTTP JSON",
+      "http_envelope": "HTTP 信封",
+      "sign_form": "Sign 表单",
+      "jsonrpc": "JSON-RPC",
+      "graphql": "GraphQL",
+      "grpc": "gRPC",
+      "soap_xml": "SOAP XML",
+      "ws_unary": "WebSocket 单次",
+      "job_poll": "任务轮询"
+    },
+    "wrapNames": {
+      "method_biz_content": "method + biz_content",
+      "none": "不组包"
+    },
+    "authProfile": "鉴权 profile",
+    "graphqlDocument": "GraphQL 文档",
+    "graphqlDocumentHint": "query / mutation 文档，变量由租户 JSON 填入",
+    "graphqlOperationName": "operationName",
+    "graphqlVariablesMap": "变量名映射（租户字段 → GraphQL）",
+    "graphqlEnumMap": "枚举值映射",
+    "jobSubmitPath": "提交路径",
+    "jobQueryPath": "查询路径",
+    "jobIdPath": "job_id JSONPath",
+    "jobStatusPath": "status JSONPath",
+    "jobResultPath": "result JSONPath",
+    "jobMessagePath": "message JSONPath",
+    "jobPollInterval": "轮询间隔 (ms)",
+    "artifactId": "工件 ID",
+    "artifactUpload": "上传 FileDescriptorSet",
+    "artifactUploaded": "工件已上传",
+    "artifactHint": "gRPC 通道需要 FileDescriptorSet（.fds / .pb）",
+    "kvKey": "键",
+    "kvValue": "值",
+    "kvPhKey": "键",
+    "kvPhValue": "值",
+    "kvPhDesc": "说明",
+    "authTicketSection": "换票",
+    "authInjectSection": "注入",
+    "adapterParamsSection": "适配器参数",
+    "transformSection": "转换",
+    "pipelineSection": "转换对照",
+    "sectionUnconfigured": "未配置",
+    "sectionItemCount": "{n} 项",
+    "sectionConfigured": "已配置",
+    "sectionFieldCount": "{n} 个字段",
+    "injectToHeader": "请求头",
+    "injectToQuery": "查询参数",
+    "injectToBody": "请求体",
+    "typeTransparent": "透传",
+    "typeMicroservice": "微服务",
+    "addQuery": "添加查询参数",
+    "addHeader": "添加请求头",
+    "addEnv": "添加变量",
+    "addAssertion": "添加断言",
+    "assertHelpTitle": "断言说明",
+    "assertHelp": "断言在发送成功后检查响应（状态码、时延、JSONPath、响应头等）。不配断言不拦发送。清空会删掉全部断言，再用 + 添加。",
+    "copyCurl": "复制 curl",
+    "importMerge": "合并到当前会话",
+    "importReplace": "替换为新会话",
+    "importFile": "从文件读入",
+    "channelMapping": "通道映射",
+    "gateChecklist": "门禁清单",
+    "productPlaceholder": "搜索产品",
+    "sampleCurl": "示例 curl",
+    "importedMerge": "已合并 {n} 个接口",
+    "keepOneEndpoint": "至少保留一个接口",
+    "unresolvedVars": "未替换变量：{vars}",
+    "unresolvedVarsBlock": "存在未展开变量 {vars}，不能发送或发布",
+    "gateReasonNotRun": "未试跑",
+    "gateReasonSpecChanged": "规格已改，请重新发送",
+    "gateReasonUnresolved": "未展开变量",
+    "staticTokenHint": "鉴权流未接管的静态令牌头：{headers}（提示，不拦截）",
+    "pipelineEmpty": "转换预览或业务试跑后，这里对照租户请求 / 上游请求 / 上游响应",
+    "pipeTenantReq": "租户请求",
+    "pipeUpstreamReq": "变换后（打向上游）",
+    "pipeUpstreamRes": "上游响应",
+    "formatJson": "格式化 JSON",
+    "collapseSidebar": "收起接口列表",
+    "expandSidebar": "展开接口列表",
+    "collapseResponse": "收起响应",
+    "expandResponse": "展开响应",
+    "sendHotkey": "Ctrl+Enter",
+    "responseIdle": "点「发送」后，上游响应会出现在这里",
+    "responseIdleHint": "Ctrl+Enter 发送当前接口 · Ctrl+S 保存草稿",
+    "timelineTab": "时间线",
+    "noAssertions": "没有断言结果",
+    "stepConfig": "配置",
+    "stepAuth": "鉴权",
+    "stepAuthOff": "鉴权未启用",
+    "stepGate": "门禁 {ok}/{total}",
+    "stepPublish": "发布",
+    "stage": {
+      "validate": "校验",
+      "ssrf": "SSRF",
+      "auth": "鉴权",
+      "request_transform": "请求变换",
+      "upstream": "上游",
+      "response_transform": "响应变换"
+    },
+    "gate": "门禁",
+    "gateOnHint": "计入门禁，点击取消",
+    "gateOffHint": "不计入门禁，点击计入",
+    "writeConfirmTitle": "确认写操作试跑",
+    "writeConfirmMsg": "当前方法可能修改上游数据，确认继续？",
+    "publishMode": "发布模式",
+    "modeSupplierOnly": "仅供应商",
+    "modeSupplierChannels": "供应商 + 通道",
+    "modeFull": "完整接入（含路由）",
+    "requireGate": "断言门禁",
+    "forcePublish": "强制发布",
+    "forceReason": "强制原因",
+    "comment": "版本备注",
+    "publishOk": "发布成功",
+    "runOk": "试跑成功",
+    "runFail": "试跑失败",
+    "created": "接入会话已创建",
+    "imported": "导入成功",
+    "fieldsRequired": "请填写名称与上游 URL",
+    "publishFieldsRequired": "请填写供应商编码与名称后再发布",
+    "bootstrapFailed": "打开接入会话失败",
+    "transparentOnly": "免代码接入只做 HTTP 透传。微服务请用列表上的「微服务接入」。",
+    "liveRun": "线上试跑",
+    "versions": "版本",
+    "versionDiff": "版本 Diff",
+    "rollback": "回滚",
+    "rollbackConfirm": "确认回滚到此版本？将写回线上 config 并生成新版本快照。",
+    "rollbackOk": "回滚成功",
+    "opsPanel": "运维 / 版本",
+    "probeNote": "连通性探测 ≠ 业务验收",
+    "fields": {
+      "name": "名称",
+      "upstreamUrl": "上游 URL",
+      "upstreamType": "类型",
+      "supplierCode": "供应商编码",
+      "epName": "接口名称",
+      "assertType": "断言类型",
+      "path": "路径",
+      "product": "产品",
+      "channelCode": "通道编码",
+      "pathPrefix": "路径前缀",
+      "contractId": "契约 ID",
+      "envName": "变量名",
+      "versionNo": "版本号"
+    }
+  },
+  "listQueryBar": {
+    "tooltip": "搜索与筛选",
+    "placeholder": "流水号、路径… 或 字段 算子 值",
+    "placeholderSuffix": "或 字段 算子 值",
+    "placeholderQOnly": "输入关键字搜索",
+    "clearAll": "清除全部",
+    "clearInput": "清除输入",
+    "dotAria": "已有文本搜索",
+    "hintTextSearch": "输入文本后回车搜索",
+    "fieldFilterContains": "筛选包含 {field} 的结果",
+    "opDetail": {
+      "eq": "等于某一值",
+      "neq": "不等于某一值",
+      "gt": "大于某一值",
+      "gte": "大于或等于某一值",
+      "lt": "小于某一值",
+      "lte": "小于或等于某一值",
+      "contains": "包含某一值",
+      "starts_with": "以某一值开头",
+      "ends_with": "以某一值结尾",
+      "is_null": "字段为空",
+      "is_not_null": "字段非空",
+      "between": "介于两值之间",
+      "in": "属于给定集合"
+    },
+    "hover": {
+      "activeFilters": "已选 {n} 条筛选",
+      "activeQ": "文本搜索",
+      "empty": "搜索与筛选"
+    },
+    "parse": {
+      "unknown_field": "未知字段：{field}",
+      "op_not_allowed": "字段 {field} 不支持算子 {op}",
+      "invalid_value": "无效的值",
+      "invalid_number": "无效的数字",
+      "invalid_duration": "无效的时长（如 100、100ms、1.5s）",
+      "invalid_decimal": "无效的小数",
+      "invalid_enum": "无效的枚举值：{value}",
+      "invalid_bool": "无效的布尔值",
+      "invalid_uuid": "无效的 UUID",
+      "invalid_datetime": "无效的时间（如 2026-08-11 12:00:00）",
+      "empty_value": "缺少值",
+      "unsupported_syntax": "不支持的语法",
+      "use_builder": "between / in 请拆成 gte/lte 或多条条件",
+      "ambiguous_label": "标签「{label}」对应多个字段，请使用 API 字段名"
+    }
+  },
+  "listFilters": {
+    "tooltip": "结构化筛选",
+    "activeTitle": "已选 {n} 条筛选",
+    "field": "字段",
+    "op": "条件",
+    "value": "值",
+    "valueMs": "毫秒，如 100 或 100ms",
+    "valueDatetime": "例如 2026-08-11 12:00:00",
+    "from": "从",
+    "to": "到",
+    "add": "添加条件",
+    "remove": "移除条件",
+    "clearAll": "清除全部",
+    "empty": "暂无筛选条件",
+    "invalidValue": "请填写有效的筛选值",
+    "tooMany": "筛选条件最多 {max} 条",
+    "ops": {
+      "eq": "=",
+      "neq": "≠",
+      "contains": "包含",
+      "starts_with": "开头是",
+      "ends_with": "结尾是",
+      "gt": ">",
+      "gte": "≥",
+      "lt": "<",
+      "lte": "≤",
+      "between": "介于",
+      "in": "属于",
+      "is_null": "为空",
+      "is_not_null": "非空"
+    },
+    "fields": {
+      "requestId": "流水号",
+      "traceId": "Trace ID",
+      "tenantCode": "租户编码",
+      "tenantId": "租户 ID",
+      "tenantName": "租户名称",
+      "productId": "产品 ID",
+      "productCode": "产品编码",
+      "productName": "产品名称",
+      "supplierCode": "供应商编码",
+      "supplierName": "供应商名称",
+      "channelCode": "通道编码",
+      "path": "路径",
+      "clientIp": "客户端 IP",
+      "upstreamHost": "上游主机",
+      "errorCode": "错误码",
+      "statusCode": "状态码",
+      "upstreamStatusCode": "上游状态码",
+      "durationMs": "时延",
+      "upstreamServiceTimeMs": "上游时延",
+      "name": "名称",
+      "contactEmail": "联系邮箱",
+      "contactPerson": "联系人",
+      "contactPhone": "联系电话",
+      "subject": "主体",
+      "fingerprint": "指纹",
+      "expiresAt": "过期时间",
+      "callbackUrl": "回调 URL",
+      "eventId": "事件 ID",
+      "qpsLimit": "QPS 上限",
+      "costPrice": "成本价",
+      "billId": "账单 ID",
+      "party": "主体方",
+      "kind": "类型",
+      "id": "ID",
+      "scope": "范围",
+      "note": "备注",
+      "username": "用户名",
+      "displayName": "显示名",
+      "email": "邮箱",
+      "code": "编码",
+      "serviceName": "服务名"
+    },
+    "quick": {
+      "latencyGt100": "时延 > 100ms",
+      "latencyGt500": "时延 > 500ms",
+      "statusGte500": "状态 ≥ 500",
+      "statusEq0": "状态 = 0"
+    }
+  }
+}

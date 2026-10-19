@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --art-color: #ffffff;
+  --theme-color: var(--main-color);
+
+  --art-primary: oklch(0.6 0.23 260);
+  --art-secondary: oklch(0.65 0.19 231.6);
+  --art-error: oklch(0.68 0.15 25.3);
+  --art-info: oklch(0.55 0.03 254.1);
+  --art-success: oklch(0.68 0.17 166.1);
+  --art-warning: oklch(0.68 0.14 75.5);
+  --art-danger: oklch(0.6 0.22 25.3);
+
+  --art-gray-100: #f1f5f9;
+  --art-gray-200: #e2e8f0;
+  --art-gray-300: #cbd5e1;
+  --art-gray-400: #94a3b8;
+  --art-gray-500: #64748b;
+  --art-gray-600: #475569;
+  --art-gray-700: #334155;
+  --art-gray-800: #1e293b;
+  --art-gray-900: #0f172a;
+
+  --art-card-border: rgba(15, 23, 42, 0.08);
+
+  --default-border: #e2e8f0;
+  --default-border-dashed: #cbd5e1;
+
+  --default-bg-color: #f0f2f5;
+  --default-box-color: #ffffff;
+
+  --art-hover-color: #f1f5f9;
+
+  --art-active-color: #e2e8f0;
+
+  --art-el-active-color: #e2e8f0;
+
+  --el-text-color-primary: var(--art-gray-900);
+  --el-text-color-regular: var(--art-gray-800);
+  --el-text-color-secondary: var(--art-gray-700);
+  --el-text-color-placeholder: var(--art-gray-600);
+  --text-color-primary: var(--el-text-color-primary);
+  --text-color-secondary: var(--el-text-color-secondary);
+
+  --custom-radius: 0rem;
+}
+
+.dark {
+  --art-color: #000000;
+
+  --art-gray-100: #161618;
+  --art-gray-200: #1d1d20;
+  --art-gray-300: #303035;
+  --art-gray-400: #424249;
+  --art-gray-500: #62626e;
+  --art-gray-600: #888896;
+  --art-gray-700: #b0b0bc;
+  --art-gray-800: #d8d8e2;
+  --art-gray-900: #f0f0f5;
+
+  --art-card-border: rgba(255, 255, 255, 0.03);
+
+  --default-border: #1d1d20;
+  --default-border-dashed: #303035;
+
+  --default-bg-color: #0b0b0c;
+  --default-box-color: #111112;
+
+  --art-hover-color: #161618;
+
+  --art-active-color: #1d1d20;
+
+  --art-el-active-color: #1d1d20;
+
+  --el-text-color-primary: var(--art-gray-900);
+  --el-text-color-regular: var(--art-gray-800);
+  --el-text-color-secondary: var(--art-gray-700);
+  --el-text-color-placeholder: var(--art-gray-600);
+  --text-color-primary: var(--el-text-color-primary);
+  --text-color-secondary: var(--el-text-color-secondary);
+}
+
+@theme {
+  --color-box: var(--default-box-color);
+
+  --color-theme: var(--theme-color);
+
+  --color-hover-color: var(--art-hover-color);
+
+  --color-active-color: var(--art-active-color);
+
+  --color-el-active-color: var(--art-active-color);
+
+  --color-primary: var(--art-primary);
+  --color-secondary: var(--art-secondary);
+  --color-error: var(--art-error);
+  --color-info: var(--art-info);
+  --color-success: var(--art-success);
+  --color-warning: var(--art-warning);
+  --color-danger: var(--art-danger);
+
+  --color-g-100: var(--art-gray-100);
+  --color-g-200: var(--art-gray-200);
+  --color-g-300: var(--art-gray-300);
+  --color-g-400: var(--art-gray-400);
+  --color-g-500: var(--art-gray-500);
+  --color-g-600: var(--art-gray-600);
+  --color-g-700: var(--art-gray-700);
+  --color-g-800: var(--art-gray-800);
+  --color-g-900: var(--art-gray-900);
+}
+
+@utility rounded-custom-xs {
+  border-radius: calc(var(--custom-radius) / 2);
+}
+
+@utility rounded-custom-sm {
+  border-radius: calc(var(--custom-radius) / 2 + 2px);
+}
+
+@layer utilities {
+  .flex-c {
+    @apply flex items-center;
+  }
+
+  .flex-b {
+    @apply flex justify-between;
+  }
+
+  .flex-cc {
+    @apply flex items-center justify-center;
+  }
+
+  .flex-cb {
+    @apply flex items-center justify-between;
+  }
+
+  .tad-200 {
+    @apply transition-all duration-200;
+  }
+
+  .tad-300 {
+    @apply transition-all duration-300;
+  }
+
+  .border-full-d {
+    @apply border border-[var(--default-border)];
+  }
+
+  .border-b-d {
+    @apply border-b border-[var(--default-border)];
+  }
+
+  .border-t-d {
+    @apply border-t border-[var(--default-border)];
+  }
+
+  .border-l-d {
+    @apply border-l border-[var(--default-border)];
+  }
+
+  .border-r-d {
+    @apply border-r border-[var(--default-border)];
+  }
+
+  .c-p {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .art-card-header {
+    @apply flex justify-between pr-6 pb-1;
+
+    .title {
+      h4 {
+        @apply text-lg font-medium text-g-900;
+      }
+
+      p {
+        @apply mt-1 text-sm text-g-600;
+
+        span {
+          @apply ml-2 font-medium;
+        }
+      }
+    }
+  }
+}

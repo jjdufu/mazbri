@@ -1,0 +1,43 @@
+[package]
+name = "mazbri-tls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "TLS/mTLS support for Mazbri microservices / Mazbri 微服务的 TLS/mTLS 支持"
+
+[dependencies]
+mazbri-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+toml = { workspace = true }
+
+axum = { workspace = true }
+
+prometheus = { workspace = true }
+
+rustls = "0.23"
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+
+tarpc = { workspace = true }
+async-stream = "0.3"
+
+rcgen = "0.13"
+x509-parser = "0.16"
+
+uuid = { workspace = true }
+
+urlencoding = "2"
+
+url = "2"
+
+dirs = "6"

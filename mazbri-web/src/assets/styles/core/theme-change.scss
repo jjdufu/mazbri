@@ -1,0 +1,26 @@
+.theme-change {
+  &,
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+
+  .el-switch__core,
+  .el-switch__action {
+    transition: all 0.3s !important;
+  }
+}
+
+html.theme-change {
+  &,
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}

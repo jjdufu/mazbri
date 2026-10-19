@@ -1,0 +1,140 @@
+[workspace]
+members = [
+    "mazbri-upstream-contracts",
+    "mazbri-core",
+    "mazbri-rpc",
+    "mazbri-i18n",
+    "mazbri-routing",
+    "mazbri-admin",
+    "mazbri-tls",
+    "mazbri-billing",
+    "mazbri-service",
+    "mazbri-auth",
+    "mazbri-cache",
+    "mazbri-product",
+    "mazbri-sdk",
+    "mazbri-registry",
+    "mazbri-callback",
+    "mazbri-cert",
+    "mazbri-upstream-runtime"
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Mazbri Team"]
+license = "MIT"
+
+[workspace.dependencies]
+mazbri-upstream-contracts = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-upstream-contracts" }
+mazbri-rpc = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-rpc" }
+mazbri-i18n = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-i18n" }
+mazbri-routing = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-routing" }
+mazbri-admin = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-admin" }
+mazbri-core = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-core" }
+mazbri-tls = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-tls" }
+mazbri-sdk = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-sdk" }
+mazbri-cert = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-cert" }
+mazbri-upstream-runtime = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-upstream-runtime" }
+mazbri-auth = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-auth" }
+mazbri-registry = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-registry" }
+mazbri-cache = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-cache" }
+mazbri-product = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-product" }
+mazbri-billing = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-billing" }
+mazbri-service = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-service" }
+mazbri-callback = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-callback" }
+
+clap = {version = "4", features = ["derive"]}
+tokio = {version = "1.35", features = ["full"]}
+tokio-util = {version = "0.7", features = ["rt"]}
+axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
+tower = {version = "0.5.3", features = ["full", "discover", "load"]}
+tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip"]}
+http-body-util = "0.1"
+http = "1.4.0"
+sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
+tokio-postgres = "0.7"
+serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+bincode = {version = "2.0.1", features = ["serde"]}
+fory = {version = "=1.0.0", features = ["chrono"]}
+fory-core = "=1.0.0"
+fory_core = {version = "=1.0.0", package = "fory-core"}
+config = "0.15"
+toml = "0.8"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = {version = "0.3", features = ["env-filter", "json"]}
+opentelemetry = { version = "0.30", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.30", default-features = false, features = ["trace", "rt-tokio"] }
+# reqwest-blocking-client: BatchSpanProcessor runs on a dedicated thread without
+# a Tokio reactor; async reqwest panics there. Blocking client is the OTel default.
+opentelemetry-otlp = { version = "0.30", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client", "reqwest-rustls-webpki-roots"] }
+opentelemetry-semantic-conventions = "0.30"
+tracing-opentelemetry = "0.31"
+flate2 = "1.0"
+prometheus = "0.14"
+anyhow = "1.0"
+thiserror = "2.0"
+uuid = {version = "1.21", features = ["v4", "serde"]}
+chrono = {version = "0.4", features = ["serde"]}
+rust_decimal = {version = "1.32", features = ["serde"]}
+dotenvy = "0.15"
+futures = "0.3"
+futures-util = "0.3"
+tokio-tungstenite = {version = "0.28", default-features = false, features = ["rustls-tls-native-roots"]}
+criterion = {version = "0.8.2", features = ["html_reports"]}
+reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"]}
+tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
+tonic-prost = "0.14.6"
+prost = "0.14.3"
+argon2 = "0.5"
+jsonwebtoken = {version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"]}
+governor = "0.10.4"
+async-trait = "0.1"
+dashmap = "6.1.0"
+lru = "0.16.3"
+moka = {version = "0.12", features = ["sync", "future"]}
+rand = "0.10.0"
+tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
+tokio-serde = {version = "0.9", features = ["bincode", "json"]}
+wincode = {version = "0.4.4", features = ["derive", "uuid"]}
+serde_urlencoded = "0.7"
+base64 = "0.22"
+sha2 = "0.10"
+parking_lot = "0.12"
+arc-swap = "1.7.1"
+hex = "0.4"
+redis = {version = "0.27", features = ["tokio-comp", "connection-manager", "aio", "cluster-async"]}
+urlencoding = "2.1"
+totp-lite = "2.0"
+qrcode = "0.14"
+aes-gcm = "0.10"
+hkdf = "0.12"
+ed25519-dalek = { version = "3.0.0", default-features = false }
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets"] }
+base32 = "0.5"
+rust-embed = {version = "8.7", features = ["interpolate-folder-path"]}
+mime_guess = "2.0"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = 2
+debug-assertions = true
+overflow-checks = true
+rpath = true

@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package mazbri.upstream.shared.v1;
+
+message HttpHeader {
+  string name = 1;
+  string value = 2;
+}
+
+message HttpHeaders {
+  repeated HttpHeader items = 1;
+}
+
+message TraceContext {
+  string request_id = 1;
+  string trace_id = 2;
+  string span_id = 3;
+  string parent_span_id = 4;
+}
+
+message UpstreamBody {
+  oneof kind {
+    string json = 1;
+    string raw = 2;
+  }
+}
+
+enum BinaryEncoding {
+  BINARY_ENCODING_UNSPECIFIED = 0;
+  BINARY_ENCODING_RAW = 1;
+}
+
+message BinaryBody {
+  bytes bytes = 1;
+  BinaryEncoding encoding = 2;
+}
+
+message UpstreamResponseBody {
+  oneof kind {
+    string json_value = 1;
+    bytes json_raw = 2;
+    string text = 3;
+    BinaryBody binary = 4;
+  }
+}
+
+message HttpUpstreamRequest {
+  string product_id = 1;
+  string tenant_id = 2;
+  string path = 3;
+  string method = 4;
+  map<string, string> query = 5;
+  map<string, string> headers = 6;
+  UpstreamBody body = 7;
+  uint64 timeout_secs = 8;
+}
+
+message HttpUpstreamData {
+  uint32 status = 1;
+  map<string, string> headers = 2;
+  UpstreamResponseBody body = 3;
+  string upstream_url = 4;
+  string method = 5;
+  string path = 6;
+  uint64 body_bytes_len = 7;
+}
+
+message HttpUpstreamResponse {
+  bool success = 1;
+  HttpUpstreamData data = 2;
+  string error = 3;
+}
+
+// Code-free invoke: tenant business JSON + channel egress spec. Used by
+// BypassHttpProxyService/Execute. Microservice contracts keep HttpUpstreamRequest.
+message InvokeBizError {
+  string code = 1;
+  string message = 2;
+  string details_json = 3;
+}
+
+message InvokeUpstreamMeta {
+  uint32 status = 1;
+  string url = 2;
+  string adapter = 3;
+  uint64 latency_ms = 4;
+}
+
+message InvokeRequest {
+  string product_id = 1;
+  string tenant_id = 2;
+  string channel_id = 3;
+  string request_id = 4;
+  TraceContext trace = 5;
+  uint64 timeout_ms = 6;
+  string payload_json = 7;
+  string egress_spec_hash = 8;
+  string egress_spec_json = 9;
+  string supplier_id = 10;
+  string supplier_code = 11;
+  string supplier_config_hash = 12;
+  string supplier_config_json = 13;
+  string fallback_base_url = 14;
+  string path_prefix = 15;
+}
+
+message InvokeResponse {
+  bool success = 1;
+  string error = 2;
+  InvokeBizError biz_error = 3;
+  string payload_json = 4;
+  InvokeUpstreamMeta upstream_meta = 5;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string service = 2;
+  int64 timestamp = 3;
+}

@@ -1,0 +1,329 @@
+import axios, {
+  AxiosRequestConfig,
+  AxiosResponse,
+  InternalAxiosRequestConfig,
+} from "axios";
+import { useUserStore } from "@/store/modules/user";
+import { ApiStatus } from "./status";
+import {
+  HttpError,
+  createBackendHttpError,
+  createSafeHttpError,
+  handleError,
+  showError,
+  showSuccess,
+} from "./error";
+import { MfaDialogService } from "./mfa-dialog-service";
+import {
+  isBaseResponse,
+  isMgmtApiResponse,
+  unwrapResponsePayload,
+} from "./response";
+import { $t } from "@/locales";
+import { BaseResponse } from "@/types";
+const REQUEST_TIMEOUT = 15000;
+const LOGOUT_DELAY = 500;
+const UNAUTHORIZED_DEBOUNCE_TIME = 3000;
+const { VITE_API_URL } = import.meta.env;
+
+const WITH_CREDENTIALS = import.meta.env.VITE_WITH_CREDENTIALS !== "false";
+let isUnauthorizedErrorShown = false;
+let unauthorizedTimer: NodeJS.Timeout | null = null;
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: () => void;
+  reject: (error: unknown) => void;
+}> = [];
+interface UnauthorizedRuntimeBoundary {
+  scheduleLogout: () => void;
+  presentUnauthorizedError: (error: HttpError) => void;
+}
+function scheduleStoreLogout(): void {
+  setTimeout(() => {
+    useUserStore().logOut();
+  }, LOGOUT_DELAY);
+}
+const defaultUnauthorizedRuntimeBoundary: UnauthorizedRuntimeBoundary = {
+  scheduleLogout: scheduleStoreLogout,
+  presentUnauthorizedError: (error) => showError(error, true),
+};
+let unauthorizedRuntimeBoundary: UnauthorizedRuntimeBoundary =
+  defaultUnauthorizedRuntimeBoundary;
+const refreshClient = axios.create({
+  timeout: REQUEST_TIMEOUT,
+  baseURL: VITE_API_URL,
+  withCredentials: WITH_CREDENTIALS,
+  validateStatus: (status) => status >= 200 && status < 300,
+  transformResponse: [
+    (data, headers) => {
+      const contentType = headers["content-type"];
+      if (contentType?.includes("application/json")) {
+        try {
+          return JSON.parse(data);
+        } catch {
+          return data;
+        }
+      }
+      return data;
+    },
+  ],
+});
+function processQueue(error: unknown, ok = false): void {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else if (ok) {
+      prom.resolve();
+    } else {
+      prom.reject(error);
+    }
+  });
+  failedQueue = [];
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  const userStore = useUserStore();
+  try {
+    const res = await refreshClient.post<
+      | BaseResponse<{
+          token?: string;
+          expires_in?: number;
+          cookie_auth?: boolean;
+        }>
+      | unknown
+    >("/api/v1/mgmt/auth/refresh", {});
+    const payload = unwrapResponsePayload<{
+      token?: string;
+      expires_in?: number;
+      cookie_auth?: boolean;
+    }>(
+      res.data as
+        | BaseResponse<{
+            token?: string;
+            expires_in?: number;
+            cookie_auth?: boolean;
+          }>
+        | {
+            token?: string;
+            expires_in?: number;
+            cookie_auth?: boolean;
+          },
+    );
+
+    if (payload.cookie_auth || payload.token || typeof payload.expires_in === "number") {
+      userStore.setToken(payload.token, payload.expires_in);
+      userStore.setLoginStatus(true);
+      return payload.token || "cookie";
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+export function configureUnauthorizedRuntimeBoundary(
+  boundary: Partial<UnauthorizedRuntimeBoundary>,
+): void {
+  unauthorizedRuntimeBoundary = {
+    ...defaultUnauthorizedRuntimeBoundary,
+    ...boundary,
+  };
+}
+export function resetHttpRuntimeBoundaryForTest(): void {
+  unauthorizedRuntimeBoundary = defaultUnauthorizedRuntimeBoundary;
+  resetUnauthorizedError();
+  isRefreshing = false;
+  failedQueue = [];
+}
+export function triggerUnauthorizedFlowForTest(message?: string): HttpError {
+  try {
+    handleUnauthorizedError(message);
+  } catch (error) {
+    return error as HttpError;
+  }
+  throw new Error("Unauthorized flow should always throw");
+}
+interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
+  showErrorMessage?: boolean;
+  showSuccessMessage?: boolean;
+  signal?: AbortSignal;
+}
+const axiosInstance = axios.create({
+  timeout: REQUEST_TIMEOUT,
+  baseURL: VITE_API_URL,
+  withCredentials: WITH_CREDENTIALS,
+  validateStatus: (status) => status >= 200 && status < 300,
+  transformResponse: [
+    (data, headers) => {
+      const contentType = headers["content-type"];
+      if (contentType?.includes("application/json")) {
+        try {
+          return JSON.parse(data);
+        } catch {
+          return data;
+        }
+      }
+      return data;
+    },
+  ],
+});
+axiosInstance.interceptors.request.use(
+  (request: InternalAxiosRequestConfig) => {
+
+    if (
+      request.data &&
+      !(request.data instanceof FormData) &&
+      !request.headers["Content-Type"]
+    ) {
+      request.headers.set("Content-Type", "application/json");
+      request.data = JSON.stringify(request.data);
+    }
+    return request;
+  },
+  (error) => {
+    showError(
+      createSafeHttpError($t("httpMsg.requestConfigError"), ApiStatus.error),
+    );
+    return Promise.reject(error);
+  },
+);
+axiosInstance.interceptors.response.use(
+  (response: AxiosResponse<BaseResponse | unknown>) => {
+    const payload = response.data;
+    if (isBaseResponse(payload)) {
+      const { code, msg } = payload;
+      if (code === ApiStatus.success) return response;
+      if (code === ApiStatus.unauthorized) handleUnauthorizedError(msg);
+      throw createBackendHttpError(msg, code, {
+        data: payload,
+      });
+    }
+    if (isMgmtApiResponse(payload)) {
+      if (payload.success) {
+        return response;
+      }
+      throw createBackendHttpError(
+        payload.error || payload.message,
+        ApiStatus.error,
+        {
+          data: payload,
+        },
+      );
+    }
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean;
+      _mfaRetry?: boolean;
+    };
+    if (
+      error.response?.status === ApiStatus.forbidden &&
+      error.response?.data?.code === "MFA_REQUIRED" &&
+      !originalRequest._mfaRetry
+    ) {
+      originalRequest._mfaRetry = true;
+      const mfaCode = await MfaDialogService.requestVerification();
+      originalRequest.headers.set("X-Mazbri-MFA-Code", mfaCode);
+      return axiosInstance(originalRequest);
+    }
+    if (
+      error.response?.status === ApiStatus.unauthorized &&
+      !originalRequest._retry
+    ) {
+      if (isRefreshing) {
+        return new Promise<void>((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(() => axiosInstance(originalRequest));
+      }
+      originalRequest._retry = true;
+      isRefreshing = true;
+      try {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          processQueue(null, true);
+          return axiosInstance(originalRequest);
+        }
+        processQueue(error, false);
+        handleUnauthorizedError();
+        return Promise.reject(handleError(error));
+      } catch (refreshError) {
+        processQueue(refreshError, false);
+        handleUnauthorizedError();
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+    return Promise.reject(handleError(error));
+  },
+);
+function handleUnauthorizedError(message?: string): never {
+  const error = createBackendHttpError(message, ApiStatus.unauthorized, {
+    displayMessage: $t("httpMsg.unauthorized"),
+  });
+  if (!isUnauthorizedErrorShown) {
+    isUnauthorizedErrorShown = true;
+    unauthorizedRuntimeBoundary.scheduleLogout();
+    unauthorizedTimer = setTimeout(
+      resetUnauthorizedError,
+      UNAUTHORIZED_DEBOUNCE_TIME,
+    );
+    unauthorizedRuntimeBoundary.presentUnauthorizedError(error);
+    throw error;
+  }
+  throw error;
+}
+function resetUnauthorizedError() {
+  isUnauthorizedErrorShown = false;
+  if (unauthorizedTimer) clearTimeout(unauthorizedTimer);
+  unauthorizedTimer = null;
+}
+async function request<T = any>(
+  config: ExtendedAxiosRequestConfig,
+): Promise<T> {
+  if (
+    ["POST", "PUT"].includes(config.method?.toUpperCase() || "") &&
+    config.params &&
+    !config.data
+  ) {
+    config.data = config.params;
+    config.params = undefined;
+  }
+  try {
+    const res = await axiosInstance.request<BaseResponse<T> | unknown>(config);
+    if (isBaseResponse(res.data)) {
+      if (config.showSuccessMessage && (res.data.msg || res.data.message)) {
+        showSuccess((res.data.msg || res.data.message)!);
+      }
+      return res.data.data as T;
+    }
+    return unwrapResponsePayload<T>(res.data as BaseResponse<T> | T);
+  } catch (error) {
+    if (error instanceof HttpError && error.code !== ApiStatus.unauthorized) {
+      const showMsg = config.showErrorMessage !== false;
+      showError(error, showMsg);
+    }
+    return Promise.reject(error);
+  }
+}
+const api = {
+  get<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>({ ...config, method: "GET" });
+  },
+  post<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>({ ...config, method: "POST" });
+  },
+  put<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>({ ...config, method: "PUT" });
+  },
+  patch<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>({ ...config, method: "PATCH" });
+  },
+  del<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>({ ...config, method: "DELETE" });
+  },
+  request<T>(config: ExtendedAxiosRequestConfig) {
+    return request<T>(config);
+  },
+};
+export default api;

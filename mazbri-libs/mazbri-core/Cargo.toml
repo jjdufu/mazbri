@@ -1,0 +1,46 @@
+[package]
+name = "mazbri-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+fory = { workspace = true }
+fory_core = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+config = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+prometheus = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+flate2 = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+urlencoding = { workspace = true }
+aes-gcm = { workspace = true }
+base64 = "0.22"
+hex = { workspace = true }
+hmac = "0.12"
+rand = { workspace = true }
+sha2 = { workspace = true }
+redis = { workspace = true }
+
+tarpc = { workspace = true }
+uuid = { workspace = true }
+mazbri-rpc = { workspace = true }
+
+hostname = "0.4"
+
+toml = { workspace = true }

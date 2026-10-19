@@ -1,0 +1,94 @@
+@use "sass:map";
+
+$transition: (
+  duration: 0.25s,
+
+  distance: 15px,
+
+  easing: cubic-bezier(0.25, 0.1, 0.25, 1),
+  fade-easing: cubic-bezier(0.4, 0, 0.6, 1),
+);
+
+@function transition-config($key) {
+  @return map.get($transition, $key);
+}
+
+$duration: transition-config("duration");
+$distance: transition-config("distance");
+$easing: transition-config("easing");
+$fade-easing: transition-config("fade-easing");
+
+.fade {
+  &-enter-active,
+  &-leave-active {
+    transition: opacity $duration $fade-easing;
+    will-change: opacity;
+  }
+
+  &-enter-from,
+  &-leave-to {
+    opacity: 0;
+  }
+
+  &-enter-to,
+  &-leave-from {
+    opacity: 1;
+  }
+}
+
+@mixin slide-transition($direction) {
+  $distance-x: 0;
+  $distance-y: 0;
+
+  @if $direction == "left" {
+    $distance-x: -$distance;
+  } @else if $direction == "right" {
+    $distance-x: $distance;
+  } @else if $direction == "top" {
+    $distance-y: -$distance;
+  } @else if $direction == "bottom" {
+    $distance-y: $distance;
+  }
+
+  &-enter-active {
+    transition:
+      opacity $duration $easing,
+      transform $duration $easing;
+    will-change: opacity, transform;
+  }
+
+  &-leave-active {
+    transition:
+      opacity calc($duration * 0.7) $easing,
+      transform calc($duration * 0.7) $easing;
+    will-change: opacity, transform;
+  }
+
+  &-enter-from {
+    opacity: 0;
+    transform: translate3d($distance-x, $distance-y, 0);
+  }
+
+  &-enter-to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  &-leave-to {
+    opacity: 0;
+    transform: translate3d(-$distance-x, -$distance-y, 0);
+  }
+}
+
+.slide-left {
+  @include slide-transition("left");
+}
+.slide-right {
+  @include slide-transition("right");
+}
+.slide-top {
+  @include slide-transition("top");
+}
+.slide-bottom {
+  @include slide-transition("bottom");
+}

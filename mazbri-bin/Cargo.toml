@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "mazbri-analytics",
+    "mazbri-auth-service",
+    "mazbri-billing-service",
+    "mazbri-bypass",
+    "mazbri-cache-service",
+    "mazbri-cbpro-ext-service",
+    "mazbri-cbpro-service",
+    "mazbri-cert-service",
+    "mazbri-gateway",
+    "mazbri-mgmt-api-v2",
+    "mazbri-ratelimit-service"
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+panic = "abort"
+
+[patch.cargo-hosted]
+mazbri-upstream-contracts = { path = "../mazbri-libs/mazbri-upstream-contracts" }
+mazbri-core = { path = "../mazbri-libs/mazbri-core" }
+mazbri-rpc = { path = "../mazbri-libs/mazbri-rpc" }
+mazbri-i18n = { path = "../mazbri-libs/mazbri-i18n" }
+mazbri-routing = { path = "../mazbri-libs/mazbri-routing" }
+mazbri-admin = { path = "../mazbri-libs/mazbri-admin" }
+mazbri-tls = { path = "../mazbri-libs/mazbri-tls" }
+mazbri-billing = { path = "../mazbri-libs/mazbri-billing" }
+mazbri-service = { path = "../mazbri-libs/mazbri-service" }
+mazbri-auth = { path = "../mazbri-libs/mazbri-auth" }
+mazbri-cache = { path = "../mazbri-libs/mazbri-cache" }
+mazbri-product = { path = "../mazbri-libs/mazbri-product" }
+mazbri-registry = { path = "../mazbri-libs/mazbri-registry" }
+mazbri-callback = { path = "../mazbri-libs/mazbri-callback" }
+mazbri-cert = { path = "../mazbri-libs/mazbri-cert" }
+mazbri-upstream-runtime = { path = "../mazbri-libs/mazbri-upstream-runtime" }

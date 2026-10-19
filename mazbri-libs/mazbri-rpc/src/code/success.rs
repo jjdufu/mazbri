@@ -1,0 +1,31 @@
+use super::billing_code::BillingCode;
+impl BillingCode {
+    pub const SUCCESS: Self = Self(0);
+    pub const SUCCESS_WITH_DATA: Self = Self(1);
+    pub const SUCCESS_PARTIAL: Self = Self(2);
+    pub const SUCCESS_CACHED: Self = Self(3);
+    pub const SUCCESS_CREATED: Self = Self(10);
+    pub const SUCCESS_NO_CONTENT: Self = Self(11);
+    pub const AUTH_TOKEN_ISSUED: Self = Self(100);
+    pub const AUTH_TOKEN_REFRESHED: Self = Self(101);
+    pub const AUTH_LOGOUT_SUCCESS: Self = Self(102);
+    pub const AUTH_MFA_VERIFIED: Self = Self(103);
+    pub const AUTH_API_KEY_VALIDATED: Self = Self(104);
+    pub const HEALTH_OK: Self = Self(200);
+    pub const HEALTH_READY: Self = Self(201);
+    pub const HEALTH_METRICS: Self = Self(202);
+    pub const HEALTH_PING: Self = Self(203);
+    pub const ADMIN_CREATED: Self = Self(300);
+    pub const ADMIN_UPDATED: Self = Self(301);
+    pub const ADMIN_DELETED: Self = Self(302);
+    pub const ADMIN_EXPORTED: Self = Self(303);
+    pub const ADMIN_IMPORTED: Self = Self(304);
+    pub const CACHE_CLEARED: Self = Self(400);
+    pub const CACHE_REFRESHED: Self = Self(401);
+    pub const CACHE_INVALIDATED: Self = Self(402);
+    pub const CACHE_WARMED: Self = Self(403);
+    pub const TASK_STARTED: Self = Self(500);
+    pub const TASK_COMPLETED: Self = Self(501);
+    pub const TASK_CANCELLED: Self = Self(502);
+    pub const TASK_SCHEDULED: Self = Self(503);
+}

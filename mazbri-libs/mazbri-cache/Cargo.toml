@@ -1,0 +1,30 @@
+[package]
+name = "mazbri-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+mazbri-auth = { workspace = true }
+
+tokio = { workspace = true }
+
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+tracing = { workspace = true }
+
+anyhow = { workspace = true }
+base64 = "0.22"
+
+async-trait = { workspace = true }
+
+lru = { workspace = true }
+
+prometheus = { workspace = true }
+dashmap = { workspace = true }
+redis = { workspace = true }

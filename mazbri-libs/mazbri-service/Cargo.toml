@@ -1,0 +1,22 @@
+[package]
+name = "mazbri-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mazbri-core = { workspace = true }
+mazbri-tls = { workspace = true }
+mazbri-admin = { workspace = true }
+mazbri-registry = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+chrono = { workspace = true }
+tarpc = { workspace = true }
+futures = { workspace = true }
