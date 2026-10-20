@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::claims::{AccountType, MazbriClaims};
 use super::jwt_keys::JwtHs256Keyring;
 use crate::config::ServiceEndpoint;
@@ -12,6 +11,7 @@ use axum::{
 use dashmap::DashMap;
 use jsonwebtoken::{Header, encode};
 use mazbri_auth::{LoginAttemptsRecorder, TokenRecorder};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::auth::ValidateApiKeyRequest;
 use mazbri_rpc::error::RpcError;
 use serde::{Deserialize, Serialize};
@@ -195,8 +195,7 @@ impl AuthService {
                     error = % first_error, endpoint = % self.auth_endpoint.url(),
                     "Auth tarpc client failed; evicting cached client and retrying once"
                 );
-                self.tarpc_pool
-                    .remove_client(self.auth_endpoint.url());
+                self.tarpc_pool.remove_client(self.auth_endpoint.url());
                 self.validate_api_key(&request)
                     .await
                     .map_err(|second_error| {
@@ -219,14 +218,13 @@ impl AuthService {
         let expiration_secs = tenant_info
             .token_expiration_secs
             .unwrap_or(self.token_expiration_secs);
-        let token = self
-            .generate_token(
-                &tenant_id,
-                &tenant_info.code,
-                &tenant_info.name,
-                expiration_secs,
-                response.scopes,
-            )?;
+        let token = self.generate_token(
+            &tenant_id,
+            &tenant_info.code,
+            &tenant_info.name,
+            expiration_secs,
+            response.scopes,
+        )?;
         Ok(TokenResponse {
             success: true,
             access_token: Some(token),
@@ -329,8 +327,7 @@ impl AuthService {
         {
             Ok(res) => Ok(res),
             Err(e) => {
-                self.tarpc_pool
-                    .remove_client(self.auth_endpoint.url());
+                self.tarpc_pool.remove_client(self.auth_endpoint.url());
                 Err(TokenError::RpcError(e.to_string()))
             }
         }

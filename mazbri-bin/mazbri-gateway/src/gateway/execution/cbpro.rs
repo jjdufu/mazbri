@@ -1,4 +1,8 @@
-use super::{debug, info, ProxyState, GatewayRequest, MazbriClaims, UpstreamResponse, Instant, FallbackRequest, Digest, FallbackSnapshot, Duration, ProxyBody, RuntimeDecision, RuntimeDecisionRequest, ObservationRequest, RngExt, BTreeMap, GatewayRequestBody};
+use super::{
+    BTreeMap, Digest, Duration, FallbackRequest, FallbackSnapshot, GatewayRequest,
+    GatewayRequestBody, Instant, MazbriClaims, ObservationRequest, ProxyBody, ProxyState, RngExt,
+    RuntimeDecision, RuntimeDecisionRequest, UpstreamResponse, debug, info,
+};
 
 pub(super) async fn try_cbpro_fallback(
     state: &ProxyState,
@@ -71,8 +75,7 @@ pub(super) async fn try_cbpro_fallback(
         .tenant_id, source = % fallback.source, failure_kind = failure_kind,
         "Served response from CBPro fallback snapshot"
     );
-    let body_bytes_len = serde_json::to_vec(&snapshot.data)
-        .map_or(0, |bytes| bytes.len() as u64);
+    let body_bytes_len = serde_json::to_vec(&snapshot.data).map_or(0, |bytes| bytes.len() as u64);
     Some(UpstreamResponse {
         status: snapshot.status,
         body: ProxyBody::JsonValue(snapshot.data),

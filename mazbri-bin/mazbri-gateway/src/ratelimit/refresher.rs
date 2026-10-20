@@ -1,8 +1,8 @@
-use mazbri_core::num::SaturatingFrom;
 use super::engine::LocalRateLimitEngine;
 use super::usage_buffer::UsageDeltaRecord;
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::{
     AckControlCommandsRequest, GetControlCommandsRequest, GetPolicySnapshotsRequest,
     IngestUsageDeltasRequest,
@@ -123,7 +123,9 @@ pub fn spawn_usage_flusher(
                 .await
             {
                 Ok(response) if response.success => {
-                    LocalRateLimitEngine::apply_usage_flush_result(usize::saturating_from(response.ingested.max(0)));
+                    LocalRateLimitEngine::apply_usage_flush_result(usize::saturating_from(
+                        response.ingested.max(0),
+                    ));
                 }
                 Ok(response) => {
                     super::metrics::LOCAL_RATELIMIT_USAGE_FLUSH_TOTAL

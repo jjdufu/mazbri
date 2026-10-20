@@ -85,10 +85,9 @@ impl CBProClient {
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro client (mTLS)");
-        let target =
-            mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
-                .await
-                .map_err(|e| CoreError::Config(e.to_string()))?;
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+            .await
+            .map_err(|e| CoreError::Config(e.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
             target.socket_addr,
             self.tls_connector.clone(),
@@ -134,7 +133,8 @@ impl CBProClient {
                 Err(e) => {
                     // Connection-level failure: treat like transient for a few tries.
                     if attempt < config.max_retries {
-                        let cap = config.initial_delay_ms * u64::from(config.multiplier).pow(attempt);
+                        let cap =
+                            config.initial_delay_ms * u64::from(config.multiplier).pow(attempt);
                         let delay_ms = cap; // deterministic small backoff
                         warn!(
                             attempt = attempt + 1,

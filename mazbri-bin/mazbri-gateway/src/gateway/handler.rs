@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::execution::execute_gateway_request_with_event;
 use super::metrics::{API_PROXY_DURATION_SECONDS, classify_error_class};
 use super::metrics::{
@@ -19,6 +18,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, AccessUpstreamMetaFields, emit_access_log, normalize_upstream_host,
@@ -34,7 +34,7 @@ const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
 pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 
-use super::post_response::{content_length, spawn_post_response_tasks, PostResponseTaskArgs};
+use super::post_response::{PostResponseTaskArgs, content_length, spawn_post_response_tasks};
 use super::state::GatewayRequestTiming;
 
 /// `unified_gateway_handler` 依次提取的请求扩展。
@@ -83,7 +83,8 @@ pub async fn unified_gateway_handler(
             return Err(ProxyError::Forbidden(TENANT_ACCESS_DENIED.to_string()));
         }
     };
-    let tenant_id_validation_ms = mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
+    let tenant_id_validation_ms =
+        mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
     let (req, crypto_profile, request_was_encrypted, crypto_timing) = state
         .proxy_state
         .crypto_state
@@ -199,7 +200,8 @@ pub async fn unified_gateway_handler(
             message = "Gateway idempotency stage completed"
         );
     }
-    timing.tenant_validation_ms = mazbri_core::num::millis_u64(tenant_validation_started_at.elapsed());
+    timing.tenant_validation_ms =
+        mazbri_core::num::millis_u64(tenant_validation_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "request_prepare",
         stage_ms = timing.tenant_validation_ms, request_id = % request_id, tenant_id = %
@@ -221,7 +223,8 @@ pub async fn unified_gateway_handler(
                 ProxyError::InternalError(format!("查找租户产品配置失败: {e}"))
             })?,
     };
-    timing.product_detail_lookup_ms = mazbri_core::num::millis_u64(product_detail_lookup_started_at.elapsed());
+    timing.product_detail_lookup_ms =
+        mazbri_core::num::millis_u64(product_detail_lookup_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
         "product_detail_lookup", stage_ms = timing.product_detail_lookup_ms, request_id =
@@ -352,7 +355,8 @@ pub async fn unified_gateway_handler(
         response_body.content_type.as_deref(),
     )?;
     let is_success = serialized_response.success;
-    let response_serialize_ms = mazbri_core::num::millis_u64(response_serialize_started_at.elapsed());
+    let response_serialize_ms =
+        mazbri_core::num::millis_u64(response_serialize_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
         "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id,
@@ -500,7 +504,8 @@ pub async fn unified_gateway_handler(
     }
     let response_bytes = serialized_response.response_bytes;
     let route_template = upstream_route
-        .as_ref().map_or_else(|| req.path.clone(), |route| route.route_template.clone());
+        .as_ref()
+        .map_or_else(|| req.path.clone(), |route| route.route_template.clone());
     // Cache / CBPro did not call live upstream — do not imply an upstream host RTT.
     let upstream_host = if from_cache || from_cbpro_fallback {
         None

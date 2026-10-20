@@ -3,12 +3,12 @@
 //! Reads/writes proxy responses when the tenant has `cache_configs.enabled`.
 //! Fail-open on any cache error so proxy availability is not coupled to cache.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use mazbri_core::num::SaturatingFrom;
 use super::execution::{ProxyBody, UpstreamResponse};
 use super::validation::GatewayRequest;
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{CacheGetRequest, CacheSetRequest};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -81,15 +81,13 @@ impl CachedUpstreamResponse {
                 let len = s.len() as u64;
                 (ProxyBody::Text(s), len)
             }
-            CachedBody::Binary(encoded) => {
-                match STANDARD.decode(encoded) {
-                    Ok(bytes) => {
-                        let len = bytes.len() as u64;
-                        (ProxyBody::Binary(bytes), len)
-                    }
-                    Err(_) => (ProxyBody::Empty, 0),
+            CachedBody::Binary(encoded) => match STANDARD.decode(encoded) {
+                Ok(bytes) => {
+                    let len = bytes.len() as u64;
+                    (ProxyBody::Binary(bytes), len)
                 }
-            }
+                Err(_) => (ProxyBody::Empty, 0),
+            },
         };
         UpstreamResponse {
             status: self.status,
@@ -134,10 +132,7 @@ pub(crate) async fn try_get_cached_response(
     tenant_id: &str,
     cache_key: &str,
 ) -> Option<CachedUpstreamResponse> {
-    let client = match pool
-        .get_cache_client(endpoint.url())
-        .await
-    {
+    let client = match pool.get_cache_client(endpoint.url()).await {
         Ok(c) => c,
         Err(e) => {
             debug!(error = %e, "Proxy response cache get: client unavailable (fail-open)");
@@ -194,10 +189,7 @@ pub(crate) async fn try_put_cached_response(
             return;
         }
     };
-    let client = match pool
-        .get_cache_client(endpoint.url())
-        .await
-    {
+    let client = match pool.get_cache_client(endpoint.url()).await {
         Ok(c) => c,
         Err(e) => {
             debug!(error = %e, "Proxy response cache set: client unavailable (fail-open)");
@@ -219,7 +211,11 @@ pub(crate) async fn try_put_cached_response(
         .await
     {
         Ok(r) if r.error.is_some() => {
-            let msg = r.error.as_ref().map(mazbri_rpc::RpcError::message).unwrap_or_default();
+            let msg = r
+                .error
+                .as_ref()
+                .map(mazbri_rpc::RpcError::message)
+                .unwrap_or_default();
             debug!(error = %msg, path = %path, "Proxy response cache set: service error (fail-open)");
         }
         Ok(_) => {

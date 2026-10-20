@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::commands::ControlCommandStore;
 use super::metrics::{
     LOCAL_RATELIMIT_CHECK_DURATION_SECONDS, LOCAL_RATELIMIT_DECISIONS_TOTAL,
@@ -13,6 +12,7 @@ use super::usage_buffer::{UsageDeltaBuffer, UsageDeltaRecord};
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
 use dashmap::DashMap;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::UsageDelta;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -381,16 +381,26 @@ impl LocalRateLimitEngine {
         }
 
         let multiplier = multiplier.clamp(0.1, 10.0);
-        let tenant_qps = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(snapshot.tenant_qps) * multiplier).round().max(1.0));
-        let tenant_burst = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(snapshot.tenant_burst) * multiplier)
-            .round()
-            .max(1.0));
-        let client_ip_qps = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(snapshot.client_ip_qps) * multiplier)
-            .round()
-            .max(1.0));
-        let client_ip_burst = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(snapshot.client_ip_burst) * multiplier)
-            .round()
-            .max(1.0));
+        let tenant_qps = mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::u64_to_f64(snapshot.tenant_qps) * multiplier)
+                .round()
+                .max(1.0),
+        );
+        let tenant_burst = mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::u64_to_f64(snapshot.tenant_burst) * multiplier)
+                .round()
+                .max(1.0),
+        );
+        let client_ip_qps = mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::u64_to_f64(snapshot.client_ip_qps) * multiplier)
+                .round()
+                .max(1.0),
+        );
+        let client_ip_burst = mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::u64_to_f64(snapshot.client_ip_burst) * multiplier)
+                .round()
+                .max(1.0),
+        );
         // Local engine: plan (tenant) → optional API override → IP → bandwidth.
         // API dimension only when an explicit api_limits rule matches (P2-4).
 
@@ -424,12 +434,16 @@ impl LocalRateLimitEngine {
 
         // Skip api dimension when no matching override — avoids api_qps noise at plan QPS.
         if let Some(rule) = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint) {
-            let api_qps = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(rule.effective_qps(tenant_qps)) * multiplier)
-                .round()
-                .max(1.0));
-            let api_burst = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(rule.effective_burst(tenant_burst)) * multiplier)
-                .round()
-                .max(1.0));
+            let api_qps = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(rule.effective_qps(tenant_qps)) * multiplier)
+                    .round()
+                    .max(1.0),
+            );
+            let api_burst = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(rule.effective_burst(tenant_burst)) * multiplier)
+                    .round()
+                    .max(1.0),
+            );
             let api_key = Self::bucket_key(
                 "api",
                 input.tenant_id,

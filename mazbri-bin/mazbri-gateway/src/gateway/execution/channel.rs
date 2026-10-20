@@ -1,4 +1,11 @@
-use super::{warn, info, ProxyState, InteractionEvent, persist_interaction_event, ProxyError, SwitchCondition, GatewayRequest, CandidateChannel, MazbriClaims, TraceContext, UpstreamResponse, get_or_create_breaker, Duration, execute_http_upstream_request, CircuitResult, classify_proxy_result, API_PROXY_REQUESTS_TOTAL, Deserialize, BYPASS_CONTRACT_ID, build_fallback_cache_key, proxy_body_to_json_value, StoreRequest, FallbackSnapshot, CBPRO_FALLBACK_TTL_SECS, enqueue_cbpro_observation, build_observation_request, ObservationRequestParts};
+use super::{
+    API_PROXY_REQUESTS_TOTAL, BYPASS_CONTRACT_ID, CBPRO_FALLBACK_TTL_SECS, CandidateChannel,
+    CircuitResult, Deserialize, Duration, FallbackSnapshot, GatewayRequest, InteractionEvent,
+    MazbriClaims, ObservationRequestParts, ProxyError, ProxyState, StoreRequest, SwitchCondition,
+    TraceContext, UpstreamResponse, build_fallback_cache_key, build_observation_request,
+    classify_proxy_result, enqueue_cbpro_observation, execute_http_upstream_request,
+    get_or_create_breaker, info, persist_interaction_event, proxy_body_to_json_value, warn,
+};
 
 pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
     if let Err(error) = persist_interaction_event(&state.db, event).await {
@@ -59,40 +66,40 @@ pub(super) async fn execute_channel_attempt(
         }),
     )
     .await;
-    if let Ok(result) = timeout_result { match result {
-        CircuitResult::Success(response) => {
-            let status = response.status.to_string();
-            let result_label = classify_proxy_result(response.status, None);
-            record_proxy_metric(&product_id, &method, &status, &mode, result_label);
-            Ok(response)
+    if let Ok(result) = timeout_result {
+        match result {
+            CircuitResult::Success(response) => {
+                let status = response.status.to_string();
+                let result_label = classify_proxy_result(response.status, None);
+                record_proxy_metric(&product_id, &method, &status, &mode, result_label);
+                Ok(response)
+            }
+            CircuitResult::Rejected {
+                reason,
+                retry_after,
+            } => {
+                warn!(
+                    "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
+                    request_id, product_id, reason, retry_after
+                );
+                record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
+                Err(ProxyError::BadGateway(format!("服务暂时不可用: {reason}")))
+            }
+            CircuitResult::Failure { error } => {
+                warn!(
+                    "[{}] upstream HTTP/2 request failed for product [{}]: {}",
+                    request_id, product_id, error
+                );
+                let result_label = if error.contains("contract") || error.contains("contract_id") {
+                    "config"
+                } else {
+                    "upstream_error"
+                };
+                record_proxy_metric(&product_id, &method, "502", &mode, result_label);
+                Err(ProxyError::BadGateway(error))
+            }
         }
-        CircuitResult::Rejected {
-            reason,
-            retry_after,
-        } => {
-            warn!(
-                "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
-                request_id, product_id, reason, retry_after
-            );
-            record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
-            Err(ProxyError::BadGateway(format!(
-                "服务暂时不可用: {reason}"
-            )))
-        }
-        CircuitResult::Failure { error } => {
-            warn!(
-                "[{}] upstream HTTP/2 request failed for product [{}]: {}",
-                request_id, product_id, error
-            );
-            let result_label = if error.contains("contract") || error.contains("contract_id") {
-                "config"
-            } else {
-                "upstream_error"
-            };
-            record_proxy_metric(&product_id, &method, "502", &mode, result_label);
-            Err(ProxyError::BadGateway(error))
-        }
-    } } else {
+    } else {
         warn!(
             "[{}] upstream HTTP/2 request timed out for product [{}]",
             request_id, product_id
@@ -114,7 +121,8 @@ fn record_proxy_metric(product_id: &str, method: &str, status: &str, mode: &str,
 pub(super) fn resolve_mode_and_contract_hint(channel: &CandidateChannel) -> (String, String) {
     match mazbri_core::SupplierConfig::deserialize(&channel.supplier_config) {
         Ok(cfg) if cfg.is_transparent() => {
-            let adapter = mazbri_core::parse_channel_config_egress(&channel.channel_config).map_or_else(|_| "transparent".to_string(), |s| s.adapter);
+            let adapter = mazbri_core::parse_channel_config_egress(&channel.channel_config)
+                .map_or_else(|_| "transparent".to_string(), |s| s.adapter);
             (adapter, BYPASS_CONTRACT_ID.to_string())
         }
         Ok(cfg) if cfg.is_microservice() => {

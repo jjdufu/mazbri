@@ -1,10 +1,10 @@
-use mazbri_core::num::SaturatingFrom;
 use super::execution::{ProxyBody, UpstreamRouteMetadata};
 use super::serializer::{proxy_body_encoding, proxy_body_to_json_value};
 use crate::router::AppState;
 use axum::http::HeaderMap;
 use mazbri_billing::{BillingCalculator, BillingModel, RateConfig, UsageOutboxEvent};
 use mazbri_callback::repository;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
@@ -12,7 +12,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::state::{ProxyState, GatewayRequest};
+use super::state::{GatewayRequest, ProxyState};
 
 pub(crate) struct CallbackPayloadContext<'a> {
     pub request_id: &'a str,
@@ -261,12 +261,14 @@ pub(crate) fn build_billing_calculator(
     let unit_price = product_detail
         .and_then(|detail| detail.unit_price.parse::<Decimal>().ok())
         .unwrap_or(default_rate.per_call_rate);
-    let billing_type = product_detail
-        .map_or("call", |detail| detail.billing_type.as_str());
+    let billing_type = product_detail.map_or("call", |detail| detail.billing_type.as_str());
     BillingCalculator::new(
         RateConfig {
             per_call_rate: unit_price,
-            tier_name: product_detail.map_or_else(|| "default".to_string(), |detail| detail.product_code.clone()),
+            tier_name: product_detail.map_or_else(
+                || "default".to_string(),
+                |detail| detail.product_code.clone(),
+            ),
         },
         BillingModel::from_billing_type(billing_type),
     )

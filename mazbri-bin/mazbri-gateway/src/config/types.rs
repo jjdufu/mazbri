@@ -127,9 +127,15 @@ impl ServicesConfig {
     pub fn list_services(&self) -> Vec<(String, ServiceEndpoint)> {
         let mut services = vec![
             (ServiceName::Auth.as_str().to_string(), self.auth.clone()),
-            (ServiceName::Ratelimit.as_str().to_string(), self.ratelimit.clone()),
+            (
+                ServiceName::Ratelimit.as_str().to_string(),
+                self.ratelimit.clone(),
+            ),
             (ServiceName::Cache.as_str().to_string(), self.cache.clone()),
-            (ServiceName::Billing.as_str().to_string(), self.billing.clone()),
+            (
+                ServiceName::Billing.as_str().to_string(),
+                self.billing.clone(),
+            ),
         ];
         if let Some(ref ep) = self.cbpro {
             services.push((ServiceName::Cbpro.as_str().to_string(), ep.clone()));

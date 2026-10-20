@@ -5,7 +5,6 @@
 //! - `qps_limit <= 0` means unlimited (no token consumed).
 //! - Modes: **reject** (default, immediate 429) or **queue** (wait with guards).
 
-use mazbri_core::num::SaturatingFrom;
 use super::metrics::{
     CHANNEL_RATELIMIT_CHECK_DURATION_SECONDS, CHANNEL_RATELIMIT_DECISIONS_TOTAL,
     CHANNEL_RATELIMIT_QUEUE_WAIT_SECONDS,
@@ -13,6 +12,7 @@ use super::metrics::{
 use super::token_bucket::TokenBucket;
 use crate::config::{ChannelRateLimitConfig, ChannelRateLimitMode};
 use dashmap::DashMap;
+use mazbri_core::num::SaturatingFrom;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::sync::Arc;
@@ -474,7 +474,9 @@ mod tests {
                     "expected some wait, got {queue_wait_ms}"
                 );
             }
-            other @ ChannelRateLimitDecision::Deny { .. } => panic!("expected Allow after queue, got {other:?}"),
+            other @ ChannelRateLimitDecision::Deny { .. } => {
+                panic!("expected Allow after queue, got {other:?}")
+            }
         }
     }
 

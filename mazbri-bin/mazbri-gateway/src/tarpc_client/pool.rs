@@ -181,8 +181,7 @@ impl TarpcClientPool {
             let keys = cache
                 .iter()
                 .filter_map(|entry| {
-                    if entry.key() == addr || entry.key().starts_with(&pooled_prefix)
-                    {
+                    if entry.key() == addr || entry.key().starts_with(&pooled_prefix) {
                         Some(entry.key().clone())
                     } else {
                         None

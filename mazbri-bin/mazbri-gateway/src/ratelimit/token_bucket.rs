@@ -34,7 +34,8 @@ impl TokenBucket {
             self.last_refill = now;
             return;
         }
-        self.tokens = (self.tokens + elapsed * self.refill_per_sec).min(mazbri_core::num::u64_to_f64(self.capacity));
+        self.tokens = (self.tokens + elapsed * self.refill_per_sec)
+            .min(mazbri_core::num::u64_to_f64(self.capacity));
         self.last_refill = now;
     }
 

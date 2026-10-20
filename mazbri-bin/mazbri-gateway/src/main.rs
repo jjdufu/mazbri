@@ -21,7 +21,6 @@ mod startup_metrics;
 mod supplier_config_cache;
 mod tarpc_client;
 mod upstream_contract;
-use axum::serve::ListenerExt;
 use crate::auth::{JwtKeyManager, register_auth_middleware_metrics};
 use crate::config::GatewayConfig;
 use crate::crypto::register_crypto_metrics;
@@ -29,6 +28,7 @@ use crate::gateway::register_proxy_metrics;
 use crate::ratelimit::register_local_ratelimit_metrics;
 use crate::startup_metrics::{register_gateway_startup_metrics, set_gateway_startup_ready};
 use anyhow::Result;
+use axum::serve::ListenerExt;
 use mazbri_core::{
     config::{
         PureBootstrap, ServiceConfig, ValidateConfig, build_log_routes, get_cert_service_token,
@@ -188,42 +188,42 @@ async fn start_registry(
     config: &GatewayConfig,
 ) -> Result<Option<Arc<ConfigCenterRegistry>>> {
     let registry = if let Some(ref registration) = bootstrap.registration {
-            if registration.enabled {
-                let token = get_cert_service_token()?;
-                let http_client = Arc::new(
-                    HttpConfigClientBuilder::new(service_name, bootstrap.cert_service.base())
-                        .cert_service_token(token)
-                        .build()
-                        .await?,
-                );
-                let handler = registry_handler::create_gateway_config_handler();
-                let metadata = registration.to_service_metadata(
-                    service,
-                    config.server.port,
-                    config.admin_health(),
-                );
-                let registry = Arc::new(ConfigCenterRegistry::new(
-                    http_client,
-                    handler as Arc<dyn ConfigHandler>,
-                    metadata,
-                ));
-                registry
-                    .register(&registry.metadata())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("节点注册失败: {e}"))?;
-                registry
-                    .start()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("注册中心启动失败: {e}"))?;
-                info!("节点注册成功，心跳已启动");
-                Some(registry)
-            } else {
-                info!("注册中心未启用 (registration.enabled=false)");
-                None
-            }
+        if registration.enabled {
+            let token = get_cert_service_token()?;
+            let http_client = Arc::new(
+                HttpConfigClientBuilder::new(service_name, bootstrap.cert_service.base())
+                    .cert_service_token(token)
+                    .build()
+                    .await?,
+            );
+            let handler = registry_handler::create_gateway_config_handler();
+            let metadata = registration.to_service_metadata(
+                service,
+                config.server.port,
+                config.admin_health(),
+            );
+            let registry = Arc::new(ConfigCenterRegistry::new(
+                http_client,
+                handler as Arc<dyn ConfigHandler>,
+                metadata,
+            ));
+            registry
+                .register(&registry.metadata())
+                .await
+                .map_err(|e| anyhow::anyhow!("节点注册失败: {e}"))?;
+            registry
+                .start()
+                .await
+                .map_err(|e| anyhow::anyhow!("注册中心启动失败: {e}"))?;
+            info!("节点注册成功，心跳已启动");
+            Some(registry)
         } else {
+            info!("注册中心未启用 (registration.enabled=false)");
             None
-        };
+        }
+    } else {
+        None
+    };
     Ok(registry)
 }
 

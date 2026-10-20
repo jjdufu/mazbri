@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::gateway::ProxyError;
 use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
@@ -15,6 +14,7 @@ use mazbri_core::crypto::transport::{
     validate_transport_algorithms, verify_payload_signature,
 };
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
+use mazbri_core::num::SaturatingFrom;
 use prometheus::{CounterVec, HistogramOpts, HistogramVec};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -738,7 +738,8 @@ impl TenantCryptoState {
         }
         let root_material_started_at = Instant::now();
         let materials = self.root_materials().await;
-        timing.tenant_key_root_material = mazbri_core::num::millis_u64(root_material_started_at.elapsed());
+        timing.tenant_key_root_material =
+            mazbri_core::num::millis_u64(root_material_started_at.elapsed());
         let materials = materials?;
         let local_started_at = Instant::now();
         let (master_key, integrity_key) = decode_root_materials(&materials)?;
@@ -1045,8 +1046,7 @@ pub async fn load_platform_hs256_jwt_keys(
     Ok(rows
         .into_iter()
         .filter(|row| {
-            row.not_before.is_none_or(|ts| now >= ts)
-                && row.not_after.is_none_or(|ts| now < ts)
+            row.not_before.is_none_or(|ts| now >= ts) && row.not_after.is_none_or(|ts| now < ts)
         })
         .map(|row| (row.kid, row.material))
         .collect())

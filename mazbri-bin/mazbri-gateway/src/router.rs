@@ -187,8 +187,8 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         circuit_breaker_config: config.circuit_breaker.clone(),
         ratelimit_endpoint: config.services.ratelimit.clone(),
         channel_rate_limit: config.channel_rate_limit.clone(),
-        cbpro_client: config.services.cbpro.as_ref().and_then(
-            |endpoint| match CBProClient::new(
+        cbpro_client: config.services.cbpro.as_ref().and_then(|endpoint| {
+            match CBProClient::new(
                 endpoint.clone(),
                 &tls_ca_cert.clone(),
                 &client_cert,
@@ -203,8 +203,8 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
                     );
                     None
                 }
-            },
-        ),
+            }
+        }),
         cbpro_ext_client: config.services.cbpro_ext.as_ref().and_then(|endpoint| {
             match CBProExtClient::new(
                 endpoint.clone(),
@@ -566,54 +566,28 @@ async fn warmup_tarpc_clients(
         },
     )
     .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        "auth",
-        services.auth.url(),
-        || async {
-            let _ = tarpc_pool
-                .get_auth_client(services.auth.url())
-                .await?;
-            Ok(())
-        },
-    )
+    warmup_tarpc_client_with_retry(tarpc_pool, "auth", services.auth.url(), || async {
+        let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
+        Ok(())
+    })
     .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        "billing",
-        services.billing.url(),
-        || async {
-            let _ = tarpc_pool
-                .get_billing_client(services.billing.url())
-                .await?;
-            Ok(())
-        },
-    )
+    warmup_tarpc_client_with_retry(tarpc_pool, "billing", services.billing.url(), || async {
+        let _ = tarpc_pool
+            .get_billing_client(services.billing.url())
+            .await?;
+        Ok(())
+    })
     .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        "cache",
-        services.cache.url(),
-        || async {
-            let _ = tarpc_pool
-                .get_cache_client(services.cache.url())
-                .await?;
-            Ok(())
-        },
-    )
+    warmup_tarpc_client_with_retry(tarpc_pool, "cache", services.cache.url(), || async {
+        let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
+        Ok(())
+    })
     .await?;
     if let Some(cbpro_url) = services.cbpro.as_ref() {
-        warmup_tarpc_client_with_retry(
-            tarpc_pool,
-            "cbpro",
-            cbpro_url.url(),
-            || async {
-                let _ = tarpc_pool
-                    .get_http_upstream_client(cbpro_url.url())
-                    .await?;
-                Ok(())
-            },
-        )
+        warmup_tarpc_client_with_retry(tarpc_pool, "cbpro", cbpro_url.url(), || async {
+            let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
+            Ok(())
+        })
         .await?;
     }
     tracing::info!("Tarpc clients warmed up");
@@ -803,7 +777,9 @@ async fn concurrency_limit_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    let permit: OwnedSemaphorePermit = if let Ok(permit) = limit.clone().try_acquire_owned() { permit } else {
+    let permit: OwnedSemaphorePermit = if let Ok(permit) = limit.clone().try_acquire_owned() {
+        permit
+    } else {
         GATEWAY_OVERLOAD_REJECT_TOTAL.inc();
         tracing::warn!(
             target: "gateway.stage",

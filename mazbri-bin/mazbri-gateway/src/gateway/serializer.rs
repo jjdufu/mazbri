@@ -48,13 +48,7 @@ pub(crate) fn serialize_proxy_response(
 ) -> Result<SerializedProxyResponse, ProxyError> {
     let success = (200..300).contains(&status) && error.is_none();
     let (body_kind, body_encoding, bytes) = if success {
-        serialize_success_response(
-            codec,
-            status,
-            request_id,
-            body,
-            content_type,
-        )?
+        serialize_success_response(codec, status, request_id, body, content_type)?
     } else {
         serialize_error_response(codec, status, request_id, error.unwrap_or("上游请求失败"))?
     };

@@ -224,8 +224,12 @@ pub async fn balance_check_middleware(
     let product_detail =
         lookup_product_detail(&state, tenant_context.tenant_id, product_id).await?;
     let product_detail_lookup_ms = product_detail_lookup_started_at.elapsed().as_millis();
-    let estimated_cost =
-        estimate_cost(&product_detail, request.headers(), &tenant_context, product_id)?;
+    let estimated_cost = estimate_cost(
+        &product_detail,
+        request.headers(),
+        &tenant_context,
+        product_id,
+    )?;
     let check_balance_started_at = Instant::now();
     let required = crate::balance_cache::required_available(estimated_cost);
     let timeout_ms = state.balance_check_timeout_ms.max(50);
@@ -260,12 +264,7 @@ pub async fn balance_check_middleware(
             request.extensions_mut().insert(product_detail);
             timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             request.extensions_mut().insert(timing);
-            log_allowed(
-                &tenant_context,
-                product_id,
-                cache_source,
-                &times,
-            );
+            log_allowed(&tenant_context, product_id, cache_source, &times);
             Ok(next.run(request).await)
         }
         Ok((false, cache_source)) => {
@@ -281,13 +280,7 @@ pub async fn balance_check_middleware(
             Err(StatusCode::PAYMENT_REQUIRED)
         }
         Err(error) => {
-            log_infra_failure(
-                &tenant_context,
-                product_id,
-                &error,
-                fail_open,
-                &times,
-            );
+            log_infra_failure(&tenant_context, product_id, &error, fail_open, &times);
             if fail_open {
                 BALANCE_PRECHECK_TOTAL
                     .with_label_values(&["l3", "fail_open"])

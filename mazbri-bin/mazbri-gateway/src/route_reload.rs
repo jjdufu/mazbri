@@ -3,11 +3,11 @@
 //! 最坏生效时间 ≈ `route_reload.interval_secs` + 全量加载耗时。
 //! LISTEN/NOTIFY 仅加速唤醒；轮询始终是保底。
 
-use mazbri_core::num::SaturatingFrom;
 use crate::config::RouteReloadConfig;
 use crate::route_source;
 use arc_swap::ArcSwap;
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_routing::RouteEngine;
 use prometheus::{CounterVec, HistogramVec, IntGauge};
 use serde::Serialize;
@@ -183,7 +183,8 @@ impl RouteReloadStatus {
         let updated = self.version_updated_at_unix.load(Ordering::SeqCst);
         let last_result = self
             .last_result
-            .read().map_or_else(|_| "unknown".to_string(), |g| g.clone());
+            .read()
+            .map_or_else(|_| "unknown".to_string(), |g| g.clone());
         let last_reload_at = if last_ms > 0 {
             Some(format_unix_ms(last_ms))
         } else {
@@ -227,7 +228,8 @@ fn now_unix_secs() -> i64 {
 fn format_unix_ms(ms: i64) -> String {
     let secs = ms / 1000;
     let nanos = u32::saturating_from((ms % 1000) * 1_000_000);
-    chrono::DateTime::from_timestamp(secs, nanos).map_or_else(|| ms.to_string(), |dt| dt.to_rfc3339())
+    chrono::DateTime::from_timestamp(secs, nanos)
+        .map_or_else(|| ms.to_string(), |dt| dt.to_rfc3339())
 }
 
 fn format_unix_secs(secs: i64) -> String {

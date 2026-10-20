@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::claims::MazbriClaims;
 use super::jwt_keys::JwtHs256Keyring;
 use crate::gateway::GatewayRequestTiming;
@@ -19,6 +18,7 @@ use jsonwebtoken::{Validation, decode, decode_header};
 use mazbri_auth::{CredentialType, TenantContext, TokenRecorder};
 use mazbri_core::crypto::transport::TransportEnvelope;
 use mazbri_core::metrics::{REGISTRY, register_collector_once};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{parse_trace_context, resolve_client_ip, validate_tenant_id};
 use prometheus::{IntCounterVec, Opts};
 use std::net::SocketAddr;
@@ -166,9 +166,10 @@ pub async fn jwt_auth_middleware(
     let body_bytes = body::to_bytes(body, MAX_BODY_SIZE)
         .await
         .map_err(|_| JwtAuthError::InvalidRequestBody.into_response())?;
-    let path_and_query = parts
-        .uri
-        .path_and_query().map_or_else(|| parts.uri.path().to_string(), |value| value.as_str().to_string());
+    let path_and_query = parts.uri.path_and_query().map_or_else(
+        || parts.uri.path().to_string(),
+        |value| value.as_str().to_string(),
+    );
     parts
         .extensions
         .insert(GatewayHttpPath(path_and_query.clone()));
@@ -272,9 +273,10 @@ pub async fn ratelimit_middleware(
             )
                 .into_response()
         })?;
-    let api_endpoint = req
-        .extensions()
-        .get::<ProxyExecutionContext>().map_or_else(|| req.uri().path().to_string(), |ctx| ctx.api_endpoint.clone());
+    let api_endpoint = req.extensions().get::<ProxyExecutionContext>().map_or_else(
+        || req.uri().path().to_string(),
+        |ctx| ctx.api_endpoint.clone(),
+    );
     let client_ip = resolve_client_ip(req.headers(), Some(peer_addr));
     let request_id = current_request_id(req.headers());
     let request_bytes = content_length_header(req.headers());
@@ -339,7 +341,11 @@ pub async fn ratelimit_middleware(
                 snapshot_age_ms, degraded, source = "local", decision = "deny",
                 message = "Gateway rate limit stage rejected request"
             );
-            Err(rate_limit_error_response(i32::saturating_from((retry_after_ms / 1000).max(1)), &reason).into())
+            Err(rate_limit_error_response(
+                i32::saturating_from((retry_after_ms / 1000).max(1)),
+                &reason,
+            )
+            .into())
         }
     }
 }
