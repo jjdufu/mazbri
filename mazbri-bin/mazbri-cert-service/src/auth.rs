@@ -26,7 +26,9 @@ impl AuthState {
 }
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth_header = headers.get("authorization")?.to_str().ok()?;
-    auth_header.strip_prefix("Bearer ").map(std::string::ToString::to_string)
+    auth_header
+        .strip_prefix("Bearer ")
+        .map(std::string::ToString::to_string)
 }
 pub async fn auth_middleware_inner(
     auth_state: Arc<AuthState>,
@@ -96,7 +98,10 @@ mod tests {
 
     fn auth_config(tokens: &[&str]) -> CertAuthConfig {
         CertAuthConfig {
-            static_tokens: tokens.iter().map(std::string::ToString::to_string).collect(),
+            static_tokens: tokens
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         }
     }
 

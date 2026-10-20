@@ -9,17 +9,17 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use mazbri_core::request_context::RequestContext;
 use mazbri_core::validation::validate_service_config;
 use serde_json::json;
 use tracing::info;
-pub async fn upsert_config(
-    State(state): State<ConfigState>,
-    Path(service): Path<String>,
-    headers: HeaderMap,
-    Json(req): Json<UpdateConfigRequest>,
-) -> Response {
-    let request_context = request_context(&headers);
-    if let Err(errs) = validate_service_config(&req.content) {
+/// 校验失败时返回应直接响应的错误。
+fn validate_upsert(
+    service: &str,
+    content: &str,
+    request_context: &RequestContext,
+) -> Option<Response> {
+    if let Err(errs) = validate_service_config(content) {
         let message = format!("配置内容校验失败: {errs:?}");
         log_config_error(
             "config_upsert_schema_validation_failed",
@@ -28,17 +28,19 @@ pub async fn upsert_config(
             &request_context.trace_id,
             &message,
         );
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!(
-                { "error" : mazbri_core::error_codes::VALIDATION_ERROR, "message" :
-                format!("{}: {}", VALIDATION_ERROR_MESSAGE, message), "details" :
-                errs }
-            )),
-        )
-            .into_response();
+        return Some(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!(
+                    { "error" : mazbri_core::error_codes::VALIDATION_ERROR, "message" :
+                    format!("{}: {}", VALIDATION_ERROR_MESSAGE, message), "details" :
+                    errs }
+                )),
+            )
+                .into_response(),
+        );
     }
-    if let Err(e) = mazbri_core::validate_config_target(&service) {
+    if let Err(e) = mazbri_core::validate_config_target(service) {
         let message = e.to_string();
         log_config_error(
             "config_upsert_service_validation_failed",
@@ -47,14 +49,51 @@ pub async fn upsert_config(
             &request_context.trace_id,
             &message,
         );
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!(
-                { "error" : mazbri_core::error_codes::VALIDATION_ERROR, "message"
-                : message }
-            )),
-        )
-            .into_response();
+        return Some(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!(
+                    { "error" : mazbri_core::error_codes::VALIDATION_ERROR, "message"
+                    : message }
+                )),
+            )
+                .into_response(),
+        );
+    }
+    None
+}
+
+fn upsert_internal_error(
+    event: &'static str,
+    request_context: &RequestContext,
+    error: &dyn std::fmt::Display,
+) -> Response {
+    log_config_error(
+        event,
+        mazbri_core::error_codes::INTERNAL_ERROR,
+        &request_context.request_id,
+        &request_context.trace_id,
+        error,
+    );
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!(
+            { "error" : mazbri_core::error_codes::INTERNAL_ERROR,
+            "message" : INTERNAL_SERVER_ERROR_MESSAGE }
+        )),
+    )
+        .into_response()
+}
+
+pub async fn upsert_config(
+    State(state): State<ConfigState>,
+    Path(service): Path<String>,
+    headers: HeaderMap,
+    Json(req): Json<UpdateConfigRequest>,
+) -> Response {
+    let request_context = request_context(&headers);
+    if let Some(response) = validate_upsert(&service, &req.content, &request_context) {
+        return response;
     }
     info!(
         service = % service, request_id = % request_context.request_id,
@@ -74,23 +113,7 @@ pub async fn upsert_config(
                 );
                 (StatusCode::OK, Json(entry)).into_response()
             }
-            Err(e) => {
-                log_config_error(
-                    "config_upsert_update_failed",
-                    mazbri_core::error_codes::INTERNAL_ERROR,
-                    &request_context.request_id,
-                    &request_context.trace_id,
-                    &e,
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(
-                        { "error" : mazbri_core::error_codes::INTERNAL_ERROR,
-                        "message" : INTERNAL_SERVER_ERROR_MESSAGE }
-                    )),
-                )
-                    .into_response()
-            }
+            Err(e) => upsert_internal_error("config_upsert_update_failed", &request_context, &e),
         }
     } else {
         let create_req = CreateConfigRequest {
@@ -108,23 +131,7 @@ pub async fn upsert_config(
                 );
                 (StatusCode::CREATED, Json(entry)).into_response()
             }
-            Err(e) => {
-                log_config_error(
-                    "config_upsert_create_failed",
-                    mazbri_core::error_codes::INTERNAL_ERROR,
-                    &request_context.request_id,
-                    &request_context.trace_id,
-                    &e,
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!(
-                        { "error" : mazbri_core::error_codes::INTERNAL_ERROR,
-                        "message" : INTERNAL_SERVER_ERROR_MESSAGE }
-                    )),
-                )
-                    .into_response()
-            }
+            Err(e) => upsert_internal_error("config_upsert_create_failed", &request_context, &e),
         }
     }
 }

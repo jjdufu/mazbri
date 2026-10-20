@@ -71,7 +71,12 @@ fn default_cert_validity_days() -> i64 {
 impl ValidateConfig for CertAppConfig {
     fn validate(&self) -> Result<()> {
         self.cert_service.validate()?;
-        if self.cert.key_password.as_ref().is_none_or(std::string::String::is_empty) {
+        if self
+            .cert
+            .key_password
+            .as_ref()
+            .is_none_or(std::string::String::is_empty)
+        {
             tracing::info!(
                 "KEY_PASSWORD will be provided by the commercial base authorization package"
             );

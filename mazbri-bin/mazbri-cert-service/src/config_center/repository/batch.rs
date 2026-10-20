@@ -1,10 +1,10 @@
-use std::fmt::Write as _;
-use mazbri_core::num::SaturatingFrom;
 use super::super::error::ConfigResult;
 use super::super::models::{
     BatchError, BatchFilters, BatchOperation, BatchResult, ConfigEntry, ConfigEntrySummary,
 };
 use super::super::validator::{compute_batch_content_hash, validate_batch_toml};
+use mazbri_core::num::SaturatingFrom;
+use std::fmt::Write as _;
 use uuid::Uuid;
 impl super::super::ConfigRepository {
     /// # Errors
@@ -106,53 +106,14 @@ impl super::super::ConfigRepository {
         }
         let mut errors: Vec<BatchError> = Vec::new();
         let mut successful_entries: Vec<ConfigEntry> = Vec::new();
-        'entry_loop: for entry in &entries {
-            let mut modified_content = entry.content.clone();
-            let mut is_sensitive = entry.is_sensitive;
-            for op in operations {
-                match op {
-                    BatchOperation::ReplaceValue { path, value } => {
-                        match apply_toml_value_replace(&modified_content, path, value) {
-                            Ok(new_content) => modified_content = new_content,
-                            Err(e) => {
-                                errors.push(BatchError {
-                                    entry_key: entry.service_name.clone(),
-                                    error: e,
-                                });
-                                continue 'entry_loop;
-                            }
-                        }
-                    }
-                    BatchOperation::SetSensitive { value } => {
-                        is_sensitive = *value;
-                    }
-                    BatchOperation::AddTag | BatchOperation::RemoveTag => {}
-                    BatchOperation::MergeContent { content } => {
-                        match merge_toml_contents(&modified_content, content) {
-                            Ok(new_content) => modified_content = new_content,
-                            Err(e) => {
-                                errors.push(BatchError {
-                                    entry_key: entry.service_name.clone(),
-                                    error: e,
-                                });
-                                continue 'entry_loop;
-                            }
-                        }
-                    }
-                }
-            }
-            if let Err(e) = validate_batch_toml(&modified_content) {
-                errors.push(BatchError {
+        for entry in &entries {
+            match apply_batch_operations(entry, operations) {
+                Ok(updated) => successful_entries.push(updated),
+                Err(error) => errors.push(BatchError {
                     entry_key: entry.service_name.clone(),
-                    error: e.to_string(),
-                });
-                continue;
+                    error,
+                }),
             }
-            successful_entries.push(ConfigEntry {
-                content: modified_content,
-                is_sensitive,
-                ..entry.clone()
-            });
         }
         if dry_run {
             return Ok(BatchResult {
@@ -212,6 +173,33 @@ impl super::super::ConfigRepository {
         })
     }
 }
+/// 按顺序对单个条目应用批量操作并校验结果 TOML。
+fn apply_batch_operations(
+    entry: &ConfigEntry,
+    operations: &[BatchOperation],
+) -> Result<ConfigEntry, String> {
+    let mut modified_content = entry.content.clone();
+    let mut is_sensitive = entry.is_sensitive;
+    for op in operations {
+        match op {
+            BatchOperation::ReplaceValue { path, value } => {
+                modified_content = apply_toml_value_replace(&modified_content, path, value)?;
+            }
+            BatchOperation::SetSensitive { value } => is_sensitive = *value,
+            BatchOperation::AddTag | BatchOperation::RemoveTag => {}
+            BatchOperation::MergeContent { content } => {
+                modified_content = merge_toml_contents(&modified_content, content)?;
+            }
+        }
+    }
+    validate_batch_toml(&modified_content).map_err(|e| e.to_string())?;
+    Ok(ConfigEntry {
+        content: modified_content,
+        is_sensitive,
+        ..entry.clone()
+    })
+}
+
 fn apply_toml_value_replace(
     content: &str,
     path: &str,

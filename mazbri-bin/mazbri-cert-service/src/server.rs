@@ -111,13 +111,61 @@ pub fn create_app(state: AppState) -> Router {
             state.auth_state.clone(),
             crate::auth::auth_middleware,
         ));
+    let root_package_routes = Router::new()
+        .route(
+            "/authorizations/root/current/materials",
+            get(handlers::root_package::get_current_root_materials),
+        )
+        .with_state(Arc::new(state.clone()))
+        .layer(middleware::from_fn_with_state(
+            state.auth_state.clone(),
+            crate::auth::auth_middleware,
+        ));
+    let auth_layer =
+        middleware::from_fn_with_state(state.auth_state.clone(), crate::auth::auth_middleware);
+    let node_state = NodeState {
+        repo: state.node_repo.clone(),
+        config_repo: state.config_repo.clone(),
+    };
+    let node_routes = Router::new()
+        .route("/nodes/register", post(handlers::node::register_node))
+        .route("/nodes/heartbeat", post(handlers::node::heartbeat))
+        .route("/nodes", get(handlers::node::list_nodes))
+        .route("/nodes/{service}", get(handlers::node::discover_service))
+        .with_state(node_state)
+        .layer(auth_layer.clone());
+    let cert_routes = cert_routes(&state);
+    let config_routes = config_routes(&state);
+    let (tag_routes, category_routes) = tag_and_category_routes(&state);
+    Router::new()
+        .merge(public_routes)
+        .merge(base_authorization_admin_routes)
+        .merge(cert_routes)
+        .merge(root_package_routes)
+        .merge(node_routes)
+        .merge(config_routes)
+        .merge(tag_routes)
+        .merge(category_routes)
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(axum::middleware::from_fn(
+                    mazbri_service::request_id_middleware,
+                ))
+                .layer(axum::middleware::from_fn(
+                    mazbri_service::error_handler_middleware,
+                )),
+        )
+        .with_state(state)
+}
+
+fn cert_routes(state: &AppState) -> Router<AppState> {
     let cert_state = CertificateState {
         repo: state.repo.clone(),
         base_authorization: state.base_authorization.clone(),
         san_policy: state.san_policy.clone(),
     };
-    let root_package_state = Arc::new(state.clone());
-    let cert_routes = Router::new()
+    Router::new()
         .route("/issue", post(handlers::certificate::issue_certificate))
         .route(
             "/renew/{id}",
@@ -157,30 +205,12 @@ pub fn create_app(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.auth_state.clone(),
             crate::auth::auth_middleware,
-        ));
-    let root_package_routes = Router::new()
-        .route(
-            "/authorizations/root/current/materials",
-            get(handlers::root_package::get_current_root_materials),
-        )
-        .with_state(root_package_state)
-        .layer(middleware::from_fn_with_state(
-            state.auth_state.clone(),
-            crate::auth::auth_middleware,
-        ));
+        ))
+}
+
+fn config_routes(state: &AppState) -> Router<AppState> {
     let auth_layer =
         middleware::from_fn_with_state(state.auth_state.clone(), crate::auth::auth_middleware);
-    let node_state = NodeState {
-        repo: state.node_repo.clone(),
-        config_repo: state.config_repo.clone(),
-    };
-    let node_routes = Router::new()
-        .route("/nodes/register", post(handlers::node::register_node))
-        .route("/nodes/heartbeat", post(handlers::node::heartbeat))
-        .route("/nodes", get(handlers::node::list_nodes))
-        .route("/nodes/{service}", get(handlers::node::discover_service))
-        .with_state(node_state)
-        .layer(auth_layer.clone());
     let config_state = ConfigState {
         repo: state.config_repo.clone(),
     };
@@ -219,7 +249,7 @@ pub fn create_app(state: AppState) -> Router {
             post(handlers::config::rollback_config),
         )
         .layer(license_write_layer);
-    let config_routes = Router::new()
+    Router::new()
         .route("/configs/{service}", get(handlers::config::get_config))
         .route(
             "/configs/{service}/history",
@@ -233,7 +263,12 @@ pub fn create_app(state: AppState) -> Router {
         .route("/configs/search", get(handlers::config::search_configs))
         .merge(config_write_routes)
         .with_state(config_state)
-        .layer(auth_layer.clone());
+        .layer(auth_layer)
+}
+
+fn tag_and_category_routes(state: &AppState) -> (Router<AppState>, Router<AppState>) {
+    let auth_layer =
+        middleware::from_fn_with_state(state.auth_state.clone(), crate::auth::auth_middleware);
     let tag_state = TagState {
         repo: state.config_repo.clone(),
     };
@@ -263,24 +298,5 @@ pub fn create_app(state: AppState) -> Router {
         )
         .with_state(category_state)
         .layer(auth_layer);
-    Router::new()
-        .merge(public_routes)
-        .merge(base_authorization_admin_routes)
-        .merge(cert_routes)
-        .merge(root_package_routes)
-        .merge(node_routes)
-        .merge(config_routes)
-        .merge(tag_routes)
-        .merge(category_routes)
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(axum::middleware::from_fn(
-                    mazbri_service::request_id_middleware,
-                ))
-                .layer(axum::middleware::from_fn(
-                    mazbri_service::error_handler_middleware,
-                )),
-        )
-        .with_state(state)
+    (tag_routes, category_routes)
 }

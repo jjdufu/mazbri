@@ -1,6 +1,4 @@
-use super::models::{
-    AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary,
-};
+use super::models::{AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary};
 use crate::error::{CertError, CertResult};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Deserialize;

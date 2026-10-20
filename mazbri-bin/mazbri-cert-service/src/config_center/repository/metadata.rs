@@ -289,55 +289,7 @@ impl super::super::ConfigRepository {
         &self,
         query: &ConfigSearchQuery,
     ) -> ConfigResult<Vec<ConfigEntryWithMeta>> {
-        let mut conditions: Vec<String> = Vec::new();
-        let mut param_idx = 0usize;
-        // service_name: contains (ILIKE) — mgmt list search uses this as free-text.
-        if query.service_name.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.service_name ILIKE ${param_idx}"));
-        }
-        if query.service_name_eq.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.service_name = ${param_idx}"));
-        }
-        if query.updated_by.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_by ILIKE ${param_idx}"));
-        }
-        if query.updated_at_gte.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_at >= ${param_idx}::timestamptz"));
-        }
-        if query.updated_at_lte.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_at <= ${param_idx}::timestamptz"));
-        }
-        if query.q.is_some() {
-            param_idx += 1;
-            conditions.push(format!(
-                "(ce.service_name ILIKE ${param_idx} OR ce.updated_by ILIKE ${param_idx})"
-            ));
-        }
-        if query.category.is_some() {
-            param_idx += 1;
-            conditions.push(format!("cc.name = ${param_idx}"));
-        }
-        if let Some(ref tags) = query.tags {
-            if !tags.is_empty() {
-                param_idx += 1;
-                conditions
-                    .push(
-                        format!(
-                            "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
-                        ),
-                    );
-            }
-        }
-        let where_clause = if conditions.is_empty() {
-            "1 = 1".to_string()
-        } else {
-            conditions.join(" AND ")
-        };
+        let (where_clause, mut param_idx) = search_where_clause(query);
         param_idx += 1;
         let limit_param = param_idx;
         param_idx += 1;
@@ -372,23 +324,13 @@ impl super::super::ConfigRepository {
         );
         let mut sql_query = sqlx::query(&sql);
         if let Some(ref service_name) = query.service_name {
-            let pat = if service_name.contains('%') {
-                service_name.clone()
-            } else {
-                format!("%{service_name}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(service_name));
         }
         if let Some(ref service_name_eq) = query.service_name_eq {
             sql_query = sql_query.bind(service_name_eq.clone());
         }
         if let Some(ref updated_by) = query.updated_by {
-            let pat = if updated_by.contains('%') {
-                updated_by.clone()
-            } else {
-                format!("%{updated_by}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(updated_by));
         }
         if let Some(ref gte) = query.updated_at_gte {
             sql_query = sql_query.bind(gte.clone());
@@ -397,12 +339,7 @@ impl super::super::ConfigRepository {
             sql_query = sql_query.bind(lte.clone());
         }
         if let Some(ref q) = query.q {
-            let pat = if q.contains('%') {
-                q.clone()
-            } else {
-                format!("%{q}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(q));
         }
         if let Some(ref category_name) = query.category {
             sql_query = sql_query.bind(category_name);
@@ -414,39 +351,102 @@ impl super::super::ConfigRepository {
         }
         sql_query = sql_query.bind(query.limit).bind(query.offset);
         let rows = sql_query.fetch_all(&*self.db).await?;
-        let mut results = Vec::with_capacity(rows.len());
-        for row in rows {
-            let entry = ConfigEntry {
-                id: row.get("id"),
-                service_name: row.get("service_name"),
-                content: row.get("content"),
-                content_hash: row.get("content_hash"),
-                is_sensitive: row.get("is_sensitive"),
-                updated_by: row.get("updated_by"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-            };
-            let tags_json: Option<serde_json::Value> = row.try_get("tags_json").ok();
-            let tags: Vec<ConfigTag> = match tags_json {
-                Some(serde_json::Value::Array(arr)) => arr
-                    .iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                    .collect(),
-                _ => vec![],
-            };
-            let category: Option<ConfigCategory> = row
-                .try_get("category_json")
-                .ok()
-                .and_then(|v: serde_json::Value| serde_json::from_value(v).ok());
-            results.push(ConfigEntryWithMeta {
-                entry,
-                tags,
-                category,
-            });
-        }
-        Ok(results)
+        Ok(rows.iter().map(row_to_entry_with_meta).collect())
     }
 }
+/// 构造 `search_configs` 的 WHERE 子句；返回已占用的参数序号。
+fn search_where_clause(query: &ConfigSearchQuery) -> (String, usize) {
+    let mut conditions: Vec<String> = Vec::new();
+    let mut param_idx = 0usize;
+    // service_name: contains (ILIKE) — mgmt list search uses this as free-text.
+    if query.service_name.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.service_name ILIKE ${param_idx}"));
+    }
+    if query.service_name_eq.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.service_name = ${param_idx}"));
+    }
+    if query.updated_by.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_by ILIKE ${param_idx}"));
+    }
+    if query.updated_at_gte.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_at >= ${param_idx}::timestamptz"));
+    }
+    if query.updated_at_lte.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_at <= ${param_idx}::timestamptz"));
+    }
+    if query.q.is_some() {
+        param_idx += 1;
+        conditions.push(format!(
+            "(ce.service_name ILIKE ${param_idx} OR ce.updated_by ILIKE ${param_idx})"
+        ));
+    }
+    if query.category.is_some() {
+        param_idx += 1;
+        conditions.push(format!("cc.name = ${param_idx}"));
+    }
+    if let Some(ref tags) = query.tags {
+        if !tags.is_empty() {
+            param_idx += 1;
+            conditions
+                .push(
+                    format!(
+                        "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
+                    ),
+                );
+        }
+    }
+    let where_clause = if conditions.is_empty() {
+        "1 = 1".to_string()
+    } else {
+        conditions.join(" AND ")
+    };
+    (where_clause, param_idx)
+}
+
+fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {
+    let entry = ConfigEntry {
+        id: row.get("id"),
+        service_name: row.get("service_name"),
+        content: row.get("content"),
+        content_hash: row.get("content_hash"),
+        is_sensitive: row.get("is_sensitive"),
+        updated_by: row.get("updated_by"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    };
+    let tags_json: Option<serde_json::Value> = row.try_get("tags_json").ok();
+    let tags: Vec<ConfigTag> = match tags_json {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect(),
+        _ => vec![],
+    };
+    let category: Option<ConfigCategory> = row
+        .try_get("category_json")
+        .ok()
+        .and_then(|v: serde_json::Value| serde_json::from_value(v).ok());
+    ConfigEntryWithMeta {
+        entry,
+        tags,
+        category,
+    }
+}
+
+/// 未含通配符时包成 `%value%`（ILIKE 包含匹配）。
+fn contains_pattern(value: &str) -> String {
+    if value.contains('%') {
+        value.to_string()
+    } else {
+        format!("%{value}%")
+    }
+}
+
 const MAX_CATEGORY_DEPTH: usize = 10;
 fn build_category_tree(
     categories: &[ConfigCategory],

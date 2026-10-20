@@ -15,8 +15,8 @@ pub mod root_package {
     pub use crate::root_package_service::*;
     pub use mazbri_cert::root_package::*;
 }
-pub mod server;
 pub mod san;
+pub mod server;
 pub mod token;
 
 pub mod base_authorization_service;

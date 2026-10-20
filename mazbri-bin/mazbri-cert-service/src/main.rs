@@ -9,11 +9,11 @@ use mazbri_cert_service::config_center::ConfigRepository;
 use mazbri_cert_service::db::CertificateRepository;
 use mazbri_cert_service::handlers::certificate::common::update_certificate_inventory_metrics;
 use mazbri_cert_service::node_registry::NodeRegistryRepository;
-use mazbri_cert_service::server;
 use mazbri_cert_service::san::{EnvSource, SanPolicy};
+use mazbri_cert_service::server;
 use mazbri_cert_service::token::TokenManager;
-use mazbri_core::config::{build_log_routes, get_cert_service_token, load_toml};
 use mazbri_core::ServiceName;
+use mazbri_core::config::{build_log_routes, get_cert_service_token, load_toml};
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use mazbri_core::init_tracing_with_routes;
 use parking_lot::Mutex;
@@ -34,30 +34,17 @@ async fn sync_authorization_expiry(
     let _ = root_material_cache;
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config_dir = Path::new(".");
-    let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
-    let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
-    if config.service_name.name() != ServiceName::Cert {
-        anyhow::bail!(
-            "service_name 必须为 {}（当前 {}）",
-            ServiceName::Cert.as_str(),
-            config.service_name.as_str()
-        );
-    }
-    let service_name = config.service_name.as_str().to_owned();
-    let log_routes = build_log_routes(&config.log_routes)?;
-    let cert_service_token = get_cert_service_token()?;
-    config.auth.static_tokens = vec![cert_service_token];
-    config.cert.key_password = None;
-    let admin_state: Option<Arc<AdminState>> = if config.admin.enabled {
+fn start_admin_server(
+    config: &CertAppConfig,
+    service_name: &str,
+) -> Result<Option<Arc<AdminState>>> {
+    let admin_state = if config.admin.enabled {
         let state = Arc::new(AdminState::new(
-            service_name.clone(),
+            service_name.to_owned(),
             Arc::new(mazbri_core::REGISTRY.clone()),
         ));
         let state_for_check = state.clone();
-        let server = AdminServerBuilder::new(&service_name, config.admin.port)
+        let server = AdminServerBuilder::new(service_name, config.admin.port)
             .registry(Arc::new(mazbri_core::REGISTRY.clone()))
             .readiness_check(move || {
                 let ready = state_for_check.is_ready();
@@ -80,6 +67,73 @@ async fn main() -> Result<()> {
         info!("Admin server disabled");
         None
     };
+    Ok(admin_state)
+}
+
+fn spawn_inventory_metrics(repo: Arc<CertificateRepository>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            update_certificate_inventory_metrics(&repo).await;
+        }
+    });
+}
+
+fn spawn_node_cleanup(node_repo: Arc<NodeRegistryRepository>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
+        loop {
+            interval.tick().await;
+            match node_repo.cleanup_offline().await {
+                Ok(count) if count > 0 => {
+                    info!(deleted_count = count, "已清理离线节点");
+                }
+                Err(e) => {
+                    tracing::error!("清理离线节点失败: {}", e);
+                }
+                _ => {}
+            }
+        }
+    })
+}
+
+fn spawn_authorization_sync(state: &server::AppState) -> tokio::task::JoinHandle<()> {
+    let sync_repo = state.repo.clone();
+    let sync_base_authorization = state.base_authorization.clone();
+    let sync_root_material_cache = state.root_material_cache.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            sync_authorization_expiry(
+                &sync_repo,
+                &sync_base_authorization,
+                Some(&sync_root_material_cache),
+            )
+            .await;
+        }
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let config_dir = Path::new(".");
+    let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
+    let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
+    if config.service_name.name() != ServiceName::Cert {
+        anyhow::bail!(
+            "service_name 必须为 {}（当前 {}）",
+            ServiceName::Cert.as_str(),
+            config.service_name.as_str()
+        );
+    }
+    let service_name = config.service_name.as_str().to_owned();
+    let log_routes = build_log_routes(&config.log_routes)?;
+    let cert_service_token = get_cert_service_token()?;
+    config.auth.static_tokens = vec![cert_service_token];
+    config.cert.key_password = None;
+    let admin_state = start_admin_server(&config, &service_name)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     mazbri_tls::register_cert_metrics()?;
     info!("Mazbri 证书服务启动中...");
@@ -88,16 +142,7 @@ async fn main() -> Result<()> {
     info!("已连接数据库");
     let repo = Arc::new(CertificateRepository::new(db.clone()));
     update_certificate_inventory_metrics(&repo).await;
-    {
-        let repo = repo.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-            loop {
-                interval.tick().await;
-                update_certificate_inventory_metrics(&repo).await;
-            }
-        });
-    }
+    spawn_inventory_metrics(repo.clone());
     if let Some(ref state) = admin_state {
         state.set_ready(true);
         info!("Service marked as ready for authorization import");
@@ -115,22 +160,7 @@ async fn main() -> Result<()> {
     info!("配置仓库已初始化");
     let san_policy = Arc::new(SanPolicy::from_config(&config.san, &EnvSource)?);
     info!("SAN 策略已加载");
-    let node_repo_for_cleanup = node_repo.clone();
-    let cleanup_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
-        loop {
-            interval.tick().await;
-            match node_repo_for_cleanup.cleanup_offline().await {
-                Ok(count) if count > 0 => {
-                    info!(deleted_count = count, "已清理离线节点");
-                }
-                Err(e) => {
-                    tracing::error!("清理离线节点失败: {}", e);
-                }
-                _ => {}
-            }
-        }
-    });
+    let cleanup_handle = spawn_node_cleanup(node_repo.clone());
     info!("节点清理任务已启动");
     sync_authorization_expiry(&repo, &base_authorization, None).await;
     if let Err(error) = base_authorization
@@ -157,25 +187,11 @@ async fn main() -> Result<()> {
     } else {
         info!("Root material cache warmup completed");
     }
-    let sync_repo = state.repo.clone();
-    let sync_base_authorization = state.base_authorization.clone();
-    let sync_root_material_cache = state.root_material_cache.clone();
     let app = server::create_app(state.clone());
     let addr = config.server.socket_addr()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("证书服务监听于 {}", addr);
-    let sync_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            sync_authorization_expiry(
-                &sync_repo,
-                &sync_base_authorization,
-                Some(&sync_root_material_cache),
-            )
-            .await;
-        }
-    });
+    let sync_handle = spawn_authorization_sync(&state);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),

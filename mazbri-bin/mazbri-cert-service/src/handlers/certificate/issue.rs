@@ -43,7 +43,9 @@ async fn issue_certificate_inner(
     // 非规范名 → CertError::SubjectNotCanonical
     let dns_names = state.san_policy.sans_for_subject(subject)?;
     if state.repo.subject_exists(subject).await? {
-        return Err(CertError::InvalidSubject(format!("'{subject}' 的证书已存在")));
+        return Err(CertError::InvalidSubject(format!(
+            "'{subject}' 的证书已存在"
+        )));
     }
     let ca_manager = state.base_authorization.require_issuance().await?;
     let (cert_pem, key_encrypted) = ca_manager.issue_certificate(subject, &dns_names)?;

@@ -141,9 +141,8 @@ impl ConfigEncryption {
         })
     }
     fn derive_key(material: &KeyMaterial) -> Result<[u8; 32], EncryptionError> {
-        let master_key = hex::decode(&material.master_key).map_err(|e| {
-            EncryptionError::KeyUnavailable(format!("Invalid master key hex: {e}"))
-        })?;
+        let master_key = hex::decode(&material.master_key)
+            .map_err(|e| EncryptionError::KeyUnavailable(format!("Invalid master key hex: {e}")))?;
         let salt = hex::decode(&material.salt)
             .map_err(|e| EncryptionError::KeyUnavailable(format!("Invalid salt hex: {e}")))?;
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), &master_key);

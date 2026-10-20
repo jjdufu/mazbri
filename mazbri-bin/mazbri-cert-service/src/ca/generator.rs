@@ -68,9 +68,8 @@ impl CaManager {
         dn.push(DnType::CountryName, "CN");
         params.distinguished_name = dn;
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|e| {
-            CertError::GenerationFailed(format!("Failed to generate CA key: {e}"))
-        })?;
+        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
+            .map_err(|e| CertError::GenerationFailed(format!("Failed to generate CA key: {e}")))?;
         let cert = params
             .self_signed(&key_pair)
             .map_err(|e| CertError::GenerationFailed(format!("Failed to create CA cert: {e}")))?;

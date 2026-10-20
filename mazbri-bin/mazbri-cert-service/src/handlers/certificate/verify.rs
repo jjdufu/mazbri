@@ -33,7 +33,9 @@ async fn verify_certificate_inner(
     if !cert_pem.contains("-----BEGIN CERTIFICATE-----") {
         return Ok(invalid_pem_response());
     }
-    let Ok(fingerprint) = compute_cert_fingerprint(cert_pem) else { return Ok(invalid_pem_response()) };
+    let Ok(fingerprint) = compute_cert_fingerprint(cert_pem) else {
+        return Ok(invalid_pem_response());
+    };
     let cert = state.repo.find_by_fingerprint(&fingerprint).await?;
     let response = match cert {
         Some(c) => build_verification_response(&c),

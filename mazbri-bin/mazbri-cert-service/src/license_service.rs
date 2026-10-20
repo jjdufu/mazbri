@@ -348,44 +348,8 @@ async fn import_in_transaction(
             let current = current.as_ref().ok_or_else(|| {
                 CertError::InvalidRequest("尚未开通，不能导入换钥许可证".to_string())
             })?;
-            if verified.payload.previous_key_version.as_deref()
-                != Some(current.key_version.as_str())
-            {
-                return Err(license_error(
-                    LICENSE_KEY_VERSION_MISMATCH,
-                    "换钥许可证的 previousKeyVersion 与当前密钥版本不一致",
-                ));
-            }
-            let assets = license::open_assets(&private_key, &public_key, verified)?;
-            let old_password = license::open_key_password(
-                &private_key,
-                &public_key,
-                installation.installation_id,
-                &current.key_version,
-                &current.key_password_sealed,
-            )?;
-            rekey_ca_and_materials(
-                &mut tx,
-                &old_password,
-                &assets,
-                &verified.payload.key_version,
-            )
-            .await?;
-            let sealed = license::seal_key_password(
-                &public_key,
-                installation.installation_id,
-                &verified.payload.key_version,
-                &assets.key_password,
-            )?;
-            update_license_row(
-                &mut tx,
-                verified,
-                Some(&sealed),
-                Some(&verified.payload.key_version),
-                Some(&verified.payload.asset_digest),
-            )
-            .await?;
-            Some(assets)
+            let keys = (&private_key, &public_key);
+            Some(apply_rekey(&mut tx, verified, installation, current, keys).await?)
         }
     };
     record_event_tx(
@@ -406,6 +370,45 @@ async fn import_in_transaction(
         activate_runtime(args, &assets.key_password, &assets).await;
     }
     sync_runtime(args.pool, Utc::now()).await
+}
+
+async fn apply_rekey(
+    tx: &mut Transaction<'_, Postgres>,
+    verified: &VerifiedLicense,
+    installation: &InstallationKeyFile,
+    current: &LicenseStateRow,
+    (private_key, public_key): (&[u8; 32], &[u8; 32]),
+) -> CertResult<LicenseAssets> {
+    if verified.payload.previous_key_version.as_deref() != Some(current.key_version.as_str()) {
+        return Err(license_error(
+            LICENSE_KEY_VERSION_MISMATCH,
+            "换钥许可证的 previousKeyVersion 与当前密钥版本不一致",
+        ));
+    }
+    let assets = license::open_assets(private_key, public_key, verified)?;
+    let old_password = license::open_key_password(
+        private_key,
+        public_key,
+        installation.installation_id,
+        &current.key_version,
+        &current.key_password_sealed,
+    )?;
+    rekey_ca_and_materials(tx, &old_password, &assets, &verified.payload.key_version).await?;
+    let sealed = license::seal_key_password(
+        public_key,
+        installation.installation_id,
+        &verified.payload.key_version,
+        &assets.key_password,
+    )?;
+    update_license_row(
+        tx,
+        verified,
+        Some(&sealed),
+        Some(&verified.payload.key_version),
+        Some(&verified.payload.asset_digest),
+    )
+    .await?;
+    Ok(assets)
 }
 
 async fn activate_runtime(args: &ImportArgs<'_>, password: &str, assets: &LicenseAssets) {
