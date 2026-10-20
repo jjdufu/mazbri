@@ -56,18 +56,81 @@ pub struct ReconciliationAuditOptions {
     pub include_raw_log_source: bool,
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn execute_reconciliation_audit(
-    billing_db: &PgPool,
+/// 网关侧 `request_logs` 当日请求数；失败时返回 `None`（回退 OLAP）。
+async fn fetch_gateway_request_count(
     analytics_client: &AnalyticsHttpClient,
+    day_start: chrono::DateTime<chrono::Utc>,
+    day_end: chrono::DateTime<chrono::Utc>,
+) -> Option<i64> {
+    match analytics_client
+        .aggregate_requests(
+            &day_start.to_rfc3339(),
+            &day_end.to_rfc3339(),
+            Some("mazbri-gateway"),
+        )
+        .await
+    {
+        Ok(body) => body
+            .get("total_requests")
+            .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)))
+            .map(i64::saturating_from),
+        Err(e) => {
+            tracing::warn!(
+                "raw_log gateway request_logs aggregate failed, falling back to OLAP: {}",
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Primary ratio: billable `usage_records` vs customer-facing gateway access count
+/// (or upstream preagg when `raw_log` disabled). Use max(sides, 1) as denominator so a
+/// near-empty OLTP side does not explode the ratio.
+fn compute_loss_ratio(oltp_call_count: i64, comparison_call_count: i64) -> Decimal {
+    let oltp_dec = Decimal::from(oltp_call_count);
+    let peer_dec = Decimal::from(comparison_call_count);
+    let diff = (oltp_dec - peer_dec).abs();
+    let denominator = if oltp_call_count == 0 && comparison_call_count == 0 {
+        Decimal::ONE
+    } else {
+        Decimal::from(oltp_call_count.max(comparison_call_count).max(1))
+    };
+    diff / denominator
+}
+
+async fn amount_recon_details(
+    billing_db: &PgPool,
+    day_start: chrono::DateTime<chrono::Utc>,
+    day_end: chrono::DateTime<chrono::Utc>,
+) -> Result<serde_json::Value, BillingError> {
+    let usage_amount = repo::sum_usage_billable_amount(billing_db, day_start, day_end)
+        .await
+        .map_err(|e| {
+            error!("Database error summing usage billable_amount: {}", e);
+            BillingError::Database
+        })?;
+    let bill_items_amount = repo::sum_bill_items_total_for_day(billing_db, day_start, day_end)
+        .await
+        .map_err(|e| {
+            error!("Database error summing bill_items for day: {}", e);
+            BillingError::Database
+        })?;
+    let amount_diff = if usage_amount >= bill_items_amount {
+        usage_amount - bill_items_amount
+    } else {
+        bill_items_amount - usage_amount
+    };
+    Ok(serde_json::json!({
+        "usage_billable_amount": usage_amount.to_string(),
+        "bill_items_total": bill_items_amount.to_string(),
+        "amount_diff": amount_diff.to_string(),
+    }))
+}
+
+fn reconciliation_day_bounds(
     reconciliation_date: chrono::NaiveDate,
-    scope_type: &str,
-    scope_id: &str,
-    options: ReconciliationAuditOptions,
-) -> Result<ReconciliationAuditResult, BillingError> {
-    let loss_ratio_threshold = options.loss_ratio_threshold;
+) -> Result<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>), BillingError> {
     let day_start = reconciliation_date
         .and_hms_opt(0, 0, 0)
         .ok_or_else(|| {
@@ -85,20 +148,16 @@ pub async fn execute_reconciliation_audit(
         })?
         .and_utc();
 
-    let oltp_call_count: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(COUNT(*), 0)::BIGINT FROM usage_records WHERE recorded_at >= $1 AND recorded_at <= $2",
-    )
-    .bind(day_start)
-    .bind(day_end)
-    .fetch_one(billing_db)
-    .await
-    .map_err(|e| {
-        error!("Database error counting usage_records for reconciliation: {}", e);
-        BillingError::Database
-    })?;
+    Ok((day_start, day_end))
+}
 
-    // Upstream pre-aggregation (supplier-side): populated from bypass access logs only
-    // after mv_upstream_hourly_usage filter — one hop per actual upstream call.
+/// Upstream pre-aggregation (supplier-side): populated from bypass access logs only
+/// after `mv_upstream_hourly_usage` filter — one hop per actual upstream call.
+async fn fetch_preagg_call_count(
+    analytics_client: &AnalyticsHttpClient,
+    day_start: chrono::DateTime<chrono::Utc>,
+    day_end: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, BillingError> {
     let summary_val = analytics_client
         .fetch_upstream_usage_summary(
             &day_start.to_rfc3339(),
@@ -117,11 +176,41 @@ pub async fn execute_reconciliation_audit(
             BillingError::Database
         })?;
 
-    let olap_preagg_call_count: i64 = summary_val.as_array().map_or(0, |arr| {
+    Ok(summary_val.as_array().map_or(0, |arr| {
         arr.iter()
             .filter_map(|row| row.get("total_calls").and_then(serde_json::Value::as_i64))
             .sum()
-    });
+    }))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn execute_reconciliation_audit(
+    billing_db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    reconciliation_date: chrono::NaiveDate,
+    scope_type: &str,
+    scope_id: &str,
+    options: ReconciliationAuditOptions,
+) -> Result<ReconciliationAuditResult, BillingError> {
+    let loss_ratio_threshold = options.loss_ratio_threshold;
+    let (day_start, day_end) = reconciliation_day_bounds(reconciliation_date)?;
+
+    let oltp_call_count: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(COUNT(*), 0)::BIGINT FROM usage_records WHERE recorded_at >= $1 AND recorded_at <= $2",
+    )
+    .bind(day_start)
+    .bind(day_end)
+    .fetch_one(billing_db)
+    .await
+    .map_err(|e| {
+        error!("Database error counting usage_records for reconciliation: {}", e);
+        BillingError::Database
+    })?;
+
+    let olap_preagg_call_count =
+        fetch_preagg_call_count(analytics_client, day_start, day_end).await?;
 
     // Customer-facing access logs (gateway only). request_logs also contains mazbri-bypass
     // rows for the same request_id; counting both ~doubles the total and falsely flags recon.
@@ -131,52 +220,19 @@ pub async fn execute_reconciliation_audit(
     let mut comparison_call_count = olap_preagg_call_count;
     let mut comparison_source = "olap_preagg";
     if options.include_raw_log_source {
-        match analytics_client
-            .aggregate_requests(
-                &day_start.to_rfc3339(),
-                &day_end.to_rfc3339(),
-                Some("mazbri-gateway"),
-            )
-            .await
+        if let Some(count) = fetch_gateway_request_count(analytics_client, day_start, day_end).await
         {
-            Ok(body) => {
-                if let Some(total) = body
-                    .get("total_requests")
-                    .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)))
-                {
-                    raw_log_call_count = i64::saturating_from(total);
-                    raw_log_source = "request_logs_gateway";
-                    comparison_call_count = raw_log_call_count;
-                    comparison_source = "request_logs_gateway";
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "raw_log gateway request_logs aggregate failed, falling back to OLAP: {}",
-                    e
-                );
-            }
+            raw_log_call_count = count;
+            raw_log_source = "request_logs_gateway";
+            comparison_call_count = count;
+            comparison_source = "request_logs_gateway";
         }
     }
 
     // Primary ratio: billable usage_records vs customer-facing gateway access count
     // (or upstream preagg when raw_log disabled). Use max(sides, 1) as denominator so a
     // near-empty OLTP side does not explode the ratio.
-    let oltp_dec = Decimal::from(oltp_call_count);
-    let peer_dec = Decimal::from(comparison_call_count);
-    let diff = if oltp_dec >= peer_dec {
-        oltp_dec - peer_dec
-    } else {
-        peer_dec - oltp_dec
-    };
-    let denominator = if oltp_call_count == 0 && comparison_call_count == 0 {
-        Decimal::ONE
-    } else if oltp_call_count >= comparison_call_count {
-        Decimal::from(oltp_call_count.max(1))
-    } else {
-        Decimal::from(comparison_call_count.max(1))
-    };
-    let loss_ratio = diff / denominator;
+    let loss_ratio = compute_loss_ratio(oltp_call_count, comparison_call_count);
 
     let status = if loss_ratio > loss_ratio_threshold {
         "flagged"
@@ -198,32 +254,9 @@ pub async fn execute_reconciliation_audit(
     });
 
     if options.include_amount_recon {
-        let usage_amount = repo::sum_usage_billable_amount(billing_db, day_start, day_end)
-            .await
-            .map_err(|e| {
-                error!("Database error summing usage billable_amount: {}", e);
-                BillingError::Database
-            })?;
-        let bill_items_amount = repo::sum_bill_items_total_for_day(billing_db, day_start, day_end)
-            .await
-            .map_err(|e| {
-                error!("Database error summing bill_items for day: {}", e);
-                BillingError::Database
-            })?;
-        let amount_diff = if usage_amount >= bill_items_amount {
-            usage_amount - bill_items_amount
-        } else {
-            bill_items_amount - usage_amount
-        };
+        let amount_recon = amount_recon_details(billing_db, day_start, day_end).await?;
         if let Some(obj) = details.as_object_mut() {
-            obj.insert(
-                "amount_recon".to_string(),
-                serde_json::json!({
-                    "usage_billable_amount": usage_amount.to_string(),
-                    "bill_items_total": bill_items_amount.to_string(),
-                    "amount_diff": amount_diff.to_string(),
-                }),
-            );
+            obj.insert("amount_recon".to_string(), amount_recon);
         }
     }
 
