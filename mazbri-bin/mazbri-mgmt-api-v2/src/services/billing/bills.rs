@@ -1,15 +1,29 @@
 use super::*;
 
+/// `list_bills` 的入参。
+pub struct ListBillsParams<'a> {
+    pub billing_db: &'a PgPool,
+    pub tenant_id: Option<uuid::Uuid>,
+    pub search: Option<String>,
+    pub status: Option<String>,
+    pub filters_json: Option<String>,
+    pub page: u32,
+    pub limit: u32,
+}
+
 pub async fn list_bills(
     db: &PgPool,
-    billing_db: &PgPool,
-    tenant_id: Option<uuid::Uuid>,
-    search: Option<String>,
-    status: Option<String>,
-    filters_json: Option<String>,
-    page: u32,
-    limit: u32,
+    params: ListBillsParams<'_>,
 ) -> Result<BillListResponse, BillingError> {
+    let ListBillsParams {
+        billing_db,
+        tenant_id,
+        search,
+        status,
+        filters_json,
+        page,
+        limit,
+    } = params;
     validate_limit(limit)?;
     let page = page.max(1);
     let status = normalize_bill_status(&status)?;
@@ -51,13 +65,15 @@ pub async fn list_bills(
     })?;
     let bills = repo::list_bills(
         billing_db,
-        tenant_id,
-        search_ref,
-        &matched_tenant_ids,
-        status.as_deref(),
-        &filters,
-        limit as i64,
-        offset,
+        repo::ListBillsQuery {
+            tenant_id,
+            search: search_ref,
+            matched_tenant_ids: &matched_tenant_ids,
+            status: status.as_deref(),
+            filters: &filters,
+            limit: limit as i64,
+            offset,
+        },
     )
     .await
     .map_err(|e| {

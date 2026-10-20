@@ -351,20 +351,17 @@ impl SupplierConfig {
             }
         }
 
-        if self.is_microservice() {
-            match self
+        if self.is_microservice()
+            && self
                 .contract_id
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-            {
-                None => {
-                    return Err(ConfigValidationError::new(
-                        "config.upstream_type=microservice 时 contract_id 必填",
-                    ));
-                }
-                Some(_) => {}
-            }
+                .is_none()
+        {
+            return Err(ConfigValidationError::new(
+                "config.upstream_type=microservice 时 contract_id 必填",
+            ));
         }
 
         if let Some(ref t) = self.timeouts {

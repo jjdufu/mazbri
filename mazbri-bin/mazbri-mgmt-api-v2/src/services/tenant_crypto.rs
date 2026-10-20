@@ -652,13 +652,15 @@ pub async fn create_request_key(
     .map_err(|error| ApiError::internal(format!("Failed to wrap request key: {error}")))?;
     let key = repo::insert_request_key(
         pool,
-        tenant_id,
-        &kid,
-        "hmac-sha256",
-        &wrapped.encrypted_secret_key,
-        &wrapped.secret_key_digest,
-        &wrapped.wrapping_key_id,
-        actor_id,
+        repo::NewRequestKey {
+            tenant_id,
+            kid: &kid,
+            alg: "hmac-sha256",
+            encrypted_material: &wrapped.encrypted_secret_key,
+            material_digest: &wrapped.secret_key_digest,
+            wrapping_key_id: &wrapped.wrapping_key_id,
+            actor_id,
+        },
     )
     .await
     .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;

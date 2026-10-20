@@ -107,13 +107,15 @@ pub async fn rollback(
     );
     let new_ver = repo::insert_version(
         pool,
-        supplier_id,
-        version_no,
-        &ver.config_snapshot,
-        &ver.channels_snapshot,
-        &ver.endpoints_snapshot,
-        Some(&comment),
-        Some(actor),
+        repo::NewVersion {
+            supplier_id,
+            version_no,
+            config_snapshot: &ver.config_snapshot,
+            channels_snapshot: &ver.channels_snapshot,
+            endpoints_snapshot: &ver.endpoints_snapshot,
+            comment: Some(&comment),
+            published_by: Some(actor),
+        },
     )
     .await
     .map_err(|e| ApiError::internal(format!("insert rollback version: {e}")))?;
@@ -141,17 +143,29 @@ pub async fn rollback(
     }))
 }
 
-pub async fn live_run(
-    pool: &PgPool,
-    audit: &AuditService,
-    supplier_id: Uuid,
-    req: RunRequest,
-    actor: &str,
-    user_id: Uuid,
-    client_ip: Option<String>,
-    default_timeout_ms: u64,
-    max_body_bytes: usize,
-) -> Result<RunDto, ApiError> {
+/// `live_run` 的入参。
+pub struct LiveRunParams<'a> {
+    pub audit: &'a AuditService,
+    pub supplier_id: Uuid,
+    pub req: RunRequest,
+    pub actor: &'a str,
+    pub user_id: Uuid,
+    pub client_ip: Option<String>,
+    pub default_timeout_ms: u64,
+    pub max_body_bytes: usize,
+}
+
+pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto, ApiError> {
+    let LiveRunParams {
+        audit,
+        supplier_id,
+        req,
+        actor,
+        user_id,
+        client_ip,
+        default_timeout_ms,
+        max_body_bytes,
+    } = params;
     let row =
         sqlx::query("SELECT id, supplier_code, upstream_url, config FROM suppliers WHERE id = $1")
             .bind(supplier_id)
@@ -230,19 +244,21 @@ pub async fn live_run(
 
     let run_row = repo::insert_run(
         pool,
-        None,
-        Some(supplier_id),
-        "live",
-        result.ok,
-        Some(result.latency_ms as i32),
-        &stages_json,
-        &serde_json::json!([]),
-        result.error_code.as_deref(),
-        result.error_message.as_deref(),
-        None,
-        None,
-        Some(actor),
-        None,
+        repo::NewRun {
+            draft_id: None,
+            supplier_id: Some(supplier_id),
+            mode: "live",
+            ok: result.ok,
+            latency_ms: Some(result.latency_ms as i32),
+            stages: &stages_json,
+            assertions: &serde_json::json!([]),
+            error_code: result.error_code.as_deref(),
+            error_message: result.error_message.as_deref(),
+            endpoint_key: None,
+            testcase_id: None,
+            actor: Some(actor),
+            spec_fingerprint: None,
+        },
     )
     .await
     .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;

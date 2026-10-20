@@ -317,21 +317,38 @@ pub fn filters_have_timestamp(filters: &[ListFilter]) -> bool {
     })
 }
 
+/// `collect_flat_numeric_filters` 的入参：各个扁平数值过滤条件。
+pub struct FlatNumericFilters {
+    pub duration_ms_gt: Option<u64>,
+    pub duration_ms_gte: Option<u64>,
+    pub duration_ms_lt: Option<u64>,
+    pub duration_ms_lte: Option<u64>,
+    pub duration_ms_eq: Option<u64>,
+    pub status_code_gt: Option<u16>,
+    pub status_code_gte: Option<u16>,
+    pub status_code_lt: Option<u16>,
+    pub status_code_lte: Option<u16>,
+    pub status_code_neq: Option<u16>,
+    pub upstream_service_time_ms_gt: Option<u64>,
+    pub upstream_service_time_ms_gte: Option<u64>,
+}
+
 /// Collect flat filter params from typed optional fields into ListFilter list.
-pub fn collect_flat_numeric_filters(
-    duration_ms_gt: Option<u64>,
-    duration_ms_gte: Option<u64>,
-    duration_ms_lt: Option<u64>,
-    duration_ms_lte: Option<u64>,
-    duration_ms_eq: Option<u64>,
-    status_code_gt: Option<u16>,
-    status_code_gte: Option<u16>,
-    status_code_lt: Option<u16>,
-    status_code_lte: Option<u16>,
-    status_code_neq: Option<u16>,
-    upstream_service_time_ms_gt: Option<u64>,
-    upstream_service_time_ms_gte: Option<u64>,
-) -> Vec<ListFilter> {
+pub fn collect_flat_numeric_filters(params: FlatNumericFilters) -> Vec<ListFilter> {
+    let FlatNumericFilters {
+        duration_ms_gt,
+        duration_ms_gte,
+        duration_ms_lt,
+        duration_ms_lte,
+        duration_ms_eq,
+        status_code_gt,
+        status_code_gte,
+        status_code_lt,
+        status_code_lte,
+        status_code_neq,
+        upstream_service_time_ms_gt,
+        upstream_service_time_ms_gte,
+    } = params;
     let mut out = Vec::new();
     let push_u64 = |out: &mut Vec<ListFilter>, field: &str, op: FilterOp, v: Option<u64>| {
         if let Some(n) = v {

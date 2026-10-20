@@ -10,12 +10,12 @@ license = "MIT"
 name = "mazbri-cert-service"
 path = "src/main.rs"
 [dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-rpc = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-tls = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-cert = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
+mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-cert = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cert" }
 
 tokio = {version = "1.35", features = ["full"]}
 

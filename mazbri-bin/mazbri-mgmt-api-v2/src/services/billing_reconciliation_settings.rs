@@ -73,10 +73,8 @@ impl BillingReconciliationRuntimeSettings {
             return Err("default_scope_type must not be empty".to_string());
         }
         let url = self.alert_webhook_url.trim();
-        if self.alert_on_flagged && !url.is_empty() {
-            if url::Url::parse(url).is_err() {
-                return Err("alert_webhook_url is not a valid URL".to_string());
-            }
+        if self.alert_on_flagged && !url.is_empty() && url::Url::parse(url).is_err() {
+            return Err("alert_webhook_url is not a valid URL".to_string());
         }
         Ok(())
     }

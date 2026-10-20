@@ -541,13 +541,15 @@ pub async fn list_route_rules(
     .map_err(|e| ApiError::internal(format!("Failed to count route rules: {}", e)))?;
     let route_rules = repo::list_route_rules(
         pool,
-        params.tenant_id,
-        params.product_id,
-        params.q.as_deref(),
-        params.status.as_deref(),
-        &filters,
-        page_size as i64,
-        offset as i64,
+        repo::ListRouteRulesQuery {
+            tenant_id: params.tenant_id,
+            product_id: params.product_id,
+            search: params.q.as_deref(),
+            status: params.status.as_deref(),
+            filters: &filters,
+            page_size: page_size as i64,
+            offset: offset as i64,
+        },
     )
     .await
     .map_err(|e| ApiError::internal(format!("Failed to list route rules: {}", e)))?;

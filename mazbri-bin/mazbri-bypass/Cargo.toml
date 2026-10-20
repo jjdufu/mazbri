@@ -11,14 +11,14 @@ name = "mazbri-bypass"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-registry = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-upstream-contracts = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-upstream-runtime = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-rpc = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-tls = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
+mazbri-upstream-contracts = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-contracts" }
+mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-runtime" }
+mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
 
 anyhow = {version = "1.0"}
 chrono = {version = "0.4", features = ["serde"]}

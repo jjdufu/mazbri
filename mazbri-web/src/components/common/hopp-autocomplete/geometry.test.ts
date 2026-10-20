@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hoppAcPanelRect } from "./geometry.ts";
+import { hoppAcPanelRect } from "./geometry";
 
 const panel = hoppAcPanelRect({
   top: 120.4,

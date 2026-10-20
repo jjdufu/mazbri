@@ -485,16 +485,30 @@ pub async fn list_request_keys(
     .await
 }
 
+/// `insert_request_key` 要写入的字段。
+pub struct NewRequestKey<'a> {
+    pub tenant_id: uuid::Uuid,
+    pub kid: &'a str,
+    pub alg: &'a str,
+    pub encrypted_material: &'a str,
+    pub material_digest: &'a str,
+    pub wrapping_key_id: &'a str,
+    pub actor_id: uuid::Uuid,
+}
+
 pub async fn insert_request_key(
     pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    kid: &str,
-    alg: &str,
-    encrypted_material: &str,
-    material_digest: &str,
-    wrapping_key_id: &str,
-    actor_id: uuid::Uuid,
+    params: NewRequestKey<'_>,
 ) -> Result<TenantRequestKeyRow, sqlx::Error> {
+    let NewRequestKey {
+        tenant_id,
+        kid,
+        alg,
+        encrypted_material,
+        material_digest,
+        wrapping_key_id,
+        actor_id,
+    } = params;
     sqlx::query_as::<_, TenantRequestKeyRow>(
         r#"
         INSERT INTO tenant_request_keys (

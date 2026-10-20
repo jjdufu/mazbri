@@ -7,7 +7,7 @@ import {
   authProfileFromPicker,
   ensureCredentialKeys,
   sanitizeAuthSpec,
-} from "../authMatrix.ts";
+} from "../authMatrix";
 
 
 const groups: Record<string, string> = {

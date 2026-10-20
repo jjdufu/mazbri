@@ -11,9 +11,9 @@ name = "mazbri-analytics"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
 
 tokio = {version = "1.35", features = ["full"]}
 

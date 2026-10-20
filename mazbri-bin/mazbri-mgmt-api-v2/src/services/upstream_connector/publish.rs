@@ -2,16 +2,30 @@ use super::*;
 
 // ---------- Publish ----------
 
+/// `publish_draft` 的入参。
+pub struct PublishDraftParams<'a> {
+    pub audit: &'a AuditService,
+    pub id: Uuid,
+    pub req: PublishRequest,
+    pub actor: &'a str,
+    pub user_id: Uuid,
+    pub is_admin: bool,
+    pub client_ip: Option<String>,
+}
+
 pub async fn publish_draft(
     pool: &PgPool,
-    audit: &AuditService,
-    id: Uuid,
-    req: PublishRequest,
-    actor: &str,
-    user_id: Uuid,
-    is_admin: bool,
-    client_ip: Option<String>,
+    params: PublishDraftParams<'_>,
 ) -> Result<PublishResult, ApiError> {
+    let PublishDraftParams {
+        audit,
+        id,
+        req,
+        actor,
+        user_id,
+        is_admin,
+        client_ip,
+    } = params;
     let draft = repo::get_draft(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?

@@ -69,20 +69,35 @@ pub struct TestCaseRow {
     pub updated_at: DateTime<Utc>,
 }
 
-pub async fn insert_draft(
-    pool: &PgPool,
-    draft_code: &str,
-    name: &str,
-    description: Option<&str>,
-    upstream_type: &str,
-    upstream_url: &str,
-    config: &JsonValue,
-    endpoints: &JsonValue,
-    workbench_env: &JsonValue,
-    source: &str,
-    linked_supplier_id: Option<Uuid>,
-    created_by: Option<&str>,
-) -> Result<DraftRow, sqlx::Error> {
+/// `insert_draft` 要写入的字段。
+pub struct NewDraft<'a> {
+    pub draft_code: &'a str,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    pub upstream_type: &'a str,
+    pub upstream_url: &'a str,
+    pub config: &'a JsonValue,
+    pub endpoints: &'a JsonValue,
+    pub workbench_env: &'a JsonValue,
+    pub source: &'a str,
+    pub linked_supplier_id: Option<Uuid>,
+    pub created_by: Option<&'a str>,
+}
+
+pub async fn insert_draft(pool: &PgPool, params: NewDraft<'_>) -> Result<DraftRow, sqlx::Error> {
+    let NewDraft {
+        draft_code,
+        name,
+        description,
+        upstream_type,
+        upstream_url,
+        config,
+        endpoints,
+        workbench_env,
+        source,
+        linked_supplier_id,
+        created_by,
+    } = params;
     sqlx::query_as::<_, DraftRow>(
         r#"
         INSERT INTO upstream_connector_drafts
@@ -166,18 +181,34 @@ pub async fn get_draft(pool: &PgPool, id: Uuid) -> Result<Option<DraftRow>, sqlx
         .await
 }
 
+/// `update_draft` 要更新的字段。
+pub struct DraftUpdate<'a> {
+    pub id: Uuid,
+    pub name: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub upstream_type: Option<&'a str>,
+    pub upstream_url: Option<&'a str>,
+    pub config: Option<&'a JsonValue>,
+    pub endpoints: Option<&'a JsonValue>,
+    pub workbench_env: Option<&'a JsonValue>,
+    pub status: Option<&'a str>,
+}
+
 pub async fn update_draft(
     pool: &PgPool,
-    id: Uuid,
-    name: Option<&str>,
-    description: Option<&str>,
-    upstream_type: Option<&str>,
-    upstream_url: Option<&str>,
-    config: Option<&JsonValue>,
-    endpoints: Option<&JsonValue>,
-    workbench_env: Option<&JsonValue>,
-    status: Option<&str>,
+    params: DraftUpdate<'_>,
 ) -> Result<Option<DraftRow>, sqlx::Error> {
+    let DraftUpdate {
+        id,
+        name,
+        description,
+        upstream_type,
+        upstream_url,
+        config,
+        endpoints,
+        workbench_env,
+        status,
+    } = params;
     // Load then patch to keep SQL simple and type-safe
     let Some(mut row) = get_draft(pool, id).await? else {
         return Ok(None);
@@ -288,22 +319,39 @@ fn strip_json_nuls(value: &mut JsonValue) {
     }
 }
 
-pub async fn insert_run(
-    pool: &PgPool,
-    draft_id: Option<Uuid>,
-    supplier_id: Option<Uuid>,
-    mode: &str,
-    ok: bool,
-    latency_ms: Option<i32>,
-    stages: &JsonValue,
-    assertions: &JsonValue,
-    error_code: Option<&str>,
-    error_message: Option<&str>,
-    endpoint_key: Option<&str>,
-    testcase_id: Option<Uuid>,
-    actor: Option<&str>,
-    spec_fingerprint: Option<&str>,
-) -> Result<RunRow, sqlx::Error> {
+/// `insert_run` 要写入的字段。
+pub struct NewRun<'a> {
+    pub draft_id: Option<Uuid>,
+    pub supplier_id: Option<Uuid>,
+    pub mode: &'a str,
+    pub ok: bool,
+    pub latency_ms: Option<i32>,
+    pub stages: &'a JsonValue,
+    pub assertions: &'a JsonValue,
+    pub error_code: Option<&'a str>,
+    pub error_message: Option<&'a str>,
+    pub endpoint_key: Option<&'a str>,
+    pub testcase_id: Option<Uuid>,
+    pub actor: Option<&'a str>,
+    pub spec_fingerprint: Option<&'a str>,
+}
+
+pub async fn insert_run(pool: &PgPool, params: NewRun<'_>) -> Result<RunRow, sqlx::Error> {
+    let NewRun {
+        draft_id,
+        supplier_id,
+        mode,
+        ok,
+        latency_ms,
+        stages,
+        assertions,
+        error_code,
+        error_message,
+        endpoint_key,
+        testcase_id,
+        actor,
+        spec_fingerprint,
+    } = params;
     let mut stages = stages.clone();
     let mut assertions = assertions.clone();
     strip_json_nuls(&mut stages);
@@ -400,16 +448,30 @@ pub async fn next_version_no(pool: &PgPool, supplier_id: Uuid) -> Result<i32, sq
     Ok(n.unwrap_or(1))
 }
 
+/// `insert_version` 要写入的字段。
+pub struct NewVersion<'a> {
+    pub supplier_id: Uuid,
+    pub version_no: i32,
+    pub config_snapshot: &'a JsonValue,
+    pub channels_snapshot: &'a JsonValue,
+    pub endpoints_snapshot: &'a JsonValue,
+    pub comment: Option<&'a str>,
+    pub published_by: Option<&'a str>,
+}
+
 pub async fn insert_version(
     pool: &PgPool,
-    supplier_id: Uuid,
-    version_no: i32,
-    config_snapshot: &JsonValue,
-    channels_snapshot: &JsonValue,
-    endpoints_snapshot: &JsonValue,
-    comment: Option<&str>,
-    published_by: Option<&str>,
+    params: NewVersion<'_>,
 ) -> Result<VersionRow, sqlx::Error> {
+    let NewVersion {
+        supplier_id,
+        version_no,
+        config_snapshot,
+        channels_snapshot,
+        endpoints_snapshot,
+        comment,
+        published_by,
+    } = params;
     sqlx::query_as::<_, VersionRow>(
         r#"
         INSERT INTO upstream_connector_versions

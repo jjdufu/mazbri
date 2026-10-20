@@ -26,7 +26,7 @@
         <template #actions>
           <ListQueryBar
             v-model:q="subscriptionQ"
-            v-model:filters="subscriptionSearch.filters"
+            v-model:filters="subscriptionFilters"
             :filter-catalog="callbackSubscriptionsCatalog"
             @search="subscriptionSearch.handleSearch"
           />
@@ -92,7 +92,7 @@
         <template #actions>
           <ListQueryBar
             v-model:q="deliveryQ"
-            v-model:filters="deliverySearch.filters"
+            v-model:filters="deliveryFilters"
             :filter-catalog="callbackDeliveriesCatalog"
             @search="deliverySearch.handleSearch"
           />
@@ -220,6 +220,8 @@ const deliverySearch = useListQuery({
 });
 const subscriptionQ = subscriptionSearch.q;
 const deliveryQ = deliverySearch.q;
+const subscriptionFilters = subscriptionSearch.filters;
+const deliveryFilters = deliverySearch.filters;
 const subscriptionColumns = ref<ColumnOption<CallbackSubscription>[]>([
   { type: "selection", width: 55 },
   {

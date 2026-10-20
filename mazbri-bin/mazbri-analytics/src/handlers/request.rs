@@ -339,18 +339,20 @@ pub async fn query_request_logs(
         }
     };
     filters.extend(mazbri_analytics::list_query::collect_flat_numeric_filters(
-        req.duration_ms_gt,
-        req.duration_ms_gte,
-        req.duration_ms_lt,
-        req.duration_ms_lte,
-        req.duration_ms_eq,
-        req.status_code_gt,
-        req.status_code_gte,
-        req.status_code_lt,
-        req.status_code_lte,
-        req.status_code_neq,
-        req.upstream_service_time_ms_gt,
-        req.upstream_service_time_ms_gte,
+        mazbri_analytics::list_query::FlatNumericFilters {
+            duration_ms_gt: req.duration_ms_gt,
+            duration_ms_gte: req.duration_ms_gte,
+            duration_ms_lt: req.duration_ms_lt,
+            duration_ms_lte: req.duration_ms_lte,
+            duration_ms_eq: req.duration_ms_eq,
+            status_code_gt: req.status_code_gt,
+            status_code_gte: req.status_code_gte,
+            status_code_lt: req.status_code_lt,
+            status_code_lte: req.status_code_lte,
+            status_code_neq: req.status_code_neq,
+            upstream_service_time_ms_gt: req.upstream_service_time_ms_gt,
+            upstream_service_time_ms_gte: req.upstream_service_time_ms_gte,
+        },
     ));
     if let Err(e) = mazbri_analytics::list_query::validate_filters(&filters) {
         return (

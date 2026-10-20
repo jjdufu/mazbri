@@ -48,19 +48,19 @@ pub async fn update_password_policy(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Json(payload): Json<UpdatePasswordPolicyRequest>,
-) -> Result<axum::response::Response, axum::response::Response> {
+) -> axum::response::Response {
     use crate::response::ApiResponse;
     use axum::http::StatusCode;
     if claims.role != "R_ADMIN" {
-        return Err(ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            "仅管理员可修改密码策略",
-        ));
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅管理员可修改密码策略");
     }
-    let audit_user_id = extract_user_id(&claims).map_err(|e| {
-        tracing::warn!("Invalid user_id in claims for audit: {:?}", e);
-        ApiResponse::err(StatusCode::UNAUTHORIZED, "令牌中的用户标识无效")
-    })?;
+    let audit_user_id = match extract_user_id(&claims) {
+        Ok(user_id) => user_id,
+        Err(e) => {
+            tracing::warn!("Invalid user_id in claims for audit: {:?}", e);
+            return ApiResponse::err(StatusCode::UNAUTHORIZED, "令牌中的用户标识无效");
+        }
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let input = service::UpdatePasswordPolicyInput {
         min_length: payload.min_length,
@@ -88,5 +88,5 @@ pub async fn update_password_policy(
     if resp.status().is_success() {
         state.password_policy_cache.invalidate().await;
     }
-    Ok(resp)
+    resp
 }

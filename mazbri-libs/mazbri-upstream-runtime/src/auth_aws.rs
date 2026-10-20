@@ -165,19 +165,35 @@ fn uri_encode(s: &str) -> String {
     out
 }
 
+#[cfg(test)]
+struct SignedHeadersTestInput<'a> {
+    method: &'a str,
+    url: &'a str,
+    extra: HashMap<String, String>,
+    body: Option<&'a str>,
+    access_key_id: &'a str,
+    secret_access_key: &'a str,
+    session_token: Option<&'a str>,
+    spec: &'a AuthAwsSpec,
+    now: DateTime<Utc>,
+}
+
 /// Test helper: headers after signing, without sending.
 #[cfg(test)]
 fn signed_headers_for_test(
-    method: &str,
-    url: &str,
-    extra: HashMap<String, String>,
-    body: Option<&str>,
-    access_key_id: &str,
-    secret_access_key: &str,
-    session_token: Option<&str>,
-    spec: &AuthAwsSpec,
-    now: DateTime<Utc>,
+    input: SignedHeadersTestInput<'_>,
 ) -> Result<HashMap<String, String>, ExecuteError> {
+    let SignedHeadersTestInput {
+        method,
+        url,
+        extra,
+        body,
+        access_key_id,
+        secret_access_key,
+        session_token,
+        spec,
+        now,
+    } = input;
     let body_owned = body.map(|s| crate::types::BodyKind::Raw {
         body: s.to_string(),
         content_type: "application/octet-stream".into(),
@@ -213,29 +229,29 @@ mod tests {
             region: "us-east-1".into(),
             service: "iam".into(),
         };
-        let h1 = signed_headers_for_test(
-            "GET",
-            "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
-            HashMap::new(),
-            None,
-            "AKIDEXAMPLE",
-            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            None,
-            &spec,
+        let h1 = signed_headers_for_test(SignedHeadersTestInput {
+            method: "GET",
+            url: "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
+            extra: HashMap::new(),
+            body: None,
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            session_token: None,
+            spec: &spec,
             now,
-        )
+        })
         .unwrap();
-        let h2 = signed_headers_for_test(
-            "GET",
-            "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
-            HashMap::new(),
-            None,
-            "AKIDEXAMPLE",
-            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            None,
-            &spec,
+        let h2 = signed_headers_for_test(SignedHeadersTestInput {
+            method: "GET",
+            url: "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
+            extra: HashMap::new(),
+            body: None,
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            session_token: None,
+            spec: &spec,
             now,
-        )
+        })
         .unwrap();
         let auth = h1.get("Authorization").expect("authorization");
         assert!(auth.starts_with(
@@ -251,17 +267,17 @@ mod tests {
             Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         );
         assert_eq!(h1.get("Authorization"), h2.get("Authorization"));
-        let with_body = signed_headers_for_test(
-            "GET",
-            "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
-            HashMap::new(),
-            Some("{}"),
-            "AKIDEXAMPLE",
-            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            None,
-            &spec,
+        let with_body = signed_headers_for_test(SignedHeadersTestInput {
+            method: "GET",
+            url: "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
+            extra: HashMap::new(),
+            body: Some("{}"),
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            session_token: None,
+            spec: &spec,
             now,
-        )
+        })
         .unwrap();
         assert_ne!(h1.get("Authorization"), with_body.get("Authorization"));
     }

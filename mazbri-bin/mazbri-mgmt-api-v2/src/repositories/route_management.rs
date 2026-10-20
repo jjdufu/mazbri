@@ -316,16 +316,30 @@ fn push_route_rule_scope<'args>(
     crate::list_query::apply_pg_filters(builder, filters)
 }
 
+/// `list_route_rules` 的查询条件。
+pub struct ListRouteRulesQuery<'a> {
+    pub tenant_id: Option<uuid::Uuid>,
+    pub product_id: Option<uuid::Uuid>,
+    pub search: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub filters: &'a [crate::list_query::ValidatedFilter],
+    pub page_size: i64,
+    pub offset: i64,
+}
+
 pub async fn list_route_rules(
     pool: &PgPool,
-    tenant_id: Option<uuid::Uuid>,
-    product_id: Option<uuid::Uuid>,
-    search: Option<&str>,
-    status: Option<&str>,
-    filters: &[crate::list_query::ValidatedFilter],
-    page_size: i64,
-    offset: i64,
+    params: ListRouteRulesQuery<'_>,
 ) -> Result<Vec<RouteRuleRow>, sqlx::Error> {
+    let ListRouteRulesQuery {
+        tenant_id,
+        product_id,
+        search,
+        status,
+        filters,
+        page_size,
+        offset,
+    } = params;
     let mut builder: QueryBuilder<_> = QueryBuilder::new(format!(
         "SELECT {} FROM route_rules WHERE 1=1",
         ROUTE_RULE_COLUMNS

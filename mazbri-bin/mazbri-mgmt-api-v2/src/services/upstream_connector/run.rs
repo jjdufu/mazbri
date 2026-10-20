@@ -39,17 +39,29 @@ pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
     }))
 }
 
-pub async fn run_draft(
-    pool: &PgPool,
-    audit: &AuditService,
-    id: Uuid,
-    req: RunRequest,
-    actor: &str,
-    user_id: Uuid,
-    client_ip: Option<String>,
-    default_timeout_ms: u64,
-    max_body_bytes: usize,
-) -> Result<RunDto, ApiError> {
+/// `run_draft` 的入参。
+pub struct RunDraftParams<'a> {
+    pub audit: &'a AuditService,
+    pub id: Uuid,
+    pub req: RunRequest,
+    pub actor: &'a str,
+    pub user_id: Uuid,
+    pub client_ip: Option<String>,
+    pub default_timeout_ms: u64,
+    pub max_body_bytes: usize,
+}
+
+pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunDto, ApiError> {
+    let RunDraftParams {
+        audit,
+        id,
+        req,
+        actor,
+        user_id,
+        client_ip,
+        default_timeout_ms,
+        max_body_bytes,
+    } = params;
     let row = repo::get_draft(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
@@ -64,13 +76,15 @@ pub async fn run_draft(
         }
         return probe_microservice_draft(
             pool,
-            audit,
-            &row,
-            &req,
-            actor,
-            user_id,
-            client_ip,
-            default_timeout_ms,
+            ProbeMicroserviceParams {
+                audit,
+                row: &row,
+                req: &req,
+                actor,
+                user_id,
+                client_ip,
+                default_timeout_ms,
+            },
         )
         .await;
     }
@@ -218,22 +232,24 @@ pub async fn run_draft(
     let write_fp = overall_ok && matches!(req.mode.as_str(), "business" | "live");
     let run_row = repo::insert_run(
         pool,
-        Some(id),
-        None,
-        &req.mode,
-        overall_ok,
-        Some(result.latency_ms as i32),
-        &stages_json,
-        &assertions_json,
-        error_code,
-        result.error_message.as_deref(),
-        endpoint_key.as_deref(),
-        req.testcase_id,
-        Some(actor),
-        if write_fp {
-            Some(built.fingerprint.as_str())
-        } else {
-            None
+        repo::NewRun {
+            draft_id: Some(id),
+            supplier_id: None,
+            mode: &req.mode,
+            ok: overall_ok,
+            latency_ms: Some(result.latency_ms as i32),
+            stages: &stages_json,
+            assertions: &assertions_json,
+            error_code,
+            error_message: result.error_message.as_deref(),
+            endpoint_key: endpoint_key.as_deref(),
+            testcase_id: req.testcase_id,
+            actor: Some(actor),
+            spec_fingerprint: if write_fp {
+                Some(built.fingerprint.as_str())
+            } else {
+                None
+            },
         },
     )
     .await
@@ -296,17 +312,31 @@ pub async fn run_draft(
     })
 }
 
+/// `probe_microservice_draft` 的入参。
+pub(super) struct ProbeMicroserviceParams<'a> {
+    pub(super) audit: &'a AuditService,
+    pub(super) row: &'a repo::DraftRow,
+    pub(super) req: &'a RunRequest,
+    pub(super) actor: &'a str,
+    pub(super) user_id: Uuid,
+    pub(super) client_ip: Option<String>,
+    pub(super) default_timeout_ms: u64,
+}
+
 /// Microservice draft probe: TCP reachability + optional contract_id presence check.
 pub(super) async fn probe_microservice_draft(
     pool: &PgPool,
-    audit: &AuditService,
-    row: &repo::DraftRow,
-    req: &RunRequest,
-    actor: &str,
-    user_id: Uuid,
-    client_ip: Option<String>,
-    default_timeout_ms: u64,
+    params: ProbeMicroserviceParams<'_>,
 ) -> Result<RunDto, ApiError> {
+    let ProbeMicroserviceParams {
+        audit,
+        row,
+        req,
+        actor,
+        user_id,
+        client_ip,
+        default_timeout_ms,
+    } = params;
     use std::time::Instant;
     let start = Instant::now();
     let mut stages = Vec::new();
@@ -377,23 +407,25 @@ pub(super) async fn probe_microservice_draft(
 
     let run_row = repo::insert_run(
         pool,
-        Some(row.id),
-        None,
-        mode,
-        overall_ok,
-        Some(latency_ms),
-        &stages_json,
-        &serde_json::json!([]),
-        error_code,
-        if overall_ok {
-            None
-        } else {
-            Some("microservice probe failed")
+        repo::NewRun {
+            draft_id: Some(row.id),
+            supplier_id: None,
+            mode,
+            ok: overall_ok,
+            latency_ms: Some(latency_ms),
+            stages: &stages_json,
+            assertions: &serde_json::json!([]),
+            error_code,
+            error_message: if overall_ok {
+                None
+            } else {
+                Some("microservice probe failed")
+            },
+            endpoint_key: None,
+            testcase_id: None,
+            actor: Some(actor),
+            spec_fingerprint: None,
         },
-        None,
-        None,
-        Some(actor),
-        None,
     )
     .await
     .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;

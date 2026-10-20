@@ -119,6 +119,41 @@ pub(crate) fn inherit_requires_session_profile(
     profile_is_undeclared(ep_profile_raw) && profile_is_undeclared(flow.profile.as_deref())
 }
 
+pub(crate) fn channel_config_with_egress(
+    existing: &serde_json::Value,
+    spec: &ChannelEgressSpec,
+) -> Result<serde_json::Value, ApiError> {
+    upsert_egress_in_channel_config(existing, spec)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))
+}
+
+pub(crate) const GATE_TTL_HOURS: i32 = 24;
+pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
+
+pub(crate) fn runtime_engine() -> &'static RuntimeEngine {
+    static ENGINE: OnceLock<RuntimeEngine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let ssrf = SsrfChecker::new();
+        let client = ssrf
+            .configure_http_client(
+                reqwest::Client::builder()
+                    .timeout(Duration::from_secs(30))
+                    .connect_timeout(Duration::from_secs(10))
+                    .redirect(reqwest::redirect::Policy::none()),
+            )
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::error!(
+                    error = %e,
+                    "Failed to build connector runtime HTTP client; using default client"
+                );
+                // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
+                reqwest::Client::new()
+            });
+        RuntimeEngine::new(Arc::new(client), ssrf)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,39 +250,4 @@ mod tests {
         assert!(auth.token_url.is_none());
         assert!(auth.inject.is_none());
     }
-}
-
-pub(crate) fn channel_config_with_egress(
-    existing: &serde_json::Value,
-    spec: &ChannelEgressSpec,
-) -> Result<serde_json::Value, ApiError> {
-    upsert_egress_in_channel_config(existing, spec)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))
-}
-
-pub(crate) const GATE_TTL_HOURS: i32 = 24;
-pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
-
-pub(crate) fn runtime_engine() -> &'static RuntimeEngine {
-    static ENGINE: OnceLock<RuntimeEngine> = OnceLock::new();
-    ENGINE.get_or_init(|| {
-        let ssrf = SsrfChecker::new();
-        let client = ssrf
-            .configure_http_client(
-                reqwest::Client::builder()
-                    .timeout(Duration::from_secs(30))
-                    .connect_timeout(Duration::from_secs(10))
-                    .redirect(reqwest::redirect::Policy::none()),
-            )
-            .build()
-            .unwrap_or_else(|e| {
-                tracing::error!(
-                    error = %e,
-                    "Failed to build connector runtime HTTP client; using default client"
-                );
-                // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
-                reqwest::Client::new()
-            });
-        RuntimeEngine::new(Arc::new(client), ssrf)
-    })
 }

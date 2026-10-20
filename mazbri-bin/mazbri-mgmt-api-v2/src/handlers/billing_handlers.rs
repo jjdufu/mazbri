@@ -72,13 +72,15 @@ pub async fn list_bills(
     debug!("Listing bills (by {})", claims.sub);
     let result = svc::list_bills(
         &state.db,
-        &state.billing_db,
-        query.tenant_id,
-        query.q,
-        query.status,
-        query.filters,
-        query.page,
-        query.limit,
+        svc::ListBillsParams {
+            billing_db: &state.billing_db,
+            tenant_id: query.tenant_id,
+            search: query.q,
+            status: query.status,
+            filters_json: query.filters,
+            page: query.page,
+            limit: query.limit,
+        },
     )
     .await?;
     Ok(ApiResponse::ok(result).into_response())
@@ -207,7 +209,7 @@ pub async fn create_adjustment(
         .into_response());
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return Ok(response);
+        return Ok(*response);
     }
     let amount_text = payload.amount.to_string();
     let direction = payload.direction.clone();
@@ -272,7 +274,7 @@ pub async fn generate_bill(
         .into_response());
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return Ok(response);
+        return Ok(*response);
     }
     let operator_id = match uuid::Uuid::parse_str(&claims.user_id) {
         Ok(uuid) => uuid,
@@ -559,15 +561,17 @@ pub async fn list_reconciliation_discrepancies(
 
     let result = svc::list_reconciliation_discrepancies(
         &state.billing_db,
-        query.from,
-        query.to,
-        query.status,
-        query.scope_type,
-        query.scope_id,
-        query.q,
-        query.filters,
-        query.page,
-        query.page_size,
+        svc::ListDiscrepanciesParams {
+            from: query.from,
+            to: query.to,
+            status: query.status,
+            scope_type: query.scope_type,
+            scope_id: query.scope_id,
+            search: query.q,
+            filters_json: query.filters,
+            page: query.page,
+            page_size: query.page_size,
+        },
     )
     .await?;
     Ok(ApiResponse::ok(result).into_response())
@@ -596,10 +600,7 @@ pub async fn update_reconciliation_discrepancy(
         .into_response());
     }
 
-    let operator_id = match uuid::Uuid::parse_str(&claims.user_id) {
-        Ok(uuid) => Some(uuid),
-        Err(_) => None,
-    };
+    let operator_id = uuid::Uuid::parse_str(&claims.user_id).ok();
 
     let result = svc::update_reconciliation_discrepancy(
         &state.billing_db,
@@ -751,7 +752,7 @@ pub async fn create_bill_adjustment(
         .into_response());
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return Ok(response);
+        return Ok(*response);
     }
     let operator_id = uuid::Uuid::parse_str(&claims.user_id).ok();
     let result = svc::create_bill_adjustment(
@@ -858,7 +859,7 @@ pub async fn void_bill_adjustment(
         .into_response());
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return Ok(response);
+        return Ok(*response);
     }
     let result = svc::void_bill_adjustment(&state.billing_db, id).await?;
     if let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) {

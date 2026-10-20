@@ -143,16 +143,30 @@ fn push_bill_scope(
     crate::list_query::apply_pg_filters(builder, filters)
 }
 
+/// `list_bills` 的查询条件。
+pub struct ListBillsQuery<'a> {
+    pub tenant_id: Option<uuid::Uuid>,
+    pub search: Option<&'a str>,
+    pub matched_tenant_ids: &'a [uuid::Uuid],
+    pub status: Option<&'a str>,
+    pub filters: &'a [crate::list_query::ValidatedFilter],
+    pub limit: i64,
+    pub offset: i64,
+}
+
 pub async fn list_bills(
     pool: &PgPool,
-    tenant_id: Option<uuid::Uuid>,
-    search: Option<&str>,
-    matched_tenant_ids: &[uuid::Uuid],
-    status: Option<&str>,
-    filters: &[crate::list_query::ValidatedFilter],
-    limit: i64,
-    offset: i64,
+    params: ListBillsQuery<'_>,
 ) -> Result<Vec<BillRow>, sqlx::Error> {
+    let ListBillsQuery {
+        tenant_id,
+        search,
+        matched_tenant_ids,
+        status,
+        filters,
+        limit,
+        offset,
+    } = params;
     let mut builder: QueryBuilder<_> =
         QueryBuilder::new(format!("SELECT {} FROM bills b WHERE 1=1", BILL_COLUMNS));
     push_bill_scope(

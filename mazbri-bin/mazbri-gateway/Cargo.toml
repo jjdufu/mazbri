@@ -11,13 +11,13 @@ name = "mazbri-gateway"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-registry = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-upstream-contracts = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-upstream-contracts = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-contracts" }
 
-mazbri-rpc = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
 tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
 tokio-serde = {version = "0.9", features = ["bincode", "json"]}
 tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
@@ -50,12 +50,12 @@ prometheus = {version = "0.14"}
 
 reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"]}
 
-mazbri-product = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-routing = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-callback = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-auth = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-cache = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-billing = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-product = { version = "0.1.0", path = "../../mazbri-libs/mazbri-product" }
+mazbri-routing = { version = "0.1.0", path = "../../mazbri-libs/mazbri-routing" }
+mazbri-callback = { version = "0.1.0", path = "../../mazbri-libs/mazbri-callback" }
+mazbri-auth = { version = "0.1.0", path = "../../mazbri-libs/mazbri-auth" }
+mazbri-cache = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cache" }
+mazbri-billing = { version = "0.1.0", path = "../../mazbri-libs/mazbri-billing" }
 sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
 uuid = {version = "1.21", features = ["v4", "v5", "serde"]}
 
@@ -65,7 +65,7 @@ chrono = {version = "0.4", features = ["serde"]}
 
 serde_urlencoded = {version = "0.7"}
 
-mazbri-tls = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
 async-trait = {version = "0.1"}
 dashmap = {version = "6.1.0"}
 moka = {version = "0.12", features = ["sync", "future"]}

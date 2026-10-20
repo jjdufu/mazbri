@@ -17,7 +17,7 @@ pub async fn require_mfa_code(
     state: &AppState,
     claims: &AdminClaims,
     headers: &HeaderMap,
-) -> Result<(), Response> {
+) -> Result<(), Box<Response>> {
     if is_admin(claims) {
         return Ok(());
     }
@@ -27,16 +27,16 @@ pub async fn require_mfa_code(
         .map_err(|_| mfa_error_response("MFA_REQUIRED", "MFA verification failed"))?
         .ok_or_else(|| mfa_error_response("MFA_REQUIRED", "MFA verification required"))?;
     if !mfa_state.mfa_enabled {
-        return Err(mfa_error_response(
+        return Err(Box::new(mfa_error_response(
             "MFA_NOT_ENABLED",
             "当前账号未启用 MFA，请联系管理员先启用 MFA 后再充值",
-        ));
+        )));
     }
     let Some(encrypted_secret) = mfa_state.mfa_secret else {
-        return Err(mfa_error_response(
+        return Err(Box::new(mfa_error_response(
             "MFA_NOT_ENABLED",
             "当前账号未启用 MFA，请联系管理员先启用 MFA 后再充值",
-        ));
+        )));
     };
     let code = headers
         .get(MFA_HEADER)
@@ -53,10 +53,10 @@ pub async fn require_mfa_code(
         .decrypt_secret(&encrypted_secret)
         .map_err(|_| mfa_error_response("MFA_REQUIRED", "MFA verification failed"))?;
     if !mfa_service.verify_totp(&secret, code) {
-        return Err(mfa_error_response(
+        return Err(Box::new(mfa_error_response(
             "MFA_REQUIRED",
             "MFA verification failed",
-        ));
+        )));
     }
     Ok(())
 }

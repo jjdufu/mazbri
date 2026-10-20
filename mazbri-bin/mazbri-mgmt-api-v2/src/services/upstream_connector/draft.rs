@@ -33,17 +33,19 @@ pub async fn create_draft(
 
     let row = repo::insert_draft(
         pool,
-        code,
-        name,
-        req.description.as_deref(),
-        &upstream_type,
-        &upstream_url,
-        &config_value,
-        &endpoints,
-        &workbench_env,
-        &source,
-        None,
-        Some(actor),
+        repo::NewDraft {
+            draft_code: code,
+            name,
+            description: req.description.as_deref(),
+            upstream_type: &upstream_type,
+            upstream_url: &upstream_url,
+            config: &config_value,
+            endpoints: &endpoints,
+            workbench_env: &workbench_env,
+            source: &source,
+            linked_supplier_id: None,
+            created_by: Some(actor),
+        },
     )
     .await
     .map_err(|e| {
@@ -117,15 +119,17 @@ pub async fn update_draft(
 
     let row = repo::update_draft(
         pool,
-        id,
-        req.name.as_deref(),
-        req.description.as_deref(),
-        req.upstream_type.as_deref(),
-        req.upstream_url.as_deref(),
-        config_opt.as_ref(),
-        req.endpoints.as_ref(),
-        req.workbench_env.as_ref(),
-        req.status.as_deref(),
+        repo::DraftUpdate {
+            id,
+            name: req.name.as_deref(),
+            description: req.description.as_deref(),
+            upstream_type: req.upstream_type.as_deref(),
+            upstream_url: req.upstream_url.as_deref(),
+            config: config_opt.as_ref(),
+            endpoints: req.endpoints.as_ref(),
+            workbench_env: req.workbench_env.as_ref(),
+            status: req.status.as_deref(),
+        },
     )
     .await
     .map_err(|e| ApiError::internal(format!("update draft: {e}")))?

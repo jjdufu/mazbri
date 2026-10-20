@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useAttrs, useSlots, watch } from "vue";
-import { ElDatePicker } from "element-plus";
+import { ElDatePicker, type DatePickerType } from "element-plus";
 import { useI18n } from "vue-i18n";
 
 defineOptions({
@@ -132,8 +132,11 @@ const isDateOnlyCallerType = computed(
   () => callerType.value === "date" || callerType.value === "daterange",
 );
 
+// 仅类型断言：type 来自调用方透传的 attrs，运行时取值与之前完全相同。
 const resolvedType = computed(
-  () => DATE_ONLY_TYPE_MAP[callerType.value] ?? callerType.value,
+  () =>
+    (DATE_ONLY_TYPE_MAP[callerType.value] ??
+      callerType.value) as DatePickerType,
 );
 
 

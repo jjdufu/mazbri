@@ -491,12 +491,10 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
 
     let parent_span_id: Arc<str> = headers
         .header_value("x-span-id")
-        .or_else(|| {
-            if !parent_from_traceparent.is_empty() {
-                Some(parent_from_traceparent)
-            } else {
-                None
-            }
+        .or(if !parent_from_traceparent.is_empty() {
+            Some(parent_from_traceparent)
+        } else {
+            None
         })
         .or_else(|| headers.header_value("x-parent-span-id"))
         .map(Arc::<str>::from)
@@ -562,51 +560,6 @@ pub fn response_flags_for_error(error_code: &str, stage: &str, status_code: u16)
         return "IP".to_string();
     }
     "UF".to_string()
-}
-
-#[cfg(test)]
-mod request_id_uuid_tests {
-    use super::{TraceContext, normalize_request_id_uuid, parse_trace_context};
-    use std::collections::HashMap;
-    use uuid::Uuid;
-
-    #[test]
-    fn normalize_accepts_simple_and_hyphenated() {
-        let simple = "6e7f448edae94db78e5e9f87f1402eaa";
-        let hyphen = "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa";
-        assert_eq!(normalize_request_id_uuid(simple), hyphen);
-        assert_eq!(normalize_request_id_uuid(hyphen), hyphen);
-        assert_eq!(
-            normalize_request_id_uuid("6E7F448EDAE94DB78E5E9F87F1402EAA"),
-            hyphen
-        );
-    }
-
-    #[test]
-    fn generated_request_id_is_hyphenated_uuid() {
-        let ctx = TraceContext::generated();
-        assert!(Uuid::parse_str(&ctx.request_id).is_ok());
-        assert!(ctx.request_id.contains('-'));
-        assert_eq!(ctx.request_id.len(), 36);
-        // W3C-friendly 32-hex trace id
-        assert_eq!(ctx.trace_id.len(), 32);
-        assert!(!ctx.trace_id.contains('-'));
-    }
-
-    #[test]
-    fn parse_normalizes_client_simple_request_id() {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "x-request-id".to_string(),
-            "6e7f448edae94db78e5e9f87f1402eaa".to_string(),
-        );
-        let ctx = parse_trace_context(&headers);
-        assert_eq!(
-            ctx.request_id.as_ref(),
-            "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa"
-        );
-        assert_eq!(ctx.trace_id.as_ref(), "6e7f448edae94db78e5e9f87f1402eaa");
-    }
 }
 
 pub fn emit_access_log(target: &str, event: AccessLogEvent) {
@@ -770,4 +723,49 @@ fn parse_traceparent_value(value: &str) -> Option<(String, String)> {
         return None;
     }
     Some((trace_id.to_string(), parent_span_id.to_string()))
+}
+
+#[cfg(test)]
+mod request_id_uuid_tests {
+    use super::{TraceContext, normalize_request_id_uuid, parse_trace_context};
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    #[test]
+    fn normalize_accepts_simple_and_hyphenated() {
+        let simple = "6e7f448edae94db78e5e9f87f1402eaa";
+        let hyphen = "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa";
+        assert_eq!(normalize_request_id_uuid(simple), hyphen);
+        assert_eq!(normalize_request_id_uuid(hyphen), hyphen);
+        assert_eq!(
+            normalize_request_id_uuid("6E7F448EDAE94DB78E5E9F87F1402EAA"),
+            hyphen
+        );
+    }
+
+    #[test]
+    fn generated_request_id_is_hyphenated_uuid() {
+        let ctx = TraceContext::generated();
+        assert!(Uuid::parse_str(&ctx.request_id).is_ok());
+        assert!(ctx.request_id.contains('-'));
+        assert_eq!(ctx.request_id.len(), 36);
+        // W3C-friendly 32-hex trace id
+        assert_eq!(ctx.trace_id.len(), 32);
+        assert!(!ctx.trace_id.contains('-'));
+    }
+
+    #[test]
+    fn parse_normalizes_client_simple_request_id() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-request-id".to_string(),
+            "6e7f448edae94db78e5e9f87f1402eaa".to_string(),
+        );
+        let ctx = parse_trace_context(&headers);
+        assert_eq!(
+            ctx.request_id.as_ref(),
+            "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa"
+        );
+        assert_eq!(ctx.trace_id.as_ref(), "6e7f448edae94db78e5e9f87f1402eaa");
+    }
 }

@@ -96,16 +96,31 @@ fn any_binding_header(headers: &HeaderMap) -> bool {
     .any(|name| headers.contains_key(*name))
 }
 
+/// `enforce_request_binding` 的入参，字段全部是借用，不产生额外拷贝。
+pub struct RequestBindingInput<'a> {
+    pub crypto: &'a TenantCryptoState,
+    pub tenant_id: Uuid,
+    pub require: bool,
+    pub nonce_prefix: &'a str,
+    pub method: &'a str,
+    pub path_and_query: &'a str,
+    pub headers: &'a HeaderMap,
+    pub body: &'a [u8],
+}
+
 pub async fn enforce_request_binding(
-    crypto: &TenantCryptoState,
-    tenant_id: Uuid,
-    require: bool,
-    nonce_prefix: &str,
-    method: &str,
-    path_and_query: &str,
-    headers: &HeaderMap,
-    body: &[u8],
+    input: RequestBindingInput<'_>,
 ) -> Result<RequestBindingOutcome, RequestBindingError> {
+    let RequestBindingInput {
+        crypto,
+        tenant_id,
+        require,
+        nonce_prefix,
+        method,
+        path_and_query,
+        headers,
+        body,
+    } = input;
     let profile = crypto
         .profile(tenant_id)
         .await

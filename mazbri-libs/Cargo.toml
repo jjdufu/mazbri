@@ -28,23 +28,23 @@ authors = ["Mazbri Team"]
 license = "MIT"
 
 [workspace.dependencies]
-mazbri-upstream-contracts = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-upstream-contracts" }
-mazbri-rpc = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-rpc" }
-mazbri-i18n = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-i18n" }
-mazbri-routing = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-routing" }
-mazbri-admin = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-admin" }
-mazbri-core = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-core" }
-mazbri-tls = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-tls" }
-mazbri-sdk = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-sdk" }
-mazbri-cert = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-cert" }
-mazbri-upstream-runtime = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-upstream-runtime" }
-mazbri-auth = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-auth" }
-mazbri-registry = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-registry" }
-mazbri-cache = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-cache" }
-mazbri-product = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-product" }
-mazbri-billing = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-billing" }
-mazbri-service = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-service" }
-mazbri-callback = { registry = "cargo-hosted", version = "0.1.0", path = "mazbri-callback" }
+mazbri-upstream-contracts = { version = "0.1.0", path = "mazbri-upstream-contracts" }
+mazbri-rpc = { version = "0.1.0", path = "mazbri-rpc" }
+mazbri-i18n = { version = "0.1.0", path = "mazbri-i18n" }
+mazbri-routing = { version = "0.1.0", path = "mazbri-routing" }
+mazbri-admin = { version = "0.1.0", path = "mazbri-admin" }
+mazbri-core = { version = "0.1.0", path = "mazbri-core" }
+mazbri-tls = { version = "0.1.0", path = "mazbri-tls" }
+mazbri-sdk = { version = "0.1.0", path = "mazbri-sdk" }
+mazbri-cert = { version = "0.1.0", path = "mazbri-cert" }
+mazbri-upstream-runtime = { version = "0.1.0", path = "mazbri-upstream-runtime" }
+mazbri-auth = { version = "0.1.0", path = "mazbri-auth" }
+mazbri-registry = { version = "0.1.0", path = "mazbri-registry" }
+mazbri-cache = { version = "0.1.0", path = "mazbri-cache" }
+mazbri-product = { version = "0.1.0", path = "mazbri-product" }
+mazbri-billing = { version = "0.1.0", path = "mazbri-billing" }
+mazbri-service = { version = "0.1.0", path = "mazbri-service" }
+mazbri-callback = { version = "0.1.0", path = "mazbri-callback" }
 
 clap = {version = "4", features = ["derive"]}
 tokio = {version = "1.35", features = ["full"]}

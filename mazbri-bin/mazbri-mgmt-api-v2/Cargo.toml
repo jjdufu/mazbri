@@ -15,16 +15,16 @@ name = "mazbri-mgmt-api-v2"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-auth = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-billing = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-product = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-callback = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-cache = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-i18n = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-upstream-runtime = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-auth = { version = "0.1.0", path = "../../mazbri-libs/mazbri-auth" }
+mazbri-billing = { version = "0.1.0", path = "../../mazbri-libs/mazbri-billing" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-product = { version = "0.1.0", path = "../../mazbri-libs/mazbri-product" }
+mazbri-callback = { version = "0.1.0", path = "../../mazbri-libs/mazbri-callback" }
+mazbri-cache = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cache" }
+mazbri-i18n = { version = "0.1.0", path = "../../mazbri-libs/mazbri-i18n" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-runtime" }
 
 time = { version = "=0.3.47", features = ["formatting", "parsing"] }
 axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
@@ -92,7 +92,7 @@ moka = {version = "0.12", features = ["sync", "future"]}
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-product = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-product = { version = "0.1.0", path = "../../mazbri-libs/mazbri-product" }
 serde = {version = "1.0", features = ["derive"]}
 ts-rs = { version = "12.0", features = ["uuid-impl", "chrono-impl"] }

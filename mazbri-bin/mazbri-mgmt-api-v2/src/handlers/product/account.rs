@@ -38,7 +38,7 @@ pub async fn recharge_tenant_account(
         );
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return response;
+        return *response;
     }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
@@ -79,7 +79,7 @@ pub async fn refund_tenant_account(
         );
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
-        return response;
+        return *response;
     }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,

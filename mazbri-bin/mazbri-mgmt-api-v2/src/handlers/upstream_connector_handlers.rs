@@ -137,14 +137,16 @@ pub async fn create_run(
     }
     let data = svc::run_draft(
         &state.db,
-        &state.audit,
-        id,
-        payload,
-        &claims.sub,
-        extract_user_id(&claims)?,
-        extract_client_ip(&headers, Some(addr)),
-        state.config.connector_probe.default_timeout_ms,
-        state.config.connector_probe.max_body_bytes,
+        svc::RunDraftParams {
+            audit: &state.audit,
+            id,
+            req: payload,
+            actor: &claims.sub,
+            user_id: extract_user_id(&claims)?,
+            client_ip: extract_client_ip(&headers, Some(addr)),
+            default_timeout_ms: state.config.connector_probe.default_timeout_ms,
+            max_body_bytes: state.config.connector_probe.max_body_bytes,
+        },
     )
     .await?;
     Ok(ApiResponse::ok(data))
@@ -181,13 +183,15 @@ pub async fn publish_draft(
     require_operator(&claims)?;
     let data = svc::publish_draft(
         &state.db,
-        &state.audit,
-        id,
-        payload,
-        &claims.sub,
-        extract_user_id(&claims)?,
-        is_admin(&claims),
-        extract_client_ip(&headers, Some(addr)),
+        svc::PublishDraftParams {
+            audit: &state.audit,
+            id,
+            req: payload,
+            actor: &claims.sub,
+            user_id: extract_user_id(&claims)?,
+            is_admin: is_admin(&claims),
+            client_ip: extract_client_ip(&headers, Some(addr)),
+        },
     )
     .await?;
     Ok(crate::response::created(data))
@@ -304,14 +308,16 @@ pub async fn live_run(
     }
     let data = svc::live_run(
         &state.db,
-        &state.audit,
-        supplier_id,
-        payload,
-        &claims.sub,
-        extract_user_id(&claims)?,
-        extract_client_ip(&headers, Some(addr)),
-        state.config.connector_probe.default_timeout_ms,
-        state.config.connector_probe.max_body_bytes,
+        svc::LiveRunParams {
+            audit: &state.audit,
+            supplier_id,
+            req: payload,
+            actor: &claims.sub,
+            user_id: extract_user_id(&claims)?,
+            client_ip: extract_client_ip(&headers, Some(addr)),
+            default_timeout_ms: state.config.connector_probe.default_timeout_ms,
+            max_body_bytes: state.config.connector_probe.max_body_bytes,
+        },
     )
     .await?;
     Ok(ApiResponse::ok(data))

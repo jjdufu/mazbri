@@ -11,13 +11,13 @@ name = "mazbri-cache-service"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-registry = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-cache = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-rpc = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-service = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-tls = { version = "0.1.0", registry = "cargo-hosted" }
-mazbri-admin = { version = "0.1.0", registry = "cargo-hosted" }
+mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
+mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
+mazbri-cache = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cache" }
+mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
+mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
+mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
+mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
 
 tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
 tokio-serde = {version = "0.9", features = ["bincode", "json"]}

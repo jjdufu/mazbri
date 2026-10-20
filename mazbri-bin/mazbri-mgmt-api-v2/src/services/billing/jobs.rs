@@ -260,25 +260,40 @@ fn is_allowed_status_transition(from: &str, to: &str) -> bool {
     if from == to {
         return true;
     }
-    match (from, to) {
-        ("ok" | "flagged", "acknowledged" | "resolved") => true,
-        ("acknowledged", "resolved") => true,
-        _ => false,
-    }
+    matches!(
+        (from, to),
+        ("ok" | "flagged", "acknowledged" | "resolved") | ("acknowledged", "resolved")
+    )
+}
+
+/// `list_reconciliation_discrepancies` 的入参。
+pub struct ListDiscrepanciesParams {
+    pub from: Option<chrono::NaiveDate>,
+    pub to: Option<chrono::NaiveDate>,
+    pub status: Option<String>,
+    pub scope_type: Option<String>,
+    pub scope_id: Option<String>,
+    pub search: Option<String>,
+    pub filters_json: Option<String>,
+    pub page: u32,
+    pub page_size: u32,
 }
 
 pub async fn list_reconciliation_discrepancies(
     billing_db: &PgPool,
-    from: Option<chrono::NaiveDate>,
-    to: Option<chrono::NaiveDate>,
-    status: Option<String>,
-    scope_type: Option<String>,
-    scope_id: Option<String>,
-    search: Option<String>,
-    filters_json: Option<String>,
-    page: u32,
-    page_size: u32,
+    params: ListDiscrepanciesParams,
 ) -> Result<ReconciliationDiscrepancyListResponse, BillingError> {
+    let ListDiscrepanciesParams {
+        from,
+        to,
+        status,
+        scope_type,
+        scope_id,
+        search,
+        filters_json,
+        page,
+        page_size,
+    } = params;
     validate_limit(page_size)?;
     let page = page.max(1);
     let status = status

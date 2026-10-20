@@ -122,7 +122,7 @@ const importMode = ref("replace");
 const importCurlText = ref("");
 const importJsonText = ref("");
 
-const columns = ref<ColumnOption[]>([
+const columns = ref<ColumnOption<ConnectorDraft>[]>([
   { type: "selection", width: 55 },
   { prop: "name", label: $t("common.fields.name"), minWidth: 160 },
   {

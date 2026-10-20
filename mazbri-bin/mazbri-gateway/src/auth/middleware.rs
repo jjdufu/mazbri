@@ -1,7 +1,9 @@
 use super::claims::MazbriClaims;
 use super::jwt_keys::JwtHs256Keyring;
 use crate::gateway::GatewayRequestTiming;
-use crate::gateway::request_binding::{GatewayHttpPath, enforce_request_binding, record_jwt_kid};
+use crate::gateway::request_binding::{
+    GatewayHttpPath, RequestBindingInput, enforce_request_binding, record_jwt_kid,
+};
 use crate::gateway::validation::{GatewayRequest, GatewayRequestPayload, MAX_BODY_SIZE};
 use crate::ratelimit::{BandwidthPrepaid, LocalRateLimitDecision, LocalRateLimitInput};
 use crate::router::AppState;
@@ -87,11 +89,24 @@ impl AuthState {
         Self { keyring }
     }
 }
+/// 中间件的拒绝响应。只把 `Response` 装箱以缩小 `Result` 的 Err 体积，
+/// `into_response` 原样取回内部响应，状态码、响应头和响应体都不变。
+pub struct MiddlewareRejection(Box<Response>);
+impl From<Response> for MiddlewareRejection {
+    fn from(response: Response) -> Self {
+        Self(Box::new(response))
+    }
+}
+impl IntoResponse for MiddlewareRejection {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
 pub async fn jwt_auth_middleware(
     State(state): State<AppState>,
     req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, MiddlewareRejection> {
     let started_at = Instant::now();
     let request_id = current_request_id(req.headers());
     let auth_header = req
@@ -157,7 +172,7 @@ pub async fn jwt_auth_middleware(
                 scopes = ?claims.scopes,
                 "Gateway invoke denied: JWT missing api:write scope"
             );
-            return Err(JwtAuthError::InsufficientScope.into_response());
+            return Err(JwtAuthError::InsufficientScope.into_response().into());
         }
         if let Some(ctx) = tenant_context.clone() {
             let payload =
@@ -181,16 +196,16 @@ pub async fn jwt_auth_middleware(
             parts.extensions.insert(payload);
         }
         if let Some(tenant_id) = tenant_context.as_ref().map(|ctx| ctx.tenant_id) {
-            binding_outcome = enforce_request_binding(
-                &state.proxy_state.crypto_state,
+            binding_outcome = enforce_request_binding(RequestBindingInput {
+                crypto: &state.proxy_state.crypto_state,
                 tenant_id,
-                state.request_binding.require_request_binding,
-                &state.request_binding.nonce_redis_prefix,
-                "POST",
-                &path_and_query,
-                &parts.headers,
-                &body_bytes,
-            )
+                require: state.request_binding.require_request_binding,
+                nonce_prefix: &state.request_binding.nonce_redis_prefix,
+                method: "POST",
+                path_and_query: &path_and_query,
+                headers: &parts.headers,
+                body: &body_bytes,
+            })
             .await
             .map_err(IntoResponse::into_response)?;
             if binding_outcome.kid.is_none() {
@@ -226,7 +241,7 @@ pub async fn ratelimit_middleware(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     mut req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, MiddlewareRejection> {
     let tenant_context = req
         .extensions()
         .get::<TenantContext>()
@@ -312,10 +327,7 @@ pub async fn ratelimit_middleware(
                 snapshot_age_ms, degraded, source = "local", decision = "deny",
                 message = "Gateway rate limit stage rejected request"
             );
-            Err(rate_limit_error_response(
-                (retry_after_ms / 1000).max(1) as i32,
-                &reason,
-            ))
+            Err(rate_limit_error_response((retry_after_ms / 1000).max(1) as i32, &reason).into())
         }
     }
 }

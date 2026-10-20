@@ -36,13 +36,26 @@ pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 use super::post_response::*;
 use super::state::*;
 
+/// `unified_gateway_handler` 依次提取的请求扩展。
+type GatewayHandlerExtensions = (
+    Extension<MazbriClaims>,
+    Extension<GatewayRequestTiming>,
+    Extension<GatewayRequestPayload>,
+    Extension<GatewayHttpPath>,
+    Option<Extension<TenantProductDetail>>,
+);
+
 pub async fn unified_gateway_handler(
     State(state): State<AppState>,
-    Extension(claims): Extension<MazbriClaims>,
-    Extension(mut timing): Extension<GatewayRequestTiming>,
-    Extension(body_payload): Extension<GatewayRequestPayload>,
-    Extension(http_path): Extension<GatewayHttpPath>,
-    tenant_product_detail: Option<Extension<TenantProductDetail>>,
+    // 元组提取器按元素顺序逐个提取，失败时返回该元素自己的拒绝响应，
+    // 和拆成多个参数时的提取顺序、拒绝响应完全一致。
+    (
+        Extension(claims),
+        Extension(mut timing),
+        Extension(body_payload),
+        Extension(http_path),
+        tenant_product_detail,
+    ): GatewayHandlerExtensions,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Result<Response, ProxyError> {
