@@ -6,6 +6,40 @@ use crate::services::PasswordPolicyCache;
 use mazbri_core::num::SaturatingFrom;
 use sqlx::PgPool;
 use tracing::{error, info, warn};
+/// 校验首次登录时可选的新用户名；返回需写入的用户名（去除首尾空白）。
+async fn validate_new_username<'a>(
+    db: &PgPool,
+    current_user_id: uuid::Uuid,
+    role: &str,
+    new_username: Option<&'a str>,
+) -> Result<Option<&'a str>, ApiError> {
+    let Some(new_uname) = new_username else {
+        return Ok(None);
+    };
+    let trimmed = new_uname.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::validation("新用户名不能为空".to_string()));
+    }
+    if role != "R_ADMIN" {
+        return Err(ApiError::validation("只有管理员能修改用户名".to_string()));
+    }
+    if trimmed.len() < 3 || trimmed.len() > 50 {
+        return Err(ApiError::validation(
+            "用户名长度必须在 3 到 50 个字符之间".to_string(),
+        ));
+    }
+    let existing_user = repo::get_admin_user_by_username(db, trimmed)
+        .await
+        .map_err(|e| {
+            error!("Failed to query user by username: {}", e);
+            ApiError::internal("查询用户失败".to_string())
+        })?;
+    if existing_user.is_some_and(|existing| existing.id != current_user_id) {
+        return Err(ApiError::validation("用户名已被占用".to_string()));
+    }
+    Ok(Some(trimmed))
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -63,35 +97,9 @@ pub async fn first_login_change_password(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         return Err(ApiError::validation("用户名或密码无效".to_string()));
     }
-    let mut final_username = user_row.username.clone();
-    let mut passed_username = None;
-    if let Some(ref new_uname) = req.new_username {
-        let trimmed = new_uname.trim();
-        if trimmed.is_empty() {
-            return Err(ApiError::validation("新用户名不能为空".to_string()));
-        }
-        if user_row.role != "R_ADMIN" {
-            return Err(ApiError::validation("只有管理员能修改用户名".to_string()));
-        }
-        if trimmed.len() < 3 || trimmed.len() > 50 {
-            return Err(ApiError::validation(
-                "用户名长度必须在 3 到 50 个字符之间".to_string(),
-            ));
-        }
-        let existing_user = repo::get_admin_user_by_username(db, trimmed)
-            .await
-            .map_err(|e| {
-                error!("Failed to query user by username: {}", e);
-                ApiError::internal("查询用户失败".to_string())
-            })?;
-        if let Some(existing) = existing_user {
-            if existing.id != user_row.id {
-                return Err(ApiError::validation("用户名已被占用".to_string()));
-            }
-        }
-        final_username = trimmed.to_string();
-        passed_username = Some(trimmed);
-    }
+    let passed_username =
+        validate_new_username(db, user_row.id, &user_row.role, req.new_username.as_deref()).await?;
+    let final_username = passed_username.map_or_else(|| user_row.username.clone(), str::to_string);
 
     let new_password_hash = hash_new_password(&req.new_password)?;
     if let Some(reuse_error) = policy

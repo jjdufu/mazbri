@@ -268,6 +268,100 @@ pub async fn create_adjustment(
     ))
     .into_response())
 }
+fn bad_request(message: &str) -> axum::response::Response {
+    ApiResponse::err(axum::http::StatusCode::BAD_REQUEST, message).into_response()
+}
+
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// 生成结果：`Ok((bill_id, audit_details))` 或直接返回的拒绝响应。
+type GeneratedBill = Result<(Uuid, serde_json::Value), axum::response::Response>;
+
+async fn generate_customer_bill(
+    state: &AppState,
+    payload: &GenerateBillRequest,
+) -> Result<GeneratedBill, svc::BillingError> {
+    let (period_start, period_end) = (payload.period_start, payload.period_end);
+    let Some(tenant_code) = non_empty(payload.tenant_code.as_deref()) else {
+        return Ok(Err(bad_request("Customer bill requires tenant_code")));
+    };
+    let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, tenant_code).await {
+        Ok(id) => id,
+        Err(error) => return Ok(Err(error.into_response())),
+    };
+    let bill_id =
+        svc::generate_bill(&state.billing_db, tenant_id, period_start, period_end).await?;
+    svc::snapshot_customer_bill_items(
+        &state.billing_db,
+        bill_id,
+        tenant_id,
+        period_start,
+        period_end,
+    )
+    .await?;
+    Ok(Ok((
+        bill_id,
+        serde_json::json!({
+            "bill_kind": "customer",
+            "tenant_code": tenant_code,
+            "tenant_id": tenant_id,
+            "period_start": period_start.to_rfc3339(),
+            "period_end": period_end.to_rfc3339(),
+        }),
+    )))
+}
+
+/// 解析上游账单范围：`(scope_type, scope_id, scope)`，失败返回提示文案。
+fn parse_upstream_scope(
+    payload: &GenerateBillRequest,
+) -> Result<(String, Uuid, svc::UpstreamBillScope), &'static str> {
+    let scope_type = non_empty(payload.upstream_scope_type.as_deref())
+        .ok_or("Upstream bill requires upstream_scope_type")?
+        .to_lowercase();
+    let scope_id = non_empty(payload.upstream_scope_id.as_deref())
+        .ok_or("Upstream bill requires upstream_scope_id")?;
+    let scope_id =
+        Uuid::parse_str(scope_id).map_err(|_| "upstream_scope_id must be a valid UUID")?;
+    let scope = match scope_type.as_str() {
+        "channel" => svc::UpstreamBillScope::channel(scope_id),
+        "supplier" => svc::UpstreamBillScope::supplier(scope_id),
+        _ => return Err("upstream_scope_type must be channel or supplier"),
+    };
+    Ok((scope_type, scope_id, scope))
+}
+
+async fn generate_upstream_bill(
+    state: &AppState,
+    payload: &GenerateBillRequest,
+) -> Result<GeneratedBill, svc::BillingError> {
+    let (period_start, period_end) = (payload.period_start, payload.period_end);
+    let (scope_type, scope_id, scope) = match parse_upstream_scope(payload) {
+        Ok(parsed) => parsed,
+        Err(message) => return Ok(Err(bad_request(message))),
+    };
+    let bill_id = svc::generate_upstream_bill(
+        &state.billing_db,
+        &state.db,
+        &state.analytics_client,
+        period_start,
+        period_end,
+        Some(scope),
+    )
+    .await?;
+    Ok(Ok((
+        bill_id,
+        serde_json::json!({
+            "bill_kind": "upstream",
+            "upstream_scope_type": scope_type,
+            "upstream_scope_id": scope_id,
+            "period_start": period_start.to_rfc3339(),
+            "period_end": period_end.to_rfc3339(),
+        }),
+    )))
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -299,115 +393,16 @@ pub async fn generate_bill(
     let bill_kind = payload.bill_kind.trim().to_lowercase();
     let period_start = payload.period_start;
     let period_end = payload.period_end;
-    let period_start_audit = period_start.to_rfc3339();
-    let period_end_audit = period_end.to_rfc3339();
-    let (bill_id, audit_details) = if bill_kind.is_empty() || bill_kind == "customer" {
-        let Some(tenant_code) = payload
-            .tenant_code
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Customer bill requires tenant_code",
-            )
-            .into_response());
-        };
-        let tenant_id =
-            match crate::services::tenant::resolve_tenant_id(&state.db, tenant_code).await {
-                Ok(id) => id,
-                Err(error) => {
-                    return Ok(error.into_response());
-                }
-            };
-        let bill_id =
-            svc::generate_bill(&state.billing_db, tenant_id, period_start, period_end).await?;
-        svc::snapshot_customer_bill_items(
-            &state.billing_db,
-            bill_id,
-            tenant_id,
-            period_start,
-            period_end,
-        )
-        .await?;
-        (
-            bill_id,
-            serde_json::json!(
-                { "bill_kind" : "customer", "tenant_code" : tenant_code, "tenant_id" :
-                tenant_id, "period_start" : period_start_audit, "period_end" :
-                period_end_audit }
-            ),
-        )
+    let generated = if bill_kind.is_empty() || bill_kind == "customer" {
+        generate_customer_bill(&state, &payload).await?
     } else if bill_kind == "upstream" {
-        let scope_type = match payload
-            .upstream_scope_type
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            Some(value) => value.to_lowercase(),
-            None => {
-                return Ok(ApiResponse::err(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Upstream bill requires upstream_scope_type",
-                )
-                .into_response());
-            }
-        };
-        let Some(scope_id) = payload
-            .upstream_scope_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Upstream bill requires upstream_scope_id",
-            )
-            .into_response());
-        };
-        let Ok(scope_id) = Uuid::parse_str(scope_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "upstream_scope_id must be a valid UUID",
-            )
-            .into_response());
-        };
-        let scope = match scope_type.as_str() {
-            "channel" => svc::UpstreamBillScope::channel(scope_id),
-            "supplier" => svc::UpstreamBillScope::supplier(scope_id),
-            _ => {
-                return Ok(ApiResponse::err(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "upstream_scope_type must be channel or supplier",
-                )
-                .into_response());
-            }
-        };
-        let bill_id = svc::generate_upstream_bill(
-            &state.billing_db,
-            &state.db,
-            &state.analytics_client,
-            period_start,
-            period_end,
-            Some(scope),
-        )
-        .await?;
-        (
-            bill_id,
-            serde_json::json!(
-                { "bill_kind" : "upstream", "upstream_scope_type" : scope_type,
-                "upstream_scope_id" : scope_id, "period_start" :
-                period_start_audit, "period_end" : period_end_audit }
-            ),
-        )
+        generate_upstream_bill(&state, &payload).await?
     } else {
-        return Ok(ApiResponse::err(
-            axum::http::StatusCode::BAD_REQUEST,
-            "bill_kind must be customer or upstream",
-        )
-        .into_response());
+        Err(bad_request("bill_kind must be customer or upstream"))
+    };
+    let (bill_id, audit_details) = match generated {
+        Ok(generated) => generated,
+        Err(response) => return Ok(response),
     };
     let mut warnings: Vec<String> = Vec::new();
     let recon_runtime = state.billing_reconciliation_settings.get().await;

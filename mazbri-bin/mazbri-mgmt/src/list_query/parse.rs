@@ -31,127 +31,104 @@ pub fn parse_flat_filters<S: ::std::hash::BuildHasher>(
     params: &HashMap<String, String, S>,
     known_fields: &[&str],
 ) -> Result<Vec<ListFilter>, ListQueryError> {
+    const RESERVED_KEYS: [&str; 9] = [
+        "q",
+        "search",
+        "filters",
+        "page",
+        "page_size",
+        "start_time",
+        "end_time",
+        "sort",
+        "order",
+    ];
+    // field_op patterns — longest op first
+    const OPS: [(&str, FilterOp); 11] = [
+        ("starts_with", FilterOp::StartsWith),
+        ("ends_with", FilterOp::EndsWith),
+        ("contains", FilterOp::Contains),
+        ("between", FilterOp::Between),
+        ("gte", FilterOp::Gte),
+        ("lte", FilterOp::Lte),
+        ("neq", FilterOp::Neq),
+        ("gt", FilterOp::Gt),
+        ("lt", FilterOp::Lt),
+        ("eq", FilterOp::Eq),
+        ("in", FilterOp::In),
+    ];
     let mut out = Vec::new();
     let field_set: std::collections::HashSet<&str> = known_fields.iter().copied().collect();
 
-    // Collect between pairs: field -> (gte, lte)
-    let mut between: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
-
     for (key, value) in params {
-        if key == "q"
-            || key == "search"
-            || key == "filters"
-            || key == "page"
-            || key == "page_size"
-            || key == "start_time"
-            || key == "end_time"
-            || key == "sort"
-            || key == "order"
-        {
+        if RESERVED_KEYS.contains(&key.as_str()) {
             continue;
         }
-
-        if let Some(field) = key.strip_suffix("_is_null") {
+        let null_check = key
+            .strip_suffix("_is_null")
+            .map(|field| (field, FilterOp::IsNull))
+            .or_else(|| {
+                key.strip_suffix("_is_not_null")
+                    .map(|field| (field, FilterOp::IsNotNull))
+            });
+        if let Some((field, op)) = null_check {
             if field_set.contains(field) {
                 out.push(ListFilter {
                     field: field.to_string(),
-                    op: FilterOp::IsNull,
+                    op,
                     value: None,
                 });
             }
             continue;
         }
-        if let Some(field) = key.strip_suffix("_is_not_null") {
-            if field_set.contains(field) {
-                out.push(ListFilter {
-                    field: field.to_string(),
-                    op: FilterOp::IsNotNull,
-                    value: None,
-                });
+        let matched = OPS.into_iter().find_map(|(suffix, op)| {
+            key.strip_suffix(&format!("_{suffix}"))
+                .map(|field| (field, op))
+        });
+        if let Some((field, op)) = matched {
+            if !field_set.contains(field) {
+                // Unknown field with filter-like suffix → error
+                return Err(ListQueryError::invalid_field(field));
             }
-            continue;
+            out.push(ListFilter {
+                field: field.to_string(),
+                value: Some(flat_filter_value(field, op, value)?),
+                op,
+            });
         }
-
-        // field_op patterns — longest op first
-        let ops = [
-            ("starts_with", FilterOp::StartsWith),
-            ("ends_with", FilterOp::EndsWith),
-            ("contains", FilterOp::Contains),
-            ("between", FilterOp::Between),
-            ("gte", FilterOp::Gte),
-            ("lte", FilterOp::Lte),
-            ("neq", FilterOp::Neq),
-            ("gt", FilterOp::Gt),
-            ("lt", FilterOp::Lt),
-            ("eq", FilterOp::Eq),
-            ("in", FilterOp::In),
-        ];
-
-        let mut matched = false;
-        for (suffix, op) in ops {
-            let token = format!("_{suffix}");
-            if let Some(field) = key.strip_suffix(&token) {
-                if !field_set.contains(field) {
-                    // Unknown field with filter-like suffix → error
-                    return Err(ListQueryError::invalid_field(field));
-                }
-                matched = true;
-                if op == FilterOp::Gte || op == FilterOp::Lte {
-                    // May be part of between convenience; still emit as gte/lte
-                    let entry = between.entry(field.to_string()).or_default();
-                    if op == FilterOp::Gte {
-                        entry.0 = Some(value.clone());
-                    } else {
-                        entry.1 = Some(value.clone());
-                    }
-                    out.push(ListFilter {
-                        field: field.to_string(),
-                        op,
-                        value: Some(parse_scalar_value(value)),
-                    });
-                } else if op == FilterOp::In {
-                    let parts: Vec<String> = value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .collect();
-                    out.push(ListFilter {
-                        field: field.to_string(),
-                        op,
-                        value: Some(FilterValue::StringArray(parts)),
-                    });
-                } else if op == FilterOp::Between {
-                    let parts: Vec<&str> = value.split(',').map(str::trim).collect();
-                    if parts.len() != 2 {
-                        return Err(ListQueryError::invalid_value(
-                            field,
-                            "between requires two comma-separated values",
-                        ));
-                    }
-                    out.push(ListFilter {
-                        field: field.to_string(),
-                        op,
-                        value: Some(FilterValue::StringArray(vec![
-                            parts[0].to_string(),
-                            parts[1].to_string(),
-                        ])),
-                    });
-                } else {
-                    out.push(ListFilter {
-                        field: field.to_string(),
-                        op,
-                        value: Some(parse_scalar_value(value)),
-                    });
-                }
-                break;
-            }
-        }
-        let _ = matched;
-        let _ = between;
     }
 
     Ok(out)
+}
+
+fn flat_filter_value(
+    field: &str,
+    op: FilterOp,
+    value: &str,
+) -> Result<FilterValue, ListQueryError> {
+    match op {
+        FilterOp::In => Ok(FilterValue::StringArray(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
+        )),
+        FilterOp::Between => {
+            let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+            if parts.len() != 2 {
+                return Err(ListQueryError::invalid_value(
+                    field,
+                    "between requires two comma-separated values",
+                ));
+            }
+            Ok(FilterValue::StringArray(vec![
+                parts[0].to_string(),
+                parts[1].to_string(),
+            ]))
+        }
+        _ => Ok(parse_scalar_value(value)),
+    }
 }
 
 fn parse_scalar_value(raw: &str) -> FilterValue {

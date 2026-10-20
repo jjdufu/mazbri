@@ -24,6 +24,52 @@ pub fn routes() -> Router<AppState> {
             "/tenants/{code}/status",
             put(tenant_handlers::set_tenant_status),
         )
+        .merge(crypto_routes())
+        .merge(product_account_routes())
+        .route(
+            "/tenants/{code}/api-keys",
+            post(api_key_handlers::create_api_key).get(api_key_handlers::list_api_keys),
+        )
+        .route(
+            "/tenants/{code}/api-keys/{key_prefix}",
+            put(api_key_handlers::update_api_key).delete(api_key_handlers::revoke_api_key),
+        )
+        .route(
+            "/tenants/{code}/whitelist",
+            get(whitelist_handlers::get_whitelist).post(whitelist_handlers::add_to_whitelist),
+        )
+        .route(
+            "/tenants/{code}/whitelist/{ip}",
+            delete(whitelist_handlers::remove_from_whitelist),
+        )
+        .route(
+            "/tenants/{code}/config/ratelimit",
+            get(config_handlers::get_ratelimit_config)
+                .put(config_handlers::update_ratelimit_config)
+                .delete(config_handlers::delete_ratelimit_config),
+        )
+        .route(
+            "/tenants/{code}/ratelimit/commands",
+            get(ratelimit_command_handlers::list_control_commands)
+                .post(ratelimit_command_handlers::create_control_command),
+        )
+        .route(
+            "/tenants/{code}/ratelimit/commands/{id}/cancel",
+            post(ratelimit_command_handlers::cancel_control_command),
+        )
+        .route(
+            "/tenants/{code}/config/cache",
+            get(config_handlers::get_cache_config).put(config_handlers::update_cache_config),
+        )
+        .route(
+            "/config/ratelimit",
+            get(config_handlers::get_global_ratelimit_settings),
+        )
+}
+
+/// 租户加密配置、密钥与请求密钥。
+fn crypto_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/tenants/{code}/crypto-profile",
             get(tenant_crypto_handlers::get_crypto_profile)
@@ -71,6 +117,11 @@ pub fn routes() -> Router<AppState> {
             "/tenants/{code}/request-keys/{kid}/retire",
             post(tenant_crypto_handlers::retire_request_key),
         )
+}
+
+/// 租户产品配置与账户。
+fn product_account_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/tenants/{code}/products",
             get(product::list_tenant_products),
@@ -91,44 +142,5 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/tenants/{code}/account/transactions",
             get(product::list_tenant_transactions),
-        )
-        .route(
-            "/tenants/{code}/api-keys",
-            post(api_key_handlers::create_api_key).get(api_key_handlers::list_api_keys),
-        )
-        .route(
-            "/tenants/{code}/api-keys/{key_prefix}",
-            put(api_key_handlers::update_api_key).delete(api_key_handlers::revoke_api_key),
-        )
-        .route(
-            "/tenants/{code}/whitelist",
-            get(whitelist_handlers::get_whitelist).post(whitelist_handlers::add_to_whitelist),
-        )
-        .route(
-            "/tenants/{code}/whitelist/{ip}",
-            delete(whitelist_handlers::remove_from_whitelist),
-        )
-        .route(
-            "/tenants/{code}/config/ratelimit",
-            get(config_handlers::get_ratelimit_config)
-                .put(config_handlers::update_ratelimit_config)
-                .delete(config_handlers::delete_ratelimit_config),
-        )
-        .route(
-            "/tenants/{code}/ratelimit/commands",
-            get(ratelimit_command_handlers::list_control_commands)
-                .post(ratelimit_command_handlers::create_control_command),
-        )
-        .route(
-            "/tenants/{code}/ratelimit/commands/{id}/cancel",
-            post(ratelimit_command_handlers::cancel_control_command),
-        )
-        .route(
-            "/tenants/{code}/config/cache",
-            get(config_handlers::get_cache_config).put(config_handlers::update_cache_config),
-        )
-        .route(
-            "/config/ratelimit",
-            get(config_handlers::get_global_ratelimit_settings),
         )
 }
