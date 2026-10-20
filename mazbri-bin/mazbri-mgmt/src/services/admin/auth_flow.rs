@@ -300,6 +300,42 @@ async fn generate_login_response(
     ))
 }
 
+/// 按用户名加载可登录账户（不存在/禁用/锁定时返回错误）。
+async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserFullRow, ApiError> {
+    let user_row = match repo::get_admin_user_by_username(db, username).await {
+        Ok(row) => row,
+        Err(e) => {
+            error!("Database error during login: {}", e);
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            return Err(ApiError::internal(
+                "Database error during login".to_string(),
+            ));
+        }
+    };
+    let Some(user_row) = user_row else {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        return Err(ApiError::Unauthorized);
+    };
+    let username = &user_row.username;
+    if !user_row.is_active {
+        warn!("Login attempt for disabled user: {}", username);
+        return Err(ApiError::validation("账户已禁用".to_string()));
+    }
+    if let Some(lock_until) = user_row.locked_until {
+        if lock_until > Utc::now() {
+            let remaining_seconds = (lock_until - Utc::now()).num_seconds();
+            warn!(
+                "Login attempt for locked user: {}, locked until: {}",
+                username, lock_until
+            );
+            return Err(ApiError::validation(format!(
+                "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
+            )));
+        }
+    }
+    Ok(user_row)
+}
+
 pub struct AdminLoginParams<'a> {
     pub db: &'a PgPool,
     pub jwt_secret: &'a str,
@@ -327,39 +363,10 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     let audit = params.audit;
     let req = params.req;
     let client_ip = params.client_ip;
-    let user_row = match repo::get_admin_user_by_username(db, &req.username).await {
-        Ok(row) => row,
-        Err(e) => {
-            error!("Database error during login: {}", e);
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            return Err(ApiError::internal(
-                "Database error during login".to_string(),
-            ));
-        }
-    };
-    let Some(user_row) = user_row else {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        return Err(ApiError::Unauthorized);
-    };
+    let user_row = load_login_user(db, &req.username).await?;
     let user_id = user_row.id;
     let username = &user_row.username;
     let role = &user_row.role;
-    if !user_row.is_active {
-        warn!("Login attempt for disabled user: {}", username);
-        return Err(ApiError::validation("账户已禁用".to_string()));
-    }
-    if let Some(lock_until) = user_row.locked_until {
-        if lock_until > Utc::now() {
-            let remaining_seconds = (lock_until - Utc::now()).num_seconds();
-            warn!(
-                "Login attempt for locked user: {}, locked until: {}",
-                username, lock_until
-            );
-            return Err(ApiError::validation(format!(
-                "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
-            )));
-        }
-    }
     let admin_password_hash = resolve_password_hash(&user_row)?;
     let password_valid =
         mazbri_auth::constant_time_argon2_verify(req.password.as_bytes(), &admin_password_hash)

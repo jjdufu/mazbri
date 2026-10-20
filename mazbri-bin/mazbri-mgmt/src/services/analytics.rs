@@ -301,6 +301,67 @@ pub struct RateLimitAnalyticsParams {
     pub end_time: Option<i64>,
     pub group_by: Option<String>,
 }
+/// 拒绝原因 / 范围分布 / 拒绝最多的 API（查询失败时为空列表）。
+async fn fetch_ratelimit_breakdowns(
+    ratelimit_db: &PgPool,
+    tenant_id: uuid::Uuid,
+    params: &RateLimitAnalyticsParams,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+) {
+    let mut denial_builder =
+        repo::build_denial_reasons_query(tenant_id, params.start_time, params.end_time);
+    let denial_reasons = match denial_builder.build().fetch_all(ratelimit_db).await {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row: sqlx::postgres::PgRow| {
+                serde_json::json!(
+                    { "reason" : row.get::< Option < String >, _ > ("reason"),
+                    "count" : row.get::< i64, _ > ("count"), "percentage" : row
+                    .get::< Option < f64 >, _ > ("percentage"), }
+                )
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => Vec::new(),
+    };
+    let mut scope_builder =
+        repo::build_scope_breakdown_query(tenant_id, params.start_time, params.end_time);
+    let scope_breakdown = match scope_builder.build().fetch_all(ratelimit_db).await {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row: sqlx::postgres::PgRow| {
+                serde_json::json!(
+                    { "scope" : row.get::< String, _ > ("scope"), "counter_type" :
+                    row.get::< String, _ > ("counter_type"), "total_checks" : row
+                    .get::< i64, _ > ("total_checks"), "allowed_count" : row.get::<
+                    i64, _ > ("allowed_count"), "denied_count" : row.get::< i64, _ >
+                    ("denied_count"), }
+                )
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => Vec::new(),
+    };
+    let mut top_denied_builder =
+        repo::build_top_denied_apis_query(tenant_id, params.start_time, params.end_time);
+    let top_denied_apis = match top_denied_builder.build().fetch_all(ratelimit_db).await {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row: sqlx::postgres::PgRow| {
+                serde_json::json!(
+                    { "api_endpoint" : row.get::< String, _ > ("api_endpoint"),
+                    "total_checks" : row.get::< i64, _ > ("total_checks"),
+                    "denied_count" : row.get::< i64, _ > ("denied_count"),
+                    "denial_rate" : row.get::< f64, _ > ("denial_rate"), }
+                )
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => Vec::new(),
+    };
+    (denial_reasons, scope_breakdown, top_denied_apis)
+}
+
 pub async fn get_ratelimit_analytics(
     db: &PgPool,
     ratelimit_db: &PgPool,
@@ -356,54 +417,8 @@ pub async fn get_ratelimit_analytics(
             );
         }
     };
-    let mut denial_builder =
-        repo::build_denial_reasons_query(tenant_id, params.start_time, params.end_time);
-    let denial_reasons = match denial_builder.build().fetch_all(ratelimit_db).await {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row: sqlx::postgres::PgRow| {
-                serde_json::json!(
-                    { "reason" : row.get::< Option < String >, _ > ("reason"),
-                    "count" : row.get::< i64, _ > ("count"), "percentage" : row
-                    .get::< Option < f64 >, _ > ("percentage"), }
-                )
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
-    let mut scope_builder =
-        repo::build_scope_breakdown_query(tenant_id, params.start_time, params.end_time);
-    let scope_breakdown = match scope_builder.build().fetch_all(ratelimit_db).await {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row: sqlx::postgres::PgRow| {
-                serde_json::json!(
-                    { "scope" : row.get::< String, _ > ("scope"), "counter_type" :
-                    row.get::< String, _ > ("counter_type"), "total_checks" : row
-                    .get::< i64, _ > ("total_checks"), "allowed_count" : row.get::<
-                    i64, _ > ("allowed_count"), "denied_count" : row.get::< i64, _ >
-                    ("denied_count"), }
-                )
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
-    let mut top_denied_builder =
-        repo::build_top_denied_apis_query(tenant_id, params.start_time, params.end_time);
-    let top_denied_apis = match top_denied_builder.build().fetch_all(ratelimit_db).await {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row: sqlx::postgres::PgRow| {
-                serde_json::json!(
-                    { "api_endpoint" : row.get::< String, _ > ("api_endpoint"),
-                    "total_checks" : row.get::< i64, _ > ("total_checks"),
-                    "denied_count" : row.get::< i64, _ > ("denied_count"),
-                    "denial_rate" : row.get::< f64, _ > ("denial_rate"), }
-                )
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
+    let (denial_reasons, scope_breakdown, top_denied_apis) =
+        fetch_ratelimit_breakdowns(ratelimit_db, tenant_id, params).await;
     ApiResponse::ok(serde_json::json!(
         { "time_range" : { "start" : params.start_time, "end" : params.end_time
         }, "group_by" : params.group_by.clone().unwrap_or_else(|| "day"
@@ -570,6 +585,134 @@ pub struct CallMonitorResponse {
     pub browse_capped: bool,
     pub data: Vec<CallMonitorItem>,
 }
+/// 数值型扁平过滤参数（原样透传给 analytics）。
+fn push_numeric_filters(
+    request_params: &mut Vec<(&'static str, String)>,
+    params: &CallMonitorParams,
+) {
+    let numeric = [
+        (
+            "duration_ms_gt",
+            params.duration_ms_gt.map(|v| v.to_string()),
+        ),
+        (
+            "duration_ms_gte",
+            params.duration_ms_gte.map(|v| v.to_string()),
+        ),
+        (
+            "duration_ms_lt",
+            params.duration_ms_lt.map(|v| v.to_string()),
+        ),
+        (
+            "duration_ms_lte",
+            params.duration_ms_lte.map(|v| v.to_string()),
+        ),
+        (
+            "duration_ms_eq",
+            params.duration_ms_eq.map(|v| v.to_string()),
+        ),
+        (
+            "status_code_gt",
+            params.status_code_gt.map(|v| v.to_string()),
+        ),
+        (
+            "status_code_gte",
+            params.status_code_gte.map(|v| v.to_string()),
+        ),
+        (
+            "status_code_lt",
+            params.status_code_lt.map(|v| v.to_string()),
+        ),
+        (
+            "status_code_lte",
+            params.status_code_lte.map(|v| v.to_string()),
+        ),
+        (
+            "status_code_neq",
+            params.status_code_neq.map(|v| v.to_string()),
+        ),
+        (
+            "upstream_service_time_ms_gt",
+            params.upstream_service_time_ms_gt.map(|v| v.to_string()),
+        ),
+        (
+            "upstream_service_time_ms_gte",
+            params.upstream_service_time_ms_gte.map(|v| v.to_string()),
+        ),
+    ];
+    for (key, value) in numeric {
+        push_opt_param(request_params, key, value);
+    }
+}
+
+/// 调用监控分页元数据（以 analytics 返回为准，缺省时本地推导）。
+struct CallMonitorPaging {
+    query_mode: String,
+    universe_size: Option<u64>,
+    total_pages: u32,
+    browse_capped: bool,
+}
+
+fn call_monitor_paging(
+    body: &serde_json::Value,
+    selective: bool,
+    page_size: u32,
+    total: u64,
+    max_page: u32,
+) -> CallMonitorPaging {
+    let query_mode = body
+        .get("query_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or(if selective { "selective" } else { "latest" })
+        .to_string();
+    let latest = query_mode == "latest";
+    let universe_size = body
+        .get("universe_size")
+        .and_then(serde_json::Value::as_u64)
+        .or(latest.then_some(MAX_BROWSE_TOTAL));
+    let total_pages = body
+        .get("total_pages")
+        .and_then(serde_json::Value::as_u64)
+        .map_or_else(
+            || u32::saturating_from(total.div_ceil(u64::from(page_size))),
+            u32::saturating_from,
+        );
+    let total_pages = if latest {
+        total_pages
+    } else {
+        total_pages.min(max_page)
+    };
+    let browse_capped = body
+        .get("browse_capped")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        || (!latest && total > MAX_BROWSE_TOTAL);
+    CallMonitorPaging {
+        query_mode,
+        universe_size,
+        total_pages,
+        browse_capped,
+    }
+}
+
+/// 本地按供应商编码过滤当前页；返回重算的 `(total, total_pages, browse_capped)`。
+fn filter_by_supplier(
+    items: &mut Vec<CallMonitorItem>,
+    supplier_code: Option<&str>,
+    page_size: u32,
+    max_page: u32,
+) -> Option<(u64, u32, bool)> {
+    let supplier_code = supplier_code.map(str::trim).filter(|v| !v.is_empty())?;
+    let needle = supplier_code.to_lowercase();
+    items.retain(|item| item.supplier.to_lowercase().contains(&needle));
+    let filtered_total = items.len() as u64;
+    Some((
+        filtered_total,
+        u32::saturating_from(filtered_total.div_ceil(u64::from(page_size))).min(max_page),
+        filtered_total > MAX_BROWSE_TOTAL,
+    ))
+}
+
 pub async fn get_call_monitor_logs(
     db: &PgPool,
     analytics_client: &AnalyticsHttpClient,
@@ -603,75 +746,14 @@ pub async fn get_call_monitor_logs(
         ("page", page.to_string()),
         ("page_size", page_size.to_string()),
     ];
-    for (key, value) in call_monitor_service_filters(kind) {
-        request_params.push((key, value));
-    }
+    request_params.extend(call_monitor_service_filters(kind));
     push_opt_param(&mut request_params, "request_id", serial_no.clone());
     // When exact serial is set, skip free-text `q` (same id would only AND a redundant LIKE).
     if !selective {
         push_opt_param(&mut request_params, "q", params.q.clone());
     }
     push_opt_param(&mut request_params, "filters", params.filters.clone());
-    push_opt_param(
-        &mut request_params,
-        "duration_ms_gt",
-        params.duration_ms_gt.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "duration_ms_gte",
-        params.duration_ms_gte.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "duration_ms_lt",
-        params.duration_ms_lt.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "duration_ms_lte",
-        params.duration_ms_lte.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "duration_ms_eq",
-        params.duration_ms_eq.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "status_code_gt",
-        params.status_code_gt.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "status_code_gte",
-        params.status_code_gte.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "status_code_lt",
-        params.status_code_lt.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "status_code_lte",
-        params.status_code_lte.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "status_code_neq",
-        params.status_code_neq.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "upstream_service_time_ms_gt",
-        params.upstream_service_time_ms_gt.map(|v| v.to_string()),
-    );
-    push_opt_param(
-        &mut request_params,
-        "upstream_service_time_ms_gte",
-        params.upstream_service_time_ms_gte.map(|v| v.to_string()),
-    );
+    push_numeric_filters(&mut request_params, params);
     push_opt_param(&mut request_params, "tenant_id", tenant_id);
     push_opt_param(&mut request_params, "product_id", product_id);
     push_opt_param(&mut request_params, "client_ip", params.client_ip.clone());
@@ -709,43 +791,12 @@ pub async fn get_call_monitor_logs(
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let max_page = u32::saturating_from(MAX_BROWSE_TOTAL.div_ceil(u64::from(page_size)).max(1));
-    let query_mode = body
-        .get("query_mode")
-        .and_then(|v| v.as_str())
-        .unwrap_or(if selective {
-            "selective"
-        } else if start_time.is_some() || end_time.is_some() || params.filters.is_some() {
-            // filters may encode timestamp; analytics is authoritative when present
-            "latest"
-        } else {
-            "latest"
-        })
-        .to_string();
-    let universe_size = body
-        .get("universe_size")
-        .and_then(serde_json::Value::as_u64)
-        .or(if query_mode == "latest" {
-            Some(MAX_BROWSE_TOTAL)
-        } else {
-            None
-        });
-    let total_pages = body
-        .get("total_pages")
-        .and_then(serde_json::Value::as_u64)
-        .map_or_else(
-            || u32::saturating_from(total.div_ceil(u64::from(page_size))),
-            u32::saturating_from,
-        );
-    let total_pages = if query_mode == "latest" {
-        total_pages
-    } else {
-        total_pages.min(max_page)
-    };
-    let browse_capped = body
-        .get("browse_capped")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-        || (query_mode != "latest" && total > MAX_BROWSE_TOTAL);
+    let CallMonitorPaging {
+        query_mode,
+        universe_size,
+        total_pages,
+        browse_capped,
+    } = call_monitor_paging(&body, selective, page_size, total, max_page);
     let (tenant_names, channel_names) =
         tokio::join!(load_tenant_names(db, &data), load_channel_names(db, &data));
     let tenant_names = tenant_names.unwrap_or_default();
@@ -754,26 +805,13 @@ pub async fn get_call_monitor_logs(
         .into_iter()
         .map(|row| map_call_monitor_item(row, &tenant_names, &channel_names, kind))
         .collect::<Vec<_>>();
-    let (total, total_pages, browse_capped) = if let Some(supplier_code) = params
-        .supplier_code
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        items.retain(|item| {
-            item.supplier
-                .to_lowercase()
-                .contains(&supplier_code.to_lowercase())
-        });
-        let filtered_total = items.len() as u64;
-        (
-            filtered_total,
-            u32::saturating_from(filtered_total.div_ceil(u64::from(page_size))).min(max_page),
-            filtered_total > MAX_BROWSE_TOTAL,
-        )
-    } else {
-        (total, total_pages, browse_capped)
-    };
+    let (total, total_pages, browse_capped) = filter_by_supplier(
+        &mut items,
+        params.supplier_code.as_deref(),
+        page_size,
+        max_page,
+    )
+    .unwrap_or((total, total_pages, browse_capped));
     ApiResponse::ok(CallMonitorResponse {
         total,
         page,
