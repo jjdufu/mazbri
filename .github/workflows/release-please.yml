@@ -1,0 +1,103 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      pack: ${{ steps.gate.outputs.pack }}
+      tag_name: ${{ steps.gate.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        continue-on-error: true
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # RP creates the GitHub Release first, then GraphQL-fetches merge commits
+      # to open the next PR. A GitHub 500 there fails the action AFTER the tag
+      # exists, which used to skip packaging. Pack anyway when this SHA is the
+      # tag, or when the latest Release notes were never rewritten by
+      # release.yml (no "docker pull" block yet). This repo attaches no assets
+      # to Releases, so an asset-count check would republish on every push.
+      - name: Decide whether to pack
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RP_OUTCOME: ${{ steps.release.outcome }}
+          RP_CREATED: ${{ steps.release.outputs.release_created }}
+          RP_TAG: ${{ steps.release.outputs.tag_name }}
+          IMAGE_NAME: dex2all/mazbri-
+        run: |
+          set -euo pipefail
+          echo "pack=false" >> "$GITHUB_OUTPUT"
+          pack_tag=""
+
+          peel_tag() {
+            local t="$1" obj_type obj_sha
+            obj_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${t}" --jq .object.type)"
+            obj_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${t}" --jq .object.sha)"
+            if [ "$obj_type" = "tag" ]; then
+              obj_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj_sha}" --jq .object.sha)"
+            fi
+            printf '%s' "$obj_sha"
+          }
+
+          if [ "${RP_CREATED}" = "true" ] && [ -n "${RP_TAG}" ]; then
+            pack_tag="${RP_TAG}"
+          else
+            while IFS= read -r t; do
+              [ -z "$t" ] && continue
+              if [ "$(peel_tag "$t")" = "${GITHUB_SHA}" ]; then
+                pack_tag="$t"
+                break
+              fi
+            done < <(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=20" --jq '.[].tag_name')
+          fi
+
+          if [ -z "$pack_tag" ]; then
+            # No Release yet (first run) is a 404; treat it as nothing to pack.
+            latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" 2>/dev/null || echo '{}')"
+            draft="$(printf '%s' "$latest" | jq -r '.draft')"
+            t="$(printf '%s' "$latest" | jq -r '.tag_name // empty')"
+            published="$(printf '%s' "$latest" | jq -r --arg img "docker pull ${IMAGE_NAME}:" '(.body // "") | contains($img)')"
+            if [ "$draft" = "false" ] && [ "$published" = "false" ] && [ -n "$t" ]; then
+              pack_tag="$t"
+            fi
+          fi
+
+          if [ -n "$pack_tag" ]; then
+            echo "pack=true" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${pack_tag}" >> "$GITHUB_OUTPUT"
+            echo "Will pack ${pack_tag}"
+          else
+            echo "No release to pack"
+          fi
+
+          if [ "${RP_OUTCOME}" != "success" ]; then
+            echo "::error::release-please-action failed (outcome=${RP_OUTCOME})"
+            exit 1
+          fi
+
+  # GITHUB_TOKEN cannot trigger other workflows via tag/release events.
+  # Call release.yml in this same run so the 11 images (Hub + ACR) get the tag RP just created.
+  release:
+    needs: release-please
+    if: always() && !cancelled() && needs.release-please.outputs.pack == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.release-please.outputs.tag_name }}
+    permissions:
+      contents: write
+    secrets: inherit
