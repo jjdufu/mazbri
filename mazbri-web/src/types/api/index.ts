@@ -20,7 +20,6 @@ export * from "./analytics";
 export * from "./billing";
 export * from "./certificate";
 export * from "./authorizations";
-export * from "./service-registry";
 export * from "./settings";
 export * from "./audit";
 export * from "./config-center";

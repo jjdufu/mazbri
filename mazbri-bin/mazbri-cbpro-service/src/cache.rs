@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use crate::config::CacheConfig;
 use crate::db::{LocalCacheEntry, RedisFallbackRepository, SetCacheParams};
 use lru::LruCache;
@@ -75,7 +76,7 @@ impl HybridFallbackCache {
                     let age_secs = redis_entry.age_secs();
                     return Some(CacheEntry {
                         data: redis_entry.data,
-                        created_at: Instant::now() - Duration::from_secs(age_secs as u64),
+                        created_at: Instant::now().checked_sub(Duration::from_secs(u64::saturating_from(age_secs))).unwrap(),
                     });
                 }
             }
@@ -85,7 +86,7 @@ impl HybridFallbackCache {
     }
     pub async fn set(&self, params: SetCacheEntryParams) {
         let ttl = params.ttl.unwrap_or(self.default_ttl);
-        let ttl_secs = ttl.as_secs() as i64;
+        let ttl_secs = i64::saturating_from(ttl.as_secs());
         let local_entry = LocalCacheEntry {
             data: params.data.clone(),
             created_at: Instant::now(),
@@ -98,8 +99,8 @@ impl HybridFallbackCache {
                 Self::evict_expired_locked(&mut cache, &self.active_count);
             }
             let len_before = cache.len();
-            let _old = cache.put(params.key.clone(), local_entry);
-            if _old.is_none() && cache.len() > len_before {
+            let old = cache.put(params.key.clone(), local_entry);
+            if old.is_none() && cache.len() > len_before {
                 self.active_count.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -149,6 +150,6 @@ pub struct CacheEntry {
 }
 impl CacheEntry {
     pub fn age_secs(&self) -> i64 {
-        self.created_at.elapsed().as_secs() as i64
+        i64::saturating_from(self.created_at.elapsed().as_secs())
     }
 }

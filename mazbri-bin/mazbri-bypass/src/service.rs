@@ -1,5 +1,6 @@
 //! Bypass HTTP proxy service — production path uses shared `mazbri-upstream-runtime`.
 
+use mazbri_core::num::SaturatingFrom;
 use crate::metrics::UpstreamMetricsRecorder;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
@@ -348,8 +349,7 @@ impl MazbriBypassServiceImpl {
         let http_status = result
             .upstream_meta
             .as_ref()
-            .map(|m| m.status)
-            .unwrap_or(200);
+            .map_or(200, |m| m.status);
         let status_code =
             reqwest::StatusCode::from_u16(http_status).unwrap_or(reqwest::StatusCode::OK);
         UpstreamMetricsRecorder::record_response(adapter, status_code, metric_result);
@@ -410,7 +410,7 @@ fn emit_bypass_access(
     start_time: Instant,
     response: &upstream_proto::InvokeResponse,
 ) {
-    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
     let mut headers = HashMap::new();
     if let Some(ref t) = req.trace {
         if !t.request_id.is_empty() {
@@ -431,7 +431,7 @@ fn emit_bypass_access(
         .filter(|s| !s.is_empty())
         .unwrap_or("http_json");
     let (status_code, upstream_url) = if let Some(ref meta) = response.upstream_meta {
-        (meta.status as u16, meta.url.clone())
+        (u16::saturating_from(meta.status), meta.url.clone())
     } else {
         (
             if response.success { 200 } else { 502 },

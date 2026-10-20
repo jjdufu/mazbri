@@ -8,11 +8,8 @@ use mazbri_service::{init_service_runtime, run_toml_config_service};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<RateLimitServiceConfig, _, _>(
-        "mazbri-ratelimit-service",
-        "ratelimit-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-ratelimit-service")?;
+    run_toml_config_service::<RateLimitServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri Rate Limiting Service starting...");
             tracing::info!("Server configuration: {:?}", runtime.ctx.config.server);
             let db = create_pool(&runtime.ctx.config.database, None).await?;

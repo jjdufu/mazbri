@@ -11,7 +11,7 @@ pub struct FallbackManager {
     cache: Arc<HybridFallbackCache>,
 }
 impl FallbackManager {
-    pub fn new(config: CBProServiceConfig, redis: Option<Arc<RedisFallbackRepository>>) -> Self {
+    pub fn new(config: &CBProServiceConfig, redis: Option<Arc<RedisFallbackRepository>>) -> Self {
         let cache = Arc::new(HybridFallbackCache::new(&config.cache, redis));
         CbProMetricsRecorder::record_state_transition("init", "closed");
         CbProMetricsRecorder::set_current_state(0);
@@ -83,6 +83,6 @@ impl FallbackManager {
         }
     }
     fn build_cache_key(product_id: &str, tenant_id: &str, key: &str) -> String {
-        format!("{}:{}:{}", product_id, tenant_id, key)
+        format!("{product_id}:{tenant_id}:{key}")
     }
 }

@@ -3,8 +3,8 @@ mod circuit_breaker;
 mod client_ip;
 pub mod codec;
 pub mod config;
-/// Backward-compatible alias for the former `config_loader` module path.
-pub use config as config_loader;
+pub mod num;
+pub mod service_identity;
 pub mod config_watch;
 pub mod crypto;
 mod db;
@@ -45,9 +45,13 @@ pub use codec::{
     serialize_payload,
 };
 pub use config::{
-    BootstrapConfig, CertServiceCredential, DatabaseConfig, MetricsConfig, PgCredential,
-    PgCredentials, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
-    get_cert_service_token, is_dev_flag, load_credentials,
+    CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, PgCredential, PgCredentials,
+    PureBootstrap, RegistrationConfig, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
+    build_log_routes, get_cert_service_token, is_dev_flag, load_toml,
+};
+pub use service_identity::{
+    CANONICAL_SERVICES, GLOBAL_CONFIG_NAME, ServiceIdentityError, ServiceName,
+    validate_config_target,
 };
 pub use crypto::supplier_secrets::{
     ENCRYPTED_PREFIX, decrypt_secret, encrypt_secret, is_encrypted_secret, supplier_secrets_key,

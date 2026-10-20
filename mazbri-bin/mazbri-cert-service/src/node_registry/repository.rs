@@ -9,16 +9,20 @@ pub struct NodeRegistryRepository {
     db: Arc<PgPool>,
 }
 impl NodeRegistryRepository {
+    #[must_use]
     pub fn new(db: Arc<PgPool>) -> Self {
         Self { db }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn register(&self, data: &RegisterNodeData) -> Result<RegisteredNode, sqlx::Error> {
         let started_at = DateTime::from_timestamp(data.started_at, 0).unwrap_or_else(Utc::now);
         sqlx::query_as::<
             _,
             RegisteredNode,
         >(
-                r#"
+                r"
             INSERT INTO registered_nodes
                 (service_name, ip, port, started_at, config_version, config_md5, health_check_url, last_heartbeat_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
@@ -29,11 +33,11 @@ impl NodeRegistryRepository {
                 health_check_url = EXCLUDED.health_check_url,
                 last_heartbeat_at = NOW()
             RETURNING *
-            "#,
+            ",
             )
             .bind(&data.service_name)
             .bind(&data.ip)
-            .bind(data.port as i32)
+            .bind(i32::from(data.port))
             .bind(started_at)
             .bind(data.config_version)
             .bind(&data.config_md5)
@@ -41,6 +45,9 @@ impl NodeRegistryRepository {
             .fetch_one(&*self.db)
             .await
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn heartbeat(
         &self,
         data: &HeartbeatData,
@@ -48,33 +55,39 @@ impl NodeRegistryRepository {
         port: u16,
     ) -> Result<bool, sqlx::Error> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE registered_nodes
             SET last_heartbeat_at = NOW(), config_version = $4
             WHERE service_name = $1 AND ip = $2 AND port = $3
-            "#,
+            ",
         )
         .bind(&data.service_name)
         .bind(ip)
-        .bind(port as i32)
+        .bind(i32::from(port))
         .bind(data.config_version)
         .execute(&*self.db)
         .await?;
         Ok(result.rows_affected() > 0)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_online(&self) -> Result<Vec<RegisteredNode>, sqlx::Error> {
         let cutoff = Utc::now() - Duration::seconds(HEARTBEAT_TIMEOUT_SECONDS);
         sqlx::query_as::<_, RegisteredNode>(
-            r#"
+            r"
             SELECT * FROM registered_nodes
             WHERE last_heartbeat_at > $1
             ORDER BY service_name, ip, port
-            "#,
+            ",
         )
         .bind(cutoff)
         .fetch_all(&*self.db)
         .await
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn cleanup_offline(&self) -> Result<u64, sqlx::Error> {
         let cutoff = Utc::now() - Duration::seconds(HEARTBEAT_TIMEOUT_SECONDS);
         let result = sqlx::query("DELETE FROM registered_nodes WHERE last_heartbeat_at < $1")

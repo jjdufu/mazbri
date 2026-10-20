@@ -32,7 +32,6 @@ export interface FullCertificateResponse {
 }
 export interface IssueCertificateRequest {
   subject: string;
-  dns_names: string[];
   validity_days?: number;
 }
 export interface IssueCertificateResponse {
@@ -47,23 +46,6 @@ export interface IssueCertificateResponse {
 }
 export interface RenewCertificateRequest {
   validity_days?: number;
-}
-export interface PresetDnsName {
-  id: string;
-  service_name: string;
-  dns_names: string[];
-  description?: string;
-  created_at: ISODateString;
-  updated_at: ISODateString;
-}
-export interface CreatePresetRequest {
-  service_name: string;
-  dns_names: string[];
-  description?: string;
-}
-export interface UpdatePresetRequest {
-  dns_names?: string[];
-  description?: string;
 }
 export interface AutoRenewalConfig {
   enabled: boolean;

@@ -29,7 +29,7 @@ SERVICES = {
     "mazbri-cbpro-service": ("mazbri-cbpro", "cbpro"),
     "mazbri-cert-service": ("mazbri-cert", "cert"),
     "mazbri-gateway": ("mazbri-gateway", "gateway"),
-    "mazbri-mgmt-api-v2": ("mazbri-mgmt", "mgmt"),
+    "mazbri-mgmt": ("mazbri-mgmt", "mgmt"),
     "mazbri-ratelimit-service": ("mazbri-ratelimit", "ratelimit"),
 }
 # Any change here rebuilds every image.
@@ -97,7 +97,7 @@ def main():
                         add(s, f)
                 continue
             if f.startswith("mazbri-web/"):  # embedded by mgmt build.rs
-                add("mazbri-mgmt-api-v2", f)
+                add("mazbri-mgmt", f)
                 continue
             if any(re.search(g, f) for g in IGNORE):
                 continue

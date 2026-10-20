@@ -13,11 +13,8 @@ use mazbri_service::{init_service_runtime, run_toml_config_service};
 use std::sync::Arc;
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<CBProServiceConfig, _, _>(
-        "mazbri-cbpro-service",
-        "cbpro-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-cbpro-service")?;
+    run_toml_config_service::<CBProServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri CBPro Service starting...");
             tracing::info!(
                 "Server config: {}:{}",
@@ -27,15 +24,15 @@ async fn main() -> Result<()> {
             let redis = Arc::new(RedisFallbackRepository::new(
                 mazbri_core::redis::RedisClient::connect_with_config(&runtime.ctx.config.redis)
                     .await
-                    .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {}", error))?,
+                    .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?,
             ));
             tracing::info!("Redis connection established");
             let admin_state = runtime.start_admin(&runtime.ctx.config.admin, None)?;
             mazbri_core::metrics::register_cbpro_metrics()
-                .map_err(|e| anyhow::anyhow!("Failed to register cbpro metrics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to register cbpro metrics: {e}"))?;
             tracing::info!("CBPro 指标已注册");
             let manager = Arc::new(FallbackManager::new(
-                runtime.ctx.config.clone(),
+                &runtime.ctx.config,
                 Some(redis),
             ));
             tracing::info!("Fallback manager initialized with hybrid cache (memory + redis)");

@@ -37,6 +37,6 @@ mod types_and_entry;
 // Re-export public(crate) API used by proxy handler / other gateway modules.
 pub(crate) use types_and_entry::*;
 // Keep sibling helpers in this module's namespace for `use super::*` in children.
-use cbpro::*;
-use channel::*;
-use http_upstream::*;
+use cbpro::{build_fallback_cache_key, enqueue_cbpro_observation, build_observation_request, ObservationRequestParts, try_cbpro_fallback};
+use channel::{resolve_mode_and_contract_hint, spawn_persist_event_best_effort, execute_channel_attempt, should_switch_status, store_fallback_snapshot, should_switch};
+use http_upstream::{execute_http_upstream_request, proxy_body_to_json_value};

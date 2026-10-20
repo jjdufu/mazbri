@@ -27,7 +27,7 @@ pub async fn get_config_history(
             (StatusCode::OK, Json(history)).into_response()
         }
         Err(e) => {
-            let message = format!("获取配置历史记录失败: {} - {}", service, e);
+            let message = format!("获取配置历史记录失败: {service} - {e}");
             log_config_error(
                 "config_history_get_failed",
                 mazbri_core::error_codes::INTERNAL_ERROR,
@@ -56,31 +56,28 @@ pub async fn get_config_history_version(
         service = % service, version = version, request_id = % request_context.request_id,
         trace_id = % request_context.trace_id, "获取特定版本的配置历史记录请求"
     );
-    match state.repo.get_history_version(&service, version).await {
-        Ok(history) => {
-            info!(
-                service = % service, version = version,
-                "特定版本的配置历史记录已获取"
-            );
-            (StatusCode::OK, Json(history)).into_response()
-        }
-        Err(_) => {
-            let message = format!("历史版本不存在: {}/v{}", service, version);
-            log_config_error(
-                "config_history_version_not_found",
-                mazbri_core::error_codes::NOT_FOUND,
-                &request_context.request_id,
-                &request_context.trace_id,
-                &message,
-            );
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!(
-                    { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
-                    NOT_FOUND_MESSAGE }
-                )),
-            )
-                .into_response()
-        }
+    if let Ok(history) = state.repo.get_history_version(&service, version).await {
+        info!(
+            service = % service, version = version,
+            "特定版本的配置历史记录已获取"
+        );
+        (StatusCode::OK, Json(history)).into_response()
+    } else {
+        let message = format!("历史版本不存在: {service}/v{version}");
+        log_config_error(
+            "config_history_version_not_found",
+            mazbri_core::error_codes::NOT_FOUND,
+            &request_context.request_id,
+            &request_context.trace_id,
+            &message,
+        );
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!(
+                { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
+                NOT_FOUND_MESSAGE }
+            )),
+        )
+            .into_response()
     }
 }

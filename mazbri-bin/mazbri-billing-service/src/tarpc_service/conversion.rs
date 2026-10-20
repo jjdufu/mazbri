@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use mazbri_billing::BillLineItem;
 use mazbri_billing::BillingError;
 use mazbri_billing::UsageBreakdownItem;
@@ -45,7 +46,7 @@ pub(super) fn to_amount(value: Decimal) -> Result<Amount, String> {
             value = % value, scaled = % scaled, error = % e,
             "to_amount: Decimal 值溢出 i64 范围，无法转换为分"
         );
-        format!("金额溢出: {} * 100 = {} ({})", value, scaled, e)
+        format!("金额溢出: {value} * 100 = {scaled} ({e})")
     })?;
     Ok(Amount {
         value: int_value,
@@ -61,15 +62,15 @@ pub(super) fn fallback_amount() -> Amount {
     }
 }
 pub(super) fn from_amount(amount: &Amount) -> Decimal {
-    Decimal::from(amount.value) / Decimal::from(100i64.pow(amount.decimals as u32))
+    Decimal::from(amount.value) / Decimal::from(100i64.pow(u32::saturating_from(amount.decimals)))
 }
 pub(super) fn map_bill_status(status: &str) -> mazbri_rpc::billing::BillStatus {
     match status {
         "pending" => mazbri_rpc::billing::BillStatus::Pending,
-        "processing" => mazbri_rpc::billing::BillStatus::Draft,
         "paid" => mazbri_rpc::billing::BillStatus::Paid,
         "overdue" => mazbri_rpc::billing::BillStatus::Overdue,
         "cancelled" => mazbri_rpc::billing::BillStatus::Cancelled,
+        // "processing" 及未知状态均视为草稿
         _ => mazbri_rpc::billing::BillStatus::Draft,
     }
 }
@@ -91,7 +92,7 @@ pub(super) fn map_bill_line_item(
     tenant_id: &Uuid,
 ) -> mazbri_rpc::billing::BillLineItem {
     mazbri_rpc::billing::BillLineItem {
-        item_id: format!("item-{}", index),
+        item_id: format!("item-{index}"),
         description: item.api_endpoint.clone(),
         billing_type: map_billing_type(&item.billing_type),
         quantity: item.call_count,
@@ -123,7 +124,7 @@ pub(super) fn map_usage_breakdown(
     }
 }
 pub(super) fn map_bill_info_to_rpc(
-    bill: mazbri_billing::BillInfo,
+    bill: &mazbri_billing::BillInfo,
     items: Vec<mazbri_rpc::billing::BillLineItem>,
     tenant_id: &Uuid,
 ) -> mazbri_rpc::billing::Bill {
@@ -140,6 +141,6 @@ pub(super) fn map_bill_info_to_rpc(
         items,
         created_at: bill.created_at.timestamp(),
         due_at: 0,
-        paid_at: bill.paid_at.map(|t| t.timestamp()).unwrap_or(0),
+        paid_at: bill.paid_at.map_or(0, |t| t.timestamp()),
     }
 }

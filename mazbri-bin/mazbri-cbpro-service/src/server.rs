@@ -23,6 +23,6 @@ pub async fn serve(
         |svc: CBProServiceImpl, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
     )
     .await
-    .map_err(|e| anyhow::anyhow!("tarpc server error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;
     Ok(())
 }

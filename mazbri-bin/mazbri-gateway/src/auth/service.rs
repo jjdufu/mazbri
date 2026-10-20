@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::claims::{AccountType, MazbriClaims};
 use super::jwt_keys::JwtHs256Keyring;
 use crate::config::ServiceEndpoint;
@@ -32,11 +33,13 @@ fn default_grant_type() -> String {
     "client_credentials".to_string()
 }
 impl TokenRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), TokenError> {
         if self.api_key.len() > MAX_API_KEY_LENGTH {
             return Err(TokenError::InvalidApiKey(format!(
-                "API key 长度超过限制: 最大 {} 字节",
-                MAX_API_KEY_LENGTH
+                "API key 长度超过限制: 最大 {MAX_API_KEY_LENGTH} 字节"
             )));
         }
         if self.grant_type != default_grant_type() {
@@ -98,11 +101,11 @@ pub enum TokenError {
 impl std::fmt::Display for TokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenError::InvalidApiKey(msg) => write!(f, "Invalid API key: {}", msg),
-            TokenError::TenantNotFound(id) => write!(f, "Tenant not found: {}", id),
-            TokenError::TenantSuspended(id) => write!(f, "Tenant suspended: {}", id),
-            TokenError::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            TokenError::RpcError(msg) => write!(f, "Auth service unavailable: {}", msg),
+            TokenError::InvalidApiKey(msg) => write!(f, "Invalid API key: {msg}"),
+            TokenError::TenantNotFound(id) => write!(f, "Tenant not found: {id}"),
+            TokenError::TenantSuspended(id) => write!(f, "Tenant suspended: {id}"),
+            TokenError::InternalError(msg) => write!(f, "Internal error: {msg}"),
+            TokenError::RpcError(msg) => write!(f, "Auth service unavailable: {msg}"),
         }
     }
 }
@@ -118,6 +121,7 @@ pub struct AuthService {
     token_cache: Arc<DashMap<String, CachedTokenResponse>>,
 }
 impl AuthService {
+    #[must_use]
     pub fn new(
         keyring: JwtHs256Keyring,
         token_expiration_secs: usize,
@@ -135,7 +139,10 @@ impl AuthService {
             token_cache: Arc::new(DashMap::new()),
         }
     }
-    pub async fn generate_token(
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub fn generate_token(
         &self,
         tenant_id: &str,
         tenant_code: &str,
@@ -144,13 +151,13 @@ impl AuthService {
         scopes: Vec<String>,
     ) -> Result<String, TokenError> {
         let now = chrono::Utc::now();
-        let expiration = now + chrono::Duration::seconds(expiration_secs as i64);
+        let expiration = now + chrono::Duration::seconds(i64::saturating_from(expiration_secs));
         // H-14: account tier is reserved; always Standard (no plan binding yet).
         let account_type = AccountType::Standard;
         let claims = MazbriClaims {
             sub: tenant_id.to_string(),
-            exp: expiration.timestamp() as usize,
-            iat: now.timestamp() as usize,
+            exp: usize::saturating_from(expiration.timestamp()),
+            iat: usize::saturating_from(now.timestamp()),
             iss: "mazbri.com".to_string(),
             jti: Uuid::new_v4().to_string(),
             tenant_id: tenant_id.to_string(),
@@ -162,8 +169,11 @@ impl AuthService {
         let mut header = Header::new(jsonwebtoken::Algorithm::HS256);
         header.kid = Some(self.keyring.current_kid().to_string());
         encode(&header, &claims, &self.keyring.encoding_key())
-            .map_err(|e| TokenError::InternalError(format!("JWT 编码失败: {}", e)))
+            .map_err(|e| TokenError::InternalError(format!("JWT 编码失败: {e}")))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn authenticate_and_generate_token(
         &self,
         api_key: &str,
@@ -186,14 +196,12 @@ impl AuthService {
                     "Auth tarpc client failed; evicting cached client and retrying once"
                 );
                 self.tarpc_pool
-                    .remove_client(self.auth_endpoint.url())
-                    .await;
+                    .remove_client(self.auth_endpoint.url());
                 self.validate_api_key(&request)
                     .await
                     .map_err(|second_error| {
                         TokenError::RpcError(format!(
-                            "验证 API Key 失败: first={}, retry={}",
-                            first_error, second_error
+                            "验证 API Key 失败: first={first_error}, retry={second_error}"
                         ))
                     })?
             }
@@ -218,8 +226,7 @@ impl AuthService {
                 &tenant_info.name,
                 expiration_secs,
                 response.scopes,
-            )
-            .await?;
+            )?;
         Ok(TokenResponse {
             success: true,
             access_token: Some(token),
@@ -247,38 +254,38 @@ impl AuthService {
             self.tenant_cache.remove(tenant_id);
         }
         let tenant_uuid = uuid::Uuid::parse_str(tenant_id).map_err(|e| {
-            TokenError::InternalError(format!("无效的租户 ID 格式 '{}': {}", tenant_id, e))
+            TokenError::InternalError(format!("无效的租户 ID 格式 '{tenant_id}': {e}"))
         })?;
         let row = sqlx::query(
-            r#"
+            r"
             SELECT tenant_code, name, status, token_expiration_secs
             FROM tenants
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(tenant_uuid)
         .fetch_optional(&*self.db)
         .await
-        .map_err(|e| TokenError::InternalError(format!("查询租户失败: {}", e)))?
+        .map_err(|e| TokenError::InternalError(format!("查询租户失败: {e}")))?
         .ok_or_else(|| TokenError::TenantNotFound(tenant_id.to_string()))?;
         let status: String = row
             .try_get("status")
-            .map_err(|e| TokenError::InternalError(format!("获取租户状态失败: {}", e)))?;
+            .map_err(|e| TokenError::InternalError(format!("获取租户状态失败: {e}")))?;
         // Only active tenants may obtain/use tokens (disabled/suspended/pending blocked).
         if status != "active" {
             return Err(TokenError::TenantSuspended(tenant_id.to_string()));
         }
         let code: String = row
             .try_get("tenant_code")
-            .map_err(|e| TokenError::InternalError(format!("获取 tenant_code 失败: {}", e)))?;
+            .map_err(|e| TokenError::InternalError(format!("获取 tenant_code 失败: {e}")))?;
         let name: String = row
             .try_get("name")
-            .map_err(|e| TokenError::InternalError(format!("获取 tenant_name 失败: {}", e)))?;
+            .map_err(|e| TokenError::InternalError(format!("获取 tenant_name 失败: {e}")))?;
         let token_expiration_secs: Option<i32> =
             row.try_get("token_expiration_secs").map_err(|e| {
-                TokenError::InternalError(format!("获取 token_expiration_secs 失败: {}", e))
+                TokenError::InternalError(format!("获取 token_expiration_secs 失败: {e}"))
             })?;
-        let token_expiration_secs = token_expiration_secs.map(|v| v as usize);
+        let token_expiration_secs = token_expiration_secs.map(usize::saturating_from);
         let tenant_info = TenantDbInfo {
             code,
             name,
@@ -293,11 +300,12 @@ impl AuthService {
         );
         Ok(tenant_info)
     }
+    #[must_use]
     pub fn get_db(&self) -> &PgPool {
         &self.db
     }
     pub fn cache_token_response(&self, api_key: String, response: TokenResponse, ttl_secs: usize) {
-        let ttl_secs = ttl_secs.min(TOKEN_RESPONSE_CACHE_TTL_SECS as usize) as u64;
+        let ttl_secs = ttl_secs.min(usize::saturating_from(TOKEN_RESPONSE_CACHE_TTL_SECS)) as u64;
         self.token_cache.insert(
             api_key,
             CachedTokenResponse {
@@ -312,9 +320,9 @@ impl AuthService {
     ) -> Result<mazbri_rpc::auth::ValidateApiKeyResponse, TokenError> {
         let client = self
             .tarpc_pool
-            .get_auth_client(self.auth_endpoint.url(), self.auth_endpoint.server_name())
+            .get_auth_client(self.auth_endpoint.url())
             .await
-            .map_err(|e| TokenError::RpcError(format!("连接认证服务失败: {}", e)))?;
+            .map_err(|e| TokenError::RpcError(format!("连接认证服务失败: {e}")))?;
         match client
             .validate_api_key(tarpc::context::current(), request.clone())
             .await
@@ -322,8 +330,7 @@ impl AuthService {
             Ok(res) => Ok(res),
             Err(e) => {
                 self.tarpc_pool
-                    .remove_client(self.auth_endpoint.url())
-                    .await;
+                    .remove_client(self.auth_endpoint.url());
                 Err(TokenError::RpcError(e.to_string()))
             }
         }
@@ -391,7 +398,7 @@ pub async fn token_handler(
                 TokenError::TenantNotFound(_) => StatusCode::NOT_FOUND,
                 TokenError::TenantSuspended(_) => StatusCode::FORBIDDEN,
                 TokenError::RpcError(_) => StatusCode::SERVICE_UNAVAILABLE,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+                TokenError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
             (status, Json(resp)).into_response()
         }

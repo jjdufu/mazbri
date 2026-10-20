@@ -1,4 +1,4 @@
-use super::*;
+use super::{debug, info, ProxyState, GatewayRequest, MazbriClaims, UpstreamResponse, Instant, FallbackRequest, Digest, FallbackSnapshot, Duration, ProxyBody, RuntimeDecision, RuntimeDecisionRequest, ObservationRequest, RngExt, BTreeMap, GatewayRequestBody};
 
 pub(super) async fn try_cbpro_fallback(
     state: &ProxyState,
@@ -62,7 +62,7 @@ pub(super) async fn try_cbpro_fallback(
             path: &req.path,
             cache_key: Some(cache_key.clone()),
             status: Some(snapshot.status),
-            service_total_ms: Some(lookup_started_at.elapsed().as_millis() as u64),
+            service_total_ms: Some(mazbri_core::num::millis_u64(lookup_started_at.elapsed())),
             response: Some(&snapshot.data),
         }),
     );
@@ -72,8 +72,7 @@ pub(super) async fn try_cbpro_fallback(
         "Served response from CBPro fallback snapshot"
     );
     let body_bytes_len = serde_json::to_vec(&snapshot.data)
-        .map(|bytes| bytes.len() as u64)
-        .unwrap_or(0);
+        .map_or(0, |bytes| bytes.len() as u64);
     Some(UpstreamResponse {
         status: snapshot.status,
         body: ProxyBody::JsonValue(snapshot.data),
@@ -213,7 +212,7 @@ pub(super) fn compute_simulated_sleep_ms(
     };
     let target_delay_ms = decision.latency_baseline_ms.saturating_add(jitter);
     target_delay_ms
-        .saturating_sub(actual_elapsed.as_millis() as u64)
+        .saturating_sub(mazbri_core::num::millis_u64(actual_elapsed))
         .min(decision.max_simulated_delay_ms)
 }
 pub(super) fn enqueue_cbpro_observation(state: &ProxyState, observation: ObservationRequest) {

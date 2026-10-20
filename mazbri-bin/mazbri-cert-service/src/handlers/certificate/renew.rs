@@ -1,5 +1,4 @@
 use super::common::{CertificateState, extract_client_ip, update_certificate_inventory_metrics};
-use super::issue::lookup_preset_dns_names;
 use crate::db::CertificateResponse;
 use crate::error::CertError;
 use axum::{
@@ -61,11 +60,7 @@ async fn renew_certificate_inner(
     if existing.revoked {
         return Err(CertError::AlreadyRevoked(id.to_string()));
     }
-    let dns_names = if existing.dns_names.is_empty() {
-        lookup_preset_dns_names(&state, &existing.subject).await?
-    } else {
-        existing.dns_names.clone()
-    };
+    let dns_names = state.san_policy.sans_for_subject(&existing.subject)?;
     let ca_manager = state.base_authorization.require_issuance().await?;
     let (cert_pem, key_encrypted) = ca_manager.issue_certificate(&existing.subject, &dns_names)?;
     let base_time = if existing.expires_at > Utc::now() {
@@ -105,7 +100,7 @@ async fn renew_certificate_inner(
             expires_at: record.expires_at,
             cert_pem,
             key_pem,
-            ca_cert_pem: ca_manager.get_ca_pem().to_string(),
+            ca_cert_pem: ca_manager.get_ca_pem().clone(),
             dns_names,
         }),
     )

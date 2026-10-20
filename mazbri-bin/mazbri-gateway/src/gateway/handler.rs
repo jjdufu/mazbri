@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::execution::execute_gateway_request_with_event;
 use super::metrics::{API_PROXY_DURATION_SECONDS, classify_error_class};
 use super::metrics::{
@@ -33,8 +34,8 @@ const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
 pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 
-use super::post_response::*;
-use super::state::*;
+use super::post_response::{content_length, spawn_post_response_tasks, PostResponseTaskArgs};
+use super::state::GatewayRequestTiming;
 
 /// `unified_gateway_handler` 依次提取的请求扩展。
 type GatewayHandlerExtensions = (
@@ -45,6 +46,9 @@ type GatewayHandlerExtensions = (
     Option<Extension<TenantProductDetail>>,
 );
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn unified_gateway_handler(
     State(state): State<AppState>,
     // 元组提取器按元素顺序逐个提取，失败时返回该元素自己的拒绝响应，
@@ -79,7 +83,7 @@ pub async fn unified_gateway_handler(
             return Err(ProxyError::Forbidden(TENANT_ACCESS_DENIED.to_string()));
         }
     };
-    let tenant_id_validation_ms = tenant_id_validation_started_at.elapsed().as_millis() as u64;
+    let tenant_id_validation_ms = mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
     let (req, crypto_profile, request_was_encrypted, crypto_timing) = state
         .proxy_state
         .crypto_state
@@ -88,36 +92,36 @@ pub async fn unified_gateway_handler(
     if request_was_encrypted {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total_ms, request_id = % request_id, tenant_id =
+            stage_ms = crypto_timing.transport_total, request_id = % request_id, tenant_id =
             % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
             req.product_id, method = % req.method, path = % req.path, encrypted_request = true,
-            transport_profile_ms = crypto_timing.transport_profile_ms, transport_total_ms =
-            crypto_timing.transport_total_ms, crypto_total_ms = crypto_timing.transport_total_ms,
-            crypto_profile_ms = crypto_timing.transport_profile_ms, crypto_envelope_ms =
-            crypto_timing.envelope_ms, crypto_preflight_ms = crypto_timing.preflight_ms,
-            crypto_nonce_ms = crypto_timing.nonce_ms, crypto_tenant_key_ms =
-            crypto_timing.tenant_key_ms, crypto_tenant_key_db_ms = crypto_timing.tenant_key_db_ms,
-            crypto_tenant_key_root_material_ms = crypto_timing.tenant_key_root_material_ms,
-            crypto_tenant_key_local_ms = crypto_timing.tenant_key_local_ms,
-            crypto_signature_ms = crypto_timing.signature_ms, crypto_decrypt_ms =
-            crypto_timing.decrypt_ms, crypto_parse_ms = crypto_timing.parse_ms,
+            transport_profile_ms = crypto_timing.transport_profile, transport_total_ms =
+            crypto_timing.transport_total, crypto_total_ms = crypto_timing.transport_total,
+            crypto_profile_ms = crypto_timing.transport_profile, crypto_envelope_ms =
+            crypto_timing.envelope, crypto_preflight_ms = crypto_timing.preflight,
+            crypto_nonce_ms = crypto_timing.nonce, crypto_tenant_key_ms =
+            crypto_timing.tenant_key, crypto_tenant_key_db_ms = crypto_timing.tenant_key_db,
+            crypto_tenant_key_root_material_ms = crypto_timing.tenant_key_root_material,
+            crypto_tenant_key_local_ms = crypto_timing.tenant_key_local,
+            crypto_signature_ms = crypto_timing.signature, crypto_decrypt_ms =
+            crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse,
             codec_version = crypto_profile.codec_version, message =
             "Gateway transport stage completed"
         );
     } else {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total_ms, request_id = % request_id, tenant_id =
+            stage_ms = crypto_timing.transport_total, request_id = % request_id, tenant_id =
             % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
             req.product_id, method = % req.method, path = % req.path, encrypted_request =
-            false, transport_profile_ms = crypto_timing.transport_profile_ms,
-            transport_total_ms = crypto_timing.transport_total_ms, codec_version =
+            false, transport_profile_ms = crypto_timing.transport_profile,
+            transport_total_ms = crypto_timing.transport_total, codec_version =
             crypto_profile.codec_version, message = "Gateway transport stage completed"
         );
     }
     let request_validate_started_at = Instant::now();
     req.validate()?;
-    let request_validate_ms = request_validate_started_at.elapsed().as_millis() as u64;
+    let request_validate_ms = mazbri_core::num::millis_u64(request_validate_started_at.elapsed());
 
     let mut idempotency_ms = 0u64;
     let mut idempotency_acquired = false;
@@ -135,12 +139,11 @@ pub async fn unified_gateway_handler(
                     request_id, fingerprint
                 );
                 return Err(ProxyError::Conflict(format!(
-                    "Duplicate request is still processing: {}",
-                    fingerprint
+                    "Duplicate request is still processing: {fingerprint}"
                 )));
             }
             Ok(crate::crypto::IdempotencyOutcome::Completed(record)) => {
-                idempotency_ms = idempotency_started_at.elapsed().as_millis() as u64;
+                idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
                 info!(
                     target: "gateway.stage",
                     service = "mazbri-gateway",
@@ -179,7 +182,7 @@ pub async fn unified_gateway_handler(
                 error!("[{}] Idempotency check failed: {}", request_id, error);
             }
         }
-        idempotency_ms = idempotency_started_at.elapsed().as_millis() as u64;
+        idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
         info!(
             target: "gateway.stage",
             service = "mazbri-gateway",
@@ -196,7 +199,7 @@ pub async fn unified_gateway_handler(
             message = "Gateway idempotency stage completed"
         );
     }
-    timing.tenant_validation_ms = tenant_validation_started_at.elapsed().as_millis() as u64;
+    timing.tenant_validation_ms = mazbri_core::num::millis_u64(tenant_validation_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "request_prepare",
         stage_ms = timing.tenant_validation_ms, request_id = % request_id, tenant_id = %
@@ -215,10 +218,10 @@ pub async fn unified_gateway_handler(
             .get_tenant_product_config(tenant_uuid, &req.product_id)
             .await
             .map_err(|e| -> ProxyError {
-                ProxyError::InternalError(format!("查找租户产品配置失败: {}", e))
+                ProxyError::InternalError(format!("查找租户产品配置失败: {e}"))
             })?,
     };
-    timing.product_detail_lookup_ms = product_detail_lookup_started_at.elapsed().as_millis() as u64;
+    timing.product_detail_lookup_ms = mazbri_core::num::millis_u64(product_detail_lookup_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
         "product_detail_lookup", stage_ms = timing.product_detail_lookup_ms, request_id =
@@ -243,7 +246,7 @@ pub async fn unified_gateway_handler(
     let proxy_cache_key = super::response_cache::build_proxy_cache_key(&req);
     let cache_hit = super::response_cache::try_get_cached_response(
         &state.proxy_state.tarpc_pool,
-        &state.proxy_state.services_config.cache_url,
+        &state.proxy_state.services_config.cache,
         &claims.tenant_id,
         &proxy_cache_key,
     )
@@ -263,8 +266,8 @@ pub async fn unified_gateway_handler(
                 product_id = %req.product_id,
                 path = %req.path,
                 cache_key = %proxy_cache_key,
-                channel_id = matched_route.as_ref().map(|r| r.channel_id.as_str()).unwrap_or(""),
-                channel_code = matched_route.as_ref().map(|r| r.channel_code.as_str()).unwrap_or(""),
+                channel_id = matched_route.as_ref().map_or("", |r| r.channel_id.as_str()),
+                channel_code = matched_route.as_ref().map_or("", |r| r.channel_code.as_str()),
                 message = "Gateway response cache hit"
             );
             (
@@ -301,7 +304,7 @@ pub async fn unified_gateway_handler(
                 }
             }
         };
-    timing.upstream_ms = upstream_started_at.elapsed().as_millis() as u64;
+    timing.upstream_ms = mazbri_core::num::millis_u64(upstream_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "upstream",
         stage_ms = timing.upstream_ms, request_id = % request_id, tenant_id = %
@@ -312,7 +315,7 @@ pub async fn unified_gateway_handler(
     // Populate cache after successful upstream (not on cache hits).
     if !from_cache {
         let pool = state.proxy_state.tarpc_pool.clone();
-        let endpoint = state.proxy_state.services_config.cache_url.clone();
+        let endpoint = state.proxy_state.services_config.cache.clone();
         let tenant_id = claims.tenant_id.clone();
         let cache_key = proxy_cache_key.clone();
         let path = req.path.clone();
@@ -347,10 +350,9 @@ pub async fn unified_gateway_handler(
         &response_body.body,
         response_error.as_deref(),
         response_body.content_type.as_deref(),
-        response_body.body_bytes_len,
     )?;
     let is_success = serialized_response.success;
-    let response_serialize_ms = response_serialize_started_at.elapsed().as_millis() as u64;
+    let response_serialize_ms = mazbri_core::num::millis_u64(response_serialize_started_at.elapsed());
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
         "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id,
@@ -367,8 +369,6 @@ pub async fn unified_gateway_handler(
         let bytes_out = serialized_response
             .response_bytes
             .max(response_body.body_bytes_len);
-        // Touch policy_id so prepaid correlation remains intentional for observability.
-        let _policy_id = prepaid.policy_id;
         state
             .proxy_state
             .local_ratelimiter
@@ -403,7 +403,7 @@ pub async fn unified_gateway_handler(
     } else {
         None
     };
-    let response_encrypt_ms = response_encrypt_started_at.elapsed().as_millis() as u64;
+    let response_encrypt_ms = mazbri_core::num::millis_u64(response_encrypt_started_at.elapsed());
     if crypto_profile.encryption_mode == "full" {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name =
@@ -453,13 +453,13 @@ pub async fn unified_gateway_handler(
             tenant_product_detail: Some(tenant_product_detail.clone()),
             tenant_product_id: tenant_product_detail.product_id,
             interaction_event_id,
-            service_total_ms: start.elapsed().as_millis() as i32,
+            service_total_ms: i32::saturating_from(start.elapsed().as_millis()),
             upstream_route: upstream_route.clone(),
             fingerprint: req.fingerprint.clone(),
         },
     );
     let elapsed = start.elapsed();
-    let customer_total_ms = elapsed.as_millis() as u64;
+    let customer_total_ms = mazbri_core::num::millis_u64(elapsed);
     // 仅平台依赖等待（限流/余额/产品），不含上游出站等待
     let dependency_wait_ms =
         timing.ratelimit_ms + timing.balance_check_ms + timing.product_detail_lookup_ms;
@@ -467,21 +467,19 @@ pub async fn unified_gateway_handler(
     let internal_ms = customer_total_ms.saturating_sub(timing.upstream_ms);
     let upstream_mode = upstream_route
         .as_ref()
-        .map(|r| r.upstream_mode.as_str())
-        .unwrap_or("unknown");
+        .map_or("unknown", |r| r.upstream_mode.as_str());
     let contract_id = upstream_route
         .as_ref()
-        .map(|r| r.contract_id.as_str())
-        .unwrap_or("");
+        .map_or("", |r| r.contract_id.as_str());
     API_PROXY_DURATION_SECONDS
         .with_label_values(&[&req.product_id, &req.method, upstream_mode])
         .observe(elapsed.as_secs_f64());
     GATEWAY_PLATFORM_LOCAL_SECONDS
         .with_label_values(&[&req.product_id])
-        .observe(internal_ms as f64 / 1000.0);
+        .observe(mazbri_core::num::u64_to_f64(internal_ms) / 1000.0);
     GATEWAY_UPSTREAM_WAIT_SECONDS
         .with_label_values(&[&req.product_id, upstream_mode])
-        .observe(timing.upstream_ms as f64 / 1000.0);
+        .observe(mazbri_core::num::u64_to_f64(timing.upstream_ms) / 1000.0);
     // 平台摘要全量保留，便于算 platform_ms
     if super::stage_log::always_log_stage() {
         info!(
@@ -502,9 +500,7 @@ pub async fn unified_gateway_handler(
     }
     let response_bytes = serialized_response.response_bytes;
     let route_template = upstream_route
-        .as_ref()
-        .map(|route| route.route_template.clone())
-        .unwrap_or_else(|| req.path.clone());
+        .as_ref().map_or_else(|| req.path.clone(), |route| route.route_template.clone());
     // Cache / CBPro did not call live upstream — do not imply an upstream host RTT.
     let upstream_host = if from_cache || from_cbpro_fallback {
         None
@@ -565,7 +561,7 @@ pub async fn unified_gateway_handler(
             host_header: headers
                 .get("host")
                 .and_then(|value| value.to_str().ok())
-                .map(|value| value.to_string()),
+                .map(std::string::ToString::to_string),
             path: req.path.clone(),
             route_template,
             status_code: serialized_response.status,
@@ -592,7 +588,7 @@ pub async fn unified_gateway_handler(
             xff: headers
                 .get("x-forwarded-for")
                 .and_then(|value| value.to_str().ok())
-                .map(|value| value.to_string()),
+                .map(std::string::ToString::to_string),
             cache_hit: from_cache,
             fallback_used: from_cbpro_fallback,
             retry_count,

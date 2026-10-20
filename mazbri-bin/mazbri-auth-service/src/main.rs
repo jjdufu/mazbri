@@ -7,11 +7,8 @@ use mazbri_core::create_pool;
 use mazbri_service::{init_service_runtime, run_toml_config_service};
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<AuthServiceConfig, _, _>(
-        "mazbri-auth-service",
-        "auth-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-auth-service")?;
+    run_toml_config_service::<AuthServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri Authentication Service starting...");
             tracing::info!("Server configuration: {:?}", runtime.ctx.config.server);
             let db = create_pool(&runtime.ctx.config.database, None).await?;
@@ -33,7 +30,7 @@ async fn main() -> Result<()> {
                 validation_cache_max_entries: runtime.ctx.config.auth.validation_cache_max_entries,
             };
             mazbri_auth::register_auth_metrics()
-                .map_err(|e| anyhow::anyhow!("Failed to register auth metrics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to register auth metrics: {e}"))?;
             tracing::info!("认证指标已注册");
             let addr = runtime.ctx.config.server.socket_addr()?;
             tracing::info!("tarpc server listening on {} (mTLS mandatory)", addr);

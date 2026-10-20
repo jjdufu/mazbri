@@ -791,7 +791,6 @@
       "certificates": "Certificate Management",
       "certificateList": "Certificate List",
       "certificateDetail": "Certificate Detail",
-      "certificatePresets": "Preset Templates",
       "authorizationManagement": "Authorization Management",
       "billList": "Bills",
       "usageReconciliation": "Usage Reconciliation",
@@ -851,7 +850,7 @@
       "resetToDefault": "Reset to Default",
       "appearanceSettingsTitle": "Appearance Settings",
       "tenantGatewayUrl": "Tenant Gateway URL",
-      "tenantGatewayUrlPlaceholder": "http://gateway.mazbri.local:8080",
+      "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "Tenant API gateway base URL (not the admin console)."
     },
     "theme": {
@@ -1388,10 +1387,6 @@
       "certificateIssue": "Issue Certificate",
       "certificateRenew": "Renew Certificate",
       "certificateRevoke": "Revoke Certificate",
-      "certificatePresetCreate": "Add Preset Template",
-      "certificatePresetUpdate": "Update Preset Template",
-      "certificatePresetDelete": "Delete Preset Template",
-      "certificatePresetImport": "Import Preset Template",
       "settingsUpdate": "Update System Settings",
       "passwordPolicyUpdate": "Update Password Policy",
       "configCenterCreate": "Create Config",
@@ -1449,7 +1444,6 @@
       "product": "Product",
       "apiKey": "API Key",
       "certificate": "Certificate",
-      "certificatePreset": "Certificate Preset Template",
       "system": "System",
       "user": "User",
       "quota": "Quota Config",
@@ -1727,25 +1721,8 @@
     },
     "serviceNameSelector": {
       "label": "Service Name",
-      "placeholder": "Please select a predefined service name",
-      "groups": {
-        "system": "System Presets",
-        "custom": "Custom"
-      },
-      "tags": {
-        "configured": "Configured",
-        "system": "System",
-        "custom": "Custom"
-      },
-      "empty": {
-        "description": "No available service names",
-        "title": "No service names have been defined yet",
-        "subtitle": "Ask an admin to add predefined services first."
-      },
-      "actions": {
-        "manage": "Manage Service Names"
-      },
-      "hint": "Pick a predefined service name."
+      "placeholder": "Select a service",
+      "global": "global (global config)"
     },
     "historyDrawer": {
       "title": "Version History",
@@ -2058,60 +2035,6 @@
         "expiredByDays": "Expired {count} days ago"
       }
     },
-    "presets": {
-      "page": {
-        "title": "Certificate Preset Templates"
-      },
-      "list": {
-        "title": "Preset DNS Templates"
-      },
-      "actions": {
-        "import": "Import",
-        "export": "Export",
-        "exportAll": "Export All",
-        "exportSelected": "Export Selected ({count})",
-        "create": "Add Preset"
-      },
-      "columns": {
-        "serviceName": "Service Name",
-        "dnsNames": "DNS Names",
-        "description": "Description",
-        "createdAt": "Created At"
-      },
-      "empty": "No preset templates",
-      "importDialog": {
-        "title": "Import Preset Templates"
-      },
-      "form": {
-        "createTitle": "Add Preset",
-        "editTitle": "Edit Preset",
-        "fields": {
-          "serviceName": "Service Name",
-          "dnsNames": "DNS Names",
-          "description": "Description"
-        },
-        "placeholders": {
-          "serviceName": "e.g. api-gateway",
-          "dnsNames": "One DNS name per line, e.g.\ngateway.local\napi.local\nadmin.local",
-          "description": "Description of usage (optional)"
-        },
-        "validation": {
-          "serviceNameRequired": "Please enter a service name",
-          "dnsNamesRequired": "Please add at least one DNS name"
-        }
-      },
-      "importHint": {
-        "header": "The file must contain headers: service_name,dns_names,description",
-        "example1": "e.g. gateway,\"gateway.local",
-        "example2": "api.local\",Gateway service"
-      },
-      "importValidation": {
-        "missingServiceName": "Missing service_name",
-        "missingDnsNames": "At least one dns_names is required",
-        "missingColumn": "Missing required column {key}",
-        "failed": "Validation failed"
-      }
-    },
     "list": {
       "title": "Certificate List",
       "actions": {
@@ -2179,16 +2102,9 @@
     },
     "issueDialog": {
       "title": "Issue Certificate",
-      "presetTemplate": "Preset Template",
-      "selectPresetPlaceholder": "Select a preset template (optional)",
-      "unnamed": "Unnamed",
+      "service": "Service",
+      "sanAutoTip": "SANs are generated automatically by cert according to the deployment mode",
       "issued": "Issued",
-      "noPresets": "No available preset templates",
-      "serviceName": "Service Name",
-      "serviceNamePlaceholder": "e.g. mazbri-auth-service",
-      "serviceNameTip": "Unique service identifier.",
-      "dnsNames": "DNS Names",
-      "dnsNamesPlaceholder": "Separate multiple DNS names with commas, or choose a preset template",
       "validity": "Validity",
       "validityOptions": {
         "90": "90 days",
@@ -2196,13 +2112,11 @@
         "365": "365 days (1 year)",
         "730": "730 days (2 years)"
       },
-      "batchIssue": "Issue All ({count} unissued)",
+      "issueAllUnissued": "Issue all unissued services ({count})",
       "issue": "Issue",
       "batchIssueFailed": "{name}: Issue failed",
       "validation": {
-        "serviceNameRequired": "Please enter a service name",
-        "serviceNameLength": "Service name length must be between 1 and 255 characters",
-        "dnsRequired": "Please enter at least one DNS name"
+        "serviceRequired": "Please select a service"
       }
     },
     "autoRenewalDialog": {
@@ -2235,14 +2149,8 @@
       }
     },
     "messages": {
-      "deletePresetConfirm": "Are you sure you want to delete preset \"{name}\"?",
-      "noPresetToExport": "No data available to export",
-      "selectPresetToExport": "Please select presets to export",
-      "exportPresetCountSuccess": "Successfully exported {count} presets",
-      "serviceNameRequired": "Please enter a service name",
-      "dnsRequired": "Please enter at least one DNS name",
       "issueSuccess": "Certificate issued successfully",
-      "noPresetToIssue": "No presets need to be issued",
+      "noServiceToIssue": "All services have been issued",
       "batchIssueSuccess": "Successfully issued {count} certificates",
       "batchIssuePartial": "Issuance complete: {successCount} succeeded, {failCount} failed",
       "renewConfirm": "Are you sure you want to renew certificate \"{name}\"?",
@@ -3476,7 +3384,8 @@
       "subtitle": "Platform route_version = {version}",
       "reloadHint": "Hot-reload typically within ~5s.",
       "copyCurl": "Copy curl sample",
-      "goSuppliers": "Back to upstream supply"
+      "goSuppliers": "Back to upstream supply",
+      "gatewayUrlMissing": "Tenant gateway URL is not set. Configure it in System Settings → Tenant Gateway URL."
     },
     "useAccessWizard": "Use the Access Upstream wizard to create",
     "placeholders": {

@@ -297,9 +297,8 @@ watch(
   { immediate: true },
 );
 
-const handleServiceChange = (value: string, description?: string | null) => {
+const handleServiceChange = (value: string) => {
   void value;
-  void description;
 };
 
 const handleContentChange = (content: string) => {

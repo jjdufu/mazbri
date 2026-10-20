@@ -1,16 +1,20 @@
-use anyhow::{Context, Result};
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use anyhow::Result;
+use mazbri_core::config::ValidateConfig;
+use mazbri_core::{CertServiceConfig, Identity, LogRouteConfig, TracingConfig};
 use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnalyticsConfig {
+    pub service_name: Identity,
+    pub cert_service: CertServiceConfig,
     #[serde(default)]
-    pub service_name: Option<String>,
+    pub tracing: TracingConfig,
+    #[serde(default)]
+    pub log_routes: Vec<LogRouteConfig>,
     pub server: mazbri_core::ServerConfig,
     #[serde(default)]
     pub greptimedb: Option<GreptimeDBConfig>,
     pub clickhouse: ClickHouseConfig,
-    #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
     #[serde(default)]
     pub metrics_targets: Vec<ServiceMetricTargetConfig>,
@@ -35,6 +39,9 @@ fn default_clickhouse_timeout() -> u64 {
     30
 }
 impl ClickHouseConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         if self.http_url.is_empty() {
             return Err("clickhouse.http_url 是必需的".to_string());
@@ -100,6 +107,9 @@ fn default_greptimedb_query_timeout() -> u64 {
     30
 }
 impl GreptimeDBConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         if self.http_url.is_empty() {
             return Err("greptimedb.http_url 是必需的".to_string());
@@ -131,67 +141,25 @@ impl GreptimeDBConfig {
         Ok(())
     }
 }
-impl AnalyticsConfig {
-    pub fn service_name_or(&self, default: &str) -> String {
-        self.service_name
-            .clone()
-            .unwrap_or_else(|| default.to_string())
-    }
-    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        if !path.exists() {
-            anyhow::bail!(
-                "Config file not found: {}\n配置文件不存在: {}",
-                path.display(),
-                path.display()
-            );
-        }
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-        let mut value: toml::Value = toml::from_str(&content)
-            .with_context(|| format!("Failed to parse config file as TOML: {}", path.display()))?;
-        if let Some(table) = value.as_table_mut() {
-            table.remove("env");
-            table.remove("tracing");
-            table.remove("log_routes");
-        }
-        let config: Self = value
-            .try_into()
-            .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
-        tracing::info!(path = % path.display(), "从配置文件加载配置");
-        Ok(config)
-    }
-}
-impl ServiceConfig for AnalyticsConfig {
-    fn service_name() -> &'static str {
-        "mazbri-analytics"
-    }
-    fn default_port() -> u16 {
-        8445
-    }
-    fn server_config(&self) -> &mazbri_core::ServerConfig {
-        &self.server
-    }
-}
 impl ValidateConfig for AnalyticsConfig {
     fn validate(&self) -> Result<()> {
+        self.cert_service.validate()?;
         if let Some(ref greptimedb) = self.greptimedb {
             greptimedb
                 .validate()
-                .map_err(|e| anyhow::anyhow!("GreptimeDB 配置无效: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("GreptimeDB 配置无效: {e}"))?;
         }
         self.clickhouse
             .validate()
-            .map_err(|e| anyhow::anyhow!("ClickHouse 配置无效: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("ClickHouse 配置无效: {e}"))?;
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceMetricTargetConfig {
-    pub key: String,
+    /// 规范服务名，反序列化时即校验
+    pub key: Identity,
     pub name: String,
-    pub port: u16,
-    #[serde(default)]
-    pub endpoint: Option<String>,
 }

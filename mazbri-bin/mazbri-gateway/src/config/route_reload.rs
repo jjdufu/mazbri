@@ -45,6 +45,9 @@ impl Default for RouteReloadConfig {
 }
 
 impl RouteReloadConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.interval_secs == 0 {
             anyhow::bail!("route_reload.interval_secs 必须 ≥ 1");

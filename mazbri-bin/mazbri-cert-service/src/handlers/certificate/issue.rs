@@ -10,7 +10,7 @@ use axum::{
 use chrono::Utc;
 use mazbri_tls::CertMetricsRecorder;
 use std::net::SocketAddr;
-use tracing::{info, warn};
+use tracing::info;
 pub async fn issue_certificate(
     State(state): State<CertificateState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -40,24 +40,11 @@ async fn issue_certificate_inner(
     let actor_ip =
         extract_client_ip(&headers, socket_addr).and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
     let subject = request.subject.trim();
-    if subject.is_empty() || subject.len() > 255 {
-        return Err(CertError::InvalidSubject("主体必须是 1-255 个字符".into()));
-    }
+    // 非规范名 → CertError::SubjectNotCanonical
+    let dns_names = state.san_policy.sans_for_subject(subject)?;
     if state.repo.subject_exists(subject).await? {
-        return Err(CertError::InvalidSubject(format!(
-            "'{}' 的证书已存在",
-            subject
-        )));
+        return Err(CertError::InvalidSubject(format!("'{subject}' 的证书已存在")));
     }
-    let dns_names = if let Some(ref names) = request.dns_names {
-        if !names.is_empty() {
-            names.clone()
-        } else {
-            lookup_preset_dns_names(&state, subject).await?
-        }
-    } else {
-        lookup_preset_dns_names(&state, subject).await?
-    };
     let ca_manager = state.base_authorization.require_issuance().await?;
     let (cert_pem, key_encrypted) = ca_manager.issue_certificate(subject, &dns_names)?;
     let expires_at = Utc::now() + chrono::Duration::days(request.validity_days);
@@ -97,27 +84,9 @@ async fn issue_certificate_inner(
             expires_at: record.expires_at,
             cert_pem,
             key_pem,
-            ca_cert_pem: ca_manager.get_ca_pem().to_string(),
+            ca_cert_pem: ca_manager.get_ca_pem().clone(),
             dns_names,
         }),
     )
         .into_response())
-}
-pub(super) async fn lookup_preset_dns_names(
-    state: &CertificateState,
-    subject: &str,
-) -> Result<Vec<String>, CertError> {
-    match state.repo.get_preset_by_service_name(subject).await? {
-        Some(preset) => {
-            info!(
-                subject = % subject, dns_names = ? preset.dns_names,
-                "使用预置 DNS 名称"
-            );
-            Ok(preset.dns_names)
-        }
-        None => {
-            warn!(subject = % subject, "未找到预置 DNS 名称，使用空 SAN");
-            Ok(vec![])
-        }
-    }
 }

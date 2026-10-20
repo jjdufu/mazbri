@@ -8,7 +8,9 @@ use std::net::SocketAddr;
 pub struct CertificateState {
     pub repo: std::sync::Arc<CertificateRepository>,
     pub base_authorization: std::sync::Arc<BaseAuthorizationState>,
+    pub san_policy: std::sync::Arc<crate::san::SanPolicy>,
 }
+#[must_use]
 pub fn extract_client_ip(headers: &HeaderMap, socket_addr: Option<SocketAddr>) -> Option<String> {
     let resolved = resolve_client_ip(headers, socket_addr);
     (resolved != "unknown").then_some(resolved)

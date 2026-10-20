@@ -15,23 +15,38 @@ macro_rules! impl_get_client {
     (
         $method_name:ident, $client_type:ty, $clients_field:ident, $service_name:literal
     ) => {
-        pub async fn $method_name (& self, addr : & str, server_name : Option <& str >,)
-        -> Result <$client_type, CoreError > { let cache_key = match server_name {
-        Some(server_name) => format!("{addr}#{server_name}"), None => addr.to_string(),
-        }; if let Some(entry) = self.$clients_field .get(& cache_key) { if ! self
-        .is_client_expired(entry.created_at) { return Ok(entry.client.clone()); }
-        drop(entry); self.$clients_field .remove(& cache_key); } info!(addr = % addr,
-        server_name = ? server_name, "Creating new tarpc {} client (mTLS)",
-        $service_name); let target = mazbri_tls::resolve_connect_target(addr,
-        server_name). await .map_err(| e | CoreError::Config(e.to_string())) ?; let
-        transport = mazbri_tls::tls_connect_with_server_name(target.socket_addr, self
-        .tls_connector.clone(), target.server_name.as_deref(),
-        tarpc::tokio_serde::formats::Bincode::default(),). await .map_err(| err |
-        CoreError::Tls(err.to_string())) ?; let client = <$client_type
-        >::new(client::Config::default(), transport).spawn(); self.$clients_field
-        .insert(cache_key, PooledClient::new(client.clone())); info!(addr = % addr,
-        server_name = ? target.server_name, "tarpc {} client connected (mTLS)",
-        $service_name); Ok(client) }
+        /// # Errors
+        ///
+        /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+        pub async fn $method_name(&self, addr: &str) -> Result<$client_type, CoreError> {
+            if let Some(entry) = self.$clients_field.get(addr) {
+                if !self.is_client_expired(entry.created_at) {
+                    return Ok(entry.client.clone());
+                }
+                drop(entry);
+                self.$clients_field.remove(addr);
+            }
+            info!(addr = %addr, "Creating new tarpc {} client (mTLS)", $service_name);
+            let target = mazbri_tls::resolve_connect_target(addr, None)
+                .await
+                .map_err(|e| CoreError::Config(e.to_string()))?;
+            let transport = mazbri_tls::tls_connect_with_server_name(
+                target.socket_addr,
+                self.tls_connector.clone(),
+                target.server_name.as_deref(),
+                tarpc::tokio_serde::formats::Bincode::default(),
+            )
+            .await
+            .map_err(|err| CoreError::Tls(err.to_string()))?;
+            let client = <$client_type>::new(client::Config::default(), transport).spawn();
+            self.$clients_field
+                .insert(addr.to_string(), PooledClient::new(client.clone()));
+            info!(
+                addr = %addr, server_name = ?target.server_name,
+                "tarpc {} client connected (mTLS)", $service_name
+            );
+            Ok(client)
+        }
     };
 }
 macro_rules! impl_cleanup {
@@ -61,8 +76,11 @@ pub struct TarpcClientPool {
     client_ttl_secs: u64,
 }
 impl TarpcClientPool {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new_with_timeouts(
-        tls_ca_cert: String,
+        tls_ca_cert: &str,
         client_cert: &ManagedCertificate,
         tls_config: &mazbri_tls::TlsConfig,
         tarpc_config: &TarpcConfig,
@@ -70,7 +88,7 @@ impl TarpcClientPool {
         upstream_timeout_ms: u64,
     ) -> Result<Self, CoreError> {
         let tls_connector =
-            mazbri_tls::TlsConnector::new(&tls_ca_cert, Some(client_cert), tls_config)
+            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
                 .map_err(|e| CoreError::Tls(e.to_string()))?;
         info!(
             "TLS connector created for tarpc client pool (mTLS mandatory) \
@@ -105,17 +123,15 @@ impl TarpcClientPool {
         billing_clients,
         "Billing"
     );
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_http_upstream_client(
         &self,
         addr: &str,
-        server_name: Option<&str>,
     ) -> Result<HttpUpstreamServiceClient, CoreError> {
-        let base_cache_key = match server_name {
-            Some(server_name) => format!("{addr}#{server_name}"),
-            None => addr.to_string(),
-        };
-        let slot = self.next_http_upstream_slot(&base_cache_key);
-        let cache_key = format!("{base_cache_key}|{slot}");
+        let slot = self.next_http_upstream_slot(addr);
+        let cache_key = format!("{addr}|{slot}");
         if let Some(entry) = self.http_upstream_clients.get(&cache_key) {
             if !self.is_client_expired(entry.created_at) {
                 return Ok(entry.client.clone());
@@ -124,10 +140,10 @@ impl TarpcClientPool {
             self.http_upstream_clients.remove(&cache_key);
         }
         info!(
-            addr = % addr, server_name = ? server_name, slot,
+            addr = % addr, slot,
             "Creating new tarpc HttpUpstream client (Bincode over mTLS)"
         );
-        let target = mazbri_tls::resolve_connect_target(addr, server_name)
+        let target = mazbri_tls::resolve_connect_target(addr, None)
             .await
             .map_err(|e| CoreError::Config(e.to_string()))?;
         let client = HttpUpstreamServiceClient::new(
@@ -159,16 +175,13 @@ impl TarpcClientPool {
         *entry = entry.wrapping_add(1);
         slot
     }
-    pub async fn remove_client(&self, addr: &str) {
+    pub fn remove_client(&self, addr: &str) {
         fn remove_matching_keys<C>(cache: &DashMap<String, PooledClient<C>>, addr: &str) {
-            let server_name_prefix = format!("{addr}#");
             let pooled_prefix = format!("{addr}|");
             let keys = cache
                 .iter()
                 .filter_map(|entry| {
-                    if entry.key() == addr
-                        || entry.key().starts_with(&server_name_prefix)
-                        || entry.key().starts_with(&pooled_prefix)
+                    if entry.key() == addr || entry.key().starts_with(&pooled_prefix)
                     {
                         Some(entry.key().clone())
                     } else {
@@ -198,6 +211,7 @@ impl TarpcClientPool {
             info!("Cleaned up {} stale tarpc clients", removed_count);
         }
     }
+    #[must_use]
     pub fn spawn_cleanup_task(&self) -> tokio::task::JoinHandle<()> {
         let pool = self.clone();
         let ttl_secs = self.client_ttl_secs;

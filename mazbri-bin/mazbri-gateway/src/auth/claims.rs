@@ -17,6 +17,7 @@ pub struct MazbriClaims {
 }
 impl MazbriClaims {
     /// True if the token has any of the required scopes (or `api:admin`).
+    #[must_use]
     pub fn has_any_scope(&self, required: &[&str]) -> bool {
         if self.scopes.iter().any(|s| s == "api:admin" || s == "admin") {
             return true;
@@ -31,6 +32,7 @@ impl MazbriClaims {
     }
 
     /// Proxy data-plane requires write (or admin).
+    #[must_use]
     pub fn can_invoke(&self) -> bool {
         self.has_any_scope(&["api:write", "write"])
     }
@@ -62,7 +64,7 @@ impl std::str::FromStr for AccountType {
             "standard" => Ok(AccountType::Standard),
             "premium" => Ok(AccountType::Premium),
             "enterprise" => Ok(AccountType::Enterprise),
-            _ => Err(format!("Invalid account type: {}", s)),
+            _ => Err(format!("Invalid account type: {s}")),
         }
     }
 }

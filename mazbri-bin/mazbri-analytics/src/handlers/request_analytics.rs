@@ -19,7 +19,7 @@ pub struct RequestAnalyticsQuery {
     #[serde(default)]
     pub tenant_id: Option<String>,
     /// Access-log producer service filter (e.g. `mazbri-gateway`). Avoids double-counting
-    /// gateway + bypass rows that share the same customer request_id.
+    /// gateway + bypass rows that share the same customer `request_id`.
     #[serde(default)]
     pub service: Option<String>,
 }
@@ -67,9 +67,7 @@ pub async fn aggregate_request_logs(
         "查询请求日志分析"
     );
     let client = &state.clickhouse_client;
-    let start_time = match parse_time_string(&req.start_time) {
-        Some(t) => t,
-        None => {
+    let Some(start_time) = parse_time_string(&req.start_time) else {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(HandlerError {
@@ -78,11 +76,8 @@ pub async fn aggregate_request_logs(
                 }),
             )
                 .into_response();
-        }
-    };
-    let end_time = match parse_time_string(&req.end_time) {
-        Some(t) => t,
-        None => {
+        };
+    let Some(end_time) = parse_time_string(&req.end_time) else {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(HandlerError {
@@ -91,8 +86,7 @@ pub async fn aggregate_request_logs(
                 }),
             )
                 .into_response();
-        }
-    };
+        };
     if start_time >= end_time {
         return (
             StatusCode::BAD_REQUEST,

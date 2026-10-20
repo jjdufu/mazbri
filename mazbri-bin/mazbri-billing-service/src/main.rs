@@ -10,21 +10,15 @@ use std::net::SocketAddr;
 fn assert_port_available(addr: SocketAddr, label: &str) -> Result<()> {
     std::net::TcpListener::bind(addr).map(drop).map_err(|e| {
         anyhow::anyhow!(
-            "Failed to reserve {} at {} before startup: {}",
-            label,
-            addr,
-            e
+            "Failed to reserve {label} at {addr} before startup: {e}"
         )
     })
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<BillingServiceConfig, _, _>(
-        "mazbri-billing-service",
-        "billing-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-billing-service")?;
+    run_toml_config_service::<BillingServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri Billing Service starting...");
             tracing::info!("Configuration: {:?}", runtime.ctx.config.server);
             let server_addr = runtime.ctx.config.server.socket_addr()?;
@@ -55,7 +49,7 @@ async fn main() -> Result<()> {
             };
             let admin_state = runtime.start_admin(&runtime.ctx.config.admin, Some(db.clone()))?;
             mazbri_billing::register_billing_metrics()
-                .map_err(|e| anyhow::anyhow!("Failed to register billing metrics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to register billing metrics: {e}"))?;
             tracing::info!("计费指标已注册");
             let addr = runtime.ctx.config.server.socket_addr()?;
             tracing::info!("tarpc server listening on {} (mTLS mandatory)", addr);
@@ -64,7 +58,7 @@ async fn main() -> Result<()> {
                 addr,
                 db,
                 db_read,
-                runtime.service_name.clone(),
+                runtime.service_name.as_str().to_owned(),
                 Some(runtime.ctx.tls_acceptor.clone()),
                 worker_config,
                 runtime.ctx.config.server.max_connections,

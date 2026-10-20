@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::PolicySnapshot as RpcPolicySnapshot;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -88,11 +89,11 @@ impl TenantPolicySnapshot {
             enabled: snapshot.enabled,
             enforcement_mode,
             stale_policy,
-            max_snapshot_age_secs: snapshot.max_snapshot_age_secs.max(1) as u64,
-            tenant_qps: snapshot.tenant_qps.max(1) as u64,
-            tenant_burst: snapshot.tenant_burst.max(1) as u64,
-            client_ip_qps: snapshot.client_ip_qps.max(1) as u64,
-            client_ip_burst: snapshot.client_ip_burst.max(1) as u64,
+            max_snapshot_age_secs: u64::saturating_from(snapshot.max_snapshot_age_secs.max(1)),
+            tenant_qps: u64::saturating_from(snapshot.tenant_qps.max(1)),
+            tenant_burst: u64::saturating_from(snapshot.tenant_burst.max(1)),
+            client_ip_qps: u64::saturating_from(snapshot.client_ip_qps.max(1)),
+            client_ip_burst: u64::saturating_from(snapshot.client_ip_burst.max(1)),
             bandwidth_bps: snapshot.bandwidth_bps.max(0),
             api_limits,
             fetched_at: Instant::now(),
@@ -100,7 +101,7 @@ impl TenantPolicySnapshot {
     }
 
     pub fn age_ms(&self) -> u64 {
-        self.fetched_at.elapsed().as_millis() as u64
+        mazbri_core::num::millis_u64(self.fetched_at.elapsed())
     }
 
     pub fn is_stale(&self) -> bool {
@@ -117,12 +118,12 @@ impl TenantPolicySnapshot {
         if self.bandwidth_bps <= 0 {
             return 0;
         }
-        (self.bandwidth_bps as u64) / 8
+        u64::saturating_from(self.bandwidth_bps) / 8
     }
 
     /// Resolve optional per-API override. `None` means no api-dimension enforcement (P2-4).
     /// Match order (productization §4.2):
-    /// 1. `product:{product_id}` 2. bare product_id 3. `api:{endpoint}` 4. bare endpoint 5. `prefix*`
+    /// 1. `product:{product_id}` 2. bare `product_id` 3. `api:{endpoint}` 4. bare endpoint 5. `prefix*`
     pub fn api_rule(&self, product_id: Option<&str>, api_endpoint: &str) -> Option<&ApiLimitRule> {
         if let Some(product_id) = product_id {
             let exact_keys = [

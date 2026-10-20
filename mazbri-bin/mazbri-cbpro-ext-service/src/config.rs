@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use mazbri_core::config::{ServiceConfig, ValidateConfig};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -16,8 +16,6 @@ pub struct CBProExtServiceConfig {
     #[serde(default)]
     pub validation: ValidationConfig,
     pub clients: ClientsConfig,
-    #[serde(default)]
-    pub tls: Option<mazbri_tls::TlsConfig>,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
 }
@@ -114,54 +112,45 @@ fn default_validation_timeout_secs() -> u64 {
 #[serde(deny_unknown_fields)]
 pub struct ClientsConfig {
     pub cbpro: ServiceEndpoint,
-    #[serde(default)]
-    pub gateway: Option<ServiceEndpoint>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ServiceEndpoint {
     pub url: String,
-    pub server_name: Option<String>,
     pub timeout_ms: u64,
 }
 
-fn default_endpoint_timeout_ms() -> u64 {
+const fn default_endpoint_timeout_ms() -> u64 {
     10
 }
 
+/// 「字符串」或「`{ url, timeout_ms }` 对象（拒绝未知键）」两种写法。
 impl<'de> Deserialize<'de> for ServiceEndpoint {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            url: String,
+            #[serde(default = "default_endpoint_timeout_ms")]
+            timeout_ms: u64,
+        }
+
+        #[derive(Deserialize)]
         #[serde(untagged)]
         enum Helper {
             String(String),
-            Object {
-                url: String,
-                #[serde(default)]
-                server_name: Option<String>,
-                #[serde(default = "default_endpoint_timeout_ms")]
-                timeout_ms: u64,
-            },
+            Object(Fields),
         }
 
         match Helper::deserialize(deserializer)? {
             Helper::String(url) => Ok(Self {
                 url,
-                server_name: None,
                 timeout_ms: default_endpoint_timeout_ms(),
             }),
-            Helper::Object {
-                url,
-                server_name,
-                timeout_ms,
-            } => Ok(Self {
-                url,
-                server_name,
-                timeout_ms,
-            }),
+            Helper::Object(Fields { url, timeout_ms }) => Ok(Self { url, timeout_ms }),
         }
     }
 }
@@ -173,23 +162,17 @@ impl ServiceEndpoint {
     }
 
     #[must_use]
-    pub fn server_name(&self) -> Option<&str> {
-        self.server_name.as_deref()
-    }
-
-    #[must_use]
     pub fn timeout(&self) -> Duration {
         Duration::from_millis(self.timeout_ms)
     }
 }
 
 impl ServiceConfig for CBProExtServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-cbpro-ext"
-    }
-
-    fn default_port() -> u16 {
-        8089
+    fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
+        self.admin.enabled.then(|| mazbri_core::config::AdminHealthEndpoint {
+            port: self.admin.port,
+            path: &self.admin.health_path,
+        })
     }
 
     fn server_config(&self) -> &mazbri_core::ServerConfig {
@@ -199,25 +182,16 @@ impl ServiceConfig for CBProExtServiceConfig {
 
 impl ValidateConfig for CBProExtServiceConfig {
     fn validate(&self) -> Result<()> {
-        if let Some(ref tls) = self.tls {
-            tls.validate()?;
-        }
         if self.clients.cbpro.timeout().is_zero() {
             anyhow::bail!("clients.cbpro timeout_ms must be greater than 0");
         }
-        if let Some(ref gateway) = self.clients.gateway
-            && gateway.timeout().is_zero()
-        {
-            anyhow::bail!("clients.gateway timeout_ms must be greater than 0");
-        }
         if let Some(ref db) = self.platform_database
             && db.credentials_file.is_none()
-            && db.url.is_none()
             && (db.username.is_none() || db.password.is_none())
         {
             anyhow::bail!(
-                "platform_database requires either 'url', 'username'+'password', or 'credentials_file' \
-                 / platform_database 需要 'url'、'username'+'password' 或 'credentials_file'"
+                "platform_database requires 'username'+'password' or 'credentials_file' \
+                 / platform_database 需要 'username'+'password' 或 'credentials_file'"
             );
         }
         if self.platform_database.is_none() {
@@ -252,11 +226,6 @@ impl ValidateConfig for CBProExtServiceConfig {
         }
         if self.clients.cbpro.url.trim().is_empty() || !self.clients.cbpro.url.contains(':') {
             anyhow::bail!("clients.cbpro must be in host:port format");
-        }
-        if let Some(ref gateway) = self.clients.gateway
-            && (gateway.url.trim().is_empty() || !gateway.url.contains(':'))
-        {
-            anyhow::bail!("clients.gateway must be in host:port format");
         }
         Ok(())
     }

@@ -29,9 +29,7 @@ pub async fn serve(
         db_read,
         BillingServiceConfig::default(),
     ));
-    let node_id = hostname::get()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let node_id = hostname::get().map_or_else(|_| "unknown".to_string(), |h| h.to_string_lossy().to_string());
     let queue_config = QueueConfig {
         max_retries: worker_config.max_retries,
         retry_interval_secs: worker_config.retry_interval_secs,
@@ -92,7 +90,7 @@ pub async fn serve(
         |svc: BillingTarpcService, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
     )
     .await
-    .map_err(|e| anyhow::anyhow!("tarpc server error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;
     if let Some(w) = usage_outbox_worker {
         w.stop().await;
     }

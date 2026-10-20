@@ -72,7 +72,7 @@ impl AuthTarpcService {
         tenant_id: &str,
     ) -> Result<Option<TenantContext>, String> {
         let uuid = Uuid::parse_str(tenant_id)
-            .map_err(|e| format!("Invalid tenant ID format '{}': {}", tenant_id, e))?;
+            .map_err(|e| format!("Invalid tenant ID format '{tenant_id}': {e}"))?;
         let row = sqlx::query(
             "SELECT id, name, status, created_at
              FROM tenants WHERE id = $1",
@@ -80,7 +80,7 @@ impl AuthTarpcService {
         .bind(uuid)
         .fetch_optional(&*self.db)
         .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .map_err(|e| format!("Database error: {e}"))?;
         match row {
             Some(row) => {
                 let status: String = row.get("status");
@@ -104,7 +104,7 @@ fn match_status(status: &str) -> TenantStatus {
         "active" => TenantStatus::Active,
         // Product model: enable/disable only; legacy terminated maps to suspended.
         "suspended" | "terminated" | "disabled" => TenantStatus::Suspended,
-        "pending" => TenantStatus::Pending,
+        // "pending" 及未知状态
         _ => TenantStatus::Pending,
     }
 }
@@ -156,10 +156,10 @@ impl AuthService for AuthTarpcService {
             }
             Err(e) => {
                 match e {
-                    AuthError::InvalidApiKeyFormat(_) => recorder.record_invalid_format(),
                     AuthError::ApiKeyNotFound(_) => recorder.record_not_found(),
                     AuthError::ApiKeyExpired(_) => recorder.record_expired(),
                     AuthError::ApiKeyDisabled(_) => recorder.record_disabled(),
+                    // InvalidApiKeyFormat 及其它错误均计为格式错误
                     _ => recorder.record_invalid_format(),
                 }
                 let rpc_err = auth_error_to_rpc(&e);
@@ -245,10 +245,10 @@ impl AuthService for AuthTarpcService {
                     "Auth tarpc validate_api_key request failed"
                 );
                 match e {
-                    AuthError::InvalidApiKeyFormat(_) => recorder.record_invalid_format(),
                     AuthError::ApiKeyNotFound(_) => recorder.record_not_found(),
                     AuthError::ApiKeyExpired(_) => recorder.record_expired(),
                     AuthError::ApiKeyDisabled(_) => recorder.record_disabled(),
+                    // InvalidApiKeyFormat 及其它错误均计为格式错误
                     _ => recorder.record_invalid_format(),
                 }
                 let rpc_err = auth_error_to_rpc(&e);
@@ -262,11 +262,11 @@ impl AuthService for AuthTarpcService {
             }
         }
     }
-    async fn health(self, _context: Context) -> HealthResponse {
-        HealthResponse {
+    fn health(self, _context: Context) -> impl std::future::Future<Output = HealthResponse> {
+        std::future::ready(HealthResponse {
             status: "ok".to_string(),
             service: "auth-service".to_string(),
             timestamp: Utc::now().timestamp(),
-        }
+        })
     }
 }

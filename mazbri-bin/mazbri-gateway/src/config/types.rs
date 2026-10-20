@@ -1,11 +1,10 @@
+use mazbri_core::ServiceName;
 use serde::Deserialize;
 use std::time::Duration;
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 #[derive(Debug, Clone)]
 pub struct ServiceEndpoint {
     pub url: String,
-    pub admin_url: Option<String>,
-    pub server_name: Option<String>,
     pub timeout_ms: u64,
 }
 impl<'de> Deserialize<'de> for ServiceEndpoint {
@@ -25,8 +24,6 @@ impl<'de> Deserialize<'de> for ServiceEndpoint {
             {
                 Ok(ServiceEndpoint {
                     url: value.to_string(),
-                    admin_url: None,
-                    server_name: None,
                     timeout_ms: default_timeout_ms(),
                 })
             }
@@ -38,10 +35,6 @@ impl<'de> Deserialize<'de> for ServiceEndpoint {
                 #[serde(deny_unknown_fields)]
                 struct ServiceEndpointFields {
                     url: String,
-                    #[serde(default)]
-                    admin_url: Option<String>,
-                    #[serde(default)]
-                    server_name: Option<String>,
                     #[serde(default = "default_timeout_ms")]
                     timeout_ms: u64,
                 }
@@ -50,8 +43,6 @@ impl<'de> Deserialize<'de> for ServiceEndpoint {
                 )?;
                 Ok(ServiceEndpoint {
                     url: fields.url,
-                    admin_url: fields.admin_url,
-                    server_name: fields.server_name,
                     timeout_ms: fields.timeout_ms,
                 })
             }
@@ -63,17 +54,11 @@ fn default_timeout_ms() -> u64 {
     DEFAULT_TIMEOUT_MS
 }
 impl ServiceEndpoint {
+    #[must_use]
     pub fn url(&self) -> &str {
         &self.url
     }
     #[must_use]
-    pub fn admin_url(&self) -> Option<&str> {
-        self.admin_url.as_deref()
-    }
-    #[must_use]
-    pub fn server_name(&self) -> Option<&str> {
-        self.server_name.as_deref()
-    }
     pub fn timeout(&self) -> Duration {
         Duration::from_millis(self.timeout_ms)
     }
@@ -82,8 +67,6 @@ impl From<String> for ServiceEndpoint {
     fn from(url: String) -> Self {
         Self {
             url,
-            admin_url: None,
-            server_name: None,
             timeout_ms: default_timeout_ms(),
         }
     }
@@ -109,45 +92,53 @@ where
 #[serde(deny_unknown_fields)]
 pub struct ServicesConfig {
     #[serde(deserialize_with = "deserialize_service_endpoint")]
-    pub auth_url: ServiceEndpoint,
+    #[serde(rename = "auth_url")]
+    pub auth: ServiceEndpoint,
     #[serde(deserialize_with = "deserialize_service_endpoint")]
-    pub ratelimit_url: ServiceEndpoint,
+    #[serde(rename = "ratelimit_url")]
+    pub ratelimit: ServiceEndpoint,
     #[serde(deserialize_with = "deserialize_service_endpoint")]
-    pub cache_url: ServiceEndpoint,
+    #[serde(rename = "cache_url")]
+    pub cache: ServiceEndpoint,
     #[serde(deserialize_with = "deserialize_service_endpoint")]
-    pub billing_url: ServiceEndpoint,
+    #[serde(rename = "billing_url")]
+    pub billing: ServiceEndpoint,
     #[serde(
         default = "default_cbpro_endpoint",
         deserialize_with = "deserialize_service_endpoint_optional"
     )]
-    pub cbpro_url: Option<ServiceEndpoint>,
+    #[serde(rename = "cbpro_url")]
+    pub cbpro: Option<ServiceEndpoint>,
     #[serde(
         default = "default_cbpro_ext_endpoint",
         deserialize_with = "deserialize_service_endpoint_optional"
     )]
-    pub cbpro_ext_url: Option<ServiceEndpoint>,
+    #[serde(rename = "cbpro_ext_url")]
+    pub cbpro_ext: Option<ServiceEndpoint>,
     #[serde(
         default = "default_bypass_endpoint",
         deserialize_with = "deserialize_service_endpoint_optional"
     )]
-    pub bypass_url: Option<ServiceEndpoint>,
+    #[serde(rename = "bypass_url")]
+    pub bypass: Option<ServiceEndpoint>,
 }
 impl ServicesConfig {
+    #[must_use]
     pub fn list_services(&self) -> Vec<(String, ServiceEndpoint)> {
         let mut services = vec![
-            ("mazbri-auth".to_string(), self.auth_url.clone()),
-            ("mazbri-ratelimit".to_string(), self.ratelimit_url.clone()),
-            ("mazbri-cache".to_string(), self.cache_url.clone()),
-            ("mazbri-billing".to_string(), self.billing_url.clone()),
+            (ServiceName::Auth.as_str().to_string(), self.auth.clone()),
+            (ServiceName::Ratelimit.as_str().to_string(), self.ratelimit.clone()),
+            (ServiceName::Cache.as_str().to_string(), self.cache.clone()),
+            (ServiceName::Billing.as_str().to_string(), self.billing.clone()),
         ];
-        if let Some(ref ep) = self.cbpro_url {
-            services.push(("mazbri-cbpro".to_string(), ep.clone()));
+        if let Some(ref ep) = self.cbpro {
+            services.push((ServiceName::Cbpro.as_str().to_string(), ep.clone()));
         }
-        if let Some(ref ep) = self.cbpro_ext_url {
-            services.push(("mazbri-cbpro-ext".to_string(), ep.clone()));
+        if let Some(ref ep) = self.cbpro_ext {
+            services.push((ServiceName::CbproExt.as_str().to_string(), ep.clone()));
         }
-        if let Some(ref ep) = self.bypass_url {
-            services.push(("mazbri-bypass".to_string(), ep.clone()));
+        if let Some(ref ep) = self.bypass {
+            services.push((ServiceName::Bypass.as_str().to_string(), ep.clone()));
         }
         services
     }

@@ -11,8 +11,11 @@ use mazbri_auth::TenantContext;
 use std::time::Instant;
 use tracing::{info, warn};
 
-use super::state::*;
+use super::state::GatewayRequestTiming;
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn balance_check_middleware(
     State(state): State<AppState>,
     mut request: Request,
@@ -25,7 +28,7 @@ pub async fn balance_check_middleware(
         .cloned()
         .unwrap_or_else(|| GatewayRequestTiming::new(stage_start));
     let Some(billing_state) = state.billing_state.as_ref() else {
-        timing.balance_check_ms = stage_start.elapsed().as_millis() as u64;
+        timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
         request.extensions_mut().insert(timing);
         return Ok(next.run(request).await);
     };
@@ -38,7 +41,7 @@ pub async fn balance_check_middleware(
             tenant_id = % tenant_context.tenant_id,
             "Skipping pre-proxy balance check because product_id was not present on tenant context"
         );
-        timing.balance_check_ms = stage_start.elapsed().as_millis() as u64;
+        timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
         request.extensions_mut().insert(timing);
         return Ok(next.run(request).await);
     };
@@ -137,9 +140,9 @@ pub async fn balance_check_middleware(
                     .await;
             }
             request.extensions_mut().insert(product_detail);
-            timing.balance_check_ms = stage_start.elapsed().as_millis() as u64;
+            timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             request.extensions_mut().insert(timing);
-            let bal_ms = stage_start.elapsed().as_millis() as u64;
+            let bal_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             if super::stage_log::should_log_stage_info(bal_ms) {
                 info!(
                     target : "gateway.stage", service = "mazbri-gateway", stage_name =
@@ -167,7 +170,7 @@ pub async fn balance_check_middleware(
             );
             warn!(
                     target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                "balance_check", stage_ms = stage_start.elapsed().as_millis() as u64,
+                "balance_check", stage_ms = mazbri_core::num::millis_u64(stage_start.elapsed()),
                 tenant_id = % tenant_context.tenant_id, product_id = % product_id,
                 product_detail_lookup_ms, check_balance_ms = check_balance_started_at
                 .elapsed().as_millis(), allowed = false, cache_source, message =
@@ -187,7 +190,7 @@ pub async fn balance_check_middleware(
             );
             warn!(
                 target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                "balance_check", stage_ms = stage_start.elapsed().as_millis() as u64,
+                "balance_check", stage_ms = mazbri_core::num::millis_u64(stage_start.elapsed()),
                 tenant_id = % tenant_context.tenant_id, product_id = % product_id,
                 product_detail_lookup_ms, check_balance_ms = check_balance_started_at
                 .elapsed().as_millis(), allowed = fail_open, cache_source, message =
@@ -198,7 +201,7 @@ pub async fn balance_check_middleware(
                     .with_label_values(&[cache_source, "fail_open"])
                     .inc();
                 request.extensions_mut().insert(product_detail);
-                timing.balance_check_ms = stage_start.elapsed().as_millis() as u64;
+                timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
                 request.extensions_mut().insert(timing);
                 Ok(next.run(request).await)
             } else {

@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::BillingTarpcService;
 use super::charge::handle_record_usage;
 use super::conversion::{
@@ -37,7 +38,7 @@ fn log_access(
     let event = AccessLogEvent::builder(service_name)
         .message("request_completed")
         .route(AccessRouteFields {
-            tenant_id: tenant_id.map(|value| value.to_string()),
+            tenant_id: tenant_id.map(std::string::ToString::to_string),
             tenant_code: None,
             product_id: None,
             supplier_id: None,
@@ -94,8 +95,8 @@ impl BillingServiceTrait for BillingTarpcService {
             "record_usage",
             Some(&req.tenant_id),
             Some(&req.request_id),
-            Some(req.status_code as u16),
-            Some(req.billing_service_duration_ms as u64),
+            Some(u16::saturating_from(req.status_code)),
+            Some(u64::saturating_from(req.billing_service_duration_ms)),
         );
         handle_record_usage(&self, req).await
     }
@@ -120,7 +121,7 @@ impl BillingServiceTrait for BillingTarpcService {
                     current_balance: None,
                     credit_limit: None,
                     available: None,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -188,7 +189,7 @@ impl BillingServiceTrait for BillingTarpcService {
                     credit_limit: None,
                     available: None,
                     cycle: None,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -250,7 +251,7 @@ impl BillingServiceTrait for BillingTarpcService {
                     transaction_id: String::new(),
                     new_balance: None,
                     processed_at: 0,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -258,8 +259,7 @@ impl BillingServiceTrait for BillingTarpcService {
         let amount = req
             .amount
             .as_ref()
-            .map(from_amount)
-            .unwrap_or(Decimal::ZERO);
+            .map_or(Decimal::ZERO, from_amount);
         match self
             .billing_service
             .add_funds(tenant_id, amount, &req.payment_method)
@@ -305,7 +305,7 @@ impl BillingServiceTrait for BillingTarpcService {
             Err(e) => {
                 return GetBillResponse {
                     bill: None,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -315,7 +315,7 @@ impl BillingServiceTrait for BillingTarpcService {
             Err(e) => {
                 return GetBillResponse {
                     bill: None,
-                    error: Some(validation_error(&format!("Invalid bill ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid bill ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -334,7 +334,7 @@ impl BillingServiceTrait for BillingTarpcService {
                         .collect(),
                     Err(_) => Vec::new(),
                 };
-                let bill = map_bill_info_to_rpc(bill_info, items, &tenant_id);
+                let bill = map_bill_info_to_rpc(&bill_info, items, &tenant_id);
                 GetBillResponse {
                     bill: Some(bill),
                     error: None,
@@ -372,7 +372,7 @@ impl BillingServiceTrait for BillingTarpcService {
                     bills: Vec::new(),
                     next_page_token: String::new(),
                     total_count: 0,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -408,9 +408,9 @@ impl BillingServiceTrait for BillingTarpcService {
             Ok(bills) => {
                 let bills: Vec<mazbri_rpc::billing::Bill> = bills
                     .into_iter()
-                    .map(|bill_info| map_bill_info_to_rpc(bill_info, Vec::new(), &tenant_id))
+                    .map(|bill_info| map_bill_info_to_rpc(&bill_info, Vec::new(), &tenant_id))
                     .collect();
-                let total_count = bills.len() as i32;
+                let total_count = i32::saturating_from(bills.len());
                 ListBillsResponse {
                     bills,
                     next_page_token: String::new(),
@@ -446,7 +446,7 @@ impl BillingServiceTrait for BillingTarpcService {
             Err(e) => {
                 return GetUsageSummaryResponse {
                     summary: None,
-                    error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                    error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                     error_message: String::new(),
                 };
             }
@@ -505,11 +505,11 @@ impl BillingServiceTrait for BillingTarpcService {
             },
         }
     }
-    async fn health(self, _context: Context) -> HealthResponse {
-        HealthResponse {
+    fn health(self, _context: Context) -> impl std::future::Future<Output = HealthResponse> {
+        std::future::ready(HealthResponse {
             status: "ok".to_string(),
             service: "billing-service".to_string(),
             timestamp: chrono::Utc::now().timestamp(),
-        }
+        })
     }
 }

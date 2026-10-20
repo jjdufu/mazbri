@@ -9,6 +9,9 @@ use sha2::Digest;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn process_validation_job(
     repo: Arc<CbProExtRepository>,
     cbpro_client: Option<Arc<CBProClient>>,

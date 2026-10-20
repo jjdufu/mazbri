@@ -9,10 +9,16 @@ members = [
     "mazbri-cbpro-service",
     "mazbri-cert-service",
     "mazbri-gateway",
-    "mazbri-mgmt-api-v2",
+    "mazbri-mgmt",
     "mazbri-ratelimit-service"
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
 
 [profile.release]
 opt-level = 3

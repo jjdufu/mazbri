@@ -76,3 +76,6 @@ rand = {version = "0.10.0"}
 base64 = {version = "0.22"}
 parking_lot = {version = "0.12"}
 arc-swap = {version = "1.7.1"}
+
+[lints]
+workspace = true

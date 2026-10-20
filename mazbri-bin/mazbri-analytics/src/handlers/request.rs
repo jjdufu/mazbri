@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::{AppState, HandlerError, parse_time_string};
 use axum::{
     Json,
@@ -14,7 +15,7 @@ use tracing::{info, warn};
 const MAX_PAGE_SIZE: u32 = limits::MAX_PAGE_SIZE;
 const MAX_TOTAL_RESULTS: u64 = limits::MAX_TOTAL_RESULTS;
 /// Latest-universe size for open list/search (no time range, non-selective).
-const LATEST_UNIVERSE_SIZE: usize = limits::MAX_TOTAL_RESULTS as usize;
+const LATEST_UNIVERSE_SIZE: usize = limits::MAX_TOTAL_RESULTS_USIZE;
 /// Safety lookback when only an upper time bound is provided.
 const OPEN_END_LOOKBACK: Duration = Duration::days(7);
 fn default_page() -> u32 {
@@ -32,7 +33,7 @@ pub struct RequestLogQueryRequest {
     /// Free-text keyword (`q`).
     #[serde(default)]
     pub q: Option<String>,
-    /// JSON array of ListFilter objects.
+    /// JSON array of `ListFilter` objects.
     #[serde(default)]
     pub filters: Option<String>,
     #[serde(default)]
@@ -101,7 +102,7 @@ pub struct RequestLogQueryRequest {
     pub service: Option<String>,
     #[serde(default)]
     pub service_like: Option<String>,
-    /// Comma-separated exact service names (OR with service / service_like).
+    /// Comma-separated exact service names (OR with service / `service_like`).
     #[serde(default)]
     pub service_in: Option<String>,
     #[serde(default = "default_page")]
@@ -112,8 +113,8 @@ pub struct RequestLogQueryRequest {
 impl RequestLogQueryRequest {
     /// Maximum reachable page for the given page size under the browse-depth cap.
     pub fn max_page_for(page_size: u32) -> u32 {
-        let page_size = page_size.clamp(1, MAX_PAGE_SIZE) as u64;
-        MAX_TOTAL_RESULTS.div_ceil(page_size).max(1) as u32
+        let page_size = u64::from(page_size.clamp(1, MAX_PAGE_SIZE));
+        u32::saturating_from(MAX_TOTAL_RESULTS.div_ceil(page_size).max(1))
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -133,8 +134,8 @@ impl RequestLogQueryRequest {
     pub fn capped_offset(&self) -> u32 {
         let page = if self.page == 0 { 1 } else { self.page };
         let page_size = self.capped_page_size();
-        let offset = (page.saturating_sub(1) as u64) * (page_size as u64);
-        offset.min(MAX_TOTAL_RESULTS.saturating_sub(1)) as u32
+        let offset = u64::from(page.saturating_sub(1)) * u64::from(page_size);
+        u32::saturating_from(offset.min(MAX_TOTAL_RESULTS.saturating_sub(1)))
     }
 
     /// Exact id lookups may span full history; free-form list queries may not.
@@ -151,7 +152,7 @@ impl RequestLogQueryRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QueryMode {
-    /// Exact request_id / trace_id — full history.
+    /// Exact `request_id` / `trace_id` — full history.
     Selective,
     /// Explicit time bounds — search within range (full volume in range).
     Ranged,
@@ -296,7 +297,7 @@ pub struct RequestLogQueryResponse {
     pub total_pages: u32,
     /// `latest` | `ranged` | `selective`
     pub query_mode: String,
-    /// Present when query_mode is `latest` (universe size used for the inner Top-N).
+    /// Present when `query_mode` is `latest` (universe size used for the inner Top-N).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub universe_size: Option<u64>,
     /// True when total exceeds the offset browse depth (pager is capped).
@@ -339,7 +340,7 @@ pub async fn query_request_logs(
         }
     };
     filters.extend(mazbri_analytics::list_query::collect_flat_numeric_filters(
-        mazbri_analytics::list_query::FlatNumericFilters {
+        &mazbri_analytics::list_query::FlatNumericFilters {
             duration_ms_gt: req.duration_ms_gt,
             duration_ms_gte: req.duration_ms_gte,
             duration_ms_lt: req.duration_ms_lt,
@@ -512,7 +513,7 @@ pub async fn query_request_logs(
                 QueryMode::Ranged | QueryMode::Selective => result.total,
             };
             let total_pages = if page_size > 0 {
-                let pages_from_total = display_total.div_ceil(page_size as u64) as u32;
+                let pages_from_total = u32::saturating_from(display_total.div_ceil(u64::from(page_size)));
                 if matches!(query_mode, QueryMode::Latest) {
                     pages_from_total
                 } else {

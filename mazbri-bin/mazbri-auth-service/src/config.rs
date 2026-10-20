@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use mazbri_core::config::{ServiceConfig, ValidateConfig};
 use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -7,8 +7,6 @@ pub struct AuthServiceConfig {
     pub server: mazbri_core::ServerConfig,
     pub database: mazbri_core::DatabaseConfig,
     pub auth: AuthConfig,
-    #[serde(default)]
-    pub tls: Option<mazbri_tls::TlsConfig>,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
     /// 白名单表在平台库。不配置时仍用认证库，监听不会启动。
@@ -19,11 +17,11 @@ pub struct AuthServiceConfig {
     pub config_watch: mazbri_core::config_watch::ConfigWatchConfig,
 }
 impl ServiceConfig for AuthServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-auth-service"
-    }
-    fn default_port() -> u16 {
-        8081
+    fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
+        self.admin.enabled.then(|| mazbri_core::config::AdminHealthEndpoint {
+            port: self.admin.port,
+            path: &self.admin.health_path,
+        })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
         &self.server
@@ -48,9 +46,6 @@ impl ValidateConfig for AuthServiceConfig {
                 "auth.validation_cache_max_entries must be <= 1000000, got {}",
                 self.auth.validation_cache_max_entries
             );
-        }
-        if let Some(ref tls_config) = self.tls {
-            tls_config.validate()?;
         }
         self.config_watch.validate()?;
         Ok(())

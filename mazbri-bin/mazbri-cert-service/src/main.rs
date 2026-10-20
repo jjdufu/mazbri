@@ -4,15 +4,16 @@ use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
-use mazbri_cert_service::config::CertServiceConfig;
+use mazbri_cert_service::config::CertAppConfig;
 use mazbri_cert_service::config_center::ConfigRepository;
 use mazbri_cert_service::db::CertificateRepository;
 use mazbri_cert_service::handlers::certificate::common::update_certificate_inventory_metrics;
 use mazbri_cert_service::node_registry::NodeRegistryRepository;
 use mazbri_cert_service::server;
-use mazbri_cert_service::service_registry::ServiceRepository;
+use mazbri_cert_service::san::{EnvSource, SanPolicy};
 use mazbri_cert_service::token::TokenManager;
-use mazbri_core::config_loader::{BootstrapConfig, ValidateConfig, get_cert_service_token};
+use mazbri_core::config::{build_log_routes, get_cert_service_token, load_toml};
+use mazbri_core::ServiceName;
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use mazbri_core::init_tracing_with_routes;
 use parking_lot::Mutex;
@@ -36,15 +37,20 @@ async fn sync_authorization_expiry(
 #[tokio::main]
 async fn main() -> Result<()> {
     let config_dir = Path::new(".");
-    let bootstrap_path = mazbri_core::config_loader::resolve_bootstrap_path_mandatory()?;
-    let mut config = CertServiceConfig::load_from_file(&bootstrap_path)?;
-    let bootstrap = BootstrapConfig::load_from_path(&bootstrap_path)?;
-    let service_name = config.service_name_or("mazbri-cert-service");
-    let log_routes = bootstrap.log_routes()?;
+    let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
+    let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
+    if config.service_name.name() != ServiceName::Cert {
+        anyhow::bail!(
+            "service_name 必须为 {}（当前 {}）",
+            ServiceName::Cert.as_str(),
+            config.service_name.as_str()
+        );
+    }
+    let service_name = config.service_name.as_str().to_owned();
+    let log_routes = build_log_routes(&config.log_routes)?;
     let cert_service_token = get_cert_service_token()?;
     config.auth.static_tokens = vec![cert_service_token];
     config.cert.key_password = None;
-    config.validate()?;
     let admin_state: Option<Arc<AdminState>> = if config.admin.enabled {
         let state = Arc::new(AdminState::new(
             service_name.clone(),
@@ -74,7 +80,7 @@ async fn main() -> Result<()> {
         info!("Admin server disabled");
         None
     };
-    let _log_guard = init_tracing_with_routes(&bootstrap.tracing, &service_name, &log_routes)?;
+    let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     mazbri_tls::register_cert_metrics()?;
     info!("Mazbri 证书服务启动中...");
     info!(host = % config.server.host, port = % config.server.port, "服务器配置");
@@ -107,8 +113,8 @@ async fn main() -> Result<()> {
     info!("节点注册仓库已初始化");
     let config_repo = Arc::new(ConfigRepository::new(db.clone()));
     info!("配置仓库已初始化");
-    let service_registry_repo = Arc::new(ServiceRepository::new(db.clone()));
-    info!("服务注册仓库已初始化");
+    let san_policy = Arc::new(SanPolicy::from_config(&config.san, &EnvSource)?);
+    info!("SAN 策略已加载");
     let node_repo_for_cleanup = node_repo.clone();
     let cleanup_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
@@ -142,7 +148,7 @@ async fn main() -> Result<()> {
         repo,
         node_repo,
         config_repo,
-        service_registry_repo,
+        san_policy,
         root_material_cache: Arc::new(Mutex::new(None)),
         root_material_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
     };

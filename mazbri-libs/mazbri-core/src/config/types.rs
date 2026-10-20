@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -72,9 +73,8 @@ impl ServerConfig {
     }
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
-    #[serde(default)]
-    pub url: Option<String>,
     #[serde(default)]
     pub host: Option<String>,
     #[serde(default = "default_database_port")]
@@ -112,27 +112,6 @@ fn default_database_port() -> u16 {
     5432
 }
 impl DatabaseConfig {
-    pub fn build_url(&self, username: &str, password: &str) -> String {
-        if let Some(ref url) = self.url {
-            return url.clone();
-        }
-        format!(
-            "postgresql://{}:{}@{}:{}/{}",
-            username,
-            password,
-            self.host.as_deref().unwrap_or("localhost"),
-            self.port,
-            self.name.as_deref().unwrap_or("mazbri")
-        )
-    }
-    #[must_use]
-    pub fn get_url(&self) -> Option<&str> {
-        self.url.as_deref()
-    }
-    #[must_use]
-    pub fn uses_credentials_file(&self) -> bool {
-        self.credentials_file.is_some() && self.url.is_none()
-    }
     /// Effective pool acquire timeout (prefers `acquire_timeout_ms` when present).
     #[must_use]
     pub fn acquire_timeout(&self) -> Duration {
@@ -159,6 +138,7 @@ fn default_max_lifetime() -> u64 {
     1800
 }
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct TracingConfig {
     #[serde(default = "default_tracing_level")]
     pub level: String,
@@ -204,20 +184,6 @@ fn default_tracing_level() -> String {
 fn default_tracing_format() -> String {
     "json".to_string()
 }
-#[derive(Debug, Clone, Deserialize)]
-pub struct MetricsConfig {
-    #[serde(default = "default_metrics_enabled")]
-    pub enabled: bool,
-    #[serde(default = "default_metrics_endpoint")]
-    pub endpoint: String,
-}
-fn default_metrics_enabled() -> bool {
-    true
-}
-fn default_metrics_endpoint() -> String {
-    "/metrics".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,11 +7,8 @@ use mazbri_core::create_pool;
 use mazbri_service::{init_service_runtime, run_toml_config_service};
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<CacheServiceConfig, _, _>(
-        "mazbri-cache-service",
-        "cache-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-cache-service")?;
+    run_toml_config_service::<CacheServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri Cache Service starting...");
             tracing::info!("Configuration: {:?}", runtime.ctx.config.server);
             if let Err(e) = mazbri_cache::register_cache_metrics() {
@@ -32,7 +29,7 @@ async fn main() -> Result<()> {
             let addr = runtime.ctx.config.server.socket_addr()?;
             let redis = mazbri_core::redis::RedisClient::connect_with_config(&runtime.ctx.config.redis)
                 .await
-                .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {}", error))?;
+                .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
             tracing::info!("tarpc server listening on {} (mTLS mandatory)", addr);
             let server_future = server::serve(
                 addr,

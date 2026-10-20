@@ -22,11 +22,8 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<CBProExtServiceConfig, _, _>(
-        "mazbri-cbpro-ext",
-        "cbpro-ext-service",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-cbpro-ext")?;
+    run_toml_config_service::<CBProExtServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri CBPro-Ext Service starting...");
             tracing::info!(
                 "Server config: {}:{}",
@@ -34,7 +31,7 @@ async fn main() -> Result<()> {
                 runtime.ctx.config.server.port
             );
             mazbri_core::register_metrics()
-                .map_err(|e| anyhow::anyhow!("Failed to register metrics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to register metrics: {e}"))?;
             let platform_db = if let Some(ref platform_config) = runtime.ctx.config.platform_database {
                 tracing::info!("Connecting to platform database...");
                 Some(create_pool(platform_config, None).await?)
@@ -46,7 +43,7 @@ async fn main() -> Result<()> {
             let client_cert = cert_manager.initialize().await?;
             let cbpro_client = match CBProClient::new(
                 runtime.ctx.config.clients.cbpro.clone(),
-                client_cert.ca_cert_pem.clone(),
+                &client_cert.ca_cert_pem,
                 &client_cert,
                 &runtime.ctx.tls_config,
             ) {
@@ -74,9 +71,7 @@ async fn main() -> Result<()> {
                     tracing::warn!(error = % error, "Failed to restore runtime decisions from DB");
                 }
             }
-            if let Err(error) = manager.restore_runtime_decisions_from_platform().await {
-                tracing::warn!(error = % error, "Platform restore probe failed");
-            }
+            manager.restore_runtime_decisions_from_platform();
             if runtime.ctx.config.greptime.enabled {
                 let manager = Arc::clone(&manager);
                 let interval_secs = runtime.ctx.config.greptime.query_interval_secs.max(5);

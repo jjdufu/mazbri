@@ -50,7 +50,7 @@ pub async fn add_config_tags(
             Some(&request_context.trace_id),
             &e,
             Some(false),
-            Some(format!("未找到配置 {}", service)),
+            Some(format!("未找到配置 {service}")),
         ),
     }
 }
@@ -95,7 +95,7 @@ pub async fn remove_config_tags(
             Some(&request_context.trace_id),
             &e,
             Some(false),
-            Some(format!("未找到配置 {}", service)),
+            Some(format!("未找到配置 {service}")),
         ),
     }
 }
@@ -140,7 +140,7 @@ pub async fn set_config_category(
             Some(&request_context.trace_id),
             &e,
             Some(false),
-            Some(format!("未找到配置 {}", service)),
+            Some(format!("未找到配置 {service}")),
         ),
     }
 }

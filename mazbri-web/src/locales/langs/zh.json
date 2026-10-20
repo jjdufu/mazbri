@@ -791,7 +791,6 @@
       "certificates": "证书管理",
       "certificateList": "证书列表",
       "certificateDetail": "证书详情",
-      "certificatePresets": "预置模板",
       "authorizationManagement": "授权管理",
       "billList": "账单列表",
       "usageReconciliation": "用量对账",
@@ -843,7 +842,7 @@
       "siteUrl": "站点 URL",
       "siteUrlPlaceholder": "https://example.com",
       "tenantGatewayUrl": "租户网关地址",
-      "tenantGatewayUrlPlaceholder": "http://gateway.mazbri.local:8080",
+      "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "租户 API 网关根地址（非管理后台）。",
       "adminEmail": "管理员邮箱",
       "adminEmailPlaceholder": "admin@example.com",
@@ -1388,10 +1387,6 @@
       "certificateIssue": "签发证书",
       "certificateRenew": "续期证书",
       "certificateRevoke": "吊销证书",
-      "certificatePresetCreate": "添加预置模板",
-      "certificatePresetUpdate": "更新预置模板",
-      "certificatePresetDelete": "删除预置模板",
-      "certificatePresetImport": "导入预置模板",
       "settingsUpdate": "更新系统设置",
       "passwordPolicyUpdate": "更新密码策略",
       "configCenterCreate": "创建配置",
@@ -1449,7 +1444,6 @@
       "product": "产品",
       "apiKey": "API 密钥",
       "certificate": "证书",
-      "certificatePreset": "证书预置模板",
       "system": "系统",
       "user": "用户",
       "quota": "授权配置",
@@ -1727,25 +1721,8 @@
     },
     "serviceNameSelector": {
       "label": "服务名称",
-      "placeholder": "请选择预定义的服务名称",
-      "groups": {
-        "system": "系统预置",
-        "custom": "自定义"
-      },
-      "tags": {
-        "configured": "已配置",
-        "system": "系统",
-        "custom": "自定义"
-      },
-      "empty": {
-        "description": "暂无可用服务名称",
-        "title": "系统暂未定义任何服务名称",
-        "subtitle": "请管理员先添加预定义服务。"
-      },
-      "actions": {
-        "manage": "管理服务名称"
-      },
-      "hint": "从预定义服务名中选择。"
+      "placeholder": "选择服务",
+      "global": "global（全局配置）"
     },
     "historyDrawer": {
       "title": "版本历史",
@@ -2058,60 +2035,6 @@
         "expiredByDays": "已过期 {count} 天"
       }
     },
-    "presets": {
-      "page": {
-        "title": "证书预置模板"
-      },
-      "list": {
-        "title": "预置 DNS 模板"
-      },
-      "actions": {
-        "import": "导入",
-        "export": "导出",
-        "exportAll": "导出全部",
-        "exportSelected": "导出选中 ({count})",
-        "create": "新增预置"
-      },
-      "columns": {
-        "serviceName": "服务名称",
-        "dnsNames": "DNS 名称",
-        "description": "描述",
-        "createdAt": "创建时间"
-      },
-      "empty": "暂无预置模板",
-      "importDialog": {
-        "title": "导入预置模板"
-      },
-      "form": {
-        "createTitle": "新增预置",
-        "editTitle": "编辑预置",
-        "fields": {
-          "serviceName": "服务名称",
-          "dnsNames": "DNS 名称",
-          "description": "描述"
-        },
-        "placeholders": {
-          "serviceName": "如: api-gateway",
-          "dnsNames": "每行一个 DNS 名称，例如：\ngateway.local\napi.local\nadmin.local",
-          "description": "用途描述（可选）"
-        },
-        "validation": {
-          "serviceNameRequired": "请输入服务名称",
-          "dnsNamesRequired": "请至少添加一个 DNS 名称"
-        }
-      },
-      "importHint": {
-        "header": "文件需包含表头：service_name,dns_names,description",
-        "example1": "例如：gateway,\"gateway.local",
-        "example2": "api.local\",网关服务"
-      },
-      "importValidation": {
-        "missingServiceName": "缺少 service_name",
-        "missingDnsNames": "至少需要一个 dns_names",
-        "missingColumn": "缺少必需列 {key}",
-        "failed": "验证失败"
-      }
-    },
     "list": {
       "title": "证书列表",
       "actions": {
@@ -2179,16 +2102,9 @@
     },
     "issueDialog": {
       "title": "签发证书",
-      "presetTemplate": "预置模板",
-      "selectPresetPlaceholder": "选择预置模板（可选）",
-      "unnamed": "未命名",
+      "service": "服务",
+      "sanAutoTip": "SAN 由 cert 按部署模式自动生成",
       "issued": "已签发",
-      "noPresets": "暂无可用的预置模板",
-      "serviceName": "服务名称",
-      "serviceNamePlaceholder": "例如: mazbri-auth-service",
-      "serviceNameTip": "服务唯一标识。",
-      "dnsNames": "DNS 名称",
-      "dnsNamesPlaceholder": "多个 DNS 名称用逗号分隔，或选择预置模板",
       "validity": "有效期",
       "validityOptions": {
         "90": "90 天",
@@ -2196,13 +2112,11 @@
         "365": "365 天 (1年)",
         "730": "730 天 (2年)"
       },
-      "batchIssue": "一键签发 ({count} 个未签发)",
+      "issueAllUnissued": "一键签发全部未签服务 ({count} 个)",
       "issue": "签发",
       "batchIssueFailed": "{name}: 签发失败",
       "validation": {
-        "serviceNameRequired": "请输入服务名称",
-        "serviceNameLength": "服务名称长度必须在 1-255 个字符之间",
-        "dnsRequired": "请输入至少一个 DNS 名称"
+        "serviceRequired": "请选择服务"
       }
     },
     "autoRenewalDialog": {
@@ -2235,14 +2149,8 @@
       }
     },
     "messages": {
-      "deletePresetConfirm": "确定要删除预置 \"{name}\" 吗？",
-      "noPresetToExport": "暂无数据可导出",
-      "selectPresetToExport": "请先选择要导出的预置模板",
-      "exportPresetCountSuccess": "成功导出 {count} 个预置模板",
-      "serviceNameRequired": "请输入服务名称",
-      "dnsRequired": "请输入至少一个 DNS 名称",
       "issueSuccess": "证书签发成功",
-      "noPresetToIssue": "没有需要签发的预置模板",
+      "noServiceToIssue": "所有服务均已签发",
       "batchIssueSuccess": "成功签发 {count} 个证书",
       "batchIssuePartial": "签发完成：成功 {successCount} 个，失败 {failCount} 个",
       "renewConfirm": "确定要续期证书 \"{name}\" 吗？",
@@ -3481,7 +3389,8 @@
       "subtitle": "平台 route_version = {version}",
       "reloadHint": "约 5 秒内热加载生效。",
       "copyCurl": "复制联调命令",
-      "goSuppliers": "返回上游供给"
+      "goSuppliers": "返回上游供给",
+      "gatewayUrlMissing": "未配置租户网关地址，请在 系统设置 → 租户网关地址 中填写后再复制调用示例"
     },
     "useAccessWizard": "新建请使用【接入上游】统一向导",
     "placeholders": {

@@ -1,4 +1,5 @@
-use super::*;
+use mazbri_core::num::SaturatingFrom;
+use super::{Serialize, Deserialize, info, debug, warn, Arc, Uuid, CandidateChannel, resolve_mode_and_contract_hint, ProxyState, MazbriClaims, GatewayRequest, RouteMatchContext, CircuitBreaker, CircuitBreakerConfig, Duration, TraceContext, ProxyError, InteractionEvent, spawn_persist_event_best_effort, UpstreamAttempt, ChannelRateLimitRequest, ChannelRateLimitDecision, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL, AttemptStatus, execute_channel_attempt, should_switch_status, classify_proxy_result, store_fallback_snapshot, should_switch, try_cbpro_fallback};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FallbackSnapshot {
@@ -26,7 +27,7 @@ pub(crate) struct ProxyExecutionOutcome {
     pub(crate) response: UpstreamResponse,
     pub(crate) interaction_event_id: Uuid,
     pub(crate) upstream_route: Option<UpstreamRouteMetadata>,
-    /// True when body was served from CBPro fallback snapshot (not live upstream).
+    /// True when body was served from `CBPro` fallback snapshot (not live upstream).
     pub(crate) from_cbpro_fallback: bool,
 }
 #[derive(Debug, Clone)]
@@ -40,7 +41,7 @@ pub(crate) struct UpstreamRouteMetadata {
     pub(crate) attempt_order: u32,
     /// transparent | microservice
     pub(crate) upstream_mode: String,
-    /// gRPC 契约 ID（见 upstream_contract::known_contract_ids）
+    /// gRPC 契约 ID（见 `upstream_contract::known_contract_ids`）
     pub(crate) contract_id: String,
 }
 
@@ -63,7 +64,7 @@ pub(crate) fn upstream_route_from_channel(
     }
 }
 
-/// First matched product route channel (for cache / CBPro access logs when no live upstream).
+/// First matched product route channel (for cache / `CBPro` access logs when no live upstream).
 pub(crate) fn match_primary_route_metadata(
     state: &ProxyState,
     claims: &MazbriClaims,
@@ -96,21 +97,21 @@ pub(crate) async fn get_or_create_breaker(
     let cb_cfg = &state.circuit_breaker_config;
     let cb_config = match state.product_service.get_product_by_id(product_id).await {
         Ok(Some(product)) => CircuitBreakerConfig {
-            failure_threshold: product.cb_failure_threshold as u64,
-            success_threshold: product.cb_success_threshold as u64,
-            cooldown_duration: Duration::from_secs(product.cb_cooldown_secs as u64),
-            request_timeout: Duration::from_secs(product.timeout_secs as u64),
+            failure_threshold: u64::saturating_from(product.cb_failure_threshold),
+            success_threshold: u64::saturating_from(product.cb_success_threshold),
+            cooldown_duration: Duration::from_secs(u64::saturating_from(product.cb_cooldown_secs)),
+            request_timeout: Duration::from_secs(u64::saturating_from(product.timeout_secs)),
         },
         _ => CircuitBreakerConfig {
-            failure_threshold: cb_cfg.failure_threshold as u64,
-            success_threshold: cb_cfg.success_threshold as u64,
+            failure_threshold: u64::from(cb_cfg.failure_threshold),
+            success_threshold: u64::from(cb_cfg.success_threshold),
             cooldown_duration: Duration::from_secs(cb_cfg.cooldown_secs),
             request_timeout: Duration::from_secs(cb_cfg.request_timeout_secs),
         },
     };
     state.circuit_breakers.get_with_by_ref(product_id, || {
         let breaker = Arc::new(CircuitBreaker::new(
-            format!("product:{}", product_id),
+            format!("product:{product_id}"),
             cb_config.clone(),
         ));
         info!(
@@ -161,7 +162,7 @@ pub(crate) async fn execute_gateway_request_with_event(
     let mut last_channel_rate_limit: Option<(u64, String, String, i32, &'static str)> = None;
     let mut last_attempted_route: Option<UpstreamRouteMetadata> = None;
     for (index, channel) in candidates.into_iter().enumerate() {
-        last_attempted_route = Some(upstream_route_from_channel(&channel, (index + 1) as u32));
+        last_attempted_route = Some(upstream_route_from_channel(&channel, u32::saturating_from(index + 1)));
         event.record_upstream_attempt(
             &channel.channel_id,
             UpstreamAttempt {
@@ -280,7 +281,7 @@ pub(crate) async fn execute_gateway_request_with_event(
                         channel_code: channel.channel_code,
                         upstream_url: channel.supplier_upstream_url,
                         route_template: channel.path_prefix,
-                        attempt_order: (index + 1) as u32,
+                        attempt_order: u32::saturating_from(index + 1),
                         upstream_mode: mode_hint,
                         contract_id: contract_hint,
                     }),

@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+use mazbri_core::num::SaturatingFrom;
 use super::super::error::ConfigResult;
 use super::super::models::{
     BatchError, BatchFilters, BatchOperation, BatchResult, ConfigEntry, ConfigEntrySummary,
@@ -5,13 +7,16 @@ use super::super::models::{
 use super::super::validator::{compute_batch_content_hash, validate_batch_toml};
 use uuid::Uuid;
 impl super::super::ConfigRepository {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_by_filters(&self, filters: &BatchFilters) -> ConfigResult<Vec<ConfigEntry>> {
         let mut query = String::from("SELECT * FROM config_entries");
         let mut param_count = 0;
         if let Some(ref service_names) = filters.service_names {
             if !service_names.is_empty() {
                 param_count += 1;
-                query.push_str(&format!(" WHERE service_name = ANY(${param_count})"));
+                let _ = write!(query, " WHERE service_name = ANY(${param_count})");
             }
         }
         query.push_str(" ORDER BY service_name");
@@ -24,6 +29,9 @@ impl super::super::ConfigRepository {
         let entries = sql_query.fetch_all(&*self.db).await?;
         Ok(entries)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn batch_delete(
         &self,
         filters: &BatchFilters,
@@ -48,10 +56,10 @@ impl super::super::ConfigRepository {
             });
         }
         let deleted_count = sqlx::query(
-            r#"
+            r"
             DELETE FROM config_entries
             WHERE id = ANY($1)
-            "#,
+            ",
         )
         .bind(&entry_ids)
         .execute(&*self.db)
@@ -59,11 +67,14 @@ impl super::super::ConfigRepository {
         .rows_affected();
         Ok(BatchResult {
             success: true,
-            affected_count: deleted_count as usize,
+            affected_count: usize::saturating_from(deleted_count),
             affected_entries: entries.iter().map(ConfigEntrySummary::from).collect(),
             errors: vec![],
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn batch_update(
         &self,
         filters: &BatchFilters,
@@ -167,11 +178,11 @@ impl super::super::ConfigRepository {
                 )
             };
             let result = sqlx::query(
-                    r#"
+                    r"
                 UPDATE config_entries
                 SET content = $1, content_hash = $2, is_sensitive = $3, updated_by = $4, updated_at = NOW()
                 WHERE id = $5
-                "#,
+                ",
                 )
                 .bind(&stored_content)
                 .bind(&content_hash)

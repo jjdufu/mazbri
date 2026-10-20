@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::*;
 
 pub(super) async fn execute_http_upstream_request(
@@ -47,8 +48,7 @@ pub(super) async fn execute_http_upstream_request(
         .timeouts
         .as_ref()
         .and_then(|t| t.total_ms)
-        .map(|ms| ms.div_ceil(1000).max(1))
-        .unwrap_or(0);
+        .map_or(0, |ms| ms.div_ceil(1000).max(1));
 
     let mut headers = sanitize_client_ip_headers(req.headers.clone().unwrap_or_default());
 
@@ -115,16 +115,12 @@ pub(super) async fn execute_http_upstream_request(
             .or_else(|| config.timeouts.as_ref().and_then(|t| t.total_ms))
             .unwrap_or(timeout_secs.saturating_mul(1000));
 
-        let bypass_endpoint = state.services_config.bypass_url.as_ref().ok_or_else(|| {
+        let bypass_endpoint = state.services_config.bypass.as_ref().ok_or_else(|| {
             "Bypass service endpoint is not configured in ServicesConfig (transparent upstream requires bypass_url)"
                 .to_string()
         })?;
         let bypass_host_port = bypass_endpoint.url();
-        if let Some(server_name) = bypass_endpoint.server_name() {
-            final_addr = format!("https://{}?server_name={}", bypass_host_port, server_name);
-        } else {
-            final_addr = format!("https://{}", bypass_host_port);
-        }
+        final_addr = format!("https://{bypass_host_port}");
 
         invoke_req = Some(upstream_proto::InvokeRequest {
             product_id: req.product_id.clone(),
@@ -211,8 +207,7 @@ pub(super) async fn execute_http_upstream_request(
                             }))
                         };
                         let bytes_len = serde_json::to_vec(&body)
-                            .map(|b| b.len() as u64)
-                            .unwrap_or(0);
+                            .map_or(0, |b| b.len() as u64);
                         return Ok(UpstreamResponse {
                             status: 400,
                             body: ProxyBody::JsonValue(body),
@@ -222,7 +217,7 @@ pub(super) async fn execute_http_upstream_request(
                         });
                     }
                     let payload = if response.payload_json.is_empty() {
-                        serde_json::Value::Object(Default::default())
+                        serde_json::Value::Object(serde_json::Map::default())
                     } else {
                         serde_json::from_str(&response.payload_json)
                             .unwrap_or(serde_json::Value::String(response.payload_json.clone()))
@@ -230,7 +225,7 @@ pub(super) async fn execute_http_upstream_request(
                     let status = response
                         .upstream_meta
                         .as_ref()
-                        .map(|m| m.status as u16)
+                        .map(|m| u16::saturating_from(m.status))
                         .filter(|s| *s > 0)
                         .unwrap_or(200);
                     let bytes_len = response.payload_json.len() as u64;
@@ -251,7 +246,7 @@ pub(super) async fn execute_http_upstream_request(
                         attempt += 1;
                         continue;
                     }
-                    return Err(format!("upstream HTTP/2 request failed: {}", error));
+                    return Err(format!("upstream HTTP/2 request failed: {error}"));
                 }
             }
         }
@@ -289,7 +284,7 @@ pub(super) async fn execute_http_upstream_request(
                 let body = map_proto_upstream_body(data.body.unwrap_or_default());
                 let content_type = data.headers.get("content-type").cloned();
                 return Ok(UpstreamResponse {
-                    status: data.status as u16,
+                    status: u16::saturating_from(data.status),
                     body,
                     error: String::new(),
                     content_type,
@@ -305,7 +300,7 @@ pub(super) async fn execute_http_upstream_request(
                     attempt += 1;
                     continue;
                 }
-                return Err(format!("upstream HTTP/2 request failed: {}", error));
+                return Err(format!("upstream HTTP/2 request failed: {error}"));
             }
         }
     }

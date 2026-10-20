@@ -15,16 +15,13 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    run_toml_config_service::<BypassServiceConfig, _, _>(
-        "mazbri-bypass",
-        "mazbri-bypass",
-        |ctx| async move {
-            let runtime = init_service_runtime(ctx, "mazbri-bypass")?;
+    run_toml_config_service::<BypassServiceConfig, _, _>(|ctx| async move {
+            let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri mazbri-bypass transparent egress gateway starting...");
             tracing::info!("Server configuration: {:?}", runtime.ctx.config.server);
 
             register_upstream_metrics()
-                .map_err(|e| anyhow::anyhow!("Failed to register upstream metrics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to register upstream metrics: {e}"))?;
 
             let db = create_pool(&runtime.ctx.config.database, None).await?;
             tracing::info!("Connected to platform database for upstream_artifacts");
@@ -48,7 +45,7 @@ async fn main() -> Result<()> {
             let service = MazbriBypassServiceImpl::new(
                 Arc::new(client),
                 ssrf_checker,
-                runtime.service_name.clone(),
+                runtime.service_name.as_str().to_owned(),
                 db,
             )
             .with_limits(mazbri_upstream_runtime::RuntimeLimits {

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use mazbri_core::config::{ServiceConfig, ValidateConfig};
 use serde::Deserialize;
 use std::collections::HashMap;
 #[derive(Debug, Clone, Deserialize)]
@@ -10,8 +10,6 @@ pub struct CacheServiceConfig {
     pub redis: mazbri_core::redis::RedisConfig,
     #[serde(default)]
     pub cache: CacheConfig,
-    #[serde(default)]
-    pub tls: Option<mazbri_tls::TlsConfig>,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
 }
@@ -49,11 +47,11 @@ impl Default for CacheConfig {
     }
 }
 impl ServiceConfig for CacheServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-cache-service"
-    }
-    fn default_port() -> u16 {
-        8083
+    fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
+        self.admin.enabled.then(|| mazbri_core::config::AdminHealthEndpoint {
+            port: self.admin.port,
+            path: &self.admin.health_path,
+        })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
         &self.server
@@ -61,9 +59,6 @@ impl ServiceConfig for CacheServiceConfig {
 }
 impl ValidateConfig for CacheServiceConfig {
     fn validate(&self) -> Result<()> {
-        if let Some(ref tls_config) = self.tls {
-            tls_config.validate()?;
-        }
         self.redis.validate()?;
         Ok(())
     }

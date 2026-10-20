@@ -4,11 +4,9 @@ use crate::config_center::ConfigRepository;
 use crate::db::CertificateRepository;
 use crate::handlers::{
     self, category::CategoryState, certificate::CertificateState, config::ConfigState,
-    health::HealthState, node::NodeState, preset::PresetState,
-    service_registry::ServiceRegistryState, tag::TagState,
+    health::HealthState, node::NodeState, tag::TagState,
 };
 use crate::node_registry::NodeRegistryRepository;
-use crate::service_registry::ServiceRepository;
 use axum::{
     Router, middleware,
     routing::{delete, get, post, put},
@@ -25,12 +23,15 @@ pub struct AppState {
     pub repo: Arc<CertificateRepository>,
     pub node_repo: Arc<NodeRegistryRepository>,
     pub config_repo: Arc<ConfigRepository>,
-    pub service_registry_repo: Arc<ServiceRepository>,
+    pub san_policy: Arc<crate::san::SanPolicy>,
     pub root_material_cache: Arc<Mutex<Option<RootProtectionMaterialBundle>>>,
     pub root_material_refresh_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn current_root_material_bundle(
         &self,
     ) -> Result<Option<RootProtectionMaterialBundle>, crate::error::CertError> {
@@ -54,6 +55,9 @@ impl AppState {
         Ok(bundle)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn current_root_material_bundle_for_decryption(
         &self,
     ) -> Result<Option<RootProtectionMaterialBundle>, crate::error::CertError> {
@@ -110,12 +114,9 @@ pub fn create_app(state: AppState) -> Router {
     let cert_state = CertificateState {
         repo: state.repo.clone(),
         base_authorization: state.base_authorization.clone(),
+        san_policy: state.san_policy.clone(),
     };
     let root_package_state = Arc::new(state.clone());
-    let preset_state = PresetState {
-        repo: state.repo.clone(),
-        base_authorization: state.base_authorization.clone(),
-    };
     let cert_routes = Router::new()
         .route("/issue", post(handlers::certificate::issue_certificate))
         .route(
@@ -167,17 +168,6 @@ pub fn create_app(state: AppState) -> Router {
             state.auth_state.clone(),
             crate::auth::auth_middleware,
         ));
-    let preset_routes = Router::new()
-        .route("/presets", get(handlers::preset::list_presets))
-        .route("/presets", post(handlers::preset::create_preset))
-        .route("/presets/{id}", get(handlers::preset::get_preset))
-        .route("/presets/{id}", put(handlers::preset::update_preset))
-        .route("/presets/{id}", delete(handlers::preset::delete_preset))
-        .with_state(preset_state)
-        .layer(middleware::from_fn_with_state(
-            state.auth_state.clone(),
-            crate::auth::auth_middleware,
-        ));
     let auth_layer =
         middleware::from_fn_with_state(state.auth_state.clone(), crate::auth::auth_middleware);
     let node_state = NodeState {
@@ -193,7 +183,6 @@ pub fn create_app(state: AppState) -> Router {
         .layer(auth_layer.clone());
     let config_state = ConfigState {
         repo: state.config_repo.clone(),
-        service_registry_repo: state.service_registry_repo.clone(),
     };
     let license_write_layer = middleware::from_fn_with_state(
         state.base_authorization.clone(),
@@ -273,45 +262,16 @@ pub fn create_app(state: AppState) -> Router {
             delete(handlers::category::delete_category),
         )
         .with_state(category_state)
-        .layer(auth_layer.clone());
-    let service_registry_state = ServiceRegistryState {
-        repo: state.service_registry_repo.clone(),
-    };
-    let service_registry_routes = Router::new()
-        .route("/services", get(handlers::service_registry::list_services))
-        .route(
-            "/services",
-            post(handlers::service_registry::create_service),
-        )
-        .route(
-            "/services/{name}",
-            get(handlers::service_registry::get_service),
-        )
-        .route(
-            "/services/{name}",
-            put(handlers::service_registry::update_service),
-        )
-        .route(
-            "/services/{name}",
-            delete(handlers::service_registry::delete_service),
-        )
-        .route(
-            "/services/{name}/validate",
-            get(handlers::service_registry::validate_service),
-        )
-        .with_state(service_registry_state)
         .layer(auth_layer);
     Router::new()
         .merge(public_routes)
         .merge(base_authorization_admin_routes)
         .merge(cert_routes)
         .merge(root_package_routes)
-        .merge(preset_routes)
         .merge(node_routes)
         .merge(config_routes)
         .merge(tag_routes)
         .merge(category_routes)
-        .merge(service_registry_routes)
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())

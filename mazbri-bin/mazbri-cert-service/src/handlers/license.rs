@@ -16,6 +16,9 @@ fn extract_admin_id(headers: &HeaderMap) -> Option<uuid::Uuid> {
         .and_then(|value| uuid::Uuid::parse_str(value).ok())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn export_license_request(
     State(state): State<Arc<crate::server::AppState>>,
 ) -> Result<impl IntoResponse, CertError> {
@@ -24,6 +27,9 @@ pub async fn export_license_request(
     Ok(Json(request))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn import_license(
     State(state): State<Arc<crate::server::AppState>>,
     headers: HeaderMap,
@@ -67,6 +73,9 @@ pub async fn import_license(
     Ok(Json(license_service::decision_json(&decision)))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_license_status(
     State(state): State<Arc<crate::server::AppState>>,
 ) -> Result<impl IntoResponse, CertError> {

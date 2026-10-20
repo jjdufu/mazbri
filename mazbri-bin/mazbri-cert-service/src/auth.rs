@@ -26,7 +26,7 @@ impl AuthState {
 }
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth_header = headers.get("authorization")?.to_str().ok()?;
-    auth_header.strip_prefix("Bearer ").map(|s| s.to_string())
+    auth_header.strip_prefix("Bearer ").map(std::string::ToString::to_string)
 }
 pub async fn auth_middleware_inner(
     auth_state: Arc<AuthState>,
@@ -71,7 +71,7 @@ pub async fn auth_middleware(
 /// 配置中心写接口的许可证闸，外层已经校验过 Bearer token。
 ///
 /// 许可证判定为 active 或 grace 才放行，否则返回 403
-/// （base_authorization_not_active / base_authorization_expired）。
+/// （`base_authorization_not_active` / `base_authorization_expired`）。
 /// 判定只看许可证原文，所以重启恢复、许可证续期、换钥和业务证书续期都不会让它失效。
 pub async fn license_write_middleware(
     State(base_authorization): State<Arc<BaseAuthorizationState>>,
@@ -96,7 +96,7 @@ mod tests {
 
     fn auth_config(tokens: &[&str]) -> CertAuthConfig {
         CertAuthConfig {
-            static_tokens: tokens.iter().map(|t| t.to_string()).collect(),
+            static_tokens: tokens.iter().map(std::string::ToString::to_string).collect(),
         }
     }
 

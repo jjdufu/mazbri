@@ -4,8 +4,8 @@ use mazbri_core::metrics::register_collector_once;
 use prometheus::{CounterVec, HistogramVec};
 use std::sync::LazyLock;
 
-/// status_class: 2xx|3xx|4xx|5xx|0
-/// result: ok|timeout|transport|ssrf|auth_token|config|transform
+/// `status_class`: 2xx|3xx|4xx|5xx|0
+/// result: `ok|timeout|transport|ssrf|auth_token|config|transform`
 pub static BYPASS_UPSTREAM_REQUESTS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "bypass_upstream_requests_total",
@@ -39,7 +39,7 @@ pub static BYPASS_SSRF_BLOCK_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     )
 });
 
-/// result: ok|error|timeout|cache_hit|cache_miss
+/// result: `ok|error|timeout|cache_hit|cache_miss`
 pub static BYPASS_AUTH_TOKEN_FETCH_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "bypass_auth_token_fetch_total",

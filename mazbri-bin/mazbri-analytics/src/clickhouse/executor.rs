@@ -1,5 +1,5 @@
 use super::client::ClickHouseClient;
-use super::queries::*;
+use super::queries::{build_audit_log_conditions, build_where_clause, build_audit_logs_count_sql, build_audit_logs_data_sql, get_time_expression, build_audit_analytics_conditions, build_audit_analytics_sql, get_stats_time_expression, build_audit_stats_aggregation_conditions, build_audit_log_stats_sql, build_request_log_conditions, build_request_logs_count_sql, build_request_logs_data_sql, build_aggregation_conditions, build_aggregation_summary_sql, build_aggregation_by_route_sql, build_aggregation_by_status_sql, get_time_bucket_expression, build_aggregation_by_time_sql, build_stats_aggregation_conditions, build_request_log_stats_summary_sql, build_request_log_route_stats_sql, build_request_log_stats_by_status_sql, get_stats_time_bucket_expression};
 use super::types::{
     AuditAnalyticsRow, AuditLogRow, GroupedCountRow, RequestLogRow, SummaryRow, TimeBucketRow,
 };
@@ -36,7 +36,7 @@ impl RawRequestAggregationPlan {
         }
     }
 
-    fn query_budget(&self) -> usize {
+    fn query_budget(self) -> usize {
         1 + usize::from(self.include_path_breakdown)
             + usize::from(self.include_status_breakdown)
             + usize::from(self.include_time_breakdown)
@@ -75,6 +75,9 @@ fn classify_request_stats_aggregation(agg: &RequestLogAggregation) -> StatsQuery
 }
 
 impl ClickHouseClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_audit_logs(&self, params: &AuditQueryParams) -> Result<AuditQueryResult> {
         self.with_query_timeout("audit_logs", self.query_audit_logs_inner(params))
             .await
@@ -94,6 +97,9 @@ impl ClickHouseClient {
         Ok(AuditQueryResult { logs, total })
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_audit_analytics(
         &self,
         params: &AuditAnalyticsParams,
@@ -175,6 +181,9 @@ impl ClickHouseClient {
         Ok(results)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_request_logs(
         &self,
         params: &RequestLogQueryParams,
@@ -225,6 +234,9 @@ impl ClickHouseClient {
         Ok(RequestLogQueryResult { logs, total })
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn aggregate_request_logs(
         &self,
         params: &RequestLogAggregationParams,
@@ -302,7 +314,7 @@ impl ClickHouseClient {
             avg_post_response_ms,
         ) = summary_results
             .first()
-            .map(|r| {
+            .map_or((0, 0.0, 0.0, 0.0, 0.0, 0.0), |r| {
                 (
                     r.total,
                     r.avg_duration_ms,
@@ -311,8 +323,7 @@ impl ClickHouseClient {
                     r.avg_internal_ms,
                     r.avg_post_response_ms,
                 )
-            })
-            .unwrap_or((0, 0.0, 0.0, 0.0, 0.0, 0.0));
+            });
 
         if total_requests == 0 {
             tracing::info!(
@@ -352,17 +363,14 @@ impl ClickHouseClient {
         let mut by_status = HashMap::new();
         let mut invalid_count = 0;
         for (k, v) in by_status_raw {
-            match k.parse::<u16>() {
-                Ok(code) => {
-                    by_status.insert(code, v);
-                }
-                Err(_) => {
-                    invalid_count += 1;
-                    if invalid_count <= 2 {
-                        tracing::warn!(
-                            key = % k, "Failed to parse status code as u16, skipping"
-                        );
-                    }
+            if let Ok(code) = k.parse::<u16>() {
+                by_status.insert(code, v);
+            } else {
+                invalid_count += 1;
+                if invalid_count <= 2 {
+                    tracing::warn!(
+                        key = % k, "Failed to parse status code as u16, skipping"
+                    );
                 }
             }
         }
@@ -429,7 +437,7 @@ impl ClickHouseClient {
             avg_post_response_ms,
         ) = summary_results
             .first()
-            .map(|r| {
+            .map_or((0, 0.0, 0.0, 0.0, 0.0, 0.0), |r| {
                 (
                     r.total,
                     r.avg_duration_ms,
@@ -438,8 +446,7 @@ impl ClickHouseClient {
                     r.avg_internal_ms,
                     r.avg_post_response_ms,
                 )
-            })
-            .unwrap_or((0, 0.0, 0.0, 0.0, 0.0, 0.0));
+            });
 
         if total_requests == 0 {
             return Ok(RequestLogAggregation {
@@ -472,18 +479,15 @@ impl ClickHouseClient {
         let mut by_status = HashMap::new();
         let mut invalid_count = 0;
         for (k, v) in by_status_raw {
-            match k.parse::<u16>() {
-                Ok(code) => {
-                    by_status.insert(code, v);
-                }
-                Err(_) => {
-                    invalid_count += 1;
-                    if invalid_count <= 2 {
-                        tracing::warn!(
-                            key = % k,
-                            "Failed to parse status code as u16 from stats, skipping"
-                        );
-                    }
+            if let Ok(code) = k.parse::<u16>() {
+                by_status.insert(code, v);
+            } else {
+                invalid_count += 1;
+                if invalid_count <= 2 {
+                    tracing::warn!(
+                        key = % k,
+                        "Failed to parse status code as u16 from stats, skipping"
+                    );
                 }
             }
         }
@@ -497,10 +501,9 @@ impl ClickHouseClient {
         let by_time = if let Some(ref group_by) = params.group_by_time {
             let time_expr = get_stats_time_bucket_expression(group_by);
             let time_sql = format!(
-                "SELECT toDateTime({}) AS time, toUInt64(ifNull(SUM(total_count), 0)) AS count \
-                FROM request_log_stats{} \
-                GROUP BY time ORDER BY time",
-                time_expr, where_clause
+                "SELECT toDateTime({time_expr}) AS time, toUInt64(ifNull(SUM(total_count), 0)) AS count \
+                FROM request_log_stats{where_clause} \
+                GROUP BY time ORDER BY time"
             );
             let time_rows = self.execute_query::<TimeBucketRow>(&time_sql).await?;
             time_rows

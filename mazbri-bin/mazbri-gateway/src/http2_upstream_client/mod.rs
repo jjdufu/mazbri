@@ -22,6 +22,7 @@ pub struct UpstreamHttp2ClientPool {
 }
 
 impl UpstreamHttp2ClientPool {
+    #[must_use]
     pub fn new(client_cert: &ManagedCertificate, client_ttl_secs: u64) -> Self {
         Self {
             clients: Arc::new(DashMap::new()),
@@ -42,7 +43,7 @@ impl UpstreamHttp2ClientPool {
     ) -> Result<Channel, CoreError> {
         // 连接池 cache key 仍按 endpoint（+server_name），与契约身份无关
         let cache_key = match server_name {
-            Some(server_name) => format!("{}#{}", endpoint, server_name),
+            Some(server_name) => format!("{endpoint}#{server_name}"),
             None => endpoint.to_string(),
         };
 
@@ -60,8 +61,7 @@ impl UpstreamHttp2ClientPool {
 
         let server_name = target.server_name.clone().ok_or_else(|| {
             CoreError::Config(format!(
-                "upstream endpoint {} requires a DNS server name for mTLS",
-                endpoint
+                "upstream endpoint {endpoint} requires a DNS server name for mTLS"
             ))
         })?;
 
@@ -113,6 +113,9 @@ impl UpstreamHttp2ClientPool {
         Ok(channel)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn warmup_endpoint(
         &self,
         endpoint: &str,
@@ -124,7 +127,11 @@ impl UpstreamHttp2ClientPool {
 
     /// 按契约 ID 调用上游 Execute。
     ///
-    /// `contract_id` 必须是已注册契约（见 `upstream_contract`），不是业务 channel_code。
+    /// `contract_id` 必须是已注册契约（见 `upstream_contract`），不是业务 `channel_code`。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn execute_request(
         &self,
         contract_id: &str,
@@ -152,7 +159,11 @@ impl UpstreamHttp2ClientPool {
         Ok(response.into_inner())
     }
 
-    /// Code-free invoke: BypassHttpProxyService/Execute with InvokeRequest.
+    /// Code-free invoke: BypassHttpProxyService/Execute with `InvokeRequest`.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn execute_invoke(
         &self,
         contract_id: &str,
@@ -197,6 +208,7 @@ impl UpstreamHttp2ClientPool {
         }
     }
 
+    #[must_use]
     pub fn spawn_cleanup_task(&self) -> tokio::task::JoinHandle<()> {
         let pool = self.clone();
         let ttl_secs = self.client_ttl_secs;

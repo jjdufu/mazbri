@@ -3,6 +3,8 @@
 //! Reads/writes proxy responses when the tenant has `cache_configs.enabled`.
 //! Fail-open on any cache error so proxy availability is not coupled to cache.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use mazbri_core::num::SaturatingFrom;
 use super::execution::{ProxyBody, UpstreamResponse};
 use super::validation::GatewayRequest;
 use crate::config::ServiceEndpoint;
@@ -37,7 +39,7 @@ impl CachedUpstreamResponse {
         if response.status < 200 || response.status >= 300 || !response.error.is_empty() {
             return None;
         }
-        if response.body_bytes_len as usize > MAX_CACHEABLE_BODY_BYTES {
+        if usize::saturating_from(response.body_bytes_len) > MAX_CACHEABLE_BODY_BYTES {
             return None;
         }
         let body = match &response.body {
@@ -57,7 +59,6 @@ impl CachedUpstreamResponse {
                 if bytes.len() > MAX_CACHEABLE_BODY_BYTES {
                     return None;
                 }
-                use base64::{Engine as _, engine::general_purpose::STANDARD};
                 CachedBody::Binary(STANDARD.encode(bytes))
             }
         };
@@ -73,7 +74,7 @@ impl CachedUpstreamResponse {
         let (body, body_bytes_len) = match self.body {
             CachedBody::Empty => (ProxyBody::Empty, 0),
             CachedBody::Json(v) => {
-                let len = serde_json::to_vec(&v).map(|b| b.len() as u64).unwrap_or(0);
+                let len = serde_json::to_vec(&v).map_or(0, |b| b.len() as u64);
                 (ProxyBody::JsonValue(v), len)
             }
             CachedBody::Text(s) => {
@@ -81,7 +82,6 @@ impl CachedUpstreamResponse {
                 (ProxyBody::Text(s), len)
             }
             CachedBody::Binary(encoded) => {
-                use base64::{Engine as _, engine::general_purpose::STANDARD};
                 match STANDARD.decode(encoded) {
                     Ok(bytes) => {
                         let len = bytes.len() as u64;
@@ -135,7 +135,7 @@ pub(crate) async fn try_get_cached_response(
     cache_key: &str,
 ) -> Option<CachedUpstreamResponse> {
     let client = match pool
-        .get_cache_client(endpoint.url(), endpoint.server_name())
+        .get_cache_client(endpoint.url())
         .await
     {
         Ok(c) => c,
@@ -195,7 +195,7 @@ pub(crate) async fn try_put_cached_response(
         }
     };
     let client = match pool
-        .get_cache_client(endpoint.url(), endpoint.server_name())
+        .get_cache_client(endpoint.url())
         .await
     {
         Ok(c) => c,
@@ -219,7 +219,7 @@ pub(crate) async fn try_put_cached_response(
         .await
     {
         Ok(r) if r.error.is_some() => {
-            let msg = r.error.as_ref().map(|e| e.message()).unwrap_or_default();
+            let msg = r.error.as_ref().map(mazbri_rpc::RpcError::message).unwrap_or_default();
             debug!(error = %msg, path = %path, "Proxy response cache set: service error (fail-open)");
         }
         Ok(_) => {

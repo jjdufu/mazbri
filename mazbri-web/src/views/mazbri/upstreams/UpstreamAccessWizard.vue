@@ -140,10 +140,24 @@
           <ElDescriptionsItem label="route_version">{{ result.route_version }}</ElDescriptionsItem>
         </ElDescriptions>
         <p class="hint">{{ $t("upstreamOnboarding.done.reloadHint") }}</p>
-        <ElInput v-model="curlSample" type="textarea" :rows="5" readonly class="mb" />
-        <ElButton type="primary" @click="copyCurl">
-          {{ $t("upstreamOnboarding.done.copyCurl") }}
-        </ElButton>
+        <template v-if="curlSample">
+          <ElInput
+            :model-value="curlSample"
+            type="textarea"
+            :rows="5"
+            readonly
+            class="mb"
+          />
+          <ElButton type="primary" @click="copyCurl">
+            {{ $t("upstreamOnboarding.done.copyCurl") }}
+          </ElButton>
+        </template>
+        <ElAlert
+          v-else
+          type="warning"
+          :closable="false"
+          :title="$t('upstreamOnboarding.done.gatewayUrlMissing')"
+        />
       </div>
     </div>
 
@@ -392,12 +406,7 @@ function resolveGatewayBaseUrl(): string {
   const fromRuntime = normalizeGatewayBase(runtimeGatewayUrl.value);
   if (fromRuntime) return fromRuntime;
   const fromStore = normalizeGatewayBase(settingStore.tenantGatewayUrl || "");
-  if (fromStore) return fromStore;
-  const fromEnv = normalizeGatewayBase(
-    String(import.meta.env.VITE_GATEWAY_URL ?? ""),
-  );
-  if (fromEnv) return fromEnv;
-  return "http://gateway.mazbri.local:8080";
+  return fromStore;
 }
 
 async function refreshTenantGatewayUrl() {
@@ -419,6 +428,7 @@ async function refreshTenantGatewayUrl() {
 const curlSample = computed(() => {
   const product = form.product_id.trim() || "8012345678";
   const gateway = resolveGatewayBaseUrl();
+  if (!gateway) return "";
   const pathPrefix = (form.path_prefix || "/").trim() || "/";
   return `curl -sS -X POST '${gateway}/api/v1/gateway' \\
   -H 'Authorization: Bearer <access_token>' \\

@@ -66,6 +66,9 @@ pub struct RouterInit<'a> {
     pub admin_state: Option<Arc<AdminState>>,
     pub service_health_cache: Option<crate::service_health_cache::ServiceHealthCache>,
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let RouterInit {
         service_name,
@@ -117,7 +120,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let product_config = ProductConfig::default();
     let redis = mazbri_core::redis::RedisClient::connect_with_config(&config.redis)
         .await
-        .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {}", error))?;
+        .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
     let permission_cache = Arc::new(RedisPermissionCache::new(
         redis.clone(),
         Duration::from_secs(product_config.cache_ttl_secs),
@@ -131,19 +134,20 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         tracing::warn!(error = % error, "Product tenant detail cache warmup failed");
     }
     let tarpc_pool = TarpcClientPool::new_with_timeouts(
-        tls_ca_cert.clone(),
+        &tls_ca_cert.clone(),
         &client_cert,
         tls_config,
         &config.tarpc,
-        config.services.auth_url.timeout_ms,
+        config.services.auth.timeout_ms,
         30_000,
     )
-    .map_err(|e| anyhow::anyhow!("Failed to create TarpcClientPool: {}", e))?;
-    tarpc_pool.spawn_cleanup_task();
+    .map_err(|e| anyhow::anyhow!("Failed to create TarpcClientPool: {e}"))?;
+    // 后台清理任务随进程存活，句柄无需持有（drop 即 detach）。
+    drop(tarpc_pool.spawn_cleanup_task());
     tracing::info!("TarpcClientPool background cleanup task started");
     let upstream_http2_pool =
         UpstreamHttp2ClientPool::new(&client_cert, config.tarpc.client_ttl_secs);
-    upstream_http2_pool.spawn_cleanup_task();
+    drop(upstream_http2_pool.spawn_cleanup_task());
     tracing::info!("UpstreamHttp2ClientPool background cleanup task started");
     let route_engine = crate::route_source::load_route_engine(&db).await?;
     if route_engine.is_empty() {
@@ -181,12 +185,12 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         tarpc_pool: tarpc_pool.clone(),
         upstream_http2_pool: upstream_http2_pool.clone(),
         circuit_breaker_config: config.circuit_breaker.clone(),
-        ratelimit_endpoint: config.services.ratelimit_url.clone(),
+        ratelimit_endpoint: config.services.ratelimit.clone(),
         channel_rate_limit: config.channel_rate_limit.clone(),
-        cbpro_client: config.services.cbpro_url.as_ref().and_then(
+        cbpro_client: config.services.cbpro.as_ref().and_then(
             |endpoint| match CBProClient::new(
                 endpoint.clone(),
-                tls_ca_cert.clone(),
+                &tls_ca_cert.clone(),
                 &client_cert,
                 tls_config,
                 config.tarpc.client_ttl_secs,
@@ -201,10 +205,10 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
                 }
             },
         ),
-        cbpro_ext_client: config.services.cbpro_ext_url.as_ref().and_then(|endpoint| {
+        cbpro_ext_client: config.services.cbpro_ext.as_ref().and_then(|endpoint| {
             match CBProExtClient::new(
                 endpoint.clone(),
-                tls_ca_cert.clone(),
+                &tls_ca_cert.clone(),
                 &client_cert,
                 tls_config,
                 config.tarpc.client_ttl_secs,
@@ -230,7 +234,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     .await?;
     if let Some(cache) = service_health_cache.clone() {
         let tarpc_pool = proxy_state.tarpc_pool.clone();
-        let ratelimit_endpoint = config.services.ratelimit_url.clone();
+        let ratelimit_endpoint = config.services.ratelimit.clone();
         spawn_supervised("service-health-monitor", async move {
             let mut last_state = ServiceHealthState::Unknown;
             let mut saw_unhealthy = false;
@@ -244,22 +248,21 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
                 match current {
                     ServiceHealthState::Unhealthy => {
                         saw_unhealthy = true;
-                        tarpc_pool.remove_client(ratelimit_endpoint.url()).await;
+                        tarpc_pool.remove_client(ratelimit_endpoint.url());
                         tracing::info!(
                             service = "mazbri-ratelimit",
                             "Removed cached tarpc client after health became unhealthy"
                         );
                     }
                     ServiceHealthState::Healthy if saw_unhealthy => {
-                        tarpc_pool.remove_client(ratelimit_endpoint.url()).await;
+                        tarpc_pool.remove_client(ratelimit_endpoint.url());
                         saw_unhealthy = false;
                         tracing::info!(
                             service = "mazbri-ratelimit",
                             "Removed cached tarpc client after health recovered"
                         );
                     }
-                    ServiceHealthState::Healthy => {}
-                    ServiceHealthState::Unknown => {}
+                    ServiceHealthState::Healthy | ServiceHealthState::Unknown => {}
                 }
                 last_state = current;
             }
@@ -340,7 +343,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         jwt_keyring.clone(),
         config.auth.token_expiration_secs,
         tarpc_pool,
-        config.services.auth_url.clone(),
+        config.services.auth.clone(),
         (*db).clone(),
     )));
     let auth_state = AuthState::new(jwt_keyring);
@@ -361,13 +364,13 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
             l1_max_capacity: 50_000,
         };
         tracing::info!(
-            l1_ttl_ms = cache_cfg.l1_ttl.as_millis() as u64,
+            l1_ttl_ms = mazbri_core::num::millis_u64(cache_cfg.l1_ttl),
             l2_ttl_secs = cache_cfg.l2_ttl_secs,
             "Balance precheck cache enabled (L1 memory + L2 Redis)"
         );
         Some(Arc::new(BalancePrecheckCache::new(
             redis.clone(),
-            cache_cfg,
+            &cache_cfg,
         )))
     } else {
         tracing::info!("Balance precheck cache disabled");
@@ -517,7 +520,7 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         match origin.parse() {
             Ok(parsed) => origins.push(parsed),
             Err(e) => {
-                invalid_origins.push(format!("'{}': {}", origin, e));
+                invalid_origins.push(format!("'{origin}': {e}"));
             }
         }
     }
@@ -554,14 +557,10 @@ async fn warmup_tarpc_clients(
     warmup_tarpc_client_with_retry(
         tarpc_pool,
         "ratelimit",
-        services.ratelimit_url.url(),
-        services.ratelimit_url.server_name(),
+        services.ratelimit.url(),
         || async {
             let _ = tarpc_pool
-                .get_ratelimit_client(
-                    services.ratelimit_url.url(),
-                    services.ratelimit_url.server_name(),
-                )
+                .get_ratelimit_client(services.ratelimit.url())
                 .await?;
             Ok(())
         },
@@ -570,11 +569,10 @@ async fn warmup_tarpc_clients(
     warmup_tarpc_client_with_retry(
         tarpc_pool,
         "auth",
-        services.auth_url.url(),
-        services.auth_url.server_name(),
+        services.auth.url(),
         || async {
             let _ = tarpc_pool
-                .get_auth_client(services.auth_url.url(), services.auth_url.server_name())
+                .get_auth_client(services.auth.url())
                 .await?;
             Ok(())
         },
@@ -583,14 +581,10 @@ async fn warmup_tarpc_clients(
     warmup_tarpc_client_with_retry(
         tarpc_pool,
         "billing",
-        services.billing_url.url(),
-        services.billing_url.server_name(),
+        services.billing.url(),
         || async {
             let _ = tarpc_pool
-                .get_billing_client(
-                    services.billing_url.url(),
-                    services.billing_url.server_name(),
-                )
+                .get_billing_client(services.billing.url())
                 .await?;
             Ok(())
         },
@@ -599,25 +593,23 @@ async fn warmup_tarpc_clients(
     warmup_tarpc_client_with_retry(
         tarpc_pool,
         "cache",
-        services.cache_url.url(),
-        services.cache_url.server_name(),
+        services.cache.url(),
         || async {
             let _ = tarpc_pool
-                .get_cache_client(services.cache_url.url(), services.cache_url.server_name())
+                .get_cache_client(services.cache.url())
                 .await?;
             Ok(())
         },
     )
     .await?;
-    if let Some(cbpro_url) = services.cbpro_url.as_ref() {
+    if let Some(cbpro_url) = services.cbpro.as_ref() {
         warmup_tarpc_client_with_retry(
             tarpc_pool,
             "cbpro",
             cbpro_url.url(),
-            cbpro_url.server_name(),
             || async {
                 let _ = tarpc_pool
-                    .get_http_upstream_client(cbpro_url.url(), cbpro_url.server_name())
+                    .get_http_upstream_client(cbpro_url.url())
                     .await?;
                 Ok(())
             },
@@ -652,17 +644,12 @@ async fn warmup_bypass_client(
     upstream_http2_pool: &UpstreamHttp2ClientPool,
     services: &crate::config::ServicesConfig,
 ) -> anyhow::Result<()> {
-    let Some(ref bypass) = services.bypass_url else {
+    let Some(ref bypass) = services.bypass else {
         tracing::info!("No bypass_url configured; skip bypass HTTP/2 warmup");
         return Ok(());
     };
     let host_port = bypass.url();
-    let endpoint = if let Some(server_name) = bypass.server_name() {
-        format!("https://{}?server_name={}", host_port, server_name)
-    } else {
-        format!("https://{}", host_port)
-    };
-    // execute 侧 server_name 参数为 None，server_name 嵌在 URL query 中
+    let endpoint = format!("https://{host_port}");
     warmup_upstream_http2_client_with_retry(upstream_http2_pool, "mazbri-bypass", &endpoint, None)
         .await?;
     tracing::info!(endpoint = %endpoint, "Bypass HTTP/2 client warmed up");
@@ -672,7 +659,6 @@ async fn warmup_tarpc_client_with_retry<F, Fut>(
     _tarpc_pool: &TarpcClientPool,
     service_label: &str,
     addr: &str,
-    server_name: Option<&str>,
     warmup: F,
 ) -> anyhow::Result<()>
 where
@@ -681,9 +667,6 @@ where
 {
     const MAX_RETRIES: u32 = 2;
     const INITIAL_DELAY_MS: u64 = 150;
-    let server_name_suffix = server_name
-        .map(|value| format!(" (server_name={})", value))
-        .unwrap_or_default();
     let mut attempt: u32 = 0;
     loop {
         match warmup().await {
@@ -697,7 +680,6 @@ where
                     tracing::warn!(
                         service = % service_label,
                         addr = % addr,
-                        server_name = ? server_name,
                         attempt = attempt + 1,
                         max_retries = MAX_RETRIES,
                         delay_ms,
@@ -709,11 +691,7 @@ where
                     continue;
                 }
                 return Err(anyhow::anyhow!(
-                    "Tarpc client warmup failed for {} at {}{}: {}",
-                    service_label,
-                    addr,
-                    server_name_suffix,
-                    error
+                    "Tarpc client warmup failed for {service_label} at {addr}: {error}"
                 ));
             }
         }
@@ -728,7 +706,7 @@ async fn warmup_upstream_http2_client_with_retry(
     const MAX_RETRIES: u32 = 2;
     const INITIAL_DELAY_MS: u64 = 150;
     let server_name_suffix = server_name
-        .map(|value| format!(" (server_name={})", value))
+        .map(|value| format!(" (server_name={value})"))
         .unwrap_or_default();
     let mut attempt: u32 = 0;
     loop {
@@ -752,11 +730,7 @@ async fn warmup_upstream_http2_client_with_retry(
                     continue;
                 }
                 return Err(anyhow::anyhow!(
-                    "Upstream HTTP/2 client warmup failed for {} at {}{}: {}",
-                    service_label,
-                    addr,
-                    server_name_suffix,
-                    error
+                    "Upstream HTTP/2 client warmup failed for {service_label} at {addr}{server_name_suffix}: {error}"
                 ));
             }
         }
@@ -829,21 +803,18 @@ async fn concurrency_limit_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    let permit: OwnedSemaphorePermit = match limit.clone().try_acquire_owned() {
-        Ok(permit) => permit,
-        Err(_) => {
-            GATEWAY_OVERLOAD_REJECT_TOTAL.inc();
-            tracing::warn!(
-                target: "gateway.stage",
-                event = "overload_reject",
-                path = %req.uri().path(),
-                message = "Request rejected: max_connections reached"
-            );
-            return ProxyError::ServiceUnavailable(
-                "Service temporarily overloaded; retry later".to_string(),
-            )
-            .into_response();
-        }
+    let permit: OwnedSemaphorePermit = if let Ok(permit) = limit.clone().try_acquire_owned() { permit } else {
+        GATEWAY_OVERLOAD_REJECT_TOTAL.inc();
+        tracing::warn!(
+            target: "gateway.stage",
+            event = "overload_reject",
+            path = %req.uri().path(),
+            message = "Request rejected: max_connections reached"
+        );
+        return ProxyError::ServiceUnavailable(
+            "Service temporarily overloaded; retry later".to_string(),
+        )
+        .into_response();
     };
     let response = next.run(req).await;
     drop(permit);
@@ -852,7 +823,7 @@ async fn concurrency_limit_middleware(
 
 /// Convert empty / non-JSON 4xx·5xx bodies into gateway JSON envelope.
 ///
-/// Covers RequestBodyLimit 413, hyper/timeout 空 body 500/504 等，避免客户端
+/// Covers `RequestBodyLimit` 413, hyper/timeout 空 body 500/504 等，避免客户端
 /// 只看到 status 却解析不出 error 字段（G-16 收尾）。
 async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Response {
     // Prefer already-normalized id from request_id_middleware (inner layer may
@@ -927,12 +898,11 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
 
 fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
     GATEWAY_PANIC_TOTAL.inc();
-    let detail = if let Some(s) = err.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = err.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic".to_string()
+    let detail = match err.downcast::<String>() {
+        Ok(s) => *s,
+        Err(other) => other
+            .downcast_ref::<&str>()
+            .map_or_else(|| "unknown panic".to_string(), |s| (*s).to_string()),
     };
     tracing::error!(
         target: "gateway.stage",

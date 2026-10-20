@@ -2771,7 +2771,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mazbri-mgmt-api-v2"
+name = "mazbri-mgmt"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",

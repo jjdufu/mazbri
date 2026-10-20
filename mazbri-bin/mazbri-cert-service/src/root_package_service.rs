@@ -45,7 +45,7 @@ pub struct RootMaterialRow {
     pub material_type: String,
     pub key_version: String,
     pub wrapping_key_id: String,
-    pub _encrypted_secret: String,
+    pub encrypted_secret: String,
     pub secret_digest: String,
     pub status: String,
     pub created_by: Option<uuid::Uuid>,
@@ -68,9 +68,12 @@ pub struct RootEventRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn latest_package(pool: &PgPool) -> CertResult<Option<RootPackageRow>> {
     let row = sqlx::query_as::<_, RootPackageRow>(
-        r#"
+        r"
         SELECT id, package_version, package_format, purpose, encrypted_package, package_sha256,
             kdf_name, kdf_params, status, expires_at, expired_at, renewed_from_package_id,
             superseded_by_package_id, created_by, imported_by, revoked_by, created_at,
@@ -78,13 +81,16 @@ pub async fn latest_package(pool: &PgPool) -> CertResult<Option<RootPackageRow>>
         FROM commercial_root_packages
         ORDER BY created_at DESC
         LIMIT 1
-        "#,
+        ",
     )
     .fetch_optional(pool)
     .await?;
     Ok(row)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_active_material_bundle(
     pool: &PgPool,
     storage_password: &str,
@@ -92,6 +98,9 @@ pub async fn load_active_material_bundle(
     load_active_material_bundle_inner(pool, storage_password, true).await
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_active_material_bundle_for_decryption(
     pool: &PgPool,
     storage_password: &str,
@@ -109,13 +118,13 @@ async fn load_active_material_bundle_inner(
         return Ok(None);
     }
     let materials = sqlx::query_as::<_, RootMaterialRow>(
-        r#"
-        SELECT id, package_id, material_type, key_version, wrapping_key_id, encrypted_secret AS _encrypted_secret,
+        r"
+        SELECT id, package_id, material_type, key_version, wrapping_key_id, encrypted_secret,
             secret_digest, status, created_by, created_at, activated_at, disabled_at, metadata
         FROM commercial_root_materials
         WHERE status = 'active'
         ORDER BY created_at DESC
-        "#,
+        ",
     )
     .fetch_all(pool)
     .await?;
@@ -127,8 +136,8 @@ async fn load_active_material_bundle_inner(
         .iter()
         .find(|row| row.material_type == COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE)
         .ok_or_else(|| CertError::NotFound("commercial root protection material".to_string()))?;
-    let master_key = unwrap_root_material(storage_password, &master_row._encrypted_secret)?;
-    let integrity_key = unwrap_root_material(storage_password, &integrity_row._encrypted_secret)?;
+    let master_key = unwrap_root_material(storage_password, &master_row.encrypted_secret)?;
+    let integrity_key = unwrap_root_material(storage_password, &integrity_row.encrypted_secret)?;
     Ok(Some(RootProtectionMaterialBundle {
         current_key_version: summary
             .current_key_version
@@ -141,17 +150,20 @@ async fn load_active_material_bundle_inner(
     }))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_summary(pool: &PgPool) -> CertResult<RootPackageSummary> {
     let package = latest_package(pool).await?;
     if let Some(package) = package {
         let counts = sqlx::query(
-            r#"
+            r"
             SELECT
                 COUNT(*) FILTER (WHERE status = 'active') AS active_count,
                 COUNT(*) FILTER (WHERE status = 'deprecated') AS deprecated_count,
                 COUNT(*) FILTER (WHERE status = 'disabled') AS disabled_count
             FROM commercial_root_materials
-            "#,
+            ",
         )
         .fetch_one(pool)
         .await?;
@@ -159,14 +171,14 @@ pub async fn load_summary(pool: &PgPool) -> CertResult<RootPackageSummary> {
         let deprecated_material_count: i64 = counts.get::<i64, _>("deprecated_count");
         let disabled_material_count: i64 = counts.get::<i64, _>("disabled_count");
         let active_material = sqlx::query_as::<_, RootMaterialRow>(
-            r#"
-            SELECT id, package_id, material_type, key_version, wrapping_key_id, encrypted_secret AS _encrypted_secret,
+            r"
+            SELECT id, package_id, material_type, key_version, wrapping_key_id, encrypted_secret,
                 secret_digest, status, created_by, created_at, activated_at, disabled_at, metadata
             FROM commercial_root_materials
             WHERE status = 'active'
             ORDER BY created_at DESC
             LIMIT 1
-            "#,
+            ",
         )
         .fetch_optional(pool)
         .await?;
@@ -253,20 +265,26 @@ pub async fn load_summary(pool: &PgPool) -> CertResult<RootPackageSummary> {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn latest_event(pool: &PgPool) -> CertResult<Option<RootEventRow>> {
     let event = sqlx::query_as::<_, RootEventRow>(
-        r#"
+        r"
         SELECT id, package_id, material_id, event_type, actor_type, actor_id, request_id, details, created_at
         FROM commercial_root_events
         ORDER BY created_at DESC
         LIMIT 1
-        "#,
+        ",
     )
     .fetch_optional(pool)
     .await?;
     Ok(event)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn read_storage_password(config: &Arc<CertConfig>) -> CertResult<String> {
     config
         .key_password

@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use crate::gateway::ProxyError;
 use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
@@ -39,6 +40,7 @@ pub struct IdempotencyRecord {
 }
 
 impl IdempotencyRecord {
+    #[must_use]
     pub fn done(http_status: u16, body: Vec<u8>, content_type: Option<String>) -> Self {
         Self {
             status: "done".to_string(),
@@ -107,6 +109,9 @@ pub static GATEWAY_CRYPTO_LOOKUP_SECONDS: std::sync::LazyLock<HistogramVec> =
         .expect("valid metric definition for gateway tenant crypto lookup")
     });
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_crypto_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(GATEWAY_CRYPTO_CACHE_TOTAL.clone()))?;
     register_collector_once(
@@ -166,19 +171,20 @@ struct TenantCryptoSnapshotRow {
 }
 
 #[derive(Debug, Clone, Default)]
+/// Per-stage durations in milliseconds.
 pub struct TenantCryptoTiming {
-    pub transport_profile_ms: u64,
-    pub envelope_ms: u64,
-    pub preflight_ms: u64,
-    pub nonce_ms: u64,
-    pub tenant_key_ms: u64,
-    pub tenant_key_db_ms: u64,
-    pub tenant_key_root_material_ms: u64,
-    pub tenant_key_local_ms: u64,
-    pub signature_ms: u64,
-    pub decrypt_ms: u64,
-    pub parse_ms: u64,
-    pub transport_total_ms: u64,
+    pub transport_profile: u64,
+    pub envelope: u64,
+    pub preflight: u64,
+    pub nonce: u64,
+    pub tenant_key: u64,
+    pub tenant_key_db: u64,
+    pub tenant_key_root_material: u64,
+    pub tenant_key_local: u64,
+    pub signature: u64,
+    pub decrypt: u64,
+    pub parse: u64,
+    pub transport_total: u64,
 }
 
 #[derive(Clone)]
@@ -195,7 +201,10 @@ pub struct TenantCryptoState {
 }
 
 impl TenantCryptoState {
-    pub async fn new(
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub fn new(
         db: Arc<PgPool>,
         redis: RedisClient,
         cert_service_url: &str,
@@ -228,6 +237,9 @@ impl TenantCryptoState {
         })
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn profile(&self, tenant_id: Uuid) -> Result<TenantCryptoProfile, ProxyError> {
         let lookup_started_at = Instant::now();
         if let Some(profile) = self.profile_cache.get(&tenant_id) {
@@ -271,6 +283,9 @@ impl TenantCryptoState {
         Ok(profile)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn warm_start(&self) -> Result<(), ProxyError> {
         let mut last_error: Option<ProxyError> = None;
         let root_started_at = Instant::now();
@@ -295,6 +310,7 @@ impl TenantCryptoState {
         Ok(())
     }
 
+    #[must_use]
     pub fn spawn_background_tasks(&self) -> Vec<tokio::task::JoinHandle<()>> {
         let snapshot_state = self.clone();
         let root_state = self.clone();
@@ -350,9 +366,12 @@ impl TenantCryptoState {
         ]
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh_active_crypto_snapshot_cache(&self) -> Result<(), ProxyError> {
         let snapshots = sqlx::query_as::<_, TenantCryptoSnapshotRow>(
-            r#"
+            r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
                 p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
@@ -363,7 +382,7 @@ impl TenantCryptoState {
                 ON k.tenant_id = p.tenant_id AND k.key_version = p.current_key_version
             WHERE p.encryption_mode <> 'none'
             ORDER BY p.tenant_id
-            "#,
+            ",
         )
         .fetch_all(self.db.as_ref())
         .await
@@ -437,6 +456,9 @@ impl TenantCryptoState {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh_root_material_cache(&self) -> Result<(), ProxyError> {
         let cache_key = "active".to_string();
         let _guard = self.root_material_refresh_lock.lock().await;
@@ -459,7 +481,7 @@ impl TenantCryptoState {
         tenant_id: Uuid,
     ) -> Result<Option<TenantCryptoSnapshotRow>, ProxyError> {
         sqlx::query_as::<_, TenantCryptoSnapshotRow>(
-            r#"
+            r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
                 p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
@@ -469,7 +491,7 @@ impl TenantCryptoState {
             LEFT JOIN tenant_crypto_keys k
                 ON k.tenant_id = p.tenant_id AND k.key_version = p.current_key_version
             WHERE p.tenant_id = $1
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_optional(self.db.as_ref())
@@ -551,6 +573,9 @@ impl TenantCryptoState {
         Self::materialize_key_row(row, &master_key, &integrity_key)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn decrypt_request_value(
         &self,
         tenant_id: Uuid,
@@ -569,7 +594,7 @@ impl TenantCryptoState {
         let mut timing = TenantCryptoTiming::default();
         let profile_started_at = Instant::now();
         let profile = self.profile(tenant_id).await?;
-        timing.transport_profile_ms = profile_started_at.elapsed().as_millis() as u64;
+        timing.transport_profile = mazbri_core::num::millis_u64(profile_started_at.elapsed());
         match body {
             GatewayRequestPayload::Plain(req) => {
                 if profile.encryption_mode != "none" {
@@ -577,7 +602,7 @@ impl TenantCryptoState {
                         "Encrypted request envelope is required".to_string(),
                     ));
                 }
-                timing.transport_total_ms = started_at.elapsed().as_millis() as u64;
+                timing.transport_total = mazbri_core::num::millis_u64(started_at.elapsed());
                 Ok((req, profile, false, timing))
             }
             GatewayRequestPayload::Encrypted(envelope) => {
@@ -592,7 +617,7 @@ impl TenantCryptoState {
                     ProxyError::BadRequest("Invalid encrypted request envelope".to_string())
                 })?;
                 validate_timestamp(&envelope, profile.clock_skew_seconds)?;
-                timing.preflight_ms = preflight_started_at.elapsed().as_millis() as u64;
+                timing.preflight = mazbri_core::num::millis_u64(preflight_started_at.elapsed());
                 self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
                     .await?;
                 let tenant_key = self
@@ -605,7 +630,7 @@ impl TenantCryptoState {
                         |_| ProxyError::Forbidden("Invalid encrypted request".to_string()),
                     )?;
                 }
-                timing.signature_ms = signature_started_at.elapsed().as_millis() as u64;
+                timing.signature = mazbri_core::num::millis_u64(signature_started_at.elapsed());
                 let decrypt_started_at = Instant::now();
                 let plaintext = decrypt_aes_256_gcm(
                     &tenant_key,
@@ -617,7 +642,7 @@ impl TenantCryptoState {
                 .map_err(|_| {
                     ProxyError::BadRequest("Invalid encrypted request body".to_string())
                 })?;
-                timing.decrypt_ms = decrypt_started_at.elapsed().as_millis() as u64;
+                timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
                 let parse_started_at = Instant::now();
                 let request_codec = profile.request_codec();
                 let req =
@@ -625,13 +650,16 @@ impl TenantCryptoState {
                         .map_err(|_| {
                         ProxyError::BadRequest("Decrypted request body is invalid".to_string())
                     })?;
-                timing.parse_ms = parse_started_at.elapsed().as_millis() as u64;
-                timing.transport_total_ms = started_at.elapsed().as_millis() as u64;
+                timing.parse = mazbri_core::num::millis_u64(parse_started_at.elapsed());
+                timing.transport_total = mazbri_core::num::millis_u64(started_at.elapsed());
                 Ok((req, profile, true, timing))
             }
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn encrypt_response_bytes(
         &self,
         tenant_id: Uuid,
@@ -681,23 +709,23 @@ impl TenantCryptoState {
         if let Some(key) = self.key_cache.get(&cache_key) {
             record_crypto_cache_result("key", "hit");
             record_crypto_lookup_duration("key", "hit", started_at.elapsed());
-            timing.tenant_key_ms = started_at.elapsed().as_millis() as u64;
+            timing.tenant_key = mazbri_core::num::millis_u64(started_at.elapsed());
             return Ok(key);
         }
         record_crypto_cache_result("key", "miss");
         let db_started_at = Instant::now();
         let row = sqlx::query_as::<_, TenantCryptoKey>(
-            r#"
+            r"
             SELECT tenant_id, key_version, encrypted_secret_key, secret_key_digest, status
             FROM tenant_crypto_keys
             WHERE tenant_id = $1 AND key_version = $2
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(key_version)
         .fetch_optional(self.db.as_ref())
         .await;
-        timing.tenant_key_db_ms = db_started_at.elapsed().as_millis() as u64;
+        timing.tenant_key_db = mazbri_core::num::millis_u64(db_started_at.elapsed());
         let row = row
             .map_err(|error| {
                 ProxyError::InternalError(format!("crypto key lookup failed: {error}"))
@@ -710,13 +738,13 @@ impl TenantCryptoState {
         }
         let root_material_started_at = Instant::now();
         let materials = self.root_materials().await;
-        timing.tenant_key_root_material_ms = root_material_started_at.elapsed().as_millis() as u64;
+        timing.tenant_key_root_material = mazbri_core::num::millis_u64(root_material_started_at.elapsed());
         let materials = materials?;
         let local_started_at = Instant::now();
         let (master_key, integrity_key) = decode_root_materials(&materials)?;
         let key = Self::materialize_key_row(&row, &master_key, &integrity_key)?;
-        timing.tenant_key_local_ms = local_started_at.elapsed().as_millis() as u64;
-        timing.tenant_key_ms = started_at.elapsed().as_millis() as u64;
+        timing.tenant_key_local = mazbri_core::num::millis_u64(local_started_at.elapsed());
+        timing.tenant_key = mazbri_core::num::millis_u64(started_at.elapsed());
         self.key_cache.insert(cache_key, key.clone());
         record_crypto_lookup_duration("key", "miss", started_at.elapsed());
         Ok(key)
@@ -753,12 +781,16 @@ impl TenantCryptoState {
     ///
     /// Redis failure policy: **fail-open** (returns `Acquired`) so transient Redis
     /// outage does not drop traffic; risk is weaker dedupe under Redis fault.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check_idempotency(
         &self,
         fingerprint: &str,
         ttl_secs: u64,
     ) -> Result<IdempotencyOutcome, ProxyError> {
-        let ttl_secs = ttl_secs.max(1) as usize;
+        let ttl_secs = usize::saturating_from(ttl_secs.max(1));
         let key = self.redis.idempotency_key(fingerprint);
         match self
             .redis
@@ -820,13 +852,17 @@ impl TenantCryptoState {
     }
 
     /// Store successful response for fingerprint so transport retries replay without re-charge.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn complete_idempotency(
         &self,
         fingerprint: &str,
         ttl_secs: u64,
         record: &IdempotencyRecord,
     ) -> Result<(), ProxyError> {
-        let ttl_secs = ttl_secs.max(1) as usize;
+        let ttl_secs = usize::saturating_from(ttl_secs.max(1));
         let key = self.redis.idempotency_key(fingerprint);
         let bytes = serde_json::to_vec(record).map_err(|error| {
             ProxyError::InternalError(format!("idempotency serialize failed: {error}"))
@@ -861,7 +897,7 @@ impl TenantCryptoState {
                 })
         })
         .await;
-        timing.nonce_ms = started_at.elapsed().as_millis() as u64;
+        timing.nonce = mazbri_core::num::millis_u64(started_at.elapsed());
         let inserted = inserted?;
         if !inserted {
             return Err(ProxyError::Conflict(
@@ -871,6 +907,9 @@ impl TenantCryptoState {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn redis_health(&self) -> anyhow::Result<()> {
         self.redis
             .ping()
@@ -878,6 +917,9 @@ impl TenantCryptoState {
             .map_err(|error| anyhow::anyhow!(error.to_string()))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn consume_binding_nonce(
         &self,
         prefix: &str,
@@ -893,6 +935,9 @@ impl TenantCryptoState {
             })
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn request_hmac_key(
         &self,
         tenant_id: Uuid,
@@ -903,12 +948,12 @@ impl TenantCryptoState {
             return Ok(Some(key));
         }
         let row = sqlx::query_as::<_, TenantRequestKeyRow>(
-            r#"
+            r"
             SELECT tenant_id, kid, alg, encrypted_material, material_digest, status,
                 not_before, not_after
             FROM tenant_request_keys
             WHERE tenant_id = $1 AND kid = $2
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(kid)
@@ -981,15 +1026,18 @@ struct TenantRequestKeyRow {
     pub not_after: Option<chrono::DateTime<Utc>>,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_platform_hs256_jwt_keys(
     db: &PgPool,
 ) -> Result<Vec<(String, String)>, sqlx::Error> {
     let rows = sqlx::query_as::<_, PlatformSigningKeyRow>(
-        r#"
+        r"
         SELECT kid, material, not_before, not_after
         FROM platform_signing_keys
         WHERE purpose = 'jwt' AND alg = 'HS256' AND status IN ('active', 'retiring')
-        "#,
+        ",
     )
     .fetch_all(db)
     .await?;
@@ -997,8 +1045,8 @@ pub async fn load_platform_hs256_jwt_keys(
     Ok(rows
         .into_iter()
         .filter(|row| {
-            row.not_before.map(|ts| now >= ts).unwrap_or(true)
-                && row.not_after.map(|ts| now < ts).unwrap_or(true)
+            row.not_before.is_none_or(|ts| now >= ts)
+                && row.not_after.is_none_or(|ts| now < ts)
         })
         .map(|row| (row.kid, row.material))
         .collect())
@@ -1013,6 +1061,7 @@ struct PlatformSigningKeyRow {
 }
 
 impl TenantCryptoProfile {
+    #[must_use]
     pub fn request_codec(&self) -> PayloadCodec {
         if !self.codec_enabled {
             return PayloadCodec::Json;
@@ -1020,6 +1069,7 @@ impl TenantCryptoProfile {
         PayloadCodec::parse(&self.request_codec).unwrap_or_default()
     }
 
+    #[must_use]
     pub fn response_codec(&self) -> PayloadCodec {
         if !self.codec_enabled {
             return PayloadCodec::Json;

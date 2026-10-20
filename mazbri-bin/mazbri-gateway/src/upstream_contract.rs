@@ -13,6 +13,10 @@ pub const BYPASS_CONTRACT_ID: &str = "BYPASS-HTTP-PROXY";
 /// 将契约 ID 解析为 tonic unary path。
 ///
 /// 未知契约明确失败（可 switch 下一通道），禁止用业务 channel 三段式凑 path。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn grpc_path_for_contract(contract_id: &str) -> Result<&'static str, CoreError> {
     match contract_id {
         BYPASS_CONTRACT_ID => {
@@ -27,6 +31,7 @@ pub fn grpc_path_for_contract(contract_id: &str) -> Result<&'static str, CoreErr
 }
 
 /// 已知契约 ID 列表（校验提示）。
+#[must_use]
 pub fn known_contract_ids() -> &'static [&'static str] {
     &[BYPASS_CONTRACT_ID]
 }

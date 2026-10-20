@@ -42,3 +42,6 @@ parking_lot = {version = "0.12"}
 moka = {version = "0.12", features = ["sync", "future"]}
 prometheus = {version = "0.14"}
 hostname = "0.4"
+
+[lints]
+workspace = true

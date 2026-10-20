@@ -25,6 +25,9 @@ pub struct LatencySnapshot {
 }
 
 impl GreptimeClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(config: &GreptimeConfig) -> Result<Option<Self>> {
         if !config.enabled {
             return Ok(None);
@@ -37,6 +40,9 @@ impl GreptimeClient {
         }))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn ping(&self) -> Result<bool> {
         let response = self
             .client
@@ -47,6 +53,9 @@ impl GreptimeClient {
         Ok(response.status().is_success())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_latency_snapshot(&self) -> Result<Option<LatencySnapshot>> {
         if !self.ping().await.unwrap_or(false) {
             return Ok(None);

@@ -38,10 +38,10 @@ pub struct ListCertificatesQuery {
     pub offset: i64,
     #[serde(default)]
     pub page: Option<i64>,
-    /// Free-text keyword over subject / fingerprint hex / dns_names.
+    /// Free-text keyword over subject / fingerprint hex / `dns_names`.
     #[serde(default)]
     pub q: Option<String>,
-    /// JSON array of List Query filters (subject, fingerprint, dns_names, expires_at, status).
+    /// JSON array of List Query filters (subject, fingerprint, `dns_names`, `expires_at`, status).
     #[serde(default)]
     pub filters: Option<String>,
 }
@@ -97,8 +97,7 @@ pub async fn list_certificates(
             }),
         )
             .into_response(),
-        (Err(e), _) => e.into_response(),
-        (_, Err(e)) => e.into_response(),
+        (Err(e), _) | (_, Err(e)) => e.into_response(),
     }
 }
 pub async fn get_certificate(
@@ -141,7 +140,7 @@ async fn get_certificate_by_subject_inner(
         .repo
         .get_by_subject(subject)
         .await?
-        .ok_or_else(|| CertError::NotFound(format!("{} (no active certificate)", subject)))?;
+        .ok_or_else(|| CertError::NotFound(format!("{subject} (no active certificate)")))?;
     let ca_manager = state.base_authorization.require_ca_manager().await?;
     let key_pem = ca_manager.decrypt_key(&record.key_pem)?;
     let status = calculate_certificate_status(&record.revoked, &record.expires_at);
@@ -156,7 +155,7 @@ async fn get_certificate_by_subject_inner(
             subject: record.subject,
             cert_pem: record.cert_pem,
             key_pem,
-            ca_cert_pem: ca_manager.get_ca_pem().to_string(),
+            ca_cert_pem: ca_manager.get_ca_pem().clone(),
             dns_names: record.dns_names,
             issued_at: record.issued_at,
             expires_at: record.expires_at,
@@ -193,7 +192,7 @@ async fn get_certificate_full_inner(
             subject: record.subject,
             cert_pem: record.cert_pem,
             key_pem,
-            ca_cert_pem: ca_manager.get_ca_pem().to_string(),
+            ca_cert_pem: ca_manager.get_ca_pem().clone(),
             dns_names: record.dns_names,
             issued_at: record.issued_at,
             expires_at: record.expires_at,
@@ -202,6 +201,7 @@ async fn get_certificate_full_inner(
     )
         .into_response())
 }
+#[must_use]
 pub fn calculate_certificate_status(
     revoked: &bool,
     expires_at: &chrono::DateTime<Utc>,

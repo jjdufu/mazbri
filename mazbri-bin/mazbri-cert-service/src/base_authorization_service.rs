@@ -18,6 +18,7 @@ pub struct BaseAuthorizationState {
 }
 
 impl BaseAuthorizationState {
+    #[must_use]
     pub fn new(repo: Arc<CertificateRepository>, auth_state: Arc<AuthState>) -> Self {
         Self {
             repo,
@@ -27,6 +28,9 @@ impl BaseAuthorizationState {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn require_issuance(&self) -> CertResult<Arc<CaManager>> {
         if crate::license_service::has_v3_state(self.repo.get_pool()).await? {
             let decision =
@@ -41,6 +45,9 @@ impl BaseAuthorizationState {
         self.require_ca_manager().await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn activate(
         &self,
         cert_config: CertConfig,
@@ -63,12 +70,19 @@ impl BaseAuthorizationState {
     }
 
     /// 配置中心写入的许可证闸，判定见 `management_writes_decision`。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn require_management_writes(&self) -> CertResult<()> {
         let decision =
             crate::license_service::current_decision(self.repo.get_pool(), Utc::now()).await?;
         management_writes_decision(&decision)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn require_ca_manager(&self) -> CertResult<Arc<CaManager>> {
         self.ca_manager
             .read()
@@ -77,6 +91,9 @@ impl BaseAuthorizationState {
             .ok_or(CertError::BaseAuthorizationNotActive)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn require_cert_config(&self) -> CertResult<Arc<CertConfig>> {
         self.cert_config
             .read()
@@ -89,6 +106,9 @@ impl BaseAuthorizationState {
         self.ca_manager.read().await.is_some()
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn restore_active_package_if_needed(&self, pool: &PgPool) -> CertResult<bool> {
         if self.is_active().await {
             return Ok(true);
@@ -102,8 +122,12 @@ impl BaseAuthorizationState {
 }
 
 /// 有效期和宽限期内允许改配置：宽限期只停新签发，运维还得能改配置。
-/// 未导入、未生效、安装编号不匹配返回 BaseAuthorizationNotActive，
+/// 未导入、未生效、安装编号不匹配返回 `BaseAuthorizationNotActive`，
 /// 过期返回 BaseAuthorizationExpired，两者都映射成 403。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn management_writes_decision(decision: &LicenseDecision) -> CertResult<()> {
     match decision.status.as_str() {
         "active" | "grace" => Ok(()),
@@ -116,7 +140,7 @@ fn validate_runtime_config(cert: &CertConfig, auth: &CertAuthConfig) -> CertResu
     if cert
         .key_password
         .as_ref()
-        .is_none_or(|value| value.is_empty())
+        .is_none_or(std::string::String::is_empty)
     {
         return Err(CertError::InvalidRequest(
             "key_password is required".to_string(),

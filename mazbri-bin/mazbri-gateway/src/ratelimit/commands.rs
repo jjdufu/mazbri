@@ -123,24 +123,21 @@ impl ControlCommandStore {
                     // New or equal-effective command still marks refresh once per newer effective_at.
                     let prev = previous.get(&tenant_id);
                     let already_consumed = prev
-                        .map(|p| {
+                        .is_some_and(|p| {
                             p.refresh_effective_at >= command.effective_at_unix
                                 && !p.refresh_requested
-                        })
-                        .unwrap_or(false);
+                        });
                     if already_consumed {
                         state.refresh_effective_at = command.effective_at_unix;
                         state.refresh_requested = false;
                     } else {
                         let prev_pending = prev
-                            .map(|p| {
+                            .is_some_and(|p| {
                                 p.refresh_requested
                                     && p.refresh_effective_at == command.effective_at_unix
-                            })
-                            .unwrap_or(false);
+                            });
                         let is_newer = prev
-                            .map(|p| command.effective_at_unix > p.refresh_effective_at)
-                            .unwrap_or(true);
+                            .is_none_or(|p| command.effective_at_unix > p.refresh_effective_at);
                         state.refresh_effective_at = command.effective_at_unix;
                         state.refresh_requested = prev_pending || is_newer;
                         if state.refresh_requested {
@@ -189,8 +186,7 @@ impl ControlCommandStore {
         self.inner
             .read()
             .get(&tenant_id)
-            .map(|state| state.quota_multiplier)
-            .unwrap_or(1.0)
+            .map_or(1.0, |state| state.quota_multiplier)
             .clamp(0.1, 10.0)
     }
 

@@ -6,6 +6,9 @@ impl std::fmt::Display for SanitizationError {
     }
 }
 impl std::error::Error for SanitizationError {}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sanitize_uuid_value(value: &str) -> std::result::Result<&str, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError("value cannot be empty".to_string()));
@@ -14,8 +17,7 @@ pub fn sanitize_uuid_value(value: &str) -> std::result::Result<&str, Sanitizatio
         match ch {
             '\'' | '"' | '`' => {
                 return Err(SanitizationError(format!(
-                    "value contains quote character: {:?}",
-                    ch
+                    "value contains quote character: {ch:?}"
                 )));
             }
             '\\' => {
@@ -31,27 +33,27 @@ pub fn sanitize_uuid_value(value: &str) -> std::result::Result<&str, Sanitizatio
             '\0' => return Err(SanitizationError("value contains null byte".to_string())),
             '(' | ')' => {
                 return Err(SanitizationError(format!(
-                    "value contains parenthesis: {:?}",
-                    ch
+                    "value contains parenthesis: {ch:?}"
                 )));
             }
             c if c.is_control() => {
                 return Err(SanitizationError(format!(
-                    "value contains control character: {:?}",
-                    c
+                    "value contains control character: {c:?}"
                 )));
             }
             c if c.is_ascii_alphanumeric() || c == '-' => {}
             c => {
                 return Err(SanitizationError(format!(
-                    "value contains invalid character: {:?}",
-                    c
+                    "value contains invalid character: {c:?}"
                 )));
             }
         }
     }
     Ok(value)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sanitize_identifier_value(value: &str) -> std::result::Result<&str, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError("value cannot be empty".to_string()));
@@ -60,8 +62,7 @@ pub fn sanitize_identifier_value(value: &str) -> std::result::Result<&str, Sanit
         match ch {
             '\'' | '"' | '`' => {
                 return Err(SanitizationError(format!(
-                    "value contains quote character: {:?}",
-                    ch
+                    "value contains quote character: {ch:?}"
                 )));
             }
             '\\' => {
@@ -77,14 +78,12 @@ pub fn sanitize_identifier_value(value: &str) -> std::result::Result<&str, Sanit
             '\0' => return Err(SanitizationError("value contains null byte".to_string())),
             '(' | ')' => {
                 return Err(SanitizationError(format!(
-                    "value contains parenthesis: {:?}",
-                    ch
+                    "value contains parenthesis: {ch:?}"
                 )));
             }
             c if c.is_control() => {
                 return Err(SanitizationError(format!(
-                    "value contains control character: {:?}",
-                    c
+                    "value contains control character: {c:?}"
                 )));
             }
             c if c.is_ascii_alphanumeric()
@@ -96,14 +95,16 @@ pub fn sanitize_identifier_value(value: &str) -> std::result::Result<&str, Sanit
                 || c == ' ' => {}
             c => {
                 return Err(SanitizationError(format!(
-                    "value contains invalid character: {:?}",
-                    c
+                    "value contains invalid character: {c:?}"
                 )));
             }
         }
     }
     Ok(value)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sanitize_like_value(value: &str) -> std::result::Result<String, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError("value cannot be empty".to_string()));
@@ -112,8 +113,7 @@ pub fn sanitize_like_value(value: &str) -> std::result::Result<String, Sanitizat
         match ch {
             '\'' | '"' | '`' => {
                 return Err(SanitizationError(format!(
-                    "value contains quote character: {:?}",
-                    ch
+                    "value contains quote character: {ch:?}"
                 )));
             }
             '\\' => {
@@ -129,8 +129,7 @@ pub fn sanitize_like_value(value: &str) -> std::result::Result<String, Sanitizat
             '\0' => return Err(SanitizationError("value contains null byte".to_string())),
             c if c.is_control() => {
                 return Err(SanitizationError(format!(
-                    "value contains control character: {:?}",
-                    c
+                    "value contains control character: {c:?}"
                 )));
             }
             _ => {}
@@ -139,6 +138,9 @@ pub fn sanitize_like_value(value: &str) -> std::result::Result<String, Sanitizat
     let escaped = value.replace('%', "\\%").replace('_', "\\_");
     Ok(escaped)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_like_param(value: &str) -> std::result::Result<String, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError(
@@ -147,8 +149,7 @@ pub fn validate_like_param(value: &str) -> std::result::Result<String, Sanitizat
     }
     for (i, ch) in value.chars().enumerate() {
         match ch {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | ':' | '/' | '.' | '%' => {}
-            '_' => {}
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | ':' | '/' | '.' | '%' | '_' => {}
             _ => {
                 return Err(SanitizationError(format!(
                     "invalid character '{ch}' at position {i} in LIKE parameter"
@@ -159,6 +160,10 @@ pub fn validate_like_param(value: &str) -> std::result::Result<String, Sanitizat
     let escaped = value.replace('_', "\\_");
     Ok(escaped)
 }
+const HYPHEN_POSITIONS: [usize; 4] = [8, 13, 18, 23];
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_uuid_param(value: &str) -> std::result::Result<&str, SanitizationError> {
     if value.len() != 36 {
         return Err(SanitizationError(format!(
@@ -166,13 +171,11 @@ pub fn validate_uuid_param(value: &str) -> std::result::Result<&str, Sanitizatio
             value.len()
         )));
     }
-    const HYPHEN_POSITIONS: [usize; 4] = [8, 13, 18, 23];
     for (i, ch) in value.chars().enumerate() {
         if HYPHEN_POSITIONS.contains(&i) {
             if ch != '-' {
                 return Err(SanitizationError(format!(
-                    "expected hyphen at position {}, found '{ch}'",
-                    i
+                    "expected hyphen at position {i}, found '{ch}'"
                 )));
             }
         } else if !ch.is_ascii_hexdigit() {
@@ -183,6 +186,9 @@ pub fn validate_uuid_param(value: &str) -> std::result::Result<&str, Sanitizatio
     }
     Ok(value)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_identifier_param(value: &str) -> std::result::Result<&str, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError("identifier cannot be empty".to_string()));
@@ -199,21 +205,25 @@ pub fn validate_identifier_param(value: &str) -> std::result::Result<&str, Sanit
     }
     Ok(value)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_numeric_param(value: i64, max: i64) -> std::result::Result<i64, SanitizationError> {
     if value < 0 {
         return Err(SanitizationError(format!(
-            "numeric value must be non-negative, got {}",
-            value
+            "numeric value must be non-negative, got {value}"
         )));
     }
     if value > max {
         return Err(SanitizationError(format!(
-            "numeric value {} exceeds maximum {}",
-            value, max
+            "numeric value {value} exceeds maximum {max}"
         )));
     }
     Ok(value)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_timestamp_param(value: &str) -> std::result::Result<&str, SanitizationError> {
     if value.is_empty() {
         return Err(SanitizationError("timestamp cannot be empty".to_string()));

@@ -3,8 +3,10 @@ use anyhow::Result;
 use mazbri_admin::readiness::{CheckStatus, ReadinessCheckResult, ReadinessResult};
 use mazbri_admin::{AdminConfig, AdminServerBuilder, AdminState};
 use mazbri_core::REGISTRY;
-use mazbri_core::config_loader::{
-    BootstrapConfig, ServiceConfig, ValidateConfig, cert_service_url, get_cert_service_token,
+use mazbri_core::ServiceName;
+use mazbri_core::config::{
+    PureBootstrap, ServiceConfig, ValidateConfig, build_log_routes, get_cert_service_token,
+    load_toml,
 };
 use mazbri_core::metrics::health::{
     BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater,
@@ -17,31 +19,27 @@ use mazbri_tls::{CertManager, ManagedCertHandle, RenewalTaskHandle, TlsAcceptor,
 use sqlx::PgPool;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::path::Path;
 use std::sync::Arc;
 
-pub async fn run_toml_config_service<C, F, Fut>(
-    service_name: impl Into<String>,
-    config_handler_service_name: &'static str,
-    service_init: F,
-) -> Result<()>
+/// 走配置中心的服务入口：读 `--bootstrap` 文件（`PureBootstrap`），拉配置中心内容，初始化 mTLS 与注册。
+///
+/// # Errors
+/// bootstrap / 配置中心 / mTLS / 注册任一步失败时返回错误。
+pub async fn run_toml_config_service<C, F, Fut>(service_init: F) -> Result<()>
 where
     C: ServiceConfig + ValidateConfig + Clone + Send + Sync + 'static,
     F: FnOnce(BootstrapContext<C>) -> Fut,
     Fut: std::future::Future<Output = Result<ServiceInitOutput>> + Send,
 {
-    let bootstrap_path = mazbri_core::config_loader::resolve_bootstrap_path_mandatory()?;
+    let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
 
-    ServiceBootstrap::<C>::new(service_name, bootstrap_path)
-        .registry_handler(crate::create_toml_config_handler::<C>(
-            config_handler_service_name,
-        ))
+    ServiceBootstrap::<C>::new(bootstrap_path)
         .run(service_init)
         .await
 }
 
 pub struct BootstrapContext<C: ServiceConfig> {
-    pub bootstrap: BootstrapConfig,
+    pub bootstrap: PureBootstrap,
     pub config: C,
     pub tls_config: TlsConfig,
     pub tls_acceptor: TlsAcceptor,
@@ -58,22 +56,26 @@ pub struct ServiceInitOutput {
 type BoxFutureService = std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
 
 pub struct ServiceRuntime<C: ServiceConfig> {
-    pub service_name: String,
+    pub service_name: ServiceName,
     pub ctx: BootstrapContext<C>,
     log_guard: mazbri_core::LogGuard,
 }
 
-pub fn init_service_runtime<C>(
-    ctx: BootstrapContext<C>,
-    fallback_service_name: &str,
-) -> Result<ServiceRuntime<C>>
+/// 初始化日志并得到运行期句柄；服务名来自 bootstrap `service_name`。
+///
+/// # Errors
+/// 日志路由或 tracing 初始化失败时返回错误。
+pub fn init_service_runtime<C>(ctx: BootstrapContext<C>) -> Result<ServiceRuntime<C>>
 where
     C: ServiceConfig,
 {
-    let service_name = ctx.bootstrap.service_name_or(fallback_service_name);
-    let log_routes = ctx.bootstrap.log_routes()?;
-    let log_guard =
-        mazbri_core::init_tracing_with_routes(&ctx.bootstrap.tracing, &service_name, &log_routes)?;
+    let service_name = ctx.bootstrap.service_name.name();
+    let log_routes = build_log_routes(&ctx.bootstrap.log_routes)?;
+    let log_guard = mazbri_core::init_tracing_with_routes(
+        &ctx.bootstrap.tracing,
+        service_name.as_str(),
+        &log_routes,
+    )?;
 
     Ok(ServiceRuntime {
         service_name,
@@ -91,9 +93,9 @@ where
         admin_config: &AdminConfig,
         db_pool: Option<Arc<PgPool>>,
     ) -> Result<Option<Arc<AdminState>>> {
-        let config_center_connected = crate::make_config_center_check(self.ctx.registry.as_ref());
+        let config_center_connected = crate::registry_helpers::make_config_center_check(self.ctx.registry.as_ref());
         start_admin_server(
-            &self.service_name,
+            self.service_name.as_str(),
             admin_config,
             db_pool,
             Some(self.ctx.cert_handle.clone()),
@@ -118,41 +120,31 @@ where
     }
 }
 
-pub struct ServiceBootstrap<C: ServiceConfig> {
-    service_name: String,
+pub(crate) struct ServiceBootstrap<C: ServiceConfig> {
     bootstrap_path: std::path::PathBuf,
-    registry_handler: Option<Arc<dyn ConfigHandler>>,
     _marker: PhantomData<C>,
 }
 impl<C> ServiceBootstrap<C>
 where
-    C: ServiceConfig + ValidateConfig + Send + 'static,
+    C: ServiceConfig + ValidateConfig + Clone + Send + Sync + 'static,
 {
-    pub fn new(service_name: impl Into<String>, bootstrap_path: std::path::PathBuf) -> Self {
+    pub(crate) const fn new(bootstrap_path: std::path::PathBuf) -> Self {
         Self {
-            service_name: service_name.into(),
             bootstrap_path,
-            registry_handler: None,
             _marker: PhantomData,
         }
     }
-    pub fn registry_handler(mut self, handler: Arc<dyn ConfigHandler>) -> Self {
-        self.registry_handler = Some(handler);
-        self
-    }
-    pub async fn run<F, Fut>(self, service_init: F) -> Result<()>
+    pub(crate) async fn run<F, Fut>(self, service_init: F) -> Result<()>
     where
         F: FnOnce(BootstrapContext<C>) -> Fut,
         Fut: std::future::Future<Output = Result<ServiceInitOutput>> + Send,
     {
-        let service_name = &self.service_name;
-        let bootstrap = load_bootstrap_config(&self.bootstrap_path)?;
-        bootstrap.validate_config_center_bootstrap()?;
-        let effective_service_name = bootstrap.service_name_or(service_name);
+        let bootstrap: PureBootstrap = load_toml(&self.bootstrap_path)?;
+        let service_name = bootstrap.service_name.name();
         let cert_service_token = get_cert_service_token()?;
         let tls_config = TlsConfig {
-            cert_service_url: cert_service_url(),
-            service_identity: effective_service_name.clone(),
+            cert_service_url: bootstrap.cert_service.base().to_owned(),
+            service_identity: service_name.as_str().to_owned(),
             cert_service_token: Some(cert_service_token),
             ..Default::default()
         };
@@ -163,13 +155,9 @@ where
         let config = C::load_from_config_center(&bootstrap).await?;
         config.validate()?;
         let mtls = init_mtls(&tls_config).await?;
-        let registry = init_registry(
-            &bootstrap,
-            &effective_service_name,
-            &config,
-            self.registry_handler,
-        )
-        .await?;
+        let handler: Arc<dyn ConfigHandler> =
+            crate::registry_helpers::create_toml_config_handler::<C>(service_name);
+        let registry = init_registry(&bootstrap, &config, handler).await?;
         let ctx = BootstrapContext {
             bootstrap,
             config,
@@ -181,7 +169,7 @@ where
             renewal_threshold_days: mtls.renewal_threshold_days,
         };
         tracing::info!(
-            service = % effective_service_name, "Bootstrap service name resolved"
+            service = % service_name, "Bootstrap service name resolved"
         );
         let output = service_init(ctx).await?;
         tokio::select! {
@@ -239,7 +227,7 @@ impl CertExpiryInfoProvider for CertInfoBridge {
         })
     }
 }
-pub fn start_admin_server(
+pub(crate) fn start_admin_server(
     service_name: &str,
     admin_config: &AdminConfig,
     db_pool: Option<Arc<PgPool>>,
@@ -346,9 +334,6 @@ pub fn start_admin_server(
     tracing::info!("Health metrics updater started for {}", service_name);
     Ok(Some(state))
 }
-fn load_bootstrap_config(path: &Path) -> Result<BootstrapConfig> {
-    BootstrapConfig::load_from_path(path)
-}
 struct MtlsInitResult {
     tls_acceptor: TlsAcceptor,
     renewal_task: RenewalTaskHandle,
@@ -358,7 +343,6 @@ struct MtlsInitResult {
 }
 async fn init_mtls(tls_config: &TlsConfig) -> Result<MtlsInitResult> {
     tracing::info!("Initializing mTLS...");
-    tls_config.validate()?;
     let cert_manager = CertManager::new(tls_config.clone());
     let cert = cert_manager.initialize().await?;
     let cert_handle = cert_manager.cert_handle();
@@ -374,10 +358,9 @@ async fn init_mtls(tls_config: &TlsConfig) -> Result<MtlsInitResult> {
     })
 }
 async fn init_registry<C: ServiceConfig>(
-    bootstrap: &BootstrapConfig,
-    service_name: &str,
+    bootstrap: &PureBootstrap,
     config: &C,
-    handler: Option<Arc<dyn ConfigHandler>>,
+    handler: Arc<dyn ConfigHandler>,
 ) -> Result<Option<Arc<ConfigCenterRegistry>>> {
     let Some(ref registration) = bootstrap.registration else {
         return Ok(None);
@@ -386,22 +369,15 @@ async fn init_registry<C: ServiceConfig>(
         tracing::info!("节点注册未启用（bootstrap.toml [registration] enabled=false）");
         return Ok(None);
     }
-    let Some(handler) = handler else {
-        tracing::info!("No registry handler provided, skipping registration");
-        return Ok(None);
-    };
-    let service_name = bootstrap.service_name_or(service_name);
-    let registration_port = if registration.port == 0 {
-        config.server_config().port
-    } else {
-        registration.port
-    };
-    let mut reg_config = registration.clone();
-    reg_config.port = registration_port;
-    let metadata = reg_config.to_service_metadata(&service_name);
+    let service_name = bootstrap.service_name.name();
+    let metadata = registration.to_service_metadata(
+        service_name,
+        config.server_config().port,
+        config.admin_health(),
+    );
     let token = get_cert_service_token()?;
     let http_client = Arc::new(
-        HttpConfigClientBuilder::new(&service_name, cert_service_url())
+        HttpConfigClientBuilder::new(service_name.as_str(), bootstrap.cert_service.base())
             .cert_service_token(token)
             .heartbeat_interval(std::time::Duration::from_secs(
                 registration.heartbeat_interval_secs,

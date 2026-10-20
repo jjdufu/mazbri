@@ -2,6 +2,9 @@ use super::super::error::{ConfigError, ConfigResult};
 use super::super::models::ConfigEntry;
 use super::super::validator::{compute_content_hash, validate_toml};
 impl super::super::repository::ConfigRepository {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create(
         &self,
         req: &super::super::models::CreateConfigRequest,
@@ -18,11 +21,11 @@ impl super::super::repository::ConfigRepository {
             _,
             ConfigEntry,
         >(
-                r#"
+                r"
             INSERT INTO config_entries (service_name, content, content_hash, is_sensitive, updated_by)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-            "#,
+            ",
             )
             .bind(&req.service_name)
             .bind(&stored_content)
@@ -41,6 +44,9 @@ impl super::super::repository::ConfigRepository {
             Err(e) => Err(e.into()),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update(
         &self,
         service_name: &str,
@@ -57,12 +63,12 @@ impl super::super::repository::ConfigRepository {
             (content.to_string(), compute_content_hash(content))
         };
         let result = sqlx::query_as::<_, ConfigEntry>(
-            r#"
+            r"
             UPDATE config_entries
             SET content = $2, content_hash = $3, is_sensitive = $4, updated_by = $5
             WHERE service_name = $1
             RETURNING *
-            "#,
+            ",
         )
         .bind(service_name)
         .bind(&stored_content)
@@ -78,6 +84,9 @@ impl super::super::repository::ConfigRepository {
             }),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn rollback(
         &self,
         service_name: &str,
@@ -86,12 +95,12 @@ impl super::super::repository::ConfigRepository {
         updated_by: &str,
     ) -> ConfigResult<ConfigEntry> {
         let result = sqlx::query_as::<_, ConfigEntry>(
-            r#"
+            r"
             UPDATE config_entries
             SET content = $2, content_hash = $3, updated_by = $4, updated_at = NOW()
             WHERE service_name = $1
             RETURNING *
-            "#,
+            ",
         )
         .bind(service_name)
         .bind(content)
@@ -106,12 +115,15 @@ impl super::super::repository::ConfigRepository {
             }),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn delete(&self, service_name: &str) -> ConfigResult<()> {
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM config_entries
             WHERE service_name = $1
-            "#,
+            ",
         )
         .bind(service_name)
         .execute(&*self.db)
@@ -123,16 +135,19 @@ impl super::super::repository::ConfigRepository {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_by_service(
         &self,
         service_name: &str,
         decrypt: bool,
     ) -> ConfigResult<ConfigEntry> {
         let mut entry = sqlx::query_as::<_, ConfigEntry>(
-            r#"
+            r"
             SELECT * FROM config_entries
             WHERE service_name = $1
-            "#,
+            ",
         )
         .bind(service_name)
         .fetch_optional(&*self.db)
@@ -146,13 +161,16 @@ impl super::super::repository::ConfigRepository {
         }
         Ok(entry)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list(&self, limit: i64, offset: i64) -> ConfigResult<Vec<ConfigEntry>> {
         let entries = sqlx::query_as::<_, ConfigEntry>(
-            r#"
+            r"
             SELECT * FROM config_entries
             ORDER BY service_name
             LIMIT $1 OFFSET $2
-            "#,
+            ",
         )
         .bind(limit)
         .bind(offset)

@@ -21,26 +21,23 @@ pub async fn rollback_config(
         request_id = % request_context.request_id, trace_id = % request_context.trace_id,
         "配置回滚请求"
     );
-    let history_version = match state.repo.get_history_version(&service, req.version).await {
-        Ok(v) => v,
-        Err(_) => {
-            let message = format!("要回滚的版本不存在: {}/v{}", service, req.version);
-            log_config_error(
-                "config_rollback_target_not_found",
-                mazbri_core::error_codes::NOT_FOUND,
-                &request_context.request_id,
-                &request_context.trace_id,
-                &message,
-            );
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!(
-                    { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
-                    "指定的历史版本未找到，无法回滚" }
-                )),
-            )
-                .into_response();
-        }
+    let Ok(history_version) = state.repo.get_history_version(&service, req.version).await else {
+        let message = format!("要回滚的版本不存在: {}/v{}", service, req.version);
+        log_config_error(
+            "config_rollback_target_not_found",
+            mazbri_core::error_codes::NOT_FOUND,
+            &request_context.request_id,
+            &request_context.trace_id,
+            &message,
+        );
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!(
+                { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
+                "指定的历史版本未找到，无法回滚" }
+            )),
+        )
+            .into_response();
     };
     match state
         .repo
@@ -60,7 +57,7 @@ pub async fn rollback_config(
             (StatusCode::OK, Json(entry)).into_response()
         }
         Err(e) => {
-            let message = format!("回滚操作执行失败: {} - {}", service, e);
+            let message = format!("回滚操作执行失败: {service} - {e}");
             log_config_error(
                 "config_rollback_execution_failed",
                 mazbri_core::error_codes::INTERNAL_ERROR,

@@ -5,6 +5,7 @@
 //! - `qps_limit <= 0` means unlimited (no token consumed).
 //! - Modes: **reject** (default, immediate 429) or **queue** (wait with guards).
 
+use mazbri_core::num::SaturatingFrom;
 use super::metrics::{
     CHANNEL_RATELIMIT_CHECK_DURATION_SECONDS, CHANNEL_RATELIMIT_DECISIONS_TOTAL,
     CHANNEL_RATELIMIT_QUEUE_WAIT_SECONDS,
@@ -47,7 +48,7 @@ pub enum ChannelRateLimitDecision {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct BucketSpec {
     capacity: u64,
     refill_per_sec: f64,
@@ -70,11 +71,11 @@ impl BucketCell {
         }
     }
 
-    fn refresh_if_needed(&mut self, spec: BucketSpec, now: Instant) {
+    fn refresh_if_needed(&mut self, spec: &BucketSpec, now: Instant) {
         if self.spec.capacity != spec.capacity
             || (self.spec.refill_per_sec - spec.refill_per_sec).abs() > 0.0001
         {
-            self.spec = spec.clone();
+            self.spec = *spec;
             self.bucket.reset(spec.capacity, spec.refill_per_sec, now);
         }
         self.last_seen = now;
@@ -157,12 +158,12 @@ impl ChannelRateLimitEngine {
     fn load_or_create_bucket(
         &self,
         channel_id: &str,
-        spec: BucketSpec,
+        spec: &BucketSpec,
         now: Instant,
     ) -> Arc<Mutex<BucketCell>> {
         self.buckets
             .entry(channel_id.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(BucketCell::new(spec.clone(), now))))
+            .or_insert_with(|| Arc::new(Mutex::new(BucketCell::new(*spec, now))))
             .clone()
     }
 
@@ -172,14 +173,13 @@ impl ChannelRateLimitEngine {
         spec: BucketSpec,
         now: Instant,
     ) -> Result<(), u64> {
-        let cell = self.load_or_create_bucket(channel_id, spec.clone(), now);
+        let cell = self.load_or_create_bucket(channel_id, &spec.clone(), now);
         let mut guard = cell.lock();
-        guard.refresh_if_needed(spec, now);
+        guard.refresh_if_needed(&spec, now);
         guard.allow_or_retry_after(1, now)
     }
 
     fn record_allow(
-        &self,
         started_at: Instant,
         mode: ChannelRateLimitMode,
         reason: &str,
@@ -194,11 +194,11 @@ impl ChannelRateLimitEngine {
         if queue_wait_ms > 0 {
             CHANNEL_RATELIMIT_QUEUE_WAIT_SECONDS
                 .with_label_values(&["ok"])
-                .observe(queue_wait_ms as f64 / 1000.0);
+                .observe(mazbri_core::num::u64_to_f64(queue_wait_ms) / 1000.0);
         }
     }
 
-    fn record_deny(&self, started_at: Instant, mode: ChannelRateLimitMode, reason: &str) {
+    fn record_deny(started_at: Instant, mode: ChannelRateLimitMode, reason: &str) {
         CHANNEL_RATELIMIT_DECISIONS_TOTAL
             .with_label_values(&["deny", reason, mode.as_str()])
             .inc();
@@ -218,31 +218,31 @@ impl ChannelRateLimitEngine {
         let mode = self.resolve_mode(&req.channel_config);
 
         if !self.config.enabled {
-            self.record_allow(started_at, mode, "disabled", 0);
+            Self::record_allow(started_at, mode, "disabled", 0);
             return ChannelRateLimitDecision::Allow {
                 queue_wait_ms: 0,
                 mode,
             };
         }
         if req.qps_limit <= 0 {
-            self.record_allow(started_at, mode, "unlimited", 0);
+            Self::record_allow(started_at, mode, "unlimited", 0);
             return ChannelRateLimitDecision::Allow {
                 queue_wait_ms: 0,
                 mode,
             };
         }
 
-        let qps = req.qps_limit as u64;
+        let qps = u64::saturating_from(req.qps_limit);
         let capacity = self.config.capacity_for_qps(qps);
         let spec = BucketSpec {
             capacity,
-            refill_per_sec: qps as f64,
+            refill_per_sec: mazbri_core::num::u64_to_f64(qps),
         };
 
         // Fast path: consume without waiting.
-        match self.try_consume_once(&req.channel_id, spec.clone(), Instant::now()) {
+        match self.try_consume_once(&req.channel_id, spec, Instant::now()) {
             Ok(()) => {
-                self.record_allow(started_at, mode, "channel_qps", 0);
+                Self::record_allow(started_at, mode, "channel_qps", 0);
                 return ChannelRateLimitDecision::Allow {
                     queue_wait_ms: 0,
                     mode,
@@ -250,7 +250,7 @@ impl ChannelRateLimitEngine {
             }
             Err(retry_after_ms) => {
                 if mode == ChannelRateLimitMode::Reject {
-                    self.record_deny(started_at, mode, "channel_qps");
+                    Self::record_deny(started_at, mode, "channel_qps");
                     return ChannelRateLimitDecision::Deny {
                         retry_after_ms: retry_after_ms.max(1),
                         qps_limit: qps,
@@ -276,7 +276,7 @@ impl ChannelRateLimitEngine {
         started_at: Instant,
     ) -> ChannelRateLimitDecision {
         let max_wait = Duration::from_millis(self.resolve_max_wait_ms(&req.channel_config));
-        let max_depth = self.resolve_max_queue_depth(&req.channel_config) as usize;
+        let max_depth = usize::saturating_from(self.resolve_max_queue_depth(&req.channel_config));
 
         let depth = self
             .queue_depths
@@ -288,7 +288,7 @@ impl ChannelRateLimitEngine {
         let prev = depth.fetch_add(1, Ordering::AcqRel);
         if prev >= max_depth {
             depth.fetch_sub(1, Ordering::AcqRel);
-            self.record_deny(started_at, mode, "queue_full");
+            Self::record_deny(started_at, mode, "queue_full");
             return ChannelRateLimitDecision::Deny {
                 retry_after_ms: 1,
                 qps_limit: qps,
@@ -305,11 +305,11 @@ impl ChannelRateLimitEngine {
             let now = Instant::now();
             if now >= deadline {
                 let retry_after_ms = self
-                    .try_consume_once(&req.channel_id, spec.clone(), now)
+                    .try_consume_once(&req.channel_id, spec, now)
                     .err()
                     .unwrap_or(1)
                     .max(1);
-                self.record_deny(started_at, mode, "queue_timeout");
+                Self::record_deny(started_at, mode, "queue_timeout");
                 return ChannelRateLimitDecision::Deny {
                     retry_after_ms,
                     qps_limit: qps,
@@ -320,10 +320,10 @@ impl ChannelRateLimitEngine {
                 };
             }
 
-            match self.try_consume_once(&req.channel_id, spec.clone(), now) {
+            match self.try_consume_once(&req.channel_id, spec, now) {
                 Ok(()) => {
-                    let queue_wait_ms = started_at.elapsed().as_millis() as u64;
-                    self.record_allow(started_at, mode, "channel_qps", queue_wait_ms);
+                    let queue_wait_ms = mazbri_core::num::millis_u64(started_at.elapsed());
+                    Self::record_allow(started_at, mode, "channel_qps", queue_wait_ms);
                     return ChannelRateLimitDecision::Allow {
                         queue_wait_ms,
                         mode,
@@ -337,13 +337,14 @@ impl ChannelRateLimitEngine {
                     // Sleep until next expected token, capped by remaining wait and a small poll.
                     let sleep_ms = retry_after_ms
                         .clamp(1, 50)
-                        .min(remaining.as_millis() as u64);
+                        .min(mazbri_core::num::millis_u64(remaining));
                     tokio::time::sleep(Duration::from_millis(sleep_ms.max(1))).await;
                 }
             }
         }
     }
 
+    #[must_use]
     pub fn prune_buckets(&self) -> usize {
         let now = Instant::now();
         let keys = self
@@ -371,6 +372,7 @@ impl ChannelRateLimitEngine {
         keys.len()
     }
 
+    #[must_use]
     pub fn spawn_background_tasks(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -472,7 +474,7 @@ mod tests {
                     "expected some wait, got {queue_wait_ms}"
                 );
             }
-            other => panic!("expected Allow after queue, got {other:?}"),
+            other @ ChannelRateLimitDecision::Deny { .. } => panic!("expected Allow after queue, got {other:?}"),
         }
     }
 

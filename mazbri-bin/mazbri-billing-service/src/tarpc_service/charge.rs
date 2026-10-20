@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use super::BillingTarpcService;
 use super::conversion::{billing_error_to_rpc, safe_to_amount, validation_error};
 use mazbri_billing::UsageRecord;
@@ -21,14 +22,12 @@ pub(super) async fn handle_record_usage(
                 charge_id: String::new(),
                 charged: None,
                 new_balance: None,
-                error: Some(validation_error(&format!("Invalid tenant ID: {}", e))),
+                error: Some(validation_error(&format!("Invalid tenant ID: {e}"))),
                 error_message: String::new(),
             };
         }
     };
-    let account_id = match service.billing_service.get_account_id(tenant_id).await {
-        Some(id) => id,
-        None => {
+    let Some(account_id) = service.billing_service.get_account_id(tenant_id).await else {
             return RecordUsageResponse {
                 success: false,
                 billing_id: String::new(),
@@ -41,8 +40,7 @@ pub(super) async fn handle_record_usage(
                 }),
                 error_message: String::new(),
             };
-        }
-    };
+        };
     let calculator = match service
         .billing_service
         .get_calculator(tenant_id, None)
@@ -62,7 +60,7 @@ pub(super) async fn handle_record_usage(
         }
     };
     let calc_result =
-        match calculator.calculate_call(req.request_size as u64, req.response_size as u64) {
+        match calculator.calculate_call(u64::saturating_from(req.request_size), u64::saturating_from(req.response_size)) {
             Ok(result) => result,
             Err(e) => {
                 return RecordUsageResponse {
@@ -83,7 +81,7 @@ pub(super) async fn handle_record_usage(
         account_id,
         api_endpoint: req.api_endpoint,
         http_method: "GET".to_string(),
-        response_status: req.status_code as u16,
+        response_status: u16::saturating_from(req.status_code),
         request_size: req.request_size,
         response_size: req.response_size,
         billing_service_duration_ms: req.billing_service_duration_ms,
@@ -159,17 +157,16 @@ pub(super) async fn process_charge(
                     };
                 }
             }
-        } else {
-            return RecordUsageResponse {
-                success: true,
-                billing_id,
-                charge_id: String::new(),
-                charged: None,
-                new_balance: None,
-                error: None,
-                error_message: String::new(),
-            };
         }
+        return RecordUsageResponse {
+            success: true,
+            billing_id,
+            charge_id: String::new(),
+            charged: None,
+            new_balance: None,
+            error: None,
+            error_message: String::new(),
+        };
     }
     let new_balance = match service
         .billing_service

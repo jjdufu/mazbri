@@ -3,6 +3,7 @@
 //! 最坏生效时间 ≈ `route_reload.interval_secs` + 全量加载耗时。
 //! LISTEN/NOTIFY 仅加速唤醒；轮询始终是保底。
 
+use mazbri_core::num::SaturatingFrom;
 use crate::config::RouteReloadConfig;
 use crate::route_source;
 use arc_swap::ArcSwap;
@@ -55,6 +56,9 @@ pub static GATEWAY_ROUTE_RELOAD_LAG_SECONDS: LazyLock<IntGauge> = LazyLock::new(
     )
 });
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_route_reload_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(GATEWAY_ROUTE_RELOAD_TOTAL.clone()))?;
     register_collector_once(
@@ -113,6 +117,7 @@ pub struct RouteReloadStatus {
 }
 
 impl RouteReloadStatus {
+    #[must_use]
     pub fn new(cfg: &RouteReloadConfig) -> Arc<Self> {
         Arc::new(Self {
             version: AtomicI64::new(0),
@@ -140,7 +145,7 @@ impl RouteReloadStatus {
             .store(now_unix_ms(), Ordering::SeqCst);
         self.set_result(ReloadResult::Success);
         GATEWAY_ROUTE_VERSION.set(version);
-        GATEWAY_ROUTE_COUNT.set(count as i64);
+        GATEWAY_ROUTE_COUNT.set(i64::saturating_from(count));
         self.update_lag_metric();
     }
 
@@ -178,9 +183,7 @@ impl RouteReloadStatus {
         let updated = self.version_updated_at_unix.load(Ordering::SeqCst);
         let last_result = self
             .last_result
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_else(|_| "unknown".to_string());
+            .read().map_or_else(|_| "unknown".to_string(), |g| g.clone());
         let last_reload_at = if last_ms > 0 {
             Some(format_unix_ms(last_ms))
         } else {
@@ -212,29 +215,23 @@ impl RouteReloadStatus {
 fn now_unix_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .map_or(0, mazbri_core::num::millis_i64)
 }
 
 fn now_unix_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| i64::saturating_from(d.as_secs()))
 }
 
 fn format_unix_ms(ms: i64) -> String {
     let secs = ms / 1000;
-    let nanos = ((ms % 1000) * 1_000_000) as u32;
-    chrono::DateTime::from_timestamp(secs, nanos)
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| ms.to_string())
+    let nanos = u32::saturating_from((ms % 1000) * 1_000_000);
+    chrono::DateTime::from_timestamp(secs, nanos).map_or_else(|| ms.to_string(), |dt| dt.to_rfc3339())
 }
 
 fn format_unix_secs(secs: i64) -> String {
-    chrono::DateTime::from_timestamp(secs, 0)
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| secs.to_string())
+    chrono::DateTime::from_timestamp(secs, 0).map_or_else(|| secs.to_string(), |dt| dt.to_rfc3339())
 }
 
 fn chrono_to_unix(ts: chrono::DateTime<chrono::Utc>) -> i64 {
@@ -382,7 +379,7 @@ async fn reload_if_needed(
 
     if elapsed.as_millis() > 500 {
         tracing::warn!(
-            elapsed_ms = elapsed.as_millis() as u64,
+            elapsed_ms = mazbri_core::num::millis_u64(elapsed),
             route_count = new_engine.route_count(),
             "Route engine full load exceeded 500ms"
         );

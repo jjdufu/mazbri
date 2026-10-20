@@ -55,11 +55,14 @@ impl ConfigEncryption {
             }
         }
         info!("Deriving new config encryption key");
-        let key = self.derive_key(&material)?;
+        let key = Self::derive_key(&material)?;
         *self.cached_key.write() = Some(key);
         *self.cached_hash.write() = Some(current_hash);
         Ok(key)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn encrypt(&self, plaintext: &str) -> Result<String, EncryptionError> {
         let key = self.get_encryption_key().await?;
         let cipher = Aes256Gcm::new_from_slice(&key)
@@ -74,13 +77,16 @@ impl ConfigEncryption {
         result.extend_from_slice(&ciphertext);
         Ok(format!("enc:{}", hex::encode(&result)))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn decrypt(&self, content: &str) -> Result<String, EncryptionError> {
         if !Self::is_encrypted(content) {
             return Ok(content.to_string());
         }
         let hex_data = &content[4..];
         let bytes = hex::decode(hex_data)
-            .map_err(|e| EncryptionError::InvalidFormat(format!("hex decode failed: {}", e)))?;
+            .map_err(|e| EncryptionError::InvalidFormat(format!("hex decode failed: {e}")))?;
         if bytes.len() < 12 {
             return Err(EncryptionError::InvalidFormat(
                 "encrypted data too short".to_string(),
@@ -101,11 +107,11 @@ impl ConfigEncryption {
         content.starts_with("enc:")
     }
     async fn fetch_key_material(&self) -> Result<KeyMaterial, EncryptionError> {
-        let query = r#"
+        let query = r"
             SELECT key, value
             FROM system_settings
             WHERE key IN ('mfa_master_key', 'mfa_salt', 'mfa_context')
-        "#;
+        ";
         let rows = sqlx::query(query)
             .fetch_all(&*self.pool)
             .await
@@ -134,16 +140,16 @@ impl ConfigEncryption {
             context: context.unwrap_or_else(|| "mazbri-mfa-v1".to_string()),
         })
     }
-    fn derive_key(&self, material: &KeyMaterial) -> Result<[u8; 32], EncryptionError> {
+    fn derive_key(material: &KeyMaterial) -> Result<[u8; 32], EncryptionError> {
         let master_key = hex::decode(&material.master_key).map_err(|e| {
-            EncryptionError::KeyUnavailable(format!("Invalid master key hex: {}", e))
+            EncryptionError::KeyUnavailable(format!("Invalid master key hex: {e}"))
         })?;
         let salt = hex::decode(&material.salt)
-            .map_err(|e| EncryptionError::KeyUnavailable(format!("Invalid salt hex: {}", e)))?;
+            .map_err(|e| EncryptionError::KeyUnavailable(format!("Invalid salt hex: {e}")))?;
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), &master_key);
         let mut derived_key = [0u8; 32];
         hkdf.expand(material.context.as_bytes(), &mut derived_key)
-            .map_err(|e| EncryptionError::KeyUnavailable(format!("HKDF expand failed: {}", e)))?;
+            .map_err(|e| EncryptionError::KeyUnavailable(format!("HKDF expand failed: {e}")))?;
         Ok(derived_key)
     }
     fn material_hash(material: &KeyMaterial) -> String {

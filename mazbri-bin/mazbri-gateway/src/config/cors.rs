@@ -24,6 +24,9 @@ impl Default for CorsConfig {
     }
 }
 impl CorsConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> anyhow::Result<()> {
         let has_wildcard = self.has_wildcard();
         if has_wildcard && self.allow_credentials {
@@ -38,6 +41,7 @@ impl CorsConfig {
         }
         Ok(())
     }
+    #[must_use]
     pub fn has_wildcard(&self) -> bool {
         self.allowed_origins.iter().any(|o| o == "*")
     }

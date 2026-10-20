@@ -71,12 +71,12 @@ impl CBProExtService for CBProExtServiceImpl {
         self.manager.report_validation_result(request).await
     }
 
-    async fn health(self, _context: Context) -> HealthResponse {
+    fn health(self, _context: Context) -> impl std::future::Future<Output = HealthResponse> {
         CbProMetricsRecorder::set_current_state(1);
-        HealthResponse {
+        std::future::ready(HealthResponse {
             status: "ok".to_string(),
             service: "cbpro-ext-service".to_string(),
             timestamp: chrono::Utc::now().timestamp(),
-        }
+        })
     }
 }

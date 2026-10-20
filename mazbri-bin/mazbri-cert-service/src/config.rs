@@ -1,17 +1,27 @@
-use anyhow::{Context, Result};
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use crate::san::SanConfig;
+use anyhow::Result;
+use mazbri_core::config::ValidateConfig;
+use mazbri_core::{
+    CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, ServerConfig, TracingConfig,
+};
 use serde::Deserialize;
+
+/// cert 自带配置（bootstrap 文件即完整配置，单次解析）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CertServiceConfig {
+pub struct CertAppConfig {
+    pub service_name: Identity,
+    pub cert_service: CertServiceConfig,
     #[serde(default)]
-    pub service_name: Option<String>,
-    pub server: mazbri_core::ServerConfig,
-    pub database: mazbri_core::DatabaseConfig,
+    pub tracing: TracingConfig,
+    #[serde(default)]
+    pub log_routes: Vec<LogRouteConfig>,
+    pub server: ServerConfig,
+    pub database: DatabaseConfig,
     pub cert: CertConfig,
+    pub san: SanConfig,
     #[serde(default)]
     pub auth: CertAuthConfig,
-    #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +35,7 @@ pub struct CertConfig {
     pub key_password: Option<String>,
 }
 impl CertConfig {
+    #[must_use]
     pub fn key_password(&self) -> &str {
         self.key_password.as_deref().unwrap_or("")
     }
@@ -57,58 +68,12 @@ fn default_ca_validity_days() -> i64 {
 fn default_cert_validity_days() -> i64 {
     365
 }
-impl CertServiceConfig {
-    pub fn service_name_or(&self, default: &str) -> String {
-        self.service_name
-            .clone()
-            .unwrap_or_else(|| default.to_string())
-    }
-    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        if !path.exists() {
-            anyhow::bail!(
-                "Config file not found: {}\n配置文件不存在: {}",
-                path.display(),
-                path.display()
-            );
-        }
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-        let mut value: toml::Value = toml::from_str(&content)
-            .with_context(|| format!("Failed to parse config file as TOML: {}", path.display()))?;
-        if let Some(table) = value.as_table_mut() {
-            table.remove("env");
-            table.remove("tracing");
-            table.remove("log_routes");
-        }
-        let config: Self = value
-            .try_into()
-            .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
-        tracing::info!(path = % path.display(), "从配置文件加载配置");
-        Ok(config)
-    }
-}
-impl ServiceConfig for CertServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-cert-service"
-    }
-    fn default_port() -> u16 {
-        8086
-    }
-    fn server_config(&self) -> &mazbri_core::ServerConfig {
-        &self.server
-    }
-}
-impl ValidateConfig for CertServiceConfig {
+impl ValidateConfig for CertAppConfig {
     fn validate(&self) -> Result<()> {
-        if self.cert.key_password.as_ref().is_none_or(|p| p.is_empty()) {
+        self.cert_service.validate()?;
+        if self.cert.key_password.as_ref().is_none_or(std::string::String::is_empty) {
             tracing::info!(
                 "KEY_PASSWORD will be provided by the commercial base authorization package"
-            );
-        }
-        if self.auth.static_tokens.is_empty() {
-            anyhow::bail!(
-                "static_tokens must be configured via MAZBRI_CERT_SERVICE_TOKEN environment variable before startup"
             );
         }
         if self.server.port == 0 {

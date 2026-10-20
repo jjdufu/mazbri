@@ -14,37 +14,34 @@ pub async fn get_config(
     headers: HeaderMap,
 ) -> Response {
     let request_context = request_context(&headers);
-    match state.repo.get_by_service(&service, true).await {
-        Ok(entry) => {
-            info!(
-                service = % service, content_length = entry.content.len(),
-                "配置已获取"
-            );
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                entry.content,
-            )
-                .into_response()
-        }
-        Err(_) => {
-            let message = format!("配置不存在: {}", service);
-            log_config_error(
-                "config_get_not_found",
-                mazbri_core::error_codes::NOT_FOUND,
-                &request_context.request_id,
-                &request_context.trace_id,
-                &message,
-            );
-            (
-                StatusCode::NOT_FOUND,
-                axum::Json(json!(
-                    { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
-                    NOT_FOUND_MESSAGE }
-                )),
-            )
-                .into_response()
-        }
+    if let Ok(entry) = state.repo.get_by_service(&service, true).await {
+        info!(
+            service = % service, content_length = entry.content.len(),
+            "配置已获取"
+        );
+        (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            entry.content,
+        )
+            .into_response()
+    } else {
+        let message = format!("配置不存在: {service}");
+        log_config_error(
+            "config_get_not_found",
+            mazbri_core::error_codes::NOT_FOUND,
+            &request_context.request_id,
+            &request_context.trace_id,
+            &message,
+        );
+        (
+            StatusCode::NOT_FOUND,
+            axum::Json(json!(
+                { "error" : mazbri_core::error_codes::NOT_FOUND, "message" :
+                NOT_FOUND_MESSAGE }
+            )),
+        )
+            .into_response()
     }
 }
 pub async fn list_configs(
