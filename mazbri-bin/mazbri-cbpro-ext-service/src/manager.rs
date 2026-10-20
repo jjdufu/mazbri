@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::cbpro_client::CBProClient;
 use crate::config::CBProExtServiceConfig;
 use crate::db::CbProExtRepository;
@@ -7,6 +6,7 @@ use crate::observations::now_unix_ms;
 use crate::runtime::{RuntimeDecisionState, build_runtime_decision_cache_key};
 use crate::validation::{build_validation_request, process_validation_job};
 use anyhow::Result;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{
     ObservationRequest, ObservationResponse, RuntimeDecision, RuntimeDecisionRequest,
     RuntimeDecisionResponse, ValidationEnqueueRequest, ValidationEnqueueResponse,
@@ -275,14 +275,17 @@ impl CbProExtManager {
                 let mut guard = self.runtime_state.lock();
                 for state in guard.values_mut() {
                     if let Some(p50) = snapshot.p50_ms {
-                        state.decision.latency_baseline_ms = mazbri_core::num::f64_to_u64(p50.round().max(1.0));
+                        state.decision.latency_baseline_ms =
+                            mazbri_core::num::f64_to_u64(p50.round().max(1.0));
                         state.decision.latency_p50_ms = state.decision.latency_baseline_ms;
                     }
                     if let Some(p75) = snapshot.p75_ms {
-                        state.decision.latency_p75_ms = mazbri_core::num::f64_to_u64(p75.round().max(1.0));
+                        state.decision.latency_p75_ms =
+                            mazbri_core::num::f64_to_u64(p75.round().max(1.0));
                     }
                     if let Some(p95) = snapshot.p95_ms {
-                        state.decision.latency_p95_ms = mazbri_core::num::f64_to_u64(p95.round().max(1.0));
+                        state.decision.latency_p95_ms =
+                            mazbri_core::num::f64_to_u64(p95.round().max(1.0));
                     }
                 }
                 guard.values().map(|state| state.decision.clone()).collect()

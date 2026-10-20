@@ -58,10 +58,7 @@ pub static BYPASS_CONFIG_CACHE_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
 });
 
 pub fn register_upstream_metrics() -> Result<(), prometheus::Error> {
-    register_collector_once(
-        &REGISTRY,
-        Box::new(BYPASS_UPSTREAM_REQUESTS_TOTAL.clone()),
-    )?;
+    register_collector_once(&REGISTRY, Box::new(BYPASS_UPSTREAM_REQUESTS_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(BYPASS_UPSTREAM_ERRORS_TOTAL.clone()))?;
     register_collector_once(
         &REGISTRY,
@@ -113,7 +110,8 @@ impl UpstreamMetricsRecorder {
     pub fn record_ssrf(reason: &str) {
         let r = if reason.is_empty() { "blocked" } else { reason };
         // 低基数 reason：截断/归一化
-        let reason_label = if r.contains("private") || r.contains("loopback") || r.contains("127.") {
+        let reason_label = if r.contains("private") || r.contains("loopback") || r.contains("127.")
+        {
             "private_ip"
         } else if r.contains("dns") || r.contains("resolve") {
             "dns"
@@ -134,9 +132,7 @@ impl UpstreamMetricsRecorder {
     }
 
     pub fn record_config_cache(result: &str) {
-        BYPASS_CONFIG_CACHE_TOTAL
-            .with_label_values(&[result])
-            .inc();
+        BYPASS_CONFIG_CACHE_TOTAL.with_label_values(&[result]).inc();
     }
 
     pub fn observe_duration(method: &str, result: &str, seconds: f64) {

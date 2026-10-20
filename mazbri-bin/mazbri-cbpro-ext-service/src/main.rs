@@ -20,6 +20,55 @@ use mazbri_core::create_pool;
 use mazbri_service::{init_service_runtime, run_toml_config_service};
 use std::sync::Arc;
 
+fn spawn_greptime_refresh(manager: &Arc<CbProExtManager>, config: &CBProExtServiceConfig) {
+    if config.greptime.enabled {
+        let manager = Arc::clone(manager);
+        let interval_secs = config.greptime.query_interval_secs.max(5);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            loop {
+                interval.tick().await;
+                if let Err(error) = manager.refresh_runtime_decisions_from_greptime().await {
+                    tracing::warn!(error = % error, "Greptime refresh failed");
+                }
+            }
+        });
+    }
+}
+
+fn spawn_validation_worker(manager: &Arc<CbProExtManager>, config: &CBProExtServiceConfig) {
+    if config.validation.enabled {
+        let manager = Arc::clone(manager);
+        let poll_interval = config.validation.job_poll_interval_ms.max(100);
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_millis(poll_interval));
+            let mut missing_schema_logged = false;
+            loop {
+                interval.tick().await;
+                if let Err(error) = manager.process_validation_jobs().await {
+                    if crate::db::CbProExtRepository::is_missing_cbpro_schema_error(&error) {
+                        if !missing_schema_logged {
+                            tracing::info!(
+                                error = % error,
+                                "CBPro validation schema is not initialized yet; validation worker will stay idle"
+                            );
+                            missing_schema_logged = true;
+                        }
+                    } else {
+                        tracing::warn!(error = % error, "Validation worker loop failed");
+                    }
+                } else if missing_schema_logged {
+                    tracing::info!(
+                        "CBPro validation schema became available; validation worker resumed"
+                    );
+                    missing_schema_logged = false;
+                }
+            }
+        });
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     run_toml_config_service::<CBProExtServiceConfig, _, _>(|ctx| async move {
@@ -72,50 +121,8 @@ async fn main() -> Result<()> {
                 }
             }
             manager.restore_runtime_decisions_from_platform();
-            if runtime.ctx.config.greptime.enabled {
-                let manager = Arc::clone(&manager);
-                let interval_secs = runtime.ctx.config.greptime.query_interval_secs.max(5);
-                tokio::spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
-                    loop {
-                        interval.tick().await;
-                        if let Err(error) = manager.refresh_runtime_decisions_from_greptime().await {
-                            tracing::warn!(error = % error, "Greptime refresh failed");
-                        }
-                    }
-                });
-            }
-            if runtime.ctx.config.validation.enabled {
-                let manager = Arc::clone(&manager);
-                let poll_interval = runtime.ctx.config.validation.job_poll_interval_ms.max(100);
-                tokio::spawn(async move {
-                    let mut interval =
-                        tokio::time::interval(std::time::Duration::from_millis(poll_interval));
-                    let mut missing_schema_logged = false;
-                    loop {
-                        interval.tick().await;
-                        if let Err(error) = manager.process_validation_jobs().await {
-                            if crate::db::CbProExtRepository::is_missing_cbpro_schema_error(&error)
-                            {
-                                if !missing_schema_logged {
-                                    tracing::info!(
-                                        error = % error,
-                                        "CBPro validation schema is not initialized yet; validation worker will stay idle"
-                                    );
-                                    missing_schema_logged = true;
-                                }
-                            } else {
-                                tracing::warn!(error = % error, "Validation worker loop failed");
-                            }
-                        } else if missing_schema_logged {
-                            tracing::info!(
-                                "CBPro validation schema became available; validation worker resumed"
-                            );
-                            missing_schema_logged = false;
-                        }
-                    }
-                });
-            }
+            spawn_greptime_refresh(&manager, &runtime.ctx.config);
+            spawn_validation_worker(&manager, &runtime.ctx.config);
             let service = CBProExtServiceImpl::new(manager);
             let addr = runtime.ctx.config.server.socket_addr()?;
             tracing::info!(

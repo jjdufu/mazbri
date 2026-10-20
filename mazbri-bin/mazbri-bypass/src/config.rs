@@ -83,10 +83,12 @@ impl UpstreamConfig {
 
 impl ServiceConfig for BypassServiceConfig {
     fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
-        self.admin.enabled.then(|| mazbri_core::config::AdminHealthEndpoint {
-            port: self.admin.port,
-            path: &self.admin.health_path,
-        })
+        self.admin
+            .enabled
+            .then(|| mazbri_core::config::AdminHealthEndpoint {
+                port: self.admin.port,
+                path: &self.admin.health_path,
+            })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
         &self.server

@@ -1,6 +1,6 @@
-use mazbri_core::num::SaturatingFrom;
 use anyhow::Result;
 use chrono::TimeZone;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{RuntimeDecision, ValidationEnqueueRequest, ValidationResultRequest};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
@@ -26,7 +26,10 @@ pub struct ValidationJobRecord {
 impl CbProExtRepository {
     #[must_use]
     pub fn new(db: Option<Arc<PgPool>>, platform_db: Option<Arc<PgPool>>) -> Self {
-        let node_id = hostname::get().map_or_else(|_| "unknown".to_string(), |value| value.to_string_lossy().to_string());
+        let node_id = hostname::get().map_or_else(
+            |_| "unknown".to_string(),
+            |value| value.to_string_lossy().to_string(),
+        );
         Self {
             db,
             platform_db,
@@ -323,13 +326,15 @@ impl CbProExtRepository {
     #[must_use]
     pub fn is_missing_cbpro_schema_error(error: &anyhow::Error) -> bool {
         error.chain().any(|cause| {
-            cause.downcast_ref::<sqlx::Error>().is_some_and(|sqlx_error| {
-                matches!(
-                    sqlx_error,
-                    sqlx::Error::Database(database_error)
-                        if matches!(database_error.code().as_deref(), Some("42P01" | "3F000"))
-                )
-            })
+            cause
+                .downcast_ref::<sqlx::Error>()
+                .is_some_and(|sqlx_error| {
+                    matches!(
+                        sqlx_error,
+                        sqlx::Error::Database(database_error)
+                            if matches!(database_error.code().as_deref(), Some("42P01" | "3F000"))
+                    )
+                })
         })
     }
 
@@ -354,15 +359,24 @@ impl CbProExtRepository {
             path: row.get("path"),
             mode: row.get("mode"),
             policy_version: u64::saturating_from(row.get::<i64, _>("policy_version").max(0)),
-            latency_baseline_ms: mazbri_core::num::f64_to_u64(row
-                .get::<Option<f64>, _>("latency_baseline_ms")
-                .unwrap_or(120.0)),
-            latency_p50_ms: mazbri_core::num::f64_to_u64(row.get::<Option<f64>, _>("latency_p50_ms").unwrap_or(120.0)),
-            latency_p75_ms: mazbri_core::num::f64_to_u64(row.get::<Option<f64>, _>("latency_p75_ms").unwrap_or(132.0)),
-            latency_p95_ms: mazbri_core::num::f64_to_u64(row.get::<Option<f64>, _>("latency_p95_ms").unwrap_or(150.0)),
+            latency_baseline_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_baseline_ms")
+                    .unwrap_or(120.0),
+            ),
+            latency_p50_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p50_ms").unwrap_or(120.0),
+            ),
+            latency_p75_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p75_ms").unwrap_or(132.0),
+            ),
+            latency_p95_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p95_ms").unwrap_or(150.0),
+            ),
             jitter_min_ms: u64::saturating_from(row.get::<i64, _>("jitter_min_ms").max(0)),
             jitter_max_ms: u64::saturating_from(row.get::<i64, _>("jitter_max_ms").max(0)),
-            max_simulated_delay_ms: u64::saturating_from(row.get::<i64, _>("max_simulated_delay_ms").max(0)),
+            max_simulated_delay_ms: u64::saturating_from(
+                row.get::<i64, _>("max_simulated_delay_ms").max(0),
+            ),
             current_ttl_secs: u64::saturating_from(row.get::<i64, _>("current_ttl_secs").max(0)),
             validate_due: row.get::<i64, _>("hit_count_since_validate")
                 >= row.get::<i64, _>("validate_every_hits")
