@@ -110,9 +110,8 @@ pub async fn list_admins(
     page_size: i64,
     offset: i64,
 ) -> Result<Vec<AdminRow>, sqlx::Error> {
-    let mut builder: QueryBuilder<_> = QueryBuilder::new(format!(
-        "SELECT {ADMIN_COLUMNS} FROM admin_users WHERE 1=1"
-    ));
+    let mut builder: QueryBuilder<_> =
+        QueryBuilder::new(format!("SELECT {ADMIN_COLUMNS} FROM admin_users WHERE 1=1"));
     push_admin_scope(&mut builder, role, status, search_pattern, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
     builder.push(" ORDER BY created_at DESC LIMIT ");

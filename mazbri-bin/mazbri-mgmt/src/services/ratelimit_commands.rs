@@ -60,8 +60,7 @@ fn row_to_response(
     tenant_code: String,
     now: chrono::DateTime<Utc>,
 ) -> ControlCommandResponse {
-    let active =
-        row.effective_at <= now && row.expires_at.is_none_or(|expires| expires > now);
+    let active = row.effective_at <= now && row.expires_at.is_none_or(|expires| expires > now);
     ControlCommandResponse {
         id: row.id.to_string(),
         tenant_id: row.tenant_id.to_string(),

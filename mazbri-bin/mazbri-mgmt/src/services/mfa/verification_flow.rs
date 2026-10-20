@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::common::{MfaServiceErrorMode, get_mfa_service, ok_json};
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminJwtClaims;
@@ -7,6 +6,7 @@ use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
 use chrono::Utc;
+use mazbri_core::num::SaturatingFrom;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info, warn};

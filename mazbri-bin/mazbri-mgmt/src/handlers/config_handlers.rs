@@ -36,8 +36,8 @@ pub async fn update_ratelimit_config(
         return ApiResponse::err(StatusCode::FORBIDDEN, "Insufficient permissions");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
@@ -97,8 +97,8 @@ pub async fn delete_ratelimit_config(
         return ApiResponse::err(StatusCode::FORBIDDEN, "Insufficient permissions");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
@@ -150,8 +150,8 @@ pub async fn update_cache_config(
         return ApiResponse::err(StatusCode::FORBIDDEN, "Insufficient permissions");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),

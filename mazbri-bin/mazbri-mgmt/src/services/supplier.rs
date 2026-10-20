@@ -172,7 +172,9 @@ pub async fn list_suppliers(
     .await
     .map_err(|e| ApiError::internal(format!("获取供应商列表失败: {e}")))?;
 
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+    );
 
     let masked_suppliers: Vec<serde_json::Value> = suppliers
         .into_iter()

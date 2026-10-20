@@ -38,8 +38,8 @@ pub async fn add_to_whitelist(
 ) -> axum::response::Response {
     info!("Adding IP whitelist for tenant: {}", code);
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
@@ -82,8 +82,8 @@ pub async fn remove_from_whitelist(
 ) -> axum::response::Response {
     info!("Removing IP {} from whitelist for tenant: {}", ip, code);
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),

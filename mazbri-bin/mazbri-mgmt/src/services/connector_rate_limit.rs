@@ -30,7 +30,10 @@ impl SlidingWindowLimiter {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn try_acquire(&self) -> Result<(), Duration> {
         let now = Instant::now();
-        let mut q = self.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut q = self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         while let Some(front) = q.front() {
             if now.duration_since(*front) > self.window {
                 q.pop_front();
@@ -39,9 +42,9 @@ impl SlidingWindowLimiter {
             }
         }
         if u32::saturating_from(q.len()) >= self.max_per_window {
-            let wait = q
-                .front()
-                .map_or(self.window, |t| self.window.saturating_sub(now.duration_since(*t)));
+            let wait = q.front().map_or(self.window, |t| {
+                self.window.saturating_sub(now.duration_since(*t))
+            });
             return Err(wait);
         }
         q.push_back(now);

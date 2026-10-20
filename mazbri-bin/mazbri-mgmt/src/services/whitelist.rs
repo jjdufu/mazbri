@@ -107,14 +107,14 @@ pub async fn remove_entry(
     ip: &str,
 ) -> Result<String, RemoveError> {
     let (ip_address, cidr): (IpAddr, i32) = if ip.contains('/') {
-        let network: ipnetwork::IpNetwork = ip.parse().map_err(|_| {
-            RemoveError::InvalidFormat(format!("Invalid IP network format: {ip}"))
-        })?;
+        let network: ipnetwork::IpNetwork = ip
+            .parse()
+            .map_err(|_| RemoveError::InvalidFormat(format!("Invalid IP network format: {ip}")))?;
         (network.ip(), i32::from(network.prefix()))
     } else {
-        let addr = ip.parse().map_err(|_| {
-            RemoveError::InvalidFormat(format!("Invalid IP address format: {ip}"))
-        })?;
+        let addr = ip
+            .parse()
+            .map_err(|_| RemoveError::InvalidFormat(format!("Invalid IP address format: {ip}")))?;
         (addr, 32)
     };
     match repo::delete_entry(pool, tenant_id, ip_address, cidr).await {

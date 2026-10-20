@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::common::{
     MfaServiceErrorMode, get_mfa_service, is_required_by_global, ok_json, prepare_setup_artifacts,
     store_setup_artifacts, verify_and_enable_mfa,
@@ -9,6 +8,7 @@ use crate::mfa::MfaServiceCache;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
+use mazbri_core::num::SaturatingFrom;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info, warn};

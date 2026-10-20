@@ -138,9 +138,7 @@ pub async fn create_api_key(
         Ok(info) => info,
         Err(e) => {
             let _ = tx.rollback().await;
-            return Err(ApiError::internal(format!(
-                "Failed to insert API key: {e}"
-            )));
+            return Err(ApiError::internal(format!("Failed to insert API key: {e}")));
         }
     };
     tx.commit()
@@ -229,9 +227,7 @@ pub async fn revoke_api_key(params: RevokeApiKeyParams<'_>) -> Result<serde_json
         Ok(key) => key,
         Err(e) => {
             let _ = tx.rollback().await;
-            return Err(ApiError::internal(format!(
-                "Failed to revoke API key: {e}"
-            )));
+            return Err(ApiError::internal(format!("Failed to revoke API key: {e}")));
         }
     };
     if updated_key.is_none() {
@@ -319,9 +315,7 @@ pub async fn update_api_key(
         }
         Err(e) => {
             let _ = tx.rollback().await;
-            return Err(ApiError::internal(format!(
-                "Failed to update API key: {e}"
-            )));
+            return Err(ApiError::internal(format!("Failed to update API key: {e}")));
         }
     };
     if let Err(e) = repo::update_credential_expiration(&mut tx, key_prefix, new_expires_at).await {

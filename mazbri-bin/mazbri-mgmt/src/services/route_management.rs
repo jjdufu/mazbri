@@ -144,9 +144,7 @@ fn validate_code(field: &str, value: &str) -> Result<(), ApiError> {
     }
     if let Some(first_char) = value.chars().next() {
         if !first_char.is_ascii_uppercase() {
-            return Err(ApiError::validation(format!(
-                "{field} 必须以大写字母开头"
-            )));
+            return Err(ApiError::validation(format!("{field} 必须以大写字母开头")));
         }
     }
     if !value
@@ -638,7 +636,7 @@ pub async fn create_route_rule(
     ))
     .bind(row.id)
     .bind(payload.channel_id)
-    .bind(1) 
+    .bind(1)
     .bind(&switch_cond)
     .fetch_one(&mut *tx)
     .await
@@ -1002,7 +1000,9 @@ pub async fn delete_route_binding(
     ))
 }
 fn pagination(page: u32, page_size: u32, total: i64) -> serde_json::Value {
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+    );
     serde_json::json!(
         { "page" : page, "page_size" : page_size, "total" : total, "total_pages" :
         total_pages, }

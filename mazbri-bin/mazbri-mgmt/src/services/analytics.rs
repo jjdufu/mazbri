@@ -1,10 +1,10 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::analytics_client::AnalyticsHttpClient;
 use crate::handlers::types::{AnalyticsParams, PlatformStatsParams};
 use crate::repositories::analytics as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use mazbri_core::num::SaturatingFrom;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use tracing::info;
@@ -121,7 +121,11 @@ async fn fetch_usage_from_analytics(
     let end_str = end.format("%Y-%m-%dT%H:%M:%S").to_string();
     // Customer-facing volume only — gateway access logs (not gateway+bypass double count).
     match client
-        .aggregate_requests(&start_str, &end_str, Some(mazbri_core::ServiceName::Gateway.as_str()))
+        .aggregate_requests(
+            &start_str,
+            &end_str,
+            Some(mazbri_core::ServiceName::Gateway.as_str()),
+        )
         .await
     {
         Ok(body) => {
@@ -155,7 +159,11 @@ async fn fetch_usage_from_analytics(
                         b.get("request_count")
                             .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0)
-                            .cmp(&a.get("request_count").and_then(serde_json::Value::as_u64).unwrap_or(0))
+                            .cmp(
+                                &a.get("request_count")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or(0),
+                            )
                     });
                     entries.truncate(10);
                     entries
@@ -696,7 +704,10 @@ pub async fn get_call_monitor_logs(
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    let total = body.get("total").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let total = body
+        .get("total")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     let max_page = u32::saturating_from(MAX_BROWSE_TOTAL.div_ceil(u64::from(page_size)).max(1));
     let query_mode = body
         .get("query_mode")
@@ -710,17 +721,21 @@ pub async fn get_call_monitor_logs(
             "latest"
         })
         .to_string();
-    let universe_size =
-        body.get("universe_size")
-            .and_then(serde_json::Value::as_u64)
-            .or(if query_mode == "latest" {
-                Some(MAX_BROWSE_TOTAL)
-            } else {
-                None
-            });
+    let universe_size = body
+        .get("universe_size")
+        .and_then(serde_json::Value::as_u64)
+        .or(if query_mode == "latest" {
+            Some(MAX_BROWSE_TOTAL)
+        } else {
+            None
+        });
     let total_pages = body
         .get("total_pages")
-        .and_then(serde_json::Value::as_u64).map_or_else(|| u32::saturating_from(total.div_ceil(u64::from(page_size))), u32::saturating_from);
+        .and_then(serde_json::Value::as_u64)
+        .map_or_else(
+            || u32::saturating_from(total.div_ceil(u64::from(page_size))),
+            u32::saturating_from,
+        );
     let total_pages = if query_mode == "latest" {
         total_pages
     } else {
@@ -776,9 +791,15 @@ fn call_monitor_service_filters(kind: &str) -> Vec<(&'static str, String)> {
     match kind {
         "upstream" => vec![
             ("service_like", "%-up".to_string()),
-            ("service_in", mazbri_core::ServiceName::Bypass.as_str().to_string()),
+            (
+                "service_in",
+                mazbri_core::ServiceName::Bypass.as_str().to_string(),
+            ),
         ],
-        _ => vec![("service", mazbri_core::ServiceName::Gateway.as_str().to_string())],
+        _ => vec![(
+            "service",
+            mazbri_core::ServiceName::Gateway.as_str().to_string(),
+        )],
     }
 }
 
@@ -937,8 +958,15 @@ fn map_call_monitor_item(
     let channel_meta = channel_names
         .get(&channel_id)
         .or_else(|| channel_names.get(&channel_code));
-    let status_code = u16::saturating_from(row.get("status_code").and_then(serde_json::Value::as_u64).unwrap_or(0));
-    let duration_ms = row.get("duration_ms").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let status_code = u16::saturating_from(
+        row.get("status_code")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+    );
+    let duration_ms = row
+        .get("duration_ms")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     let upstream_service_time_ms = row
         .get("upstream_service_time_ms")
         .and_then(serde_json::Value::as_u64)
@@ -947,7 +975,10 @@ fn map_call_monitor_item(
         .get("dependency_wait_ms")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    let internal_ms = row.get("internal_ms").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let internal_ms = row
+        .get("internal_ms")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     let post_response_ms = row
         .get("post_response_ms")
         .and_then(serde_json::Value::as_u64)

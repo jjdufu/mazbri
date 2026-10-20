@@ -28,8 +28,8 @@ pub async fn create_product(
         return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以创建产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::create_product(
         &state.product_service,
@@ -54,8 +54,8 @@ pub async fn create_product_reservation(
         );
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::create_product_reservation(
         &state.product_service,
@@ -80,8 +80,8 @@ pub async fn release_product_reservation(
         );
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::release_product_reservation(
         &state.product_service,
@@ -111,8 +111,8 @@ pub async fn update_product(
         return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以更新产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::update_product(
         &state.product_service,
@@ -136,8 +136,8 @@ pub async fn delete_product(
         return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以删除产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::delete_product(
         &state.product_service,

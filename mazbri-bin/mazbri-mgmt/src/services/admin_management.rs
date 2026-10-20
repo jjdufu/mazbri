@@ -73,7 +73,9 @@ pub async fn list_admins(
         ApiError::internal("获取管理员列表失败".to_string())
     })?;
     let items: Vec<serde_json::Value> = rows.iter().map(admin_row_to_json).collect();
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+    );
     Ok(serde_json::json!(
         { "items" : items, "total" : total, "page" : page, "page_size" : page_size,
         "total_pages" : total_pages, }

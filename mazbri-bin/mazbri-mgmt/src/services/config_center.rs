@@ -83,7 +83,11 @@ fn dependency_internal_error(
     );
     ApiError::internal(CONFIG_CENTER_INTERNAL_MESSAGE.to_string())
 }
-fn ensure_service_name(service_name: &str, request_id: &str, trace_id: &str) -> Result<(), ApiError> {
+fn ensure_service_name(
+    service_name: &str,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<(), ApiError> {
     mazbri_core::validate_config_target(service_name).map_err(|e| {
         validation_error(
             "config_center_service_validation_failed",
@@ -161,7 +165,8 @@ fn validate_zip_entry(
             1.0
         }
     } else {
-        mazbri_core::num::u64_to_f64(uncompressed_size) / mazbri_core::num::u64_to_f64(compressed_size)
+        mazbri_core::num::u64_to_f64(uncompressed_size)
+            / mazbri_core::num::u64_to_f64(compressed_size)
     };
     if ratio > MAX_COMPRESSION_RATIO {
         return Err(format!(

@@ -1,7 +1,7 @@
-use std::fmt::Write as _;
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
+use std::fmt::Write as _;
 use tracing::info;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

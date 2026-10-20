@@ -1,4 +1,7 @@
-use super::{error, PgPool, AnalyticsHttpClient, DateTime, Utc, UpstreamBillScope, BillingError, UpstreamBillScopeKind, Row, BTreeMap, UpstreamBillItemDraft, Decimal, repo, HashMap};
+use super::{
+    AnalyticsHttpClient, BTreeMap, BillingError, DateTime, Decimal, HashMap, PgPool, Row,
+    UpstreamBillItemDraft, UpstreamBillScope, UpstreamBillScopeKind, Utc, error, repo,
+};
 
 /// # Errors
 ///

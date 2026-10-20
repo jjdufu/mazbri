@@ -1,4 +1,4 @@
-use super::{Serialize, Deserialize, Uuid, repo, mask_config_credentials, HashMap};
+use super::{Deserialize, HashMap, Serialize, Uuid, mask_config_credentials, repo};
 
 // ---------- API types ----------
 

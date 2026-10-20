@@ -1,4 +1,4 @@
-use super::{error, Serialize, PgPool, DateTime, Utc, BillingError, Row, Decimal, repo};
+use super::{BillingError, DateTime, Decimal, PgPool, Row, Serialize, Utc, error, repo};
 
 /// # Errors
 ///

@@ -1,4 +1,8 @@
-use super::{PgPool, CreateDraftRequest, DraftDto, ApiError, strip_workbench_env_from_config, repo, draft_to_dto, Uuid, UpdateDraftRequest, SupplierConfig, parse_workbench_env, GATE_TTL_HOURS, RecentGateRun, evaluate_endpoint_gates};
+use super::{
+    ApiError, CreateDraftRequest, DraftDto, GATE_TTL_HOURS, PgPool, RecentGateRun, SupplierConfig,
+    UpdateDraftRequest, Uuid, draft_to_dto, evaluate_endpoint_gates, parse_workbench_env, repo,
+    strip_workbench_env_from_config,
+};
 
 // ---------- Draft CRUD ----------
 
@@ -86,7 +90,9 @@ pub async fn list_drafts(
     let rows = repo::list_drafts(pool, status, search_ref, i64::from(page_size), offset)
         .await
         .map_err(|e| ApiError::internal(format!("list drafts: {e}")))?;
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+    );
     Ok(serde_json::json!({
         "drafts": rows.into_iter().map(draft_to_dto).collect::<Vec<_>>(),
         "pagination": {

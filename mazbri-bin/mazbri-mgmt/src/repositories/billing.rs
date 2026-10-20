@@ -298,7 +298,9 @@ pub async fn list_bill_items(
     if bill.bill_kind == "upstream" {
         return Ok(Vec::new());
     }
-    let Some(tenant_id) = bill.tenant_id else { return Ok(Vec::new()) };
+    let Some(tenant_id) = bill.tenant_id else {
+        return Ok(Vec::new());
+    };
     let rows = sqlx::query(
         "SELECT
             api_endpoint,

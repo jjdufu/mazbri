@@ -293,7 +293,8 @@ pub async fn get_ratelimit_config(
         .ok_or_else(|| format!("Tenant not found: {tenant_id}"))?;
     if let Some(row) = repo::get_ratelimit_config(ratelimit_db, tenant_id)
         .await
-        .map_err(|e| format!("Failed to get rate limit config: {e}"))? {
+        .map_err(|e| format!("Failed to get rate limit config: {e}"))?
+    {
         let resp = row_to_ratelimit_response(&row, tenant_code, tenant_id_str);
         Ok(serde_json::to_value(resp).unwrap_or_default())
     } else {
@@ -475,9 +476,7 @@ pub async fn update_cache_config(
             expected_updated_at,
         )
         .await
-        .map_err(|e| {
-            ConfigUpdateError::Internal(format!("Failed to update cache config: {e}"))
-        })?,
+        .map_err(|e| ConfigUpdateError::Internal(format!("Failed to update cache config: {e}")))?,
         None => repo::insert_cache_config(cache_db, tenant_id, &write_params)
             .await
             .map_err(|e| {

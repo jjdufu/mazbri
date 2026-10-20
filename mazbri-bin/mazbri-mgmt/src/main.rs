@@ -12,7 +12,8 @@ use axum::{
 };
 use mazbri_cache::RedisPermissionCache;
 use mazbri_core::{
-    ServiceName, build_log_routes, create_pool, get_cert_service_token, load_toml, init_tracing_with_routes, register_metrics,
+    ServiceName, build_log_routes, create_pool, get_cert_service_token, init_tracing_with_routes,
+    load_toml, register_metrics,
 };
 use mazbri_mgmt::{audit, config, handlers, middleware, proxy};
 use mazbri_product::{ProductConfig, ProductService};
@@ -63,9 +64,12 @@ async fn cache_control_middleware(request: Request, next: Next) -> Response {
             .unwrap_or_else(|_| Response::new(Body::empty()));
     }
     let mut response = next.run(request).await;
-    if path.ends_with('/') || std::path::Path::new(&path)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("html")) || path == "/" {
+    if path.ends_with('/')
+        || std::path::Path::new(&path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("html"))
+        || path == "/"
+    {
         let headers = response.headers_mut();
         if let Ok(value) = "no-cache, no-store, must-revalidate".parse() {
             headers.insert(CACHE_CONTROL, value);
@@ -82,9 +86,11 @@ async fn vue_spa_fallback(uri: Uri) -> Response {
             .body(Body::from(r#"{"error":"Not Found"}"#))
             .unwrap_or_else(|_| StatusCode::NOT_FOUND.into_response());
     }
-    if path.contains('.') && !std::path::Path::new(path)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("html")) {
+    if path.contains('.')
+        && !std::path::Path::new(path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("html"))
+    {
         let asset_path = path.trim_start_matches('/');
         if let Some(asset) = frontend_asset(asset_path) {
             let mime_type = mime_guess::from_path(asset_path)
@@ -217,12 +223,11 @@ async fn main() -> Result<()> {
         mazbri_mgmt::services::mfa_settings_cache::MfaSettingsCache::new(admin_db.clone()),
     );
     let analytics_client = {
-        let client =
-            mazbri_mgmt::analytics_client::AnalyticsHttpClient::new(&config.analytics)
-                .map_err(|e| {
-                    tracing::error!("Analytics 客户端创建失败: {}", e);
-                    anyhow::anyhow!("Analytics 客户端创建失败: {e}")
-                })?;
+        let client = mazbri_mgmt::analytics_client::AnalyticsHttpClient::new(&config.analytics)
+            .map_err(|e| {
+                tracing::error!("Analytics 客户端创建失败: {}", e);
+                anyhow::anyhow!("Analytics 客户端创建失败: {e}")
+            })?;
         info!("Analytics 客户端已初始化: {}", config.analytics.url);
         Arc::new(client)
     };

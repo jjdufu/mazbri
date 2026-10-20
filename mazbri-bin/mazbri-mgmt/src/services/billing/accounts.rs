@@ -1,4 +1,7 @@
-use super::{error, PgPool, AccountListResponse, BillingError, validate_limit, normalize_account_status, decode_cursor, repo, encode_cursor};
+use super::{
+    AccountListResponse, BillingError, PgPool, decode_cursor, encode_cursor, error,
+    normalize_account_status, repo, validate_limit,
+};
 
 /// # Errors
 ///

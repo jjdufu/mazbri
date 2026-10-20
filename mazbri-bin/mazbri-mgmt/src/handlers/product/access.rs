@@ -39,8 +39,8 @@ pub async fn grant_tenant_access(
             Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
         };
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let product_req = mazbri_product::service::GrantAccessRequest {
         tenant_id,
@@ -78,8 +78,8 @@ pub async fn revoke_tenant_access(
             Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
         };
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::revoke_tenant_access(service::RevokeTenantAccessArgs {
         product_service: &state.product_service,
@@ -112,8 +112,8 @@ pub async fn update_tenant_product_config(
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
     };
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::update_tenant_product_config(service::UpdateTenantProductConfigArgs {
         product_service: &state.product_service,

@@ -124,12 +124,12 @@ pub async fn update_bill_status(
         .into_response());
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let status = payload.status.clone();
     let result = svc::update_bill_status(&state.db, &state.billing_db, id, &payload.status).await?;
@@ -162,12 +162,12 @@ pub async fn delete_bill(
         .into_response());
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     debug!("Deleting bill {} (by {})", id, claims.sub);
     let deleted_id = svc::delete_bill(&state.billing_db, id).await?;
@@ -227,12 +227,12 @@ pub async fn create_adjustment(
     let direction = payload.direction.clone();
     let description = payload.description.clone();
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let billing_service = mazbri_billing::BillingService::with_pgpool(
         state.billing_db.clone(),
@@ -289,12 +289,12 @@ pub async fn generate_bill(
         return Ok(*response);
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let bill_kind = payload.bill_kind.trim().to_lowercase();
     let period_start = payload.period_start;
@@ -306,13 +306,14 @@ pub async fn generate_bill(
             .tenant_code
             .as_deref()
             .map(str::trim)
-            .filter(|v| !v.is_empty()) else {
-                return Ok(ApiResponse::err(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Customer bill requires tenant_code",
-                )
-                .into_response());
-            };
+            .filter(|v| !v.is_empty())
+        else {
+            return Ok(ApiResponse::err(
+                axum::http::StatusCode::BAD_REQUEST,
+                "Customer bill requires tenant_code",
+            )
+            .into_response());
+        };
         let tenant_id =
             match crate::services::tenant::resolve_tenant_id(&state.db, tenant_code).await {
                 Ok(id) => id,
@@ -358,20 +359,21 @@ pub async fn generate_bill(
             .upstream_scope_id
             .as_deref()
             .map(str::trim)
-            .filter(|value| !value.is_empty()) else {
-                return Ok(ApiResponse::err(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "Upstream bill requires upstream_scope_id",
-                )
-                .into_response());
-            };
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(ApiResponse::err(
+                axum::http::StatusCode::BAD_REQUEST,
+                "Upstream bill requires upstream_scope_id",
+            )
+            .into_response());
+        };
         let Ok(scope_id) = Uuid::parse_str(scope_id) else {
-                return Ok(ApiResponse::err(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    "upstream_scope_id must be a valid UUID",
-                )
-                .into_response());
-            };
+            return Ok(ApiResponse::err(
+                axum::http::StatusCode::BAD_REQUEST,
+                "upstream_scope_id must be a valid UUID",
+            )
+            .into_response());
+        };
         let scope = match scope_type.as_str() {
             "channel" => svc::UpstreamBillScope::channel(scope_id),
             "supplier" => svc::UpstreamBillScope::supplier(scope_id),
@@ -655,12 +657,12 @@ pub async fn delete_reconciliation_discrepancy(
         .into_response());
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     debug!(
         "Deleting reconciliation discrepancy {} (by {})",
@@ -923,12 +925,12 @@ pub async fn generate_bill_async(
     }
 
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
-            return Ok(ApiResponse::err(
-                axum::http::StatusCode::BAD_REQUEST,
-                "Invalid operator ID format",
-            )
-            .into_response());
-        };
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid operator ID format",
+        )
+        .into_response());
+    };
     let client_ip = extract_client_ip(&headers, Some(addr));
     let bill_kind = payload.bill_kind.trim().to_lowercase();
     let period_start = payload.period_start;

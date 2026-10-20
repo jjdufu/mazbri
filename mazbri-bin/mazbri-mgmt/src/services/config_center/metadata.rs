@@ -10,9 +10,7 @@ pub async fn list_services(
     request_id: &str,
     trace_id: &str,
 ) -> Result<serde_json::Value, ApiError> {
-    let url_path = format!(
-        "/configs/search?limit={MAX_SERVICE_FILTER_CONFIGS}&offset=0"
-    );
+    let url_path = format!("/configs/search?limit={MAX_SERVICE_FILTER_CONFIGS}&offset=0");
     let resp = cert_service_request(
         state,
         reqwest::Method::GET,

@@ -1,8 +1,8 @@
-use std::fmt::Write as _;
 use super::{cert_service_request, dependency_internal_error, not_found_error};
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::config_center::{ConfigListParams, MAX_PAGE_SIZE};
+use std::fmt::Write as _;
 pub async fn list_configs(
     state: &AppState,
     client_ip: Option<String>,

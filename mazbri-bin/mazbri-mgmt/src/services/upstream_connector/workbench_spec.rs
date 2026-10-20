@@ -915,7 +915,11 @@ fn transform_scan_value(t: &TransformConfig) -> Value {
     })
 }
 
-fn walk_unresolved(value: &Value, names: &mut Vec<String>, seen: &mut std::collections::HashSet<String>) {
+fn walk_unresolved(
+    value: &Value,
+    names: &mut Vec<String>,
+    seen: &mut std::collections::HashSet<String>,
+) {
     match value {
         Value::String(s) => collect_unresolved_from_str(s, names, seen),
         Value::Array(arr) => {

@@ -132,7 +132,9 @@ impl BillingReconciliationSettingsCache {
                                 defaults.schedule.interval_secs.max(60);
                         }
                         if settings.default_scope_type.trim().is_empty() {
-                            settings.default_scope_type.clone_from(&defaults.default_scope_type);
+                            settings
+                                .default_scope_type
+                                .clone_from(&defaults.default_scope_type);
                         }
                         settings
                     }

@@ -258,7 +258,8 @@ impl ValidateConfig for MgmtApiConfig {
         if self.billing_reconciliation.alert.on_flagged
             && !self
                 .billing_reconciliation
-                .alert.webhook_url
+                .alert
+                .webhook_url
                 .trim()
                 .is_empty()
             && url::Url::parse(self.billing_reconciliation.alert.webhook_url.trim()).is_err()

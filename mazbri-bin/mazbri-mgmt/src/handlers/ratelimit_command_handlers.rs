@@ -42,8 +42,8 @@ pub async fn create_control_command(
         );
     }
     let Ok(operator_id) = Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
@@ -120,15 +120,15 @@ pub async fn cancel_control_command(
         );
     }
     let Ok(operator_id) = Uuid::parse_str(&claims.user_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
+    };
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
     };
     let Ok(command_uuid) = Uuid::parse_str(&command_id) else {
-            return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid command id format");
-        };
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid command id format");
+    };
     match svc::cancel_control_command(&state.db, &state.ratelimit_db, tenant_id, command_uuid).await
     {
         Ok(data) => {

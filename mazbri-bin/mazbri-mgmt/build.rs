@@ -28,7 +28,8 @@ fn main() {
     }
     let frontend_dir = workspace_root.join("mazbri-web");
     let dist_dir = frontend_dir.join("dist");
-    assert!(dist_dir.exists(), 
+    assert!(
+        dist_dir.exists(),
         "Frontend dist not found at {}! Please run: cd mazbri-web && pnpm build\n\
          / 前端 dist 未找到！请运行: cd mazbri-web && pnpm build",
         dist_dir.display()

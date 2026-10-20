@@ -1,7 +1,7 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log};
 use crate::repositories::password_policy as repo;
 use chrono::{DateTime, Utc};
+use mazbri_core::num::SaturatingFrom;
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -353,9 +353,7 @@ fn policy_row_response(row: &repo::PasswordPolicyRow) -> axum::response::Respons
 }
 pub async fn get_policy(db: &PgPool) -> axum::response::Response {
     match repo::get_password_policy(db).await {
-        Ok(row) => {
-            policy_row_response(&row)
-        }
+        Ok(row) => policy_row_response(&row),
         Err(e) => {
             error!("Failed to get password policy: {}", e);
             ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "获取密码策略失败")

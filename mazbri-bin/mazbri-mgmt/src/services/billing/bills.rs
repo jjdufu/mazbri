@@ -1,4 +1,7 @@
-use super::{BillStatus, error, PgPool, BillListResponse, BillingError, validate_limit, normalize_bill_status, tenant_repo, repo, enrich_bill_rows, BillDetailResponse, FromStr, Utc};
+use super::{
+    BillDetailResponse, BillListResponse, BillStatus, BillingError, FromStr, PgPool, Utc,
+    enrich_bill_rows, error, normalize_bill_status, repo, tenant_repo, validate_limit,
+};
 
 /// `list_bills` 的入参。
 pub struct ListBillsParams<'a> {
@@ -84,7 +87,9 @@ pub async fn list_bills(
         BillingError::Database
     })?;
     let bills = enrich_bill_rows(db, bills).await?;
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(limit)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(limit)).ceil(),
+    );
     Ok(BillListResponse {
         bills,
         total,
@@ -137,12 +142,13 @@ pub async fn delete_bill(pool: &PgPool, bill_id: uuid::Uuid) -> Result<uuid::Uui
 
 /// Allowed transitions for operator status flow (H-17).
 pub(super) fn can_transition_bill_status(from: BillStatus, to: BillStatus) -> bool {
-    use BillStatus::{Pending, Processing, Paid, Overdue, Cancelled};
+    use BillStatus::{Cancelled, Overdue, Paid, Pending, Processing};
     matches!(
         (from, to),
-        (Pending, Processing | Paid | Overdue | Cancelled) |
-(Processing | Overdue, Paid) | (Processing, Overdue | Cancelled) |
-(Overdue, Cancelled)
+        (Pending, Processing | Paid | Overdue | Cancelled)
+            | (Processing | Overdue, Paid)
+            | (Processing, Overdue | Cancelled)
+            | (Overdue, Cancelled)
     )
 }
 

@@ -1,5 +1,12 @@
+use super::{
+    ApiError, AuditAction, AuditLogRequest, AuditResourceType, AuditService, Decimal,
+    DraftGateItem, FromStr, GATE_REASON_SKIPPED, GATE_TTL_HOURS, PgPool, PublishChannel,
+    PublishRequest, PublishResult, RecentGateRun, Row, SupplierConfig, Uuid, apply_env_str,
+    apply_env_to_supplier_config, build_workbench_spec, channel_config_with_egress,
+    connector_metrics, endpoint_by_id, evaluate_endpoint_gates, info, mask_config_credentials,
+    parse_workbench_env, repo, ssrf,
+};
 use mazbri_core::num::SaturatingFrom;
-use super::{info, AuditService, Uuid, PublishRequest, PgPool, PublishResult, ApiError, repo, SupplierConfig, parse_workbench_env, apply_env_to_supplier_config, apply_env_str, GATE_TTL_HOURS, RecentGateRun, evaluate_endpoint_gates, Row, ssrf, DraftGateItem, GATE_REASON_SKIPPED, Decimal, FromStr, endpoint_by_id, build_workbench_spec, channel_config_with_egress, AuditLogRequest, AuditAction, AuditResourceType, mask_config_credentials, connector_metrics, PublishChannel};
 
 // ---------- Publish ----------
 
@@ -92,7 +99,9 @@ pub async fn publish_draft(
                     .force
                     .force_reason
                     .as_deref()
-                    .map(str::trim).as_ref().is_none_or(|s| s.is_empty())
+                    .map(str::trim)
+                    .as_ref()
+                    .is_none_or(|s| s.is_empty())
                 {
                     return Err(ApiError::validation("force_publish 需要 force_reason"));
                 }
@@ -562,9 +571,8 @@ pub(super) fn auto_channels_from_endpoints(endpoints: &serde_json::Value) -> Vec
                 .and_then(|v| v.as_str())
                 .unwrap_or("/")
                 .to_string();
-            let code = ep
-                .get("channel_code")
-                .and_then(|v| v.as_str()).map_or_else(|| {
+            let code = ep.get("channel_code").and_then(|v| v.as_str()).map_or_else(
+                || {
                     let base: String = name
                         .chars()
                         .filter(char::is_ascii_alphanumeric)
@@ -575,7 +583,9 @@ pub(super) fn auto_channels_from_endpoints(endpoints: &serde_json::Value) -> Vec
                     } else {
                         base.chars().take(20).collect()
                     }
-                }, std::string::ToString::to_string);
+                },
+                std::string::ToString::to_string,
+            );
             let path_prefix = ep
                 .get("path_prefix")
                 .and_then(|v| v.as_str())

@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use axum::{
     Extension,
     extract::Request,
@@ -7,6 +6,7 @@ use axum::{
 };
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use mazbri_auth::JwtKeyManager;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

@@ -24,7 +24,6 @@ fn require_operator(claims: &AdminClaims) -> Result<(), ApiError> {
     Ok(())
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct ListDraftsQuery {
     pub status: Option<String>,

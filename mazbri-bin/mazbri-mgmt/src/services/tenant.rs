@@ -94,7 +94,9 @@ pub async fn list_tenants(
     )
     .await
     .map_err(|e| ApiError::internal(format!("Failed to list tenants: {e}")))?;
-    let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil());
+    let total_pages = mazbri_core::num::f64_to_u64(
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+    );
     Ok(serde_json::json!(
         { "tenants" : tenants, "pagination" : { "page" : params.page, "page_size" :
         page_size, "total" : total, "total_pages" : total_pages, } }

@@ -25,7 +25,9 @@ mod client;
 // Route builders reference handler fns expanded in authorization/certificates — load last.
 mod routes;
 
-use client::{get_cert_proxy_config, proxy_request, forbidden, enrich_audit_details, parse_json_body};
+use client::{
+    enrich_audit_details, forbidden, get_cert_proxy_config, parse_json_body, proxy_request,
+};
 pub(crate) use common::*;
 // Handlers must be in parent namespace for `routes` (`use super::*` + macro-expanded names).
 pub(crate) use authorization::*;

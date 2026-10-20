@@ -1,4 +1,4 @@
-use super::{Deserialize, Serialize, Uuid, repo, PgPool, ApiError};
+use super::{ApiError, Deserialize, PgPool, Serialize, Uuid, repo};
 use base64::Engine;
 use sha2::{Digest, Sha256};
 

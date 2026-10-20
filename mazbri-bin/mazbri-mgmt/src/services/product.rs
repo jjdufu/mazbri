@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::audit::{AuditAction, AuditResourceType, AuditService, create_audit_log, tenant_audit};
 use crate::handlers::product::{
     RechargeRequest, RefundRequest, RefundResponse, Transaction, TransactionListQuery,
@@ -8,6 +7,7 @@ use crate::handlers::types::ListParams;
 use crate::repositories::product as repo;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_product::model::{CreateProductRequest, UpdateProductRequest};
 use mazbri_product::service::{
     GrantAccessRequest, ProductDeleteError, ProductWriteError, TenantProductConfig,
@@ -41,7 +41,9 @@ pub async fn list_products(
     {
         Ok((page, total)) => {
             let total = u64::saturating_from(total);
-            let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(total) / f64::from(page_size)).ceil());
+            let total_pages = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(total) / f64::from(page_size)).ceil(),
+            );
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "products" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
@@ -80,7 +82,9 @@ pub async fn list_authorizations(
     {
         Ok((page, total)) => {
             let total = u64::saturating_from(total);
-            let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(total) / f64::from(page_size)).ceil());
+            let total_pages = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(total) / f64::from(page_size)).ceil(),
+            );
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "authorizations" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
@@ -507,7 +511,10 @@ pub async fn list_product_tenants(
                     )
                 })
                 .collect::<Vec<_>>();
-            let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(total) / mazbri_core::num::usize_to_f64(page_size)).ceil());
+            let total_pages = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(total) / mazbri_core::num::usize_to_f64(page_size))
+                    .ceil(),
+            );
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "tenants" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
@@ -543,7 +550,10 @@ pub async fn list_tenant_products(
             let page_size = params.capped_page_size() as usize;
             let offset = params.offset() as usize;
             let page: Vec<_> = all_json.into_iter().skip(offset).take(page_size).collect();
-            let total_pages = mazbri_core::num::f64_to_u64((mazbri_core::num::u64_to_f64(total) / mazbri_core::num::usize_to_f64(page_size)).ceil());
+            let total_pages = mazbri_core::num::f64_to_u64(
+                (mazbri_core::num::u64_to_f64(total) / mazbri_core::num::usize_to_f64(page_size))
+                    .ceil(),
+            );
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "products" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
@@ -914,15 +924,11 @@ fn product_write_error_details(action: &str, error: &ProductWriteError) -> (Stat
         ),
         ProductWriteError::ProductIdReservationUnavailable(reservation_id) => (
             StatusCode::CONFLICT,
-            format!(
-                "product_id reservation '{reservation_id}' is no longer available"
-            ),
+            format!("product_id reservation '{reservation_id}' is no longer available"),
         ),
         ProductWriteError::ProductIdReservationOwnedByAnotherOperator(reservation_id) => (
             StatusCode::FORBIDDEN,
-            format!(
-                "product_id reservation '{reservation_id}' belongs to another operator"
-            ),
+            format!("product_id reservation '{reservation_id}' belongs to another operator"),
         ),
         ProductWriteError::Database(database_error) => (
             StatusCode::INTERNAL_SERVER_ERROR,

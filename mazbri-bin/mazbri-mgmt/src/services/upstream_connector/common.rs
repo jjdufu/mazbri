@@ -3,7 +3,7 @@ use mazbri_core::{
     upsert_egress_in_channel_config,
 };
 
-use super::{ApiError, RuntimeEngine, OnceLock, SsrfChecker, Duration, Arc};
+use super::{ApiError, Arc, Duration, OnceLock, RuntimeEngine, SsrfChecker};
 
 pub(crate) fn endpoint_by_id<'a>(
     endpoints: &'a serde_json::Value,
@@ -46,12 +46,7 @@ pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &Suppl
     };
     if target.uses_ticket() {
         copy_if_empty(&mut auth.token_url, nonempty(&flow.token_url));
-        if auth
-            .token_path
-            .as_deref()
-            .map_or("", str::trim)
-            .is_empty()
-        {
+        if auth.token_path.as_deref().map_or("", str::trim).is_empty() {
             if let Some(p) = flow
                 .token_path
                 .as_deref()

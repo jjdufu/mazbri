@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::config::MfaConfig;
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
@@ -10,6 +9,7 @@ use argon2::{
 };
 use base32::{Alphabet, decode as base32_decode, encode as base32_encode};
 use hkdf::Hkdf;
+use mazbri_core::num::SaturatingFrom;
 use moka::future::Cache;
 use rand::RngExt;
 use sha1::Sha1;
@@ -314,7 +314,9 @@ impl MfaService {
             );
             return false;
         };
-        let code_num: u32 = if let Ok(n) = code.parse() { n } else {
+        let code_num: u32 = if let Ok(n) = code.parse() {
+            n
+        } else {
             tracing::trace!("Failed to parse TOTP code as number, code: ***");
             return false;
         };
@@ -331,7 +333,9 @@ impl MfaService {
             current_timestamp,
             secret_bytes.len()
         );
-        for offset in -i64::saturating_from(self.config.window)..=i64::saturating_from(self.config.window) {
+        for offset in
+            -i64::saturating_from(self.config.window)..=i64::saturating_from(self.config.window)
+        {
             let check_timestamp = i64::saturating_from(current_timestamp) + offset;
             if check_timestamp < 0 {
                 continue;

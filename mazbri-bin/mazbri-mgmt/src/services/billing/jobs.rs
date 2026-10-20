@@ -1,5 +1,9 @@
+use super::{
+    AnalyticsHttpClient, BillGenerationSummary, BillingAdjustmentListResponse, BillingError,
+    DateTime, Decimal, PgPool, ReconciliationAuditResult, ReconciliationDiscrepancyListResponse,
+    UpstreamBillScope, Utc, error, generate_upstream_bill, repo, validate_limit,
+};
 use mazbri_core::num::SaturatingFrom;
-use super::{error, PgPool, AnalyticsHttpClient, DateTime, Utc, UpstreamBillScope, BillGenerationSummary, BillingError, generate_upstream_bill, repo, Decimal, ReconciliationAuditResult, ReconciliationDiscrepancyListResponse, validate_limit, BillingAdjustmentListResponse};
 
 /// # Errors
 ///
@@ -113,13 +117,11 @@ pub async fn execute_reconciliation_audit(
             BillingError::Database
         })?;
 
-    let olap_preagg_call_count: i64 = summary_val
-        .as_array()
-        .map_or(0, |arr| {
-            arr.iter()
-                .filter_map(|row| row.get("total_calls").and_then(serde_json::Value::as_i64))
-                .sum()
-        });
+    let olap_preagg_call_count: i64 = summary_val.as_array().map_or(0, |arr| {
+        arr.iter()
+            .filter_map(|row| row.get("total_calls").and_then(serde_json::Value::as_i64))
+            .sum()
+    });
 
     // Customer-facing access logs (gateway only). request_logs also contains mazbri-bypass
     // rows for the same request_id; counting both ~doubles the total and falsely flags recon.
@@ -360,7 +362,9 @@ pub async fn list_reconciliation_discrepancies(
     let total_pages = if total == 0 {
         0
     } else {
-        mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil())
+        mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+        )
     };
     Ok(ReconciliationDiscrepancyListResponse {
         items,
@@ -600,7 +604,9 @@ pub async fn list_billing_adjustments(
     let total_pages = if total == 0 {
         0
     } else {
-        mazbri_core::num::f64_to_u64((mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil())
+        mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
+        )
     };
     Ok(BillingAdjustmentListResponse {
         items,

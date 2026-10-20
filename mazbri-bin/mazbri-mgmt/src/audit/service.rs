@@ -1,4 +1,3 @@
-use std::fmt::Write as _;
 use super::types::{
     ActorType, AuditAction, AuditLogChanges, AuditLogDetailResponse, AuditLogListResponse,
     AuditLogQuery, AuditLogRequest, AuditLogResponse, AuditResourceType, AuditStatus,
@@ -6,6 +5,7 @@ use super::types::{
 use crate::sanitize::sanitize_json_value;
 use axum::http::HeaderMap;
 use sqlx::{Postgres, QueryBuilder, Row};
+use std::fmt::Write as _;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -338,7 +338,6 @@ impl AuditService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list(&self, query: AuditLogQuery) -> Result<AuditLogListResponse, sqlx::Error> {
-        let tenant_id_str = query.tenant_id.map(|id| id.to_string());
         let filters = crate::list_query::parse_and_validate_filters(
             query.filters.as_deref(),
             &crate::list_query::audit_logs_catalog(),
@@ -364,70 +363,8 @@ impl AuditService {
              ip_address, user_agent, old_value, new_value, created_at \
              FROM audit_logs_view WHERE 1=1",
         );
-        if let Some(ref tid) = tenant_id_str {
-            count_builder.push(" AND (details->>'tenant_id' = ");
-            count_builder.push_bind(tid.clone());
-            count_builder.push(" OR resource_id = ");
-            count_builder.push_bind(tid.clone());
-            count_builder.push(")");
-            select_builder.push(" AND (details->>'tenant_id' = ");
-            select_builder.push_bind(tid.clone());
-            select_builder.push(" OR resource_id = ");
-            select_builder.push_bind(tid);
-            select_builder.push(")");
-        }
-        if let Some(ref action) = query.action {
-            count_builder.push(" AND action = ");
-            count_builder.push_bind(action.clone());
-            select_builder.push(" AND action = ");
-            select_builder.push_bind(action.clone());
-        }
-        if let Some(ref resource_type) = query.resource_type {
-            count_builder.push(" AND resource_type = ");
-            count_builder.push_bind(resource_type.clone());
-            select_builder.push(" AND resource_type = ");
-            select_builder.push_bind(resource_type.clone());
-        }
-        if let Some(ref resource_id) = query.resource_id {
-            count_builder.push(" AND resource_id = ");
-            count_builder.push_bind(resource_id.clone());
-            select_builder.push(" AND resource_id = ");
-            select_builder.push_bind(resource_id.clone());
-        }
-        if let Some(actor_id) = query.actor_id {
-            count_builder.push(" AND user_id = ");
-            count_builder.push_bind(actor_id);
-            select_builder.push(" AND user_id = ");
-            select_builder.push_bind(actor_id);
-        }
-        if let Some(keyword) = keyword {
-            push_audit_keyword_filter(&mut count_builder, keyword);
-            push_audit_keyword_filter(&mut select_builder, keyword);
-        }
-        if let Some(ref status) = query.status {
-            count_builder.push(" AND status = ");
-            count_builder.push_bind(status.clone());
-            select_builder.push(" AND status = ");
-            select_builder.push_bind(status.clone());
-        }
-        if let Some(start_time) = query.start_time {
-            let start_dt = chrono::DateTime::from_timestamp(start_time, 0);
-            if let Some(dt) = start_dt {
-                count_builder.push(" AND created_at >= ");
-                count_builder.push_bind(dt);
-                select_builder.push(" AND created_at >= ");
-                select_builder.push_bind(dt);
-            }
-        }
-        if let Some(end_time) = query.end_time {
-            let end_dt = chrono::DateTime::from_timestamp(end_time, 0);
-            if let Some(dt) = end_dt {
-                count_builder.push(" AND created_at <= ");
-                count_builder.push_bind(dt);
-                select_builder.push(" AND created_at <= ");
-                select_builder.push_bind(dt);
-            }
-        }
+        push_audit_conditions(&mut count_builder, &query, keyword);
+        push_audit_conditions(&mut select_builder, &query, keyword);
         crate::list_query::apply_pg_filters(&mut count_builder, &filters)
             .map_err(|e| sqlx::Error::Protocol(e.message))?;
         crate::list_query::apply_pg_filters(&mut select_builder, &filters)
@@ -438,32 +375,7 @@ impl AuditService {
         select_builder.push(" OFFSET ");
         select_builder.push_bind(query.offset());
         let rows = select_builder.build().fetch_all(&*self.db).await?;
-        let logs: Vec<AuditLogResponse> = rows
-            .into_iter()
-            .map(|row| {
-                let ip_address: Option<String> = row.get::<Option<String>, _>("ip_address");
-                let user_agent: Option<String> = row.get::<Option<String>, _>("user_agent");
-                let actor_type: Option<String> = row.get::<Option<String>, _>("actor_type");
-                let status: Option<String> = row.get::<Option<String>, _>("status");
-                let details: Option<serde_json::Value> = row.get("details");
-                let details = details.unwrap_or(serde_json::json!({}));
-                AuditLogResponse {
-                    id: row.get("id"),
-                    timestamp: row.get("created_at"),
-                    actor_id: row.get("user_id"),
-                    actor_type: actor_type.unwrap_or_else(|| "admin".to_string()),
-                    actor_name: row.get::<Option<String>, _>("username"),
-                    action: row.get("action"),
-                    resource_type: row.get("resource_type"),
-                    resource_id: row.get("resource_id"),
-                    details: details.clone(),
-                    ip_address: resolve_ip_address(ip_address.as_deref(), &details),
-                    user_agent,
-                    status: status.unwrap_or_else(|| "success".to_string()),
-                    error_message: row.get("error_message"),
-                }
-            })
-            .collect();
+        let logs: Vec<AuditLogResponse> = rows.iter().map(audit_row_to_response).collect();
         Ok(AuditLogListResponse {
             logs,
             total,
@@ -604,12 +516,12 @@ impl AuditService {
             let details = details.unwrap_or_else(|| serde_json::json!({}));
             let resolved_ip = resolve_ip_address(ip_address.as_deref(), &details);
             let sanitized_details = sanitize_json_value(details);
-            let _ = writeln!(csv, "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            let _ = writeln!(
+                csv,
+                "{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 csv_escape(&id.to_string()),
                 csv_escape(&timestamp.to_rfc3339()),
-                csv_escape(
-                    &actor_id.map_or_else(|| "N/A".to_string(), |i| i.to_string())
-                ),
+                csv_escape(&actor_id.map_or_else(|| "N/A".to_string(), |i| i.to_string())),
                 csv_escape(&actor_type.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&actor_name.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&action),
@@ -619,7 +531,8 @@ impl AuditService {
                 csv_escape(&status.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&error_message.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&resolved_ip.unwrap_or_else(|| "N/A".to_string())),
-                csv_escape(&user_agent.unwrap_or_else(|| "N/A".to_string())));
+                csv_escape(&user_agent.unwrap_or_else(|| "N/A".to_string()))
+            );
         }
         Ok(csv)
     }
@@ -733,4 +646,79 @@ pub fn config_center_audit(
         details.into(),
         ip_address.into(),
     )
+}
+
+/// 对 count/select 两个查询追加相同的显式过滤条件。
+fn push_audit_conditions(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &AuditLogQuery,
+    keyword: Option<&str>,
+) {
+    if let Some(tid) = query.tenant_id.map(|id| id.to_string()) {
+        builder.push(" AND (details->>'tenant_id' = ");
+        builder.push_bind(tid.clone());
+        builder.push(" OR resource_id = ");
+        builder.push_bind(tid);
+        builder.push(")");
+    }
+    let eq_filters = [
+        ("action", query.action.as_ref()),
+        ("resource_type", query.resource_type.as_ref()),
+        ("resource_id", query.resource_id.as_ref()),
+    ];
+    for (column, value) in eq_filters {
+        if let Some(value) = value {
+            builder.push(format!(" AND {column} = "));
+            builder.push_bind(value.clone());
+        }
+    }
+    if let Some(actor_id) = query.actor_id {
+        builder.push(" AND user_id = ");
+        builder.push_bind(actor_id);
+    }
+    if let Some(keyword) = keyword {
+        push_audit_keyword_filter(builder, keyword);
+    }
+    if let Some(ref status) = query.status {
+        builder.push(" AND status = ");
+        builder.push_bind(status.clone());
+    }
+    if let Some(dt) = query
+        .start_time
+        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
+    {
+        builder.push(" AND created_at >= ");
+        builder.push_bind(dt);
+    }
+    if let Some(dt) = query
+        .end_time
+        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
+    {
+        builder.push(" AND created_at <= ");
+        builder.push_bind(dt);
+    }
+}
+
+fn audit_row_to_response(row: &sqlx::postgres::PgRow) -> AuditLogResponse {
+    let ip_address: Option<String> = row.get::<Option<String>, _>("ip_address");
+    let user_agent: Option<String> = row.get::<Option<String>, _>("user_agent");
+    let actor_type: Option<String> = row.get::<Option<String>, _>("actor_type");
+    let status: Option<String> = row.get::<Option<String>, _>("status");
+    let details: Option<serde_json::Value> = row.get("details");
+    let details = details.unwrap_or(serde_json::json!({}));
+    AuditLogResponse {
+        id: row.get("id"),
+        timestamp: row.get("created_at"),
+        actor_id: row.get("user_id"),
+        actor_type: actor_type.unwrap_or_else(|| "admin".to_string()),
+        actor_name: row.get::<Option<String>, _>("username"),
+        action: row.get("action"),
+        resource_type: row.get("resource_type"),
+        resource_id: row.get("resource_id"),
+        details: details.clone(),
+        ip_address: resolve_ip_address(ip_address.as_deref(), &details),
+        user_agent,
+        status: status.unwrap_or_else(|| "success".to_string()),
+        error_message: row.get("error_message"),
+    }
 }

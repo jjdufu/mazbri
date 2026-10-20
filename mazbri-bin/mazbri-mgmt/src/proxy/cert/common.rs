@@ -1,4 +1,4 @@
-use super::{AppState, ApiError, ensure_license_issuance_allowed};
+use super::{ApiError, AppState, ensure_license_issuance_allowed};
 
 pub(crate) const MAX_PROXY_BODY_BYTES: usize = 1024 * 1024;
 #[derive(Clone)]

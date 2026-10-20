@@ -1,4 +1,7 @@
-use super::{error, json, AppState, CertProxyConfig, Client, Request, Method, Response, extract_client_ip, header, MAX_PROXY_BODY_BYTES, IntoResponse, StatusCode, Json, Value};
+use super::{
+    AppState, CertProxyConfig, Client, IntoResponse, Json, MAX_PROXY_BODY_BYTES, Method, Request,
+    Response, StatusCode, Value, error, extract_client_ip, header, json,
+};
 
 pub(crate) fn get_cert_proxy_config(state: &AppState) -> CertProxyConfig {
     CertProxyConfig {
