@@ -291,7 +291,8 @@ pub fn parse_filters_json(raw: Option<&str>) -> Result<Vec<ListFilter>, ListQuer
     let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(Vec::new());
     };
-    serde_json::from_str(raw).map_err(|e| ListQueryError::parse(format!("Invalid filters JSON: {e}")))
+    serde_json::from_str(raw)
+        .map_err(|e| ListQueryError::parse(format!("Invalid filters JSON: {e}")))
 }
 
 /// # Errors
@@ -323,10 +324,9 @@ pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
 /// True when any filter targets the temporal `timestamp` column.
 #[must_use]
 pub fn filters_have_timestamp(filters: &[ListFilter]) -> bool {
-    filters.iter().any(|f| {
-        find_field(&f.field)
-            .is_some_and(|d| d.temporal)
-    })
+    filters
+        .iter()
+        .any(|f| find_field(&f.field).is_some_and(|d| d.temporal))
 }
 
 /// `collect_flat_numeric_filters` 的入参：各个扁平数值过滤条件。
@@ -433,7 +433,9 @@ pub fn value_as_string(v: &FilterValue) -> Result<String, ListQueryError> {
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn value_as_u64(v: &FilterValue) -> Result<u64, ListQueryError> {
     match v {
-        FilterValue::Number(n) if *n >= 0.0 && n.is_finite() => Ok(mazbri_core::num::f64_to_u64(*n)),
+        FilterValue::Number(n) if *n >= 0.0 && n.is_finite() => {
+            Ok(mazbri_core::num::f64_to_u64(*n))
+        }
         FilterValue::String(s) => s
             .parse::<u64>()
             .map_err(|_| ListQueryError::invalid_value("expected unsigned integer")),
@@ -447,7 +449,8 @@ pub fn value_as_u64(v: &FilterValue) -> Result<u64, ListQueryError> {
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn compile_filter_condition(filter: &ListFilter) -> Result<String, ListQueryError> {
-    let def = find_field(&filter.field).ok_or_else(|| ListQueryError::invalid_field(&filter.field))?;
+    let def =
+        find_field(&filter.field).ok_or_else(|| ListQueryError::invalid_field(&filter.field))?;
     let col = def.field; // catalog field == CH column for call_monitor
 
     match filter.op {
@@ -581,9 +584,8 @@ fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
     if let Ok(n) = s.parse::<i64>() {
         // Heuristic: ms vs seconds.
         let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        let dt = chrono::DateTime::from_timestamp(secs, 0).ok_or_else(|| {
-            ListQueryError::invalid_value("invalid unix timestamp")
-        })?;
+        let dt = chrono::DateTime::from_timestamp(secs, 0)
+            .ok_or_else(|| ListQueryError::invalid_value("invalid unix timestamp"))?;
         return Ok(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
     }
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
@@ -610,7 +612,10 @@ fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
         }
     }
     // Already a CH-looking literal — pass through after length guard.
-    if s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || " -:.T+Z".contains(c)) {
+    if s.len() <= 40
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || " -:.T+Z".contains(c))
+    {
         return Ok(s.to_string());
     }
     Err(ListQueryError::invalid_value(format!(
@@ -636,7 +641,10 @@ fn between_datetime(value: &FilterValue) -> Result<(String, String), ListQueryEr
 
 fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) if v.len() == 2 => Ok((mazbri_core::num::f64_to_u64(v[0]), mazbri_core::num::f64_to_u64(v[1]))),
+        FilterValue::NumberArray(v) if v.len() == 2 => Ok((
+            mazbri_core::num::f64_to_u64(v[0]),
+            mazbri_core::num::f64_to_u64(v[1]),
+        )),
         FilterValue::StringArray(v) if v.len() == 2 => {
             let a = v[0]
                 .parse::<u64>()
@@ -652,7 +660,10 @@ fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
 
 fn number_list(value: &FilterValue) -> Result<Vec<String>, ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) => Ok(v.iter().map(|n| mazbri_core::num::f64_to_u64(*n).to_string()).collect()),
+        FilterValue::NumberArray(v) => Ok(v
+            .iter()
+            .map(|n| mazbri_core::num::f64_to_u64(*n).to_string())
+            .collect()),
         FilterValue::StringArray(v) => {
             let mut out = Vec::new();
             for s in v {
@@ -688,9 +699,7 @@ mod tests {
         let filter = ListFilter {
             field: "timestamp".to_string(),
             op: FilterOp::Eq,
-            value: Some(FilterValue::String(
-                "2026-08-09 11:31:39.422".to_string(),
-            )),
+            value: Some(FilterValue::String("2026-08-09 11:31:39.422".to_string())),
         };
         let sql = compile_filter_condition(&filter).expect("compile");
         assert_eq!(

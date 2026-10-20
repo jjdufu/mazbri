@@ -38,4 +38,3 @@ pub fn create_router(app_state: AppState) -> Router {
         .route("/health", axum::routing::get(health_check))
         .with_state(app_state)
 }
-

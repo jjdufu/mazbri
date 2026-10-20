@@ -3,9 +3,9 @@
 //! These structs mirror `ClickHouse` column types exactly (widths and nullability).
 //! Domain models in `crate::models` stay chrono/API-friendly; convert at the boundary.
 
-use mazbri_core::num::SaturatingFrom;
 use crate::models::{AuditLogEntry, RequestLogEntry};
 use chrono::{DateTime, TimeZone, Utc};
+use mazbri_core::num::SaturatingFrom;
 use serde::Deserialize;
 
 /// `DateTime64(9)` → unix epoch nanoseconds.
@@ -172,7 +172,7 @@ pub struct AuditAnalyticsRow {
     pub count: u64,
 }
 
-#[derive(Debug, clickhouse::Row, Deserialize)]
+#[derive(Debug, Default, clickhouse::Row, Deserialize)]
 pub struct SummaryRow {
     pub total: u64,
     pub avg_duration_ms: f64,
@@ -222,4 +222,3 @@ pub struct UpstreamHourlyUsageRow {
     pub total_payload_bytes: u64,
     pub total_latency_ms: u64,
 }
-

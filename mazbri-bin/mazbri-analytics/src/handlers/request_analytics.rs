@@ -68,25 +68,25 @@ pub async fn aggregate_request_logs(
     );
     let client = &state.clickhouse_client;
     let Some(start_time) = parse_time_string(&req.start_time) else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_start_time".to_string(),
-                    message: "start_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
-                }),
-            )
-                .into_response();
-        };
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_start_time".to_string(),
+                message: "start_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
+            }),
+        )
+            .into_response();
+    };
     let Some(end_time) = parse_time_string(&req.end_time) else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_end_time".to_string(),
-                    message: "end_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
-                }),
-            )
-                .into_response();
-        };
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_end_time".to_string(),
+                message: "end_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
+            }),
+        )
+            .into_response();
+    };
     if start_time >= end_time {
         return (
             StatusCode::BAD_REQUEST,
@@ -177,4 +177,3 @@ pub async fn get_upstream_billing_summary(
         }
     }
 }
-

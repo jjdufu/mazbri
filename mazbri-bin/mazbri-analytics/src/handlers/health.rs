@@ -4,8 +4,8 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::clickhouse::ClickHouseClient;
+use mazbri_analytics::greptimedb::GreptimeDBClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info};

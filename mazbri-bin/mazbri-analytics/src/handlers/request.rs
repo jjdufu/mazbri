@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::{AppState, HandlerError, parse_time_string};
 use axum::{
     Json,
@@ -9,6 +8,7 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use mazbri_analytics::RequestLogEntry;
 use mazbri_analytics::greptimedb::RequestLogQueryParams;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::validation::limits;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -304,41 +304,23 @@ pub struct RequestLogQueryResponse {
     pub browse_capped: bool,
     pub data: Vec<RequestLogItem>,
 }
-pub async fn query_request_logs(
-    State(state): State<AppState>,
-    Query(req): Query<RequestLogQueryRequest>,
-) -> Response {
-    info!(
-        page = req.page, page_size = req.page_size, request_id = ? req.request_id, q
-        = ? req.q, event_target = ? req.event_target, path = ? req.path, tenant_id = ? req.tenant_id, product_id = ?
-        req.product_id, supplier_id = ? req.supplier_id, channel_id = ? req.channel_id,
-        "查询请求日志"
-    );
-    if let Err(e) = req.validate() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(HandlerError {
-                error: "invalid_pagination".to_string(),
-                message: e,
-            }),
-        )
-            .into_response();
-    }
+fn bad_request(error: HandlerError) -> Response {
+    (StatusCode::BAD_REQUEST, Json(error)).into_response()
+}
 
-    let mut filters = match mazbri_analytics::list_query::parse_filters_json(req.filters.as_deref())
-    {
-        Ok(f) => f,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: e.code.to_string(),
-                    message: e.message,
-                }),
-            )
-                .into_response();
-        }
-    };
+fn list_query_error(e: mazbri_analytics::list_query::ListQueryError) -> HandlerError {
+    HandlerError {
+        error: e.code.to_string(),
+        message: e.message,
+    }
+}
+
+/// 解析 `filters` JSON 与扁平数值过滤参数，并校验。
+fn parse_request_filters(
+    req: &RequestLogQueryRequest,
+) -> Result<Vec<mazbri_analytics::list_query::ListFilter>, HandlerError> {
+    let mut filters = mazbri_analytics::list_query::parse_filters_json(req.filters.as_deref())
+        .map_err(list_query_error)?;
     filters.extend(mazbri_analytics::list_query::collect_flat_numeric_filters(
         &mazbri_analytics::list_query::FlatNumericFilters {
             duration_ms_gt: req.duration_ms_gt,
@@ -355,89 +337,39 @@ pub async fn query_request_logs(
             upstream_service_time_ms_gte: req.upstream_service_time_ms_gte,
         },
     ));
-    if let Err(e) = mazbri_analytics::list_query::validate_filters(&filters) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(HandlerError {
-                error: e.code.to_string(),
-                message: e.message,
-            }),
-        )
-            .into_response();
-    }
+    mazbri_analytics::list_query::validate_filters(&filters).map_err(list_query_error)?;
+    Ok(filters)
+}
 
-    let client = &state.clickhouse_client;
-    let page_size = req.capped_page_size();
-    let offset = req.capped_offset();
-    let parsed_start = match req.start_time.as_ref() {
-        Some(s) => match parse_time_string(s) {
-            Some(t) => Some(t),
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(HandlerError {
-                        error: "invalid_start_time".to_string(),
-                        message: "start_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式"
-                            .to_string(),
-                    }),
-                )
-                    .into_response();
-            }
-        },
-        None => None,
+fn parse_optional_time(
+    value: Option<&String>,
+    field: &str,
+) -> Result<Option<DateTime<Utc>>, HandlerError> {
+    let Some(s) = value else {
+        return Ok(None);
     };
-    let parsed_end = match req.end_time.as_ref() {
-        Some(s) => match parse_time_string(s) {
-            Some(t) => Some(t),
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(HandlerError {
-                        error: "invalid_end_time".to_string(),
-                        message: "end_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式"
-                            .to_string(),
-                    }),
-                )
-                    .into_response();
-            }
-        },
-        None => None,
-    };
+    parse_time_string(s).map(Some).ok_or_else(|| HandlerError {
+        error: format!("invalid_{field}"),
+        message: format!("{field} 格式无效，请使用 Unix 时间戳或 ISO 8601 格式"),
+    })
+}
 
-    let has_time_params = parsed_start.is_some() || parsed_end.is_some();
-    let has_timestamp_filters = mazbri_analytics::list_query::filters_have_timestamp(&filters);
-    let selective = req.is_selective_lookup();
+/// 查询时间窗：`(start, end, latest_universe_limit, universe_size)`。
+type TimeWindow = (
+    Option<DateTime<Utc>>,
+    Option<DateTime<Utc>>,
+    Option<usize>,
+    Option<u64>,
+);
 
-    let query_mode = if selective {
-        QueryMode::Selective
-    } else if has_time_params || has_timestamp_filters {
-        QueryMode::Ranged
-    } else {
-        QueryMode::Latest
-    };
-
-    let has_ts_lower = filters.iter().any(|f| {
-        f.field == "timestamp"
-            && matches!(
-                f.op,
-                mazbri_analytics::list_query::FilterOp::Gt
-                    | mazbri_analytics::list_query::FilterOp::Gte
-                    | mazbri_analytics::list_query::FilterOp::Between
-                    | mazbri_analytics::list_query::FilterOp::Eq
-            )
-    });
-    let has_ts_upper = filters.iter().any(|f| {
-        f.field == "timestamp"
-            && matches!(
-                f.op,
-                mazbri_analytics::list_query::FilterOp::Lt
-                    | mazbri_analytics::list_query::FilterOp::Lte
-                    | mazbri_analytics::list_query::FilterOp::Between
-                    | mazbri_analytics::list_query::FilterOp::Eq
-            )
-    });
-
-    let (start_time, end_time, latest_universe_limit, universe_size) = match query_mode {
+fn resolve_time_window(
+    query_mode: QueryMode,
+    parsed_start: Option<DateTime<Utc>>,
+    parsed_end: Option<DateTime<Utc>>,
+    filters: &[mazbri_analytics::list_query::ListFilter],
+) -> TimeWindow {
+    use mazbri_analytics::list_query::FilterOp;
+    match query_mode {
         QueryMode::Selective => (None, None, None, None),
         QueryMode::Latest => (
             None,
@@ -445,31 +377,42 @@ pub async fn query_request_logs(
             Some(LATEST_UNIVERSE_SIZE),
             Some(LATEST_UNIVERSE_SIZE as u64),
         ),
-        QueryMode::Ranged => {
-            // Explicit start/end params always normalize both sides.
-            if has_time_params {
-                let (s, e) = normalize_ranged_bounds(parsed_start, parsed_end);
-                (Some(s), Some(e), None, None)
-            } else {
-                // Filter-only time range: inject safety floor when no lower bound exists.
-                let now = Utc::now();
-                let start = if has_ts_lower {
-                    None
-                } else {
-                    Some(now - OPEN_END_LOOKBACK)
-                };
-                let end = if has_ts_upper { None } else { Some(now) };
-                (start, end, None, None)
-            }
+        // Explicit start/end params always normalize both sides.
+        QueryMode::Ranged if parsed_start.is_some() || parsed_end.is_some() => {
+            let (s, e) = normalize_ranged_bounds(parsed_start, parsed_end);
+            (Some(s), Some(e), None, None)
         }
-    };
+        QueryMode::Ranged => {
+            let has_ts = |ops: &[FilterOp]| {
+                filters
+                    .iter()
+                    .any(|f| f.field == "timestamp" && ops.contains(&f.op))
+            };
+            let has_ts_lower =
+                has_ts(&[FilterOp::Gt, FilterOp::Gte, FilterOp::Between, FilterOp::Eq]);
+            let has_ts_upper =
+                has_ts(&[FilterOp::Lt, FilterOp::Lte, FilterOp::Between, FilterOp::Eq]);
+            // Filter-only time range: inject safety floor when no lower bound exists.
+            let now = Utc::now();
+            let start = (!has_ts_lower).then(|| now - OPEN_END_LOOKBACK);
+            let end = (!has_ts_upper).then_some(now);
+            (start, end, None, None)
+        }
+    }
+}
 
+fn build_query_params(
+    req: &RequestLogQueryRequest,
+    filters: Vec<mazbri_analytics::list_query::ListFilter>,
+    window: TimeWindow,
+) -> RequestLogQueryParams {
+    let (start_time, end_time, latest_universe_limit, _) = window;
     let q = req
         .q
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    let params = RequestLogQueryParams {
+    RequestLogQueryParams {
         start_time,
         end_time,
         q,
@@ -497,47 +440,97 @@ pub async fn query_request_logs(
         service_in: req.service_in.clone(),
         filters,
         latest_universe_limit,
-        limit: page_size as usize,
-        offset: offset as usize,
+        limit: req.capped_page_size() as usize,
+        offset: req.capped_offset() as usize,
+    }
+}
+
+fn build_query_response(
+    req: &RequestLogQueryRequest,
+    query_mode: QueryMode,
+    universe_size: Option<u64>,
+    result: mazbri_analytics::greptimedb::RequestLogQueryResult,
+) -> RequestLogQueryResponse {
+    let page_size = req.capped_page_size();
+    let max_page = RequestLogQueryRequest::max_page_for(page_size);
+    let latest = matches!(query_mode, QueryMode::Latest);
+    // Latest mode total is already ≤ universe; ranged/selective may exceed browse depth.
+    let browse_capped = !latest && result.total > MAX_TOTAL_RESULTS;
+    let display_total = if latest {
+        result.total.min(MAX_TOTAL_RESULTS)
+    } else {
+        result.total
     };
-    match client.query_request_logs(&params).await {
+    let total_pages = if page_size > 0 {
+        let pages_from_total = u32::saturating_from(display_total.div_ceil(u64::from(page_size)));
+        if latest {
+            pages_from_total
+        } else {
+            pages_from_total.min(max_page)
+        }
+    } else {
+        0
+    };
+    RequestLogQueryResponse {
+        total: display_total,
+        page: req.page,
+        page_size,
+        total_pages,
+        query_mode: query_mode.as_str().to_string(),
+        universe_size,
+        browse_capped,
+        data: result.logs.into_iter().map(RequestLogItem::from).collect(),
+    }
+}
+
+pub async fn query_request_logs(
+    State(state): State<AppState>,
+    Query(req): Query<RequestLogQueryRequest>,
+) -> Response {
+    info!(
+        page = req.page, page_size = req.page_size, request_id = ? req.request_id, q
+        = ? req.q, event_target = ? req.event_target, path = ? req.path, tenant_id = ? req.tenant_id, product_id = ?
+        req.product_id, supplier_id = ? req.supplier_id, channel_id = ? req.channel_id,
+        "查询请求日志"
+    );
+    if let Err(e) = req.validate() {
+        return bad_request(HandlerError {
+            error: "invalid_pagination".to_string(),
+            message: e,
+        });
+    }
+    let filters = match parse_request_filters(&req) {
+        Ok(filters) => filters,
+        Err(error) => return bad_request(error),
+    };
+    let (parsed_start, parsed_end) = match (
+        parse_optional_time(req.start_time.as_ref(), "start_time"),
+        parse_optional_time(req.end_time.as_ref(), "end_time"),
+    ) {
+        (Ok(start), Ok(end)) => (start, end),
+        (Err(error), _) | (_, Err(error)) => return bad_request(error),
+    };
+    let has_time_params = parsed_start.is_some() || parsed_end.is_some();
+    let has_timestamp_filters = mazbri_analytics::list_query::filters_have_timestamp(&filters);
+    let query_mode = if req.is_selective_lookup() {
+        QueryMode::Selective
+    } else if has_time_params || has_timestamp_filters {
+        QueryMode::Ranged
+    } else {
+        QueryMode::Latest
+    };
+    let window = resolve_time_window(query_mode, parsed_start, parsed_end, &filters);
+    let universe_size = window.3;
+    let params = build_query_params(&req, filters, window);
+    match state.clickhouse_client.query_request_logs(&params).await {
         Ok(result) => {
-            let max_page = RequestLogQueryRequest::max_page_for(page_size);
-            // Latest mode total is already ≤ universe; ranged/selective may exceed browse depth.
-            let browse_capped = match query_mode {
-                QueryMode::Latest => false,
-                QueryMode::Ranged | QueryMode::Selective => result.total > MAX_TOTAL_RESULTS,
-            };
-            let display_total = match query_mode {
-                QueryMode::Latest => result.total.min(MAX_TOTAL_RESULTS),
-                QueryMode::Ranged | QueryMode::Selective => result.total,
-            };
-            let total_pages = if page_size > 0 {
-                let pages_from_total = u32::saturating_from(display_total.div_ceil(u64::from(page_size)));
-                if matches!(query_mode, QueryMode::Latest) {
-                    pages_from_total
-                } else {
-                    pages_from_total.min(max_page)
-                }
-            } else {
-                0
-            };
-            let response = RequestLogQueryResponse {
-                total: display_total,
-                page: req.page,
-                page_size,
-                total_pages,
-                query_mode: query_mode.as_str().to_string(),
-                universe_size,
-                browse_capped,
-                data: result.logs.into_iter().map(RequestLogItem::from).collect(),
-            };
+            let response = build_query_response(&req, query_mode, universe_size, result);
             info!(
                 total = response.total,
                 page = response.page,
                 total_pages = response.total_pages,
                 query_mode = %response.query_mode,
-                browse_capped,
+                browse_capped = response.browse_capped,
                 returned = response.data.len(),
                 "查询完成"
             );

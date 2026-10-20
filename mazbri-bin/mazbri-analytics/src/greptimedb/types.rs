@@ -1,7 +1,7 @@
-use mazbri_core::num::SaturatingFrom;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Deserializer, Serialize};
 pub use crate::models::{AuditLogEntry, RequestLogEntry};
+use chrono::{DateTime, Utc};
+use mazbri_core::num::SaturatingFrom;
+use serde::{Deserialize, Deserializer, Serialize};
 
 fn deserialize_i64_as_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
@@ -53,12 +53,13 @@ where
                     return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
                 }
             }
-            Err(serde::de::Error::custom(format!("unexpected timestamp format: {s}")))
+            Err(serde::de::Error::custom(format!(
+                "unexpected timestamp format: {s}"
+            )))
         }
         _ => Err(serde::de::Error::custom("unexpected timestamp type")),
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct AuditQueryParams {

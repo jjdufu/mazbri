@@ -1,5 +1,15 @@
 use super::client::ClickHouseClient;
-use super::queries::{build_audit_log_conditions, build_where_clause, build_audit_logs_count_sql, build_audit_logs_data_sql, get_time_expression, build_audit_analytics_conditions, build_audit_analytics_sql, get_stats_time_expression, build_audit_stats_aggregation_conditions, build_audit_log_stats_sql, build_request_log_conditions, build_request_logs_count_sql, build_request_logs_data_sql, build_aggregation_conditions, build_aggregation_summary_sql, build_aggregation_by_route_sql, build_aggregation_by_status_sql, get_time_bucket_expression, build_aggregation_by_time_sql, build_stats_aggregation_conditions, build_request_log_stats_summary_sql, build_request_log_route_stats_sql, build_request_log_stats_by_status_sql, get_stats_time_bucket_expression};
+use super::queries::{
+    build_aggregation_by_route_sql, build_aggregation_by_status_sql, build_aggregation_by_time_sql,
+    build_aggregation_conditions, build_aggregation_summary_sql, build_audit_analytics_conditions,
+    build_audit_analytics_sql, build_audit_log_conditions, build_audit_log_stats_sql,
+    build_audit_logs_count_sql, build_audit_logs_data_sql,
+    build_audit_stats_aggregation_conditions, build_request_log_conditions,
+    build_request_log_route_stats_sql, build_request_log_stats_by_status_sql,
+    build_request_log_stats_summary_sql, build_request_logs_count_sql, build_request_logs_data_sql,
+    build_stats_aggregation_conditions, build_where_clause, get_stats_time_bucket_expression,
+    get_stats_time_expression, get_time_bucket_expression, get_time_expression,
+};
 use super::types::{
     AuditAnalyticsRow, AuditLogRow, GroupedCountRow, RequestLogRow, SummaryRow, TimeBucketRow,
 };
@@ -87,9 +97,7 @@ impl ClickHouseClient {
         let conditions = build_audit_log_conditions(params)?;
         let where_clause = build_where_clause(&conditions);
         let count_sql = build_audit_logs_count_sql(&where_clause);
-        let total = self
-            .execute_count_query_inner(&count_sql)
-            .await?;
+        let total = self.execute_count_query_inner(&count_sql).await?;
         let data_sql = build_audit_logs_data_sql(&where_clause, params.limit, params.offset)?;
         let rows = self.execute_query::<AuditLogRow>(&data_sql).await?;
         let logs: Vec<AuditLogEntry> = rows.into_iter().map(Into::into).collect();
@@ -198,11 +206,13 @@ impl ClickHouseClient {
     ) -> Result<RequestLogQueryResult> {
         let (count_sql, data_sql) = if let Some(universe_limit) = params.latest_universe_limit {
             // Latest-N: service scope → top N by time → then apply search/filters.
-            let service_conds = crate::clickhouse::queries::build_request_log_service_conditions(params)?;
+            let service_conds =
+                crate::clickhouse::queries::build_request_log_service_conditions(params)?;
             let mut filter_conds =
                 crate::clickhouse::queries::build_request_log_filter_conditions(params)?;
             // Time bounds must not appear inside latest-universe mode.
-            filter_conds.retain(|c| !c.starts_with("timestamp >= ") && !c.starts_with("timestamp <= "));
+            filter_conds
+                .retain(|c| !c.starts_with("timestamp >= ") && !c.starts_with("timestamp <= "));
             let universe_where = build_where_clause(&service_conds);
             let outer_where = build_where_clause(&filter_conds);
             (
@@ -305,78 +315,34 @@ impl ClickHouseClient {
         );
         let summary_sql = build_aggregation_summary_sql(&where_clause);
         let summary_results = self.execute_query::<SummaryRow>(&summary_sql).await?;
-        let (
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms,
-            avg_internal_ms,
-            avg_post_response_ms,
-        ) = summary_results
-            .first()
-            .map_or((0, 0.0, 0.0, 0.0, 0.0, 0.0), |r| {
-                (
-                    r.total,
-                    r.avg_duration_ms,
-                    r.avg_upstream_service_time_ms,
-                    r.avg_dependency_wait_ms,
-                    r.avg_internal_ms,
-                    r.avg_post_response_ms,
-                )
-            });
+        let summary = summary_results.into_iter().next().unwrap_or_default();
 
-        if total_requests == 0 {
+        if summary.total == 0 {
             tracing::info!(
                 "Raw request aggregation summary returned zero rows; skipping breakdown queries"
             );
-            return Ok(RequestLogAggregation {
-                period_start: params.start_time,
-                period_end: params.end_time,
-                total_requests: 0,
-                avg_duration_ms: 0.0,
-                avg_upstream_service_time_ms: 0.0,
-                avg_dependency_wait_ms: 0.0,
-                avg_internal_ms: 0.0,
-                avg_post_response_ms: 0.0,
-                by_route: HashMap::new(),
-                by_status: HashMap::new(),
-                by_time: Vec::new(),
-            });
+            return Ok(assemble_aggregation(
+                params,
+                &SummaryRow::default(),
+                (HashMap::new(), HashMap::new(), Vec::new()),
+            ));
         }
 
         let by_route = if raw_query_plan.include_path_breakdown {
             let route_sql = build_aggregation_by_route_sql(&where_clause);
-            self.query_grouped_counts(&route_sql)
-                .await?
+            self.query_grouped_counts(&route_sql).await?
         } else {
             HashMap::new()
         };
 
         let by_status_raw: HashMap<String, u64> = if raw_query_plan.include_status_breakdown {
             let status_sql = build_aggregation_by_status_sql(&where_clause);
-            self.query_grouped_counts(&status_sql)
-                .await?
+            self.query_grouped_counts(&status_sql).await?
         } else {
             HashMap::new()
         };
 
-        let mut by_status = HashMap::new();
-        let mut invalid_count = 0;
-        for (k, v) in by_status_raw {
-            if let Ok(code) = k.parse::<u16>() {
-                by_status.insert(code, v);
-            } else {
-                invalid_count += 1;
-                if invalid_count <= 2 {
-                    tracing::warn!(
-                        key = % k, "Failed to parse status code as u16, skipping"
-                    );
-                }
-            }
-        }
-        if invalid_count > 2 {
-            tracing::warn!("... and {} more invalid status codes", invalid_count - 2);
-        }
+        let by_status = parse_status_counts(by_status_raw, "");
 
         let by_time = if raw_query_plan.include_time_breakdown {
             let group_by = params
@@ -396,28 +362,20 @@ impl ClickHouseClient {
 
         tracing::debug!(
             "Aggregated request logs: total={}, avg_duration={:.2}ms, avg_upstream_service_time={:.2}ms, avg_dependency_wait={:.2}ms, routes={}, statuses={}, time_buckets={}",
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms,
+            summary.total,
+            summary.avg_duration_ms,
+            summary.avg_upstream_service_time_ms,
+            summary.avg_dependency_wait_ms,
             by_route.len(),
             by_status.len(),
             by_time.len()
         );
 
-        Ok(RequestLogAggregation {
-            period_start: params.start_time,
-            period_end: params.end_time,
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms,
-            avg_internal_ms,
-            avg_post_response_ms,
-            by_route,
-            by_status,
-            by_time,
-        })
+        Ok(assemble_aggregation(
+            params,
+            &summary,
+            (by_route, by_status, by_time),
+        ))
     }
 
     async fn aggregate_request_logs_from_stats(
@@ -428,75 +386,26 @@ impl ClickHouseClient {
         let where_clause = build_where_clause(&conditions);
         let summary_sql = build_request_log_stats_summary_sql(&where_clause);
         let summary_results = self.execute_query::<SummaryRow>(&summary_sql).await?;
-        let (
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms,
-            avg_internal_ms,
-            avg_post_response_ms,
-        ) = summary_results
-            .first()
-            .map_or((0, 0.0, 0.0, 0.0, 0.0, 0.0), |r| {
-                (
-                    r.total,
-                    r.avg_duration_ms,
-                    r.avg_upstream_service_time_ms,
-                    r.avg_dependency_wait_ms,
-                    r.avg_internal_ms,
-                    r.avg_post_response_ms,
-                )
-            });
+        let summary = summary_results.into_iter().next().unwrap_or_default();
 
-        if total_requests == 0 {
-            return Ok(RequestLogAggregation {
-                period_start: params.start_time,
-                period_end: params.end_time,
-                total_requests: 0,
-                avg_duration_ms: 0.0,
-                avg_upstream_service_time_ms: 0.0,
-                avg_dependency_wait_ms: 0.0,
-                avg_internal_ms: 0.0,
-                avg_post_response_ms: 0.0,
-                by_route: HashMap::new(),
-                by_status: HashMap::new(),
-                by_time: Vec::new(),
-            });
+        if summary.total == 0 {
+            return Ok(assemble_aggregation(
+                params,
+                &SummaryRow::default(),
+                (HashMap::new(), HashMap::new(), Vec::new()),
+            ));
         }
 
         let by_route = if params.group_by_route {
             let route_sql = build_request_log_route_stats_sql(&where_clause);
-            self.query_grouped_counts(&route_sql)
-                .await?
+            self.query_grouped_counts(&route_sql).await?
         } else {
             HashMap::new()
         };
 
         let status_sql = build_request_log_stats_by_status_sql(&where_clause);
-        let by_status_raw: HashMap<String, u64> = self
-            .query_grouped_counts(&status_sql)
-            .await?;
-        let mut by_status = HashMap::new();
-        let mut invalid_count = 0;
-        for (k, v) in by_status_raw {
-            if let Ok(code) = k.parse::<u16>() {
-                by_status.insert(code, v);
-            } else {
-                invalid_count += 1;
-                if invalid_count <= 2 {
-                    tracing::warn!(
-                        key = % k,
-                        "Failed to parse status code as u16 from stats, skipping"
-                    );
-                }
-            }
-        }
-        if invalid_count > 2 {
-            tracing::warn!(
-                "... and {} more invalid status codes from stats",
-                invalid_count - 2
-            );
-        }
+        let by_status_raw: HashMap<String, u64> = self.query_grouped_counts(&status_sql).await?;
+        let by_status = parse_status_counts(by_status_raw, " from stats");
 
         let by_time = if let Some(ref group_by) = params.group_by_time {
             let time_expr = get_stats_time_bucket_expression(group_by);
@@ -516,31 +425,20 @@ impl ClickHouseClient {
 
         tracing::debug!(
             "Aggregated from stats: total={}, avg_duration={:.2}ms, avg_upstream_service_time={:.2}ms, avg_dependency_wait={:.2}ms",
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms
+            summary.total,
+            summary.avg_duration_ms,
+            summary.avg_upstream_service_time_ms,
+            summary.avg_dependency_wait_ms
         );
 
-        Ok(RequestLogAggregation {
-            period_start: params.start_time,
-            period_end: params.end_time,
-            total_requests,
-            avg_duration_ms,
-            avg_upstream_service_time_ms,
-            avg_dependency_wait_ms,
-            avg_internal_ms,
-            avg_post_response_ms,
-            by_route,
-            by_status,
-            by_time,
-        })
+        Ok(assemble_aggregation(
+            params,
+            &summary,
+            (by_route, by_status, by_time),
+        ))
     }
 
-    async fn query_grouped_counts(
-        &self,
-        sql: &str,
-    ) -> Result<HashMap<String, u64>> {
+    async fn query_grouped_counts(&self, sql: &str) -> Result<HashMap<String, u64>> {
         let results = self.execute_query::<GroupedCountRow>(sql).await?;
         let mut result = HashMap::new();
         for row in results {
@@ -552,4 +450,51 @@ impl ClickHouseClient {
 
 fn should_use_raw_audit_analytics(params: &AuditAnalyticsParams) -> bool {
     params.admin_id.is_some()
+}
+
+fn assemble_aggregation(
+    params: &RequestLogAggregationParams,
+    summary: &SummaryRow,
+    (by_route, by_status, by_time): (
+        HashMap<String, u64>,
+        HashMap<u16, u64>,
+        Vec<crate::greptimedb::TimeBucket>,
+    ),
+) -> RequestLogAggregation {
+    RequestLogAggregation {
+        period_start: params.start_time,
+        period_end: params.end_time,
+        total_requests: summary.total,
+        avg_duration_ms: summary.avg_duration_ms,
+        avg_upstream_service_time_ms: summary.avg_upstream_service_time_ms,
+        avg_dependency_wait_ms: summary.avg_dependency_wait_ms,
+        avg_internal_ms: summary.avg_internal_ms,
+        avg_post_response_ms: summary.avg_post_response_ms,
+        by_route,
+        by_status,
+        by_time,
+    }
+}
+
+/// 解析状态码分组；非法键最多告警 2 条后汇总。
+fn parse_status_counts(raw: HashMap<String, u64>, source: &str) -> HashMap<u16, u64> {
+    let mut by_status = HashMap::new();
+    let mut invalid_count = 0;
+    for (k, v) in raw {
+        if let Ok(code) = k.parse::<u16>() {
+            by_status.insert(code, v);
+        } else {
+            invalid_count += 1;
+            if invalid_count <= 2 {
+                tracing::warn!(key = % k, "Failed to parse status code as u16{source}, skipping");
+            }
+        }
+    }
+    if invalid_count > 2 {
+        tracing::warn!(
+            "... and {} more invalid status codes{source}",
+            invalid_count - 2
+        );
+    }
+    by_status
 }

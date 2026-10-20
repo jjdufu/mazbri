@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::{
     AppState, AuditLogItem, AuditQueryRequest, AuditQueryResponse, HandlerError, parse_time_string,
 };
@@ -9,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use mazbri_analytics::greptimedb::AuditQueryParams;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::validation::limits;
 use tracing::{error, info};
 const MAX_PAGE_SIZE: u32 = limits::MAX_AUDIT_PAGE_SIZE;
@@ -30,8 +30,7 @@ impl AuditQueryRequest {
         Ok(())
     }
     pub fn capped_offset(&self) -> u32 {
-        let offset =
-            u64::from(self.page.saturating_sub(1)) * u64::from(self.capped_page_size());
+        let offset = u64::from(self.page.saturating_sub(1)) * u64::from(self.capped_page_size());
         u32::saturating_from(offset.min(MAX_TOTAL_RESULTS.saturating_sub(1)))
     }
     pub fn capped_page_size(&self) -> u32 {

@@ -8,7 +8,9 @@ use axum::{
 use mazbri_analytics::greptimedb::{GreptimeDBClient, MetricQueryParams};
 use tracing::error;
 pub async fn get_metrics_overview(State(state): State<AppState>) -> Response {
-    let Some(client) = metrics_client(&state) else { return greptimedb_unavailable() };
+    let Some(client) = metrics_client(&state) else {
+        return greptimedb_unavailable();
+    };
     match client.query_metrics_overview().await {
         Ok(overview) => (StatusCode::OK, Json(overview)).into_response(),
         Err(e) => {
@@ -21,7 +23,9 @@ pub async fn get_metric_timeseries(
     State(state): State<AppState>,
     Query(params): Query<MetricQueryParams>,
 ) -> Response {
-    let Some(client) = metrics_client(&state) else { return greptimedb_unavailable() };
+    let Some(client) = metrics_client(&state) else {
+        return greptimedb_unavailable();
+    };
     if params.start_time >= params.end_time {
         return (
             StatusCode::BAD_REQUEST,
@@ -41,7 +45,9 @@ pub async fn get_metric_timeseries(
     }
 }
 pub async fn get_metrics_catalog(State(state): State<AppState>) -> Response {
-    let Some(client) = metrics_client(&state) else { return greptimedb_unavailable() };
+    let Some(client) = metrics_client(&state) else {
+        return greptimedb_unavailable();
+    };
     (
         StatusCode::OK,
         Json(serde_json::json!(

@@ -39,7 +39,10 @@ impl GreptimeDBClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub fn new(config: &GreptimeDBConfig, service_targets: Vec<crate::greptimedb::ServiceMetricTarget>) -> Result<Self> {
+    pub fn new(
+        config: &GreptimeDBConfig,
+        service_targets: Vec<crate::greptimedb::ServiceMetricTarget>,
+    ) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .gzip(config.compression)

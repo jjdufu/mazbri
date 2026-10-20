@@ -1,6 +1,6 @@
+use super::types::TotalRow;
 use crate::config::ClickHouseConfig;
 use crate::error::{AnalyticsError, Result};
-use super::types::TotalRow;
 use clickhouse::Client;
 
 #[derive(Clone)]
@@ -163,8 +163,8 @@ impl ClickHouseClient {
             .bind(end_time)
             .fetch_all::<super::types::UpstreamHourlyUsageRow>()
             .await
-            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {e}")))
+            .map_err(|e| {
+                AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {e}"))
+            })
     }
 }
-
-

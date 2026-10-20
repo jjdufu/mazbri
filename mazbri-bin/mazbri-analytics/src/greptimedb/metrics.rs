@@ -144,7 +144,8 @@ impl GreptimeDBClient {
                 .ok_or_else(|| {
                     AnalyticsError::Config(format!("Unsupported metric: {}", params.metric))
                 })?;
-            let query = build_metric_query(metric.key, params.service.as_deref(), &self.service_targets)?;
+            let query =
+                build_metric_query(metric.key, params.service.as_deref(), &self.service_targets)?;
             let mut points = self
                 .prometheus_range_values(
                     &query,
@@ -258,7 +259,13 @@ fn parse_prometheus_timestamp(value: &serde_json::Value) -> Option<i64> {
     value
         .as_i64()
         .or_else(|| value.as_f64().map(mazbri_core::num::f64_to_i64))
-        .or_else(|| value.as_str()?.parse::<f64>().ok().map(mazbri_core::num::f64_to_i64))
+        .or_else(|| {
+            value
+                .as_str()?
+                .parse::<f64>()
+                .ok()
+                .map(mazbri_core::num::f64_to_i64)
+        })
 }
 fn parse_prometheus_number(value: &serde_json::Value) -> Option<f64> {
     value
@@ -354,7 +361,11 @@ fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Re
         }
     }
 }
-fn build_metric_query(metric: &str, service: Option<&str>, targets: &[ServiceMetricTarget]) -> Result<String> {
+fn build_metric_query(
+    metric: &str,
+    service: Option<&str>,
+    targets: &[ServiceMetricTarget],
+) -> Result<String> {
     let filter = endpoint_filter(service, targets)?;
     Ok(match metric {
         "qps" => format!("sum(rate(http_requests_total{filter}[1m]))"),

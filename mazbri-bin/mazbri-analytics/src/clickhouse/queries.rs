@@ -1,12 +1,12 @@
-use mazbri_core::num::SaturatingFrom;
+use crate::error::Result;
+use crate::greptimedb::{
+    AuditAnalyticsParams, AuditQueryParams, RequestLogAggregationParams, RequestLogQueryParams,
+};
 use crate::greptimedb::{
     sanitize_like_value, validate_identifier_param, validate_like_param, validate_numeric_param,
     validate_uuid_param,
 };
-use crate::greptimedb::{
-    AuditAnalyticsParams, AuditQueryParams, RequestLogAggregationParams, RequestLogQueryParams,
-};
-use crate::error::Result;
+use mazbri_core::num::SaturatingFrom;
 
 pub fn build_audit_log_conditions(params: &AuditQueryParams) -> Result<Vec<String>> {
     let mut conditions: Vec<String> = Vec::new();
@@ -47,9 +47,7 @@ pub fn build_where_clause(conditions: &[String]) -> String {
 
 #[must_use]
 pub fn build_audit_logs_count_sql(where_clause: &str) -> String {
-    format!(
-        "SELECT toUInt64(count()) AS total FROM audit_logs{where_clause}"
-    )
+    format!("SELECT toUInt64(count()) AS total FROM audit_logs{where_clause}")
 }
 
 pub fn build_audit_logs_data_sql(
