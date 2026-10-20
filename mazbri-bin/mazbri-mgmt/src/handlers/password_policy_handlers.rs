@@ -7,23 +7,7 @@ use axum::{
     extract::{ConnectInfo, State},
     http::HeaderMap,
 };
-use serde::{Deserialize, Serialize};
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PasswordPolicyResponse {
-    pub min_length: i32,
-    pub max_length: i32,
-    pub require_uppercase: bool,
-    pub require_lowercase: bool,
-    pub require_digit: bool,
-    pub require_special_char: bool,
-    pub special_chars: String,
-    pub max_age_days: i32,
-    pub warning_days: i32,
-    pub prevent_reuse_count: i32,
-    pub max_login_attempts: i32,
-    pub lockout_duration_minutes: i32,
-    pub updated_at: Option<String>,
-}
+use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct UpdatePasswordPolicyRequest {
     pub min_length: Option<i32>,

@@ -83,12 +83,13 @@ pub async fn publish_draft(
             .filter(|i| i.reason != GATE_REASON_SKIPPED && !i.met)
             .collect();
         if !missing.is_empty() {
-            if req.options.force_publish {
+            if req.options.force.force_publish {
                 if !is_admin {
                     return Err(ApiError::Forbidden);
                 }
                 if req
                     .options
+                    .force
                     .force_reason
                     .as_deref()
                     .map(str::trim).as_ref().is_none_or(|s| s.is_empty())
@@ -462,16 +463,16 @@ pub async fn publish_draft(
     .await
     .unwrap_or(0);
 
-    if req.options.force_publish {
+    if req.options.force.force_publish {
         warnings.push(format!(
             "force_publish: {}",
-            req.options.force_reason.clone().unwrap_or_default()
+            req.options.force.force_reason.clone().unwrap_or_default()
         ));
     }
 
     audit.log(AuditLogRequest {
         user_id,
-        action: if req.options.force_publish {
+        action: if req.options.force.force_publish {
             AuditAction::ConnectorForcePublish
         } else {
             AuditAction::ConnectorPublish
@@ -486,8 +487,8 @@ pub async fn publish_draft(
             "version_no": version_no,
             "mode": req.mode,
             "route_version": route_version,
-            "force": req.options.force_publish,
-            "force_reason": req.options.force_reason,
+            "force": req.options.force.force_publish,
+            "force_reason": req.options.force.force_reason,
         })),
         ip_address: client_ip,
         new_value: Some(serde_json::json!({
@@ -507,7 +508,7 @@ pub async fn publish_draft(
         "curl -sS -X POST 'https://<gateway-host>/api/v1/gateway' \\\n  -H 'Authorization: Bearer <access_token>' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"product_id\":\"<product_id>\",\"method\":\"POST\",\"path\":\"<path>\",\"body\":{}}'".to_string(),
     );
 
-    connector_metrics::record_publish(&req.mode, req.options.force_publish, true);
+    connector_metrics::record_publish(&req.mode, req.options.force.force_publish, true);
 
     Ok(PublishResult {
         supplier_id,

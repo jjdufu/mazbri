@@ -1,6 +1,20 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+/// 导航区显示开关（工作标签、面包屑、语言切换）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::FromRow)]
+pub struct NavigationToggles {
+    pub show_work_tab: bool,
+    pub show_crumbs: bool,
+    pub show_language: bool,
+}
+/// 顶栏按钮显示开关（菜单、快速入口、刷新）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::FromRow)]
+pub struct HeaderBarToggles {
+    pub show_menu_button: bool,
+    pub show_fast_enter: bool,
+    pub show_refresh_button: bool,
+}
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AppearanceRow {
     pub system_theme_mode: String,
@@ -8,12 +22,12 @@ pub struct AppearanceRow {
     pub container_width: String,
     pub box_border_mode: bool,
     pub menu_open_width: i32,
-    pub show_work_tab: bool,
-    pub show_menu_button: bool,
-    pub show_fast_enter: bool,
-    pub show_refresh_button: bool,
-    pub show_crumbs: bool,
-    pub show_language: bool,
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub navigation: NavigationToggles,
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub header_bar: HeaderBarToggles,
     pub show_nprogress: bool,
     pub watermark_visible: bool,
     pub tab_style: String,

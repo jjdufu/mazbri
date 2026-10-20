@@ -2755,6 +2755,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-serde",
+ "toml 0.8.23",
  "tonic 0.14.6",
  "tonic-prost",
  "tower",

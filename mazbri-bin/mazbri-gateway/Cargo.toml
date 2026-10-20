@@ -79,3 +79,6 @@ arc-swap = {version = "1.7.1"}
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+toml = "0.8"

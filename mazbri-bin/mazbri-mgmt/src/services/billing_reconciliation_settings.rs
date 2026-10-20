@@ -1,7 +1,9 @@
 //! Runtime billing reconciliation settings (admin DB `system_settings`).
 //! Bootstrap conf supplies defaults only when DB has no value.
 
-use crate::config::BillingReconciliationConfig;
+use crate::config::{
+    BillingReconciliationConfig, ReconAlertConfig, ReconScheduleConfig, ReconSourcesConfig,
+};
 use chrono::{DateTime, Utc};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
@@ -17,13 +19,9 @@ const SETTINGS_CATEGORY: &str = "billing";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BillingReconciliationRuntimeSettings {
-    pub scheduled_enabled: bool,
-    pub scheduled_interval_secs: u64,
-    pub scheduled_use_previous_day: bool,
-    pub alert_on_flagged: bool,
-    pub alert_webhook_url: String,
-    pub include_amount_recon: bool,
-    pub include_raw_log_source: bool,
+    pub schedule: ReconScheduleConfig,
+    pub alert: ReconAlertConfig,
+    pub sources: ReconSourcesConfig,
     pub loss_ratio_threshold: f64,
     pub default_scope_type: String,
     pub default_scope_id: String,
@@ -42,13 +40,12 @@ impl BillingReconciliationRuntimeSettings {
     #[must_use]
     pub fn from_bootstrap(cfg: &BillingReconciliationConfig) -> Self {
         Self {
-            scheduled_enabled: cfg.scheduled_enabled,
-            scheduled_interval_secs: cfg.scheduled_interval_secs.max(60),
-            scheduled_use_previous_day: cfg.scheduled_use_previous_day,
-            alert_on_flagged: cfg.alert_on_flagged,
-            alert_webhook_url: cfg.alert_webhook_url.clone(),
-            include_amount_recon: cfg.include_amount_recon,
-            include_raw_log_source: cfg.include_raw_log_source,
+            schedule: ReconScheduleConfig {
+                interval_secs: cfg.schedule.interval_secs.max(60),
+                ..cfg.schedule.clone()
+            },
+            alert: cfg.alert.clone(),
+            sources: cfg.sources.clone(),
             loss_ratio_threshold: cfg.loss_ratio_threshold,
             default_scope_type: cfg.default_scope_type.clone(),
             default_scope_id: cfg.default_scope_id.clone(),
@@ -70,15 +67,15 @@ impl BillingReconciliationRuntimeSettings {
                 self.loss_ratio_threshold
             ));
         }
-        if self.scheduled_interval_secs < 60 {
-            return Err("scheduled_interval_secs must be >= 60".to_string());
+        if self.schedule.interval_secs < 60 {
+            return Err("schedule.interval_secs must be >= 60".to_string());
         }
         if self.default_scope_type.trim().is_empty() {
             return Err("default_scope_type must not be empty".to_string());
         }
-        let url = self.alert_webhook_url.trim();
-        if self.alert_on_flagged && !url.is_empty() && url::Url::parse(url).is_err() {
-            return Err("alert_webhook_url is not a valid URL".to_string());
+        let url = self.alert.webhook_url.trim();
+        if self.alert.on_flagged && !url.is_empty() && url::Url::parse(url).is_err() {
+            return Err("alert.webhook_url is not a valid URL".to_string());
         }
         Ok(())
     }
@@ -130,9 +127,9 @@ impl BillingReconciliationSettingsCache {
                 match serde_json::from_value::<BillingReconciliationRuntimeSettings>(value) {
                     Ok(mut settings) => {
                         // Fill missing / invalid with bootstrap defaults safely.
-                        if settings.scheduled_interval_secs < 60 {
-                            settings.scheduled_interval_secs =
-                                defaults.scheduled_interval_secs.max(60);
+                        if settings.schedule.interval_secs < 60 {
+                            settings.schedule.interval_secs =
+                                defaults.schedule.interval_secs.max(60);
                         }
                         if settings.default_scope_type.trim().is_empty() {
                             settings.default_scope_type.clone_from(&defaults.default_scope_type);
@@ -162,9 +159,9 @@ impl BillingReconciliationSettingsCache {
         &self,
         mut settings: BillingReconciliationRuntimeSettings,
     ) -> Result<BillingReconciliationRuntimeSettings, String> {
-        settings.scheduled_interval_secs = settings.scheduled_interval_secs.max(60);
+        settings.schedule.interval_secs = settings.schedule.interval_secs.max(60);
         settings.default_scope_type = settings.default_scope_type.trim().to_string();
-        settings.alert_webhook_url = settings.alert_webhook_url.trim().to_string();
+        settings.alert.webhook_url = settings.alert.webhook_url.trim().to_string();
         settings.validate()?;
 
         // Preserve last_scheduled_run_at from DB (client cannot forge run history).

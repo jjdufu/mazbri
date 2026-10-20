@@ -15,8 +15,8 @@ fn admin_row_to_json(row: &repo::AdminRow) -> serde_json::Value {
         { "id" : row.id, "username" : row.username, "display_name" : row.display_name,
         "email" : row.email, "role" : row.role, "is_active" : row.is_active,
         "password_changed_at" : row.password_changed_at, "force_password_reset" : row
-        .force_password_reset, "mfa_enabled" : row.mfa_enabled, "mfa_required" : row
-        .mfa_required, "created_at" : row.created_at, "updated_at" : row.updated_at,
+        .force_password_reset, "mfa_enabled" : row.mfa.mfa_enabled, "mfa_required" : row
+        .mfa.mfa_required, "created_at" : row.created_at, "updated_at" : row.updated_at,
         "last_login_at" : row.last_login_at, }
     )
 }

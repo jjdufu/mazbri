@@ -1,11 +1,18 @@
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
-#[derive(Debug, sqlx::FromRow)]
+/// 字母大小写要求。
+#[derive(Debug, Clone, Copy, serde::Serialize, sqlx::FromRow)]
+pub struct LetterCaseRules {
+    pub require_uppercase: bool,
+    pub require_lowercase: bool,
+}
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
 pub struct PasswordPolicyRow {
     pub min_length: i32,
     pub max_length: i32,
-    pub require_uppercase: bool,
-    pub require_lowercase: bool,
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub letter_case: LetterCaseRules,
     pub require_digit: bool,
     pub require_special_char: bool,
     pub special_chars: String,
@@ -89,36 +96,9 @@ pub async fn update_password_policy(
         .fetch_one(pool)
         .await
 }
-#[derive(Debug, sqlx::FromRow)]
-pub struct PasswordPolicyFields {
-    pub min_length: i32,
-    pub max_length: i32,
-    pub require_uppercase: bool,
-    pub require_lowercase: bool,
-    pub require_digit: bool,
-    pub require_special_char: bool,
-    pub special_chars: String,
-    pub max_age_days: i32,
-    pub warning_days: i32,
-    pub prevent_reuse_count: i32,
-    pub max_login_attempts: i32,
-    pub lockout_duration_minutes: i32,
-}
-pub async fn load_policy_fields(pool: &PgPool) -> Option<PasswordPolicyFields> {
-    sqlx::query_as::<_, PasswordPolicyFields>(
-        r"
-        SELECT
-            min_length, max_length, require_uppercase, require_lowercase,
-            require_digit, require_special_char, special_chars, max_age_days,
-            warning_days, prevent_reuse_count, max_login_attempts, lockout_duration_minutes
-        FROM password_policy
-        WHERE id = '00000000-0000-0000-0000-000000000101'
-    ",
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
+/// 读取策略；缺失或读取失败时返回 `None`（调用方回落默认值）。
+pub async fn load_policy_fields(pool: &PgPool) -> Option<PasswordPolicyRow> {
+    get_password_policy(pool).await.ok()
 }
 /// # Errors
 ///

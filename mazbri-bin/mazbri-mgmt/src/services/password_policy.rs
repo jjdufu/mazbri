@@ -8,31 +8,18 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PasswordPolicy {
-    #[serde(default = "default_min_length")]
     pub min_length: usize,
-    #[serde(default = "default_max_length")]
     pub max_length: usize,
-    #[serde(default = "default_max_age_days")]
     pub max_age_days: i64,
-    #[serde(default = "default_warning_days")]
     pub warning_days: i64,
-    #[serde(default = "default_require_uppercase")]
-    pub require_uppercase: bool,
-    #[serde(default = "default_require_lowercase")]
-    pub require_lowercase: bool,
-    #[serde(default = "default_require_digit")]
+    pub letter_case: repo::LetterCaseRules,
     pub require_digit: bool,
-    #[serde(default)]
     pub require_special: bool,
-    #[serde(default = "default_special_chars")]
     pub special_chars: String,
-    #[serde(default = "default_prevent_reuse_count")]
     pub prevent_reuse_count: i32,
-    #[serde(default = "default_max_login_attempts")]
     pub max_login_attempts: i32,
-    #[serde(default = "default_lockout_duration_minutes")]
     pub lockout_duration_minutes: i32,
 }
 fn default_min_length() -> usize {
@@ -46,15 +33,6 @@ fn default_max_age_days() -> i64 {
 }
 fn default_warning_days() -> i64 {
     60
-}
-fn default_require_uppercase() -> bool {
-    true
-}
-fn default_require_lowercase() -> bool {
-    true
-}
-fn default_require_digit() -> bool {
-    true
 }
 fn default_special_chars() -> String {
     "!@#$%^&*()_+-=".to_string()
@@ -75,9 +53,11 @@ impl Default for PasswordPolicy {
             max_length: default_max_length(),
             max_age_days: default_max_age_days(),
             warning_days: default_warning_days(),
-            require_uppercase: default_require_uppercase(),
-            require_lowercase: default_require_lowercase(),
-            require_digit: default_require_digit(),
+            letter_case: repo::LetterCaseRules {
+                require_uppercase: true,
+                require_lowercase: true,
+            },
+            require_digit: true,
             require_special: false,
             special_chars: default_special_chars(),
             prevent_reuse_count: default_prevent_reuse_count(),
@@ -104,8 +84,7 @@ impl PasswordPolicy {
             Self {
                 min_length: usize::saturating_from(f.min_length),
                 max_length: usize::saturating_from(f.max_length),
-                require_uppercase: f.require_uppercase,
-                require_lowercase: f.require_lowercase,
+                letter_case: f.letter_case,
                 require_digit: f.require_digit,
                 require_special: f.require_special_char,
                 special_chars: f.special_chars,
@@ -219,7 +198,7 @@ impl PasswordPolicy {
             description: format!("最多 {} 个字符", self.max_length),
             passed: max_length_ok,
         });
-        if self.require_uppercase {
+        if self.letter_case.require_uppercase {
             let has_upper = password.chars().any(char::is_uppercase);
             if !has_upper {
                 errors.push("密码必须包含大写字母".to_string());
@@ -229,7 +208,7 @@ impl PasswordPolicy {
                 passed: has_upper,
             });
         }
-        if self.require_lowercase {
+        if self.letter_case.require_lowercase {
             let has_lower = password.chars().any(char::is_lowercase);
             if !has_lower {
                 errors.push("密码必须包含小写字母".to_string());
@@ -363,20 +342,19 @@ fn validate_update_fields(input: &UpdatePasswordPolicyInput) -> Option<axum::res
     }
     None
 }
+fn policy_row_response(row: &repo::PasswordPolicyRow) -> axum::response::Response {
+    match serde_json::to_value(row) {
+        Ok(data) => ApiResponse::ok(serde_json::json!({ "data" : data })).into_response(),
+        Err(e) => {
+            error!("Failed to serialize password policy: {}", e);
+            ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "获取密码策略失败")
+        }
+    }
+}
 pub async fn get_policy(db: &PgPool) -> axum::response::Response {
     match repo::get_password_policy(db).await {
         Ok(row) => {
-            let data = serde_json::json!(
-                { "min_length" : row.min_length, "max_length" : row.max_length,
-                "require_uppercase" : row.require_uppercase, "require_lowercase" : row
-                .require_lowercase, "require_digit" : row.require_digit,
-                "require_special_char" : row.require_special_char, "special_chars" : row
-                .special_chars, "max_age_days" : row.max_age_days, "warning_days" : row
-                .warning_days, "prevent_reuse_count" : row.prevent_reuse_count,
-                "max_login_attempts" : row.max_login_attempts, "lockout_duration_minutes"
-                : row.lockout_duration_minutes, "updated_at" : row.updated_at, }
-            );
-            ApiResponse::ok(serde_json::json!({ "data" : data })).into_response()
+            policy_row_response(&row)
         }
         Err(e) => {
             error!("Failed to get password policy: {}", e);
@@ -424,25 +402,15 @@ pub async fn update_policy(
                 Some("global".to_string()),
                 serde_json::json!(
                     { "min_length" : row.min_length, "max_length" : row
-                    .max_length, "require_uppercase" : row.require_uppercase,
-                    "require_lowercase" : row.require_lowercase, "require_digit"
+                    .max_length, "require_uppercase" : row.letter_case.require_uppercase,
+                    "require_lowercase" : row.letter_case.require_lowercase, "require_digit"
                     : row.require_digit, "require_special_char" : row
                     .require_special_char, "max_age_days" : row.max_age_days,
                     "max_login_attempts" : row.max_login_attempts, }
                 ),
                 client_ip,
             ));
-            let data = serde_json::json!(
-                { "min_length" : row.min_length, "max_length" : row.max_length,
-                "require_uppercase" : row.require_uppercase, "require_lowercase" : row
-                .require_lowercase, "require_digit" : row.require_digit,
-                "require_special_char" : row.require_special_char, "special_chars" : row
-                .special_chars, "max_age_days" : row.max_age_days, "warning_days" : row
-                .warning_days, "prevent_reuse_count" : row.prevent_reuse_count,
-                "max_login_attempts" : row.max_login_attempts, "lockout_duration_minutes"
-                : row.lockout_duration_minutes, "updated_at" : row.updated_at, }
-            );
-            ApiResponse::ok(serde_json::json!({ "data" : data })).into_response()
+            policy_row_response(&row)
         }
         Err(e) => {
             error!("Failed to update password policy: {}", e);

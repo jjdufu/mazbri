@@ -61,14 +61,14 @@
                   mode="inline"
                   :label="$t('billing.reconciliation.scheduledEnabled')"
                 >
-                  <ElSwitch v-model="settingsForm.scheduled_enabled" />
+                  <ElSwitch v-model="settingsForm.schedule.enabled" />
                 </CommonSettingRow>
                 <CommonSettingRow
                   mode="inline"
                   :label="$t('billing.reconciliation.intervalSecs')"
                 >
                   <ElInputNumber
-                    v-model="settingsForm.scheduled_interval_secs"
+                    v-model="settingsForm.schedule.interval_secs"
                     :min="60"
                     :step="60"
                     controls-position="right"
@@ -81,7 +81,7 @@
                   :label="$t('billing.reconciliation.usePreviousDay')"
                 >
                   <ElSwitch
-                    v-model="settingsForm.scheduled_use_previous_day"
+                    v-model="settingsForm.schedule.use_previous_day"
                   />
                 </CommonSettingRow>
                 <CommonSettingRow
@@ -103,13 +103,13 @@
                   mode="inline"
                   :label="$t('billing.reconciliation.includeRawLog')"
                 >
-                  <ElSwitch v-model="settingsForm.include_raw_log_source" />
+                  <ElSwitch v-model="settingsForm.sources.include_raw_log_source" />
                 </CommonSettingRow>
                 <CommonSettingRow
                   mode="inline"
                   :label="$t('billing.reconciliation.alertOnFlagged')"
                 >
-                  <ElSwitch v-model="settingsForm.alert_on_flagged" />
+                  <ElSwitch v-model="settingsForm.alert.on_flagged" />
                 </CommonSettingRow>
 
                 <CommonSettingRow
@@ -127,7 +127,7 @@
                   :label="$t('billing.reconciliation.alertWebhook')"
                 >
                   <ExpandOnFocusInput
-                    v-model="settingsForm.alert_webhook_url"
+                    v-model="settingsForm.alert.webhook_url"
                     clearable
                     :compact-width="180"
                     :expand-width="420"
@@ -135,7 +135,7 @@
                     :placeholder="
                       $t('billing.reconciliation.alertWebhookPlaceholder')
                     "
-                    :disabled="!settingsForm.alert_on_flagged"
+                    :disabled="!settingsForm.alert.on_flagged"
                   />
                 </CommonSettingRow>
               </div>
@@ -579,13 +579,9 @@ const settingsSaving = ref(false);
 
 const settingsExpanded = ref(false);
 const settingsForm = reactive<ReconciliationSettings>({
-  scheduled_enabled: false,
-  scheduled_interval_secs: 86400,
-  scheduled_use_previous_day: true,
-  alert_on_flagged: false,
-  alert_webhook_url: "",
-  include_amount_recon: true,
-  include_raw_log_source: true,
+  schedule: { enabled: false, interval_secs: 86400, use_previous_day: true },
+  alert: { on_flagged: false, webhook_url: "" },
+  sources: { include_amount_recon: true, include_raw_log_source: true },
   loss_ratio_threshold: 0.05,
   default_scope_type: "system",
   default_scope_id: "",
@@ -928,7 +924,7 @@ const detailView = computed<DetailView | null>(() => {
 
 
 const settingsSummaryLine = computed(() => {
-  const scheduled = settingsForm.scheduled_enabled
+  const scheduled = settingsForm.schedule.enabled
     ? $t("billing.reconciliation.summaryScheduledOn")
     : $t("billing.reconciliation.summaryScheduledOff");
   const threshold = $t("billing.reconciliation.summaryThreshold", {

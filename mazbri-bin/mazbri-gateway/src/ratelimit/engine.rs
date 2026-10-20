@@ -147,7 +147,6 @@ pub struct LocalRateLimitEngine {
 impl LocalRateLimitEngine {
     pub fn new(gateway_id: impl Into<String>) -> Self {
         let default_snapshot = TenantPolicySnapshot {
-            id: Uuid::nil(),
             tenant_id: Uuid::nil(),
             version: 0,
             enabled: true,
@@ -762,7 +761,6 @@ mod tests {
 
     fn snapshot_with_bandwidth(tenant_id: Uuid, bandwidth_bps: i64) -> TenantPolicySnapshot {
         TenantPolicySnapshot {
-            id: Uuid::new_v4(),
             tenant_id,
             version: 1,
             enabled: true,
@@ -860,7 +858,6 @@ mod tests {
 
     fn snapshot_plan(tenant_id: Uuid, tenant_qps: u64, tenant_burst: u64) -> TenantPolicySnapshot {
         TenantPolicySnapshot {
-            id: Uuid::new_v4(),
             tenant_id,
             version: 1,
             enabled: true,

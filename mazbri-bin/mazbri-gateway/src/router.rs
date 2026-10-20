@@ -354,13 +354,13 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         None
     };
     let balance_cache = if config.billing.enabled
-        && config.billing.balance_check_enabled
-        && config.billing.balance_cache_enabled
+        && config.billing.balance_check.enabled
+        && config.billing.balance_check.cache.enabled
     {
         let cache_cfg = BalanceCacheConfig {
             enabled: true,
-            l1_ttl: Duration::from_millis(config.billing.balance_cache_l1_ttl_ms.max(1)),
-            l2_ttl_secs: config.billing.balance_cache_l2_ttl_secs.max(1),
+            l1_ttl: Duration::from_millis(config.billing.balance_check.cache.l1_ttl_ms.max(1)),
+            l2_ttl_secs: config.billing.balance_check.cache.l2_ttl_secs.max(1),
             l1_max_capacity: 50_000,
         };
         tracing::info!(
@@ -382,8 +382,8 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         auth_service,
         billing_state,
         balance_cache,
-        balance_check_timeout_ms: config.billing.balance_check_timeout_ms.max(50),
-        balance_check_fail_open: config.billing.balance_check_fail_open,
+        balance_check_timeout_ms: config.billing.balance_check.timeout_ms.max(50),
+        balance_check_fail_open: config.billing.balance_check.fail_open,
         service_health_cache,
         admin_state,
         request_binding: config.request_binding.clone(),
@@ -403,7 +403,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         .route("/auth/token", post(crate::auth::service::token_handler))
         .route("/openapi.yaml", get(crate::openapi::openapi_yaml));
     let protected_routes = if app_state.billing_state.is_some() {
-        let balance_check_middleware = if config.billing.balance_check_enabled {
+        let balance_check_middleware = if config.billing.balance_check.enabled {
             Some(axum::middleware::from_fn_with_state(
                 app_state.clone(),
                 crate::gateway::balance_check_middleware,
@@ -428,7 +428,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         let router = Router::new().route("/api/v1/gateway", proxy_route);
         tracing::info!(
             "Billing hooks enabled: balance_check={}, proxy_usage_record={}",
-            config.billing.balance_check_enabled,
+            config.billing.balance_check.enabled,
             config.billing.usage_record_enabled
         );
         router

@@ -2,7 +2,7 @@ use crate::analytics_client::AnalyticsClientConfig;
 use anyhow::Result;
 use mazbri_core::config::ValidateConfig;
 use mazbri_core::{CertServiceConfig, Identity, LogRouteConfig, TracingConfig};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -75,7 +75,8 @@ impl Default for ConnectorProbeConfig {
 }
 
 /// 用量对账（mgmt 管理面；静态 conf，非配置中心）。
-#[derive(Debug, Clone, Deserialize)]
+/// 同一结构也是管理端运行时配置（`system_settings`）的形状。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 pub struct BillingReconciliationConfig {
@@ -85,19 +86,46 @@ pub struct BillingReconciliationConfig {
     pub default_scope_id: String,
     /// 出账前是否警告账期内存在未关闭差异（不阻断）。
     pub warn_on_open_discrepancies_before_bill: bool,
-    /// 是否启用 mgmt 侧定时日对账 worker。
-    pub scheduled_enabled: bool,
-    /// 定时对账轮询间隔（秒）；默认 86400=日级。
-    pub scheduled_interval_secs: u64,
-    /// 定时跑批时对「昨天」做审计（true）或「今天」（false）。
-    pub scheduled_use_previous_day: bool,
+    /// `[billing_reconciliation.schedule]` 定时对账。
+    pub schedule: ReconScheduleConfig,
+    /// `[billing_reconciliation.alert]` flagged 告警。
+    pub alert: ReconAlertConfig,
+    /// `[billing_reconciliation.sources]` 对账数据维度。
+    pub sources: ReconSourcesConfig,
+}
+
+/// mgmt 侧定时日对账 worker。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct ReconScheduleConfig {
+    /// 是否启用。
+    pub enabled: bool,
+    /// 轮询间隔（秒，最小 60）；默认 86400=日级。
+    pub interval_secs: u64,
+    /// 对「昨天」做审计（true）或「今天」（false）。
+    pub use_previous_day: bool,
+}
+
+/// flagged 时的 webhook 告警。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct ReconAlertConfig {
     /// flagged 时是否 POST webhook。
-    pub alert_on_flagged: bool,
+    pub on_flagged: bool,
     /// 告警 webhook URL（JSON body）；空则不发送。
-    pub alert_webhook_url: String,
-    /// 对账 details 是否写入金额维（usage sum vs 当日 `bill_items` 合计）。
+    pub webhook_url: String,
+}
+
+/// 对账 details 额外数据维度。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct ReconSourcesConfig {
+    /// 是否写入金额维（usage sum vs 当日 `bill_items` 合计）。
     pub include_amount_recon: bool,
-    /// 是否从 analytics `request_logs` 聚合拉取 `raw_log_call_count（真·第三方`）。
+    /// 是否从 analytics `request_logs` 聚合拉取 `raw_log_call_count`（真·第三方）。
     pub include_raw_log_source: bool,
 }
 
@@ -108,11 +136,26 @@ impl Default for BillingReconciliationConfig {
             default_scope_type: "system".to_string(),
             default_scope_id: String::new(),
             warn_on_open_discrepancies_before_bill: true,
-            scheduled_enabled: false,
-            scheduled_interval_secs: 86400,
-            scheduled_use_previous_day: true,
-            alert_on_flagged: false,
-            alert_webhook_url: String::new(),
+            schedule: ReconScheduleConfig::default(),
+            alert: ReconAlertConfig::default(),
+            sources: ReconSourcesConfig::default(),
+        }
+    }
+}
+
+impl Default for ReconScheduleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_secs: 86400,
+            use_previous_day: true,
+        }
+    }
+}
+
+impl Default for ReconSourcesConfig {
+    fn default() -> Self {
+        Self {
             include_amount_recon: true,
             include_raw_log_source: true,
         }
@@ -205,22 +248,22 @@ impl ValidateConfig for MgmtApiConfig {
         {
             anyhow::bail!("billing_reconciliation.default_scope_type must not be empty");
         }
-        if self.billing_reconciliation.scheduled_enabled
-            && self.billing_reconciliation.scheduled_interval_secs < 60
+        if self.billing_reconciliation.schedule.enabled
+            && self.billing_reconciliation.schedule.interval_secs < 60
         {
             anyhow::bail!(
-                "billing_reconciliation.scheduled_interval_secs must be >= 60 when scheduled_enabled"
+                "billing_reconciliation.schedule.interval_secs must be >= 60 when schedule.enabled"
             );
         }
-        if self.billing_reconciliation.alert_on_flagged
+        if self.billing_reconciliation.alert.on_flagged
             && !self
                 .billing_reconciliation
-                .alert_webhook_url
+                .alert.webhook_url
                 .trim()
                 .is_empty()
-            && url::Url::parse(self.billing_reconciliation.alert_webhook_url.trim()).is_err()
+            && url::Url::parse(self.billing_reconciliation.alert.webhook_url.trim()).is_err()
         {
-            anyhow::bail!("billing_reconciliation.alert_webhook_url is not a valid URL");
+            anyhow::bail!("billing_reconciliation.alert.webhook_url is not a valid URL");
         }
         self.redis.validate()?;
         self.cert_service.validate()?;

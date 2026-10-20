@@ -247,14 +247,21 @@ pub struct PublishAuth {
 pub struct PublishOptions {
     #[serde(default = "default_true")]
     pub require_gate: bool,
-    #[serde(default)]
-    pub force_publish: bool,
-    #[serde(default)]
-    pub force_reason: Option<String>,
+    /// 绕过门禁强制发布（与 `force_reason` 成对出现）。
+    #[serde(flatten)]
+    pub force: ForceOverride,
     #[serde(default = "default_true")]
     pub fail_if_route_exists: bool,
     #[serde(default)]
     pub probe_connectivity: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ForceOverride {
+    #[serde(default)]
+    pub force_publish: bool,
+    #[serde(default)]
+    pub force_reason: Option<String>,
 }
 
 pub(super) fn default_true() -> bool {
@@ -265,8 +272,7 @@ impl Default for PublishOptions {
     fn default() -> Self {
         Self {
             require_gate: true,
-            force_publish: false,
-            force_reason: None,
+            force: ForceOverride::default(),
             fail_if_route_exists: true,
             probe_connectivity: false,
         }

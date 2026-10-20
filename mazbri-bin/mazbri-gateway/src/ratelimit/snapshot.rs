@@ -37,8 +37,6 @@ impl ApiLimitRule {
 
 /// Local cache of a tenant rate-limit policy snapshot from ratelimit-service.
 pub struct TenantPolicySnapshot {
-    /// Policy row id (RPC); retained for control-plane correlation.
-    pub id: Uuid,
     pub tenant_id: Uuid,
     pub version: i64,
     pub enabled: bool,
@@ -58,7 +56,6 @@ pub struct TenantPolicySnapshot {
 impl TenantPolicySnapshot {
     pub fn from_rpc(snapshot: RpcPolicySnapshot) -> Option<Self> {
         let tenant_id = Uuid::parse_str(&snapshot.tenant_id).ok()?;
-        let id = Uuid::parse_str(&snapshot.id).ok()?;
         let enforcement_mode = match snapshot.enforcement_mode.as_str() {
             "deny_all" => EnforcementMode::DenyAll,
             "observe_only" => EnforcementMode::ObserveOnly,
@@ -83,7 +80,6 @@ impl TenantPolicySnapshot {
             .collect::<HashMap<_, _>>();
 
         Some(Self {
-            id,
             tenant_id,
             version: snapshot.version,
             enabled: snapshot.enabled,

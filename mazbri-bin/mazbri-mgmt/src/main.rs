@@ -288,10 +288,10 @@ async fn main() -> Result<()> {
             loop {
                 ticker.tick().await;
                 let settings = recon_settings.get().await;
-                if !settings.scheduled_enabled {
+                if !settings.schedule.enabled {
                     continue;
                 }
-                let interval = Duration::from_secs(settings.scheduled_interval_secs.max(60));
+                let interval = Duration::from_secs(settings.schedule.interval_secs.max(60));
                 let due = match last_run_at {
                     Some(t) => t.elapsed() >= interval,
                     None => true,
@@ -300,7 +300,7 @@ async fn main() -> Result<()> {
                     continue;
                 }
 
-                let day = if settings.scheduled_use_previous_day {
+                let day = if settings.schedule.use_previous_day {
                     chrono::Utc::now().date_naive() - chrono::Duration::days(1)
                 } else {
                     chrono::Utc::now().date_naive()
@@ -312,8 +312,8 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| rust_decimal::Decimal::new(5, 2));
                 let options = mazbri_mgmt::services::billing::ReconciliationAuditOptions {
                     loss_ratio_threshold: threshold,
-                    include_amount_recon: settings.include_amount_recon,
-                    include_raw_log_source: settings.include_raw_log_source,
+                    include_amount_recon: settings.sources.include_amount_recon,
+                    include_raw_log_source: settings.sources.include_raw_log_source,
                 };
                 match mazbri_mgmt::services::billing::execute_reconciliation_audit(
                     recon_billing_db.as_ref(),
@@ -334,9 +334,9 @@ async fn main() -> Result<()> {
                             discrepancy_id = %result.discrepancy_id,
                             "scheduled reconciliation audit completed"
                         );
-                        if settings.alert_on_flagged
+                        if settings.alert.on_flagged
                             && result.status == "flagged"
-                            && !settings.alert_webhook_url.trim().is_empty()
+                            && !settings.alert.webhook_url.trim().is_empty()
                         {
                             let body = serde_json::json!({
                                 "event": "billing.reconciliation.flagged",
@@ -349,7 +349,7 @@ async fn main() -> Result<()> {
                                 "status": result.status,
                             });
                             if let Err(e) = reqwest::Client::new()
-                                .post(settings.alert_webhook_url.trim())
+                                .post(settings.alert.webhook_url.trim())
                                 .json(&body)
                                 .send()
                                 .await

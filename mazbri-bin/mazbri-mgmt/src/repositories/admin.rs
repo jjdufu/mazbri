@@ -1,5 +1,11 @@
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
+/// 管理员 MFA 开关：是否已绑定、是否被要求绑定。
+#[derive(Debug, Clone, Copy, serde::Serialize, sqlx::FromRow)]
+pub struct AdminMfaFlags {
+    pub mfa_enabled: bool,
+    pub mfa_required: bool,
+}
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserFullRow {
     pub id: uuid::Uuid,
@@ -10,9 +16,9 @@ pub struct AdminUserFullRow {
     pub created_at: DateTime<Utc>,
     pub password_changed_at: DateTime<Utc>,
     pub force_password_reset: bool,
-    pub mfa_enabled: bool,
+    #[sqlx(flatten)]
+    pub mfa: AdminMfaFlags,
     pub mfa_locked_until: Option<DateTime<Utc>>,
-    pub mfa_required: bool,
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
 }

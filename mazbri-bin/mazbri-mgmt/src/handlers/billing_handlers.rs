@@ -484,8 +484,8 @@ pub async fn run_reconciliation_audit(
     let threshold = loss_ratio_threshold_decimal(recon_cfg.loss_ratio_threshold);
     let options = svc::ReconciliationAuditOptions {
         loss_ratio_threshold: threshold,
-        include_amount_recon: recon_cfg.include_amount_recon,
-        include_raw_log_source: recon_cfg.include_raw_log_source,
+        include_amount_recon: recon_cfg.sources.include_amount_recon,
+        include_raw_log_source: recon_cfg.sources.include_raw_log_source,
     };
 
     let result = svc::execute_reconciliation_audit(

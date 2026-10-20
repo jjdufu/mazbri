@@ -156,8 +156,8 @@ fn determine_mfa(
     } else {
         (false, mfa_settings.totp_digits)
     };
-    if user_row.mfa_enabled || mfa_required_by_global_settings {
-        if user_row.mfa_enabled {
+    if user_row.mfa.mfa_enabled || mfa_required_by_global_settings {
+        if user_row.mfa.mfa_enabled {
             if let Some(mfa_lock_until) = user_row.mfa_locked_until {
                 if mfa_lock_until > Utc::now() {
                     warn!("Login blocked: MFA locked for user: {}", username);
@@ -183,7 +183,7 @@ fn determine_mfa(
                 : totp_digits, "message" : "需要 MFA 验证" }
             )));
         }
-        if mfa_required_by_global_settings && !user_row.mfa_enabled {
+        if mfa_required_by_global_settings && !user_row.mfa.mfa_enabled {
             let temp_token = generate_admin_jwt(
                 username,
                 &user_id.to_string(),
@@ -205,7 +205,7 @@ fn determine_mfa(
             )));
         }
     }
-    if user_row.mfa_required && !user_row.mfa_enabled {
+    if user_row.mfa.mfa_required && !user_row.mfa.mfa_enabled {
         let temp_token = generate_admin_jwt(
             username,
             &user_id.to_string(),

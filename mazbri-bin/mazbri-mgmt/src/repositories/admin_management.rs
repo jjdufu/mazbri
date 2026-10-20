@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, QueryBuilder, Row};
+use sqlx::{FromRow, PgPool, QueryBuilder, Row};
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AdminRow {
     pub id: uuid::Uuid,
@@ -11,8 +11,9 @@ pub struct AdminRow {
     pub is_active: bool,
     pub password_changed_at: DateTime<Utc>,
     pub force_password_reset: bool,
-    pub mfa_enabled: bool,
-    pub mfa_required: bool,
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub mfa: super::admin::AdminMfaFlags,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_login_at: Option<DateTime<Utc>>,
@@ -119,24 +120,7 @@ pub async fn list_admins(
     builder.push(" OFFSET ");
     builder.push_bind(offset);
     let rows = builder.build().fetch_all(pool).await?;
-    Ok(rows
-        .iter()
-        .map(|row| AdminRow {
-            id: row.get("id"),
-            username: row.get("username"),
-            display_name: row.get("display_name"),
-            email: row.get("email"),
-            role: row.get("role"),
-            is_active: row.get("is_active"),
-            password_changed_at: row.get("password_changed_at"),
-            force_password_reset: row.get("force_password_reset"),
-            mfa_enabled: row.get("mfa_enabled"),
-            mfa_required: row.get("mfa_required"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-            last_login_at: row.get("last_login_at"),
-        })
-        .collect())
+    rows.iter().map(AdminRow::from_row).collect()
 }
 /// # Errors
 ///
@@ -306,21 +290,7 @@ pub async fn update_admin(
     builder.push_bind(id);
     builder.push(format!(" RETURNING {ADMIN_COLUMNS}"));
     let row = builder.build().fetch_one(pool).await?;
-    Ok(AdminRow {
-        id: row.get("id"),
-        username: row.get("username"),
-        display_name: row.get("display_name"),
-        email: row.get("email"),
-        role: row.get("role"),
-        is_active: row.get("is_active"),
-        password_changed_at: row.get("password_changed_at"),
-        force_password_reset: row.get("force_password_reset"),
-        mfa_enabled: row.get("mfa_enabled"),
-        mfa_required: row.get("mfa_required"),
-        created_at: row.get("created_at"),
-        updated_at: row.get("updated_at"),
-        last_login_at: row.get("last_login_at"),
-    })
+    AdminRow::from_row(&row)
 }
 /// # Errors
 ///
