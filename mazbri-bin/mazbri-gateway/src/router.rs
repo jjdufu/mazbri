@@ -84,22 +84,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let cors_layer = build_cors_layer(&config.cors);
     let max_connections = config.server.max_connections.max(1) as usize;
     let concurrency_limit = Arc::new(Semaphore::new(max_connections));
-    tracing::info!(
-        max_connections,
-        tcp_nodelay = config.server.tcp_nodelay,
-        tcp_keepalive_secs = config.server.tcp_keepalive_secs,
-        http1_keep_alive = config.server.http1_keep_alive,
-        http1_header_read_timeout_secs = config.server.http1_header_read_timeout_secs,
-        compression_enabled = config.server.compression_enabled,
-        "Gateway HTTP transport settings"
-    );
-    let compression_layer = if config.server.compression_enabled {
-        tracing::info!("Response compression enabled");
-        CompressionLayer::new()
-    } else {
-        tracing::info!("Response compression disabled (proxy disconnect governance)");
-        CompressionLayer::new().no_gzip()
-    };
+    let compression_layer = compression_layer_for(&config, max_connections);
     let base_middleware = ServiceBuilder::new()
         .layer(CatchPanicLayer::custom(handle_panic))
         .layer(TraceLayer::new_for_http())
@@ -117,25 +102,100 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         ))
         .layer(cors_layer)
         .layer(compression_layer);
-    let product_config = ProductConfig::default();
     let redis = mazbri_core::redis::RedisClient::connect_with_config(&config.redis)
         .await
         .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
+    let product_service = init_product_service(&db, &redis).await;
+    let (tarpc_pool, upstream_http2_pool) =
+        init_client_pools(&config, &tls_ca_cert, &client_cert, tls_config)?;
+    let route_engine =
+        load_routes_and_warmup(&db, &tarpc_pool, &upstream_http2_pool, &config).await?;
+    let route_engine = Arc::new(arc_swap::ArcSwap::new(Arc::new(route_engine)));
+    let proxy_state = ProxyState::new(crate::gateway::ProxyStateInit {
+        service_name,
+        product_service,
+        tarpc_pool: tarpc_pool.clone(),
+        upstream_http2_pool: upstream_http2_pool.clone(),
+        circuit_breaker_config: config.circuit_breaker.clone(),
+        ratelimit_endpoint: config.services.ratelimit.clone(),
+        channel_rate_limit: config.channel_rate_limit.clone(),
+        cbpro_client: init_cbpro_client(&config, &tls_ca_cert, &client_cert, tls_config),
+        cbpro_ext_client: init_cbpro_ext_client(&config, &tls_ca_cert, &client_cert, tls_config),
+        route_engine: route_engine.clone(),
+        db: db.clone(),
+        redis: redis.clone(),
+        cert_service_url: &tls_config.cert_service_url,
+        cert_service_token: tls_config.cert_service_token.clone(),
+        services_config: config.services.clone(),
+        supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache::new(),
+    })
+    .await?;
+    if let Some(cache) = service_health_cache.clone() {
+        spawn_ratelimit_health_monitor(
+            cache,
+            proxy_state.tarpc_pool.clone(),
+            config.services.ratelimit.clone(),
+        );
+    }
+    let route_reload_status = spawn_background_workers(
+        &config,
+        &db,
+        &route_engine,
+        admin_state.as_ref(),
+        &proxy_state,
+    );
+    let (auth_state, auth_service) = init_auth(&config, &db, jwt_secret, tarpc_pool).await;
+    let billing_state = create_billing_state(&config, &db).await;
+    let balance_cache = build_balance_cache(&config, &redis);
+    let app_state = AppState {
+        proxy_state,
+        auth_state,
+        auth_service,
+        billing_state,
+        balance_cache,
+        balance_check_timeout_ms: config.billing.balance_check.timeout_ms.max(50),
+        balance_check_fail_open: config.billing.balance_check.fail_open,
+        service_health_cache,
+        admin_state,
+        request_binding: config.request_binding.clone(),
+    };
+    let public_routes = build_public_routes(route_reload_status);
+    let protected_routes = build_protected_routes(&app_state, &config);
+    Ok(Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .layer(base_middleware)
+        .with_state(app_state))
+}
+async fn init_product_service(
+    db: &PgPool,
+    redis: &mazbri_core::redis::RedisClient,
+) -> Arc<ProductService> {
+    let product_config = ProductConfig::default();
     let permission_cache = Arc::new(RedisPermissionCache::new(
         redis.clone(),
         Duration::from_secs(product_config.cache_ttl_secs),
     ));
     let product_service = Arc::new(ProductService::new(
-        (*db).clone(),
+        db.clone(),
         product_config,
         permission_cache,
     ));
     if let Err(error) = product_service.warm_tenant_product_detail_cache().await {
         tracing::warn!(error = % error, "Product tenant detail cache warmup failed");
     }
+    product_service
+}
+
+fn init_client_pools(
+    config: &GatewayConfig,
+    tls_ca_cert: &str,
+    client_cert: &mazbri_tls::ManagedCertificate,
+    tls_config: &mazbri_tls::TlsConfig,
+) -> anyhow::Result<(TarpcClientPool, UpstreamHttp2ClientPool)> {
     let tarpc_pool = TarpcClientPool::new_with_timeouts(
-        &tls_ca_cert.clone(),
-        &client_cert,
+        tls_ca_cert,
+        client_cert,
         tls_config,
         &config.tarpc,
         config.services.auth.timeout_ms,
@@ -146,12 +206,83 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     drop(tarpc_pool.spawn_cleanup_task());
     tracing::info!("TarpcClientPool background cleanup task started");
     let upstream_http2_pool =
-        UpstreamHttp2ClientPool::new(&client_cert, config.tarpc.client_ttl_secs);
+        UpstreamHttp2ClientPool::new(client_cert, config.tarpc.client_ttl_secs);
     drop(upstream_http2_pool.spawn_cleanup_task());
     tracing::info!("UpstreamHttp2ClientPool background cleanup task started");
-    let route_engine = crate::route_source::load_route_engine(&db).await?;
+    Ok((tarpc_pool, upstream_http2_pool))
+}
+
+async fn init_auth(
+    config: &GatewayConfig,
+    db: &PgPool,
+    jwt_secret: String,
+    tarpc_pool: TarpcClientPool,
+) -> (AuthState, Arc<RwLock<AuthService>>) {
+    let extra_jwt_keys = crate::crypto::load_platform_hs256_jwt_keys(db)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "Failed to load extra platform HS256 JWT keys");
+            Vec::new()
+        });
+    let jwt_keyring = crate::auth::JwtHs256Keyring::new(config.auth.jwt_kid.clone(), jwt_secret)
+        .with_extra_keys(extra_jwt_keys);
+    let auth_service = Arc::new(RwLock::new(AuthService::new(
+        jwt_keyring.clone(),
+        config.auth.token_expiration_secs,
+        tarpc_pool,
+        config.services.auth.clone(),
+        db.clone(),
+    )));
+    let auth_state = AuthState::new(jwt_keyring);
+    (auth_state, auth_service)
+}
+
+fn build_public_routes(
+    route_reload_status: Arc<crate::route_reload::RouteReloadStatus>,
+) -> Router<AppState> {
+    Router::new()
+        .route("/health", get(health_check))
+        .route("/ready", get(ready_check))
+        .route("/metrics", get(metrics_handler))
+        .route(
+            "/admin/routes/status",
+            get(move || {
+                let status = route_reload_status.clone();
+                async move { axum::Json(status.snapshot()) }
+            }),
+        )
+        .route("/auth/token", post(crate::auth::service::token_handler))
+        .route("/openapi.yaml", get(crate::openapi::openapi_yaml))
+}
+
+fn compression_layer_for(config: &GatewayConfig, max_connections: usize) -> CompressionLayer {
+    tracing::info!(
+        max_connections,
+        tcp_nodelay = config.server.tcp_nodelay,
+        tcp_keepalive_secs = config.server.tcp_keepalive_secs,
+        http1_keep_alive = config.server.http1_keep_alive,
+        http1_header_read_timeout_secs = config.server.http1_header_read_timeout_secs,
+        compression_enabled = config.server.compression_enabled,
+        "Gateway HTTP transport settings"
+    );
+    if config.server.compression_enabled {
+        tracing::info!("Response compression enabled");
+        CompressionLayer::new()
+    } else {
+        tracing::info!("Response compression disabled (proxy disconnect governance)");
+        CompressionLayer::new().no_gzip()
+    }
+}
+
+async fn load_routes_and_warmup(
+    db: &PgPool,
+    tarpc_pool: &TarpcClientPool,
+    upstream_http2_pool: &UpstreamHttp2ClientPool,
+    config: &GatewayConfig,
+) -> anyhow::Result<mazbri_routing::RouteEngine> {
+    let route_engine = crate::route_source::load_route_engine(db).await?;
     if route_engine.is_empty() {
-        match crate::route_source::check_tenants_count(&db).await {
+        match crate::route_source::check_tenants_count(db).await {
             Ok(0) => {
                 tracing::info!(
                     "Gateway is in bootstrap mode (no tenants configured). Awaiting configuration."
@@ -169,108 +300,113 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
             "Loaded gateway route rules from database"
         );
     }
-    if let Err(error) = warmup_tarpc_clients(&tarpc_pool, &config.services).await {
+    if let Err(error) = warmup_tarpc_clients(tarpc_pool, &config.services).await {
         tracing::warn!(error = % error, "Tarpc client warmup failed");
     }
-    if let Err(error) = warmup_route_upstream_clients(&upstream_http2_pool, &route_engine).await {
+    if let Err(error) = warmup_route_upstream_clients(upstream_http2_pool, &route_engine).await {
         tracing::warn!(error = % error, "Route upstream client warmup failed");
     }
-    if let Err(error) = warmup_bypass_client(&upstream_http2_pool, &config.services).await {
+    if let Err(error) = warmup_bypass_client(upstream_http2_pool, &config.services).await {
         tracing::warn!(error = % error, "Bypass HTTP/2 client warmup failed");
     }
-    let route_engine = Arc::new(arc_swap::ArcSwap::new(Arc::new(route_engine)));
-    let proxy_state = ProxyState::new(crate::gateway::ProxyStateInit {
-        service_name,
-        product_service,
-        tarpc_pool: tarpc_pool.clone(),
-        upstream_http2_pool: upstream_http2_pool.clone(),
-        circuit_breaker_config: config.circuit_breaker.clone(),
-        ratelimit_endpoint: config.services.ratelimit.clone(),
-        channel_rate_limit: config.channel_rate_limit.clone(),
-        cbpro_client: config.services.cbpro.as_ref().and_then(|endpoint| {
-            match CBProClient::new(
-                endpoint.clone(),
-                &tls_ca_cert.clone(),
-                &client_cert,
-                tls_config,
-                config.tarpc.client_ttl_secs,
-            ) {
-                Ok(client) => Some(client),
-                Err(error) => {
-                    tracing::warn!(
-                        error = % error, url = % endpoint.url(),
-                        "Failed to initialize CBPro client; fallback support disabled"
-                    );
-                    None
-                }
-            }
-        }),
-        cbpro_ext_client: config.services.cbpro_ext.as_ref().and_then(|endpoint| {
-            match CBProExtClient::new(
-                endpoint.clone(),
-                &tls_ca_cert.clone(),
-                &client_cert,
-                tls_config,
-                config.tarpc.client_ttl_secs,
-            ) {
-                Ok(client) => Some(client),
-                Err(error) => {
-                    tracing::warn!(
-                        error = % error, url = % endpoint.url(),
-                        "Failed to initialize CBPro-Ext client; runtime decision support disabled"
-                    );
-                    None
-                }
-            }
-        }),
-        route_engine: route_engine.clone(),
-        db: db.clone(),
-        redis: redis.clone(),
-        cert_service_url: &tls_config.cert_service_url,
-        cert_service_token: tls_config.cert_service_token.clone(),
-        services_config: config.services.clone(),
-        supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache::new(),
+    Ok(route_engine)
+}
+
+fn init_cbpro_client(
+    config: &GatewayConfig,
+    tls_ca_cert: &str,
+    client_cert: &mazbri_tls::ManagedCertificate,
+    tls_config: &mazbri_tls::TlsConfig,
+) -> Option<CBProClient> {
+    let endpoint = config.services.cbpro.as_ref()?;
+    CBProClient::new(
+        endpoint.clone(),
+        tls_ca_cert,
+        client_cert,
+        tls_config,
+        config.tarpc.client_ttl_secs,
+    )
+    .inspect_err(|error| {
+        tracing::warn!(
+            error = % error, url = % endpoint.url(),
+            "Failed to initialize CBPro client; fallback support disabled"
+        );
     })
-    .await?;
-    if let Some(cache) = service_health_cache.clone() {
-        let tarpc_pool = proxy_state.tarpc_pool.clone();
-        let ratelimit_endpoint = config.services.ratelimit.clone();
-        spawn_supervised("service-health-monitor", async move {
-            let mut last_state = ServiceHealthState::Unknown;
-            let mut saw_unhealthy = false;
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-                let current = cache.get("mazbri-ratelimit").await.state;
-                if current == last_state {
-                    continue;
-                }
-                match current {
-                    ServiceHealthState::Unhealthy => {
-                        saw_unhealthy = true;
-                        tarpc_pool.remove_client(ratelimit_endpoint.url());
-                        tracing::info!(
-                            service = "mazbri-ratelimit",
-                            "Removed cached tarpc client after health became unhealthy"
-                        );
-                    }
-                    ServiceHealthState::Healthy if saw_unhealthy => {
-                        tarpc_pool.remove_client(ratelimit_endpoint.url());
-                        saw_unhealthy = false;
-                        tracing::info!(
-                            service = "mazbri-ratelimit",
-                            "Removed cached tarpc client after health recovered"
-                        );
-                    }
-                    ServiceHealthState::Healthy | ServiceHealthState::Unknown => {}
-                }
-                last_state = current;
+    .ok()
+}
+
+fn init_cbpro_ext_client(
+    config: &GatewayConfig,
+    tls_ca_cert: &str,
+    client_cert: &mazbri_tls::ManagedCertificate,
+    tls_config: &mazbri_tls::TlsConfig,
+) -> Option<CBProExtClient> {
+    let endpoint = config.services.cbpro_ext.as_ref()?;
+    CBProExtClient::new(
+        endpoint.clone(),
+        tls_ca_cert,
+        client_cert,
+        tls_config,
+        config.tarpc.client_ttl_secs,
+    )
+    .inspect_err(|error| {
+        tracing::warn!(
+            error = % error, url = % endpoint.url(),
+            "Failed to initialize CBPro-Ext client; runtime decision support disabled"
+        );
+    })
+    .ok()
+}
+
+fn spawn_ratelimit_health_monitor(
+    cache: crate::service_health_cache::ServiceHealthCache,
+    tarpc_pool: TarpcClientPool,
+    ratelimit_endpoint: crate::config::ServiceEndpoint,
+) {
+    spawn_supervised("service-health-monitor", async move {
+        let mut last_state = ServiceHealthState::Unknown;
+        let mut saw_unhealthy = false;
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let current = cache.get("mazbri-ratelimit").await.state;
+            if current == last_state {
+                continue;
             }
-        });
-    }
+            match current {
+                ServiceHealthState::Unhealthy => {
+                    saw_unhealthy = true;
+                    tarpc_pool.remove_client(ratelimit_endpoint.url());
+                    tracing::info!(
+                        service = "mazbri-ratelimit",
+                        "Removed cached tarpc client after health became unhealthy"
+                    );
+                }
+                ServiceHealthState::Healthy if saw_unhealthy => {
+                    tarpc_pool.remove_client(ratelimit_endpoint.url());
+                    saw_unhealthy = false;
+                    tracing::info!(
+                        service = "mazbri-ratelimit",
+                        "Removed cached tarpc client after health recovered"
+                    );
+                }
+                ServiceHealthState::Healthy | ServiceHealthState::Unknown => {}
+            }
+            last_state = current;
+        }
+    });
+}
+
+fn spawn_background_workers(
+    config: &GatewayConfig,
+    db: &PgPool,
+    route_engine: &Arc<arc_swap::ArcSwap<mazbri_routing::RouteEngine>>,
+    admin_state: Option<&Arc<AdminState>>,
+    proxy_state: &ProxyState,
+) -> Arc<crate::route_reload::RouteReloadStatus> {
     spawn_supervised("callback-worker", {
         let cb_cfg = config.callback.to_runtime();
-        let worker = CallbackWorker::with_config((*db).clone(), cb_cfg.clone());
+        let worker = CallbackWorker::with_config(db.clone(), cb_cfg.clone());
         async move {
             worker.run().await;
         }
@@ -283,13 +419,13 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     );
     let route_reload_status = crate::route_reload::RouteReloadStatus::new(&config.route_reload);
     crate::route_reload::spawn_route_hot_reload(
-        (*db).clone(),
+        db.clone(),
         config.database.clone(),
         route_engine.clone(),
         config.route_reload.clone(),
         route_reload_status.clone(),
     );
-    if let Some(ref admin) = admin_state {
+    if let Some(admin) = admin_state {
         admin.set_routes_status_provider({
             let status = route_reload_status.clone();
             move || {
@@ -306,7 +442,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let product_service_for_watch = proxy_state.product_service.clone();
     let circuit_breakers_for_watch = proxy_state.circuit_breakers.clone();
     mazbri_core::config_watch::spawn_config_watch(
-        (*db).clone(),
+        db.clone(),
         config.database.clone(),
         config.config_watch.clone(),
         mazbri_core::config_watch::PRODUCT_DETAIL_VERSION_KEY,
@@ -331,29 +467,14 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         listen_notify = config.config_watch.listen_notify,
         "Product detail config watch started"
     );
-    let extra_jwt_keys = crate::crypto::load_platform_hs256_jwt_keys(&db)
-        .await
-        .unwrap_or_else(|error| {
-            tracing::warn!(error = %error, "Failed to load extra platform HS256 JWT keys");
-            Vec::new()
-        });
-    let jwt_keyring = crate::auth::JwtHs256Keyring::new(config.auth.jwt_kid.clone(), jwt_secret)
-        .with_extra_keys(extra_jwt_keys);
-    let auth_service = Arc::new(RwLock::new(AuthService::new(
-        jwt_keyring.clone(),
-        config.auth.token_expiration_secs,
-        tarpc_pool,
-        config.services.auth.clone(),
-        (*db).clone(),
-    )));
-    let auth_state = AuthState::new(jwt_keyring);
-    let billing_state = if config.billing.enabled {
-        create_billing_state(&config, &db).await
-    } else {
-        tracing::info!("Billing middleware disabled by configuration");
-        None
-    };
-    let balance_cache = if config.billing.enabled
+    route_reload_status
+}
+
+fn build_balance_cache(
+    config: &GatewayConfig,
+    redis: &mazbri_core::redis::RedisClient,
+) -> Option<SharedBalancePrecheckCache> {
+    if config.billing.enabled
         && config.billing.balance_check.enabled
         && config.billing.balance_check.cache.enabled
     {
@@ -375,34 +496,11 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     } else {
         tracing::info!("Balance precheck cache disabled");
         None
-    };
-    let app_state = AppState {
-        proxy_state,
-        auth_state,
-        auth_service,
-        billing_state,
-        balance_cache,
-        balance_check_timeout_ms: config.billing.balance_check.timeout_ms.max(50),
-        balance_check_fail_open: config.billing.balance_check.fail_open,
-        service_health_cache,
-        admin_state,
-        request_binding: config.request_binding.clone(),
-    };
-    let route_status_for_http = route_reload_status.clone();
-    let public_routes = Router::new()
-        .route("/health", get(health_check))
-        .route("/ready", get(ready_check))
-        .route("/metrics", get(metrics_handler))
-        .route(
-            "/admin/routes/status",
-            get(move || {
-                let status = route_status_for_http.clone();
-                async move { axum::Json(status.snapshot()) }
-            }),
-        )
-        .route("/auth/token", post(crate::auth::service::token_handler))
-        .route("/openapi.yaml", get(crate::openapi::openapi_yaml));
-    let protected_routes = if app_state.billing_state.is_some() {
+    }
+}
+
+fn build_protected_routes(app_state: &AppState, config: &GatewayConfig) -> Router<AppState> {
+    if app_state.billing_state.is_some() {
         let balance_check_middleware = if config.billing.balance_check.enabled {
             Some(axum::middleware::from_fn_with_state(
                 app_state.clone(),
@@ -443,17 +541,17 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
                 app_state.clone(),
                 crate::auth::jwt_auth_middleware,
             ))
-    };
-    Ok(Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
-        .layer(base_middleware)
-        .with_state(app_state))
+    }
 }
+
 async fn create_billing_state(
     config: &GatewayConfig,
     db: &Arc<PgPool>,
 ) -> Option<BillingMiddlewareState> {
+    if !config.billing.enabled {
+        tracing::info!("Billing middleware disabled by configuration");
+        return None;
+    }
     let billing_db: Arc<PgPool> = if let Some(ref billing_config) = config.billing_database {
         match mazbri_core::create_pool(billing_config, None).await {
             Ok(pool) => {
