@@ -1,0 +1,172 @@
+name: CI
+
+# Strict gate: runs on every PR / push to main, and is called again by
+# release.yml right before images are built (decision: gate in both places).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # workflow_call shares the caller's context; keep its group distinct so the
+  # release gate never cancels / is cancelled by a PR run.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUST_TOOLCHAIN: '1.99.1'
+  NODE_VERSION: '20.19.2'
+  PNPM_VERSION: '10.34.6'
+
+jobs:
+  frontend:
+    name: Frontend typecheck, build, test
+    # release-please PRs only touch CHANGELOG/manifest; the code was gated on
+    # the PR that preceded them.
+    if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
+      !(github.event_name == 'push' &&
+        startsWith(github.event.head_commit.message, 'chore(main): release'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mazbri-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: mazbri-web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm build` = vite build && vue-tsc --noEmit (typecheck is part of it)
+      - name: Build (vite + vue-tsc)
+        run: pnpm build
+
+      - name: Unit tests (tsx)
+        run: |
+          set -euo pipefail
+          git ls-files '*.test.ts' | sed 's#^mazbri-web/##' | while read -r t; do
+            echo "::group::$t"
+            pnpm exec tsx "$t"
+            echo "::endgroup::"
+          done
+
+      - name: Upload dist for mgmt embed
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mazbri-web-dist
+          path: mazbri-web/dist
+          if-no-files-found: error
+          retention-days: 3
+
+  libs:
+    name: mazbri-libs clippy -D warnings + test
+    if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
+      !(github.event_name == 'push' &&
+        startsWith(github.event.head_commit.message, 'chore(main): release'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: mazbri-libs
+          shared-key: libs
+
+      - name: Clippy (strict)
+        working-directory: mazbri-libs
+        run: cargo clippy --release --locked --workspace --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: mazbri-libs
+        run: cargo test --release --locked --workspace --no-fail-fast
+
+  bin:
+    name: mazbri-bin clippy -D warnings + test
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # mgmt build.rs embeds mazbri-web/dist (no skip flag: gate the real build)
+      - name: Download frontend dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mazbri-web-dist
+          path: mazbri-web/dist
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: mazbri-bin
+          shared-key: bin
+
+      - name: Clippy (strict)
+        working-directory: mazbri-bin
+        run: cargo clippy --release --locked --workspace --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: mazbri-bin
+        run: cargo test --release --locked --workspace --no-fail-fast
+
+      # build.rs regenerates TS bindings; fail if they drift from the repo.
+      - name: Generated TS bindings up to date
+        run: git diff --exit-code -- mazbri-web/src/types/api/generated
+
+  smoke:
+    name: Release metadata smoke check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check VERSION / manifest / config
+        run: |
+          set -euo pipefail
+          v="$(awk '{print $1; exit}' VERSION)"
+          echo "VERSION: $v"
+          [[ "$v" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=VERSION::'$v' is not semver"; exit 1; }
+          m="$(jq -r '.["."] // empty' .release-please-manifest.json)"
+          # empty manifest = no release yet; release-please uses initial-version 0.0.0
+          if [ -n "$m" ] && [ "$m" != "$v" ]; then
+            echo "::error::manifest $m != VERSION $v"; exit 1
+          fi
+          jq -e '.packages["."]["release-type"]' release-please-config.json >/dev/null
+          python3 -m py_compile .github/scripts/detect.py
