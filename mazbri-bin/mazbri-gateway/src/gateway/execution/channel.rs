@@ -63,15 +63,7 @@ pub(super) async fn execute_channel_attempt(
         CircuitResult::Success(response) => {
             let status = response.status.to_string();
             let result_label = classify_proxy_result(response.status, None);
-            API_PROXY_REQUESTS_TOTAL
-                .with_label_values(&[
-                    product_id.as_str(),
-                    method.as_str(),
-                    status.as_str(),
-                    mode.as_str(),
-                    result_label,
-                ])
-                .inc();
+            record_proxy_metric(&product_id, &method, &status, &mode, result_label);
             Ok(response)
         }
         CircuitResult::Rejected {
@@ -82,15 +74,7 @@ pub(super) async fn execute_channel_attempt(
                 "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
                 request_id, product_id, reason, retry_after
             );
-            API_PROXY_REQUESTS_TOTAL
-                .with_label_values(&[
-                    product_id.as_str(),
-                    method.as_str(),
-                    "503",
-                    mode.as_str(),
-                    "circuit_open",
-                ])
-                .inc();
+            record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
             Err(ProxyError::BadGateway(format!(
                 "服务暂时不可用: {reason}"
             )))
@@ -105,15 +89,7 @@ pub(super) async fn execute_channel_attempt(
             } else {
                 "upstream_error"
             };
-            API_PROXY_REQUESTS_TOTAL
-                .with_label_values(&[
-                    product_id.as_str(),
-                    method.as_str(),
-                    "502",
-                    mode.as_str(),
-                    result_label,
-                ])
-                .inc();
+            record_proxy_metric(&product_id, &method, "502", &mode, result_label);
             Err(ProxyError::BadGateway(error))
         }
     } } else {
@@ -121,19 +97,17 @@ pub(super) async fn execute_channel_attempt(
             "[{}] upstream HTTP/2 request timed out for product [{}]",
             request_id, product_id
         );
-        API_PROXY_REQUESTS_TOTAL
-            .with_label_values(&[
-                product_id.as_str(),
-                method.as_str(),
-                "504",
-                mode.as_str(),
-                "timeout",
-            ])
-            .inc();
+        record_proxy_metric(&product_id, &method, "504", &mode, "timeout");
         Err(ProxyError::GatewayTimeout(format!(
             "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
         )))
     }
+}
+
+fn record_proxy_metric(product_id: &str, method: &str, status: &str, mode: &str, result: &str) {
+    API_PROXY_REQUESTS_TOTAL
+        .with_label_values(&[product_id, method, status, mode, result])
+        .inc();
 }
 
 /// 从 `channel.supplier_config` 解析 mode / contract 提示（失败时 unknown，正式路径在 execute 内再校验）。

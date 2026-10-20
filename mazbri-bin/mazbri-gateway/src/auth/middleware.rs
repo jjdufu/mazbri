@@ -107,18 +107,12 @@ impl IntoResponse for MiddlewareRejection {
         *self.0
     }
 }
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn jwt_auth_middleware(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Result<Response, MiddlewareRejection> {
-    let started_at = Instant::now();
-    let request_id = current_request_id(req.headers());
-    let auth_header = req
-        .headers()
+/// 校验 `Authorization: Bearer <jwt>`（按 kid 取密钥），返回 claims 与 kid。
+fn verify_bearer_jwt(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<(MazbriClaims, String), MiddlewareRejection> {
+    let auth_header = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| JwtAuthError::MissingHeader.into_response())?;
@@ -148,6 +142,19 @@ pub async fn jwt_auth_middleware(
         .claims;
     record_jwt_kid(&kid, "ok");
     TokenRecorder::new("jwt").record_validated();
+    Ok((claims, kid))
+}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn jwt_auth_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, MiddlewareRejection> {
+    let started_at = Instant::now();
+    let request_id = current_request_id(req.headers());
+    let (claims, kid) = verify_bearer_jwt(&state, req.headers())?;
     let tenant_context = validate_tenant_id(&claims.tenant_id)
         .ok()
         .map(|tenant_id| TenantContext::new(tenant_id, CredentialType::Jwt));
