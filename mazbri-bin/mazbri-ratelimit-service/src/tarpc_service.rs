@@ -1,11 +1,11 @@
-use mazbri_core::num::SaturatingFrom;
 use chrono::{TimeZone, Utc};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::RpcError;
 use mazbri_rpc::ratelimit::{
     AckControlCommandsRequest, AckControlCommandsResponse, ApiLimitRule as RpcApiLimitRule,
     ControlCommand, GetControlCommandsRequest, GetControlCommandsResponse,
     GetPolicySnapshotsRequest, GetPolicySnapshotsResponse, IngestUsageDeltasRequest,
-    IngestUsageDeltasResponse, PolicySnapshot, RateLimitService,
+    IngestUsageDeltasResponse, PolicySnapshot, RateLimitService, UsageDelta,
 };
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
@@ -74,8 +74,9 @@ fn parse_api_limits_json(value: &Value) -> HashMap<String, RpcApiLimitRule> {
                     burst: qps,
                 }
             }
-            Value::Object(_) => serde_json::from_value::<RpcApiLimitRule>(entry.clone())
-                .unwrap_or_default(),
+            Value::Object(_) => {
+                serde_json::from_value::<RpcApiLimitRule>(entry.clone()).unwrap_or_default()
+            }
             _ => continue,
         };
         if rule.qps.unwrap_or(0) > 0 || rule.burst.unwrap_or(0) > 0 {
@@ -135,6 +136,257 @@ fn command_row_to_command(row: &sqlx::postgres::PgRow) -> Result<ControlCommand,
 pub struct RateLimitTarpcService {
     pool: Arc<PgPool>,
     audit_enabled: bool,
+}
+
+/// 已校验的用量增量：`(delta, tenant_id, window_start)`。
+type ValidatedDelta<'a> = (&'a UsageDelta, Uuid, chrono::DateTime<Utc>);
+
+fn validate_usage_deltas(
+    deltas: &[UsageDelta],
+) -> Result<Vec<ValidatedDelta<'_>>, IngestUsageDeltasResponse> {
+    let mut validated_deltas = Vec::with_capacity(deltas.len());
+    for (idx, delta) in deltas.iter().enumerate() {
+        let tenant_id = match Uuid::parse_str(&delta.tenant_id) {
+            Ok(uuid) => uuid,
+            Err(error) => {
+                return Err(IngestUsageDeltasResponse {
+                    success: false,
+                    ingested: i64::saturating_from(idx),
+                    error: Some(rpc_validation(
+                        format!("invalid tenant id: {error}"),
+                        Some("tenant_id"),
+                    )),
+                });
+            }
+        };
+        let window_start = match unix_to_ts(delta.window_start_unix) {
+            Ok(ts) => ts,
+            Err(error) => {
+                return Err(IngestUsageDeltasResponse {
+                    success: false,
+                    ingested: i64::saturating_from(idx),
+                    error: Some(rpc_validation(error, Some("window_start_unix"))),
+                });
+            }
+        };
+        validated_deltas.push((delta, tenant_id, window_start));
+    }
+
+    Ok(validated_deltas)
+}
+
+async fn insert_usage_deltas(
+    conn: &mut sqlx::PgConnection,
+    validated_deltas: &[ValidatedDelta<'_>],
+) -> Result<(), sqlx::Error> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r"
+        INSERT INTO rate_limit_usage_deltas (
+            gateway_id, tenant_id, policy_version, product_id, api_endpoint, client_ip,
+            window_start, window_secs, allowed_count, denied_count, bytes_in, bytes_out,
+            snapshot_age_ms, degraded, degrade_reason
+        ) VALUES 
+        ",
+    );
+    for (i, (delta, tenant_id, window_start)) in validated_deltas.iter().enumerate() {
+        if i > 0 {
+            builder.push(", ");
+        }
+        builder.push("(");
+        builder.push_bind(&delta.gateway_id);
+        builder.push(", ");
+        builder.push_bind(tenant_id);
+        builder.push(", ");
+        builder.push_bind(delta.policy_version);
+        builder.push(", ");
+        builder.push_bind(&delta.product_id);
+        builder.push(", ");
+        builder.push_bind(&delta.api_endpoint);
+        builder.push(", ");
+        let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
+        let client_ip_opt = if client_ip.is_empty() {
+            None
+        } else {
+            Some(client_ip)
+        };
+        builder.push_bind(client_ip_opt);
+        builder.push("::inet, ");
+        builder.push_bind(*window_start);
+        builder.push(", ");
+        builder.push_bind(delta.window_secs);
+        builder.push(", ");
+        builder.push_bind(delta.allowed_count);
+        builder.push(", ");
+        builder.push_bind(delta.denied_count);
+        builder.push(", ");
+        builder.push_bind(delta.bytes_in);
+        builder.push(", ");
+        builder.push_bind(delta.bytes_out);
+        builder.push(", ");
+        builder.push_bind(delta.snapshot_age_ms);
+        builder.push(", ");
+        builder.push_bind(delta.degraded);
+        builder.push(", ");
+        builder.push_bind(&delta.degrade_reason);
+        builder.push(")");
+    }
+    builder.build().execute(&mut *conn).await?;
+
+    Ok(())
+}
+
+async fn upsert_global_counters(
+    conn: &mut sqlx::PgConnection,
+    validated_deltas: &[ValidatedDelta<'_>],
+) -> Result<(), sqlx::Error> {
+    let mut aggregated_counters: HashMap<CounterKey, AggregatedCounter> = HashMap::new();
+    for (delta, tenant_id, window_start) in validated_deltas {
+        let client_ip = delta.client_ip.clone().unwrap_or_default();
+        let dimension_key = format!(
+            "{}|{}|{}|{}",
+            delta.product_id, delta.api_endpoint, client_ip, delta.policy_version
+        );
+        let key = (*tenant_id, dimension_key, *window_start, delta.window_secs);
+        let entry = aggregated_counters.entry(key).or_insert(AggregatedCounter {
+            policy_version: delta.policy_version,
+            allowed_count: 0,
+            denied_count: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+        });
+        entry.policy_version = entry.policy_version.max(delta.policy_version);
+        entry.allowed_count += delta.allowed_count;
+        entry.denied_count += delta.denied_count;
+        entry.bytes_in += delta.bytes_in;
+        entry.bytes_out += delta.bytes_out;
+    }
+
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r"
+        INSERT INTO rate_limit_global_counters (
+            tenant_id, policy_version, dimension_key, window_start, window_secs,
+            allowed_count, denied_count, bytes_in, bytes_out, gateway_count
+        ) VALUES 
+        ",
+    );
+    for (i, (key, value)) in aggregated_counters.iter().enumerate() {
+        if i > 0 {
+            builder.push(", ");
+        }
+        builder.push("(");
+        builder.push_bind(key.0);
+        builder.push(", ");
+        builder.push_bind(value.policy_version);
+        builder.push(", ");
+        builder.push_bind(&key.1);
+        builder.push(", ");
+        builder.push_bind(key.2);
+        builder.push(", ");
+        builder.push_bind(key.3);
+        builder.push(", ");
+        builder.push_bind(value.allowed_count);
+        builder.push(", ");
+        builder.push_bind(value.denied_count);
+        builder.push(", ");
+        builder.push_bind(value.bytes_in);
+        builder.push(", ");
+        builder.push_bind(value.bytes_out);
+        builder.push(", 1)");
+    }
+    builder.push(
+        r"
+        ON CONFLICT (tenant_id, dimension_key, window_start, window_secs)
+        DO UPDATE SET
+            policy_version = EXCLUDED.policy_version,
+            allowed_count = rate_limit_global_counters.allowed_count + EXCLUDED.allowed_count,
+            denied_count = rate_limit_global_counters.denied_count + EXCLUDED.denied_count,
+            bytes_in = rate_limit_global_counters.bytes_in + EXCLUDED.bytes_in,
+            bytes_out = rate_limit_global_counters.bytes_out + EXCLUDED.bytes_out,
+            gateway_count = GREATEST(rate_limit_global_counters.gateway_count, EXCLUDED.gateway_count),
+            updated_at = NOW()
+        ",
+    );
+    builder.build().execute(&mut *conn).await?;
+
+    Ok(())
+}
+
+async fn insert_usage_audit_events(
+    conn: &mut sqlx::PgConnection,
+    validated_deltas: &[ValidatedDelta<'_>],
+) -> Result<(), sqlx::Error> {
+    let mut audit_events = Vec::new();
+    for (delta, tenant_id, _window_start) in validated_deltas {
+        if delta.degraded || delta.denied_count > 0 {
+            audit_events.push((delta, tenant_id));
+        }
+    }
+    if !audit_events.is_empty() {
+        let mut builder = QueryBuilder::<Postgres>::new(
+            r"
+            INSERT INTO rate_limit_events (
+                tenant_id, gateway_id, request_id, policy_version, scope, scope_key,
+                product_id, api_endpoint, client_ip, allowed, reason, local_decision,
+                degraded, current_count, limit_value, retry_after_ms
+            ) VALUES 
+            ",
+        );
+        for (i, (delta, tenant_id)) in audit_events.iter().enumerate() {
+            if i > 0 {
+                builder.push(", ");
+            }
+            let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
+            let client_ip_opt = if client_ip.is_empty() {
+                None
+            } else {
+                Some(client_ip.to_string())
+            };
+            let dimension_key = format!(
+                "{}|{}|{}|{}",
+                delta.product_id,
+                delta.api_endpoint,
+                delta.client_ip.as_deref().unwrap_or(""),
+                delta.policy_version
+            );
+            builder.push("(");
+            builder.push_bind(*tenant_id);
+            builder.push(", ");
+            builder.push_bind(&delta.gateway_id);
+            builder.push(", NULL, ");
+            builder.push_bind(delta.policy_version);
+            builder.push(", ");
+            builder.push_bind("tenant");
+            builder.push(", ");
+            builder.push_bind(dimension_key);
+            builder.push(", ");
+            builder.push_bind(&delta.product_id);
+            builder.push(", ");
+            builder.push_bind(&delta.api_endpoint);
+            builder.push(", ");
+            builder.push_bind(client_ip_opt);
+            builder.push("::inet, ");
+            builder.push_bind(delta.denied_count == 0);
+            builder.push(", ");
+            let reason = if delta.degraded {
+                delta
+                    .degrade_reason
+                    .clone()
+                    .unwrap_or_else(|| "degraded".to_string())
+            } else {
+                "usage_delta".to_string()
+            };
+            builder.push_bind(reason);
+            builder.push(", true, ");
+            builder.push_bind(delta.degraded);
+            builder.push(", ");
+            builder.push_bind(delta.allowed_count + delta.denied_count);
+            builder.push(", ");
+            builder.push_bind(delta.allowed_count + delta.denied_count);
+            builder.push(", 0)");
+        }
+        builder.build().execute(&mut *conn).await?;
+    }
+    Ok(())
 }
 
 type CounterKey = (Uuid, String, chrono::DateTime<Utc>, i32);
@@ -231,31 +483,10 @@ impl RateLimitService for RateLimitTarpcService {
             };
         }
 
-        let mut validated_deltas = Vec::with_capacity(request.deltas.len());
-        for (idx, delta) in request.deltas.iter().enumerate() {
-            let tenant_id = match Uuid::parse_str(&delta.tenant_id) {
-                Ok(uuid) => uuid,
-                Err(error) => {
-                    return IngestUsageDeltasResponse {
-                        success: false,
-                        ingested: i64::saturating_from(idx),
-                        error: Some(rpc_validation(format!("invalid tenant id: {error}"), Some("tenant_id"))),
-                    };
-                }
-            };
-            let window_start = match unix_to_ts(delta.window_start_unix) {
-                Ok(ts) => ts,
-                Err(error) => {
-                    return IngestUsageDeltasResponse {
-                        success: false,
-                        ingested: i64::saturating_from(idx),
-                        error: Some(rpc_validation(error, Some("window_start_unix"))),
-                    };
-                }
-            };
-            validated_deltas.push((delta, tenant_id, window_start));
-        }
-
+        let validated_deltas = match validate_usage_deltas(&request.deltas) {
+            Ok(validated) => validated,
+            Err(response) => return response,
+        };
         let mut tx = match self.pool.begin().await {
             Ok(tx) => tx,
             Err(error) => {
@@ -266,214 +497,16 @@ impl RateLimitService for RateLimitTarpcService {
                 };
             }
         };
-
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r"
-            INSERT INTO rate_limit_usage_deltas (
-                gateway_id, tenant_id, policy_version, product_id, api_endpoint, client_ip,
-                window_start, window_secs, allowed_count, denied_count, bytes_in, bytes_out,
-                snapshot_age_ms, degraded, degrade_reason
-            ) VALUES 
-            ",
-        );
-        for (i, (delta, tenant_id, window_start)) in validated_deltas.iter().enumerate() {
-            if i > 0 {
-                builder.push(", ");
+        let persisted = async {
+            insert_usage_deltas(&mut tx, &validated_deltas).await?;
+            upsert_global_counters(&mut tx, &validated_deltas).await?;
+            if self.audit_enabled {
+                insert_usage_audit_events(&mut tx, &validated_deltas).await?;
             }
-            builder.push("(");
-            builder.push_bind(&delta.gateway_id);
-            builder.push(", ");
-            builder.push_bind(tenant_id);
-            builder.push(", ");
-            builder.push_bind(delta.policy_version);
-            builder.push(", ");
-            builder.push_bind(&delta.product_id);
-            builder.push(", ");
-            builder.push_bind(&delta.api_endpoint);
-            builder.push(", ");
-            let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
-            let client_ip_opt = if client_ip.is_empty() { None } else { Some(client_ip) };
-            builder.push_bind(client_ip_opt);
-            builder.push("::inet, ");
-            builder.push_bind(*window_start);
-            builder.push(", ");
-            builder.push_bind(delta.window_secs);
-            builder.push(", ");
-            builder.push_bind(delta.allowed_count);
-            builder.push(", ");
-            builder.push_bind(delta.denied_count);
-            builder.push(", ");
-            builder.push_bind(delta.bytes_in);
-            builder.push(", ");
-            builder.push_bind(delta.bytes_out);
-            builder.push(", ");
-            builder.push_bind(delta.snapshot_age_ms);
-            builder.push(", ");
-            builder.push_bind(delta.degraded);
-            builder.push(", ");
-            builder.push_bind(&delta.degrade_reason);
-            builder.push(")");
+            tx.commit().await
         }
-        if let Err(error) = builder.build().execute(&mut *tx).await {
-            return IngestUsageDeltasResponse {
-                success: false,
-                ingested: 0,
-                error: Some(rpc_database_error(error)),
-            };
-        }
-
-        let mut aggregated_counters: HashMap<CounterKey, AggregatedCounter> = HashMap::new();
-        for (delta, tenant_id, window_start) in &validated_deltas {
-            let client_ip = delta.client_ip.clone().unwrap_or_default();
-            let dimension_key = format!(
-                "{}|{}|{}|{}",
-                delta.product_id, delta.api_endpoint, client_ip, delta.policy_version
-            );
-            let key = (*tenant_id, dimension_key, *window_start, delta.window_secs);
-            let entry = aggregated_counters.entry(key).or_insert(AggregatedCounter {
-                policy_version: delta.policy_version,
-                allowed_count: 0,
-                denied_count: 0,
-                bytes_in: 0,
-                bytes_out: 0,
-            });
-            entry.policy_version = entry.policy_version.max(delta.policy_version);
-            entry.allowed_count += delta.allowed_count;
-            entry.denied_count += delta.denied_count;
-            entry.bytes_in += delta.bytes_in;
-            entry.bytes_out += delta.bytes_out;
-        }
-
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r"
-            INSERT INTO rate_limit_global_counters (
-                tenant_id, policy_version, dimension_key, window_start, window_secs,
-                allowed_count, denied_count, bytes_in, bytes_out, gateway_count
-            ) VALUES 
-            ",
-        );
-        for (i, (key, value)) in aggregated_counters.iter().enumerate() {
-            if i > 0 {
-                builder.push(", ");
-            }
-            builder.push("(");
-            builder.push_bind(key.0); 
-            builder.push(", ");
-            builder.push_bind(value.policy_version);
-            builder.push(", ");
-            builder.push_bind(&key.1); 
-            builder.push(", ");
-            builder.push_bind(key.2); 
-            builder.push(", ");
-            builder.push_bind(key.3); 
-            builder.push(", ");
-            builder.push_bind(value.allowed_count);
-            builder.push(", ");
-            builder.push_bind(value.denied_count);
-            builder.push(", ");
-            builder.push_bind(value.bytes_in);
-            builder.push(", ");
-            builder.push_bind(value.bytes_out);
-            builder.push(", 1)");
-        }
-        builder.push(
-            r"
-            ON CONFLICT (tenant_id, dimension_key, window_start, window_secs)
-            DO UPDATE SET
-                policy_version = EXCLUDED.policy_version,
-                allowed_count = rate_limit_global_counters.allowed_count + EXCLUDED.allowed_count,
-                denied_count = rate_limit_global_counters.denied_count + EXCLUDED.denied_count,
-                bytes_in = rate_limit_global_counters.bytes_in + EXCLUDED.bytes_in,
-                bytes_out = rate_limit_global_counters.bytes_out + EXCLUDED.bytes_out,
-                gateway_count = GREATEST(rate_limit_global_counters.gateway_count, EXCLUDED.gateway_count),
-                updated_at = NOW()
-            ",
-        );
-        if let Err(error) = builder.build().execute(&mut *tx).await {
-            return IngestUsageDeltasResponse {
-                success: false,
-                ingested: 0,
-                error: Some(rpc_database_error(error)),
-            };
-        }
-
-        if self.audit_enabled {
-            let mut audit_events = Vec::new();
-            for (delta, tenant_id, _window_start) in &validated_deltas {
-                if delta.degraded || delta.denied_count > 0 {
-                    audit_events.push((delta, tenant_id));
-                }
-            }
-            if !audit_events.is_empty() {
-                let mut builder = QueryBuilder::<Postgres>::new(
-                    r"
-                    INSERT INTO rate_limit_events (
-                        tenant_id, gateway_id, request_id, policy_version, scope, scope_key,
-                        product_id, api_endpoint, client_ip, allowed, reason, local_decision,
-                        degraded, current_count, limit_value, retry_after_ms
-                    ) VALUES 
-                    ",
-                );
-                for (i, (delta, tenant_id)) in audit_events.iter().enumerate() {
-                    if i > 0 {
-                        builder.push(", ");
-                    }
-                    let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
-                    let client_ip_opt = if client_ip.is_empty() { None } else { Some(client_ip.to_string()) };
-                    let dimension_key = format!(
-                        "{}|{}|{}|{}",
-                        delta.product_id,
-                        delta.api_endpoint,
-                        delta.client_ip.as_deref().unwrap_or(""),
-                        delta.policy_version
-                    );
-                    builder.push("(");
-                    builder.push_bind(*tenant_id);
-                    builder.push(", ");
-                    builder.push_bind(&delta.gateway_id);
-                    builder.push(", NULL, ");
-                    builder.push_bind(delta.policy_version);
-                    builder.push(", ");
-                    builder.push_bind("tenant");
-                    builder.push(", ");
-                    builder.push_bind(dimension_key);
-                    builder.push(", ");
-                    builder.push_bind(&delta.product_id);
-                    builder.push(", ");
-                    builder.push_bind(&delta.api_endpoint);
-                    builder.push(", ");
-                    builder.push_bind(client_ip_opt);
-                    builder.push("::inet, ");
-                    builder.push_bind(delta.denied_count == 0);
-                    builder.push(", ");
-                    let reason = if delta.degraded {
-                        delta
-                            .degrade_reason
-                            .clone()
-                            .unwrap_or_else(|| "degraded".to_string())
-                    } else {
-                        "usage_delta".to_string()
-                    };
-                    builder.push_bind(reason);
-                    builder.push(", true, ");
-                    builder.push_bind(delta.degraded);
-                    builder.push(", ");
-                    builder.push_bind(delta.allowed_count + delta.denied_count);
-                    builder.push(", ");
-                    builder.push_bind(delta.allowed_count + delta.denied_count);
-                    builder.push(", 0)");
-                }
-                if let Err(error) = builder.build().execute(&mut *tx).await {
-                    return IngestUsageDeltasResponse {
-                        success: false,
-                        ingested: 0,
-                        error: Some(rpc_database_error(error)),
-                    };
-                }
-            }
-        }
-
-        if let Err(error) = tx.commit().await {
+        .await;
+        if let Err(error) = persisted {
             return IngestUsageDeltasResponse {
                 success: false,
                 ingested: 0,
@@ -614,7 +647,10 @@ impl RateLimitService for RateLimitTarpcService {
         }
     }
 
-    fn health(self, _context: Context) -> impl std::future::Future<Output = mazbri_rpc::HealthResponse> {
+    fn health(
+        self,
+        _context: Context,
+    ) -> impl std::future::Future<Output = mazbri_rpc::HealthResponse> {
         std::future::ready(mazbri_rpc::HealthResponse {
             status: "ok".to_string(),
             service: "ratelimit-service".to_string(),
