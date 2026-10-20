@@ -3,58 +3,13 @@ use super::{
     UpstreamBillItemDraft, UpstreamBillScope, UpstreamBillScopeKind, Utc, error, repo,
 };
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn generate_upstream_bill(
+/// 按上游用量行汇总通道账单明细，并顺带写入小时结算；返回 `(drafts, total_data_bytes)`。
+async fn build_upstream_drafts(
     billing_db: &PgPool,
     platform_db: &PgPool,
-    analytics_client: &AnalyticsHttpClient,
+    rows: &[serde_json::Value],
     period_start: DateTime<Utc>,
-    period_end: DateTime<Utc>,
-    scope: Option<UpstreamBillScope>,
-) -> Result<uuid::Uuid, BillingError> {
-    if period_start >= period_end {
-        return Err(BillingError::Validation(
-            "Billing period start must be before end".to_string(),
-        ));
-    }
-
-    let (supplier_id_filter, channel_id_filter) = match scope {
-        Some(UpstreamBillScope {
-            kind: UpstreamBillScopeKind::Channel,
-            scope_id,
-        }) => (None, Some(scope_id.to_string())),
-        Some(UpstreamBillScope {
-            kind: UpstreamBillScopeKind::Supplier,
-            scope_id,
-        }) => (Some(scope_id.to_string()), None),
-        None => (None, None),
-    };
-
-    let summary_val = analytics_client
-        .fetch_upstream_usage_summary(
-            &period_start.to_rfc3339(),
-            &period_end.to_rfc3339(),
-            None,
-            None,
-            supplier_id_filter.as_deref(),
-            channel_id_filter.as_deref(),
-        )
-        .await
-        .map_err(|e| {
-            error!("Failed to fetch upstream usage summary: {}", e);
-            BillingError::Database
-        })?;
-
-    let rows = summary_val.as_array().cloned().unwrap_or_default();
-
-    if rows.is_empty() {
-        return Err(BillingError::Validation(
-            "No upstream request logs found in this billing period".to_string(),
-        ));
-    }
-
+) -> Result<(BTreeMap<String, UpstreamBillItemDraft>, i64), BillingError> {
     let channel_ids = rows
         .iter()
         .filter_map(|row| row.get("channel_id").and_then(|v| v.as_str()))
@@ -71,7 +26,7 @@ pub async fn generate_upstream_bill(
     let mut drafts: BTreeMap<String, UpstreamBillItemDraft> = BTreeMap::new();
     let mut total_data_bytes: i64 = 0;
 
-    for row in &rows {
+    for row in rows {
         let supplier_code = string_field(row, "supplier_code");
         let supplier_name =
             first_non_empty(&[string_field(row, "supplier_name"), supplier_code.clone()]);
@@ -127,18 +82,11 @@ pub async fn generate_upstream_bill(
         }
     }
 
-    if drafts.is_empty() {
-        return Err(BillingError::Validation(
-            "No billable upstream request logs found in this billing period".to_string(),
-        ));
-    }
+    Ok((drafts, total_data_bytes))
+}
 
-    let total_calls: i64 = drafts.values().map(|item| item.quantity).sum();
-    let total_amount = drafts.values().fold(Decimal::ZERO, |acc, item| {
-        acc + (Decimal::from(item.quantity) * item.unit_price)
-    });
-
-    let (bill_party_code, bill_party_name) = match scope {
+fn upstream_bill_party(scope: Option<UpstreamBillScope>) -> (String, String) {
+    match scope {
         Some(UpstreamBillScope {
             kind: UpstreamBillScopeKind::Channel,
             ..
@@ -151,14 +99,26 @@ pub async fn generate_upstream_bill(
             "上游供应商账单".to_string(),
         ),
         None => ("UPSTREAM".to_string(), "全量上游账单".to_string()),
-    };
-    let bill_party_id = scope.map(|item| item.scope_id);
+    }
+}
 
-    let mut tx = billing_db.begin().await.map_err(|e| {
-        error!("Database error starting upstream bill transaction: {}", e);
-        BillingError::Database
-    })?;
+/// 上游账单头字段。
+struct UpstreamBillHeader<'a> {
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+    party_id: Option<uuid::Uuid>,
+    party_code: &'a str,
+    party_name: &'a str,
+    total_calls: i64,
+    total_data_bytes: i64,
+    total_amount: Decimal,
+}
 
+/// 复用同周期同主体的已有账单（清空明细并更新），否则新建；返回账单 ID。
+async fn upsert_upstream_bill_header(
+    conn: &mut sqlx::PgConnection,
+    h: &UpstreamBillHeader<'_>,
+) -> Result<uuid::Uuid, BillingError> {
     let existing_bill: Option<uuid::Uuid> = sqlx::query_scalar(
         "SELECT id FROM bills
          WHERE bill_kind = 'upstream'
@@ -171,11 +131,11 @@ pub async fn generate_upstream_bill(
            )
          LIMIT 1",
     )
-    .bind(period_start)
-    .bind(period_end)
-    .bind(bill_party_id)
-    .bind(&bill_party_code)
-    .fetch_optional(&mut *tx)
+    .bind(h.period_start)
+    .bind(h.period_end)
+    .bind(h.party_id)
+    .bind(h.party_code)
+    .fetch_optional(&mut *conn)
     .await
     .map_err(|e| {
         error!("Database error querying existing upstream bill: {}", e);
@@ -185,7 +145,7 @@ pub async fn generate_upstream_bill(
     let bill_id = if let Some(bill_id) = existing_bill {
         sqlx::query("DELETE FROM bill_items WHERE bill_id = $1")
             .bind(bill_id)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| {
                 error!("Database error clearing upstream bill items: {}", e);
@@ -206,14 +166,14 @@ pub async fn generate_upstream_bill(
              WHERE id = $1",
         )
         .bind(bill_id)
-        .bind(bill_party_id)
-        .bind(&bill_party_code)
-        .bind(&bill_party_name)
-        .bind(total_calls)
-        .bind(total_data_bytes)
-        .bind(total_amount)
-        .bind(total_amount)
-        .execute(&mut *tx)
+        .bind(h.party_id)
+        .bind(h.party_code)
+        .bind(h.party_name)
+        .bind(h.total_calls)
+        .bind(h.total_data_bytes)
+        .bind(h.total_amount)
+        .bind(h.total_amount)
+        .execute(&mut *conn)
         .await
         .map_err(|e| {
             error!("Database error updating upstream bill: {}", e);
@@ -236,23 +196,30 @@ pub async fn generate_upstream_bill(
                 'pending'
             ) RETURNING id",
         )
-        .bind(bill_party_id)
-        .bind(&bill_party_code)
-        .bind(&bill_party_name)
-        .bind(period_start)
-        .bind(period_end)
-        .bind(total_calls)
-        .bind(total_data_bytes)
-        .bind(total_amount)
-        .bind(total_amount)
-        .fetch_one(&mut *tx)
+        .bind(h.party_id)
+        .bind(h.party_code)
+        .bind(h.party_name)
+        .bind(h.period_start)
+        .bind(h.period_end)
+        .bind(h.total_calls)
+        .bind(h.total_data_bytes)
+        .bind(h.total_amount)
+        .bind(h.total_amount)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| {
             error!("Database error inserting upstream bill: {}", e);
             BillingError::Database
         })?
     };
+    Ok(bill_id)
+}
 
+async fn insert_upstream_bill_items(
+    conn: &mut sqlx::PgConnection,
+    bill_id: uuid::Uuid,
+    drafts: &BTreeMap<String, UpstreamBillItemDraft>,
+) -> Result<(), BillingError> {
     for (index, item) in drafts.values().enumerate() {
         let total = Decimal::from(item.quantity) * item.unit_price;
         sqlx::query(
@@ -273,13 +240,106 @@ pub async fn generate_upstream_bill(
             .channel_key, "channel_code" : item.channel_code, "channel_name" :
             item.channel_name, }
         ))
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await
         .map_err(|e| {
             error!("Database error inserting upstream bill item: {}", e);
             BillingError::Database
         })?;
     }
+    Ok(())
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn generate_upstream_bill(
+    billing_db: &PgPool,
+    platform_db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+    scope: Option<UpstreamBillScope>,
+) -> Result<uuid::Uuid, BillingError> {
+    if period_start >= period_end {
+        return Err(BillingError::Validation(
+            "Billing period start must be before end".to_string(),
+        ));
+    }
+
+    let (supplier_id_filter, channel_id_filter) = match scope {
+        Some(UpstreamBillScope {
+            kind: UpstreamBillScopeKind::Channel,
+            scope_id,
+        }) => (None, Some(scope_id.to_string())),
+        Some(UpstreamBillScope {
+            kind: UpstreamBillScopeKind::Supplier,
+            scope_id,
+        }) => (Some(scope_id.to_string()), None),
+        None => (None, None),
+    };
+
+    let summary_val = analytics_client
+        .fetch_upstream_usage_summary(
+            &period_start.to_rfc3339(),
+            &period_end.to_rfc3339(),
+            None,
+            None,
+            supplier_id_filter.as_deref(),
+            channel_id_filter.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch upstream usage summary: {}", e);
+            BillingError::Database
+        })?;
+
+    let rows = summary_val.as_array().cloned().unwrap_or_default();
+
+    if rows.is_empty() {
+        return Err(BillingError::Validation(
+            "No upstream request logs found in this billing period".to_string(),
+        ));
+    }
+
+    let (drafts, total_data_bytes) =
+        build_upstream_drafts(billing_db, platform_db, &rows, period_start).await?;
+
+    if drafts.is_empty() {
+        return Err(BillingError::Validation(
+            "No billable upstream request logs found in this billing period".to_string(),
+        ));
+    }
+
+    let total_calls: i64 = drafts.values().map(|item| item.quantity).sum();
+    let total_amount = drafts.values().fold(Decimal::ZERO, |acc, item| {
+        acc + (Decimal::from(item.quantity) * item.unit_price)
+    });
+
+    let (bill_party_code, bill_party_name) = upstream_bill_party(scope);
+    let bill_party_id = scope.map(|item| item.scope_id);
+
+    let mut tx = billing_db.begin().await.map_err(|e| {
+        error!("Database error starting upstream bill transaction: {}", e);
+        BillingError::Database
+    })?;
+
+    let bill_id = upsert_upstream_bill_header(
+        &mut tx,
+        &UpstreamBillHeader {
+            period_start,
+            period_end,
+            party_id: bill_party_id,
+            party_code: &bill_party_code,
+            party_name: &bill_party_name,
+            total_calls,
+            total_data_bytes,
+            total_amount,
+        },
+    )
+    .await?;
+
+    insert_upstream_bill_items(&mut tx, bill_id, &drafts).await?;
 
     tx.commit().await.map_err(|e| {
         error!("Database error committing upstream bill: {}", e);
