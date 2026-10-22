@@ -193,7 +193,6 @@ fn normalize_ranged_bounds(
 pub struct RequestLogItem {
     pub timestamp: DateTime<Utc>,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     #[serde(rename = "target")]
@@ -243,7 +242,6 @@ impl From<RequestLogEntry> for RequestLogItem {
         Self {
             timestamp: entry.timestamp,
             service: entry.service,
-            env: entry.env,
             host: entry.host,
             instance_id: entry.instance_id,
             event_target: entry.event_target,

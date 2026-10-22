@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 pub struct RequestLogEntry {
     pub timestamp: DateTime<Utc>,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     pub event_target: String,

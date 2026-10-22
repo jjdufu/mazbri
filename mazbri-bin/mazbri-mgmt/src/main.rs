@@ -594,7 +594,7 @@ async fn health_check() -> Html<&'static str> {
 fn validate_security_config() {
     let is_dev = mazbri_core::is_dev_flag();
     info!(
-        "JWT secret will be loaded from database (system_settings table: jwt_master_key, jwt_salt, jwt_context)."
+        "JWT secret will be loaded from database (system_settings table: jwt_master_key, jwt_salt)."
     );
     if let Ok(username) = std::env::var("MAZBRI_ADMIN_USERNAME") {
         info!("管理员用户名已配置: {}", username);

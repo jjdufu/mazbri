@@ -75,7 +75,6 @@ pub struct AccessUpstreamMetaFields {
 pub struct AccessLogEvent {
     pub message: String,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     pub request_id: String,
@@ -130,7 +129,6 @@ impl AccessLogEvent {
 pub struct AccessLogEventBuilder {
     message: String,
     service: String,
-    env: String,
     host: String,
     instance_id: String,
     request_id: String,
@@ -182,7 +180,6 @@ impl AccessLogEventBuilder {
         Self {
             message: "request_completed".to_string(),
             service,
-            env: resolve_env(),
             host: resolve_host(),
             instance_id: resolve_instance_id(),
             request_id: context.request_id.to_string(),
@@ -314,7 +311,6 @@ impl AccessLogEventBuilder {
         AccessLogEvent {
             message: self.message,
             service: self.service,
-            env: self.env,
             host: self.host,
             instance_id: self.instance_id,
             request_id: self.request_id,
@@ -578,7 +574,6 @@ macro_rules! emit_access_log_for_target {
             target: $target,
             message = %$event.message,
             service = %$event.service,
-            env = %$event.env,
             host = %$event.host,
             instance_id = %$event.instance_id,
             request_id = %$event.request_id,
@@ -642,7 +637,6 @@ fn emit_access_log_generic(target: &str, event: AccessLogEvent) {
         log_target = %target,
         message = %event.message,
         service = %event.service,
-        env = %event.env,
         host = %event.host,
         instance_id = %event.instance_id,
         request_id = %event.request_id,
@@ -685,10 +679,6 @@ fn emit_access_log_generic(target: &str, event: AccessLogEvent) {
         contract_id = %event.contract_id,
         error_class = %event.error_class,
     );
-}
-
-fn resolve_env() -> String {
-    "default".to_string()
 }
 
 fn resolve_host() -> String {
