@@ -195,7 +195,7 @@ pub(super) async fn probe_microservice_draft(
     } = params;
     let start = std::time::Instant::now();
 
-    let cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     let (contract_ok, validate_stage) = probe_contract_stage(&cfg);
     let (connect_ok, connect_stage) =
@@ -462,7 +462,7 @@ async fn prepare_run_input(
     default_timeout_ms: u64,
     max_body_bytes: usize,
 ) -> Result<PreparedRun, ApiError> {
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let mut cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     cfg = cfg
         .decrypt_credentials_for_runtime()

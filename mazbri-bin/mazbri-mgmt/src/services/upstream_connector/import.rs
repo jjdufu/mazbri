@@ -560,7 +560,7 @@ pub async fn transform_preview(
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
         .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
 
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let mut cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     cfg = cfg
         .decrypt_credentials_for_runtime()

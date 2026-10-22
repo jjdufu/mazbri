@@ -73,7 +73,7 @@ pub use sqlx;
 pub use supplier_config::{
     AuthFlowConfig, ConfigValidationError, MAX_SUPPLIER_CONFIG_BYTES, SupplierConfig,
     TimeoutsConfig, UPSTREAM_TYPE_MICROSERVICE, UPSTREAM_TYPE_TRANSPARENT, mask_config_credentials,
-    merge_auth_credentials, reject_unsupported_config_keys, strip_unsupported_config_fields,
+    merge_auth_credentials,
 };
 pub use tarpc_middleware::{TenantValidationError, validate_tenant_id};
 pub use telemetry::{

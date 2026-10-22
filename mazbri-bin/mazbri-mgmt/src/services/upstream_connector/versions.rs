@@ -281,7 +281,7 @@ async fn prepare_live_input(
     let spec = mazbri_core::parse_channel_config_egress(&channel_config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
 
-    let cfg = SupplierConfig::parse_and_validate_lenient(&config)
+    let cfg = SupplierConfig::parse_and_validate(&config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?
         .decrypt_credentials_for_runtime()
         .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;

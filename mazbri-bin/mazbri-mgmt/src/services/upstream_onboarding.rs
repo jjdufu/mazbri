@@ -212,7 +212,6 @@ async fn build_supplier_config(
         .clone()
         .unwrap_or_else(|| serde_json::json!({}));
     if let Some(obj) = config_raw.as_object_mut() {
-        obj.remove("disguise");
         if let Some(ref t) = supplier.upstream_type {
             match obj.get("upstream_type").and_then(|v| v.as_str()) {
                 Some(existing) if existing != t => {
@@ -714,11 +713,7 @@ pub async fn validate_config_payload(
     config: &serde_json::Value,
     upstream_url: &str,
 ) -> Result<serde_json::Value, ApiError> {
-    let mut cleaned = config.clone();
-    if let Some(obj) = cleaned.as_object_mut() {
-        obj.remove("disguise");
-    }
-    let mut cfg = SupplierConfig::parse_and_validate(&cleaned)
+    let mut cfg = SupplierConfig::parse_and_validate(config)
         .map_err(|e| ApiError::validation(format!("UPSTREAM_CONFIG_INVALID: {e}")))?;
     cfg = cfg.normalize_disabled_sections();
     cfg.validate_upstream_url_for_type(upstream_url)
