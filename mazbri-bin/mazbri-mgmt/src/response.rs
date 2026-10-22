@@ -36,6 +36,5 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
 }
 pub fn created<T: Serialize>(data: T) -> Response {
     let value = serde_json::to_value(ApiResponse::ok(data)).unwrap_or_default();
-    let value = value;
     (StatusCode::CREATED, Json(value)).into_response()
 }
