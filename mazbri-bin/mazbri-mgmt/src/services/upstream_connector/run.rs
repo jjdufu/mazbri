@@ -149,7 +149,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
 
     let mut credentials = HashMap::new();
     if let Some(ref auth) = cfg.auth_flow {
-        credentials = auth.credentials.clone();
+        credentials.clone_from(&auth.credentials);
     }
 
     let artifact_bytes = if let Some(ref aid) = spec.artifact_id {

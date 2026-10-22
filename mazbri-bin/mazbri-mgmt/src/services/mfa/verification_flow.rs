@@ -196,6 +196,43 @@ async fn consume_backup_code(
     }
 }
 
+/// MFA 校验通过后签发完整访问令牌。
+async fn issue_verified_token(
+    pool: &PgPool,
+    jwt_secret: &str,
+    username: &str,
+    user_id_str: &str,
+    role: &str,
+) -> Result<String, Box<axum::response::Response>> {
+    let now = Utc::now().timestamp();
+    let access_ttl =
+        crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
+    let expiration = now + i64::saturating_from(access_ttl);
+    let full_claims = AdminJwtClaims {
+        iss: "mazbri-mgmt-api".to_string(),
+        sub: username.to_string(),
+        user_id: user_id_str.to_string(),
+        role: role.to_string(),
+        iat: now,
+        exp: expiration,
+        jti: Some(uuid::Uuid::new_v4().to_string()),
+        token_type: None,
+    };
+    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &full_claims,
+        &encoding_key,
+    )
+    .map_err(|error| {
+        error!("Failed to generate JWT: {}", error);
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })
+}
+
 pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let mfa_cache = params.mfa_cache;
@@ -210,8 +247,10 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let client_ip = params.client_ip;
 
     info!(
-        "[mfa_verify] Processing: user_id={}, totp_code={:?}, backup_code={:?}",
-        user_id, totp_code, backup_code
+        "[mfa_verify] Processing: user_id={}, has_totp_code={}, has_backup_code={}",
+        user_id,
+        totp_code.is_some(),
+        backup_code.is_some()
     );
     let state = match repo::get_mfa_verify_state(pool, user_id).await {
         Ok(state) => state,
@@ -261,34 +300,9 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             username, error
         );
     }
-    let now = Utc::now().timestamp();
-    let access_ttl =
-        crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
-    let expiration = now + i64::saturating_from(access_ttl);
-    let full_claims = AdminJwtClaims {
-        iss: "mazbri-mgmt-api".to_string(),
-        sub: username.to_string(),
-        user_id: user_id_str.to_string(),
-        role: role.to_string(),
-        iat: now,
-        exp: expiration,
-        jti: Some(uuid::Uuid::new_v4().to_string()),
-        token_type: None,
-    };
-    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
-    let token = match jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &full_claims,
-        &encoding_key,
-    ) {
+    let token = match issue_verified_token(pool, jwt_secret, username, user_id_str, role).await {
         Ok(token) => token,
-        Err(error) => {
-            error!("Failed to generate JWT: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_generate_token(),
-            );
-        }
+        Err(response) => return *response,
     };
     if let Err(error) = audit
         .log_critical(user_audit(

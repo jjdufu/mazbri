@@ -586,7 +586,7 @@ pub async fn transform_preview(
 
     let mut credentials = HashMap::new();
     if let Some(ref auth) = cfg.auth_flow {
-        credentials = auth.credentials.clone();
+        credentials.clone_from(&auth.credentials);
     }
 
     let input = InvokeInput {
