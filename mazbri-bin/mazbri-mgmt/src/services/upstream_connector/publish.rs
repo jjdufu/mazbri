@@ -10,6 +10,9 @@ use mazbri_core::num::SaturatingFrom;
 
 // ---------- Publish ----------
 
+/// 发布成功后返回的调用示例（网关地址等为占位符）。
+const SAMPLE_CURL: &str = "curl -sS -X POST 'https://<gateway-host>/api/v1/gateway' \\\n  -H 'Authorization: Bearer <access_token>' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"product_id\":\"<product_id>\",\"method\":\"POST\",\"path\":\"<path>\",\"body\":{}}'";
+
 /// `publish_draft` 的入参。
 pub struct PublishDraftParams<'a> {
     pub audit: &'a AuditService,
@@ -37,69 +40,15 @@ pub async fn publish_draft(
         is_admin,
         client_ip,
     } = params;
-    let draft = repo::get_draft(pool, id)
-        .await
-        .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
-        .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
+    let PreparedPublish {
+        draft,
+        env,
+        publish_cfg,
+        expanded_url,
+        config_value,
+    } = prepare_publish(pool, id, &req, is_admin).await?;
 
-    let mut cfg = SupplierConfig::parse_and_validate(&draft.config)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    cfg = cfg.normalize_disabled_sections();
-    cfg.validate_upstream_url_for_type(&draft.upstream_url)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-
-    let env = parse_workbench_env(&draft.workbench_env);
-    let mut publish_cfg = cfg.clone();
-    apply_env_to_supplier_config(&mut publish_cfg, &env);
-    let expanded_url = apply_env_str(&draft.upstream_url, &env);
-
-    let recent = repo::list_recent_gate_runs(pool, id, GATE_TTL_HOURS)
-        .await
-        .map_err(|e| ApiError::internal(format!("gate check: {e}")))?;
-    let recent: Vec<RecentGateRun> = recent
-        .into_iter()
-        .map(|r| RecentGateRun {
-            endpoint_key: r.endpoint_key,
-            spec_fingerprint: r.spec_fingerprint,
-        })
-        .collect();
-    let eval = evaluate_endpoint_gates(
-        &draft.endpoints,
-        &env,
-        Some(&cfg),
-        &draft.upstream_url,
-        &recent,
-    );
-    if !eval.leftover.is_empty() {
-        return Err(ApiError::validation(format!(
-            "UNRESOLVED_VARS: {}",
-            eval.leftover.join(", ")
-        )));
-    }
-
-    if publish_cfg.is_transparent() {
-        ssrf::validate_public_http_url(&expanded_url)
-            .await
-            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-    }
-
-    check_publish_gates(&eval.items, &req, is_admin)?;
-
-    // Credentials stay in encrypted slots; workbench {{vars}} in auth/transform
-    // become literals. workbench_env is never copied into suppliers.config.
-    let config_value = publish_cfg
-        .to_json_value()
-        .map_err(|e| ApiError::validation(e.to_string()))?;
-
-    let supplier_code = req.supplier.supplier_code.trim();
-    let name = req.supplier.name.trim();
-    if supplier_code.is_empty() || name.is_empty() {
-        return Err(ApiError::validation(
-            "supplier.supplier_code / name 不能为空",
-        ));
-    }
-
-    let mut warnings: Vec<String> = Vec::new();
+    let (supplier_code, name) = supplier_identity(&req)?;
 
     let mut tx = pool
         .begin()
@@ -147,47 +96,23 @@ pub async fn publish_draft(
         .await
         .map_err(|e| ApiError::internal(format!("commit: {e}")))?;
 
-    let route_version: i64 = sqlx::query_scalar(
-        "SELECT version FROM route_sync_metadata WHERE key = 'global_route_version'",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let route_version = current_route_version(pool).await;
 
-    if req.options.force.force_publish {
-        warnings.push(format!(
-            "force_publish: {}",
-            req.options.force.force_reason.clone().unwrap_or_default()
-        ));
-    }
+    let warnings = force_publish_warnings(&req);
 
-    audit.log(AuditLogRequest {
+    audit.log(publish_audit_request(&PublishAuditInfo {
         user_id,
-        action: if req.options.force.force_publish {
-            AuditAction::ConnectorForcePublish
-        } else {
-            AuditAction::ConnectorPublish
-        },
-        resource_type: AuditResourceType::Supplier,
-        resource_id: Some(supplier_id.to_string()),
-        details: Some(serde_json::json!({
-            "draft_id": id,
-            "supplier_id": supplier_id,
-            "channel_ids": channel_ids,
-            "version_id": version_id,
-            "version_no": version_no,
-            "mode": req.mode,
-            "route_version": route_version,
-            "force": req.options.force.force_publish,
-            "force_reason": req.options.force.force_reason,
-        })),
-        ip_address: client_ip,
-        new_value: Some(serde_json::json!({
-            "supplier_code": supplier_code,
-            "config": mask_config_credentials(config_value),
-        })),
-        ..Default::default()
-    });
+        draft_id: id,
+        req: &req,
+        supplier_id,
+        supplier_code,
+        channel_ids: &channel_ids,
+        version_id,
+        version_no,
+        route_version,
+        client_ip,
+        config_value,
+    }));
 
     info!(
         supplier_id = %supplier_id,
@@ -195,9 +120,7 @@ pub async fn publish_draft(
         "Connector publish completed"
     );
 
-    let sample_curl = Some(
-        "curl -sS -X POST 'https://<gateway-host>/api/v1/gateway' \\\n  -H 'Authorization: Bearer <access_token>' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"product_id\":\"<product_id>\",\"method\":\"POST\",\"path\":\"<path>\",\"body\":{}}'".to_string(),
-    );
+    let sample_curl = Some(SAMPLE_CURL.to_string());
 
     connector_metrics::record_publish(&req.mode, req.options.force.force_publish, true);
 
@@ -707,4 +630,159 @@ async fn resolve_route_product(
     }
 
     Ok((product_uuid, product_external_id))
+}
+
+/// 发布前已校验的草稿与展开后的配置。
+struct PreparedPublish {
+    draft: repo::DraftRow,
+    env: std::collections::HashMap<String, String>,
+    publish_cfg: SupplierConfig,
+    expanded_url: String,
+    config_value: serde_json::Value,
+}
+
+/// 读取草稿、展开变量并完成配置 / SSRF / 门禁校验。
+async fn prepare_publish(
+    pool: &PgPool,
+    id: Uuid,
+    req: &PublishRequest,
+    is_admin: bool,
+) -> Result<PreparedPublish, ApiError> {
+    let draft = repo::get_draft(pool, id)
+        .await
+        .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
+        .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
+
+    let mut cfg = SupplierConfig::parse_and_validate(&draft.config)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    cfg = cfg.normalize_disabled_sections();
+    cfg.validate_upstream_url_for_type(&draft.upstream_url)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+
+    let env = parse_workbench_env(&draft.workbench_env);
+    let mut publish_cfg = cfg.clone();
+    apply_env_to_supplier_config(&mut publish_cfg, &env);
+    let expanded_url = apply_env_str(&draft.upstream_url, &env);
+
+    let recent = repo::list_recent_gate_runs(pool, id, GATE_TTL_HOURS)
+        .await
+        .map_err(|e| ApiError::internal(format!("gate check: {e}")))?;
+    let recent: Vec<RecentGateRun> = recent
+        .into_iter()
+        .map(|r| RecentGateRun {
+            endpoint_key: r.endpoint_key,
+            spec_fingerprint: r.spec_fingerprint,
+        })
+        .collect();
+    let eval = evaluate_endpoint_gates(
+        &draft.endpoints,
+        &env,
+        Some(&cfg),
+        &draft.upstream_url,
+        &recent,
+    );
+    if !eval.leftover.is_empty() {
+        return Err(ApiError::validation(format!(
+            "UNRESOLVED_VARS: {}",
+            eval.leftover.join(", ")
+        )));
+    }
+
+    if publish_cfg.is_transparent() {
+        ssrf::validate_public_http_url(&expanded_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+    }
+
+    check_publish_gates(&eval.items, req, is_admin)?;
+
+    // Credentials stay in encrypted slots; workbench {{vars}} in auth/transform
+    // become literals. workbench_env is never copied into suppliers.config.
+    let config_value = publish_cfg
+        .to_json_value()
+        .map_err(|e| ApiError::validation(e.to_string()))?;
+
+    Ok(PreparedPublish {
+        draft,
+        env,
+        publish_cfg,
+        expanded_url,
+        config_value,
+    })
+}
+
+/// 发布审计所需字段。
+struct PublishAuditInfo<'a> {
+    user_id: Uuid,
+    draft_id: Uuid,
+    req: &'a PublishRequest,
+    supplier_id: Uuid,
+    supplier_code: &'a str,
+    channel_ids: &'a [Uuid],
+    version_id: Uuid,
+    version_no: i32,
+    route_version: i64,
+    client_ip: Option<String>,
+    config_value: serde_json::Value,
+}
+
+fn publish_audit_request(info: &PublishAuditInfo<'_>) -> AuditLogRequest {
+    AuditLogRequest {
+        user_id: info.user_id,
+        action: if info.req.options.force.force_publish {
+            AuditAction::ConnectorForcePublish
+        } else {
+            AuditAction::ConnectorPublish
+        },
+        resource_type: AuditResourceType::Supplier,
+        resource_id: Some(info.supplier_id.to_string()),
+        details: Some(serde_json::json!({
+            "draft_id": info.draft_id,
+            "supplier_id": info.supplier_id,
+            "channel_ids": info.channel_ids,
+            "version_id": info.version_id,
+            "version_no": info.version_no,
+            "mode": info.req.mode,
+            "route_version": info.route_version,
+            "force": info.req.options.force.force_publish,
+            "force_reason": info.req.options.force.force_reason,
+        })),
+        ip_address: info.client_ip.clone(),
+        new_value: Some(serde_json::json!({
+            "supplier_code": info.supplier_code,
+            "config": mask_config_credentials(info.config_value.clone()),
+        })),
+        ..Default::default()
+    }
+}
+
+/// 校验并返回 `(supplier_code, name)`（均已 trim）。
+fn supplier_identity(req: &PublishRequest) -> Result<(&str, &str), ApiError> {
+    let supplier_code = req.supplier.supplier_code.trim();
+    let name = req.supplier.name.trim();
+    if supplier_code.is_empty() || name.is_empty() {
+        return Err(ApiError::validation(
+            "supplier.supplier_code / name 不能为空",
+        ));
+    }
+    Ok((supplier_code, name))
+}
+
+fn force_publish_warnings(req: &PublishRequest) -> Vec<String> {
+    if req.options.force.force_publish {
+        vec![format!(
+            "force_publish: {}",
+            req.options.force.force_reason.clone().unwrap_or_default()
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+/// 读取全局路由版本号（失败时为 0，仅用于展示）。
+async fn current_route_version(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT version FROM route_sync_metadata WHERE key = 'global_route_version'")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
 }
