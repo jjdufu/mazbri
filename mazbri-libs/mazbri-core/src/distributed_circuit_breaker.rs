@@ -42,9 +42,10 @@ impl DistributedCircuitBreaker {
         db: Arc<PgPool>,
         cache_ttl: Duration,
     ) -> Self {
-        let node_id = hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
+        let node_id = hostname::get().map_or_else(
+            |_| "unknown".to_string(),
+            |h| h.to_string_lossy().to_string(),
+        );
         debug!(
             circuit_breaker = % name, node_id = % node_id, cache_ttl_ms = cache_ttl
             .as_millis(), "Distributed circuit breaker created"
@@ -60,6 +61,7 @@ impl DistributedCircuitBreaker {
             rejected_requests: AtomicU64::new(0),
         }
     }
+    #[must_use]
     pub fn with_defaults(name: String, config: CircuitBreakerConfig, db: Arc<PgPool>) -> Self {
         Self::new(name, config, db, Duration::from_millis(100))
     }
@@ -87,31 +89,28 @@ impl DistributedCircuitBreaker {
     }
     async fn load_from_db(&self) -> Result<LocalCacheEntry, CoreError> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT state, failure_count, success_count, last_state_change,
                    failure_threshold, success_threshold, cooldown_duration_secs
             FROM mazbri_platform.circuit_breakers
             WHERE name = $1
-            "#,
+            ",
         )
         .bind(&self.name)
         .fetch_optional(&*self.db)
         .await
         .map_err(CoreError::Database)?;
-        let entry = match row {
-            Some(r) => {
-                let state_value: i16 = storage_sync::get_row_field_i16(&r, "state", "load_from_db");
-                let state = state_machine::state_from_db_value(state_value);
-                let db_last_change: Option<DateTime<Utc>> = r.try_get("last_state_change").ok();
-                let last_state_change =
-                    storage_sync::instant_from_db_timestamp(&self.name, db_last_change);
-                storage_sync::build_cache_entry(state, last_state_change)
-            }
-            None => {
-                let entry = LocalCacheEntry::default();
-                self.insert_default_record().await?;
-                entry
-            }
+        let entry = if let Some(r) = row {
+            let state_value: i16 = storage_sync::get_row_field_i16(&r, "state", "load_from_db");
+            let state = state_machine::state_from_db_value(state_value);
+            let db_last_change: Option<DateTime<Utc>> = r.try_get("last_state_change").ok();
+            let last_state_change =
+                storage_sync::instant_from_db_timestamp(&self.name, db_last_change);
+            storage_sync::build_cache_entry(state, last_state_change)
+        } else {
+            let entry = LocalCacheEntry::default();
+            self.insert_default_record().await?;
+            entry
         };
         {
             let mut cache = self.local_cache.write().await;
@@ -121,13 +120,13 @@ impl DistributedCircuitBreaker {
     }
     async fn insert_default_record(&self) -> Result<(), CoreError> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_platform.circuit_breakers
                 (name, state, failure_count, success_count, failure_threshold,
                  success_threshold, cooldown_duration_secs, updated_by)
             VALUES ($1, 0, 0, 0, $2, $3, $4, $5)
             ON CONFLICT (name) DO NOTHING
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(self.config.failure_threshold as i64)
@@ -306,7 +305,7 @@ impl DistributedCircuitBreaker {
     async fn transition_to(&self, new_state: CircuitState) {
         let state_value = new_state.as_metric_value();
         let result = sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_platform.circuit_breakers
                 (name, state, failure_count, success_count, last_state_change, updated_by)
             VALUES ($1, $2, 0, 0, NOW(), $3)
@@ -317,7 +316,7 @@ impl DistributedCircuitBreaker {
                 last_state_change = NOW(),
                 updated_by = $3,
                 updated_at = NOW()
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(state_value)
@@ -338,7 +337,7 @@ impl DistributedCircuitBreaker {
     }
     async fn increment_failure_count(&self) -> Result<u64, CoreError> {
         let row = sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_platform.circuit_breakers
                 (name, state, failure_count, success_count, updated_by)
             VALUES ($1, 0, 1, 0, $2)
@@ -348,7 +347,7 @@ impl DistributedCircuitBreaker {
                 updated_by = $2,
                 updated_at = NOW()
             RETURNING failure_count
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(&self.node_id)
@@ -362,7 +361,7 @@ impl DistributedCircuitBreaker {
     }
     async fn increment_success_count(&self) -> Result<u64, CoreError> {
         let row = sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_platform.circuit_breakers
                 (name, state, failure_count, success_count, updated_by)
             VALUES ($1, 1, 0, 1, $2)
@@ -371,7 +370,7 @@ impl DistributedCircuitBreaker {
                 updated_by = $2,
                 updated_at = NOW()
             RETURNING success_count
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(&self.node_id)
@@ -385,7 +384,7 @@ impl DistributedCircuitBreaker {
     }
     async fn reset_failure_count(&self) -> Result<(), CoreError> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_platform.circuit_breakers
                 (name, state, failure_count, success_count, updated_by)
             VALUES ($1, 0, 0, 0, $2)
@@ -393,7 +392,7 @@ impl DistributedCircuitBreaker {
                 failure_count = 0,
                 updated_by = $2,
                 updated_at = NOW()
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(&self.node_id)
@@ -405,11 +404,11 @@ impl DistributedCircuitBreaker {
     }
     async fn reset_counters(&self) -> Result<(), CoreError> {
         sqlx::query(
-            r#"
+            r"
             UPDATE mazbri_platform.circuit_breakers
             SET failure_count = 0, success_count = 0, updated_by = $2, updated_at = NOW()
             WHERE name = $1
-            "#,
+            ",
         )
         .bind(&self.name)
         .bind(&self.node_id)

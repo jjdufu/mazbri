@@ -32,7 +32,7 @@ pub struct PolicySnapshot {
     pub tenant_burst: i32,
     pub client_ip_qps: i32,
     pub client_ip_burst: i32,
-    /// Bit per second. `0` disables bandwidth enforcement. UI Mbps = bandwidth_bps / 1_000_000.
+    /// Bit per second. `0` disables bandwidth enforcement. UI Mbps = `bandwidth_bps` / `1_000_000`.
     pub bandwidth_bps: i64,
     #[serde(default)]
     pub api_limits: HashMap<String, ApiLimitRule>,

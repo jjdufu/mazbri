@@ -38,10 +38,12 @@ pub struct ChargeWorker {
 }
 
 impl ChargeWorker {
+    #[must_use]
     pub fn new(db: PgPool, billing_service: Arc<BillingService>) -> Self {
         Self::with_config(db, billing_service, QueueConfig::default())
     }
 
+    #[must_use]
     pub fn with_config(
         db: PgPool,
         billing_service: Arc<BillingService>,
@@ -115,6 +117,7 @@ impl ChargeWorker {
         }
     }
 
+    #[must_use]
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
     }

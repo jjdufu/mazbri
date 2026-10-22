@@ -9,6 +9,7 @@ pub struct TtlManager {
 }
 
 impl TtlManager {
+    #[must_use]
     pub fn new(cache: Arc<RedisCache>) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
         Self { cache, shutdown_tx }

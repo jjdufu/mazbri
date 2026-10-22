@@ -75,6 +75,7 @@ impl DeductionRecorder {
     ///
     /// Accepts [`Decimal`] so callers never string-parse money or `unwrap_or(0.0)`.
     /// Out-of-range values saturate (with a warning) instead of silently becoming zero.
+    #[must_use]
     pub fn new(amount: Decimal) -> Self {
         Self {
             amount: decimal_to_histogram_f64(amount),

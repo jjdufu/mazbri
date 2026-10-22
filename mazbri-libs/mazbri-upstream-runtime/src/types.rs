@@ -12,7 +12,7 @@ pub const DEFAULT_MAX_BODY_CAPTURE: usize = 64 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMode {
-    /// Production bypass path (no detailed stages unless collect_trace).
+    /// Production bypass path (no detailed stages unless `collect_trace`).
     Production,
     /// Only fetch/inject auth token stages; no business upstream call.
     AuthOnly,
@@ -64,6 +64,7 @@ pub enum BodyKind {
 }
 
 impl BodyKind {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             BodyKind::Json(s) | BodyKind::Form(s) | BodyKind::Xml(s) => s,
@@ -71,6 +72,7 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn into_string(self) -> String {
         match self {
             BodyKind::Json(s) | BodyKind::Form(s) | BodyKind::Xml(s) => s,
@@ -78,10 +80,12 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn is_json(&self) -> bool {
         matches!(self, BodyKind::Json(_))
     }
 
+    #[must_use]
     pub fn content_type(&self) -> &str {
         match self {
             BodyKind::Json(_) => "application/json",
@@ -91,6 +95,7 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.into_string().into_bytes()
     }
@@ -128,7 +133,7 @@ pub struct ExecuteInput {
     pub timeout: Duration,
     pub mode: ExecuteMode,
     pub options: ExecuteOptions,
-    /// Optional token cache key override (probe namespace). Defaults to supplier_code.
+    /// Optional token cache key override (probe namespace). Defaults to `supplier_code`.
     pub cache_key: Option<String>,
 }
 
@@ -147,9 +152,9 @@ pub struct InvokeInput {
     pub timeout: Duration,
     pub mode: ExecuteMode,
     pub options: ExecuteOptions,
-    /// Decrypted credential map (supplier auth_flow.credentials).
+    /// Decrypted credential map (supplier `auth_flow.credentials`).
     pub credentials: HashMap<String, String>,
-    /// gRPC FileDescriptorSet / optional WSDL bytes.
+    /// gRPC `FileDescriptorSet` / optional WSDL bytes.
     pub artifact_bytes: Option<Vec<u8>>,
     pub cache_key: Option<String>,
 }
@@ -259,6 +264,7 @@ pub enum ExecuteError {
 }
 
 impl ExecuteError {
+    #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
             Self::ConfigInvalid(_) => "CONFIG_INVALID",

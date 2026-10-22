@@ -66,8 +66,7 @@ impl CertClient {
                 status = % status, error = % error_text, "Failed to issue certificate"
             );
             Err(TlsError::IssueFailed(format!(
-                "HTTP {}: {}",
-                status, error_text
+                "HTTP {status}: {error_text}"
             )))
         }
     }
@@ -93,8 +92,7 @@ impl CertClient {
                 status = % status, error = % error_text, "Failed to renew certificate"
             );
             Err(TlsError::RenewFailed(format!(
-                "HTTP {}: {}",
-                status, error_text
+                "HTTP {status}: {error_text}"
             )))
         }
     }
@@ -128,8 +126,7 @@ impl CertClient {
                 "Failed to fetch certificate by subject"
             );
             Err(TlsError::CertificateNotFound(format!(
-                "{}: HTTP {} - {}",
-                subject, status, error_text
+                "{subject}: HTTP {status} - {error_text}"
             )))
         }
     }

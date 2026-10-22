@@ -537,7 +537,7 @@ async fn parse_token_response(
     })
 }
 
-/// Sign the assembled HTTP call (SigV4 / HAWK). `sign_form` adapter never enters this match.
+/// Sign the assembled HTTP call (`SigV4` / HAWK). `sign_form` adapter never enters this match.
 pub fn apply_request_signature(
     call: &mut HttpCall<'_>,
     adapter: AdapterKind,
@@ -636,7 +636,7 @@ mod tests {
     fn header_line<'a>(raw: &'a str, name: &str) -> Option<&'a str> {
         raw.lines().find_map(|line| {
             if line.to_ascii_lowercase().starts_with(name) {
-                Some(line.split_once(':').map(|(_, v)| v.trim()).unwrap_or(""))
+                Some(line.split_once(':').map_or("", |(_, v)| v.trim()))
             } else {
                 None
             }

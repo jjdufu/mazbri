@@ -111,6 +111,7 @@ impl CertManager {
         );
         Ok(cert)
     }
+    #[must_use]
     pub fn spawn_renewal_task(&self) -> (tokio::task::JoinHandle<()>, oneshot::Sender<()>) {
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let manager = Self {
@@ -126,7 +127,7 @@ impl CertManager {
                         info!("Renewal task received shutdown signal");
                         break;
                     }
-                    _ = tokio::time::sleep(check_interval) => {
+                    () = tokio::time::sleep(check_interval) => {
                         if let Some(cert) = manager.cert.read().await.clone() {
                             if cert.needs_renewal(manager.config.renewal_threshold_days) {
                                 info!(
@@ -157,6 +158,7 @@ impl CertManager {
         });
         (handle, shutdown_tx)
     }
+    #[must_use]
     pub fn spawn_renewal_task_managed(&self) -> RenewalTaskHandle {
         let (handle, shutdown_tx) = self.spawn_renewal_task();
         RenewalTaskHandle {

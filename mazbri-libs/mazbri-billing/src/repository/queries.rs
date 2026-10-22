@@ -36,7 +36,7 @@ impl BillingRepository for PgBillingRepository {
         .bind(record.account_id)
         .bind(&record.api_endpoint)
         .bind(&record.http_method)
-        .bind(record.response_status as i32)
+        .bind(i32::from(record.response_status))
         .bind(record.request_size)
         .bind(record.response_size)
         .bind(record.billing_service_duration_ms)
@@ -80,7 +80,7 @@ impl BillingRepository for PgBillingRepository {
         .bind(&event.product_id)
         .bind(&event.api_endpoint)
         .bind(&event.http_method)
-        .bind(event.response_status as i32)
+        .bind(i32::from(event.response_status))
         .bind(event.request_size)
         .bind(event.response_size)
         .bind(event.billing_service_duration_ms)
@@ -152,33 +152,32 @@ impl BillingRepository for PgBillingRepository {
         }
         if page_size > MAX_PAGE_SIZE {
             return Err(CoreError::Validation(format!(
-                "page_size must not exceed {}",
-                MAX_PAGE_SIZE
+                "page_size must not exceed {MAX_PAGE_SIZE}"
             )));
         }
         let mut conditions = vec!["tenant_id = $1".to_string()];
         let mut param_count = 1;
         let start_filter = if let Some(start) = start_time {
             param_count += 1;
-            conditions.push(format!("created_at >= to_timestamp(${})", param_count));
+            conditions.push(format!("created_at >= to_timestamp(${param_count})"));
             Some(start)
         } else {
             None
         };
         let end_filter = if let Some(end) = end_time {
             param_count += 1;
-            conditions.push(format!("created_at <= to_timestamp(${})", param_count));
+            conditions.push(format!("created_at <= to_timestamp(${param_count})"));
             Some(end)
         } else {
             None
         };
         let status_filter = if let Some(s) = status {
-            if !s.is_empty() {
-                param_count += 1;
-                conditions.push(format!("status = ${}", param_count));
-                Some(s.to_string())
-            } else {
+            if s.is_empty() {
                 None
+            } else {
+                param_count += 1;
+                conditions.push(format!("status = ${param_count}"));
+                Some(s.to_string())
             }
         } else {
             None
@@ -204,7 +203,7 @@ impl BillingRepository for PgBillingRepository {
         if let Some(ref s) = status_filter {
             q = q.bind(s);
         }
-        q = q.bind(page_size as i64);
+        q = q.bind(i64::from(page_size));
         let rows = q
             .fetch_all(&*self.read_pool)
             .await

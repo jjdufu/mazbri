@@ -71,6 +71,7 @@ pub struct CertMetricsRecorder {
     operation: &'static str,
 }
 impl CertMetricsRecorder {
+    #[must_use]
     pub fn new(operation: &'static str) -> Self {
         Self { operation }
     }

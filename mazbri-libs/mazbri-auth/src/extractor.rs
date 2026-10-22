@@ -38,6 +38,7 @@ impl FromRef<TenantContext> for TenantId {
     }
 }
 impl TenantContext {
+    #[must_use]
     pub fn new(tenant_id: Uuid, credential_type: CredentialType) -> Self {
         Self {
             tenant_id,
@@ -46,6 +47,7 @@ impl TenantContext {
             product_id: None,
         }
     }
+    #[must_use]
     pub fn with_credential(
         tenant_id: Uuid,
         credential_type: CredentialType,
@@ -58,15 +60,19 @@ impl TenantContext {
             product_id: None,
         }
     }
+    #[must_use]
     pub fn id(&self) -> Uuid {
         self.tenant_id
     }
+    #[must_use]
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
+    #[must_use]
     pub fn is_api_key(&self) -> bool {
         self.credential_type == CredentialType::ApiKey
     }
+    #[must_use]
     pub fn is_jwt(&self) -> bool {
         self.credential_type == CredentialType::Jwt
     }
@@ -75,6 +81,7 @@ impl TenantContext {
         self.product_id = Some(product_id);
         self
     }
+    #[must_use]
     pub fn product_id(&self) -> Option<&str> {
         self.product_id.as_deref()
     }

@@ -40,15 +40,19 @@ impl CacheService {
             ttl_manager,
         })
     }
+    #[must_use]
     pub fn cache(&self) -> &Arc<RedisCache> {
         &self.cache
     }
+    #[must_use]
     pub fn config(&self) -> &Arc<CacheConfig> {
         &self.config
     }
+    #[must_use]
     pub fn ttl_manager(&self) -> &Arc<TtlManager> {
         &self.ttl_manager
     }
+    #[must_use]
     pub fn db(&self) -> &Arc<PgPool> {
         &self.db
     }
@@ -58,7 +62,7 @@ impl CacheService {
         tenant_id: uuid::Uuid,
     ) -> mazbri_core::Result<Option<CacheConfig>> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT
                 enabled,
                 default_ttl,
@@ -67,7 +71,7 @@ impl CacheService {
                 tenant_isolated
             FROM cache_configs
             WHERE tenant_id = $1
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_optional(&*self.db)

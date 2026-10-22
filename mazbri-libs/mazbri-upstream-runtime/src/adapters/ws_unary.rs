@@ -104,7 +104,10 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let _ = ws.close(None).await;
     let json = wait?;
-    let code = json.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
+    let code = json
+        .get("code")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
     if code != 0 {
         let message = json
             .get("message")

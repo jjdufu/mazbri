@@ -44,3 +44,6 @@ mazbri-rpc = { workspace = true }
 hostname = "0.4"
 
 toml = { workspace = true }
+
+[lints]
+workspace = true

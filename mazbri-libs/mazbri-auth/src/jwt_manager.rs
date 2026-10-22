@@ -40,11 +40,11 @@ impl JwtKeyManager {
         }
     }
     async fn fetch_key_material(&self) -> Result<JwtKeyMaterial, JwtKeyError> {
-        let query = r#"
+        let query = r"
             SELECT key, value
             FROM system_settings
             WHERE key IN ('jwt_master_key', 'jwt_salt')
-        "#;
+        ";
         let rows = sqlx::query(query).fetch_all(&*self.pool).await?;
         let mut master_key = None;
         let mut salt = None;
@@ -53,10 +53,10 @@ impl JwtKeyManager {
             let value: serde_json::Value = row.get("value");
             match key.as_str() {
                 "jwt_master_key" => {
-                    master_key = value.as_str().map(|s| s.to_string());
+                    master_key = value.as_str().map(std::string::ToString::to_string);
                 }
                 "jwt_salt" => {
-                    salt = value.as_str().map(|s| s.to_string());
+                    salt = value.as_str().map(std::string::ToString::to_string);
                 }
                 _ => {}
             }
@@ -72,13 +72,13 @@ impl JwtKeyManager {
     }
     fn derive_secret(&self, material: &JwtKeyMaterial) -> Result<String, JwtKeyError> {
         let master_key = hex::decode(&material.master_key)
-            .map_err(|e| JwtKeyError::InvalidFormat(format!("Invalid master key hex: {}", e)))?;
+            .map_err(|e| JwtKeyError::InvalidFormat(format!("Invalid master key hex: {e}")))?;
         let salt = hex::decode(&material.salt)
-            .map_err(|e| JwtKeyError::InvalidFormat(format!("Invalid salt hex: {}", e)))?;
+            .map_err(|e| JwtKeyError::InvalidFormat(format!("Invalid salt hex: {e}")))?;
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), &master_key);
         let mut derived_key = [0u8; 32];
         hkdf.expand(material.context.as_bytes(), &mut derived_key)
-            .map_err(|e| JwtKeyError::Derivation(format!("HKDF expand failed: {}", e)))?;
+            .map_err(|e| JwtKeyError::Derivation(format!("HKDF expand failed: {e}")))?;
         Ok(hex::encode(derived_key))
     }
     fn material_hash(material: &JwtKeyMaterial) -> String {

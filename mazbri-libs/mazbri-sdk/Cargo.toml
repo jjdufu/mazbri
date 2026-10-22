@@ -18,3 +18,6 @@ mazbri-core = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
+
+[lints]
+workspace = true

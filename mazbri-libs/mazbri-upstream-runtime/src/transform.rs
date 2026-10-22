@@ -18,6 +18,7 @@ pub enum InjectLocation {
 }
 
 impl InjectLocation {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "header" => Self::Header,
@@ -28,7 +29,7 @@ impl InjectLocation {
     }
 }
 
-/// Apply request-side transform: rewrite_path, header set/remove, body template.
+/// Apply request-side transform: `rewrite_path`, header set/remove, body template.
 /// `original_path` is the inbound path used for `{{request.path}}`.
 pub fn apply_request_transform(
     transform: &TransformConfig,
@@ -54,17 +55,13 @@ pub fn apply_request_transform(
         }
     }
     if let Some(ref body_tpl) = transform.request_body_template {
-        let incoming = body
-            .as_ref()
-            .map(BodyKind::as_str)
-            .unwrap_or("{}")
-            .to_string();
+        let incoming = body.as_ref().map_or("{}", BodyKind::as_str).to_string();
         let rendered = render_body_template(body_tpl, &incoming, original_path);
         *body = Some(BodyKind::Json(rendered));
     }
 }
 
-/// Inject auth token into header / query / body per AuthFlowConfig.
+/// Inject auth token into header / query / body per `AuthFlowConfig`.
 pub fn inject_token(
     auth: &AuthFlowConfig,
     token: &str,
@@ -123,6 +120,7 @@ pub fn apply_response_headers_transform(
     }
 }
 
+#[must_use]
 pub fn apply_response_body_transform(
     transform: &TransformConfig,
     body_bytes: Vec<u8>,

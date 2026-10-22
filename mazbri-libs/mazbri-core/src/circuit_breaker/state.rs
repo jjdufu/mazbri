@@ -10,6 +10,7 @@ pub enum CircuitState {
     HalfOpen,
 }
 impl CircuitState {
+    #[must_use]
     pub const fn as_metric_value(&self) -> i64 {
         match self {
             CircuitState::Closed => circuit_values::CLOSED as i64,
@@ -17,6 +18,7 @@ impl CircuitState {
             CircuitState::Open => circuit_values::OPEN as i64,
         }
     }
+    #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
             CircuitState::Closed => "closed",

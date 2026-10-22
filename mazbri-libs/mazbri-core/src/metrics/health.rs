@@ -87,10 +87,10 @@ impl HealthMetricsUpdater {
             let idle = pool.num_idle();
             DB_POOL_ACTIVE_CONNECTIONS
                 .with_label_values(&[name])
-                .set(active as i64);
+                .set(i64::from(active));
             DB_POOL_IDLE_CONNECTIONS
                 .with_label_values(&[name])
-                .set(idle as i64);
+                .set(i64::from(idle));
             pool.is_healthy()
         } else {
             DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&[name]).set(0);
@@ -110,21 +110,22 @@ impl HealthMetricsUpdater {
         let rpc_healthy = db_healthy && cert_healthy;
         RPC_HEALTH_CHECK
             .with_label_values(&[name, "healthy"])
-            .set(if rpc_healthy { 1 } else { 0 });
+            .set(i64::from(rpc_healthy));
         RPC_HEALTH_CHECK
             .with_label_values(&[name, "unhealthy"])
-            .set(if rpc_healthy { 0 } else { 1 });
+            .set(i64::from(!rpc_healthy));
         if let Some(ref checker) = self.config_center_connected {
             let connected = checker().await;
             CONFIG_CENTER_CONNECTED
                 .with_label_values(&[name])
-                .set(if connected { 1 } else { 0 });
+                .set(i64::from(connected));
         }
         tracing::trace!(
             service = % name, db_healthy = db_healthy, cert_healthy = cert_healthy,
             rpc_healthy = rpc_healthy, "Health metrics updated"
         );
     }
+    #[must_use]
     pub fn spawn(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(15));

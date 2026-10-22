@@ -75,7 +75,7 @@ pub trait ErrorResponse: Error + Send + Sync + Sized + 'static {
             status: self.status_code().as_u16(),
             detail: self.detail(),
             instance: self.instance(),
-            trace_id: trace_id.map(|s| s.to_string()),
+            trace_id: trace_id.map(std::string::ToString::to_string),
         }
     }
     fn into_response(self) -> Response {
@@ -256,17 +256,17 @@ impl ErrorResponse for CoreError {
             CoreError::RateLimit(msg) => Some(msg.clone()),
             CoreError::Validation(msg) => Some(msg.clone()),
             CoreError::NotFound { resource, id } => {
-                Some(format!("资源 {} (id={}) 未找到", resource, id))
+                Some(format!("资源 {resource} (id={id}) 未找到"))
             }
             CoreError::InsufficientBalance {
                 required,
                 available,
-            } => Some(format!("余额不足，需要 {}，可用 {}", required, available)),
+            } => Some(format!("余额不足，需要 {required}，可用 {available}")),
             CoreError::RateLimited { retry_after_secs } => {
-                Some(format!("请求过于频繁，{} 秒后重试", retry_after_secs))
+                Some(format!("请求过于频繁，{retry_after_secs} 秒后重试"))
             }
             CoreError::QuotaExceeded(msg) => Some(msg.clone()),
-            CoreError::ServiceUnavailable { service } => Some(format!("服务 {} 暂不可用", service)),
+            CoreError::ServiceUnavailable { service } => Some(format!("服务 {service} 暂不可用")),
             CoreError::CircuitBreakerOpen(msg) => Some(msg.clone()),
         }
     }

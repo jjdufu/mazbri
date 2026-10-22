@@ -12,6 +12,7 @@ pub enum TenantStatus {
     Terminated = 3,
 }
 impl TenantStatus {
+    #[must_use]
     pub fn as_str_name(&self) -> &'static str {
         match self {
             TenantStatus::Pending => "PENDING",
@@ -20,6 +21,7 @@ impl TenantStatus {
             TenantStatus::Terminated => "TERMINATED",
         }
     }
+    #[must_use]
     pub fn from_str_name(value: &str) -> Option<Self> {
         match value {
             "PENDING" => Some(Self::Pending),
@@ -69,7 +71,7 @@ pub struct GetTenantInfoRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GetTenantInfoResponse {
     pub tenant: Option<TenantContext>,
-    /// Reserved (H-15). Currently always None; use rate_limit policies for limits.
+    /// Reserved (H-15). Currently always None; use `rate_limit` policies for limits.
     pub quota: Option<ResourceQuota>,
     #[serde(default)]
     pub error: Option<RpcError>,

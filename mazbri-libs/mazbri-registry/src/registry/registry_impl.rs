@@ -62,6 +62,7 @@ impl ConfigCenterRegistry {
     pub fn connection_manager(&self) -> &Arc<ConnectionManager> {
         &self.connection_manager
     }
+    #[must_use]
     pub fn map_http_error(e: HttpConfigClientError) -> RegistryError {
         match e {
             HttpConfigClientError::Core(core) => RegistryError::Core(core),
@@ -130,9 +131,10 @@ impl ServiceRegistry for ConfigCenterRegistry {
         {
             let mut handle = self.heartbeat_handle.write().await;
             if let Some(h) = handle.take() {
-                match tokio::time::timeout(timeout, h).await {
-                    Ok(_) => info!("心跳任务已停止"),
-                    Err(_) => warn!("心跳任务超时未停止"),
+                if let Ok(_) = tokio::time::timeout(timeout, h).await {
+                    info!("心跳任务已停止")
+                } else {
+                    warn!("心跳任务超时未停止")
                 }
             }
         }

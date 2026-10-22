@@ -1,4 +1,4 @@
-//! Sign JWT at apply_auth time (not a token-endpoint exchange).
+//! Sign JWT at `apply_auth` time (not a token-endpoint exchange).
 
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};

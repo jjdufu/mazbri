@@ -20,6 +20,7 @@ pub struct ConnectionManager {
     state: RwLock<ConnectionState>,
 }
 impl ConnectionManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: RwLock::new(ConnectionState::default()),

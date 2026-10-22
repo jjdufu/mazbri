@@ -57,7 +57,7 @@ pub struct AccessOutcomeFields {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
-    /// 与 metrics `result` 对齐：ok | timeout | upstream_error | ssrf | …
+    /// 与 metrics `result` 对齐：ok | timeout | `upstream_error` | ssrf | …
     #[serde(default)]
     pub error_class: String,
 }
@@ -67,7 +67,7 @@ pub struct AccessOutcomeFields {
 pub struct AccessUpstreamMetaFields {
     /// transparent | microservice | unknown
     pub upstream_mode: String,
-    /// 契约 ID（见 gateway upstream_contract::known_contract_ids）
+    /// 契约 ID（见 gateway `upstream_contract::known_contract_ids`）
     pub contract_id: String,
 }
 
@@ -464,7 +464,7 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
     let traceparent_parts = traceparent
         .as_deref()
         .and_then(parse_traceparent_value)
-        .unwrap_or_else(|| ("".to_string(), "".to_string()));
+        .unwrap_or_else(|| (String::new(), String::new()));
     let tp_trace_id = traceparent_parts.0;
     let parent_from_traceparent = traceparent_parts.1;
 
@@ -487,14 +487,13 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
 
     let parent_span_id: Arc<str> = headers
         .header_value("x-span-id")
-        .or(if !parent_from_traceparent.is_empty() {
-            Some(parent_from_traceparent)
-        } else {
+        .or(if parent_from_traceparent.is_empty() {
             None
+        } else {
+            Some(parent_from_traceparent)
         })
         .or_else(|| headers.header_value("x-parent-span-id"))
-        .map(Arc::<str>::from)
-        .unwrap_or_else(|| Arc::from(""));
+        .map_or_else(|| Arc::from(""), Arc::<str>::from);
 
     TraceContext {
         request_id,

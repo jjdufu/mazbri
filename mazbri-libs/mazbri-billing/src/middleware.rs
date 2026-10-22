@@ -19,6 +19,7 @@ pub struct BillingMiddlewareState {
     pub charge_queue: Option<Arc<ChargeQueue>>,
 }
 impl BillingMiddlewareState {
+    #[must_use]
     pub fn new(
         billing_service: Arc<BillingService>,
         charge_queue: Option<Arc<ChargeQueue>>,
@@ -28,6 +29,7 @@ impl BillingMiddlewareState {
             charge_queue,
         }
     }
+    #[must_use]
     pub fn without_queue(billing_service: Arc<BillingService>) -> Self {
         Self {
             billing_service,

@@ -30,11 +30,11 @@ pub async fn find_active_subscription(
     product_id: Uuid,
 ) -> sqlx::Result<Option<CallbackSubscription>> {
     sqlx::query_as::<_, CallbackSubscription>(
-        r#"
+        r"
         SELECT id, tenant_id, product_id, callback_url, secret_key, retry_policy, is_active
         FROM mazbri_platform.callback_subscriptions
         WHERE tenant_id = $1 AND product_id = $2 AND is_active = true
-        "#,
+        ",
     )
     .bind(tenant_id)
     .bind(product_id)
@@ -48,11 +48,11 @@ pub async fn enqueue_callback(
     payload: &serde_json::Value,
 ) -> sqlx::Result<Uuid> {
     let row: (Uuid,) = sqlx::query_as(
-            r#"
+            r"
         INSERT INTO mazbri_platform.callback_delivery_logs (subscription_id, event_id, payload, status, next_retry_at)
         VALUES ($1, $2, $3, 'pending', NOW())
         RETURNING id
-        "#,
+        ",
         )
         .bind(subscription_id)
         .bind(event_id)
@@ -69,7 +69,7 @@ pub async fn fetch_pending_tasks(
         _,
         CallbackDeliveryLog,
     >(
-            r#"
+            r"
         WITH picked AS (
             SELECT id
             FROM mazbri_platform.callback_delivery_logs
@@ -83,7 +83,7 @@ pub async fn fetch_pending_tasks(
         FROM picked
         WHERE d.id = picked.id
         RETURNING d.id, d.subscription_id, d.event_id, d.payload, d.status, d.retry_count, d.next_retry_at, d.last_response_code, d.last_error
-        "#,
+        ",
         )
         .bind(limit)
         .fetch_all(pool)
@@ -99,11 +99,11 @@ pub async fn update_delivery_status(
     error: Option<&str>,
 ) -> sqlx::Result<()> {
     sqlx::query(
-            r#"
+            r"
         UPDATE mazbri_platform.callback_delivery_logs
         SET status = $2, retry_count = $3, next_retry_at = $4, last_response_code = $5, last_error = $6, updated_at = NOW()
         WHERE id = $1
-        "#,
+        ",
         )
         .bind(id)
         .bind(status)

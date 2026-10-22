@@ -34,13 +34,10 @@ pub struct FallbackRequest {
 impl FallbackRequest {
     pub fn validate_payload_size(&self) -> Result<(), String> {
         if let Some(ref body) = self.body {
-            let size = serde_json::to_vec(body)
-                .map(|v| v.len())
-                .unwrap_or(usize::MAX);
+            let size = serde_json::to_vec(body).map_or(usize::MAX, |v| v.len());
             if size > MAX_CACHE_PAYLOAD_SIZE {
                 return Err(format!(
-                    "Cache payload too large: {} bytes (max {} bytes)",
-                    size, MAX_CACHE_PAYLOAD_SIZE
+                    "Cache payload too large: {size} bytes (max {MAX_CACHE_PAYLOAD_SIZE} bytes)"
                 ));
             }
         }
@@ -75,13 +72,10 @@ pub struct StoreRequest {
 }
 impl StoreRequest {
     pub fn validate_payload_size(&self) -> Result<(), String> {
-        let size = serde_json::to_vec(&self.data)
-            .map(|v| v.len())
-            .unwrap_or(usize::MAX);
+        let size = serde_json::to_vec(&self.data).map_or(usize::MAX, |v| v.len());
         if size > MAX_CACHE_PAYLOAD_SIZE {
             return Err(format!(
-                "Cache payload too large: {} bytes (max {} bytes)",
-                size, MAX_CACHE_PAYLOAD_SIZE
+                "Cache payload too large: {size} bytes (max {MAX_CACHE_PAYLOAD_SIZE} bytes)"
             ));
         }
         Ok(())

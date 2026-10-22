@@ -292,8 +292,7 @@ fn tenant_name(tag: &str, field_map: &std::collections::HashMap<String, String>)
     field_map
         .iter()
         .find(|(_, xml_name)| xml_name == &tag)
-        .map(|(tenant_key, _)| tenant_key.clone())
-        .unwrap_or_else(|| tag.to_string())
+        .map_or_else(|| tag.to_string(), |(tenant_key, _)| tenant_key.clone())
 }
 
 fn text_content(elem: &XmlElem) -> String {
@@ -541,7 +540,7 @@ mod tests {
 
     #[test]
     fn compare_image_parses_bool_and_number() {
-        let xml = r#"<soap:Body><CompareImageResponse><matched>true</matched><filename>img_001.png</filename><distance>0</distance><threshold>10</threshold></CompareImageResponse></soap:Body>"#;
+        let xml = r"<soap:Body><CompareImageResponse><matched>true</matched><filename>img_001.png</filename><distance>0</distance><threshold>10</threshold></CompareImageResponse></soap:Body>";
         let value = xml_body_to_json(xml, "CompareImage", &empty_map());
         assert_eq!(value["matched"], true);
         assert_eq!(value["distance"], 0);

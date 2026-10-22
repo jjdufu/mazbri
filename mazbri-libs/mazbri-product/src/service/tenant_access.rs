@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Context, DateTime, PermissionCache, ProductService, Result, Row, TenantProduct,
+    TenantProductConfig, UpdateTenantProductConfigResult, Utc, Uuid, info,
+};
 
 impl ProductService {
     pub async fn grant_tenant_access(
@@ -18,12 +21,11 @@ impl ProductService {
         config.validate().map_err(anyhow::Error::msg)?;
         let custom_config = serde_json::to_value(&config).with_context(|| {
             format!(
-                "Failed to serialize tenant product config: {:?} / 无法序列化租户产品配置",
-                config
+                "Failed to serialize tenant product config: {config:?} / 无法序列化租户产品配置"
             )
         })?;
         let row = sqlx::query(
-                r#"
+                r"
             INSERT INTO tenant_products (id, tenant_id, product_id, enabled, custom_config, created_at)
             VALUES ($1, $2, $3, true, $4, $5)
             ON CONFLICT (tenant_id, product_id) DO UPDATE SET
@@ -31,7 +33,7 @@ impl ProductService {
                 custom_config = COALESCE($4, tenant_products.custom_config),
                 updated_at = $5
             RETURNING id, tenant_id, product_id, enabled, custom_config, created_at
-            "#,
+            ",
             )
             .bind(id)
             .bind(tenant_id)
@@ -67,18 +69,15 @@ impl ProductService {
                 .bind(product_id)
                 .fetch_optional(&self.db)
                 .await?;
-        let product_uuid = match product_uuid {
-            Some(uuid) => {
-                info!("revoke_tenant_access: found product_uuid={}", uuid);
-                uuid
-            }
-            None => {
-                info!(
-                    "revoke_tenant_access: product not found for product_id={}",
-                    product_id
-                );
-                return Ok(false);
-            }
+        let product_uuid = if let Some(uuid) = product_uuid {
+            info!("revoke_tenant_access: found product_uuid={}", uuid);
+            uuid
+        } else {
+            info!(
+                "revoke_tenant_access: product not found for product_id={}",
+                product_id
+            );
+            return Ok(false);
         };
         let result = sqlx::query(
                 "UPDATE tenant_products SET enabled = false, updated_at = NOW() WHERE tenant_id = $1 AND product_id = $2 AND enabled = true",
@@ -122,15 +121,14 @@ impl ProductService {
         config.validate().map_err(anyhow::Error::msg)?;
         let custom_config = serde_json::to_value(config).with_context(|| {
             format!(
-                "Failed to serialize tenant product config: {:?} / 无法序列化租户产品配置",
-                config
+                "Failed to serialize tenant product config: {config:?} / 无法序列化租户产品配置"
             )
         })?;
         let now = Utc::now();
         let row = match expected_updated_at {
             Some(expected_updated_at) => {
                 sqlx::query(
-                    r#"
+                    r"
                     UPDATE tenant_products
                     SET custom_config = $3, updated_at = $4
                     WHERE tenant_id = $1
@@ -138,7 +136,7 @@ impl ProductService {
                       AND enabled = true
                       AND COALESCE(updated_at, created_at) = $5
                     RETURNING id, tenant_id, product_id, enabled, custom_config, created_at
-                    "#,
+                    ",
                 )
                 .bind(tenant_id)
                 .bind(product_uuid)
@@ -150,12 +148,12 @@ impl ProductService {
             }
             None => {
                 sqlx::query(
-                    r#"
+                    r"
                     UPDATE tenant_products
                     SET custom_config = $3, updated_at = $4
                     WHERE tenant_id = $1 AND product_id = $2 AND enabled = true
                     RETURNING id, tenant_id, product_id, enabled, custom_config, created_at
-                    "#,
+                    ",
                 )
                 .bind(tenant_id)
                 .bind(product_uuid)
@@ -180,11 +178,11 @@ impl ProductService {
             }));
         }
         let latest_updated_at = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COALESCE(updated_at, created_at) AS updated_at
             FROM tenant_products
             WHERE tenant_id = $1 AND product_id = $2 AND enabled = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(product_uuid)

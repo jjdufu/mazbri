@@ -41,7 +41,7 @@ pub struct CandidateChannel {
     pub version_tag: Option<String>,
     pub weight: Option<u32>,
     pub supplier_config: serde_json::Value,
-    /// Channel JSON config (`channels.config`). May include rate_limit_* overrides.
+    /// Channel JSON config (`channels.config`). May include `rate_limit`_* overrides.
     #[serde(default)]
     pub channel_config: serde_json::Value,
     /// Cross-tenant total QPS for this channel (`channels.qps_limit`).
@@ -77,11 +77,13 @@ pub struct RouteEngine {
 }
 
 impl RouteEngine {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             routes: HashMap::new(),
         }
     }
+    #[must_use]
     pub fn with_routes(routes: HashMap<String, Vec<CandidateChannel>>) -> Self {
         let routes = routes
             .into_iter()
@@ -89,12 +91,15 @@ impl RouteEngine {
             .collect();
         Self { routes }
     }
+    #[must_use]
     pub fn with_scoped_routes(routes: HashMap<RouteKey, Vec<CandidateChannel>>) -> Self {
         Self { routes }
     }
+    #[must_use]
     pub fn route_count(&self) -> usize {
         self.routes.len()
     }
+    #[must_use]
     pub fn unique_service_urls(&self) -> Vec<String> {
         let mut urls = HashSet::new();
         for channels in self.routes.values() {
@@ -104,9 +109,11 @@ impl RouteEngine {
         }
         urls.into_iter().collect()
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.routes.is_empty()
     }
+    #[must_use]
     pub fn match_route(&self, ctx: &RouteMatchContext) -> Option<Vec<CandidateChannel>> {
         let tenant_route = RouteKey::tenant_product(&ctx.tenant_id, &ctx.product_id);
         let default_route = RouteKey::product_default(&ctx.product_id);
@@ -129,12 +136,12 @@ impl RouteEngine {
 
         let total_weight: u32 = channels.iter().map(|c| c.weight.unwrap_or(0)).sum();
         if total_weight > 0 {
-            let roll = if !ctx.tenant_id.is_empty() {
+            let roll = if ctx.tenant_id.is_empty() {
+                rand::random_range(0..100)
+            } else {
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 std::hash::Hash::hash(&ctx.tenant_id, &mut hasher);
                 (std::hash::Hasher::finish(&hasher) % 100) as u32
-            } else {
-                rand::random_range(0..100)
             };
 
             let scaled_roll = if total_weight == 100 {

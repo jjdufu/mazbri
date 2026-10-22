@@ -5,9 +5,7 @@ use std::path::PathBuf;
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let default = manifest_dir.join("../../mazbri-license.pub");
-    let path = env::var_os("MAZBRI_LICENSE_PUB")
-        .map(PathBuf::from)
-        .unwrap_or(default);
+    let path = env::var_os("MAZBRI_LICENSE_PUB").map_or(default, PathBuf::from);
     println!("cargo:rerun-if-env-changed=MAZBRI_LICENSE_PUB");
     println!("cargo:rerun-if-changed={}", path.display());
 

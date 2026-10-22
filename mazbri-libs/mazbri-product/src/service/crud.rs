@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    CreateProductRequest, PermissionCache, Postgres, Product, ProductDeleteError,
+    ProductIdReservation, ProductService, ProductWriteError, QueryBuilder, Result, Row,
+    UpdateProductRequest, Utc, Uuid, classify_product_write_error, info, product_from_row,
+    validate_product_id,
+};
 
 impl ProductService {
     pub async fn create_product(
@@ -29,16 +34,15 @@ impl ProductService {
         let mut tx = self.db.begin().await.map_err(ProductWriteError::Database)?;
         self.lock_product_id_space(&mut tx).await?;
         self.expire_stale_product_id_reservations(&mut tx).await?;
-        let reservation = match self
+        let reservation = if let Some(reservation) = self
             .reserve_available_product_id(&mut tx, reserved_by)
             .await?
         {
-            Some(reservation) => reservation,
-            None => {
-                let product_id = self.allocate_next_product_id(&mut tx).await?;
-                self.insert_product_id_reservation(&mut tx, &product_id, reserved_by)
-                    .await?
-            }
+            reservation
+        } else {
+            let product_id = self.allocate_next_product_id(&mut tx).await?;
+            self.insert_product_id_reservation(&mut tx, &product_id, reserved_by)
+                .await?
         };
         tx.commit().await.map_err(ProductWriteError::Database)?;
         Ok(reservation)
@@ -49,7 +53,7 @@ impl ProductService {
         reserved_by: &str,
     ) -> std::result::Result<bool, ProductWriteError> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE product_id_reservations
             SET status = 'available',
                 active_reservation_id = NULL,
@@ -62,7 +66,7 @@ impl ProductService {
               AND status = 'reserved'
               AND consumed_at IS NULL
             RETURNING id
-            "#,
+            ",
         )
         .bind(reservation_id)
         .bind(reserved_by)
@@ -156,14 +160,14 @@ impl ProductService {
         product_id: &str,
     ) -> std::result::Result<Option<Product>, sqlx::Error> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT id, product_id, name, description,
                    timeout_secs, enabled, cb_pro_enabled,
                    cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
                    created_at, updated_at
             FROM products
             WHERE product_id = $1
-            "#,
+            ",
         )
         .bind(product_id)
         .fetch_optional(&self.db)
@@ -176,14 +180,14 @@ impl ProductService {
     }
     pub async fn list_products(&self) -> Result<Vec<Product>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT id, product_id, name, description,
                    timeout_secs, enabled, cb_pro_enabled,
                    cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
                    created_at, updated_at
             FROM products
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .fetch_all(&self.db)
         .await?;
@@ -204,7 +208,7 @@ impl ProductService {
     where
         F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
     {
-        let search_pattern = search.map(|value| format!("%{}%", value));
+        let search_pattern = search.map(|value| format!("%{value}%"));
 
         let mut count_builder: QueryBuilder<'_, Postgres> =
             QueryBuilder::new("SELECT COUNT(*) FROM products WHERE 1=1");
@@ -255,12 +259,12 @@ impl ProductService {
             None => return Ok(false),
         };
         let active_tenants: Vec<String> = sqlx::query_scalar(
-            r#"
+            r"
             SELECT t.tenant_code
             FROM tenant_products tp
             JOIN tenants t ON tp.tenant_id = t.id
             WHERE tp.product_id = $1 AND tp.enabled = true
-            "#,
+            ",
         )
         .bind(product_uuid)
         .fetch_all(&self.db)
@@ -270,11 +274,11 @@ impl ProductService {
             return Err(ProductDeleteError::HasActiveTenants(active_tenants));
         }
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM products
             WHERE id = $1
             RETURNING id
-            "#,
+            ",
         )
         .bind(product_uuid)
         .fetch_optional(&self.db)

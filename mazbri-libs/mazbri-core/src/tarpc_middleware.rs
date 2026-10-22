@@ -12,5 +12,5 @@ pub fn validate_tenant_id(tenant_id: &str) -> Result<Uuid, TenantValidationError
         return Err(TenantValidationError::Empty);
     }
     Uuid::parse_str(trimmed)
-        .map_err(|e| TenantValidationError::InvalidFormat(format!("{}: {}", tenant_id, e)))
+        .map_err(|e| TenantValidationError::InvalidFormat(format!("{tenant_id}: {e}")))
 }

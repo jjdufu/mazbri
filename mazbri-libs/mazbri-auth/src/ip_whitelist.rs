@@ -23,6 +23,7 @@ pub struct IpWhitelist {
     cache: Cache<Uuid, Vec<String>>,
 }
 impl IpWhitelist {
+    #[must_use]
     pub fn new(db: Arc<PgPool>) -> Self {
         Self {
             db,
@@ -50,11 +51,11 @@ impl IpWhitelist {
             return Ok(cached);
         }
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT ip_address, cidr
             FROM ip_whitelist
             WHERE tenant_id = $1 AND is_active = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_all(&*self.db)
@@ -63,7 +64,7 @@ impl IpWhitelist {
         for row in rows {
             let ip_address: String = row.try_get("ip_address")?;
             let cidr: i32 = row.try_get("cidr")?;
-            whitelist.push(format!("{}/{}", ip_address, cidr));
+            whitelist.push(format!("{ip_address}/{cidr}"));
         }
         self.cache.insert(tenant_id, whitelist.clone()).await;
         Ok(whitelist)
@@ -76,18 +77,18 @@ impl IpWhitelist {
         description: Option<String>,
     ) -> AuthResult<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO ip_whitelist (tenant_id, ip_address, cidr, description)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (tenant_id, ip_address, cidr) DO UPDATE
             SET description = COALESCE($4, ip_whitelist.description),
                 updated_at = NOW(),
                 is_active = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(ip_addr.to_string())
-        .bind(cidr as i32)
+        .bind(i32::from(cidr))
         .bind(description)
         .execute(&*self.db)
         .await?;
@@ -96,15 +97,15 @@ impl IpWhitelist {
     }
     pub async fn remove_ip(&self, tenant_id: Uuid, ip_addr: IpAddr, cidr: u8) -> AuthResult<()> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE ip_whitelist
             SET is_active = false, updated_at = NOW()
             WHERE tenant_id = $1 AND ip_address = $2 AND cidr = $3
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(ip_addr.to_string())
-        .bind(cidr as i32)
+        .bind(i32::from(cidr))
         .execute(&*self.db)
         .await?;
         if result.rows_affected() == 0 {
@@ -126,8 +127,7 @@ impl IpWhitelist {
         let parts: Vec<&str> = cidr.split('/').collect();
         if parts.len() != 2 {
             return Err(AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                "Invalid CIDR format: {}",
-                cidr
+                "Invalid CIDR format: {cidr}"
             ))));
         }
         let allowed_ip: IpAddr = parts[0].parse().map_err(|e| {

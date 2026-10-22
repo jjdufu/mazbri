@@ -39,6 +39,7 @@ pub struct InteractionEvent {
     pub final_status: Option<String>,
 }
 impl InteractionEvent {
+    #[must_use]
     pub fn new(request_id: &str, tenant_id: &str, product_id: &str) -> Self {
         Self {
             id: Uuid::new_v4(),

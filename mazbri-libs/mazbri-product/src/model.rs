@@ -14,9 +14,8 @@ impl fmt::Display for ProductIdValidationError {
 impl std::error::Error for ProductIdValidationError {}
 pub fn validate_product_id(product_id: &str) -> Result<(), ProductIdValidationError> {
     let bytes = product_id.as_bytes();
-    let is_valid = bytes.len() == 10
-        && bytes.first() == Some(&b'8')
-        && bytes.iter().all(|byte| byte.is_ascii_digit());
+    let is_valid =
+        bytes.len() == 10 && bytes.first() == Some(&b'8') && bytes.iter().all(u8::is_ascii_digit);
     if is_valid {
         Ok(())
     } else {

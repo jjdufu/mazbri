@@ -1,4 +1,4 @@
-//! Hand-written AWS SigV4 (no aws-sigv4 crate, no AWS SDK).
+//! Hand-written AWS `SigV4` (no aws-sigv4 crate, no AWS SDK).
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -123,17 +123,17 @@ pub fn host_from_url(url: &str) -> Result<String, ExecuteError> {
 }
 
 fn canonical_uri(url: &str) -> String {
-    url::Url::parse(url)
-        .ok()
-        .map(|u| {
+    url::Url::parse(url).ok().map_or_else(
+        || "/".into(),
+        |u| {
             let p = u.path();
             if p.is_empty() {
                 "/".into()
             } else {
                 p.to_string()
             }
-        })
-        .unwrap_or_else(|| "/".into())
+        },
+    )
 }
 
 fn canonical_query(url: &str) -> String {

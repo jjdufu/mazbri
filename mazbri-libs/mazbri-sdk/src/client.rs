@@ -107,13 +107,12 @@ impl MazbriClient {
         let body = response.text().await?;
         let token: TokenResponse = serde_json::from_str(&body).map_err(|error| {
             Error::Token(format!(
-                "failed to parse token response (HTTP {}): {}",
-                status, error
+                "failed to parse token response (HTTP {status}): {error}"
             ))
         })?;
         if !token.success {
             return Err(Error::Token(token.error.unwrap_or_else(|| {
-                format!("token request rejected with HTTP {}", status)
+                format!("token request rejected with HTTP {status}")
             })));
         }
         Ok(token)

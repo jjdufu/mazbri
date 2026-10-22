@@ -74,6 +74,7 @@ impl ConfigWatchConfig {
 }
 
 /// 启动时还没有见过版本，第一次读到不算变更。
+#[must_use]
 pub fn should_reload(last_seen: Option<i64>, current: i64) -> bool {
     match last_seen {
         None => false,

@@ -73,7 +73,7 @@ pub(crate) fn outbound_body(
     Ok(Some(BodyKind::Json(raw)))
 }
 
-/// Flat JSON object → `k=v&k=v` with sorted keys. Nested object/array is SpecInvalid.
+/// Flat JSON object → `k=v&k=v` with sorted keys. Nested object/array is `SpecInvalid`.
 pub(crate) fn encode_form_object(payload: &Value) -> Result<String, ExecuteError> {
     let obj = payload
         .as_object()

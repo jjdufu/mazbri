@@ -43,14 +43,17 @@ impl HttpConfigClientBuilder {
             request_timeout: Duration::from_secs(10),
         }
     }
+    #[must_use]
     pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
         self.heartbeat_interval = interval;
         self
     }
+    #[must_use]
     pub fn request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
         self
     }
+    #[must_use]
     pub fn http_client(mut self, client: Client) -> Self {
         self.http_client = Some(client);
         self

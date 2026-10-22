@@ -11,6 +11,7 @@ pub struct RedisPermissionCache {
 }
 
 impl RedisPermissionCache {
+    #[must_use]
     pub fn new(redis: RedisClient, default_ttl: Duration) -> Self {
         Self { redis, default_ttl }
     }

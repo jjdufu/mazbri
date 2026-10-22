@@ -90,14 +90,16 @@ impl Default for QueueConfig {
             worker_loops: 2,
             idle_poll_ms: 100,
             stale_processing_secs: 120,
-            worker_node_id: hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "unknown".to_string()),
+            worker_node_id: hostname::get().map_or_else(
+                |_| "unknown".to_string(),
+                |h| h.to_string_lossy().to_string(),
+            ),
         }
     }
 }
 
 impl QueueConfig {
+    #[must_use]
     pub fn sanitized(mut self) -> Self {
         if self.batch_size < 1 {
             self.batch_size = 1;

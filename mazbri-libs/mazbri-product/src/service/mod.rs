@@ -1,4 +1,7 @@
-use super::model::*;
+use super::model::{
+    AuthorizationDetail, CreateProductRequest, Product, ProductIdReservation,
+    ProductIdValidationError, TenantProduct, UpdateProductRequest, validate_product_id,
+};
 pub use super::model::{
     GrantAccessRequest, ProductTenantAccess, TenantProductConfig, TenantProductDetail,
 };

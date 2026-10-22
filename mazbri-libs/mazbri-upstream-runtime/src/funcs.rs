@@ -95,7 +95,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert("b".into(), "2".into());
         m.insert("a".into(), "1".into());
-        m.insert("z".into(), "".into());
+        m.insert("z".into(), String::new());
         assert_eq!(sort_kv_join(&m), "a=1&b=2");
         let sig = hmac_sha256_b64("secret", "a=1&b=2");
         assert!(hmac_sha256_b64_verify("secret", "a=1&b=2", &sig));

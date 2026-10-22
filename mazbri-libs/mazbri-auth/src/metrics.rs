@@ -57,6 +57,7 @@ pub struct KeyValidationRecorder {
     credential_type: &'static str,
 }
 impl KeyValidationRecorder {
+    #[must_use]
     pub fn new(credential_type: &'static str) -> Self {
         Self { credential_type }
     }
@@ -95,6 +96,7 @@ pub struct TokenRecorder {
     token_type: &'static str,
 }
 impl TokenRecorder {
+    #[must_use]
     pub fn new(token_type: &'static str) -> Self {
         Self { token_type }
     }
@@ -118,6 +120,7 @@ pub struct LoginAttemptsRecorder {
     method: &'static str,
 }
 impl LoginAttemptsRecorder {
+    #[must_use]
     pub fn new(method: &'static str) -> Self {
         Self { method }
     }

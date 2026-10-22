@@ -41,7 +41,7 @@ const ALLOWED_TOP_KEYS: &[&str] = &[
 ];
 
 /// 已裁剪、写入必须拒绝的顶层字段（G-02/G-03 / H-23）。
-/// 售前须写明：不支持插件市场、通用 LB、配置内 health_check 探活摘流等。
+/// 售前须写明：不支持插件市场、通用 LB、配置内 `health_check` 探活摘流等。
 const REJECTED_TOP_KEYS: &[&str] = &[
     "protocol",
     "retries",
@@ -52,7 +52,7 @@ const REJECTED_TOP_KEYS: &[&str] = &[
     "disguise",
 ];
 
-/// timeouts 仅允许 total_ms。
+/// timeouts 仅允许 `total_ms`。
 const ALLOWED_TIMEOUT_KEYS: &[&str] = &["total_ms"];
 const REJECTED_TIMEOUT_KEYS: &[&str] = &["connect_ms", "read_ms", "write_ms"];
 
@@ -152,7 +152,7 @@ impl Default for AuthFlowConfig {
 
 impl AuthFlowConfig {
     pub fn profile_kind(&self) -> Result<AuthProfile, ConfigValidationError> {
-        let raw = self.profile.as_deref().map(str::trim).unwrap_or("");
+        let raw = self.profile.as_deref().map_or("", str::trim);
         AuthProfile::parse(raw).map_err(|e| ConfigValidationError::new(e.to_string()))
     }
 }
@@ -248,6 +248,7 @@ pub fn reject_unsupported_config_keys(
 }
 
 /// 从存量 JSON 去掉已裁剪字段（读路径/兼容旧库；不用于「静默接受写入」）。
+#[must_use]
 pub fn strip_unsupported_config_fields(mut value: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = value.as_object_mut() {
         for k in REJECTED_TOP_KEYS {
@@ -279,10 +280,12 @@ pub fn strip_unsupported_config_fields(mut value: serde_json::Value) -> serde_js
 }
 
 impl SupplierConfig {
+    #[must_use]
     pub fn is_transparent(&self) -> bool {
         self.upstream_type == UPSTREAM_TYPE_TRANSPARENT
     }
 
+    #[must_use]
     pub fn is_microservice(&self) -> bool {
         self.upstream_type == UPSTREAM_TYPE_MICROSERVICE
     }
@@ -356,8 +359,8 @@ impl SupplierConfig {
                 .contract_id
                 .as_deref()
                 .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .is_none()
+                .as_ref()
+                .is_none_or(|s| !!s.is_empty())
         {
             return Err(ConfigValidationError::new(
                 "config.upstream_type=microservice 时 contract_id 必填",
@@ -485,6 +488,7 @@ impl SupplierConfig {
         Ok(())
     }
 
+    #[must_use]
     pub fn normalize_disabled_sections(mut self) -> Self {
         if let Some(ref auth) = self.auth_flow {
             if !auth.enabled {
@@ -579,7 +583,8 @@ pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &s
     }
 }
 
-/// 脱敏 config 中 auth_flow.credentials（列表/详情/审计用；密文也打码）。
+/// 脱敏 config 中 `auth_flow.credentials（列表/详情/审计用；密文也打码`）。
+#[must_use]
 pub fn mask_config_credentials(mut config: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = config.as_object_mut() {
         if let Some(auth_flow) = obj.get_mut("auth_flow") {

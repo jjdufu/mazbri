@@ -62,6 +62,7 @@ impl BillingModel {
     ///
     /// Non-`call` values (legacy `data` / `subscription` / unknown) are forced to
     /// per-call so historical or dirty configs never free-ride or use removed paths.
+    #[must_use]
     pub fn from_billing_type(_billing_type: &str) -> Self {
         Self { per_call: true }
     }
@@ -80,6 +81,7 @@ pub struct BillingCalculator {
 }
 
 impl BillingCalculator {
+    #[must_use]
     pub fn new(rate_config: RateConfig, billing_model: BillingModel) -> Self {
         Self {
             rate_config,

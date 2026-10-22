@@ -45,27 +45,33 @@ pub struct HttpUpstreamChannelConfig {
     pub base_url: Option<String>,
 }
 
+#[must_use]
 pub fn default_timeout_secs() -> u64 {
     15
 }
 
+#[must_use]
 pub fn default_connect_timeout_secs() -> u64 {
     3
 }
 
+#[must_use]
 pub fn default_json_raw_enabled() -> bool {
     true
 }
 
+#[must_use]
 pub fn default_json_raw_min_bytes() -> usize {
     32 * 1024
 }
 
 impl HttpUpstreamConfig {
+    #[must_use]
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 
+    #[must_use]
     pub fn connect_timeout(&self) -> Duration {
         Duration::from_secs(self.connect_timeout_secs)
     }
@@ -77,6 +83,7 @@ impl HttpUpstreamConfig {
 }
 
 impl HttpUpstreamChannelConfig {
+    #[must_use]
     pub fn effective_base_url<'a>(&'a self, default_base_url: &'a str) -> &'a str {
         self.base_url.as_deref().unwrap_or(default_base_url)
     }
@@ -91,15 +98,11 @@ pub fn validate_base_config(
         anyhow::bail!("upstream.base_url 不能为空");
     }
     if !(1..=300).contains(&timeout_secs) {
-        anyhow::bail!(
-            "upstream.timeout_secs must be between 1 and 300, got {}",
-            timeout_secs
-        );
+        anyhow::bail!("upstream.timeout_secs must be between 1 and 300, got {timeout_secs}");
     }
     if !(1..=30).contains(&connect_timeout_secs) {
         anyhow::bail!(
-            "upstream.connect_timeout_secs must be between 1 and 30, got {}",
-            connect_timeout_secs
+            "upstream.connect_timeout_secs must be between 1 and 30, got {connect_timeout_secs}"
         );
     }
     Ok(())

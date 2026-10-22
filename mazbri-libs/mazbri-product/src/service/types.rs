@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Arc, Cache, DateTime, PermissionCache, PgPool, ProductConfig, ProductIdValidationError,
+    TenantProduct, TenantProductDetail, Utc, Uuid, fmt,
+};
 
 #[derive(Debug)]
 pub enum UpdateTenantProductConfigResult {
@@ -22,27 +25,25 @@ impl fmt::Display for ProductWriteError {
         match self {
             Self::InvalidProductId(error) => error.fmt(f),
             Self::DuplicateProductId(product_id) => {
-                write!(f, "product_id '{}' already exists", product_id)
+                write!(f, "product_id '{product_id}' already exists")
             }
             Self::ExhaustedProductIdSpace => f.write_str("product_id space exhausted"),
             Self::ProductIdReservationNotFound(reservation_id) => {
-                write!(f, "product_id reservation '{}' not found", reservation_id)
+                write!(f, "product_id reservation '{reservation_id}' not found")
             }
             Self::ProductIdReservationExpired(reservation_id) => {
-                write!(f, "product_id reservation '{}' expired", reservation_id)
+                write!(f, "product_id reservation '{reservation_id}' expired")
             }
             Self::ProductIdReservationUnavailable(reservation_id) => {
                 write!(
                     f,
-                    "product_id reservation '{}' is no longer available",
-                    reservation_id
+                    "product_id reservation '{reservation_id}' is no longer available"
                 )
             }
             Self::ProductIdReservationOwnedByAnotherOperator(reservation_id) => {
                 write!(
                     f,
-                    "product_id reservation '{}' belongs to another operator",
-                    reservation_id
+                    "product_id reservation '{reservation_id}' belongs to another operator"
                 )
             }
             Self::Database(error) => error.fmt(f),

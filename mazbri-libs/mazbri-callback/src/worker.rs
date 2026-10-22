@@ -42,10 +42,12 @@ pub struct CallbackWorker {
 }
 
 impl CallbackWorker {
+    #[must_use]
     pub fn new(pool: PgPool) -> Self {
         Self::with_config(pool, CallbackWorkerConfig::default())
     }
 
+    #[must_use]
     pub fn with_config(pool: PgPool, config: CallbackWorkerConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
@@ -233,7 +235,7 @@ impl CallbackWorker {
                     "success",
                     task.retry_count,
                     None,
-                    Some(resp.status().as_u16() as i32),
+                    Some(i32::from(resp.status().as_u16())),
                     None,
                 )
                 .await?;
@@ -241,7 +243,7 @@ impl CallbackWorker {
             Ok(resp) => {
                 let status_code = resp.status().as_u16();
                 warn!("Callback {} failed with status {}", task.id, status_code);
-                self.handle_failure(task, sub, Some(status_code as i32), None)
+                self.handle_failure(task, sub, Some(i32::from(status_code)), None)
                     .await?;
             }
             Err(e) => {

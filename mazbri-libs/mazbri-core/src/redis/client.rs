@@ -100,9 +100,9 @@ impl RedisClient {
                 if config.use_tls { "rediss" } else { "redis" }
             };
             if let Some(ref password) = config.password {
-                format!("{}://:{}@{}:{}/{}", scheme, password, host, port, db)
+                format!("{scheme}://:{password}@{host}:{port}/{db}")
             } else {
-                format!("{}://{}:{}/{}", scheme, host, port, db)
+                format!("{scheme}://{host}:{port}/{db}")
             }
         } else {
             anyhow::bail!("Redis configuration must specify either 'url' or 'host'");
@@ -198,14 +198,17 @@ impl RedisClient {
             || message.contains("already shutdown")
     }
 
+    #[must_use]
     pub fn nonce_key(&self, tenant_id: Uuid, key_version: &str, nonce: &str) -> String {
         nonce_key(&self.key_prefix, tenant_id, key_version, nonce)
     }
 
+    #[must_use]
     pub fn cache_key(&self, tenant_id: &str, cache_key_value: &str) -> String {
         crate::redis::keys::cache_key(&self.key_prefix, tenant_id, cache_key_value)
     }
 
+    #[must_use]
     pub fn permission_key(&self, tenant_id: Uuid, product_id: &str) -> String {
         permission_key(&self.key_prefix, tenant_id, product_id)
     }
@@ -234,14 +237,17 @@ impl RedisClient {
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }
 
+    #[must_use]
     pub fn fallback_key(&self, cache_key: &str) -> String {
         fallback_key(&self.key_prefix, cache_key)
     }
 
+    #[must_use]
     pub fn idempotency_key(&self, fingerprint: &str) -> String {
         idempotency_key(&self.key_prefix, fingerprint)
     }
 
+    #[must_use]
     pub fn rate_limit_key(&self, parts: &[&str]) -> String {
         rate_limit_key(&self.key_prefix, parts)
     }

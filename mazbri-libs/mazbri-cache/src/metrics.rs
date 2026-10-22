@@ -65,6 +65,7 @@ pub struct CacheOperationRecorder {
     operation: &'static str,
 }
 impl CacheOperationRecorder {
+    #[must_use]
     pub fn new(operation: &'static str) -> Self {
         Self { operation }
     }
@@ -103,6 +104,7 @@ pub struct EvictionRecorder {
     reason: &'static str,
 }
 impl EvictionRecorder {
+    #[must_use]
     pub fn new(reason: &'static str) -> Self {
         Self { reason }
     }

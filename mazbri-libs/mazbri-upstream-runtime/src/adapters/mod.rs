@@ -266,7 +266,10 @@ pub fn parse_json_body(bytes: &[u8]) -> Result<serde_json::Value, ExecuteError> 
 }
 
 pub fn map_jsonrpc_error(err: &serde_json::Value) -> BizError {
-    let code = err.get("code").and_then(|v| v.as_i64()).unwrap_or(-32603);
+    let code = err
+        .get("code")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(-32603);
     let message = err
         .get("message")
         .and_then(|v| v.as_str())
@@ -512,7 +515,7 @@ mod tests {
         raw.lines().find_map(|line| {
             let lower = line.to_ascii_lowercase();
             if lower.starts_with(&want) {
-                Some(line.split_once(':').map(|(_, v)| v.trim()).unwrap_or(""))
+                Some(line.split_once(':').map_or("", |(_, v)| v.trim()))
             } else {
                 None
             }

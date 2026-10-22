@@ -59,7 +59,7 @@ fn build_connect_options_from_fields(
             "allow" => PgSslMode::Allow,
             "verify-ca" => PgSslMode::VerifyCa,
             "verify-full" => PgSslMode::VerifyFull,
-            _ => bail!("不支持的 ssl_mode: {}", ssl),
+            _ => bail!("不支持的 ssl_mode: {ssl}"),
         };
         options = options.ssl_mode(mode);
     }

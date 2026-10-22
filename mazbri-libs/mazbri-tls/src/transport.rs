@@ -74,7 +74,7 @@ impl TlsConnector {
         let client_config = build_client_config(ca_cert_pem, client_cert, config)?;
         let connector = RustlsConnector::from(client_config);
         let server_name = rustls::pki_types::ServerName::try_from(domain)
-            .map_err(|e| TlsError::Config(format!("Invalid server name '{}': {}", domain, e)))?
+            .map_err(|e| TlsError::Config(format!("Invalid server name '{domain}': {e}")))?
             .to_owned();
         Ok(Self {
             inner: Arc::new(connector),
@@ -92,12 +92,10 @@ impl TlsConnector {
         debug!(addr = % addr, "Connecting to TLS server");
         let tcp_stream = TcpStream::connect(addr)
             .await
-            .map_err(|e| TlsError::HandshakeFailed(format!("TCP connect failed: {}", e)))?;
+            .map_err(|e| TlsError::HandshakeFailed(format!("TCP connect failed: {e}")))?;
         let domain = if let Some(server_name) = server_name {
             rustls::pki_types::ServerName::try_from(server_name)
-                .map_err(|e| {
-                    TlsError::Config(format!("Invalid server name '{}': {}", server_name, e))
-                })?
+                .map_err(|e| TlsError::Config(format!("Invalid server name '{server_name}': {e}")))?
                 .to_owned()
         } else {
             self.domain.clone()
@@ -118,19 +116,19 @@ pub async fn resolve_connect_target(endpoint: &str) -> TlsResult<ConnectTarget> 
     } else {
         url::Url::parse(&format!("tcp://{endpoint}"))
     }
-    .map_err(|e| TlsError::Config(format!("Invalid endpoint '{}': {}", endpoint, e)))?;
+    .map_err(|e| TlsError::Config(format!("Invalid endpoint '{endpoint}': {e}")))?;
     let host = url
         .host_str()
-        .ok_or_else(|| TlsError::Config(format!("Endpoint '{}' missing host", endpoint)))?;
+        .ok_or_else(|| TlsError::Config(format!("Endpoint '{endpoint}' missing host")))?;
     let port = url
         .port()
-        .ok_or_else(|| TlsError::Config(format!("Endpoint '{}' missing port", endpoint)))?;
+        .ok_or_else(|| TlsError::Config(format!("Endpoint '{endpoint}' missing port")))?;
     let display_addr = format!("{host}:{port}");
     let mut addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
-        TlsError::HandshakeFailed(format!("Failed to resolve '{}': {}", display_addr, e))
+        TlsError::HandshakeFailed(format!("Failed to resolve '{display_addr}': {e}"))
     })?;
     let socket_addr = addrs.next().ok_or_else(|| {
-        TlsError::HandshakeFailed(format!("No resolved addresses for '{}'", display_addr))
+        TlsError::HandshakeFailed(format!("No resolved addresses for '{display_addr}'"))
     })?;
     let server_name = if host.parse::<IpAddr>().is_ok() {
         None
@@ -189,7 +187,7 @@ fn build_server_config(
         return Err(TlsError::InvalidCertificate("PEM 中未找到证书".to_string()));
     }
     let key = private_key(&mut Cursor::new(cert.key_pem.as_bytes()))
-        .map_err(|e| TlsError::InvalidCertificate(format!("Failed to parse key: {}", e)))?
+        .map_err(|e| TlsError::InvalidCertificate(format!("Failed to parse key: {e}")))?
         .ok_or_else(|| TlsError::InvalidCertificate("PEM 中未找到私钥".to_string()))?;
     let server_config = if config.verify_peer {
         let ca_certs: Vec<rustls::pki_types::CertificateDer> = {
@@ -222,27 +220,27 @@ fn build_server_config(
             ServerConfig::builder()
                 .with_no_client_auth()
                 .with_single_cert(cert_chain, key)
-                .map_err(|e| TlsError::Config(format!("Failed to build server config: {}", e)))?
+                .map_err(|e| TlsError::Config(format!("Failed to build server config: {e}")))?
         } else {
             let mut root_store = rustls::RootCertStore::empty();
             for cert in ca_certs {
                 root_store
                     .add(cert)
-                    .map_err(|e| TlsError::Config(format!("Failed to add CA cert: {}", e)))?;
+                    .map_err(|e| TlsError::Config(format!("Failed to add CA cert: {e}")))?;
             }
             let verifier = WebPkiClientVerifier::builder(root_store.into())
                 .build()
-                .map_err(|e| TlsError::Config(format!("Failed to build client verifier: {}", e)))?;
+                .map_err(|e| TlsError::Config(format!("Failed to build client verifier: {e}")))?;
             ServerConfig::builder()
                 .with_client_cert_verifier(verifier)
                 .with_single_cert(cert_chain, key)
-                .map_err(|e| TlsError::Config(format!("Failed to build server config: {}", e)))?
+                .map_err(|e| TlsError::Config(format!("Failed to build server config: {e}")))?
         }
     } else {
         ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(cert_chain, key)
-            .map_err(|e| TlsError::Config(format!("Failed to build server config: {}", e)))?
+            .map_err(|e| TlsError::Config(format!("Failed to build server config: {e}")))?
     };
     Ok(Arc::new(server_config))
 }
@@ -289,7 +287,7 @@ fn build_client_config(
     for cert in ca_certs {
         root_store
             .add(cert)
-            .map_err(|e| TlsError::Config(format!("Failed to add CA cert: {}", e)))?;
+            .map_err(|e| TlsError::Config(format!("Failed to add CA cert: {e}")))?;
     }
     let builder = ClientConfig::builder().with_root_certificates(root_store);
     let client_config = if let Some(cert) = client_cert {
@@ -325,14 +323,12 @@ fn build_client_config(
             ));
         }
         let key = private_key(&mut Cursor::new(cert.key_pem.as_bytes()))
-            .map_err(|e| {
-                TlsError::InvalidCertificate(format!("Failed to parse client key: {}", e))
-            })?
+            .map_err(|e| TlsError::InvalidCertificate(format!("Failed to parse client key: {e}")))?
             .ok_or_else(|| TlsError::InvalidCertificate("未找到客户端私钥".to_string()))?;
         builder
             .with_client_auth_cert(cert_chain, key)
             .map_err(|e| {
-                TlsError::Config(format!("Failed to build client config with cert: {}", e))
+                TlsError::Config(format!("Failed to build client config with cert: {e}"))
             })?
     } else {
         builder.with_no_client_auth()

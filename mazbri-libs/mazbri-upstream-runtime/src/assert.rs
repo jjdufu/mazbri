@@ -74,6 +74,7 @@ pub struct AssertionResult {
     pub message: Option<String>,
 }
 
+#[must_use]
 pub fn evaluate_assertions(
     assertions: &[Assertion],
     response: Option<&OutboundResponse>,
@@ -193,10 +194,10 @@ fn evaluate_one(
         Assertion::BodyNotContains { value, name } => {
             let name = name.clone().unwrap_or_else(|| "body_not_contains".into());
             let body = body_str(response);
-            if !body.contains(value) {
-                pass(name)
-            } else {
+            if body.contains(value) {
                 fail(name, "body unexpectedly contains substring")
+            } else {
+                pass(name)
             }
         }
         Assertion::HeaderEquals { key, value, name } => {

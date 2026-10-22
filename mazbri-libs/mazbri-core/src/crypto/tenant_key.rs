@@ -49,10 +49,12 @@ pub struct WrappedTenantKey {
     pub wrapping_key_id: String,
 }
 
+#[must_use]
 pub fn generate_tenant_secret_key() -> [u8; TENANT_SECRET_KEY_BYTES] {
     rand::random()
 }
 
+#[must_use]
 pub fn generate_key_version(existing_versions: &[String]) -> String {
     let max = existing_versions
         .iter()
@@ -201,10 +203,12 @@ pub fn secret_key_digest(
     Ok(sign_payload(integrity_key, &payload)?)
 }
 
+#[must_use]
 pub fn envelope_aad(tenant_id: &str, key_version: &str) -> String {
-    format!("{}:{}", tenant_id, key_version)
+    format!("{tenant_id}:{key_version}")
 }
 
+#[must_use]
 pub fn default_key_metadata() -> serde_json::Value {
     serde_json::json!({
         "dataAlgorithm": DATA_ALGORITHM,

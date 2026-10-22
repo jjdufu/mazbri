@@ -11,7 +11,7 @@ pub fn generate_signature(
     // HMAC-SHA256 accepts any key length in practice; still surface failure without panicking.
     let mut mac =
         HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| "invalid HMAC signing key")?;
-    let message = format!("{}.{}", timestamp, payload);
+    let message = format!("{timestamp}.{payload}");
     mac.update(message.as_bytes());
     let result = mac.finalize();
     Ok(hex::encode(result.into_bytes()))

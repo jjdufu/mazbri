@@ -108,10 +108,12 @@ impl BillingService {
                 .build(),
         }
     }
+    #[must_use]
     pub fn with_pgpool(pool: Arc<PgPool>, config: BillingServiceConfig) -> Self {
         Self::with_pgpools(Arc::clone(&pool), pool, config)
     }
     /// Dual-pool constructor: `read_pool` serves balance precheck; `write_pool` serves charges.
+    #[must_use]
     pub fn with_pgpools(
         write_pool: Arc<PgPool>,
         read_pool: Arc<PgPool>,
@@ -134,6 +136,7 @@ impl BillingService {
                 .build(),
         }
     }
+    #[must_use]
     pub fn db(&self) -> Option<&PgPool> {
         self.pool.as_deref()
     }
@@ -451,7 +454,7 @@ impl BillingService {
         tenant_id: Uuid,
         product_id: &str,
     ) -> BillingResult<(RateConfig, BillingModel)> {
-        let cache_key = format!("{}:{}", tenant_id, product_id);
+        let cache_key = format!("{tenant_id}:{product_id}");
         if let Some(cached) = self.rate_config_cache.get(&cache_key) {
             return Ok(cached);
         }
@@ -461,39 +464,36 @@ impl BillingService {
             ))
         })?;
         let row = sqlx::query(
-            r#"SELECT COALESCE(tp.custom_config->>'unit_price', '0.001') as unit_price,
+            r"SELECT COALESCE(tp.custom_config->>'unit_price', '0.001') as unit_price,
                       COALESCE(tp.custom_config->>'billing_type', 'call') as billing_type
                FROM tenant_products tp
                JOIN products p ON tp.product_id = p.id
-               WHERE tp.tenant_id = $1 AND p.product_id = $2 AND tp.enabled = true"#,
+               WHERE tp.tenant_id = $1 AND p.product_id = $2 AND tp.enabled = true",
         )
         .bind(tenant_id)
         .bind(product_id)
         .fetch_optional(pool)
         .await
         .map_err(BillingError::from)?;
-        match row {
-            Some(row) => {
-                let unit_price: String = row.get("unit_price");
-                let billing_type: String = row.get("billing_type");
-                let rate_config = RateConfig {
-                    per_call_rate: unit_price.parse::<Decimal>().unwrap_or_else(|_| {
-                        Decimal::from_str_exact(RateConfig::DEFAULT_PER_CALL_RATE)
-                            .expect("default per-call rate constant is valid")
-                    }),
-                    tier_name: "custom".to_string(),
-                };
-                // Non-call legacy values are coerced to per-call inside from_billing_type.
-                let billing_model = BillingModel::from_billing_type(&billing_type);
-                let cached = (rate_config, billing_model);
-                self.rate_config_cache.insert(cache_key, cached.clone());
-                Ok(cached)
-            }
-            None => {
-                let cached = (RateConfig::default(), BillingModel::default());
-                self.rate_config_cache.insert(cache_key, cached.clone());
-                Ok(cached)
-            }
+        if let Some(row) = row {
+            let unit_price: String = row.get("unit_price");
+            let billing_type: String = row.get("billing_type");
+            let rate_config = RateConfig {
+                per_call_rate: unit_price.parse::<Decimal>().unwrap_or_else(|_| {
+                    Decimal::from_str_exact(RateConfig::DEFAULT_PER_CALL_RATE)
+                        .expect("default per-call rate constant is valid")
+                }),
+                tier_name: "custom".to_string(),
+            };
+            // Non-call legacy values are coerced to per-call inside from_billing_type.
+            let billing_model = BillingModel::from_billing_type(&billing_type);
+            let cached = (rate_config, billing_model);
+            self.rate_config_cache.insert(cache_key, cached.clone());
+            Ok(cached)
+        } else {
+            let cached = (RateConfig::default(), BillingModel::default());
+            self.rate_config_cache.insert(cache_key, cached.clone());
+            Ok(cached)
         }
     }
 }

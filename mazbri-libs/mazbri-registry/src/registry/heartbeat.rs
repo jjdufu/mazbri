@@ -18,7 +18,7 @@ pub(crate) async fn spawn_heartbeat_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
-                _ = token.cancelled() => {
+                () = token.cancelled() => {
                     info!("心跳任务收到关闭信号");
                     break;
                 }

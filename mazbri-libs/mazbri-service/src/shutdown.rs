@@ -27,6 +27,7 @@ pub struct ShutdownHandle {
     tx: tokio::sync::broadcast::Sender<()>,
 }
 impl ShutdownHandle {
+    #[must_use]
     pub fn new() -> (Self, tokio::sync::broadcast::Receiver<()>) {
         let (tx, rx) = tokio::sync::broadcast::channel(1);
         (Self { tx }, rx)
@@ -35,6 +36,7 @@ impl ShutdownHandle {
         let _ = self.tx.send(());
     }
 }
+#[must_use]
 pub fn create_shutdown_manager() -> ShutdownHandle {
     let (handle, _rx) = ShutdownHandle::new();
     handle

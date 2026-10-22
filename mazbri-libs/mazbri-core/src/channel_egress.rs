@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// Closed adapter enum (wire names are snake_case).
+/// Closed adapter enum (wire names are `snake_case`).
 pub const ADAPTER_HTTP_JSON: &str = "http_json";
 pub const ADAPTER_HTTP_ENVELOPE: &str = "http_envelope";
 pub const ADAPTER_SIGN_FORM: &str = "sign_form";
@@ -111,6 +111,7 @@ impl AdapterKind {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::HttpJson => ADAPTER_HTTP_JSON,
@@ -125,10 +126,12 @@ impl AdapterKind {
         }
     }
 
+    #[must_use]
     pub fn known() -> &'static [&'static str] {
         KNOWN_ADAPTERS
     }
 
+    #[must_use]
     pub fn requires_operation(self) -> bool {
         !matches!(self, Self::HttpJson)
     }
@@ -173,6 +176,7 @@ impl AuthProfile {
         }
     }
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => AUTH_NONE,
@@ -190,18 +194,22 @@ impl AuthProfile {
         }
     }
 
+    #[must_use]
     pub fn known() -> &'static [&'static str] {
         KNOWN_AUTH
     }
 
+    #[must_use]
     pub fn is_none(self) -> bool {
         matches!(self, Self::None)
     }
 
+    #[must_use]
     pub fn uses_ticket(self) -> bool {
         matches!(self, Self::OauthCcForm | Self::Gettoken)
     }
 
+    #[must_use]
     pub fn uses_inject(self) -> bool {
         matches!(
             self,
@@ -214,6 +222,7 @@ impl AuthProfile {
         )
     }
 
+    #[must_use]
     pub fn needs_http_challenge_or_sign(self) -> bool {
         matches!(self, Self::Digest | Self::AwsSigV4 | Self::Hawk)
     }
@@ -341,6 +350,7 @@ fn clear_nested_specs(spec: &mut AuthSpec) {
 
 /// Drop fields that the selected profile must not persist.
 /// `None` means the caller should set `egress.auth = None`.
+#[must_use]
 pub fn sanitize_auth_spec(mut spec: AuthSpec) -> Option<AuthSpec> {
     let profile = match AuthProfile::parse(&spec.profile) {
         Ok(p) => p,
@@ -435,7 +445,7 @@ pub fn sanitize_egress_auth(spec: &mut ChannelEgressSpec) {
 }
 
 pub fn profile_is_undeclared(raw: Option<&str>) -> bool {
-    matches!(raw.map(str::trim).unwrap_or(""), "" | AUTH_NONE)
+    matches!(raw.map_or("", str::trim), "" | AUTH_NONE)
 }
 
 /// L2 outbound request. Tenant L1 is always JSON (or none).
@@ -455,7 +465,7 @@ pub struct EgressRequestSpec {
     /// JSON MIME override (`application/vnd.api+json`, …). Ignored for form/none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
-    /// `json` (default) | `form` | `none`. Absent = legacy http_json behavior.
+    /// `json` (default) | `form` | `none`. Absent = legacy `http_json` behavior.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body_encoding: Option<String>,
 }
@@ -511,7 +521,7 @@ pub struct WsUnarySpec {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap: Option<String>,
-    /// header / query / first_frame — closed set, combinable.
+    /// header / query / `first_frame` — closed set, combinable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_in: Option<Vec<String>>,
 }
@@ -528,7 +538,7 @@ pub struct SignFormSpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct SoapSpec {
-    /// Upstream camelCase field → tenant snake_case (response reverse map).
+    /// Upstream camelCase field → tenant `snake_case` (response reverse map).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_map: Option<HashMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -570,6 +580,7 @@ impl ChannelEgressSpec {
         AdapterKind::parse(&self.adapter)
     }
 
+    #[must_use]
     pub fn wrap_name(&self) -> &str {
         self.request
             .as_ref()
@@ -578,6 +589,7 @@ impl ChannelEgressSpec {
             .unwrap_or(WRAP_METHOD_BIZ_CONTENT)
     }
 
+    #[must_use]
     pub fn request_method(&self) -> &str {
         self.request
             .as_ref()
@@ -586,6 +598,7 @@ impl ChannelEgressSpec {
             .unwrap_or("POST")
     }
 
+    #[must_use]
     pub fn request_path<'a>(&'a self, path_prefix_fallback: &'a str) -> &'a str {
         if let Some(p) = self
             .request
@@ -602,6 +615,7 @@ impl ChannelEgressSpec {
         }
     }
 
+    #[must_use]
     pub fn resolved_base_url<'a>(&'a self, supplier_upstream_url: &'a str) -> &'a str {
         self.base_url
             .as_deref()
@@ -611,6 +625,7 @@ impl ChannelEgressSpec {
 }
 
 /// SHA-256 hex of canonical JSON (stable enough for cache keys).
+#[must_use]
 pub fn hash_egress_spec_json(json: &str) -> String {
     let digest = Sha256::digest(json.as_bytes());
     hex::encode(digest)
@@ -834,7 +849,7 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
     }
 
     if adapter.requires_operation() {
-        let op = spec.operation.as_deref().map(str::trim).unwrap_or("");
+        let op = spec.operation.as_deref().map_or("", str::trim);
         if op.is_empty() {
             return Err(ChannelEgressError::new(format!(
                 "egress.adapter={} 需要 egress.operation",
@@ -845,11 +860,7 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
 
     match adapter {
         AdapterKind::Graphql => {
-            let doc = spec
-                .graphql
-                .as_ref()
-                .map(|g| g.document.trim())
-                .unwrap_or("");
+            let doc = spec.graphql.as_ref().map_or("", |g| g.document.trim());
             if doc.is_empty() {
                 return Err(ChannelEgressError::new(
                     "egress.adapter=graphql 需要 graphql.document",
@@ -857,7 +868,7 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
             }
         }
         AdapterKind::Grpc => {
-            let id = spec.artifact_id.as_deref().map(str::trim).unwrap_or("");
+            let id = spec.artifact_id.as_deref().map_or("", str::trim);
             if id.is_empty() {
                 return Err(ChannelEgressError::new(
                     "egress.adapter=grpc 需要 egress.artifact_id（FileDescriptorSet）",
@@ -927,8 +938,7 @@ fn validate_outbound_url(raw: &str, field: &str) -> Result<(), ChannelEgressErro
     }
     let rest = raw
         .split_once("://")
-        .map(|(_, r)| r)
-        .unwrap_or("")
+        .map_or("", |(_, r)| r)
         .trim_start_matches('/');
     let host = rest.split(['/', '?', '#']).next().unwrap_or("");
     let host = host.split('@').next_back().unwrap_or(host);
@@ -944,6 +954,7 @@ fn validate_outbound_url(raw: &str, field: &str) -> Result<(), ChannelEgressErro
 
 /// Default REST-shaped egress used when migrating a legacy channel that only
 /// had `path_prefix` (M0 backfill).
+#[must_use]
 pub fn default_http_json_egress(path: &str, method: &str) -> ChannelEgressSpec {
     ChannelEgressSpec {
         adapter: ADAPTER_HTTP_JSON.to_string(),

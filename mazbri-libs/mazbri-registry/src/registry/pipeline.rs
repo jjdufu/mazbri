@@ -33,7 +33,7 @@ impl ConfigPipeline {
                     accepted: false,
                     applied: false,
                     version: push.version,
-                    message: Some(format!("validate failed: {}", e)),
+                    message: Some(format!("validate failed: {e}")),
                 });
             }
         };
@@ -52,33 +52,32 @@ impl ConfigPipeline {
             }
             Err(apply_err) => {
                 if let Some(ref old) = old_config {
-                    match self.config_handler.rollback(old).await {
-                        Ok(_) => Ok(ConfigPushResult {
+                    if let Ok(_) = self.config_handler.rollback(old).await {
+                        Ok(ConfigPushResult {
                             accepted: true,
                             applied: false,
                             version: push.version,
                             message: Some(
                                 "config apply failed, rolled back to previous version".to_string(),
                             ),
-                        }),
-                        Err(_) => {
-                            tracing::error!(
-                                error = % apply_err, "config apply and rollback both failed"
-                            );
-                            Ok(ConfigPushResult {
-                                accepted: true,
-                                applied: false,
-                                version: push.version,
-                                message: Some("apply and rollback both failed".to_string()),
-                            })
-                        }
+                        })
+                    } else {
+                        tracing::error!(
+                            error = % apply_err, "config apply and rollback both failed"
+                        );
+                        Ok(ConfigPushResult {
+                            accepted: true,
+                            applied: false,
+                            version: push.version,
+                            message: Some("apply and rollback both failed".to_string()),
+                        })
                     }
                 } else {
                     Ok(ConfigPushResult {
                         accepted: true,
                         applied: false,
                         version: push.version,
-                        message: Some(format!("config apply failed: {}", apply_err)),
+                        message: Some(format!("config apply failed: {apply_err}")),
                     })
                 }
             }

@@ -77,15 +77,16 @@ impl CircuitBreaker {
     fn now_ms() -> i64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+            .map_or(0, |d| d.as_millis() as i64)
     }
     pub async fn state(&self) -> CircuitState {
         CircuitState::from_u8(self.state.load(Ordering::Acquire))
     }
+    #[must_use]
     pub fn failure_count(&self) -> u64 {
         self.failure_count.load(Ordering::Relaxed)
     }
+    #[must_use]
     pub fn success_count(&self) -> u64 {
         self.success_count.load(Ordering::Relaxed)
     }
@@ -145,7 +146,7 @@ impl CircuitBreaker {
             CircuitBreakerEvent::RequestRejected,
             Some(CircuitState::Open),
             None,
-            &format!("Circuit is open, retry after {:?}", retry_after),
+            &format!("Circuit is open, retry after {retry_after:?}"),
         );
         CircuitResult::Rejected {
             reason: "断路器打开".to_string(),
@@ -174,7 +175,7 @@ impl CircuitBreaker {
                         CircuitBreakerEvent::StateTransition,
                         Some(CircuitState::HalfOpen),
                         Some(CircuitState::Closed),
-                        &format!("Success threshold ({}) reached", successes),
+                        &format!("Success threshold ({successes}) reached"),
                     );
                     self.transition_to(CircuitState::Closed).await;
                     self.reset_counters();
@@ -188,7 +189,7 @@ impl CircuitBreaker {
                     CircuitBreakerEvent::RequestFailure,
                     Some(CircuitState::HalfOpen),
                     None,
-                    &format!("Test request failed: {}", error),
+                    &format!("Test request failed: {error}"),
                 );
                 log_event(
                     &self.name,
@@ -235,7 +236,7 @@ impl CircuitBreaker {
                         CircuitBreakerEvent::StateTransition,
                         Some(CircuitState::Closed),
                         Some(CircuitState::Open),
-                        &format!("Failure threshold ({}) reached", failures),
+                        &format!("Failure threshold ({failures}) reached"),
                     );
                     self.transition_to(CircuitState::Open).await;
                     self.reset_counters();

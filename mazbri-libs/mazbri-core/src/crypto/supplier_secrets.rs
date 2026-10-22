@@ -42,24 +42,21 @@ pub fn supplier_secrets_key() -> Result<&'static [u8; 32], SupplierSecretsError>
 }
 
 fn load_key_once() -> Result<[u8; 32], String> {
-    match std::env::var(ENV_KEY) {
-        Ok(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(format!("{ENV_KEY} is empty"));
-            }
-            parse_key_material(trimmed)
+    if let Ok(raw) = std::env::var(ENV_KEY) {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(format!("{ENV_KEY} is empty"));
         }
-        Err(_) => {
-            tracing::warn!(
-                env = ENV_KEY,
-                "MAZBRI_SUPPLIER_SECRETS_KEY not set; using development-derived key (not for production)"
-            );
-            let digest = Sha256::digest(DEV_SEED.as_bytes());
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&digest);
-            Ok(key)
-        }
+        parse_key_material(trimmed)
+    } else {
+        tracing::warn!(
+            env = ENV_KEY,
+            "MAZBRI_SUPPLIER_SECRETS_KEY not set; using development-derived key (not for production)"
+        );
+        let digest = Sha256::digest(DEV_SEED.as_bytes());
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&digest);
+        Ok(key)
     }
 }
 

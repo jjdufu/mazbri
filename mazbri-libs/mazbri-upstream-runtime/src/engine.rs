@@ -61,6 +61,7 @@ pub struct RuntimeEngine {
 }
 
 impl RuntimeEngine {
+    #[must_use]
     pub fn new(client: Arc<reqwest::Client>, ssrf: SsrfChecker) -> Self {
         Self {
             client,
@@ -83,19 +84,23 @@ impl RuntimeEngine {
         }
     }
 
+    #[must_use]
     pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
         self.limits = limits;
         self
     }
 
+    #[must_use]
     pub fn token_cache(&self) -> Arc<TokenCache> {
         self.token_cache.clone()
     }
 
+    #[must_use]
     pub fn ssrf(&self) -> &SsrfChecker {
         &self.ssrf
     }
 
+    #[must_use]
     pub fn client(&self) -> Arc<reqwest::Client> {
         self.client.clone()
     }
@@ -832,7 +837,7 @@ impl RuntimeEngine {
             };
 
             let mut header_map = HeaderMap::new();
-            for (k, v) in outbound_headers.iter() {
+            for (k, v) in &outbound_headers {
                 if k.to_lowercase().starts_with("x-mazbri-") {
                     continue;
                 }
@@ -887,7 +892,7 @@ impl RuntimeEngine {
                     }
 
                     let mut resp_headers = HashMap::new();
-                    for (key, val) in resp.headers().iter() {
+                    for (key, val) in resp.headers() {
                         if let Ok(str_val) = val.to_str() {
                             resp_headers.insert(key.to_string(), str_val.to_string());
                         }
@@ -939,7 +944,7 @@ impl RuntimeEngine {
                     }
 
                     // propagate tracing headers from inbound
-                    for (key, val) in input.request.headers.iter() {
+                    for (key, val) in &input.request.headers {
                         let k_lower = key.to_lowercase();
                         if k_lower.starts_with("x-b3-")
                             || k_lower == "x-request-id"
@@ -1213,7 +1218,8 @@ fn build_target_url(base_url: &str, path: &str, query: &[(String, String)]) -> S
     target_url
 }
 
-/// Resolve timeout: explicit override, else config.total_ms, else 15s.
+/// Resolve timeout: explicit override, else `config.total_ms`, else 15s.
+#[must_use]
 pub fn resolve_timeout(override_secs: u64, config_total_ms: Option<u64>) -> Duration {
     if override_secs > 0 {
         Duration::from_secs(override_secs)

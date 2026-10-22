@@ -58,6 +58,7 @@ pub enum RootPackageAction {
 }
 
 impl RootPackageAction {
+    #[must_use]
     pub fn event_type(self) -> &'static str {
         match self {
             Self::Import => "package_import",
@@ -93,6 +94,7 @@ pub fn validate_material_encoding(value: &str) -> CertResult<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn material_digest(
     package_id: uuid::Uuid,
     material_type: &str,
@@ -106,6 +108,7 @@ pub fn material_digest(
     hasher.update(plaintext);
     hex::encode(hasher.finalize())
 }
+#[must_use]
 pub fn derive_root_package_status(
     package_status: &str,
     active_material_count: i64,
@@ -133,6 +136,7 @@ pub fn derive_root_package_status(
     }
 }
 
+#[must_use]
 pub fn is_root_package_expired(
     now: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
@@ -141,6 +145,7 @@ pub fn is_root_package_expired(
     expired_at.is_some() || expires_at.is_some_and(|expires_at| expires_at <= now)
 }
 
+#[must_use]
 pub fn is_root_package_renewable(status: &str) -> bool {
     status != "revoked" && status != "deleted"
 }

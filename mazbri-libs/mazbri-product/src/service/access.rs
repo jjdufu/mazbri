@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Duration, PermissionCache, PermissionEntry, ProductService, Result, Row, Uuid, debug, info,
+    tenant_product_detail_from_row,
+};
 
 impl ProductService {
     pub async fn check_tenant_access(&self, tenant_id: Uuid, product_id: &str) -> Result<bool> {
@@ -7,19 +10,19 @@ impl ProductService {
             return Ok(entry.enabled);
         }
         let row = sqlx::query(
-            r#"
+            r"
             SELECT tp.enabled
             FROM tenant_products tp
             JOIN products p ON tp.product_id = p.id
             WHERE tp.tenant_id = $1 AND p.product_id = $2
                 AND p.enabled = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(product_id)
         .fetch_optional(&self.db)
         .await?;
-        let result = row.map(|r| r.get::<bool, _>("enabled")).unwrap_or(false);
+        let result = row.is_some_and(|r| r.get::<bool, _>("enabled"));
         let entry = PermissionEntry { enabled: result };
         let _ = self
             .permission_cache
@@ -63,7 +66,7 @@ impl ProductService {
     }
     pub async fn warm_tenant_product_detail_cache(&self) -> Result<usize> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 tp.id,
                 tp.tenant_id,
@@ -88,7 +91,7 @@ impl ProductService {
             JOIN products p ON tp.product_id = p.id
             WHERE tp.enabled = true
               AND p.enabled = true
-            "#,
+            ",
         )
         .fetch_all(&self.db)
         .await?;

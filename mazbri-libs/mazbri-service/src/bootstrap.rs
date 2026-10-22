@@ -175,13 +175,13 @@ where
         let output = service_init(ctx).await?;
         tokio::select! {
             result = output.server_future => { if let Err(e) = result {
-            tracing::error!("Server error: {}", e); } } _ = wait_for_termination_signal()
+            tracing::error!("Server error: {}", e); } } () = wait_for_termination_signal()
             => { tracing::info!("收到关闭信号"); }
         }
         if let Some(ref reg) = registry {
             reg.shutdown()
                 .await
-                .map_err(|e| anyhow::anyhow!("注册中心关闭失败: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("注册中心关闭失败: {e}"))?;
             tracing::info!("注册中心已关闭");
         }
         mtls.renewal_task.shutdown().await;
@@ -271,7 +271,7 @@ pub(crate) fn start_admin_server(
                             checks.push(ReadinessCheckResult {
                                 name: "database".to_string(),
                                 status: CheckStatus::Failed,
-                                message: Some(format!("database connection failed: {}", e)),
+                                message: Some(format!("database connection failed: {e}")),
                             });
                         }
                     }
@@ -384,17 +384,17 @@ async fn init_registry<C: ServiceConfig>(
             ))
             .build()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to create config client: {}", e))?,
+            .map_err(|e| anyhow::anyhow!("Failed to create config client: {e}"))?,
     );
     let registry = Arc::new(ConfigCenterRegistry::new(http_client, handler, metadata));
     registry
         .register(&registry.metadata())
         .await
-        .map_err(|e| anyhow::anyhow!("Node registration failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Node registration failed: {e}"))?;
     registry
         .start()
         .await
-        .map_err(|e| anyhow::anyhow!("Registry startup failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Registry startup failed: {e}"))?;
     tracing::info!(service = % service_name, "Node registered successfully, heartbeat started");
     Ok(Some(registry))
 }

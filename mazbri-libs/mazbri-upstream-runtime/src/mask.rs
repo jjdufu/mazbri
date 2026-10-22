@@ -4,11 +4,13 @@ use std::collections::HashMap;
 
 const MASK: &str = "••••••••";
 
+#[must_use]
 pub fn mask_secret(_value: &str) -> String {
     MASK.to_string()
 }
 
 /// Mask known secret header names.
+#[must_use]
 pub fn mask_headers(headers: &HashMap<String, String>, enabled: bool) -> HashMap<String, String> {
     if !enabled {
         return headers.clone();
@@ -29,6 +31,7 @@ pub fn mask_headers(headers: &HashMap<String, String>, enabled: bool) -> HashMap
         .collect()
 }
 
+#[must_use]
 pub fn mask_string_map(map: &HashMap<String, String>, enabled: bool) -> HashMap<String, String> {
     if !enabled {
         return map.clone();
@@ -49,6 +52,7 @@ pub fn mask_string_map(map: &HashMap<String, String>, enabled: bool) -> HashMap<
         .collect()
 }
 
+#[must_use]
 pub fn redact_body_preview(body: &str, max_bytes: usize, mask: bool) -> String {
     // Postgres JSON/JSONB rejects \u0000. gRPC/protobuf frames include NULs.
     let body = body.replace('\0', "");

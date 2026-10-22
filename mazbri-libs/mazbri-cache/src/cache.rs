@@ -13,6 +13,7 @@ pub struct CacheEntry {
     pub metadata: serde_json::Value,
 }
 impl CacheEntry {
+    #[must_use]
     pub fn new(value: Vec<u8>, ttl: u64, metadata: serde_json::Value) -> Self {
         let expires_at = Utc::now() + chrono::Duration::seconds(ttl as i64);
         Self {
@@ -22,6 +23,7 @@ impl CacheEntry {
             metadata,
         }
     }
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         Utc::now() > self.expires_at
     }
@@ -60,6 +62,7 @@ pub struct MemoryCache {
     max_entry_size: u64,
 }
 impl MemoryCache {
+    #[must_use]
     pub fn new(max_entries: usize, max_entry_size: u64) -> Self {
         let capacity = NonZeroUsize::new(max_entries).unwrap_or_else(|| {
             tracing::warn!(
@@ -74,7 +77,7 @@ impl MemoryCache {
         }
     }
     fn make_key(tenant_id: &str, key: &str) -> String {
-        format!("{}:{}", tenant_id, key)
+        format!("{tenant_id}:{key}")
     }
     pub async fn insert(
         &self,
@@ -113,7 +116,7 @@ impl MemoryCache {
         Ok(())
     }
     pub async fn clear_tenant(&self, tenant_id: &str) -> Result<(), mazbri_core::CoreError> {
-        let prefix = format!("{}:", tenant_id);
+        let prefix = format!("{tenant_id}:");
         let mut cache = self.data.write().await;
         let keys_to_remove: Vec<String> = cache
             .iter()

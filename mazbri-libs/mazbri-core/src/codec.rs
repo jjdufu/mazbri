@@ -10,6 +10,7 @@ pub enum PayloadCodec {
 }
 
 impl PayloadCodec {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Json => "json",
@@ -17,6 +18,7 @@ impl PayloadCodec {
         }
     }
 
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "json" => Some(Self::Json),

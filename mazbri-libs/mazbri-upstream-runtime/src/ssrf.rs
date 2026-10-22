@@ -1,6 +1,6 @@
 //! SSRF checker: preflight URL validation + connect-time DNS filter (TOCTOU mitigation).
 //!
-//! Preflight (`validate_url`) rejects private hosts early.  
+//! Preflight (`validate_url`) rejects private hosts early.\
 //! `SsrfSafeResolver` is installed on the reqwest client so **connect-path DNS** also
 //! drops blocked IPs — narrowing the classic resolve-then-connect rebinding window.
 
@@ -17,6 +17,7 @@ pub struct SsrfChecker {
 }
 
 impl SsrfChecker {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             allow_private: false,
@@ -24,6 +25,7 @@ impl SsrfChecker {
     }
 
     /// Test / local-mock helper. Never enable for production probe paths.
+    #[must_use]
     pub fn with_allow_private(allow_private: bool) -> Self {
         Self { allow_private }
     }
@@ -129,7 +131,7 @@ impl Resolve for SsrfSafeResolver {
             let resolved = tokio::task::spawn_blocking(move || {
                 (host_for_lookup.as_str(), 0u16)
                     .to_socket_addrs()
-                    .map(|iter| iter.collect::<Vec<_>>())
+                    .map(std::iter::Iterator::collect::<Vec<_>>)
             })
             .await
             .map_err(|e| format!("SSRF DNS task failed for '{host}': {e}"))?
@@ -153,6 +155,7 @@ impl Resolve for SsrfSafeResolver {
     }
 }
 
+#[must_use]
 pub fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ipv4) => {

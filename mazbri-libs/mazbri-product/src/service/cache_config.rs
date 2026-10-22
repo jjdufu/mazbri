@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    PermissionCache, ProductService, ProductTenantAccess, Result, Row, TenantProductDetail, Uuid,
+    debug, info, tenant_product_detail_from_row,
+};
 
 impl ProductService {
     pub fn clear_cache(&self) {
@@ -7,7 +10,7 @@ impl ProductService {
     }
     pub async fn list_tenant_products(&self, tenant_id: Uuid) -> Result<Vec<TenantProductDetail>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 tp.id,
                 tp.product_id,
@@ -31,7 +34,7 @@ impl ProductService {
             JOIN products p ON tp.product_id = p.id
             WHERE tp.tenant_id = $1 AND tp.enabled = true AND p.enabled = true
             ORDER BY tp.created_at DESC
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_all(&self.db)
@@ -53,7 +56,7 @@ impl ProductService {
             return Ok(detail.clone());
         }
         let row = sqlx::query(
-            r#"
+            r"
             SELECT
                 tp.id,
                 tp.product_id,
@@ -79,7 +82,7 @@ impl ProductService {
               AND p.product_id = $2
               AND tp.enabled = true
               AND p.enabled = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(product_id)
@@ -101,12 +104,12 @@ impl ProductService {
             None => return Ok(vec![]),
         };
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT id, tenant_id, product_id, enabled, created_at
             FROM tenant_products
             WHERE product_id = $1
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .bind(product_uuid)
         .fetch_all(&self.db)

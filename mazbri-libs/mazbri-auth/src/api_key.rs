@@ -57,7 +57,7 @@ impl LastUsedBatchWriter {
             loop {
                 tokio::select! {
                     _ = interval.tick() => { Self::flush(&buffer_task, &db_task).await; }
-                    _ = cancel.cancelled() => {
+                    () = cancel.cancelled() => {
                         debug!("LastUsedBatchWriter shutdown signal received, performing final flush");
                         Self::flush(&buffer_task, &db_task).await;
                         break;
@@ -93,7 +93,7 @@ impl LastUsedBatchWriter {
             let mut guard = self
                 .flush_task_handle
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.take()
         };
         if let Some(h) = handle {
@@ -103,7 +103,7 @@ impl LastUsedBatchWriter {
 
     async fn flush(buffer: &DashMap<Uuid, std::time::SystemTime>, db: &PgPool) {
         let mut ids = HashSet::new();
-        for entry in buffer.iter() {
+        for entry in buffer {
             ids.insert(*entry.key());
         }
         if ids.is_empty() {
@@ -152,6 +152,7 @@ struct CachedApiKeyAuth {
 }
 
 impl ApiKeyValidator {
+    #[must_use]
     pub fn new(db: Arc<PgPool>, config: Arc<AuthServiceConfig>) -> Self {
         let last_used_writer = LastUsedBatchWriter::new(db.clone());
         Self {
@@ -225,7 +226,7 @@ impl ApiKeyValidator {
         }
 
         let row_opt = sqlx::query(
-            r#"
+            r"
             SELECT
                 ac.id,
                 ac.tenant_id,
@@ -238,7 +239,7 @@ impl ApiKeyValidator {
             LEFT JOIN api_keys ak ON ak.credential_id = ac.id
             WHERE ac.credential_type = 'api_key'
                 AND ac.credential_id = $1
-            "#,
+            ",
         )
         .bind(prefix)
         .fetch_optional(&*self.db)
@@ -269,8 +270,7 @@ impl ApiKeyValidator {
             .await
             .map_err(|e| {
                 AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                    "API key verify task failed: {}",
-                    e
+                    "API key verify task failed: {e}"
                 )))
             })?;
             debug!(
@@ -339,23 +339,22 @@ impl ApiKeyValidator {
         let mut tx = self.db.begin().await?;
         let prefix = self.generate_prefix(&mut tx).await?;
         let random_bytes: [u8; 32] = rand::random();
-        let secret: String = random_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let secret: String = random_bytes.iter().map(|b| format!("{b:02x}")).collect();
         let salt = SaltString::generate(&mut OsRng);
         let password_hash = Argon2::default()
             .hash_password(secret.as_bytes(), &salt)
             .map_err(|e| {
                 AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                    "Failed to hash password: {}",
-                    e
+                    "Failed to hash password: {e}"
                 )))
             })?
             .to_string();
         let metadata = description.map(|d| serde_json::json!({ "description" : d }));
         sqlx::query(
-                r#"
+                r"
             INSERT INTO auth_credentials (tenant_id, credential_type, credential_id, credential_secret_hash, metadata)
             VALUES ($1, 'api_key', $2, $3, $4)
-            "#,
+            ",
             )
             .bind(tenant_id)
             .bind(&prefix)
@@ -364,7 +363,7 @@ impl ApiKeyValidator {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(format!("mazbri_{}_{}", prefix, secret))
+        Ok(format!("mazbri_{prefix}_{secret}"))
     }
 
     pub async fn revoke_api_key(&self, prefix: &str) -> AuthResult<()> {
@@ -400,7 +399,7 @@ impl ApiKeyValidator {
         let byte_count = hex_length.div_ceil(2);
         for _ in 0..MAX_PREFIX_ATTEMPTS {
             let random_bytes: Vec<u8> = (0..byte_count).map(|_| rand::random::<u8>()).collect();
-            let hex_str: String = random_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            let hex_str: String = random_bytes.iter().map(|b| format!("{b:02x}")).collect();
             let prefix = hex_str[..hex_length].to_string();
             let exists = sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS(SELECT 1 FROM auth_credentials WHERE credential_id = $1)",

@@ -50,6 +50,7 @@ pub enum LicenseOperation {
 }
 
 impl LicenseOperation {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bootstrap => "bootstrap",
@@ -164,6 +165,7 @@ pub fn license_error(code: &'static str, message: impl Into<String>) -> CertErro
     }
 }
 
+#[must_use]
 pub fn trusted_verifying_key(kid: &str) -> Option<VerifyingKey> {
     let bytes = match kid {
         LICENSE_KID => &PRODUCTION_PUBLIC_KEY,
@@ -256,7 +258,7 @@ fn interpret_payload(
             if payload
                 .previous_key_version
                 .as_ref()
-                .is_none_or(|value| value.is_empty())
+                .is_none_or(std::string::String::is_empty)
                 || payload.sealed_assets.is_none()
             {
                 return Err(license_error(LICENSE_SIGNATURE_INVALID, "许可证签名无效"));
@@ -284,6 +286,7 @@ pub fn canonical_asset_json(assets: &LicenseAssets) -> CertResult<Vec<u8>> {
     })
 }
 
+#[must_use]
 pub fn asset_digest_hex(plaintext: &[u8]) -> String {
     hex::encode(Sha256::digest(plaintext))
 }
@@ -370,10 +373,12 @@ pub fn unseal_for_installation(
     plaintext
 }
 
+#[must_use]
 pub fn asset_aad(installation_id: Uuid, key_version: &str, package_id: Uuid) -> String {
     format!("assets|{installation_id}|{key_version}|{package_id}")
 }
 
+#[must_use]
 pub fn key_password_aad(installation_id: Uuid, key_version: &str) -> String {
     format!("key-password|{installation_id}|{key_version}")
 }
@@ -471,6 +476,7 @@ pub fn load_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     Ok(file)
 }
 
+#[must_use]
 pub fn generate_installation_key() -> InstallationKeyFile {
     let secret_bytes: [u8; 32] = rand::random();
     let secret = StaticSecret::from(secret_bytes);
@@ -549,6 +555,7 @@ pub fn require_installation_key_path(path: Option<&str>) -> CertResult<&str> {
         })
 }
 
+#[must_use]
 pub fn decide_license(
     verified: Option<&VerifiedLicense>,
     installation_matches: bool,
@@ -597,6 +604,7 @@ pub fn decide_license(
     }
 }
 
+#[must_use]
 pub fn unconfigured_decision() -> LicenseDecision {
     empty_decision("unconfigured", false)
 }
@@ -620,6 +628,7 @@ fn empty_decision(status: &str, clock_rollback: bool) -> LicenseDecision {
     }
 }
 
+#[must_use]
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }

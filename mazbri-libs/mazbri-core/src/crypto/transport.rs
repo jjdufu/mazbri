@@ -57,6 +57,7 @@ pub enum TransportCryptoError {
     UnsupportedAlgorithm,
 }
 
+#[must_use]
 pub fn canonical_signature_payload(
     envelope: &TransportEnvelope,
     tenant_id: &str,
@@ -210,6 +211,7 @@ pub fn decrypt_aes_256_gcm(
         .map_err(|_| TransportCryptoError::DecryptFailed)
 }
 
+#[must_use]
 pub fn generate_nonce_base64url() -> String {
     let nonce: [u8; NONCE_BYTES] = rand::random();
     URL_SAFE_NO_PAD.encode(nonce)

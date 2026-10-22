@@ -36,8 +36,7 @@ impl RedisCacheEnvelope {
     fn into_entry(self, ttl_secs: u64) -> Result<CacheEntry, CoreError> {
         let value = STANDARD.decode(&self.value).map_err(|e| {
             CoreError::Validation(format!(
-                "Cache base64 decode failed: {}. This indicates corrupted cache data.",
-                e
+                "Cache base64 decode failed: {e}. This indicates corrupted cache data."
             ))
         })?;
         Ok(CacheEntry {
@@ -71,6 +70,7 @@ impl RedisCache {
         Ok(Self::with_client(db, config, redis))
     }
 
+    #[must_use]
     pub fn with_client(db: Arc<PgPool>, config: CacheConfig, redis: RedisClient) -> Self {
         let memory_cache = Arc::new(MemoryCache::new(10_000, config.max_entry_size));
         Self {
@@ -98,11 +98,11 @@ impl RedisCache {
             Err(_) => return Ok(((*self.config).clone(), true)),
         };
         let row = sqlx::query(
-            r#"
+            r"
             SELECT enabled, default_ttl, max_cache_size, api_ttl, tenant_isolated
             FROM cache_configs
             WHERE tenant_id = $1
-            "#,
+            ",
         )
         .bind(tenant_uuid)
         .fetch_optional(&*self.db)
@@ -316,25 +316,21 @@ impl Cache for RedisCache {
             .get_bytes(&redis_key)
             .await
             .map_err(Self::redis_unavailable)?;
-        match cached {
-            Some(bytes) => match self.load_entry(&redis_key, bytes).await? {
-                Some(entry) => {
-                    let _ = self
-                        .memory_cache
-                        .insert(memory_tenant_id, key, entry.clone())
-                        .await;
-                    recorder.record_hit();
-                    Ok(Some(entry))
-                }
-                None => {
-                    recorder.record_miss();
-                    Ok(None)
-                }
-            },
-            None => {
+        if let Some(bytes) = cached {
+            if let Some(entry) = self.load_entry(&redis_key, bytes).await? {
+                let _ = self
+                    .memory_cache
+                    .insert(memory_tenant_id, key, entry.clone())
+                    .await;
+                recorder.record_hit();
+                Ok(Some(entry))
+            } else {
                 recorder.record_miss();
                 Ok(None)
             }
+        } else {
+            recorder.record_miss();
+            Ok(None)
         }
     }
 

@@ -12,15 +12,18 @@ pub struct ChargeQueue {
     config: QueueConfig,
 }
 impl ChargeQueue {
+    #[must_use]
     pub fn new(db: PgPool) -> Self {
         Self {
             db,
             config: QueueConfig::default(),
         }
     }
+    #[must_use]
     pub fn with_config(db: PgPool, config: QueueConfig) -> Self {
         Self { db, config }
     }
+    #[must_use]
     pub fn config(&self) -> &QueueConfig {
         &self.config
     }
@@ -33,9 +36,9 @@ impl ChargeQueue {
         payload: Option<serde_json::Value>,
     ) -> Result<Uuid, BillingError> {
         let existing: Option<Uuid> = sqlx::query_scalar(
-            r#"SELECT id FROM usage_charge_queue
+            r"SELECT id FROM usage_charge_queue
                WHERE usage_record_id = $1
-                 AND status NOT IN ('completed', 'dead_letter')"#,
+                 AND status NOT IN ('completed', 'dead_letter')",
         )
         .bind(usage_record_id)
         .fetch_optional(&self.db)
@@ -48,10 +51,10 @@ impl ChargeQueue {
             return Ok(id);
         }
         let queue_id: Uuid = sqlx::query_scalar(
-            r#"INSERT INTO usage_charge_queue
+            r"INSERT INTO usage_charge_queue
                (tenant_id, account_id, usage_record_id, amount, payload, max_retries)
                VALUES ($1, $2, $3, $4, $5, $6)
-               RETURNING id"#,
+               RETURNING id",
         )
         .bind(tenant_id)
         .bind(account_id)
@@ -78,7 +81,7 @@ impl ChargeQueue {
     /// Reclaim rows left in `processing` after a crash (multi-replica safe).
     pub async fn reclaim_stale_processing(&self, stale_secs: u64) -> Result<u64, BillingError> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE usage_charge_queue
             SET status = 'pending',
                 worker_node = NULL,
@@ -87,7 +90,7 @@ impl ChargeQueue {
             WHERE status = 'processing'
               AND locked_at IS NOT NULL
               AND locked_at < NOW() - ($1::double precision * INTERVAL '1 second')
-            "#,
+            ",
         )
         .bind(stale_secs as f64)
         .execute(&self.db)
@@ -109,7 +112,7 @@ impl ChargeQueue {
             _,
             ChargeQueueItem,
         >(
-                r#"SELECT id, tenant_id, account_id, usage_record_id, amount, payload,
+                r"SELECT id, tenant_id, account_id, usage_record_id, amount, payload,
                       status::VARCHAR as status, retry_count, max_retries, error_message, scheduled_at,
                       transaction_id, created_at
                FROM usage_charge_queue
@@ -117,9 +120,9 @@ impl ChargeQueue {
                  AND scheduled_at <= NOW()
                ORDER BY created_at ASC
                LIMIT $1
-               FOR UPDATE SKIP LOCKED"#,
+               FOR UPDATE SKIP LOCKED",
             )
-            .bind(limit as i64)
+            .bind(i64::from(limit))
             .fetch_all(&mut *tx)
             .await?;
         if rows.is_empty() {
@@ -129,9 +132,9 @@ impl ChargeQueue {
         let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
         let now = Utc::now();
         sqlx::query(
-            r#"UPDATE usage_charge_queue
+            r"UPDATE usage_charge_queue
                SET status = 'processing', worker_node = $1, locked_at = $2
-               WHERE id = ANY($3)"#,
+               WHERE id = ANY($3)",
         )
         .bind(&self.config.worker_node_id)
         .bind(now)
@@ -150,9 +153,9 @@ impl ChargeQueue {
     ) -> Result<(), BillingError> {
         let now = Utc::now();
         sqlx::query(
-            r#"UPDATE usage_charge_queue
+            r"UPDATE usage_charge_queue
                SET status = 'completed', transaction_id = $2, processed_at = $3
-               WHERE id = $1"#,
+               WHERE id = $1",
         )
         .bind(queue_id)
         .bind(transaction_id)
@@ -188,10 +191,10 @@ impl ChargeQueue {
                 (self.config.retry_interval_secs * backoff_factor).min(MAX_RETRY_DELAY_SECS);
             let scheduled_at = Utc::now() + ChronoDuration::seconds(delay_secs);
             sqlx::query(
-                r#"UPDATE usage_charge_queue
+                r"UPDATE usage_charge_queue
                    SET status = 'failed', retry_count = retry_count + 1,
                        error_message = $1, scheduled_at = $2
-                   WHERE id = $3"#,
+                   WHERE id = $3",
             )
             .bind(error_message)
             .bind(scheduled_at)
@@ -215,7 +218,7 @@ impl ChargeQueue {
             Ok(true)
         } else {
             sqlx::query(
-                    r#"UPDATE usage_charge_queue SET status = 'dead_letter', error_message = $1 WHERE id = $2"#,
+                    r"UPDATE usage_charge_queue SET status = 'dead_letter', error_message = $1 WHERE id = $2",
                 )
                 .bind(error_message)
                 .bind(queue_id)
@@ -230,9 +233,9 @@ impl ChargeQueue {
             .fetch_one(&self.db)
             .await?;
             sqlx::query(
-                r#"INSERT INTO charge_failures
+                r"INSERT INTO charge_failures
                    (queue_id, tenant_id, account_id, amount, error_message, attempt_number)
-                   VALUES ($1, $2, $3, $4, $5, $6)"#,
+                   VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(queue_id)
             .bind(item.tenant_id)

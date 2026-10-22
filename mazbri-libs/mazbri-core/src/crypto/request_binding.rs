@@ -29,6 +29,7 @@ pub enum RequestBindingError {
     UnsupportedSignatureInput,
 }
 
+#[must_use]
 pub fn canonical_http_binding(
     method: &str,
     path_and_query: &str,
@@ -51,6 +52,7 @@ pub fn canonical_http_binding(
     payload
 }
 
+#[must_use]
 pub fn path_and_query_from_parts(path: &str, query: Option<&str>) -> String {
     match query {
         Some(q) if !q.is_empty() => format!("{path}?{q}"),
@@ -133,12 +135,14 @@ pub fn verify_hmac_sha256_base64(
     }
 }
 
+#[must_use]
 pub fn generate_binding_nonce() -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let nonce: [u8; 16] = rand::random();
     URL_SAFE_NO_PAD.encode(nonce)
 }
 
+#[must_use]
 pub fn truncate_nonce_for_log(nonce: &str) -> String {
     const KEEP: usize = 8;
     if nonce.len() <= KEEP {

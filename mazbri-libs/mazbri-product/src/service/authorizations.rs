@@ -1,9 +1,12 @@
-use super::*;
+use super::{
+    AuthorizationDetail, PermissionCache, Postgres, ProductService, QueryBuilder, Result, Row,
+    authorization_detail_from_row,
+};
 
 impl ProductService {
     pub async fn list_authorizations(&self) -> Result<Vec<AuthorizationDetail>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 tp.id,
                 tp.tenant_id,
@@ -25,7 +28,7 @@ impl ProductService {
             JOIN tenants t ON tp.tenant_id = t.id
             WHERE tp.enabled = true AND p.enabled = true
             ORDER BY tp.created_at DESC
-            "#,
+            ",
         )
         .fetch_all(&self.db)
         .await?;
@@ -34,7 +37,7 @@ impl ProductService {
     }
     /// Paginated authorizations with free-text search and optional extra AND filters.
     ///
-    /// Default scope: only enabled tenant_products on enabled products.
+    /// Default scope: only enabled `tenant_products` on enabled products.
     /// `apply_extra` runs for both COUNT and SELECT (caller validates filters).
     pub async fn list_authorizations_page<F>(
         &self,
@@ -46,7 +49,7 @@ impl ProductService {
     where
         F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
     {
-        let search_pattern = search.map(|value| format!("%{}%", value));
+        let search_pattern = search.map(|value| format!("%{value}%"));
         const BASE_FROM: &str = "\
             FROM tenant_products tp \
             JOIN products p ON tp.product_id = p.id \

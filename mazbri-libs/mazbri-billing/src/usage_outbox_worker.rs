@@ -61,6 +61,7 @@ pub struct UsageOutboxWorker {
 }
 
 impl UsageOutboxWorker {
+    #[must_use]
     pub fn with_config(
         db: PgPool,
         billing_service: Arc<BillingService>,
@@ -220,13 +221,13 @@ async fn run_outbox_loop(
 
 async fn reclaim_stale_outbox(db: &PgPool, stale_secs: u64) -> Result<u64, BillingError> {
     let result = sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'pending',
             error_message = COALESCE(error_message, 'reclaimed stale processing')
         WHERE status = 'processing'
           AND updated_at < NOW() - ($1::double precision * INTERVAL '1 second')
-        "#,
+        ",
     )
     .bind(stale_secs as f64)
     .execute(db)
@@ -297,7 +298,7 @@ async fn process_batch(
 async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, BillingError> {
     let mut tx = db.begin().await?;
     let rows = sqlx::query_as::<_, UsageOutboxItem>(
-        r#"
+        r"
         SELECT
             id, event_id, request_id, tenant_id, account_id, product_id,
             api_endpoint, http_method, response_status, request_size,
@@ -309,9 +310,9 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
         ORDER BY created_at ASC
         LIMIT $1
         FOR UPDATE SKIP LOCKED
-        "#,
+        ",
     )
-    .bind(limit as i64)
+    .bind(i64::from(limit))
     .fetch_all(&mut *tx)
     .await?;
     if rows.is_empty() {
@@ -320,11 +321,11 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
     }
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
     sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'processing'
         WHERE id = ANY($1)
-        "#,
+        ",
     )
     .bind(&ids)
     .execute(&mut *tx)
@@ -405,13 +406,13 @@ async fn process_one(
 
 async fn mark_processed_batch(db: &PgPool, ids: &[i64]) -> Result<(), BillingError> {
     sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'processed',
             processed_at = NOW(),
             error_message = NULL
         WHERE id = ANY($1)
-        "#,
+        ",
     )
     .bind(ids)
     .execute(db)
@@ -432,13 +433,13 @@ async fn mark_failed(
     let next_retry = retry_count + 1;
     if next_retry >= config.max_retries {
         sqlx::query(
-            r#"
+            r"
             UPDATE usage_outbox
             SET status = 'dead_letter',
                 retry_count = retry_count + 1,
                 error_message = $2
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(error)
@@ -449,14 +450,14 @@ async fn mark_failed(
         let delay_secs = (config.retry_interval_secs * backoff_factor).min(3600);
         let next_attempt_at = Utc::now() + ChronoDuration::seconds(delay_secs);
         sqlx::query(
-            r#"
+            r"
             UPDATE usage_outbox
             SET status = 'failed',
                 retry_count = retry_count + 1,
                 next_attempt_at = $2,
                 error_message = $3
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(next_attempt_at)

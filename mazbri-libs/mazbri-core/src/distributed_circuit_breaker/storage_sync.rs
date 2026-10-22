@@ -32,15 +32,14 @@ pub fn instant_from_db_timestamp(name: &str, db_last_change: Option<DateTime<Utc
     match db_last_change {
         Some(ts) => {
             let elapsed = Utc::now() - ts;
-            match elapsed.to_std() {
-                Ok(duration) => Instant::now() - duration,
-                Err(_) => {
-                    warn!(
-                        circuit_breaker = % name, db_ts = % ts,
-                        "last_state_change is in the future (clock skew), treating as just transitioned"
-                    );
-                    Instant::now()
-                }
+            if let Ok(duration) = elapsed.to_std() {
+                Instant::now().checked_sub(duration).unwrap()
+            } else {
+                warn!(
+                    circuit_breaker = % name, db_ts = % ts,
+                    "last_state_change is in the future (clock skew), treating as just transitioned"
+                );
+                Instant::now()
             }
         }
         None => Instant::now(),

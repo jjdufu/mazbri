@@ -1,6 +1,6 @@
 //! Optional OTLP trace export (HTTP/protobuf).
 //!
-//! Production path: services push spans **directly** to GreptimeDB
+//! Production path: services push spans **directly** to `GreptimeDB`
 //! (`http://…:4000/v1/otlp` + Greptime headers). Not routed via Vector.
 //!
 //! ## Span export filter
@@ -54,7 +54,7 @@ pub struct OtlpExportOptions<'a> {
 /// Whether a `tracing` span should be exported via OTLP.
 ///
 /// **Keep (useful for call path / latency / dependency hops):**
-/// - HTTP root: name `request` (mazbri middleware / tower-http TraceLayer)
+/// - HTTP root: name `request` (mazbri middleware / tower-http `TraceLayer`)
 /// - tarpc client/server RPC: names like `CacheService.get`, `AuthService.validate_api_key`
 /// - application targets: `mazbri*`, `ut*` modules
 ///
@@ -62,6 +62,7 @@ pub struct OtlpExportOptions<'a> {
 /// - `h2` / hyper / mio / rustls transport internals (`FramedRead::*`, `poll_ready`, …)
 /// - DEBUG / TRACE level spans
 /// - other dependency noise not matching the allow rules
+#[must_use]
 pub fn should_export_otlp_span(meta: &tracing::Metadata<'_>) -> bool {
     // Level ordering: ERROR < WARN < INFO < DEBUG < TRACE
     if *meta.level() > Level::INFO {

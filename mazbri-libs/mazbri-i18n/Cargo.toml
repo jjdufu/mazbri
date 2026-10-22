@@ -9,3 +9,6 @@ description = "i18n internationalization support for Mazbri API responses"
 
 [dependencies]
 rust-i18n = "3"
+
+[lints]
+workspace = true

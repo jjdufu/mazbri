@@ -20,11 +20,11 @@ async fn insert_ledger_entry(
     entry: LedgerEntry<'_>,
 ) -> Result<(), CoreError> {
     sqlx::query(
-            r#"
+            r"
         INSERT INTO mazbri_billing.ledger_entries 
         (tenant_id, interaction_event_id, entry_type, amount, direction, balance_before, balance_after, description)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
+        ",
         )
         .bind(entry.tenant_id)
         .bind(entry.event_id)
@@ -75,17 +75,16 @@ pub(crate) async fn deduct_balance(
     .map_err(PgBillingRepository::map_error)?
     .ok_or_else(|| {
         CoreError::Validation(format!(
-            "Insufficient balance: required {}, tenant {}",
-            amount, tenant_id
+            "Insufficient balance: required {amount}, tenant {tenant_id}"
         ))
     })?;
     let transaction_id = Uuid::new_v4();
     let balance_before = new_balance + amount;
     sqlx::query(
-        r#"INSERT INTO transactions
+        r"INSERT INTO transactions
            (id, tenant_id, account_id, transaction_type, amount,
             balance_before, balance_after, status)
-           VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'completed')"#,
+           VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'completed')",
     )
     .bind(transaction_id)
     .bind(tenant_id)
@@ -306,7 +305,7 @@ pub(crate) async fn deduct_and_record(
             .await
             .map_err(PgBillingRepository::map_error)?;
         use sqlx::Row;
-        let balance: Decimal = row.map(|r| r.get("balance")).unwrap_or(Decimal::ZERO);
+        let balance: Decimal = row.map_or(Decimal::ZERO, |r| r.get("balance"));
         return Ok(DeductAndRecordResult {
             transaction_id: Uuid::nil(),
             balance_before: balance,
@@ -338,8 +337,7 @@ pub(crate) async fn deduct_and_record(
         }
         None => {
             return Err(CoreError::Validation(format!(
-                "Insufficient balance: required {}, tenant {}",
-                amount, tenant_id
+                "Insufficient balance: required {amount}, tenant {tenant_id}"
             )));
         }
     };
@@ -351,11 +349,11 @@ pub(crate) async fn deduct_and_record(
             .await
             .map_err(PgBillingRepository::map_error)?;
     sqlx::query(
-        r#"INSERT INTO transactions
+        r"INSERT INTO transactions
            (id, tenant_id, account_id, transaction_type, amount,
             balance_before, balance_after, reference_type, reference_id,
             description, status)
-           VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')"#,
+           VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')",
     )
     .bind(transaction_id)
     .bind(tenant_id)
@@ -364,7 +362,7 @@ pub(crate) async fn deduct_and_record(
     .bind(balance_before)
     .bind(balance_after)
     .bind(usage_record_id.to_string())
-    .bind(format!("Usage charge for record {}", usage_record_id))
+    .bind(format!("Usage charge for record {usage_record_id}"))
     .execute(&mut *tx)
     .await
     .map_err(PgBillingRepository::map_error)?;
@@ -378,14 +376,14 @@ pub(crate) async fn deduct_and_record(
             direction: "DEBIT",
             balance_before,
             balance_after,
-            description: Some(&format!("Usage record {}", usage_record_id)),
+            description: Some(&format!("Usage record {usage_record_id}")),
         },
     )
     .await?;
     sqlx::query(
-        r#"UPDATE usage_charge_queue
+        r"UPDATE usage_charge_queue
            SET status = 'completed', transaction_id = $2, processed_at = NOW()
-           WHERE id = $1"#,
+           WHERE id = $1",
     )
     .bind(queue_id)
     .bind(transaction_id)
@@ -431,7 +429,7 @@ pub(crate) async fn deduct_and_record_batch(
             .await
             .map_err(PgBillingRepository::map_error)?;
         use sqlx::Row;
-        let balance: Decimal = row.map(|r| r.get("balance")).unwrap_or(Decimal::ZERO);
+        let balance: Decimal = row.map_or(Decimal::ZERO, |r| r.get("balance"));
         return Ok(DeductAndRecordResult {
             transaction_id: Uuid::nil(),
             balance_before: balance,
@@ -466,8 +464,7 @@ pub(crate) async fn deduct_and_record_batch(
         }
         None => {
             return Err(CoreError::Validation(format!(
-                "Insufficient balance: required {}, tenant {}",
-                total, tenant_id
+                "Insufficient balance: required {total}, tenant {tenant_id}"
             )));
         }
     };
@@ -477,9 +474,9 @@ pub(crate) async fn deduct_and_record_batch(
     for (queue_id, usage_record_id, amount) in items {
         if *amount <= Decimal::ZERO {
             sqlx::query(
-                r#"UPDATE usage_charge_queue
+                r"UPDATE usage_charge_queue
                    SET status = 'completed', processed_at = NOW()
-                   WHERE id = $1"#,
+                   WHERE id = $1",
             )
             .bind(queue_id)
             .execute(&mut *tx)
@@ -510,11 +507,11 @@ pub(crate) async fn deduct_and_record_batch(
                 .map_err(PgBillingRepository::map_error)?;
 
         sqlx::query(
-            r#"INSERT INTO transactions
+            r"INSERT INTO transactions
                (id, tenant_id, account_id, transaction_type, amount,
                 balance_before, balance_after, reference_type, reference_id,
                 description, status)
-               VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')"#,
+               VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')",
         )
         .bind(transaction_id)
         .bind(tenant_id)
@@ -544,9 +541,9 @@ pub(crate) async fn deduct_and_record_batch(
         .await?;
 
         sqlx::query(
-            r#"UPDATE usage_charge_queue
+            r"UPDATE usage_charge_queue
                SET status = 'completed', transaction_id = $2, processed_at = NOW()
-               WHERE id = $1"#,
+               WHERE id = $1",
         )
         .bind(queue_id)
         .bind(transaction_id)

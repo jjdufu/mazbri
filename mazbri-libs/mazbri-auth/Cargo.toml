@@ -41,3 +41,6 @@ moka = { workspace = true, features = ["future"] }
 tokio-util = { workspace = true }
 
 dashmap = { workspace = true }
+
+[lints]
+workspace = true

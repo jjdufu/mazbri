@@ -22,8 +22,9 @@ pub struct PreparedOutbound {
     pub body: Option<String>,
 }
 
-/// Apply the same request_transform + inject sequence used by `RuntimeEngine::execute`
+/// Apply the same `request_transform` + inject sequence used by `RuntimeEngine::execute`
 /// for Production / Business / Live modes.
+#[must_use]
 pub fn prepare_outbound_request(
     config: Option<&SupplierConfig>,
     path: &str,
@@ -65,11 +66,12 @@ pub fn prepare_outbound_request(
         path: req_path,
         headers: outbound_headers,
         query: outbound_query,
-        body: req_body.map(|b| b.into_string()),
+        body: req_body.map(super::types::BodyKind::into_string),
     }
 }
 
-/// Apply response_headers_set + response body template (shared by all modes).
+/// Apply `response_headers_set` + response body template (shared by all modes).
+#[must_use]
 pub fn prepare_outbound_response(
     config: Option<&SupplierConfig>,
     mut headers: HashMap<String, String>,

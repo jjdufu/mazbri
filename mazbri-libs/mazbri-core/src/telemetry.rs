@@ -57,6 +57,7 @@ pub struct LogGuard {
     _otlp: Option<crate::otlp::OtlpGuard>,
 }
 impl LogGuard {
+    #[must_use]
     pub fn none() -> Self {
         Self {
             _guards: Vec::new(),
@@ -92,10 +93,12 @@ impl LogRoute {
         self.exclude_targets.push(target.into());
         self
     }
+    #[must_use]
     pub fn include_level(mut self, level: Level) -> Self {
         self.include_levels.push(level);
         self
     }
+    #[must_use]
     pub fn exclude_level(mut self, level: Level) -> Self {
         self.exclude_levels.push(level);
         self
@@ -210,11 +213,11 @@ fn resolve_log_instance_id_with(
 fn base_log_name(service_name: &str) -> String {
     match resolve_log_instance_id() {
         Some(instance_id) => {
-            let expected_prefix = format!("{}-", service_name);
+            let expected_prefix = format!("{service_name}-");
             if instance_id.starts_with(&expected_prefix) {
                 instance_id
             } else {
-                format!("{}.{}", service_name, instance_id)
+                format!("{service_name}.{instance_id}")
             }
         }
         None => service_name.to_string(),
@@ -258,7 +261,7 @@ fn setup_file_logging(
         service_name,
         basenames
             .iter()
-            .map(|name| format!("{}.log", name))
+            .map(|name| format!("{name}.log"))
             .collect::<Vec<_>>(),
         config_format
     );
@@ -539,7 +542,7 @@ impl io::Write for DailyRollingWriter {
     }
 }
 fn rotate_old_log_if_needed(log_dir: &Path, service_name: &str) -> io::Result<()> {
-    let current_log_path = log_dir.join(format!("{}.log", service_name));
+    let current_log_path = log_dir.join(format!("{service_name}.log"));
     if !current_log_path.exists() {
         return Ok(());
     }
@@ -550,7 +553,7 @@ fn rotate_old_log_if_needed(log_dir: &Path, service_name: &str) -> io::Result<()
         let file_date = file_datetime.format("%Y-%m-%d").to_string();
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         if file_date != today {
-            let dated_path = log_dir.join(format!("{}.{}.log", service_name, file_date));
+            let dated_path = log_dir.join(format!("{service_name}.{file_date}.log"));
             fs::rename(&current_log_path, &dated_path)?;
             tracing::info!(
                 "Rotated old log at startup: {:?} -> {:?}",
@@ -625,7 +628,7 @@ async fn check_and_rotate_logs(log_dir: &Path, basenames: &[String]) {
 }
 async fn check_and_rotate_log(log_dir: &Path, basename: &str) {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let current_log_path = log_dir.join(format!("{}.log", basename));
+    let current_log_path = log_dir.join(format!("{basename}.log"));
     if current_log_path.exists()
         && let Ok(metadata) = fs::metadata(&current_log_path)
         && let Ok(modified) = metadata.modified()
@@ -633,7 +636,7 @@ async fn check_and_rotate_log(log_dir: &Path, basename: &str) {
         let file_datetime: chrono::DateTime<chrono::Local> = modified.into();
         let file_date = file_datetime.format("%Y-%m-%d").to_string();
         if file_date != today {
-            let dated_path = log_dir.join(format!("{}.{}.log", basename, file_date));
+            let dated_path = log_dir.join(format!("{basename}.{file_date}.log"));
             if fs::rename(&current_log_path, &dated_path).is_ok() {
                 tracing::info!("Rotated log: {:?} -> {:?}", current_log_path, dated_path);
             }
