@@ -169,12 +169,11 @@ struct PreparedOnboarding {
     options: OnboardingOptions,
 }
 
-/// 与 `dry_run` / 真实提交共用的校验管线。
-async fn prepare(
-    pool: &PgPool,
-    req: &UpstreamOnboardingRequest,
-) -> Result<PreparedOnboarding, ApiError> {
-    let supplier_code = req.supplier.supplier_code.trim();
+/// 校验供应商基础字段，返回 (`supplier_code`, `name`, `upstream_url`)。
+fn validate_supplier_fields(
+    supplier: &OnboardingSupplier,
+) -> Result<(&str, &str, String), ApiError> {
+    let supplier_code = supplier.supplier_code.trim();
     if supplier_code.is_empty() || supplier_code.len() > 100 {
         return Err(ApiError::validation(
             "supplier_code 长度必须在 1..=100".to_string(),
@@ -188,26 +187,33 @@ async fn prepare(
             "supplier_code 只能包含字母、数字、下划线和连字符".to_string(),
         ));
     }
-    let name = req.supplier.name.trim();
+    let name = supplier.name.trim();
     if name.is_empty() || name.len() > 255 {
         return Err(ApiError::validation("name 长度必须在 1..=255".to_string()));
     }
-    let upstream_url = req.supplier.upstream_url.trim().to_string();
+    let upstream_url = supplier.upstream_url.trim().to_string();
     if upstream_url.is_empty() || upstream_url.len() > 500 {
         return Err(ApiError::validation(
             "upstream_url 长度必须在 1..=500".to_string(),
         ));
     }
 
+    Ok((supplier_code, name, upstream_url))
+}
+
+/// 组装并校验供应商配置（合并 `upstream_type`、SSRF 检查、凭据加密）。
+async fn build_supplier_config(
+    supplier: &OnboardingSupplier,
+    upstream_url: &str,
+) -> Result<SupplierConfig, ApiError> {
     // 组装 config：确保 upstream_type 存在且一致
-    let mut config_raw = req
-        .supplier
+    let mut config_raw = supplier
         .config
         .clone()
         .unwrap_or_else(|| serde_json::json!({}));
     if let Some(obj) = config_raw.as_object_mut() {
         obj.remove("disguise");
-        if let Some(ref t) = req.supplier.upstream_type {
+        if let Some(ref t) = supplier.upstream_type {
             match obj.get("upstream_type").and_then(|v| v.as_str()) {
                 Some(existing) if existing != t => {
                     return Err(ApiError::validation(format!(
@@ -228,11 +234,11 @@ async fn prepare(
     let mut cfg = SupplierConfig::parse_and_validate(&config_raw)
         .map_err(|e| ApiError::validation(format!("UPSTREAM_CONFIG_INVALID: {e}")))?;
     cfg = cfg.normalize_disabled_sections();
-    cfg.validate_upstream_url_for_type(&upstream_url)
+    cfg.validate_upstream_url_for_type(upstream_url)
         .map_err(|e| ApiError::validation(format!("UPSTREAM_CONFIG_INVALID: {e}")))?;
 
     if cfg.is_transparent() {
-        ssrf::validate_public_http_url(&upstream_url)
+        ssrf::validate_public_http_url(upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
         if let Some(ref auth) = cfg.auth_flow {
@@ -252,7 +258,14 @@ async fn prepare(
         .encrypt_credentials_for_storage()
         .map_err(|e| ApiError::internal(format!("加密供应商凭据失败: {e}")))?;
 
-    let channel_code = req.channel.channel_code.trim().to_string();
+    Ok(cfg)
+}
+
+/// 校验渠道字段，返回 (`channel_code`, `name`, `path_prefix`, `cost_price`, `qps_limit`)。
+fn validate_channel_fields(
+    channel: &OnboardingChannel,
+) -> Result<(String, &str, String, Decimal, i32), ApiError> {
+    let channel_code = channel.channel_code.trim().to_string();
     if !channel_code.chars().enumerate().all(|(i, c)| {
         if i == 0 {
             c.is_ascii_uppercase()
@@ -264,26 +277,43 @@ async fn prepare(
             "channel_code 必须匹配 ^[A-Z][A-Z0-9-]*$".to_string(),
         ));
     }
-    let channel_name = req.channel.name.trim();
+    let channel_name = channel.name.trim();
     if channel_name.is_empty() {
         return Err(ApiError::validation("channel.name 不能为空".to_string()));
     }
-    let path_prefix = if req.channel.path_prefix.trim().is_empty() {
+    let path_prefix = if channel.path_prefix.trim().is_empty() {
         "/".to_string()
     } else {
-        req.channel.path_prefix.trim().to_string()
+        channel.path_prefix.trim().to_string()
     };
-    let cost_price = match &req.channel.cost_price {
+    let cost_price = match &channel.cost_price {
         Some(s) => Decimal::from_str(s.trim())
             .map_err(|e| ApiError::validation(format!("cost_price 无效: {e}")))?,
         None => Decimal::ZERO,
     };
-    let qps_limit = req.channel.qps_limit.unwrap_or(0);
+    let qps_limit = channel.qps_limit.unwrap_or(0);
     if qps_limit < 0 {
         return Err(ApiError::validation("qps_limit 不能为负".to_string()));
     }
 
-    let product_external_id = req.route.product_ref.product_id.trim().to_string();
+    Ok((
+        channel_code,
+        channel_name,
+        path_prefix,
+        cost_price,
+        qps_limit,
+    ))
+}
+
+/// 查找目标产品并检查 supplier/channel/route 冲突，返回 (产品 UUID, 外部产品编码)。
+async fn check_onboarding_targets(
+    pool: &PgPool,
+    supplier_code: &str,
+    channel_code: &str,
+    route: &OnboardingRoute,
+    fail_if_route_exists: bool,
+) -> Result<(uuid::Uuid, String), ApiError> {
+    let product_external_id = route.product_ref.product_id.trim().to_string();
     let product_row =
         sqlx::query("SELECT id, product_id, enabled FROM products WHERE product_id = $1 LIMIT 1")
             .bind(&product_external_id)
@@ -314,7 +344,7 @@ async fn prepare(
     }
     let channel_exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM channels WHERE channel_code = $1)")
-            .bind(&channel_code)
+            .bind(channel_code)
             .fetch_one(pool)
             .await
             .map_err(|e| ApiError::internal(format!("检查 channel_code 失败: {e}")))?;
@@ -324,8 +354,8 @@ async fn prepare(
         )));
     }
 
-    if req.options.fail_if_route_exists {
-        let route_exists: bool = match req.route.tenant_id {
+    if fail_if_route_exists {
+        let route_exists: bool = match route.tenant_id {
             Some(tid) => {
                 sqlx::query_scalar(
                     "SELECT EXISTS(SELECT 1 FROM route_rules WHERE product_id = $1 AND tenant_id = $2 AND status = 'active')",
@@ -351,6 +381,27 @@ async fn prepare(
             ));
         }
     }
+
+    Ok((product_uuid, product_external_id))
+}
+
+/// 与 `dry_run` / 真实提交共用的校验管线。
+async fn prepare(
+    pool: &PgPool,
+    req: &UpstreamOnboardingRequest,
+) -> Result<PreparedOnboarding, ApiError> {
+    let (supplier_code, name, upstream_url) = validate_supplier_fields(&req.supplier)?;
+    let cfg = build_supplier_config(&req.supplier, &upstream_url).await?;
+    let (channel_code, channel_name, path_prefix, cost_price, qps_limit) =
+        validate_channel_fields(&req.channel)?;
+    let (product_uuid, product_external_id) = check_onboarding_targets(
+        pool,
+        supplier_code,
+        &channel_code,
+        &req.route,
+        req.options.fail_if_route_exists,
+    )
+    .await?;
 
     if !(0..=100).contains(&req.route.weight) {
         return Err(ApiError::validation("weight 必须在 0..=100".to_string()));
@@ -404,22 +455,8 @@ async fn prepare(
     })
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn onboard(
-    pool: &PgPool,
-    audit: &AuditService,
-    req: &UpstreamOnboardingRequest,
-    user_id: uuid::Uuid,
-    username: &str,
-    client_ip: Option<String>,
-) -> Result<OnboardingResult, ApiError> {
-    info!(by = %username, "Upstream onboarding requested");
-    let prepared = prepare(pool, req).await?;
-    let warnings = Vec::new();
-
-    let plan = OnboardingPlan {
+fn onboarding_plan(prepared: &PreparedOnboarding) -> OnboardingPlan {
+    OnboardingPlan {
         supplier_code: prepared.supplier_code.clone(),
         channel_code: prepared.channel_code.clone(),
         product_external_id: prepared.product_external_id.clone(),
@@ -437,7 +474,128 @@ pub async fn onboard(
                 "skip authorization".into()
             },
         ],
-    };
+    }
+}
+
+/// 事务内写入 supplier 与 channel，返回 (`supplier_id`, `channel_id`)。
+async fn insert_supplier_and_channel(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    p: &PreparedOnboarding,
+) -> Result<(uuid::Uuid, uuid::Uuid), ApiError> {
+    let supplier_id: uuid::Uuid = sqlx::query_scalar(
+        r"
+        INSERT INTO suppliers (supplier_code, name, upstream_url, status, config)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        ",
+    )
+    .bind(&p.supplier_code)
+    .bind(&p.name)
+    .bind(&p.upstream_url)
+    .bind(&p.status)
+    .bind(&p.config_value)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| map_db_conflict(&e, "创建 supplier 失败"))?;
+
+    let channel_id: uuid::Uuid = sqlx::query_scalar(
+        r"
+        INSERT INTO channels (supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, config, status)
+        VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb, 'active')
+        RETURNING id
+        ",
+    )
+    .bind(supplier_id)
+    .bind(&p.channel_code)
+    .bind(&p.channel_name)
+    .bind(&p.path_prefix)
+    .bind(p.cost_price)
+    .bind(p.qps_limit)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| map_db_conflict(&e, "创建 channel 失败"))?;
+
+    Ok((supplier_id, channel_id))
+}
+
+/// 事务内写入路由规则、绑定与租户授权，返回 (`route_rule_id`, `binding_id`)。
+async fn insert_route_and_grants(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    p: &PreparedOnboarding,
+    channel_id: uuid::Uuid,
+) -> Result<(uuid::Uuid, uuid::Uuid), ApiError> {
+    let metadata = serde_json::json!({
+        "source": "upstream_onboarding",
+        "product_external_id": p.product_external_id,
+    });
+    let route_rule_id: uuid::Uuid = sqlx::query_scalar(
+        r"
+        INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
+        VALUES ($1, $2, $3, 'active', $4)
+        RETURNING id
+        ",
+    )
+    .bind(p.tenant_id)
+    .bind(p.product_uuid)
+    .bind(p.priority)
+    .bind(&metadata)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("创建 route_rule 失败: {e}")))?;
+
+    let binding_id: uuid::Uuid = sqlx::query_scalar(
+        r"
+        INSERT INTO route_channel_bindings
+            (route_rule_id, channel_id, channel_order, switch_condition, version_tag, weight)
+        VALUES ($1, $2, 1, $3, $4, $5)
+        RETURNING id
+        ",
+    )
+    .bind(route_rule_id)
+    .bind(channel_id)
+    .bind(&p.switch_condition)
+    .bind(&p.version_tag)
+    .bind(p.weight)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("创建 route binding 失败: {e}")))?;
+
+    if p.auth_enabled {
+        for tenant_uuid in &p.auth_tenant_ids {
+            sqlx::query(
+                r"
+                INSERT INTO tenant_products (tenant_id, product_id, enabled, custom_config)
+                VALUES ($1, $2, true, '{}'::jsonb)
+                ON CONFLICT (tenant_id, product_id) DO UPDATE SET enabled = true, updated_at = NOW()
+                ",
+            )
+            .bind(tenant_uuid)
+            .bind(p.product_uuid)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| ApiError::internal(format!("授权 tenant_products 失败: {e}")))?;
+        }
+    }
+
+    Ok((route_rule_id, binding_id))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn onboard(
+    pool: &PgPool,
+    audit: &AuditService,
+    req: &UpstreamOnboardingRequest,
+    user_id: uuid::Uuid,
+    username: &str,
+    client_ip: Option<String>,
+) -> Result<OnboardingResult, ApiError> {
+    info!(by = %username, "Upstream onboarding requested");
+    let prepared = prepare(pool, req).await?;
+    let warnings = Vec::new();
+
+    let plan = onboarding_plan(&prepared);
 
     if prepared.options.dry_run {
         return Ok(OnboardingResult {
@@ -457,91 +615,9 @@ pub async fn onboard(
         .await
         .map_err(|e| ApiError::internal(format!("开启事务失败: {e}")))?;
 
-    let supplier_id: uuid::Uuid = sqlx::query_scalar(
-        r"
-        INSERT INTO suppliers (supplier_code, name, upstream_url, status, config)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
-        ",
-    )
-    .bind(&prepared.supplier_code)
-    .bind(&prepared.name)
-    .bind(&prepared.upstream_url)
-    .bind(&prepared.status)
-    .bind(&prepared.config_value)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| map_db_conflict(&e, "创建 supplier 失败"))?;
-
-    let channel_id: uuid::Uuid = sqlx::query_scalar(
-        r"
-        INSERT INTO channels (supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, config, status)
-        VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb, 'active')
-        RETURNING id
-        ",
-    )
-    .bind(supplier_id)
-    .bind(&prepared.channel_code)
-    .bind(&prepared.channel_name)
-    .bind(&prepared.path_prefix)
-    .bind(prepared.cost_price)
-    .bind(prepared.qps_limit)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| map_db_conflict(&e, "创建 channel 失败"))?;
-
-    let metadata = serde_json::json!({
-        "source": "upstream_onboarding",
-        "product_external_id": prepared.product_external_id,
-    });
-    let route_rule_id: uuid::Uuid = sqlx::query_scalar(
-        r"
-        INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
-        VALUES ($1, $2, $3, 'active', $4)
-        RETURNING id
-        ",
-    )
-    .bind(prepared.tenant_id)
-    .bind(prepared.product_uuid)
-    .bind(prepared.priority)
-    .bind(&metadata)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| ApiError::internal(format!("创建 route_rule 失败: {e}")))?;
-
-    let binding_id: uuid::Uuid = sqlx::query_scalar(
-        r"
-        INSERT INTO route_channel_bindings
-            (route_rule_id, channel_id, channel_order, switch_condition, version_tag, weight)
-        VALUES ($1, $2, 1, $3, $4, $5)
-        RETURNING id
-        ",
-    )
-    .bind(route_rule_id)
-    .bind(channel_id)
-    .bind(&prepared.switch_condition)
-    .bind(&prepared.version_tag)
-    .bind(prepared.weight)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| ApiError::internal(format!("创建 route binding 失败: {e}")))?;
-
-    if prepared.auth_enabled {
-        for tenant_uuid in &prepared.auth_tenant_ids {
-            sqlx::query(
-                r"
-                INSERT INTO tenant_products (tenant_id, product_id, enabled, custom_config)
-                VALUES ($1, $2, true, '{}'::jsonb)
-                ON CONFLICT (tenant_id, product_id) DO UPDATE SET enabled = true, updated_at = NOW()
-                ",
-            )
-            .bind(tenant_uuid)
-            .bind(prepared.product_uuid)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| ApiError::internal(format!("授权 tenant_products 失败: {e}")))?;
-        }
-    }
+    let (supplier_id, channel_id) = insert_supplier_and_channel(&mut tx, &prepared).await?;
+    let (route_rule_id, binding_id) =
+        insert_route_and_grants(&mut tx, &prepared, channel_id).await?;
 
     tx.commit()
         .await
