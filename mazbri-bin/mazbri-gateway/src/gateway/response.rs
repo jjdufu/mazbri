@@ -29,6 +29,10 @@ pub enum ProxyError {
         retry_after_secs: u64,
     },
     ServiceUnavailable(String),
+    /// Idempotency store (Redis) unavailable for a keyed request: fail-closed 503.
+    IdempotencyUnavailable {
+        retry_after_secs: u64,
+    },
     GatewayTimeout(String),
     BadGateway(String),
     InternalError(String),
@@ -45,6 +49,10 @@ impl std::fmt::Display for ProxyError {
                 write!(f, "Too Many Requests: {message}")
             }
             ProxyError::ServiceUnavailable(msg) => write!(f, "Service Unavailable: {msg}"),
+            ProxyError::IdempotencyUnavailable { .. } => write!(
+                f,
+                "Idempotency store unavailable; retry the request with the same idempotency key later"
+            ),
             ProxyError::GatewayTimeout(msg) => write!(f, "Gateway Timeout: {msg}"),
             ProxyError::BadGateway(msg) => write!(f, "Bad Gateway: {msg}"),
             ProxyError::InternalError(msg) => write!(f, "Internal Error: {msg}"),
@@ -62,6 +70,7 @@ impl ProxyError {
             ProxyError::PayloadTooLarge(_) => "E4130",
             ProxyError::TooManyRequests { .. } => "E4290",
             ProxyError::ServiceUnavailable(_) => "E5030",
+            ProxyError::IdempotencyUnavailable { .. } => "IDEMPOTENCY_UNAVAILABLE",
             ProxyError::GatewayTimeout(_) => "E5040",
             ProxyError::BadGateway(_) => "E5020",
             ProxyError::InternalError(_) => "E5000",
@@ -116,8 +125,10 @@ pub fn gateway_error_response_with_retry(
     };
     let mut response = (status, Json(resp)).into_response();
     let retry_value = match (status, retry_after_secs) {
-        (StatusCode::TOO_MANY_REQUESTS, Some(secs)) => Some(secs.max(1).to_string()),
-        (StatusCode::SERVICE_UNAVAILABLE, _) => Some("1".to_string()),
+        (StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE, Some(secs)) => {
+            Some(secs.max(1).to_string())
+        }
+        (StatusCode::SERVICE_UNAVAILABLE, None) => Some("1".to_string()),
         _ => None,
     };
     if let Some(value) = retry_value
@@ -141,6 +152,9 @@ impl IntoResponse for ProxyError {
                 retry_after_secs, ..
             } => (StatusCode::TOO_MANY_REQUESTS, Some(*retry_after_secs)),
             ProxyError::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, None),
+            ProxyError::IdempotencyUnavailable { retry_after_secs } => {
+                (StatusCode::SERVICE_UNAVAILABLE, Some(*retry_after_secs))
+            }
             ProxyError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, None),
             ProxyError::BadGateway(_) => (StatusCode::BAD_GATEWAY, None),
             ProxyError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, None),

@@ -320,8 +320,7 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
         });
     };
     let idempotency_started_at = Instant::now();
-    let mut acquired = false;
-    match ctx
+    let acquired = match ctx
         .state
         .proxy_state
         .crypto_state
@@ -356,12 +355,13 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
             );
             return replay_response(record).map(IdempotencyStage::Replay);
         }
-        Ok(crate::crypto::IdempotencyOutcome::Acquired) => acquired = true,
+        Ok(crate::crypto::IdempotencyOutcome::Acquired) => true,
         Err(error) => {
-            // Fail-open already applied inside check; this branch is for unexpected types.
+            // Fail-closed: idempotency store unavailable → 503 (keyless requests never reach here).
             error!("[{}] Idempotency check failed: {}", request_id, error);
+            return Err(error);
         }
-    }
+    };
     let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
     info!(
         target: "gateway.stage",

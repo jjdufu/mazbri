@@ -758,12 +758,13 @@ impl TenantCryptoState {
     /// - `InProgress`: same fingerprint still running → 409.
     /// - `Completed`: prior success body; return without re-billing.
     ///
-    /// Redis failure policy: **fail-open** (returns `Acquired`) so transient Redis
-    /// outage does not drop traffic; risk is weaker dedupe under Redis fault.
+    /// Redis failure policy: **fail-closed** — any Redis error returns
+    /// `ProxyError::IdempotencyUnavailable` (503 + Retry-After, code
+    /// `IDEMPOTENCY_UNAVAILABLE`), logged and counted. Only keyed requests call this.
     ///
     /// # Errors
     ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    /// Redis 不可用时返回 `ProxyError::IdempotencyUnavailable`。
     pub async fn check_idempotency(
         &self,
         fingerprint: &str,
@@ -794,32 +795,13 @@ impl TenantCryptoState {
                         Ok(true) => Ok(IdempotencyOutcome::Acquired),
                         Ok(false) => Ok(IdempotencyOutcome::InProgress),
                         Err(error) => {
-                            tracing::warn!(
-                                fingerprint = %fingerprint,
-                                error = %error,
-                                "Idempotency re-acquire failed; fail-open"
-                            );
-                            Ok(IdempotencyOutcome::Acquired)
+                            Err(idempotency_unavailable("re-acquire", fingerprint, &error))
                         }
                     }
                 }
-                Err(error) => {
-                    tracing::warn!(
-                        fingerprint = %fingerprint,
-                        error = %error,
-                        "Idempotency GET failed; fail-open"
-                    );
-                    Ok(IdempotencyOutcome::Acquired)
-                }
+                Err(error) => Err(idempotency_unavailable("GET", fingerprint, &error)),
             },
-            Err(error) => {
-                tracing::warn!(
-                    fingerprint = %fingerprint,
-                    error = %error,
-                    "Idempotency SET NX failed; fail-open"
-                );
-                Ok(IdempotencyOutcome::Acquired)
-            }
+            Err(error) => Err(idempotency_unavailable("SET NX", fingerprint, &error)),
         }
     }
 
@@ -1092,4 +1074,58 @@ fn validate_timestamp(
         ));
     }
     Ok(())
+}
+
+/// Suggested Retry-After when the idempotency store is unavailable.
+pub const IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 1;
+
+/// Fail-closed: a keyed request must not run without the idempotency guard
+/// (would risk double charge). Logs, bumps the metric, returns 503 error.
+pub(crate) fn idempotency_unavailable(
+    op: &str,
+    fingerprint: &str,
+    error: &dyn std::fmt::Display,
+) -> ProxyError {
+    crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.inc();
+    tracing::error!(
+        target: "gateway.stage",
+        event = "idempotency_unavailable",
+        op = op,
+        fingerprint = %fingerprint,
+        error = %error,
+        "Idempotency store failed; rejecting keyed request (fail-closed)"
+    );
+    ProxyError::IdempotencyUnavailable {
+        retry_after_secs: IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS,
+    }
+}
+
+#[cfg(test)]
+mod idempotency_fail_closed_tests {
+    use super::idempotency_unavailable;
+    use crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn redis_failure_maps_to_503_with_retry_after_and_code() {
+        let before = GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get();
+        let err = idempotency_unavailable("SET NX", "fp-1", &"connection refused");
+        assert!(GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get() > before);
+        assert_eq!(err.error_code(), "IDEMPOTENCY_UNAVAILABLE");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok()),
+            Some("1")
+        );
+        let body = axum::body::to_bytes(response.into_body(), 1 << 16)
+            .await
+            .expect("body");
+        let text = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(text.contains("IDEMPOTENCY_UNAVAILABLE"));
+    }
 }
