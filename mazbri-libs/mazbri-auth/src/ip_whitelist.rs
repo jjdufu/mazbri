@@ -45,14 +45,6 @@ impl IpWhitelist {
         }
         Ok(WhitelistResult::Denied(ip_addr.to_string()))
     }
-    #[deprecated(since = "0.2.0", note = "Use check() instead")]
-    pub async fn is_allowed(&self, tenant_id: Uuid, ip_addr: IpAddr) -> AuthResult<bool> {
-        match self.check(tenant_id, ip_addr).await? {
-            WhitelistResult::NotConfigured => Ok(true),
-            WhitelistResult::Allowed => Ok(true),
-            WhitelistResult::Denied(_) => Ok(false),
-        }
-    }
     async fn load_whitelist(&self, tenant_id: Uuid) -> AuthResult<Vec<String>> {
         if let Some(cached) = self.cache.get(&tenant_id).await {
             return Ok(cached);
