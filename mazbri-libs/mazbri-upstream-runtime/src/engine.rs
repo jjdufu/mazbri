@@ -117,7 +117,7 @@ impl RuntimeEngine {
 
         let v_start = Instant::now();
         if let Err(e) = mazbri_core::validate_egress_spec(&input.spec) {
-            return self.invoke_fail(InvokeFail {
+            return Self::invoke_fail(InvokeFail {
                 start,
                 stages,
                 want_trace,
@@ -128,7 +128,7 @@ impl RuntimeEngine {
             });
         }
         if !input.payload.is_object() {
-            return self.invoke_fail(InvokeFail {
+            return Self::invoke_fail(InvokeFail {
                 start,
                 stages,
                 want_trace,
@@ -144,7 +144,7 @@ impl RuntimeEngine {
             .trim()
             .to_string();
         if base_url.is_empty() {
-            return self.invoke_fail(InvokeFail {
+            return Self::invoke_fail(InvokeFail {
                 start,
                 stages,
                 want_trace,
@@ -179,7 +179,7 @@ impl RuntimeEngine {
 
         let s_start = Instant::now();
         if let Err(e) = self.ssrf.validate_url(&base_url).await {
-            return self.invoke_fail(InvokeFail {
+            return Self::invoke_fail(InvokeFail {
                 start,
                 stages,
                 want_trace,
@@ -199,7 +199,7 @@ impl RuntimeEngine {
                         .filter(|s| !s.is_empty())
                     {
                         if let Err(e) = self.ssrf.validate_url(url).await {
-                            return self.invoke_fail(InvokeFail {
+                            return Self::invoke_fail(InvokeFail {
                                 start,
                                 stages,
                                 want_trace,
@@ -308,7 +308,7 @@ impl RuntimeEngine {
             {
                 Ok(a) => a,
                 Err(e) => {
-                    return self.invoke_fail(InvokeFail {
+                    return Self::invoke_fail(InvokeFail {
                         start,
                         stages,
                         want_trace,
@@ -343,7 +343,7 @@ impl RuntimeEngine {
             let kind = match input.spec.adapter_kind() {
                 Ok(k) => k,
                 Err(e) => {
-                    return self.invoke_fail(InvokeFail {
+                    return Self::invoke_fail(InvokeFail {
                         start,
                         stages,
                         want_trace,
@@ -460,7 +460,7 @@ impl RuntimeEngine {
                     };
                 }
                 Err(e) => {
-                    return self.invoke_fail(InvokeFail {
+                    return Self::invoke_fail(InvokeFail {
                         start,
                         stages,
                         want_trace,
@@ -474,7 +474,7 @@ impl RuntimeEngine {
         }
     }
 
-    fn invoke_fail(&self, fail: InvokeFail<'_>) -> InvokeResult {
+    fn invoke_fail(fail: InvokeFail<'_>) -> InvokeResult {
         let InvokeFail {
             start,
             mut stages,
@@ -523,12 +523,12 @@ impl RuntimeEngine {
         // Stage: validate
         let v_start = Instant::now();
         if input.base_url.trim().is_empty() {
-            return self.fail(
+            return Self::fail(
                 start,
                 stages,
                 want_trace,
                 "validate",
-                ExecuteError::ConfigInvalid("base_url is empty".into()),
+                &ExecuteError::ConfigInvalid("base_url is empty".into()),
                 v_start,
             );
         }
@@ -556,12 +556,12 @@ impl RuntimeEngine {
         if let Err(e) = self.ssrf.validate_url(&input.base_url).await {
             // transparent http(s) only — microservice host:port may not parse as URL
             if input.base_url.starts_with("http://") || input.base_url.starts_with("https://") {
-                return self.fail(
+                return Self::fail(
                     start,
                     stages,
                     want_trace,
                     "ssrf",
-                    ExecuteError::SsrfBlocked(e),
+                    &ExecuteError::SsrfBlocked(e),
                     s_start,
                 );
             }
@@ -572,23 +572,23 @@ impl RuntimeEngine {
                     match auth.profile_kind() {
                         Ok(p) if p.uses_ticket() && !auth.token_url.trim().is_empty() => {
                             if let Err(e) = self.ssrf.validate_url(&auth.token_url).await {
-                                return self.fail(
+                                return Self::fail(
                                     start,
                                     stages,
                                     want_trace,
                                     "ssrf",
-                                    ExecuteError::SsrfBlocked(format!("token_url: {e}")),
+                                    &ExecuteError::SsrfBlocked(format!("token_url: {e}")),
                                     s_start,
                                 );
                             }
                         }
                         Err(e) => {
-                            return self.fail(
+                            return Self::fail(
                                 start,
                                 stages,
                                 want_trace,
                                 "ssrf",
-                                ExecuteError::SpecInvalid(e.to_string()),
+                                &ExecuteError::SpecInvalid(e.to_string()),
                                 s_start,
                             );
                         }
@@ -609,7 +609,7 @@ impl RuntimeEngine {
         }
 
         if matches!(input.mode, ExecuteMode::TransformPreview) {
-            return self.execute_transform_preview(input, start, stages, mask, max_cap);
+            return Self::execute_transform_preview(&input, start, stages, mask, max_cap);
         }
 
         let cache_key = input
@@ -646,12 +646,12 @@ impl RuntimeEngine {
                 if let Some(ref auth) = cfg.auth_flow {
                     let fetch = match auth.profile_kind() {
                         Err(e) if auth.enabled => {
-                            return self.fail(
+                            return Self::fail(
                                 start,
                                 stages,
                                 want_trace,
                                 "auth",
-                                ExecuteError::SpecInvalid(e.to_string()),
+                                &ExecuteError::SpecInvalid(e.to_string()),
                                 a_start,
                             );
                         }
@@ -690,12 +690,12 @@ impl RuntimeEngine {
                                 token = Some(t);
                             }
                             Err(e) => {
-                                return self.fail(
+                                return Self::fail(
                                     start,
                                     stages,
                                     want_trace,
                                     "auth",
-                                    ExecuteError::AuthTokenFailed(e),
+                                    &ExecuteError::AuthTokenFailed(e),
                                     a_start,
                                 );
                             }
@@ -812,12 +812,12 @@ impl RuntimeEngine {
 
             // Final URL SSRF
             if let Err(e) = self.ssrf.validate_url(&target_url).await {
-                return self.fail(
+                return Self::fail(
                     start,
                     stages,
                     want_trace,
                     "upstream",
-                    ExecuteError::SsrfBlocked(e),
+                    &ExecuteError::SsrfBlocked(e),
                     Instant::now(),
                 );
             }
@@ -825,12 +825,12 @@ impl RuntimeEngine {
             let method_type = match Method::from_bytes(input.request.method.as_bytes()) {
                 Ok(m) => m,
                 Err(e) => {
-                    return self.fail(
+                    return Self::fail(
                         start,
                         stages,
                         want_trace,
                         "upstream",
-                        ExecuteError::InvalidMethod(format!(
+                        &ExecuteError::InvalidMethod(format!(
                             "Invalid HTTP method '{}': {}",
                             input.request.method, e
                         )),
@@ -1018,7 +1018,7 @@ impl RuntimeEngine {
                     } else {
                         ExecuteError::UpstreamTransport(e.to_string())
                     };
-                    return self.fail(start, stages, want_trace, "upstream", err, u_start);
+                    return Self::fail(start, stages, want_trace, "upstream", &err, u_start);
                 }
             }
         }
@@ -1104,8 +1104,7 @@ impl RuntimeEngine {
     }
 
     fn execute_transform_preview(
-        &self,
-        input: ExecuteInput,
+        input: &ExecuteInput,
         start: Instant,
         mut stages: Vec<StageResult>,
         mask: bool,
@@ -1173,12 +1172,11 @@ impl RuntimeEngine {
     }
 
     fn fail(
-        &self,
         start: Instant,
         mut stages: Vec<StageResult>,
         want_trace: bool,
         stage_name: &str,
-        err: ExecuteError,
+        err: &ExecuteError,
         stage_start: Instant,
     ) -> ExecuteResult {
         if want_trace {
