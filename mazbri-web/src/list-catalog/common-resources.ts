@@ -270,7 +270,7 @@ export const reconciliationCatalog: ResourceFilterCatalog = {
       ops: ENUM_OPS,
       in_q: true,
       label_key: "billing.reconciliation.columns.status",
-      enum_values: ["ok", "flagged", "acknowledged", "resolved"],
+      enum_values: ["ok", "flagged", "error", "acknowledged", "resolved"],
     },
     {
       field: "scope_type",
@@ -287,13 +287,19 @@ export const reconciliationCatalog: ResourceFilterCatalog = {
       label_key: "listFilters.fields.scope",
     },
     {
-      field: "oltp_call_count",
+      field: "billable_call_count",
       value_type: "int",
       ops: NUMBER_OPS,
       label_key: "billing.reconciliation.columns.oltp",
     },
     {
-      field: "olap_preagg_call_count",
+      field: "gateway_call_count",
+      value_type: "int",
+      ops: NUMBER_OPS,
+      label_key: "billing.reconciliation.columns.gateway",
+    },
+    {
+      field: "upstream_preagg_call_count",
       value_type: "int",
       ops: NUMBER_OPS,
       label_key: "billing.reconciliation.columns.olap",

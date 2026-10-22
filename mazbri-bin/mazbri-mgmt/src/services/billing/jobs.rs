@@ -53,50 +53,60 @@ pub async fn execute_upstream_billing_job(
 pub struct ReconciliationAuditOptions {
     pub loss_ratio_threshold: Decimal,
     pub include_amount_recon: bool,
-    pub include_raw_log_source: bool,
 }
 
-/// 网关侧 `request_logs` 当日请求数；失败时返回 `None`（回退 OLAP）。
+/// 网关侧 `request_logs` 当日请求数（主比对源）。
 async fn fetch_gateway_request_count(
     analytics_client: &AnalyticsHttpClient,
     day_start: chrono::DateTime<chrono::Utc>,
     day_end: chrono::DateTime<chrono::Utc>,
-) -> Option<i64> {
-    match analytics_client
+) -> Result<i64, String> {
+    let body = analytics_client
         .aggregate_requests(
             &day_start.to_rfc3339(),
             &day_end.to_rfc3339(),
             Some("mazbri-gateway"),
         )
         .await
-    {
-        Ok(body) => body
-            .get("total_requests")
-            .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)))
-            .map(i64::saturating_from),
-        Err(e) => {
-            tracing::warn!(
-                "raw_log gateway request_logs aggregate failed, falling back to OLAP: {}",
-                e
-            );
-            None
-        }
-    }
+        .map_err(|e| format!("gateway request_logs aggregate failed: {e}"))?;
+    body.get("total_requests")
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)))
+        .map(i64::saturating_from)
+        .ok_or_else(|| "gateway request_logs aggregate missing total_requests".to_string())
 }
 
-/// Primary ratio: billable `usage_records` vs customer-facing gateway access count
-/// (or upstream preagg when `raw_log` disabled). Use max(sides, 1) as denominator so a
-/// near-empty OLTP side does not explode the ratio.
-fn compute_loss_ratio(oltp_call_count: i64, comparison_call_count: i64) -> Decimal {
-    let oltp_dec = Decimal::from(oltp_call_count);
-    let peer_dec = Decimal::from(comparison_call_count);
-    let diff = (oltp_dec - peer_dec).abs();
-    let denominator = if oltp_call_count == 0 && comparison_call_count == 0 {
+/// Ratio: billable `usage_records` vs gateway access count. Use max(sides, 1) as
+/// denominator so a near-empty side does not explode the ratio.
+fn compute_loss_ratio(billable_call_count: i64, gateway_call_count: i64) -> Decimal {
+    let billable = Decimal::from(billable_call_count);
+    let gateway = Decimal::from(gateway_call_count);
+    let diff = (billable - gateway).abs();
+    let denominator = if billable_call_count == 0 && gateway_call_count == 0 {
         Decimal::ONE
     } else {
-        Decimal::from(oltp_call_count.max(comparison_call_count).max(1))
+        Decimal::from(billable_call_count.max(gateway_call_count).max(1))
     };
     diff / denominator
+}
+
+/// 对账判定：analytics 任一来源失败 → `error`；否则按阈值 `ok` / `flagged`。
+fn classify_reconciliation(
+    billable_call_count: i64,
+    gateway: &Result<i64, String>,
+    upstream_preagg: &Result<i64, String>,
+    threshold: Decimal,
+) -> (&'static str, Decimal, Option<String>) {
+    let errors: Vec<&str> = [gateway, upstream_preagg]
+        .into_iter()
+        .filter_map(|r| r.as_ref().err().map(String::as_str))
+        .collect();
+    if !errors.is_empty() {
+        return ("error", Decimal::ZERO, Some(errors.join("; ")));
+    }
+    let gateway_call_count = gateway.as_ref().map_or(0, |v| *v);
+    let ratio = compute_loss_ratio(billable_call_count, gateway_call_count);
+    let status = if ratio > threshold { "flagged" } else { "ok" };
+    (status, ratio, None)
 }
 
 async fn amount_recon_details(
@@ -152,12 +162,12 @@ fn reconciliation_day_bounds(
 }
 
 /// Upstream pre-aggregation (supplier-side): populated from bypass access logs only
-/// after `mv_upstream_hourly_usage` filter — one hop per actual upstream call.
+/// after `mv_upstream_hourly_usage` filter — one hop per actual upstream call. 参考值。
 async fn fetch_preagg_call_count(
     analytics_client: &AnalyticsHttpClient,
     day_start: chrono::DateTime<chrono::Utc>,
     day_end: chrono::DateTime<chrono::Utc>,
-) -> Result<i64, BillingError> {
+) -> Result<i64, String> {
     let summary_val = analytics_client
         .fetch_upstream_usage_summary(
             &day_start.to_rfc3339(),
@@ -168,14 +178,7 @@ async fn fetch_preagg_call_count(
             None,
         )
         .await
-        .map_err(|e| {
-            error!(
-                "Failed to fetch preagg summary for reconciliation audit: {}",
-                e
-            );
-            BillingError::Database
-        })?;
-
+        .map_err(|e| format!("upstream preagg summary failed: {e}"))?;
     Ok(summary_val.as_array().map_or(0, |arr| {
         arr.iter()
             .filter_map(|row| row.get("total_calls").and_then(serde_json::Value::as_i64))
@@ -197,7 +200,7 @@ pub async fn execute_reconciliation_audit(
     let loss_ratio_threshold = options.loss_ratio_threshold;
     let (day_start, day_end) = reconciliation_day_bounds(reconciliation_date)?;
 
-    let oltp_call_count: i64 = sqlx::query_scalar(
+    let billable_call_count: i64 = sqlx::query_scalar(
         "SELECT COALESCE(COUNT(*), 0)::BIGINT FROM usage_records WHERE recorded_at >= $1 AND recorded_at <= $2",
     )
     .bind(day_start)
@@ -209,49 +212,36 @@ pub async fn execute_reconciliation_audit(
         BillingError::Database
     })?;
 
-    let olap_preagg_call_count =
-        fetch_preagg_call_count(analytics_client, day_start, day_end).await?;
-
-    // Customer-facing access logs (gateway only). request_logs also contains mazbri-bypass
-    // rows for the same request_id; counting both ~doubles the total and falsely flags recon.
-    // usage_records is written once per billable gateway proxy call → compare to gateway logs.
-    let mut raw_log_source = "olap_preagg_compat";
-    let mut raw_log_call_count = olap_preagg_call_count;
-    let mut comparison_call_count = olap_preagg_call_count;
-    let mut comparison_source = "olap_preagg";
-    if options.include_raw_log_source {
-        if let Some(count) = fetch_gateway_request_count(analytics_client, day_start, day_end).await
-        {
-            raw_log_call_count = count;
-            raw_log_source = "request_logs_gateway";
-            comparison_call_count = count;
-            comparison_source = "request_logs_gateway";
-        }
+    // usage_records is written once per billable gateway proxy call → compare to gateway
+    // access logs (gateway rows only; bypass rows share request_id and would double count).
+    let gateway = fetch_gateway_request_count(analytics_client, day_start, day_end).await;
+    let upstream_preagg = fetch_preagg_call_count(analytics_client, day_start, day_end).await;
+    let (status, loss_ratio, error_reason) = classify_reconciliation(
+        billable_call_count,
+        &gateway,
+        &upstream_preagg,
+        loss_ratio_threshold,
+    );
+    if let Some(reason) = &error_reason {
+        error!("reconciliation audit {reconciliation_date} analytics error: {reason}");
     }
-
-    // Primary ratio: billable usage_records vs customer-facing gateway access count
-    // (or upstream preagg when raw_log disabled). Use max(sides, 1) as denominator so a
-    // near-empty OLTP side does not explode the ratio.
-    let loss_ratio = compute_loss_ratio(oltp_call_count, comparison_call_count);
-
-    let status = if loss_ratio > loss_ratio_threshold {
-        "flagged"
-    } else {
-        "ok"
-    };
+    let gateway_call_count = gateway.unwrap_or(0);
+    let upstream_preagg_call_count = upstream_preagg.unwrap_or(0);
 
     let mut details = serde_json::json!({
-        "oltp_calls": oltp_call_count,
-        "olap_preagg_calls": olap_preagg_call_count,
-        "raw_log_call_count": raw_log_call_count,
-        "raw_log_source": raw_log_source,
-        "comparison_call_count": comparison_call_count,
-        "comparison_source": comparison_source,
+        "billable_calls": billable_call_count,
+        "gateway_calls": gateway_call_count,
+        "upstream_preagg_calls": upstream_preagg_call_count,
         "audit_date": reconciliation_date.to_string(),
         "loss_ratio_threshold": loss_ratio_threshold.to_string(),
-        "sources": ["oltp_usage_records", "olap_preagg_bypass", raw_log_source],
-        "notes": "OLTP=usage_records; OLAP preagg=upstream_hourly (bypass-only); raw_log=gateway access logs for customer-call parity",
+        "notes": "billable=usage_records; gateway=gateway request_logs (primary); upstream_preagg=upstream_hourly (reference)",
     });
+    if let (Some(reason), Some(obj)) = (&error_reason, details.as_object_mut()) {
+        obj.insert(
+            "error".to_string(),
+            serde_json::Value::String(reason.clone()),
+        );
+    }
 
     if options.include_amount_recon {
         let amount_recon = amount_recon_details(billing_db, day_start, day_end).await?;
@@ -266,9 +256,9 @@ pub async fn execute_reconciliation_audit(
             reconciliation_date,
             scope_type,
             scope_id,
-            oltp_call_count,
-            olap_preagg_call_count,
-            raw_log_call_count,
+            billable_call_count,
+            upstream_preagg_call_count,
+            gateway_call_count,
             discrepancy_ratio: loss_ratio,
             status,
             details: Some(details),
@@ -285,17 +275,18 @@ pub async fn execute_reconciliation_audit(
         reconciliation_date,
         scope_type: scope_type.to_string(),
         scope_id: scope_id.to_string(),
-        oltp_call_count,
-        olap_preagg_call_count,
-        raw_log_call_count,
-        raw_log_source: raw_log_source.to_string(),
+        billable_call_count,
+        upstream_preagg_call_count,
+        gateway_call_count,
+        error: error_reason,
         loss_ratio,
         loss_ratio_threshold,
         status: status.to_string(),
     })
 }
 
-const ALLOWED_DISCREPANCY_STATUSES: &[&str] = &["ok", "flagged", "acknowledged", "resolved"];
+const ALLOWED_DISCREPANCY_STATUSES: &[&str] =
+    &["ok", "flagged", "error", "acknowledged", "resolved"];
 
 fn is_allowed_status_transition(from: &str, to: &str) -> bool {
     if from == to {
@@ -303,7 +294,7 @@ fn is_allowed_status_transition(from: &str, to: &str) -> bool {
     }
     matches!(
         (from, to),
-        ("ok" | "flagged", "acknowledged" | "resolved") | ("acknowledged", "resolved")
+        ("ok" | "flagged" | "error", "acknowledged" | "resolved") | ("acknowledged", "resolved")
     )
 }
 
@@ -706,5 +697,40 @@ pub async fn open_discrepancy_warning_for_period(
         )))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod recon_classify_tests {
+    use super::classify_reconciliation;
+    use rust_decimal::Decimal;
+
+    fn threshold() -> Decimal {
+        Decimal::new(5, 2)
+    }
+
+    #[test]
+    fn normal_is_ok() {
+        let (status, _, err) = classify_reconciliation(100, &Ok(100), &Ok(100), threshold());
+        assert_eq!(status, "ok");
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn analytics_failure_is_error() {
+        let (status, ratio, err) =
+            classify_reconciliation(100, &Err("down".into()), &Ok(100), threshold());
+        assert_eq!(status, "error");
+        assert_eq!(ratio, Decimal::ZERO);
+        assert_eq!(err.as_deref(), Some("down"));
+        let (status, _, _) =
+            classify_reconciliation(100, &Ok(100), &Err("preagg down".into()), threshold());
+        assert_eq!(status, "error");
+    }
+
+    #[test]
+    fn over_threshold_is_flagged() {
+        let (status, _, _) = classify_reconciliation(100, &Ok(80), &Ok(80), threshold());
+        assert_eq!(status, "flagged");
     }
 }

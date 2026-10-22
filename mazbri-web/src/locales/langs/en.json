@@ -2429,7 +2429,6 @@
       "alertWebhook": "Webhook URL",
       "alertWebhookPlaceholder": "https://hooks.example.com/...",
       "includeAmount": "Include amount recon",
-      "includeRawLog": "Include gateway request logs",
       "warnBeforeBill": "Warn open diffs before bill",
       "lastRunAt": "Last scheduled run",
       "neverRun": "Never",
@@ -2461,12 +2460,9 @@
         "roleCol": "Role",
         "sourceBilling": "Billable usage (usage_records)",
         "sourceUpstream": "Upstream bypass pre-aggregate",
-        "sourceGatewayUnavailable": "Gateway customer calls (not included)",
         "roleBilling": "Billing side",
         "rolePrimary": "Primary",
-        "roleGateway": "Customer access",
         "roleReference": "Reference",
-        "roleUnavailable": "Disabled",
         "amountTitle": "Amount recon",
         "usageAmount": "Usage billable amount",
         "billItemsTotal": "Bill items total",
@@ -2478,20 +2474,17 @@
         "methodGateway": "Gateway customer calls: mazbri-gateway access logs only, aligned with customer-facing traffic.",
         "methodUpstream": "Upstream bypass pre-aggregate: upstream_hourly (bypass-only); reference, not primary.",
         "methodPrimary": "Primary comparison side this run: {peerLabel}.",
-        "methodSources": "Sources used: {list}",
         "sources": {
           "unknown": "Unknown source",
-          "oltp_usage_records": "Billable usage (usage_records)",
-          "olap_preagg_bypass": "Upstream bypass pre-aggregate",
-          "olap_preagg": "Upstream pre-aggregate",
-          "request_logs_gateway": "Gateway customer calls",
-          "olap_preagg_compat": "Upstream pre-aggregate (compat fallback)"
-        }
+          "request_logs_gateway": "Gateway customer calls"
+        },
+        "errorTitle": "Reconciliation source fetch failed"
       },
       "columns": {
         "date": "Date",
         "scope": "Scope",
         "oltp": "Billable usage",
+        "gateway": "Gateway",
         "olap": "Upstream preagg",
         "ratio": "Loss ratio",
         "status": "Status"
@@ -2500,7 +2493,8 @@
         "ok": "OK",
         "flagged": "Flagged",
         "acknowledged": "Acknowledged",
-        "resolved": "Resolved"
+        "resolved": "Resolved",
+        "error": "Error (source failed)"
       }
     },
     "adjustments": {

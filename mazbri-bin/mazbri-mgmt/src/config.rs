@@ -125,8 +125,6 @@ pub struct ReconAlertConfig {
 pub struct ReconSourcesConfig {
     /// 是否写入金额维（usage sum vs 当日 `bill_items` 合计）。
     pub include_amount_recon: bool,
-    /// 是否从 analytics `request_logs` 聚合拉取 `raw_log_call_count`（真·第三方）。
-    pub include_raw_log_source: bool,
 }
 
 impl Default for BillingReconciliationConfig {
@@ -157,7 +155,6 @@ impl Default for ReconSourcesConfig {
     fn default() -> Self {
         Self {
             include_amount_recon: true,
-            include_raw_log_source: true,
         }
     }
 }

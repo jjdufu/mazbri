@@ -482,7 +482,6 @@ pub async fn run_reconciliation_audit(
     let options = svc::ReconciliationAuditOptions {
         loss_ratio_threshold: threshold,
         include_amount_recon: recon_cfg.sources.include_amount_recon,
-        include_raw_log_source: recon_cfg.sources.include_raw_log_source,
     };
 
     let result = svc::execute_reconciliation_audit(
@@ -506,10 +505,10 @@ pub async fn run_reconciliation_audit(
                 "reconciliation_date": result.reconciliation_date.to_string(),
                 "scope_type": result.scope_type,
                 "scope_id": result.scope_id,
-                "oltp_call_count": result.oltp_call_count,
-                "olap_preagg_call_count": result.olap_preagg_call_count,
-                "raw_log_call_count": result.raw_log_call_count,
-                "raw_log_source": result.raw_log_source,
+                "billable_call_count": result.billable_call_count,
+                "upstream_preagg_call_count": result.upstream_preagg_call_count,
+                "gateway_call_count": result.gateway_call_count,
+                "error": result.error,
                 "loss_ratio": result.loss_ratio.to_string(),
                 "loss_ratio_threshold": result.loss_ratio_threshold.to_string(),
                 "status": result.status,

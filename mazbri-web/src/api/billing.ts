@@ -173,10 +173,11 @@ export interface ReconciliationDiscrepancy {
   reconciliation_date: string;
   scope_type: string;
   scope_id: string;
-  oltp_call_count: number;
-  olap_preagg_call_count: number;
+  billable_call_count: number;
+  gateway_call_count: number;
+  upstream_preagg_call_count: number;
   discrepancy_ratio: string;
-  status: "ok" | "flagged" | "acknowledged" | "resolved" | string;
+  status: "ok" | "flagged" | "error" | "acknowledged" | "resolved";
   details?: Record<string, unknown> | null;
   resolution_note?: string | null;
   resolved_at?: string | null;
@@ -211,8 +212,10 @@ export interface ReconciliationAuditResult {
   reconciliation_date: string;
   scope_type: string;
   scope_id: string;
-  oltp_call_count: number;
-  olap_preagg_call_count: number;
+  billable_call_count: number;
+  gateway_call_count: number;
+  upstream_preagg_call_count: number;
+  error?: string | null;
   loss_ratio: string;
   loss_ratio_threshold: string;
   status: string;
@@ -269,7 +272,6 @@ export interface ReconciliationAlert {
 
 export interface ReconciliationSources {
   include_amount_recon: boolean;
-  include_raw_log_source: boolean;
 }
 
 export interface ReconciliationSettings {

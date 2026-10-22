@@ -2429,7 +2429,6 @@
       "alertWebhook": "Webhook URL",
       "alertWebhookPlaceholder": "https://hooks.example.com/...",
       "includeAmount": "写入金额维对账",
-      "includeRawLog": "纳入网关请求日志",
       "warnBeforeBill": "出账前警告未关闭差异",
       "lastRunAt": "上次定时跑批",
       "neverRun": "尚未跑过",
@@ -2461,12 +2460,9 @@
         "roleCol": "角色",
         "sourceBilling": "计费用量（usage_records）",
         "sourceUpstream": "上游旁路预聚合",
-        "sourceGatewayUnavailable": "网关客户请求（本次未纳入）",
         "roleBilling": "出账侧",
         "rolePrimary": "主比对",
-        "roleGateway": "客户侧请求",
         "roleReference": "参考",
-        "roleUnavailable": "未启用",
         "amountTitle": "金额对账",
         "usageAmount": "用量应计金额",
         "billItemsTotal": "账单明细合计",
@@ -2478,20 +2474,17 @@
         "methodGateway": "网关客户请求：仅 mazbri-gateway 访问日志，与客户侧调用口径对齐。",
         "methodUpstream": "上游旁路预聚合：bypass 侧 upstream_hourly，仅作旁证，不是主比对。",
         "methodPrimary": "本次主比对侧：{peerLabel}。",
-        "methodSources": "参与数据源：{list}",
         "sources": {
           "unknown": "未知来源",
-          "oltp_usage_records": "计费用量（usage_records）",
-          "olap_preagg_bypass": "上游旁路预聚合",
-          "olap_preagg": "上游预聚合",
-          "request_logs_gateway": "网关客户请求",
-          "olap_preagg_compat": "上游预聚合（兼容回退）"
-        }
+          "request_logs_gateway": "网关客户请求"
+        },
+        "errorTitle": "对账数据源拉取失败"
       },
       "columns": {
         "date": "对账日期",
         "scope": "范围",
         "oltp": "计费用量",
+        "gateway": "网关请求",
         "olap": "上游预聚合",
         "ratio": "差异率",
         "status": "状态"
@@ -2500,7 +2493,8 @@
         "ok": "正常",
         "flagged": "异常",
         "acknowledged": "已确认",
-        "resolved": "已关闭"
+        "resolved": "已关闭",
+        "error": "异常（数据源失败）"
       }
     },
     "adjustments": {

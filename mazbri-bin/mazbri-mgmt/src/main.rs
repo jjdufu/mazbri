@@ -306,7 +306,6 @@ async fn run_scheduled_reconciliation(
     let options = mazbri_mgmt::services::billing::ReconciliationAuditOptions {
         loss_ratio_threshold: threshold,
         include_amount_recon: settings.sources.include_amount_recon,
-        include_raw_log_source: settings.sources.include_raw_log_source,
     };
     match mazbri_mgmt::services::billing::execute_reconciliation_audit(
         billing_db,
@@ -336,9 +335,9 @@ async fn run_scheduled_reconciliation(
                     "event": "billing.reconciliation.flagged",
                     "discrepancy_id": result.discrepancy_id,
                     "reconciliation_date": result.reconciliation_date.to_string(),
-                    "oltp_call_count": result.oltp_call_count,
-                    "olap_preagg_call_count": result.olap_preagg_call_count,
-                    "raw_log_call_count": result.raw_log_call_count,
+                    "billable_call_count": result.billable_call_count,
+                    "upstream_preagg_call_count": result.upstream_preagg_call_count,
+                    "gateway_call_count": result.gateway_call_count,
                     "loss_ratio": result.loss_ratio.to_string(),
                     "status": result.status,
                 });
