@@ -14,7 +14,11 @@ const DATETIME_RE =
 
 
 function hasUnsafeChars(s: string): boolean {
-  return /['";]/.test(s) || /[\x00-\x1f]/.test(s);
+  if (/['";]/.test(s)) return true;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) < 0x20) return true;
+  }
+  return false;
 }
 
 function pad2(n: number): string {
