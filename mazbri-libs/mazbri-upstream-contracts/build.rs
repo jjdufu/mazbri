@@ -1,10 +1,8 @@
 fn main() {
-    let protoc =
+    let protoc_path =
         protoc_bin_vendored::protoc_bin_path().expect("failed to locate vendored protoc binary");
-
-    unsafe {
-        std::env::set_var("PROTOC", protoc);
-    }
+    let mut prost_config = tonic_prost_build::Config::new();
+    prost_config.protoc_executable(protoc_path);
 
     let proto_dir = "protos";
     let protos = [
@@ -16,6 +14,6 @@ fn main() {
     tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
-        .compile_protos(&protos, &[proto_dir.to_string()])
+        .compile_with_config(prost_config, &protos, &[proto_dir.to_string()])
         .expect("failed to compile upstream proto definitions");
 }

@@ -172,10 +172,10 @@ fn build_server_config(
     cert: &ManagedCertificate,
     config: &TlsConfig,
 ) -> TlsResult<Arc<rustls::ServerConfig>> {
-    init_crypto_provider();
     use rustls::ServerConfig;
     use rustls::server::WebPkiClientVerifier;
     use std::io::Cursor;
+    init_crypto_provider();
     let cert_chain: Vec<rustls::pki_types::CertificateDer> = {
         use rustls_pemfile::certs;
         use std::io::Cursor;
@@ -270,9 +270,9 @@ fn build_client_config(
     client_cert: Option<&ManagedCertificate>,
     _config: &TlsConfig,
 ) -> TlsResult<Arc<rustls::ClientConfig>> {
-    init_crypto_provider();
     use rustls::ClientConfig;
     use std::io::Cursor;
+    init_crypto_provider();
     let ca_certs: Vec<rustls::pki_types::CertificateDer> = {
         let certs_vec: Vec<_> = certs(&mut Cursor::new(ca_cert_pem.as_bytes())).collect();
         let mut valid_certs = Vec::new();
