@@ -800,19 +800,12 @@ impl TenantCryptoState {
         {
             Ok(true) => Ok(IdempotencyOutcome::Acquired),
             Ok(false) => match self.redis.get_bytes(&key).await {
-                Ok(Some(bytes)) => {
-                    if let Ok(record) = serde_json::from_slice::<IdempotencyRecord>(&bytes) {
-                        match record.status.as_str() {
-                            "done" => Ok(IdempotencyOutcome::Completed(record)),
-                            _ => Ok(IdempotencyOutcome::InProgress),
-                        }
-                    } else if bytes.as_slice() == b"1" || bytes.as_slice() == b"processing" {
-                        // Legacy marker from older builds → treat as in-progress / conflict
-                        Ok(IdempotencyOutcome::InProgress)
-                    } else {
-                        Ok(IdempotencyOutcome::InProgress)
+                Ok(Some(bytes)) => match serde_json::from_slice::<IdempotencyRecord>(&bytes) {
+                    Ok(record) if record.status == "done" => {
+                        Ok(IdempotencyOutcome::Completed(record))
                     }
-                }
+                    _ => Ok(IdempotencyOutcome::InProgress),
+                },
                 Ok(None) => {
                     // Race: key expired between NX miss and GET → re-acquire
                     match self
