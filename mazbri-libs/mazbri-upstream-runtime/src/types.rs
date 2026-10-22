@@ -121,8 +121,6 @@ pub struct InvokeInput {
     pub payload: serde_json::Value,
     pub spec: ChannelEgressSpec,
     pub config: Option<Arc<SupplierConfig>>,
-    pub fallback_base_url: String,
-    pub path_prefix: String,
     pub timeout: Duration,
     pub mode: ExecuteMode,
     pub options: ExecuteOptions,

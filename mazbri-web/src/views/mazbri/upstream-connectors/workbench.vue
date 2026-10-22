@@ -1049,6 +1049,7 @@ function addEndpoint() {
         path: "",
         adapter: "http_json",
         body_content_type: "json",
+        body_encoding: "json",
         body: {},
         wrap: "method_biz_content",
         assertions: [],

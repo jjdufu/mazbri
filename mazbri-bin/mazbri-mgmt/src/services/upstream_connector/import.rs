@@ -568,18 +568,8 @@ pub async fn transform_preview(
 
     let env = parse_workbench_env(&row.workbench_env);
     let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
-    let path_prefix = ep
-        .and_then(|e| e.get("path_prefix").and_then(|v| v.as_str()))
-        .or_else(|| ep.and_then(|e| e.get("path").and_then(|v| v.as_str())))
-        .unwrap_or("/");
     let empty_ep = serde_json::json!({});
-    let built = build_workbench_spec(
-        ep.unwrap_or(&empty_ep),
-        &env,
-        Some(&cfg),
-        path_prefix,
-        &row.upstream_url,
-    )?;
+    let built = build_workbench_spec(ep.unwrap_or(&empty_ep), &env, Some(&cfg), &row.upstream_url)?;
     let payload = built.payload.clone();
     let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
     let spec = built.spec.clone();
@@ -600,8 +590,6 @@ pub async fn transform_preview(
         payload,
         spec,
         config: Some(Arc::new(cfg)),
-        fallback_base_url: built.upstream_url.clone(),
-        path_prefix: path_prefix.to_string(),
         timeout: Duration::from_secs(5),
         mode: ExecuteMode::TransformPreview,
         options: ExecuteOptions {

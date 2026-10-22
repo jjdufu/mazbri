@@ -117,7 +117,7 @@ async fn ws_url(ctx: &AdapterCtx<'_>) -> Result<String, ExecuteError> {
         .as_ref()
         .and_then(|w| w.path.as_deref())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| spec.request_path(&ctx.input.path_prefix));
+        .unwrap_or(spec.request.path.as_str());
     let mut url = join_url(ctx.base_url, path);
     if url.starts_with("http://") {
         url = format!("ws://{}", url.trim_start_matches("http://"));

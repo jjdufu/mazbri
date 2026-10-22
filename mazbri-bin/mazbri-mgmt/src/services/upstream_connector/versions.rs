@@ -258,29 +258,25 @@ async fn prepare_live_input(
     default_timeout_ms: u64,
     max_body_bytes: usize,
 ) -> Result<InvokeInput, ApiError> {
-    let row =
-        sqlx::query("SELECT id, supplier_code, upstream_url, config FROM suppliers WHERE id = $1")
-            .bind(supplier_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
-            .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
+    let row = sqlx::query("SELECT id, supplier_code, config FROM suppliers WHERE id = $1")
+        .bind(supplier_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
+        .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
     let supplier_code: String = row.get("supplier_code");
-    let upstream_url: String = row.get("upstream_url");
     let config: serde_json::Value = row.get("config");
 
     let channel_code = req.channel_code.trim();
-    let channel = sqlx::query(
-        "SELECT id, path_prefix, config FROM channels WHERE supplier_id = $1 AND channel_code = $2",
-    )
-    .bind(supplier_id)
-    .bind(channel_code)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| ApiError::internal(format!("get channel: {e}")))?
-    .ok_or_else(|| ApiError::not_found("channel".into(), channel_code.to_string()))?;
+    let channel =
+        sqlx::query("SELECT id, config FROM channels WHERE supplier_id = $1 AND channel_code = $2")
+            .bind(supplier_id)
+            .bind(channel_code)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| ApiError::internal(format!("get channel: {e}")))?
+            .ok_or_else(|| ApiError::not_found("channel".into(), channel_code.to_string()))?;
     let channel_id: Uuid = channel.get("id");
-    let path_prefix: String = channel.get("path_prefix");
     let channel_config: serde_json::Value = channel.get("config");
     let spec = mazbri_core::parse_channel_config_egress(&channel_config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
@@ -319,8 +315,6 @@ async fn prepare_live_input(
         payload,
         spec,
         config: Some(Arc::new(cfg)),
-        fallback_base_url: upstream_url,
-        path_prefix,
         timeout: Duration::from_millis(timeout_ms),
         mode: ExecuteMode::Live,
         options: ExecuteOptions {

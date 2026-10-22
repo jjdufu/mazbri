@@ -77,7 +77,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let form = build_signed_form(ctx, operation, app_id, secret)?;
 
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),
@@ -91,7 +91,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let response = super::dispatch_http(
         ctx,
         HttpCall {
-            method: spec.request_method(),
+            method: spec.request.method.as_str(),
             url: &url,
             headers,
             body: Some(BodyKind::Form(form)),

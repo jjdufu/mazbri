@@ -21,7 +21,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .submit_path
         .as_deref()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| spec.request_path(&ctx.input.path_prefix));
+        .unwrap_or(spec.request.path.as_str());
     let wrapped = wrap_method_biz(operation, &ctx.input.payload);
     let body = serde_json::to_string(&wrapped)
         .map_err(|e| ExecuteError::SpecInvalid(format!("job submit: {e}")))?;

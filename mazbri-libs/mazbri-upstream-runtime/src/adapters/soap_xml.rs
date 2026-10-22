@@ -56,7 +56,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .entry("SOAPAction".into())
         .or_insert_with(|| format!("\"{operation}\""));
 
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),

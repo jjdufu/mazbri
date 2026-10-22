@@ -125,16 +125,7 @@ impl RuntimeEngine {
                 "payload_json 必须是 JSON 对象".into(),
             )));
         }
-        let base_url = input
-            .spec
-            .resolved_base_url(&input.fallback_base_url)
-            .trim()
-            .to_string();
-        if base_url.is_empty() {
-            return Err(validate_fail(ExecuteError::ConfigInvalid(
-                "base_url is empty".into(),
-            )));
-        }
+        let base_url = input.spec.base_url.trim().to_string();
         let max_cap = input.options.max_body_capture_bytes;
         let mask = input.options.mask_secrets;
         trace.record(|| StageResult {
@@ -142,7 +133,7 @@ impl RuntimeEngine {
             ok: true,
             latency_ms: elapsed_ms(v_start),
             request_summary: Some(StageSummary {
-                method: Some(input.spec.request_method().to_string()),
+                method: Some(input.spec.request.method.clone()),
                 url: Some(base_url.clone()),
                 headers_masked: None,
                 body_preview: Some(redact_body_preview(
@@ -300,7 +291,7 @@ fn transform_preview(input: &InvokeInput, base_url: String, mut trace: Trace) ->
         ok: wrap_err.is_none(),
         latency_ms: 0,
         request_summary: Some(StageSummary {
-            method: Some(input.spec.request_method().to_string()),
+            method: Some(input.spec.request.method.clone()),
             url: Some(base_url),
             headers_masked: None,
             body_preview: Some(redact_body_preview(&preview.to_string(), max_cap, mask)),

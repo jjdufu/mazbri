@@ -235,6 +235,7 @@ impl AuthProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthInjectSpec {
     #[serde(default = "default_inject_to")]
     pub to: String,
@@ -252,6 +253,7 @@ fn default_inject_format() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthCredentialKeys {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -260,6 +262,7 @@ pub struct AuthCredentialKeys {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthJwtSpec {
     /// HS256 | HS384 | HS512 | RS256 | RS384 | RS512. Empty = HS256.
     #[serde(default)]
@@ -273,6 +276,7 @@ pub struct AuthJwtSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthDigestSpec {
     /// MD5 | SHA-256. Empty = MD5.
     #[serde(default)]
@@ -282,12 +286,14 @@ pub struct AuthDigestSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthAwsSpec {
     pub region: String,
     pub service: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthHawkSpec {
     /// sha256 (default).
     #[serde(default)]
@@ -297,6 +303,7 @@ pub struct AuthHawkSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthSpec {
     #[serde(default = "default_auth_profile")]
     pub profile: String,
@@ -456,14 +463,35 @@ pub fn profile_is_undeclared(raw: Option<&str>) -> bool {
     matches!(raw.map_or("", str::trim), "" | AUTH_NONE)
 }
 
+/// Outbound body encoding of the tenant JSON payload.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyEncoding {
+    #[default]
+    Json,
+    Form,
+    None,
+}
+
+impl BodyEncoding {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Form => "form",
+            Self::None => "none",
+        }
+    }
+}
+
 /// L2 outbound request. Tenant L1 is always JSON (or none).
-/// `content_type` overrides JSON MIME only; `body_encoding` is json|form|none.
+/// `content_type` overrides JSON MIME only.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EgressRequestSpec {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub method: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
+    pub method: String,
+    pub path: String,
+    pub body_encoding: BodyEncoding,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,12 +501,10 @@ pub struct EgressRequestSpec {
     /// JSON MIME override (`application/vnd.api+json`, …). Ignored for form/none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
-    /// `json` (default) | `form` | `none`. Absent = legacy `http_json` behavior.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body_encoding: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct EgressOkSpec {
     pub path: String,
     #[serde(default)]
@@ -486,6 +512,7 @@ pub struct EgressOkSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EgressResponseSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unwrap: Option<String>,
@@ -494,6 +521,7 @@ pub struct EgressResponseSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GraphqlSpec {
     #[serde(default)]
     pub document: String,
@@ -506,6 +534,7 @@ pub struct GraphqlSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct JobPollSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub submit_path: Option<String>,
@@ -524,6 +553,7 @@ pub struct JobPollSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct WsUnarySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -535,6 +565,7 @@ pub struct WsUnarySpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SignFormSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charset: Option<String>,
@@ -545,6 +576,7 @@ pub struct SignFormSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SoapSpec {
     /// Upstream camelCase field → tenant `snake_case` (response reverse map).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -555,16 +587,15 @@ pub struct SoapSpec {
 
 /// Parsed `channels.config.egress` object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ChannelEgressSpec {
     pub adapter: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
+    pub base_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request: Option<EgressRequestSpec>,
+    pub request: EgressRequestSpec,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<EgressResponseSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -594,44 +625,10 @@ impl ChannelEgressSpec {
     #[must_use]
     pub fn wrap_name(&self) -> &str {
         self.request
-            .as_ref()
-            .and_then(|r| r.wrap.as_deref())
-            .filter(|s| !s.is_empty())
-            .unwrap_or(WRAP_METHOD_BIZ_CONTENT)
-    }
-
-    #[must_use]
-    pub fn request_method(&self) -> &str {
-        self.request
-            .as_ref()
-            .and_then(|r| r.method.as_deref())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("POST")
-    }
-
-    #[must_use]
-    pub fn request_path<'a>(&'a self, path_prefix_fallback: &'a str) -> &'a str {
-        if let Some(p) = self
-            .request
-            .as_ref()
-            .and_then(|r| r.path.as_deref())
-            .filter(|s| !s.is_empty())
-        {
-            return p;
-        }
-        if path_prefix_fallback.is_empty() {
-            "/"
-        } else {
-            path_prefix_fallback
-        }
-    }
-
-    #[must_use]
-    pub fn resolved_base_url<'a>(&'a self, supplier_upstream_url: &'a str) -> &'a str {
-        self.base_url
+            .wrap
             .as_deref()
             .filter(|s| !s.is_empty())
-            .unwrap_or(supplier_upstream_url)
+            .unwrap_or(WRAP_METHOD_BIZ_CONTENT)
     }
 }
 
@@ -727,42 +724,32 @@ fn validate_egress_request(
             )));
         }
     }
-    if let Some(ref method) = req.method {
-        let m = method.trim().to_ascii_uppercase();
-        if !is_allowed_http_method(&m) {
-            return Err(ChannelEgressError::new(format!(
-                "egress.request.method '{method}' 不受支持"
-            )));
-        }
+    if !is_allowed_http_method(&req.method.trim().to_ascii_uppercase()) {
+        return Err(ChannelEgressError::new(format!(
+            "egress.request.method '{}' 不受支持",
+            req.method
+        )));
     }
-    if let Some(ref path) = req.path {
-        if !path.is_empty() && !path.starts_with('/') && !path.starts_with("http") {
+    if !req.path.starts_with('/') && !req.path.starts_with("http") {
+        return Err(ChannelEgressError::new(
+            "egress.request.path 必须以 / 开头（或为绝对 URL）",
+        ));
+    }
+    match req.body_encoding {
+        BodyEncoding::Form if adapter != AdapterKind::HttpJson => {
             return Err(ChannelEgressError::new(
-                "egress.request.path 必须以 / 开头（或为绝对 URL）",
+                "egress.request.body_encoding=form 仅支持 adapter=http_json",
             ));
         }
-    }
-    if let Some(ref enc) = req.body_encoding {
-        let e = enc.trim();
-        if !e.is_empty() {
-            if !matches!(e, "json" | "form" | "none") {
-                return Err(ChannelEgressError::new(format!(
-                    "unknown egress.request.body_encoding '{enc}': known=[json, form, none]"
-                )));
-            }
-            if e == "form" && adapter != AdapterKind::HttpJson {
-                return Err(ChannelEgressError::new(
-                    "egress.request.body_encoding=form 仅支持 adapter=http_json",
-                ));
-            }
-            if e == "none" && !matches!(adapter, AdapterKind::HttpJson | AdapterKind::HttpEnvelope)
-            {
-                return Err(ChannelEgressError::new(format!(
-                    "adapter {} requires json body",
-                    adapter.as_str()
-                )));
-            }
+        BodyEncoding::None
+            if !matches!(adapter, AdapterKind::HttpJson | AdapterKind::HttpEnvelope) =>
+        {
+            return Err(ChannelEgressError::new(format!(
+                "adapter {} requires json body",
+                adapter.as_str()
+            )));
         }
+        BodyEncoding::Json | BodyEncoding::Form | BodyEncoding::None => {}
     }
     if let Some(ref ct) = req.content_type {
         if ct.chars().any(char::is_control) {
@@ -941,20 +928,13 @@ fn validate_adapter_options(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
     let adapter = spec.adapter_kind()?;
-    if let Some(ref url) = spec.base_url {
-        let trimmed = url.trim();
-        if !trimmed.is_empty() {
-            validate_outbound_url(trimmed, "egress.base_url")?;
-        }
-    }
+    validate_outbound_url(spec.base_url.trim(), "egress.base_url")?;
     if let Some(ms) = spec.timeout_ms {
         if ms == 0 {
             return Err(ChannelEgressError::new("egress.timeout_ms 必须大于 0"));
         }
     }
-    if let Some(ref req) = spec.request {
-        validate_egress_request(req, adapter)?;
-    }
+    validate_egress_request(&spec.request, adapter)?;
     if let Some(ref auth) = spec.auth {
         validate_egress_auth(auth, adapter)?;
     }
@@ -998,25 +978,6 @@ fn validate_outbound_url(raw: &str, field: &str) -> Result<(), ChannelEgressErro
     Ok(())
 }
 
-/// Default REST-shaped egress used when migrating a legacy channel that only
-/// had `path_prefix` (M0 backfill).
-#[must_use]
-pub fn default_http_json_egress(path: &str, method: &str) -> ChannelEgressSpec {
-    ChannelEgressSpec {
-        adapter: ADAPTER_HTTP_JSON.to_string(),
-        request: Some(EgressRequestSpec {
-            method: Some(method.to_string()),
-            path: Some(if path.is_empty() {
-                "/".into()
-            } else {
-                path.to_string()
-            }),
-            ..Default::default()
-        }),
-        ..Default::default()
-    }
-}
-
 /// Merge `egress` into an existing channel config object, preserving
 /// `rate_limit_*` and other sibling keys.
 ///
@@ -1048,7 +1009,8 @@ mod tests {
 
     #[test]
     fn rejects_unknown_adapter() {
-        let v = serde_json::json!({"adapter": "ftp"});
+        let v = serde_json::json!({"adapter": "ftp", "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"}});
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("unknown egress.adapter"));
     }
@@ -1057,7 +1019,8 @@ mod tests {
     fn http_json_ok_without_operation() {
         let v = serde_json::json!({
             "adapter": "http_json",
-            "request": {"method": "POST", "path": "/v1/search"}
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/v1/search", "body_encoding": "json"}
         });
         let spec = parse_and_validate_egress(&v).unwrap();
         assert_eq!(spec.adapter_kind().unwrap(), AdapterKind::HttpJson);
@@ -1065,7 +1028,8 @@ mod tests {
 
     #[test]
     fn envelope_requires_operation() {
-        let v = serde_json::json!({"adapter": "http_envelope"});
+        let v = serde_json::json!({"adapter": "http_envelope", "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"}});
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("operation"));
     }
@@ -1080,7 +1044,16 @@ mod tests {
     #[test]
     fn upsert_preserves_rate_limit() {
         let existing = serde_json::json!({"rate_limit_mode": "reject"});
-        let spec = default_http_json_egress("/x", "POST");
+        let spec = ChannelEgressSpec {
+            adapter: ADAPTER_HTTP_JSON.into(),
+            base_url: "https://up.example".into(),
+            request: EgressRequestSpec {
+                method: "POST".into(),
+                path: "/x".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let merged = upsert_egress_in_channel_config(&existing, &spec).unwrap();
         assert_eq!(merged["rate_limit_mode"], "reject");
         assert_eq!(merged["egress"]["adapter"], "http_json");
@@ -1090,26 +1063,45 @@ mod tests {
     fn rejects_bad_url() {
         let v = serde_json::json!({
             "adapter": "http_json",
-            "base_url": "not-a-url"
+            "base_url": "not-a-url",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("http"));
     }
 
     #[test]
-    fn http_json_upstream_path_decoupled_from_tenant_prefix() {
+    fn missing_required_fields_rejected() {
+        for v in [
+            serde_json::json!({"adapter": "http_json",
+                "request": {"method": "POST", "path": "/", "body_encoding": "json"}}),
+            serde_json::json!({"adapter": "http_json", "base_url": "https://up.example"}),
+            serde_json::json!({"adapter": "http_json", "base_url": "https://up.example",
+                "request": {"method": "POST", "body_encoding": "json"}}),
+            serde_json::json!({"adapter": "http_json", "base_url": "https://up.example",
+                "request": {"method": "POST", "path": "/"}}),
+        ] {
+            assert!(parse_and_validate_egress(&v).is_err(), "{v}");
+        }
+    }
+
+    #[test]
+    fn unknown_field_rejected() {
         let v = serde_json::json!({
             "adapter": "http_json",
-            "request": {"method": "POST", "path": "/v1/search"}
+            "base_url": "https://up.example",
+            "path_prefix": "/x",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"}
         });
-        let spec = parse_and_validate_egress(&v).unwrap();
-        assert_eq!(spec.request_path("/api/v1/gateway-product"), "/v1/search");
+        let err = parse_and_validate_egress(&v).unwrap_err().to_string();
+        assert!(err.contains("unknown field"), "{err}");
     }
 
     #[test]
     fn body_encoding_form_ok_on_http_json() {
         let v = serde_json::json!({
             "adapter": "http_json",
+            "base_url": "https://up.example",
             "request": {"method": "POST", "path": "/", "body_encoding": "form"}
         });
         parse_and_validate_egress(&v).unwrap();
@@ -1121,7 +1113,8 @@ mod tests {
             "adapter": "graphql",
             "operation": "Q",
             "graphql": {"document": "query Q { x }"},
-            "request": {"body_encoding": "form"}
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "form"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("form"));
@@ -1132,7 +1125,8 @@ mod tests {
         let v = serde_json::json!({
             "adapter": "sign_form",
             "operation": "pay",
-            "request": {"body_encoding": "none"}
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "none"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("requires json body"));
@@ -1142,20 +1136,12 @@ mod tests {
     fn content_type_rejects_crlf() {
         let v = serde_json::json!({
             "adapter": "http_json",
-            "request": {"content_type": "application/json\r\nX-Inject: 1"}
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json",
+                "content_type": "application/json\r\nX-Inject: 1"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("content_type"));
-    }
-
-    #[test]
-    fn missing_body_encoding_still_valid() {
-        let v = serde_json::json!({
-            "adapter": "http_json",
-            "request": {"method": "POST", "path": "/v1"}
-        });
-        let spec = parse_and_validate_egress(&v).unwrap();
-        assert!(spec.request.as_ref().unwrap().body_encoding.is_none());
     }
 
     #[test]
@@ -1175,6 +1161,8 @@ mod tests {
     fn rejects_inject_to_body() {
         let v = serde_json::json!({
             "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
             "auth": {
                 "profile": "api_key",
                 "inject": {"to": "body", "key": "token", "format": "{}"}
@@ -1214,6 +1202,8 @@ mod tests {
             "adapter": "grpc",
             "operation": "pkg.Svc/M",
             "artifact_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
             "auth": {"profile": "digest"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
@@ -1224,6 +1214,8 @@ mod tests {
     fn aws_requires_region_and_service() {
         let v = serde_json::json!({
             "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
             "auth": {"profile": "aws_sigv4"}
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();

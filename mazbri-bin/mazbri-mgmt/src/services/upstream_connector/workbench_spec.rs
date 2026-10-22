@@ -21,14 +21,12 @@ pub struct BuiltWorkbenchSpec {
     pub spec: ChannelEgressSpec,
     pub payload: Value,
     pub fingerprint: String,
-    pub upstream_url: String,
 }
 
 pub fn build_workbench_spec(
     endpoint: &Value,
     env: &HashMap<String, String>,
     supplier_cfg: Option<&SupplierConfig>,
-    fallback_path: &str,
     upstream_url: &str,
 ) -> Result<BuiltWorkbenchSpec, ApiError> {
     let expanded_ep = expand_endpoint(endpoint, env)?;
@@ -40,7 +38,7 @@ pub fn build_workbench_spec(
     }
     let cfg_ref = cfg_owned.as_ref();
 
-    let spec = assemble_spec(&expanded_ep, fallback_path, cfg_ref)?;
+    let spec = assemble_spec(&expanded_ep, &expanded_url, cfg_ref)?;
     let payload = payload_from_endpoint(&expanded_ep);
 
     if FAIL_ON_UNRESOLVED_VARS {
@@ -61,7 +59,6 @@ pub fn build_workbench_spec(
         spec,
         payload,
         fingerprint,
-        upstream_url: expanded_url,
     })
 }
 
@@ -147,7 +144,7 @@ pub fn evaluate_endpoint_gates(
     let mut leftover_seen: HashSet<String> = HashSet::new();
     let Some(arr) = endpoints.as_array().filter(|a| !a.is_empty()) else {
         if let Err(e) =
-            build_workbench_spec(&serde_json::json!({}), env, supplier_cfg, "/", upstream_url)
+            build_workbench_spec(&serde_json::json!({}), env, supplier_cfg, upstream_url)
         {
             merge_leftover(&e, &mut leftover, &mut leftover_seen);
         }
@@ -161,12 +158,7 @@ pub fn evaluate_endpoint_gates(
         let fallback = format!("ep-{}", i + 1);
         let key = workbench_endpoint_key(ep, Some(&fallback)).unwrap_or_else(|| fallback.clone());
         let gated = ep.get("gate").and_then(Value::as_bool).unwrap_or(true);
-        let path_prefix = ep
-            .get("path_prefix")
-            .and_then(Value::as_str)
-            .or_else(|| ep.get("path").and_then(Value::as_str))
-            .unwrap_or("/");
-        let built = build_workbench_spec(ep, env, supplier_cfg, path_prefix, upstream_url);
+        let built = build_workbench_spec(ep, env, supplier_cfg, upstream_url);
         let (fingerprint, unresolved) = match &built {
             Ok(b) => (Some(b.fingerprint.clone()), false),
             Err(e) => {
@@ -406,14 +398,18 @@ fn non_empty_str<'a>(ep: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
-/// 出口规格的 `request` 段（method、path、headers、query 等）。
-fn request_json_from_endpoint(ep: &Value, fallback_path: &str) -> serde_json::Map<String, Value> {
-    let method = non_empty_str(ep, "method").unwrap_or("POST");
-    let path = non_empty_str(ep, "path").unwrap_or(fallback_path);
-    let path = if path.is_empty() { "/" } else { path };
+/// 端点必填字符串字段。
+fn required_str<'a>(ep: &'a Value, key: &str) -> Result<&'a str, ApiError> {
+    non_empty_str(ep, key)
+        .ok_or_else(|| ApiError::validation(format!("CONFIG_INVALID: endpoint.{key} 必填")))
+}
+
+/// 出口规格的 `request` 段（`method`、`path`、`body_encoding` 必填；`headers`、`query` 等可选）。
+fn request_json_from_endpoint(ep: &Value) -> Result<serde_json::Map<String, Value>, ApiError> {
     let mut req = serde_json::Map::new();
-    req.insert("method".into(), Value::String(method.into()));
-    req.insert("path".into(), Value::String(path.into()));
+    for key in ["method", "path", "body_encoding"] {
+        req.insert(key.into(), Value::String(required_str(ep, key)?.into()));
+    }
     let headers = kv_from_json(ep.get("headers"));
     if !headers.is_empty() {
         req.insert("headers".into(), json_from_kv(&headers));
@@ -425,9 +421,6 @@ fn request_json_from_endpoint(ep: &Value, fallback_path: &str) -> serde_json::Ma
     if let Some(wrap) = non_empty_str(ep, "wrap") {
         req.insert("wrap".into(), Value::String(wrap.into()));
     }
-    if let Some(enc) = resolved_body_encoding(ep) {
-        req.insert("body_encoding".into(), Value::String(enc.into()));
-    }
     if let Some(ct) = ep
         .get("content_type")
         .and_then(|v| v.as_str())
@@ -436,19 +429,22 @@ fn request_json_from_endpoint(ep: &Value, fallback_path: &str) -> serde_json::Ma
     {
         req.insert("content_type".into(), Value::String(ct.into()));
     }
-    req
+    Ok(req)
 }
 
 /// 从端点 JSON 组装出口规格的 JSON 形态（尚未反序列化）。
-fn spec_json_from_endpoint(ep: &Value, fallback_path: &str) -> Value {
+/// 端点未单独指定 `base_url` 时写入供应商地址，运行时不再回退。
+fn spec_json_from_endpoint(ep: &Value, upstream_url: &str) -> Result<Value, ApiError> {
     let mut obj = serde_json::Map::new();
     let adapter = non_empty_str(ep, "adapter").unwrap_or(ADAPTER_HTTP_JSON);
     obj.insert("adapter".into(), Value::String(adapter.into()));
     obj.insert(
         "request".into(),
-        Value::Object(request_json_from_endpoint(ep, fallback_path)),
+        Value::Object(request_json_from_endpoint(ep)?),
     );
-    for key in ["operation", "base_url", "artifact_id"] {
+    let base_url = non_empty_str(ep, "base_url").unwrap_or(upstream_url);
+    obj.insert("base_url".into(), Value::String(base_url.into()));
+    for key in ["operation", "artifact_id"] {
         if let Some(v) = non_empty_str(ep, key) {
             obj.insert(key.into(), Value::String(v.into()));
         }
@@ -464,15 +460,15 @@ fn spec_json_from_endpoint(ep: &Value, fallback_path: &str) -> Value {
     if let Some(ms) = ep.get("timeout_ms").and_then(serde_json::Value::as_u64) {
         obj.insert("timeout_ms".into(), serde_json::json!(ms));
     }
-    Value::Object(obj)
+    Ok(Value::Object(obj))
 }
 
 fn assemble_spec(
     ep: &Value,
-    fallback_path: &str,
+    upstream_url: &str,
     supplier: Option<&SupplierConfig>,
 ) -> Result<ChannelEgressSpec, ApiError> {
-    let spec = spec_json_from_endpoint(ep, fallback_path);
+    let spec = spec_json_from_endpoint(ep, upstream_url)?;
     let mut spec: ChannelEgressSpec = serde_json::from_value(spec)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     let ep_profile = spec.auth.as_ref().map_or("", |a| a.profile.as_str());
@@ -521,9 +517,7 @@ fn strip_inject_key(spec: &mut ChannelEgressSpec, supplier: Option<&SupplierConf
         .filter(|s| !s.is_empty())
         .or_else(|| flow.map(|f| f.inject_to.trim().to_string()))
         .unwrap_or_else(|| "header".into());
-    let Some(ref mut req) = spec.request else {
-        return;
-    };
+    let req = &mut spec.request;
     if let Some(ref mut headers) = req.headers {
         headers.retain(|k, _| {
             let kl = k.to_ascii_lowercase();
@@ -556,52 +550,15 @@ fn strip_inject_key(spec: &mut ChannelEgressSpec, supplier: Option<&SupplierConf
     }
 }
 
-fn is_none_l1(ep: &Value) -> bool {
-    let bct = ep
-        .get("body_content_type")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    if bct.eq_ignore_ascii_case("none") {
-        return true;
-    }
-    let enc = ep
-        .get("body_encoding")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    enc.eq_ignore_ascii_case("none")
-}
-
-/// Explicit none/form only. Absent encoding keeps legacy `http_json` (GET no body, else json).
-fn resolved_body_encoding(ep: &Value) -> Option<&'static str> {
-    let explicit = ep
-        .get("body_encoding")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    if explicit.eq_ignore_ascii_case("none") || is_none_l1(ep) {
-        return Some("none");
-    }
-    if explicit.eq_ignore_ascii_case("form") {
-        return Some("form");
-    }
-    if explicit.eq_ignore_ascii_case("json") {
-        return None;
-    }
-    None
-}
-
-/// L1 tenant JSON. `none` → Null (not `{}`). Missing body on POST → `{}` (compat).
+/// L1 tenant JSON. `body_encoding=none` → Null; otherwise the endpoint body (missing = `{}`).
 fn payload_from_endpoint(ep: &Value) -> Value {
-    if is_none_l1(ep) {
+    if non_empty_str(ep, "body_encoding") == Some("none") {
         return Value::Null;
     }
-    let payload = ep.get("body").cloned().unwrap_or(Value::Null);
-    if payload.is_null() {
-        return serde_json::json!({});
+    match ep.get("body") {
+        None | Some(Value::Null) => serde_json::json!({}),
+        Some(body) => body.clone(),
     }
-    payload
 }
 
 fn expand_endpoint(ep: &Value, env: &HashMap<String, String>) -> Result<Value, ApiError> {
@@ -621,7 +578,6 @@ fn expand_endpoint(ep: &Value, env: &HashMap<String, String>) -> Result<Value, A
         "base_url",
         "content_type",
         "body_encoding",
-        "body_content_type",
     ] {
         expand_string_field(obj, key, env);
     }
@@ -919,18 +875,18 @@ mod tests {
     fn ignores_ep_egress_copies_tab_headers() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/v1",
+            "path": "/v1", "body_encoding": "json",
             "headers": { "X-Version": "1" },
             "egress": {
                 "adapter": "http_json",
                 "request": { "method": "POST", "path": "/old" }
             }
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
-        let req = built.spec.request.expect("request");
-        assert_eq!(req.method.as_deref(), Some("GET"));
-        assert_eq!(req.path.as_deref(), Some("/v1"));
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
+        let req = built.spec.request;
+        assert_eq!(req.method, "GET");
+        assert_eq!(req.path, "/v1");
         let headers = req.headers.expect("headers");
         assert_eq!(headers.get("X-Version").map(String::as_str), Some("1"));
     }
@@ -939,38 +895,31 @@ mod tests {
     fn payload_comes_from_endpoint_body() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body": { "from": "db" }
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         assert_eq!(built.payload["from"], "db");
-        assert!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .is_none_or(|r| r.headers.is_none()),
-        );
+        assert!(built.spec.request.headers.is_none(),);
     }
 
     #[test]
     fn expands_env_in_query_and_body() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/x",
+            "path": "/x", "body_encoding": "json",
             "query": { "appId": "{{appId}}" },
             "body": { "appId": "{{appId}}" }
         });
         let mut env = HashMap::new();
         env.insert("appId".into(), "1".into());
-        let built =
-            build_workbench_spec(&ep, &env, None, "/", "https://up.example").expect("build");
-        let q = built.spec.request.as_ref().unwrap().query.as_ref().unwrap();
+        let built = build_workbench_spec(&ep, &env, None, "https://up.example").expect("build");
+        let q = built.spec.request.query.as_ref().unwrap();
         assert_eq!(q.get("appId").map(String::as_str), Some("1"));
         assert_eq!(built.payload["appId"], "1");
         let leftover = unresolved_idents_in(&leftover_scan_json(
-            &built.upstream_url,
+            &built.spec.base_url,
             None,
             &built.spec,
             &built.payload,
@@ -990,16 +939,16 @@ mod tests {
     fn leftover_ident_fails_pr2() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/p/{{missing}}",
+            "path": "/p/{{missing}}", "body_encoding": "json",
         });
-        let err = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
+        let err = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
             .expect_err("pr2 leftover must 4xx");
         err_contains_unresolved(&err, "missing");
     }
 
     #[test]
     fn leftover_in_token_url_fails() {
-        let ep = serde_json::json!({ "method": "GET", "path": "/" });
+        let ep = serde_json::json!({ "method": "GET", "path": "/", "body_encoding": "json" });
         let cfg = SupplierConfig {
             auth_flow: Some(AuthFlowConfig {
                 enabled: true,
@@ -1010,7 +959,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
+        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
             .expect_err("token_url leftover");
         err_contains_unresolved(&err, "missing");
     }
@@ -1019,7 +968,7 @@ mod tests {
     fn leftover_in_graphql_map_fails() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "adapter": "graphql",
             "operation": "Q",
             "graphql": {
@@ -1027,7 +976,7 @@ mod tests {
                 "variables_map": { "id": "{{missing}}" }
             }
         });
-        let err = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
+        let err = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
             .expect_err("graphql leftover");
         err_contains_unresolved(&err, "missing");
     }
@@ -1036,7 +985,7 @@ mod tests {
     fn strips_inject_authorization_keeps_static_header() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "headers": {
                 "Authorization": "Bearer hand",
                 "X-Version": "1"
@@ -1052,16 +1001,9 @@ mod tests {
             }),
             ..Default::default()
         };
-        let built = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
+        let built = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
             .expect("build");
-        let headers = built
-            .spec
-            .request
-            .as_ref()
-            .unwrap()
-            .headers
-            .clone()
-            .unwrap_or_default();
+        let headers = built.spec.request.headers.clone().unwrap_or_default();
         assert!(
             !headers
                 .keys()
@@ -1091,13 +1033,12 @@ mod tests {
     fn fingerprint_includes_base_url_and_is_stable() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/ping"
+            "path": "/ping", "body_encoding": "json"
         });
-        let a = build_workbench_spec(&ep, &empty_env(), None, "/", "https://a.example").expect("a");
-        let b = build_workbench_spec(&ep, &empty_env(), None, "/", "https://b.example").expect("b");
+        let a = build_workbench_spec(&ep, &empty_env(), None, "https://a.example").expect("a");
+        let b = build_workbench_spec(&ep, &empty_env(), None, "https://b.example").expect("b");
         assert_ne!(a.fingerprint, b.fingerprint);
-        let a2 =
-            build_workbench_spec(&ep, &empty_env(), None, "/", "https://a.example").expect("a2");
+        let a2 = build_workbench_spec(&ep, &empty_env(), None, "https://a.example").expect("a2");
         assert_eq!(a.fingerprint, a2.fingerprint);
     }
 
@@ -1105,11 +1046,12 @@ mod tests {
     fn fingerprint_golden_hex() {
         let spec = ChannelEgressSpec {
             adapter: ADAPTER_HTTP_JSON.into(),
-            request: Some(mazbri_core::EgressRequestSpec {
-                method: Some("GET".into()),
-                path: Some("/ping".into()),
+            base_url: "https://api.example.com".into(),
+            request: mazbri_core::EgressRequestSpec {
+                method: "GET".into(),
+                path: "/ping".into(),
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         };
         let hex = fingerprint_workbench(
@@ -1121,20 +1063,20 @@ mod tests {
         .expect("fp");
         assert_eq!(
             hex,
-            "ac90538774eb1c5335ab12c1ee2abf39ba6b6f738e948c7ee41922d7d9091f10"
+            "6eed78d1119b5597ebc8ab612d8b2cbfe4324f0dbedbf9d712392bab75ed43f5"
         );
     }
 
     #[test]
     fn gate_skipped_not_run_spec_changed_and_met() {
         let endpoints = serde_json::json!([
-            { "id": "ep-skip", "path": "/s", "method": "GET", "gate": false },
-            { "id": "ep-a", "path": "/a", "method": "GET" },
-            { "id": "ep-b", "path": "/b", "method": "GET" },
-            { "id": "ep-c", "path": "/c", "method": "GET" }
+            { "id": "ep-skip", "path": "/s", "body_encoding": "json", "method": "GET", "gate": false },
+            { "id": "ep-a", "path": "/a", "body_encoding": "json", "method": "GET" },
+            { "id": "ep-b", "path": "/b", "body_encoding": "json", "method": "GET" },
+            { "id": "ep-c", "path": "/c", "body_encoding": "json", "method": "GET" }
         ]);
         let env = empty_env();
-        let fp_b = build_workbench_spec(&endpoints[2], &env, None, "/", "https://up.example")
+        let fp_b = build_workbench_spec(&endpoints[2], &env, None, "https://up.example")
             .expect("b")
             .fingerprint;
         let fp_c_old = "deadbeef".to_string();
@@ -1162,7 +1104,7 @@ mod tests {
     #[test]
     fn gate_unresolved_and_auth_only_does_not_count() {
         let endpoints = serde_json::json!([
-            { "id": "ep-a", "path": "/{{missing}}", "method": "GET" }
+            { "id": "ep-a", "path": "/{{missing}}", "body_encoding": "json", "method": "GET" }
         ]);
         let eval = evaluate_endpoint_gates(
             &endpoints,
@@ -1183,96 +1125,61 @@ mod tests {
     fn post_none_payload_is_null_and_encoding_none() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
-            "body_content_type": "none"
+            "path": "/", "body_encoding": "none"
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         assert!(built.payload.is_null());
-        assert_eq!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.body_encoding.as_deref()),
-            Some("none")
-        );
+        assert_eq!(built.spec.request.body_encoding.as_str(), "none");
     }
 
     #[test]
     fn post_json_empty_object_stays_object() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body_content_type": "json",
             "body": {}
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         assert_eq!(built.payload, serde_json::json!({}));
-        assert!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.body_encoding.as_deref())
-                .is_none()
+        assert_eq!(
+            built.spec.request.body_encoding,
+            mazbri_core::BodyEncoding::Json
         );
     }
 
     #[test]
-    fn old_post_without_body_still_empty_object() {
-        let ep = serde_json::json!({
-            "method": "POST",
-            "path": "/"
-        });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
-        assert_eq!(built.payload, serde_json::json!({}));
-        assert!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.body_encoding.as_deref())
-                .is_none()
-        );
+    fn missing_body_encoding_is_rejected() {
+        let ep = serde_json::json!({ "method": "POST", "path": "/" });
+        let err = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
+            .expect_err("must reject");
+        assert!(err.to_string().contains("body_encoding"));
     }
 
     #[test]
-    fn old_get_without_fields_has_no_encoding() {
-        let ep = serde_json::json!({
-            "method": "GET",
-            "path": "/"
-        });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
-        assert_eq!(built.payload, serde_json::json!({}));
-        assert!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.body_encoding.as_deref())
-                .is_none()
-        );
+    fn missing_path_is_rejected() {
+        let ep = serde_json::json!({ "method": "GET", "body_encoding": "json" });
+        let err = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
+            .expect_err("must reject");
+        assert!(err.to_string().contains("path"));
     }
 
     #[test]
     fn none_and_empty_object_have_different_fingerprints() {
         let none_ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
-            "body_content_type": "none"
+            "path": "/", "body_encoding": "none"
         });
         let empty_ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body": {}
         });
-        let a = build_workbench_spec(&none_ep, &empty_env(), None, "/", "https://up.example")
-            .expect("none");
-        let b = build_workbench_spec(&empty_ep, &empty_env(), None, "/", "https://up.example")
+        let a =
+            build_workbench_spec(&none_ep, &empty_env(), None, "https://up.example").expect("none");
+        let b = build_workbench_spec(&empty_ep, &empty_env(), None, "https://up.example")
             .expect("empty");
         assert_ne!(a.fingerprint, b.fingerprint);
     }
@@ -1281,27 +1188,23 @@ mod tests {
     fn content_type_override_enters_spec_and_fingerprint() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body": {"a": 1},
             "content_type": "application/vnd.api+json"
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         assert_eq!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.content_type.as_deref()),
+            built.spec.request.content_type.as_deref(),
             Some("application/vnd.api+json")
         );
         let plain = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body": {"a": 1}
         });
-        let other = build_workbench_spec(&plain, &empty_env(), None, "/", "https://up.example")
-            .expect("plain");
+        let other =
+            build_workbench_spec(&plain, &empty_env(), None, "https://up.example").expect("plain");
         assert_ne!(built.fingerprint, other.fingerprint);
     }
 
@@ -1313,16 +1216,9 @@ mod tests {
             "body": {"a": 1, "b": "x"},
             "body_encoding": "form"
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
-        assert_eq!(
-            built
-                .spec
-                .request
-                .as_ref()
-                .and_then(|r| r.body_encoding.as_deref()),
-            Some("form")
-        );
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
+        assert_eq!(built.spec.request.body_encoding.as_str(), "form");
         assert_eq!(built.payload["a"], 1);
     }
 
@@ -1330,17 +1226,17 @@ mod tests {
     fn non_object_body_is_not_wrapped_in_value() {
         let ep = serde_json::json!({
             "method": "POST",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "body": [1, 2]
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         assert_eq!(built.payload, serde_json::json!([1, 2]));
     }
 
     #[test]
     fn inherit_without_session_profile_is_rejected() {
-        let ep = serde_json::json!({ "method": "GET", "path": "/" });
+        let ep = serde_json::json!({ "method": "GET", "path": "/", "body_encoding": "json" });
         let cfg = SupplierConfig {
             auth_flow: Some(AuthFlowConfig {
                 enabled: true,
@@ -1348,7 +1244,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
+        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
             .expect_err("inherit without profile");
         assert!(err.to_string().contains("请设置会话鉴权类型"), "{err}");
     }
@@ -1357,7 +1253,7 @@ mod tests {
     fn inherit_basic_strips_session_token_url() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "auth": { "profile": "none" }
         });
         let cfg = SupplierConfig {
@@ -1369,7 +1265,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let built = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
+        let built = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
             .expect("build");
         let auth = built.spec.auth.expect("auth");
         assert_eq!(auth.profile, "basic");
@@ -1380,14 +1276,14 @@ mod tests {
     fn basic_endpoint_sanitizes_token_url() {
         let ep = serde_json::json!({
             "method": "GET",
-            "path": "/",
+            "path": "/", "body_encoding": "json",
             "auth": {
                 "profile": "basic",
                 "token_url": "https://idp.example/token"
             }
         });
-        let built = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
-            .expect("build");
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
         let auth = built.spec.auth.expect("auth");
         assert_eq!(auth.profile, "basic");
         assert!(auth.token_url.is_none());

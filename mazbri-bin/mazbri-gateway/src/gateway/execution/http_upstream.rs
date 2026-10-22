@@ -216,8 +216,6 @@ fn build_invoke_request(
         } else {
             String::new()
         },
-        fallback_base_url: channel.supplier_upstream_url.clone(),
-        path_prefix: channel.path_prefix.clone(),
     };
     Ok((bypass_addr, invoke_req))
 }

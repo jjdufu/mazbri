@@ -1,19 +1,19 @@
 use crate::http_call::{HttpCall, append_query, join_url};
 use crate::types::{BodyKind, ExecuteError};
+use mazbri_core::BodyEncoding;
 
 use super::{AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, parse_json_body, wrap_by_name};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
     let spec = &ctx.input.spec;
-    let method = spec.request_method();
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let method = spec.request.method.as_str();
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),
     );
-    let encoding = super::request_body_encoding(spec);
     let mut headers = super::merge_request_headers(ctx.auth, spec);
-    let body = if encoding.is_some_and(|e| e.eq_ignore_ascii_case("none")) {
+    let body = if spec.request.body_encoding == BodyEncoding::None {
         None
     } else {
         let wrapped = wrap_by_name(spec, &ctx.input.payload)?;

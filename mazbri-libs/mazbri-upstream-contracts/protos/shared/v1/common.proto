@@ -94,8 +94,6 @@ message InvokeRequest {
   string supplier_code = 11;
   string supplier_config_hash = 12;
   string supplier_config_json = 13;
-  string fallback_base_url = 14;
-  string path_prefix = 15;
 }
 
 message InvokeResponse {

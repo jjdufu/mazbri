@@ -45,11 +45,9 @@ pub(crate) fn merge_request_headers(
     spec: &ChannelEgressSpec,
 ) -> HashMap<String, String> {
     let mut headers = auth.headers.clone();
-    if let Some(ref req) = spec.request {
-        if let Some(ref spec_h) = req.headers {
-            for (k, v) in spec_h {
-                headers.entry(k.clone()).or_insert_with(|| v.clone());
-            }
+    if let Some(ref spec_h) = spec.request.headers {
+        for (k, v) in spec_h {
+            headers.entry(k.clone()).or_insert_with(|| v.clone());
         }
     }
     headers
@@ -66,8 +64,8 @@ pub(crate) fn apply_json_content_type_override(
 ) {
     let Some(ct) = spec
         .request
-        .as_ref()
-        .and_then(|r| r.content_type.as_deref())
+        .content_type
+        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
     else {
@@ -86,58 +84,15 @@ pub(crate) fn force_urlencoded_content_type(headers: &mut HashMap<String, String
     );
 }
 
-pub(crate) fn request_body_encoding(spec: &ChannelEgressSpec) -> Option<&str> {
-    spec.request
-        .as_ref()
-        .and_then(|r| r.body_encoding.as_deref())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
-fn reject_incompatible_body_encoding(
-    kind: AdapterKind,
-    spec: &ChannelEgressSpec,
-) -> Result<(), ExecuteError> {
-    let Some(enc) = request_body_encoding(spec) else {
-        return Ok(());
-    };
-    if enc.eq_ignore_ascii_case("json") {
-        return Ok(());
-    }
-    if enc.eq_ignore_ascii_case("none") {
-        if matches!(kind, AdapterKind::HttpJson | AdapterKind::HttpEnvelope) {
-            return Ok(());
-        }
-        return Err(ExecuteError::SpecInvalid(format!(
-            "adapter {} requires json body",
-            kind.as_str()
-        )));
-    }
-    if enc.eq_ignore_ascii_case("form") {
-        if matches!(kind, AdapterKind::HttpJson) {
-            return Ok(());
-        }
-        return Err(ExecuteError::SpecInvalid(format!(
-            "adapter {} forbids form body_encoding",
-            kind.as_str()
-        )));
-    }
-    Err(ExecuteError::SpecInvalid(format!(
-        "unknown body_encoding '{enc}'"
-    )))
-}
-
 /// Auth query first; spec `request.query` appended after.
 pub(crate) fn merge_request_query(
     auth: &AppliedAuth,
     spec: &ChannelEgressSpec,
 ) -> Vec<(String, String)> {
     let mut query = auth.query.clone();
-    if let Some(ref req) = spec.request {
-        if let Some(ref spec_q) = req.query {
-            for (k, v) in spec_q {
-                query.push((k.clone(), v.clone()));
-            }
+    if let Some(ref spec_q) = spec.request.query {
+        for (k, v) in spec_q {
+            query.push((k.clone(), v.clone()));
         }
     }
     query
@@ -165,7 +120,6 @@ pub async fn invoke_adapter(
     ctx: &AdapterCtx<'_>,
     kind: AdapterKind,
 ) -> Result<AdapterOutcome, ExecuteError> {
-    reject_incompatible_body_encoding(kind, &ctx.input.spec)?;
     match kind {
         AdapterKind::HttpJson => http_json::invoke(ctx).await,
         AdapterKind::HttpEnvelope => http_envelope::invoke(ctx).await,
@@ -323,7 +277,7 @@ mod tests {
     use crate::http_call::HttpCall;
     use crate::ssrf::SsrfChecker;
     use crate::types::{ExecuteMode, ExecuteOptions, InvokeInput};
-    use mazbri_core::{ADAPTER_HTTP_JSON, ChannelEgressSpec, EgressRequestSpec};
+    use mazbri_core::{ADAPTER_HTTP_JSON, BodyEncoding, ChannelEgressSpec, EgressRequestSpec};
     use std::collections::HashMap;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -343,7 +297,7 @@ mod tests {
     ) -> ChannelEgressSpec {
         ChannelEgressSpec {
             adapter: ADAPTER_HTTP_JSON.into(),
-            request: Some(EgressRequestSpec {
+            request: EgressRequestSpec {
                 headers: if headers.is_empty() {
                     None
                 } else {
@@ -351,7 +305,7 @@ mod tests {
                 },
                 query: if query.is_empty() { None } else { Some(query) },
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         }
     }
@@ -400,7 +354,7 @@ mod tests {
         let auth = auth_with(HashMap::new(), vec![]);
         let spec = ChannelEgressSpec {
             adapter: ADAPTER_HTTP_JSON.into(),
-            request: Some(EgressRequestSpec {
+            request: EgressRequestSpec {
                 headers: Some(
                     [("Content-Type".into(), "text/plain".into())]
                         .into_iter()
@@ -408,7 +362,7 @@ mod tests {
                 ),
                 content_type: Some("application/vnd.api+json".into()),
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         };
         let mut merged = merge_request_headers(&auth, &spec);
@@ -426,11 +380,11 @@ mod tests {
         headers.insert("Content-Type".into(), "application/json".into());
         let spec = ChannelEgressSpec {
             adapter: ADAPTER_HTTP_JSON.into(),
-            request: Some(EgressRequestSpec {
+            request: EgressRequestSpec {
                 content_type: Some("application/vnd.api+json".into()),
-                body_encoding: Some("form".into()),
+                body_encoding: BodyEncoding::Form,
                 ..Default::default()
-            }),
+            },
             ..Default::default()
         };
         apply_json_content_type_override(&mut headers, &spec);
@@ -451,11 +405,10 @@ mod tests {
             payload: serde_json::json!({}),
             spec: ChannelEgressSpec {
                 adapter: ADAPTER_HTTP_JSON.into(),
+                base_url: "http://127.0.0.1".into(),
                 ..Default::default()
             },
             config: None,
-            fallback_base_url: "http://127.0.0.1".into(),
-            path_prefix: "/".into(),
             timeout: Duration::from_secs(2),
             mode: ExecuteMode::Business,
             options: ExecuteOptions::default(),

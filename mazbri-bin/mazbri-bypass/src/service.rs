@@ -212,8 +212,18 @@ impl MazbriBypassServiceImpl {
     ) -> Response<upstream_proto::InvokeResponse> {
         let req = request.into_inner();
         let start_time = Instant::now();
-        let response = self.execute_once(&req).await;
-        emit_bypass_access(self.service_name.as_ref(), &req, start_time, &response);
+        let (response, spec) =
+            match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
+                Ok(spec) => (self.execute_once(&req, &spec).await, Some(spec)),
+                Err(error) => (invoke_error(error), None),
+            };
+        emit_bypass_access(
+            self.service_name.as_ref(),
+            &req,
+            spec.as_ref(),
+            start_time,
+            &response,
+        );
         Response::new(response)
     }
 
@@ -230,14 +240,9 @@ impl MazbriBypassServiceImpl {
     async fn execute_once(
         &self,
         req: &upstream_proto::InvokeRequest,
+        spec: &ChannelEgressSpec,
     ) -> upstream_proto::InvokeResponse {
         let start_time = Instant::now();
-        let spec = match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
-            Ok(s) => s,
-            Err(error) => {
-                return invoke_error(error);
-            }
-        };
         let config = match self
             .resolve_supplier_config(&req.supplier_config_hash, &req.supplier_config_json)
         {
@@ -275,12 +280,6 @@ impl MazbriBypassServiceImpl {
             }
         }
 
-        let fallback = if req.fallback_base_url.is_empty() {
-            spec.base_url.clone().unwrap_or_default()
-        } else {
-            req.fallback_base_url.clone()
-        };
-
         let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {
             Some(id) if !id.is_empty() => match self.load_artifact_bytes(id).await {
                 Ok(bytes) => bytes,
@@ -297,8 +296,6 @@ impl MazbriBypassServiceImpl {
             payload,
             spec: spec.clone(),
             config,
-            fallback_base_url: fallback,
-            path_prefix: req.path_prefix.clone(),
             timeout,
             mode: ExecuteMode::Production,
             options: ExecuteOptions {
@@ -458,10 +455,12 @@ fn classify_bypass_outcome(
 fn emit_bypass_access(
     service_name: &str,
     req: &upstream_proto::InvokeRequest,
+    spec: Option<&ChannelEgressSpec>,
     start_time: Instant,
     response: &upstream_proto::InvokeResponse,
 ) {
     let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
+    let route_path = spec.map(|s| s.request.path.clone()).unwrap_or_default();
     let headers = trace_headers(req);
     let trace_context = parse_trace_context(&headers);
     let adapter = response
@@ -475,7 +474,7 @@ fn emit_bypass_access(
     } else {
         (
             if response.success { 200 } else { 502 },
-            req.fallback_base_url.clone(),
+            spec.map(|s| s.base_url.clone()).unwrap_or_default(),
         )
     };
     let is_success = response.success && response.biz_error.is_none();
@@ -506,8 +505,8 @@ fn emit_bypass_access(
             method: "INVOKE".into(),
             protocol: "HTTP/2".to_string(),
             host_header: None,
-            path: req.path_prefix.clone(),
-            route_template: req.path_prefix.clone(),
+            path: route_path.clone(),
+            route_template: route_path,
             status_code,
             request_bytes: req.payload_json.len() as u64,
             response_bytes,

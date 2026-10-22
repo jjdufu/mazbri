@@ -1245,6 +1245,7 @@ export function normalizeWorkbenchEndpoint(
     id: ep.id || `ep-${index + 1}`,
     method: ep.method || "GET",
     path: typeof ep.path === "string" ? ep.path : "/",
+    body_encoding: resolvedBodyEncoding(ep),
     name: ep.name || ep.path || `ep-${index + 1}`,
     headers: ep.headers || {},
     query: ep.query || {},

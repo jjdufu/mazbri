@@ -362,18 +362,15 @@ async fn publish_channel(
         ep.unwrap_or(&empty_ep),
         ctx.env,
         Some(ctx.cfg),
-        path_prefix,
         ctx.upstream_url,
     )?;
     let egress = built.spec;
     if ctx.cfg.is_transparent() {
         mazbri_core::validate_egress_spec(&egress)
             .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-        if let Some(ref url) = egress.base_url {
-            ssrf::validate_public_http_url(url)
-                .await
-                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-        }
+        ssrf::validate_public_http_url(&egress.base_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }
     let channel_config = channel_config_with_egress(&serde_json::json!({}), &egress)?;
 
