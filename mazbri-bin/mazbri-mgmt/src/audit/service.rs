@@ -337,23 +337,6 @@ impl AuditService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list(&self, query: AuditLogQuery) -> Result<AuditLogListResponse, sqlx::Error> {
-        let filters = crate::list_query::parse_and_validate_filters(
-            query.filters.as_deref(),
-            &crate::list_query::audit_logs_catalog(),
-        )
-        .map_err(|e| sqlx::Error::Protocol(e.message))?;
-        let keyword = query
-            .q
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                query
-                    .actor_name
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-            });
         let mut count_builder =
             sqlx::QueryBuilder::new("SELECT COUNT(*) FROM audit_logs_view WHERE 1=1");
         let mut select_builder = sqlx::QueryBuilder::new(
@@ -362,12 +345,8 @@ impl AuditService {
              ip_address, user_agent, old_value, new_value, created_at \
              FROM audit_logs_view WHERE 1=1",
         );
-        push_audit_conditions(&mut count_builder, &query, keyword);
-        push_audit_conditions(&mut select_builder, &query, keyword);
-        crate::list_query::apply_pg_filters(&mut count_builder, &filters)
-            .map_err(|e| sqlx::Error::Protocol(e.message))?;
-        crate::list_query::apply_pg_filters(&mut select_builder, &filters)
-            .map_err(|e| sqlx::Error::Protocol(e.message))?;
+        push_audit_where(&mut count_builder, &query)?;
+        push_audit_where(&mut select_builder, &query)?;
         let total: i64 = count_builder.build().fetch_one(&*self.db).await?.get(0);
         select_builder.push(" ORDER BY created_at DESC LIMIT ");
         select_builder.push_bind(query.effective_limit());
@@ -440,58 +419,13 @@ impl AuditService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn export_csv(&self, query: AuditLogQuery) -> Result<String, sqlx::Error> {
-        let tenant_id_str = query.tenant_id.map(|id| id.to_string());
         let mut select_builder = sqlx::QueryBuilder::new(
             "SELECT id, user_id, username, actor_type, action, \
              resource_type, resource_id, details, status, error_message, \
              ip_address, user_agent, created_at \
              FROM audit_logs_view WHERE 1=1",
         );
-        if let Some(ref tid) = tenant_id_str {
-            select_builder.push(" AND (details->>'tenant_id' = ");
-            select_builder.push_bind(tid);
-            select_builder.push(" OR resource_id = ");
-            select_builder.push_bind(tid);
-            select_builder.push(")");
-        }
-        if let Some(ref action) = query.action {
-            select_builder.push(" AND action = ");
-            select_builder.push_bind(action);
-        }
-        if let Some(ref resource_type) = query.resource_type {
-            select_builder.push(" AND resource_type = ");
-            select_builder.push_bind(resource_type);
-        }
-        if let Some(ref resource_id) = query.resource_id {
-            select_builder.push(" AND resource_id = ");
-            select_builder.push_bind(resource_id);
-        }
-        if let Some(actor_id) = query.actor_id {
-            select_builder.push(" AND user_id = ");
-            select_builder.push_bind(actor_id);
-        }
-        if let Some(ref actor_name) = query.actor_name {
-            let actor_name = actor_name.trim();
-            if !actor_name.is_empty() {
-                push_audit_keyword_filter(&mut select_builder, actor_name);
-            }
-        }
-        if let Some(ref status) = query.status {
-            select_builder.push(" AND status = ");
-            select_builder.push_bind(status);
-        }
-        if let Some(start_time) = query.start_time {
-            if let Some(dt) = chrono::DateTime::from_timestamp(start_time, 0) {
-                select_builder.push(" AND created_at >= ");
-                select_builder.push_bind(dt);
-            }
-        }
-        if let Some(end_time) = query.end_time {
-            if let Some(dt) = chrono::DateTime::from_timestamp(end_time, 0) {
-                select_builder.push(" AND created_at <= ");
-                select_builder.push_bind(dt);
-            }
-        }
+        push_audit_where(&mut select_builder, &query)?;
         select_builder.push(" ORDER BY created_at DESC LIMIT ");
         select_builder.push_bind(EXPORT_LIMIT);
         let rows = select_builder.build().fetch_all(&*self.db).await?;
@@ -646,7 +580,23 @@ pub fn config_center_audit(
     )
 }
 
-/// 对 count/select 两个查询追加相同的显式过滤条件。
+/// list / count / export 共用的完整 WHERE 条件：显式字段 + `q` + `filters`。
+fn push_audit_where(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &AuditLogQuery,
+) -> Result<(), sqlx::Error> {
+    let filters = crate::list_query::parse_and_validate_filters(
+        query.filters.as_deref(),
+        &crate::list_query::audit_logs_catalog(),
+    )
+    .map_err(|e| sqlx::Error::Protocol(e.message))?;
+    let keyword = query.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    push_audit_conditions(builder, query, keyword);
+    crate::list_query::apply_pg_filters(builder, &filters)
+        .map_err(|e| sqlx::Error::Protocol(e.message))
+}
+
+/// 追加显式字段过滤条件。
 fn push_audit_conditions(
     builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     query: &AuditLogQuery,
@@ -718,5 +668,39 @@ fn audit_row_to_response(row: &sqlx::postgres::PgRow) -> AuditLogResponse {
         user_agent,
         status: status.unwrap_or_else(|| "success".to_string()),
         error_message: row.get("error_message"),
+    }
+}
+
+#[cfg(test)]
+mod where_tests {
+    use super::push_audit_where;
+    use crate::audit::types::AuditLogQuery;
+
+    fn where_sql(query: &AuditLogQuery, head: &str) -> String {
+        let mut b = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
+        push_audit_where(&mut b, query).unwrap();
+        b.sql().trim_start_matches(head).to_string()
+    }
+
+    #[test]
+    fn list_and_export_share_q_and_filters() {
+        let query = AuditLogQuery {
+            q: Some(" alice ".into()),
+            action: Some("create".into()),
+            filters: Some(r#"[{"field":"action","op":"eq","value":"create"}]"#.into()),
+            ..AuditLogQuery::default()
+        };
+        let count = where_sql(&query, "SELECT COUNT(*) FROM audit_logs_view WHERE 1=1");
+        let export = where_sql(&query, "SELECT id FROM audit_logs_view WHERE 1=1");
+        assert_eq!(count, export);
+        assert!(count.contains("ILIKE"));
+        assert!(count.contains("action"));
+    }
+
+    #[test]
+    fn unknown_query_field_rejected() {
+        let r: Result<AuditLogQuery, _> =
+            serde_json::from_value(serde_json::json!({"actor_name": "x"}));
+        assert!(r.is_err());
     }
 }

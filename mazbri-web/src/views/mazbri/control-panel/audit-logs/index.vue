@@ -361,12 +361,11 @@ const formatAction = (action: string) => {
 const timeRange = ref<[number, number] | null>(null);
 const listFilters = ref<ListFilter[]>([]);
 const searchForm = reactive({
-  actor_name: "",
   q: "",
 });
 const hasActiveSearch = computed(
   () =>
-    Boolean(searchForm.q?.trim() || searchForm.actor_name?.trim()) || listFilters.value.length > 0 ||
+    Boolean(searchForm.q?.trim()) || listFilters.value.length > 0 ||
     Boolean(timeRange.value?.length === 2),
 );
 const emptyDescription = computed(() =>
@@ -656,8 +655,7 @@ const auditDetailRows = computed(() => {
     }));
 });
 const buildQueryParams = (includePagination = true) => {
-  const keyword =
-    searchForm.q?.trim() || searchForm.actor_name?.trim() || "";
+  const keyword = searchForm.q?.trim() || "";
   const params: AuditLogListQuery = {};
   if (includePagination) {
     params.page = pagination.page;
@@ -665,7 +663,6 @@ const buildQueryParams = (includePagination = true) => {
   }
   if (keyword) {
     params.q = keyword;
-    params.actor_name = keyword;
   }
   if (listFilters.value.length) {
     params.filters = JSON.stringify(listFilters.value);
@@ -693,7 +690,6 @@ const handleSearch = () => {
 };
 
 const handleResetFilters = () => {
-  searchForm.actor_name = "";
   searchForm.q = "";
   listFilters.value = [];
   timeRange.value = null;

@@ -214,16 +214,15 @@ impl std::fmt::Display for AuditResourceType {
         write!(f, "{}", self.as_str())
     }
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditLogQuery {
     pub tenant_id: Option<uuid::Uuid>,
     pub action: Option<String>,
     pub resource_type: Option<String>,
     pub resource_id: Option<String>,
     pub actor_id: Option<uuid::Uuid>,
-    /// Legacy free-text keyword (broad ILIKE). Prefer `q` + structured `filters`.
-    pub actor_name: Option<String>,
-    /// Free-text keyword (same broad ILIKE as historical `actor_name`).
+    /// Free-text keyword (broad ILIKE over actor / action / resource).
     #[serde(default)]
     pub q: Option<String>,
     /// JSON array of `{field,op,value}` list filters.
