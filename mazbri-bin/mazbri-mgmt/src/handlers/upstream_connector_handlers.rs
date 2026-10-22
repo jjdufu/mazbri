@@ -25,6 +25,7 @@ fn require_operator(claims: &AdminClaims) -> Result<(), ApiError> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListDraftsQuery {
     pub status: Option<String>,
     pub q: Option<String>,

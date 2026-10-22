@@ -48,6 +48,7 @@ impl FallbackRequest {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FallbackResponse {
     pub available: bool,
     /// Cached snapshot payload; encoded as JSON text for bincode compatibility.
@@ -88,6 +89,7 @@ impl StoreRequest {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StoreResponse {
     pub success: bool,
     pub cache_key: String,

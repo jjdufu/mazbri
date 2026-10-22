@@ -23,6 +23,7 @@ const fn default_page() -> u32 {
     1
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BillListQuery {
     pub tenant_id: Option<uuid::Uuid>,
     #[serde(default)]
@@ -37,6 +38,7 @@ pub struct BillListQuery {
     pub limit: u32,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AccountListQuery {
     pub tenant_id: Option<uuid::Uuid>,
     pub status: Option<String>,
@@ -45,6 +47,7 @@ pub struct AccountListQuery {
     pub limit: u32,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdjustmentRequest {
     pub tenant_id: Uuid,
     pub amount: Decimal,
@@ -52,6 +55,7 @@ pub struct AdjustmentRequest {
     pub description: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GenerateBillRequest {
     #[serde(default)]
     pub bill_kind: String,
@@ -101,6 +105,7 @@ pub async fn get_bill(
     Ok(ApiResponse::ok(result).into_response())
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BillStatusUpdateRequest {
     pub status: String,
 }
@@ -431,6 +436,7 @@ pub async fn generate_bill(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReconciliationAuditRequest {
     pub reconciliation_date: chrono::NaiveDate,
     #[serde(default)]
@@ -520,6 +526,7 @@ pub async fn run_reconciliation_audit(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReconciliationDiscrepancyListQuery {
     pub from: Option<chrono::NaiveDate>,
     pub to: Option<chrono::NaiveDate>,
@@ -577,6 +584,7 @@ pub async fn list_reconciliation_discrepancies(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateReconciliationDiscrepancyRequest {
     pub status: String,
     #[serde(default)]
@@ -738,6 +746,7 @@ pub async fn update_reconciliation_settings(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateBillAdjustmentRequest {
     pub adjustment_type: String,
     pub amount: Decimal,
@@ -821,6 +830,7 @@ pub async fn list_bill_adjustments(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GlobalBillAdjustmentListQuery {
     pub bill_id: Option<uuid::Uuid>,
     pub tenant_id: Option<uuid::Uuid>,

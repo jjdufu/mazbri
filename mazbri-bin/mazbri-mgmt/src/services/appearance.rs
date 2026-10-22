@@ -2,7 +2,7 @@ use crate::repositories::appearance as repo;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::info;
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct AppearanceSettings {
     pub system_theme_mode: String,
     pub system_theme_color: String,
@@ -22,6 +22,7 @@ pub struct AppearanceSettings {
     pub updated_at: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateAppearanceRequest {
     pub system_theme_mode: Option<String>,
     pub system_theme_color: Option<String>,

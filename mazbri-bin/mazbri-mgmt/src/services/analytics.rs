@@ -296,6 +296,7 @@ pub async fn get_usage_analytics(
     .into_response()
 }
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RateLimitAnalyticsParams {
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
@@ -492,6 +493,7 @@ pub async fn get_ratelimit_platform_stats(
     .into_response()
 }
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsTimeseriesParams {
     pub metric: String,
     pub start_time: i64,
@@ -500,6 +502,7 @@ pub struct MetricsTimeseriesParams {
     pub service: Option<String>,
 }
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CallMonitorParams {
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,

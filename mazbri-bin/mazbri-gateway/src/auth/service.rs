@@ -24,6 +24,7 @@ const MAX_API_KEY_LENGTH: usize = 512;
 const TENANT_INFO_CACHE_TTL_SECS: u64 = 5;
 const TOKEN_RESPONSE_CACHE_TTL_SECS: u64 = 120;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TokenRequest {
     pub api_key: String,
     #[serde(default = "default_grant_type")]

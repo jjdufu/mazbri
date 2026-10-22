@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HealthResponse {
     pub status: String,
     pub service: String,

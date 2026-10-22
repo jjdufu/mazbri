@@ -172,8 +172,7 @@ export interface PublishRequest {
   authorization?: { tenant_ids?: string[]; enabled?: boolean };
   options?: {
     require_gate?: boolean;
-    force_publish?: boolean;
-    force_reason?: string | null;
+    force?: { force_publish: boolean; force_reason?: string | null };
     fail_if_route_exists?: boolean;
     probe_connectivity?: boolean;
   };

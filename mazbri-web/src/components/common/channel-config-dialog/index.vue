@@ -123,7 +123,7 @@ const handleSave = async () => {
   await runWithLoading(saving, async () => {
     try {
       await updateTenantProductConfig(props.tenantCode, product.product_id, {
-        ...submittedPayload,
+        config: submittedPayload,
         expected_updated_at: product.updated_at,
       });
       ElMessage.success($t("authorization.config.saveSuccess"));

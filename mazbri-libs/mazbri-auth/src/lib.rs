@@ -66,6 +66,7 @@ pub use metrics::{
 use sqlx::PgPool;
 use std::sync::Arc;
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthServiceConfig {
     pub api_key_prefix_length: usize,
     pub enable_ip_whitelist: bool,

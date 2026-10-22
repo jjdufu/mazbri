@@ -196,6 +196,13 @@ export interface UpdateTenantCacheConfigRequest {
   warmup_keys: string[];
   expected_updated_at?: ISODateString;
 }
+export interface CBProLatencySimulation {
+  latency_simulation_enabled: boolean;
+  default_simulated_latency_ms: number;
+  latency_jitter_min_ms: number;
+  latency_jitter_max_ms: number;
+  max_simulated_delay_ms: number;
+}
 export interface CBProPolicyConfig {
   mode: "disabled" | "fallback_only" | "cost_saving";
   base_ttl_secs: number;
@@ -206,11 +213,7 @@ export interface CBProPolicyConfig {
   validate_every_hits: number;
   max_validate_interval_secs: number;
   prevalidate_before_expiry_secs: number;
-  latency_simulation_enabled: boolean;
-  default_simulated_latency_ms: number;
-  latency_jitter_min_ms: number;
-  latency_jitter_max_ms: number;
-  max_simulated_delay_ms: number;
+  latency: CBProLatencySimulation;
   cacheable_methods: string[];
   allow_body_cache: boolean;
   ignore_query_keys: string[];
@@ -224,7 +227,8 @@ export interface TenantProductConfig {
   cb_pro_fallback: boolean;
   cbpro: CBProPolicyConfig;
 }
-export interface UpdateTenantProductConfigRequest extends TenantProductConfig {
+export interface UpdateTenantProductConfigRequest {
+  config: TenantProductConfig;
   expected_updated_at?: ISODateString;
 }
 export interface TenantProduct {

@@ -18,6 +18,7 @@ const SETTINGS_CATEGORY: &str = "billing";
 /// Operator-editable reconciliation settings (hot-reloadable via admin API).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct BillingReconciliationRuntimeSettings {
     pub schedule: ReconScheduleConfig,
     pub alert: ReconAlertConfig,
@@ -216,5 +217,37 @@ impl BillingReconciliationSettingsCache {
         .map_err(|e| format!("Failed to update last_scheduled_run_at: {e}"))?;
         self.invalidate().await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod deny_unknown_tests {
+    use super::BillingReconciliationRuntimeSettings;
+    use serde_json::json;
+
+    #[test]
+    fn admin_seed_shape_parses() {
+        let s: BillingReconciliationRuntimeSettings = serde_json::from_value(json!({
+            "schedule": {"enabled": false, "interval_secs": 86400, "use_previous_day": true},
+            "alert": {"on_flagged": false, "webhook_url": ""},
+            "sources": {"include_amount_recon": true},
+            "loss_ratio_threshold": 0.05,
+            "default_scope_type": "system",
+            "default_scope_id": "",
+            "warn_on_open_discrepancies_before_bill": true,
+            "last_scheduled_run_at": null
+        }))
+        .expect("seed parses");
+        assert_eq!(s.schedule.interval_secs, 86400);
+    }
+
+    #[test]
+    fn legacy_flat_seed_is_rejected() {
+        assert!(
+            serde_json::from_value::<BillingReconciliationRuntimeSettings>(json!({
+                "scheduled_enabled": false
+            }))
+            .is_err()
+        );
     }
 }

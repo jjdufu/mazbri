@@ -62,6 +62,7 @@ pub struct TenantProduct {
     pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CBProLatencySimulation {
     #[serde(default = "default_cbpro_latency_simulation_enabled")]
     pub latency_simulation_enabled: bool,
@@ -86,6 +87,7 @@ impl Default for CBProLatencySimulation {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CBProPolicyConfig {
     #[serde(default = "default_cbpro_mode")]
     pub mode: String,
@@ -105,8 +107,8 @@ pub struct CBProPolicyConfig {
     pub max_validate_interval_secs: u64,
     #[serde(default = "default_cbpro_prevalidate_before_expiry_secs")]
     pub prevalidate_before_expiry_secs: u64,
-    /// 延迟模拟参数；flatten 保持 JSON 字段平铺不变。
-    #[serde(flatten)]
+    /// 延迟模拟参数（嵌套对象 `latency`）。
+    #[serde(default)]
     pub latency: CBProLatencySimulation,
     #[serde(default = "default_cbpro_cacheable_methods")]
     pub cacheable_methods: Vec<String>,
@@ -295,7 +297,8 @@ pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), St
     }
     if config.latency.latency_jitter_max_ms < config.latency.latency_jitter_min_ms {
         return Err(
-            "cbpro.latency_jitter_max_ms must be >= cbpro.latency_jitter_min_ms".to_string(),
+            "cbpro.latency.latency_jitter_max_ms must be >= cbpro.latency.latency_jitter_min_ms"
+                .to_string(),
         );
     }
     if config.latency.max_simulated_delay_ms < config.latency.latency_jitter_max_ms {
@@ -309,6 +312,7 @@ pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), St
     Ok(())
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GrantAccessRequest {
     pub tenant_id: uuid::Uuid,
     #[serde(default)]
@@ -373,4 +377,41 @@ pub struct AuthorizationDetail {
     pub config: TenantProductConfig,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod deny_unknown_tests {
+    use super::{CBProPolicyConfig, TenantProductConfig};
+    use serde_json::json;
+
+    #[test]
+    fn cbpro_latency_is_nested_object() {
+        let cfg: CBProPolicyConfig = serde_json::from_value(json!({
+            "latency": { "latency_simulation_enabled": true, "default_simulated_latency_ms": 50 }
+        }))
+        .expect("nested latency parses");
+        assert!(cfg.latency.latency_simulation_enabled);
+        assert_eq!(cfg.latency.default_simulated_latency_ms, 50);
+        let value = serde_json::to_value(&cfg).expect("serialize");
+        assert!(value.get("latency").is_some());
+        assert!(value.get("latency_simulation_enabled").is_none());
+    }
+
+    #[test]
+    fn cbpro_flat_latency_field_is_rejected() {
+        let err = serde_json::from_value::<CBProPolicyConfig>(json!({
+            "latency_simulation_enabled": true
+        }))
+        .expect_err("flat latency field must be rejected");
+        assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn tenant_product_config_rejects_unknown_field() {
+        let err = serde_json::from_value::<TenantProductConfig>(json!({
+            "unit_price": "0.001", "currency": "CNY", "cb_pro_fallback": false, "bogus": 1
+        }))
+        .expect_err("unknown field must be rejected");
+        assert!(err.to_string().contains("unknown field"));
+    }
 }

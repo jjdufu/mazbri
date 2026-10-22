@@ -3,6 +3,7 @@ pub use crate::error::RpcError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct TenantContext {
     pub tenant_id: String,
     pub tenant_name: String,
@@ -12,6 +13,7 @@ pub struct TenantContext {
     pub created_at: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceQuota {
     pub max_requests_per_day: i64,
     pub max_storage_bytes: i64,
@@ -27,6 +29,7 @@ pub struct ValidateTokenRequest {
     pub client_ip: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ValidateTokenResponse {
     pub valid: bool,
     pub tenant: Option<TenantContext>,
@@ -39,6 +42,7 @@ pub struct GetTenantInfoRequest {
     pub tenant_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetTenantInfoResponse {
     pub tenant: Option<TenantContext>,
     /// Reserved (H-15). Currently always None; use `rate_limit` policies for limits.
@@ -52,6 +56,7 @@ pub struct ValidateApiKeyRequest {
     pub api_key: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ValidateApiKeyResponse {
     pub valid: bool,
     #[serde(default)]

@@ -18,6 +18,7 @@ pub struct NodeState {
     pub config_repo: Arc<ConfigRepository>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HeartbeatRequest {
     pub service_name: String,
     pub config_version: i32,

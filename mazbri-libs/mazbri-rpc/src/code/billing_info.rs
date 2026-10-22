@@ -2,6 +2,7 @@ use super::billing_code::BillingCode;
 use super::code_meta::CodeMeta;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BillingInfo {
     pub code: BillingCode,
     pub billable: bool,

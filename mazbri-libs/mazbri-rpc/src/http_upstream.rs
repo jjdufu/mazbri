@@ -24,6 +24,7 @@ pub enum UpstreamResponseBody {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct HttpUpstreamData {
     pub status: u16,
     #[serde(default)]

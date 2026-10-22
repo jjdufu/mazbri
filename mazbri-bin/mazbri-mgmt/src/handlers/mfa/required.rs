@@ -6,10 +6,12 @@ use axum::{
     extract::{ConnectInfo, State},
 };
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MfaRequiredSetupRequest {
     pub temp_token: String,
 }
 #[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MfaRequiredEnableRequest {
     pub temp_token: String,
     pub totp_code: String,

@@ -71,6 +71,7 @@ pub enum FilterValue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ListFilter {
     pub field: String,
     pub op: FilterOp,

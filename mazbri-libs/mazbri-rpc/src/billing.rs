@@ -23,6 +23,7 @@ pub enum BillStatus {
     Cancelled = 4,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Amount {
     pub value: i64,
     #[serde(default)]
@@ -30,6 +31,7 @@ pub struct Amount {
     pub decimals: i32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct BillingCycle {
     #[serde(default)]
     pub cycle_id: String,
@@ -38,6 +40,7 @@ pub struct BillingCycle {
     pub period: BillingPeriod,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct BillLineItem {
     #[serde(default)]
     pub item_id: String,
@@ -48,6 +51,7 @@ pub struct BillLineItem {
     pub total: Option<Amount>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Bill {
     #[serde(default)]
     pub bill_id: String,
@@ -63,6 +67,7 @@ pub struct Bill {
     pub paid_at: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct UsageBreakdown {
     #[serde(default)]
     pub category: String,
@@ -71,6 +76,7 @@ pub struct UsageBreakdown {
     pub percentage: f64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct UsageSummary {
     pub total_requests: i64,
     pub total_bytes_in: i64,
@@ -97,6 +103,7 @@ pub struct RecordUsageRequest {
     pub metadata: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RecordUsageResponse {
     pub success: bool,
     #[serde(default)]
@@ -117,6 +124,7 @@ pub struct CheckBalanceRequest {
     pub estimated_cost: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CheckBalanceResponse {
     pub sufficient: bool,
     pub current_balance: Option<Amount>,
@@ -133,6 +141,7 @@ pub struct GetBalanceRequest {
     pub tenant_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetBalanceResponse {
     pub balance: Option<Amount>,
     pub credit_limit: Option<Amount>,
@@ -156,6 +165,7 @@ pub struct AddFundsRequest {
     pub metadata: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddFundsResponse {
     pub success: bool,
     #[serde(default)]
@@ -174,6 +184,7 @@ pub struct GetBillRequest {
     pub bill_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetBillResponse {
     pub bill: Option<Bill>,
     #[serde(default)]
@@ -193,6 +204,7 @@ pub struct ListBillsRequest {
     pub page_token: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ListBillsResponse {
     #[serde(default)]
     pub bills: Vec<Bill>,
@@ -214,6 +226,7 @@ pub struct GetUsageSummaryRequest {
     pub group_by: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetUsageSummaryResponse {
     pub summary: Option<UsageSummary>,
     #[serde(default)]

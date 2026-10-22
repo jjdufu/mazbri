@@ -15,6 +15,7 @@ pub struct ConfigState {
     pub repo: Arc<ConfigRepository>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListQuery {
     #[serde(default)]
     pub service: Option<String>,

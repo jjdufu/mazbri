@@ -87,6 +87,7 @@ impl std::fmt::Display for AccountStatus {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Cursor {
     pub created_at: DateTime<Utc>,
     pub id: uuid::Uuid,

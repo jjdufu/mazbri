@@ -25,6 +25,7 @@ fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestLogQueryRequest {
     #[serde(default)]
     pub start_time: Option<String>,

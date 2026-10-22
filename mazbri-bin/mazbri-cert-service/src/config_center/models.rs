@@ -26,6 +26,7 @@ pub struct ConfigHistory {
     pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateConfigRequest {
     pub service_name: String,
     pub content: String,
@@ -34,6 +35,7 @@ pub struct CreateConfigRequest {
     pub updated_by: String,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateConfigRequest {
     pub content: String,
     #[serde(default)]
@@ -41,17 +43,20 @@ pub struct UpdateConfigRequest {
     pub updated_by: String,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RollbackRequest {
     pub version: i32,
     pub updated_by: String,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BatchDeleteRequest {
     pub filters: BatchFilters,
     #[serde(default)]
     pub dry_run: bool,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BatchUpdateRequest {
     pub filters: BatchFilters,
     pub operations: Vec<BatchOperation>,
@@ -60,6 +65,7 @@ pub struct BatchUpdateRequest {
     pub updated_by: String,
 }
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct BatchFilters {
     #[serde(default)]
     pub service_names: Option<Vec<String>>,
@@ -133,6 +139,7 @@ pub struct ConfigEntryWithMeta {
     pub category: Option<ConfigCategory>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTagRequest {
     pub name: String,
     pub description: Option<String>,
@@ -143,11 +150,13 @@ fn default_tag_color() -> String {
     "#6B7280".to_string()
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateTagRequest {
     pub description: Option<String>,
     pub color: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateCategoryRequest {
     pub name: String,
     pub parent_id: Option<Uuid>,
@@ -156,6 +165,7 @@ pub struct CreateCategoryRequest {
     pub sort_order: i32,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCategoryRequest {
     pub name: Option<String>,
     pub parent_id: Option<Uuid>,
@@ -163,6 +173,7 @@ pub struct UpdateCategoryRequest {
     pub sort_order: Option<i32>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigSearchQuery {
     #[serde(default)]
     pub tags: Option<Vec<String>>,
@@ -194,10 +205,12 @@ fn default_search_limit() -> i64 {
     50
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigTagsRequest {
     pub tag_names: Vec<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigCategoryRequest {
     pub category_id: Option<Uuid>,
 }

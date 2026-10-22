@@ -1592,8 +1592,10 @@ async function doPublish() {
           : undefined,
       options: {
         require_gate: publishForm.value.require_gate,
-        force_publish: publishForm.value.force_publish,
-        force_reason: publishForm.value.force_reason || null,
+        force: {
+          force_publish: publishForm.value.force_publish,
+          force_reason: publishForm.value.force_reason || null,
+        },
         fail_if_route_exists: true,
       },
       comment: publishForm.value.comment,

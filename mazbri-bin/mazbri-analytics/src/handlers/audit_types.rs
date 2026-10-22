@@ -8,6 +8,7 @@ fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditQueryRequest {
     #[serde(default)]
     pub start_time: Option<String>,
@@ -69,6 +70,7 @@ fn default_group_by() -> String {
     "day".to_string()
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditAnalyticsRequest {
     #[serde(default)]
     pub start_time: Option<String>,

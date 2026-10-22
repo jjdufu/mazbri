@@ -21,6 +21,7 @@ const fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigListParams {
     pub service_name: Option<String>,
     #[serde(default)]
@@ -38,6 +39,7 @@ pub struct ExportParams {}
 #[derive(Debug, Deserialize)]
 pub struct ImportParams {}
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateConfigRequest {
     pub service_name: String,
     pub content: String,
@@ -46,11 +48,13 @@ pub struct CreateConfigRequest {
     pub updated_by: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateConfigRequest {
     pub content: String,
     pub updated_by: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HistoryQueryParams {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
@@ -60,6 +64,7 @@ pub struct ServiceListParams {}
 #[derive(Debug, Deserialize)]
 pub struct NodeListParams {}
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidateTomlRequest {
     pub content: String,
 }

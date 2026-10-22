@@ -20,6 +20,7 @@ pub struct TenantCryptoPurgeResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCryptoProfileRequest {
     pub encryption_mode: String,
     #[serde(default = "default_require_signature")]
@@ -37,6 +38,7 @@ pub struct UpdateCryptoProfileRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CryptoExportQuery {
     #[serde(default = "default_export_mode")]
     pub mode: String,

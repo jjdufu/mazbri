@@ -13,8 +13,8 @@ use axum::{
 use mazbri_product::service::TenantProductConfig;
 use serde::Deserialize;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateTenantProductConfigRequest {
-    #[serde(flatten)]
     pub config: TenantProductConfig,
     #[serde(default)]
     pub expected_updated_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -151,4 +151,29 @@ pub async fn list_authorizations(
     Query(params): Query<ListParams>,
 ) -> axum::response::Response {
     service::list_authorizations(&state.product_service, &params).await
+}
+
+#[cfg(test)]
+mod deny_unknown_tests {
+    use super::UpdateTenantProductConfigRequest;
+    use serde_json::json;
+
+    #[test]
+    fn nested_config_request_parses() {
+        let req: UpdateTenantProductConfigRequest = serde_json::from_value(json!({
+            "config": { "unit_price": "0.002", "currency": "CNY", "cb_pro_fallback": true },
+            "expected_updated_at": null
+        }))
+        .expect("nested request parses");
+        assert!(req.config.cb_pro_fallback);
+    }
+
+    #[test]
+    fn flat_config_request_is_rejected() {
+        let err = serde_json::from_value::<UpdateTenantProductConfigRequest>(json!({
+            "unit_price": "0.002", "currency": "CNY", "cb_pro_fallback": true
+        }))
+        .expect_err("legacy flat body must be rejected");
+        assert!(err.to_string().contains("unknown field"));
+    }
 }

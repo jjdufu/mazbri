@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, QueryBuilder, Row};
 use uuid::Uuid;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSubscriptionRequest {
     pub tenant_code: String,
     pub product_code: String,
@@ -46,6 +47,7 @@ async fn resolve_product_id(pool: &PgPool, code: &str) -> Result<Uuid, ApiError>
         .ok_or_else(|| ApiError::not_found("product".to_string(), code.to_string()))
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CallbackListQuery {
     #[serde(default)]
     pub q: Option<String>,

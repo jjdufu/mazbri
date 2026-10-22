@@ -11,6 +11,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListCommandsQuery {
     #[serde(default)]
     pub limit: Option<i64>,
