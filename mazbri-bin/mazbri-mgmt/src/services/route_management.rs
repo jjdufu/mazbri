@@ -743,30 +743,17 @@ pub async fn delete_route_rule(
     ));
     Ok(serde_json::json!({ "message" : "Route rule deleted successfully", "id" : id }))
 }
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn emergency_switch_route(
-    pool: &PgPool,
-    audit: &AuditService,
-    route_rule_id: &str,
-    payload: &EmergencySwitchRequest,
-    user_id: uuid::Uuid,
-    actor_name: &str,
-    client_ip: Option<String>,
-) -> Result<serde_json::Value, ApiError> {
-    payload.validate()?;
-    let route_rule_id = parse_uuid(route_rule_id, "route rule")?;
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to start emergency switch: {e}")))?;
+/// 锁定路由规则及其全部渠道绑定（`FOR UPDATE`）。
+async fn lock_route_for_switch(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    route_rule_id: uuid::Uuid,
+) -> Result<(repo::RouteRuleRow, Vec<repo::RouteChannelBindingRow>), ApiError> {
     let old_rule = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
         "SELECT {} FROM route_rules WHERE id = $1 FOR UPDATE",
         repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
     ))
     .bind(route_rule_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(|e| ApiError::internal(format!("Failed to lock route rule: {e}")))?
     .ok_or_else(|| ApiError::not_found("route_rule".to_string(), route_rule_id.to_string()))?;
@@ -780,36 +767,21 @@ pub async fn emergency_switch_route(
             ),
         )
         .bind(route_rule_id)
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|e| ApiError::internal(
             format!("Failed to lock route bindings: {e}"),
         ))?;
-    let target_binding = old_bindings
-        .iter()
-        .find(|binding| binding.channel_id == payload.channel_id)
-        .ok_or_else(|| {
-            ApiError::validation("channel_id is not bound to this route rule".to_string())
-        })?;
-    let emergency_metadata = serde_json::json!(
-        { "emergency_switch" : { "enabled" : true, "channel_id" : payload.channel_id,
-        "binding_id" : target_binding.id, "reason" : payload.reason.trim(), "operator" :
-        actor_name, "operator_id" : user_id, "switched_at" : chrono::Utc::now(), } }
-    );
-    let merged_metadata = merge_route_metadata(&old_rule.metadata, &emergency_metadata);
-    let new_rule = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
-        "UPDATE route_rules
-         SET status = 'active', metadata = $2, updated_at = NOW()
-         WHERE id = $1
-         RETURNING {}",
-        repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
-    ))
-    .bind(route_rule_id)
-    .bind(&merged_metadata)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| ApiError::internal(format!("Failed to update route rule: {e}")))?;
-    for binding in &old_bindings {
+    Ok((old_rule, old_bindings))
+}
+
+/// 紧急切换：选中渠道置首并标记 fail-fast，其余渠道顺延。
+async fn apply_emergency_binding_order(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    old_bindings: &[repo::RouteChannelBindingRow],
+    payload: &EmergencySwitchRequest,
+) -> Result<(), ApiError> {
+    for binding in old_bindings {
         let new_order = if binding.channel_id == payload.channel_id {
             1
         } else {
@@ -834,10 +806,57 @@ pub async fn emergency_switch_route(
         .bind(binding.id)
         .bind(new_order)
         .bind(&switch_condition)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to update route binding: {e}")))?;
     }
+    Ok(())
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn emergency_switch_route(
+    pool: &PgPool,
+    audit: &AuditService,
+    route_rule_id: &str,
+    payload: &EmergencySwitchRequest,
+    user_id: uuid::Uuid,
+    actor_name: &str,
+    client_ip: Option<String>,
+) -> Result<serde_json::Value, ApiError> {
+    payload.validate()?;
+    let route_rule_id = parse_uuid(route_rule_id, "route rule")?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to start emergency switch: {e}")))?;
+    let (old_rule, old_bindings) = lock_route_for_switch(&mut tx, route_rule_id).await?;
+    let target_binding = old_bindings
+        .iter()
+        .find(|binding| binding.channel_id == payload.channel_id)
+        .ok_or_else(|| {
+            ApiError::validation("channel_id is not bound to this route rule".to_string())
+        })?;
+    let emergency_metadata = serde_json::json!(
+        { "emergency_switch" : { "enabled" : true, "channel_id" : payload.channel_id,
+        "binding_id" : target_binding.id, "reason" : payload.reason.trim(), "operator" :
+        actor_name, "operator_id" : user_id, "switched_at" : chrono::Utc::now(), } }
+    );
+    let merged_metadata = merge_route_metadata(&old_rule.metadata, &emergency_metadata);
+    let new_rule = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
+        "UPDATE route_rules
+         SET status = 'active', metadata = $2, updated_at = NOW()
+         WHERE id = $1
+         RETURNING {}",
+        repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
+    ))
+    .bind(route_rule_id)
+    .bind(&merged_metadata)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("Failed to update route rule: {e}")))?;
+    apply_emergency_binding_order(&mut tx, &old_bindings, payload).await?;
     let new_bindings = sqlx::query_as::<_, repo::RouteChannelBindingRow>(&format!(
         "SELECT {} FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC",
         repo::ROUTE_BINDING_COLUMNS_FOR_SERVICE
