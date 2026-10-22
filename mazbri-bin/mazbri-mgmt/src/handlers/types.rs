@@ -65,8 +65,8 @@ pub struct CreateTenantRequest {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SetTenantStatusRequest {
-    pub status: String,
+pub struct SetTenantEnabledRequest {
+    pub enabled: bool,
     pub reason: Option<String>,
 }
 #[derive(Debug, Deserialize)]

@@ -256,7 +256,7 @@ impl AuthService {
         })?;
         let row = sqlx::query(
             r"
-            SELECT tenant_code, name, status, token_expiration_secs
+            SELECT tenant_code, name, enabled, token_expiration_secs
             FROM tenants
             WHERE id = $1
             ",
@@ -266,11 +266,10 @@ impl AuthService {
         .await
         .map_err(|e| TokenError::InternalError(format!("查询租户失败: {e}")))?
         .ok_or_else(|| TokenError::TenantNotFound(tenant_id.to_string()))?;
-        let status: String = row
-            .try_get("status")
+        let enabled: bool = row
+            .try_get("enabled")
             .map_err(|e| TokenError::InternalError(format!("获取租户状态失败: {e}")))?;
-        // Only active tenants may obtain/use tokens (disabled/suspended/pending blocked).
-        if status != "active" {
+        if !enabled {
             return Err(TokenError::TenantSuspended(tenant_id.to_string()));
         }
         let code: String = row

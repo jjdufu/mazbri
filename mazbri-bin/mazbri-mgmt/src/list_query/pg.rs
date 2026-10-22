@@ -651,16 +651,16 @@ mod tests {
     }
 
     #[test]
-    fn tenants_status_filter_validates() {
+    fn tenants_enabled_filter_validates() {
         let catalog = tenants_catalog();
         let filters = vec![ListFilter {
-            field: "status".into(),
+            field: "enabled".into(),
             op: FilterOp::Eq,
-            value: Some(FilterValue::String("active".into())),
+            value: Some(FilterValue::Bool(true)),
         }];
         let v = validate_filters(&catalog, &filters).unwrap();
         assert_eq!(v.len(), 1);
-        assert_eq!(v[0].sql_expr, "status");
+        assert_eq!(v[0].sql_expr, "enabled");
     }
 
     #[test]

@@ -7,7 +7,7 @@ pub async fn get_total_tenants(db: &PgPool) -> i64 {
         .unwrap_or_default()
 }
 pub async fn get_active_tenants(db: &PgPool) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE status = 'active'")
+    sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE enabled")
         .fetch_one(db)
         .await
         .unwrap_or_default()

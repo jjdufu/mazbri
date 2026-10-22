@@ -21,8 +21,8 @@ pub fn routes() -> Router<AppState> {
                 .delete(tenant_handlers::delete_tenant),
         )
         .route(
-            "/tenants/{code}/status",
-            put(tenant_handlers::set_tenant_status),
+            "/tenants/{code}/enabled",
+            put(tenant_handlers::set_tenant_enabled),
         )
         .merge(crypto_routes())
         .merge(product_account_routes())

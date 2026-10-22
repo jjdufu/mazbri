@@ -1,10 +1,9 @@
-import type { TenantStatus, ISODateString, DecimalString } from "./common";
-export type { TenantStatus } from "./common";
+import type { ISODateString, DecimalString } from "./common";
 export interface Tenant {
   tenant_code: string;
   tenant_id: string;
   name: string;
-  status: TenantStatus;
+  enabled: boolean;
   contact_person?: string;
   contact_email?: string;
   contact_phone?: string;
@@ -25,7 +24,7 @@ export interface TenantListQuery {
   page?: number;
   page_size?: number;
   q?: string;
-  status?: TenantStatus;
+  filters?: string;
 }
 export interface CreateTenantRequest {
   tenant_code: string;
@@ -41,10 +40,10 @@ export interface UpdateTenantRequest {
   contact_person?: string;
   contact_email?: string;
   contact_phone?: string;
-  status?: TenantStatus;
 }
-export interface SetTenantStatusRequest {
-  status: TenantStatus;
+export interface SetTenantEnabledRequest {
+  enabled: boolean;
+  reason?: string;
 }
 export interface TenantAccount {
   tenant_id: string;

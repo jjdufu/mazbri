@@ -287,12 +287,12 @@ const TENANTS_FIELDS: &[FilterFieldDef] = &[
         sql_expr: "contact_phone",
     },
     FilterFieldDef {
-        field: "status",
-        value_type: FilterValueType::Enum,
-        ops: ENUM_OPS,
+        field: "enabled",
+        value_type: FilterValueType::Bool,
+        ops: &[FilterOp::Eq],
         in_q: false,
         requires_time_window: false,
-        sql_expr: "status",
+        sql_expr: "enabled",
     },
     FilterFieldDef {
         field: "created_at",

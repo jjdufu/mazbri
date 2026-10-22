@@ -11,8 +11,8 @@ pub mod ratelimit;
 pub mod serde_json_value_as_text;
 pub use auth::{
     AuthService, AuthServiceClient, GetTenantInfoRequest, GetTenantInfoResponse, ResourceQuota,
-    TenantContext, TenantStatus, ValidateApiKeyRequest, ValidateApiKeyResponse,
-    ValidateTokenRequest, ValidateTokenResponse,
+    TenantContext, ValidateApiKeyRequest, ValidateApiKeyResponse, ValidateTokenRequest,
+    ValidateTokenResponse,
 };
 pub use billing::{
     AddFundsRequest, AddFundsResponse, Amount, Bill, BillLineItem, BillStatus, BillingCycle,

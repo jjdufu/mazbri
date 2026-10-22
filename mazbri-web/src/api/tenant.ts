@@ -5,7 +5,7 @@ import type {
   TenantListQuery,
   CreateTenantRequest,
   UpdateTenantRequest,
-  SetTenantStatusRequest,
+  SetTenantEnabledRequest,
   TenantAccount,
   RechargeRequest,
   RechargeResponse,
@@ -197,13 +197,13 @@ export function deleteTenant(code: string, signal?: AbortSignal) {
     signal,
   });
 }
-export function setTenantStatus(
+export function setTenantEnabled(
   code: string,
-  data: SetTenantStatusRequest,
+  data: SetTenantEnabledRequest,
   signal?: AbortSignal,
 ) {
   return request.put<void>({
-    url: `${BASE_PATH}/${code}/status`,
+    url: `${BASE_PATH}/${code}/enabled`,
     params: data,
     showSuccessMessage: true,
     signal,

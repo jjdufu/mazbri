@@ -2,41 +2,11 @@ pub use crate::common::HealthResponse;
 pub use crate::error::RpcError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TenantStatus {
-    #[default]
-    Pending = 0,
-    Active = 1,
-    Suspended = 2,
-    Terminated = 3,
-}
-impl TenantStatus {
-    #[must_use]
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            TenantStatus::Pending => "PENDING",
-            TenantStatus::Active => "ACTIVE",
-            TenantStatus::Suspended => "SUSPENDED",
-            TenantStatus::Terminated => "TERMINATED",
-        }
-    }
-    #[must_use]
-    pub fn from_str_name(value: &str) -> Option<Self> {
-        match value {
-            "PENDING" => Some(Self::Pending),
-            "ACTIVE" => Some(Self::Active),
-            "SUSPENDED" => Some(Self::Suspended),
-            "TERMINATED" => Some(Self::Terminated),
-            _ => None,
-        }
-    }
-}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TenantContext {
     pub tenant_id: String,
     pub tenant_name: String,
-    pub status: TenantStatus,
+    pub enabled: bool,
     #[serde(default)]
     pub metadata: HashMap<String, String>,
     pub created_at: i64,

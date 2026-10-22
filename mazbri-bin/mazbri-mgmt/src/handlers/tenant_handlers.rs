@@ -1,7 +1,7 @@
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantStatusRequest};
+use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantEnabledRequest};
 use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::tenant as svc;
@@ -116,20 +116,20 @@ pub async fn delete_tenant(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_tenant_status(
+pub async fn set_tenant_enabled(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(code): Path<String>,
-    Json(payload): Json<SetTenantStatusRequest>,
+    Json(payload): Json<SetTenantEnabledRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let user_id = extract_user_id(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
-    let data = svc::set_tenant_status(
+    let data = svc::set_tenant_enabled(
         &state.db,
         &state.audit,
         &code,

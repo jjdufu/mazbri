@@ -1,6 +1,6 @@
 use crate::audit::{AuditAction, AuditService, tenant_audit};
 use crate::error::ApiError;
-use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantStatusRequest};
+use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantEnabledRequest};
 use crate::repositories::tenant as repo;
 use sqlx::PgPool;
 use tracing::info;
@@ -15,8 +15,6 @@ pub struct UpdateTenantRequest {
     pub contact_phone: Option<String>,
     #[serde(default)]
     pub contact_email: Option<String>,
-    #[serde(default)]
-    pub status: Option<String>,
     #[serde(default)]
     pub token_expiration_secs: Option<i32>,
 }
@@ -38,11 +36,6 @@ impl UpdateTenantRequest {
                     "contact_email must be a valid email address".to_string(),
                 ));
             }
-        }
-        if let Some(ref _status) = self.status {
-            return Err(ApiError::validation(
-                "Use PUT /tenants/{id}/status to change tenant status".to_string(),
-            ));
         }
         if let Some(secs) = self.token_expiration_secs {
             if secs < 60 {
@@ -81,12 +74,17 @@ pub async fn list_tenants(
         &crate::list_query::tenants_catalog(),
     )
     .map_err(|e| ApiError::validation(e.message))?;
-    let total = repo::count_tenants(pool, params.status.as_deref(), search_ref, &filters)
+    if params.status.is_some() {
+        return Err(ApiError::validation(
+            "tenants list: use filters field `enabled`".to_string(),
+        ));
+    }
+    let total = repo::count_tenants(pool, None, search_ref, &filters)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to count tenants: {e}")))?;
     let tenants = repo::list_tenants(
         pool,
-        params.status.as_deref(),
+        None,
         search_ref,
         &filters,
         i64::from(page_size),
@@ -178,7 +176,7 @@ pub async fn create_tenant(
     Ok(serde_json::json!(
         { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
         .name, "contact_person" : row.contact_person, "contact_phone" : row
-        .contact_phone, "contact_email" : row.contact_email, "status" : row.status,
+        .contact_phone, "contact_email" : row.contact_email, "enabled" : row.enabled,
         "token_expiration_secs" : row.token_expiration_secs, "created_at" : row
         .created_at, }
     ))
@@ -207,7 +205,7 @@ pub async fn get_tenant(pool: &PgPool, id_or_code: &str) -> Result<serde_json::V
     Ok(serde_json::json!(
         { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
         .name, "contact_person" : row.contact_person, "contact_phone" : row
-        .contact_phone, "contact_email" : row.contact_email, "status" : row.status,
+        .contact_phone, "contact_email" : row.contact_email, "enabled" : row.enabled,
         "token_expiration_secs" : row.token_expiration_secs, "created_at" : row
         .created_at, "updated_at" : row.updated_at, }
     ))
@@ -259,7 +257,7 @@ pub async fn update_tenant(
     ));
     Ok(serde_json::json!(
         { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
-        .name, "status" : row.status, "contact_email" : row.contact_email,
+        .name, "enabled" : row.enabled, "contact_email" : row.contact_email,
         "token_expiration_secs" : row.token_expiration_secs, "updated_at" : row
         .updated_at, }
     ))
@@ -281,7 +279,7 @@ pub async fn delete_tenant(
 ) -> Result<serde_json::Value, ApiError> {
     info!("Hard-deleting tenant: {} (by {})", id_or_code, username);
     let tenant_id = resolve_tenant_id(pool, id_or_code).await?;
-    let row = repo::get_status_row(pool, tenant_id)
+    let row = repo::get_identity_row(pool, tenant_id)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to load tenant: {e}")))?
         .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
@@ -314,7 +312,7 @@ pub async fn delete_tenant(
         Some(serde_json::json!({
             "tenant_code": row.tenant_code,
             "name": row.name,
-            "prior_status": row.status,
+            "prior_enabled": row.enabled,
             "hard_delete": true,
         })),
         client_ip,
@@ -326,65 +324,54 @@ pub async fn delete_tenant(
     }))
 }
 
-/// Operational status only: active (启用) | suspended (停用).
+/// 启用 / 停用租户。
 ///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_tenant_status(
+pub async fn set_tenant_enabled(
     pool: &PgPool,
     audit: &AuditService,
     id_or_code: &str,
-    payload: &SetTenantStatusRequest,
+    payload: &SetTenantEnabledRequest,
     user_id: uuid::Uuid,
     username: &str,
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
     info!(
-        "Setting tenant {} status to {} (by {})",
-        id_or_code, payload.status, username
+        "Setting tenant {} enabled={} (by {})",
+        id_or_code, payload.enabled, username
     );
     let tenant_id = resolve_tenant_id(pool, id_or_code).await?;
-    // Product model: enable/disable only. Map legacy "terminated" clients to suspended.
-    let status = match payload.status.as_str() {
-        "active" => "active",
-        "suspended" | "terminated" | "disabled" => "suspended",
-        other => {
-            return Err(ApiError::validation(format!(
-                "Invalid status '{other}'. Use active or suspended"
-            )));
-        }
-    };
-    let row = repo::set_status(pool, tenant_id, status)
+    let row = repo::set_enabled(pool, tenant_id, payload.enabled)
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to update tenant status: {e}")))?
+        .map_err(|e| ApiError::internal(format!("Failed to update tenant enabled: {e}")))?
         .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
     info!(
-        "Tenant [{}] {} status updated to {}",
-        row.tenant_code, row.name, status
+        "Tenant [{}] {} enabled={}",
+        row.tenant_code, row.name, row.enabled
     );
-    if let Some(audit_action) = match status {
-        "suspended" => Some(AuditAction::TenantSuspend),
-        "active" => Some(AuditAction::TenantActivate),
-        _ => None,
-    } {
-        audit.log(tenant_audit(
-            user_id,
-            audit_action,
-            tenant_id,
-            Some(serde_json::json!({
-                "tenant_code": row.tenant_code,
-                "name": row.name,
-                "reason": payload.reason,
-                "status": status,
-            })),
-            client_ip.clone(),
-        ));
-    }
+    let audit_action = if row.enabled {
+        AuditAction::TenantActivate
+    } else {
+        AuditAction::TenantSuspend
+    };
+    audit.log(tenant_audit(
+        user_id,
+        audit_action,
+        tenant_id,
+        Some(serde_json::json!({
+            "tenant_code": row.tenant_code,
+            "name": row.name,
+            "reason": payload.reason,
+            "enabled": row.enabled,
+        })),
+        client_ip,
+    ));
     Ok(serde_json::json!({
         "tenant_code": row.tenant_code,
         "name": row.name,
-        "status": row.status,
+        "enabled": row.enabled,
         "reason": payload.reason,
     }))
 }

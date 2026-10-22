@@ -7,8 +7,8 @@
         }}</span>
       </template>
       <template #extra>
-        <ElTag :type="getStatusType(tenant?.status || 'active')">
-          {{ getStatusLabel(tenant?.status || "active") }}
+        <ElTag :type="getStatusType(tenantStatusKey)">
+          {{ getStatusLabel(tenantStatusKey) }}
         </ElTag>
       </template>
     </ElPageHeader>
@@ -78,7 +78,7 @@
 <script setup lang="ts">
 import { $t } from "@/locales";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
-import type { Tenant, TenantStatus } from "@/types/api/tenant";
+import type { Tenant } from "@/types/api/tenant";
 import { fetchTenantById } from "@/api/tenant";
 import BasicInfoTab from "./tabs/basic-info.vue";
 import ApiKeysTab from "./tabs/api-keys.vue";
@@ -96,6 +96,9 @@ const router = useRouter();
 const route = useRoute();
 const loading = ref(false);
 const tenant = ref<Tenant | null>(null);
+const tenantStatusKey = computed(() =>
+  tenant.value?.enabled === false ? "disabled" : "enabled",
+);
 const { activeTab, handleTabChange } = useTabRouteSync({
   defaultValue: "basic",
   allowedValues: [

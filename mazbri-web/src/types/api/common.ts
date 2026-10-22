@@ -23,7 +23,6 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 export type AdminStatus = "active" | "inactive" | "suspended" | "pending";
-export type TenantStatus = "active" | "suspended" | "pending";
 export type CertificateStatus =
   | "valid"
   | "expiring_soon"

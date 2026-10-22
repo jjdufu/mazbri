@@ -16,7 +16,7 @@ export {
   createTenant,
   updateTenant,
   deleteTenant,
-  setTenantStatus,
+  setTenantEnabled,
   fetchTenantAccount,
   rechargeTenantAccount,
   refundTenantAccount,

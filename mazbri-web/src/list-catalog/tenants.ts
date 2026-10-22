@@ -1,5 +1,5 @@
 import type { ResourceFilterCatalog } from "@/types/list-query";
-import { DATETIME_OPS, ENUM_OPS, STRING_OPS } from "@/types/list-query";
+import { DATETIME_OPS, STRING_OPS } from "@/types/list-query";
 
 
 export const tenantsCatalog: ResourceFilterCatalog = {
@@ -49,16 +49,10 @@ export const tenantsCatalog: ResourceFilterCatalog = {
       label_key: "tenant.fields.contactPhone",
     },
     {
-      field: "status",
-      value_type: "enum",
-      ops: ENUM_OPS,
+      field: "enabled",
+      value_type: "bool",
+      ops: ["eq"],
       label_key: "common.fields.status",
-      enum_values: ["active", "suspended", "pending"],
-      enum_label_keys: [
-        "common.status.active",
-        "common.status.suspended",
-        "common.status.pending",
-      ],
     },
     {
       field: "created_at",
