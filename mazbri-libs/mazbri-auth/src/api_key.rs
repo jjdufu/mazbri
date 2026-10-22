@@ -225,7 +225,7 @@ impl ApiKeyValidator {
                 ac.is_active,
                 ak.is_active AS api_key_active,
                 ac.expires_at,
-                COALESCE(ak.scopes, ARRAY[]::TEXT[]) AS scopes
+                ak.scopes AS scopes
             FROM auth_credentials ac
             LEFT JOIN api_keys ak ON ak.credential_id = ac.id
             WHERE ac.credential_type = 'api_key'
@@ -315,7 +315,7 @@ impl ApiKeyValidator {
         }
         let credential_id: Uuid = row.try_get("id")?;
         let tenant_id: Uuid = row.try_get("tenant_id")?;
-        let scopes: Vec<String> = row.try_get("scopes").unwrap_or_default();
+        let scopes: Vec<String> = row.try_get("scopes")?;
         self.last_used_writer.record(credential_id);
         let auth = ApiKeyAuth {
             credential_id,
@@ -467,7 +467,7 @@ pub struct ApiKeyAuth {
     pub credential_id: Uuid,
     pub tenant_id: Uuid,
     pub api_key_prefix: String,
-    /// Scopes stored on `api_keys.scopes` (may be empty for legacy keys).
+    /// Scopes stored on `api_keys.scopes` (non-empty; `api:read` | `api:write` | `api:admin`).
     pub scopes: Vec<String>,
 }
 

@@ -87,6 +87,9 @@ pub async fn create_api_key(
     info!("Creating API key for tenant: {}", id_or_code);
     let tenant_id = crate::services::tenant::resolve_tenant_id(db, id_or_code).await?;
     ensure_tenant_exists(db, tenant_id, id_or_code).await?;
+    if payload.scopes.as_slice().is_empty() {
+        return Err(ApiError::validation("scopes 不能为空".to_string()));
+    }
     let existing_count = repo::count_active_api_keys(auth_db, tenant_id)
         .await
         .unwrap_or(0);
@@ -120,7 +123,13 @@ pub async fn create_api_key(
         )));
     }
     let api_key_id = uuid::Uuid::new_v4();
-    let scopes_array: Vec<String> = payload.scopes.to_vec();
+    let mut scopes_array: Vec<String> = Vec::new();
+    for s in payload.scopes.as_slice() {
+        let s = s.as_str().to_string();
+        if !scopes_array.contains(&s) {
+            scopes_array.push(s);
+        }
+    }
     let key_result = repo::insert_api_key(
         &mut tx,
         repo::InsertApiKeyParams {
@@ -150,7 +159,7 @@ pub async fn create_api_key(
         AuditAction::ApiKeyCreate,
         tenant_id,
         &prefix,
-        Some(serde_json::json!({ "scopes" : payload.scopes.to_vec(), })),
+        Some(serde_json::json!({ "scopes" : scopes_array, })),
         client_ip,
     ));
     Ok(serde_json::json!(

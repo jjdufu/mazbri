@@ -69,10 +69,30 @@ pub struct SetTenantEnabledRequest {
     pub enabled: bool,
     pub reason: Option<String>,
 }
+/// API key scope（存储与 JWT 统一使用 `api:*` 字面量）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
+pub enum ApiScope {
+    #[serde(rename = "api:read")]
+    Read,
+    #[serde(rename = "api:write")]
+    Write,
+    #[serde(rename = "api:admin")]
+    Admin,
+}
+impl ApiScope {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "api:read",
+            Self::Write => "api:write",
+            Self::Admin => "api:admin",
+        }
+    }
+}
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
-    pub scopes: BoundedVec<String, { limits::MAX_API_KEY_SCOPES }>,
+    pub scopes: BoundedVec<ApiScope, { limits::MAX_API_KEY_SCOPES }>,
     pub expires_at: Option<i64>,
     #[serde(default)]
     pub expires_days: Option<i64>,
