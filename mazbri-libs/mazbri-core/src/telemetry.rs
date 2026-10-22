@@ -85,10 +85,12 @@ impl LogRoute {
             exclude_levels: Vec::new(),
         }
     }
+    #[must_use]
     pub fn include_target(mut self, target: impl Into<String>) -> Self {
         self.include_targets.push(target.into());
         self
     }
+    #[must_use]
     pub fn exclude_target(mut self, target: impl Into<String>) -> Self {
         self.exclude_targets.push(target.into());
         self
@@ -130,12 +132,18 @@ impl LogRoute {
         true
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn init_tracing_with_service(
     config: &crate::config::TracingConfig,
     service_name: &str,
 ) -> Result<LogGuard> {
     init_tracing_with_routes(config, service_name, &[])
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn init_tracing_with_routes(
     config: &crate::config::TracingConfig,
     service_name: &str,
@@ -189,6 +197,9 @@ pub fn init_tracing_with_routes(
         _otlp: otlp_guard,
     })
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn init_tracing(config: &crate::config::TracingConfig) -> anyhow::Result<()> {
     let _guard = init_tracing_with_service(config, "mazbri")?;
     Ok(())

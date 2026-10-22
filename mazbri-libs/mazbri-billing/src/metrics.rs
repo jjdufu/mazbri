@@ -55,6 +55,9 @@ pub static BILLING_CHARGE_BATCH_ITEMS: LazyLock<CounterVec> = LazyLock::new(|| {
         &["result"],
     )
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_billing_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(BILLING_BALANCE_QUERIES_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(BILLING_DEDUCTIONS_TOTAL.clone()))?;

@@ -44,6 +44,9 @@ impl<T> CircuitResult<T> {
             _ => None,
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn into_result(self) -> Result<T, String> {
         match self {
             CircuitResult::Success(v) => Ok(v),

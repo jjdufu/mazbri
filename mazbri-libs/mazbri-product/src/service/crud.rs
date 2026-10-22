@@ -6,6 +6,9 @@ use super::{
 };
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_product(
         &self,
         req: CreateProductRequest,
@@ -27,6 +30,9 @@ impl ProductService {
         );
         Ok(product_from_row(&row))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn reserve_product_id(
         &self,
         reserved_by: &str,
@@ -47,6 +53,9 @@ impl ProductService {
         tx.commit().await.map_err(ProductWriteError::Database)?;
         Ok(reservation)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn release_product_id_reservation(
         &self,
         reservation_id: Uuid,
@@ -75,6 +84,9 @@ impl ProductService {
         .map_err(ProductWriteError::Database)?;
         Ok(result.is_some())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_product(
         &self,
         product_id: &str,
@@ -152,6 +164,9 @@ impl ProductService {
             Ok(None)
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_product_by_id(&self, product_id: &str) -> Result<Option<Product>> {
         Ok(self.fetch_product_by_id(product_id).await?)
     }
@@ -178,6 +193,9 @@ impl ProductService {
             Ok(None)
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_products(&self) -> Result<Vec<Product>> {
         let rows = sqlx::query(
             r"
@@ -198,6 +216,10 @@ impl ProductService {
     ///
     /// `apply_extra` is called for both COUNT and SELECT builders (trusted
     /// SQL only — caller must validate filters before applying).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_products_page<F>(
         &self,
         search: Option<&str>,
@@ -244,6 +266,9 @@ impl ProductService {
         let rows = list_builder.build().fetch_all(&self.db).await?;
         Ok((rows.iter().map(product_from_row).collect(), total))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn delete_product(
         &self,
         product_id: &str,

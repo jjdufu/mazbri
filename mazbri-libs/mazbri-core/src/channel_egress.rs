@@ -93,6 +93,9 @@ pub enum AdapterKind {
 }
 
 impl AdapterKind {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn parse(s: &str) -> Result<Self, ChannelEgressError> {
         match s.trim() {
             ADAPTER_HTTP_JSON => Ok(Self::HttpJson),
@@ -155,6 +158,9 @@ pub enum AuthProfile {
 }
 
 impl AuthProfile {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn parse(s: &str) -> Result<Self, ChannelEgressError> {
         match s.trim() {
             AUTH_NONE | "" => Ok(Self::None),
@@ -327,6 +333,9 @@ fn default_auth_profile() -> String {
 }
 
 impl AuthSpec {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn profile_kind(&self) -> Result<AuthProfile, ChannelEgressError> {
         AuthProfile::parse(&self.profile)
     }
@@ -576,6 +585,9 @@ pub struct ChannelEgressSpec {
 }
 
 impl ChannelEgressSpec {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn adapter_kind(&self) -> Result<AdapterKind, ChannelEgressError> {
         AdapterKind::parse(&self.adapter)
     }
@@ -631,6 +643,9 @@ pub fn hash_egress_spec_json(json: &str) -> String {
     hex::encode(digest)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn hash_egress_spec(spec: &ChannelEgressSpec) -> Result<String, ChannelEgressError> {
     let json = serde_json::to_string(spec)
         .map_err(|e| ChannelEgressError::new(format!("serialize egress: {e}")))?;
@@ -638,6 +653,10 @@ pub fn hash_egress_spec(spec: &ChannelEgressSpec) -> Result<String, ChannelEgres
 }
 
 /// Parse and validate an `egress` object (not the whole `channels.config`).
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_and_validate_egress(
     value: &serde_json::Value,
 ) -> Result<ChannelEgressSpec, ChannelEgressError> {
@@ -652,6 +671,10 @@ pub fn parse_and_validate_egress(
 
 /// Extract `channels.config.egress`. Missing egress is an error (caller may
 /// treat empty config as “not a code-free channel”).
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_channel_config_egress(
     channel_config: &serde_json::Value,
 ) -> Result<ChannelEgressSpec, ChannelEgressError> {
@@ -665,6 +688,10 @@ pub fn parse_channel_config_egress(
 
 /// If `config.egress` is present, validate it. Absent egress is allowed
 /// (microservice channels, incomplete drafts).
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_channel_config_if_egress(
     channel_config: &serde_json::Value,
 ) -> Result<Option<ChannelEgressSpec>, ChannelEgressError> {
@@ -689,6 +716,9 @@ fn is_allowed_http_method(method: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-')
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
     let adapter = spec.adapter_kind()?;
     if let Some(ref url) = spec.base_url {
@@ -973,6 +1003,10 @@ pub fn default_http_json_egress(path: &str, method: &str) -> ChannelEgressSpec {
 
 /// Merge `egress` into an existing channel config object, preserving
 /// `rate_limit_*` and other sibling keys.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn upsert_egress_in_channel_config(
     existing: &serde_json::Value,
     egress: &ChannelEgressSpec,

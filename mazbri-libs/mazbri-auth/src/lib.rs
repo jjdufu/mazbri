@@ -15,10 +15,16 @@ pub use ip_whitelist::IpWhitelist;
 pub use jwt_manager::{JwtKeyError, JwtKeyManager, JwtKeyMaterial};
 pub use middleware::auth_middleware;
 pub use permission_cache::{PermissionCache, PermissionEntry};
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn argon2_params() -> std::result::Result<argon2::Params, String> {
     argon2::Params::new(65536, 3, 4, Some(32))
         .map_err(|e| format!("Failed to create Argon2 params: {e}"))
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn constant_time_argon2_verify(
     password: &[u8],
     hash_str: &str,

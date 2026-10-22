@@ -33,6 +33,9 @@ pub static DB_QUERY_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
         &["operation", "table"],
     )
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(HTTP_REQUESTS_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(HTTP_REQUEST_DURATION_SECONDS.clone()))?;

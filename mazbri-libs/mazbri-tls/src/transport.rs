@@ -21,6 +21,9 @@ pub struct TlsAcceptor {
     inner: Arc<RustlsAcceptor>,
 }
 impl TlsAcceptor {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(cert: &ManagedCertificate, config: &TlsConfig) -> TlsResult<Self> {
         let server_config = build_server_config(cert, config)?;
         let acceptor = RustlsAcceptor::from(server_config);
@@ -28,6 +31,9 @@ impl TlsAcceptor {
             inner: Arc::new(acceptor),
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn accept<S>(&self, stream: S) -> TlsResult<TlsStream<S>>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -44,6 +50,9 @@ pub struct TlsConnector {
     domain: rustls::pki_types::ServerName<'static>,
 }
 impl TlsConnector {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(
         ca_cert_pem: &str,
         client_cert: Option<&ManagedCertificate>,
@@ -65,6 +74,9 @@ impl TlsConnector {
             domain,
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn with_domain(
         ca_cert_pem: &str,
         client_cert: Option<&ManagedCertificate>,
@@ -81,9 +93,15 @@ impl TlsConnector {
             domain: server_name,
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn connect(&self, addr: SocketAddr) -> TlsResult<ClientTlsStream<TcpStream>> {
         self.connect_with_server_name(addr, None).await
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn connect_with_server_name(
         &self,
         addr: SocketAddr,
@@ -106,6 +124,9 @@ impl TlsConnector {
             .map_err(|e| TlsError::HandshakeFailed(e.to_string()))
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn resolve_connect_target(endpoint: &str) -> TlsResult<ConnectTarget> {
     let endpoint = endpoint.trim();
     if endpoint.is_empty() {

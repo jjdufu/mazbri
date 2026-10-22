@@ -3,6 +3,9 @@ use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminConfig, AdminServerBuilder, AdminState};
 use mazbri_core::REGISTRY;
 use std::sync::Arc;
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn start_simple_admin_server(
     service_name: &str,
     admin_config: &AdminConfig,

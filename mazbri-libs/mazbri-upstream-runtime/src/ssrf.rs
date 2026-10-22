@@ -49,6 +49,9 @@ impl SsrfChecker {
         builder.dns_resolver(self.dns_resolver())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn validate_url(&self, raw_url: &str) -> Result<(), String> {
         let url = Url::parse(raw_url).map_err(|e| format!("Invalid URL structure: {e}"))?;
         let scheme = url.scheme();

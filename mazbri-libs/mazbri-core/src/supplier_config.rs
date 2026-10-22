@@ -151,6 +151,9 @@ impl Default for AuthFlowConfig {
 }
 
 impl AuthFlowConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn profile_kind(&self) -> Result<AuthProfile, ConfigValidationError> {
         let raw = self.profile.as_deref().map_or("", str::trim);
         AuthProfile::parse(raw).map_err(|e| ConfigValidationError::new(e.to_string()))
@@ -205,6 +208,10 @@ impl From<SupplierSecretsError> for ConfigValidationError {
 }
 
 /// 写入路径：拒绝已裁剪/未知顶层键与非法 timeouts 键。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn reject_unsupported_config_keys(
     value: &serde_json::Value,
 ) -> Result<(), ConfigValidationError> {
@@ -291,6 +298,10 @@ impl SupplierConfig {
     }
 
     /// 管理端写入：拒绝假字段 → 解析 → 校验。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn parse_and_validate(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
         reject_unsupported_config_keys(value)?;
         Self::parse_and_validate_lenient(value)
@@ -300,12 +311,20 @@ impl SupplierConfig {
     ///
     /// 工作台自动保存允许 `auth_flow.enabled=true` 且 `token_url` 暂空；
     /// 发布 / 试跑仍走 [`parse_and_validate`]。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn parse_for_draft_write(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
         reject_unsupported_config_keys(value)?;
         Self::deserialize_config(value)
     }
 
     /// 读路径 / 存量兼容：先剥离已裁剪字段再校验（不拒绝旧数据）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn parse_and_validate_lenient(
         value: &serde_json::Value,
     ) -> Result<Self, ConfigValidationError> {
@@ -339,6 +358,10 @@ impl SupplierConfig {
     }
 
     /// 结构与语义校验（写入路径必须调用）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
         match self.upstream_type.as_str() {
             UPSTREAM_TYPE_TRANSPARENT | UPSTREAM_TYPE_MICROSERVICE => {}
@@ -472,6 +495,9 @@ impl SupplierConfig {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_upstream_url_for_type(
         &self,
         upstream_url: &str,
@@ -504,6 +530,10 @@ impl SupplierConfig {
     }
 
     /// 写入 DB 前加密 credentials（G-05）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn encrypt_credentials_for_storage(mut self) -> Result<Self, ConfigValidationError> {
         if let Some(ref mut auth) = self.auth_flow {
             let key = supplier_secrets_key()?;
@@ -513,6 +543,10 @@ impl SupplierConfig {
     }
 
     /// 数据面出站前解密 credentials。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn decrypt_credentials_for_runtime(mut self) -> Result<Self, ConfigValidationError> {
         if let Some(ref mut auth) = self.auth_flow {
             let key = supplier_secrets_key()?;
@@ -521,6 +555,9 @@ impl SupplierConfig {
         Ok(self)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn to_json_value(&self) -> Result<serde_json::Value, ConfigValidationError> {
         serde_json::to_value(self)
             .map_err(|e| ConfigValidationError::new(format!("config 序列化失败: {e}")))

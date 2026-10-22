@@ -61,6 +61,9 @@ impl RedisCache {
         CoreError::service_unavailable(format!("redis: {error}"))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(
         db: Arc<PgPool>,
         config: CacheConfig,
@@ -182,6 +185,9 @@ impl RedisCache {
         Ok(Some(entry))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn clear_tenant_with_count(
         &self,
         tenant_id: &str,
@@ -205,6 +211,10 @@ impl RedisCache {
     }
 
     /// Set a value, optionally resolving TTL from tenant `api_ttl` via `endpoint`.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_with_endpoint(
         &self,
         tenant_id: &str,
@@ -259,6 +269,9 @@ impl RedisCache {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn stats(
         &self,
         tenant_id: Option<&str>,

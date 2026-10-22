@@ -58,6 +58,9 @@ impl HttpConfigClientBuilder {
         self.http_client = Some(client);
         self
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn build(self) -> Result<HttpConfigClient, HttpConfigClientError> {
         let http_client = match self.http_client {
             Some(client) => client,
@@ -90,6 +93,9 @@ impl HttpConfigClient {
         let cache = self.cache.read().await;
         (cache.content.clone(), cache.version, cache.last_updated)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_config(&self) -> Result<ConfigResponse, HttpConfigClientError> {
         let url = format!("{}/configs/{}", self.cert_service_url, self.service_name);
         let request_builder = self
@@ -119,6 +125,9 @@ impl HttpConfigClient {
             version: 0,
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh(&self) -> Result<(), HttpConfigClientError> {
         let config = self.fetch_config().await?;
         let mut cache = self.cache.write().await;
@@ -131,6 +140,9 @@ impl HttpConfigClient {
         );
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn register_node(
         &self,
         ip: String,
@@ -168,6 +180,9 @@ impl HttpConfigClient {
             .await
             .map_err(|e| HttpConfigClientError::ResponseParseFailed(e.to_string()))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn send_heartbeat(
         &self,
         ip: &str,

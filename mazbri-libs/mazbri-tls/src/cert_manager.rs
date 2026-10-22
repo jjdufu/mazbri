@@ -43,6 +43,9 @@ impl CertManager {
             cert: Arc::new(RwLock::new(None)),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn initialize(&self) -> TlsResult<ManagedCertificate> {
         info!(
             service_identity = % self.config.service_identity,
@@ -58,6 +61,9 @@ impl CertManager {
         }
         Ok(cert)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_certificate(&self) -> TlsResult<ManagedCertificate> {
         let guard = self.cert.read().await;
         guard
@@ -166,6 +172,9 @@ impl CertManager {
             shutdown_tx,
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_ca_cert(&self) -> TlsResult<String> {
         let cert = self.get_certificate().await?;
         Ok(cert.ca_cert_pem)

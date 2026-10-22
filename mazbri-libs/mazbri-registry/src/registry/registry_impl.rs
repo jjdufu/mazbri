@@ -45,6 +45,9 @@ impl ConfigCenterRegistry {
             pipeline_mutex: Arc::new(Mutex::new(())),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn start(&self) -> RegistryResult<()> {
         let handle = super::heartbeat::spawn_heartbeat_task(
             self.shutdown_token.clone(),
@@ -132,9 +135,9 @@ impl ServiceRegistry for ConfigCenterRegistry {
             let mut handle = self.heartbeat_handle.write().await;
             if let Some(h) = handle.take() {
                 if let Ok(_) = tokio::time::timeout(timeout, h).await {
-                    info!("心跳任务已停止")
+                    info!("心跳任务已停止");
                 } else {
-                    warn!("心跳任务超时未停止")
+                    warn!("心跳任务超时未停止");
                 }
             }
         }

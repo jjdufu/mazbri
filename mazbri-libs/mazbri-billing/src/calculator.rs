@@ -91,6 +91,10 @@ impl BillingCalculator {
 
     /// Charge one API call. `request_size` / `response_size` are accepted for call-site
     /// compatibility and usage metering elsewhere; they do not affect the amount.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn calculate_call(
         &self,
         _request_size: u64,

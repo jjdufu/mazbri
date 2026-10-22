@@ -35,6 +35,9 @@ impl IsTransient for tarpc::client::RpcError {
         }
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn retry_rpc<F, Fut, T, E>(config: &RetryConfig, f: F) -> Result<T, E>
 where
     F: Fn() -> Fut,

@@ -200,6 +200,10 @@ fn is_rpc_style_span_name(name: &str) -> bool {
 /// Note: `opentelemetry-otlp` 0.30 uses programmatic `with_endpoint` **as-is**
 /// (it does **not** append `/v1/traces`). We normalize here so conf can keep the
 /// documented Greptime base URL.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, OtlpGuard)> {
     let endpoint = normalize_otlp_traces_endpoint(options.endpoint)?;
     anyhow::ensure!(!endpoint.is_empty(), "otel_endpoint is empty");
@@ -250,6 +254,10 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
 /// - `…/v1/traces` → unchanged  
 /// - `…/v1/otlp` (Greptime base) → `…/v1/otlp/v1/traces`  
 /// - other base → `{base}/v1/traces`
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn normalize_otlp_traces_endpoint(endpoint: &str) -> Result<String> {
     let endpoint = endpoint.trim().trim_end_matches('/');
     anyhow::ensure!(!endpoint.is_empty(), "otel_endpoint is empty");

@@ -38,6 +38,9 @@ pub enum CodecError {
     UnsupportedCodec,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn serialize_payload<T>(codec: PayloadCodec, value: &T) -> Result<Vec<u8>, CodecError>
 where
     T: Serialize,
@@ -47,6 +50,9 @@ where
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn deserialize_payload<T>(codec: PayloadCodec, bytes: &[u8]) -> Result<T, CodecError>
 where
     T: DeserializeOwned,
@@ -78,6 +84,9 @@ pub struct FuryErrorEnvelope {
     pub request_id: String,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn serialize_fury_success(envelope: &FurySuccessEnvelope) -> Result<Vec<u8>, CodecError> {
     let mut fory = Fory::builder().xlang(true).build();
     fory.register_by_name::<FurySuccessEnvelope>("mazbri", "FurySuccessEnvelope")
@@ -86,6 +95,9 @@ pub fn serialize_fury_success(envelope: &FurySuccessEnvelope) -> Result<Vec<u8>,
         .map_err(|e| CodecError::Fury(e.to_string()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn deserialize_fury_success(bytes: &[u8]) -> Result<FurySuccessEnvelope, CodecError> {
     let mut fory = Fory::builder().xlang(true).build();
     fory.register_by_name::<FurySuccessEnvelope>("mazbri", "FurySuccessEnvelope")
@@ -94,6 +106,9 @@ pub fn deserialize_fury_success(bytes: &[u8]) -> Result<FurySuccessEnvelope, Cod
         .map_err(|e| CodecError::Fury(e.to_string()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn serialize_fury_error(envelope: &FuryErrorEnvelope) -> Result<Vec<u8>, CodecError> {
     let mut fory = Fory::builder().xlang(true).build();
     fory.register_by_name::<FuryErrorEnvelope>("mazbri", "FuryErrorEnvelope")
@@ -102,6 +117,9 @@ pub fn serialize_fury_error(envelope: &FuryErrorEnvelope) -> Result<Vec<u8>, Cod
         .map_err(|e| CodecError::Fury(e.to_string()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn deserialize_fury_error(bytes: &[u8]) -> Result<FuryErrorEnvelope, CodecError> {
     let mut fory = Fory::builder().xlang(true).build();
     fory.register_by_name::<FuryErrorEnvelope>("mazbri", "FuryErrorEnvelope")

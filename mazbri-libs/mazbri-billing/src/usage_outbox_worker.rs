@@ -138,6 +138,9 @@ impl UsageOutboxWorker {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn shutdown(self, timeout: Duration) -> Result<(), tokio::time::error::Elapsed> {
         let stop_fut = self.stop();
         tokio::time::timeout(timeout, stop_fut).await

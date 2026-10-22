@@ -52,6 +52,9 @@ pub static CONFIG_CENTER_CONNECTED: LazyLock<IntGaugeVec> = LazyLock::new(|| {
         &["service"],
     )
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_health_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(RPC_HEALTH_CHECK.clone()))?;
     register_collector_once(&REGISTRY, Box::new(DB_POOL_ACTIVE_CONNECTIONS.clone()))?;

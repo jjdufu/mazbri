@@ -39,6 +39,9 @@ impl CertClient {
             auth_token: auth_token.to_owned(),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn issue(&self, subject: &str) -> TlsResult<CertificateResponse> {
         let url = format!("{}/issue", self.base_url);
         let request = IssueRequest {
@@ -70,6 +73,9 @@ impl CertClient {
             )))
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn renew(&self, cert_id: Uuid) -> TlsResult<CertificateResponse> {
         let url = format!("{}/renew/{}", self.base_url, cert_id);
         info!(cert_id = % cert_id, url = % url, "Requesting certificate renewal");
@@ -96,6 +102,9 @@ impl CertClient {
             )))
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_by_subject(&self, subject: &str) -> TlsResult<CertificateResponse> {
         let url = format!(
             "{}/certificates/by-subject/{}",
@@ -130,6 +139,9 @@ impl CertClient {
             )))
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn health_check(&self) -> TlsResult<bool> {
         let url = format!("{}/health", self.base_url);
         debug!(url = % url, "Performing health check on cert-service");

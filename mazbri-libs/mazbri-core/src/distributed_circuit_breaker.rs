@@ -72,6 +72,9 @@ impl DistributedCircuitBreaker {
     pub fn name(&self) -> &str {
         &self.name
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn state(&self) -> Result<CircuitState, CoreError> {
         let entry = self.get_or_load_state().await?;
         Ok(entry.state)
@@ -138,6 +141,9 @@ impl DistributedCircuitBreaker {
         .map_err(CoreError::Database)?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn is_request_allowed(&self) -> Result<bool, CoreError> {
         let entry = self.get_or_load_state().await?;
         match entry.state {
@@ -418,6 +424,9 @@ impl DistributedCircuitBreaker {
         self.invalidate_cache().await;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn reset(&self) -> Result<(), CoreError> {
         self.transition_to(CircuitState::Closed).await;
         self.reset_counters().await?;

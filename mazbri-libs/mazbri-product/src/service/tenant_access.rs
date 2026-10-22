@@ -4,6 +4,9 @@ use super::{
 };
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn grant_tenant_access(
         &self,
         tenant_id: Uuid,
@@ -59,6 +62,9 @@ impl ProductService {
             created_at: row.get("created_at"),
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn revoke_tenant_access(&self, tenant_id: Uuid, product_id: &str) -> Result<bool> {
         info!(
             "revoke_tenant_access: tenant_id={}, product_id={}",
@@ -103,6 +109,9 @@ impl ProductService {
         }
         Ok(affected)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_tenant_product_config(
         &self,
         tenant_id: Uuid,

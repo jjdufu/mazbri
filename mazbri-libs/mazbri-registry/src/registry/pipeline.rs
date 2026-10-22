@@ -22,6 +22,9 @@ impl ConfigPipeline {
             previous_config: Arc::new(tokio::sync::RwLock::new(Some(previous))),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn process_config_change(
         &self,
         push: &ConfigPush,

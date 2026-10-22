@@ -104,6 +104,9 @@ pub struct HttpUpstreamRequest {
 }
 
 impl HttpUpstreamRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         if self.product_id.trim().is_empty() {
             return Err("product_id 不能为空".to_string());

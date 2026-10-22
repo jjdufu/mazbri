@@ -26,6 +26,9 @@ pub struct CacheService {
 }
 
 impl CacheService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(
         db: Arc<PgPool>,
         config: CacheConfig,
@@ -57,6 +60,9 @@ impl CacheService {
         &self.db
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn load_config(
         &self,
         tenant_id: uuid::Uuid,

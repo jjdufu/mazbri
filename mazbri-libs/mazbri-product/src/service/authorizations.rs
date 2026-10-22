@@ -4,6 +4,9 @@ use super::{
 };
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_authorizations(&self) -> Result<Vec<AuthorizationDetail>> {
         let rows = sqlx::query(
             r"
@@ -39,6 +42,10 @@ impl ProductService {
     ///
     /// Default scope: only enabled `tenant_products` on enabled products.
     /// `apply_extra` runs for both COUNT and SELECT (caller validates filters).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_authorizations_page<F>(
         &self,
         search: Option<&str>,

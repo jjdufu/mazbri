@@ -14,6 +14,9 @@ impl fmt::Display for ValidationError {
 }
 impl std::error::Error for ValidationError {}
 pub type ValidationResult<T> = Result<T, Vec<ValidationError>>;
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_service_config(content: &str) -> ValidationResult<()> {
     let value = match toml::from_str::<toml::Value>(content) {
         Ok(v) => v,
@@ -79,6 +82,9 @@ impl StringValidator {
         self.required = required;
         self
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_value(&self, field_name: &str, value: &Option<String>) -> ValidationResult<()> {
         let value = if let Some(v) = value {
             v
@@ -141,6 +147,9 @@ impl ValidationHelper {
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn errors(self) -> Result<(), Vec<ValidationError>> {
         if self.errors.is_empty() {
             Ok(())
@@ -159,6 +168,9 @@ pub struct BoundedVec<T, const MAX: usize> {
     pub(crate) inner: Vec<T>,
 }
 impl<T, const MAX: usize> BoundedVec<T, MAX> {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(vec: Vec<T>) -> Result<Self, String> {
         if vec.len() > MAX {
             Err(format!("数组长度超过限制: {} > {}", vec.len(), MAX))

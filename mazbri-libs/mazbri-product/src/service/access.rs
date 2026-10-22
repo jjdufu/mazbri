@@ -4,6 +4,9 @@ use super::{
 };
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check_tenant_access(&self, tenant_id: Uuid, product_id: &str) -> Result<bool> {
         if let Ok(Some(entry)) = self.permission_cache.get(&tenant_id, product_id).await {
             debug!("Permission cache hit for: {}:{}", tenant_id, product_id);
@@ -64,6 +67,9 @@ impl ProductService {
             tenant_id, product_id
         );
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn warm_tenant_product_detail_cache(&self) -> Result<usize> {
         let rows = sqlx::query(
             r"

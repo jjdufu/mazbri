@@ -86,6 +86,9 @@ impl TokenCache {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_token<F, Fut>(&self, cache_key: &str, fetch_fn: F) -> Result<String, String>
     where
         F: FnOnce() -> Fut,

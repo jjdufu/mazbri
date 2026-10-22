@@ -9,10 +9,14 @@ impl MetricsBuilder {
     pub fn new() -> Self {
         Self { prefix: None }
     }
+    #[must_use]
     pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
     #[must_use]
     pub fn counter(&self, name: &str, help: &str, labels: &[&str]) -> CounterVec {
         let full_name = self.full_name(name);
@@ -29,6 +33,9 @@ impl MetricsBuilder {
                 .expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
     #[must_use]
     pub fn gauge_vec(&self, name: &str, help: &str, labels: &[&str]) -> IntGaugeVec {
         let full_name = self.full_name(name);
@@ -45,6 +52,9 @@ impl MetricsBuilder {
                 .expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
     #[must_use]
     pub fn gauge(&self, name: &str, help: &str) -> IntGauge {
         let full_name = self.full_name(name);
@@ -60,6 +70,9 @@ impl MetricsBuilder {
             IntGauge::new(&fallback_name, help).expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
     #[must_use]
     pub fn histogram(
         &self,

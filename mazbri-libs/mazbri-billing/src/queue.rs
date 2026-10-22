@@ -27,6 +27,9 @@ impl ChargeQueue {
     pub fn config(&self) -> &QueueConfig {
         &self.config
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn enqueue(
         &self,
         tenant_id: Uuid,
@@ -79,6 +82,10 @@ impl ChargeQueue {
         Ok(queue_id)
     }
     /// Reclaim rows left in `processing` after a crash (multi-replica safe).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn reclaim_stale_processing(&self, stale_secs: u64) -> Result<u64, BillingError> {
         let result = sqlx::query(
             r"
@@ -106,6 +113,9 @@ impl ChargeQueue {
         Ok(n)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_pending(&self, limit: i32) -> Result<Vec<ChargeQueueItem>, BillingError> {
         let mut tx = self.db.begin().await?;
         let rows = sqlx::query_as::<
@@ -146,6 +156,9 @@ impl ChargeQueue {
         self.refresh_queue_depth_metrics().await;
         Ok(rows)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn mark_completed(
         &self,
         queue_id: Uuid,
@@ -174,6 +187,9 @@ impl ChargeQueue {
         self.refresh_queue_depth_metrics().await;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn mark_failed(
         &self,
         queue_id: Uuid,
@@ -253,6 +269,9 @@ impl ChargeQueue {
             Ok(false)
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_stats(&self) -> Result<QueueStats, BillingError> {
         let pending: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM usage_charge_queue WHERE status = 'pending'")

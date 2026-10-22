@@ -24,6 +24,9 @@ pub struct CallbackDeliveryLog {
     pub last_response_code: Option<i32>,
     pub last_error: Option<String>,
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn find_active_subscription(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -41,6 +44,9 @@ pub async fn find_active_subscription(
     .fetch_optional(pool)
     .await
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn enqueue_callback(
     pool: &PgPool,
     subscription_id: Uuid,
@@ -61,6 +67,9 @@ pub async fn enqueue_callback(
         .await?;
     Ok(row.0)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn fetch_pending_tasks(
     pool: &PgPool,
     limit: i64,
@@ -89,6 +98,9 @@ pub async fn fetch_pending_tasks(
         .fetch_all(pool)
         .await
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_delivery_status(
     pool: &PgPool,
     id: Uuid,

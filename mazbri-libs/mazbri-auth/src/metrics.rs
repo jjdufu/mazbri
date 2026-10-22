@@ -41,6 +41,9 @@ pub static API_KEY_LAST_USED_DROPPED_TOTAL: LazyLock<IntCounter> = LazyLock::new
     )
     .expect("api_key_last_used_dropped_total metric definition is valid")
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_auth_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(AUTH_KEY_VALIDATION_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(AUTH_TOKEN_ISSUANCE_TOTAL.clone()))?;

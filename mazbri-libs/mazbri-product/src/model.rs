@@ -12,6 +12,9 @@ impl fmt::Display for ProductIdValidationError {
     }
 }
 impl std::error::Error for ProductIdValidationError {}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_product_id(product_id: &str) -> Result<(), ProductIdValidationError> {
     let bytes = product_id.as_bytes();
     let is_valid =
@@ -203,6 +206,9 @@ impl Default for TenantProductConfig {
     }
 }
 impl TenantProductConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         validate_cbpro_policy_config(&self.cbpro)?;
         match self.billing_type.as_str() {
@@ -304,6 +310,9 @@ fn default_cbpro_shadow_validate_enabled() -> bool {
 fn default_cbpro_background_analysis_enabled() -> bool {
     true
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), String> {
     if !matches!(
         config.mode.trim(),

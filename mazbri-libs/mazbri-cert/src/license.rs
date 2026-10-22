@@ -176,6 +176,9 @@ pub fn trusted_verifying_key(kid: &str) -> Option<VerifyingKey> {
     VerifyingKey::from_bytes(bytes).ok()
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_compact_license(raw: &str) -> CertResult<VerifiedLicense> {
     if raw.len() > LICENSE_MAX_FILE_BYTES || raw.bytes().any(|byte| byte.is_ascii_whitespace()) {
         return Err(license_error(LICENSE_SIGNATURE_INVALID, "许可证签名无效"));
@@ -279,6 +282,9 @@ fn interpret_payload(
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn canonical_asset_json(assets: &LicenseAssets) -> CertResult<Vec<u8>> {
     validate_assets(assets)?;
     serde_json::to_vec(assets).map_err(|error| {
@@ -291,6 +297,9 @@ pub fn asset_digest_hex(plaintext: &[u8]) -> String {
     hex::encode(Sha256::digest(plaintext))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_assets(assets: &LicenseAssets) -> CertResult<()> {
     if assets.key_password.trim().is_empty() {
         return Err(CertError::InvalidRequest(
@@ -312,6 +321,9 @@ pub fn validate_assets(assets: &LicenseAssets) -> CertResult<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn seal_for_installation(
     installation_public: &[u8; 32],
     aad: &str,
@@ -331,6 +343,9 @@ pub fn seal_for_installation(
     )
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn unseal_for_installation(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -383,6 +398,9 @@ pub fn key_password_aad(installation_id: Uuid, key_version: &str) -> String {
     format!("key-password|{installation_id}|{key_version}")
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn open_assets(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -412,6 +430,9 @@ pub fn open_assets(
     Ok(assets)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn seal_key_password(
     installation_public: &[u8; 32],
     installation_id: Uuid,
@@ -425,6 +446,9 @@ pub fn seal_key_password(
     )
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn open_key_password(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -442,6 +466,9 @@ pub fn open_key_password(
         .map_err(|_| license_error(LICENSE_ASSET_DIGEST_MISMATCH, "许可证资产摘要不一致"))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decode_key_material(value: &str, label: &str) -> CertResult<[u8; 32]> {
     let bytes = BASE64
         .decode(value.as_bytes())
@@ -452,6 +479,9 @@ pub fn decode_key_material(value: &str, label: &str) -> CertResult<[u8; 32]> {
     Ok(array)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     let raw = std::fs::read(path).map_err(|_| {
         license_error(
@@ -489,6 +519,9 @@ pub fn generate_installation_key() -> InstallationKeyFile {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn ensure_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     if path.exists() {
         return load_installation_key(path);
@@ -544,6 +577,9 @@ pub fn ensure_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     Ok(file)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn require_installation_key_path(path: Option<&str>) -> CertResult<&str> {
     path.map(str::trim)
         .filter(|value| !value.is_empty())

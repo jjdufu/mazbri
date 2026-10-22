@@ -198,6 +198,9 @@ impl ApiKeyValidator {
         self.validation_cache.insert(cache_key, entry);
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn validate(&self, api_key: &str) -> AuthResult<ApiKeyAuth> {
         let started_at = std::time::Instant::now();
         let parts: Vec<&str> = api_key.split('_').collect();
@@ -331,6 +334,9 @@ impl ApiKeyValidator {
         );
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_api_key(
         &self,
         tenant_id: Uuid,
@@ -366,6 +372,9 @@ impl ApiKeyValidator {
         Ok(format!("mazbri_{prefix}_{secret}"))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn revoke_api_key(&self, prefix: &str) -> AuthResult<()> {
         let mut tx = self.db.begin().await?;
         let result = sqlx::query(

@@ -32,6 +32,9 @@ pub struct FallbackRequest {
     pub body: Option<serde_json::Value>,
 }
 impl FallbackRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_payload_size(&self) -> Result<(), String> {
         if let Some(ref body) = self.body {
             let size = serde_json::to_vec(body).map_or(usize::MAX, |v| v.len());
@@ -71,6 +74,9 @@ pub struct StoreRequest {
     pub tags: Vec<String>,
 }
 impl StoreRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_payload_size(&self) -> Result<(), String> {
         let size = serde_json::to_vec(&self.data).map_or(usize::MAX, |v| v.len());
         if size > MAX_CACHE_PAYLOAD_SIZE {

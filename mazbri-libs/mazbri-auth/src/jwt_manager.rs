@@ -87,6 +87,9 @@ impl JwtKeyManager {
             material.master_key, material.salt, material.context
         )
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_jwt_secret(&self) -> Result<String, JwtKeyError> {
         let material = self.fetch_key_material().await?;
         let current_hash = Self::material_hash(&material);

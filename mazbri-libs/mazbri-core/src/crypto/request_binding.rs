@@ -60,6 +60,9 @@ pub fn path_and_query_from_parts(path: &str, query: Option<&str>) -> String {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_binding_nonce(nonce: &str) -> Result<(), RequestBindingError> {
     if nonce.len() < NONCE_MIN_LEN || nonce.len() > NONCE_MAX_LEN {
         return Err(RequestBindingError::InvalidNonce);
@@ -73,12 +76,18 @@ pub fn validate_binding_nonce(nonce: &str) -> Result<(), RequestBindingError> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_unix_timestamp(value: &str) -> Result<i64, RequestBindingError> {
     value
         .parse::<i64>()
         .map_err(|_| RequestBindingError::InvalidTimestamp)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_unix_timestamp(
     timestamp: i64,
     now_unix: i64,
@@ -94,6 +103,9 @@ pub fn validate_unix_timestamp(
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_signature_input(value: &str) -> Result<(), RequestBindingError> {
     if value == SIGNATURE_INPUT_HMAC_V1 {
         Ok(())
@@ -102,6 +114,9 @@ pub fn validate_signature_input(value: &str) -> Result<(), RequestBindingError> 
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sign_hmac_sha256_base64(key: &[u8], payload: &str) -> Result<String, RequestBindingError> {
     let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
         .map_err(|_| RequestBindingError::InvalidKeyLength)?;
@@ -109,6 +124,9 @@ pub fn sign_hmac_sha256_base64(key: &[u8], payload: &str) -> Result<String, Requ
     Ok(STANDARD.encode(mac.finalize().into_bytes()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_hmac_sha256_base64(
     key: &[u8],
     payload: &str,

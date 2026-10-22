@@ -34,6 +34,9 @@ impl TenantKeyEnvelope {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), CryptoEnvelopeError> {
         if self.format != TENANT_KEY_ENVELOPE_FORMAT {
             return Err(CryptoEnvelopeError::UnsupportedFormat);
@@ -55,11 +58,17 @@ pub enum CryptoEnvelopeError {
     InvalidJson(#[from] serde_json::Error),
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn serialize_envelope(envelope: &TenantKeyEnvelope) -> Result<String, CryptoEnvelopeError> {
     envelope.validate()?;
     Ok(serde_json::to_string(envelope)?)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_envelope(value: &str) -> Result<TenantKeyEnvelope, CryptoEnvelopeError> {
     let envelope: TenantKeyEnvelope = serde_json::from_str(value)?;
     envelope.validate()?;

@@ -8,6 +8,9 @@ impl ProductService {
         self.tenant_product_detail_cache.invalidate_all();
         info!("Product cache cleared");
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_tenant_products(&self, tenant_id: Uuid) -> Result<Vec<TenantProductDetail>> {
         let rows = sqlx::query(
             r"
@@ -42,6 +45,9 @@ impl ProductService {
         let products = rows.iter().map(tenant_product_detail_from_row).collect();
         Ok(products)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_tenant_product_config(
         &self,
         tenant_id: Uuid,
@@ -93,6 +99,9 @@ impl ProductService {
             .insert(cache_key, detail.clone());
         Ok(detail)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_product_tenants(&self, product_id: &str) -> Result<Vec<ProductTenantAccess>> {
         let product_uuid: Option<Uuid> =
             sqlx::query_scalar("SELECT id FROM products WHERE product_id = $1")

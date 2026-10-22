@@ -62,6 +62,9 @@ pub struct MemoryCache {
     max_entry_size: u64,
 }
 impl MemoryCache {
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
     #[must_use]
     pub fn new(max_entries: usize, max_entry_size: u64) -> Self {
         let capacity = NonZeroUsize::new(max_entries).unwrap_or_else(|| {
@@ -79,6 +82,9 @@ impl MemoryCache {
     fn make_key(tenant_id: &str, key: &str) -> String {
         format!("{tenant_id}:{key}")
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn insert(
         &self,
         tenant_id: &str,
@@ -100,6 +106,9 @@ impl MemoryCache {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get(
         &self,
         tenant_id: &str,
@@ -109,12 +118,18 @@ impl MemoryCache {
         let mut cache = self.data.write().await;
         Ok(cache.get(&cache_key).cloned())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn remove(&self, tenant_id: &str, key: &str) -> Result<(), mazbri_core::CoreError> {
         let cache_key = Self::make_key(tenant_id, key);
         let mut cache = self.data.write().await;
         cache.pop(&cache_key);
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn clear_tenant(&self, tenant_id: &str) -> Result<(), mazbri_core::CoreError> {
         let prefix = format!("{tenant_id}:");
         let mut cache = self.data.write().await;

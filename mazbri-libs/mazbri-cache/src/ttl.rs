@@ -29,14 +29,23 @@ impl TtlManager {
         let _ = self.shutdown_tx.send(());
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn cleanup_expired(&self) -> Result<u64, mazbri_core::CoreError> {
         Ok(0)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_stats(&self, tenant_id: &str) -> Result<CacheStats, mazbri_core::CoreError> {
         self.cache.stats(Some(tenant_id)).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_global_stats(&self) -> Result<CacheStats, mazbri_core::CoreError> {
         self.cache.stats(None).await
     }

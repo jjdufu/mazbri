@@ -34,6 +34,9 @@ impl IpWhitelist {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check(&self, tenant_id: Uuid, ip_addr: IpAddr) -> AuthResult<WhitelistResult> {
         let whitelist = self.load_whitelist(tenant_id).await?;
         if whitelist.is_empty() {
@@ -69,6 +72,9 @@ impl IpWhitelist {
         self.cache.insert(tenant_id, whitelist.clone()).await;
         Ok(whitelist)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn add_ip(
         &self,
         tenant_id: Uuid,
@@ -95,6 +101,9 @@ impl IpWhitelist {
         self.invalidate_cache(tenant_id).await;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn remove_ip(&self, tenant_id: Uuid, ip_addr: IpAddr, cidr: u8) -> AuthResult<()> {
         let result = sqlx::query(
             r"

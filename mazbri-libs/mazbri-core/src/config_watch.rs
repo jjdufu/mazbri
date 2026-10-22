@@ -56,6 +56,9 @@ impl Default for ConfigWatchConfig {
 }
 
 impl ConfigWatchConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<()> {
         if self.interval_secs == 0 {
             anyhow::bail!("config_watch.interval_secs 必须 ≥ 1");
@@ -82,6 +85,9 @@ pub fn should_reload(last_seen: Option<i64>, current: i64) -> bool {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn fetch_config_version(pool: &PgPool, key: &str) -> Result<Option<i64>, sqlx::Error> {
     let row = sqlx::query("SELECT version FROM route_sync_metadata WHERE key = $1")
         .bind(key)

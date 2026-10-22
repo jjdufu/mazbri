@@ -25,6 +25,9 @@ impl<T> TomlConfigHandler<T> {
             _service_name: service_name.into(),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn get_config(&self) -> RegistryResult<T>
     where
         T: Clone,

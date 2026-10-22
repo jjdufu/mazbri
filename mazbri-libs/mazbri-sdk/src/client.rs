@@ -77,6 +77,9 @@ pub struct MazbriClient {
 }
 
 impl MazbriClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(config: ClientConfig) -> Result<Self, Error> {
         let client = Client::builder().build()?;
         let mut sdk = Self {
@@ -92,6 +95,9 @@ impl MazbriClient {
         Ok(sdk)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_token(&self) -> Result<TokenResponse, Error> {
         let url = self.token_url();
         let response = self
@@ -118,6 +124,9 @@ impl MazbriClient {
         Ok(token)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call<Req, Resp>(&self, request: &Req) -> Result<Resp, Error>
     where
         Req: Serialize,
@@ -126,6 +135,9 @@ impl MazbriClient {
         Ok(self.call_with_meta(request).await?.response)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_envelope<Req>(
         &self,
         request: &Req,
@@ -136,6 +148,9 @@ impl MazbriClient {
         self.send_request(request, None).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_envelope_with_headers<Req>(
         &self,
         request: &Req,
@@ -147,6 +162,9 @@ impl MazbriClient {
         self.send_request(request, Some(headers)).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_with_meta<Req, Resp>(&self, request: &Req) -> Result<CallResult<Resp>, Error>
     where
         Req: Serialize,

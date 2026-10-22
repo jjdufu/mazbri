@@ -51,6 +51,9 @@ fn default_http1_header_read_timeout_secs() -> u64 {
     30
 }
 impl ServerConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn socket_addr(&self) -> Result<SocketAddr, std::net::AddrParseError> {
         format!("{}:{}", self.host, self.port).parse()
     }

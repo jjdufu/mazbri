@@ -148,18 +148,27 @@ impl BillingService {
         self.account_id_cache.insert(tenant_id, account_id);
         account_id
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn record_usage(&self, record: UsageRecord) -> BillingResult<i64> {
         self.repo
             .record_usage(&record)
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn enqueue_usage_outbox(&self, event: UsageOutboxEvent) -> BillingResult<()> {
         self.repo
             .insert_usage_outbox(&event)
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check_balance(
         &self,
         tenant_id: Uuid,
@@ -196,6 +205,9 @@ impl BillingService {
             .inc();
         Ok(sufficient)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_balance(&self, tenant_id: Uuid, amount: Decimal) -> BillingResult<Decimal> {
         let recorder = DeductionRecorder::new(amount);
         match self
@@ -226,6 +238,9 @@ impl BillingService {
             }
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_balance(&self, tenant_id: Uuid) -> BillingResult<AccountBalance> {
         let row = match self
             .repo
@@ -254,6 +269,9 @@ impl BillingService {
         };
         Ok(row.into())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn add_funds(
         &self,
         tenant_id: Uuid,
@@ -278,6 +296,9 @@ impl BillingService {
             Err(error) => Err(error),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bill(
         &self,
         tenant_id: Uuid,
@@ -288,6 +309,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_bills(
         &self,
         tenant_id: Uuid,
@@ -301,6 +325,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_usage_summary(
         &self,
         tenant_id: Uuid,
@@ -312,6 +339,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bill_items(
         &self,
         tenant_id: Uuid,
@@ -327,6 +357,9 @@ impl BillingService {
                 other => BillingError::from(other),
             })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_usage_breakdown(
         &self,
         tenant_id: Uuid,
@@ -338,6 +371,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn generate_bill(
         &self,
         tenant_id: Uuid,
@@ -349,6 +385,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_and_record(
         &self,
         tenant_id: Uuid,
@@ -379,6 +418,10 @@ impl BillingService {
         }
     }
     /// Batch charge for a single tenant (one balance UPDATE for the sum).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_and_record_batch(
         &self,
         tenant_id: Uuid,
@@ -422,6 +465,9 @@ impl BillingService {
             }
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_adjustment(
         &self,
         tenant_id: Uuid,
@@ -434,6 +480,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_calculator(
         &self,
         tenant_id: Uuid,

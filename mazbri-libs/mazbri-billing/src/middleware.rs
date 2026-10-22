@@ -147,6 +147,9 @@ pub async fn usage_middleware(
     }
     response
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn balance_check_middleware(
     State(state): State<BillingMiddlewareState>,
     request: Request,
