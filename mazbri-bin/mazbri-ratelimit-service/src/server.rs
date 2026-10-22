@@ -27,7 +27,7 @@ pub async fn serve_with_config(
         |svc: RateLimitTarpcService, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
     )
     .await
-    .map_err(|e| anyhow::anyhow!("tarpc server error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;
     info!("流控服务关闭完成");
     Ok(())
 }

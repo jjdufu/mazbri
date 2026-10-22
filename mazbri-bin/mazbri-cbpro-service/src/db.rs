@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -68,9 +69,10 @@ pub struct RedisFallbackRepository {
 
 impl RedisFallbackRepository {
     pub fn new(redis: RedisClient) -> Self {
-        let node_id = hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
+        let node_id = hostname::get().map_or_else(
+            |_| "unknown".to_string(),
+            |h| h.to_string_lossy().to_string(),
+        );
         Self { redis, node_id }
     }
 
@@ -99,7 +101,7 @@ impl RedisFallbackRepository {
     }
 
     pub async fn set(&self, params: SetCacheParams<'_>) -> Result<()> {
-        let ttl_secs = params.ttl_secs.max(1) as usize;
+        let ttl_secs = usize::saturating_from(params.ttl_secs.max(1));
         let expires_at = Utc::now() + chrono::Duration::seconds(params.ttl_secs.max(1));
         let entry = RedisFallbackEntry {
             data: params.data.clone(),

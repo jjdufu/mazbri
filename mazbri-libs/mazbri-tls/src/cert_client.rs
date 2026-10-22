@@ -20,8 +20,6 @@ pub struct CertificateResponse {
     pub key_pem: String,
     pub ca_cert_pem: String,
     #[serde(default)]
-    pub dns_names: Vec<String>,
-    #[serde(default)]
     pub status: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]

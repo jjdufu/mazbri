@@ -14,8 +14,9 @@ impl RuntimeDecisionState {
     #[must_use]
     pub fn new(request: &RuntimeDecisionRequest, config: &RuntimeConfig, now_unix_ms: i64) -> Self {
         let mut decision = build_default_runtime_decision(request, config);
-        let baseline_ema_ms = decision.latency_baseline_ms as f64;
-        decision.valid_until_unix_ms = now_unix_ms + config.decision_ttl().as_millis() as i64;
+        let baseline_ema_ms = mazbri_core::num::u64_to_f64(decision.latency_baseline_ms);
+        decision.valid_until_unix_ms =
+            now_unix_ms + mazbri_core::num::millis_i64(config.decision_ttl());
         decision.generated_at_unix_ms = now_unix_ms;
         Self {
             decision,
@@ -39,9 +40,13 @@ impl RuntimeDecisionState {
             self.last_hit_at_unix_ms = now_unix_ms;
             self.hit_count_since_validate = self.hit_count_since_validate.saturating_add(1);
             if let Some(service_total_ms) = service_total_ms {
-                let service_total_ms = service_total_ms.max(1) as f64;
+                let service_total_ms = mazbri_core::num::u64_to_f64(service_total_ms.max(1));
                 self.baseline_ema_ms = (self.baseline_ema_ms * 0.8) + (service_total_ms * 0.2);
-                let baseline = self.baseline_ema_ms.round().clamp(1.0, u64::MAX as f64) as u64;
+                let baseline = mazbri_core::num::f64_to_u64(
+                    self.baseline_ema_ms
+                        .round()
+                        .clamp(1.0, mazbri_core::num::u64_to_f64(u64::MAX)),
+                );
                 self.decision.latency_baseline_ms = baseline;
                 self.decision.latency_p50_ms = baseline;
                 self.decision.latency_p75_ms = baseline.saturating_add(baseline / 10);
@@ -58,7 +63,8 @@ impl RuntimeDecisionState {
                 .max((service_total_ms / 1_000).max(1));
         }
         self.decision.validate_due = validate_due;
-        self.decision.valid_until_unix_ms = now_unix_ms + config.decision_ttl().as_millis() as i64;
+        self.decision.valid_until_unix_ms =
+            now_unix_ms + mazbri_core::num::millis_i64(config.decision_ttl());
         self.decision.generated_at_unix_ms = now_unix_ms;
         validate_due
     }
@@ -94,6 +100,7 @@ pub fn is_hit_event(event_type: &str) -> bool {
     )
 }
 
+#[must_use]
 pub fn build_default_runtime_decision(
     request: &RuntimeDecisionRequest,
     config: &RuntimeConfig,
@@ -119,7 +126,7 @@ pub fn build_default_runtime_decision(
         validate_due: false,
         hot_level: 0,
         last_validation_status: None,
-        valid_until_unix_ms: now + config.decision_ttl().as_millis() as i64,
+        valid_until_unix_ms: now + mazbri_core::num::millis_i64(config.decision_ttl()),
         generated_at_unix_ms: now,
     }
 }

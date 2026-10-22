@@ -38,3 +38,6 @@ tracing = {version = "0.1"}
 anyhow = {version = "1.0"}
 
 uuid = {version = "1.21", features = ["v4", "serde"]}
+
+[lints]
+workspace = true

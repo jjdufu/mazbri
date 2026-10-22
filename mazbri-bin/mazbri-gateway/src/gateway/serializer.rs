@@ -45,18 +45,10 @@ pub(crate) fn serialize_proxy_response(
     body: &ProxyBody,
     error: Option<&str>,
     content_type: Option<&str>,
-    _body_bytes_len: u64,
 ) -> Result<SerializedProxyResponse, ProxyError> {
     let success = (200..300).contains(&status) && error.is_none();
     let (body_kind, body_encoding, bytes) = if success {
-        serialize_success_response(
-            codec,
-            status,
-            request_id,
-            body,
-            content_type,
-            _body_bytes_len,
-        )?
+        serialize_success_response(codec, status, request_id, body, content_type)?
     } else {
         serialize_error_response(codec, status, request_id, error.unwrap_or("上游请求失败"))?
     };
@@ -71,7 +63,7 @@ pub(crate) fn serialize_proxy_response(
                 .unwrap_or("application/octet-stream")
                 .to_string(),
         ),
-        _ => content_type.map(|value| value.to_string()),
+        _ => content_type.map(std::string::ToString::to_string),
     };
     let response_bytes = bytes.len() as u64;
     Ok(SerializedProxyResponse {
@@ -117,7 +109,6 @@ fn serialize_success_response(
     request_id: &str,
     body: &ProxyBody,
     content_type: Option<&str>,
-    _body_bytes_len: u64,
 ) -> Result<(&'static str, &'static str, Vec<u8>), ProxyError> {
     let (body_kind, body_encoding, bytes) = match codec {
         PayloadCodec::Json => {

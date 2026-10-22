@@ -71,6 +71,9 @@ pub struct AuthorizationImportForm {
     pub activate_now: Option<bool>,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn parse_authorization_import_form(
     mut multipart: Multipart,
 ) -> Result<(Vec<u8>, AuthorizationImportForm), CertError> {
@@ -129,20 +132,21 @@ fn log_config_entry_error(
     match severity {
         "warn" => {
             warn!(
-                service = "mazbri-cert-service", event = "config_handler_failed",
+                service = mazbri_core::ServiceName::Cert.as_str(), event = "config_handler_failed",
                 severity = severity, error_code = error_code, request_id = request_id,
                 trace_id = trace_id, action = action, error = % err, "{} failed", action
-            )
+            );
         }
         _ => {
             error!(
-                service = "mazbri-cert-service", event = "config_handler_failed",
+                service = mazbri_core::ServiceName::Cert.as_str(), event = "config_handler_failed",
                 severity = severity, error_code = error_code, request_id = request_id,
                 trace_id = trace_id, action = action, error = % err, "{} failed", action
-            )
+            );
         }
     }
 }
+#[must_use]
 pub fn controlled_config_error_response(
     error_code: &str,
     success: Option<bool>,
@@ -169,17 +173,17 @@ pub fn logged_config_error_response(
     match severity {
         "warn" => {
             warn!(
-                service = "mazbri-cert-service", event = "config_handler_failed",
+                service = mazbri_core::ServiceName::Cert.as_str(), event = "config_handler_failed",
                 severity = severity, error_code = error_code, request_id = request_id,
                 trace_id = trace_id, action = action, error = % err, "{} failed", action
-            )
+            );
         }
         _ => {
             error!(
-                service = "mazbri-cert-service", event = "config_handler_failed",
+                service = mazbri_core::ServiceName::Cert.as_str(), event = "config_handler_failed",
                 severity = severity, error_code = error_code, request_id = request_id,
                 trace_id = trace_id, action = action, error = % err, "{} failed", action
-            )
+            );
         }
     }
     controlled_config_error_response(error_code, success, message)

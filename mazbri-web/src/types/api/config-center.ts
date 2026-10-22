@@ -86,4 +86,4 @@ export interface NodeListResponse {
   nodes: NodeInfo[];
   total: number;
 }
-export interface NodeListQuery {}
+export type NodeListQuery = Record<string, never>;

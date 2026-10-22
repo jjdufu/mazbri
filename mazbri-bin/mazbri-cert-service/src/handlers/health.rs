@@ -13,14 +13,14 @@ pub struct HealthState {
 }
 pub async fn health_check() -> Html<&'static str> {
     Html(
-        r#"<!DOCTYPE html>
+        r"<!DOCTYPE html>
 <html>
 <head><title>Mazbri Certificate Service</title></head>
 <body>
 <h1>Mazbri Certificate Service - OK</h1>
 <p>mTLS Certificate Management for Internal Services / 内网服务 mTLS 证书管理</p>
 </body>
-</html>"#,
+</html>",
     )
 }
 pub async fn readiness(State(state): State<HealthState>) -> Response {
@@ -48,15 +48,14 @@ pub async fn metrics(State(state): State<HealthState>) -> Response {
         .await
         .unwrap_or(0);
     let metrics = format!(
-        r#"# HELP certdaemon_certificates_active Number of active (non-revoked, non-expired) certificates
+        r"# HELP certdaemon_certificates_active Number of active (non-revoked, non-expired) certificates
 # TYPE certdaemon_certificates_active gauge
-certdaemon_certificates_active {}
+certdaemon_certificates_active {active_count}
 
 # HELP certdaemon_certificates_expiring Number of certificates expiring within 30 days
 # TYPE certdaemon_certificates_expiring gauge
-certdaemon_certificates_expiring {}
-"#,
-        active_count, expiring_count
+certdaemon_certificates_expiring {expiring_count}
+"
     );
     (
         StatusCode::OK,

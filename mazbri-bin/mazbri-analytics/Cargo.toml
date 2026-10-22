@@ -42,3 +42,5 @@ reqwest = {version = "0.13.2", default-features = false, features = ["json", "gz
 urlencoding = {version = "2.1"}
 clickhouse = { version = "0.12", features = ["lz4"] }
 
+[lints]
+workspace = true

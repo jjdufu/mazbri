@@ -1,11 +1,12 @@
+use crate::error::Result;
+use crate::greptimedb::{
+    AuditAnalyticsParams, AuditQueryParams, RequestLogAggregationParams, RequestLogQueryParams,
+};
 use crate::greptimedb::{
     sanitize_like_value, validate_identifier_param, validate_like_param, validate_numeric_param,
     validate_uuid_param,
 };
-use crate::greptimedb::{
-    AuditAnalyticsParams, AuditQueryParams, RequestLogAggregationParams, RequestLogQueryParams,
-};
-use crate::error::Result;
+use mazbri_core::num::SaturatingFrom;
 
 pub fn build_audit_log_conditions(params: &AuditQueryParams) -> Result<Vec<String>> {
     let mut conditions: Vec<String> = Vec::new();
@@ -22,15 +23,15 @@ pub fn build_audit_log_conditions(params: &AuditQueryParams) -> Result<Vec<Strin
         ));
     }
     if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {}", admin_id));
+        conditions.push(format!("admin_id = {admin_id}"));
     }
     if let Some(ref action) = params.action {
         let validated = validate_identifier_param(action)?;
-        conditions.push(format!("action = '{}'", validated));
+        conditions.push(format!("action = '{validated}'"));
     }
     if let Some(ref resource_type) = params.resource_type {
         let validated = validate_identifier_param(resource_type)?;
-        conditions.push(format!("resource_type = '{}'", validated));
+        conditions.push(format!("resource_type = '{validated}'"));
     }
     Ok(conditions)
 }
@@ -46,10 +47,7 @@ pub fn build_where_clause(conditions: &[String]) -> String {
 
 #[must_use]
 pub fn build_audit_logs_count_sql(where_clause: &str) -> String {
-    format!(
-        "SELECT toUInt64(count()) AS total FROM audit_logs{}",
-        where_clause
-    )
+    format!("SELECT toUInt64(count()) AS total FROM audit_logs{where_clause}")
 }
 
 pub fn build_audit_logs_data_sql(
@@ -57,14 +55,13 @@ pub fn build_audit_logs_data_sql(
     limit: usize,
     offset: usize,
 ) -> Result<String> {
-    let limit = validate_numeric_param(limit as i64, 10000)?;
-    let offset = validate_numeric_param(offset as i64, 1_000_000)?;
+    let limit = validate_numeric_param(i64::saturating_from(limit), 10000)?;
+    let offset = validate_numeric_param(i64::saturating_from(offset), 1_000_000)?;
     Ok(format!(
         "SELECT timestamp, admin_id, admin_username, action, resource_type, \
          resource_id, description, ip_address, user_agent, request_id, \
          old_value, new_value \
-         FROM audit_logs{} ORDER BY timestamp DESC LIMIT {} OFFSET {}",
-        where_clause, limit, offset
+         FROM audit_logs{where_clause} ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
     ))
 }
 
@@ -91,7 +88,7 @@ pub fn build_audit_analytics_conditions(params: &AuditAnalyticsParams) -> Vec<St
         ));
     }
     if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {}", admin_id));
+        conditions.push(format!("admin_id = {admin_id}"));
     }
     conditions
 }
@@ -100,14 +97,13 @@ pub fn build_audit_analytics_conditions(params: &AuditAnalyticsParams) -> Vec<St
 pub fn build_audit_analytics_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
         "SELECT \
-            {} AS period, \
+            {time_expr} AS period, \
             action, \
             resource_type, \
             toUInt64(count()) AS count \
-        FROM audit_logs{} \
+        FROM audit_logs{where_clause} \
         GROUP BY period, action, resource_type \
-        ORDER BY period DESC, count DESC",
-        time_expr, where_clause
+        ORDER BY period DESC, count DESC"
     )
 }
 
@@ -116,11 +112,11 @@ pub fn build_request_log_service_conditions(params: &RequestLogQueryParams) -> R
     let mut service_preds: Vec<String> = Vec::new();
     if let Some(ref service) = params.service {
         let validated = validate_like_param(service)?;
-        service_preds.push(format!("`service` = '{}'", validated));
+        service_preds.push(format!("`service` = '{validated}'"));
     }
     if let Some(ref service_like) = params.service_like {
         let validated = validate_like_param(service_like)?;
-        service_preds.push(format!("`service` LIKE '{}'", validated));
+        service_preds.push(format!("`service` LIKE '{validated}'"));
     }
     if let Some(ref service_in) = params.service_in {
         let mut exact: Vec<String> = Vec::new();
@@ -130,7 +126,7 @@ pub fn build_request_log_service_conditions(params: &RequestLogQueryParams) -> R
                 continue;
             }
             let validated = validate_like_param(trimmed)?;
-            exact.push(format!("'{}'", validated));
+            exact.push(format!("'{validated}'"));
         }
         if !exact.is_empty() {
             service_preds.push(format!("`service` IN ({})", exact.join(", ")));
@@ -160,7 +156,7 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
     }
     if let Some(ref q) = params.q {
         let keyword = sanitize_like_value(q)?;
-        let pattern = format!("%{}%", keyword);
+        let pattern = format!("%{keyword}%");
         conditions.push(format!(
             "(request_id LIKE '{pattern}' OR trace_id LIKE '{pattern}' OR tenant_id LIKE '{pattern}' OR tenant_code LIKE '{pattern}' OR product_id LIKE '{pattern}' OR supplier_code LIKE '{pattern}' OR channel_code LIKE '{pattern}' OR path LIKE '{pattern}' OR client_ip LIKE '{pattern}' OR upstream_host LIKE '{pattern}' OR error_code LIKE '{pattern}')"
         ));
@@ -173,73 +169,73 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
     }
     if let Some(ref request_id) = params.request_id {
         let validated = validate_like_param(request_id)?;
-        conditions.push(format!("request_id = '{}'", validated));
+        conditions.push(format!("request_id = '{validated}'"));
     }
     if let Some(ref path_filter) = params.path {
         let validated = validate_like_param(path_filter)?;
-        conditions.push(format!("path LIKE '{}'", validated));
+        conditions.push(format!("path LIKE '{validated}'"));
     }
     if let Some(ref tenant_id) = params.tenant_id {
         let validated = validate_uuid_param(tenant_id)?;
-        conditions.push(format!("tenant_id = '{}'", validated));
+        conditions.push(format!("tenant_id = '{validated}'"));
     }
     if let Some(ref tenant_code) = params.tenant_code {
         let validated = validate_like_param(tenant_code)?;
-        conditions.push(format!("tenant_code = '{}'", validated));
+        conditions.push(format!("tenant_code = '{validated}'"));
     }
     if let Some(ref product_id) = params.product_id {
         let validated = validate_like_param(product_id)?;
-        conditions.push(format!("product_id = '{}'", validated));
+        conditions.push(format!("product_id = '{validated}'"));
     }
     if let Some(ref event_target) = params.event_target {
         let validated = validate_like_param(event_target)?;
-        conditions.push(format!("event_target = '{}'", validated));
+        conditions.push(format!("event_target = '{validated}'"));
     }
     if let Some(ref supplier_id) = params.supplier_id {
         let validated = validate_uuid_param(supplier_id)?;
-        conditions.push(format!("supplier_id = '{}'", validated));
+        conditions.push(format!("supplier_id = '{validated}'"));
     }
     if let Some(ref channel_id) = params.channel_id {
         let validated = validate_uuid_param(channel_id)?;
-        conditions.push(format!("channel_id = '{}'", validated));
+        conditions.push(format!("channel_id = '{validated}'"));
     }
     if let Some(ref supplier_code) = params.supplier_code {
         let validated = validate_like_param(supplier_code)?;
-        conditions.push(format!("supplier_code = '{}'", validated));
+        conditions.push(format!("supplier_code = '{validated}'"));
     }
     if let Some(ref channel_code) = params.channel_code {
         let validated = validate_like_param(channel_code)?;
-        conditions.push(format!("channel_code = '{}'", validated));
+        conditions.push(format!("channel_code = '{validated}'"));
     }
     if let Some(ref route_template) = params.route_template {
         let validated = validate_like_param(route_template)?;
-        conditions.push(format!("route_template LIKE '{}'", validated));
+        conditions.push(format!("route_template LIKE '{validated}'"));
     }
     if let Some(ref client_ip) = params.client_ip {
         let validated = validate_like_param(client_ip)?;
-        conditions.push(format!("client_ip = '{}'", validated));
+        conditions.push(format!("client_ip = '{validated}'"));
     }
     if let Some(ref upstream_host) = params.upstream_host {
         let validated = validate_like_param(upstream_host)?;
-        conditions.push(format!("upstream_host = '{}'", validated));
+        conditions.push(format!("upstream_host = '{validated}'"));
     }
     if let Some(upstream_status_code) = params.upstream_status_code {
-        conditions.push(format!("upstream_status_code = {}", upstream_status_code));
+        conditions.push(format!("upstream_status_code = {upstream_status_code}"));
     }
     if let Some(ref error_code) = params.error_code {
         let validated = validate_like_param(error_code)?;
-        conditions.push(format!("error_code = '{}'", validated));
+        conditions.push(format!("error_code = '{validated}'"));
     }
     if let Some(ref error_stage) = params.error_stage {
         let validated = validate_like_param(error_stage)?;
-        conditions.push(format!("error_stage = '{}'", validated));
+        conditions.push(format!("error_stage = '{validated}'"));
     }
     if let Some(ref response_flags) = params.response_flags {
         let validated = validate_like_param(response_flags)?;
-        conditions.push(format!("response_flags = '{}'", validated));
+        conditions.push(format!("response_flags = '{validated}'"));
     }
     if let Some(status_code) = params.status_code {
-        conditions.push(format!("status_code = {}", status_code));
+        conditions.push(format!("status_code = {status_code}"));
     }
     Ok(conditions)
 }
@@ -256,7 +252,7 @@ const REQUEST_LOG_SELECT_COLS: &str = "timestamp, `service`, env, host, instance
 
 #[must_use]
 pub fn build_request_logs_count_sql(where_clause: &str) -> String {
-    format!("SELECT toUInt64(count()) AS total FROM request_logs{}", where_clause)
+    format!("SELECT toUInt64(count()) AS total FROM request_logs{where_clause}")
 }
 
 pub fn build_request_logs_data_sql(
@@ -264,12 +260,11 @@ pub fn build_request_logs_data_sql(
     limit: usize,
     offset: usize,
 ) -> Result<String> {
-    let limit = validate_numeric_param(limit as i64, 20_000)?;
-    let offset = validate_numeric_param(offset as i64, 1_000_000)?;
+    let limit = validate_numeric_param(i64::saturating_from(limit), 20_000)?;
+    let offset = validate_numeric_param(i64::saturating_from(offset), 1_000_000)?;
     Ok(format!(
         "SELECT {REQUEST_LOG_SELECT_COLS} \
-         FROM request_logs{} ORDER BY timestamp DESC LIMIT {} OFFSET {}",
-        where_clause, limit, offset
+         FROM request_logs{where_clause} ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
     ))
 }
 
@@ -279,7 +274,7 @@ pub fn build_request_logs_latest_universe_count_sql(
     outer_where: &str,
     universe_limit: usize,
 ) -> Result<String> {
-    let universe_limit = validate_numeric_param(universe_limit as i64, 20_000)?;
+    let universe_limit = validate_numeric_param(i64::saturating_from(universe_limit), 20_000)?;
     Ok(format!(
         "SELECT toUInt64(count()) AS total FROM (\
             SELECT {REQUEST_LOG_SELECT_COLS} \
@@ -296,9 +291,9 @@ pub fn build_request_logs_latest_universe_data_sql(
     limit: usize,
     offset: usize,
 ) -> Result<String> {
-    let universe_limit = validate_numeric_param(universe_limit as i64, 20_000)?;
-    let limit = validate_numeric_param(limit as i64, 20_000)?;
-    let offset = validate_numeric_param(offset as i64, 1_000_000)?;
+    let universe_limit = validate_numeric_param(i64::saturating_from(universe_limit), 20_000)?;
+    let limit = validate_numeric_param(i64::saturating_from(limit), 20_000)?;
+    let offset = validate_numeric_param(i64::saturating_from(offset), 1_000_000)?;
     Ok(format!(
         "SELECT {REQUEST_LOG_SELECT_COLS} FROM (\
             SELECT {REQUEST_LOG_SELECT_COLS} \
@@ -321,11 +316,11 @@ pub fn build_aggregation_conditions(params: &RequestLogAggregationParams) -> Res
     ));
     if let Some(ref tenant_id) = params.tenant_id {
         let validated = validate_uuid_param(tenant_id)?;
-        conditions.push(format!("tenant_id = '{}'", validated));
+        conditions.push(format!("tenant_id = '{validated}'"));
     }
     if let Some(ref service) = params.service {
         let validated = validate_like_param(service)?;
-        conditions.push(format!("`service` = '{}'", validated));
+        conditions.push(format!("`service` = '{validated}'"));
     }
     Ok(conditions)
 }
@@ -339,8 +334,7 @@ pub fn build_aggregation_summary_sql(where_clause: &str) -> String {
         ifNotFinite(AVG(dependency_wait_ms), 0) AS avg_dependency_wait_ms, \
         ifNotFinite(AVG(internal_ms), 0) AS avg_internal_ms, \
         ifNotFinite(AVG(post_response_ms), 0) AS avg_post_response_ms \
-        FROM request_logs{}",
-        where_clause
+        FROM request_logs{where_clause}"
     )
 }
 
@@ -348,9 +342,8 @@ pub fn build_aggregation_summary_sql(where_clause: &str) -> String {
 pub fn build_aggregation_by_route_sql(where_clause: &str) -> String {
     format!(
         "SELECT route_template AS key, toUInt64(count()) AS cnt \
-        FROM request_logs{} \
-        GROUP BY route_template ORDER BY cnt DESC LIMIT 50",
-        where_clause
+        FROM request_logs{where_clause} \
+        GROUP BY route_template ORDER BY cnt DESC LIMIT 50"
     )
 }
 
@@ -358,9 +351,8 @@ pub fn build_aggregation_by_route_sql(where_clause: &str) -> String {
 pub fn build_aggregation_by_status_sql(where_clause: &str) -> String {
     format!(
         "SELECT toString(status_code) AS key, toUInt64(count()) AS cnt \
-        FROM request_logs{} \
-        GROUP BY status_code",
-        where_clause
+        FROM request_logs{where_clause} \
+        GROUP BY status_code"
     )
 }
 
@@ -385,10 +377,9 @@ pub fn get_stats_time_bucket_expression(group_by: &str) -> String {
 #[must_use]
 pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
-        "SELECT toDateTime({}) AS time, toUInt64(count()) AS count \
-        FROM request_logs{} \
-        GROUP BY time ORDER BY time",
-        time_expr, where_clause
+        "SELECT toDateTime({time_expr}) AS time, toUInt64(count()) AS count \
+        FROM request_logs{where_clause} \
+        GROUP BY time ORDER BY time"
     )
 }
 
@@ -415,8 +406,7 @@ pub fn build_request_log_stats_summary_sql(where_clause: &str) -> String {
             ifNull(SUM(sum_dependency_wait_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_dependency_wait_ms, \
             ifNull(SUM(sum_internal_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_internal_ms, \
             ifNull(SUM(sum_post_response_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_post_response_ms \
-         FROM request_log_stats{}",
-        where_clause
+         FROM request_log_stats{where_clause}"
     )
 }
 
@@ -424,9 +414,8 @@ pub fn build_request_log_stats_summary_sql(where_clause: &str) -> String {
 pub fn build_request_log_stats_by_status_sql(where_clause: &str) -> String {
     format!(
         "SELECT toString(status_code) AS key, toUInt64(ifNull(SUM(total_count), 0)) AS cnt \
-        FROM request_log_stats{} \
-        GROUP BY status_code",
-        where_clause
+        FROM request_log_stats{where_clause} \
+        GROUP BY status_code"
     )
 }
 
@@ -434,9 +423,8 @@ pub fn build_request_log_stats_by_status_sql(where_clause: &str) -> String {
 pub fn build_request_log_route_stats_sql(where_clause: &str) -> String {
     format!(
         "SELECT route_template AS key, toUInt64(ifNull(SUM(total_count), 0)) AS cnt \
-        FROM request_log_stats{} \
-        GROUP BY route_template ORDER BY cnt DESC LIMIT 50",
-        where_clause
+        FROM request_log_stats{where_clause} \
+        GROUP BY route_template ORDER BY cnt DESC LIMIT 50"
     )
 }
 
@@ -455,7 +443,7 @@ pub fn build_audit_stats_aggregation_conditions(params: &AuditAnalyticsParams) -
         ));
     }
     if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {}", admin_id));
+        conditions.push(format!("admin_id = {admin_id}"));
     }
     conditions
 }
@@ -464,19 +452,18 @@ pub fn build_audit_stats_aggregation_conditions(params: &AuditAnalyticsParams) -
 pub fn build_audit_log_stats_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
         "SELECT \
-            {} AS period, \
+            {time_expr} AS period, \
             action, \
             resource_type, \
             toUInt64(ifNull(SUM(total_count), 0)) AS count \
-        FROM audit_log_stats{} \
+        FROM audit_log_stats{where_clause} \
         GROUP BY period, action, resource_type \
-        ORDER BY period DESC, count DESC",
-        time_expr, where_clause
+        ORDER BY period DESC, count DESC"
     )
 }
 
 /// Period expression for audit stats analytics — must return String to match
-/// RowBinary field `period: String` (same shape as raw audit analytics).
+/// `RowBinary` field `period: String` (same shape as raw audit analytics).
 #[must_use]
 pub fn get_stats_time_expression(group_by: &str) -> &'static str {
     match group_by {

@@ -1,6 +1,4 @@
-use super::models::{
-    AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary, PresetDnsName,
-};
+use super::models::{AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary};
 use crate::error::{CertError, CertResult};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Deserialize;
@@ -19,19 +17,24 @@ pub struct CertListFilter {
 }
 fn compute_cert_fingerprint(pem: &str) -> Result<Vec<u8>, String> {
     use x509_parser::pem::parse_x509_pem;
-    let (_, pem_obj) = parse_x509_pem(pem.as_bytes()).map_err(|e| format!("invalid PEM: {}", e))?;
+    let (_, pem_obj) = parse_x509_pem(pem.as_bytes()).map_err(|e| format!("invalid PEM: {e}"))?;
     Ok(Sha256::digest(&pem_obj.contents).to_vec())
 }
 pub struct CertificateRepository {
     db: Arc<PgPool>,
 }
 impl CertificateRepository {
+    #[must_use]
     pub fn new(db: Arc<PgPool>) -> Self {
         Self { db }
     }
+    #[must_use]
     pub fn get_pool(&self) -> &PgPool {
         &self.db
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_certificate(
         &self,
         subject: &str,
@@ -42,16 +45,16 @@ impl CertificateRepository {
         created_by_ip: Option<std::net::IpAddr>,
     ) -> CertResult<CertificateRecord> {
         let fingerprint = compute_cert_fingerprint(cert_pem)
-            .map_err(|e| CertError::VerificationFailed(e.to_string()))?;
+            .map_err(|e| CertError::VerificationFailed(e.clone()))?;
         let record = sqlx::query_as::<
             _,
             CertificateRecord,
         >(
-                r#"
+                r"
             INSERT INTO certificates (subject, cert_pem, key_pem, expires_at, dns_names, created_by_ip, fingerprint)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
-            "#,
+            ",
             )
             .bind(subject)
             .bind(cert_pem)
@@ -64,6 +67,9 @@ impl CertificateRepository {
             .await?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_by_id(&self, id: Uuid) -> CertResult<CertificateRecord> {
         let record =
             sqlx::query_as::<_, CertificateRecord>("SELECT * FROM certificates WHERE id = $1")
@@ -73,6 +79,9 @@ impl CertificateRepository {
                 .ok_or_else(|| CertError::NotFound(id.to_string()))?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_by_subject(&self, subject: &str) -> CertResult<Option<CertificateRecord>> {
         let record = sqlx::query_as::<
             _,
@@ -85,6 +94,9 @@ impl CertificateRepository {
             .await?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn subject_exists(&self, subject: &str) -> CertResult<bool> {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM certificates WHERE subject = $1 AND revoked = false)",
@@ -94,6 +106,9 @@ impl CertificateRepository {
         .await?;
         Ok(exists)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_certificate(
         &self,
         id: Uuid,
@@ -103,13 +118,13 @@ impl CertificateRepository {
         dns_names: &[String],
     ) -> CertResult<CertificateRecord> {
         let record = sqlx::query_as::<_, CertificateRecord>(
-            r#"
+            r"
             UPDATE certificates
             SET cert_pem = $2, key_pem = $3, expires_at = $4, dns_names = $5,
                 renewal_count = renewal_count + 1, updated_at = NOW()
             WHERE id = $1 AND revoked = false
             RETURNING *
-            "#,
+            ",
         )
         .bind(id)
         .bind(cert_pem)
@@ -121,18 +136,21 @@ impl CertificateRepository {
         .ok_or_else(|| CertError::NotFound(id.to_string()))?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn revoke_certificate(&self, id: Uuid) -> CertResult<CertificateRecord> {
         let existing = self.get_by_id(id).await?;
         if existing.revoked {
             return Err(CertError::AlreadyRevoked(id.to_string()));
         }
         let record = sqlx::query_as::<_, CertificateRecord>(
-            r#"
+            r"
             UPDATE certificates
             SET revoked = true, revoked_at = NOW(), updated_at = NOW()
             WHERE id = $1 AND revoked = false
             RETURNING *
-            "#,
+            ",
         )
         .bind(id)
         .fetch_optional(&*self.db)
@@ -140,6 +158,9 @@ impl CertificateRepository {
         .ok_or_else(|| CertError::NotFound(id.to_string()))?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_certificates(
         &self,
         include_revoked: bool,
@@ -163,6 +184,9 @@ impl CertificateRepository {
             .await?;
         Ok(records)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn find_by_fingerprint(
         &self,
         fingerprint: &[u8],
@@ -178,6 +202,9 @@ impl CertificateRepository {
             .await?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_audit_log(
         &self,
         action: &str,
@@ -188,10 +215,10 @@ impl CertificateRepository {
         error_message: Option<&str>,
     ) -> CertResult<()> {
         sqlx::query(
-                r#"
+                r"
             INSERT INTO audit_logs (action, actor_ip, target_subject, target_cert_id, result, error_message)
             VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
+            ",
             )
             .bind(action)
             .bind(actor_ip)
@@ -203,6 +230,9 @@ impl CertificateRepository {
             .await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_active_ca(&self) -> CertResult<Option<CaStorageRecord>> {
         let record = sqlx::query_as::<_, CaStorageRecord>(
             "SELECT * FROM ca_storage WHERE is_active = true ORDER BY created_at DESC LIMIT 1",
@@ -211,12 +241,15 @@ impl CertificateRepository {
         .await?;
         Ok(record)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn store_ca(&self, ca_cert_pem: &str, ca_key_encrypted: &str) -> CertResult<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO ca_storage (ca_cert_pem, ca_key_encrypted, is_active)
             VALUES ($1, $2, true)
-            "#,
+            ",
         )
         .bind(ca_cert_pem)
         .bind(ca_key_encrypted)
@@ -224,6 +257,9 @@ impl CertificateRepository {
         .await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn count_certificates(
         &self,
         include_revoked: bool,
@@ -236,6 +272,9 @@ impl CertificateRepository {
         let count: i64 = builder.build_query_scalar().fetch_one(&*self.db).await?;
         Ok(count)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn count_active_certificates(&self) -> CertResult<i64> {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM certificates WHERE revoked = false AND expires_at > NOW()",
@@ -244,187 +283,41 @@ impl CertificateRepository {
         .await?;
         Ok(count)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn count_expiring_certificates(&self, threshold_days: i64) -> CertResult<i64> {
         let count: i64 = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COUNT(*) FROM certificates
             WHERE revoked = false
             AND expires_at > NOW()
             AND expires_at < NOW() + INTERVAL '1 day' * $1
-            "#,
+            ",
         )
         .bind(threshold_days)
         .fetch_one(&*self.db)
         .await?;
         Ok(count)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn min_active_expiry_days(&self) -> CertResult<Option<i64>> {
         let days: Option<i64> = sqlx::query_scalar(
-            r#"
+            r"
             SELECT FLOOR(EXTRACT(EPOCH FROM (MIN(expires_at) - NOW())) / 86400)::BIGINT
             FROM certificates
             WHERE revoked = false AND expires_at > NOW()
-            "#,
+            ",
         )
         .fetch_one(&*self.db)
         .await?;
         Ok(days)
     }
-    pub async fn get_preset_by_service_name(
-        &self,
-        service_name: &str,
-    ) -> CertResult<Option<PresetDnsName>> {
-        let preset = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            SELECT id, service_name, dns_names, description, created_at, updated_at
-            FROM services
-            WHERE service_name = $1
-              AND status IN ('active', 'deprecated')
-            "#,
-        )
-        .bind(service_name)
-        .fetch_optional(&*self.db)
-        .await?;
-        Ok(preset)
-    }
-    pub async fn get_preset_by_id(&self, id: Uuid) -> CertResult<Option<PresetDnsName>> {
-        let preset = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            SELECT id, service_name, dns_names, description, created_at, updated_at
-            FROM services
-            WHERE id = $1
-              AND status IN ('active', 'deprecated')
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&*self.db)
-        .await?;
-        Ok(preset)
-    }
-    pub async fn list_presets(&self, limit: i64, offset: i64) -> CertResult<Vec<PresetDnsName>> {
-        let presets = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            SELECT id, service_name, dns_names, description, created_at, updated_at
-            FROM services
-            WHERE status IN ('active', 'deprecated')
-            ORDER BY created_at DESC
-            LIMIT $1 OFFSET $2
-            "#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&*self.db)
-        .await?;
-        Ok(presets)
-    }
-    pub async fn create_preset(
-        &self,
-        service_name: &str,
-        dns_names: &[String],
-        description: Option<&str>,
-    ) -> CertResult<PresetDnsName> {
-        let preset = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            INSERT INTO services (
-                service_name,
-                display_name,
-                description,
-                dns_names,
-                source
-            )
-            VALUES ($1, $1, $3, $2, 'user')
-            RETURNING id, service_name, dns_names, description, created_at, updated_at
-            "#,
-        )
-        .bind(service_name)
-        .bind(dns_names)
-        .bind(description)
-        .fetch_one(&*self.db)
-        .await?;
-        Ok(preset)
-    }
-    pub async fn restore_retired_preset(
-        &self,
-        service_name: &str,
-        dns_names: &[String],
-        description: Option<&str>,
-    ) -> CertResult<Option<PresetDnsName>> {
-        let preset = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            UPDATE services
-            SET status = 'active',
-                display_name = $1,
-                dns_names = $2,
-                description = $3,
-                source = 'user',
-                updated_at = NOW()
-            WHERE service_name = $1
-              AND status = 'retired'
-            RETURNING id, service_name, dns_names, description, created_at, updated_at
-            "#,
-        )
-        .bind(service_name)
-        .bind(dns_names)
-        .bind(description)
-        .fetch_optional(&*self.db)
-        .await?;
-        Ok(preset)
-    }
-    pub async fn update_preset(
-        &self,
-        id: Uuid,
-        dns_names: &[String],
-        description: Option<&str>,
-    ) -> CertResult<PresetDnsName> {
-        let preset = sqlx::query_as::<_, PresetDnsName>(
-            r#"
-            UPDATE services
-            SET dns_names = $2, description = $3, updated_at = NOW()
-            WHERE id = $1
-              AND status IN ('active', 'deprecated')
-            RETURNING id, service_name, dns_names, description, created_at, updated_at
-            "#,
-        )
-        .bind(id)
-        .bind(dns_names)
-        .bind(description)
-        .fetch_optional(&*self.db)
-        .await?
-        .ok_or_else(|| CertError::NotFound(id.to_string()))?;
-        Ok(preset)
-    }
-    pub async fn delete_preset(&self, id: Uuid) -> CertResult<()> {
-        let result = sqlx::query(
-            r#"
-            UPDATE services
-            SET status = 'retired', updated_at = NOW()
-            WHERE id = $1
-              AND status IN ('active', 'deprecated')
-            "#,
-        )
-        .bind(id)
-        .execute(&*self.db)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(CertError::NotFound(id.to_string()));
-        }
-        Ok(())
-    }
-    pub async fn preset_exists(&self, service_name: &str) -> CertResult<bool> {
-        let exists: bool = sqlx::query_scalar(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM services
-                WHERE service_name = $1
-                  AND status IN ('active', 'deprecated')
-            )
-            "#,
-        )
-        .bind(service_name)
-        .fetch_one(&*self.db)
-        .await?;
-        Ok(exists)
-    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_auto_renewal_config(
         &self,
         certificate_id: Uuid,
@@ -437,6 +330,9 @@ impl CertificateRepository {
         .await?;
         Ok(config)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn upsert_auto_renewal_config(
         &self,
         certificate_id: Uuid,
@@ -445,7 +341,7 @@ impl CertificateRepository {
         validity_days: i32,
     ) -> CertResult<AutoRenewalConfig> {
         let config = sqlx::query_as::<_, AutoRenewalConfig>(
-            r#"
+            r"
             INSERT INTO auto_renewal_config (certificate_id, enabled, threshold_days, validity_days)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (certificate_id) DO UPDATE SET
@@ -454,7 +350,7 @@ impl CertificateRepository {
                 validity_days = EXCLUDED.validity_days,
                 updated_at = NOW()
             RETURNING *
-            "#,
+            ",
         )
         .bind(certificate_id)
         .bind(enabled)
@@ -468,8 +364,8 @@ impl CertificateRepository {
 
 const CERT_STATUS_SQL: &str = "CASE WHEN revoked THEN 'revoked' WHEN expires_at <= NOW() THEN 'expired' WHEN expires_at <= NOW() + INTERVAL '30 days' THEN 'expiring_soon' ELSE 'valid' END";
 
-fn push_cert_list_scope<'args>(
-    builder: &mut sqlx::QueryBuilder<'args, sqlx::Postgres>,
+fn push_cert_list_scope(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     include_revoked: bool,
     q: Option<&str>,
     filters: &[CertListFilter],
@@ -493,15 +389,15 @@ fn push_cert_list_scope<'args>(
     Ok(())
 }
 
-fn push_cert_filter<'args>(
-    builder: &mut sqlx::QueryBuilder<'args, sqlx::Postgres>,
+fn push_cert_filter(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     f: &CertListFilter,
 ) -> CertResult<()> {
     let op = f.op.as_str();
     match f.field.as_str() {
         "subject" => push_str_filter(builder, "subject", op, f.value.as_ref())?,
         "fingerprint" => {
-            push_str_filter(builder, "encode(fingerprint, 'hex')", op, f.value.as_ref())?
+            push_str_filter(builder, "encode(fingerprint, 'hex')", op, f.value.as_ref())?;
         }
         "dns_names" => {
             push_str_filter(
@@ -533,8 +429,8 @@ fn filter_string(value: Option<&serde_json::Value>) -> CertResult<String> {
     }
 }
 
-fn push_str_filter<'args>(
-    builder: &mut sqlx::QueryBuilder<'args, sqlx::Postgres>,
+fn push_str_filter(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     expr: &str,
     op: &str,
     value: Option<&serde_json::Value>,
@@ -646,8 +542,8 @@ fn parse_dt(raw: &str) -> Option<DateTime<Utc>> {
     None
 }
 
-fn push_datetime_filter<'args>(
-    builder: &mut sqlx::QueryBuilder<'args, sqlx::Postgres>,
+fn push_datetime_filter(
+    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     expr: &str,
     op: &str,
     value: Option<&serde_json::Value>,

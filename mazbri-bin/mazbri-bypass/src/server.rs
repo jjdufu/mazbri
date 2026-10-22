@@ -23,7 +23,7 @@ pub async fn serve(
     );
     Server::builder()
         .tls_config(tls_config)
-        .map_err(|e| anyhow::anyhow!("failed to configure tonic TLS: {}", e))?
+        .map_err(|e| anyhow::anyhow!("failed to configure tonic TLS: {e}"))?
         .concurrency_limit_per_connection(max_connections as usize)
         .add_service(BypassHttpProxyServiceServer::new(service))
         .serve(addr)

@@ -2,6 +2,7 @@ use super::engine::LocalRateLimitEngine;
 use super::usage_buffer::UsageDeltaRecord;
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::{
     AckControlCommandsRequest, GetControlCommandsRequest, GetPolicySnapshotsRequest,
     IngestUsageDeltasRequest,
@@ -17,7 +18,7 @@ pub async fn refresh_snapshots_once(
     ratelimit_endpoint: &ServiceEndpoint,
 ) -> Result<(), String> {
     let client = tarpc_pool
-        .get_ratelimit_client(ratelimit_endpoint.url(), ratelimit_endpoint.server_name())
+        .get_ratelimit_client(ratelimit_endpoint.url())
         .await
         .map_err(|error| error.to_string())?;
     let request = GetPolicySnapshotsRequest {
@@ -32,7 +33,7 @@ pub async fn refresh_snapshots_once(
     {
         Ok(res) => res,
         Err(error) => {
-            tarpc_pool.remove_client(ratelimit_endpoint.url()).await;
+            tarpc_pool.remove_client(ratelimit_endpoint.url());
             return Err(error.to_string());
         }
     };
@@ -44,10 +45,10 @@ pub async fn refresh_snapshots_once(
         .into_iter()
         .filter_map(super::snapshot::TenantPolicySnapshot::from_rpc)
         .collect::<Vec<_>>();
-    if !snapshots.is_empty() {
-        engine.replace_snapshots(snapshots);
-    } else {
+    if snapshots.is_empty() {
         engine.update_snapshot_age_metric();
+    } else {
+        engine.replace_snapshots(snapshots);
     }
     Ok(())
 }
@@ -99,7 +100,7 @@ pub fn spawn_usage_flusher(
                 .map(|UsageDeltaRecord { delta }| delta)
                 .collect::<Vec<_>>();
             let client = match tarpc_pool
-                .get_ratelimit_client(ratelimit_endpoint.url(), ratelimit_endpoint.server_name())
+                .get_ratelimit_client(ratelimit_endpoint.url())
                 .await
             {
                 Ok(client) => client,
@@ -122,7 +123,9 @@ pub fn spawn_usage_flusher(
                 .await
             {
                 Ok(response) if response.success => {
-                    engine.apply_usage_flush_result(response.ingested.max(0) as usize);
+                    LocalRateLimitEngine::apply_usage_flush_result(usize::saturating_from(
+                        response.ingested.max(0),
+                    ));
                 }
                 Ok(response) => {
                     super::metrics::LOCAL_RATELIMIT_USAGE_FLUSH_TOTAL
@@ -139,7 +142,7 @@ pub fn spawn_usage_flusher(
                         .with_label_values(&["error"])
                         .inc();
                     warn!(error = % error, "Gateway ratelimit usage flush failed");
-                    tarpc_pool.remove_client(ratelimit_endpoint.url()).await;
+                    tarpc_pool.remove_client(ratelimit_endpoint.url());
                     for delta in deltas {
                         engine.usage_buffer().record(delta);
                     }
@@ -159,7 +162,7 @@ pub fn spawn_command_poller(
         loop {
             interval.tick().await;
             let client = match tarpc_pool
-                .get_ratelimit_client(ratelimit_endpoint.url(), ratelimit_endpoint.server_name())
+                .get_ratelimit_client(ratelimit_endpoint.url())
                 .await
             {
                 Ok(client) => client,
@@ -233,7 +236,7 @@ pub fn spawn_command_poller(
                 }
                 Err(error) => {
                     warn!(error = % error, "Gateway ratelimit command poll failed");
-                    tarpc_pool.remove_client(ratelimit_endpoint.url()).await;
+                    tarpc_pool.remove_client(ratelimit_endpoint.url());
                 }
             }
         }

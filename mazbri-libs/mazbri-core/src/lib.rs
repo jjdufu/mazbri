@@ -3,8 +3,6 @@ mod circuit_breaker;
 mod client_ip;
 pub mod codec;
 pub mod config;
-/// Backward-compatible alias for the former `config_loader` module path.
-pub use config as config_loader;
 pub mod config_watch;
 pub mod crypto;
 mod db;
@@ -15,11 +13,13 @@ pub mod interaction;
 pub mod log_writer_metrics;
 pub mod logging;
 pub mod metrics;
+pub mod num;
 pub mod otlp;
 pub mod pool_types;
 pub mod redis;
 pub mod request_context;
 pub mod retry;
+pub mod service_identity;
 pub mod supplier_config;
 pub mod tarpc_middleware;
 mod telemetry;
@@ -45,9 +45,9 @@ pub use codec::{
     serialize_payload,
 };
 pub use config::{
-    BootstrapConfig, CertServiceCredential, DatabaseConfig, MetricsConfig, PgCredential,
-    PgCredentials, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
-    get_cert_service_token, is_dev_flag, load_credentials,
+    CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, PgCredential, PgCredentials,
+    PureBootstrap, RegistrationConfig, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
+    build_log_routes, get_cert_service_token, is_dev_flag, load_toml,
 };
 pub use crypto::supplier_secrets::{
     ENCRYPTED_PREFIX, decrypt_secret, encrypt_secret, is_encrypted_secret, supplier_secrets_key,
@@ -71,6 +71,10 @@ pub use metrics::{
 };
 pub use pool_types::{DEFAULT_REQUEST_TIMEOUT_MS, PooledClient};
 pub use retry::{DEFAULT_RETRY_CONFIG, IsTransient, RetryConfig, retry_rpc};
+pub use service_identity::{
+    CANONICAL_SERVICES, GLOBAL_CONFIG_NAME, ServiceIdentityError, ServiceName,
+    validate_config_target,
+};
 pub use sqlx;
 pub use supplier_config::{
     AuthFlowConfig, ConfigValidationError, MAX_SUPPLIER_CONFIG_BYTES, SupplierConfig,

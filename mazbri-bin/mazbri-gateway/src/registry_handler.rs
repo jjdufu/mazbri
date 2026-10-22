@@ -17,9 +17,9 @@ impl GatewayConfigHandler {
 #[async_trait]
 impl ConfigHandler for GatewayConfigHandler {
     fn parse_config(&self, content: &str) -> RegistryResult<Box<dyn Any + Send>> {
-        let _config: serde_json::Value = serde_json::from_str(content)
-            .map_err(|e| RegistryError::ConfigInvalid(format!("配置解析失败: {}", e)))?;
-        Ok(Box::new(_config))
+        let config: serde_json::Value = serde_json::from_str(content)
+            .map_err(|e| RegistryError::ConfigInvalid(format!("配置解析失败: {e}")))?;
+        Ok(Box::new(config))
     }
     async fn validate(&self, content: &str) -> RegistryResult<ValidatedConfig> {
         info!(

@@ -257,14 +257,26 @@ export function fetchReconciliationDiscrepancies(
 }
 
 
-export interface ReconciliationSettings {
-  scheduled_enabled: boolean;
-  scheduled_interval_secs: number;
-  scheduled_use_previous_day: boolean;
-  alert_on_flagged: boolean;
-  alert_webhook_url: string;
+export interface ReconciliationSchedule {
+  enabled: boolean;
+  interval_secs: number;
+  use_previous_day: boolean;
+}
+
+export interface ReconciliationAlert {
+  on_flagged: boolean;
+  webhook_url: string;
+}
+
+export interface ReconciliationSources {
   include_amount_recon: boolean;
   include_raw_log_source: boolean;
+}
+
+export interface ReconciliationSettings {
+  schedule: ReconciliationSchedule;
+  alert: ReconciliationAlert;
+  sources: ReconciliationSources;
   loss_ratio_threshold: number;
   default_scope_type: string;
   default_scope_id: string;

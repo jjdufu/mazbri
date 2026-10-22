@@ -84,69 +84,10 @@ impl ControlCommandStore {
 
             let state = next.entry(tenant_id).or_default();
             match command.command_type.as_str() {
-                "deny_until" => {
-                    if command.effective_at_unix < state.deny_effective_at {
-                        continue;
-                    }
-                    let payload =
-                        serde_json::from_str::<Value>(&command.command_payload).unwrap_or_default();
-                    let deny_until = payload
-                        .get("deny_until_unix")
-                        .and_then(Value::as_i64)
-                        .or_else(|| {
-                            payload
-                                .get("deny_for_secs")
-                                .and_then(Value::as_i64)
-                                .map(|secs| now_unix + secs.max(0))
-                        });
-                    state.deny_until_unix = deny_until.filter(|ts| *ts > now_unix);
-                    state.deny_effective_at = command.effective_at_unix;
-                }
-                "quota_correction" => {
-                    if command.effective_at_unix < state.quota_effective_at {
-                        continue;
-                    }
-                    let payload =
-                        serde_json::from_str::<Value>(&command.command_payload).unwrap_or_default();
-                    state.quota_multiplier = payload
-                        .get("quota_multiplier")
-                        .and_then(Value::as_f64)
-                        .or_else(|| payload.get("tenant_qps_multiplier").and_then(Value::as_f64))
-                        .unwrap_or(1.0)
-                        .clamp(0.1, 10.0);
-                    state.quota_effective_at = command.effective_at_unix;
-                }
+                "deny_until" => apply_deny_until(state, command, now_unix),
+                "quota_correction" => apply_quota_correction(state, command),
                 "refresh_policy" => {
-                    if command.effective_at_unix < state.refresh_effective_at {
-                        continue;
-                    }
-                    // New or equal-effective command still marks refresh once per newer effective_at.
-                    let prev = previous.get(&tenant_id);
-                    let already_consumed = prev
-                        .map(|p| {
-                            p.refresh_effective_at >= command.effective_at_unix
-                                && !p.refresh_requested
-                        })
-                        .unwrap_or(false);
-                    if already_consumed {
-                        state.refresh_effective_at = command.effective_at_unix;
-                        state.refresh_requested = false;
-                    } else {
-                        let prev_pending = prev
-                            .map(|p| {
-                                p.refresh_requested
-                                    && p.refresh_effective_at == command.effective_at_unix
-                            })
-                            .unwrap_or(false);
-                        let is_newer = prev
-                            .map(|p| command.effective_at_unix > p.refresh_effective_at)
-                            .unwrap_or(true);
-                        state.refresh_effective_at = command.effective_at_unix;
-                        state.refresh_requested = prev_pending || is_newer;
-                        if state.refresh_requested {
-                            any_refresh = true;
-                        }
-                    }
+                    any_refresh |= apply_refresh_policy(state, command, previous.get(&tenant_id));
                 }
                 _ => {}
             }
@@ -189,8 +130,7 @@ impl ControlCommandStore {
         self.inner
             .read()
             .get(&tenant_id)
-            .map(|state| state.quota_multiplier)
-            .unwrap_or(1.0)
+            .map_or(1.0, |state| state.quota_multiplier)
             .clamp(0.1, 10.0)
     }
 
@@ -209,4 +149,62 @@ impl ControlCommandStore {
         }
         any
     }
+}
+
+fn apply_deny_until(state: &mut TenantControlState, command: &ControlCommand, now_unix: i64) {
+    if command.effective_at_unix < state.deny_effective_at {
+        return;
+    }
+    let payload = serde_json::from_str::<Value>(&command.command_payload).unwrap_or_default();
+    let deny_until = payload
+        .get("deny_until_unix")
+        .and_then(Value::as_i64)
+        .or_else(|| {
+            payload
+                .get("deny_for_secs")
+                .and_then(Value::as_i64)
+                .map(|secs| now_unix + secs.max(0))
+        });
+    state.deny_until_unix = deny_until.filter(|ts| *ts > now_unix);
+    state.deny_effective_at = command.effective_at_unix;
+}
+
+fn apply_quota_correction(state: &mut TenantControlState, command: &ControlCommand) {
+    if command.effective_at_unix < state.quota_effective_at {
+        return;
+    }
+    let payload = serde_json::from_str::<Value>(&command.command_payload).unwrap_or_default();
+    state.quota_multiplier = payload
+        .get("quota_multiplier")
+        .and_then(Value::as_f64)
+        .or_else(|| payload.get("tenant_qps_multiplier").and_then(Value::as_f64))
+        .unwrap_or(1.0)
+        .clamp(0.1, 10.0);
+    state.quota_effective_at = command.effective_at_unix;
+}
+
+/// Returns `true` when a new (not yet consumed) refresh was requested.
+fn apply_refresh_policy(
+    state: &mut TenantControlState,
+    command: &ControlCommand,
+    prev: Option<&TenantControlState>,
+) -> bool {
+    if command.effective_at_unix < state.refresh_effective_at {
+        return false;
+    }
+    // New or equal-effective command still marks refresh once per newer effective_at.
+    let already_consumed = prev.is_some_and(|p| {
+        p.refresh_effective_at >= command.effective_at_unix && !p.refresh_requested
+    });
+    state.refresh_effective_at = command.effective_at_unix;
+    if already_consumed {
+        state.refresh_requested = false;
+        return false;
+    }
+    let prev_pending = prev.is_some_and(|p| {
+        p.refresh_requested && p.refresh_effective_at == command.effective_at_unix
+    });
+    let is_newer = prev.is_none_or(|p| command.effective_at_unix > p.refresh_effective_at);
+    state.refresh_requested = prev_pending || is_newer;
+    state.refresh_requested
 }

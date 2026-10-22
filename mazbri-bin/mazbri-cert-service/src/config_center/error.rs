@@ -63,16 +63,13 @@ impl ErrorResponse for ConfigError {
     fn details(&self) -> Option<serde_json::Value> {
         match self {
             Self::Core(e) => e.details(),
-            Self::NotFound { service_name } => {
+            Self::NotFound { service_name } | Self::AlreadyExists { service_name } => {
                 Some(serde_json::json!({ "service_name" : service_name }))
             }
             Self::TomlValidation { details } => Some(serde_json::json!(
                 { "message" : details.message, "line" : details.line, "column" :
                 details.column }
             )),
-            Self::AlreadyExists { service_name } => {
-                Some(serde_json::json!({ "service_name" : service_name }))
-            }
             Self::Validation(msg) => Some(serde_json::json!({ "message" : msg })),
             Self::Encryption(_) => Some(serde_json::json!({ "type" : "encryption_error" })),
         }

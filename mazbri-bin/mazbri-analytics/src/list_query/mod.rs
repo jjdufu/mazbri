@@ -24,6 +24,7 @@ pub enum FilterOp {
 }
 
 impl FilterOp {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Eq => "eq",
@@ -69,12 +70,14 @@ pub struct ListQueryError {
 }
 
 impl ListQueryError {
+    #[must_use]
     pub fn invalid_field(field: &str) -> Self {
         Self {
             code: "invalid_filter_field",
             message: format!("Unknown filter field: {field}"),
         }
     }
+    #[must_use]
     pub fn invalid_op(field: &str, op: &str) -> Self {
         Self {
             code: "invalid_filter_op",
@@ -87,6 +90,7 @@ impl ListQueryError {
             message: msg.into(),
         }
     }
+    #[must_use]
     pub fn too_many(max: usize) -> Self {
         Self {
             code: "too_many_filters",
@@ -107,7 +111,7 @@ pub struct FieldDef {
     pub ops: &'static [FilterOp],
     pub in_q: bool,
     pub numeric: bool,
-    /// ClickHouse DateTime64 column; values are datetime strings.
+    /// `ClickHouse` `DateTime64` column; values are datetime strings.
     pub temporal: bool,
 }
 
@@ -266,10 +270,12 @@ pub const CALL_MONITOR_FIELDS: &[FieldDef] = &[
     },
 ];
 
+#[must_use]
 pub fn find_field(name: &str) -> Option<&'static FieldDef> {
     CALL_MONITOR_FIELDS.iter().find(|f| f.field == name)
 }
 
+#[must_use]
 pub fn q_columns() -> Vec<&'static str> {
     CALL_MONITOR_FIELDS
         .iter()
@@ -278,13 +284,20 @@ pub fn q_columns() -> Vec<&'static str> {
         .collect()
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_filters_json(raw: Option<&str>) -> Result<Vec<ListFilter>, ListQueryError> {
     let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(Vec::new());
     };
-    serde_json::from_str(raw).map_err(|e| ListQueryError::parse(format!("Invalid filters JSON: {e}")))
+    serde_json::from_str(raw)
+        .map_err(|e| ListQueryError::parse(format!("Invalid filters JSON: {e}")))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
     if filters.len() > DEFAULT_MAX_FILTERS {
         return Err(ListQueryError::too_many(DEFAULT_MAX_FILTERS));
@@ -309,12 +322,11 @@ pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
 }
 
 /// True when any filter targets the temporal `timestamp` column.
+#[must_use]
 pub fn filters_have_timestamp(filters: &[ListFilter]) -> bool {
-    filters.iter().any(|f| {
-        find_field(&f.field)
-            .map(|d| d.temporal)
-            .unwrap_or(false)
-    })
+    filters
+        .iter()
+        .any(|f| find_field(&f.field).is_some_and(|d| d.temporal))
 }
 
 /// `collect_flat_numeric_filters` 的入参：各个扁平数值过滤条件。
@@ -333,8 +345,9 @@ pub struct FlatNumericFilters {
     pub upstream_service_time_ms_gte: Option<u64>,
 }
 
-/// Collect flat filter params from typed optional fields into ListFilter list.
-pub fn collect_flat_numeric_filters(params: FlatNumericFilters) -> Vec<ListFilter> {
+/// Collect flat filter params from typed optional fields into `ListFilter` list.
+#[must_use]
+pub fn collect_flat_numeric_filters(params: &FlatNumericFilters) -> Vec<ListFilter> {
     let FlatNumericFilters {
         duration_ms_gt,
         duration_ms_gte,
@@ -355,7 +368,7 @@ pub fn collect_flat_numeric_filters(params: FlatNumericFilters) -> Vec<ListFilte
             out.push(ListFilter {
                 field: field.to_string(),
                 op,
-                value: Some(FilterValue::Number(n as f64)),
+                value: Some(FilterValue::Number(mazbri_core::num::u64_to_f64(n))),
             });
         }
     };
@@ -368,32 +381,33 @@ pub fn collect_flat_numeric_filters(params: FlatNumericFilters) -> Vec<ListFilte
             });
         }
     };
-    push_u64(&mut out, "duration_ms", FilterOp::Gt, duration_ms_gt);
-    push_u64(&mut out, "duration_ms", FilterOp::Gte, duration_ms_gte);
-    push_u64(&mut out, "duration_ms", FilterOp::Lt, duration_ms_lt);
-    push_u64(&mut out, "duration_ms", FilterOp::Lte, duration_ms_lte);
-    push_u64(&mut out, "duration_ms", FilterOp::Eq, duration_ms_eq);
-    push_u16(&mut out, "status_code", FilterOp::Gt, status_code_gt);
-    push_u16(&mut out, "status_code", FilterOp::Gte, status_code_gte);
-    push_u16(&mut out, "status_code", FilterOp::Lt, status_code_lt);
-    push_u16(&mut out, "status_code", FilterOp::Lte, status_code_lte);
-    push_u16(&mut out, "status_code", FilterOp::Neq, status_code_neq);
+    push_u64(&mut out, "duration_ms", FilterOp::Gt, *duration_ms_gt);
+    push_u64(&mut out, "duration_ms", FilterOp::Gte, *duration_ms_gte);
+    push_u64(&mut out, "duration_ms", FilterOp::Lt, *duration_ms_lt);
+    push_u64(&mut out, "duration_ms", FilterOp::Lte, *duration_ms_lte);
+    push_u64(&mut out, "duration_ms", FilterOp::Eq, *duration_ms_eq);
+    push_u16(&mut out, "status_code", FilterOp::Gt, *status_code_gt);
+    push_u16(&mut out, "status_code", FilterOp::Gte, *status_code_gte);
+    push_u16(&mut out, "status_code", FilterOp::Lt, *status_code_lt);
+    push_u16(&mut out, "status_code", FilterOp::Lte, *status_code_lte);
+    push_u16(&mut out, "status_code", FilterOp::Neq, *status_code_neq);
     push_u64(
         &mut out,
         "upstream_service_time_ms",
         FilterOp::Gt,
-        upstream_service_time_ms_gt,
+        *upstream_service_time_ms_gt,
     );
     push_u64(
         &mut out,
         "upstream_service_time_ms",
         FilterOp::Gte,
-        upstream_service_time_ms_gte,
+        *upstream_service_time_ms_gte,
     );
     out
 }
 
-/// Escape LIKE special characters for ClickHouse string patterns.
+/// Escape LIKE special characters for `ClickHouse` string patterns.
+#[must_use]
 pub fn escape_like(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -402,6 +416,9 @@ pub fn escape_like(value: &str) -> String {
         .replace('\'', "\\'")
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn value_as_string(v: &FilterValue) -> Result<String, ListQueryError> {
     match v {
         FilterValue::String(s) => Ok(s.clone()),
@@ -411,9 +428,14 @@ pub fn value_as_string(v: &FilterValue) -> Result<String, ListQueryError> {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn value_as_u64(v: &FilterValue) -> Result<u64, ListQueryError> {
     match v {
-        FilterValue::Number(n) if *n >= 0.0 && n.is_finite() => Ok(*n as u64),
+        FilterValue::Number(n) if *n >= 0.0 && n.is_finite() => {
+            Ok(mazbri_core::num::f64_to_u64(*n))
+        }
         FilterValue::String(s) => s
             .parse::<u64>()
             .map_err(|_| ListQueryError::invalid_value("expected unsigned integer")),
@@ -422,8 +444,13 @@ pub fn value_as_u64(v: &FilterValue) -> Result<u64, ListQueryError> {
 }
 
 /// Compile a single filter into a CH condition fragment (values already sanitized).
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn compile_filter_condition(filter: &ListFilter) -> Result<String, ListQueryError> {
-    let def = find_field(&filter.field).ok_or_else(|| ListQueryError::invalid_field(&filter.field))?;
+    let def =
+        find_field(&filter.field).ok_or_else(|| ListQueryError::invalid_field(&filter.field))?;
     let col = def.field; // catalog field == CH column for call_monitor
 
     match filter.op {
@@ -557,9 +584,8 @@ fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
     if let Ok(n) = s.parse::<i64>() {
         // Heuristic: ms vs seconds.
         let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        let dt = chrono::DateTime::from_timestamp(secs, 0).ok_or_else(|| {
-            ListQueryError::invalid_value("invalid unix timestamp")
-        })?;
+        let dt = chrono::DateTime::from_timestamp(secs, 0)
+            .ok_or_else(|| ListQueryError::invalid_value("invalid unix timestamp"))?;
         return Ok(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
     }
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
@@ -586,7 +612,10 @@ fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
         }
     }
     // Already a CH-looking literal — pass through after length guard.
-    if s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || " -:.T+Z".contains(c)) {
+    if s.len() <= 40
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || " -:.T+Z".contains(c))
+    {
         return Ok(s.to_string());
     }
     Err(ListQueryError::invalid_value(format!(
@@ -612,7 +641,10 @@ fn between_datetime(value: &FilterValue) -> Result<(String, String), ListQueryEr
 
 fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) if v.len() == 2 => Ok((v[0] as u64, v[1] as u64)),
+        FilterValue::NumberArray(v) if v.len() == 2 => Ok((
+            mazbri_core::num::f64_to_u64(v[0]),
+            mazbri_core::num::f64_to_u64(v[1]),
+        )),
         FilterValue::StringArray(v) if v.len() == 2 => {
             let a = v[0]
                 .parse::<u64>()
@@ -628,7 +660,10 @@ fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
 
 fn number_list(value: &FilterValue) -> Result<Vec<String>, ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) => Ok(v.iter().map(|n| (*n as u64).to_string()).collect()),
+        FilterValue::NumberArray(v) => Ok(v
+            .iter()
+            .map(|n| mazbri_core::num::f64_to_u64(*n).to_string())
+            .collect()),
         FilterValue::StringArray(v) => {
             let mut out = Vec::new();
             for s in v {
@@ -639,7 +674,7 @@ fn number_list(value: &FilterValue) -> Result<Vec<String>, ListQueryError> {
             }
             Ok(out)
         }
-        FilterValue::Number(n) => Ok(vec![(*n as u64).to_string()]),
+        FilterValue::Number(n) => Ok(vec![mazbri_core::num::f64_to_u64(*n).to_string()]),
         _ => Err(ListQueryError::invalid_value("expected number list")),
     }
 }
@@ -664,9 +699,7 @@ mod tests {
         let filter = ListFilter {
             field: "timestamp".to_string(),
             op: FilterOp::Eq,
-            value: Some(FilterValue::String(
-                "2026-08-09 11:31:39.422".to_string(),
-            )),
+            value: Some(FilterValue::String("2026-08-09 11:31:39.422".to_string())),
         };
         let sql = compile_filter_condition(&filter).expect("compile");
         assert_eq!(

@@ -1,5 +1,9 @@
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{AttemptStatus, InteractionEvent};
 use sqlx::PgPool;
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn persist_interaction_event(
     pool: &PgPool,
     event: &InteractionEvent,
@@ -7,12 +11,12 @@ pub async fn persist_interaction_event(
     let mut tx = pool.begin().await?;
     let final_status = event.final_status.as_deref().unwrap_or("unknown");
     sqlx::query(
-        r#"
+        r"
         INSERT INTO interaction_events (
             id, request_id, tenant_id, product_id, start_time, final_status
         )
         VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
+        ",
     )
     .bind(event.id)
     .bind(&event.request_id)
@@ -25,7 +29,7 @@ pub async fn persist_interaction_event(
     for (index, attempt) in event.attempts.iter().enumerate() {
         let (status, error_message) = attempt_status_parts(attempt.status.as_ref());
         sqlx::query(
-            r#"
+            r"
             INSERT INTO interaction_event_attempts (
                 interaction_event_id,
                 channel_id,
@@ -42,7 +46,7 @@ pub async fn persist_interaction_event(
                 error_message
             )
             VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            "#,
+            ",
         )
         .bind(event.id)
         .bind(&attempt.channel_id)
@@ -52,7 +56,7 @@ pub async fn persist_interaction_event(
         .bind(attempt.channel_code.as_deref())
         .bind(attempt.channel_name.as_deref())
         .bind(attempt.endpoint_url.as_deref())
-        .bind((index + 1) as i32)
+        .bind(i32::saturating_from(index + 1))
         .bind(attempt.start_time)
         .bind(attempt.end_time)
         .bind(status)

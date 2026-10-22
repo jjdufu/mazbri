@@ -33,9 +33,8 @@ async fn verify_certificate_inner(
     if !cert_pem.contains("-----BEGIN CERTIFICATE-----") {
         return Ok(invalid_pem_response());
     }
-    let fingerprint = match compute_cert_fingerprint(cert_pem) {
-        Ok(fp) => fp,
-        Err(_) => return Ok(invalid_pem_response()),
+    let Ok(fingerprint) = compute_cert_fingerprint(cert_pem) else {
+        return Ok(invalid_pem_response());
     };
     let cert = state.repo.find_by_fingerprint(&fingerprint).await?;
     let response = match cert {
@@ -61,7 +60,7 @@ fn invalid_pem_response() -> Response {
 }
 fn compute_cert_fingerprint(pem: &str) -> Result<Vec<u8>, String> {
     use x509_parser::pem::parse_x509_pem;
-    let (_, pem_obj) = parse_x509_pem(pem.as_bytes()).map_err(|e| format!("invalid PEM: {}", e))?;
+    let (_, pem_obj) = parse_x509_pem(pem.as_bytes()).map_err(|e| format!("invalid PEM: {e}"))?;
     Ok(Sha256::digest(&pem_obj.contents).to_vec())
 }
 fn build_verification_response(cert: &crate::db::CertificateSummary) -> VerifyCertificateResponse {

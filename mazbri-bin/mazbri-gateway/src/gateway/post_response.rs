@@ -4,6 +4,7 @@ use crate::router::AppState;
 use axum::http::HeaderMap;
 use mazbri_billing::{BillingCalculator, BillingModel, RateConfig, UsageOutboxEvent};
 use mazbri_callback::repository;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
@@ -11,7 +12,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::state::*;
+use super::state::{GatewayRequest, ProxyState};
 
 pub(crate) struct CallbackPayloadContext<'a> {
     pub request_id: &'a str,
@@ -24,7 +25,7 @@ pub(crate) struct CallbackPayloadContext<'a> {
     pub content_type: Option<&'a str>,
 }
 
-impl<'a> CallbackPayloadContext<'a> {
+impl CallbackPayloadContext<'_> {
     pub fn build_payload(&self) -> serde_json::Value {
         let mut payload = serde_json::Map::new();
         payload.insert(
@@ -165,11 +166,11 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
         api_endpoint: ctx.req.path.clone(),
         http_method: ctx.req.method.clone(),
         response_status: ctx.status,
-        request_size: ctx.request_size as i64,
-        response_size: ctx.response_bytes as i64,
+        request_size: i64::saturating_from(ctx.request_size),
+        response_size: i64::saturating_from(ctx.response_bytes),
         billing_service_duration_ms: ctx.service_total_ms,
         billing_result: calc_result.clone(),
-        billing_code: Some(billing_code.0 as i16),
+        billing_code: Some(i16::saturating_from(billing_code.0)),
     };
     if let Err(error) = billing_state
         .billing_service
@@ -203,7 +204,7 @@ pub(crate) struct PostResponseTaskArgs {
     pub(crate) interaction_event_id: Uuid,
     pub(crate) service_total_ms: i32,
     pub(crate) upstream_route: Option<UpstreamRouteMetadata>,
-    /// When present, used as billing outbox dedupe key (fingerprint → deterministic event_id).
+    /// When present, used as billing outbox dedupe key (fingerprint → deterministic `event_id`).
     pub(crate) fingerprint: Option<String>,
 }
 pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTaskArgs) {
@@ -240,13 +241,13 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
                 fingerprint: args.fingerprint.as_deref(),
             },
         );
-        let (_, billing_record_ms) = tokio::join!(callback_task, billing_task);
+        let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
         info!(
             target : "gateway.postpath", service = "mazbri-gateway", stage_name =
             "post_response", request_id = % request_id, tenant_id = % args.tenant_id,
             tenant_code = "", product_id = % args.req.product_id, method = % args.req.method,
-            path = % args.req.path, stage_ms = started_at.elapsed().as_millis() as u64,
-            post_response_ms = started_at.elapsed().as_millis() as u64, billing_record_ms,
+            path = % args.req.path, stage_ms = mazbri_core::num::millis_u64(started_at.elapsed()),
+            post_response_ms = mazbri_core::num::millis_u64(started_at.elapsed()), billing_record_ms,
             upstream_route = ? args.upstream_route.as_ref().map(|route| (& route.supplier_code,
             & route.channel_code, & route.upstream_url)), message =
             "Gateway post-response work completed"
@@ -260,15 +261,14 @@ pub(crate) fn build_billing_calculator(
     let unit_price = product_detail
         .and_then(|detail| detail.unit_price.parse::<Decimal>().ok())
         .unwrap_or(default_rate.per_call_rate);
-    let billing_type = product_detail
-        .map(|detail| detail.billing_type.as_str())
-        .unwrap_or("call");
+    let billing_type = product_detail.map_or("call", |detail| detail.billing_type.as_str());
     BillingCalculator::new(
         RateConfig {
             per_call_rate: unit_price,
-            tier_name: product_detail
-                .map(|detail| detail.product_code.clone())
-                .unwrap_or_else(|| "default".to_string()),
+            tier_name: product_detail.map_or_else(
+                || "default".to_string(),
+                |detail| detail.product_code.clone(),
+            ),
         },
         BillingModel::from_billing_type(billing_type),
     )

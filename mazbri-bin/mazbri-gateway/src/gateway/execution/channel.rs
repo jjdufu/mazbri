@@ -1,4 +1,11 @@
-use super::*;
+use super::{
+    API_PROXY_REQUESTS_TOTAL, BYPASS_CONTRACT_ID, CBPRO_FALLBACK_TTL_SECS, CandidateChannel,
+    CircuitResult, Deserialize, Duration, FallbackSnapshot, GatewayRequest, InteractionEvent,
+    MazbriClaims, ObservationRequestParts, ProxyError, ProxyState, StoreRequest, SwitchCondition,
+    TraceContext, UpstreamResponse, build_fallback_cache_key, build_observation_request,
+    classify_proxy_result, enqueue_cbpro_observation, execute_http_upstream_request,
+    get_or_create_breaker, info, persist_interaction_event, proxy_body_to_json_value, warn,
+};
 
 pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
     if let Err(error) = persist_interaction_event(&state.db, event).await {
@@ -59,20 +66,12 @@ pub(super) async fn execute_channel_attempt(
         }),
     )
     .await;
-    match timeout_result {
-        Ok(result) => match result {
+    if let Ok(result) = timeout_result {
+        match result {
             CircuitResult::Success(response) => {
                 let status = response.status.to_string();
                 let result_label = classify_proxy_result(response.status, None);
-                API_PROXY_REQUESTS_TOTAL
-                    .with_label_values(&[
-                        product_id.as_str(),
-                        method.as_str(),
-                        status.as_str(),
-                        mode.as_str(),
-                        result_label,
-                    ])
-                    .inc();
+                record_proxy_metric(&product_id, &method, &status, &mode, result_label);
                 Ok(response)
             }
             CircuitResult::Rejected {
@@ -83,19 +82,8 @@ pub(super) async fn execute_channel_attempt(
                     "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
                     request_id, product_id, reason, retry_after
                 );
-                API_PROXY_REQUESTS_TOTAL
-                    .with_label_values(&[
-                        product_id.as_str(),
-                        method.as_str(),
-                        "503",
-                        mode.as_str(),
-                        "circuit_open",
-                    ])
-                    .inc();
-                Err(ProxyError::BadGateway(format!(
-                    "服务暂时不可用: {}",
-                    reason
-                )))
+                record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
+                Err(ProxyError::BadGateway(format!("服务暂时不可用: {reason}")))
             }
             CircuitResult::Failure { error } => {
                 warn!(
@@ -107,46 +95,34 @@ pub(super) async fn execute_channel_attempt(
                 } else {
                     "upstream_error"
                 };
-                API_PROXY_REQUESTS_TOTAL
-                    .with_label_values(&[
-                        product_id.as_str(),
-                        method.as_str(),
-                        "502",
-                        mode.as_str(),
-                        result_label,
-                    ])
-                    .inc();
+                record_proxy_metric(&product_id, &method, "502", &mode, result_label);
                 Err(ProxyError::BadGateway(error))
             }
-        },
-        Err(_) => {
-            warn!(
-                "[{}] upstream HTTP/2 request timed out for product [{}]",
-                request_id, product_id
-            );
-            API_PROXY_REQUESTS_TOTAL
-                .with_label_values(&[
-                    product_id.as_str(),
-                    method.as_str(),
-                    "504",
-                    mode.as_str(),
-                    "timeout",
-                ])
-                .inc();
-            Err(ProxyError::GatewayTimeout(format!(
-                "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
-            )))
         }
+    } else {
+        warn!(
+            "[{}] upstream HTTP/2 request timed out for product [{}]",
+            request_id, product_id
+        );
+        record_proxy_metric(&product_id, &method, "504", &mode, "timeout");
+        Err(ProxyError::GatewayTimeout(format!(
+            "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
+        )))
     }
 }
 
-/// 从 channel.supplier_config 解析 mode / contract 提示（失败时 unknown，正式路径在 execute 内再校验）。
+fn record_proxy_metric(product_id: &str, method: &str, status: &str, mode: &str, result: &str) {
+    API_PROXY_REQUESTS_TOTAL
+        .with_label_values(&[product_id, method, status, mode, result])
+        .inc();
+}
+
+/// 从 `channel.supplier_config` 解析 mode / contract 提示（失败时 unknown，正式路径在 execute 内再校验）。
 pub(super) fn resolve_mode_and_contract_hint(channel: &CandidateChannel) -> (String, String) {
     match mazbri_core::SupplierConfig::deserialize(&channel.supplier_config) {
         Ok(cfg) if cfg.is_transparent() => {
             let adapter = mazbri_core::parse_channel_config_egress(&channel.channel_config)
-                .map(|s| s.adapter)
-                .unwrap_or_else(|_| "transparent".to_string());
+                .map_or_else(|_| "transparent".to_string(), |s| s.adapter);
             (adapter, BYPASS_CONTRACT_ID.to_string())
         }
         Ok(cfg) if cfg.is_microservice() => {

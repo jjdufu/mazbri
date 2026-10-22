@@ -7,6 +7,8 @@ use super::execution::{ProxyBody, UpstreamResponse};
 use super::validation::GatewayRequest;
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{CacheGetRequest, CacheSetRequest};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -37,7 +39,7 @@ impl CachedUpstreamResponse {
         if response.status < 200 || response.status >= 300 || !response.error.is_empty() {
             return None;
         }
-        if response.body_bytes_len as usize > MAX_CACHEABLE_BODY_BYTES {
+        if usize::saturating_from(response.body_bytes_len) > MAX_CACHEABLE_BODY_BYTES {
             return None;
         }
         let body = match &response.body {
@@ -57,7 +59,6 @@ impl CachedUpstreamResponse {
                 if bytes.len() > MAX_CACHEABLE_BODY_BYTES {
                     return None;
                 }
-                use base64::{Engine as _, engine::general_purpose::STANDARD};
                 CachedBody::Binary(STANDARD.encode(bytes))
             }
         };
@@ -73,23 +74,20 @@ impl CachedUpstreamResponse {
         let (body, body_bytes_len) = match self.body {
             CachedBody::Empty => (ProxyBody::Empty, 0),
             CachedBody::Json(v) => {
-                let len = serde_json::to_vec(&v).map(|b| b.len() as u64).unwrap_or(0);
+                let len = serde_json::to_vec(&v).map_or(0, |b| b.len() as u64);
                 (ProxyBody::JsonValue(v), len)
             }
             CachedBody::Text(s) => {
                 let len = s.len() as u64;
                 (ProxyBody::Text(s), len)
             }
-            CachedBody::Binary(encoded) => {
-                use base64::{Engine as _, engine::general_purpose::STANDARD};
-                match STANDARD.decode(encoded) {
-                    Ok(bytes) => {
-                        let len = bytes.len() as u64;
-                        (ProxyBody::Binary(bytes), len)
-                    }
-                    Err(_) => (ProxyBody::Empty, 0),
+            CachedBody::Binary(encoded) => match STANDARD.decode(encoded) {
+                Ok(bytes) => {
+                    let len = bytes.len() as u64;
+                    (ProxyBody::Binary(bytes), len)
                 }
-            }
+                Err(_) => (ProxyBody::Empty, 0),
+            },
         };
         UpstreamResponse {
             status: self.status,
@@ -134,10 +132,7 @@ pub(crate) async fn try_get_cached_response(
     tenant_id: &str,
     cache_key: &str,
 ) -> Option<CachedUpstreamResponse> {
-    let client = match pool
-        .get_cache_client(endpoint.url(), endpoint.server_name())
-        .await
-    {
+    let client = match pool.get_cache_client(endpoint.url()).await {
         Ok(c) => c,
         Err(e) => {
             debug!(error = %e, "Proxy response cache get: client unavailable (fail-open)");
@@ -194,10 +189,7 @@ pub(crate) async fn try_put_cached_response(
             return;
         }
     };
-    let client = match pool
-        .get_cache_client(endpoint.url(), endpoint.server_name())
-        .await
-    {
+    let client = match pool.get_cache_client(endpoint.url()).await {
         Ok(c) => c,
         Err(e) => {
             debug!(error = %e, "Proxy response cache set: client unavailable (fail-open)");
@@ -219,7 +211,11 @@ pub(crate) async fn try_put_cached_response(
         .await
     {
         Ok(r) if r.error.is_some() => {
-            let msg = r.error.as_ref().map(|e| e.message()).unwrap_or_default();
+            let msg = r
+                .error
+                .as_ref()
+                .map(mazbri_rpc::RpcError::message)
+                .unwrap_or_default();
             debug!(error = %msg, path = %path, "Proxy response cache set: service error (fail-open)");
         }
         Ok(_) => {

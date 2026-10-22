@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 const METRICS_DATABASE: &str = "mazbri_metrics";
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceMetricTarget {
+    /// 规范服务名（与指标 `service` 标签一致）
     pub key: String,
+    /// 中文显示名
     pub name: String,
-    pub port: u16,
-    pub endpoint: String,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricCatalogItem {
@@ -68,6 +68,9 @@ struct PrometheusResult {
     values: Option<Vec<(serde_json::Value, serde_json::Value)>>,
 }
 impl GreptimeDBClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_metrics_overview(&self) -> Result<MetricOverview> {
         self.with_query_timeout(
                 "metrics_overview",
@@ -130,6 +133,9 @@ impl GreptimeDBClient {
             )
             .await
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_metric_series(&self, params: &MetricQueryParams) -> Result<MetricSeries> {
         self.with_query_timeout("metrics_timeseries", async {
             let metric = metric_catalog()
@@ -138,7 +144,8 @@ impl GreptimeDBClient {
                 .ok_or_else(|| {
                     AnalyticsError::Config(format!("Unsupported metric: {}", params.metric))
                 })?;
-            let query = build_metric_query(metric.key, params.service.as_deref(), &self.service_targets)?;
+            let query =
+                build_metric_query(metric.key, params.service.as_deref(), &self.service_targets)?;
             let mut points = self
                 .prometheus_range_values(
                     &query,
@@ -161,9 +168,11 @@ impl GreptimeDBClient {
         })
         .await
     }
+    #[must_use]
     pub fn metric_services(&self) -> Vec<ServiceMetricTarget> {
         self.service_targets.clone()
     }
+    #[must_use]
     pub fn metric_catalog(&self) -> Vec<MetricCatalogItem> {
         metric_catalog()
     }
@@ -249,8 +258,14 @@ fn ensure_prometheus_success(envelope: &PrometheusEnvelope) -> Result<()> {
 fn parse_prometheus_timestamp(value: &serde_json::Value) -> Option<i64> {
     value
         .as_i64()
-        .or_else(|| value.as_f64().map(|v| v as i64))
-        .or_else(|| value.as_str()?.parse::<f64>().ok().map(|v| v as i64))
+        .or_else(|| value.as_f64().map(mazbri_core::num::f64_to_i64))
+        .or_else(|| {
+            value
+                .as_str()?
+                .parse::<f64>()
+                .ok()
+                .map(mazbri_core::num::f64_to_i64)
+        })
 }
 fn parse_prometheus_number(value: &serde_json::Value) -> Option<f64> {
     value
@@ -310,45 +325,50 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
         },
     ]
 }
+#[must_use]
 pub fn default_service_targets() -> Vec<ServiceMetricTarget> {
-    vec![
-        ("auth", "认证服务", 9091),
-        ("billing", "计费服务", 9092),
-        ("ratelimit", "限流服务", 9093),
-        ("cache", "缓存服务", 9094),
-        ("cbpro", "熔断保护服务", 9095),
-        ("cert", "证书服务", 9096),
-        ("gateway", "网关", 9097),
-        ("mazbri-mgmt-api-v2", "管理 API", 9098),
-        ("mazbri-analytics", "分析服务", 9100),
+    use mazbri_core::ServiceName as S;
+    [
+        (S::Auth, "认证服务"),
+        (S::Billing, "计费服务"),
+        (S::Ratelimit, "限流服务"),
+        (S::Cache, "缓存服务"),
+        (S::Cbpro, "熔断保护服务"),
+        (S::CbproExt, "扩展保护服务"),
+        (S::Bypass, "旁路服务"),
+        (S::Cert, "证书服务"),
+        (S::Gateway, "网关"),
+        (S::Mgmt, "管理端"),
+        (S::Analytics, "分析服务"),
     ]
     .into_iter()
-    .map(|(key, name, port)| ServiceMetricTarget {
-        key: key.to_string(),
-        name: name.to_string(),
-        port,
-        endpoint: format!("http://localhost:{}/metrics", port),
+    .map(|(svc, name)| ServiceMetricTarget {
+        key: svc.as_str().to_owned(),
+        name: name.to_owned(),
     })
     .collect()
 }
 fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Result<String> {
     match service {
         Some("all") | None => Ok(String::new()),
-        Some(service_key) => {
+        Some(key) => {
             let target = targets
                 .iter()
-                .find(|target| target.key == service_key)
-                .ok_or_else(|| {
-                    AnalyticsError::Config(format!("Unsupported service: {}", service_key))
-                })?;
-            Ok(format!(r#"{{endpoint=~".*:{}(/metrics)?"}}"#, target.port))
+                .find(|t| t.key == key)
+                .ok_or_else(|| AnalyticsError::Config(format!("Unsupported service: {key}")))?;
+            // key 来自规范列表，只含 [a-z0-9-]，无需转义
+            Ok(format!(r#"{{service="{}"}}"#, target.key))
         }
     }
 }
-fn build_metric_query(metric: &str, service: Option<&str>, targets: &[ServiceMetricTarget]) -> Result<String> {
+fn build_metric_query(
+    metric: &str,
+    service: Option<&str>,
+    targets: &[ServiceMetricTarget],
+) -> Result<String> {
     let filter = endpoint_filter(service, targets)?;
     Ok(match metric {
-        "qps" => format!("sum(rate(http_requests_total{}[1m]))", filter),
+        "qps" => format!("sum(rate(http_requests_total{filter}[1m]))"),
         "error_rate" => {
             format!(
                 r#"100 * sum(rate(http_requests_total{{status=~"5.."{}}}[5m])) / clamp_min(sum(rate(http_requests_total{}[5m])), 1)"#,
@@ -358,28 +378,25 @@ fn build_metric_query(metric: &str, service: Option<&str>, targets: &[ServiceMet
         }
         "p95_latency_ms" => {
             format!(
-                "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{}[5m])) by (le))",
-                filter
+                "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{filter}[5m])) by (le))"
             )
         }
         "p99_latency_ms" => {
             format!(
-                "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{}[5m])) by (le))",
-                filter
+                "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{filter}[5m])) by (le))"
             )
         }
-        "active_connections" => format!("sum(active_connections{})", filter),
+        "active_connections" => format!("sum(active_connections{filter})"),
         "ratelimit_rejections" => {
             // Gateway is the sole enforcement point; filter is unused (metric is not multi-endpoint).
             let _ = filter;
             r#"sum(rate(gateway_ratelimit_decisions_total{decision="deny"}[5m]))"#.to_string()
         }
-        "billing_queue_depth" => format!("sum(billing_queue_depth{})", filter),
-        "cert_min_expiry_days" => format!("min(cert_min_expiry_days{})", filter),
+        "billing_queue_depth" => format!("sum(billing_queue_depth{filter})"),
+        "cert_min_expiry_days" => format!("min(cert_min_expiry_days{filter})"),
         other => {
             return Err(AnalyticsError::Config(format!(
-                "Unsupported metric: {}",
-                other
+                "Unsupported metric: {other}"
             )));
         }
     })
@@ -388,6 +405,53 @@ fn label_filter_suffix(filter: &str) -> String {
     filter
         .strip_prefix('{')
         .and_then(|value| value.strip_suffix('}'))
-        .map(|value| format!(",{}", value))
+        .map(|value| format!(",{value}"))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_uses_service_label() -> Result<()> {
+        let t = default_service_targets();
+        assert_eq!(
+            endpoint_filter(Some("mazbri-auth"), &t)?,
+            r#"{service="mazbri-auth"}"#
+        );
+        assert_eq!(endpoint_filter(Some("all"), &t)?, "");
+        assert_eq!(endpoint_filter(None, &t)?, "");
+        Ok(())
+    }
+
+    #[test]
+    fn filter_rejects_unknown_and_legacy() {
+        let t = default_service_targets();
+        assert!(endpoint_filter(Some("auth"), &t).is_err());
+        assert!(endpoint_filter(Some("mazbri-mgmt-api"), &t).is_err());
+    }
+
+    #[test]
+    fn defaults_cover_all_canonical() {
+        let keys: Vec<_> = default_service_targets()
+            .into_iter()
+            .map(|t| t.key)
+            .collect();
+        for s in mazbri_core::CANONICAL_SERVICES {
+            assert!(keys.contains(&s.as_str().to_owned()));
+        }
+    }
+
+    #[test]
+    fn error_rate_query_contains_service_label() -> Result<()> {
+        let q = build_metric_query(
+            "error_rate",
+            Some("mazbri-gateway"),
+            &default_service_targets(),
+        )?;
+        assert!(q.contains(r#"service="mazbri-gateway""#));
+        assert!(!q.contains("endpoint=~"));
+        Ok(())
+    }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use mazbri_core::config::{ServiceConfig, ValidateConfig};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -9,8 +9,6 @@ pub struct BypassServiceConfig {
     pub server: mazbri_core::ServerConfig,
     pub database: mazbri_core::DatabaseConfig,
     pub upstream: UpstreamConfig,
-    #[serde(default)]
-    pub tls: Option<mazbri_tls::TlsConfig>,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
 }
@@ -84,11 +82,13 @@ impl UpstreamConfig {
 }
 
 impl ServiceConfig for BypassServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-bypass"
-    }
-    fn default_port() -> u16 {
-        8093
+    fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
+        self.admin
+            .enabled
+            .then(|| mazbri_core::config::AdminHealthEndpoint {
+                port: self.admin.port,
+                path: &self.admin.health_path,
+            })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
         &self.server
@@ -98,9 +98,6 @@ impl ServiceConfig for BypassServiceConfig {
 impl ValidateConfig for BypassServiceConfig {
     fn validate(&self) -> Result<()> {
         self.upstream.validate()?;
-        if let Some(ref tls_config) = self.tls {
-            tls_config.validate()?;
-        }
         Ok(())
     }
 }

@@ -3,6 +3,9 @@ use axum::{Json, extract::State, response::IntoResponse};
 use chrono::Utc;
 use std::sync::Arc;
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_current_root_materials(
     State(state): State<Arc<crate::server::AppState>>,
 ) -> Result<impl IntoResponse, CertError> {

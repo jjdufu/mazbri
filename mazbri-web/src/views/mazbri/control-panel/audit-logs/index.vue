@@ -233,14 +233,6 @@ const ACTION_LABELS: Record<string, string> = {
   "certificate.issue": "auditLogs.explicitActions.certificateIssue",
   "certificate.renew": "auditLogs.explicitActions.certificateRenew",
   "certificate.revoke": "auditLogs.explicitActions.certificateRevoke",
-  "certificate.preset_create":
-    "auditLogs.explicitActions.certificatePresetCreate",
-  "certificate.preset_update":
-    "auditLogs.explicitActions.certificatePresetUpdate",
-  "certificate.preset_delete":
-    "auditLogs.explicitActions.certificatePresetDelete",
-  "certificate.preset_import":
-    "auditLogs.explicitActions.certificatePresetImport",
   "settings.update": "auditLogs.explicitActions.settingsUpdate",
   "password_policy.update": "auditLogs.explicitActions.passwordPolicyUpdate",
   "config_center.create": "auditLogs.explicitActions.configCenterCreate",
@@ -309,7 +301,6 @@ const RESOURCE_TYPE_LABELS: Record<string, string> = {
   product: "auditLogs.resources.product",
   apikey: "auditLogs.resources.apiKey",
   certificate: "auditLogs.resources.certificate",
-  certificate_preset: "auditLogs.resources.certificatePreset",
   system: "auditLogs.resources.system",
   user: "auditLogs.resources.user",
   quota: "auditLogs.resources.quota",

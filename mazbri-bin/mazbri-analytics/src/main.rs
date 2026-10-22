@@ -4,30 +4,27 @@ use crate::handlers::AppState;
 use anyhow::Result;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
-use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::clickhouse::ClickHouseClient;
+use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::log_writer_metrics::register_log_writer_metrics;
 use mazbri_analytics::{AnalyticsConfig, register_analytics_metrics};
-use mazbri_core::config_loader::{BootstrapConfig, ValidateConfig};
+use mazbri_core::ServiceName;
+use mazbri_core::config::{build_log_routes, load_toml};
 use mazbri_core::{REGISTRY, init_tracing_with_routes};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
-#[tokio::main]
-async fn main() -> Result<()> {
-    let bootstrap_path = mazbri_core::config_loader::resolve_bootstrap_path_mandatory()?;
-    let config = AnalyticsConfig::load_from_file(&bootstrap_path)?;
-    let bootstrap = BootstrapConfig::load_from_path(&bootstrap_path)?;
-    let service_name = config.service_name_or("mazbri-analytics");
-    let log_routes = bootstrap.log_routes()?;
-    config.validate()?;
-    let admin_state: Option<Arc<AdminState>> = if config.admin.enabled {
+fn start_admin_server(
+    config: &AnalyticsConfig,
+    service_name: &str,
+) -> Result<Option<Arc<AdminState>>> {
+    let admin_state = if config.admin.enabled {
         let state = Arc::new(AdminState::new(
-            service_name.clone(),
+            service_name.to_owned(),
             Arc::new(REGISTRY.clone()),
         ));
         let state_for_check = state.clone();
-        let server = AdminServerBuilder::new(&service_name, config.admin.port)
+        let server = AdminServerBuilder::new(service_name, config.admin.port)
             .bind_addr(&config.admin.bind_addr)
             .registry(Arc::new(REGISTRY.clone()))
             .readiness_check(move || {
@@ -51,16 +48,11 @@ async fn main() -> Result<()> {
         info!("Admin server disabled");
         None
     };
-    let _log_guard = init_tracing_with_routes(&bootstrap.tracing, &service_name, &log_routes)?;
-    info!("Mazbri 分析服务启动中...");
-    info!("使用内置配置（不依赖配置中心）");
-    info!(host = % config.server.host, port = % config.server.port, "服务器配置");
-    register_analytics_metrics()
-        .map_err(|e| anyhow::anyhow!("Failed to register analytics metrics: {}", e))?;
-    register_log_writer_metrics()
-        .map_err(|e| anyhow::anyhow!("Failed to register log writer metrics: {}", e))?;
-    info!("分析指标已注册");
-    let greptimedb_client = if let Some(ref greptimedb_config) = config.greptimedb {
+    Ok(admin_state)
+}
+
+async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClient>> {
+    if let Some(ref greptimedb_config) = config.greptimedb {
         if greptimedb_config.http_url.is_empty() {
             info!("GreptimeDB 未配置");
             None
@@ -68,21 +60,18 @@ async fn main() -> Result<()> {
             let targets = if config.metrics_targets.is_empty() {
                 mazbri_analytics::greptimedb::default_service_targets()
             } else {
-                config.metrics_targets.iter().map(|t| {
-                    let endpoint = t.endpoint.clone().unwrap_or_else(|| {
-                        format!("http://localhost:{}/metrics", t.port)
-                    });
-                    mazbri_analytics::greptimedb::ServiceMetricTarget {
-                        key: t.key.clone(),
+                config
+                    .metrics_targets
+                    .iter()
+                    .map(|t| mazbri_analytics::greptimedb::ServiceMetricTarget {
+                        key: t.key.as_str().to_owned(),
                         name: t.name.clone(),
-                        port: t.port,
-                        endpoint,
-                    }
-                }).collect()
+                    })
+                    .collect()
             };
             match GreptimeDBClient::new(greptimedb_config, targets) {
                 Ok(client) => match client.test_connection().await {
-                    Ok(_) => {
+                    Ok(()) => {
                         info!("GreptimeDB 连接已建立");
                         Some(Arc::new(client))
                     }
@@ -100,11 +89,37 @@ async fn main() -> Result<()> {
     } else {
         info!("GreptimeDB 未配置");
         None
-    };
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
+    let config: AnalyticsConfig = load_toml(&bootstrap_path)?;
+    if config.service_name.name() != ServiceName::Analytics {
+        anyhow::bail!(
+            "service_name 必须为 {}（当前 {}）",
+            ServiceName::Analytics.as_str(),
+            config.service_name.as_str()
+        );
+    }
+    let service_name = config.service_name.as_str().to_owned();
+    let log_routes = build_log_routes(&config.log_routes)?;
+    let admin_state = start_admin_server(&config, &service_name)?;
+    let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
+    info!("Mazbri 分析服务启动中...");
+    info!("使用内置配置（不依赖配置中心）");
+    info!(host = % config.server.host, port = % config.server.port, "服务器配置");
+    register_analytics_metrics()
+        .map_err(|e| anyhow::anyhow!("Failed to register analytics metrics: {e}"))?;
+    register_log_writer_metrics()
+        .map_err(|e| anyhow::anyhow!("Failed to register log writer metrics: {e}"))?;
+    info!("分析指标已注册");
+    let greptimedb_client = init_greptimedb(&config).await;
 
     let clickhouse_client = match ClickHouseClient::new(&config.clickhouse) {
         Ok(client) => match client.test_connection().await {
-            Ok(_) => {
+            Ok(()) => {
                 info!("ClickHouse 连接已建立");
                 Arc::new(client)
             }
@@ -114,7 +129,7 @@ async fn main() -> Result<()> {
             }
         },
         Err(e) => {
-            return Err(anyhow::anyhow!("无法创建 ClickHouse 客户端: {}", e));
+            return Err(anyhow::anyhow!("无法创建 ClickHouse 客户端: {e}"));
         }
     };
 
@@ -194,7 +209,7 @@ async fn check_admin_endpoint(
     path: &str,
     label: &str,
 ) {
-    let url = format!("{}{}", base_url, path);
+    let url = format!("{base_url}{path}");
     match client.get(&url).send().await {
         Ok(response) if response.status().is_success() => {
             info!(

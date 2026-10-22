@@ -6,6 +6,7 @@ use crate::observations::now_unix_ms;
 use crate::runtime::{RuntimeDecisionState, build_runtime_decision_cache_key};
 use crate::validation::{build_validation_request, process_validation_job};
 use anyhow::Result;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{
     ObservationRequest, ObservationResponse, RuntimeDecision, RuntimeDecisionRequest,
     RuntimeDecisionResponse, ValidationEnqueueRequest, ValidationEnqueueResponse,
@@ -123,7 +124,7 @@ impl CbProExtManager {
                 guard.insert(
                     key.clone(),
                     RuntimeDecisionState {
-                        baseline_ema_ms: decision.latency_baseline_ms as f64,
+                        baseline_ema_ms: mazbri_core::num::u64_to_f64(decision.latency_baseline_ms),
                         hit_count_since_validate: 0,
                         last_hit_at_unix_ms: 0,
                         last_validated_at_unix_ms: 0,
@@ -233,6 +234,9 @@ impl CbProExtManager {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn process_validation_jobs(&self) -> Result<()> {
         if !self.config.validation.enabled {
             return Ok(());
@@ -240,8 +244,8 @@ impl CbProExtManager {
         let jobs = self
             .repo
             .claim_validation_jobs(
-                self.config.validation.max_inflight as i64,
-                self.config.validation.lock_ttl_secs as i64,
+                i64::saturating_from(self.config.validation.max_inflight),
+                i64::saturating_from(self.config.validation.lock_ttl_secs),
             )
             .await?;
         for job in jobs {
@@ -259,6 +263,9 @@ impl CbProExtManager {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh_runtime_decisions_from_greptime(&self) -> Result<()> {
         let Some(client) = self.greptime_client.as_ref() else {
             return Ok(());
@@ -268,14 +275,17 @@ impl CbProExtManager {
                 let mut guard = self.runtime_state.lock();
                 for state in guard.values_mut() {
                     if let Some(p50) = snapshot.p50_ms {
-                        state.decision.latency_baseline_ms = p50.round().max(1.0) as u64;
+                        state.decision.latency_baseline_ms =
+                            mazbri_core::num::f64_to_u64(p50.round().max(1.0));
                         state.decision.latency_p50_ms = state.decision.latency_baseline_ms;
                     }
                     if let Some(p75) = snapshot.p75_ms {
-                        state.decision.latency_p75_ms = p75.round().max(1.0) as u64;
+                        state.decision.latency_p75_ms =
+                            mazbri_core::num::f64_to_u64(p75.round().max(1.0));
                     }
                     if let Some(p95) = snapshot.p95_ms {
-                        state.decision.latency_p95_ms = p95.round().max(1.0) as u64;
+                        state.decision.latency_p95_ms =
+                            mazbri_core::num::f64_to_u64(p95.round().max(1.0));
                     }
                 }
                 guard.values().map(|state| state.decision.clone()).collect()
@@ -289,6 +299,9 @@ impl CbProExtManager {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh_runtime_decisions_from_db(&self) -> Result<()> {
         let rows = self.repo.restore_runtime_decisions().await?;
         let mut guard = self.runtime_state.lock();
@@ -304,7 +317,7 @@ impl CbProExtManager {
             guard.insert(
                 key,
                 RuntimeDecisionState {
-                    baseline_ema_ms: decision.latency_baseline_ms as f64,
+                    baseline_ema_ms: mazbri_core::num::u64_to_f64(decision.latency_baseline_ms),
                     hit_count_since_validate: 0,
                     last_hit_at_unix_ms: 0,
                     last_validated_at_unix_ms: 0,
@@ -315,10 +328,9 @@ impl CbProExtManager {
         Ok(())
     }
 
-    pub async fn restore_runtime_decisions_from_platform(&self) -> Result<()> {
+    pub fn restore_runtime_decisions_from_platform(&self) {
         if self.repo.platform_db().is_some() {
             info!("platform database configured for cbpro-ext");
         }
-        Ok(())
     }
 }

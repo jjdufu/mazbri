@@ -55,11 +55,11 @@ impl CBProService for CBProServiceImpl {
         }
         self.manager.store_response(request).await
     }
-    async fn health(self, _context: Context) -> HealthResponse {
-        HealthResponse {
+    fn health(self, _context: Context) -> impl std::future::Future<Output = HealthResponse> {
+        std::future::ready(HealthResponse {
             status: "ok".to_string(),
             service: "cbpro-service".to_string(),
             timestamp: chrono::Utc::now().timestamp(),
-        }
+        })
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazbri_core::config_loader::{ServiceConfig, ValidateConfig};
+use mazbri_core::config::{ServiceConfig, ValidateConfig};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,19 +34,19 @@ pub struct RateLimitServiceConfig {
     pub server: mazbri_core::ServerConfig,
     pub database: mazbri_core::DatabaseConfig,
     #[serde(default)]
-    pub tls: Option<mazbri_tls::TlsConfig>,
-    #[serde(default)]
     pub rate_limit: RateLimitConfigSection,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
 }
 
 impl ServiceConfig for RateLimitServiceConfig {
-    fn service_name() -> &'static str {
-        "mazbri-ratelimit-service"
-    }
-    fn default_port() -> u16 {
-        8082
+    fn admin_health(&self) -> Option<mazbri_core::config::AdminHealthEndpoint<'_>> {
+        self.admin
+            .enabled
+            .then(|| mazbri_core::config::AdminHealthEndpoint {
+                port: self.admin.port,
+                path: &self.admin.health_path,
+            })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
         &self.server
@@ -55,9 +55,6 @@ impl ServiceConfig for RateLimitServiceConfig {
 
 impl ValidateConfig for RateLimitServiceConfig {
     fn validate(&self) -> Result<()> {
-        if let Some(ref tls_config) = self.tls {
-            tls_config.validate()?;
-        }
         Ok(())
     }
 }

@@ -31,7 +31,7 @@ pub async fn serve(
         |svc: CacheTarpcService, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
     )
     .await
-    .map_err(|e| anyhow::anyhow!("tarpc server error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;
     info!("缓存服务关闭完成");
     Ok(())
 }

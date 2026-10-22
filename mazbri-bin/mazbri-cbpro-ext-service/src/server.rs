@@ -5,6 +5,9 @@ use mazbri_tls::TlsAcceptor;
 use std::net::SocketAddr;
 use tracing::info;
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn serve(
     addr: SocketAddr,
     service: CBProExtServiceImpl,
@@ -24,6 +27,6 @@ pub async fn serve(
         |svc: CBProExtServiceImpl, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
     )
     .await
-    .map_err(|e| anyhow::anyhow!("tarpc server error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;
     Ok(())
 }

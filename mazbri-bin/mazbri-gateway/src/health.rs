@@ -76,12 +76,12 @@ pub async fn check_database_health(pool: &PgPool) -> ServiceHealth {
     match sqlx::query("SELECT 1").fetch_one(pool).await {
         Ok(_) => ServiceHealth {
             status: HealthStatus::Healthy,
-            latency_ms: Some(start.elapsed().as_millis() as u64),
+            latency_ms: Some(mazbri_core::num::millis_u64(start.elapsed())),
             error: None,
         },
         Err(e) => ServiceHealth {
             status: HealthStatus::Unhealthy,
-            latency_ms: Some(start.elapsed().as_millis() as u64),
+            latency_ms: Some(mazbri_core::num::millis_u64(start.elapsed())),
             error: Some(e.to_string()),
         },
     }
@@ -98,21 +98,21 @@ async fn cached_service_health(
         None => ServiceHealth {
             status: HealthStatus::Unknown,
             latency_ms: None,
-            error: Some("Service health cache not configured (no admin_url)".to_string()),
+            error: Some("Service health cache not configured".to_string()),
         },
     }
 }
 async fn redis_health(state: &AppState) -> ServiceHealth {
     let start = std::time::Instant::now();
     match state.proxy_state.crypto_state.redis_health().await {
-        Ok(_) => ServiceHealth {
+        Ok(()) => ServiceHealth {
             status: HealthStatus::Healthy,
-            latency_ms: Some(start.elapsed().as_millis() as u64),
+            latency_ms: Some(mazbri_core::num::millis_u64(start.elapsed())),
             error: None,
         },
         Err(error) => ServiceHealth {
             status: HealthStatus::Unhealthy,
-            latency_ms: Some(start.elapsed().as_millis() as u64),
+            latency_ms: Some(mazbri_core::num::millis_u64(start.elapsed())),
             error: Some(error.to_string()),
         },
     }
@@ -128,8 +128,7 @@ pub async fn health_check(
     let startup_ready = state
         .admin_state
         .as_ref()
-        .map(|admin_state| admin_state.is_ready())
-        .unwrap_or(true);
+        .is_none_or(|admin_state| admin_state.is_ready());
     let redis_health = redis_health(&state).await;
 
     let mut services = std::collections::HashMap::new();
@@ -178,8 +177,7 @@ pub async fn ready_check(State(state): State<AppState>) -> (StatusCode, Json<ser
     let startup_ready = state
         .admin_state
         .as_ref()
-        .map(|admin_state| admin_state.is_ready())
-        .unwrap_or(true);
+        .is_none_or(|admin_state| admin_state.is_ready());
     let ready = startup_ready
         && db_health.status == HealthStatus::Healthy
         && redis_health.status == HealthStatus::Healthy;

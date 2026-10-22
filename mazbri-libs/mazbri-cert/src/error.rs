@@ -12,8 +12,10 @@ pub enum CertError {
     Core(#[from] mazbri_core::CoreError),
     #[error("证书未找到: {0}")]
     NotFound(String),
-    #[error("预置未找到: {0}")]
-    PresetNotFound(String),
+    #[error("证书主体不在规范服务列表: {0}")]
+    SubjectNotCanonical(String),
+    #[error("SAN 配置错误: {0}")]
+    SanConfig(String),
     #[error("证书已作废: {0}")]
     AlreadyRevoked(String),
     #[error("无效的主体: {0}")]
@@ -45,17 +47,21 @@ pub type CertResult<T> = Result<T, CertError>;
 impl ErrorResponse for CertError {
     fn status_code(&self) -> StatusCode {
         core_error_response_match!(self, status_code, {
-            Self::NotFound(_) | Self::PresetNotFound(_) => StatusCode::NOT_FOUND,
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Self::AlreadyRevoked(_)
             | Self::InvalidSubject(_)
             | Self::InvalidRequest(_)
+            | Self::SubjectNotCanonical(_)
             | Self::VerificationFailed(_) => StatusCode::BAD_REQUEST,
             Self::BaseAuthorizationNotActive
             | Self::BaseAuthorizationExpired
             | Self::RootPackageExpired => StatusCode::FORBIDDEN,
             Self::License { .. } => StatusCode::BAD_REQUEST,
-            Self::GenerationFailed(_) | Self::CaInitFailed(_) | Self::KeyEncryption(_) => {
+            Self::GenerationFailed(_)
+            | Self::CaInitFailed(_)
+            | Self::KeyEncryption(_)
+            | Self::SanConfig(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         })
@@ -63,7 +69,8 @@ impl ErrorResponse for CertError {
     fn error_code(&self) -> &'static str {
         core_error_response_match!(self, error_code, {
             Self::NotFound(_) => "CERTIFICATE_NOT_FOUND",
-            Self::PresetNotFound(_) => "PRESET_NOT_FOUND",
+            Self::SubjectNotCanonical(_) => "SUBJECT_NOT_CANONICAL",
+            Self::SanConfig(_) => "SAN_CONFIG_ERROR",
             Self::AlreadyRevoked(_) => "CERTIFICATE_ALREADY_REVOKED",
             Self::InvalidSubject(_) => "INVALID_SUBJECT",
             Self::InvalidRequest(_) => "INVALID_REQUEST",
@@ -81,7 +88,10 @@ impl ErrorResponse for CertError {
     fn details(&self) -> Option<serde_json::Value> {
         core_error_response_match!(self, details, {
             Self::NotFound(id) => Some(json!({ "certificate_id" : id })),
-            Self::PresetNotFound(name) => Some(json!({ "preset_name" : name })),
+            Self::SubjectNotCanonical(reason) => Some(json!({
+                "reason" : reason,
+                "allowed" : mazbri_core::ServiceName::all_names(),
+            })),
             _ => None,
         })
     }

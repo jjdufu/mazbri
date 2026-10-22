@@ -19,7 +19,7 @@ pub struct RequestAnalyticsQuery {
     #[serde(default)]
     pub tenant_id: Option<String>,
     /// Access-log producer service filter (e.g. `mazbri-gateway`). Avoids double-counting
-    /// gateway + bypass rows that share the same customer request_id.
+    /// gateway + bypass rows that share the same customer `request_id`.
     #[serde(default)]
     pub service: Option<String>,
 }
@@ -67,31 +67,25 @@ pub async fn aggregate_request_logs(
         "查询请求日志分析"
     );
     let client = &state.clickhouse_client;
-    let start_time = match parse_time_string(&req.start_time) {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_start_time".to_string(),
-                    message: "start_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
-                }),
-            )
-                .into_response();
-        }
+    let Some(start_time) = parse_time_string(&req.start_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_start_time".to_string(),
+                message: "start_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
+            }),
+        )
+            .into_response();
     };
-    let end_time = match parse_time_string(&req.end_time) {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_end_time".to_string(),
-                    message: "end_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
-                }),
-            )
-                .into_response();
-        }
+    let Some(end_time) = parse_time_string(&req.end_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_end_time".to_string(),
+                message: "end_time 格式无效，请使用 Unix 时间戳或 ISO 8601 格式".to_string(),
+            }),
+        )
+            .into_response();
     };
     if start_time >= end_time {
         return (
@@ -183,4 +177,3 @@ pub async fn get_upstream_billing_summary(
         }
     }
 }
-

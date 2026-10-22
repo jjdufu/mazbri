@@ -2,7 +2,7 @@
 //!
 //! Used by:
 //! - `mazbri-bypass` production path
-//! - `mazbri-mgmt-api-v2` connector workbench probe runs
+//! - `mazbri-mgmt` connector workbench probe runs
 //!
 //! **Single Runtime**: auth token fetch, inject, request/response transform,
 //! SSRF checks, and outbound HTTP must live only here — no dual implementations.

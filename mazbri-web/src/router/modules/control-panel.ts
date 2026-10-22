@@ -58,17 +58,6 @@ export const controlPanelRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "certificate-presets",
-        name: "CertificatePresets",
-        component: "/mazbri/control-panel/certificates/presets/index",
-        meta: {
-          title: "menus.mazbri.certificatePresets",
-          icon: "ri:file-copy-line",
-          keepAlive: true,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "authorizations",
         name: "AuthorizationManagement",
         component: "/mazbri/control-panel/authorizations/index",

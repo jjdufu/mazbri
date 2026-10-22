@@ -15,12 +15,12 @@ pub mod root_package {
     pub use crate::root_package_service::*;
     pub use mazbri_cert::root_package::*;
 }
+pub mod san;
 pub mod server;
-pub mod service_registry;
 pub mod token;
 
 pub mod base_authorization_service;
 pub mod root_package_service;
 
-pub use config::CertServiceConfig;
+pub use config::CertAppConfig;
 pub use error::{CertError, CertResult};

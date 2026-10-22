@@ -5,7 +5,7 @@ use prometheus::{CounterVec, Encoder, HistogramVec, IntCounter, IntGauge, Opts, 
 use std::sync::LazyLock;
 
 /// mode: transparent | microservice | unknown
-/// result: ok | client_error | upstream_error | timeout | overload | authz | ratelimit | config | circuit_open | internal
+/// result: ok | `client_error` | `upstream_error` | timeout | overload | authz | ratelimit | config | `circuit_open` | internal
 pub static API_PROXY_REQUESTS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "api_proxy_requests_total",
@@ -29,7 +29,7 @@ pub static ACTIVE_PROXY_CONNECTIONS: LazyLock<IntGauge> = LazyLock::new(|| {
         "Number of active proxy connections",
     )
 });
-/// 网关本地段（duration - upstream_wait），不含真实上游业务时间中的出站等待。
+/// 网关本地段（duration - `upstream_wait），不含真实上游业务时间中的出站等待`。
 pub static GATEWAY_PLATFORM_LOCAL_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
     MetricsBuilder::new().histogram(
         "gateway_platform_local_seconds",
@@ -78,7 +78,7 @@ pub static GATEWAY_HTTP_CLIENT_DISCONNECT_TOTAL: LazyLock<CounterVec> = LazyLock
         &["phase", "reason"],
     )
 });
-/// Panic recovered by CatchPanic middleware.
+/// Panic recovered by `CatchPanic` middleware.
 pub static GATEWAY_PANIC_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     IntCounter::with_opts(Opts::new(
         "gateway_panic_total",
@@ -86,7 +86,7 @@ pub static GATEWAY_PANIC_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     ))
     .expect("gateway_panic_total metric")
 });
-/// Overload rejections (max_connections concurrency limit).
+/// Overload rejections (`max_connections` concurrency limit).
 pub static GATEWAY_REQUEST_BINDING_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "gateway_request_binding_total",
@@ -110,6 +110,7 @@ pub static GATEWAY_OVERLOAD_REJECT_TOTAL: LazyLock<IntCounter> = LazyLock::new(|
 });
 
 /// Map HTTP status (+ optional error hint) to low-cardinality result label.
+#[must_use]
 pub fn classify_proxy_result(status: u16, error_hint: Option<&str>) -> &'static str {
     if let Some(hint) = error_hint {
         let h = hint.to_ascii_lowercase();
@@ -137,12 +138,12 @@ pub fn classify_proxy_result(status: u16, error_hint: Option<&str>) -> &'static 
         504 => "timeout",
         503 => "overload",
         502 => "upstream_error",
-        500..=599 => "internal",
         _ => "internal",
     }
 }
 
-/// Map status/error to error_class for access logs (aligned with metrics result).
+/// Map status/error to `error_class` for access logs (aligned with metrics result).
+#[must_use]
 pub fn classify_error_class(status: u16, is_success: bool, error_code: &str) -> String {
     if is_success {
         return "ok".to_string();
@@ -150,6 +151,9 @@ pub fn classify_error_class(status: u16, is_success: bool, error_code: &str) -> 
     classify_proxy_result(status, Some(error_code)).to_string()
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(API_PROXY_REQUESTS_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(API_PROXY_DURATION_SECONDS.clone()))?;
@@ -173,7 +177,7 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     Ok(())
 }
 
-/// Record a client disconnect and emit stage log (reuse gateway.stage, no new log_route).
+/// Record a client disconnect and emit stage log (reuse gateway.stage, no new `log_route`).
 pub fn record_client_disconnect(
     phase: &str,
     reason: &str,
@@ -219,12 +223,12 @@ pub async fn metrics_handler() -> impl IntoResponse {
     let metric_families = REGISTRY.gather();
     let mut buffer = Vec::new();
     match encoder.encode(&metric_families, &mut buffer) {
-        Ok(_) => {
+        Ok(()) => {
             String::from_utf8(buffer).unwrap_or_else(|_| "# Metrics encoding error\n".to_string())
         }
         Err(e) => {
             tracing::error!("Failed to encode metrics: {}", e);
-            format!("# ERROR: Failed to encode metrics: {}\n", e)
+            format!("# ERROR: Failed to encode metrics: {e}\n")
         }
     }
 }

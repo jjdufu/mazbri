@@ -168,21 +168,21 @@ pub struct ConfigSearchQuery {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub category: Option<String>,
-    /// Free-text / contains match on service_name (ILIKE).
+    /// Free-text / contains match on `service_name` (ILIKE).
     #[serde(default)]
     pub service_name: Option<String>,
     #[serde(default)]
     pub service_name_eq: Option<String>,
-    /// Free-text / contains match on updated_by (ILIKE).
+    /// Free-text / contains match on `updated_by` (ILIKE).
     #[serde(default)]
     pub updated_by: Option<String>,
-    /// ISO-8601 / RFC3339 lower bound for updated_at (inclusive).
+    /// ISO-8601 / RFC3339 lower bound for `updated_at` (inclusive).
     #[serde(default)]
     pub updated_at_gte: Option<String>,
-    /// ISO-8601 / RFC3339 upper bound for updated_at (inclusive).
+    /// ISO-8601 / RFC3339 upper bound for `updated_at` (inclusive).
     #[serde(default)]
     pub updated_at_lte: Option<String>,
-    /// Free-text OR over service_name + updated_by.
+    /// Free-text OR over `service_name` + `updated_by`.
     #[serde(default)]
     pub q: Option<String>,
     #[serde(default = "default_search_limit")]

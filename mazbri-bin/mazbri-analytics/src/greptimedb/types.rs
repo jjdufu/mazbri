@@ -1,13 +1,14 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Deserializer, Serialize};
 pub use crate::models::{AuditLogEntry, RequestLogEntry};
+use chrono::{DateTime, Utc};
+use mazbri_core::num::SaturatingFrom;
+use serde::{Deserialize, Deserializer, Serialize};
 
 fn deserialize_i64_as_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
     let opt = Option::<i64>::deserialize(deserializer)?;
-    Ok(opt.unwrap_or(0) as u64)
+    Ok(u64::saturating_from(opt.unwrap_or(0)))
 }
 
 fn deserialize_greptime_timestamp<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
@@ -21,7 +22,7 @@ where
                 .as_i64()
                 .ok_or_else(|| serde::de::Error::custom("timestamp not i64"))?;
             let secs = nanos / 1_000_000_000;
-            let nanos_part = (nanos % 1_000_000_000) as u32;
+            let nanos_part = u32::saturating_from(nanos % 1_000_000_000);
             DateTime::from_timestamp(secs, nanos_part)
                 .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))
         }
@@ -52,12 +53,13 @@ where
                     return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
                 }
             }
-            Err(serde::de::Error::custom(format!("unexpected timestamp format: {}", s)))
+            Err(serde::de::Error::custom(format!(
+                "unexpected timestamp format: {s}"
+            )))
         }
         _ => Err(serde::de::Error::custom("unexpected timestamp type")),
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct AuditQueryParams {
@@ -113,7 +115,7 @@ pub struct RequestLogQueryParams {
     pub service_like: Option<String>,
     /// Comma-separated exact service names; combined with `service` / `service_like` using OR.
     pub service_in: Option<String>,
-    /// Structured filters (already validated against call_monitor catalog).
+    /// Structured filters (already validated against `call_monitor` catalog).
     pub filters: Vec<crate::list_query::ListFilter>,
     /// When set, list/search only inside the latest N rows (service-scoped), then apply filters.
     pub latest_universe_limit: Option<usize>,

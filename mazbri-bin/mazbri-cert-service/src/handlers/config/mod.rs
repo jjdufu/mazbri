@@ -1,5 +1,4 @@
 use crate::config_center::ConfigRepository;
-use crate::service_registry::ServiceRepository;
 use mazbri_core::error_codes;
 use serde::Deserialize;
 use std::fmt::Display;
@@ -14,7 +13,6 @@ pub mod write;
 #[derive(Clone)]
 pub struct ConfigState {
     pub repo: Arc<ConfigRepository>,
-    pub service_registry_repo: Arc<ServiceRepository>,
 }
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -41,17 +39,17 @@ pub(crate) fn log_config_error(
     match severity {
         "warn" => {
             warn!(
-                service = "mazbri-cert-service", event = event, severity = severity,
+                service = mazbri_core::ServiceName::Cert.as_str(), event = event, severity = severity,
                 error_code = error_code, request_id = request_id, trace_id = trace_id,
                 error = % error, "config handler failed"
-            )
+            );
         }
         _ => {
             error!(
-                service = "mazbri-cert-service", event = event, severity = severity,
+                service = mazbri_core::ServiceName::Cert.as_str(), event = event, severity = severity,
                 error_code = error_code, request_id = request_id, trace_id = trace_id,
                 error = % error, "config handler failed"
-            )
+            );
         }
     }
 }

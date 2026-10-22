@@ -19,6 +19,7 @@ pub fn should_log_stage_info(stage_ms: u64) -> bool {
 
 /// 平台摘要、余额拒绝等始终打。
 #[inline]
+#[must_use]
 pub fn always_log_stage() -> bool {
     true
 }

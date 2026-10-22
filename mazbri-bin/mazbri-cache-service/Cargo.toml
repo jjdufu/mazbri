@@ -37,3 +37,6 @@ clap = {version = "4", features = ["derive"]}
 tracing = {version = "0.1"}
 
 anyhow = {version = "1.0"}
+
+[lints]
+workspace = true

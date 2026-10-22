@@ -1,6 +1,7 @@
 //! 余额预检缓存：L1 本 Pod 内存 + L2 Redis（多副本共享）+ L3 billing 权威读。
 //! 预检允许时做本地预留扣减，避免热路径反复打 billing DB；账本仍以 billing/PG 为准。
 
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use moka::sync::Cache;
 use rust_decimal::Decimal;
@@ -48,7 +49,8 @@ pub enum BalanceCacheSource {
 }
 
 impl BalancePrecheckCache {
-    pub fn new(redis: RedisClient, config: BalanceCacheConfig) -> Self {
+    #[must_use]
+    pub fn new(redis: RedisClient, config: &BalanceCacheConfig) -> Self {
         let l1 = Cache::builder()
             .max_capacity(config.l1_max_capacity)
             .time_to_live(config.l1_ttl)
@@ -56,7 +58,7 @@ impl BalancePrecheckCache {
         Self {
             l1,
             redis,
-            l2_ttl_secs: config.l2_ttl_secs.max(1) as usize,
+            l2_ttl_secs: usize::saturating_from(config.l2_ttl_secs.max(1)),
             enabled: config.enabled,
         }
     }
@@ -65,7 +67,7 @@ impl BalancePrecheckCache {
         format!("{REDIS_KEY_PREFIX}{tenant_id}")
     }
 
-    /// 返回缓存中的 available_balance（若有）
+    /// 返回缓存中的 `available_balance（若有`）
     pub async fn get_available(&self, tenant_id: Uuid) -> Option<(Decimal, BalanceCacheSource)> {
         if !self.enabled {
             return None;
@@ -156,8 +158,9 @@ impl BalancePrecheckCache {
     }
 }
 
-/// 与 BillingService 默认 min_balance_ratio=0.1 对齐：
-/// required = estimated_cost + estimated_cost * 0.1 = estimated_cost * 1.1
+/// 与 `BillingService` 默认 `min_balance_ratio=0.1` 对齐：
+/// required = `estimated_cost` + `estimated_cost` * 0.1 = `estimated_cost` * 1.1
+#[must_use]
 pub fn required_available(estimated_cost: Decimal) -> Decimal {
     let ratio = Decimal::from_str_exact("0.1").unwrap_or(Decimal::ZERO);
     estimated_cost + estimated_cost * ratio

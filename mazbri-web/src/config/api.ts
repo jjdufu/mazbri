@@ -8,7 +8,7 @@ export const API_PATHS = {
   CERTIFICATES: "/certificates",
   CONFIG_CENTER: "/config-center",
   PRODUCTS: "/products",
-  SERVICE_NAMES: "/service-names",
+  CANONICAL_SERVICE_NAMES: "/config-center/service-names",
   SETTINGS: "/settings",
   STATS: "/stats",
   TENANTS: "/tenants",

@@ -7,7 +7,5 @@ pub mod health;
 pub mod helpers;
 pub mod license;
 pub mod node;
-pub mod preset;
 pub mod root_package;
-pub mod service_registry;
 pub mod tag;

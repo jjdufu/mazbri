@@ -84,6 +84,9 @@ pub struct ProxyState {
     pub supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache,
 }
 impl ProxyState {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(init: ProxyStateInit<'_>) -> anyhow::Result<Self> {
         let service_name = init.service_name;
         let circuit_breakers = moka::sync::Cache::builder()
@@ -99,8 +102,7 @@ impl ProxyState {
             init.redis,
             init.cert_service_url,
             init.cert_service_token,
-        )
-        .await?;
+        )?;
         let (cbpro_observation_tx, cbpro_observation_rx) = if init.cbpro_ext_client.is_some() {
             let (tx, rx) = tokio::sync::mpsc::channel(1024);
             (Some(tx), Some(rx))
@@ -143,7 +145,7 @@ impl ProxyState {
         let _bg_tasks = state
             .local_ratelimiter
             .clone()
-            .spawn_background_tasks(state.tarpc_pool.clone(), state.ratelimit_endpoint.clone());
+            .spawn_background_tasks(&state.tarpc_pool.clone(), &state.ratelimit_endpoint.clone());
         let _channel_rl_janitor = state.channel_ratelimiter.clone().spawn_background_tasks();
         if let (Some(client), Some(mut rx)) = (state.cbpro_ext_client.clone(), cbpro_observation_rx)
         {
@@ -157,8 +159,10 @@ impl ProxyState {
                     while batch.len() < 32 {
                         match rx.try_recv() {
                             Ok(next) => batch.push(next),
-                            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
-                            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                            Err(
+                                tokio::sync::mpsc::error::TryRecvError::Empty
+                                | tokio::sync::mpsc::error::TryRecvError::Disconnected,
+                            ) => break,
                         }
                     }
                     let observations = std::mem::take(&mut batch);

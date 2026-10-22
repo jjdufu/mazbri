@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::TimeZone;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{RuntimeDecision, ValidationEnqueueRequest, ValidationResultRequest};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
@@ -25,9 +26,10 @@ pub struct ValidationJobRecord {
 impl CbProExtRepository {
     #[must_use]
     pub fn new(db: Option<Arc<PgPool>>, platform_db: Option<Arc<PgPool>>) -> Self {
-        let node_id = hostname::get()
-            .map(|value| value.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
+        let node_id = hostname::get().map_or_else(
+            |_| "unknown".to_string(),
+            |value| value.to_string_lossy().to_string(),
+        );
         Self {
             db,
             platform_db,
@@ -35,12 +37,15 @@ impl CbProExtRepository {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn upsert_runtime_decision(&self, decision: &RuntimeDecision) -> Result<()> {
         let Some(db) = self.db.as_ref() else {
             return Ok(());
         };
         sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_cbpro.runtime_decisions (
                 cache_key, tenant_id, product_id, method, path, mode, policy_version,
                 latency_baseline_ms, latency_p50_ms, latency_p75_ms, latency_p95_ms,
@@ -80,7 +85,7 @@ impl CbProExtRepository {
                 generated_at = EXCLUDED.generated_at,
                 valid_until = EXCLUDED.valid_until,
                 updated_at = NOW()
-            "#,
+            ",
         )
         .bind(&decision.cache_key)
         .bind(&decision.tenant_id)
@@ -89,10 +94,10 @@ impl CbProExtRepository {
         .bind(&decision.path)
         .bind(&decision.mode)
         .bind(i64::try_from(decision.policy_version).unwrap_or(i64::MAX))
-        .bind(decision.latency_baseline_ms as f64)
-        .bind(decision.latency_p50_ms as f64)
-        .bind(decision.latency_p75_ms as f64)
-        .bind(decision.latency_p95_ms as f64)
+        .bind(mazbri_core::num::u64_to_f64(decision.latency_baseline_ms))
+        .bind(mazbri_core::num::u64_to_f64(decision.latency_p50_ms))
+        .bind(mazbri_core::num::u64_to_f64(decision.latency_p75_ms))
+        .bind(mazbri_core::num::u64_to_f64(decision.latency_p95_ms))
         .bind(i64::try_from(decision.jitter_min_ms).unwrap_or(i64::MAX))
         .bind(i64::try_from(decision.jitter_max_ms).unwrap_or(i64::MAX))
         .bind(i64::try_from(decision.max_simulated_delay_ms).unwrap_or(i64::MAX))
@@ -121,12 +126,15 @@ impl CbProExtRepository {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_runtime_decision(&self, cache_key: &str) -> Result<Option<RuntimeDecision>> {
         let Some(db) = self.db.as_ref() else {
             return Ok(None);
         };
         let row = sqlx::query(
-            r#"
+            r"
             SELECT cache_key, tenant_id, product_id, method, path, mode, policy_version,
                    latency_baseline_ms, latency_p50_ms, latency_p75_ms, latency_p95_ms,
                    jitter_min_ms, jitter_max_ms, max_simulated_delay_ms, current_ttl_secs,
@@ -134,7 +142,7 @@ impl CbProExtRepository {
                    last_validated_at, last_validation_status, generated_at, valid_until
             FROM mazbri_cbpro.runtime_decisions
             WHERE cache_key = $1
-            "#,
+            ",
         )
         .bind(cache_key)
         .fetch_optional(&**db)
@@ -142,12 +150,15 @@ impl CbProExtRepository {
         Ok(row.map(|row| Self::runtime_decision_from_row(&row)))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_runtime_decisions(&self, limit: i64) -> Result<Vec<RuntimeDecision>> {
         let Some(db) = self.db.as_ref() else {
             return Ok(Vec::new());
         };
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT cache_key, tenant_id, product_id, method, path, mode, policy_version,
                    latency_baseline_ms, latency_p50_ms, latency_p75_ms, latency_p95_ms,
                    jitter_min_ms, jitter_max_ms, max_simulated_delay_ms, current_ttl_secs,
@@ -156,7 +167,7 @@ impl CbProExtRepository {
             FROM mazbri_cbpro.runtime_decisions
             ORDER BY updated_at DESC
             LIMIT $1
-            "#,
+            ",
         )
         .bind(limit)
         .fetch_all(&**db)
@@ -164,6 +175,9 @@ impl CbProExtRepository {
         Ok(rows.iter().map(Self::runtime_decision_from_row).collect())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn enqueue_validation_job(
         &self,
         request: &ValidationEnqueueRequest,
@@ -172,7 +186,7 @@ impl CbProExtRepository {
             return Ok(None);
         };
         let row = sqlx::query(
-            r#"
+            r"
             INSERT INTO mazbri_cbpro.validation_jobs (
                 cache_key, tenant_id, product_id, method, path, reason, priority
             )
@@ -183,7 +197,7 @@ impl CbProExtRepository {
                 priority = LEAST(mazbri_cbpro.validation_jobs.priority, EXCLUDED.priority),
                 updated_at = NOW()
             RETURNING id
-            "#,
+            ",
         )
         .bind(&request.cache_key)
         .bind(&request.tenant_id)
@@ -199,13 +213,13 @@ impl CbProExtRepository {
             Ok(Some(id))
         } else {
             let existing = sqlx::query(
-                r#"
+                r"
                 SELECT id
                 FROM mazbri_cbpro.validation_jobs
                 WHERE cache_key = $1 AND status IN ('pending', 'running')
                 ORDER BY updated_at DESC
                 LIMIT 1
-                "#,
+                ",
             )
             .bind(&request.cache_key)
             .fetch_optional(&**db)
@@ -214,6 +228,9 @@ impl CbProExtRepository {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn claim_validation_jobs(
         &self,
         limit: i64,
@@ -223,7 +240,7 @@ impl CbProExtRepository {
             return Ok(Vec::new());
         };
         let rows = sqlx::query(
-            r#"
+            r"
             WITH picked AS (
                 SELECT id
                 FROM mazbri_cbpro.validation_jobs
@@ -244,7 +261,7 @@ impl CbProExtRepository {
             WHERE jobs.id = picked.id
             RETURNING jobs.id, jobs.cache_key, jobs.tenant_id, jobs.product_id,
                       jobs.method, jobs.path
-            "#,
+            ",
         )
         .bind(limit)
         .bind(&self.node_id)
@@ -265,6 +282,9 @@ impl CbProExtRepository {
         Ok(jobs)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn mark_validation_result(
         &self,
         request: &ValidationResultRequest,
@@ -274,14 +294,14 @@ impl CbProExtRepository {
             return Ok(());
         };
         sqlx::query(
-            r#"
+            r"
             UPDATE mazbri_cbpro.validation_jobs
             SET status = $2,
                 finished_at = NOW(),
                 last_error = $3,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(Uuid::parse_str(&request.job_id).unwrap_or_else(|_| Uuid::nil()))
         .bind(status)
@@ -291,23 +311,30 @@ impl CbProExtRepository {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn restore_runtime_decisions(&self) -> Result<Vec<RuntimeDecision>> {
         self.list_runtime_decisions(10_000).await
     }
 
+    #[must_use]
     pub fn platform_db(&self) -> Option<&Arc<PgPool>> {
         self.platform_db.as_ref()
     }
 
+    #[must_use]
     pub fn is_missing_cbpro_schema_error(error: &anyhow::Error) -> bool {
         error.chain().any(|cause| {
-            cause.downcast_ref::<sqlx::Error>().is_some_and(|sqlx_error| {
-                matches!(
-                    sqlx_error,
-                    sqlx::Error::Database(database_error)
-                        if matches!(database_error.code().as_deref(), Some("42P01") | Some("3F000"))
-                )
-            })
+            cause
+                .downcast_ref::<sqlx::Error>()
+                .is_some_and(|sqlx_error| {
+                    matches!(
+                        sqlx_error,
+                        sqlx::Error::Database(database_error)
+                            if matches!(database_error.code().as_deref(), Some("42P01" | "3F000"))
+                    )
+                })
         })
     }
 
@@ -331,29 +358,37 @@ impl CbProExtRepository {
             method: row.get("method"),
             path: row.get("path"),
             mode: row.get("mode"),
-            policy_version: row.get::<i64, _>("policy_version").max(0) as u64,
-            latency_baseline_ms: row
-                .get::<Option<f64>, _>("latency_baseline_ms")
-                .unwrap_or(120.0) as u64,
-            latency_p50_ms: row.get::<Option<f64>, _>("latency_p50_ms").unwrap_or(120.0) as u64,
-            latency_p75_ms: row.get::<Option<f64>, _>("latency_p75_ms").unwrap_or(132.0) as u64,
-            latency_p95_ms: row.get::<Option<f64>, _>("latency_p95_ms").unwrap_or(150.0) as u64,
-            jitter_min_ms: row.get::<i64, _>("jitter_min_ms").max(0) as u64,
-            jitter_max_ms: row.get::<i64, _>("jitter_max_ms").max(0) as u64,
-            max_simulated_delay_ms: row.get::<i64, _>("max_simulated_delay_ms").max(0) as u64,
-            current_ttl_secs: row.get::<i64, _>("current_ttl_secs").max(0) as u64,
+            policy_version: u64::saturating_from(row.get::<i64, _>("policy_version").max(0)),
+            latency_baseline_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_baseline_ms")
+                    .unwrap_or(120.0),
+            ),
+            latency_p50_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p50_ms").unwrap_or(120.0),
+            ),
+            latency_p75_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p75_ms").unwrap_or(132.0),
+            ),
+            latency_p95_ms: mazbri_core::num::f64_to_u64(
+                row.get::<Option<f64>, _>("latency_p95_ms").unwrap_or(150.0),
+            ),
+            jitter_min_ms: u64::saturating_from(row.get::<i64, _>("jitter_min_ms").max(0)),
+            jitter_max_ms: u64::saturating_from(row.get::<i64, _>("jitter_max_ms").max(0)),
+            max_simulated_delay_ms: u64::saturating_from(
+                row.get::<i64, _>("max_simulated_delay_ms").max(0),
+            ),
+            current_ttl_secs: u64::saturating_from(row.get::<i64, _>("current_ttl_secs").max(0)),
             validate_due: row.get::<i64, _>("hit_count_since_validate")
                 >= row.get::<i64, _>("validate_every_hits")
                 || row
                     .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_validated_at")
                     .ok()
                     .flatten()
-                    .map(|ts| {
+                    .is_none_or(|ts| {
                         (chrono::Utc::now() - ts).num_seconds()
                             >= row.get::<i64, _>("max_validate_interval_secs")
-                    })
-                    .unwrap_or(true),
-            hot_level: row.get::<i32, _>("hot_level").max(0) as u32,
+                    }),
+            hot_level: u32::saturating_from(row.get::<i32, _>("hot_level").max(0)),
             last_validation_status: row
                 .try_get::<Option<String>, _>("last_validation_status")
                 .ok()

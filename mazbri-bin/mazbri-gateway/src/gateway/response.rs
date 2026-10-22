@@ -36,22 +36,23 @@ pub enum ProxyError {
 impl std::fmt::Display for ProxyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProxyError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
-            ProxyError::NotFound(msg) => write!(f, "Not Found: {}", msg),
-            ProxyError::BadRequest(msg) => write!(f, "Bad Request: {}", msg),
-            ProxyError::Conflict(msg) => write!(f, "Conflict: {}", msg),
-            ProxyError::PayloadTooLarge(msg) => write!(f, "Payload Too Large: {}", msg),
+            ProxyError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
+            ProxyError::NotFound(msg) => write!(f, "Not Found: {msg}"),
+            ProxyError::BadRequest(msg) => write!(f, "Bad Request: {msg}"),
+            ProxyError::Conflict(msg) => write!(f, "Conflict: {msg}"),
+            ProxyError::PayloadTooLarge(msg) => write!(f, "Payload Too Large: {msg}"),
             ProxyError::TooManyRequests { message, .. } => {
-                write!(f, "Too Many Requests: {}", message)
+                write!(f, "Too Many Requests: {message}")
             }
-            ProxyError::ServiceUnavailable(msg) => write!(f, "Service Unavailable: {}", msg),
-            ProxyError::GatewayTimeout(msg) => write!(f, "Gateway Timeout: {}", msg),
-            ProxyError::BadGateway(msg) => write!(f, "Bad Gateway: {}", msg),
-            ProxyError::InternalError(msg) => write!(f, "Internal Error: {}", msg),
+            ProxyError::ServiceUnavailable(msg) => write!(f, "Service Unavailable: {msg}"),
+            ProxyError::GatewayTimeout(msg) => write!(f, "Gateway Timeout: {msg}"),
+            ProxyError::BadGateway(msg) => write!(f, "Bad Gateway: {msg}"),
+            ProxyError::InternalError(msg) => write!(f, "Internal Error: {msg}"),
         }
     }
 }
 impl ProxyError {
+    #[must_use]
     pub fn error_code(&self) -> &'static str {
         match self {
             ProxyError::Forbidden(_) => "E4030",
@@ -66,6 +67,7 @@ impl ProxyError {
             ProxyError::InternalError(_) => "E5000",
         }
     }
+    #[must_use]
     pub fn should_sanitize(&self) -> bool {
         matches!(
             self,
@@ -74,6 +76,7 @@ impl ProxyError {
                 | ProxyError::GatewayTimeout(_)
         )
     }
+    #[must_use]
     pub fn sanitized_message(&self) -> String {
         match self {
             ProxyError::InternalError(_) => "Internal Server Error".to_string(),
@@ -86,7 +89,7 @@ impl ProxyError {
         }
     }
 }
-/// Build a unified gateway JSON error envelope (success/status/error/request_id).
+/// Build a unified gateway JSON error envelope (`success/status/error/request_id`).
 pub fn gateway_error_response(
     status: StatusCode,
     error_code: &str,

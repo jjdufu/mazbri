@@ -12,6 +12,7 @@ use super::usage_buffer::{UsageDeltaBuffer, UsageDeltaRecord};
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
 use dashmap::DashMap;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::UsageDelta;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -21,6 +22,15 @@ use uuid::Uuid;
 
 /// Burst window for bandwidth token bucket (seconds of traffic allowed as burst).
 const BANDWIDTH_BURST_SECS: u64 = 1;
+
+/// Per-check constants shared by every decision path.
+#[derive(Debug, Clone, Copy)]
+struct DecisionMeta {
+    policy_version: i64,
+    snapshot_age_ms: u64,
+    started_at: Instant,
+    bytes_in: i64,
+}
 
 struct UsagePush {
     policy_version: i64,
@@ -45,7 +55,6 @@ pub struct LocalRateLimitInput {
 /// Carried from ratelimit middleware to proxy completion for bandwidth settle + usage bytes.
 #[derive(Debug, Clone, Copy)]
 pub struct BandwidthPrepaid {
-    pub policy_id: Uuid,
     pub policy_version: i64,
     pub snapshot_age_ms: u64,
     pub degraded: bool,
@@ -77,7 +86,6 @@ pub enum LocalRateLimitDecision {
         degraded: bool,
         prepaid_request_bytes: u64,
         bandwidth_enabled: bool,
-        policy_id: Uuid,
     },
     Deny {
         policy_version: i64,
@@ -88,7 +96,7 @@ pub enum LocalRateLimitDecision {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct BucketSpec {
     capacity: u64,
     refill_per_sec: f64,
@@ -111,11 +119,11 @@ impl BucketCell {
         }
     }
 
-    fn refresh_if_needed(&mut self, spec: BucketSpec, now: Instant) {
+    fn refresh_if_needed(&mut self, spec: &BucketSpec, now: Instant) {
         if self.spec.capacity != spec.capacity
             || (self.spec.refill_per_sec - spec.refill_per_sec).abs() > 0.0001
         {
-            self.spec = spec.clone();
+            self.spec = *spec;
             self.bucket.reset(spec.capacity, spec.refill_per_sec, now);
         }
         self.last_seen = now;
@@ -148,7 +156,6 @@ pub struct LocalRateLimitEngine {
 impl LocalRateLimitEngine {
     pub fn new(gateway_id: impl Into<String>) -> Self {
         let default_snapshot = TenantPolicySnapshot {
-            id: Uuid::nil(),
             tenant_id: Uuid::nil(),
             version: 0,
             enabled: true,
@@ -160,7 +167,7 @@ impl LocalRateLimitEngine {
             client_ip_qps: 1000,
             client_ip_burst: 1000,
             bandwidth_bps: 0,
-            api_limits: Default::default(),
+            api_limits: std::collections::HashMap::default(),
             fetched_at: Instant::now(),
         };
         Self {
@@ -173,10 +180,12 @@ impl LocalRateLimitEngine {
         }
     }
 
+    #[must_use]
     pub fn usage_buffer(&self) -> &UsageDeltaBuffer {
         &self.usage_buffer
     }
 
+    #[must_use]
     pub fn gateway_id(&self) -> &str {
         &self.gateway_id
     }
@@ -192,12 +201,12 @@ impl LocalRateLimitEngine {
     fn load_or_create_bucket(
         &self,
         key: String,
-        spec: BucketSpec,
+        spec: &BucketSpec,
         now: Instant,
     ) -> Arc<Mutex<BucketCell>> {
         self.buckets
             .entry(key)
-            .or_insert_with(|| Arc::new(Mutex::new(BucketCell::new(spec.clone(), now))))
+            .or_insert_with(|| Arc::new(Mutex::new(BucketCell::new(*spec, now))))
             .clone()
     }
 
@@ -208,9 +217,9 @@ impl LocalRateLimitEngine {
         amount: u64,
         now: Instant,
     ) -> Result<(), u64> {
-        let bucket = self.load_or_create_bucket(key, spec.clone(), now);
+        let bucket = self.load_or_create_bucket(key, &spec.clone(), now);
         let mut guard = bucket.lock();
-        guard.refresh_if_needed(spec, now);
+        guard.refresh_if_needed(&spec, now);
         guard.allow_or_retry_after(amount, now)
     }
 
@@ -222,14 +231,14 @@ impl LocalRateLimitEngine {
         let refill = bytes_per_sec.max(1);
         BucketSpec {
             capacity: refill.saturating_mul(BANDWIDTH_BURST_SECS).max(1),
-            refill_per_sec: refill as f64,
+            refill_per_sec: mazbri_core::num::u64_to_f64(refill),
         }
     }
 
     fn build_spec(capacity: u64, qps: u64) -> BucketSpec {
         BucketSpec {
             capacity: capacity.max(1),
-            refill_per_sec: qps.max(1) as f64,
+            refill_per_sec: mazbri_core::num::u64_to_f64(qps.max(1)),
         }
     }
 
@@ -243,11 +252,11 @@ impl LocalRateLimitEngine {
             client_ip: Some(input.client_ip.clone()),
             window_start_unix: chrono::Utc::now().timestamp(),
             window_secs: 1,
-            allowed_count: if rec.allowed { 1 } else { 0 },
-            denied_count: if rec.allowed { 0 } else { 1 },
+            allowed_count: i64::from(rec.allowed),
+            denied_count: i64::from(!rec.allowed),
             bytes_in: rec.bytes_in,
             bytes_out: rec.bytes_out,
-            snapshot_age_ms: rec.snapshot_age_ms as i64,
+            snapshot_age_ms: i64::saturating_from(rec.snapshot_age_ms),
             degraded: rec.degraded,
             degrade_reason: rec.reason,
         };
@@ -258,7 +267,7 @@ impl LocalRateLimitEngine {
         matches!(snapshot.enforcement_mode, EnforcementMode::ObserveOnly)
     }
 
-    fn record_decision(&self, decision: &str, degraded: bool, reason: &str, started_at: Instant) {
+    fn record_decision(decision: &str, degraded: bool, reason: &str, started_at: Instant) {
         let degraded_label = if degraded { "true" } else { "false" };
         LOCAL_RATELIMIT_DECISIONS_TOTAL
             .with_label_values(&[decision, "local", degraded_label, reason])
@@ -268,50 +277,67 @@ impl LocalRateLimitEngine {
             .observe(started_at.elapsed().as_secs_f64());
     }
 
-    pub fn check(&self, input: LocalRateLimitInput) -> LocalRateLimitDecision {
-        let started_at = Instant::now();
-        let snapshot = self.snapshots.get(input.tenant_id);
-        // Touch policy id so snapshot correlation stays live across refresh cycles.
-        let policy_id = snapshot.id;
-        let snapshot_age_ms = snapshot.age_ms();
+    /// Usage push + decision metric + `Deny` result for a rejected check.
+    fn deny(
+        &self,
+        input: &LocalRateLimitInput,
+        meta: DecisionMeta,
+        degraded: bool,
+        reason: &str,
+        retry_after_ms: u64,
+    ) -> LocalRateLimitDecision {
+        self.push_usage(
+            input,
+            UsagePush {
+                policy_version: meta.policy_version,
+                snapshot_age_ms: meta.snapshot_age_ms,
+                degraded,
+                allowed: false,
+                reason: Some(reason.to_string()),
+                bytes_in: meta.bytes_in,
+                bytes_out: 0,
+            },
+        );
+        Self::record_decision("deny", degraded, reason, meta.started_at);
+        LocalRateLimitDecision::Deny {
+            policy_version: meta.policy_version,
+            retry_after_ms,
+            reason: reason.to_string(),
+            snapshot_age_ms: meta.snapshot_age_ms,
+            degraded,
+        }
+    }
+
+    fn scaled(value: u64, multiplier: f64) -> u64 {
+        mazbri_core::num::f64_to_u64(
+            (mazbri_core::num::u64_to_f64(value) * multiplier)
+                .round()
+                .max(1.0),
+        )
+    }
+
+    /// Pre-checks before token buckets: deny-until command, disabled policy, stale, deny-all.
+    /// Returns `Ok(degraded)` to continue or the final decision.
+    fn check_policy_state(
+        &self,
+        input: &LocalRateLimitInput,
+        snapshot: &TenantPolicySnapshot,
+        meta: DecisionMeta,
+    ) -> Result<bool, LocalRateLimitDecision> {
         let mut degraded = snapshot.tenant_id.is_nil() || snapshot.is_stale();
-        let observe_only = Self::observe_only(&snapshot);
         let now_unix = chrono::Utc::now().timestamp();
         if let Some(deny_until_unix) = self.commands.is_denied(input.tenant_id, now_unix)
             && deny_until_unix > now_unix
         {
-            let retry_after_ms = ((deny_until_unix - now_unix).max(1) as u64) * 1000;
-            self.push_usage(
-                &input,
-                UsagePush {
-                    policy_version: snapshot.version,
-                    snapshot_age_ms,
-                    degraded: true,
-                    allowed: false,
-                    reason: Some("deny_until".to_string()),
-                    bytes_in: 0,
-                    bytes_out: 0,
-                },
-            );
-            self.record_decision("deny", true, "deny_until", started_at);
-            return LocalRateLimitDecision::Deny {
-                policy_version: snapshot.version,
-                retry_after_ms,
-                reason: "deny_until".to_string(),
-                snapshot_age_ms,
-                degraded: true,
-            };
-        }
-        let multiplier = self.commands.quota_multiplier(input.tenant_id).max(0.1);
-        if snapshot.tenant_id.is_nil() {
-            degraded = true;
+            let retry_after_ms = u64::saturating_from((deny_until_unix - now_unix).max(1)) * 1000;
+            return Err(self.deny(input, meta, true, "deny_until", retry_after_ms));
         }
         if !snapshot.enabled {
             self.push_usage(
-                &input,
+                input,
                 UsagePush {
-                    policy_version: snapshot.version,
-                    snapshot_age_ms,
+                    policy_version: meta.policy_version,
+                    snapshot_age_ms: meta.snapshot_age_ms,
                     degraded,
                     allowed: true,
                     reason: Some("disabled_policy".to_string()),
@@ -319,118 +345,57 @@ impl LocalRateLimitEngine {
                     bytes_out: 0,
                 },
             );
-            self.record_decision("allow", degraded, "disabled", started_at);
-            return LocalRateLimitDecision::Allow {
-                policy_version: snapshot.version,
-                snapshot_age_ms,
+            Self::record_decision("allow", degraded, "disabled", meta.started_at);
+            return Err(LocalRateLimitDecision::Allow {
+                policy_version: meta.policy_version,
+                snapshot_age_ms: meta.snapshot_age_ms,
                 degraded,
                 prepaid_request_bytes: 0,
                 bandwidth_enabled: false,
-                policy_id,
-            };
+            });
         }
         if snapshot.is_stale() {
             match snapshot.stale_policy {
                 StalePolicy::StaleDeny => {
-                    self.push_usage(
-                        &input,
-                        UsagePush {
-                            policy_version: snapshot.version,
-                            snapshot_age_ms,
-                            degraded: true,
-                            allowed: false,
-                            reason: Some("snapshot_stale".to_string()),
-                            bytes_in: 0,
-                            bytes_out: 0,
-                        },
-                    );
-                    self.record_decision("deny", true, "snapshot_stale", started_at);
-                    return LocalRateLimitDecision::Deny {
-                        policy_version: snapshot.version,
-                        retry_after_ms: 1000,
-                        reason: "snapshot_stale".to_string(),
-                        snapshot_age_ms,
-                        degraded: true,
-                    };
+                    return Err(self.deny(input, meta, true, "snapshot_stale", 1000));
                 }
-                StalePolicy::StaleAllow => {
-                    degraded = true;
-                }
+                StalePolicy::StaleAllow => degraded = true,
             }
         }
         if matches!(snapshot.enforcement_mode, EnforcementMode::DenyAll) {
-            self.push_usage(
-                &input,
-                UsagePush {
-                    policy_version: snapshot.version,
-                    snapshot_age_ms,
-                    degraded: true,
-                    allowed: false,
-                    reason: Some("deny_all".to_string()),
-                    bytes_in: 0,
-                    bytes_out: 0,
-                },
-            );
-            self.record_decision("deny", true, "deny_all", started_at);
-            return LocalRateLimitDecision::Deny {
-                policy_version: snapshot.version,
-                retry_after_ms: 1000,
-                reason: "deny_all".to_string(),
-                snapshot_age_ms,
-                degraded: true,
-            };
+            return Err(self.deny(input, meta, true, "deny_all", 1000));
         }
+        Ok(degraded)
+    }
 
-        let multiplier = multiplier.clamp(0.1, 10.0);
-        let tenant_qps = ((snapshot.tenant_qps as f64) * multiplier).round().max(1.0) as u64;
-        let tenant_burst = ((snapshot.tenant_burst as f64) * multiplier)
-            .round()
-            .max(1.0) as u64;
-        let client_ip_qps = ((snapshot.client_ip_qps as f64) * multiplier)
-            .round()
-            .max(1.0) as u64;
-        let client_ip_burst = ((snapshot.client_ip_burst as f64) * multiplier)
-            .round()
-            .max(1.0) as u64;
-        // Local engine: plan (tenant) → optional API override → IP → bandwidth.
-        // API dimension only when an explicit api_limits rule matches (P2-4).
-
+    /// Local engine: plan (tenant) → optional API override → IP.
+    /// API dimension only when an explicit `api_limits` rule matches (P2-4).
+    fn check_qps_buckets(
+        &self,
+        input: &LocalRateLimitInput,
+        snapshot: &TenantPolicySnapshot,
+        meta: DecisionMeta,
+        degraded: bool,
+    ) -> Result<(), LocalRateLimitDecision> {
+        let multiplier = self
+            .commands
+            .quota_multiplier(input.tenant_id)
+            .max(0.1)
+            .clamp(0.1, 10.0);
+        let tenant_qps = Self::scaled(snapshot.tenant_qps, multiplier);
+        let tenant_burst = Self::scaled(snapshot.tenant_burst, multiplier);
         let tenant_key = Self::bucket_key("tenant", input.tenant_id, "");
         if let Err(retry_after_ms) = self.check_bucket(
             tenant_key,
             Self::build_spec(tenant_burst, tenant_qps),
             Instant::now(),
         ) {
-            self.push_usage(
-                &input,
-                UsagePush {
-                    policy_version: snapshot.version,
-                    snapshot_age_ms,
-                    degraded,
-                    allowed: false,
-                    reason: Some("tenant_qps".to_string()),
-                    bytes_in: 0,
-                    bytes_out: 0,
-                },
-            );
-            self.record_decision("deny", degraded, "tenant_qps", started_at);
-            return LocalRateLimitDecision::Deny {
-                policy_version: snapshot.version,
-                retry_after_ms,
-                reason: "tenant_qps".to_string(),
-                snapshot_age_ms,
-                degraded,
-            };
+            return Err(self.deny(input, meta, degraded, "tenant_qps", retry_after_ms));
         }
-
         // Skip api dimension when no matching override — avoids api_qps noise at plan QPS.
         if let Some(rule) = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint) {
-            let api_qps = ((rule.effective_qps(tenant_qps) as f64) * multiplier)
-                .round()
-                .max(1.0) as u64;
-            let api_burst = ((rule.effective_burst(tenant_burst) as f64) * multiplier)
-                .round()
-                .max(1.0) as u64;
+            let api_qps = Self::scaled(rule.effective_qps(tenant_qps), multiplier);
+            let api_burst = Self::scaled(rule.effective_burst(tenant_burst), multiplier);
             let api_key = Self::bucket_key(
                 "api",
                 input.tenant_id,
@@ -445,125 +410,99 @@ impl LocalRateLimitEngine {
                 Self::build_spec(api_burst, api_qps),
                 Instant::now(),
             ) {
-                self.push_usage(
-                    &input,
-                    UsagePush {
-                        policy_version: snapshot.version,
-                        snapshot_age_ms,
-                        degraded,
-                        allowed: false,
-                        reason: Some("api_qps".to_string()),
-                        bytes_in: 0,
-                        bytes_out: 0,
-                    },
-                );
-                self.record_decision("deny", degraded, "api_qps", started_at);
-                return LocalRateLimitDecision::Deny {
-                    policy_version: snapshot.version,
-                    retry_after_ms,
-                    reason: "api_qps".to_string(),
-                    snapshot_age_ms,
-                    degraded,
-                };
+                return Err(self.deny(input, meta, degraded, "api_qps", retry_after_ms));
             }
         }
-
         let ip_key = Self::bucket_key("ip", input.tenant_id, &input.client_ip);
         if let Err(retry_after_ms) = self.check_bucket(
             ip_key,
-            Self::build_spec(client_ip_burst, client_ip_qps),
+            Self::build_spec(
+                Self::scaled(snapshot.client_ip_burst, multiplier),
+                Self::scaled(snapshot.client_ip_qps, multiplier),
+            ),
             Instant::now(),
         ) {
-            self.push_usage(
-                &input,
-                UsagePush {
-                    policy_version: snapshot.version,
-                    snapshot_age_ms,
-                    degraded,
-                    allowed: false,
-                    reason: Some("client_ip_qps".to_string()),
-                    bytes_in: 0,
-                    bytes_out: 0,
-                },
-            );
-            self.record_decision("deny", degraded, "client_ip_qps", started_at);
-            return LocalRateLimitDecision::Deny {
-                policy_version: snapshot.version,
-                retry_after_ms,
-                reason: "client_ip_qps".to_string(),
-                snapshot_age_ms,
-                degraded,
-            };
+            return Err(self.deny(input, meta, degraded, "client_ip_qps", retry_after_ms));
         }
+        Ok(())
+    }
 
-        let bandwidth_enabled = snapshot.bandwidth_enabled();
-        let mut prepaid_request_bytes = 0u64;
-        if bandwidth_enabled {
-            let bytes_per_sec = snapshot.bandwidth_bytes_per_sec().max(1);
-            let spec = Self::bandwidth_spec(bytes_per_sec);
-            // amount > capacity can never pass — try_consume handles this.
-            if input.request_bytes > 0 {
-                let bw_key = Self::bandwidth_bucket_key(input.tenant_id);
-                match self.check_bucket_amount(bw_key, spec, input.request_bytes, Instant::now()) {
-                    Ok(()) => {
-                        prepaid_request_bytes = input.request_bytes;
-                    }
-                    Err(retry_after_ms) => {
-                        if observe_only {
-                            // Soft path: do not block; still surface metric/usage reason.
-                            self.push_usage(
-                                &input,
-                                UsagePush {
-                                    policy_version: snapshot.version,
-                                    snapshot_age_ms,
-                                    degraded: true,
-                                    allowed: true,
-                                    reason: Some("bandwidth_observe".to_string()),
-                                    bytes_in: input.request_bytes as i64,
-                                    bytes_out: 0,
-                                },
-                            );
-                            self.record_decision("allow", true, "bandwidth_observe", started_at);
-                            return LocalRateLimitDecision::Allow {
-                                policy_version: snapshot.version,
-                                snapshot_age_ms,
-                                degraded: true,
-                                prepaid_request_bytes: 0,
-                                bandwidth_enabled: true,
-                                policy_id,
-                            };
-                        }
-                        self.push_usage(
-                            &input,
-                            UsagePush {
-                                policy_version: snapshot.version,
-                                snapshot_age_ms,
-                                degraded,
-                                allowed: false,
-                                reason: Some("bandwidth".to_string()),
-                                bytes_in: input.request_bytes as i64,
-                                bytes_out: 0,
-                            },
-                        );
-                        self.record_decision("deny", degraded, "bandwidth", started_at);
-                        return LocalRateLimitDecision::Deny {
-                            policy_version: snapshot.version,
-                            retry_after_ms: retry_after_ms.max(1),
-                            reason: "bandwidth".to_string(),
-                            snapshot_age_ms,
-                            degraded,
-                        };
-                    }
-                }
-            }
+    /// Bandwidth prepay of request bytes; returns prepaid bytes or the final decision.
+    fn check_bandwidth(
+        &self,
+        input: &LocalRateLimitInput,
+        snapshot: &TenantPolicySnapshot,
+        meta: DecisionMeta,
+        degraded: bool,
+    ) -> Result<u64, LocalRateLimitDecision> {
+        // amount > capacity can never pass — try_consume handles this.
+        if !snapshot.bandwidth_enabled() || input.request_bytes == 0 {
+            return Ok(0);
         }
+        let spec = Self::bandwidth_spec(snapshot.bandwidth_bytes_per_sec().max(1));
+        let bw_key = Self::bandwidth_bucket_key(input.tenant_id);
+        let Err(retry_after_ms) =
+            self.check_bucket_amount(bw_key, spec, input.request_bytes, Instant::now())
+        else {
+            return Ok(input.request_bytes);
+        };
+        let meta = DecisionMeta {
+            bytes_in: i64::saturating_from(input.request_bytes),
+            ..meta
+        };
+        if !Self::observe_only(snapshot) {
+            return Err(self.deny(input, meta, degraded, "bandwidth", retry_after_ms.max(1)));
+        }
+        // Soft path: do not block; still surface metric/usage reason.
+        self.push_usage(
+            input,
+            UsagePush {
+                policy_version: meta.policy_version,
+                snapshot_age_ms: meta.snapshot_age_ms,
+                degraded: true,
+                allowed: true,
+                reason: Some("bandwidth_observe".to_string()),
+                bytes_in: meta.bytes_in,
+                bytes_out: 0,
+            },
+        );
+        Self::record_decision("allow", true, "bandwidth_observe", meta.started_at);
+        Err(LocalRateLimitDecision::Allow {
+            policy_version: meta.policy_version,
+            snapshot_age_ms: meta.snapshot_age_ms,
+            degraded: true,
+            prepaid_request_bytes: 0,
+            bandwidth_enabled: true,
+        })
+    }
 
+    #[must_use]
+    pub fn check(&self, input: &LocalRateLimitInput) -> LocalRateLimitDecision {
+        let snapshot = self.snapshots.get(input.tenant_id);
+        let meta = DecisionMeta {
+            policy_version: snapshot.version,
+            // Touch policy id so snapshot correlation stays live across refresh cycles.
+            snapshot_age_ms: snapshot.age_ms(),
+            started_at: Instant::now(),
+            bytes_in: 0,
+        };
+        let degraded = match self.check_policy_state(input, &snapshot, meta) {
+            Ok(degraded) => degraded,
+            Err(decision) => return decision,
+        };
+        if let Err(decision) = self.check_qps_buckets(input, &snapshot, meta, degraded) {
+            return decision;
+        }
+        let prepaid_request_bytes = match self.check_bandwidth(input, &snapshot, meta, degraded) {
+            Ok(bytes) => bytes,
+            Err(decision) => return decision,
+        };
         // U3: keep QPS allowed_count here; bytes filled by record_transfer at response path.
         self.push_usage(
-            &input,
+            input,
             UsagePush {
-                policy_version: snapshot.version,
-                snapshot_age_ms,
+                policy_version: meta.policy_version,
+                snapshot_age_ms: meta.snapshot_age_ms,
                 degraded,
                 allowed: true,
                 reason: None,
@@ -571,14 +510,13 @@ impl LocalRateLimitEngine {
                 bytes_out: 0,
             },
         );
-        self.record_decision("allow", degraded, "ok", started_at);
+        Self::record_decision("allow", degraded, "ok", meta.started_at);
         LocalRateLimitDecision::Allow {
-            policy_version: snapshot.version,
-            snapshot_age_ms,
+            policy_version: meta.policy_version,
+            snapshot_age_ms: meta.snapshot_age_ms,
             degraded,
             prepaid_request_bytes,
-            bandwidth_enabled,
-            policy_id,
+            bandwidth_enabled: snapshot.bandwidth_enabled(),
         }
     }
 
@@ -598,9 +536,9 @@ impl LocalRateLimitEngine {
             if debit > 0 {
                 let key = Self::bandwidth_bucket_key(rec.tenant_id);
                 let now = Instant::now();
-                let cell = self.load_or_create_bucket(key, spec.clone(), now);
+                let cell = self.load_or_create_bucket(key, &spec.clone(), now);
                 let mut guard = cell.lock();
-                guard.refresh_if_needed(spec, now);
+                guard.refresh_if_needed(&spec, now);
                 guard.consume_up_to(debit, now);
             }
         }
@@ -618,9 +556,9 @@ impl LocalRateLimitEngine {
                 window_secs: 1,
                 allowed_count: 0,
                 denied_count: 0,
-                bytes_in: rec.bytes_in as i64,
-                bytes_out: rec.bytes_out as i64,
-                snapshot_age_ms: rec.snapshot_age_ms as i64,
+                bytes_in: i64::saturating_from(rec.bytes_in),
+                bytes_out: i64::saturating_from(rec.bytes_out),
+                snapshot_age_ms: i64::saturating_from(rec.snapshot_age_ms),
                 degraded: rec.degraded,
                 degrade_reason: None,
             };
@@ -628,10 +566,11 @@ impl LocalRateLimitEngine {
         }
     }
 
+    #[must_use]
     pub fn spawn_background_tasks(
         self: Arc<Self>,
-        tarpc_pool: TarpcClientPool,
-        ratelimit_endpoint: ServiceEndpoint,
+        tarpc_pool: &TarpcClientPool,
+        ratelimit_endpoint: &ServiceEndpoint,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         vec![
             refresher::spawn_snapshot_refresher(
@@ -665,16 +604,18 @@ impl LocalRateLimitEngine {
         }
     }
 
+    #[must_use]
     pub fn flush_usage_buffer(&self) -> Vec<UsageDeltaRecord> {
         self.usage_buffer.drain()
     }
 
-    pub fn apply_usage_flush_result(&self, ingested: usize) {
+    pub fn apply_usage_flush_result(ingested: usize) {
         LOCAL_RATELIMIT_USAGE_FLUSH_TOTAL
             .with_label_values(&["success"])
             .inc_by(ingested as u64);
     }
 
+    #[must_use]
     pub fn prune_buckets(&self) -> usize {
         let now = Instant::now();
         let keys = self
@@ -727,6 +668,7 @@ impl LocalRateLimitEngine {
     }
 
     /// Consume pending `refresh_policy` request (full snapshot refresh is fine).
+    #[must_use]
     pub fn take_policy_refresh_request(&self) -> bool {
         self.commands.take_policy_refresh_request()
     }
@@ -760,7 +702,6 @@ mod tests {
 
     fn snapshot_with_bandwidth(tenant_id: Uuid, bandwidth_bps: i64) -> TenantPolicySnapshot {
         TenantPolicySnapshot {
-            id: Uuid::new_v4(),
             tenant_id,
             version: 1,
             enabled: true,
@@ -793,7 +734,7 @@ mod tests {
         let tenant = Uuid::new_v4();
         eng.replace_snapshots_for_test(vec![snapshot_with_bandwidth(tenant, 0)]);
         // Huge body would exceed any small limit; with 0 bps must allow.
-        match eng.check(input(tenant, 50_000_000)) {
+        match eng.check(&input(tenant, 50_000_000)) {
             LocalRateLimitDecision::Allow {
                 bandwidth_enabled, ..
             } => assert!(!bandwidth_enabled),
@@ -809,7 +750,7 @@ mod tests {
         let tenant = Uuid::new_v4();
         // 1 Mbps => 125_000 byte/s, burst 1s => capacity 125_000
         eng.replace_snapshots_for_test(vec![snapshot_with_bandwidth(tenant, 1_000_000)]);
-        match eng.check(input(tenant, 200_000)) {
+        match eng.check(&input(tenant, 200_000)) {
             LocalRateLimitDecision::Deny { reason, .. } => assert_eq!(reason, "bandwidth"),
             LocalRateLimitDecision::Allow { .. } => panic!("expected bandwidth deny"),
         }
@@ -820,16 +761,14 @@ mod tests {
         let eng = engine();
         let tenant = Uuid::new_v4();
         eng.replace_snapshots_for_test(vec![snapshot_with_bandwidth(tenant, 1_000_000)]);
-        match eng.check(input(tenant, 10_000)) {
+        match eng.check(&input(tenant, 10_000)) {
             LocalRateLimitDecision::Allow {
                 prepaid_request_bytes,
                 bandwidth_enabled,
-                policy_id,
                 ..
             } => {
                 assert!(bandwidth_enabled);
                 assert_eq!(prepaid_request_bytes, 10_000);
-                assert!(!policy_id.is_nil());
             }
             LocalRateLimitDecision::Deny { reason, .. } => {
                 panic!("unexpected deny: {reason}")
@@ -844,7 +783,7 @@ mod tests {
         let mut snap = snapshot_with_bandwidth(tenant, 1_000_000);
         snap.enforcement_mode = EnforcementMode::ObserveOnly;
         eng.replace_snapshots_for_test(vec![snap]);
-        match eng.check(input(tenant, 200_000)) {
+        match eng.check(&input(tenant, 200_000)) {
             LocalRateLimitDecision::Allow { degraded, .. } => assert!(degraded),
             LocalRateLimitDecision::Deny { reason, .. } => {
                 panic!("observe_only must not deny bandwidth: {reason}")
@@ -860,7 +799,6 @@ mod tests {
 
     fn snapshot_plan(tenant_id: Uuid, tenant_qps: u64, tenant_burst: u64) -> TenantPolicySnapshot {
         TenantPolicySnapshot {
-            id: Uuid::new_v4(),
             tenant_id,
             version: 1,
             enabled: true,
@@ -877,7 +815,7 @@ mod tests {
         }
     }
 
-    /// P2-4: empty api_limits must not invent a second api bucket / api_qps reason.
+    /// P2-4: empty `api_limits` must not invent a second api bucket / `api_qps` reason.
     #[test]
     fn empty_api_limits_skips_api_dimension() {
         let eng = engine();
@@ -885,10 +823,10 @@ mod tests {
         // burst=1,qps=1 so second request is denied by plan, not api.
         eng.replace_snapshots_for_test(vec![snapshot_plan(tenant, 1, 1)]);
         assert!(matches!(
-            eng.check(input(tenant, 0)),
+            eng.check(&input(tenant, 0)),
             LocalRateLimitDecision::Allow { .. }
         ));
-        match eng.check(input(tenant, 0)) {
+        match eng.check(&input(tenant, 0)) {
             LocalRateLimitDecision::Deny { reason, .. } => {
                 assert_eq!(
                     reason, "tenant_qps",
@@ -899,7 +837,7 @@ mod tests {
         }
     }
 
-    /// P2-4: explicit override still enforces api_qps when tighter than plan.
+    /// P2-4: explicit override still enforces `api_qps` when tighter than plan.
     #[test]
     fn matching_api_override_enforces_api_qps() {
         let eng = engine();
@@ -914,10 +852,10 @@ mod tests {
         );
         eng.replace_snapshots_for_test(vec![snap]);
         assert!(matches!(
-            eng.check(input(tenant, 0)),
+            eng.check(&input(tenant, 0)),
             LocalRateLimitDecision::Allow { .. }
         ));
-        match eng.check(input(tenant, 0)) {
+        match eng.check(&input(tenant, 0)) {
             LocalRateLimitDecision::Deny { reason, .. } => assert_eq!(reason, "api_qps"),
             LocalRateLimitDecision::Allow { .. } => panic!("expected api_qps deny"),
         }

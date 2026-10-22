@@ -22,10 +22,9 @@ pub struct CertificateRecord {
     pub updated_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IssueCertificateRequest {
     pub subject: String,
-    #[serde(default)]
-    pub dns_names: Option<Vec<String>>,
     #[serde(default = "default_validity_days")]
     pub validity_days: i64,
 }
@@ -101,28 +100,6 @@ pub struct CaStorageRecord {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub is_active: bool,
-}
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct PresetDnsName {
-    pub id: Uuid,
-    pub service_name: String,
-    pub dns_names: Vec<String>,
-    pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-#[derive(Debug, Clone, Deserialize)]
-pub struct CreatePresetRequest {
-    pub service_name: String,
-    pub dns_names: Vec<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-}
-#[derive(Debug, Clone, Deserialize)]
-pub struct UpdatePresetRequest {
-    pub dns_names: Vec<String>,
-    #[serde(default)]
-    pub description: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct FullCertificateResponse {

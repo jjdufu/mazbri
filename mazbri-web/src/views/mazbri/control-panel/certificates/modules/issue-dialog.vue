@@ -5,86 +5,37 @@
     width="600px"
   >
     <ElForm ref="formRef" :model="form" :rules="rules" label-width="100px">
-      <ElFormItem :label="$t('certificate.issueDialog.presetTemplate')">
+      <ElFormItem :label="$t('certificate.issueDialog.service')" prop="subject">
         <ElSelect
-          v-model="selectedPreset"
-          :placeholder="$t('certificate.issueDialog.selectPresetPlaceholder')"
-          clearable
+          v-model="form.subject"
+          :placeholder="$t('certificate.issueDialog.service')"
+          filterable
           style="width: 100%"
-          @change="applyPreset"
         >
           <ElOption
-            v-for="preset in presets"
-            :key="preset.id"
-            :label="
-              preset.service_name || $t('certificate.issueDialog.unnamed')
-            "
-            :value="preset.id"
-            :disabled="isSubjectIssued(preset.service_name)"
+            v-for="name in services"
+            :key="name"
+            :label="name"
+            :value="name"
+            :disabled="isSubjectIssued(name)"
           >
             <span
-              :class="{
-                'line-through text-gray-400': isSubjectIssued(
-                  preset.service_name,
-                ),
-              }"
+              :class="{ 'line-through text-gray-400': isSubjectIssued(name) }"
             >
-              {{ preset.service_name || $t("certificate.issueDialog.unnamed") }}
+              {{ name }}
             </span>
             <CommonInlineHint
-              v-if="isSubjectIssued(preset.service_name)"
+              v-if="isSubjectIssued(name)"
               class="ml-2"
               tone="danger"
             >
               ({{ $t("certificate.issueDialog.issued") }})
             </CommonInlineHint>
-            <CommonInlineHint v-else-if="preset.description" class="ml-2">
-              {{ preset.description }}
-            </CommonInlineHint>
           </ElOption>
         </ElSelect>
-        <CommonInlineHint v-if="presets.length === 0" block class="mt-1">
-          {{ $t("certificate.issueDialog.noPresets") }}
-        </CommonInlineHint>
-      </ElFormItem>
-
-      <ElFormItem
-        :label="$t('certificate.issueDialog.serviceName')"
-        prop="subject"
-      >
-        <ElInput
-          v-model="form.subject"
-          :placeholder="$t('certificate.issueDialog.serviceNamePlaceholder')"
-          maxlength="255"
-          show-word-limit
-        />
         <CommonInlineHint block class="mt-1">
-          {{ $t("certificate.issueDialog.serviceNameTip") }}
+          {{ $t("certificate.issueDialog.sanAutoTip") }}
         </CommonInlineHint>
-      </ElFormItem>
-
-      <ElFormItem
-        :label="$t('certificate.issueDialog.dnsNames')"
-        prop="dns_names"
-      >
-        <ElInput
-          v-model="dnsNamesText"
-          type="textarea"
-          :rows="4"
-          :placeholder="$t('certificate.issueDialog.dnsNamesPlaceholder')"
-          @blur="parseDnsNames"
-          @input="parseDnsNames"
-        />
-        <div v-if="form.dns_names?.length > 0" class="mt-2">
-          <ElTag
-            v-for="(name, idx) in form.dns_names"
-            :key="idx"
-            size="small"
-            class="mr-1 mb-1"
-          >
-            {{ name }}
-          </ElTag>
-        </div>
       </ElFormItem>
 
       <ElFormItem :label="$t('certificate.issueDialog.validity')">
@@ -121,13 +72,13 @@
                 type="success"
                 :loading="batchSubmitting"
                 :disabled="
-                  authorizationDisabled || unissuedPresets.length === 0
+                  authorizationDisabled || unissuedServices.length === 0
                 "
                 @click="handleBatchIssue"
               >
                 {{
-                  $t("certificate.issueDialog.batchIssue", {
-                    count: unissuedPresets.length,
+                  $t("certificate.issueDialog.issueAllUnissued", {
+                    count: unissuedServices.length,
                   })
                 }}
               </ElButton>
@@ -163,11 +114,8 @@
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage } from "element-plus";
 import { $t } from "@/locales";
-import type {
-  IssueCertificateRequest,
-  PresetDnsName,
-} from "@/types/api/certificate";
-import { issueCertificate, fetchPresetList } from "@/api/certificate";
+import { issueCertificate } from "@/api/certificate";
+import { fetchCanonicalServiceNames } from "@/api/service-names";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
@@ -194,116 +142,51 @@ const emit = defineEmits<{
 const formRef = ref<FormInstance>();
 const submitting = ref(false);
 const batchSubmitting = ref(false);
-const presets = ref<PresetDnsName[]>([]);
-const selectedPreset = ref("");
-const dnsNamesText = ref("");
+const services = ref<string[]>([]);
 const form = reactive<{
   subject: string;
-  dns_names: string[];
   validity_days: number;
 }>({
   subject: "",
-  dns_names: [],
   validity_days: 365,
 });
 const isSubjectIssued = (subject: string | undefined): boolean => {
-  if (!subject || !props.issuedSubjects) return false;
+  if (!subject) return false;
   return props.issuedSubjects.includes(subject);
 };
-const unissuedPresets = computed(() => {
-  return presets.value.filter(
-    (preset) => !isSubjectIssued(preset.service_name),
-  );
-});
+const unissuedServices = computed(() =>
+  services.value.filter((s) => !isSubjectIssued(s)),
+);
 const rules: FormRules = {
   subject: [
     {
       required: true,
-      message: $t("certificate.issueDialog.validation.serviceNameRequired"),
-      trigger: "blur",
-    },
-    {
-      min: 1,
-      max: 255,
-      message: $t("certificate.issueDialog.validation.serviceNameLength"),
-      trigger: "blur",
-    },
-  ],
-  dns_names: [
-    {
-      required: true,
-      message: $t("certificate.issueDialog.validation.dnsRequired"),
+      message: $t("certificate.issueDialog.validation.serviceRequired"),
       trigger: "change",
-      type: "array",
-      min: 1,
     },
   ],
 };
-const loadPresets = async () => {
+const loadServices = async () => {
   try {
-    const data = await fetchPresetList();
-    if (Array.isArray(data)) {
-      presets.value = data.filter(
-        (preset) =>
-          preset &&
-          preset.id &&
-          preset.service_name &&
-          preset.service_name.trim() !== "" &&
-          Array.isArray(preset.dns_names) &&
-          preset.dns_names.length > 0,
-      );
-    } else {
-      logger.error("Preset data is not an array:", typeof data, data);
-      presets.value = [];
-    }
+    const data = await fetchCanonicalServiceNames();
+    services.value = data.services;
   } catch (error) {
-    logger.error("Failed to load presets:", error);
-    presets.value = [];
+    logger.error("Failed to load service names:", error);
+    services.value = [];
   }
-};
-const applyPreset = (presetId: string) => {
-  if (!presetId) {
-    form.subject = "";
-    form.dns_names = [];
-    dnsNamesText.value = "";
-    return;
-  }
-  const preset = presets.value.find((p) => p.id === presetId);
-  if (preset) {
-    form.subject = preset.service_name;
-    form.dns_names = [...preset.dns_names];
-    dnsNamesText.value = preset.dns_names.join(", ");
-  }
-};
-const parseDnsNames = () => {
-  form.dns_names = dnsNamesText.value
-    .split(/[,，\n]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
 };
 const handleSubmit = async () => {
   if (props.authorizationDisabled) {
     ElMessage.warning(props.authorizationDisabledReason);
     return;
   }
-  parseDnsNames();
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
-  if (!form.subject || form.subject.trim() === "") {
-    ElMessage.error($t("certificate.messages.serviceNameRequired"));
-    return;
-  }
-  if (!form.dns_names || form.dns_names.length === 0) {
-    ElMessage.error($t("certificate.messages.dnsRequired"));
-    return;
-  }
   await runWithLoading(submitting, async () => {
-    const request = {
-      subject: form.subject.trim(),
-      dns_names: form.dns_names,
+    await issueCertificate({
+      subject: form.subject,
       validity_days: form.validity_days,
-    };
-    await issueCertificate(request);
+    });
     ElMessage.success($t("certificate.messages.issueSuccess"));
     visible.value = false;
     emit("success");
@@ -317,34 +200,24 @@ const handleBatchIssue = async () => {
     ElMessage.warning(props.authorizationDisabledReason);
     return;
   }
-  if (unissuedPresets.value.length === 0) {
-    ElMessage.warning($t("certificate.messages.noPresetToIssue"));
+  if (unissuedServices.value.length === 0) {
+    ElMessage.warning($t("certificate.messages.noServiceToIssue"));
     return;
   }
   batchSubmitting.value = true;
   let successCount = 0;
   let failCount = 0;
   const errors: string[] = [];
-  for (const preset of unissuedPresets.value) {
+  for (const subject of unissuedServices.value) {
     try {
-      const request: IssueCertificateRequest = {
-        subject: preset.service_name,
-        dns_names: preset.dns_names,
-        validity_days: form.validity_days,
-      };
-      await issueCertificate(request);
+      await issueCertificate({ subject, validity_days: form.validity_days });
       successCount++;
     } catch (error) {
       failCount++;
       errors.push(
-        $t("certificate.issueDialog.batchIssueFailed", {
-          name: preset.service_name,
-        }),
+        $t("certificate.issueDialog.batchIssueFailed", { name: subject }),
       );
-      logger.error(
-        `Failed to issue certificate for ${preset.service_name}:`,
-        error,
-      );
+      logger.error(`Failed to issue certificate for ${subject}:`, error);
     }
   }
   batchSubmitting.value = false;
@@ -368,21 +241,18 @@ const handleBatchIssue = async () => {
 };
 const resetForm = () => {
   form.subject = "";
-  form.dns_names = [];
   form.validity_days = 365;
-  dnsNamesText.value = "";
-  selectedPreset.value = "";
   formRef.value?.resetFields();
 };
 watch(visible, (val) => {
   if (val) {
-    loadPresets();
+    void loadServices();
   } else {
     resetForm();
   }
 });
 onMounted(() => {
-  loadPresets();
+  void loadServices();
 });
 </script>
 

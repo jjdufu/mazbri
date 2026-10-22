@@ -17,6 +17,9 @@ pub fn inc_logs_dropped(log_type: &str, reason: &str) {
         .with_label_values(&[log_type, reason])
         .inc();
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_log_writer_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(LOGS_DROPPED_TOTAL.clone()))
 }

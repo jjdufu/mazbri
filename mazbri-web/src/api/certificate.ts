@@ -3,13 +3,10 @@ import type {
   AutoRenewalConfig,
   AutoRenewalConfigResponse,
   CertificateListResponse,
-  CreatePresetRequest,
   FullCertificateResponse,
   IssueCertificateRequest,
   IssueCertificateResponse,
-  PresetDnsName,
   RenewCertificateRequest,
-  UpdatePresetRequest,
 } from "@/types/api/certificate";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 
@@ -86,40 +83,5 @@ export function updateAutoRenewal(id: string, config: AutoRenewalConfig) {
 export function getAutoRenewalConfig(id: string) {
   return request.get<AutoRenewalConfigResponse>({
     url: `${BASE_PATH}/${id}/auto-renewal`,
-  });
-}
-
-export function fetchPresetList() {
-  return request.get<PresetDnsName[]>({
-    url: `${BASE_PATH}/presets`,
-  });
-}
-
-export function createPreset(
-  data: CreatePresetRequest,
-  options?: {
-    headers?: Record<string, string>;
-  },
-) {
-  return request.post<PresetDnsName>({
-    url: `${BASE_PATH}/presets`,
-    params: data,
-    headers: options?.headers,
-    showSuccessMessage: true,
-  });
-}
-
-export function updatePreset(id: string, data: UpdatePresetRequest) {
-  return request.put<PresetDnsName>({
-    url: `${BASE_PATH}/presets/${id}`,
-    params: data,
-    showSuccessMessage: true,
-  });
-}
-
-export function deletePreset(id: string) {
-  return request.del<void>({
-    url: `${BASE_PATH}/presets/${id}`,
-    showSuccessMessage: true,
   });
 }

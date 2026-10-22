@@ -1,4 +1,6 @@
+//! 当前未编译、未生效（未声明 mod）。自动续期为规划功能。约束：续期时按证书 subject（规范服务名）用 SanPolicy 重算 SAN；不查预置、不沿用旧 dns_names。
 use crate::ca::CaManager;
+use crate::san::SanPolicy;
 use crate::db::{CertificateRecord, CertificateRepository};
 use chrono::{DateTime, Duration, Utc};
 use mazbri_tls::CertMetricsRecorder;
@@ -6,7 +8,7 @@ use sqlx::FromRow;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::time;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 const AUTO_RENEWAL_LOCK_ID: i64 = 0x5A7B8C9D_0E1F2A3B;
 #[derive(Debug, Clone)]
@@ -60,6 +62,7 @@ pub fn spawn_auto_renewal_task(
 async fn check_and_renew_in_transaction(
     repo: &CertificateRepository,
     ca_manager: &CaManager,
+    san_policy: &SanPolicy,
 ) -> anyhow::Result<()> {
     let mut tx = repo.get_pool().begin().await?;
     let _lock: i64 = sqlx::query_scalar("SELECT pg_advisory_xact_lock($1)")
@@ -79,10 +82,13 @@ async fn check_and_renew_in_transaction(
         let _timer = metrics.start_timer();
         let cert = &item.certificate;
         let config = &item.config;
-        let dns_names = if cert.dns_names.is_empty() {
-            vec![]
-        } else {
-            cert.dns_names.clone()
+        let dns_names = match san_policy.sans_for_subject(&cert.subject) {
+            Ok(v) => v,
+            Err(e) => {
+                metrics.record_renewal_failed();
+                warn!(subject = %cert.subject, error = %e, "续期跳过：subject 非规范服务名");
+                continue;
+            }
         };
         let (new_cert_pem, new_key_encrypted) =
             match ca_manager.issue_certificate(&cert.subject, &dns_names) {

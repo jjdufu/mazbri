@@ -32,6 +32,9 @@ pub enum GatewayRequestBody {
     Empty,
 }
 impl GatewayRequestBody {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ProxyError> {
         match self {
             GatewayRequestBody::Json(val) => {
@@ -48,8 +51,7 @@ impl GatewayRequestBody {
             GatewayRequestBody::Raw(s) => {
                 if s.len() > MAX_BODY_SIZE {
                     Err(ProxyError::BadRequest(format!(
-                        "Body too large: max {} bytes",
-                        MAX_BODY_SIZE
+                        "Body too large: max {MAX_BODY_SIZE} bytes"
                     )))
                 } else {
                     Ok(())
@@ -79,6 +81,9 @@ fn default_method() -> String {
     "POST".to_string()
 }
 impl GatewayRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ProxyError> {
         if self.product_id.is_empty() {
             return Err(ProxyError::BadRequest("product_id 不能为空".to_string()));
@@ -99,28 +104,24 @@ impl GatewayRequest {
         }
         if self.path.len() > MAX_PATH_LENGTH {
             return Err(ProxyError::BadRequest(format!(
-                "路径长度超过限制: 最大 {} 字节",
-                MAX_PATH_LENGTH
+                "路径长度超过限制: 最大 {MAX_PATH_LENGTH} 字节"
             )));
         }
         if let Some(ref query) = self.query {
             if query.len() > MAX_QUERY_PARAMS {
                 return Err(ProxyError::BadRequest(format!(
-                    "查询参数数量超过限制: 最大 {} 个",
-                    MAX_QUERY_PARAMS
+                    "查询参数数量超过限制: 最大 {MAX_QUERY_PARAMS} 个"
                 )));
             }
             for (key, value) in query {
                 if key.len() > MAX_HEADER_KEY_LENGTH {
                     return Err(ProxyError::BadRequest(format!(
-                        "查询参数 key 长度超过限制: 最大 {} 字节",
-                        MAX_HEADER_KEY_LENGTH
+                        "查询参数 key 长度超过限制: 最大 {MAX_HEADER_KEY_LENGTH} 字节"
                     )));
                 }
                 if value.len() > MAX_HEADER_VALUE_LENGTH {
                     return Err(ProxyError::BadRequest(format!(
-                        "查询参数 value 长度超过限制: 最大 {} 字节",
-                        MAX_HEADER_VALUE_LENGTH
+                        "查询参数 value 长度超过限制: 最大 {MAX_HEADER_VALUE_LENGTH} 字节"
                     )));
                 }
             }
@@ -128,21 +129,18 @@ impl GatewayRequest {
         if let Some(ref headers) = self.headers {
             if headers.len() > MAX_HEADERS {
                 return Err(ProxyError::BadRequest(format!(
-                    "请求头数量超过限制: 最大 {} 个",
-                    MAX_HEADERS
+                    "请求头数量超过限制: 最大 {MAX_HEADERS} 个"
                 )));
             }
             for (key, value) in headers {
                 if key.len() > MAX_HEADER_KEY_LENGTH {
                     return Err(ProxyError::BadRequest(format!(
-                        "请求头 key 长度超过限制: 最大 {} 字节",
-                        MAX_HEADER_KEY_LENGTH
+                        "请求头 key 长度超过限制: 最大 {MAX_HEADER_KEY_LENGTH} 字节"
                     )));
                 }
                 if value.len() > MAX_HEADER_VALUE_LENGTH {
                     return Err(ProxyError::BadRequest(format!(
-                        "请求头 value 长度超过限制: 最大 {} 字节",
-                        MAX_HEADER_VALUE_LENGTH
+                        "请求头 value 长度超过限制: 最大 {MAX_HEADER_VALUE_LENGTH} 字节"
                     )));
                 }
             }

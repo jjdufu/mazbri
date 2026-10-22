@@ -20,6 +20,7 @@ impl JwtHs256Keyring {
         }
     }
 
+    #[must_use]
     pub fn with_extra_keys(mut self, extra: Vec<(String, String)>) -> Self {
         let keys = Arc::make_mut(&mut self.keys);
         for (kid, secret) in extra {
@@ -28,14 +29,17 @@ impl JwtHs256Keyring {
         self
     }
 
+    #[must_use]
     pub fn current_kid(&self) -> &str {
         &self.current_kid
     }
 
+    #[must_use]
     pub fn encoding_key(&self) -> EncodingKey {
         EncodingKey::from_secret(self.current_secret().as_bytes())
     }
 
+    #[must_use]
     pub fn decoding_key(&self, kid: &str) -> Option<DecodingKey> {
         self.keys
             .get(kid)

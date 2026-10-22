@@ -2,7 +2,7 @@ use crate::registry::error::{RegistryError, RegistryResult};
 use crate::registry::traits::ConfigHandler;
 use crate::registry::types::{ConfigApplyResult, ValidatedConfig};
 use async_trait::async_trait;
-use mazbri_core::config_loader::ValidateConfig;
+use mazbri_core::config::ValidateConfig;
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};

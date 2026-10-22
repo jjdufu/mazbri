@@ -4,8 +4,8 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::clickhouse::ClickHouseClient;
+use mazbri_analytics::greptimedb::GreptimeDBClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info};
@@ -23,7 +23,7 @@ pub struct AppState {
 }
 pub async fn health_check(State(state): State<AppState>) -> Response {
     let clickhouse_connected = match state.clickhouse_client.test_connection().await {
-        Ok(_) => {
+        Ok(()) => {
             info!("ClickHouse 连接正常");
             true
         }
@@ -34,7 +34,7 @@ pub async fn health_check(State(state): State<AppState>) -> Response {
     };
     let greptimedb_connected = if let Some(client) = &state.greptimedb_client {
         match client.test_connection().await {
-            Ok(_) => {
+            Ok(()) => {
                 info!("GreptimeDB 连接正常");
                 true
             }

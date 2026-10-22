@@ -8,14 +8,15 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use mazbri_analytics::greptimedb::AuditQueryParams;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::validation::limits;
 use tracing::{error, info};
 const MAX_PAGE_SIZE: u32 = limits::MAX_AUDIT_PAGE_SIZE;
 const MAX_TOTAL_RESULTS: u64 = limits::MAX_TOTAL_RESULTS;
 impl AuditQueryRequest {
     pub fn max_page_for(page_size: u32) -> u32 {
-        let page_size = page_size.clamp(1, MAX_PAGE_SIZE) as u64;
-        MAX_TOTAL_RESULTS.div_ceil(page_size).max(1) as u32
+        let page_size = u64::from(page_size.clamp(1, MAX_PAGE_SIZE));
+        u32::saturating_from(MAX_TOTAL_RESULTS.div_ceil(page_size).max(1))
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -29,9 +30,8 @@ impl AuditQueryRequest {
         Ok(())
     }
     pub fn capped_offset(&self) -> u32 {
-        let offset =
-            (self.page.saturating_sub(1) as u64) * (self.capped_page_size() as u64);
-        offset.min(MAX_TOTAL_RESULTS.saturating_sub(1)) as u32
+        let offset = u64::from(self.page.saturating_sub(1)) * u64::from(self.capped_page_size());
+        u32::saturating_from(offset.min(MAX_TOTAL_RESULTS.saturating_sub(1)))
     }
     pub fn capped_page_size(&self) -> u32 {
         self.page_size.clamp(1, MAX_PAGE_SIZE)
@@ -85,7 +85,7 @@ pub async fn query_audit_logs(
         Ok(result) => {
             let max_page = AuditQueryRequest::max_page_for(page_size);
             let total_pages = if page_size > 0 {
-                (result.total.div_ceil(page_size as u64) as u32).min(max_page)
+                u32::saturating_from(result.total.div_ceil(u64::from(page_size))).min(max_page)
             } else {
                 0
             };

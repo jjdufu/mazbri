@@ -16,7 +16,7 @@ struct CachedClient {
     created_at: Instant,
 }
 
-/// Gateway-side CBPro RPC client.
+/// Gateway-side `CBPro` RPC client.
 ///
 /// Holds at most one live tarpc channel. On transient transport errors
 /// (`Shutdown` / `Send` / `Channel` / deadline) the cached client is dropped and
@@ -31,15 +31,18 @@ pub struct CBProClient {
 }
 
 impl CBProClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: String,
+        tls_ca_cert: &str,
         client_cert: &ManagedCertificate,
         tls_config: &mazbri_tls::TlsConfig,
         client_ttl_secs: u64,
     ) -> Result<Self, CoreError> {
         let tls_connector =
-            mazbri_tls::TlsConnector::new(&tls_ca_cert, Some(client_cert), tls_config)
+            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
                 .map_err(|e| CoreError::Tls(e.to_string()))?;
         Ok(Self {
             endpoint,
@@ -82,10 +85,9 @@ impl CBProClient {
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro client (mTLS)");
-        let target =
-            mazbri_tls::resolve_connect_target(self.endpoint.url(), self.endpoint.server_name())
-                .await
-                .map_err(|e| CoreError::Config(e.to_string()))?;
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+            .await
+            .map_err(|e| CoreError::Config(e.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
             target.socket_addr,
             self.tls_connector.clone(),
@@ -131,7 +133,8 @@ impl CBProClient {
                 Err(e) => {
                     // Connection-level failure: treat like transient for a few tries.
                     if attempt < config.max_retries {
-                        let cap = config.initial_delay_ms * (config.multiplier as u64).pow(attempt);
+                        let cap =
+                            config.initial_delay_ms * u64::from(config.multiplier).pow(attempt);
                         let delay_ms = cap; // deterministic small backoff
                         warn!(
                             attempt = attempt + 1,
@@ -152,7 +155,7 @@ impl CBProClient {
             match op(client).await {
                 Ok(val) => return Ok(val),
                 Err(e) if e.is_transient() && attempt < config.max_retries => {
-                    let cap = config.initial_delay_ms * (config.multiplier as u64).pow(attempt);
+                    let cap = config.initial_delay_ms * u64::from(config.multiplier).pow(attempt);
                     let delay_ms = cap;
                     warn!(
                         attempt = attempt + 1,
@@ -215,6 +218,10 @@ impl CBProClient {
     }
 
     /// Lightweight connectivity probe (also used after reconnect to verify the channel).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn health_check(&self) -> Result<(), String> {
         match self
             .call_with_reconnect(&DEFAULT_RETRY_CONFIG, |client| async move {

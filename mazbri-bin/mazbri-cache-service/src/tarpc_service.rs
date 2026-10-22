@@ -1,4 +1,5 @@
 use mazbri_cache::{Cache, RedisCache, TtlManager};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::RpcError;
 use mazbri_rpc::cache::{
     CacheService, CacheStats, ClearRequest, ClearResponse, DeleteRequest, DeleteResponse,
@@ -26,7 +27,7 @@ impl CacheService for CacheTarpcService {
             Ok(Some(entry)) => GetResponse {
                 found: true,
                 value: entry.value,
-                ttl_remaining: entry.ttl as i64,
+                ttl_remaining: i64::saturating_from(entry.ttl),
                 error: None,
             },
             Ok(None) => GetResponse {
@@ -47,7 +48,7 @@ impl CacheService for CacheTarpcService {
         }
     }
     async fn set(self, _context: Context, req: SetRequest) -> SetResponse {
-        let ttl = Duration::from_secs(req.ttl_seconds.max(0) as u64);
+        let ttl = Duration::from_secs(u64::saturating_from(req.ttl_seconds.max(0)));
         let endpoint = if req.endpoint.is_empty() {
             None
         } else {
@@ -110,7 +111,7 @@ impl CacheService for CacheTarpcService {
         match self.cache.clear_tenant_with_count(&req.tenant_id).await {
             Ok(entries_cleared) => ClearResponse {
                 success: true,
-                entries_cleared: entries_cleared as i32,
+                entries_cleared: i32::saturating_from(entries_cleared),
                 error: None,
             },
             Err(e) => {
@@ -175,11 +176,11 @@ impl CacheService for CacheTarpcService {
             .entries
             .into_iter()
             .map(|(key, entry)| {
-                let ttl = Duration::from_secs(entry.ttl_seconds as u64);
+                let ttl = Duration::from_secs(u64::saturating_from(entry.ttl_seconds));
                 (key, entry.value, ttl)
             })
             .collect();
-        let count = entries.len() as i32;
+        let count = i32::saturating_from(entries.len());
         match self.cache.set_multi(&req.tenant_id, entries).await {
             Ok(()) => SetMultiResponse {
                 success: true,
@@ -205,12 +206,12 @@ impl CacheService for CacheTarpcService {
         match stats {
             Ok(cache_stats) => {
                 let rpc_stats = CacheStats {
-                    total_entries: cache_stats.total_entries as i64,
-                    total_size_bytes: cache_stats.total_size as i64,
+                    total_entries: i64::saturating_from(cache_stats.total_entries),
+                    total_size_bytes: i64::saturating_from(cache_stats.total_size),
                     hit_count: 0,
                     miss_count: 0,
                     hit_rate: 0.0,
-                    eviction_count: cache_stats.expired_entries as i64,
+                    eviction_count: i64::saturating_from(cache_stats.expired_entries),
                 };
                 GetStatsResponse {
                     stats: Some(rpc_stats),
@@ -226,11 +227,11 @@ impl CacheService for CacheTarpcService {
             }
         }
     }
-    async fn health(self, _context: Context) -> HealthResponse {
-        HealthResponse {
+    fn health(self, _context: Context) -> impl std::future::Future<Output = HealthResponse> {
+        std::future::ready(HealthResponse {
             status: "ok".to_string(),
             service: "cache-service".to_string(),
             timestamp: Utc::now().timestamp(),
-        }
+        })
     }
 }

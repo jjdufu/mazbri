@@ -3,15 +3,20 @@ use super::super::models::{
     BatchError, BatchFilters, BatchOperation, BatchResult, ConfigEntry, ConfigEntrySummary,
 };
 use super::super::validator::{compute_batch_content_hash, validate_batch_toml};
+use mazbri_core::num::SaturatingFrom;
+use std::fmt::Write as _;
 use uuid::Uuid;
 impl super::super::ConfigRepository {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_by_filters(&self, filters: &BatchFilters) -> ConfigResult<Vec<ConfigEntry>> {
         let mut query = String::from("SELECT * FROM config_entries");
         let mut param_count = 0;
         if let Some(ref service_names) = filters.service_names {
             if !service_names.is_empty() {
                 param_count += 1;
-                query.push_str(&format!(" WHERE service_name = ANY(${param_count})"));
+                let _ = write!(query, " WHERE service_name = ANY(${param_count})");
             }
         }
         query.push_str(" ORDER BY service_name");
@@ -24,6 +29,9 @@ impl super::super::ConfigRepository {
         let entries = sql_query.fetch_all(&*self.db).await?;
         Ok(entries)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn batch_delete(
         &self,
         filters: &BatchFilters,
@@ -48,10 +56,10 @@ impl super::super::ConfigRepository {
             });
         }
         let deleted_count = sqlx::query(
-            r#"
+            r"
             DELETE FROM config_entries
             WHERE id = ANY($1)
-            "#,
+            ",
         )
         .bind(&entry_ids)
         .execute(&*self.db)
@@ -59,11 +67,14 @@ impl super::super::ConfigRepository {
         .rows_affected();
         Ok(BatchResult {
             success: true,
-            affected_count: deleted_count as usize,
+            affected_count: usize::saturating_from(deleted_count),
             affected_entries: entries.iter().map(ConfigEntrySummary::from).collect(),
             errors: vec![],
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn batch_update(
         &self,
         filters: &BatchFilters,
@@ -95,53 +106,14 @@ impl super::super::ConfigRepository {
         }
         let mut errors: Vec<BatchError> = Vec::new();
         let mut successful_entries: Vec<ConfigEntry> = Vec::new();
-        'entry_loop: for entry in &entries {
-            let mut modified_content = entry.content.clone();
-            let mut is_sensitive = entry.is_sensitive;
-            for op in operations {
-                match op {
-                    BatchOperation::ReplaceValue { path, value } => {
-                        match apply_toml_value_replace(&modified_content, path, value) {
-                            Ok(new_content) => modified_content = new_content,
-                            Err(e) => {
-                                errors.push(BatchError {
-                                    entry_key: entry.service_name.clone(),
-                                    error: e,
-                                });
-                                continue 'entry_loop;
-                            }
-                        }
-                    }
-                    BatchOperation::SetSensitive { value } => {
-                        is_sensitive = *value;
-                    }
-                    BatchOperation::AddTag | BatchOperation::RemoveTag => {}
-                    BatchOperation::MergeContent { content } => {
-                        match merge_toml_contents(&modified_content, content) {
-                            Ok(new_content) => modified_content = new_content,
-                            Err(e) => {
-                                errors.push(BatchError {
-                                    entry_key: entry.service_name.clone(),
-                                    error: e,
-                                });
-                                continue 'entry_loop;
-                            }
-                        }
-                    }
-                }
-            }
-            if let Err(e) = validate_batch_toml(&modified_content) {
-                errors.push(BatchError {
+        for entry in &entries {
+            match apply_batch_operations(entry, operations) {
+                Ok(updated) => successful_entries.push(updated),
+                Err(error) => errors.push(BatchError {
                     entry_key: entry.service_name.clone(),
-                    error: e.to_string(),
-                });
-                continue;
+                    error,
+                }),
             }
-            successful_entries.push(ConfigEntry {
-                content: modified_content,
-                is_sensitive,
-                ..entry.clone()
-            });
         }
         if dry_run {
             return Ok(BatchResult {
@@ -167,11 +139,11 @@ impl super::super::ConfigRepository {
                 )
             };
             let result = sqlx::query(
-                    r#"
+                    r"
                 UPDATE config_entries
                 SET content = $1, content_hash = $2, is_sensitive = $3, updated_by = $4, updated_at = NOW()
                 WHERE id = $5
-                "#,
+                ",
                 )
                 .bind(&stored_content)
                 .bind(&content_hash)
@@ -201,6 +173,33 @@ impl super::super::ConfigRepository {
         })
     }
 }
+/// 按顺序对单个条目应用批量操作并校验结果 TOML。
+fn apply_batch_operations(
+    entry: &ConfigEntry,
+    operations: &[BatchOperation],
+) -> Result<ConfigEntry, String> {
+    let mut modified_content = entry.content.clone();
+    let mut is_sensitive = entry.is_sensitive;
+    for op in operations {
+        match op {
+            BatchOperation::ReplaceValue { path, value } => {
+                modified_content = apply_toml_value_replace(&modified_content, path, value)?;
+            }
+            BatchOperation::SetSensitive { value } => is_sensitive = *value,
+            BatchOperation::AddTag | BatchOperation::RemoveTag => {}
+            BatchOperation::MergeContent { content } => {
+                modified_content = merge_toml_contents(&modified_content, content)?;
+            }
+        }
+    }
+    validate_batch_toml(&modified_content).map_err(|e| e.to_string())?;
+    Ok(ConfigEntry {
+        content: modified_content,
+        is_sensitive,
+        ..entry.clone()
+    })
+}
+
 fn apply_toml_value_replace(
     content: &str,
     path: &str,

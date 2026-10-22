@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 use mazbri_routing::{CandidateChannel, RouteEngine, RouteKey, SwitchCondition};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -22,9 +23,12 @@ struct RouteSourceRow {
     version_tag: Option<String>,
     weight: Option<i32>,
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_route_engine(pool: &PgPool) -> anyhow::Result<RouteEngine> {
     let rows = sqlx::query(
-        r#"
+        r"
         WITH ranked_rules AS (
             SELECT
                 rr.id,
@@ -65,7 +69,7 @@ pub async fn load_route_engine(pool: &PgPool) -> anyhow::Result<RouteEngine> {
           AND c.status = 'active'
           AND s.status = 'active'
         ORDER BY rr.tenant_id NULLS LAST, p.product_id, rcb.channel_order ASC
-        "#,
+        ",
     )
     .fetch_all(pool)
     .await?;
@@ -118,9 +122,9 @@ fn build_route_map(rows: Vec<RouteSourceRow>) -> HashMap<RouteKey, Vec<Candidate
             channel_config: row.channel_config,
             path_prefix: row.path_prefix,
             switch_condition: parse_switch_condition(row.switch_condition),
-            order: row.channel_order.max(0) as u32,
+            order: u32::saturating_from(row.channel_order.max(0)),
             version_tag: row.version_tag,
-            weight: row.weight.map(|w| w.max(0) as u32),
+            weight: row.weight.map(|w| u32::saturating_from(w.max(0))),
             qps_limit: row.qps_limit.max(0),
         });
     }
@@ -144,6 +148,9 @@ pub struct RouteVersionInfo {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn check_route_version_info(pool: &PgPool) -> Result<RouteVersionInfo, sqlx::Error> {
     let row = sqlx::query(
         "SELECT version, updated_at FROM route_sync_metadata WHERE key = 'global_route_version'",
@@ -156,6 +163,9 @@ pub async fn check_route_version_info(pool: &PgPool) -> Result<RouteVersionInfo,
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn check_tenants_count(pool: &PgPool) -> Result<i64, sqlx::Error> {
     let row = sqlx::query("SELECT COUNT(*) as count FROM tenants")
         .fetch_one(pool)

@@ -1,23 +1,24 @@
-//! ClickHouse RowBinary wire types.
+//! `ClickHouse` `RowBinary` wire types.
 //!
-//! These structs mirror ClickHouse column types exactly (widths and nullability).
+//! These structs mirror `ClickHouse` column types exactly (widths and nullability).
 //! Domain models in `crate::models` stay chrono/API-friendly; convert at the boundary.
 
 use crate::models::{AuditLogEntry, RequestLogEntry};
 use chrono::{DateTime, TimeZone, Utc};
+use mazbri_core::num::SaturatingFrom;
 use serde::Deserialize;
 
 /// `DateTime64(9)` → unix epoch nanoseconds.
 #[inline]
 fn datetime64_ns_to_utc(ns: i64) -> DateTime<Utc> {
     let secs = ns.div_euclid(1_000_000_000);
-    let nanos = ns.rem_euclid(1_000_000_000) as u32;
+    let nanos = u32::saturating_from(ns.rem_euclid(1_000_000_000));
     Utc.timestamp_opt(secs, nanos)
         .single()
         .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().expect("epoch"))
 }
 
-/// `DateTime` → unix epoch seconds (u32 in RowBinary).
+/// `DateTime` → unix epoch seconds (u32 in `RowBinary`).
 #[inline]
 fn datetime_secs_to_utc(secs: u32) -> DateTime<Utc> {
     Utc.timestamp_opt(i64::from(secs), 0)
@@ -171,7 +172,7 @@ pub struct AuditAnalyticsRow {
     pub count: u64,
 }
 
-#[derive(Debug, clickhouse::Row, Deserialize)]
+#[derive(Debug, Default, clickhouse::Row, Deserialize)]
 pub struct SummaryRow {
     pub total: u64,
     pub avg_duration_ms: f64,
@@ -183,12 +184,13 @@ pub struct SummaryRow {
 
 #[derive(Debug, clickhouse::Row, Deserialize)]
 pub struct TimeBucketRow {
-    /// DateTime (seconds since epoch)
+    /// `DateTime` (seconds since epoch)
     pub time: u32,
     pub count: u64,
 }
 
 impl TimeBucketRow {
+    #[must_use]
     pub fn into_time_bucket(self) -> crate::greptimedb::TimeBucket {
         crate::greptimedb::TimeBucket {
             time: datetime_secs_to_utc(self.time),
@@ -220,4 +222,3 @@ pub struct UpstreamHourlyUsageRow {
     pub total_payload_bytes: u64,
     pub total_latency_ms: u64,
 }
-

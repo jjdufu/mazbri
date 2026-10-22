@@ -108,6 +108,12 @@ pub struct RequestBindingInput<'a> {
     pub body: &'a [u8],
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// # Panics
+///
+/// 仅在内部不变量被破坏时 panic。
 pub async fn enforce_request_binding(
     input: RequestBindingInput<'_>,
 ) -> Result<RequestBindingOutcome, RequestBindingError> {

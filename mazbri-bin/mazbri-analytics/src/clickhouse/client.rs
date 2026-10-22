@@ -1,6 +1,6 @@
+use super::types::TotalRow;
 use crate::config::ClickHouseConfig;
 use crate::error::{AnalyticsError, Result};
-use super::types::TotalRow;
 use clickhouse::Client;
 
 #[derive(Clone)]
@@ -18,6 +18,9 @@ impl std::fmt::Debug for ClickHouseClient {
 }
 
 impl ClickHouseClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(config: &ClickHouseConfig) -> Result<Self> {
         let mut client = Client::default()
             .with_url(config.http_url.trim_end_matches('/'))
@@ -36,6 +39,9 @@ impl ClickHouseClient {
         })
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn execute_query<T>(&self, sql: &str) -> Result<Vec<T>>
     where
         T: clickhouse::Row + for<'de> serde::Deserialize<'de>,
@@ -52,29 +58,35 @@ impl ClickHouseClient {
             .query(clean_sql)
             .fetch_all::<T>()
             .await
-            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {}", e)))
+            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")))
     }
 
     pub(super) async fn execute_count_query_inner(&self, sql: &str) -> Result<u64> {
         let rows = self.execute_query::<TotalRow>(sql).await?;
-        Ok(rows.first().map(|r| r.total).unwrap_or(0))
+        Ok(rows.first().map_or(0, |r| r.total))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn test_connection(&self) -> Result<()> {
         // ClickHouse types literal `1` as UInt8; RowBinary requires exact width match for u64.
         let rows = self
             .execute_query::<TotalRow>("SELECT toUInt64(1) AS total")
             .await?;
-        if !rows.is_empty() {
-            tracing::info!("ClickHouse connection test successful");
-            Ok(())
-        } else {
+        if rows.is_empty() {
             Err(AnalyticsError::ClickHouse(
                 "ClickHouse connection test failed: no results returned".to_string(),
             ))
+        } else {
+            tracing::info!("ClickHouse connection test successful");
+            Ok(())
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn with_query_timeout<T>(
         &self,
         operation_name: &str,
@@ -94,6 +106,9 @@ impl ClickHouseClient {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_upstream_usage_summary(
         &self,
         start_time: &str,
@@ -148,8 +163,8 @@ impl ClickHouseClient {
             .bind(end_time)
             .fetch_all::<super::types::UpstreamHourlyUsageRow>()
             .await
-            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {}", e)))
+            .map_err(|e| {
+                AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {e}"))
+            })
     }
 }
-
-

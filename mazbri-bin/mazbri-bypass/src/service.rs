@@ -1,6 +1,7 @@
 //! Bypass HTTP proxy service — production path uses shared `mazbri-upstream-runtime`.
 
 use crate::metrics::UpstreamMetricsRecorder;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, AccessUpstreamMetaFields, ChannelEgressSpec, SupplierConfig,
@@ -10,8 +11,7 @@ use mazbri_core::{
 use mazbri_upstream_contracts::bypass_http_proxy::bypass_http_proxy_service_server::BypassHttpProxyService;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
-    ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeLimits, SsrfChecker,
-    TokenCache,
+    ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeLimits, SsrfChecker, TokenCache,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -87,8 +87,16 @@ impl MazbriBypassServiceImpl {
         hash: &str,
         full: &str,
     ) -> Result<Option<Arc<SupplierConfig>>, String> {
-        let hash = if hash.is_empty() { None } else { Some(hash.to_string()) };
-        let full = if full.is_empty() { None } else { Some(full.to_string()) };
+        let hash = if hash.is_empty() {
+            None
+        } else {
+            Some(hash.to_string())
+        };
+        let full = if full.is_empty() {
+            None
+        } else {
+            Some(full.to_string())
+        };
 
         if let Some(ref h) = hash {
             if let Some(cached) = self.supplier_config_cache.get(h) {
@@ -131,11 +139,7 @@ impl MazbriBypassServiceImpl {
         Ok(None)
     }
 
-    fn resolve_egress_spec(
-        &self,
-        hash: &str,
-        full: &str,
-    ) -> Result<ChannelEgressSpec, String> {
+    fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<ChannelEgressSpec, String> {
         let hash = hash.trim();
         let full = full.trim();
         if !hash.is_empty() {
@@ -154,8 +158,8 @@ impl MazbriBypassServiceImpl {
                     .into(),
             );
         }
-        let value: serde_json::Value = serde_json::from_str(full)
-            .map_err(|e| format!("invalid egress_spec JSON: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(full).map_err(|e| format!("invalid egress_spec JSON: {e}"))?;
         let spec = parse_and_validate_egress(&value).map_err(|e| e.to_string())?;
         let h = if hash.is_empty() {
             hash_egress_spec_json(full)
@@ -180,16 +184,14 @@ impl MazbriBypassServiceImpl {
         if let Some(cached) = self.artifact_cache.get(id) {
             return Ok(Some(cached.as_ref().clone()));
         }
-        let uuid = Uuid::parse_str(id).map_err(|_| {
-            format!("ARTIFACT_INVALID: artifact_id '{id}' is not a UUID")
-        })?;
-        let row: Option<(Vec<u8>,)> = sqlx::query_as(
-            "SELECT content FROM upstream_artifacts WHERE id = $1",
-        )
-        .bind(uuid)
-        .fetch_optional(self.db.as_ref())
-        .await
-        .map_err(|e| format!("ARTIFACT_LOAD_FAILED: {e}"))?;
+        let uuid = Uuid::parse_str(id)
+            .map_err(|_| format!("ARTIFACT_INVALID: artifact_id '{id}' is not a UUID"))?;
+        let row: Option<(Vec<u8>,)> =
+            sqlx::query_as("SELECT content FROM upstream_artifacts WHERE id = $1")
+                .bind(uuid)
+                .fetch_optional(self.db.as_ref())
+                .await
+                .map_err(|e| format!("ARTIFACT_LOAD_FAILED: {e}"))?;
         match row {
             Some((bytes,)) => {
                 let arc = Arc::new(bytes);
@@ -229,7 +231,10 @@ impl BypassHttpProxyService for MazbriBypassServiceImpl {
 }
 
 impl MazbriBypassServiceImpl {
-    async fn execute_once(&self, req: &upstream_proto::InvokeRequest) -> upstream_proto::InvokeResponse {
+    async fn execute_once(
+        &self,
+        req: &upstream_proto::InvokeRequest,
+    ) -> upstream_proto::InvokeResponse {
         let start_time = Instant::now();
         let spec = match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
             Ok(s) => s,
@@ -320,77 +325,89 @@ impl MazbriBypassServiceImpl {
                 .error_message
                 .clone()
                 .unwrap_or_else(|| "upstream invoke failed".into());
-            if code == "SSRF_BLOCKED" || err_msg.contains("SSRF") {
-                UpstreamMetricsRecorder::record_ssrf(&err_msg);
-                UpstreamMetricsRecorder::record_failure(adapter, "ssrf");
-            } else if code == "AUTH_TOKEN_FAILED" {
-                UpstreamMetricsRecorder::record_token_fetch("error");
-            } else if err_msg.contains("timeout") || err_msg.contains("Timeout") {
-                UpstreamMetricsRecorder::record_timeout(adapter);
-                UpstreamMetricsRecorder::observe_duration(adapter, "timeout", duration);
-            } else {
-                UpstreamMetricsRecorder::record_transport_error(adapter);
-                UpstreamMetricsRecorder::observe_duration(adapter, "transport", duration);
-            }
-            let error = if code == "SSRF_BLOCKED" {
-                format!("SSRF Violation: {err_msg}")
-            } else if code == "AUTH_TOKEN_FAILED" {
-                format!("Dynamic Auth Token Retrieval Error: {err_msg}")
-            } else if code == "CONFIG_CACHE_MISS" || err_msg.contains("CONFIG_CACHE") {
-                err_msg
-            } else {
-                format!("Transparent Bypass Outbound Error: {err_msg}")
-            };
-            return invoke_error(error);
+            return invoke_failure(code, err_msg, adapter, duration);
         }
+        invoke_success(result, &spec.adapter, duration)
+    }
+}
 
-        let metric_result = if result.ok { "ok" } else { "biz" };
-        let http_status = result
-            .upstream_meta
-            .as_ref()
-            .map(|m| m.status)
-            .unwrap_or(200);
-        let status_code =
-            reqwest::StatusCode::from_u16(http_status).unwrap_or(reqwest::StatusCode::OK);
-        UpstreamMetricsRecorder::record_response(adapter, status_code, metric_result);
-        UpstreamMetricsRecorder::observe_duration(adapter, metric_result, duration);
-        if result.token.is_some() {
-            UpstreamMetricsRecorder::record_token_fetch("ok");
-        }
+fn invoke_failure(
+    code: &str,
+    err_msg: String,
+    adapter: &str,
+    duration: f64,
+) -> upstream_proto::InvokeResponse {
+    if code == "SSRF_BLOCKED" || err_msg.contains("SSRF") {
+        UpstreamMetricsRecorder::record_ssrf(&err_msg);
+        UpstreamMetricsRecorder::record_failure(adapter, "ssrf");
+    } else if code == "AUTH_TOKEN_FAILED" {
+        UpstreamMetricsRecorder::record_token_fetch("error");
+    } else if err_msg.contains("timeout") || err_msg.contains("Timeout") {
+        UpstreamMetricsRecorder::record_timeout(adapter);
+        UpstreamMetricsRecorder::observe_duration(adapter, "timeout", duration);
+    } else {
+        UpstreamMetricsRecorder::record_transport_error(adapter);
+        UpstreamMetricsRecorder::observe_duration(adapter, "transport", duration);
+    }
+    let error = if code == "SSRF_BLOCKED" {
+        format!("SSRF Violation: {err_msg}")
+    } else if code == "AUTH_TOKEN_FAILED" {
+        format!("Dynamic Auth Token Retrieval Error: {err_msg}")
+    } else if code == "CONFIG_CACHE_MISS" || err_msg.contains("CONFIG_CACHE") {
+        err_msg
+    } else {
+        format!("Transparent Bypass Outbound Error: {err_msg}")
+    };
+    invoke_error(error)
+}
 
-        let payload_json = result
-            .payload
-            .as_ref()
-            .and_then(|v| serde_json::to_string(v).ok())
-            .unwrap_or_default();
-        let biz_error = result.biz_error.map(|b| upstream_proto::InvokeBizError {
-            code: b.code,
-            message: b.message,
-            details_json: b
-                .details
-                .and_then(|d| serde_json::to_string(&d).ok())
-                .unwrap_or_default(),
+fn invoke_success(
+    result: mazbri_upstream_runtime::InvokeResult,
+    spec_adapter: &str,
+    duration: f64,
+) -> upstream_proto::InvokeResponse {
+    let adapter = spec_adapter;
+    let metric_result = if result.ok { "ok" } else { "biz" };
+    let http_status = result.upstream_meta.as_ref().map_or(200, |m| m.status);
+    let status_code = reqwest::StatusCode::from_u16(http_status).unwrap_or(reqwest::StatusCode::OK);
+    UpstreamMetricsRecorder::record_response(adapter, status_code, metric_result);
+    UpstreamMetricsRecorder::observe_duration(adapter, metric_result, duration);
+    if result.token.is_some() {
+        UpstreamMetricsRecorder::record_token_fetch("ok");
+    }
+
+    let payload_json = result
+        .payload
+        .as_ref()
+        .and_then(|v| serde_json::to_string(v).ok())
+        .unwrap_or_default();
+    let biz_error = result.biz_error.map(|b| upstream_proto::InvokeBizError {
+        code: b.code,
+        message: b.message,
+        details_json: b
+            .details
+            .and_then(|d| serde_json::to_string(&d).ok())
+            .unwrap_or_default(),
+    });
+    let meta = result
+        .upstream_meta
+        .unwrap_or(mazbri_upstream_runtime::UpstreamMeta {
+            adapter: spec_adapter.to_string(),
+            latency_ms: result.latency_ms,
+            ..Default::default()
         });
-        let meta = result
-            .upstream_meta
-            .unwrap_or(mazbri_upstream_runtime::UpstreamMeta {
-                adapter: spec.adapter.clone(),
-                latency_ms: result.latency_ms,
-                ..Default::default()
-            });
 
-        upstream_proto::InvokeResponse {
-            success: result.error_code.is_none(),
-            error: String::new(),
-            biz_error,
-            payload_json,
-            upstream_meta: Some(upstream_proto::InvokeUpstreamMeta {
-                status: u32::from(meta.status),
-                url: meta.url,
-                adapter: meta.adapter,
-                latency_ms: meta.latency_ms,
-            }),
-        }
+    upstream_proto::InvokeResponse {
+        success: result.error_code.is_none(),
+        error: String::new(),
+        biz_error,
+        payload_json,
+        upstream_meta: Some(upstream_proto::InvokeUpstreamMeta {
+            status: u32::from(meta.status),
+            url: meta.url,
+            adapter: meta.adapter,
+            latency_ms: meta.latency_ms,
+        }),
     }
 }
 
@@ -404,13 +421,7 @@ fn invoke_error(error: String) -> upstream_proto::InvokeResponse {
     }
 }
 
-fn emit_bypass_access(
-    service_name: &str,
-    req: &upstream_proto::InvokeRequest,
-    start_time: Instant,
-    response: &upstream_proto::InvokeResponse,
-) {
-    let duration_ms = start_time.elapsed().as_millis() as u64;
+fn trace_headers(req: &upstream_proto::InvokeRequest) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     if let Some(ref t) = req.trace {
         if !t.request_id.is_empty() {
@@ -423,23 +434,15 @@ fn emit_bypass_access(
             headers.insert("x-span-id".into(), t.span_id.clone());
         }
     }
-    let trace_context = parse_trace_context(&headers);
-    let adapter = response
-        .upstream_meta
-        .as_ref()
-        .map(|m| m.adapter.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("http_json");
-    let (status_code, upstream_url) = if let Some(ref meta) = response.upstream_meta {
-        (meta.status as u16, meta.url.clone())
-    } else {
-        (
-            if response.success { 200 } else { 502 },
-            req.fallback_base_url.clone(),
-        )
-    };
-    let is_success = response.success && response.biz_error.is_none();
-    let (error_code, error_class) = if is_success {
+    headers
+}
+
+/// `(error_code, error_class)` for the access log.
+fn classify_bypass_outcome(
+    response: &upstream_proto::InvokeResponse,
+    is_success: bool,
+) -> (String, String) {
+    if is_success {
         (String::new(), "ok".to_string())
     } else if let Some(ref biz) = response.biz_error {
         (biz.code.clone(), "biz".to_string())
@@ -453,7 +456,34 @@ fn emit_bypass_access(
         ("UPSTREAM_TIMEOUT".to_string(), "timeout".to_string())
     } else {
         ("UPSTREAM_ERROR".to_string(), "transport".to_string())
+    }
+}
+
+fn emit_bypass_access(
+    service_name: &str,
+    req: &upstream_proto::InvokeRequest,
+    start_time: Instant,
+    response: &upstream_proto::InvokeResponse,
+) {
+    let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
+    let headers = trace_headers(req);
+    let trace_context = parse_trace_context(&headers);
+    let adapter = response
+        .upstream_meta
+        .as_ref()
+        .map(|m| m.adapter.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("http_json");
+    let (status_code, upstream_url) = if let Some(ref meta) = response.upstream_meta {
+        (u16::saturating_from(meta.status), meta.url.clone())
+    } else {
+        (
+            if response.success { 200 } else { 502 },
+            req.fallback_base_url.clone(),
+        )
     };
+    let is_success = response.success && response.biz_error.is_none();
+    let (error_code, error_class) = classify_bypass_outcome(response, is_success);
     let error_stage = if is_success {
         String::new()
     } else {

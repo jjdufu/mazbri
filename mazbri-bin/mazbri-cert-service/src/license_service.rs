@@ -49,6 +49,9 @@ struct ActiveCaRow {
     ca_key_encrypted: String,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn has_v3_state(pool: &PgPool) -> CertResult<bool> {
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM commercial_license_state WHERE id = 1)",
@@ -58,6 +61,7 @@ pub async fn has_v3_state(pool: &PgPool) -> CertResult<bool> {
     Ok(exists)
 }
 
+#[must_use]
 pub fn decision_json(decision: &LicenseDecision) -> serde_json::Value {
     serde_json::json!({
         "status": decision.status,
@@ -78,18 +82,19 @@ pub fn decision_json(decision: &LicenseDecision) -> serde_json::Value {
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct InstallationKeyRow {
-    #[allow(dead_code)]
-    id: i16,
     installation_id: Uuid,
     public_key: String,
     private_key: String,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_or_create_installation_key(
     pool: &PgPool,
 ) -> CertResult<license::InstallationKeyFile> {
     if let Some(row) = sqlx::query_as::<_, InstallationKeyRow>(
-        "SELECT id, installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
+        "SELECT installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
     )
     .fetch_optional(pool)
     .await?
@@ -104,11 +109,11 @@ pub async fn get_or_create_installation_key(
 
     let generated = license::generate_installation_key();
     let inserted = sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_installation_keys (id, installation_id, public_key, private_key)
         VALUES (1, $1, $2, $3)
         ON CONFLICT (id) DO NOTHING
-        "#,
+        ",
     )
     .bind(generated.installation_id)
     .bind(&generated.public_key)
@@ -130,7 +135,7 @@ pub async fn get_or_create_installation_key(
     }
 
     let row = sqlx::query_as::<_, InstallationKeyRow>(
-        "SELECT id, installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
+        "SELECT installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
     )
     .fetch_one(pool)
     .await?;
@@ -143,11 +148,14 @@ pub async fn get_or_create_installation_key(
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn load_installation_key_db(
     pool: &PgPool,
 ) -> CertResult<Option<license::InstallationKeyFile>> {
     let row = sqlx::query_as::<_, InstallationKeyRow>(
-        "SELECT id, installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
+        "SELECT installation_id, public_key, private_key FROM commercial_installation_keys WHERE id = 1",
     )
     .fetch_optional(pool)
     .await?;
@@ -160,6 +168,9 @@ pub async fn load_installation_key_db(
     }))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn current_decision(pool: &PgPool, now: DateTime<Utc>) -> CertResult<LicenseDecision> {
     if !has_v3_state(pool).await? {
         return Ok(license::unconfigured_decision());
@@ -167,6 +178,9 @@ pub async fn current_decision(pool: &PgPool, now: DateTime<Utc>) -> CertResult<L
     sync_runtime(pool, now).await
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn sync_runtime(pool: &PgPool, now: DateTime<Utc>) -> CertResult<LicenseDecision> {
     let Some(row) = load_state(pool).await? else {
         return Ok(license::unconfigured_decision());
@@ -197,6 +211,9 @@ pub async fn sync_runtime(pool: &PgPool, now: DateTime<Utc>) -> CertResult<Licen
     Ok(decision)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn export_request(
     pool: &PgPool,
     product_version: &str,
@@ -207,7 +224,7 @@ pub async fn export_request(
         version: 3,
         installation_id: file.installation_id,
         public_key: file.public_key,
-        current_sequence: state.as_ref().map(|row| row.current_sequence).unwrap_or(0),
+        current_sequence: state.as_ref().map_or(0, |row| row.current_sequence),
         key_version: state.as_ref().map(|row| row.key_version.clone()),
         customer_id: state.and_then(|row| row.customer_id),
         product_version: product_version.to_string(),
@@ -222,6 +239,9 @@ pub struct ImportArgs<'a> {
     pub recovery_secret: Option<&'a str>,
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn import_license(args: ImportArgs<'_>) -> CertResult<LicenseDecision> {
     if args.raw_license.len() > license::LICENSE_MAX_FILE_BYTES {
         return Err(CertError::InvalidRequest(
@@ -328,44 +348,8 @@ async fn import_in_transaction(
             let current = current.as_ref().ok_or_else(|| {
                 CertError::InvalidRequest("尚未开通，不能导入换钥许可证".to_string())
             })?;
-            if verified.payload.previous_key_version.as_deref()
-                != Some(current.key_version.as_str())
-            {
-                return Err(license_error(
-                    LICENSE_KEY_VERSION_MISMATCH,
-                    "换钥许可证的 previousKeyVersion 与当前密钥版本不一致",
-                ));
-            }
-            let assets = license::open_assets(&private_key, &public_key, verified)?;
-            let old_password = license::open_key_password(
-                &private_key,
-                &public_key,
-                installation.installation_id,
-                &current.key_version,
-                &current.key_password_sealed,
-            )?;
-            rekey_ca_and_materials(
-                &mut tx,
-                &old_password,
-                &assets,
-                &verified.payload.key_version,
-            )
-            .await?;
-            let sealed = license::seal_key_password(
-                &public_key,
-                installation.installation_id,
-                &verified.payload.key_version,
-                &assets.key_password,
-            )?;
-            update_license_row(
-                &mut tx,
-                verified,
-                Some(&sealed),
-                Some(&verified.payload.key_version),
-                Some(&verified.payload.asset_digest),
-            )
-            .await?;
-            Some(assets)
+            let keys = (&private_key, &public_key);
+            Some(apply_rekey(&mut tx, verified, installation, current, keys).await?)
         }
     };
     record_event_tx(
@@ -386,6 +370,45 @@ async fn import_in_transaction(
         activate_runtime(args, &assets.key_password, &assets).await;
     }
     sync_runtime(args.pool, Utc::now()).await
+}
+
+async fn apply_rekey(
+    tx: &mut Transaction<'_, Postgres>,
+    verified: &VerifiedLicense,
+    installation: &InstallationKeyFile,
+    current: &LicenseStateRow,
+    (private_key, public_key): (&[u8; 32], &[u8; 32]),
+) -> CertResult<LicenseAssets> {
+    if verified.payload.previous_key_version.as_deref() != Some(current.key_version.as_str()) {
+        return Err(license_error(
+            LICENSE_KEY_VERSION_MISMATCH,
+            "换钥许可证的 previousKeyVersion 与当前密钥版本不一致",
+        ));
+    }
+    let assets = license::open_assets(private_key, public_key, verified)?;
+    let old_password = license::open_key_password(
+        private_key,
+        public_key,
+        installation.installation_id,
+        &current.key_version,
+        &current.key_password_sealed,
+    )?;
+    rekey_ca_and_materials(tx, &old_password, &assets, &verified.payload.key_version).await?;
+    let sealed = license::seal_key_password(
+        public_key,
+        installation.installation_id,
+        &verified.payload.key_version,
+        &assets.key_password,
+    )?;
+    update_license_row(
+        tx,
+        verified,
+        Some(&sealed),
+        Some(&verified.payload.key_version),
+        Some(&verified.payload.asset_digest),
+    )
+    .await?;
+    Ok(assets)
 }
 
 async fn activate_runtime(args: &ImportArgs<'_>, password: &str, assets: &LicenseAssets) {
@@ -436,7 +459,7 @@ async fn prepare_bootstrap_materials(
         .await?;
     }
     sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_root_packages (
             id, package_version, package_format, purpose, encrypted_package, package_sha256,
             kdf_name, kdf_params, status, expires_at, imported_at, imported_by, metadata
@@ -445,7 +468,7 @@ async fn prepare_bootstrap_materials(
             'x25519-hkdf-sha256', '{}', 'active', $5, NOW(), $6, '{}'
         )
         ON CONFLICT (id) DO NOTHING
-        "#,
+        ",
     )
     .bind(verified.package_id)
     .bind(&verified.payload.key_version)
@@ -493,12 +516,12 @@ async fn insert_wrapped_material(
     let (encrypted, digest, _) =
         wrap_root_material(password, package_id, material_type, key_version, &bytes)?;
     sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_root_materials (
             package_id, material_type, key_version, wrapping_key_id, encrypted_secret,
             secret_digest, status, created_by, activated_at, metadata
         ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW(), '{}')
-        "#,
+        ",
     )
     .bind(package_id)
     .bind(material_type)
@@ -600,11 +623,11 @@ async fn rekey_ca_and_materials(
             &plaintext,
         )?;
         sqlx::query(
-            r#"
+            r"
             UPDATE commercial_root_materials
             SET encrypted_secret = $1, secret_digest = $2, key_version = $3
             WHERE id = $4
-            "#,
+            ",
         )
         .bind(encrypted)
         .bind(digest)
@@ -618,12 +641,12 @@ async fn rekey_ca_and_materials(
 
 async fn load_state(pool: &PgPool) -> CertResult<Option<LicenseStateRow>> {
     let row = sqlx::query_as::<_, LicenseStateRow>(
-        r#"
+        r"
         SELECT customer_id, raw_license, max_accepted_sequence, current_sequence,
             key_version, asset_digest, key_password_sealed, expired_sticky_sequence, last_seen_at
         FROM commercial_license_state
         WHERE id = 1
-        "#,
+        ",
     )
     .fetch_optional(pool)
     .await?;
@@ -632,13 +655,13 @@ async fn load_state(pool: &PgPool) -> CertResult<Option<LicenseStateRow>> {
 
 async fn lock_state(tx: &mut Transaction<'_, Postgres>) -> CertResult<Option<LicenseStateRow>> {
     let row = sqlx::query_as::<_, LicenseStateRow>(
-        r#"
+        r"
         SELECT customer_id, raw_license, max_accepted_sequence, current_sequence,
             key_version, asset_digest, key_password_sealed, expired_sticky_sequence, last_seen_at
         FROM commercial_license_state
         WHERE id = 1
         FOR UPDATE
-        "#,
+        ",
     )
     .fetch_optional(&mut **tx)
     .await?;
@@ -651,13 +674,13 @@ async fn insert_state(
     sealed_password: &str,
 ) -> CertResult<()> {
     sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_license_state (
             id, installation_id, customer_id, raw_license, license_sha256,
             max_accepted_sequence, current_sequence, key_version, asset_digest,
             key_password_sealed, not_before, expires_at, grace_until
         ) VALUES (1, $1, $2, $3, $4, $5, $5, $6, $7, $8, $9, $10, $11)
-        "#,
+        ",
     )
     .bind(verified.installation_id)
     .bind(&verified.payload.customer_id)
@@ -683,7 +706,7 @@ async fn update_license_row(
     asset_digest: Option<&str>,
 ) -> CertResult<()> {
     sqlx::query(
-        r#"
+        r"
         UPDATE commercial_license_state
         SET raw_license = $1,
             license_sha256 = $2,
@@ -698,7 +721,7 @@ async fn update_license_row(
             asset_digest = COALESCE($10, asset_digest),
             updated_at = NOW()
         WHERE id = 1
-        "#,
+        ",
     )
     .bind(&verified.raw)
     .bind(license::sha256_hex(verified.raw.as_bytes()))
@@ -764,13 +787,13 @@ async fn persist_runtime_marks(
     }
     if decision.clock_rollback {
         let already = sqlx::query_scalar::<_, bool>(
-            r#"
+            r"
             SELECT EXISTS(
                 SELECT 1 FROM commercial_license_events
                 WHERE event_type = 'clock_rollback'
                   AND details->>'lastSeenAt' = $1
             )
-            "#,
+            ",
         )
         .bind(
             row.last_seen_at
@@ -820,11 +843,11 @@ async fn load_active_materials(
     tx: &mut Transaction<'_, Postgres>,
 ) -> CertResult<Vec<ActiveMaterialRow>> {
     let rows = sqlx::query_as::<_, ActiveMaterialRow>(
-        r#"
+        r"
         SELECT id, package_id, material_type, key_version, encrypted_secret, secret_digest
         FROM commercial_root_materials
         WHERE status = 'active'
-        "#,
+        ",
     )
     .fetch_all(&mut **tx)
     .await?;
@@ -833,13 +856,13 @@ async fn load_active_materials(
 
 async fn load_active_ca(tx: &mut Transaction<'_, Postgres>) -> CertResult<Option<ActiveCaRow>> {
     let row = sqlx::query_as::<_, ActiveCaRow>(
-        r#"
+        r"
         SELECT id, ca_key_encrypted
         FROM ca_storage
         WHERE is_active = true
         ORDER BY created_at DESC
         LIMIT 1
-        "#,
+        ",
     )
     .fetch_optional(&mut **tx)
     .await?;
@@ -895,10 +918,10 @@ async fn record_event(
     details: serde_json::Value,
 ) -> CertResult<()> {
     sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_license_events (sequence, event_type, actor_type, actor_id, details)
         VALUES ($1, $2, $3, $4, $5)
-        "#,
+        ",
     )
     .bind(sequence)
     .bind(event_type)
@@ -919,10 +942,10 @@ async fn record_event_tx(
     details: serde_json::Value,
 ) -> CertResult<()> {
     sqlx::query(
-        r#"
+        r"
         INSERT INTO commercial_license_events (sequence, event_type, actor_type, actor_id, details)
         VALUES ($1, $2, $3, $4, $5)
-        "#,
+        ",
     )
     .bind(sequence)
     .bind(event_type)
@@ -934,6 +957,9 @@ async fn record_event_tx(
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn restore_v3(
     state: &BaseAuthorizationState,
     pool: &PgPool,

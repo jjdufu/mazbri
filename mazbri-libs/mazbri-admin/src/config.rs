@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdminConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,

@@ -36,12 +36,18 @@ pub struct GreptimeDBClient {
     pub(super) service_targets: Vec<crate::greptimedb::ServiceMetricTarget>,
 }
 impl GreptimeDBClient {
-    pub fn new(config: &GreptimeDBConfig, service_targets: Vec<crate::greptimedb::ServiceMetricTarget>) -> Result<Self> {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub fn new(
+        config: &GreptimeDBConfig,
+        service_targets: Vec<crate::greptimedb::ServiceMetricTarget>,
+    ) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .gzip(config.compression)
             .build()
-            .map_err(|e| AnalyticsError::Config(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| AnalyticsError::Config(format!("Failed to create HTTP client: {e}")))?;
         let user = config.user.clone().unwrap_or_else(|| "default".to_string());
         let password = config
             .password
@@ -76,20 +82,19 @@ impl GreptimeDBClient {
             .body(format!("sql={}", urlencoding::encode(sql)))
             .send()
             .await
-            .map_err(|e| AnalyticsError::GreptimeDB(format!("{} failed: {}", error_context, e)))?;
+            .map_err(|e| AnalyticsError::GreptimeDB(format!("{error_context} failed: {e}")))?;
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
             return Err(AnalyticsError::GreptimeDB(format!(
-                "{} failed: {} - {}",
-                error_context, status, error_body
+                "{error_context} failed: {status} - {error_body}"
             )));
         }
         let body = response.text().await.map_err(|e| {
-            AnalyticsError::GreptimeDB(format!("{} response read failed: {}", error_context, e))
+            AnalyticsError::GreptimeDB(format!("{error_context} response read failed: {e}"))
         })?;
         let resp: GreptimeDBSqlResponse = serde_json::from_str(&body).map_err(|e| {
-            AnalyticsError::GreptimeDB(format!("{} JSON parse failed: {}", error_context, e))
+            AnalyticsError::GreptimeDB(format!("{error_context} JSON parse failed: {e}"))
         })?;
         let output = resp
             .output
@@ -110,6 +115,9 @@ impl GreptimeDBClient {
             None => Ok((vec![], vec![])),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn execute_query_rows(
         &self,
         sql: &str,
@@ -128,19 +136,25 @@ impl GreptimeDBClient {
             .collect();
         Ok(results)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn test_connection(&self) -> Result<()> {
         let rows = self
             .execute_query_rows("SELECT 1", "GreptimeDB connection test")
             .await?;
-        if !rows.is_empty() {
-            tracing::info!("GreptimeDB connection test successful");
-            Ok(())
-        } else {
+        if rows.is_empty() {
             Err(AnalyticsError::GreptimeDB(
                 "GreptimeDB connection test failed: no results returned".to_string(),
             ))
+        } else {
+            tracing::info!("GreptimeDB connection test successful");
+            Ok(())
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn with_query_timeout<T>(
         &self,
         operation_name: &str,

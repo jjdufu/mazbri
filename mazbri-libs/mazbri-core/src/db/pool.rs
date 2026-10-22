@@ -4,7 +4,6 @@ use anyhow::{Context, Result, bail};
 use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgListener, PgPoolOptions, PgSslMode};
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
@@ -13,12 +12,7 @@ pub fn build_connect_options(
     config: &DatabaseConfig,
     base_dir: Option<&Path>,
 ) -> Result<PgConnectOptions> {
-    let options = if let Some(ref url) = config.url {
-        PgConnectOptions::from_str(url)
-            .context("解析数据库 URL 失败 / Failed to parse database URL")?
-    } else {
-        build_connect_options_from_fields(config, base_dir)?
-    };
+    let options = build_connect_options_from_fields(config, base_dir)?;
     Ok(apply_application_name(options, config))
 }
 
@@ -45,8 +39,8 @@ fn build_connect_options_from_fields(
         (creds.username, creds.password)
     } else {
         bail!(
-            "Database configuration must include one of: 'url', 'username'+'password', or 'credentials_file'. \
-             / 数据库配置必须包含以下之一：'url'、'username'+'password' 或 'credentials_file'。"
+            "Database configuration must include 'username'+'password' or 'credentials_file'. \
+             / 数据库配置必须包含 'username'+'password' 或 'credentials_file'。"
         );
     };
 
@@ -171,7 +165,11 @@ mod tests {
     fn application_name_overrides_database_fallback() {
         let config = config_from(
             r#"
-            url = "postgresql://user:s3cret-pass@db.example:5432/mazbri_auth"
+            host = "db.example"
+            port = 5432
+            name = "mazbri_auth"
+            username = "user"
+            password = "s3cret-pass"
             application_name = "mazbri-auth"
             "#,
         );
@@ -200,7 +198,11 @@ mod tests {
     fn connect_failure_context_omits_password_and_url() {
         let config = config_from(
             r#"
-            url = "postgresql://user:s3cret-pass@db.example:5432/mazbri_auth"
+            host = "db.example"
+            port = 5432
+            name = "mazbri_auth"
+            username = "user"
+            password = "s3cret-pass"
             acquire_timeout_secs = 5
             "#,
         );
@@ -212,6 +214,29 @@ mod tests {
         );
         assert!(!context.contains("s3cret-pass"));
         assert!(!context.contains("postgresql://"));
+    }
+
+    #[test]
+    fn special_char_password_needs_no_encoding() {
+        let config = config_from(
+            r#"
+            host = "db.example"
+            name = "mazbri_auth"
+            username = "user"
+            password = "p@ss:w/rd%#?"
+            "#,
+        );
+        let options = build_connect_options(&config, None).expect("options");
+        assert_eq!(options.get_username(), "user");
+        let context = connect_failure_context(&options, &config);
+        assert!(!context.contains("p@ss"));
+    }
+
+    #[test]
+    fn rejects_url_field() {
+        let parsed: Result<DatabaseConfig, _> =
+            toml::from_str(r#"url = "postgresql://u:p@h:5432/d""#);
+        assert!(parsed.is_err());
     }
 
     #[test]

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Domain/API model for an audit log entry.
-/// ClickHouse wire types live in `crate::clickhouse::types`.
+/// `ClickHouse` wire types live in `crate::clickhouse::types`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {
     pub timestamp: DateTime<Utc>,

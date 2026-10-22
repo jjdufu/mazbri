@@ -1,4 +1,4 @@
-pub use mazbri_core::config_loader::ServiceMetadata;
+pub use mazbri_core::config::ServiceMetadata;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigPush {

@@ -8,11 +8,12 @@ pub enum ChannelRateLimitMode {
     /// Immediate 429 when no token (default, protects gateway/upstream).
     #[default]
     Reject,
-    /// Wait for a token up to max_wait / queue depth guards.
+    /// Wait for a token up to `max_wait` / queue depth guards.
     Queue,
 }
 
 impl ChannelRateLimitMode {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Reject => "reject",
@@ -20,6 +21,7 @@ impl ChannelRateLimitMode {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "reject" => Some(Self::Reject),
@@ -58,7 +60,7 @@ pub struct ChannelRateLimitConfig {
     /// Default max concurrent waiters per channel in queue mode.
     #[serde(default = "default_max_queue_depth")]
     pub max_queue_depth: u64,
-    /// Bucket capacity = max(1, ceil(qps_limit * burst_multiplier)).
+    /// Bucket capacity = max(1, `ceil(qps_limit` * `burst_multiplier`)).
     #[serde(default = "default_burst_multiplier")]
     pub burst_multiplier: f64,
     /// Drop idle channel buckets after this many seconds.
@@ -100,6 +102,9 @@ impl Default for ChannelRateLimitConfig {
 }
 
 impl ChannelRateLimitConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> anyhow::Result<()> {
         if !self.burst_multiplier.is_finite() || self.burst_multiplier <= 0.0 {
             anyhow::bail!(
@@ -119,8 +124,9 @@ impl ChannelRateLimitConfig {
         Ok(())
     }
 
+    #[must_use]
     pub fn capacity_for_qps(&self, qps_limit: u64) -> u64 {
-        let raw = (qps_limit as f64) * self.burst_multiplier;
-        raw.ceil().max(1.0) as u64
+        let raw = mazbri_core::num::u64_to_f64(qps_limit) * self.burst_multiplier;
+        mazbri_core::num::f64_to_u64(raw.ceil().max(1.0))
     }
 }

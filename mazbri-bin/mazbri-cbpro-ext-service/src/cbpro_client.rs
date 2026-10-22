@@ -17,14 +17,17 @@ pub struct CBProClient {
 }
 
 impl CBProClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: String,
+        tls_ca_cert: &str,
         client_cert: &ManagedCertificate,
         tls_config: &mazbri_tls::TlsConfig,
     ) -> Result<Self, CoreError> {
         let tls_connector =
-            mazbri_tls::TlsConnector::new(&tls_ca_cert, Some(client_cert), tls_config)
+            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
                 .map_err(|error| CoreError::Tls(error.to_string()))?;
         Ok(Self {
             endpoint,
@@ -41,10 +44,9 @@ impl CBProClient {
                 return Ok(client.clone());
             }
         }
-        let target =
-            mazbri_tls::resolve_connect_target(self.endpoint.url(), self.endpoint.server_name())
-                .await
-                .map_err(|error| CoreError::Config(error.to_string()))?;
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+            .await
+            .map_err(|error| CoreError::Config(error.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
             target.socket_addr,
             self.tls_connector.clone(),
@@ -82,7 +84,7 @@ impl CBProClient {
                             age_secs: None,
                             error: Some(RpcError::ServiceUnavailable {
                                 service: "cbpro".into(),
-                                message: format!("CBPro service error: {}", error),
+                                message: format!("CBPro service error: {error}"),
                             }),
                         }
                     }
@@ -97,7 +99,7 @@ impl CBProClient {
                     age_secs: None,
                     error: Some(RpcError::ServiceUnavailable {
                         service: "cbpro".into(),
-                        message: format!("CBPro connection failed: {}", error),
+                        message: format!("CBPro connection failed: {error}"),
                     }),
                 }
             }
@@ -122,7 +124,7 @@ impl CBProClient {
                             cache_key: String::new(),
                             error: Some(RpcError::ServiceUnavailable {
                                 service: "cbpro".into(),
-                                message: format!("CBPro service error: {}", error),
+                                message: format!("CBPro service error: {error}"),
                             }),
                         }
                     }
@@ -135,7 +137,7 @@ impl CBProClient {
                     cache_key: String::new(),
                     error: Some(RpcError::ServiceUnavailable {
                         service: "cbpro".into(),
-                        message: format!("CBPro connection failed: {}", error),
+                        message: format!("CBPro connection failed: {error}"),
                     }),
                 }
             }

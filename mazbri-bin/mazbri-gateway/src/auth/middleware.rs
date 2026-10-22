@@ -18,6 +18,7 @@ use jsonwebtoken::{Validation, decode, decode_header};
 use mazbri_auth::{CredentialType, TenantContext, TokenRecorder};
 use mazbri_core::crypto::transport::TransportEnvelope;
 use mazbri_core::metrics::{REGISTRY, register_collector_once};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{parse_trace_context, resolve_client_ip, validate_tenant_id};
 use prometheus::{IntCounterVec, Opts};
 use std::net::SocketAddr;
@@ -34,6 +35,9 @@ pub static RATELIMIT_FAIL_CLOSED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     )
     .expect("valid metric definition for gateway ratelimit fail-closed counter")
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_auth_middleware_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(RATELIMIT_FAIL_CLOSED_TOTAL.clone()))
 }
@@ -85,6 +89,7 @@ pub struct ProxyExecutionContext {
     pub api_endpoint: String,
 }
 impl AuthState {
+    #[must_use]
     pub fn new(keyring: JwtHs256Keyring) -> Self {
         Self { keyring }
     }
@@ -102,15 +107,12 @@ impl IntoResponse for MiddlewareRejection {
         *self.0
     }
 }
-pub async fn jwt_auth_middleware(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Result<Response, MiddlewareRejection> {
-    let started_at = Instant::now();
-    let request_id = current_request_id(req.headers());
-    let auth_header = req
-        .headers()
+/// 校验 `Authorization: Bearer <jwt>`（按 kid 取密钥），返回 claims 与 kid。
+fn verify_bearer_jwt(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<(MazbriClaims, String), MiddlewareRejection> {
+    let auth_header = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| JwtAuthError::MissingHeader.into_response())?;
@@ -140,6 +142,19 @@ pub async fn jwt_auth_middleware(
         .claims;
     record_jwt_kid(&kid, "ok");
     TokenRecorder::new("jwt").record_validated();
+    Ok((claims, kid))
+}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn jwt_auth_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, MiddlewareRejection> {
+    let started_at = Instant::now();
+    let request_id = current_request_id(req.headers());
+    let (claims, kid) = verify_bearer_jwt(&state, req.headers())?;
     let tenant_context = validate_tenant_id(&claims.tenant_id)
         .ok()
         .map(|tenant_id| TenantContext::new(tenant_id, CredentialType::Jwt));
@@ -151,11 +166,10 @@ pub async fn jwt_auth_middleware(
     let body_bytes = body::to_bytes(body, MAX_BODY_SIZE)
         .await
         .map_err(|_| JwtAuthError::InvalidRequestBody.into_response())?;
-    let path_and_query = parts
-        .uri
-        .path_and_query()
-        .map(|value| value.as_str().to_string())
-        .unwrap_or_else(|| parts.uri.path().to_string());
+    let path_and_query = parts.uri.path_and_query().map_or_else(
+        || parts.uri.path().to_string(),
+        |value| value.as_str().to_string(),
+    );
     parts
         .extensions
         .insert(GatewayHttpPath(path_and_query.clone()));
@@ -216,9 +230,9 @@ pub async fn jwt_auth_middleware(
         parts.extensions.insert(ctx);
     }
     if let Some(timing) = parts.extensions.get_mut::<GatewayRequestTiming>() {
-        timing.auth_ms = started_at.elapsed().as_millis() as u64;
+        timing.auth_ms = mazbri_core::num::millis_u64(started_at.elapsed());
     }
-    let auth_stage_ms = started_at.elapsed().as_millis() as u64;
+    let auth_stage_ms = mazbri_core::num::millis_u64(started_at.elapsed());
     if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name = "auth",
@@ -236,6 +250,9 @@ pub async fn jwt_auth_middleware(
         .run(Request::from_parts(parts, Body::from(body_bytes)))
         .await)
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn ratelimit_middleware(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -256,11 +273,10 @@ pub async fn ratelimit_middleware(
             )
                 .into_response()
         })?;
-    let api_endpoint = req
-        .extensions()
-        .get::<ProxyExecutionContext>()
-        .map(|ctx| ctx.api_endpoint.clone())
-        .unwrap_or_else(|| req.uri().path().to_string());
+    let api_endpoint = req.extensions().get::<ProxyExecutionContext>().map_or_else(
+        || req.uri().path().to_string(),
+        |ctx| ctx.api_endpoint.clone(),
+    );
     let client_ip = resolve_client_ip(req.headers(), Some(peer_addr));
     let request_id = current_request_id(req.headers());
     let request_bytes = content_length_header(req.headers());
@@ -273,14 +289,14 @@ pub async fn ratelimit_middleware(
     let decision = state
         .proxy_state
         .local_ratelimiter
-        .check(LocalRateLimitInput {
+        .check(&LocalRateLimitInput {
             tenant_id: tenant_context.tenant_id,
             product_id: tenant_context.product_id.clone(),
             api_endpoint: api_endpoint.clone(),
             client_ip: client_ip.clone(),
             request_bytes,
         });
-    timing.ratelimit_ms = stage_start.elapsed().as_millis() as u64;
+    timing.ratelimit_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
     match decision {
         LocalRateLimitDecision::Allow {
             policy_version,
@@ -288,10 +304,8 @@ pub async fn ratelimit_middleware(
             degraded,
             prepaid_request_bytes,
             bandwidth_enabled,
-            policy_id,
         } => {
             timing.bandwidth_prepaid = Some(BandwidthPrepaid {
-                policy_id,
                 policy_version,
                 snapshot_age_ms,
                 degraded,
@@ -299,7 +313,7 @@ pub async fn ratelimit_middleware(
                 bandwidth_enabled,
             });
             req.extensions_mut().insert(timing);
-            let rl_ms = stage_start.elapsed().as_millis() as u64;
+            let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
                 info!(
                     target : "gateway.stage", service = "mazbri-gateway", stage_name =
@@ -321,13 +335,17 @@ pub async fn ratelimit_middleware(
         } => {
             warn!(
                 target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                "ratelimit", stage_ms = stage_start.elapsed().as_millis() as u64, tenant_id
+                "ratelimit", stage_ms = mazbri_core::num::millis_u64(stage_start.elapsed()), tenant_id
                 = % tenant_context.tenant_id, api_endpoint = % api_endpoint, request_id =
                 % request_id, policy_version, retry_after_ms, reason = % reason,
                 snapshot_age_ms, degraded, source = "local", decision = "deny",
                 message = "Gateway rate limit stage rejected request"
             );
-            Err(rate_limit_error_response((retry_after_ms / 1000).max(1) as i32, &reason).into())
+            Err(rate_limit_error_response(
+                i32::saturating_from((retry_after_ms / 1000).max(1)),
+                &reason,
+            )
+            .into())
         }
     }
 }

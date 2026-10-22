@@ -6,13 +6,16 @@ use super::super::models::{
 use sqlx::Row;
 use uuid::Uuid;
 impl super::super::ConfigRepository {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_tag(&self, req: &CreateTagRequest) -> ConfigResult<ConfigTag> {
         let result = sqlx::query_as::<_, ConfigTag>(
-            r#"
+            r"
             INSERT INTO config_tags (name, description, color)
             VALUES ($1, $2, $3)
             RETURNING *
-            "#,
+            ",
         )
         .bind(&req.name)
         .bind(&req.description)
@@ -29,21 +32,27 @@ impl super::super::ConfigRepository {
             Err(e) => Err(e.into()),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_tags(&self) -> ConfigResult<Vec<ConfigTag>> {
         let tags = sqlx::query_as::<_, ConfigTag>(
-            r#"
+            r"
             SELECT * FROM config_tags ORDER BY name
-            "#,
+            ",
         )
         .fetch_all(&*self.db)
         .await?;
         Ok(tags)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_tag(&self, id: Uuid) -> ConfigResult<ConfigTag> {
         let tag = sqlx::query_as::<_, ConfigTag>(
-            r#"
+            r"
             SELECT * FROM config_tags WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .fetch_optional(&*self.db)
@@ -53,14 +62,17 @@ impl super::super::ConfigRepository {
         })?;
         Ok(tag)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_tag(&self, id: Uuid, req: &UpdateTagRequest) -> ConfigResult<ConfigTag> {
         let result = sqlx::query_as::<_, ConfigTag>(
-            r#"
+            r"
             UPDATE config_tags
             SET description = $1, color = $2
             WHERE id = $3
             RETURNING *
-            "#,
+            ",
         )
         .bind(&req.description)
         .bind(&req.color)
@@ -71,11 +83,14 @@ impl super::super::ConfigRepository {
             service_name: id.to_string(),
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn delete_tag(&self, id: Uuid) -> ConfigResult<()> {
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM config_tags WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .execute(&*self.db)
@@ -87,16 +102,19 @@ impl super::super::ConfigRepository {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_category(
         &self,
         req: &CreateCategoryRequest,
     ) -> ConfigResult<ConfigCategory> {
         let result = sqlx::query_as::<_, ConfigCategory>(
-            r#"
+            r"
             INSERT INTO config_categories (name, parent_id, description, sort_order)
             VALUES ($1, $2, $3, $4)
             RETURNING *
-            "#,
+            ",
         )
         .bind(&req.name)
         .bind(req.parent_id)
@@ -116,25 +134,34 @@ impl super::super::ConfigRepository {
             Err(e) => Err(e.into()),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_categories(&self) -> ConfigResult<Vec<ConfigCategory>> {
         let categories = sqlx::query_as::<_, ConfigCategory>(
-            r#"
+            r"
             SELECT * FROM config_categories ORDER BY sort_order, name
-            "#,
+            ",
         )
         .fetch_all(&*self.db)
         .await?;
         Ok(categories)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_categories_tree(&self) -> ConfigResult<Vec<ConfigCategory>> {
         let categories = self.list_categories().await?;
-        build_category_tree(categories, None)
+        build_category_tree(&categories, None)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_category(&self, id: Uuid) -> ConfigResult<ConfigCategory> {
         let category = sqlx::query_as::<_, ConfigCategory>(
-            r#"
+            r"
             SELECT * FROM config_categories WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .fetch_optional(&*self.db)
@@ -144,18 +171,21 @@ impl super::super::ConfigRepository {
         })?;
         Ok(category)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_category(
         &self,
         id: Uuid,
         req: &UpdateCategoryRequest,
     ) -> ConfigResult<ConfigCategory> {
         let result = sqlx::query_as::<_, ConfigCategory>(
-            r#"
+            r"
             UPDATE config_categories
             SET name = $1, parent_id = $2, description = $3, sort_order = $4
             WHERE id = $5
             RETURNING *
-            "#,
+            ",
         )
         .bind(&req.name)
         .bind(req.parent_id)
@@ -168,11 +198,14 @@ impl super::super::ConfigRepository {
             service_name: id.to_string(),
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn delete_category(&self, id: Uuid) -> ConfigResult<()> {
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM config_categories WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .execute(&*self.db)
@@ -184,6 +217,9 @@ impl super::super::ConfigRepository {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn add_tags_to_config(
         &self,
         entry_id: Uuid,
@@ -191,11 +227,11 @@ impl super::super::ConfigRepository {
     ) -> ConfigResult<()> {
         for tag_name in tag_names {
             sqlx::query(
-                r#"
+                r"
                 INSERT INTO config_entry_tags (config_entry_id, tag_id)
                 SELECT $1, id FROM config_tags WHERE name = $2
                 ON CONFLICT DO NOTHING
-                "#,
+                ",
             )
             .bind(entry_id)
             .bind(tag_name)
@@ -204,6 +240,9 @@ impl super::super::ConfigRepository {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn remove_tags_from_config(
         &self,
         entry_id: Uuid,
@@ -211,11 +250,11 @@ impl super::super::ConfigRepository {
     ) -> ConfigResult<()> {
         for tag_name in tag_names {
             sqlx::query(
-                r#"
+                r"
                 DELETE FROM config_entry_tags
                 WHERE config_entry_id = $1
                 AND tag_id = (SELECT id FROM config_tags WHERE name = $2)
-                "#,
+                ",
             )
             .bind(entry_id)
             .bind(tag_name)
@@ -224,15 +263,18 @@ impl super::super::ConfigRepository {
         }
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_config_category(
         &self,
         entry_id: Uuid,
         category_id: Option<Uuid>,
     ) -> ConfigResult<()> {
         sqlx::query(
-            r#"
+            r"
             UPDATE config_entries SET category_id = $1 WHERE id = $2
-            "#,
+            ",
         )
         .bind(category_id)
         .bind(entry_id)
@@ -240,65 +282,20 @@ impl super::super::ConfigRepository {
         .await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn search_configs(
         &self,
         query: &ConfigSearchQuery,
     ) -> ConfigResult<Vec<ConfigEntryWithMeta>> {
-        let mut conditions: Vec<String> = Vec::new();
-        let mut param_idx = 0usize;
-        // service_name: contains (ILIKE) — mgmt list search uses this as free-text.
-        if query.service_name.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.service_name ILIKE ${param_idx}"));
-        }
-        if query.service_name_eq.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.service_name = ${param_idx}"));
-        }
-        if query.updated_by.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_by ILIKE ${param_idx}"));
-        }
-        if query.updated_at_gte.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_at >= ${param_idx}::timestamptz"));
-        }
-        if query.updated_at_lte.is_some() {
-            param_idx += 1;
-            conditions.push(format!("ce.updated_at <= ${param_idx}::timestamptz"));
-        }
-        if query.q.is_some() {
-            param_idx += 1;
-            conditions.push(format!(
-                "(ce.service_name ILIKE ${param_idx} OR ce.updated_by ILIKE ${param_idx})"
-            ));
-        }
-        if query.category.is_some() {
-            param_idx += 1;
-            conditions.push(format!("cc.name = ${param_idx}"));
-        }
-        if let Some(ref tags) = query.tags {
-            if !tags.is_empty() {
-                param_idx += 1;
-                conditions
-                    .push(
-                        format!(
-                            "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
-                        ),
-                    );
-            }
-        }
-        let where_clause = if conditions.is_empty() {
-            "1 = 1".to_string()
-        } else {
-            conditions.join(" AND ")
-        };
+        let (where_clause, mut param_idx) = search_where_clause(query);
         param_idx += 1;
         let limit_param = param_idx;
         param_idx += 1;
         let offset_param = param_idx;
         let sql = format!(
-            r#"
+            r"
             WITH matched_entries AS (
                 SELECT ce.id, ce.service_name, ce.content,
                        ce.content_hash, ce.is_sensitive, ce.updated_by,
@@ -323,27 +320,17 @@ impl super::super::ConfigRepository {
                      me.content_hash, me.is_sensitive, me.updated_by,
                      me.created_at, me.updated_at, me.category_id
             ORDER BY me.service_name
-            "#
+            "
         );
         let mut sql_query = sqlx::query(&sql);
         if let Some(ref service_name) = query.service_name {
-            let pat = if service_name.contains('%') {
-                service_name.clone()
-            } else {
-                format!("%{service_name}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(service_name));
         }
         if let Some(ref service_name_eq) = query.service_name_eq {
             sql_query = sql_query.bind(service_name_eq.clone());
         }
         if let Some(ref updated_by) = query.updated_by {
-            let pat = if updated_by.contains('%') {
-                updated_by.clone()
-            } else {
-                format!("%{updated_by}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(updated_by));
         }
         if let Some(ref gte) = query.updated_at_gte {
             sql_query = sql_query.bind(gte.clone());
@@ -352,12 +339,7 @@ impl super::super::ConfigRepository {
             sql_query = sql_query.bind(lte.clone());
         }
         if let Some(ref q) = query.q {
-            let pat = if q.contains('%') {
-                q.clone()
-            } else {
-                format!("%{q}%")
-            };
-            sql_query = sql_query.bind(pat);
+            sql_query = sql_query.bind(contains_pattern(q));
         }
         if let Some(ref category_name) = query.category {
             sql_query = sql_query.bind(category_name);
@@ -369,47 +351,110 @@ impl super::super::ConfigRepository {
         }
         sql_query = sql_query.bind(query.limit).bind(query.offset);
         let rows = sql_query.fetch_all(&*self.db).await?;
-        let mut results = Vec::with_capacity(rows.len());
-        for row in rows {
-            let entry = ConfigEntry {
-                id: row.get("id"),
-                service_name: row.get("service_name"),
-                content: row.get("content"),
-                content_hash: row.get("content_hash"),
-                is_sensitive: row.get("is_sensitive"),
-                updated_by: row.get("updated_by"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-            };
-            let tags_json: Option<serde_json::Value> = row.try_get("tags_json").ok();
-            let tags: Vec<ConfigTag> = match tags_json {
-                Some(serde_json::Value::Array(arr)) => arr
-                    .iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                    .collect(),
-                _ => vec![],
-            };
-            let category: Option<ConfigCategory> = row
-                .try_get("category_json")
-                .ok()
-                .and_then(|v: serde_json::Value| serde_json::from_value(v).ok());
-            results.push(ConfigEntryWithMeta {
-                entry,
-                tags,
-                category,
-            });
-        }
-        Ok(results)
+        Ok(rows.iter().map(row_to_entry_with_meta).collect())
     }
 }
+/// 构造 `search_configs` 的 WHERE 子句；返回已占用的参数序号。
+fn search_where_clause(query: &ConfigSearchQuery) -> (String, usize) {
+    let mut conditions: Vec<String> = Vec::new();
+    let mut param_idx = 0usize;
+    // service_name: contains (ILIKE) — mgmt list search uses this as free-text.
+    if query.service_name.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.service_name ILIKE ${param_idx}"));
+    }
+    if query.service_name_eq.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.service_name = ${param_idx}"));
+    }
+    if query.updated_by.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_by ILIKE ${param_idx}"));
+    }
+    if query.updated_at_gte.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_at >= ${param_idx}::timestamptz"));
+    }
+    if query.updated_at_lte.is_some() {
+        param_idx += 1;
+        conditions.push(format!("ce.updated_at <= ${param_idx}::timestamptz"));
+    }
+    if query.q.is_some() {
+        param_idx += 1;
+        conditions.push(format!(
+            "(ce.service_name ILIKE ${param_idx} OR ce.updated_by ILIKE ${param_idx})"
+        ));
+    }
+    if query.category.is_some() {
+        param_idx += 1;
+        conditions.push(format!("cc.name = ${param_idx}"));
+    }
+    if let Some(ref tags) = query.tags {
+        if !tags.is_empty() {
+            param_idx += 1;
+            conditions
+                .push(
+                    format!(
+                        "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
+                    ),
+                );
+        }
+    }
+    let where_clause = if conditions.is_empty() {
+        "1 = 1".to_string()
+    } else {
+        conditions.join(" AND ")
+    };
+    (where_clause, param_idx)
+}
+
+fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {
+    let entry = ConfigEntry {
+        id: row.get("id"),
+        service_name: row.get("service_name"),
+        content: row.get("content"),
+        content_hash: row.get("content_hash"),
+        is_sensitive: row.get("is_sensitive"),
+        updated_by: row.get("updated_by"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    };
+    let tags_json: Option<serde_json::Value> = row.try_get("tags_json").ok();
+    let tags: Vec<ConfigTag> = match tags_json {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect(),
+        _ => vec![],
+    };
+    let category: Option<ConfigCategory> = row
+        .try_get("category_json")
+        .ok()
+        .and_then(|v: serde_json::Value| serde_json::from_value(v).ok());
+    ConfigEntryWithMeta {
+        entry,
+        tags,
+        category,
+    }
+}
+
+/// 未含通配符时包成 `%value%`（ILIKE 包含匹配）。
+fn contains_pattern(value: &str) -> String {
+    if value.contains('%') {
+        value.to_string()
+    } else {
+        format!("%{value}%")
+    }
+}
+
 const MAX_CATEGORY_DEPTH: usize = 10;
 fn build_category_tree(
-    categories: Vec<ConfigCategory>,
+    categories: &[ConfigCategory],
     parent_id: Option<Uuid>,
 ) -> ConfigResult<Vec<ConfigCategory>> {
     let mut children_map: std::collections::HashMap<Option<Uuid>, Vec<ConfigCategory>> =
         std::collections::HashMap::new();
-    for cat in &categories {
+    for cat in categories {
         children_map
             .entry(cat.parent_id)
             .or_default()
@@ -426,8 +471,7 @@ fn build_category_tree_recursive(
 ) -> ConfigResult<Vec<ConfigCategory>> {
     if depth > MAX_CATEGORY_DEPTH {
         return Err(ConfigError::Validation(format!(
-            "Category tree exceeds maximum depth of {}",
-            MAX_CATEGORY_DEPTH
+            "Category tree exceeds maximum depth of {MAX_CATEGORY_DEPTH}"
         )));
     }
     let mut result = Vec::new();

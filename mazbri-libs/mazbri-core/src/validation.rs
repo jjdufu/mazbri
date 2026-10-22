@@ -220,5 +220,20 @@ pub mod limits {
     pub const MAX_PAGE_SIZE: u32 = 1000;
     /// Offset browse depth / latest-universe size for heavy list APIs (call monitor).
     pub const MAX_TOTAL_RESULTS: u64 = 20_000;
+    /// `MAX_TOTAL_RESULTS` 的 `usize` 形式（内存中结果集上限）。
+    pub const MAX_TOTAL_RESULTS_USIZE: usize = 20_000;
     pub const MAX_AUDIT_PAGE_SIZE: u32 = 100;
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::limits;
+
+    #[test]
+    fn total_results_forms_agree() {
+        assert_eq!(
+            u64::try_from(limits::MAX_TOTAL_RESULTS_USIZE).ok(),
+            Some(limits::MAX_TOTAL_RESULTS)
+        );
+    }
 }

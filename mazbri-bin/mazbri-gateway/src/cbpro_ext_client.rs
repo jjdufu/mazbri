@@ -25,15 +25,18 @@ pub struct CBProExtClient {
 }
 
 impl CBProExtClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: String,
+        tls_ca_cert: &str,
         client_cert: &ManagedCertificate,
         tls_config: &mazbri_tls::TlsConfig,
         client_ttl_secs: u64,
     ) -> Result<Self, CoreError> {
         let tls_connector =
-            mazbri_tls::TlsConnector::new(&tls_ca_cert, Some(client_cert), tls_config)
+            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
                 .map_err(|error| CoreError::Tls(error.to_string()))?;
         Ok(Self {
             endpoint,
@@ -74,10 +77,9 @@ impl CBProExtClient {
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro-Ext client (mTLS)");
-        let target =
-            mazbri_tls::resolve_connect_target(self.endpoint.url(), self.endpoint.server_name())
-                .await
-                .map_err(|error| CoreError::Config(error.to_string()))?;
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+            .await
+            .map_err(|error| CoreError::Config(error.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
             target.socket_addr,
             self.tls_connector.clone(),

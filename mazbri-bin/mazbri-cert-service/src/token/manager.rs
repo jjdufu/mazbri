@@ -8,6 +8,7 @@ pub struct TokenManager {
     config: RwLock<Arc<CertAuthConfig>>,
 }
 impl TokenManager {
+    #[must_use]
     pub fn new(config: Arc<CertAuthConfig>) -> Self {
         Self {
             config: RwLock::new(config),
@@ -16,6 +17,9 @@ impl TokenManager {
     pub async fn update_config(&self, config: Arc<CertAuthConfig>) {
         *self.config.write().await = config;
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn validate(&self, token: &str) -> CertResult<bool> {
         let config = self.config.read().await;
         Ok(config
@@ -26,6 +30,9 @@ impl TokenManager {
     pub async fn static_tokens(&self) -> Vec<String> {
         self.config.read().await.static_tokens.clone()
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn validate_config(&self) -> CertResult<()> {
         let config = self.config.read().await;
         if config.static_tokens.is_empty() {
