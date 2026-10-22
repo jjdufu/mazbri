@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 use crate::auth::credential;
@@ -124,12 +125,12 @@ fn json_to_xml_children(
             }
             serde_json::Value::Array(items) => {
                 for item in items {
-                    out.push_str(&format!("<item>{}</item>", scalar_xml(item)?));
+                    let _ = write!(out, "<item>{}</item>", scalar_xml(item)?);
                 }
             }
             serde_json::Value::Object(_) => {
                 let inner = json_to_xml_children(v, number_fields, field_map)?;
-                out.push_str(&format!("<{tag}>{inner}</{tag}>"));
+                let _ = write!(out, "<{tag}>{inner}</{tag}>");
             }
             serde_json::Value::Number(n) => {
                 if !number_fields.is_empty() && !number_fields.iter().any(|f| f == k) {
@@ -137,13 +138,13 @@ fn json_to_xml_children(
                         "SOAP number field '{k}' not listed in soap.number_fields"
                     )));
                 }
-                out.push_str(&format!("<{tag}>{n}</{tag}>"));
+                let _ = write!(out, "<{tag}>{n}</{tag}>");
             }
             serde_json::Value::Bool(b) => {
-                out.push_str(&format!("<{tag}>{b}</{tag}>"));
+                let _ = write!(out, "<{tag}>{b}</{tag}>");
             }
             serde_json::Value::String(s) => {
-                out.push_str(&format!("<{tag}>{}</{tag}>", xml_escape(s)));
+                let _ = write!(out, "<{tag}>{}</{tag}>", xml_escape(s));
             }
         }
     }

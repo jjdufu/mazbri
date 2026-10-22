@@ -83,7 +83,7 @@ pub(crate) fn encode_form_object(payload: &Value) -> Result<String, ExecuteError
     let mut parts = Vec::with_capacity(keys.len());
     for k in keys {
         match &obj[k] {
-            Value::Null => continue,
+            Value::Null => {}
             Value::Object(_) | Value::Array(_) => {
                 return Err(ExecuteError::SpecInvalid(
                     "form body_encoding 第一期不支持嵌套 object/array".into(),

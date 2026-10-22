@@ -92,7 +92,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
                         "ws closed before reply".into(),
                     ));
                 }
-                Some(Ok(_)) => continue,
+                Some(Ok(_)) => {}
                 Some(Err(e)) => {
                     return Err(ExecuteError::UpstreamTransport(format!("ws: {e}")));
                 }
@@ -135,7 +135,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
     OutboundResponse {
         status: 200,
-        headers: Default::default(),
+        headers: std::collections::HashMap::default(),
         body: serde_json::to_vec(json).unwrap_or_default(),
         final_url: url.to_string(),
         method: "WS".into(),

@@ -2,6 +2,7 @@
 //!
 //! Proves that Production (bypass) and Business/Live (workbench) share the same
 //! auth inject + request/response transform pipeline inside `RuntimeEngine`.
+use std::hash::BuildHasher;
 
 use std::collections::HashMap;
 
@@ -25,17 +26,20 @@ pub struct PreparedOutbound {
 /// Apply the same `request_transform` + inject sequence used by `RuntimeEngine::execute`
 /// for Production / Business / Live modes.
 #[must_use]
-pub fn prepare_outbound_request(
+pub fn prepare_outbound_request<S: BuildHasher>(
     config: Option<&SupplierConfig>,
     path: &str,
-    headers: &HashMap<String, String>,
+    headers: &HashMap<String, String, S>,
     query: &[(String, String)],
     body: Option<&BodyKind>,
     token: Option<&str>,
 ) -> PreparedOutbound {
     let original_path = path.to_string();
     let mut req_path = path.to_string();
-    let mut outbound_headers = headers.clone();
+    let mut outbound_headers: HashMap<String, String> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     let mut outbound_query = query.to_vec();
     let mut req_body = body.cloned();
 
@@ -72,12 +76,12 @@ pub fn prepare_outbound_request(
 
 /// Apply `response_headers_set` + response body template (shared by all modes).
 #[must_use]
-pub fn prepare_outbound_response(
+pub fn prepare_outbound_response<S: BuildHasher>(
     config: Option<&SupplierConfig>,
-    mut headers: HashMap<String, String>,
+    mut headers: HashMap<String, String, S>,
     body: Vec<u8>,
     status: u16,
-) -> (HashMap<String, String>, Vec<u8>) {
+) -> (HashMap<String, String, S>, Vec<u8>) {
     let final_body = if let Some(cfg) = config {
         if let Some(ref trans) = cfg.transform {
             apply_response_headers_transform(trans, &mut headers);

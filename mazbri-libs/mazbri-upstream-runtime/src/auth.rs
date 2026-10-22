@@ -7,7 +7,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use mazbri_core::{AdapterKind, AuthProfile, AuthSpec, ChannelEgressSpec};
+use mazbri_core::{AdapterKind, AuthInjectSpec, AuthProfile, AuthSpec, ChannelEgressSpec};
 
 use crate::auth_digest::DigestAttempt;
 use crate::http_call::HttpCall;
@@ -23,6 +23,38 @@ pub struct AppliedAuth {
     pub query: Vec<(String, String)>,
     pub metadata: HashMap<String, String>,
     pub token: Option<String>,
+}
+
+impl AppliedAuth {
+    fn empty() -> Self {
+        Self {
+            headers: HashMap::new(),
+            query: Vec::new(),
+            metadata: HashMap::new(),
+            token: None,
+        }
+    }
+
+    fn set_basic(&mut self, id: Option<&str>, secret: Option<&str>) -> Result<(), ExecuteError> {
+        let user = id.unwrap_or("");
+        let pass = secret.ok_or_else(|| {
+            ExecuteError::AuthTokenFailed("basic profile missing secret credential".into())
+        })?;
+        let val = format!("Basic {}", basic_b64(user, pass));
+        self.headers.insert("Authorization".into(), val);
+        Ok(())
+    }
+
+    fn place(&mut self, to: &str, key: &str, val: &str) {
+        place_inject(
+            to,
+            key,
+            val,
+            &mut self.headers,
+            &mut self.query,
+            &mut self.metadata,
+        );
+    }
 }
 
 pub fn token_cache_key(supplier_id: &str, channel_id: &str, spec: &ChannelEgressSpec) -> String {
@@ -65,53 +97,31 @@ pub struct AuthApply<'a> {
     pub request_id: &'a str,
 }
 
-pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError> {
-    let AuthApply {
-        client,
-        ssrf,
-        token_cache,
-        spec,
-        base_url,
-        credentials,
-        cache_key,
-        evict_first,
-        request_id,
-    } = args;
-    let mut headers = HashMap::new();
-    let mut query = Vec::new();
-    let mut metadata = HashMap::new();
-    let Some(auth) = spec.auth.as_ref() else {
-        return Ok(AppliedAuth {
-            headers,
-            query,
-            metadata,
-            token: None,
-        });
-    };
-    let profile = auth
-        .profile_kind()
-        .map_err(|e| ExecuteError::SpecInvalid(e.to_string()))?;
-    if evict_first {
-        token_cache.evict_token(cache_key).await;
-    }
-
-    let inject = auth.inject.clone().unwrap_or_default();
-    let inject_to = if inject.to.is_empty() {
+/// 注入位置、键名与格式（空值回落到默认）。
+fn inject_settings(inject: &AuthInjectSpec) -> (&str, &str, &str) {
+    let to = if inject.to.is_empty() {
         "header"
     } else {
         inject.to.as_str()
     };
-    let inject_key = if inject.key.is_empty() {
+    let key = if inject.key.is_empty() {
         "Authorization"
     } else {
         inject.key.as_str()
     };
-    let inject_fmt = if inject.format.is_empty() {
+    let fmt = if inject.format.is_empty() {
         "{}"
     } else {
         inject.format.as_str()
     };
+    (to, key, fmt)
+}
 
+/// 按 `credential_keys` 与常见别名解析 (id, secret)。
+fn resolve_id_secret<'c>(
+    auth: &AuthSpec,
+    credentials: &'c HashMap<String, String>,
+) -> (Option<&'c str>, Option<&'c str>) {
     let id_key = auth.credential_keys.as_ref().and_then(|k| k.id.as_deref());
     let secret_key = auth
         .credential_keys
@@ -136,39 +146,56 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
             "password",
         ],
     );
+    (id, secret)
+}
+
+pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError> {
+    let AuthApply {
+        client,
+        ssrf,
+        token_cache,
+        spec,
+        base_url,
+        credentials,
+        cache_key,
+        evict_first,
+        request_id,
+    } = args;
+    let mut applied = AppliedAuth::empty();
+    let Some(auth) = spec.auth.as_ref() else {
+        return Ok(applied);
+    };
+    let profile = auth
+        .profile_kind()
+        .map_err(|e| ExecuteError::SpecInvalid(e.to_string()))?;
+    if evict_first {
+        token_cache.evict_token(cache_key).await;
+    }
+
+    let inject = auth.inject.clone().unwrap_or_default();
+    let (inject_to, inject_key, inject_fmt) = inject_settings(&inject);
+    let (id, secret) = resolve_id_secret(auth, credentials);
+    let fmt = |raw: &str| inject_fmt.replace("{}", raw);
 
     match profile {
-        AuthProfile::None => {}
+        // SignForm: per-request HMAC is assembled by the sign_form adapter.
+        AuthProfile::None
+        | AuthProfile::SignForm
+        | AuthProfile::Digest
+        | AuthProfile::AwsSigV4
+        | AuthProfile::Hawk => {}
         AuthProfile::ApiKey => {
             let key = secret.ok_or_else(|| {
                 ExecuteError::AuthTokenFailed("api_key profile missing secret credential".into())
             })?;
-            let val = inject_fmt.replace("{}", key);
-            place_inject(
-                inject_to,
-                inject_key,
-                &val,
-                &mut headers,
-                &mut query,
-                &mut metadata,
-            );
+            applied.place(inject_to, inject_key, &fmt(key));
         }
-        AuthProfile::Basic => {
-            let user = id.unwrap_or("");
-            let pass = secret.ok_or_else(|| {
-                ExecuteError::AuthTokenFailed("basic profile missing secret credential".into())
-            })?;
-            let val = format!("Basic {}", basic_b64(user, pass));
-            headers.insert("Authorization".into(), val);
-        }
-        AuthProfile::SignForm => {
-            // Per-request HMAC is assembled by the sign_form adapter.
-        }
+        AuthProfile::Basic => applied.set_basic(id, secret)?,
         AuthProfile::GrpcMetadata => {
             if let Some(s) = secret {
-                let val = inject_fmt.replace("{}", s);
-                metadata.insert(inject_key.to_string(), val.clone());
-                headers.insert(inject_key.to_string(), val);
+                let val = fmt(s);
+                applied.metadata.insert(inject_key.to_string(), val.clone());
+                applied.headers.insert(inject_key.to_string(), val);
             }
         }
         AuthProfile::Bearer => {
@@ -176,15 +203,7 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
                 credential(credentials, &["token", "api_key", "secret"]).ok_or_else(|| {
                     ExecuteError::AuthTokenFailed("bearer profile missing token credential".into())
                 })?;
-            let val = inject_fmt.replace("{}", key);
-            place_inject(
-                inject_to,
-                inject_key,
-                &val,
-                &mut headers,
-                &mut query,
-                &mut metadata,
-            );
+            applied.place(inject_to, inject_key, &fmt(key));
         }
         AuthProfile::Jwt => {
             let token = crate::auth_jwt::sign_jwt(
@@ -195,26 +214,9 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
                 Utc::now(),
             )
             .await?;
-            let val = inject_fmt.replace("{}", &token);
-            place_inject(
-                inject_to,
-                inject_key,
-                &val,
-                &mut headers,
-                &mut query,
-                &mut metadata,
-            );
-            for (k, v) in &auth.headers {
-                headers.insert(k.clone(), v.clone());
-            }
-            return Ok(AppliedAuth {
-                headers,
-                query,
-                metadata,
-                token: Some(token),
-            });
+            applied.place(inject_to, inject_key, &fmt(&token));
+            applied.token = Some(token);
         }
-        AuthProfile::Digest | AuthProfile::AwsSigV4 | AuthProfile::Hawk => {}
         AuthProfile::OauthCcForm | AuthProfile::Gettoken => {
             let token_url = resolve_token_url(base_url, auth)?;
             if evict_first {
@@ -236,33 +238,17 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
                 },
             )
             .await?;
-            let val = inject_fmt.replace("{}", &token);
-            place_inject(
-                inject_to,
-                inject_key,
-                &val,
-                &mut headers,
-                &mut query,
-                &mut metadata,
-            );
-            return Ok(AppliedAuth {
-                headers,
-                query,
-                metadata,
-                token: Some(token),
-            });
+            applied.place(inject_to, inject_key, &fmt(&token));
+            applied.token = Some(token);
+            // 换票档不追加 auth.headers（保持既有行为）。
+            return Ok(applied);
         }
     }
 
     for (k, v) in &auth.headers {
-        headers.insert(k.clone(), v.clone());
+        applied.headers.insert(k.clone(), v.clone());
     }
-    Ok(AppliedAuth {
-        headers,
-        query,
-        metadata,
-        token: None,
-    })
+    Ok(applied)
 }
 
 fn place_inject(

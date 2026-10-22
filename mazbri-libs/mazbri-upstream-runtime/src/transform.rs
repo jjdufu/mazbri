@@ -1,4 +1,5 @@
 //! Request/response transform + token inject (production semantics).
+use std::hash::BuildHasher;
 
 use std::collections::HashMap;
 
@@ -31,10 +32,10 @@ impl InjectLocation {
 
 /// Apply request-side transform: `rewrite_path`, header set/remove, body template.
 /// `original_path` is the inbound path used for `{{request.path}}`.
-pub fn apply_request_transform(
+pub fn apply_request_transform<S: BuildHasher>(
     transform: &TransformConfig,
     path: &mut String,
-    headers: &mut HashMap<String, String>,
+    headers: &mut HashMap<String, String, S>,
     body: &mut Option<BodyKind>,
     original_path: &str,
 ) {
@@ -42,7 +43,7 @@ pub fn apply_request_transform(
         return;
     }
     if let Some(ref rw_path) = transform.rewrite_path {
-        *path = rw_path.clone();
+        path.clone_from(rw_path);
     }
     if let Some(ref remove) = transform.request_headers_remove {
         for key in remove {
@@ -62,10 +63,10 @@ pub fn apply_request_transform(
 }
 
 /// Inject auth token into header / query / body per `AuthFlowConfig`.
-pub fn inject_token(
+pub fn inject_token<S: BuildHasher>(
     auth: &AuthFlowConfig,
     token: &str,
-    headers: &mut HashMap<String, String>,
+    headers: &mut HashMap<String, String, S>,
     query: &mut Vec<(String, String)>,
     body: &mut Option<BodyKind>,
 ) {
@@ -106,9 +107,9 @@ pub fn inject_token(
     }
 }
 
-pub fn apply_response_headers_transform(
+pub fn apply_response_headers_transform<S: BuildHasher>(
     transform: &TransformConfig,
-    headers: &mut HashMap<String, String>,
+    headers: &mut HashMap<String, String, S>,
 ) {
     if !transform.enabled {
         return;

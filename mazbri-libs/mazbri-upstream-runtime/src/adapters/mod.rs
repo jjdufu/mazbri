@@ -276,10 +276,8 @@ pub fn map_jsonrpc_error(err: &serde_json::Value) -> BizError {
         .unwrap_or("jsonrpc error")
         .to_string();
     let mapped = match code {
-        -32600 => "INVALID_PARAMETER",
+        -32600 | -32602 | -32700 => "INVALID_PARAMETER",
         -32601 => "NOT_FOUND",
-        -32602 => "INVALID_PARAMETER",
-        -32700 => "INVALID_PARAMETER",
         -32001 | -32003 => "FORBIDDEN",
         -32002 => "UNAUTHORIZED",
         _ => "UPSTREAM_BIZ",
