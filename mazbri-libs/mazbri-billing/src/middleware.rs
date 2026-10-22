@@ -119,32 +119,7 @@ pub async fn usage_middleware(
             product_id,
             billing_code: Some(i16::saturating_from(billing_code.0)),
         };
-        match state.billing_service.record_usage(usage_record).await {
-            Ok(usage_record_id) => {
-                debug!(
-                    "Recorded usage for tenant {}: {} {} (record_id={})",
-                    tid,
-                    method,
-                    uri.path(),
-                    usage_record_id
-                );
-                if let Some(ref queue) = state.charge_queue {
-                    if amount > rust_decimal::Decimal::ZERO {
-                        if let Err(e) = queue
-                            .enqueue(tid, account_id, usage_record_id, amount, None)
-                            .await
-                        {
-                            error!("Failed to enqueue charge for tenant {}: {}", tid, e);
-                        } else {
-                            debug!("Enqueued charge for tenant {}", tid);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to record usage: {}", e);
-            }
-        }
+        persist_usage(&state, usage_record, amount, &method, uri.path()).await;
     }
     response
 }
@@ -267,4 +242,38 @@ async fn get_tenant_product_rate(
     row.try_get::<String, _>("unit_price")
         .ok()
         .and_then(|s: String| s.parse::<Decimal>().ok())
+}
+
+async fn persist_usage(
+    state: &BillingMiddlewareState,
+    usage_record: UsageRecord,
+    amount: rust_decimal::Decimal,
+    method: &axum::http::Method,
+    path: &str,
+) {
+    let tenant_id = usage_record.tenant_id;
+    let account_id = usage_record.account_id;
+    match state.billing_service.record_usage(usage_record).await {
+        Ok(usage_record_id) => {
+            debug!(
+                "Recorded usage for tenant {}: {} {} (record_id={})",
+                tenant_id, method, path, usage_record_id
+            );
+            if let Some(ref queue) = state.charge_queue {
+                if amount > rust_decimal::Decimal::ZERO {
+                    if let Err(e) = queue
+                        .enqueue(tenant_id, account_id, usage_record_id, amount, None)
+                        .await
+                    {
+                        error!("Failed to enqueue charge for tenant {}: {}", tenant_id, e);
+                    } else {
+                        debug!("Enqueued charge for tenant {}", tenant_id);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to record usage: {}", e);
+        }
+    }
 }

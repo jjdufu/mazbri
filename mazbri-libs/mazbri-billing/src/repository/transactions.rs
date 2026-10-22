@@ -3,7 +3,7 @@ use crate::service::AddFundsResult;
 use chrono::{DateTime, Utc};
 use mazbri_core::CoreError;
 use rust_decimal::Decimal;
-use sqlx::{Postgres, Transaction};
+use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 struct LedgerEntry<'a> {
     tenant_id: Uuid,
@@ -141,7 +141,6 @@ pub(crate) async fn add_funds(
         resource: "tenant_account".to_string(),
         id: tenant_id.to_string(),
     })?;
-    use sqlx::Row;
     let account_id: Uuid = row.get("id");
     let new_balance: Decimal = row.get("balance");
     let transaction_id = Uuid::new_v4();
@@ -182,6 +181,35 @@ pub(crate) async fn add_funds(
         processed_at: now.timestamp(),
     })
 }
+/// 统计账期内的成功调用数、数据量与基础费用。
+async fn usage_totals(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    period_start: DateTime<Utc>,
+    period_end: DateTime<Utc>,
+) -> Result<(i64, i64, Decimal), CoreError> {
+    let usage_row = sqlx::query(
+        "SELECT
+            COUNT(*) as total_calls,
+            COALESCE(SUM(request_size + response_size), 0)::BIGINT as total_data_bytes,
+            COALESCE(SUM(billable_amount), 0) as base_amount
+         FROM usage_records
+         WHERE tenant_id = $1
+         AND recorded_at >= $2
+         AND recorded_at <= $3
+         AND response_status < 400",
+    )
+    .bind(tenant_id)
+    .bind(period_start)
+    .bind(period_end)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(PgBillingRepository::map_error)?;
+    let total_calls: i64 = usage_row.get("total_calls");
+    let total_data_bytes: i64 = usage_row.get("total_data_bytes");
+    let base_amount: Decimal = usage_row.get("base_amount");
+    Ok((total_calls, total_data_bytes, base_amount))
+}
 pub(crate) async fn generate_bill(
     repo: &PgBillingRepository,
     tenant_id: Uuid,
@@ -218,27 +246,8 @@ pub(crate) async fn generate_bill(
             .await
             .map_err(PgBillingRepository::map_error)?
             .ok_or_else(|| CoreError::Validation("Tenant account not found".to_string()))?;
-    let usage_row = sqlx::query(
-        "SELECT
-            COUNT(*) as total_calls,
-            COALESCE(SUM(request_size + response_size), 0)::BIGINT as total_data_bytes,
-            COALESCE(SUM(billable_amount), 0) as base_amount
-         FROM usage_records
-         WHERE tenant_id = $1
-         AND recorded_at >= $2
-         AND recorded_at <= $3
-         AND response_status < 400",
-    )
-    .bind(tenant_id)
-    .bind(period_start)
-    .bind(period_end)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(PgBillingRepository::map_error)?;
-    use sqlx::Row;
-    let total_calls: i64 = usage_row.get("total_calls");
-    let total_data_bytes: i64 = usage_row.get("total_data_bytes");
-    let base_amount: Decimal = usage_row.get("base_amount");
+    let (total_calls, total_data_bytes, base_amount) =
+        usage_totals(&mut tx, tenant_id, period_start, period_end).await?;
     if let Some(bill_id) = existing_bill {
         sqlx::query(
             "UPDATE bills
@@ -290,33 +299,29 @@ pub(crate) async fn generate_bill(
     tx.commit().await.map_err(PgBillingRepository::map_error)?;
     Ok(bill_id)
 }
-pub(crate) async fn deduct_and_record(
+async fn zero_charge_result(
     repo: &PgBillingRepository,
     tenant_id: Uuid,
-    amount: Decimal,
-    account_id: Uuid,
-    usage_record_id: i64,
-    queue_id: Uuid,
 ) -> Result<DeductAndRecordResult, CoreError> {
-    if amount <= Decimal::ZERO {
-        let row = sqlx::query("SELECT balance FROM tenant_accounts WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&*repo.pool)
-            .await
-            .map_err(PgBillingRepository::map_error)?;
-        use sqlx::Row;
-        let balance: Decimal = row.map_or(Decimal::ZERO, |r| r.get("balance"));
-        return Ok(DeductAndRecordResult {
-            transaction_id: Uuid::nil(),
-            balance_before: balance,
-            balance_after: balance,
-        });
-    }
-    let mut tx = repo
-        .pool
-        .begin()
+    let row = sqlx::query("SELECT balance FROM tenant_accounts WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&*repo.pool)
         .await
         .map_err(PgBillingRepository::map_error)?;
+    let balance: Decimal = row.map_or(Decimal::ZERO, |r| r.get("balance"));
+    Ok(DeductAndRecordResult {
+        transaction_id: Uuid::nil(),
+        balance_before: balance,
+        balance_after: balance,
+    })
+}
+
+/// 扣减余额（含授信额度检查），返回 (扣前, 扣后)。
+async fn debit_balance(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    amount: Decimal,
+) -> Result<(Decimal, Decimal), CoreError> {
     let row = sqlx::query(
         "UPDATE tenant_accounts
          SET balance = balance - $1
@@ -325,27 +330,65 @@ pub(crate) async fn deduct_and_record(
     )
     .bind(amount)
     .bind(tenant_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(PgBillingRepository::map_error)?;
-    use sqlx::Row;
-    let (balance_before, balance_after) = match row {
-        Some(r) => {
-            let before: Decimal = r.get("balance_before");
-            let after: Decimal = r.get("balance_after");
-            (before, after)
-        }
-        None => {
-            return Err(CoreError::Validation(format!(
-                "Insufficient balance: required {amount}, tenant {tenant_id}"
-            )));
-        }
+    let Some(r) = row else {
+        return Err(CoreError::Validation(format!(
+            "Insufficient balance: required {amount}, tenant {tenant_id}"
+        )));
     };
-    let transaction_id = Uuid::new_v4();
+    Ok((r.get("balance_before"), r.get("balance_after")))
+}
+
+/// 标记扣费队列项与对应用量记录为已扣费。
+async fn mark_queue_charged(
+    tx: &mut Transaction<'_, Postgres>,
+    queue_id: Uuid,
+    transaction_id: Option<Uuid>,
+) -> Result<(), CoreError> {
+    sqlx::query(
+        r"UPDATE usage_charge_queue
+           SET status = 'completed', transaction_id = COALESCE($2, transaction_id), processed_at = NOW()
+           WHERE id = $1",
+    )
+    .bind(queue_id)
+    .bind(transaction_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(PgBillingRepository::map_error)?;
+    sqlx::query(
+        "UPDATE usage_records SET charge_status = 'charged', charged_at = NOW() \
+         WHERE charge_queue_id = $1",
+    )
+    .bind(queue_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(PgBillingRepository::map_error)?;
+    Ok(())
+}
+
+struct UsageCharge {
+    transaction_id: Uuid,
+    tenant_id: Uuid,
+    account_id: Uuid,
+    amount: Decimal,
+    balance_before: Decimal,
+    balance_after: Decimal,
+    usage_record_id: i64,
+    queue_id: Uuid,
+}
+
+/// 写一笔用量扣费：交易记录、账本分录、队列与用量状态。
+async fn record_usage_charge(
+    tx: &mut Transaction<'_, Postgres>,
+    charge: &UsageCharge,
+) -> Result<(), CoreError> {
+    let usage_record_id = charge.usage_record_id;
     let event_id: Option<Uuid> =
         sqlx::query_scalar("SELECT event_id FROM usage_records WHERE id = $1")
             .bind(usage_record_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await
             .map_err(PgBillingRepository::map_error)?;
     sqlx::query(
@@ -355,49 +398,66 @@ pub(crate) async fn deduct_and_record(
             description, status)
            VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')",
     )
-    .bind(transaction_id)
-    .bind(tenant_id)
-    .bind(account_id)
-    .bind(amount)
-    .bind(balance_before)
-    .bind(balance_after)
+    .bind(charge.transaction_id)
+    .bind(charge.tenant_id)
+    .bind(charge.account_id)
+    .bind(charge.amount)
+    .bind(charge.balance_before)
+    .bind(charge.balance_after)
     .bind(usage_record_id.to_string())
     .bind(format!("Usage charge for record {usage_record_id}"))
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(PgBillingRepository::map_error)?;
     insert_ledger_entry(
-        &mut tx,
+        tx,
         LedgerEntry {
-            tenant_id,
+            tenant_id: charge.tenant_id,
             event_id,
             entry_type: "CHARGE",
-            amount,
+            amount: charge.amount,
             direction: "DEBIT",
-            balance_before,
-            balance_after,
+            balance_before: charge.balance_before,
+            balance_after: charge.balance_after,
             description: Some(&format!("Usage record {usage_record_id}")),
         },
     )
     .await?;
-    sqlx::query(
-        r"UPDATE usage_charge_queue
-           SET status = 'completed', transaction_id = $2, processed_at = NOW()
-           WHERE id = $1",
+    mark_queue_charged(tx, charge.queue_id, Some(charge.transaction_id)).await
+}
+
+pub(crate) async fn deduct_and_record(
+    repo: &PgBillingRepository,
+    tenant_id: Uuid,
+    amount: Decimal,
+    account_id: Uuid,
+    usage_record_id: i64,
+    queue_id: Uuid,
+) -> Result<DeductAndRecordResult, CoreError> {
+    if amount <= Decimal::ZERO {
+        return zero_charge_result(repo, tenant_id).await;
+    }
+    let mut tx = repo
+        .pool
+        .begin()
+        .await
+        .map_err(PgBillingRepository::map_error)?;
+    let (balance_before, balance_after) = debit_balance(&mut tx, tenant_id, amount).await?;
+    let transaction_id = Uuid::new_v4();
+    record_usage_charge(
+        &mut tx,
+        &UsageCharge {
+            transaction_id,
+            tenant_id,
+            account_id,
+            amount,
+            balance_before,
+            balance_after,
+            usage_record_id,
+            queue_id,
+        },
     )
-    .bind(queue_id)
-    .bind(transaction_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(PgBillingRepository::map_error)?;
-    sqlx::query(
-        "UPDATE usage_records SET charge_status = 'charged', charged_at = NOW() \
-         WHERE charge_queue_id = $1",
-    )
-    .bind(queue_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(PgBillingRepository::map_error)?;
+    .await?;
     tx.commit().await.map_err(PgBillingRepository::map_error)?;
     Ok(DeductAndRecordResult {
         transaction_id,
@@ -423,18 +483,7 @@ pub(crate) async fn deduct_and_record_batch(
     }
     let total: Decimal = items.iter().map(|(_, _, amount)| *amount).sum();
     if total <= Decimal::ZERO {
-        let row = sqlx::query("SELECT balance FROM tenant_accounts WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&*repo.pool)
-            .await
-            .map_err(PgBillingRepository::map_error)?;
-        use sqlx::Row;
-        let balance: Decimal = row.map_or(Decimal::ZERO, |r| r.get("balance"));
-        return Ok(DeductAndRecordResult {
-            transaction_id: Uuid::nil(),
-            balance_before: balance,
-            balance_after: balance,
-        });
+        return zero_charge_result(repo, tenant_id).await;
     }
 
     let mut tx = repo
@@ -442,123 +491,34 @@ pub(crate) async fn deduct_and_record_batch(
         .begin()
         .await
         .map_err(PgBillingRepository::map_error)?;
-
-    let row = sqlx::query(
-        "UPDATE tenant_accounts
-         SET balance = balance - $1
-         WHERE tenant_id = $2 AND balance + credit_limit >= $1
-         RETURNING balance + $1 AS balance_before, balance AS balance_after",
-    )
-    .bind(total)
-    .bind(tenant_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(PgBillingRepository::map_error)?;
-
-    use sqlx::Row;
-    let (balance_before_batch, balance_after_final) = match row {
-        Some(r) => {
-            let before: Decimal = r.get("balance_before");
-            let after: Decimal = r.get("balance_after");
-            (before, after)
-        }
-        None => {
-            return Err(CoreError::Validation(format!(
-                "Insufficient balance: required {total}, tenant {tenant_id}"
-            )));
-        }
-    };
+    let (balance_before_batch, balance_after_final) =
+        debit_balance(&mut tx, tenant_id, total).await?;
 
     let mut cursor = balance_before_batch;
     let mut last_tx_id = Uuid::nil();
-    for (queue_id, usage_record_id, amount) in items {
-        if *amount <= Decimal::ZERO {
-            sqlx::query(
-                r"UPDATE usage_charge_queue
-                   SET status = 'completed', processed_at = NOW()
-                   WHERE id = $1",
-            )
-            .bind(queue_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(PgBillingRepository::map_error)?;
-            sqlx::query(
-                "UPDATE usage_records SET charge_status = 'charged', charged_at = NOW() \
-                 WHERE charge_queue_id = $1",
-            )
-            .bind(queue_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(PgBillingRepository::map_error)?;
+    for &(queue_id, usage_record_id, amount) in items {
+        if amount <= Decimal::ZERO {
+            mark_queue_charged(&mut tx, queue_id, None).await?;
             continue;
         }
-
         let item_before = cursor;
-        let item_after = cursor - *amount;
-        cursor = item_after;
-
+        cursor -= amount;
         let transaction_id = Uuid::new_v4();
         last_tx_id = transaction_id;
-        let event_id: Option<Uuid> =
-            sqlx::query_scalar("SELECT event_id FROM usage_records WHERE id = $1")
-                .bind(usage_record_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(PgBillingRepository::map_error)?;
-
-        sqlx::query(
-            r"INSERT INTO transactions
-               (id, tenant_id, account_id, transaction_type, amount,
-                balance_before, balance_after, reference_type, reference_id,
-                description, status)
-               VALUES ($1, $2, $3, 'charge', $4, $5, $6, 'usage', $7, $8, 'completed')",
-        )
-        .bind(transaction_id)
-        .bind(tenant_id)
-        .bind(account_id)
-        .bind(amount)
-        .bind(item_before)
-        .bind(item_after)
-        .bind(usage_record_id.to_string())
-        .bind(format!("Usage charge for record {usage_record_id}"))
-        .execute(&mut *tx)
-        .await
-        .map_err(PgBillingRepository::map_error)?;
-
-        insert_ledger_entry(
+        record_usage_charge(
             &mut tx,
-            LedgerEntry {
+            &UsageCharge {
+                transaction_id,
                 tenant_id,
-                event_id,
-                entry_type: "CHARGE",
-                amount: *amount,
-                direction: "DEBIT",
+                account_id,
+                amount,
                 balance_before: item_before,
-                balance_after: item_after,
-                description: Some(&format!("Usage record {usage_record_id}")),
+                balance_after: cursor,
+                usage_record_id,
+                queue_id,
             },
         )
         .await?;
-
-        sqlx::query(
-            r"UPDATE usage_charge_queue
-               SET status = 'completed', transaction_id = $2, processed_at = NOW()
-               WHERE id = $1",
-        )
-        .bind(queue_id)
-        .bind(transaction_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(PgBillingRepository::map_error)?;
-
-        sqlx::query(
-            "UPDATE usage_records SET charge_status = 'charged', charged_at = NOW() \
-             WHERE charge_queue_id = $1",
-        )
-        .bind(queue_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(PgBillingRepository::map_error)?;
     }
 
     debug_assert_eq!(cursor, balance_after_final);
@@ -593,7 +553,6 @@ pub(crate) async fn create_adjustment(
                 resource: "tenant_account".to_string(),
                 id: tenant_id.to_string(),
             })?;
-    use sqlx::Row;
     let account_id: Uuid = row.get("id");
     let balance_before: Decimal = row.get("balance");
     let balance_after = if direction == "CREDIT" {

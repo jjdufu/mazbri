@@ -251,14 +251,11 @@ impl BillingRepository for PgBillingRepository {
         .fetch_optional(&*self.read_pool)
         .await
         .map_err(Self::map_error)?;
-        let bill_row = match bill_row {
-            Some(r) => r,
-            None => {
-                return Err(CoreError::NotFound {
-                    resource: "bill".to_string(),
-                    id: bill_id.to_string(),
-                });
-            }
+        let Some(bill_row) = bill_row else {
+            return Err(CoreError::NotFound {
+                resource: "bill".to_string(),
+                id: bill_id.to_string(),
+            });
         };
         let period_start: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_start");
         let period_end: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_end");
