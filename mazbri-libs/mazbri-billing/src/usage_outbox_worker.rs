@@ -1,4 +1,4 @@
-use crate::calculator::{BillingType, CalculationResult};
+use crate::calculator::CalculationResult;
 use crate::error::BillingError;
 use crate::queue::ChargeQueue;
 use crate::service::{BillingService, UsageRecord};
@@ -45,7 +45,6 @@ struct UsageOutboxItem {
     request_size: i64,
     response_size: i64,
     billing_service_duration_ms: i32,
-    billing_type: String,
     unit_price: Decimal,
     billable_units: i64,
     billable_amount: Decimal,
@@ -306,7 +305,7 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
         SELECT
             id, event_id, request_id, tenant_id, account_id, product_id,
             api_endpoint, http_method, response_status, request_size,
-            response_size, billing_service_duration_ms, billing_type, unit_price,
+            response_size, billing_service_duration_ms, unit_price,
             billable_units, billable_amount, billing_code
         FROM usage_outbox
         WHERE status IN ('pending', 'failed')
@@ -372,17 +371,6 @@ async fn process_one(
             billing_result: CalculationResult {
                 amount: item.billable_amount,
                 units: u64::saturating_from(item.billable_units.max(0)),
-                // Only per-call billing remains; coerce any legacy outbox values.
-                billing_type: {
-                    if item.billing_type != "call" {
-                        tracing::warn!(
-                            event_id = %item.event_id,
-                            billing_type = %item.billing_type,
-                            "Coercing legacy usage_outbox billing_type to call"
-                        );
-                    }
-                    BillingType::Call
-                },
                 unit_price: item.unit_price,
                 description: format!(
                     "usage_outbox request_id={} endpoint={}",

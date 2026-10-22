@@ -74,10 +74,6 @@ pub(super) fn map_bill_status(status: &str) -> mazbri_rpc::billing::BillStatus {
         _ => mazbri_rpc::billing::BillStatus::Draft,
     }
 }
-pub(super) fn map_billing_type(_billing_type: &str) -> mazbri_rpc::billing::BillingType {
-    // Product surface is per-call only.
-    mazbri_rpc::billing::BillingType::PerRequest
-}
 pub(super) fn safe_to_amount(value: Decimal, tenant_id: &Uuid, context: &str) -> Amount {
     to_amount(value).unwrap_or_else(|e| {
         tracing::warn!(
@@ -94,7 +90,6 @@ pub(super) fn map_bill_line_item(
     mazbri_rpc::billing::BillLineItem {
         item_id: format!("item-{index}"),
         description: item.api_endpoint.clone(),
-        billing_type: map_billing_type(&item.billing_type),
         quantity: item.call_count,
         unit_price: Some(safe_to_amount(
             item.unit_price,

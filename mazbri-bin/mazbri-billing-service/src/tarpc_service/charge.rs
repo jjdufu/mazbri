@@ -59,12 +59,7 @@ async fn prepare_usage(
         .get_calculator(tenant_id, None)
         .await
         .map_err(|e| billing_error_to_rpc(&e))?;
-    let calc_result = calculator
-        .calculate_call(
-            u64::saturating_from(req.request_size),
-            u64::saturating_from(req.response_size),
-        )
-        .map_err(|e| billing_error_to_rpc(&e))?;
+    let calc_result = calculator.calculate_call();
     let cost_value = calc_result.amount;
     let usage_record = UsageRecord {
         event_id: None,

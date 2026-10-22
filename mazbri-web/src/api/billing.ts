@@ -75,7 +75,6 @@ const normalizeBillLineItems = (items?: BillLineItemApiRow[]): BillLineItem[] =>
   (items ?? []).map((item, index) => ({
     item_id: String(item.item_id ?? `item-${index + 1}`),
     description: String(item.description ?? ""),
-    billing_type: String(item.billing_type ?? ""),
     quantity: Number(item.quantity ?? 0),
     total_units: Number(item.total_units ?? 0),
     unit_price: toDecimalString(item.unit_price),

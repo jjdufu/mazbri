@@ -22,16 +22,6 @@ pub enum BillStatus {
     Overdue = 3,
     Cancelled = 4,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum BillingType {
-    #[default]
-    PerRequest = 0,
-    PerByte = 1,
-    PerSecond = 2,
-    FlatRate = 3,
-    Tiered = 4,
-}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Amount {
     pub value: i64,
@@ -53,7 +43,6 @@ pub struct BillLineItem {
     pub item_id: String,
     #[serde(default)]
     pub description: String,
-    pub billing_type: BillingType,
     pub quantity: i64,
     pub unit_price: Option<Amount>,
     pub total: Option<Amount>,

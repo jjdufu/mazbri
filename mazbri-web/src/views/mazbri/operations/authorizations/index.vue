@@ -41,9 +41,6 @@
         />
       </template>
 
-      <template #billing_type="{ row }">
-        {{ getBillingTypeLabel(row.billing_type) }}
-      </template>
       <template #unit_price="{ row }">
         {{ row.unit_price }} {{ $t("common.currencies.cny") }}
       </template>
@@ -162,12 +159,6 @@ const authorizationColumns: ColumnOption<AuthorizationDetail>[] = [
     showOverflowTooltip: true,
   },
   {
-    prop: "billing_type",
-    label: $t("authorization.list.billingType"),
-    width: 100,
-    useSlot: true,
-  },
-  {
     prop: "unit_price",
     label: $t("authorization.list.unitPrice"),
     width: 100,
@@ -237,7 +228,6 @@ interface AuthorizationImportRow extends Record<string, unknown> {
   unique_key: string;
   tenant_code: string;
   product_code: string;
-  billing_type: string;
   unit_price: string;
   cb_pro_fallback: boolean;
 }
@@ -246,7 +236,6 @@ interface AuthorizationExportRow extends Record<string, unknown> {
   tenant_name: string;
   product_code: string;
   product_name: string;
-  billing_type: string;
   unit_price: string;
   cb_pro_fallback: boolean;
   enabled: boolean;
@@ -265,11 +254,6 @@ const authorizationImportColumns: ColumnConfig[] = [
     key: "product_code",
     label: $t("authorization.list.productCode"),
     required: true,
-  },
-  {
-    key: "billing_type",
-    label: $t("authorization.list.billingType"),
-    required: false,
   },
   {
     key: "unit_price",
@@ -367,8 +351,6 @@ const getAuthorizationCellText = (
       return row.product_code || "-";
     case "product_name":
       return row.product_name || "-";
-    case "billing_type":
-      return getBillingTypeLabel(row.billing_type);
     case "unit_price":
       return `${row.unit_price} ${$t("common.currencies.cny")}`;
     case "created_at":
@@ -387,7 +369,6 @@ const getAuthorizationColumnWeight = (columnKey: string) => {
     case "tenant_name":
     case "product_name":
       return 1.8;
-    case "billing_type":
     case "unit_price":
       return 0.9;
     case "created_at":
@@ -406,12 +387,6 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getAuthorizationCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getAuthorizationColumnWeight(columnKey),
 });
-function getBillingTypeLabel(type?: string) {
-  const labels: Record<string, string> = {
-    call: $t("authorization.grantDialog.billingCall"),
-  };
-  return labels[type || ""] || type || "-";
-}
 const buildTenantProductFromAuthorization = (
   auth: AuthorizationDetail,
 ): TenantProduct => ({
@@ -422,7 +397,6 @@ const buildTenantProductFromAuthorization = (
   config: {
     unit_price: auth.unit_price,
     currency: auth.currency,
-    billing_type: auth.billing_type,
     cb_pro_fallback: auth.cb_pro_fallback,
     request_codec: auth.config?.request_codec ?? "json",
     response_codec: auth.config?.response_codec ?? "json",
@@ -458,14 +432,6 @@ const validateAuthorizationImportRow = (row: Record<string, string>) => {
     return {
       valid: false,
       reason: $t("authorization.grantDialog.selectProduct"),
-    };
-  }
-  const billingType = row.billing_type?.trim();
-
-  if (billingType && billingType !== "call") {
-    return {
-      valid: false,
-      reason: $t("authorization.grantDialog.selectBillingMode"),
     };
   }
   const tenantExists = importTenants.value.some(
@@ -505,7 +471,6 @@ const transformAuthorizationImportRow = (
   unique_key: `${row.tenant_code.trim()}/${row.product_code.trim()}`,
   tenant_code: row.tenant_code.trim(),
   product_code: row.product_code.trim(),
-  billing_type: row.billing_type?.trim() || "call",
   unit_price: parseUnitPrice(row.unit_price) || "0.001",
   cb_pro_fallback: parseBoolean(row.cb_pro_fallback) ?? false,
 });
@@ -520,7 +485,6 @@ const handleExportCommand = (command: string) => {
     tenant_name: row.tenant_name,
     product_code: row.product_code,
     product_name: row.product_name,
-    billing_type: row.billing_type,
     unit_price: row.unit_price,
     cb_pro_fallback: row.cb_pro_fallback,
     enabled: row.enabled,
@@ -533,7 +497,6 @@ const handleExportCommand = (command: string) => {
       { key: "tenant_name", label: $t("authorization.list.tenantName") },
       { key: "product_code", label: $t("authorization.list.productCode") },
       { key: "product_name", label: $t("authorization.list.productName") },
-      { key: "billing_type", label: $t("authorization.list.billingType") },
       { key: "unit_price", label: $t("authorization.list.unitPrice") },
       {
         key: "cb_pro_fallback",
@@ -560,7 +523,6 @@ const handleAuthorizationImport = async (items: Record<string, unknown>[]) => {
         row.tenant_code,
         row.product_code,
         {
-          billing_type: row.billing_type,
           unit_price: row.unit_price,
           cb_pro_fallback: product?.cb_pro_enabled
             ? row.cb_pro_fallback

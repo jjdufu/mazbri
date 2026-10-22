@@ -85,7 +85,6 @@ impl ProductService {
                 tp.custom_config,
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
-                COALESCE(tp.custom_config->>'billing_type', 'call') AS billing_type,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at

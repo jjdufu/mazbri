@@ -50,7 +50,6 @@ pub fn map_usage_summary(r: &sqlx::postgres::PgRow) -> UsageSummaryInfo {
 pub fn map_bill_line_item(r: &sqlx::postgres::PgRow) -> BillLineItem {
     BillLineItem {
         api_endpoint: r.get("api_endpoint"),
-        billing_type: r.get("billing_type"),
         call_count: r.get("call_count"),
         total_units: r.get("total_units"),
         unit_price: r.get("unit_price"),

@@ -188,8 +188,6 @@ pub struct TenantProductConfig {
     pub unit_price: String,
     #[serde(default = "default_currency")]
     pub currency: String,
-    #[serde(default = "default_billing_type")]
-    pub billing_type: String,
     #[serde(default)]
     pub cb_pro_fallback: bool,
     #[serde(default)]
@@ -208,7 +206,6 @@ impl Default for TenantProductConfig {
         Self {
             unit_price: default_unit_price(),
             currency: default_currency(),
-            billing_type: default_billing_type(),
             cb_pro_fallback: false,
             cbpro: CBProPolicyConfig::default(),
             request_codec: default_request_codec(),
@@ -224,18 +221,6 @@ impl TenantProductConfig {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         validate_cbpro_policy_config(&self.cbpro)?;
-        match self.billing_type.as_str() {
-            "call" | "" => {}
-            "data" | "bandwidth" | "subscription" => {
-                return Err(format!(
-                    "billing_type '{}' is not supported; only 'call' (per-request) is available",
-                    self.billing_type
-                ));
-            }
-            other => {
-                return Err(format!("unsupported billing_type '{other}'; allowed: call"));
-            }
-        }
         if self.codec_version == 0 {
             return Err("codec_version must be greater than zero".to_string());
         }
@@ -253,9 +238,6 @@ fn default_unit_price() -> String {
 }
 fn default_currency() -> String {
     "CNY".to_string()
-}
-fn default_billing_type() -> String {
-    "call".to_string()
 }
 fn default_request_codec() -> PayloadCodec {
     PayloadCodec::Json
@@ -385,7 +367,6 @@ pub struct TenantProductDetail {
     pub cb_cooldown_secs: i32,
     pub unit_price: String,
     pub currency: String,
-    pub billing_type: String,
     #[serde(default)]
     pub cb_pro_fallback: bool,
     #[serde(default)]
@@ -421,7 +402,6 @@ pub struct AuthorizationDetail {
     pub enabled: bool,
     pub unit_price: String,
     pub currency: String,
-    pub billing_type: String,
     pub cb_pro_fallback: bool,
     #[serde(default)]
     pub config: TenantProductConfig,

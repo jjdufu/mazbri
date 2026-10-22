@@ -93,17 +93,7 @@ pub async fn usage_middleware(
                 return response;
             }
         };
-        let calc_result = match calculator.calculate_call(request_size as u64, response_size as u64)
-        {
-            Ok(calc_result) => calc_result,
-            Err(e) => {
-                error!(
-                    tenant_id = % tid, product_id = ? product_id, error = % e,
-                    "Skipping usage recording because billing calculation failed"
-                );
-                return response;
-            }
-        };
+        let calc_result = calculator.calculate_call();
         let amount = calc_result.amount;
         let usage_record = UsageRecord {
             event_id: None,

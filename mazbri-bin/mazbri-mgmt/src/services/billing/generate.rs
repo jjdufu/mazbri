@@ -42,7 +42,6 @@ pub async fn snapshot_customer_bill_items(
     let rows = sqlx::query(
         "SELECT
             api_endpoint,
-            billing_type,
             COUNT(*) as quantity,
             COALESCE(SUM(billable_units), 0)::BIGINT as total_units,
             COALESCE(MIN(unit_price), 0) as unit_price,
@@ -51,7 +50,7 @@ pub async fn snapshot_customer_bill_items(
          WHERE tenant_id = $1
            AND recorded_at >= $2
            AND recorded_at <= $3
-         GROUP BY api_endpoint, billing_type
+         GROUP BY api_endpoint
          ORDER BY total DESC, api_endpoint ASC",
     )
     .bind(tenant_id)
@@ -81,14 +80,13 @@ pub async fn snapshot_customer_bill_items(
     for (index, row) in rows.into_iter().enumerate() {
         sqlx::query(
             "INSERT INTO bill_items (
-                bill_id, item_key, description, billing_type,
+                bill_id, item_key, description,
                 quantity, total_units, unit_price, total, metadata
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(bill_id)
         .bind(format!("item-{}", index + 1))
         .bind(row.get::<String, _>("api_endpoint"))
-        .bind(row.get::<String, _>("billing_type"))
         .bind(row.get::<i64, _>("quantity"))
         .bind(row.get::<i64, _>("total_units"))
         .bind(row.get::<Decimal, _>("unit_price"))

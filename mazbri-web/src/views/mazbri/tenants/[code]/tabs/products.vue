@@ -40,9 +40,6 @@
       <template #granted_at="{ row }">
         {{ formatDate(row.granted_at) }}
       </template>
-      <template #billing_type="{ row }">
-        {{ getBillingTypeLabel(row.config.billing_type) }}
-      </template>
       <template #unit_price="{ row }">
         {{ row.config.unit_price }} {{ $t("common.currencies.cny") }}
       </template>
@@ -103,20 +100,6 @@
               :key="product.id"
               :label="product.name"
               :value="product.product_id"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="$t('tenant.products.grantDialog.billingMode')">
-          <ElSelect
-            v-model="grantForm.billing_type"
-            :placeholder="
-              $t('tenant.products.grantDialog.billingModePlaceholder')
-            "
-            style="width: 100%"
-          >
-            <ElOption
-              :label="$t('authorization.grantDialog.billingCall')"
-              value="call"
             />
           </ElSelect>
         </ElFormItem>
@@ -187,7 +170,6 @@ const configDrawerVisible = ref(false);
 const selectedProduct = ref<TenantProduct | null>(null);
 const grantForm = reactive({
   productId: "",
-  billing_type: "call",
   unit_price: "0.001",
   cb_pro_fallback: false,
 });
@@ -208,12 +190,6 @@ const productColumns = ref<ColumnOption<TenantProduct>[]>([
     prop: "granted_at",
     label: $t("tenant.products.columns.grantedAt"),
     width: 170,
-    useSlot: true,
-  },
-  {
-    prop: "billing_type",
-    label: $t("tenant.products.columns.billingType"),
-    width: 120,
     useSlot: true,
   },
   {
@@ -245,15 +221,8 @@ const selectedGrantProduct = computed(
       (product) => product.product_id === grantForm.productId,
     ) || null,
 );
-const getBillingTypeLabel = (type?: string) => {
-  const labels: Record<string, string> = {
-    call: $t("authorization.grantDialog.billingCall"),
-  };
-  return labels[type || ""] || type || "-";
-};
 const resetGrantForm = () => {
   grantForm.productId = "";
-  grantForm.billing_type = "call";
   grantForm.unit_price = "0.001";
   grantForm.cb_pro_fallback = false;
 };
@@ -323,7 +292,6 @@ const handleSubmitGrant = async () => {
   granting.value = true;
   try {
     await grantProduct(code, grantForm.productId, {
-      billing_type: grantForm.billing_type,
       unit_price: grantForm.unit_price,
       cb_pro_fallback: selectedGrantProduct.value?.cb_pro_enabled
         ? grantForm.cb_pro_fallback

@@ -283,7 +283,6 @@
       "cacheApiTtlOverride": "API TTL Override",
       "cacheWarmupKeys": "Warmup Key List",
       "productScope": "Product Authorization Config",
-      "productBillingMode": "Billing Mode",
       "productUnitPrice": "Unit Price",
       "productCbProFallback": "CBPRO",
       "productCodecEnabled": "Payload Codec Enabled",
@@ -2594,7 +2593,6 @@
     },
     "itemColumns": {
       "description": "API",
-      "billingType": "Billing Type",
       "quantity": "Calls",
       "totalUnits": "Billable Units",
       "unitPrice": "Unit Price",
@@ -2616,9 +2614,6 @@
       "one": "Are you sure you want to delete bill \"{name}\"?",
       "all": "Are you sure you want to delete all {count} bills on the current page?",
       "selected": "Are you sure you want to delete the selected {count} bills?"
-    },
-    "billingTypes": {
-      "call": "Per Call"
     },
     "billKinds": {
       "customer": "Customer Bill",
@@ -2880,7 +2875,6 @@
         "name": "Product Name",
         "description": "Product Description",
         "grantedAt": "Granted At",
-        "billingType": "Billing Type",
         "unitPrice": "Unit Price",
         "cbProFallback": "CBPRO"
       },
@@ -2889,8 +2883,6 @@
         "confirm": "Grant",
         "product": "Select Product",
         "productPlaceholder": "Please select or search a product to grant",
-        "billingMode": "Billing Mode",
-        "billingModePlaceholder": "Please select a billing mode",
         "unitPrice": "Unit Price",
         "unitPricePlaceholder": "e.g. 0.001",
         "cbProFallback": "CBPRO",
@@ -3160,7 +3152,6 @@
       "tenantName": "Tenant Name",
       "productCode": "Product Code",
       "productName": "Product Name",
-      "billingType": "Billing Type",
       "unitPrice": "Unit Price",
       "createdAt": "Granted At",
       "revokeConfirm": "Are you sure you want to revoke this authorization?",
@@ -3177,8 +3168,6 @@
       "billingSection": "Billing Config",
       "fallbackSection": "CBPRO",
       "codecSection": "Payload Codec",
-      "billingMode": "Billing Mode",
-      "billingCall": "Per-call Billing",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
@@ -3201,9 +3190,6 @@
       "product": "Product",
       "selectTenant": "Please select a tenant",
       "selectProduct": "Please select a product",
-      "billingMode": "Billing Mode",
-      "selectBillingMode": "Please select a billing mode",
-      "billingCall": "Per-call Billing",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",

@@ -283,7 +283,6 @@
       "cacheApiTtlOverride": "API TTL 覆盖",
       "cacheWarmupKeys": "预热 Key 列表",
       "productScope": "产品授权配置",
-      "productBillingMode": "计费模式",
       "productUnitPrice": "单价",
       "productCbProFallback": "CBPRO",
       "productCodecEnabled": "协议编码开关",
@@ -2594,7 +2593,6 @@
     },
     "itemColumns": {
       "description": "接口",
-      "billingType": "计费类型",
       "quantity": "调用次数",
       "totalUnits": "计费单位",
       "unitPrice": "单价",
@@ -2616,9 +2614,6 @@
       "one": "确认删除账单「{name}」吗？",
       "all": "确认删除当前页全部 {count} 条账单吗？",
       "selected": "确认删除所选的 {count} 条账单吗？"
-    },
-    "billingTypes": {
-      "call": "按次"
     },
     "billKinds": {
       "customer": "客户账单",
@@ -2885,7 +2880,6 @@
         "name": "产品名称",
         "description": "产品说明",
         "grantedAt": "授权时间",
-        "billingType": "计费模式",
         "unitPrice": "单价",
         "cbProFallback": "CBPRO"
       },
@@ -2894,8 +2888,6 @@
         "confirm": "开通",
         "product": "选择产品",
         "productPlaceholder": "请选择或搜索要开通的产品",
-        "billingMode": "计费模式",
-        "billingModePlaceholder": "请选择计费模式",
         "unitPrice": "单价",
         "unitPricePlaceholder": "例如 0.001",
         "cbProFallback": "CBPRO",
@@ -3165,7 +3157,6 @@
       "tenantName": "租户名称",
       "productCode": "产品编码",
       "productName": "产品名称",
-      "billingType": "计费模式",
       "unitPrice": "单价",
       "createdAt": "授权时间",
       "revokeConfirm": "确定要撤销此授权吗？",
@@ -3182,8 +3173,6 @@
       "billingSection": "计费配置",
       "fallbackSection": "CBPRO",
       "codecSection": "协议编码",
-      "billingMode": "计费模式",
-      "billingCall": "按调用计费",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
@@ -3206,9 +3195,6 @@
       "product": "产品",
       "selectTenant": "请选择租户",
       "selectProduct": "请选择产品",
-      "billingMode": "计费模式",
-      "selectBillingMode": "请选择计费模式",
-      "billingCall": "按调用计费",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",

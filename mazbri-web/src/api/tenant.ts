@@ -83,7 +83,6 @@ export const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
 export const DEFAULT_TENANT_PRODUCT_CONFIG: TenantProductConfig = {
   unit_price: "0.001",
   currency: "CNY",
-  billing_type: "call",
   cb_pro_fallback: false,
   cbpro: DEFAULT_CBPRO_POLICY_CONFIG,
   request_codec: "json",

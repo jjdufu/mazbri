@@ -560,14 +560,6 @@ const AUTHORIZATIONS_FIELDS: &[FilterFieldDef] = &[
         sql_expr: "p.name",
     },
     FilterFieldDef {
-        field: "billing_type",
-        value_type: FilterValueType::Enum,
-        ops: ENUM_OPS,
-        in_q: false,
-        requires_time_window: false,
-        sql_expr: "COALESCE(tp.custom_config->>'billing_type', 'call')",
-    },
-    FilterFieldDef {
         field: "unit_price",
         value_type: FilterValueType::Decimal,
         ops: NUMBER_OPS,

@@ -56,22 +56,6 @@
       </ElFormItem>
 
       <ElFormItem
-        :label="$t('authorization.grantDialog.billingMode')"
-        prop="billing_type"
-      >
-        <ElSelect
-          v-model="form.billing_type"
-          :placeholder="$t('authorization.grantDialog.selectBillingMode')"
-          style="width: 100%"
-        >
-          <ElOption
-            :label="$t('authorization.grantDialog.billingCall')"
-            value="call"
-          />
-        </ElSelect>
-      </ElFormItem>
-
-      <ElFormItem
         :label="$t('authorization.grantDialog.unitPrice')"
         prop="unit_price"
       >
@@ -123,7 +107,6 @@ const products = ref<Product[]>([]);
 const form = reactive({
   tenantCode: "",
   productId: "",
-  billing_type: "call",
   unit_price: "0.001",
   cb_pro_fallback: false,
 });
@@ -139,13 +122,6 @@ const rules: FormRules = {
     {
       required: true,
       message: $t("authorization.grantDialog.selectProduct"),
-      trigger: "change",
-    },
-  ],
-  billing_type: [
-    {
-      required: true,
-      message: $t("authorization.grantDialog.selectBillingMode"),
       trigger: "change",
     },
   ],
@@ -188,7 +164,6 @@ const handleConfirm = async () => {
   await runWithLoading(saving, async () => {
     try {
       await grantProduct(form.tenantCode, form.productId, {
-        billing_type: form.billing_type,
         unit_price: form.unit_price,
         cb_pro_fallback: form.cb_pro_fallback,
         cbpro: createDefaultCBProPolicyConfig(),
@@ -206,7 +181,6 @@ const handleClose = () => {
   formRef.value?.resetFields();
   form.tenantCode = "";
   form.productId = "";
-  form.billing_type = "call";
   form.unit_price = "0.001";
   form.cb_pro_fallback = false;
 };

@@ -144,11 +144,6 @@ export function summarizeTenantProductConflict(
 ): string {
   return buildConflictSummary("common.conflict.productScope", updatedAt, [
     {
-      labelKey: "common.conflict.productBillingMode",
-      attempted: attempted.billing_type,
-      latest: latest.billing_type,
-    },
-    {
       labelKey: "common.conflict.productUnitPrice",
       attempted: attempted.unit_price,
       latest: latest.unit_price,

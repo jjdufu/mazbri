@@ -13,14 +13,6 @@
         <ElDivider content-position="left">{{
           $t("authorization.config.billingSection")
         }}</ElDivider>
-        <ElFormItem :label="$t('authorization.config.billingMode')">
-          <ElSelect v-model="form.billing_type" style="width: 100%">
-            <ElOption
-              :label="$t('authorization.config.billingCall')"
-              value="call"
-            />
-          </ElSelect>
-        </ElFormItem>
         <ElFormItem :label="$t('authorization.config.unitPrice')">
           <ElInput
             v-model="form.unit_price"
@@ -117,7 +109,6 @@ const visible = computed({
 const form = reactive<TenantProductConfig>({
   unit_price: "0.001",
   currency: "CNY",
-  billing_type: "call",
   cb_pro_fallback: false,
   cbpro: createDefaultCBProPolicyConfig(),
   request_codec: "json" as PayloadCodec,
@@ -139,7 +130,6 @@ const syncFromProduct = (product: TenantProduct | null) => {
   };
   form.unit_price = product.config.unit_price;
   form.currency = "CNY";
-  form.billing_type = product.config.billing_type;
   form.cb_pro_fallback = product.cb_pro_enabled
     ? product.config.cb_pro_fallback
     : false;

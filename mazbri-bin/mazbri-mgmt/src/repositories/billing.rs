@@ -30,7 +30,6 @@ pub struct BillRow {
 pub struct BillLineItemRow {
     pub item_id: String,
     pub description: String,
-    pub billing_type: String,
     pub quantity: i64,
     pub total_units: i64,
     pub unit_price: Decimal,
@@ -270,7 +269,7 @@ pub async fn list_bill_items(
     bill: &BillRow,
 ) -> Result<Vec<BillLineItemRow>, sqlx::Error> {
     let snapshot_rows = sqlx::query(
-        "SELECT item_key, description, billing_type, quantity, total_units, unit_price, total
+        "SELECT item_key, description, quantity, total_units, unit_price, total
          FROM bill_items
          WHERE bill_id = $1
          ORDER BY id ASC",
@@ -287,7 +286,6 @@ pub async fn list_bill_items(
                     .get::<String, _>("item_key")
                     .if_empty(format!("item-{}", index + 1)),
                 description: row.get("description"),
-                billing_type: row.get("billing_type"),
                 quantity: row.get("quantity"),
                 total_units: row.get("total_units"),
                 unit_price: row.get("unit_price"),
@@ -304,7 +302,6 @@ pub async fn list_bill_items(
     let rows = sqlx::query(
         "SELECT
             api_endpoint,
-            billing_type,
             COUNT(*) as quantity,
             COALESCE(SUM(billable_units), 0) as total_units,
             COALESCE(MIN(unit_price), 0) as unit_price,
@@ -313,7 +310,7 @@ pub async fn list_bill_items(
          WHERE tenant_id = $1
            AND recorded_at >= $2
            AND recorded_at <= $3
-         GROUP BY api_endpoint, billing_type
+         GROUP BY api_endpoint
          ORDER BY total DESC, api_endpoint ASC",
     )
     .bind(tenant_id)
@@ -327,7 +324,6 @@ pub async fn list_bill_items(
         .map(|(index, row)| BillLineItemRow {
             item_id: format!("item-{}", index + 1),
             description: row.get("api_endpoint"),
-            billing_type: row.get("billing_type"),
             quantity: row.get("quantity"),
             total_units: row.get("total_units"),
             unit_price: row.get("unit_price"),

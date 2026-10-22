@@ -164,13 +164,6 @@ export const authorizationsCatalog: ResourceFilterCatalog = {
       label_key: "authorization.list.productName",
     },
     {
-      field: "billing_type",
-      value_type: "enum",
-      ops: ENUM_OPS,
-      label_key: "authorization.list.billingType",
-      enum_values: ["call", "data", "duration"],
-    },
-    {
       field: "unit_price",
       value_type: "decimal",
       ops: NUMBER_OPS,

@@ -27,9 +27,9 @@ impl BillingRepository for PgBillingRepository {
             "INSERT INTO usage_records (
                 tenant_id, account_id, api_endpoint, http_method, response_status,
                 request_size, response_size, billing_service_duration_ms,
-                billing_type, unit_price, billable_amount, billable_units,
+                unit_price, billable_amount, billable_units,
                 product_id, billing_code, event_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id",
         )
         .bind(record.tenant_id)
@@ -40,7 +40,6 @@ impl BillingRepository for PgBillingRepository {
         .bind(record.request_size)
         .bind(record.response_size)
         .bind(record.billing_service_duration_ms)
-        .bind(record.billing_result.billing_type.to_string())
         .bind(record.billing_result.unit_price)
         .bind(record.billing_result.amount)
         .bind(i64::try_from(record.billing_result.units).map_err(|e| {
@@ -63,13 +62,13 @@ impl BillingRepository for PgBillingRepository {
             "INSERT INTO usage_outbox (
                 event_id, request_id, tenant_id, account_id, product_id,
                 api_endpoint, http_method, response_status, request_size,
-                response_size, billing_service_duration_ms, billing_type, unit_price,
+                response_size, billing_service_duration_ms, unit_price,
                 billable_units, billable_amount, billing_code
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, $16
+                $10, $11, $12,
+                $13, $14, $15
             )
             ON CONFLICT (event_id) DO NOTHING",
         )
@@ -84,7 +83,6 @@ impl BillingRepository for PgBillingRepository {
         .bind(event.request_size)
         .bind(event.response_size)
         .bind(event.billing_service_duration_ms)
-        .bind(event.billing_result.billing_type.to_string())
         .bind(event.billing_result.unit_price)
         .bind(i64::try_from(event.billing_result.units).map_err(|e| {
             CoreError::Validation(format!(
@@ -262,7 +260,6 @@ impl BillingRepository for PgBillingRepository {
         let rows = sqlx::query(
             "SELECT
                 api_endpoint,
-                billing_type,
                 COUNT(*) as call_count,
                 COALESCE(SUM(billable_units), 0) as total_units,
                 COALESCE(SUM(billable_amount), 0) as total_amount,
@@ -271,7 +268,7 @@ impl BillingRepository for PgBillingRepository {
              WHERE tenant_id = $1
              AND recorded_at >= $2
              AND recorded_at <= $3
-             GROUP BY api_endpoint, billing_type
+             GROUP BY api_endpoint
              ORDER BY total_amount DESC",
         )
         .bind(tenant_id)

@@ -224,9 +224,9 @@ async fn insert_upstream_bill_items(
         let total = Decimal::from(item.quantity) * item.unit_price;
         sqlx::query(
             "INSERT INTO bill_items (
-                bill_id, item_key, description, billing_type,
+                bill_id, item_key, description,
                 quantity, total_units, unit_price, total, metadata
-             ) VALUES ($1, $2, $3, 'call', $4, $5, $6, $7, $8)",
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(bill_id)
         .bind(format!("upstream-{}", index + 1))

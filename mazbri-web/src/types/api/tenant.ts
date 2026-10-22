@@ -222,7 +222,6 @@ export interface CBProPolicyConfig {
 export interface TenantProductConfig {
   unit_price: DecimalString;
   currency: string;
-  billing_type: string;
   cb_pro_fallback: boolean;
   cbpro: CBProPolicyConfig;
   request_codec: PayloadCodec;
