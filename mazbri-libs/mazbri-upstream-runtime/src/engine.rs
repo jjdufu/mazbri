@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use mazbri_core::AdapterKind;
 
-use crate::adapters::{AdapterCtx, invoke_adapter, merge_request_headers};
-use crate::auth::{apply_auth, token_cache_key};
+use crate::adapters::{AdapterCtx, AdapterOutcome, invoke_adapter, merge_request_headers};
+use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
 use crate::ssrf::SsrfChecker;
 use crate::token_cache::TokenCache;
@@ -19,16 +19,6 @@ use crate::types::{
 pub struct RuntimeLimits {
     pub ws_handshake_timeout: Duration,
     pub job_poll_min_interval: Duration,
-}
-
-struct InvokeFail<'a> {
-    start: Instant,
-    stages: Vec<StageResult>,
-    want_trace: bool,
-    stage_name: &'a str,
-    err: ExecuteError,
-    stage_start: Instant,
-    adapter: &'a str,
 }
 
 impl Default for RuntimeLimits {
@@ -95,35 +85,45 @@ impl RuntimeEngine {
 
     /// Code-free invoke: tenant JSON + channel egress spec.
     pub async fn invoke(&self, input: InvokeInput) -> InvokeResult {
-        let start = Instant::now();
-        let want_trace =
-            input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production);
-        let mut stages: Vec<StageResult> = Vec::new();
-        let mask = input.options.mask_secrets;
-        let max_cap = input.options.max_body_capture_bytes;
-
-        let v_start = Instant::now();
-        if let Err(e) = mazbri_core::validate_egress_spec(&input.spec) {
-            return Self::invoke_fail(InvokeFail {
-                start,
-                stages,
-                want_trace,
-                stage_name: "validate",
-                err: ExecuteError::SpecInvalid(e.to_string()),
-                stage_start: v_start,
-                adapter: &input.spec.adapter,
-            });
+        let mut trace = Trace::new(&input);
+        let base_url = match self.preflight(&input, &mut trace).await {
+            Ok(url) => url,
+            Err(fail) => return trace.fail(fail),
+        };
+        if matches!(input.mode, ExecuteMode::TransformPreview) {
+            return transform_preview(&input, base_url, trace);
         }
+        let cache_key = input
+            .cache_key
+            .clone()
+            .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
+        let first = self
+            .attempt(&input, &base_url, &cache_key, false, &mut trace)
+            .await;
+        let outcome = match first {
+            AttemptOutcome::RetryUnauthorized => {
+                self.attempt(&input, &base_url, &cache_key, true, &mut trace)
+                    .await
+            }
+            other => other,
+        };
+        match outcome {
+            AttemptOutcome::Done(result) => *result,
+            AttemptOutcome::Failed(fail) => trace.fail(fail),
+            AttemptOutcome::RetryUnauthorized => trace.retries_exhausted(),
+        }
+    }
+
+    /// validate + ssrf stages; returns the resolved base URL.
+    async fn preflight(&self, input: &InvokeInput, trace: &mut Trace) -> Result<String, StageFail> {
+        let v_start = Instant::now();
+        let validate_fail = |err| StageFail::new("validate", v_start, err);
+        mazbri_core::validate_egress_spec(&input.spec)
+            .map_err(|e| validate_fail(ExecuteError::SpecInvalid(e.to_string())))?;
         if !input.payload.is_object() {
-            return Self::invoke_fail(InvokeFail {
-                start,
-                stages,
-                want_trace,
-                stage_name: "validate",
-                err: ExecuteError::SpecInvalid("payload_json 必须是 JSON 对象".into()),
-                stage_start: v_start,
-                adapter: &input.spec.adapter,
-            });
+            return Err(validate_fail(ExecuteError::SpecInvalid(
+                "payload_json 必须是 JSON 对象".into(),
+            )));
         }
         let base_url = input
             .spec
@@ -131,371 +131,406 @@ impl RuntimeEngine {
             .trim()
             .to_string();
         if base_url.is_empty() {
-            return Self::invoke_fail(InvokeFail {
-                start,
-                stages,
-                want_trace,
-                stage_name: "validate",
-                err: ExecuteError::ConfigInvalid("base_url is empty".into()),
-                stage_start: v_start,
-                adapter: &input.spec.adapter,
-            });
+            return Err(validate_fail(ExecuteError::ConfigInvalid(
+                "base_url is empty".into(),
+            )));
         }
-        if want_trace {
-            stages.push(StageResult {
-                name: "validate".into(),
-                ok: true,
-                latency_ms: u64::saturating_from(v_start.elapsed().as_millis()),
-                request_summary: Some(StageSummary {
-                    method: Some(input.spec.request_method().to_string()),
-                    url: Some(base_url.clone()),
-                    headers_masked: None,
-                    body_preview: Some(redact_body_preview(
-                        &input.payload.to_string(),
-                        max_cap,
-                        mask,
-                    )),
-                    status: None,
-                    extracted: None,
-                    detail: Some(format!("adapter={}", input.spec.adapter)),
-                }),
-                response_summary: None,
-                error: None,
-            });
-        }
+        let max_cap = input.options.max_body_capture_bytes;
+        let mask = input.options.mask_secrets;
+        trace.record(|| StageResult {
+            name: "validate".into(),
+            ok: true,
+            latency_ms: elapsed_ms(v_start),
+            request_summary: Some(StageSummary {
+                method: Some(input.spec.request_method().to_string()),
+                url: Some(base_url.clone()),
+                headers_masked: None,
+                body_preview: Some(redact_body_preview(
+                    &input.payload.to_string(),
+                    max_cap,
+                    mask,
+                )),
+                status: None,
+                extracted: None,
+                detail: Some(format!("adapter={}", input.spec.adapter)),
+            }),
+            response_summary: None,
+            error: None,
+        });
 
         let s_start = Instant::now();
-        if let Err(e) = self.ssrf.validate_url(&base_url).await {
-            return Self::invoke_fail(InvokeFail {
-                start,
-                stages,
-                want_trace,
-                stage_name: "ssrf",
-                err: ExecuteError::SsrfBlocked(e),
-                stage_start: s_start,
-                adapter: &input.spec.adapter,
-            });
-        }
-        if let Some(ref auth) = input.spec.auth {
-            if let Ok(p) = auth.profile_kind() {
-                if p.uses_ticket() {
-                    if let Some(url) = auth
-                        .token_url
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                    {
-                        if let Err(e) = self.ssrf.validate_url(url).await {
-                            return Self::invoke_fail(InvokeFail {
-                                start,
-                                stages,
-                                want_trace,
-                                stage_name: "ssrf",
-                                err: ExecuteError::SsrfBlocked(format!("token_url: {e}")),
-                                stage_start: s_start,
-                                adapter: &input.spec.adapter,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        if want_trace {
-            stages.push(StageResult {
-                name: "ssrf".into(),
-                ok: true,
-                latency_ms: u64::saturating_from(s_start.elapsed().as_millis()),
-                request_summary: None,
-                response_summary: None,
-                error: None,
-            });
-        }
-
-        if matches!(input.mode, ExecuteMode::TransformPreview) {
-            let wrapped = crate::adapters::wrap_by_name(&input.spec, &input.payload);
-            let (preview, wrap_err) = match wrapped {
-                Ok(v) => (v, None),
-                Err(e) => (input.payload.clone(), Some(e)),
-            };
-            if want_trace {
-                stages.push(StageResult {
-                    name: "request_transform".into(),
-                    ok: wrap_err.is_none(),
-                    latency_ms: 0,
-                    request_summary: Some(StageSummary {
-                        method: Some(input.spec.request_method().to_string()),
-                        url: Some(base_url),
-                        headers_masked: None,
-                        body_preview: Some(redact_body_preview(
-                            &preview.to_string(),
-                            max_cap,
-                            mask,
-                        )),
-                        status: None,
-                        extracted: None,
-                        detail: Some("transform_preview (no network)".into()),
-                    }),
-                    response_summary: None,
-                    error: wrap_err.as_ref().map(ToString::to_string),
-                });
-            }
-            return InvokeResult {
-                ok: wrap_err.is_none(),
-                latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                stages,
-                payload: Some(preview),
-                biz_error: None,
-                error_code: wrap_err.as_ref().map(|e| e.code().to_string()),
-                error_message: wrap_err.map(|e| e.to_string()),
-                upstream_meta: None,
-                token: None,
-                response: None,
-            };
-        }
-
-        let cache_key = input
-            .cache_key
-            .clone()
-            .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
-        let adapter_name = input.spec.adapter.clone();
-        let mut attempt = 0u32;
-
-        loop {
-            if attempt >= 2 {
-                return InvokeResult {
-                    ok: false,
-                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                    stages,
-                    payload: None,
-                    biz_error: None,
-                    error_code: Some("AUTH_TOKEN_FAILED".into()),
-                    error_message: Some("Outbound request failed after 401 retries".into()),
-                    upstream_meta: Some(UpstreamMeta {
-                        adapter: adapter_name,
-                        ..Default::default()
-                    }),
-                    token: None,
-                    response: None,
-                };
-            }
-
-            let a_start = Instant::now();
-            let applied = match apply_auth(crate::auth::AuthApply {
-                client: &self.client,
-                ssrf: &self.ssrf,
-                token_cache: &self.token_cache,
-                spec: &input.spec,
-                base_url: &base_url,
-                credentials: &input.credentials,
-                cache_key: &cache_key,
-                evict_first: attempt > 0,
-                request_id: &input.request_id,
-            })
+        self.ssrf
+            .validate_url(&base_url)
             .await
-            {
-                Ok(a) => a,
-                Err(e) => {
-                    return Self::invoke_fail(InvokeFail {
-                        start,
-                        stages,
-                        want_trace,
-                        stage_name: "auth",
-                        err: e,
-                        stage_start: a_start,
-                        adapter: &adapter_name,
-                    });
-                }
-            };
-            if want_trace {
-                stages.push(StageResult {
-                    name: "auth".into(),
-                    ok: true,
-                    latency_ms: u64::saturating_from(a_start.elapsed().as_millis()),
-                    request_summary: Some(StageSummary {
-                        method: None,
-                        url: None,
-                        headers_masked: Some(mask_headers(&applied.headers, mask)),
-                        body_preview: None,
-                        status: None,
-                        extracted: Some(serde_json::json!({
-                            "token_present": applied.token.is_some()
-                        })),
-                        detail: input.spec.auth.as_ref().map(|a| a.profile.clone()),
-                    }),
-                    response_summary: None,
-                    error: None,
-                });
-            }
-
-            let kind = match input.spec.adapter_kind() {
-                Ok(k) => k,
-                Err(e) => {
-                    return Self::invoke_fail(InvokeFail {
-                        start,
-                        stages,
-                        want_trace,
-                        stage_name: "adapter",
-                        err: ExecuteError::SpecInvalid(e.to_string()),
-                        stage_start: Instant::now(),
-                        adapter: &adapter_name,
-                    });
-                }
-            };
-            let u_start = Instant::now();
-            let ctx = AdapterCtx {
-                client: &self.client,
-                ssrf: &self.ssrf,
-                input: &input,
-                base_url: &base_url,
-                auth: &applied,
-                timeout: input.timeout,
-                ws_handshake_timeout: self.limits.ws_handshake_timeout,
-                job_poll_min_interval: self.limits.job_poll_min_interval,
-            };
-            if matches!(input.mode, ExecuteMode::AuthOnly)
-                && matches!(kind, AdapterKind::Grpc | AdapterKind::WsUnary)
-            {
-                return InvokeResult {
-                    ok: true,
-                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                    stages,
-                    payload: None,
-                    biz_error: None,
-                    error_code: None,
-                    error_message: None,
-                    upstream_meta: None,
-                    token: applied.token,
-                    response: None,
-                };
-            }
-            match invoke_adapter(&ctx, kind).await {
-                Ok(outcome) => {
-                    if matches!(input.mode, ExecuteMode::AuthOnly) {
-                        return InvokeResult {
-                            ok: true,
-                            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                            stages,
-                            payload: None,
-                            biz_error: None,
-                            error_code: None,
-                            error_message: None,
-                            upstream_meta: Some(UpstreamMeta {
-                                status: outcome.response.status,
-                                url: outcome.response.final_url.clone(),
-                                adapter: adapter_name,
-                                latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                            }),
-                            token: applied.token,
-                            response: Some(outcome.response),
-                        };
-                    }
-                    if outcome.response.status == 401 && applied.token.is_some() && attempt == 0 {
-                        attempt += 1;
-                        continue;
-                    }
-                    if want_trace {
-                        stages.push(StageResult {
-                            name: "upstream".into(),
-                            ok: outcome.biz_error.is_none()
-                                && (200..300).contains(&outcome.response.status),
-                            latency_ms: u64::saturating_from(u_start.elapsed().as_millis()),
-                            request_summary: Some(StageSummary {
-                                method: Some(outcome.response.method.clone()),
-                                url: Some(outcome.response.final_url.clone()),
-                                headers_masked: Some(mask_headers(
-                                    &merge_request_headers(&applied, &input.spec),
-                                    mask,
-                                )),
-                                body_preview: None,
-                                status: None,
-                                extracted: None,
-                                detail: None,
-                            }),
-                            response_summary: Some(StageSummary {
-                                method: None,
-                                url: None,
-                                headers_masked: Some(mask_headers(&outcome.response.headers, mask)),
-                                body_preview: Some(redact_body_preview(
-                                    &String::from_utf8_lossy(&outcome.response.body),
-                                    max_cap,
-                                    mask,
-                                )),
-                                status: Some(outcome.response.status),
-                                extracted: Some(outcome.payload.clone()),
-                                detail: None,
-                            }),
-                            error: outcome.biz_error.as_ref().map(|b| b.message.clone()),
-                        });
-                    }
-                    let meta = UpstreamMeta {
-                        status: outcome.response.status,
-                        url: outcome.response.final_url.clone(),
-                        adapter: adapter_name,
-                        latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-                    };
-                    return InvokeResult {
-                        ok: outcome.biz_error.is_none(),
-                        latency_ms: meta.latency_ms,
-                        stages,
-                        payload: Some(outcome.payload),
-                        biz_error: outcome.biz_error,
-                        error_code: None,
-                        error_message: None,
-                        upstream_meta: Some(meta),
-                        token: applied.token,
-                        response: Some(outcome.response),
-                    };
-                }
-                Err(e) => {
-                    return Self::invoke_fail(InvokeFail {
-                        start,
-                        stages,
-                        want_trace,
-                        stage_name: "upstream",
-                        err: e,
-                        stage_start: u_start,
-                        adapter: &adapter_name,
-                    });
-                }
-            }
+            .map_err(|e| StageFail::new("ssrf", s_start, ExecuteError::SsrfBlocked(e)))?;
+        if let Some(url) = ticket_token_url(input) {
+            self.ssrf.validate_url(url).await.map_err(|e| {
+                StageFail::new(
+                    "ssrf",
+                    s_start,
+                    ExecuteError::SsrfBlocked(format!("token_url: {e}")),
+                )
+            })?;
         }
+        trace.record(|| StageResult {
+            name: "ssrf".into(),
+            ok: true,
+            latency_ms: elapsed_ms(s_start),
+            request_summary: None,
+            response_summary: None,
+            error: None,
+        });
+        Ok(base_url)
     }
 
-    fn invoke_fail(fail: InvokeFail<'_>) -> InvokeResult {
-        let InvokeFail {
-            start,
-            mut stages,
-            want_trace,
-            stage_name,
-            err,
-            stage_start,
-            adapter,
-        } = fail;
-        if want_trace {
-            stages.push(StageResult {
-                name: stage_name.into(),
-                ok: false,
-                latency_ms: u64::saturating_from(stage_start.elapsed().as_millis()),
-                request_summary: None,
-                response_summary: None,
-                error: Some(err.to_string()),
-            });
+    /// One auth + adapter round. `evict_first` marks the retry after a 401.
+    async fn attempt(
+        &self,
+        input: &InvokeInput,
+        base_url: &str,
+        cache_key: &str,
+        evict_first: bool,
+        trace: &mut Trace,
+    ) -> AttemptOutcome {
+        let a_start = Instant::now();
+        let applied = match apply_auth(crate::auth::AuthApply {
+            client: &self.client,
+            ssrf: &self.ssrf,
+            token_cache: &self.token_cache,
+            spec: &input.spec,
+            base_url,
+            credentials: &input.credentials,
+            cache_key,
+            evict_first,
+            request_id: &input.request_id,
+        })
+        .await
+        {
+            Ok(a) => a,
+            Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
+        };
+        trace.record(|| auth_stage(input, &applied, a_start));
+
+        let kind = match input.spec.adapter_kind() {
+            Ok(k) => k,
+            Err(e) => {
+                return AttemptOutcome::Failed(StageFail::new(
+                    "adapter",
+                    Instant::now(),
+                    ExecuteError::SpecInvalid(e.to_string()),
+                ));
+            }
+        };
+        let auth_only = matches!(input.mode, ExecuteMode::AuthOnly);
+        if auth_only && matches!(kind, AdapterKind::Grpc | AdapterKind::WsUnary) {
+            return AttemptOutcome::done(trace.result(ResultParts {
+                token: applied.token,
+                ..ResultParts::ok()
+            }));
         }
-        InvokeResult {
-            ok: false,
-            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
-            stages,
+        let u_start = Instant::now();
+        let ctx = AdapterCtx {
+            client: &self.client,
+            ssrf: &self.ssrf,
+            input,
+            base_url,
+            auth: &applied,
+            timeout: input.timeout,
+            ws_handshake_timeout: self.limits.ws_handshake_timeout,
+            job_poll_min_interval: self.limits.job_poll_min_interval,
+        };
+        let outcome = match invoke_adapter(&ctx, kind).await {
+            Ok(o) => o,
+            Err(e) => return AttemptOutcome::Failed(StageFail::new("upstream", u_start, e)),
+        };
+        if auth_only {
+            let meta = trace.upstream_meta(&outcome.response);
+            return AttemptOutcome::done(trace.result(ResultParts {
+                upstream_meta: Some(meta),
+                token: applied.token,
+                response: Some(outcome.response),
+                ..ResultParts::ok()
+            }));
+        }
+        if outcome.response.status == 401 && applied.token.is_some() && !evict_first {
+            return AttemptOutcome::RetryUnauthorized;
+        }
+        trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
+        let meta = trace.upstream_meta(&outcome.response);
+        let latency_ms = meta.latency_ms;
+        let mut result = trace.result(ResultParts {
+            ok: outcome.biz_error.is_none(),
+            payload: Some(outcome.payload),
+            biz_error: outcome.biz_error,
+            upstream_meta: Some(meta),
+            token: applied.token,
+            response: Some(outcome.response),
+            ..ResultParts::ok()
+        });
+        result.latency_ms = latency_ms;
+        AttemptOutcome::done(result)
+    }
+}
+
+/// `token_url` of a ticket-style auth profile (must pass SSRF too).
+fn ticket_token_url(input: &InvokeInput) -> Option<&str> {
+    let auth = input.spec.auth.as_ref()?;
+    if !auth
+        .profile_kind()
+        .is_ok_and(mazbri_core::AuthProfile::uses_ticket)
+    {
+        return None;
+    }
+    auth.token_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// `TransformPreview`: render the adapter wrap, no network.
+fn transform_preview(input: &InvokeInput, base_url: String, mut trace: Trace) -> InvokeResult {
+    let (preview, wrap_err) = match crate::adapters::wrap_by_name(&input.spec, &input.payload) {
+        Ok(v) => (v, None),
+        Err(e) => (input.payload.clone(), Some(e)),
+    };
+    let max_cap = input.options.max_body_capture_bytes;
+    let mask = input.options.mask_secrets;
+    trace.record(|| StageResult {
+        name: "request_transform".into(),
+        ok: wrap_err.is_none(),
+        latency_ms: 0,
+        request_summary: Some(StageSummary {
+            method: Some(input.spec.request_method().to_string()),
+            url: Some(base_url),
+            headers_masked: None,
+            body_preview: Some(redact_body_preview(&preview.to_string(), max_cap, mask)),
+            status: None,
+            extracted: None,
+            detail: Some("transform_preview (no network)".into()),
+        }),
+        response_summary: None,
+        error: wrap_err.as_ref().map(ToString::to_string),
+    });
+    trace.result(ResultParts {
+        ok: wrap_err.is_none(),
+        payload: Some(preview),
+        error_code: wrap_err.as_ref().map(|e| e.code().to_string()),
+        error_message: wrap_err.map(|e| e.to_string()),
+        ..ResultParts::ok()
+    })
+}
+
+fn auth_stage(input: &InvokeInput, applied: &AppliedAuth, started: Instant) -> StageResult {
+    StageResult {
+        name: "auth".into(),
+        ok: true,
+        latency_ms: elapsed_ms(started),
+        request_summary: Some(StageSummary {
+            method: None,
+            url: None,
+            headers_masked: Some(mask_headers(&applied.headers, input.options.mask_secrets)),
+            body_preview: None,
+            status: None,
+            extracted: Some(serde_json::json!({
+                "token_present": applied.token.is_some()
+            })),
+            detail: input.spec.auth.as_ref().map(|a| a.profile.clone()),
+        }),
+        response_summary: None,
+        error: None,
+    }
+}
+
+fn upstream_stage(
+    input: &InvokeInput,
+    applied: &AppliedAuth,
+    outcome: &AdapterOutcome,
+    started: Instant,
+) -> StageResult {
+    let mask = input.options.mask_secrets;
+    let response = &outcome.response;
+    StageResult {
+        name: "upstream".into(),
+        ok: outcome.biz_error.is_none() && (200..300).contains(&response.status),
+        latency_ms: elapsed_ms(started),
+        request_summary: Some(StageSummary {
+            method: Some(response.method.clone()),
+            url: Some(response.final_url.clone()),
+            headers_masked: Some(mask_headers(
+                &merge_request_headers(applied, &input.spec),
+                mask,
+            )),
+            body_preview: None,
+            status: None,
+            extracted: None,
+            detail: None,
+        }),
+        response_summary: Some(StageSummary {
+            method: None,
+            url: None,
+            headers_masked: Some(mask_headers(&response.headers, mask)),
+            body_preview: Some(redact_body_preview(
+                &String::from_utf8_lossy(&response.body),
+                input.options.max_body_capture_bytes,
+                mask,
+            )),
+            status: Some(response.status),
+            extracted: Some(outcome.payload.clone()),
+            detail: None,
+        }),
+        error: outcome.biz_error.as_ref().map(|b| b.message.clone()),
+    }
+}
+
+fn elapsed_ms(since: Instant) -> u64 {
+    u64::saturating_from(since.elapsed().as_millis())
+}
+
+/// A failed stage: name, when it started, and the error.
+struct StageFail {
+    stage: &'static str,
+    started: Instant,
+    err: ExecuteError,
+}
+
+impl StageFail {
+    fn new(stage: &'static str, started: Instant, err: ExecuteError) -> Self {
+        Self {
+            stage,
+            started,
+            err,
+        }
+    }
+}
+
+/// Result of one auth + adapter round.
+enum AttemptOutcome {
+    Done(Box<InvokeResult>),
+    Failed(StageFail),
+    /// Upstream answered 401 with a cached token: evict and retry once.
+    RetryUnauthorized,
+}
+
+impl AttemptOutcome {
+    fn done(result: InvokeResult) -> Self {
+        Self::Done(Box::new(result))
+    }
+}
+
+/// Non-stage fields of an [`InvokeResult`].
+struct ResultParts {
+    ok: bool,
+    payload: Option<serde_json::Value>,
+    biz_error: Option<crate::types::BizError>,
+    error_code: Option<String>,
+    error_message: Option<String>,
+    upstream_meta: Option<UpstreamMeta>,
+    token: Option<String>,
+    response: Option<crate::types::OutboundResponse>,
+}
+
+impl ResultParts {
+    fn ok() -> Self {
+        Self {
+            ok: true,
             payload: None,
             biz_error: None,
-            error_code: Some(err.code().to_string()),
-            error_message: Some(err.to_string()),
-            upstream_meta: Some(UpstreamMeta {
-                adapter: adapter.to_string(),
-                ..Default::default()
-            }),
+            error_code: None,
+            error_message: None,
+            upstream_meta: None,
             token: None,
             response: None,
         }
+    }
+}
+
+/// Stage collector for one invoke: records only when tracing is on.
+struct Trace {
+    start: Instant,
+    stages: Vec<StageResult>,
+    enabled: bool,
+    adapter: String,
+}
+
+impl Trace {
+    fn new(input: &InvokeInput) -> Self {
+        Self {
+            start: Instant::now(),
+            stages: Vec::new(),
+            enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
+            adapter: input.spec.adapter.clone(),
+        }
+    }
+
+    fn record(&mut self, stage: impl FnOnce() -> StageResult) {
+        if self.enabled {
+            self.stages.push(stage());
+        }
+    }
+
+    fn upstream_meta(&self, response: &crate::types::OutboundResponse) -> UpstreamMeta {
+        UpstreamMeta {
+            status: response.status,
+            url: response.final_url.clone(),
+            adapter: self.adapter.clone(),
+            latency_ms: elapsed_ms(self.start),
+        }
+    }
+
+    fn result(&mut self, parts: ResultParts) -> InvokeResult {
+        InvokeResult {
+            ok: parts.ok,
+            latency_ms: elapsed_ms(self.start),
+            stages: std::mem::take(&mut self.stages),
+            payload: parts.payload,
+            biz_error: parts.biz_error,
+            error_code: parts.error_code,
+            error_message: parts.error_message,
+            upstream_meta: parts.upstream_meta,
+            token: parts.token,
+            response: parts.response,
+        }
+    }
+
+    fn fail(mut self, fail: StageFail) -> InvokeResult {
+        let StageFail {
+            stage,
+            started,
+            err,
+        } = fail;
+        self.record(|| StageResult {
+            name: stage.into(),
+            ok: false,
+            latency_ms: elapsed_ms(started),
+            request_summary: None,
+            response_summary: None,
+            error: Some(err.to_string()),
+        });
+        let upstream_meta = Some(UpstreamMeta {
+            adapter: self.adapter.clone(),
+            ..Default::default()
+        });
+        self.result(ResultParts {
+            ok: false,
+            error_code: Some(err.code().to_string()),
+            error_message: Some(err.to_string()),
+            upstream_meta,
+            ..ResultParts::ok()
+        })
+    }
+
+    fn retries_exhausted(mut self) -> InvokeResult {
+        let upstream_meta = Some(UpstreamMeta {
+            adapter: self.adapter.clone(),
+            ..Default::default()
+        });
+        self.result(ResultParts {
+            ok: false,
+            error_code: Some("AUTH_TOKEN_FAILED".into()),
+            error_message: Some("Outbound request failed after 401 retries".into()),
+            upstream_meta,
+            ..ResultParts::ok()
+        })
     }
 }
 
