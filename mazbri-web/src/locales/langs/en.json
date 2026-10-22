@@ -2319,7 +2319,6 @@
       "basicInfoTitle": "Basic Information",
       "advancedInfoTitle": "Integration Config",
       "authSectionTitle": "Dynamic Auth",
-      "transformSectionTitle": "Transform",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "noCredentials": "No credentials",
@@ -2361,15 +2360,6 @@
       "injectPreviewTitle": "Inject preview",
       "injectLocation": "Inject to",
       "injectPreviewTip": "<DYNAMIC_TOKEN> is a sample; the gateway injects and maintains the real token.",
-      "transformTitle": "Transform",
-      "rewritePath": "Rewrite path",
-      "requestBodyTemplate": "Request body template",
-      "requestBodyTemplateHint": "e.g. {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
-      "responseBodyTemplate": "Response body template",
-      "requestHeadersSet": "Request headers set",
-      "requestHeadersRemove": "Request headers remove",
-      "responseHeadersSet": "Response headers set",
-      "addHeader": "Add header",
       "authHeaders": "Token request headers"
     }
   },
@@ -3354,7 +3344,6 @@
       "authTokenUrl": "token_url is required when auth is enabled",
       "authTokenPath": "token_jsonpath is required when auth is enabled",
       "authInjectKey": "inject_key is required when auth is enabled",
-      "transformEmpty": "Configure at least one transform rule when enabled",
       "contractIdRequired": "Microservice mode requires contract_id"
     },
     "confirm": {
@@ -3516,7 +3505,6 @@
     "injectToMetadata": "metadata",
     "injectToFirstFrame": "first_frame",
     "authAttachHint": "Auth headers/signatures are attached by the engine on send and are not written into the Header List by default.",
-    "transformEnabled": "Enable transform",
     "bodyContentType": "Tenant body",
     "bodyTypeNone": "None",
     "bodyTypeJson": "JSON",
@@ -3603,7 +3591,6 @@
     "authTicketSection": "Token request",
     "authInjectSection": "Inject",
     "adapterParamsSection": "Adapter params",
-    "transformSection": "Transform",
     "pipelineSection": "Transform compare",
     "sectionUnconfigured": "Not configured",
     "sectionItemCount": "{n} items",

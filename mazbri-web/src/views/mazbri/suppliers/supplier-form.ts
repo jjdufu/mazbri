@@ -2,7 +2,6 @@ import type { Supplier } from "@/api/supplier";
 import type {
   AuthFlowForm,
   SupplierConfigForm,
-  TransformForm,
 } from "./components/SupplierTransparentConfig.vue";
 import { stripUrlScheme } from "@/utils/sensitive";
 
@@ -39,18 +38,6 @@ export function createEmptyAuthFlow(): AuthFlowForm {
   };
 }
 
-export function createEmptyTransform(): TransformForm {
-  return {
-    enabled: false,
-    rewrite_path: "",
-    request_body_template: "",
-    response_body_template: "",
-    request_headers_set: [],
-    request_headers_remove: [],
-    response_headers_set: [],
-  };
-}
-
 function mapToKvList(obj?: Record<string, string> | null): { key: string; value: string }[] {
   if (!obj || typeof obj !== "object") return [];
   return Object.entries(obj).map(([key, value]) => ({
@@ -78,7 +65,6 @@ export function createEmptySupplierForm(): SupplierFormModel {
       upstream_type: "microservice",
       contract_id: "",
       auth_flow: createEmptyAuthFlow(),
-      transform: createEmptyTransform(),
     },
   };
 }
@@ -151,29 +137,6 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
           ...(((supplier.config?.auth_flow as { hawk?: Record<string, unknown> } | undefined)?.hawk) || {}),
         } as AuthFlowForm["hawk"],
       },
-      transform: {
-        enabled: supplier.config?.transform?.enabled || false,
-        rewrite_path: supplier.config?.transform?.rewrite_path || "",
-        request_body_template:
-          supplier.config?.transform?.request_body_template || "",
-        response_body_template:
-          supplier.config?.transform?.response_body_template || "",
-        request_headers_set: mapToKvList(
-          supplier.config?.transform?.request_headers_set as
-            | Record<string, string>
-            | undefined,
-        ),
-        request_headers_remove: Array.isArray(
-          supplier.config?.transform?.request_headers_remove,
-        )
-          ? [...(supplier.config?.transform?.request_headers_remove as string[])]
-          : [],
-        response_headers_set: mapToKvList(
-          supplier.config?.transform?.response_headers_set as
-            | Record<string, string>
-            | undefined,
-        ),
-      },
     },
   };
 }
@@ -236,31 +199,6 @@ export function buildSupplierUpdatePayload(form: SupplierFormModel) {
     upstream_type: form.upstream_type,
     auth_flow: form.config.auth_flow.enabled
       ? serializeAuthFlow(form.config.auth_flow, credsMap)
-      : null,
-    transform: form.config.transform.enabled
-      ? {
-          enabled: true,
-          rewrite_path: form.config.transform.rewrite_path
-            ? form.config.transform.rewrite_path.trim()
-            : null,
-          request_body_template: form.config.transform.request_body_template
-            ? form.config.transform.request_body_template.trim()
-            : null,
-          response_body_template: form.config.transform.response_body_template
-            ? form.config.transform.response_body_template.trim()
-            : null,
-          request_headers_set: (() => {
-            const m = kvListToMap(form.config.transform.request_headers_set || []);
-            return Object.keys(m).length ? m : null;
-          })(),
-          request_headers_remove: (form.config.transform.request_headers_remove || [])
-            .map((s) => s.trim())
-            .filter(Boolean),
-          response_headers_set: (() => {
-            const m = kvListToMap(form.config.transform.response_headers_set || []);
-            return Object.keys(m).length ? m : null;
-          })(),
-        }
       : null,
   };
   if (form.upstream_type === "microservice") {

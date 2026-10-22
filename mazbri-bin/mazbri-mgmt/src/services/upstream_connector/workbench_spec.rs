@@ -3,8 +3,7 @@
 //! `ep.egress` or the browser `RunRequestBody`.
 
 use mazbri_core::{
-    ADAPTER_HTTP_JSON, AuthFlowConfig, ChannelEgressSpec, SupplierConfig, TransformConfig,
-    validate_egress_spec,
+    ADAPTER_HTTP_JSON, AuthFlowConfig, ChannelEgressSpec, SupplierConfig, validate_egress_spec,
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -289,9 +288,6 @@ pub(crate) fn apply_env_to_supplier_config(
     if let Some(ref mut flow) = cfg.auth_flow {
         expand_auth_flow(flow, env);
     }
-    if let Some(ref mut transform) = cfg.transform {
-        expand_transform(transform, env);
-    }
 }
 
 pub(crate) fn apply_env_str(input: &str, env: &HashMap<String, String>) -> String {
@@ -345,14 +341,10 @@ pub(crate) fn leftover_scan_json(
     let auth_flow = cfg
         .and_then(|c| c.auth_flow.as_ref())
         .map(auth_flow_scan_value);
-    let transform = cfg
-        .and_then(|c| c.transform.as_ref())
-        .map(transform_scan_value);
     let spec_v = serde_json::to_value(spec).unwrap_or(Value::Null);
     serde_json::json!({
         "upstream_url": upstream_url,
         "auth_flow": auth_flow,
-        "transform": transform,
         "spec": spec_v,
         "payload": payload,
     })
@@ -743,27 +735,6 @@ fn expand_auth_flow(flow: &mut AuthFlowConfig, env: &HashMap<String, String>) {
     flow.headers = expand_kv_map(&flow.headers, env);
 }
 
-fn expand_transform(t: &mut TransformConfig, env: &HashMap<String, String>) {
-    if let Some(ref mut p) = t.rewrite_path {
-        *p = apply_env_str(p, env);
-    }
-    if let Some(ref mut p) = t.request_body_template {
-        *p = apply_env_str(p, env);
-    }
-    if let Some(ref mut p) = t.response_body_template {
-        *p = apply_env_str(p, env);
-    }
-    if let Some(ref mut m) = t.request_headers_set {
-        *m = expand_kv_map(m, env);
-    }
-    if let Some(ref mut m) = t.response_headers_set {
-        *m = expand_kv_map(m, env);
-    }
-    if let Some(ref mut v) = t.request_headers_remove {
-        *v = v.iter().map(|s| apply_env_str(s, env)).collect();
-    }
-}
-
 fn expand_kv_map(
     map: &HashMap<String, String>,
     env: &HashMap<String, String>,
@@ -861,17 +832,6 @@ fn auth_flow_scan_value(flow: &AuthFlowConfig) -> Value {
         "inject_value_format": flow.inject_value_format,
         "request_body_tpl": flow.request_body_tpl,
         "headers": flow.headers,
-    })
-}
-
-fn transform_scan_value(t: &TransformConfig) -> Value {
-    serde_json::json!({
-        "rewrite_path": t.rewrite_path,
-        "request_body_template": t.request_body_template,
-        "response_body_template": t.response_body_template,
-        "request_headers_set": t.request_headers_set,
-        "response_headers_set": t.response_headers_set,
-        "request_headers_remove": t.request_headers_remove,
     })
 }
 
@@ -1056,28 +1016,6 @@ mod tests {
     }
 
     #[test]
-    fn leftover_in_transform_headers_fails() {
-        let ep = serde_json::json!({ "method": "GET", "path": "/" });
-        let mut headers = HashMap::new();
-        headers.insert("X-App".into(), "{{missing}}".into());
-        let cfg = SupplierConfig {
-            transform: Some(mazbri_core::TransformConfig {
-                enabled: true,
-                rewrite_path: None,
-                request_headers_set: Some(headers),
-                request_headers_remove: None,
-                request_body_template: None,
-                response_body_template: None,
-                response_headers_set: None,
-            }),
-            ..Default::default()
-        };
-        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
-            .expect_err("transform leftover");
-        err_contains_unresolved(&err, "missing");
-    }
-
-    #[test]
     fn leftover_in_graphql_map_fails() {
         let ep = serde_json::json!({
             "method": "POST",
@@ -1092,25 +1030,6 @@ mod tests {
         let err = build_workbench_spec(&ep, &empty_env(), None, "/", "https://up.example")
             .expect_err("graphql leftover");
         err_contains_unresolved(&err, "missing");
-    }
-
-    #[test]
-    fn execute_placeholder_in_transform_does_not_fail() {
-        let ep = serde_json::json!({ "method": "GET", "path": "/" });
-        let cfg = SupplierConfig {
-            transform: Some(mazbri_core::TransformConfig {
-                enabled: true,
-                rewrite_path: None,
-                request_headers_set: None,
-                request_headers_remove: None,
-                request_body_template: Some("{\"endpoint\":\"{{request.path}}\"}".into()),
-                response_body_template: Some("{{response.body}}".into()),
-                response_headers_set: None,
-            }),
-            ..Default::default()
-        };
-        build_workbench_spec(&ep, &empty_env(), Some(&cfg), "/", "https://up.example")
-            .expect("execute placeholders must not 4xx");
     }
 
     #[test]

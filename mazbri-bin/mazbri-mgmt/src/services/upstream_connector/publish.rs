@@ -696,7 +696,7 @@ async fn prepare_publish(
 
     check_publish_gates(&eval.items, req, is_admin)?;
 
-    // Credentials stay in encrypted slots; workbench {{vars}} in auth/transform
+    // Credentials stay in encrypted slots; workbench {{vars}} in auth_flow
     // become literals. workbench_env is never copied into suppliers.config.
     let config_value = publish_cfg
         .to_json_value()

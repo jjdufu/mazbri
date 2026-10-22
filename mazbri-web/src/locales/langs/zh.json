@@ -2319,7 +2319,6 @@
       "basicInfoTitle": "基本信息",
       "advancedInfoTitle": "集成配置",
       "authSectionTitle": "动态认证",
-      "transformSectionTitle": "转换引擎",
       "enabled": "已启用",
       "disabled": "未启用",
       "noCredentials": "无凭证",
@@ -2361,15 +2360,6 @@
       "injectPreviewTitle": "注入效果预览",
       "injectLocation": "注入位置",
       "injectPreviewTip": "<DYNAMIC_TOKEN> 仅为示例，网关将自动注入并维护真实令牌。",
-      "transformTitle": "转换引擎",
-      "rewritePath": "路径重写",
-      "requestBodyTemplate": "请求体模板",
-      "requestBodyTemplateHint": "如 {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
-      "responseBodyTemplate": "响应体模板",
-      "requestHeadersSet": "请求头设置",
-      "requestHeadersRemove": "请求头移除",
-      "responseHeadersSet": "响应头设置",
-      "addHeader": "添加请求头",
       "authHeaders": "换票请求头"
     }
   },
@@ -3359,7 +3349,6 @@
       "authTokenUrl": "启用动态认证时 token_url 必填",
       "authTokenPath": "启用动态认证时 token_jsonpath 必填",
       "authInjectKey": "启用动态认证时 inject_key 必填",
-      "transformEmpty": "启用转换时至少配置一项规则",
       "contractIdRequired": "微服务模式必须填写 contract_id"
     },
     "confirm": {
@@ -3521,7 +3510,6 @@
     "injectToMetadata": "metadata",
     "injectToFirstFrame": "first_frame",
     "authAttachHint": "发送时由引擎附加鉴权头/签名，默认不写入请求头列表。",
-    "transformEnabled": "启用转换",
     "bodyContentType": "租户请求体",
     "bodyTypeNone": "无",
     "bodyTypeJson": "JSON",
@@ -3608,7 +3596,6 @@
     "authTicketSection": "换票",
     "authInjectSection": "注入",
     "adapterParamsSection": "适配器参数",
-    "transformSection": "转换",
     "pipelineSection": "转换对照",
     "sectionUnconfigured": "未配置",
     "sectionItemCount": "{n} 项",

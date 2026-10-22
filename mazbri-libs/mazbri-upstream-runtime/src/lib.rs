@@ -4,8 +4,8 @@
 //! - `mazbri-bypass` production path
 //! - `mazbri-mgmt` connector workbench probe runs
 //!
-//! **Single Runtime**: auth token fetch, inject, request/response transform,
-//! SSRF checks, and outbound HTTP must live only here — no dual implementations.
+//! **Single Runtime**: auth, adapters, SSRF checks and outbound HTTP live only
+//! here — mgmt workbench/live runs and bypass all go through `RuntimeEngine::invoke`.
 
 mod adapters;
 mod assert;
@@ -18,28 +18,20 @@ mod engine;
 mod funcs;
 mod http_call;
 mod mask;
-mod parity;
 mod ssrf;
 mod template;
 mod token_cache;
-mod transform;
 mod types;
 
 pub use assert::{Assertion, AssertionResult, evaluate_assertions};
 pub use engine::{RuntimeEngine, RuntimeLimits, resolve_timeout};
 pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};
-pub use parity::{PreparedOutbound, prepare_outbound_request, prepare_outbound_response};
 pub use ssrf::{SsrfChecker, SsrfSafeResolver, is_blocked_ip};
 pub use template::{
     extract_by_path, is_identity_response_template, render_body_template, render_response_template,
 };
 pub use token_cache::{CachedToken, TokenCache};
-pub use transform::{
-    InjectLocation, apply_request_transform, apply_response_body_transform,
-    apply_response_headers_transform, inject_token,
-};
 pub use types::{
-    BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError, ExecuteInput, ExecuteMode,
-    ExecuteOptions, ExecuteResult, InvokeInput, InvokeResult, OutboundRequest, OutboundResponse,
-    StageResult, StageSummary, UpstreamMeta,
+    BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError, ExecuteMode, ExecuteOptions,
+    InvokeInput, InvokeResult, OutboundResponse, StageResult, StageSummary, UpstreamMeta,
 };

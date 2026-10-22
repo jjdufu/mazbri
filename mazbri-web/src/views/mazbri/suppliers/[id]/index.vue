@@ -459,84 +459,6 @@
             </div>
           </div>
         </div>
-
-
-        <div class="config-section config-section--last">
-          <div class="config-section-head">
-            <span class="config-section-label">{{
-              $t("supplier.detail.transformSectionTitle")
-            }}</span>
-            <div class="config-section-control">
-              <ElSwitch
-                v-if="editing"
-                v-model="form.config.transform.enabled"
-              />
-              <ElTag
-                v-else
-                size="small"
-                :type="transformEnabled ? 'success' : 'info'"
-              >
-                {{
-                  transformEnabled
-                    ? $t("supplier.detail.enabled")
-                    : $t("supplier.detail.disabled")
-                }}
-              </ElTag>
-            </div>
-          </div>
-
-          <div
-            v-if="editing || transformEnabled"
-            :class="{
-              'section-body': true,
-              'is-disabled': editing && !form.config.transform.enabled,
-            }"
-          >
-            <ElDescriptions class="detail-descriptions" :column="1" border>
-              <ElDescriptionsItem :label="$t('supplier.config.rewritePath')">
-                <ElInput
-                  v-if="editing"
-                  v-model="form.config.transform.rewrite_path"
-                  placeholder="/api/proxy"
-                  :disabled="!form.config.transform.enabled"
-                />
-                <span v-else>{{ transform?.rewrite_path || "-" }}</span>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem
-                :label="$t('supplier.config.requestBodyTemplate')"
-              >
-                <ElInput
-                  v-if="editing"
-                  v-model="form.config.transform.request_body_template"
-                  type="textarea"
-                  :rows="3"
-                  class="tpl-textarea"
-                  :placeholder="$t('supplier.config.requestBodyTemplateHint')"
-                  :disabled="!form.config.transform.enabled"
-                />
-                <pre v-else class="mono-block">{{
-                  transform?.request_body_template || "-"
-                }}</pre>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem
-                :label="$t('supplier.config.responseBodyTemplate')"
-              >
-                <ElInput
-                  v-if="editing"
-                  v-model="form.config.transform.response_body_template"
-                  type="textarea"
-                  :rows="2"
-                  class="tpl-textarea"
-                  placeholder="{{response.body}}"
-                  :disabled="!form.config.transform.enabled"
-                />
-                <pre v-else class="mono-block">{{
-                  transform?.response_body_template || "-"
-                }}</pre>
-              </ElDescriptionsItem>
-            </ElDescriptions>
-          </div>
-        </div>
       </ElCard>
     </ElForm>
   </div>
@@ -628,9 +550,7 @@ const contractId = computed(
       ?.contract_id || "",
 );
 const authFlow = computed(() => supplier.value?.config?.auth_flow);
-const transform = computed(() => supplier.value?.config?.transform);
 const authEnabled = computed(() => Boolean(authFlow.value?.enabled));
-const transformEnabled = computed(() => Boolean(transform.value?.enabled));
 const credentialEntries = computed(() => {
   const creds = authFlow.value?.credentials;
   if (!creds || typeof creds !== "object") return [] as [string, string][];
@@ -756,17 +676,6 @@ const submitForm = async () => {
     }
     if (!form.config.auth_flow.inject_key.trim()) {
       ElMessage.error($t("upstreamOnboarding.validation.authInjectKey"));
-      return;
-    }
-  }
-  if (form.config.transform.enabled) {
-    const t = form.config.transform;
-    if (
-      !t.rewrite_path.trim() &&
-      !t.request_body_template.trim() &&
-      !t.response_body_template.trim()
-    ) {
-      ElMessage.error($t("upstreamOnboarding.validation.transformEmpty"));
       return;
     }
   }

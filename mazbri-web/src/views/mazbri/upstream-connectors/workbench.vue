@@ -315,123 +315,6 @@
                           :append-to="pageMount"
                           @update:model-value="onBodyEncodingChange(String($event))"
                         />
-                        <div class="wb-sheet-row is-head">
-                          <span class="wb-sheet-row__label">{{
-                            $t("upstreamConnector.transformSection")
-                          }}</span>
-                          <div class="wb-sheet-row__control wb-sheet-row__control--end">
-                            <label class="wb-hopp-check">
-                              <input
-                                v-model="configForm.transform.enabled"
-                                type="checkbox"
-                              />
-                              {{ $t("upstreamConnector.transformEnabled") }}
-                            </label>
-                            <button
-                              type="button"
-                              class="wb-hopp-action"
-                              :disabled="running"
-                              @click="doTransformPreview"
-                            >
-                              {{ $t("upstreamConnector.transformPreview") }}
-                            </button>
-                          </div>
-                        </div>
-                      <WorkbenchGhostField
-                        :label="$t('supplier.config.rewritePath')"
-                        :model-value="configForm.transform.rewrite_path"
-                        placeholder="/api/proxy"
-                        @update:model-value="
-                          configForm.transform.rewrite_path = String($event)
-                        "
-                      />
-                      <WorkbenchKvRows
-                        v-model="configForm.transform.request_headers_set"
-                        variant="headers"
-                        empty-compact
-                        foldable
-                        :title="$t('supplier.config.requestHeadersSet')"
-                        :add-title="$t('upstreamConnector.addHeader')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                        :env="envMap"
-                        :append-to="pageMount"
-                      />
-                      <WorkbenchKvRows
-                        v-model="removeHeaderRows"
-                        variant="keys"
-                        empty-compact
-                        foldable
-                        :title="$t('supplier.config.requestHeadersRemove')"
-                        :add-title="$t('upstreamConnector.addHeader')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                        :append-to="pageMount"
-                      />
-                      <div class="wb-section wb-section--nested">
-                        <button
-                          type="button"
-                          class="wb-section__head is-toggle"
-                          @click="xfReqTplOpen = !xfReqTplOpen"
-                        >
-                          <span class="wb-section__title">{{
-                            $t("supplier.config.requestBodyTemplate")
-                          }}</span>
-                          <span class="wb-section__summary">{{
-                            templateSummary(configForm.transform.request_body_template)
-                          }}</span>
-                        </button>
-                        <div v-show="xfReqTplOpen" class="wb-section__body">
-                          <JsonTemplateEditor
-                            v-model="configForm.transform.request_body_template"
-                            empty-placeholder
-                            :variables="transformReqVars"
-                            :disabled="!configForm.transform.enabled"
-                            :key-column-label="$t('upstreamConnector.kvKey')"
-                            :value-column-label="$t('upstreamConnector.kvValue')"
-                            :op-column-label="$t('common.fields.operations')"
-                            :key-placeholder="$t('upstreamConnector.kvPhKey')"
-                            :value-placeholder="$t('upstreamConnector.kvPhValue')"
-                          />
-                        </div>
-                      </div>
-                      <div class="wb-section wb-section--nested">
-                        <button
-                          type="button"
-                          class="wb-section__head is-toggle"
-                          @click="xfResTplOpen = !xfResTplOpen"
-                        >
-                          <span class="wb-section__title">{{
-                            $t("supplier.config.responseBodyTemplate")
-                          }}</span>
-                          <span class="wb-section__summary">{{
-                            templateSummary(configForm.transform.response_body_template)
-                          }}</span>
-                        </button>
-                        <div v-show="xfResTplOpen" class="wb-section__body">
-                          <JsonTemplateEditor
-                            v-model="configForm.transform.response_body_template"
-                            empty-placeholder
-                            :variables="transformResVars"
-                            :disabled="!configForm.transform.enabled"
-                            :key-column-label="$t('upstreamConnector.kvKey')"
-                            :value-column-label="$t('upstreamConnector.kvValue')"
-                            :op-column-label="$t('common.fields.operations')"
-                            :key-placeholder="$t('upstreamConnector.kvPhKey')"
-                            :value-placeholder="$t('upstreamConnector.kvPhValue')"
-                          />
-                        </div>
-                      </div>
-                      <WorkbenchKvRows
-                        v-model="configForm.transform.response_headers_set"
-                        variant="headers"
-                        empty-compact
-                        foldable
-                        :title="$t('supplier.config.responseHeadersSet')"
-                        :add-title="$t('upstreamConnector.addHeader')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                        :env="envMap"
-                        :append-to="pageMount"
-                      />
-
                       <WorkbenchKvRows
                         v-if="activeEp.adapter === 'graphql'"
                         v-model="gqlEnumRows"
@@ -568,11 +451,9 @@ import { saveAs } from "file-saver";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
 import { type SupplierConfigForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
-import JsonTemplateEditor from "@/views/mazbri/suppliers/components/JsonTemplateEditor.vue";
 import {
   createEmptyAuthFlow,
   serializeAuthFlow,
-  createEmptyTransform,
   resolveUpstreamType,
 } from "@/views/mazbri/suppliers/supplier-form";
 import {
@@ -630,12 +511,10 @@ import {
   kvEnabledCount,
   kvToEntries,
   kvToMap,
-  normalizeKvRow,
   workbenchEnvToKv,
   lastAuthJson,
   mapToKv,
   mergeQueryFromMap,
-  stripEmptyKv,
   mergeImportedEndpoints,
   normalizeWorkbenchEndpoint,
   parseCurl,
@@ -791,80 +670,12 @@ const encodingSelectOptions = computed(() => [
   { label: $t("upstreamConnector.egressEncodingForm"), value: "form" },
   { label: $t("upstreamConnector.egressEncodingNone"), value: "none" },
 ]);
-const transformReqVars = ["request.path", "request.body"];
-const transformResVars = ["response.body", "response.status"];
-
-function jsonTemplateFilled(raw: string): boolean {
-  const t = (raw || "").trim();
-  if (!t || t === "{}" || t === "{\n}" || t === "{\n\n}") return false;
-  try {
-    const parsed: unknown = JSON.parse(t);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return Object.keys(parsed as Record<string, unknown>).length > 0;
-    }
-  } catch {
-    void 0;
-  }
-  return t.length > 2;
-}
-
-function jsonTemplateFieldCount(raw: string): number {
-  const t = (raw || "").trim();
-  if (!t) return 0;
-  try {
-    const parsed: unknown = JSON.parse(t);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return Object.keys(parsed as Record<string, unknown>).length;
-    }
-  } catch {
-    void 0;
-  }
-  return jsonTemplateFilled(t) ? 1 : 0;
-}
-
-function templateSummary(raw: string): string {
-  const n = jsonTemplateFieldCount(raw);
-  if (n > 0) return $t("upstreamConnector.sectionFieldCount", { n });
-  if (jsonTemplateFilled(raw)) return $t("upstreamConnector.sectionConfigured");
-  return $t("upstreamConnector.sectionUnconfigured");
-}
-
-const xfReqTplUser = ref<boolean | null>(null);
-const xfResTplUser = ref<boolean | null>(null);
 const xfPipeUser = ref<boolean | null>(null);
 
-const xfReqTplOpen = computed({
-  get: () =>
-    xfReqTplUser.value != null
-      ? xfReqTplUser.value
-      : jsonTemplateFilled(configForm.value.transform.request_body_template),
-  set: (v: boolean) => {
-    xfReqTplUser.value = v;
-  },
-});
-const xfResTplOpen = computed({
-  get: () =>
-    xfResTplUser.value != null
-      ? xfResTplUser.value
-      : jsonTemplateFilled(configForm.value.transform.response_body_template),
-  set: (v: boolean) => {
-    xfResTplUser.value = v;
-  },
-});
 const xfPipeOpen = computed({
   get: () => (xfPipeUser.value != null ? xfPipeUser.value : Boolean(lastRun.value)),
   set: (v: boolean) => {
     xfPipeUser.value = v;
-  },
-});
-
-const removeHeaderRows = computed({
-  get: (): KvRow[] =>
-    (configForm.value.transform.request_headers_remove || []).map((key) =>
-      normalizeKvRow({ key }),
-    ),
-  set: (rows: KvRow[]) => {
-    configForm.value.transform.request_headers_remove = rows.map((row) => row.key);
   },
 });
 
@@ -880,7 +691,6 @@ const activeAssertions = computed<AssertionSpec[]>({
 const configForm = ref<SupplierConfigForm>({
   upstream_type: CODE_FREE_UPSTREAM_TYPE,
   auth_flow: createEmptyAuthFlow(),
-  transform: createEmptyTransform(),
 });
 
 const userStore = useUserStore();
@@ -918,7 +728,6 @@ const transformFilled = computed(() => {
   const ep = activeEp.value;
   if (!ep) return false;
   if ((ep.adapter || "http_json") !== "http_json") return true;
-  if (configForm.value.transform.enabled) return true;
   if ((ep.operation || "").trim()) return true;
   if ((ep.unwrap || "").trim()) return true;
   const wrap = (ep.wrap || "").trim();
@@ -935,7 +744,6 @@ function unresolvedOn(ep: ConnectorEndpoint | null | undefined): string[] {
       upstreamUrl: draft.value?.upstream_url,
       endpoint: ep,
       authFlow: configForm.value.auth_flow,
-      transform: configForm.value.transform,
     }),
     envMap.value,
   );
@@ -961,7 +769,6 @@ const unresolvedAll = computed(() => {
 
 function apiConfigToForm(cfg: Record<string, unknown>): SupplierConfigForm {
   const auth = (cfg.auth_flow || {}) as Record<string, unknown>;
-  const transform = (cfg.transform || {}) as Record<string, unknown>;
   const creds = (auth.credentials || {}) as Record<string, string>;
   const credsList = Object.entries(creds).map(([key, value]) => ({
     key,
@@ -989,21 +796,6 @@ function apiConfigToForm(cfg: Record<string, unknown>): SupplierConfigForm {
       aws: { ...createEmptyAuthFlow().aws, ...((auth.aws as object) || {}) },
       hawk: { ...createEmptyAuthFlow().hawk, ...((auth.hawk as object) || {}) },
     },
-    transform: {
-      enabled: Boolean(transform.enabled),
-      rewrite_path: String(transform.rewrite_path || ""),
-      request_body_template: String(transform.request_body_template || ""),
-      response_body_template: String(transform.response_body_template || ""),
-      request_headers_set: mapToKv(
-        transform.request_headers_set as Record<string, string> | undefined,
-      ),
-      request_headers_remove: Array.isArray(transform.request_headers_remove)
-        ? [...(transform.request_headers_remove as string[])]
-        : [],
-      response_headers_set: mapToKv(
-        transform.response_headers_set as Record<string, string> | undefined,
-      ),
-    },
   };
 }
 
@@ -1012,25 +804,10 @@ function formToApiConfig(form: SupplierConfigForm): Record<string, unknown> {
   form.auth_flow.credentials.forEach((item) => {
     if (item.key.trim()) credsMap[item.key.trim()] = item.value;
   });
-  const rhs = kvToMap(stripEmptyKv(form.transform.request_headers_set || []));
-  const resph = kvToMap(stripEmptyKv(form.transform.response_headers_set || []));
   const payload: Record<string, unknown> = {
     upstream_type: CODE_FREE_UPSTREAM_TYPE,
     auth_flow: form.auth_flow.enabled
       ? serializeAuthFlow(form.auth_flow, credsMap)
-      : null,
-    transform: form.transform.enabled
-      ? {
-          enabled: true,
-          rewrite_path: form.transform.rewrite_path || null,
-          request_body_template: form.transform.request_body_template || null,
-          response_body_template: form.transform.response_body_template || null,
-          request_headers_set: Object.keys(rhs).length ? rhs : null,
-          request_headers_remove: (form.transform.request_headers_remove || [])
-            .map((s) => s.trim())
-            .filter(Boolean),
-          response_headers_set: Object.keys(resph).length ? resph : null,
-        }
       : null,
   };
   const timeouts = (draft.value?.config as { timeouts?: unknown })?.timeouts;
@@ -1582,14 +1359,12 @@ async function doRun(mode: string) {
   const signal = beginRun();
   try {
     await saveDraft({ silent: true, signal });
-    const req = appliedRequest();
-    if (!req) return;
+    if (!appliedRequest()) return;
     const r = await runDraft(
       draft.value.id,
       {
         mode,
         endpoint_id: activeEp.value.id,
-        request: req,
         assertions: activeEp.value.assertions as AssertionSpec[],
       },
       { signal, ...RUN_HTTP },
@@ -1615,20 +1390,17 @@ async function doRun(mode: string) {
 async function doLiveRun() {
   if (!draft.value?.linked_supplier_id || !activeEp.value) return;
   flushKvToActive();
+  const epId = activeEp.value.id;
+  const channelCode = autoChannelsFromEndpoints(endpoints.value).find(
+    (c) => c.endpoint_id === epId,
+  )?.channel_code;
+  if (!channelCode) return;
   const gen = runGen + 1;
   const signal = beginRun();
   try {
     const r = await liveRun(
       draft.value.linked_supplier_id,
-      {
-        mode: "live",
-        request: {
-          method: activeEp.value.method || "GET",
-          path: activeEp.value.path || "/",
-          headers: activeEp.value.headers || {},
-          body: activeEp.value.body,
-        },
-      },
+      { channel_code: channelCode, payload: activeEp.value.body ?? {} },
       { signal, ...RUN_HTTP },
     );
     lastRun.value = r;
@@ -1658,12 +1430,6 @@ async function doTransformPreview() {
       draft.value.id,
       {
         endpoint_id: activeEp.value.id,
-        request: {
-          method: activeEp.value.method || "GET",
-          path: activeEp.value.path || "/",
-          headers: activeEp.value.headers || {},
-          body: activeEp.value.body,
-        },
       },
       { signal, ...RUN_HTTP },
     );

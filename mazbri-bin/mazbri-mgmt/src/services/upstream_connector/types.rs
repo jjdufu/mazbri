@@ -1,4 +1,4 @@
-use super::{Deserialize, HashMap, Serialize, Uuid, mask_config_credentials, repo};
+use super::{Deserialize, Serialize, Uuid, mask_config_credentials, repo};
 
 // ---------- API types ----------
 
@@ -109,8 +109,6 @@ pub struct RunRequest {
     #[serde(default)]
     pub testcase_id: Option<Uuid>,
     #[serde(default)]
-    pub request: Option<RunRequestBody>,
-    #[serde(default)]
     pub assertions: Option<Vec<serde_json::Value>>,
 }
 
@@ -118,25 +116,13 @@ pub(super) fn default_business() -> String {
     "business".into()
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct RunRequestBody {
-    #[serde(default = "default_get")]
-    pub method: String,
-    #[serde(default = "default_slash")]
-    pub path: String,
+/// 线上试跑：走已发布通道的 egress spec + `RuntimeEngine::invoke`（与 bypass 同路径）。
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveRunRequest {
+    pub channel_code: String,
     #[serde(default)]
-    pub query: HashMap<String, String>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    #[serde(default)]
-    pub body: Option<serde_json::Value>,
-}
-
-pub(super) fn default_get() -> String {
-    "GET".into()
-}
-pub(super) fn default_slash() -> String {
-    "/".into()
+    pub payload: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -324,4 +310,8 @@ pub struct RollbackRequest {
     pub version_id: Uuid,
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+pub(super) fn default_slash() -> String {
+    "/".into()
 }

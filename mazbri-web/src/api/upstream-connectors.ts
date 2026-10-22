@@ -292,13 +292,6 @@ export function runDraft(
   data: {
     mode?: string;
     endpoint_id?: string;
-    request?: {
-      method: string;
-      path: string;
-      query?: Record<string, string>;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
     assertions?: AssertionSpec[];
   },
   opts?: ConnectorRequestOpts,
@@ -325,12 +318,6 @@ export function getRun(runId: string) {
 export function transformPreview(
   id: string,
   data: {
-    request?: {
-      method: string;
-      path: string;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
     endpoint_id?: string;
   },
   opts?: ConnectorRequestOpts,
@@ -423,13 +410,8 @@ export function rollbackVersion(
 export function liveRun(
   supplierId: string,
   data: {
-    mode?: string;
-    request?: {
-      method: string;
-      path: string;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
+    channel_code: string;
+    payload?: unknown;
   },
   opts?: ConnectorRequestOpts,
 ) {

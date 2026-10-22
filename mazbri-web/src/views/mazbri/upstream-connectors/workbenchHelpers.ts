@@ -541,14 +541,6 @@ export function workbenchEnvSurfaceParts(args: {
     request_body_tpl?: string;
     headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
   } | null;
-  transform?: {
-    rewrite_path?: string;
-    request_body_template?: string;
-    response_body_template?: string;
-    request_headers_set?: Array<{ key?: string; value?: string; enabled?: boolean }>;
-    response_headers_set?: Array<{ key?: string; value?: string; enabled?: boolean }>;
-    request_headers_remove?: string[];
-  } | null;
 }): string[] {
   const parts: string[] = [];
   if (args.upstreamUrl) parts.push(args.upstreamUrl);
@@ -594,17 +586,6 @@ export function workbenchEnvSurfaceParts(args: {
       if (s) parts.push(s);
     }
     pushKvParts(parts, auth.headers);
-  }
-  const tr = args.transform;
-  if (tr) {
-    if (tr.rewrite_path) parts.push(tr.rewrite_path);
-    if (tr.request_body_template) parts.push(tr.request_body_template);
-    if (tr.response_body_template) parts.push(tr.response_body_template);
-    pushKvParts(parts, tr.request_headers_set);
-    pushKvParts(parts, tr.response_headers_set);
-    for (const s of tr.request_headers_remove || []) {
-      if (s) parts.push(s);
-    }
   }
   return parts;
 }

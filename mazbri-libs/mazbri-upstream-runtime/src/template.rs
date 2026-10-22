@@ -1,4 +1,4 @@
-//! Template rendering helpers shared by `auth_flow` and transform.
+//! Template rendering helpers used by `auth_flow` and adapters.
 
 #[must_use]
 pub fn extract_by_path(value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {

@@ -6,7 +6,7 @@
 //! - `upstream_type`（必填）
 //! - `contract_id`（microservice 必填）
 //! - `timeouts.total_ms`（可选；数据面生效）
-//! - `auth_flow` / `transform`（transparent 可选）
+//! - `auth_flow`（transparent 可选）
 //!
 //! # 写入拒绝（禁止静默忽略）
 //! - `protocol`、`retries`、`plugins` 等
@@ -32,13 +32,7 @@ pub const UPSTREAM_TYPE_TRANSPARENT: &str = "transparent";
 pub const UPSTREAM_TYPE_MICROSERVICE: &str = "microservice";
 
 /// 写入允许的顶层字段。
-const ALLOWED_TOP_KEYS: &[&str] = &[
-    "upstream_type",
-    "contract_id",
-    "timeouts",
-    "auth_flow",
-    "transform",
-];
+const ALLOWED_TOP_KEYS: &[&str] = &["upstream_type", "contract_id", "timeouts", "auth_flow"];
 
 /// 已裁剪、写入必须拒绝的顶层字段（G-02/G-03 / H-23）。
 /// 售前须写明：不支持插件市场、通用 LB、配置内 `health_check` 探活摘流等。
@@ -74,10 +68,6 @@ pub struct SupplierConfig {
     /// 透明上游动态鉴权（bypass 消费）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_flow: Option<AuthFlowConfig>,
-
-    /// 请求/响应转换（bypass 消费）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<TransformConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -170,23 +160,6 @@ fn default_inject_location() -> String {
 
 fn default_inject_format() -> String {
     "Bearer {}".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TransformConfig {
-    pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rewrite_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_headers_set: Option<HashMap<String, String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_headers_remove: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_body_template: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub response_body_template: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub response_headers_set: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -341,7 +314,7 @@ impl SupplierConfig {
         {
             return Err(ConfigValidationError::new(
                 "config.plugins 不受支持：平台横切能力为内建；\
-                 上游差异化使用 auth_flow/transform 或 microservice",
+                 上游差异化使用 auth_flow 或 microservice",
             ));
         }
         let raw = serde_json::to_vec(&cleaned)
@@ -398,38 +371,6 @@ impl SupplierConfig {
             validate_auth_flow(auth)?;
         }
 
-        if let Some(ref transform) = self.transform {
-            if transform.enabled {
-                let has_any = transform.rewrite_path.is_some()
-                    || transform.request_body_template.is_some()
-                    || transform.response_body_template.is_some()
-                    || transform
-                        .request_headers_set
-                        .as_ref()
-                        .is_some_and(|m| !m.is_empty())
-                    || transform
-                        .request_headers_remove
-                        .as_ref()
-                        .is_some_and(|v| !v.is_empty())
-                    || transform
-                        .response_headers_set
-                        .as_ref()
-                        .is_some_and(|m| !m.is_empty());
-                if !has_any {
-                    return Err(ConfigValidationError::new(
-                        "config.transform.enabled=true 时至少配置一项转换规则",
-                    ));
-                }
-                if let Some(ref path) = transform.rewrite_path {
-                    if path.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.transform.rewrite_path 不能为空字符串",
-                        ));
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
 
@@ -457,11 +398,6 @@ impl SupplierConfig {
         if let Some(ref auth) = self.auth_flow {
             if !auth.enabled {
                 self.auth_flow = None;
-            }
-        }
-        if let Some(ref transform) = self.transform {
-            if !transform.enabled {
-                self.transform = None;
             }
         }
         self

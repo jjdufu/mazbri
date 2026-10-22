@@ -102,18 +102,6 @@ impl BodyKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutboundRequest {
-    pub method: String,
-    pub path: String,
-    #[serde(default)]
-    pub query: Vec<(String, String)>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    #[serde(default)]
-    pub body: Option<BodyKind>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutboundResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
@@ -121,20 +109,6 @@ pub struct OutboundResponse {
     pub final_url: String,
     pub method: String,
     pub path: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExecuteInput {
-    pub supplier_code: String,
-    pub base_url: String,
-    /// Decrypted runtime config (may be None for plain passthrough).
-    pub config: Option<Arc<SupplierConfig>>,
-    pub request: OutboundRequest,
-    pub timeout: Duration,
-    pub mode: ExecuteMode,
-    pub options: ExecuteOptions,
-    /// Optional token cache key override (probe namespace). Defaults to `supplier_code`.
-    pub cache_key: Option<String>,
 }
 
 /// Production / workbench invoke: tenant JSON object + channel egress spec.
@@ -221,22 +195,6 @@ pub struct StageResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecuteResult {
-    pub ok: bool,
-    pub latency_ms: u64,
-    pub stages: Vec<StageResult>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response: Option<OutboundResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_message: Option<String>,
-    /// Token used (raw) — only for internal inject; not serialized for API.
-    #[serde(skip)]
-    pub token: Option<String>,
-}
-
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ExecuteError {
     #[error("CONFIG_INVALID: {0}")]
@@ -245,8 +203,6 @@ pub enum ExecuteError {
     SsrfBlocked(String),
     #[error("AUTH_TOKEN_FAILED: {0}")]
     AuthTokenFailed(String),
-    #[error("TRANSFORM_FAILED: {0}")]
-    TransformFailed(String),
     #[error("UPSTREAM_TRANSPORT: {0}")]
     UpstreamTransport(String),
     #[error("UPSTREAM_HTTP: {0}")]
@@ -270,7 +226,6 @@ impl ExecuteError {
             Self::ConfigInvalid(_) => "CONFIG_INVALID",
             Self::SsrfBlocked(_) => "SSRF_BLOCKED",
             Self::AuthTokenFailed(_) => "AUTH_TOKEN_FAILED",
-            Self::TransformFailed(_) => "TRANSFORM_FAILED",
             Self::UpstreamTransport(_) => "UPSTREAM_TRANSPORT",
             Self::UpstreamHttp(_) => "UPSTREAM_HTTP",
             Self::InvalidMethod(_) => "INVALID_METHOD",

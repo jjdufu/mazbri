@@ -2413,7 +2413,6 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "sha2 0.10.9",
  "thiserror 2.0.19",
  "tokio",

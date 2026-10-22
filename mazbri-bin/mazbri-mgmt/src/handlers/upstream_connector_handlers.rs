@@ -351,7 +351,7 @@ pub async fn live_run(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(supplier_id): Path<Uuid>,
-    Json(payload): Json<svc::RunRequest>,
+    Json(payload): Json<svc::LiveRunRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_operator(&claims)?;
     if let Err(wait) = state.connector_run_limiter.try_acquire() {
@@ -360,7 +360,7 @@ pub async fn live_run(
             wait.as_secs().max(1)
         )));
     }
-    let data = svc::live_run(
+    let data = Box::pin(svc::live_run(
         &state.db,
         svc::LiveRunParams {
             audit: &state.audit,
@@ -372,7 +372,7 @@ pub async fn live_run(
             default_timeout_ms: state.config.connector_probe.default_timeout_ms,
             max_body_bytes: state.config.connector_probe.max_body_bytes,
         },
-    )
+    ))
     .await?;
     Ok(ApiResponse::ok(data))
 }

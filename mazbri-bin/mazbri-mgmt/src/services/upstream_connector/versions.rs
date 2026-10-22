@@ -1,8 +1,8 @@
 use super::{
-    ApiError, Arc, AuditAction, AuditLogRequest, AuditResourceType, AuditService, BodyKind,
-    Duration, ExecuteInput, ExecuteMode, ExecuteOptions, HashMap, OutboundRequest, PgPool,
-    RollbackRequest, Row, RunDto, RunRequest, RunRequestBody, SupplierConfig, Uuid,
-    connector_metrics, info, mask_config_credentials, repo, runtime_engine,
+    ApiError, Arc, AuditAction, AuditLogRequest, AuditResourceType, AuditService, Duration,
+    ExecuteMode, ExecuteOptions, InvokeInput, LiveRunRequest, PgPool, RollbackRequest, Row, RunDto,
+    SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes, mask_config_credentials,
+    repo, runtime_engine,
 };
 use mazbri_core::num::SaturatingFrom;
 
@@ -162,7 +162,7 @@ pub async fn rollback(
 pub struct LiveRunParams<'a> {
     pub audit: &'a AuditService,
     pub supplier_id: Uuid,
-    pub req: RunRequest,
+    pub req: LiveRunRequest,
     pub actor: &'a str,
     pub user_id: Uuid,
     pub client_ip: Option<String>,
@@ -184,55 +184,9 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         default_timeout_ms,
         max_body_bytes,
     } = params;
-    let row =
-        sqlx::query("SELECT id, supplier_code, upstream_url, config FROM suppliers WHERE id = $1")
-            .bind(supplier_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
-            .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
-
-    let supplier_code: String = row.get("supplier_code");
-    let upstream_url: String = row.get("upstream_url");
-    let config: serde_json::Value = row.get("config");
-
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&config)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    cfg = cfg
-        .decrypt_credentials_for_runtime()
-        .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;
-
-    let (body, body_kind) = live_request_body(req.request.clone(), max_body_bytes)?;
-
-    let timeout_ms = cfg
-        .timeouts
-        .as_ref()
-        .and_then(|t| t.total_ms)
-        .unwrap_or(default_timeout_ms);
-
-    let input = ExecuteInput {
-        supplier_code: supplier_code.clone(),
-        base_url: upstream_url,
-        config: Some(Arc::new(cfg)),
-        request: OutboundRequest {
-            method: body.method,
-            path: body.path,
-            query: body.query.into_iter().collect(),
-            headers: body.headers,
-            body: body_kind,
-        },
-        timeout: Duration::from_millis(timeout_ms),
-        mode: ExecuteMode::Live,
-        options: ExecuteOptions {
-            follow_redirects: false,
-            max_body_capture_bytes: 64 * 1024,
-            mask_secrets: true,
-            collect_trace: true,
-        },
-        cache_key: Some(format!("live:{supplier_id}")),
-    };
-
-    let result = runtime_engine().execute(input).await;
+    let input =
+        prepare_live_input(pool, supplier_id, req, default_timeout_ms, max_body_bytes).await?;
+    let result = runtime_engine().invoke(input).await;
     let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
 
     connector_metrics::record_run("live", result.ok, result.error_code.as_deref());
@@ -296,35 +250,87 @@ pub async fn cleanup_old_runs(pool: &PgPool, retention_days: u32) -> Result<u64,
     Ok(n)
 }
 
-/// 线上试跑请求体（缺省 `GET /`），并检查体积上限。
-fn live_request_body(
-    request: Option<RunRequestBody>,
+/// 线上试跑入参：已发布通道 `channels.config.egress` + 供应商配置，`mode=Live`。
+async fn prepare_live_input(
+    pool: &PgPool,
+    supplier_id: Uuid,
+    req: LiveRunRequest,
+    default_timeout_ms: u64,
     max_body_bytes: usize,
-) -> Result<(RunRequestBody, Option<BodyKind>), ApiError> {
-    let body = request.unwrap_or(RunRequestBody {
-        method: "GET".into(),
-        path: "/".into(),
-        query: HashMap::new(),
-        headers: HashMap::new(),
-        body: None,
-    });
-    let body_kind = body.body.as_ref().map(|v| {
-        if v.is_string() {
-            BodyKind::Raw {
-                body: v.as_str().unwrap_or("").to_string(),
-                content_type: "text/plain".into(),
-            }
-        } else {
-            BodyKind::Json(v.to_string())
-        }
-    });
-    if let Some(ref b) = body_kind {
-        if b.as_str().len() > max_body_bytes {
-            return Err(ApiError::validation(format!(
-                "request body exceeds max_body_bytes ({max_body_bytes})"
-            )));
-        }
+) -> Result<InvokeInput, ApiError> {
+    let row =
+        sqlx::query("SELECT id, supplier_code, upstream_url, config FROM suppliers WHERE id = $1")
+            .bind(supplier_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
+            .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
+    let supplier_code: String = row.get("supplier_code");
+    let upstream_url: String = row.get("upstream_url");
+    let config: serde_json::Value = row.get("config");
+
+    let channel_code = req.channel_code.trim();
+    let channel = sqlx::query(
+        "SELECT id, path_prefix, config FROM channels WHERE supplier_id = $1 AND channel_code = $2",
+    )
+    .bind(supplier_id)
+    .bind(channel_code)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("get channel: {e}")))?
+    .ok_or_else(|| ApiError::not_found("channel".into(), channel_code.to_string()))?;
+    let channel_id: Uuid = channel.get("id");
+    let path_prefix: String = channel.get("path_prefix");
+    let channel_config: serde_json::Value = channel.get("config");
+    let spec = mazbri_core::parse_channel_config_egress(&channel_config)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+
+    let cfg = SupplierConfig::parse_and_validate_lenient(&config)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?
+        .decrypt_credentials_for_runtime()
+        .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;
+
+    let payload = req.payload;
+    if payload.to_string().len() > max_body_bytes {
+        return Err(ApiError::validation(format!(
+            "request body exceeds max_body_bytes ({max_body_bytes})"
+        )));
     }
 
-    Ok((body, body_kind))
+    let timeout_ms = spec
+        .timeout_ms
+        .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
+        .unwrap_or(default_timeout_ms);
+    let credentials = cfg
+        .auth_flow
+        .as_ref()
+        .map(|auth| auth.credentials.clone())
+        .unwrap_or_default();
+    let artifact_bytes = match spec.artifact_id.as_deref() {
+        Some(aid) => load_artifact_bytes(pool, aid).await?,
+        None => None,
+    };
+
+    Ok(InvokeInput {
+        supplier_id: supplier_id.to_string(),
+        supplier_code,
+        channel_id: channel_id.to_string(),
+        request_id: Uuid::new_v4().to_string(),
+        payload,
+        spec,
+        config: Some(Arc::new(cfg)),
+        fallback_base_url: upstream_url,
+        path_prefix,
+        timeout: Duration::from_millis(timeout_ms),
+        mode: ExecuteMode::Live,
+        options: ExecuteOptions {
+            follow_redirects: false,
+            max_body_capture_bytes: 64 * 1024,
+            mask_secrets: true,
+            collect_trace: true,
+        },
+        credentials,
+        artifact_bytes,
+        cache_key: Some(format!("live:{supplier_id}")),
+    })
 }
