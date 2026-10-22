@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let default =
-        manifest_dir.join("../../mazbri-license.pub");
+    let default = manifest_dir.join("../../mazbri-license.pub");
     let path = env::var_os("MAZBRI_LICENSE_PUB")
         .map(PathBuf::from)
         .unwrap_or(default);

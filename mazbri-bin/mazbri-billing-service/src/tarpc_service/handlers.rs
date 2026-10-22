@@ -1,4 +1,3 @@
-use mazbri_core::num::SaturatingFrom;
 use super::BillingTarpcService;
 use super::charge::handle_record_usage;
 use super::conversion::{
@@ -6,6 +5,7 @@ use super::conversion::{
     map_usage_breakdown, safe_to_amount, validation_error,
 };
 use mazbri_billing::{AccountBalance, AddFundsResult, UsageSummaryInfo};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, emit_access_log, response_flags_for_error,
@@ -256,10 +256,7 @@ impl BillingServiceTrait for BillingTarpcService {
                 };
             }
         };
-        let amount = req
-            .amount
-            .as_ref()
-            .map_or(Decimal::ZERO, from_amount);
+        let amount = req.amount.as_ref().map_or(Decimal::ZERO, from_amount);
         match self
             .billing_service
             .add_funds(tenant_id, amount, &req.payment_method)

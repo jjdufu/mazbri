@@ -143,8 +143,7 @@ impl RegistrationConfig {
         server_port: u16,
         admin: Option<AdminHealthEndpoint<'_>>,
     ) -> super::ServiceMetadata {
-        let health_check_url =
-            admin.map(|a| format!("http://{}:{}{}", self.ip, a.port, a.path));
+        let health_check_url = admin.map(|a| format!("http://{}:{}{}", self.ip, a.port, a.path));
         super::ServiceMetadata {
             service_name: service.as_str().to_owned(),
             ip: self.ip.clone(),
@@ -206,8 +205,8 @@ pub fn load_toml<T>(path: &Path) -> Result<T>
 where
     T: serde::de::DeserializeOwned + ValidateConfig,
 {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("读取配置失败: {}", path.display()))?;
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("读取配置失败: {}", path.display()))?;
     let cfg: T = toml::from_str(&text)
         .with_context(|| format!("解析配置失败（含未知键即报错）: {}", path.display()))?;
     cfg.validate()
@@ -254,14 +253,19 @@ enabled = true
         assert!(parse(&format!("env = \"prod\"\n{OK}")).is_err());
         assert!(parse(&OK.replace("[registration]", "[registration]\nport = 8888")).is_err());
         assert!(
-            parse(&OK.replace("[registration]", "[registration]\nhealth_check_path = \"/h\""))
-                .is_err()
+            parse(&OK.replace(
+                "[registration]",
+                "[registration]\nhealth_check_path = \"/h\""
+            ))
+            .is_err()
         );
-        assert!(parse(&OK.replace(
-            "url = \"http://mazbri-cert:8888\"",
-            "url = \"http://mazbri-cert:8888\"\ntoken = \"x\""
-        ))
-        .is_err());
+        assert!(
+            parse(&OK.replace(
+                "url = \"http://mazbri-cert:8888\"",
+                "url = \"http://mazbri-cert:8888\"\ntoken = \"x\""
+            ))
+            .is_err()
+        );
         assert!(parse(&format!("{OK}\n[unknown]\na = 1\n")).is_err());
     }
 
@@ -293,7 +297,10 @@ enabled = true
             }),
         );
         assert_eq!(md.port, 8888);
-        assert_eq!(md.health_check_url.as_deref(), Some("http://10.0.0.5:9000/health"));
+        assert_eq!(
+            md.health_check_url.as_deref(),
+            Some("http://10.0.0.5:9000/health")
+        );
         assert_eq!(md.service_name, "mazbri-auth");
         let md = reg.to_service_metadata(ServiceName::Auth, 8888, None);
         assert!(md.health_check_url.is_none());

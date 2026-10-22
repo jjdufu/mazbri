@@ -1,7 +1,7 @@
-use mazbri_core::num::SaturatingFrom;
 use crate::config::CacheConfig;
 use crate::db::{LocalCacheEntry, RedisFallbackRepository, SetCacheParams};
 use lru::LruCache;
+use mazbri_core::num::SaturatingFrom;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -76,7 +76,9 @@ impl HybridFallbackCache {
                     let age_secs = redis_entry.age_secs();
                     return Some(CacheEntry {
                         data: redis_entry.data,
-                        created_at: Instant::now().checked_sub(Duration::from_secs(u64::saturating_from(age_secs))).unwrap(),
+                        created_at: Instant::now()
+                            .checked_sub(Duration::from_secs(u64::saturating_from(age_secs)))
+                            .unwrap(),
                     });
                 }
             }

@@ -1,6 +1,6 @@
-use mazbri_core::num::SaturatingFrom;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -69,7 +69,10 @@ pub struct RedisFallbackRepository {
 
 impl RedisFallbackRepository {
     pub fn new(redis: RedisClient) -> Self {
-        let node_id = hostname::get().map_or_else(|_| "unknown".to_string(), |h| h.to_string_lossy().to_string());
+        let node_id = hostname::get().map_or_else(
+            |_| "unknown".to_string(),
+            |h| h.to_string_lossy().to_string(),
+        );
         Self { redis, node_id }
     }
 

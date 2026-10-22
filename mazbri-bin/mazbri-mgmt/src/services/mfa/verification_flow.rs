@@ -1,7 +1,7 @@
 use super::common::{MfaServiceErrorMode, get_mfa_service, ok_json};
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminJwtClaims;
-use crate::mfa::MfaServiceCache;
+use crate::mfa::{MfaService, MfaServiceCache};
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
@@ -101,6 +101,101 @@ pub struct VerifyParams<'a> {
     pub client_ip: Option<String>,
 }
 
+/// 哪一种验证码匹配成功。
+enum MfaCodeMatch {
+    Totp,
+    /// 命中的备用码下标
+    Backup(usize),
+}
+
+/// 先校验 TOTP，再校验备用码；都不匹配返回 `None`。
+fn match_mfa_code(
+    mfa_service: &MfaService,
+    state: &repo::MfaVerifyState,
+    totp_code: Option<&str>,
+    backup_code: Option<&str>,
+) -> Option<MfaCodeMatch> {
+    if let (Some(code), Some(encrypted_secret)) = (totp_code, &state.mfa_secret) {
+        if let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret) {
+            if mfa_service.verify_totp(&secret, code) {
+                return Some(MfaCodeMatch::Totp);
+            }
+        }
+    }
+    let code = backup_code?;
+    let hashed_codes: Vec<String> = state
+        .mfa_backup_codes
+        .as_ref()?
+        .as_array()?
+        .iter()
+        .filter_map(|value| value.as_str().map(std::string::ToString::to_string))
+        .collect();
+    match mfa_service.verify_backup_code(code, &hashed_codes) {
+        Ok(Some(index)) => Some(MfaCodeMatch::Backup(index)),
+        _ => None,
+    }
+}
+
+/// 记录一次失败尝试（必要时锁定）并返回错误响应。
+async fn record_failed_attempt(
+    pool: &PgPool,
+    mfa_service: &MfaService,
+    user_id: uuid::Uuid,
+    username: &str,
+    attempts: i32,
+) -> axum::response::Response {
+    let new_attempts = attempts + 1;
+    let lockout_until = if new_attempts >= mfa_service.config().max_attempts {
+        Some(mfa_service.calculate_lockout_until())
+    } else {
+        None
+    };
+    if let Err(error) = repo::update_mfa_attempts(pool, user_id, new_attempts, lockout_until).await
+    {
+        error!(
+            "Failed to update MFA attempt count for user {}: {}. Lockout mechanism may be bypassed!",
+            username, error
+        );
+        return ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::database_error(),
+        );
+    }
+    warn!(
+        "MFA verification failed for user: {} (attempt {}/{})",
+        username,
+        new_attempts,
+        mfa_service.config().max_attempts
+    );
+    ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::invalid_code())
+}
+
+/// 删除已使用的备用码（失败只记日志）。
+async fn consume_backup_code(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    username: &str,
+    state: &repo::MfaVerifyState,
+    index: usize,
+) {
+    let Some(hashed_codes) = state
+        .mfa_backup_codes
+        .as_ref()
+        .and_then(serde_json::Value::as_array)
+    else {
+        return;
+    };
+    let mut new_codes: Vec<serde_json::Value> = hashed_codes.clone();
+    new_codes.remove(index);
+    if let Err(error) = repo::remove_backup_code(pool, user_id, serde_json::json!(new_codes)).await
+    {
+        error!(
+            "Failed to remove used backup code for user {}: {}",
+            username, error
+        );
+    }
+}
+
 pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let mfa_cache = params.mfa_cache;
@@ -149,76 +244,17 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     if mfa_service.is_locked(state.mfa_attempts, state.mfa_locked_until) {
         return ApiResponse::err(StatusCode::FORBIDDEN, mazbri_i18n::mfa::locked());
     }
-    let mut verified = false;
-    let mut used_backup_code_idx: Option<usize> = None;
-    if let Some(code) = totp_code {
-        if let Some(encrypted_secret) = &state.mfa_secret {
-            if let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret) {
-                if mfa_service.verify_totp(&secret, code) {
-                    verified = true;
-                }
-            }
+    let Some(matched) = match_mfa_code(&mfa_service, &state, totp_code, backup_code) else {
+        return record_failed_attempt(pool, &mfa_service, user_id, username, state.mfa_attempts)
+            .await;
+    };
+    let used_backup_code_idx = match matched {
+        MfaCodeMatch::Totp => None,
+        MfaCodeMatch::Backup(index) => {
+            consume_backup_code(pool, user_id, username, &state, index).await;
+            Some(index)
         }
-    }
-    if !verified {
-        if let Some(code) = backup_code {
-            if let Some(codes_value) = &state.mfa_backup_codes {
-                if let Some(hashed_codes) = codes_value.as_array() {
-                    let hashed_codes: Vec<String> = hashed_codes
-                        .iter()
-                        .filter_map(|value| value.as_str().map(std::string::ToString::to_string))
-                        .collect();
-                    if let Ok(Some(index)) = mfa_service.verify_backup_code(code, &hashed_codes) {
-                        verified = true;
-                        used_backup_code_idx = Some(index);
-                    }
-                }
-            }
-        }
-    }
-    if !verified {
-        let new_attempts = state.mfa_attempts + 1;
-        let lockout_until = if new_attempts >= mfa_service.config().max_attempts {
-            Some(mfa_service.calculate_lockout_until())
-        } else {
-            None
-        };
-        if let Err(error) =
-            repo::update_mfa_attempts(pool, user_id, new_attempts, lockout_until).await
-        {
-            error!(
-                "Failed to update MFA attempt count for user {}: {}. Lockout mechanism may be bypassed!",
-                username, error
-            );
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::database_error(),
-            );
-        }
-        warn!(
-            "MFA verification failed for user: {} (attempt {}/{})",
-            username,
-            new_attempts,
-            mfa_service.config().max_attempts
-        );
-        return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::invalid_code());
-    }
-    if let Some(index) = used_backup_code_idx {
-        if let Some(codes_value) = &state.mfa_backup_codes {
-            if let Some(hashed_codes) = codes_value.as_array() {
-                let mut new_codes: Vec<serde_json::Value> = hashed_codes.clone();
-                new_codes.remove(index);
-                if let Err(error) =
-                    repo::remove_backup_code(pool, user_id, serde_json::json!(new_codes)).await
-                {
-                    error!(
-                        "Failed to remove used backup code for user {}: {}",
-                        username, error
-                    );
-                }
-            }
-        }
-    }
+    };
     if let Err(error) = repo::reset_mfa_verify_state(pool, user_id).await {
         error!(
             "Failed to reset MFA attempts/update verified_at for user {}: {}",

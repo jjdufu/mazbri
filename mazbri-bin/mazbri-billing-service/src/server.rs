@@ -29,7 +29,10 @@ pub async fn serve(
         db_read,
         BillingServiceConfig::default(),
     ));
-    let node_id = hostname::get().map_or_else(|_| "unknown".to_string(), |h| h.to_string_lossy().to_string());
+    let node_id = hostname::get().map_or_else(
+        |_| "unknown".to_string(),
+        |h| h.to_string_lossy().to_string(),
+    );
     let queue_config = QueueConfig {
         max_retries: worker_config.max_retries,
         retry_interval_secs: worker_config.retry_interval_secs,

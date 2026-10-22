@@ -5,7 +5,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-pub(crate) fn create_toml_config_handler<T>(service_name: ServiceName) -> Arc<TomlConfigHandler<T>> {
+pub(crate) fn create_toml_config_handler<T>(
+    service_name: ServiceName,
+) -> Arc<TomlConfigHandler<T>> {
     Arc::new(TomlConfigHandler::new(service_name.as_str()))
 }
 

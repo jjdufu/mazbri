@@ -122,6 +122,53 @@ pub struct RequiredEnableParams<'a> {
     pub client_ip: Option<String>,
 }
 
+/// 读取并校验「强制启用 MFA」所需的用户状态；返回状态与加密的 TOTP 密钥。
+async fn load_required_enable_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<(repo::MfaRequiredEnableState, String), Box<axum::response::Response>> {
+    let state = match repo::get_mfa_required_enable_state(pool, user_id).await {
+        Ok(state) => state,
+        Err(error) => {
+            error!("Database error during MFA required enable: {}", error);
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
+    let Some(mut state) = state else {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::NOT_FOUND,
+            mazbri_i18n::mfa::user_not_found(),
+        )));
+    };
+    if state.mfa_enabled {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            mazbri_i18n::mfa::already_enabled_simple(),
+        )));
+    }
+    let mfa_required_by_global = is_required_by_global(
+        state.mfa_enabled_globally,
+        state.mfa_required_for_roles.as_ref(),
+        &state.role,
+    );
+    if !state.mfa_required && !mfa_required_by_global {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            mazbri_i18n::mfa::not_required(),
+        )));
+    }
+    let Some(encrypted_secret) = state.mfa_secret.take() else {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            mazbri_i18n::mfa::required_setup_needed(),
+        )));
+    };
+    Ok((state, encrypted_secret))
+}
+
 pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let mfa_cache = params.mfa_cache;
@@ -140,38 +187,9 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
         Ok(user_id) => user_id,
         Err(response) => return *response,
     };
-    let state = match repo::get_mfa_required_enable_state(pool, user_id).await {
-        Ok(state) => state,
-        Err(error) => {
-            error!("Database error during MFA required enable: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::database_error(),
-            );
-        }
-    };
-    let Some(state) = state else {
-        return ApiResponse::err(StatusCode::NOT_FOUND, mazbri_i18n::mfa::user_not_found());
-    };
-    if state.mfa_enabled {
-        return ApiResponse::err(
-            StatusCode::BAD_REQUEST,
-            mazbri_i18n::mfa::already_enabled_simple(),
-        );
-    }
-    let mfa_required_by_global = is_required_by_global(
-        state.mfa_enabled_globally,
-        state.mfa_required_for_roles.as_ref(),
-        &state.role,
-    );
-    if !state.mfa_required && !mfa_required_by_global {
-        return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_required());
-    }
-    let Some(encrypted_secret) = state.mfa_secret else {
-        return ApiResponse::err(
-            StatusCode::BAD_REQUEST,
-            mazbri_i18n::mfa::required_setup_needed(),
-        );
+    let (state, encrypted_secret) = match load_required_enable_state(pool, user_id).await {
+        Ok(loaded) => loaded,
+        Err(response) => return *response,
     };
     let mfa_service = match get_mfa_service(mfa_cache, MfaServiceErrorMode::InternalError).await {
         Ok(service) => service,

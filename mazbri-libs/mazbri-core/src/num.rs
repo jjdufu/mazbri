@@ -149,8 +149,20 @@ mod tests {
 
     #[test]
     fn float_to_int_matches_truncation() {
-        for x in [0.0, 0.4, 1.0, 1.9, 2.5, 123.999, 4_294_967_296.5, 9.007_199_254_740_992e15] {
-            assert_eq!(f64_to_u64(x), x.trunc().to_string().parse::<u64>().unwrap_or(0));
+        for x in [
+            0.0,
+            0.4,
+            1.0,
+            1.9,
+            2.5,
+            123.999,
+            4_294_967_296.5,
+            9.007_199_254_740_992e15,
+        ] {
+            assert_eq!(
+                f64_to_u64(x),
+                x.trunc().to_string().parse::<u64>().unwrap_or(0)
+            );
         }
         assert_eq!(f64_to_u64(f64::NAN), 0);
         assert_eq!(f64_to_u64(-3.0), 0);

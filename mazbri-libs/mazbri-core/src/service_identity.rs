@@ -132,7 +132,13 @@ mod tests {
 
     #[test]
     fn rejects_legacy_and_unknown() {
-        for bad in ["mazbri-mgmt-api", "mazbri-cert-service", "cert", "global", ""] {
+        for bad in [
+            "mazbri-mgmt-api",
+            "mazbri-cert-service",
+            "cert",
+            "global",
+            "",
+        ] {
             assert!(bad.parse::<ServiceName>().is_err(), "{bad}");
         }
     }
@@ -149,5 +155,4 @@ mod tests {
         assert!(validate_config_target("mazbri-auth").is_ok());
         assert!(validate_config_target("foo").is_err());
     }
-
 }

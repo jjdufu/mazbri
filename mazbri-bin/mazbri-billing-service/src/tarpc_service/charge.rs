@@ -1,7 +1,7 @@
-use mazbri_core::num::SaturatingFrom;
 use super::BillingTarpcService;
 use super::conversion::{billing_error_to_rpc, safe_to_amount, validation_error};
 use mazbri_billing::UsageRecord;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::RpcError;
 use mazbri_rpc::billing::RecordUsageRequest;
 use mazbri_rpc::billing::RecordUsageResponse;

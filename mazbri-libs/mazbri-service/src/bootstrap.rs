@@ -93,7 +93,8 @@ where
         admin_config: &AdminConfig,
         db_pool: Option<Arc<PgPool>>,
     ) -> Result<Option<Arc<AdminState>>> {
-        let config_center_connected = crate::registry_helpers::make_config_center_check(self.ctx.registry.as_ref());
+        let config_center_connected =
+            crate::registry_helpers::make_config_center_check(self.ctx.registry.as_ref());
         start_admin_server(
             self.service_name.as_str(),
             admin_config,
