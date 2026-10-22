@@ -858,10 +858,10 @@ fn push_opt_param(
     key: &'static str,
     value: Option<String>,
 ) {
-    if let Some(value) = value {
-        if !value.trim().is_empty() {
-            params.push((key, value));
-        }
+    if let Some(value) = value
+        && !value.trim().is_empty()
+    {
+        params.push((key, value));
     }
 }
 async fn resolve_tenant_filter(

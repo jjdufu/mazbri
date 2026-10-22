@@ -158,13 +158,13 @@ fn determine_mfa(
     };
     if user_row.mfa.mfa_enabled || mfa_required_by_global_settings {
         if user_row.mfa.mfa_enabled {
-            if let Some(mfa_lock_until) = user_row.mfa_locked_until {
-                if mfa_lock_until > Utc::now() {
-                    warn!("Login blocked: MFA locked for user: {}", username);
-                    return Err(ApiError::validation(
-                        "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
-                    ));
-                }
+            if let Some(mfa_lock_until) = user_row.mfa_locked_until
+                && mfa_lock_until > Utc::now()
+            {
+                warn!("Login blocked: MFA locked for user: {}", username);
+                return Err(ApiError::validation(
+                    "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
+                ));
             }
             let temp_token = generate_admin_jwt(
                 username,
@@ -321,17 +321,17 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
         warn!("Login attempt for disabled user: {}", username);
         return Err(ApiError::validation("账户已禁用".to_string()));
     }
-    if let Some(lock_until) = user_row.locked_until {
-        if lock_until > Utc::now() {
-            let remaining_seconds = (lock_until - Utc::now()).num_seconds();
-            warn!(
-                "Login attempt for locked user: {}, locked until: {}",
-                username, lock_until
-            );
-            return Err(ApiError::validation(format!(
-                "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
-            )));
-        }
+    if let Some(lock_until) = user_row.locked_until
+        && lock_until > Utc::now()
+    {
+        let remaining_seconds = (lock_until - Utc::now()).num_seconds();
+        warn!(
+            "Login attempt for locked user: {}, locked until: {}",
+            username, lock_until
+        );
+        return Err(ApiError::validation(format!(
+            "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
+        )));
     }
     Ok(user_row)
 }
@@ -408,13 +408,13 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
             "密码已过期。请联系管理员重置密码。".to_string(),
         ));
     }
-    if user_row.login_attempts > 0 || user_row.locked_until.is_some() {
-        if let Err(e) = repo::reset_login_attempts(db, user_id).await {
-            error!(
-                "Failed to reset login failure count for user {}: {}",
-                username, e
-            );
-        }
+    if (user_row.login_attempts > 0 || user_row.locked_until.is_some())
+        && let Err(e) = repo::reset_login_attempts(db, user_id).await
+    {
+        error!(
+            "Failed to reset login failure count for user {}: {}",
+            username, e
+        );
     }
     let mfa_settings = mfa_settings_cache.get().await;
     if let Some(mfa_response) = determine_mfa(
@@ -461,10 +461,10 @@ pub async fn admin_refresh_token(
             ));
         }
     }
-    if let Some(ref jti) = claims.jti {
-        if is_jti_revoked(redis, jti).await {
-            return Err(ApiError::Unauthorized);
-        }
+    if let Some(ref jti) = claims.jti
+        && is_jti_revoked(redis, jti).await
+    {
+        return Err(ApiError::Unauthorized);
     }
     let jwt_expiration_secs =
         resolve_access_token_expiration_secs(db, jwt_expiration_secs_fallback).await;
@@ -512,14 +512,12 @@ pub async fn admin_logout(
         validation.set_issuer(&["mazbri-mgmt-api"]);
         if let Ok(token_data) =
             jsonwebtoken::decode::<AdminClaims>(refresh_token, &decoding_key, &validation)
+            && token_data.claims.token_type.as_deref() == Some("refresh")
+            && let Some(ref jti) = token_data.claims.jti
         {
-            if token_data.claims.token_type.as_deref() == Some("refresh") {
-                if let Some(ref jti) = token_data.claims.jti {
-                    let ttl = (token_data.claims.exp - now).max(1);
-                    if let Err(e) = revoke_jti(redis, jti, ttl).await {
-                        error!("Failed to revoke refresh token jti: {}", e);
-                    }
-                }
+            let ttl = (token_data.claims.exp - now).max(1);
+            if let Err(e) = revoke_jti(redis, jti, ttl).await {
+                error!("Failed to revoke refresh token jti: {}", e);
             }
         }
     }

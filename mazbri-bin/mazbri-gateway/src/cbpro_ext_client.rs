@@ -59,19 +59,19 @@ impl CBProExtClient {
     async fn get_client(&self) -> Result<CBProExtServiceClient, CoreError> {
         {
             let guard = self.client.read().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    debug!(url = %self.endpoint.url(), "Using cached CBPro-Ext client");
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                debug!(url = %self.endpoint.url(), "Using cached CBPro-Ext client");
+                return Ok(cached.client.clone());
             }
         }
         {
             let mut guard = self.client.write().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                return Ok(cached.client.clone());
             }
             *guard = None;
         }

@@ -48,10 +48,10 @@ where
                     return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
                 }
             }
-            if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-                if let Some(ndt) = nd.and_hms_opt(0, 0, 0) {
-                    return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
-                }
+            if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+                && let Some(ndt) = nd.and_hms_opt(0, 0, 0)
+            {
+                return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
             }
             Err(serde::de::Error::custom(format!(
                 "unexpected timestamp format: {s}"

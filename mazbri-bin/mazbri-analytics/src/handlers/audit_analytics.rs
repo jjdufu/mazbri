@@ -15,17 +15,17 @@ pub async fn get_audit_analytics(
     Query(req): Query<AuditAnalyticsRequest>,
 ) -> Response {
     let client = &state.clickhouse_client;
-    if let Some(admin_id) = req.admin_id {
-        if admin_id <= 0 {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_admin_id".to_string(),
-                    message: "admin_id must be a positive integer".to_string(),
-                }),
-            )
-                .into_response();
-        }
+    if let Some(admin_id) = req.admin_id
+        && admin_id <= 0
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_admin_id".to_string(),
+                message: "admin_id must be a positive integer".to_string(),
+            }),
+        )
+            .into_response();
     }
     let group_by = match req.group_by.as_str() {
         "day" | "hour" => req.group_by.clone(),

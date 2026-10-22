@@ -279,10 +279,10 @@ impl SupplierConfig {
 
     #[must_use]
     pub fn normalize_disabled_sections(mut self) -> Self {
-        if let Some(ref auth) = self.auth_flow {
-            if !auth.enabled {
-                self.auth_flow = None;
-            }
+        if let Some(ref auth) = self.auth_flow
+            && !auth.enabled
+        {
+            self.auth_flow = None;
         }
         self
     }
@@ -393,12 +393,12 @@ fn validate_timeout_field(
     min: u64,
     max: u64,
 ) -> Result<(), ConfigValidationError> {
-    if let Some(v) = value {
-        if v < min || v > max {
-            return Err(ConfigValidationError::new(format!(
-                "config.timeouts.{name} 必须在 {min}..={max} 范围内，当前为 {v}"
-            )));
-        }
+    if let Some(v) = value
+        && (v < min || v > max)
+    {
+        return Err(ConfigValidationError::new(format!(
+            "config.timeouts.{name} 必须在 {min}..={max} 范围内，当前为 {v}"
+        )));
     }
     Ok(())
 }
@@ -422,23 +422,22 @@ pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &s
     };
 
     let mut old_creds_map = HashMap::new();
-    if let Some(old_auth) = old_config.get("auth_flow").and_then(|v| v.as_object()) {
-        if let Some(old_creds) = old_auth.get("credentials").and_then(|v| v.as_object()) {
-            for (k, v) in old_creds {
-                if let Some(s) = v.as_str() {
-                    old_creds_map.insert(k.clone(), s.to_string());
-                }
+    if let Some(old_auth) = old_config.get("auth_flow").and_then(|v| v.as_object())
+        && let Some(old_creds) = old_auth.get("credentials").and_then(|v| v.as_object())
+    {
+        for (k, v) in old_creds {
+            if let Some(s) = v.as_str() {
+                old_creds_map.insert(k.clone(), s.to_string());
             }
         }
     }
 
     for (k, val) in new_creds_obj.iter_mut() {
-        if let Some(s) = val.as_str() {
-            if s == "••••••••" || s == "********" {
-                if let Some(old_val) = old_creds_map.get(k) {
-                    *val = serde_json::Value::String(old_val.clone());
-                }
-            }
+        if let Some(s) = val.as_str()
+            && (s == "••••••••" || s == "********")
+            && let Some(old_val) = old_creds_map.get(k)
+        {
+            *val = serde_json::Value::String(old_val.clone());
         }
     }
 }
@@ -446,17 +445,14 @@ pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &s
 /// 脱敏 config 中 `auth_flow.credentials（列表/详情/审计用；密文也打码`）。
 #[must_use]
 pub fn mask_config_credentials(mut config: serde_json::Value) -> serde_json::Value {
-    if let Some(obj) = config.as_object_mut() {
-        if let Some(auth_flow) = obj.get_mut("auth_flow") {
-            if let Some(auth_flow_obj) = auth_flow.as_object_mut() {
-                if let Some(credentials) = auth_flow_obj.get_mut("credentials") {
-                    if let Some(creds_obj) = credentials.as_object_mut() {
-                        for (_, val) in creds_obj.iter_mut() {
-                            *val = serde_json::Value::String("••••••••".to_string());
-                        }
-                    }
-                }
-            }
+    if let Some(obj) = config.as_object_mut()
+        && let Some(auth_flow) = obj.get_mut("auth_flow")
+        && let Some(auth_flow_obj) = auth_flow.as_object_mut()
+        && let Some(credentials) = auth_flow_obj.get_mut("credentials")
+        && let Some(creds_obj) = credentials.as_object_mut()
+    {
+        for (_, val) in creds_obj.iter_mut() {
+            *val = serde_json::Value::String("••••••••".to_string());
         }
     }
     config

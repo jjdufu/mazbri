@@ -249,16 +249,16 @@ async fn persist_usage(
                 "Recorded usage for tenant {}: {} {} (record_id={})",
                 tenant_id, method, path, usage_record_id
             );
-            if let Some(ref queue) = state.charge_queue {
-                if amount > rust_decimal::Decimal::ZERO {
-                    if let Err(e) = queue
-                        .enqueue(tenant_id, account_id, usage_record_id, amount, None)
-                        .await
-                    {
-                        error!("Failed to enqueue charge for tenant {}: {}", tenant_id, e);
-                    } else {
-                        debug!("Enqueued charge for tenant {}", tenant_id);
-                    }
+            if let Some(ref queue) = state.charge_queue
+                && amount > rust_decimal::Decimal::ZERO
+            {
+                if let Err(e) = queue
+                    .enqueue(tenant_id, account_id, usage_record_id, amount, None)
+                    .await
+                {
+                    error!("Failed to enqueue charge for tenant {}: {}", tenant_id, e);
+                } else {
+                    debug!("Enqueued charge for tenant {}", tenant_id);
                 }
             }
         }

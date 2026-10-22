@@ -98,10 +98,10 @@ impl TokenCache {
 
         {
             let guard = self.cache.read().await;
-            if let Some(cached) = guard.get(cache_key) {
-                if cached.expires_at > now + chrono::Duration::seconds(30) {
-                    return Ok(cached.token.clone());
-                }
+            if let Some(cached) = guard.get(cache_key)
+                && cached.expires_at > now + chrono::Duration::seconds(30)
+            {
+                return Ok(cached.token.clone());
             }
         }
 
@@ -110,10 +110,10 @@ impl TokenCache {
             .work(&cache_key.to_string(), || async move {
                 {
                     let guard = self.cache.read().await;
-                    if let Some(cached) = guard.get(cache_key) {
-                        if cached.expires_at > Utc::now() + chrono::Duration::seconds(30) {
-                            return Ok(cached.clone());
-                        }
+                    if let Some(cached) = guard.get(cache_key)
+                        && cached.expires_at > Utc::now() + chrono::Duration::seconds(30)
+                    {
+                        return Ok(cached.clone());
                     }
                 }
 

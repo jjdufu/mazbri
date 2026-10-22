@@ -38,18 +38,17 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     if !headers
         .keys()
         .any(|k| k.eq_ignore_ascii_case("authorization"))
-    {
-        if let Some(secret) = credential(
+        && let Some(secret) = credential(
             &ctx.input.credentials,
             &["password", "secret", "client_secret"],
-        ) {
-            let user = credential(&ctx.input.credentials, &["username", "client_id", "app_id"])
-                .unwrap_or("");
-            headers.insert(
-                "Authorization".into(),
-                format!("Basic {}", basic_b64(user, secret)),
-            );
-        }
+        )
+    {
+        let user =
+            credential(&ctx.input.credentials, &["username", "client_id", "app_id"]).unwrap_or("");
+        headers.insert(
+            "Authorization".into(),
+            format!("Basic {}", basic_b64(user, secret)),
+        );
     }
     headers.insert("content-type".into(), "text/xml; charset=utf-8".into());
     headers
@@ -213,10 +212,10 @@ fn find_in(elem: &XmlElem, name: &str) -> Option<XmlElem> {
         return Some(clone_elem(elem));
     }
     for child in &elem.children {
-        if let XmlNode::Elem(inner) = child {
-            if let Some(found) = find_in(inner, name) {
-                return Some(found);
-            }
+        if let XmlNode::Elem(inner) = child
+            && let Some(found) = find_in(inner, name)
+        {
+            return Some(found);
         }
     }
     None

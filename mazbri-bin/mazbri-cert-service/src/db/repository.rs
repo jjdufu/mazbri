@@ -533,10 +533,10 @@ fn parse_dt(raw: &str) -> Option<DateTime<Utc>> {
         if let Ok(naive) = NaiveDateTime::parse_from_str(s, fmt) {
             return Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc));
         }
-        if let Ok(date) = NaiveDate::parse_from_str(s, fmt) {
-            if let Some(naive) = date.and_hms_opt(0, 0, 0) {
-                return Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc));
-            }
+        if let Ok(date) = NaiveDate::parse_from_str(s, fmt)
+            && let Some(naive) = date.and_hms_opt(0, 0, 0)
+        {
+            return Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc));
         }
     }
     None

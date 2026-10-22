@@ -406,13 +406,12 @@ pub async fn generate_bill(
     };
     let mut warnings: Vec<String> = Vec::new();
     let recon_runtime = state.billing_reconciliation_settings.get().await;
-    if recon_runtime.warn_on_open_discrepancies_before_bill {
-        if let Ok(Some(msg)) =
+    if recon_runtime.warn_on_open_discrepancies_before_bill
+        && let Ok(Some(msg)) =
             svc::open_discrepancy_warning_for_period(&state.billing_db, period_start, period_end)
                 .await
-        {
-            warnings.push(msg);
-        }
+    {
+        warnings.push(msg);
     }
 
     state.audit.log(create_audit_log(

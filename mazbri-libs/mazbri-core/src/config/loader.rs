@@ -169,10 +169,10 @@ pub fn resolve_bootstrap_path_mandatory() -> Result<std::path::PathBuf> {
             if let Some(val) = args.next() {
                 return Ok(std::path::PathBuf::from(val));
             }
-        } else if arg.starts_with("--bootstrap=") {
-            if let Some(val) = arg.strip_prefix("--bootstrap=") {
-                return Ok(std::path::PathBuf::from(val));
-            }
+        } else if arg.starts_with("--bootstrap=")
+            && let Some(val) = arg.strip_prefix("--bootstrap=")
+        {
+            return Ok(std::path::PathBuf::from(val));
         }
     }
     anyhow::bail!(

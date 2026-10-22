@@ -71,12 +71,12 @@ fn parse_key_material(s: &str) -> Result<[u8; 32], String> {
         key.copy_from_slice(&bytes);
         return Ok(key);
     }
-    if let Ok(bytes) = B64.decode(s.as_bytes()) {
-        if bytes.len() == 32 {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&bytes);
-            return Ok(key);
-        }
+    if let Ok(bytes) = B64.decode(s.as_bytes())
+        && bytes.len() == 32
+    {
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&bytes);
+        return Ok(key);
     }
     // 任意口令：SHA-256 派生
     let digest = Sha256::digest(s.as_bytes());

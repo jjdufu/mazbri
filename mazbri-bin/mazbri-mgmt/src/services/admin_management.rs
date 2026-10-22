@@ -192,21 +192,22 @@ pub async fn update_admin(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    if let Some(ref role) = req.role {
-        if role != &current.role {
-            helpers::validate_assignable_role(claims, role)?;
-        }
+    if let Some(ref role) = req.role
+        && role != &current.role
+    {
+        helpers::validate_assignable_role(claims, role)?;
     }
-    if let Some(ref new_role) = req.role {
-        if current.role == "R_ADMIN" && new_role != "R_ADMIN" {
-            let admin_count = repo::count_admins_by_role(pool, "R_ADMIN")
-                .await
-                .unwrap_or(0);
-            if admin_count <= 1 {
-                return Err(ApiError::validation(
-                    "不能更改最后一个管理员的角色".to_string(),
-                ));
-            }
+    if let Some(ref new_role) = req.role
+        && current.role == "R_ADMIN"
+        && new_role != "R_ADMIN"
+    {
+        let admin_count = repo::count_admins_by_role(pool, "R_ADMIN")
+            .await
+            .unwrap_or(0);
+        if admin_count <= 1 {
+            return Err(ApiError::validation(
+                "不能更改最后一个管理员的角色".to_string(),
+            ));
         }
     }
     let has_updates = req.display_name.is_some()

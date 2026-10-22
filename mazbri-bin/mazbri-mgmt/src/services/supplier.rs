@@ -65,12 +65,12 @@ impl UpdateSupplierRequest {
         if let Some(ref supplier_code) = self.supplier_code {
             validate_supplier_code(supplier_code)?;
         }
-        if let Some(ref name) = self.name {
-            if name.is_empty() || name.len() > 255 {
-                return Err(ApiError::validation(
-                    "供应商名称长度必须在 1 到 255 个字符之间".to_string(),
-                ));
-            }
+        if let Some(ref name) = self.name
+            && (name.is_empty() || name.len() > 255)
+        {
+            return Err(ApiError::validation(
+                "供应商名称长度必须在 1 到 255 个字符之间".to_string(),
+            ));
         }
         if let Some(ref upstream_url) = self.upstream_url {
             validate_upstream_url(upstream_url)?;

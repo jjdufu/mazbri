@@ -97,10 +97,10 @@ pub struct AuditAnalyticsResponse {
 }
 pub fn parse_time_string(s: &str) -> Option<DateTime<Utc>> {
     let s = s.trim();
-    if let Ok(ts) = s.parse::<i64>() {
-        if let Some(dt) = DateTime::from_timestamp(ts, 0) {
-            return Some(dt);
-        }
+    if let Ok(ts) = s.parse::<i64>()
+        && let Some(dt) = DateTime::from_timestamp(ts, 0)
+    {
+        return Some(dt);
     }
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return Some(dt.with_timezone(&Utc));
@@ -110,10 +110,10 @@ pub fn parse_time_string(s: &str) -> Option<DateTime<Utc>> {
         if let Ok((naive_dt, _)) = chrono::NaiveDateTime::parse_and_remainder(s, fmt) {
             return Some(naive_dt.and_utc());
         }
-        if let Ok((naive_date, _)) = chrono::NaiveDate::parse_and_remainder(s, fmt) {
-            if let Some(naive_dt) = naive_date.and_hms_opt(0, 0, 0) {
-                return Some(naive_dt.and_utc());
-            }
+        if let Ok((naive_date, _)) = chrono::NaiveDate::parse_and_remainder(s, fmt)
+            && let Some(naive_dt) = naive_date.and_hms_opt(0, 0, 0)
+        {
+            return Some(naive_dt.and_utc());
         }
     }
     None

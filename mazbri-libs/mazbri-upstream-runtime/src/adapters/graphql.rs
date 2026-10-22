@@ -33,15 +33,14 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         "query": gql.document,
         "variables": serde_json::Value::Object(variables),
     });
-    if let Some(ref name) = gql.operation_name {
-        if !name.is_empty() {
-            if let Some(obj) = body_obj.as_object_mut() {
-                obj.insert(
-                    "operationName".into(),
-                    serde_json::Value::String(name.clone()),
-                );
-            }
-        }
+    if let Some(ref name) = gql.operation_name
+        && !name.is_empty()
+        && let Some(obj) = body_obj.as_object_mut()
+    {
+        obj.insert(
+            "operationName".into(),
+            serde_json::Value::String(name.clone()),
+        );
     }
 
     let path = spec.request.path.as_str();
@@ -64,27 +63,27 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     )
     .await?;
     let json = parse_json_body(&response.body)?;
-    if let Some(errors) = json.get("errors").and_then(|v| v.as_array()) {
-        if let Some(first) = errors.first() {
-            let code = first
-                .pointer("/extensions/code")
-                .and_then(|v| v.as_str())
-                .unwrap_or("UPSTREAM_BIZ");
-            let message = first
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("graphql error")
-                .to_string();
-            return Ok(AdapterOutcome {
-                payload: serde_json::Value::Null,
-                biz_error: Some(BizError {
-                    code: code.into(),
-                    message,
-                    details: Some(json.clone()),
-                }),
-                response,
-            });
-        }
+    if let Some(errors) = json.get("errors").and_then(|v| v.as_array())
+        && let Some(first) = errors.first()
+    {
+        let code = first
+            .pointer("/extensions/code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("UPSTREAM_BIZ");
+        let message = first
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("graphql error")
+            .to_string();
+        return Ok(AdapterOutcome {
+            payload: serde_json::Value::Null,
+            biz_error: Some(BizError {
+                code: code.into(),
+                message,
+                details: Some(json.clone()),
+            }),
+            response,
+        });
     }
     let payload = json.get("data").cloned().unwrap_or(json);
     Ok(AdapterOutcome {

@@ -95,11 +95,11 @@ impl JwtKeyManager {
         let current_hash = Self::material_hash(&material);
         {
             let cache = self.cache.read().await;
-            if let Some(cached) = cache.as_ref() {
-                if cached.hash == current_hash {
-                    debug!("Using cached JWT secret");
-                    return Ok(cached.secret.clone());
-                }
+            if let Some(cached) = cache.as_ref()
+                && cached.hash == current_hash
+            {
+                debug!("Using cached JWT secret");
+                return Ok(cached.secret.clone());
             }
         }
         info!(

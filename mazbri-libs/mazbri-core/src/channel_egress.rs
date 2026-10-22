@@ -716,13 +716,14 @@ fn validate_egress_request(
     req: &EgressRequestSpec,
     adapter: AdapterKind,
 ) -> Result<(), ChannelEgressError> {
-    if let Some(ref wrap) = req.wrap {
-        if !wrap.is_empty() && !KNOWN_WRAPS.contains(&wrap.as_str()) {
-            return Err(ChannelEgressError::new(format!(
-                "unknown egress.request.wrap '{wrap}': known=[{}]",
-                KNOWN_WRAPS.join(", ")
-            )));
-        }
+    if let Some(ref wrap) = req.wrap
+        && !wrap.is_empty()
+        && !KNOWN_WRAPS.contains(&wrap.as_str())
+    {
+        return Err(ChannelEgressError::new(format!(
+            "unknown egress.request.wrap '{wrap}': known=[{}]",
+            KNOWN_WRAPS.join(", ")
+        )));
     }
     if !is_allowed_http_method(&req.method.trim().to_ascii_uppercase()) {
         return Err(ChannelEgressError::new(format!(
@@ -751,22 +752,22 @@ fn validate_egress_request(
         }
         BodyEncoding::Json | BodyEncoding::Form | BodyEncoding::None => {}
     }
-    if let Some(ref ct) = req.content_type {
-        if ct.chars().any(char::is_control) {
-            return Err(ChannelEgressError::new(
-                "egress.request.content_type 含非法控制字符",
-            ));
-        }
+    if let Some(ref ct) = req.content_type
+        && ct.chars().any(char::is_control)
+    {
+        return Err(ChannelEgressError::new(
+            "egress.request.content_type 含非法控制字符",
+        ));
     }
     Ok(())
 }
 
 fn validate_egress_auth(auth: &AuthSpec, adapter: AdapterKind) -> Result<(), ChannelEgressError> {
     let profile = auth.profile_kind()?;
-    if let Some(ref url) = auth.token_url {
-        if !url.trim().is_empty() {
-            validate_outbound_url(url.trim(), "egress.auth.token_url")?;
-        }
+    if let Some(ref url) = auth.token_url
+        && !url.trim().is_empty()
+    {
+        validate_outbound_url(url.trim(), "egress.auth.token_url")?;
     }
     if profile.uses_ticket() {
         let token_loc = auth
@@ -885,36 +886,36 @@ fn validate_adapter_options(
             if jp.status_jsonpath.trim().is_empty() {
                 return Err(ChannelEgressError::new("job_poll.status_jsonpath 不能为空"));
             }
-            if let Some(ms) = jp.poll_interval_ms {
-                if ms == 0 {
-                    return Err(ChannelEgressError::new(
-                        "job_poll.poll_interval_ms 必须大于 0",
-                    ));
-                }
+            if let Some(ms) = jp.poll_interval_ms
+                && ms == 0
+            {
+                return Err(ChannelEgressError::new(
+                    "job_poll.poll_interval_ms 必须大于 0",
+                ));
             }
         }
         AdapterKind::WsUnary => {
-            if let Some(ref ws) = spec.ws {
-                if let Some(ref auth_in) = ws.auth_in {
-                    for loc in auth_in {
-                        if !matches!(loc.as_str(), "header" | "query" | "first_frame") {
-                            return Err(ChannelEgressError::new(format!(
-                                "unknown ws.auth_in '{loc}'"
-                            )));
-                        }
+            if let Some(ref ws) = spec.ws
+                && let Some(ref auth_in) = ws.auth_in
+            {
+                for loc in auth_in {
+                    if !matches!(loc.as_str(), "header" | "query" | "first_frame") {
+                        return Err(ChannelEgressError::new(format!(
+                            "unknown ws.auth_in '{loc}'"
+                        )));
                     }
                 }
             }
         }
         AdapterKind::SignForm => {
-            if let Some(ref sf) = spec.sign_form {
-                if let Some(ref st) = sf.sign_type {
-                    let t = st.trim();
-                    if !t.is_empty() && !t.eq_ignore_ascii_case("HMAC-SHA256") {
-                        return Err(ChannelEgressError::new(format!(
-                            "sign_form.sign_type '{st}' 第一期仅支持 HMAC-SHA256"
-                        )));
-                    }
+            if let Some(ref sf) = spec.sign_form
+                && let Some(ref st) = sf.sign_type
+            {
+                let t = st.trim();
+                if !t.is_empty() && !t.eq_ignore_ascii_case("HMAC-SHA256") {
+                    return Err(ChannelEgressError::new(format!(
+                        "sign_form.sign_type '{st}' 第一期仅支持 HMAC-SHA256"
+                    )));
                 }
             }
         }
@@ -929,10 +930,10 @@ fn validate_adapter_options(
 pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
     let adapter = spec.adapter_kind()?;
     validate_outbound_url(spec.base_url.trim(), "egress.base_url")?;
-    if let Some(ms) = spec.timeout_ms {
-        if ms == 0 {
-            return Err(ChannelEgressError::new("egress.timeout_ms 必须大于 0"));
-        }
+    if let Some(ms) = spec.timeout_ms
+        && ms == 0
+    {
+        return Err(ChannelEgressError::new("egress.timeout_ms 必须大于 0"));
     }
     validate_egress_request(&spec.request, adapter)?;
     if let Some(ref auth) = spec.auth {

@@ -152,10 +152,10 @@ async fn graceful_shutdown(
         }
     }
     renewal_task.shutdown().await;
-    if let Some(ref reg) = registry_for_shutdown {
-        if let Err(e) = reg.shutdown().await {
-            tracing::warn!("注册中心关闭失败: {}", e);
-        }
+    if let Some(ref reg) = registry_for_shutdown
+        && let Err(e) = reg.shutdown().await
+    {
+        tracing::warn!("注册中心关闭失败: {}", e);
     }
     // Drain in-flight requests up to graceful_shutdown_timeout (axum already
     // stops accepting; sleep allows handlers to finish before process exit).
@@ -239,15 +239,13 @@ async fn bind_listener(
     let tcp_nodelay = server.tcp_nodelay;
     let tcp_keepalive = server.tcp_keepalive();
     let configure = move |stream: &mut tokio::net::TcpStream| {
-        if tcp_nodelay {
-            if let Err(err) = stream.set_nodelay(true) {
-                tracing::debug!(error = %err, "failed to set TCP_NODELAY on accepted connection");
-            }
+        if tcp_nodelay && let Err(err) = stream.set_nodelay(true) {
+            tracing::debug!(error = %err, "failed to set TCP_NODELAY on accepted connection");
         }
-        if let Some(keepalive) = tcp_keepalive {
-            if let Err(err) = apply_tcp_keepalive(stream, keepalive) {
-                tracing::debug!(error = %err, "failed to set TCP keepalive on accepted connection");
-            }
+        if let Some(keepalive) = tcp_keepalive
+            && let Err(err) = apply_tcp_keepalive(stream, keepalive)
+        {
+            tracing::debug!(error = %err, "failed to set TCP keepalive on accepted connection");
         }
     };
     info!(

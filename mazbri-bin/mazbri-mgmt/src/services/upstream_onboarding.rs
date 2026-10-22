@@ -211,22 +211,22 @@ async fn build_supplier_config(
         .config
         .clone()
         .unwrap_or_else(|| serde_json::json!({}));
-    if let Some(obj) = config_raw.as_object_mut() {
-        if let Some(ref t) = supplier.upstream_type {
-            match obj.get("upstream_type").and_then(|v| v.as_str()) {
-                Some(existing) if existing != t => {
-                    return Err(ApiError::validation(format!(
-                        "supplier.upstream_type('{t}') 与 config.upstream_type('{existing}') 不一致"
-                    )));
-                }
-                None => {
-                    obj.insert(
-                        "upstream_type".to_string(),
-                        serde_json::Value::String(t.clone()),
-                    );
-                }
-                _ => {}
+    if let Some(obj) = config_raw.as_object_mut()
+        && let Some(ref t) = supplier.upstream_type
+    {
+        match obj.get("upstream_type").and_then(|v| v.as_str()) {
+            Some(existing) if existing != t => {
+                return Err(ApiError::validation(format!(
+                    "supplier.upstream_type('{t}') 与 config.upstream_type('{existing}') 不一致"
+                )));
             }
+            None => {
+                obj.insert(
+                    "upstream_type".to_string(),
+                    serde_json::Value::String(t.clone()),
+                );
+            }
+            _ => {}
         }
     }
 
@@ -240,16 +240,16 @@ async fn build_supplier_config(
         ssrf::validate_public_http_url(upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
-        if let Some(ref auth) = cfg.auth_flow {
-            if auth.enabled {
-                ssrf::validate_public_http_url(&auth.token_url)
-                    .await
-                    .map_err(|e| {
-                        ApiError::validation(format!(
-                            "UPSTREAM_SSRF_BLOCKED (auth_flow.token_url): {e}"
-                        ))
-                    })?;
-            }
+        if let Some(ref auth) = cfg.auth_flow
+            && auth.enabled
+        {
+            ssrf::validate_public_http_url(&auth.token_url)
+                .await
+                .map_err(|e| {
+                    ApiError::validation(format!(
+                        "UPSTREAM_SSRF_BLOCKED (auth_flow.token_url): {e}"
+                    ))
+                })?;
         }
     }
     // G-05：落库前加密（SSRF 校验时 token_url 仍是明文，credentials 加密不影响）
@@ -729,10 +729,10 @@ pub async fn validate_config_payload(
 }
 
 fn map_db_conflict(e: &sqlx::Error, ctx: &str) -> ApiError {
-    if let sqlx::Error::Database(db) = &e {
-        if db.constraint().is_some() {
-            return ApiError::validation(format!("{ctx}: 唯一约束冲突 ({e})"));
-        }
+    if let sqlx::Error::Database(db) = &e
+        && db.constraint().is_some()
+    {
+        return ApiError::validation(format!("{ctx}: 唯一约束冲突 ({e})"));
     }
     ApiError::internal(format!("{ctx}: {e}"))
 }

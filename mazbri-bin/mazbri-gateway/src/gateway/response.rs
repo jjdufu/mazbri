@@ -120,12 +120,12 @@ pub fn gateway_error_response_with_retry(
         (StatusCode::SERVICE_UNAVAILABLE, _) => Some("1".to_string()),
         _ => None,
     };
-    if let Some(value) = retry_value {
-        if let Ok(header_value) = axum::http::HeaderValue::from_str(&value) {
-            response
-                .headers_mut()
-                .insert(axum::http::header::RETRY_AFTER, header_value);
-        }
+    if let Some(value) = retry_value
+        && let Ok(header_value) = axum::http::HeaderValue::from_str(&value)
+    {
+        response
+            .headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, header_value);
     }
     response
 }

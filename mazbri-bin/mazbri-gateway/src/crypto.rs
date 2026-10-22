@@ -214,7 +214,7 @@ impl TenantCryptoState {
             key_cache: moka::sync::Cache::builder()
                 .max_capacity(100_000)
                 .support_invalidation_closures()
-                .time_to_live(Duration::from_secs(900))
+                .time_to_live(Duration::from_mins(15))
                 .build(),
             root_material_cache: moka::sync::Cache::builder()
                 .max_capacity(1)
@@ -256,15 +256,15 @@ impl TenantCryptoState {
         };
         let profile = Self::profile_from_snapshot(&snapshot);
         self.profile_cache.insert(tenant_id, profile.clone());
-        if let Some(key_row) = Self::key_from_snapshot(&snapshot) {
-            if let Err(error) = self.materialize_key_row_with_root(&key_row).await {
-                warn!(
-                    tenant_id = % tenant_id,
-                    key_version = % key_row.key_version,
-                    error = % error,
-                    "Tenant crypto current key warmup failed"
-                );
-            }
+        if let Some(key_row) = Self::key_from_snapshot(&snapshot)
+            && let Err(error) = self.materialize_key_row_with_root(&key_row).await
+        {
+            warn!(
+                tenant_id = % tenant_id,
+                key_version = % key_row.key_version,
+                error = % error,
+                "Tenant crypto current key warmup failed"
+            );
         }
         record_crypto_lookup_duration("profile", "miss", lookup_started_at.elapsed());
         Ok(profile)
@@ -941,15 +941,15 @@ impl TenantCryptoState {
             return Ok(None);
         }
         let now = Utc::now();
-        if let Some(not_before) = row.not_before {
-            if now < not_before {
-                return Ok(None);
-            }
+        if let Some(not_before) = row.not_before
+            && now < not_before
+        {
+            return Ok(None);
         }
-        if let Some(not_after) = row.not_after {
-            if now >= not_after {
-                return Ok(None);
-            }
+        if let Some(not_after) = row.not_after
+            && now >= not_after
+        {
+            return Ok(None);
         }
         if row.alg != "hmac-sha256" {
             return Ok(None);

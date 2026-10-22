@@ -23,19 +23,19 @@ impl UpdateTenantRequest {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ApiError> {
-        if let Some(ref name) = self.name {
-            if name.len() > 255 {
-                return Err(ApiError::validation(
-                    "name must not exceed 255 characters".to_string(),
-                ));
-            }
+        if let Some(ref name) = self.name
+            && name.len() > 255
+        {
+            return Err(ApiError::validation(
+                "name must not exceed 255 characters".to_string(),
+            ));
         }
-        if let Some(ref email) = self.contact_email {
-            if !email.contains('@') {
-                return Err(ApiError::validation(
-                    "contact_email must be a valid email address".to_string(),
-                ));
-            }
+        if let Some(ref email) = self.contact_email
+            && !email.contains('@')
+        {
+            return Err(ApiError::validation(
+                "contact_email must be a valid email address".to_string(),
+            ));
         }
         if let Some(secs) = self.token_expiration_secs {
             if secs < 60 {

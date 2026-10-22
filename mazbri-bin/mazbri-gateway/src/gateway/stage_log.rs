@@ -14,7 +14,7 @@ pub fn should_log_stage_info(stage_ms: u64) -> bool {
         return true;
     }
     let n = STAGE_SEQ.fetch_add(1, Ordering::Relaxed);
-    n % DEFAULT_SAMPLE_N == 0
+    n.is_multiple_of(DEFAULT_SAMPLE_N)
 }
 
 /// 平台摘要、余额拒绝等始终打。

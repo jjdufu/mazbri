@@ -18,12 +18,11 @@ pub fn extract_client_ip(headers: &HeaderMap, socket_addr: Option<SocketAddr>) -
         "cf-connecting-ip",
         "forwarded",
     ] {
-        if let Some(header_value) = headers.get(header_name) {
-            if let Ok(raw_value) = header_value.to_str() {
-                if let Some(ip) = normalize_client_ip(raw_value) {
-                    return Some(ip);
-                }
-            }
+        if let Some(header_value) = headers.get(header_name)
+            && let Ok(raw_value) = header_value.to_str()
+            && let Some(ip) = normalize_client_ip(raw_value)
+        {
+            return Some(ip);
         }
     }
     socket_addr
@@ -65,13 +64,12 @@ fn normalize_client_ip(raw: &str) -> Option<String> {
     if let Ok(socket_addr) = candidate.parse::<SocketAddr>() {
         return Some(socket_addr.ip().to_string());
     }
-    if let Some((host, port)) = candidate.rsplit_once(':') {
-        if !host.contains(':')
-            && port.chars().all(|ch| ch.is_ascii_digit())
-            && let Ok(ip) = host.parse::<IpAddr>()
-        {
-            return Some(ip.to_string());
-        }
+    if let Some((host, port)) = candidate.rsplit_once(':')
+        && !host.contains(':')
+        && port.chars().all(|ch| ch.is_ascii_digit())
+        && let Ok(ip) = host.parse::<IpAddr>()
+    {
+        return Some(ip.to_string());
     }
     Some(candidate.to_string())
 }

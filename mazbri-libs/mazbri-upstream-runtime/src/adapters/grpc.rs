@@ -165,10 +165,9 @@ fn build_grpc_headers(ctx: &AdapterCtx<'_>) -> HeaderMap {
         if let (Ok(hn), Ok(hv)) = (
             HeaderName::from_bytes(k.as_bytes()),
             HeaderValue::from_str(&v),
-        ) {
-            if !header_map.contains_key(&hn) {
-                header_map.insert(hn, hv);
-            }
+        ) && !header_map.contains_key(&hn)
+        {
+            header_map.insert(hn, hv);
         }
     }
     crate::http_call::inject_x_request_id_header_map(&mut header_map, &ctx.input.request_id);

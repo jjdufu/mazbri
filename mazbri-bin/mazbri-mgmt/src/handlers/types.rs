@@ -110,10 +110,10 @@ impl UpdateApiKeyRequest {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
-        if let Some(days) = self.expires_days {
-            if !(1..=3650).contains(&days) {
-                return Err("续期天数必须在 1 到 3650 天之间".to_string());
-            }
+        if let Some(days) = self.expires_days
+            && !(1..=3650).contains(&days)
+        {
+            return Err("续期天数必须在 1 到 3650 天之间".to_string());
         }
         Ok(())
     }

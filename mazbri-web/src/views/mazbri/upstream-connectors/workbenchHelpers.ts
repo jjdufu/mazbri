@@ -6,6 +6,7 @@ import type {
   ConnectorRun,
   DraftGateItem,
   StageResult,
+  WorkbenchEnvEntry,
 } from "@/api/upstream-connectors";
 
 /** Hoppscotch Header List row. Edit-time truth is this array (order, dup keys, enabled, desc). Empty table is []. */
@@ -208,20 +209,9 @@ export function kvToEntries(rows: KvRow[]): KvRow[] {
   return rows.map(normalizeKvRow);
 }
 
-/** Load workbench_env: array of KvRow (incl. []) or legacy string map. */
-export function workbenchEnvToKv(value: unknown): KvRow[] {
-  if (Array.isArray(value)) {
-    return entriesToKv(value as Array<Partial<KvRow>>);
-  }
-  if (value && typeof value === "object") {
-    const rec: Record<string, string> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === "string") rec[k] = v;
-      else if (typeof v === "number" || typeof v === "boolean") rec[k] = String(v);
-    }
-    return mapToKv(rec);
-  }
-  return mapToKv({});
+/** Load workbench_env: array of KvRow (incl. []). */
+export function workbenchEnvToKv(value: WorkbenchEnvEntry[]): KvRow[] {
+  return entriesToKv(value);
 }
 
 /** Egress / engine map only. Last duplicate key wins. Disabled and blank keys dropped. */

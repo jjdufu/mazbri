@@ -10,13 +10,13 @@ pub(crate) fn endpoint_by_id<'a>(
     id: Option<&str>,
 ) -> Option<&'a serde_json::Value> {
     let arr = endpoints.as_array()?;
-    if let Some(id) = id.filter(|s| !s.is_empty()) {
-        if let Some(found) = arr.iter().find(|e| {
+    if let Some(id) = id.filter(|s| !s.is_empty())
+        && let Some(found) = arr.iter().find(|e| {
             e.get("id").and_then(|v| v.as_str()) == Some(id)
                 || e.get("name").and_then(|v| v.as_str()) == Some(id)
-        }) {
-            return Some(found);
-        }
+        })
+    {
+        return Some(found);
     }
     arr.first()
 }
@@ -28,17 +28,15 @@ pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &Suppl
         return;
     };
     let mut auth = spec.auth.clone().unwrap_or_default();
-    if profile_is_undeclared(Some(auth.profile.as_str())) {
-        if let Some(p) = flow
+    if profile_is_undeclared(Some(auth.profile.as_str()))
+        && let Some(p) = flow
             .profile
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-        {
-            if !profile_is_undeclared(Some(p)) {
-                auth.profile = p.to_string();
-            }
-        }
+        && !profile_is_undeclared(Some(p))
+    {
+        auth.profile = p.to_string();
     }
     let Ok(target) = AuthProfile::parse(&auth.profile) else {
         spec.auth = Some(auth);
@@ -46,15 +44,14 @@ pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &Suppl
     };
     if target.uses_ticket() {
         copy_if_empty(&mut auth.token_url, nonempty(&flow.token_url));
-        if auth.token_path.as_deref().map_or("", str::trim).is_empty() {
-            if let Some(p) = flow
+        if auth.token_path.as_deref().map_or("", str::trim).is_empty()
+            && let Some(p) = flow
                 .token_path
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-            {
-                auth.token_path = Some(p.to_string());
-            }
+        {
+            auth.token_path = Some(p.to_string());
         }
         copy_if_empty(&mut auth.token_jsonpath, nonempty(&flow.token_jsonpath));
         copy_if_empty(&mut auth.expiry_jsonpath, nonempty(&flow.expiry_jsonpath));
@@ -95,10 +92,10 @@ fn nonempty(s: &str) -> Option<&str> {
 }
 
 fn copy_if_empty(slot: &mut Option<String>, src: Option<&str>) {
-    if slot.as_deref().map_or("", str::trim).is_empty() {
-        if let Some(v) = src {
-            *slot = Some(v.to_string());
-        }
+    if slot.as_deref().map_or("", str::trim).is_empty()
+        && let Some(v) = src
+    {
+        *slot = Some(v.to_string());
     }
 }
 

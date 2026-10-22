@@ -393,10 +393,9 @@ fn parse_gateway_request_payload(body_bytes: &[u8]) -> Result<GatewayRequestPayl
             return Ok(GatewayRequestPayload::Encrypted(envelope));
         }
     } else if body_bytes.starts_with(br#"{"product_id":"#,
-    ) {
-        if let Ok(proxy_req) = serde_json::from_slice::<GatewayRequest>(body_bytes) {
-            return Ok(GatewayRequestPayload::Plain(proxy_req));
-        }
+    ) && let Ok(proxy_req) = serde_json::from_slice::<GatewayRequest>(body_bytes)
+    {
+        return Ok(GatewayRequestPayload::Plain(proxy_req));
     }
 
     if let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(body_bytes) {

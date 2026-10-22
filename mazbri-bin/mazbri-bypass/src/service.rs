@@ -97,13 +97,12 @@ impl MazbriBypassServiceImpl {
             Some(full.to_string())
         };
 
-        if let Some(ref h) = hash {
-            if let Some(cached) = self.supplier_config_cache.get(h) {
-                if full.is_none() || cached.hash == *h {
-                    UpstreamMetricsRecorder::record_config_cache("hit");
-                    return Ok(Some(cached.config));
-                }
-            }
+        if let Some(ref h) = hash
+            && let Some(cached) = self.supplier_config_cache.get(h)
+            && (full.is_none() || cached.hash == *h)
+        {
+            UpstreamMetricsRecorder::record_config_cache("hit");
+            return Ok(Some(cached.config));
         }
 
         if let Some(ref json) = full {
@@ -141,12 +140,11 @@ impl MazbriBypassServiceImpl {
     fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<ChannelEgressSpec, String> {
         let hash = hash.trim();
         let full = full.trim();
-        if !hash.is_empty() {
-            if let Some(cached) = self.egress_spec_cache.get(hash) {
-                if full.is_empty() || cached.hash == hash {
-                    return Ok(cached.spec);
-                }
-            }
+        if !hash.is_empty()
+            && let Some(cached) = self.egress_spec_cache.get(hash)
+            && (full.is_empty() || cached.hash == hash)
+        {
+            return Ok(cached.spec);
         }
         if full.is_empty() {
             if hash.is_empty() {
@@ -274,10 +272,10 @@ impl MazbriBypassServiceImpl {
         };
 
         let mut credentials = HashMap::new();
-        if let Some(ref cfg) = config {
-            if let Some(ref auth) = cfg.auth_flow {
-                credentials = auth.credentials.clone();
-            }
+        if let Some(ref cfg) = config
+            && let Some(ref auth) = cfg.auth_flow
+        {
+            credentials = auth.credentials.clone();
         }
 
         let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {

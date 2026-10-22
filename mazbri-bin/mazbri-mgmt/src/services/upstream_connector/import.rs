@@ -72,31 +72,31 @@ pub(super) fn parse_curl(curl: &str) -> Result<ParsedCurl, ApiError> {
             i += 1;
             continue;
         }
-        if t == "-X" || t == "--request" {
-            if let Some(m) = tokens.get(i + 1) {
-                method = m.to_uppercase();
-                i += 2;
-                continue;
-            }
+        if (t == "-X" || t == "--request")
+            && let Some(m) = tokens.get(i + 1)
+        {
+            method = m.to_uppercase();
+            i += 2;
+            continue;
         }
-        if t == "-H" || t == "--header" {
-            if let Some(h) = tokens.get(i + 1) {
-                if let Some((k, v)) = h.split_once(':') {
-                    headers.insert(k.trim().to_string(), v.trim().to_string());
-                }
-                i += 2;
-                continue;
+        if (t == "-H" || t == "--header")
+            && let Some(h) = tokens.get(i + 1)
+        {
+            if let Some((k, v)) = h.split_once(':') {
+                headers.insert(k.trim().to_string(), v.trim().to_string());
             }
+            i += 2;
+            continue;
         }
-        if t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary" {
-            if let Some(d) = tokens.get(i + 1) {
-                body = Some(d.clone());
-                if method == "GET" {
-                    method = "POST".into();
-                }
-                i += 2;
-                continue;
+        if (t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary")
+            && let Some(d) = tokens.get(i + 1)
+        {
+            body = Some(d.clone());
+            if method == "GET" {
+                method = "POST".into();
             }
+            i += 2;
+            continue;
         }
         if !t.starts_with('-') && (t.starts_with("http://") || t.starts_with("https://")) {
             url = t.trim_matches('\'').trim_matches('"').to_string();
@@ -379,14 +379,13 @@ pub async fn import_openapi(
         .unwrap_or_else(|| format!("oas-{}", &Uuid::new_v4().to_string()[..8]));
 
     let mut base_url = String::new();
-    if let Some(servers) = req.document.get("servers").and_then(|v| v.as_array()) {
-        if let Some(u) = servers
+    if let Some(servers) = req.document.get("servers").and_then(|v| v.as_array())
+        && let Some(u) = servers
             .first()
             .and_then(|s| s.get("url"))
             .and_then(|v| v.as_str())
-        {
-            base_url = u.trim_end_matches('/').to_string();
-        }
+    {
+        base_url = u.trim_end_matches('/').to_string();
     }
 
     let mut endpoints = Vec::new();

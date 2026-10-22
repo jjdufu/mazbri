@@ -52,36 +52,35 @@ impl HybridFallbackCache {
     pub async fn get(&self, key: &str) -> Option<CacheEntry> {
         {
             let mut cache = self.memory.lock();
-            if let Some(local_entry) = cache.get(key) {
-                if !local_entry.is_local_expired() {
-                    debug!(key = % key, source = "L1_memory", "Cache hit");
-                    return Some(CacheEntry {
-                        data: local_entry.data.clone(),
-                        created_at: local_entry.created_at,
-                    });
-                }
+            if let Some(local_entry) = cache.get(key)
+                && !local_entry.is_local_expired()
+            {
+                debug!(key = % key, source = "L1_memory", "Cache hit");
+                return Some(CacheEntry {
+                    data: local_entry.data.clone(),
+                    created_at: local_entry.created_at,
+                });
             }
         }
-        if let Some(ref redis) = self.redis {
-            if let Ok(Some(redis_entry)) = redis.get(key).await {
-                if !redis_entry.is_expired() {
-                    let local_entry = redis_entry.to_local_entry(self.local_cache_ttl);
-                    let mut cache = self.memory.lock();
-                    let len_before = cache.len();
-                    cache.put(key.to_string(), local_entry);
-                    if cache.len() > len_before {
-                        self.active_count.fetch_add(1, Ordering::Relaxed);
-                    }
-                    debug!(key = % key, source = "L2_redis", "Cache hit");
-                    let age_secs = redis_entry.age_secs();
-                    return Some(CacheEntry {
-                        data: redis_entry.data,
-                        created_at: Instant::now()
-                            .checked_sub(Duration::from_secs(u64::saturating_from(age_secs)))
-                            .unwrap(),
-                    });
-                }
+        if let Some(ref redis) = self.redis
+            && let Ok(Some(redis_entry)) = redis.get(key).await
+            && !redis_entry.is_expired()
+        {
+            let local_entry = redis_entry.to_local_entry(self.local_cache_ttl);
+            let mut cache = self.memory.lock();
+            let len_before = cache.len();
+            cache.put(key.to_string(), local_entry);
+            if cache.len() > len_before {
+                self.active_count.fetch_add(1, Ordering::Relaxed);
             }
+            debug!(key = % key, source = "L2_redis", "Cache hit");
+            let age_secs = redis_entry.age_secs();
+            return Some(CacheEntry {
+                data: redis_entry.data,
+                created_at: Instant::now()
+                    .checked_sub(Duration::from_secs(u64::saturating_from(age_secs)))
+                    .unwrap(),
+            });
         }
         debug!(key = % key, "Cache miss");
         None

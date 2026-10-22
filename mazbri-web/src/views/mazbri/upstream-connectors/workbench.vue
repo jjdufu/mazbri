@@ -949,7 +949,7 @@ async function openSession(d: ConnectorDraft): Promise<boolean> {
     publishForm.value.supplier_name = d.name;
   }
   publishResult.value = null;
-  envRows.value = workbenchEnvToKv(d.workbench_env);
+  envRows.value = workbenchEnvToKv(d.workbench_env ?? []);
   syncKvFromActive();
   refreshUrlDraft();
   saveError.value = false;

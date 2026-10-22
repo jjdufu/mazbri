@@ -334,13 +334,13 @@ pub async fn list_reconciliation_discrepancies(
     let status = status
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty());
-    if let Some(ref s) = status {
-        if !ALLOWED_DISCREPANCY_STATUSES.contains(&s.as_str()) {
-            return Err(BillingError::Validation(format!(
-                "status must be one of: {}",
-                ALLOWED_DISCREPANCY_STATUSES.join(", ")
-            )));
-        }
+    if let Some(ref s) = status
+        && !ALLOWED_DISCREPANCY_STATUSES.contains(&s.as_str())
+    {
+        return Err(BillingError::Validation(format!(
+            "status must be one of: {}",
+            ALLOWED_DISCREPANCY_STATUSES.join(", ")
+        )));
     }
     let scope_type = scope_type
         .map(|s| s.trim().to_string())
@@ -598,12 +598,13 @@ pub async fn list_billing_adjustments(
     let status = status
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty());
-    if let Some(ref s) = status {
-        if s != "posted" && s != "void" {
-            return Err(BillingError::Validation(
-                "status must be posted or void".to_string(),
-            ));
-        }
+    if let Some(ref s) = status
+        && s != "posted"
+        && s != "void"
+    {
+        return Err(BillingError::Validation(
+            "status must be posted or void".to_string(),
+        ));
     }
     let offset = i64::from(page.saturating_sub(1).saturating_mul(page_size));
     let params = repo::ListBillingAdjustmentsParams {

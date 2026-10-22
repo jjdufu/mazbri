@@ -15,10 +15,10 @@ fn default_expires_timestamp() -> DateTime<Utc> {
     Utc::now() + TimeDelta::days(365)
 }
 fn parse_expiration(expires_at: Option<i64>, expires_days: Option<i64>) -> DateTime<Utc> {
-    if let Some(timestamp) = expires_at {
-        if let Some(dt) = DateTime::<Utc>::from_timestamp(timestamp, 0) {
-            return dt;
-        }
+    if let Some(timestamp) = expires_at
+        && let Some(dt) = DateTime::<Utc>::from_timestamp(timestamp, 0)
+    {
+        return dt;
     }
     if let Some(days) = expires_days {
         return Utc::now() + TimeDelta::days(days);

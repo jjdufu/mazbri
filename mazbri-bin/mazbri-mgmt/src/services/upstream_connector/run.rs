@@ -29,12 +29,12 @@ pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
         ssrf::validate_public_http_url(&row.upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-        if let Some(ref auth) = cfg.auth_flow {
-            if auth.enabled {
-                ssrf::validate_public_http_url(&auth.token_url)
-                    .await
-                    .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
-            }
+        if let Some(ref auth) = cfg.auth_flow
+            && auth.enabled
+        {
+            ssrf::validate_public_http_url(&auth.token_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
         }
     } else {
         warnings.push("microservice: 跳过 HTTP SSRF 校验".into());

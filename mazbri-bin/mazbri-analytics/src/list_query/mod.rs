@@ -605,10 +605,10 @@ fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
         if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
             return Ok(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
         }
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(s, fmt) {
-            if let Some(naive) = date.and_hms_opt(0, 0, 0) {
-                return Ok(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
-            }
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(s, fmt)
+            && let Some(naive) = date.and_hms_opt(0, 0, 0)
+        {
+            return Ok(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
         }
     }
     // Already a CH-looking literal — pass through after length guard.

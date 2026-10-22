@@ -499,23 +499,23 @@ async fn publish_route(
         binding_ids.push(bid);
     }
 
-    if let Some(ref auth) = req.authorization {
-        if auth.enabled {
-            for tid in &auth.tenant_ids {
-                sqlx::query(
-                    r"
+    if let Some(ref auth) = req.authorization
+        && auth.enabled
+    {
+        for tid in &auth.tenant_ids {
+            sqlx::query(
+                r"
                     INSERT INTO tenant_products (tenant_id, product_id, enabled, custom_config)
                     VALUES ($1,$2,true,'{}'::jsonb)
                     ON CONFLICT (tenant_id, product_id)
                     DO UPDATE SET enabled = true, updated_at = NOW()
                     ",
-                )
-                .bind(tid)
-                .bind(product_uuid)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| ApiError::internal(format!("grant tenant: {e}")))?;
-            }
+            )
+            .bind(tid)
+            .bind(product_uuid)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| ApiError::internal(format!("grant tenant: {e}")))?;
         }
     }
     Ok((rid, binding_ids))

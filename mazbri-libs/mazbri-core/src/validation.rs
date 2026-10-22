@@ -29,23 +29,23 @@ pub fn validate_service_config(content: &str) -> ValidationResult<()> {
         }
     };
     let mut errors = Vec::new();
-    if let Some(server) = value.get("server") {
-        if let Err(e) = ServerConfig::deserialize(server.clone()) {
-            errors.push(ValidationError {
-                field: "server".to_string(),
-                message: format!("无效的 [server] 配置: {e}"),
-                code: "INVALID_SERVER_CONFIG".to_string(),
-            });
-        }
+    if let Some(server) = value.get("server")
+        && let Err(e) = ServerConfig::deserialize(server.clone())
+    {
+        errors.push(ValidationError {
+            field: "server".to_string(),
+            message: format!("无效的 [server] 配置: {e}"),
+            code: "INVALID_SERVER_CONFIG".to_string(),
+        });
     }
-    if let Some(database) = value.get("database") {
-        if let Err(e) = DatabaseConfig::deserialize(database.clone()) {
-            errors.push(ValidationError {
-                field: "database".to_string(),
-                message: format!("无效的 [database] 配置: {e}"),
-                code: "INVALID_DATABASE_CONFIG".to_string(),
-            });
-        }
+    if let Some(database) = value.get("database")
+        && let Err(e) = DatabaseConfig::deserialize(database.clone())
+    {
+        errors.push(ValidationError {
+            field: "database".to_string(),
+            message: format!("无效的 [database] 配置: {e}"),
+            code: "INVALID_DATABASE_CONFIG".to_string(),
+        });
     }
     if errors.is_empty() {
         Ok(())

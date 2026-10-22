@@ -42,14 +42,14 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         });
     }
     let json = parse_json_body(&response.body)?;
-    if let Some(err) = json.get("error") {
-        if !err.is_null() {
-            return Ok(AdapterOutcome {
-                payload: serde_json::Value::Null,
-                biz_error: Some(map_jsonrpc_error(err)),
-                response,
-            });
-        }
+    if let Some(err) = json.get("error")
+        && !err.is_null()
+    {
+        return Ok(AdapterOutcome {
+            payload: serde_json::Value::Null,
+            biz_error: Some(map_jsonrpc_error(err)),
+            response,
+        });
     }
     let payload = json
         .get("result")

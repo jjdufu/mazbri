@@ -90,25 +90,11 @@ pub fn validate_toml(content: &str) -> Result<(), Box<axum::response::Response>>
         ))),
     }
 }
-/// Floor `index` to the nearest UTF-8 char boundary at or before it.
-///
-/// Compatible with the workspace MSRV (1.85); equivalent to `str::floor_char_boundary` (1.91+).
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
-    }
-    let mut i = index;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
-}
-
 #[must_use]
 pub fn parse_toml_error_position(error: &toml_edit::TomlError, content: &str) -> (usize, usize) {
     match error.span() {
         Some(range) if range.start <= content.len() => {
-            let pos = floor_char_boundary(content, range.start);
+            let pos = content.floor_char_boundary(range.start);
             let line = content[..pos].matches('\n').count() + 1;
             let last_newline = content[..pos].rfind('\n').map_or(0, |i| i + 1);
             let column = pos - last_newline + 1;

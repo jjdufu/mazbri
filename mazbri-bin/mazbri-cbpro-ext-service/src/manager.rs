@@ -91,10 +91,10 @@ impl CbProExtManager {
                 format!("event:{}", request.event_type),
             );
             let response = self.enqueue_validation(enqueue_request).await;
-            if !response.accepted {
-                if let Some(error) = response.error {
-                    warn!(error = % error.message(), "Failed to enqueue validation from observation");
-                }
+            if !response.accepted
+                && let Some(error) = response.error
+            {
+                warn!(error = % error.message(), "Failed to enqueue validation from observation");
             }
         }
         ObservationResponse {

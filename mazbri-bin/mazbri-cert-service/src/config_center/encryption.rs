@@ -48,10 +48,10 @@ impl ConfigEncryption {
         {
             let cached_key = self.cached_key.read();
             let cached_hash = self.cached_hash.read();
-            if let (Some(cached), Some(cached_hash)) = (&*cached_key, &*cached_hash) {
-                if cached_hash == &current_hash {
-                    return Ok(*cached);
-                }
+            if let (Some(cached), Some(cached_hash)) = (&*cached_key, &*cached_hash)
+                && cached_hash == &current_hash
+            {
+                return Ok(*cached);
             }
         }
         info!("Deriving new config encryption key");

@@ -74,9 +74,7 @@ export type WorkbenchEnvEntry = {
 };
 
 /** Array of KV rows (incl. disabled) or legacy string map. */
-export type WorkbenchEnvValue =
-  | Record<string, string>
-  | WorkbenchEnvEntry[];
+export type WorkbenchEnvValue = WorkbenchEnvEntry[];
 
 export interface ConnectorDraft {
   id: string;

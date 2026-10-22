@@ -76,10 +76,10 @@ pub fn token_cache_key(supplier_id: &str, channel_id: &str, spec: &ChannelEgress
 
 pub fn credential<'a>(creds: &'a HashMap<String, String>, names: &[&str]) -> Option<&'a str> {
     for n in names {
-        if let Some(v) = creds.get(*n) {
-            if !v.is_empty() {
-                return Some(v.as_str());
-            }
+        if let Some(v) = creds.get(*n)
+            && !v.is_empty()
+        {
+            return Some(v.as_str());
         }
     }
     None
@@ -429,10 +429,8 @@ async fn fetch_oauth_cc_form(
         .headers
         .keys()
         .any(|k| k.eq_ignore_ascii_case("authorization"));
-    if !basic_in_header {
-        if let (Some(i), Some(s)) = (id, secret) {
-            builder = builder.header("authorization", format!("Basic {}", basic_b64(i, s)));
-        }
+    if !basic_in_header && let (Some(i), Some(s)) = (id, secret) {
+        builder = builder.header("authorization", format!("Basic {}", basic_b64(i, s)));
     }
     if let Some(i) = id {
         form.push(("client_id".into(), i.to_string()));
@@ -474,10 +472,9 @@ fn apply_auth_headers(
         && !headers
             .keys()
             .any(|k| k.eq_ignore_ascii_case("x-request-id"))
+        && let Ok(hv) = HeaderValue::from_str(request_id)
     {
-        if let Ok(hv) = HeaderValue::from_str(request_id) {
-            builder = builder.header(HeaderName::from_static("x-request-id"), hv);
-        }
+        builder = builder.header(HeaderName::from_static("x-request-id"), hv);
     }
     builder
 }
@@ -506,15 +503,15 @@ async fn parse_token_response(
         .ok_or_else(|| "Token is not a string".to_string())?
         .to_string();
     let mut expires_in_sec = 3600u64;
-    if let Some(ep) = auth.expiry_jsonpath.as_deref().filter(|s| !s.is_empty()) {
-        if let Some(expiry_val) = extract_by_path(&json, ep) {
-            if let Some(n) = expiry_val.as_u64() {
-                expires_in_sec = n;
-            } else if let Some(s) = expiry_val.as_str() {
-                if let Ok(n) = s.parse::<u64>() {
-                    expires_in_sec = n;
-                }
-            }
+    if let Some(ep) = auth.expiry_jsonpath.as_deref().filter(|s| !s.is_empty())
+        && let Some(expiry_val) = extract_by_path(&json, ep)
+    {
+        if let Some(n) = expiry_val.as_u64() {
+            expires_in_sec = n;
+        } else if let Some(s) = expiry_val.as_str()
+            && let Ok(n) = s.parse::<u64>()
+        {
+            expires_in_sec = n;
         }
     }
     let expires_at = Utc::now() + chrono::Duration::seconds(i64::saturating_from(expires_in_sec));

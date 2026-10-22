@@ -45,17 +45,17 @@ pub async fn query_audit_logs(
         page = req.page, page_size = req.page_size, admin_id = ? req.admin_id, action = ?
         req.action, "查询审计日志"
     );
-    if let Some(admin_id) = req.admin_id {
-        if admin_id <= 0 {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(HandlerError {
-                    error: "invalid_admin_id".to_string(),
-                    message: "admin_id must be a positive integer".to_string(),
-                }),
-            )
-                .into_response();
-        }
+    if let Some(admin_id) = req.admin_id
+        && admin_id <= 0
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_admin_id".to_string(),
+                message: "admin_id must be a positive integer".to_string(),
+            }),
+        )
+            .into_response();
     }
     if let Err(e) = req.validate() {
         return (

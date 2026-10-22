@@ -134,8 +134,8 @@ impl CertManager {
                         break;
                     }
                     () = tokio::time::sleep(check_interval) => {
-                        if let Some(cert) = manager.cert.read().await.clone() {
-                            if cert.needs_renewal(manager.config.renewal_threshold_days) {
+                        if let Some(cert) = manager.cert.read().await.clone()
+                            && cert.needs_renewal(manager.config.renewal_threshold_days) {
                                 info!(
                                     subject = %cert.subject,
                                     "Certificate needs renewal, renewing in background"
@@ -156,7 +156,6 @@ impl CertManager {
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }

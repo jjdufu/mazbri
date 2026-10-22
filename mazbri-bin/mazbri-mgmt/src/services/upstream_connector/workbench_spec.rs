@@ -71,43 +71,39 @@ fn env_value_to_string(v: &Value) -> Option<String> {
     }
 }
 
-/// Accepts a legacy `{ "k": "v" }` map or a `KvRow` array
-/// (`[{ key, value, desc, enabled }, …]`). Disabled / blank keys are omitted.
+/// Parses a `KvRow` array (`[{ key, value, desc, enabled }, …]`).
+/// Disabled / blank keys are omitted.
 pub(crate) fn parse_workbench_env(value: &Value) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                let Some(obj) = item.as_object() else {
-                    continue;
-                };
-                if obj.get("enabled").and_then(Value::as_bool) == Some(false) {
-                    continue;
-                }
-                let key = obj.get("key").and_then(Value::as_str).unwrap_or("").trim();
-                if key.is_empty() {
-                    continue;
-                }
-                let val = obj
-                    .get("value")
-                    .and_then(env_value_to_string)
-                    .unwrap_or_default();
-                out.insert(key.to_string(), val);
-            }
+    let Some(items) = value.as_array() else {
+        return out;
+    };
+    for obj in items.iter().filter_map(Value::as_object) {
+        if obj.get("enabled").and_then(Value::as_bool) == Some(false) {
+            continue;
         }
-        Value::Object(obj) => {
-            for (k, v) in obj {
-                if k.is_empty() {
-                    continue;
-                }
-                if let Some(s) = env_value_to_string(v) {
-                    out.insert(k.clone(), s);
-                }
-            }
+        let key = obj.get("key").and_then(Value::as_str).unwrap_or("").trim();
+        if key.is_empty() {
+            continue;
         }
-        _ => {}
+        let val = obj
+            .get("value")
+            .and_then(env_value_to_string)
+            .unwrap_or_default();
+        out.insert(key.to_string(), val);
     }
     out
+}
+
+/// `workbench_env` 写入校验：必须为 `KvRow` 数组。
+pub(crate) fn validate_workbench_env(value: &Value) -> Result<(), ApiError> {
+    if value.is_array() {
+        Ok(())
+    } else {
+        Err(ApiError::validation(
+            "workbench_env 必须是 [{key,value,desc,enabled}] 数组",
+        ))
+    }
 }
 
 pub(crate) fn strip_workbench_env_from_config(config: &mut Value) {
@@ -229,10 +225,9 @@ fn endpoint_key_aliases(ep: &Value, primary: &str) -> Vec<String> {
             .get(field)
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
+            && !out.iter().any(|x| x == s)
         {
-            if !out.iter().any(|x| x == s) {
-                out.push(s.to_string());
-            }
+            out.push(s.to_string());
         }
     }
     out
@@ -540,12 +535,12 @@ fn strip_inject_key(spec: &mut ChannelEgressSpec, supplier: Option<&SupplierConf
             req.headers = None;
         }
     }
-    if inject_to.eq_ignore_ascii_case("query") {
-        if let Some(ref mut query) = req.query {
-            query.retain(|k, _| !k.eq_ignore_ascii_case(&inject_key));
-            if query.is_empty() {
-                req.query = None;
-            }
+    if inject_to.eq_ignore_ascii_case("query")
+        && let Some(ref mut query) = req.query
+    {
+        query.retain(|k, _| !k.eq_ignore_ascii_case(&inject_key));
+        if query.is_empty() {
+            req.query = None;
         }
     }
 }
@@ -864,6 +859,18 @@ fn is_ident_byte(b: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn workbench_env_object_form_is_rejected() {
+        let obj = serde_json::json!({"k": "v"});
+        assert!(super::validate_workbench_env(&obj).is_err());
+        assert!(super::parse_workbench_env(&obj).is_empty());
+        let arr = serde_json::json!([{"key": "k", "value": "v"}, {"key": "x", "enabled": false}]);
+        assert!(super::validate_workbench_env(&arr).is_ok());
+        let env = super::parse_workbench_env(&arr);
+        assert_eq!(env.len(), 1);
+        assert_eq!(env.get("k").map(String::as_str), Some("v"));
+    }
+
     use super::*;
     use mazbri_core::AuthFlowConfig;
 

@@ -83,10 +83,10 @@ impl DistributedCircuitBreaker {
     async fn get_or_load_state(&self) -> Result<LocalCacheEntry, CoreError> {
         {
             let cache = self.local_cache.read().await;
-            if let Some(ref entry) = *cache {
-                if entry.cached_at.elapsed() < self.cache_ttl {
-                    return Ok(entry.clone());
-                }
+            if let Some(ref entry) = *cache
+                && entry.cached_at.elapsed() < self.cache_ttl
+            {
+                return Ok(entry.clone());
             }
         }
         self.load_from_db().await
