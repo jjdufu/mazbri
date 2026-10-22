@@ -103,127 +103,15 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
         .await;
     }
 
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    cfg = cfg
-        .decrypt_credentials_for_runtime()
-        .map_err(|e| ApiError::internal(format!("decrypt credentials: {e}")))?;
-
-    // D36: ignore the entire RunRequestBody. Spec and payload come from the
-    // saved draft via the single builder (Tab fields + workbench_env).
-    let env = parse_workbench_env(&row.workbench_env);
-    let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
-    let path_prefix = ep
-        .and_then(|e| e.get("path_prefix").and_then(|v| v.as_str()))
-        .or_else(|| ep.and_then(|e| e.get("path").and_then(|v| v.as_str())))
-        .unwrap_or("/");
-    let empty_ep = serde_json::json!({});
-    let built = build_workbench_spec(
-        ep.unwrap_or(&empty_ep),
-        &env,
-        Some(&cfg),
-        path_prefix,
-        &row.upstream_url,
-    )?;
-    let payload = built.payload.clone();
-    let payload_str = payload.to_string();
-    if payload_str.len() > max_body_bytes {
-        return Err(ApiError::validation(format!(
-            "request body exceeds max_body_bytes ({max_body_bytes})"
-        )));
-    }
-    let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
-    let spec = built.spec.clone();
-
-    let mode = match req.mode.as_str() {
-        "auth_only" => ExecuteMode::AuthOnly,
-        "transform_preview" => ExecuteMode::TransformPreview,
-        "live" => ExecuteMode::Live,
-        _ => ExecuteMode::Business,
-    };
-
-    let timeout_ms = spec
-        .timeout_ms
-        .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
-        .unwrap_or(default_timeout_ms);
-
-    let mut credentials = HashMap::new();
-    if let Some(ref auth) = cfg.auth_flow {
-        credentials.clone_from(&auth.credentials);
-    }
-
-    let artifact_bytes = if let Some(ref aid) = spec.artifact_id {
-        load_artifact_bytes(pool, aid).await?
-    } else {
-        None
-    };
-
-    let input = InvokeInput {
-        supplier_id: row
-            .linked_supplier_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
-        supplier_code: format!("probe:{}", row.draft_code),
-        channel_id: endpoint_key.clone().unwrap_or_else(|| row.id.to_string()),
-        request_id: Uuid::new_v4().to_string(),
-        payload,
-        spec,
-        config: Some(Arc::new(cfg)),
-        fallback_base_url: built.upstream_url.clone(),
-        path_prefix: path_prefix.to_string(),
-        timeout: Duration::from_millis(timeout_ms),
-        mode,
-        options: ExecuteOptions {
-            follow_redirects: false,
-            max_body_capture_bytes: 64 * 1024,
-            mask_secrets: true,
-            collect_trace: true,
-        },
-        credentials,
-        artifact_bytes,
-        cache_key: Some(format!("probe:{}", row.id)),
-    };
+    let PreparedRun {
+        input,
+        endpoint_key,
+        fingerprint,
+    } = prepare_run_input(pool, &row, &req, default_timeout_ms, max_body_bytes).await?;
 
     let result = runtime_engine().invoke(input).await;
 
-    let assert_response = invoke_assert_response(&result);
-    let has_http_status = result
-        .upstream_meta
-        .as_ref()
-        .map(|m| m.status)
-        .or_else(|| result.response.as_ref().map(|r| r.status))
-        .is_some();
-    let skip_assertions = !result.ok && !has_http_status;
-    let mut assertion_results: Vec<AssertionResult> = Vec::new();
-    if !skip_assertions {
-        if let Some(ref raw_assertions) = req.assertions {
-            let parsed: Vec<Assertion> = raw_assertions
-                .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                .collect();
-            assertion_results =
-                evaluate_assertions(&parsed, assert_response.as_ref(), result.latency_ms);
-        } else if let Some(ref ep_id) = req.endpoint_id {
-            if let Some(eps) = row.endpoints.as_array() {
-                if let Some(ep) = eps.iter().find(|e| {
-                    e.get("id").and_then(|v| v.as_str()) == Some(ep_id.as_str())
-                        || e.get("name").and_then(|v| v.as_str()) == Some(ep_id.as_str())
-                }) {
-                    if let Some(arr) = ep.get("assertions").and_then(|v| v.as_array()) {
-                        let parsed: Vec<Assertion> = arr
-                            .iter()
-                            .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                            .collect();
-                        assertion_results = evaluate_assertions(
-                            &parsed,
-                            assert_response.as_ref(),
-                            result.latency_ms,
-                        );
-                    }
-                }
-            }
-        }
-    }
+    let assertion_results = run_draft_assertions(&req, &row.endpoints, &result);
 
     let assertions_ok = assertion_results.is_empty() || assertion_results.iter().all(|a| a.ok);
     let overall_ok = result.ok && assertions_ok;
@@ -231,15 +119,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
     let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
     let assertions_json = serde_json::to_value(&assertion_results).unwrap_or(serde_json::json!([]));
 
-    let error_code = if overall_ok {
-        None
-    } else if !result.ok {
-        result.error_code.as_deref()
-    } else if !assertions_ok {
-        Some("ASSERTION_FAILED")
-    } else {
-        None
-    };
+    let error_code = run_error_code(&result, overall_ok, assertions_ok);
 
     connector_metrics::record_run(&req.mode, overall_ok, error_code);
 
@@ -260,7 +140,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
             testcase_id: req.testcase_id,
             actor: Some(actor),
             spec_fingerprint: if write_fp {
-                Some(built.fingerprint.as_str())
+                Some(fingerprint.as_str())
             } else {
                 None
             },
@@ -283,46 +163,9 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
         ..Default::default()
     });
 
-    let response_preview = result.payload.as_ref().map(|p| {
-        let status = result
-            .upstream_meta
-            .as_ref()
-            .map_or(if result.ok { 200 } else { 400 }, |m| m.status);
-        serde_json::json!({
-            "status": status,
-            "body_preview": p.to_string().chars().take(4096).collect::<String>(),
-            "url": result.upstream_meta.as_ref().map(|m| m.url.clone()).unwrap_or_default(),
-            "adapter": result.upstream_meta.as_ref().map(|m| m.adapter.clone()),
-            "biz_error": result.biz_error,
-        })
-    }).or_else(|| {
-        result.response.as_ref().map(|r| {
-            serde_json::json!({
-                "status": r.status,
-                "headers": r.headers,
-                "body_preview": String::from_utf8_lossy(&r.body).chars().take(4096).collect::<String>(),
-                "url": r.final_url,
-            })
-        })
-    });
+    let response_preview = run_response_preview(&result);
 
-    Ok(RunDto {
-        id: run_row.id,
-        draft_id: run_row.draft_id,
-        supplier_id: run_row.supplier_id,
-        mode: run_row.mode,
-        ok: run_row.ok,
-        latency_ms: run_row.latency_ms,
-        stages: run_row.stages,
-        assertions: run_row.assertions,
-        error_code: run_row.error_code,
-        error_message: run_row.error_message,
-        endpoint_key: run_row.endpoint_key,
-        actor: run_row.actor,
-        created_at: run_row.created_at,
-        response_preview,
-        spec_fingerprint: run_row.spec_fingerprint,
-    })
+    Ok(run_dto_from_row(run_row, response_preview))
 }
 
 /// `probe_microservice_draft` 的入参。
@@ -351,53 +194,13 @@ pub(super) async fn probe_microservice_draft(
         default_timeout_ms,
     } = params;
     let start = std::time::Instant::now();
-    let mut stages = Vec::new();
 
-    // Stage validate
     let cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    let contract_id = cfg.contract_id.clone().unwrap_or_default();
-    let contract_ok = !contract_id.trim().is_empty();
-    stages.push(serde_json::json!({
-        "name": "validate",
-        "ok": contract_ok,
-        "latency_ms": 0,
-        "response_summary": {
-            "detail": if contract_ok {
-                format!("contract_id={contract_id}")
-            } else {
-                "contract_id missing".into()
-            }
-        },
-        "error": if contract_ok { serde_json::Value::Null } else { serde_json::json!("contract_id required") }
-    }));
-
-    // Stage connectivity: TCP connect to host:port (strip scheme if present)
-    let target = row.upstream_url.trim().to_string();
-    let host_port = target
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .to_string();
-    let c_start = std::time::Instant::now();
-    let connect_ok = if host_port.is_empty() {
-        false
-    } else {
-        let timeout = Duration::from_millis(default_timeout_ms.min(5_000));
-        matches!(
-            tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&host_port)).await,
-            Ok(Ok(_))
-        )
-    };
-    stages.push(serde_json::json!({
-        "name": "probe_connectivity",
-        "ok": connect_ok,
-        "latency_ms": mazbri_core::num::millis_u64(c_start.elapsed()),
-        "request_summary": { "url": host_port },
-        "error": if connect_ok { serde_json::Value::Null } else { serde_json::json!("TCP connect failed") }
-    }));
+    let (contract_ok, validate_stage) = probe_contract_stage(&cfg);
+    let (connect_ok, connect_stage) =
+        probe_connectivity_stage(&row.upstream_url, default_timeout_ms).await;
+    let stages = vec![validate_stage, connect_stage];
 
     let overall_ok = contract_ok && connect_ok;
     let latency_ms = i32::saturating_from(start.elapsed().as_millis());
@@ -555,4 +358,270 @@ pub async fn get_run(pool: &PgPool, run_id: Uuid) -> Result<RunDto, ApiError> {
         response_preview: None,
         spec_fingerprint: r.spec_fingerprint,
     })
+}
+
+/// 按请求或端点上配置的断言评估结果；无 HTTP 响应的失败不评估。
+fn run_draft_assertions(
+    req: &RunRequest,
+    endpoints: &serde_json::Value,
+    result: &mazbri_upstream_runtime::InvokeResult,
+) -> Vec<AssertionResult> {
+    let has_http_status = result
+        .upstream_meta
+        .as_ref()
+        .map(|m| m.status)
+        .or_else(|| result.response.as_ref().map(|r| r.status))
+        .is_some();
+    if !result.ok && !has_http_status {
+        return Vec::new();
+    }
+    let raw: Vec<serde_json::Value> = if let Some(ref raw_assertions) = req.assertions {
+        raw_assertions.clone()
+    } else {
+        let Some(ep_id) = req.endpoint_id.as_deref() else {
+            return Vec::new();
+        };
+        let Some(arr) = endpoints
+            .as_array()
+            .and_then(|eps| {
+                eps.iter().find(|e| {
+                    e.get("id").and_then(|v| v.as_str()) == Some(ep_id)
+                        || e.get("name").and_then(|v| v.as_str()) == Some(ep_id)
+                })
+            })
+            .and_then(|ep| ep.get("assertions"))
+            .and_then(|v| v.as_array())
+        else {
+            return Vec::new();
+        };
+        arr.clone()
+    };
+    let parsed: Vec<Assertion> = raw
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let assert_response = invoke_assert_response(result);
+    evaluate_assertions(&parsed, assert_response.as_ref(), result.latency_ms)
+}
+
+fn run_error_code(
+    result: &mazbri_upstream_runtime::InvokeResult,
+    overall_ok: bool,
+    assertions_ok: bool,
+) -> Option<&str> {
+    if overall_ok {
+        None
+    } else if !result.ok {
+        result.error_code.as_deref()
+    } else if !assertions_ok {
+        Some("ASSERTION_FAILED")
+    } else {
+        None
+    }
+}
+
+fn run_response_preview(
+    result: &mazbri_upstream_runtime::InvokeResult,
+) -> Option<serde_json::Value> {
+    result.payload.as_ref().map(|p| {
+        let status = result
+            .upstream_meta
+            .as_ref()
+            .map_or(if result.ok { 200 } else { 400 }, |m| m.status);
+        serde_json::json!({
+            "status": status,
+            "body_preview": p.to_string().chars().take(4096).collect::<String>(),
+            "url": result.upstream_meta.as_ref().map(|m| m.url.clone()).unwrap_or_default(),
+            "adapter": result.upstream_meta.as_ref().map(|m| m.adapter.clone()),
+            "biz_error": result.biz_error,
+        })
+    }).or_else(|| {
+        result.response.as_ref().map(|r| {
+            serde_json::json!({
+                "status": r.status,
+                "headers": r.headers,
+                "body_preview": String::from_utf8_lossy(&r.body).chars().take(4096).collect::<String>(),
+                "url": r.final_url,
+            })
+        })
+    })
+}
+
+/// 一次草稿试跑的执行输入。
+struct PreparedRun {
+    input: InvokeInput,
+    endpoint_key: Option<String>,
+    fingerprint: String,
+}
+
+/// 从已保存草稿构建执行输入（D36：忽略请求体中的 spec/payload）。
+async fn prepare_run_input(
+    pool: &PgPool,
+    row: &repo::DraftRow,
+    req: &RunRequest,
+    default_timeout_ms: u64,
+    max_body_bytes: usize,
+) -> Result<PreparedRun, ApiError> {
+    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    cfg = cfg
+        .decrypt_credentials_for_runtime()
+        .map_err(|e| ApiError::internal(format!("decrypt credentials: {e}")))?;
+
+    // D36: ignore the entire RunRequestBody. Spec and payload come from the
+    // saved draft via the single builder (Tab fields + workbench_env).
+    let env = parse_workbench_env(&row.workbench_env);
+    let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
+    let path_prefix = ep
+        .and_then(|e| e.get("path_prefix").and_then(|v| v.as_str()))
+        .or_else(|| ep.and_then(|e| e.get("path").and_then(|v| v.as_str())))
+        .unwrap_or("/");
+    let empty_ep = serde_json::json!({});
+    let built = build_workbench_spec(
+        ep.unwrap_or(&empty_ep),
+        &env,
+        Some(&cfg),
+        path_prefix,
+        &row.upstream_url,
+    )?;
+    let payload = built.payload.clone();
+    let payload_str = payload.to_string();
+    if payload_str.len() > max_body_bytes {
+        return Err(ApiError::validation(format!(
+            "request body exceeds max_body_bytes ({max_body_bytes})"
+        )));
+    }
+    let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
+    let spec = built.spec.clone();
+
+    let mode = match req.mode.as_str() {
+        "auth_only" => ExecuteMode::AuthOnly,
+        "transform_preview" => ExecuteMode::TransformPreview,
+        "live" => ExecuteMode::Live,
+        _ => ExecuteMode::Business,
+    };
+
+    let timeout_ms = spec
+        .timeout_ms
+        .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
+        .unwrap_or(default_timeout_ms);
+
+    let mut credentials = HashMap::new();
+    if let Some(ref auth) = cfg.auth_flow {
+        credentials.clone_from(&auth.credentials);
+    }
+
+    let artifact_bytes = if let Some(ref aid) = spec.artifact_id {
+        load_artifact_bytes(pool, aid).await?
+    } else {
+        None
+    };
+
+    let input = InvokeInput {
+        supplier_id: row
+            .linked_supplier_id
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
+        supplier_code: format!("probe:{}", row.draft_code),
+        channel_id: endpoint_key.clone().unwrap_or_else(|| row.id.to_string()),
+        request_id: Uuid::new_v4().to_string(),
+        payload,
+        spec,
+        config: Some(Arc::new(cfg)),
+        fallback_base_url: built.upstream_url.clone(),
+        path_prefix: path_prefix.to_string(),
+        timeout: Duration::from_millis(timeout_ms),
+        mode,
+        options: ExecuteOptions {
+            follow_redirects: false,
+            max_body_capture_bytes: 64 * 1024,
+            mask_secrets: true,
+            collect_trace: true,
+        },
+        credentials,
+        artifact_bytes,
+        cache_key: Some(format!("probe:{}", row.id)),
+    };
+
+    Ok(PreparedRun {
+        input,
+        endpoint_key,
+        fingerprint: built.fingerprint,
+    })
+}
+
+pub(super) fn run_dto_from_row(
+    run_row: repo::RunRow,
+    response_preview: Option<serde_json::Value>,
+) -> RunDto {
+    RunDto {
+        id: run_row.id,
+        draft_id: run_row.draft_id,
+        supplier_id: run_row.supplier_id,
+        mode: run_row.mode,
+        ok: run_row.ok,
+        latency_ms: run_row.latency_ms,
+        stages: run_row.stages,
+        assertions: run_row.assertions,
+        error_code: run_row.error_code,
+        error_message: run_row.error_message,
+        endpoint_key: run_row.endpoint_key,
+        actor: run_row.actor,
+        created_at: run_row.created_at,
+        response_preview,
+        spec_fingerprint: run_row.spec_fingerprint,
+    }
+}
+
+/// 校验阶段：微服务草稿必须配置 `contract_id`。
+fn probe_contract_stage(cfg: &SupplierConfig) -> (bool, serde_json::Value) {
+    let contract_id = cfg.contract_id.clone().unwrap_or_default();
+    let contract_ok = !contract_id.trim().is_empty();
+    let stage = serde_json::json!({
+        "name": "validate",
+        "ok": contract_ok,
+        "latency_ms": 0,
+        "response_summary": {
+            "detail": if contract_ok {
+                format!("contract_id={contract_id}")
+            } else {
+                "contract_id missing".into()
+            }
+        },
+        "error": if contract_ok { serde_json::Value::Null } else { serde_json::json!("contract_id required") }
+    });
+    (contract_ok, stage)
+}
+
+/// 连通性阶段：TCP 连接 host:port（去掉 scheme 与路径）。
+async fn probe_connectivity_stage(
+    upstream_url: &str,
+    default_timeout_ms: u64,
+) -> (bool, serde_json::Value) {
+    let host_port = upstream_url
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .to_string();
+    let c_start = std::time::Instant::now();
+    let connect_ok = if host_port.is_empty() {
+        false
+    } else {
+        let timeout = Duration::from_millis(default_timeout_ms.min(5_000));
+        matches!(
+            tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&host_port)).await,
+            Ok(Ok(_))
+        )
+    };
+    let stage = serde_json::json!({
+        "name": "probe_connectivity",
+        "ok": connect_ok,
+        "latency_ms": mazbri_core::num::millis_u64(c_start.elapsed()),
+        "request_summary": { "url": host_port },
+        "error": if connect_ok { serde_json::Value::Null } else { serde_json::json!("TCP connect failed") }
+    });
+    (connect_ok, stage)
 }
