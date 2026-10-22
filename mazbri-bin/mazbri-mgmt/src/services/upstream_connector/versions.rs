@@ -202,30 +202,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         .decrypt_credentials_for_runtime()
         .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;
 
-    let body = req.request.clone().unwrap_or(RunRequestBody {
-        method: "GET".into(),
-        path: "/".into(),
-        query: HashMap::new(),
-        headers: HashMap::new(),
-        body: None,
-    });
-    let body_kind = body.body.as_ref().map(|v| {
-        if v.is_string() {
-            BodyKind::Raw {
-                body: v.as_str().unwrap_or("").to_string(),
-                content_type: "text/plain".into(),
-            }
-        } else {
-            BodyKind::Json(v.to_string())
-        }
-    });
-    if let Some(ref b) = body_kind {
-        if b.as_str().len() > max_body_bytes {
-            return Err(ApiError::validation(format!(
-                "request body exceeds max_body_bytes ({max_body_bytes})"
-            )));
-        }
-    }
+    let (body, body_kind) = live_request_body(req.request.clone(), max_body_bytes)?;
 
     let timeout_ms = cfg
         .timeouts
@@ -291,29 +268,14 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         ..Default::default()
     });
 
-    Ok(RunDto {
-        id: run_row.id,
-        draft_id: None,
-        supplier_id: Some(supplier_id),
-        mode: "live".into(),
-        ok: run_row.ok,
-        latency_ms: run_row.latency_ms,
-        stages: run_row.stages,
-        assertions: run_row.assertions,
-        error_code: run_row.error_code,
-        error_message: run_row.error_message,
-        endpoint_key: None,
-        actor: run_row.actor,
-        created_at: run_row.created_at,
-        response_preview: result.response.map(|r| {
-            serde_json::json!({
-                "status": r.status,
-                "body_preview": String::from_utf8_lossy(&r.body).chars().take(4096).collect::<String>(),
-                "url": r.final_url,
-            })
-        }),
-        spec_fingerprint: None,
-    })
+    let response_preview = result.response.map(|r| {
+        serde_json::json!({
+            "status": r.status,
+            "body_preview": String::from_utf8_lossy(&r.body).chars().take(4096).collect::<String>(),
+            "url": r.final_url,
+        })
+    });
+    Ok(super::run::run_dto_from_row(run_row, response_preview))
 }
 
 /// Delete probe runs older than `retention_days`. Returns deleted row count.
@@ -332,4 +294,37 @@ pub async fn cleanup_old_runs(pool: &PgPool, retention_days: u32) -> Result<u64,
         info!(deleted = n, retention_days, "connector runs cleaned up");
     }
     Ok(n)
+}
+
+/// 线上试跑请求体（缺省 `GET /`），并检查体积上限。
+fn live_request_body(
+    request: Option<RunRequestBody>,
+    max_body_bytes: usize,
+) -> Result<(RunRequestBody, Option<BodyKind>), ApiError> {
+    let body = request.unwrap_or(RunRequestBody {
+        method: "GET".into(),
+        path: "/".into(),
+        query: HashMap::new(),
+        headers: HashMap::new(),
+        body: None,
+    });
+    let body_kind = body.body.as_ref().map(|v| {
+        if v.is_string() {
+            BodyKind::Raw {
+                body: v.as_str().unwrap_or("").to_string(),
+                content_type: "text/plain".into(),
+            }
+        } else {
+            BodyKind::Json(v.to_string())
+        }
+    });
+    if let Some(ref b) = body_kind {
+        if b.as_str().len() > max_body_bytes {
+            return Err(ApiError::validation(format!(
+                "request body exceeds max_body_bytes ({max_body_bytes})"
+            )));
+        }
+    }
+
+    Ok((body, body_kind))
 }

@@ -407,120 +407,80 @@ fn canonicalize(value: &Value) -> Value {
     }
 }
 
+/// 端点字段中的非空字符串。
+fn non_empty_str<'a>(ep: &'a Value, key: &str) -> Option<&'a str> {
+    ep.get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+}
+
+/// 出口规格的 `request` 段（method、path、headers、query 等）。
+fn request_json_from_endpoint(ep: &Value, fallback_path: &str) -> serde_json::Map<String, Value> {
+    let method = non_empty_str(ep, "method").unwrap_or("POST");
+    let path = non_empty_str(ep, "path").unwrap_or(fallback_path);
+    let path = if path.is_empty() { "/" } else { path };
+    let mut req = serde_json::Map::new();
+    req.insert("method".into(), Value::String(method.into()));
+    req.insert("path".into(), Value::String(path.into()));
+    let headers = kv_from_json(ep.get("headers"));
+    if !headers.is_empty() {
+        req.insert("headers".into(), json_from_kv(&headers));
+    }
+    let query = kv_from_json(ep.get("query"));
+    if !query.is_empty() {
+        req.insert("query".into(), json_from_kv(&query));
+    }
+    if let Some(wrap) = non_empty_str(ep, "wrap") {
+        req.insert("wrap".into(), Value::String(wrap.into()));
+    }
+    if let Some(enc) = resolved_body_encoding(ep) {
+        req.insert("body_encoding".into(), Value::String(enc.into()));
+    }
+    if let Some(ct) = ep
+        .get("content_type")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        req.insert("content_type".into(), Value::String(ct.into()));
+    }
+    req
+}
+
+/// 从端点 JSON 组装出口规格的 JSON 形态（尚未反序列化）。
+fn spec_json_from_endpoint(ep: &Value, fallback_path: &str) -> Value {
+    let mut obj = serde_json::Map::new();
+    let adapter = non_empty_str(ep, "adapter").unwrap_or(ADAPTER_HTTP_JSON);
+    obj.insert("adapter".into(), Value::String(adapter.into()));
+    obj.insert(
+        "request".into(),
+        Value::Object(request_json_from_endpoint(ep, fallback_path)),
+    );
+    for key in ["operation", "base_url", "artifact_id"] {
+        if let Some(v) = non_empty_str(ep, key) {
+            obj.insert(key.into(), Value::String(v.into()));
+        }
+    }
+    if let Some(unwrap) = non_empty_str(ep, "unwrap") {
+        obj.insert("response".into(), serde_json::json!({ "unwrap": unwrap }));
+    }
+    for key in ["graphql", "job_poll", "sign_form", "soap", "ws", "auth"] {
+        if let Some(v) = ep.get(key) {
+            obj.insert(key.into(), v.clone());
+        }
+    }
+    if let Some(ms) = ep.get("timeout_ms").and_then(serde_json::Value::as_u64) {
+        obj.insert("timeout_ms".into(), serde_json::json!(ms));
+    }
+    Value::Object(obj)
+}
+
 fn assemble_spec(
     ep: &Value,
     fallback_path: &str,
     supplier: Option<&SupplierConfig>,
 ) -> Result<ChannelEgressSpec, ApiError> {
-    let adapter = ep
-        .get("adapter")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(ADAPTER_HTTP_JSON);
-    let method = ep
-        .get("method")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("POST");
-    let path = ep
-        .get("path")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(fallback_path);
-    let path = if path.is_empty() { "/" } else { path };
-
-    let headers = kv_from_json(ep.get("headers"));
-    let query = kv_from_json(ep.get("query"));
-
-    let mut spec = serde_json::json!({
-        "adapter": adapter,
-        "request": {
-            "method": method,
-            "path": path,
-        }
-    });
-    {
-        let req = spec
-            .get_mut("request")
-            .and_then(|v| v.as_object_mut())
-            .ok_or_else(|| ApiError::validation("egress spec must be object"))?;
-        if !headers.is_empty() {
-            req.insert("headers".into(), json_from_kv(&headers));
-        }
-        if !query.is_empty() {
-            req.insert("query".into(), json_from_kv(&query));
-        }
-        if let Some(wrap) = ep
-            .get("wrap")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            req.insert("wrap".into(), Value::String(wrap.into()));
-        }
-        if let Some(enc) = resolved_body_encoding(ep) {
-            req.insert("body_encoding".into(), Value::String(enc.into()));
-        }
-        if let Some(ct) = ep
-            .get("content_type")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            req.insert("content_type".into(), Value::String(ct.into()));
-        }
-    }
-    if let Some(obj) = spec.as_object_mut() {
-        if let Some(op) = ep
-            .get("operation")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            obj.insert("operation".into(), Value::String(op.into()));
-        }
-        if let Some(unwrap) = ep
-            .get("unwrap")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            obj.insert("response".into(), serde_json::json!({ "unwrap": unwrap }));
-        }
-        if let Some(gql) = ep.get("graphql") {
-            obj.insert("graphql".into(), gql.clone());
-        }
-        if let Some(jp) = ep.get("job_poll") {
-            obj.insert("job_poll".into(), jp.clone());
-        }
-        if let Some(sf) = ep.get("sign_form") {
-            obj.insert("sign_form".into(), sf.clone());
-        }
-        if let Some(soap) = ep.get("soap") {
-            obj.insert("soap".into(), soap.clone());
-        }
-        if let Some(ws) = ep.get("ws") {
-            obj.insert("ws".into(), ws.clone());
-        }
-        if let Some(auth) = ep.get("auth") {
-            obj.insert("auth".into(), auth.clone());
-        }
-        if let Some(base) = ep
-            .get("base_url")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            obj.insert("base_url".into(), Value::String(base.into()));
-        }
-        if let Some(aid) = ep
-            .get("artifact_id")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-        {
-            obj.insert("artifact_id".into(), Value::String(aid.into()));
-        }
-        if let Some(ms) = ep.get("timeout_ms").and_then(serde_json::Value::as_u64) {
-            obj.insert("timeout_ms".into(), serde_json::json!(ms));
-        }
-    }
-
+    let spec = spec_json_from_endpoint(ep, fallback_path);
     let mut spec: ChannelEgressSpec = serde_json::from_value(spec)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     let ep_profile = spec.auth.as_ref().map_or("", |a| a.profile.as_str());
