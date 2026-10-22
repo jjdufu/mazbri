@@ -248,7 +248,7 @@ async fn invoke_bypass(
     loop {
         let response = state
             .upstream_http2_pool
-            .execute_invoke(contract_id, bypass_addr, None, request.clone())
+            .execute_invoke(contract_id, bypass_addr, request.clone())
             .await;
         match response {
             Ok(response) if !response.success => {
@@ -349,7 +349,7 @@ async fn execute_plain_request(
     loop {
         let response = state
             .upstream_http2_pool
-            .execute_request(contract_id, addr, None, request.clone())
+            .execute_request(contract_id, addr, request.clone())
             .await;
         match response {
             Ok(response) => {

@@ -146,7 +146,7 @@ where
         let tls_config = TlsConfig {
             cert_service_url: bootstrap.cert_service.base().to_owned(),
             service_identity: service_name.as_str().to_owned(),
-            cert_service_token: Some(cert_service_token),
+            cert_service_token,
             ..Default::default()
         };
         tracing::info!(
@@ -378,8 +378,7 @@ async fn init_registry<C: ServiceConfig>(
     );
     let token = get_cert_service_token()?;
     let http_client = Arc::new(
-        HttpConfigClientBuilder::new(service_name.as_str(), bootstrap.cert_service.base())
-            .cert_service_token(token)
+        HttpConfigClientBuilder::new(service_name.as_str(), bootstrap.cert_service.base(), token)
             .heartbeat_interval(std::time::Duration::from_secs(
                 registration.heartbeat_interval_secs,
             ))

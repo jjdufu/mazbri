@@ -35,17 +35,9 @@ impl UpstreamHttp2ClientPool {
         created_at.elapsed().as_secs() >= self.client_ttl_secs
     }
 
-    async fn get_channel(
-        &self,
-        contract_id: &str,
-        endpoint: &str,
-        server_name: Option<&str>,
-    ) -> Result<Channel, CoreError> {
-        // 连接池 cache key 仍按 endpoint（+server_name），与契约身份无关
-        let cache_key = match server_name {
-            Some(server_name) => format!("{endpoint}#{server_name}"),
-            None => endpoint.to_string(),
-        };
+    async fn get_channel(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
+        // 连接池 cache key 按 endpoint，与契约身份无关
+        let cache_key = endpoint.to_string();
 
         if let Some(entry) = self.clients.get(&cache_key) {
             if !self.is_client_expired(entry.created_at) {
@@ -55,7 +47,7 @@ impl UpstreamHttp2ClientPool {
             self.clients.remove(&cache_key);
         }
 
-        let target = resolve_connect_target(endpoint, server_name)
+        let target = resolve_connect_target(endpoint)
             .await
             .map_err(|error| CoreError::Config(error.to_string()))?;
 
@@ -116,12 +108,8 @@ impl UpstreamHttp2ClientPool {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn warmup_endpoint(
-        &self,
-        endpoint: &str,
-        server_name: Option<&str>,
-    ) -> Result<(), CoreError> {
-        let _ = self.get_channel("warmup", endpoint, server_name).await?;
+    pub async fn warmup_endpoint(&self, endpoint: &str) -> Result<(), CoreError> {
+        let _ = self.get_channel("warmup", endpoint).await?;
         Ok(())
     }
 
@@ -136,10 +124,9 @@ impl UpstreamHttp2ClientPool {
         &self,
         contract_id: &str,
         endpoint: &str,
-        server_name: Option<&str>,
         request: HttpUpstreamRequest,
     ) -> Result<HttpUpstreamResponse, CoreError> {
-        let channel = self.get_channel(contract_id, endpoint, server_name).await?;
+        let channel = self.get_channel(contract_id, endpoint).await?;
         let grpc_path = grpc_path_for_contract(contract_id)?;
         let path = http::uri::PathAndQuery::from_static(grpc_path);
 
@@ -168,10 +155,9 @@ impl UpstreamHttp2ClientPool {
         &self,
         contract_id: &str,
         endpoint: &str,
-        server_name: Option<&str>,
         request: InvokeRequest,
     ) -> Result<InvokeResponse, CoreError> {
-        let channel = self.get_channel(contract_id, endpoint, server_name).await?;
+        let channel = self.get_channel(contract_id, endpoint).await?;
         let grpc_path = grpc_path_for_contract(contract_id)?;
         let path = http::uri::PathAndQuery::from_static(grpc_path);
 

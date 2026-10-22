@@ -85,7 +85,7 @@ fn default_codec_version() -> i32 {
 async fn ensure_tenant_crypto_enabled(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<(), ApiError> {
     ensure_license_issuance_allowed(client, base_url, token).await
 }
@@ -93,7 +93,7 @@ async fn ensure_tenant_crypto_enabled(
 async fn load_root_materials(
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
 ) -> Result<(Vec<u8>, Vec<u8>), ApiError> {
     let bundle =
         fetch_root_material_bundle(cert_client, cert_service_url, cert_service_token).await?;
@@ -166,7 +166,7 @@ pub async fn update_profile(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     payload: &UpdateCryptoProfileRequest,
     actor_id: uuid::Uuid,
@@ -231,7 +231,7 @@ pub async fn create_key(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     actor_id: uuid::Uuid,
     rotate: bool,
@@ -323,7 +323,7 @@ pub struct SetKeyStatusArgs<'a> {
     pub pool: &'a PgPool,
     pub cert_client: &'a reqwest::Client,
     pub cert_service_url: &'a str,
-    pub cert_service_token: Option<&'a str>,
+    pub cert_service_token: &'a str,
     pub code: &'a str,
     pub version: &'a str,
     pub status: &'a str,
@@ -477,7 +477,7 @@ pub async fn verify_crypto_keys(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
     let (master_key, integrity_key) =
@@ -657,7 +657,7 @@ pub async fn create_request_key(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {

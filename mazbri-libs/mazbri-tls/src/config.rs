@@ -6,20 +6,14 @@ pub struct TlsConfig {
     pub service_identity: String,
     pub cache_dir: PathBuf,
     pub renewal_threshold_days: i64,
-    pub cert_service_token: Option<String>,
+    pub cert_service_token: String,
     pub verify_peer: bool,
-    pub ca_cert_path: Option<PathBuf>,
-    pub cache_only: bool,
-    pub server_name: Option<String>,
 }
 fn default_cache_dir() -> PathBuf {
     PathBuf::from("/tmp/mazbri-certs")
 }
 fn default_renewal_threshold() -> i64 {
     30
-}
-fn default_cache_only() -> bool {
-    true
 }
 impl Default for TlsConfig {
     fn default() -> Self {
@@ -28,11 +22,8 @@ impl Default for TlsConfig {
             service_identity: String::new(),
             cache_dir: default_cache_dir(),
             renewal_threshold_days: default_renewal_threshold(),
-            cert_service_token: None,
+            cert_service_token: String::new(),
             verify_peer: true,
-            ca_cert_path: None,
-            cache_only: default_cache_only(),
-            server_name: None,
         }
     }
 }

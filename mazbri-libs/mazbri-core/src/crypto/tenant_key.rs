@@ -80,17 +80,13 @@ pub fn load_integrity_key_from_env() -> Result<Vec<u8>, TenantKeyError> {
 pub async fn fetch_root_protection_material_bundle(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<RootProtectionMaterialBundle, TenantKeyError> {
     let url = format!(
         "{}/authorizations/root/current/materials",
         base_url.trim_end_matches('/')
     );
-    let mut request = client.get(url);
-    let token = token.map(str::to_owned).filter(|value| !value.is_empty());
-    if let Some(token) = token.as_deref() {
-        request = request.bearer_auth(token);
-    }
+    let request = client.get(url).bearer_auth(token);
     let response = request.send().await.map_err(|error| {
         TenantKeyError::RootMaterialRequestFailed(format!(
             "failed to query commercial root protection materials: {error}"

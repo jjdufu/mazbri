@@ -197,7 +197,7 @@ pub struct TenantCryptoState {
     http_client: reqwest::Client,
     redis: RedisClient,
     cert_service_url: String,
-    cert_service_token: Option<String>,
+    cert_service_token: String,
 }
 
 impl TenantCryptoState {
@@ -208,7 +208,7 @@ impl TenantCryptoState {
         db: Arc<PgPool>,
         redis: RedisClient,
         cert_service_url: &str,
-        cert_service_token: Option<String>,
+        cert_service_token: String,
     ) -> anyhow::Result<Self> {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
@@ -465,7 +465,7 @@ impl TenantCryptoState {
         let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
             &self.http_client,
             &self.cert_service_url,
-            self.cert_service_token.as_deref(),
+            &self.cert_service_token,
         )
         .await
         .map_err(|error| {
@@ -763,7 +763,7 @@ impl TenantCryptoState {
         let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
             &self.http_client,
             &self.cert_service_url,
-            self.cert_service_token.as_deref(),
+            &self.cert_service_token,
         )
         .await
         .map_err(|error| {

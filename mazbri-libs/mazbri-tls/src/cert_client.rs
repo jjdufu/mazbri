@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub struct CertClient {
     client: Client,
     base_url: String,
-    auth_token: Option<String>,
+    auth_token: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertificateResponse {
@@ -28,7 +28,7 @@ struct IssueRequest {
 }
 impl CertClient {
     #[must_use]
-    pub fn new(base_url: &str, auth_token: Option<&str>) -> Self {
+    pub fn new(base_url: &str, auth_token: &str) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -36,7 +36,7 @@ impl CertClient {
         Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
-            auth_token: auth_token.map(std::string::ToString::to_string),
+            auth_token: auth_token.to_owned(),
         }
     }
     pub async fn issue(&self, subject: &str) -> TlsResult<CertificateResponse> {
@@ -48,9 +48,7 @@ impl CertClient {
             subject = % subject, url = % url, "Requesting certificate from cert-service"
         );
         let mut builder = self.client.post(&url).json(&request);
-        if let Some(ref token) = self.auth_token {
-            builder = builder.bearer_auth(token);
-        }
+        builder = builder.bearer_auth(&self.auth_token);
         let response = builder.send().await?;
         let status = response.status();
         debug!(status = % status, "Received response from cert-service");
@@ -77,9 +75,7 @@ impl CertClient {
         let url = format!("{}/renew/{}", self.base_url, cert_id);
         info!(cert_id = % cert_id, url = % url, "Requesting certificate renewal");
         let mut builder = self.client.post(&url);
-        if let Some(ref token) = self.auth_token {
-            builder = builder.bearer_auth(token);
-        }
+        builder = builder.bearer_auth(&self.auth_token);
         let response = builder.send().await?;
         let status = response.status();
         debug!(status = % status, "Received renewal response from cert-service");
@@ -113,9 +109,7 @@ impl CertClient {
             "Fetching certificate by subject from cert-service"
         );
         let mut builder = self.client.get(&url);
-        if let Some(ref token) = self.auth_token {
-            builder = builder.bearer_auth(token);
-        }
+        builder = builder.bearer_auth(&self.auth_token);
         let response = builder.send().await?;
         let status = response.status();
         debug!(status = % status, "Received certificate response from cert-service");

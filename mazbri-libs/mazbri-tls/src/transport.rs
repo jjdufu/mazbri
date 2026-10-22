@@ -51,10 +51,7 @@ impl TlsConnector {
     ) -> TlsResult<Self> {
         let client_config = build_client_config(ca_cert_pem, client_cert, config)?;
         let connector = RustlsConnector::from(client_config);
-        let domain_str = config
-            .server_name
-            .as_deref()
-            .unwrap_or(&config.service_identity);
+        let domain_str = config.service_identity.as_str();
         let domain = rustls::pki_types::ServerName::try_from(domain_str)
             .map_err(|e| {
                 TlsError::Config(format!(
@@ -111,10 +108,7 @@ impl TlsConnector {
             .map_err(|e| TlsError::HandshakeFailed(e.to_string()))
     }
 }
-pub async fn resolve_connect_target(
-    endpoint: &str,
-    explicit_server_name: Option<&str>,
-) -> TlsResult<ConnectTarget> {
+pub async fn resolve_connect_target(endpoint: &str) -> TlsResult<ConnectTarget> {
     let endpoint = endpoint.trim();
     if endpoint.is_empty() {
         return Err(TlsError::Config("Endpoint must not be empty".to_string()));
@@ -138,21 +132,11 @@ pub async fn resolve_connect_target(
     let socket_addr = addrs.next().ok_or_else(|| {
         TlsError::HandshakeFailed(format!("No resolved addresses for '{}'", display_addr))
     })?;
-    let query_server_name = url
-        .query_pairs()
-        .find(|(key, _)| key == "server_name")
-        .map(|(_, value)| value.into_owned())
-        .filter(|value| !value.is_empty());
-    let server_name = explicit_server_name
-        .map(ToOwned::to_owned)
-        .or(query_server_name)
-        .or_else(|| {
-            if host.parse::<IpAddr>().is_ok() {
-                None
-            } else {
-                Some(host.to_string())
-            }
-        });
+    let server_name = if host.parse::<IpAddr>().is_ok() {
+        None
+    } else {
+        Some(host.to_string())
+    };
     Ok(ConnectTarget {
         socket_addr,
         server_name,

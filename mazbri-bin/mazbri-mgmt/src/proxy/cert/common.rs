@@ -11,7 +11,7 @@ pub(crate) async fn require_license_issuance(state: &AppState) -> Result<(), Api
     ensure_license_issuance_allowed(
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
     )
     .await
 }

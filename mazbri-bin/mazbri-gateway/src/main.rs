@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     let tls_config = mazbri_tls::TlsConfig {
         cert_service_url: bootstrap.cert_service.base().to_owned(),
         service_identity: service_name.clone(),
-        cert_service_token: Some(cert_service_token_value),
+        cert_service_token: cert_service_token_value,
         ..Default::default()
     };
     info!(
@@ -191,8 +191,7 @@ async fn start_registry(
         if registration.enabled {
             let token = get_cert_service_token()?;
             let http_client = Arc::new(
-                HttpConfigClientBuilder::new(service_name, bootstrap.cert_service.base())
-                    .cert_service_token(token)
+                HttpConfigClientBuilder::new(service_name, bootstrap.cert_service.base(), token)
                     .build()
                     .await?,
             );

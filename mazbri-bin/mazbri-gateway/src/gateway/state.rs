@@ -58,7 +58,7 @@ pub struct ProxyStateInit<'a> {
     pub db: Arc<PgPool>,
     pub redis: mazbri_core::redis::RedisClient,
     pub cert_service_url: &'a str,
-    pub cert_service_token: Option<String>,
+    pub cert_service_token: String,
     pub services_config: crate::config::ServicesConfig,
     pub supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache,
 }

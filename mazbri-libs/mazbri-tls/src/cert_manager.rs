@@ -36,10 +36,7 @@ pub struct CertManager {
 impl CertManager {
     #[must_use]
     pub fn new(config: TlsConfig) -> Self {
-        let client = CertClient::new(
-            &config.cert_service_url,
-            config.cert_service_token.as_deref(),
-        );
+        let client = CertClient::new(&config.cert_service_url, &config.cert_service_token);
         Self {
             config,
             client,
