@@ -13,29 +13,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .operation
         .as_deref()
         .ok_or_else(|| ExecuteError::SpecInvalid("ws_unary operation missing".into()))?;
-    let path = spec
-        .ws
-        .as_ref()
-        .and_then(|w| w.path.as_deref())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| spec.request_path(&ctx.input.path_prefix));
-    let mut url = join_url(ctx.base_url, path);
-    if url.starts_with("http://") {
-        url = format!("ws://{}", url.trim_start_matches("http://"));
-    } else if url.starts_with("https://") {
-        url = format!("wss://{}", url.trim_start_matches("https://"));
-    }
-    url = append_query(&url, &super::merge_request_query(ctx.auth, spec));
-    if let Err(e) = ctx
-        .ssrf
-        .validate_url(
-            &url.replace("ws://", "http://")
-                .replace("wss://", "https://"),
-        )
-        .await
-    {
-        return Err(ExecuteError::SsrfBlocked(e));
-    }
+    let url = ws_url(ctx).await?;
 
     let mut req = url
         .as_str()
@@ -130,6 +108,34 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         biz_error: None,
         response: synthetic_response(&url, &json),
     })
+}
+
+async fn ws_url(ctx: &AdapterCtx<'_>) -> Result<String, ExecuteError> {
+    let spec = &ctx.input.spec;
+    let path = spec
+        .ws
+        .as_ref()
+        .and_then(|w| w.path.as_deref())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| spec.request_path(&ctx.input.path_prefix));
+    let mut url = join_url(ctx.base_url, path);
+    if url.starts_with("http://") {
+        url = format!("ws://{}", url.trim_start_matches("http://"));
+    } else if url.starts_with("https://") {
+        url = format!("wss://{}", url.trim_start_matches("https://"));
+    }
+    url = append_query(&url, &super::merge_request_query(ctx.auth, spec));
+    if let Err(e) = ctx
+        .ssrf
+        .validate_url(
+            &url.replace("ws://", "http://")
+                .replace("wss://", "https://"),
+        )
+        .await
+    {
+        return Err(ExecuteError::SsrfBlocked(e));
+    }
+    Ok(url)
 }
 
 fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {

@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use mazbri_core::channel_egress::JobPollSpec;
+
 use crate::http_call::{HttpCall, append_query, join_url};
 use crate::template::extract_by_path;
 use crate::types::{BizError, BodyKind, ExecuteError, ExecuteMode};
@@ -37,14 +39,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         },
     )
     .await?;
-    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) {
-        return Ok(AdapterOutcome {
-            payload: serde_json::Value::Null,
-            biz_error: None,
-            response: submit,
-        });
-    }
-    if submit.status == 401 {
+    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) || submit.status == 401 {
         return Ok(AdapterOutcome {
             payload: serde_json::Value::Null,
             biz_error: None,
@@ -105,41 +100,51 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             });
         }
         let json = parse_json_body(&last.body)?;
-        let status = extract_by_path(&json, &jp.status_jsonpath)
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if status == "succeeded" || status == "success" || status == "ok" {
-            let result_path = jp
-                .result_jsonpath
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .unwrap_or("$.result");
-            let payload = extract_by_path(&json, result_path).unwrap_or(json);
+        if let Some((payload, biz_error)) = terminal_outcome(jp, json) {
             return Ok(AdapterOutcome {
                 payload,
-                biz_error: None,
-                response: last,
-            });
-        }
-        if status == "failed" || status == "error" {
-            let msg_path = jp
-                .message_jsonpath
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .unwrap_or("$.message");
-            let message = extract_by_path(&json, msg_path)
-                .and_then(|v| v.as_str().map(str::to_string))
-                .unwrap_or_else(|| "job failed".into());
-            return Ok(AdapterOutcome {
-                payload: serde_json::Value::Null,
-                biz_error: Some(BizError {
-                    code: "UPSTREAM_BIZ".into(),
-                    message,
-                    details: Some(json),
-                }),
+                biz_error,
                 response: last,
             });
         }
     }
+}
+
+/// 终态（成功/失败）返回 `(payload, biz_error)`；仍在处理中返回 `None`。
+fn terminal_outcome(
+    jp: &JobPollSpec,
+    json: serde_json::Value,
+) -> Option<(serde_json::Value, Option<BizError>)> {
+    let status = extract_by_path(&json, &jp.status_jsonpath)
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if status == "succeeded" || status == "success" || status == "ok" {
+        let result_path = jp
+            .result_jsonpath
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("$.result");
+        let payload = extract_by_path(&json, result_path).unwrap_or(json);
+        return Some((payload, None));
+    }
+    if status == "failed" || status == "error" {
+        let msg_path = jp
+            .message_jsonpath
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("$.message");
+        let message = extract_by_path(&json, msg_path)
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| "job failed".into());
+        return Some((
+            serde_json::Value::Null,
+            Some(BizError {
+                code: "UPSTREAM_BIZ".into(),
+                message,
+                details: Some(json),
+            }),
+        ));
+    }
+    None
 }
