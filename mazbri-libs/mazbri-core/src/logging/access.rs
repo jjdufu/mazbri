@@ -519,7 +519,6 @@ pub fn normalize_upstream_host(url_or_addr: &str) -> Option<String> {
     let without_scheme = trimmed
         .strip_prefix("http://")
         .or_else(|| trimmed.strip_prefix("https://"))
-        .or_else(|| trimmed.strip_prefix("tarpc://"))
         .unwrap_or(trimmed);
     let host = without_scheme
         .split(['/', '?', '#'])

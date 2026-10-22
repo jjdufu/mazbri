@@ -187,10 +187,6 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
         let validated = validate_like_param(product_id)?;
         conditions.push(format!("product_id = '{validated}'"));
     }
-    if let Some(ref event_target) = params.event_target {
-        let validated = validate_like_param(event_target)?;
-        conditions.push(format!("event_target = '{validated}'"));
-    }
     if let Some(ref supplier_id) = params.supplier_id {
         let validated = validate_uuid_param(supplier_id)?;
         conditions.push(format!("supplier_id = '{validated}'"));

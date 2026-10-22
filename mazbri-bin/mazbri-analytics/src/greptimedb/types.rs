@@ -101,7 +101,6 @@ pub struct RequestLogQueryParams {
     pub supplier_code: Option<String>,
     pub channel_id: Option<String>,
     pub channel_code: Option<String>,
-    pub event_target: Option<String>,
     pub path: Option<String>,
     pub route_template: Option<String>,
     pub client_ip: Option<String>,

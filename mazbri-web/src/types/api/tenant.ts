@@ -111,8 +111,6 @@ export interface TenantRateLimitConfig {
   tenant_id: string;
 
   max_concurrent: number;
-
-  tenant_qps?: number;
   max_bandwidth_mbps: number;
 
   api_limits: Record<string, number>;

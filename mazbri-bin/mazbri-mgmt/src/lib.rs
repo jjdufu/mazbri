@@ -9,6 +9,5 @@ pub mod middleware;
 pub mod proxy;
 pub mod repositories;
 pub mod response;
-pub mod sanitize;
 pub mod services;
 pub use response::ApiResponse;

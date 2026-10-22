@@ -273,8 +273,7 @@ pub struct ResetPasswordRequest {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForcePasswordResetRequest {
-    #[serde(alias = "force_password_reset")]
-    pub force_reset: bool,
+    pub force_password_reset: bool,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

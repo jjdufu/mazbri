@@ -3,7 +3,6 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::middleware::auth::AdminClaims;
-use crate::sanitize::sanitize_json_value;
 use crate::services::config_center as service;
 use axum::{
     Extension, Json,
@@ -23,9 +22,9 @@ pub async fn list_configs(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::list_configs(&state, client_ip, &request_id, &trace_id, &params).await?,
-    )))
+    ))
 }
 /// # Errors
 ///
@@ -38,9 +37,9 @@ pub async fn get_config(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::get_config(&state, &service_name, client_ip, &request_id, &trace_id).await?,
-    )))
+    ))
 }
 /// # Errors
 ///
@@ -56,7 +55,7 @@ pub async fn create_config(
     let (request_id, trace_id) = request_ids(&headers);
     let data = service::create_config(&state, &claims, &payload, client_ip, &request_id, &trace_id)
         .await?;
-    Ok((StatusCode::CREATED, Json(sanitize_json_value(data))))
+    Ok((StatusCode::CREATED, Json(data)))
 }
 /// # Errors
 ///
@@ -71,7 +70,7 @@ pub async fn update_config(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::update_config(
             &state,
             &claims,
@@ -82,7 +81,7 @@ pub async fn update_config(
             &trace_id,
         )
         .await?,
-    )))
+    ))
 }
 /// # Errors
 ///
@@ -96,7 +95,7 @@ pub async fn delete_config(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::delete_config(
             &state,
             &claims,
@@ -106,5 +105,5 @@ pub async fn delete_config(
             &trace_id,
         )
         .await?,
-    )))
+    ))
 }

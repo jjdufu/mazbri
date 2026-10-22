@@ -2,7 +2,6 @@ use super::types::{
     ActorType, AuditAction, AuditLogChanges, AuditLogDetailResponse, AuditLogListResponse,
     AuditLogQuery, AuditLogRequest, AuditLogResponse, AuditResourceType, AuditStatus,
 };
-use crate::sanitize::sanitize_json_value;
 use axum::http::HeaderMap;
 use sqlx::{Postgres, QueryBuilder, Row};
 use std::fmt::Write as _;
@@ -515,7 +514,6 @@ impl AuditService {
             let user_agent: Option<String> = row.get("user_agent");
             let details = details.unwrap_or_else(|| serde_json::json!({}));
             let resolved_ip = resolve_ip_address(ip_address.as_deref(), &details);
-            let sanitized_details = sanitize_json_value(details);
             let _ = writeln!(
                 csv,
                 "{},{},{},{},{},{},{},{},{},{},{},{},{}",
@@ -527,7 +525,7 @@ impl AuditService {
                 csv_escape(&action),
                 csv_escape(&resource_type.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&resource_id.unwrap_or_else(|| "N/A".to_string())),
-                csv_escape(&sanitized_details.to_string()),
+                csv_escape(&details.to_string()),
                 csv_escape(&status.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&error_message.unwrap_or_else(|| "N/A".to_string())),
                 csv_escape(&resolved_ip.unwrap_or_else(|| "N/A".to_string())),

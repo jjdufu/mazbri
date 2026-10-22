@@ -536,7 +536,7 @@ pub struct ReconciliationDiscrepancyListQuery {
     pub filters: Option<String>,
     #[serde(default = "default_page")]
     pub page: u32,
-    #[serde(default = "default_limit", alias = "limit")]
+    #[serde(default = "default_limit")]
     pub page_size: u32,
 }
 
@@ -829,7 +829,7 @@ pub struct GlobalBillAdjustmentListQuery {
     pub status: Option<String>,
     #[serde(default = "default_page")]
     pub page: u32,
-    #[serde(default = "default_limit", alias = "limit")]
+    #[serde(default = "default_limit")]
     pub page_size: u32,
 }
 

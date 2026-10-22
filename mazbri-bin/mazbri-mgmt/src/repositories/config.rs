@@ -5,7 +5,7 @@ use sqlx::PgPool;
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct RateLimitConfigRow {
     pub tenant_id: uuid::Uuid,
-    /// Plan QPS mapped from DB `tenant_qps` (API wire name: `max_concurrent`, alias `tenant_qps`).
+    /// Plan QPS mapped from DB `tenant_qps` (API wire name: `max_concurrent`).
     pub max_concurrent: i32,
     pub max_bandwidth_mbps: i32,
     pub api_limits: serde_json::Value,

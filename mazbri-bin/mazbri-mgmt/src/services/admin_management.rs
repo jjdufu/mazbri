@@ -373,7 +373,7 @@ pub async fn force_password_reset(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    repo::update_force_password_reset(pool, id, req.force_reset)
+    repo::update_force_password_reset(pool, id, req.force_password_reset)
         .await
         .map_err(|e| {
             tracing::error!("Failed to update force_password_reset: {}", e);
@@ -381,7 +381,7 @@ pub async fn force_password_reset(
         })?;
     info!(
         "Force password reset {} for admin: {} by {}",
-        if req.force_reset {
+        if req.force_password_reset {
             "enabled"
         } else {
             "disabled"
@@ -397,13 +397,13 @@ pub async fn force_password_reset(
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(
             { "username" : admin.username, "force_password_reset" : req
-            .force_reset, }
+            .force_password_reset, }
         )),
         ip_address: client_ip,
         ..Default::default()
     });
     Ok(serde_json::json!(
-        { "message" : if req.force_reset { "已启用强制重置密码" } else {
+        { "message" : if req.force_password_reset { "已启用强制重置密码" } else {
         "已禁用强制重置密码" } }
     ))
 }
