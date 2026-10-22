@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use mazbri_auth::TenantContext;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
 use sqlx::Row;
@@ -52,7 +53,7 @@ pub async fn usage_middleware(
         .and_then(|ctx| ctx.product_id.clone());
     let request_size = get_content_length(request.headers());
     let response = next.run(request).await;
-    let billing_service_duration_ms = start.elapsed().as_millis() as i32;
+    let billing_service_duration_ms = i32::saturating_from(start.elapsed().as_millis());
     let response_size = get_response_size(&response);
     let billing_code = get_billing_code_from_response(&response);
     let billable = billing_code.default_billable();
@@ -111,12 +112,12 @@ pub async fn usage_middleware(
             api_endpoint: uri.path().to_string(),
             http_method: method.to_string(),
             response_status: response.status().as_u16(),
-            request_size: request_size as i64,
-            response_size: response_size as i64,
+            request_size: i64::saturating_from(request_size),
+            response_size: i64::saturating_from(response_size),
             billing_service_duration_ms,
             billing_result: calc_result,
             product_id,
-            billing_code: Some(billing_code.0 as i16),
+            billing_code: Some(i16::saturating_from(billing_code.0)),
         };
         match state.billing_service.record_usage(usage_record).await {
             Ok(usage_record_id) => {

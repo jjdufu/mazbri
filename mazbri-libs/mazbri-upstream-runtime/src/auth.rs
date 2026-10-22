@@ -1,4 +1,5 @@
 //! Auth profiles applied before adapter invoke.
+use mazbri_core::num::SaturatingFrom;
 
 use chrono::Utc;
 use reqwest::Method;
@@ -530,7 +531,7 @@ async fn parse_token_response(
             }
         }
     }
-    let expires_at = Utc::now() + chrono::Duration::seconds(expires_in_sec as i64);
+    let expires_at = Utc::now() + chrono::Duration::seconds(i64::saturating_from(expires_in_sec));
     Ok(CachedToken {
         token: t_str,
         expires_at,

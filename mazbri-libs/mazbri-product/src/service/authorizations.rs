@@ -1,5 +1,5 @@
 use super::{
-    AuthorizationDetail, PermissionCache, Postgres, ProductService, QueryBuilder, Result, Row,
+    AuthorizationDetail, Postgres, ProductService, QueryBuilder, Result, Row,
     authorization_detail_from_row,
 };
 

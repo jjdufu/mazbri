@@ -12,6 +12,7 @@ use mazbri_core::metrics::health::{
     BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater,
     register_health_metrics,
 };
+use mazbri_core::num::SaturatingFrom;
 use mazbri_registry::{
     ConfigCenterRegistry, ConfigHandler, HttpConfigClientBuilder, ServiceRegistry,
 };
@@ -198,7 +199,7 @@ impl DbPoolInfo for PgPoolInfoBridge {
         self.0.size()
     }
     fn num_idle(&self) -> u32 {
-        self.0.num_idle() as u32
+        u32::saturating_from(self.0.num_idle())
     }
     fn is_healthy(&self) -> bool {
         let pool = self.0.clone();
@@ -334,7 +335,7 @@ pub(crate) fn start_admin_server(
         }),
         config_center_connected,
     );
-    updater.spawn();
+    drop(updater.spawn());
     tracing::info!("Health metrics updater started for {}", service_name);
     Ok(Some(state))
 }

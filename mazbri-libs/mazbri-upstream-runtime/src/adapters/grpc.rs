@@ -55,7 +55,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     dyn_msg
         .encode(&mut proto_buf)
         .map_err(|e| ExecuteError::AdapterFailed(format!("encode protobuf: {e}")))?;
-    let frame = grpc_frame(&proto_buf);
+    let frame = grpc_frame(&proto_buf)?;
 
     let url = format!(
         "{}/{}",
@@ -175,12 +175,15 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     })
 }
 
-fn grpc_frame(msg: &[u8]) -> Vec<u8> {
+fn grpc_frame(msg: &[u8]) -> Result<Vec<u8>, ExecuteError> {
+    let len = u32::try_from(msg.len()).map_err(|_| {
+        ExecuteError::AdapterFailed("grpc request message exceeds 4 GiB".to_string())
+    })?;
     let mut out = Vec::with_capacity(5 + msg.len());
     out.push(0);
-    out.extend_from_slice(&(msg.len() as u32).to_be_bytes());
+    out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(msg);
-    out
+    Ok(out)
 }
 
 fn decode_grpc_frame(buf: &[u8]) -> Result<&[u8], ExecuteError> {

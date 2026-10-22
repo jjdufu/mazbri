@@ -2,6 +2,7 @@
 //!
 //! New path: `invoke` — validate spec → ssrf → auth profile → adapter.invoke.
 //! Legacy `execute` remains for supplier transform / probe compatibility tests.
+use mazbri_core::num::SaturatingFrom;
 
 use chrono::Utc;
 use reqwest::Method;
@@ -157,7 +158,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: "validate".into(),
                 ok: true,
-                latency_ms: v_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(v_start.elapsed().as_millis()),
                 request_summary: Some(StageSummary {
                     method: Some(input.spec.request_method().to_string()),
                     url: Some(base_url.clone()),
@@ -216,7 +217,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: "ssrf".into(),
                 ok: true,
-                latency_ms: s_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(s_start.elapsed().as_millis()),
                 request_summary: None,
                 response_summary: None,
                 error: None,
@@ -253,7 +254,7 @@ impl RuntimeEngine {
             }
             return InvokeResult {
                 ok: wrap_err.is_none(),
-                latency_ms: start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                 stages,
                 payload: Some(preview),
                 biz_error: None,
@@ -276,7 +277,7 @@ impl RuntimeEngine {
             if attempt >= 2 {
                 return InvokeResult {
                     ok: false,
-                    latency_ms: start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                     stages,
                     payload: None,
                     biz_error: None,
@@ -322,7 +323,7 @@ impl RuntimeEngine {
                 stages.push(StageResult {
                     name: "auth".into(),
                     ok: true,
-                    latency_ms: a_start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(a_start.elapsed().as_millis()),
                     request_summary: Some(StageSummary {
                         method: None,
                         url: None,
@@ -369,7 +370,7 @@ impl RuntimeEngine {
             {
                 return InvokeResult {
                     ok: true,
-                    latency_ms: start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                     stages,
                     payload: None,
                     biz_error: None,
@@ -385,7 +386,7 @@ impl RuntimeEngine {
                     if matches!(input.mode, ExecuteMode::AuthOnly) {
                         return InvokeResult {
                             ok: true,
-                            latency_ms: start.elapsed().as_millis() as u64,
+                            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                             stages,
                             payload: None,
                             biz_error: None,
@@ -395,7 +396,7 @@ impl RuntimeEngine {
                                 status: outcome.response.status,
                                 url: outcome.response.final_url.clone(),
                                 adapter: adapter_name,
-                                latency_ms: start.elapsed().as_millis() as u64,
+                                latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                             }),
                             token: applied.token,
                             response: Some(outcome.response),
@@ -410,7 +411,7 @@ impl RuntimeEngine {
                             name: "upstream".into(),
                             ok: outcome.biz_error.is_none()
                                 && (200..300).contains(&outcome.response.status),
-                            latency_ms: u_start.elapsed().as_millis() as u64,
+                            latency_ms: u64::saturating_from(u_start.elapsed().as_millis()),
                             request_summary: Some(StageSummary {
                                 method: Some(outcome.response.method.clone()),
                                 url: Some(outcome.response.final_url.clone()),
@@ -443,7 +444,7 @@ impl RuntimeEngine {
                         status: outcome.response.status,
                         url: outcome.response.final_url.clone(),
                         adapter: adapter_name,
-                        latency_ms: start.elapsed().as_millis() as u64,
+                        latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                     };
                     return InvokeResult {
                         ok: outcome.biz_error.is_none(),
@@ -487,7 +488,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: stage_name.into(),
                 ok: false,
-                latency_ms: stage_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(stage_start.elapsed().as_millis()),
                 request_summary: None,
                 response_summary: None,
                 error: Some(err.to_string()),
@@ -495,7 +496,7 @@ impl RuntimeEngine {
         }
         InvokeResult {
             ok: false,
-            latency_ms: start.elapsed().as_millis() as u64,
+            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
             stages,
             payload: None,
             biz_error: None,
@@ -535,7 +536,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: "validate".into(),
                 ok: true,
-                latency_ms: v_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(v_start.elapsed().as_millis()),
                 request_summary: Some(StageSummary {
                     method: Some(input.request.method.clone()),
                     url: Some(input.base_url.clone()),
@@ -600,7 +601,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: "ssrf".into(),
                 ok: true,
-                latency_ms: s_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(s_start.elapsed().as_millis()),
                 request_summary: None,
                 response_summary: None,
                 error: None,
@@ -623,7 +624,7 @@ impl RuntimeEngine {
             if attempt >= 2 {
                 return ExecuteResult {
                     ok: false,
-                    latency_ms: start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                     stages,
                     response: None,
                     error_code: Some("AUTH_TOKEN_FAILED".into()),
@@ -664,7 +665,9 @@ impl RuntimeEngine {
                                     stages.push(StageResult {
                                         name: "auth".into(),
                                         ok: true,
-                                        latency_ms: a_start.elapsed().as_millis() as u64,
+                                        latency_ms: u64::saturating_from(
+                                            a_start.elapsed().as_millis(),
+                                        ),
                                         request_summary: Some(StageSummary {
                                             method: Some(auth.method.clone()),
                                             url: Some(auth.token_url.clone()),
@@ -701,7 +704,7 @@ impl RuntimeEngine {
                         stages.push(StageResult {
                             name: "auth".into(),
                             ok: true,
-                            latency_ms: a_start.elapsed().as_millis() as u64,
+                            latency_ms: u64::saturating_from(a_start.elapsed().as_millis()),
                             request_summary: None,
                             response_summary: Some(StageSummary {
                                 method: None,
@@ -719,7 +722,7 @@ impl RuntimeEngine {
                     stages.push(StageResult {
                         name: "auth".into(),
                         ok: true,
-                        latency_ms: a_start.elapsed().as_millis() as u64,
+                        latency_ms: u64::saturating_from(a_start.elapsed().as_millis()),
                         request_summary: None,
                         response_summary: Some(StageSummary {
                             method: None,
@@ -743,7 +746,7 @@ impl RuntimeEngine {
                             .as_ref()
                             .and_then(|c| c.auth_flow.as_ref())
                             .is_none_or(|a| !a.enabled),
-                    latency_ms: start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                     stages,
                     response: None,
                     error_code: None,
@@ -790,7 +793,7 @@ impl RuntimeEngine {
                 stages.push(StageResult {
                     name: "request_transform".into(),
                     ok: true,
-                    latency_ms: t_start.elapsed().as_millis() as u64,
+                    latency_ms: u64::saturating_from(t_start.elapsed().as_millis()),
                     request_summary: Some(StageSummary {
                         method: Some(input.request.method.clone()),
                         url: Some(target_url.clone()),
@@ -904,7 +907,7 @@ impl RuntimeEngine {
                         stages.push(StageResult {
                             name: "upstream".into(),
                             ok: status_code.is_success(),
-                            latency_ms: u_start.elapsed().as_millis() as u64,
+                            latency_ms: u64::saturating_from(u_start.elapsed().as_millis()),
                             request_summary: Some(StageSummary {
                                 method: Some(input.request.method.clone()),
                                 url: Some(target_url.clone()),
@@ -971,7 +974,7 @@ impl RuntimeEngine {
                         stages.push(StageResult {
                             name: "response_transform".into(),
                             ok: true,
-                            latency_ms: rt_start.elapsed().as_millis() as u64,
+                            latency_ms: u64::saturating_from(rt_start.elapsed().as_millis()),
                             request_summary: None,
                             response_summary: Some(StageSummary {
                                 method: None,
@@ -1001,7 +1004,7 @@ impl RuntimeEngine {
 
                     return ExecuteResult {
                         ok: true,
-                        latency_ms: start.elapsed().as_millis() as u64,
+                        latency_ms: u64::saturating_from(start.elapsed().as_millis()),
                         stages,
                         response: Some(outbound),
                         error_code: None,
@@ -1090,7 +1093,8 @@ impl RuntimeEngine {
                         }
                     }
                 }
-                let expires_at = Utc::now() + chrono::Duration::seconds(expires_in_sec as i64);
+                let expires_at =
+                    Utc::now() + chrono::Duration::seconds(i64::saturating_from(expires_in_sec));
                 Ok(CachedToken {
                     token: t_str,
                     expires_at,
@@ -1141,7 +1145,7 @@ impl RuntimeEngine {
         stages.push(StageResult {
             name: "request_transform".into(),
             ok: true,
-            latency_ms: start.elapsed().as_millis() as u64,
+            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
             request_summary: Some(StageSummary {
                 method: Some(input.request.method.clone()),
                 url: Some(target_url),
@@ -1159,7 +1163,7 @@ impl RuntimeEngine {
 
         ExecuteResult {
             ok: true,
-            latency_ms: start.elapsed().as_millis() as u64,
+            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
             stages,
             response: None,
             error_code: None,
@@ -1181,7 +1185,7 @@ impl RuntimeEngine {
             stages.push(StageResult {
                 name: stage_name.into(),
                 ok: false,
-                latency_ms: stage_start.elapsed().as_millis() as u64,
+                latency_ms: u64::saturating_from(stage_start.elapsed().as_millis()),
                 request_summary: None,
                 response_summary: None,
                 error: Some(err.to_string()),
@@ -1189,7 +1193,7 @@ impl RuntimeEngine {
         }
         ExecuteResult {
             ok: false,
-            latency_ms: start.elapsed().as_millis() as u64,
+            latency_ms: u64::saturating_from(start.elapsed().as_millis()),
             stages,
             response: None,
             error_code: Some(err.code().to_string()),

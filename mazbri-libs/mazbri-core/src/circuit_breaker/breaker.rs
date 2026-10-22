@@ -2,6 +2,7 @@ use super::config::CircuitBreakerConfig;
 use super::metrics::{record_failure, record_state, record_success_rate};
 use super::state::{CircuitState, circuit_values as state_constants};
 use super::types::{CircuitBreakerEvent, CircuitResult};
+use crate::num::SaturatingFrom;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
@@ -77,7 +78,7 @@ impl CircuitBreaker {
     fn now_ms() -> i64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis() as i64)
+            .map_or(0, |d| i64::saturating_from(d.as_millis()))
     }
     pub async fn state(&self) -> CircuitState {
         CircuitState::from_u8(self.state.load(Ordering::Acquire))
@@ -93,7 +94,7 @@ impl CircuitBreaker {
     pub async fn time_since_last_state_change(&self) -> Duration {
         let last_change_ms = self.last_state_change_ms.load(Ordering::Acquire);
         let now_ms = Self::now_ms();
-        Duration::from_millis((now_ms - last_change_ms).max(0) as u64)
+        Duration::from_millis(u64::saturating_from((now_ms - last_change_ms).max(0)))
     }
     pub async fn is_request_allowed(&self) -> bool {
         let current_state = CircuitState::from_u8(self.state.load(Ordering::Acquire));

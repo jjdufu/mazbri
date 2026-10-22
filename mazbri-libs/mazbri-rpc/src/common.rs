@@ -11,9 +11,7 @@ impl HealthResponse {
         Self {
             status: "ok".to_string(),
             service: service.into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs() as i64),
+            timestamp: unix_now_secs(),
         }
     }
     #[must_use]
@@ -21,9 +19,7 @@ impl HealthResponse {
         Self {
             status: "degraded".to_string(),
             service: service.into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs() as i64),
+            timestamp: unix_now_secs(),
         }
     }
     #[must_use]
@@ -31,9 +27,7 @@ impl HealthResponse {
         Self {
             status: "down".to_string(),
             service: service.into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs() as i64),
+            timestamp: unix_now_secs(),
         }
     }
     #[must_use]
@@ -49,4 +43,10 @@ impl Default for HealthResponse {
             timestamp: 0,
         }
     }
+}
+
+fn unix_now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }

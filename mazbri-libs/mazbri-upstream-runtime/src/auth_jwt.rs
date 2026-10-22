@@ -1,4 +1,5 @@
 //! Sign JWT at `apply_auth` time (not a token-endpoint exchange).
+use mazbri_core::num::SaturatingFrom;
 
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
@@ -60,7 +61,7 @@ pub async fn sign_jwt(
                 .map_err(|e| e.to_string())?;
             Ok(CachedToken {
                 token,
-                expires_at: now_c + chrono::Duration::seconds(ttl as i64),
+                expires_at: now_c + chrono::Duration::seconds(i64::saturating_from(ttl)),
             })
         })
         .await
@@ -80,7 +81,7 @@ pub fn encode_jwt(
     let obj = claims
         .as_object_mut()
         .ok_or_else(|| ExecuteError::SpecInvalid("jwt claims_tpl must be a JSON object".into()))?;
-    let exp = now.timestamp() + ttl_secs as i64;
+    let exp = now.timestamp() + i64::saturating_from(ttl_secs);
     obj.insert("iat".into(), Value::from(now.timestamp()));
     obj.insert("exp".into(), Value::from(exp));
     let mut header = Header::new(algo);

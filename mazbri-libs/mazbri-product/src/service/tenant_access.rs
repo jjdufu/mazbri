@@ -1,6 +1,6 @@
 use super::{
-    Context, DateTime, PermissionCache, ProductService, Result, Row, TenantProduct,
-    TenantProductConfig, UpdateTenantProductConfigResult, Utc, Uuid, info,
+    Context, DateTime, ProductService, Result, Row, TenantProduct, TenantProductConfig,
+    UpdateTenantProductConfigResult, Utc, Uuid, info,
 };
 
 impl ProductService {

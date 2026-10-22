@@ -1,3 +1,4 @@
+use crate::num::SaturatingFrom;
 use crate::redis::config::RedisConfig;
 use crate::redis::error::{RedisError, Result};
 use crate::redis::keys::{
@@ -229,7 +230,7 @@ impl RedisClient {
         nonce: &str,
         ttl_seconds: i32,
     ) -> Result<bool> {
-        let ttl_seconds = ttl_seconds.max(1) as usize;
+        let ttl_seconds = usize::saturating_from(ttl_seconds.max(1));
         let key = self.nonce_key(tenant_id, key_version, nonce);
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }
@@ -244,7 +245,7 @@ impl RedisClient {
         nonce: &str,
         ttl_seconds: i32,
     ) -> Result<bool> {
-        let ttl_seconds = ttl_seconds.max(1) as usize;
+        let ttl_seconds = usize::saturating_from(ttl_seconds.max(1));
         let key = gateway_binding_nonce_key(prefix, tenant_id, nonce);
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }

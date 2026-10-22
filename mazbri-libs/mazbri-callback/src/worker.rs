@@ -2,6 +2,7 @@ use crate::repository::{self, CallbackDeliveryLog, CallbackSubscription};
 use crate::retry::calculate_next_retry;
 use crate::signer::{generate_signature, validate_timestamp};
 use chrono::Utc;
+use mazbri_core::num::SaturatingFrom;
 use reqwest::Client;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -79,7 +80,7 @@ impl CallbackWorker {
             worker_count,
             batch_size = self.config.batch_size,
             max_concurrent = self.config.max_concurrent_deliveries,
-            poll_interval_ms = self.config.poll_interval.as_millis() as u64,
+            poll_interval_ms = u64::saturating_from(self.config.poll_interval.as_millis()),
             "Starting CallbackWorker fleet"
         );
         if worker_count == 1 {
@@ -262,12 +263,17 @@ impl CallbackWorker {
         status_code: Option<i32>,
         error_msg: Option<&str>,
     ) -> anyhow::Result<()> {
-        let max_retries = sub.retry_policy["max_retries"].as_u64().unwrap_or(5) as i32;
+        let max_retries =
+            i32::saturating_from(sub.retry_policy["max_retries"].as_u64().unwrap_or(5));
         let backoff_multiplier = sub.retry_policy["backoff_multiplier"]
             .as_f64()
             .unwrap_or(2.0);
         if task.retry_count < max_retries {
-            let next_retry = calculate_next_retry(task.retry_count as u32, 30, backoff_multiplier);
+            let next_retry = calculate_next_retry(
+                u32::saturating_from(task.retry_count),
+                30,
+                backoff_multiplier,
+            );
             info!(
                 "Scheduling retry for callback {} at {}",
                 task.id, next_retry

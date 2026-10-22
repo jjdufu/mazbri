@@ -7,6 +7,7 @@ use super::metrics::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use mazbri_core::CoreError;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::{RedisClient, sha256_hex};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -42,7 +43,7 @@ impl RedisCacheEnvelope {
         Ok(CacheEntry {
             value,
             ttl: ttl_secs,
-            expires_at: Utc::now() + chrono::Duration::seconds(ttl_secs as i64),
+            expires_at: Utc::now() + chrono::Duration::seconds(i64::saturating_from(ttl_secs)),
             metadata: self.metadata,
         })
     }
@@ -126,8 +127,8 @@ impl RedisCache {
         };
         Ok((
             CacheConfig {
-                default_ttl: default_ttl as u64,
-                max_cache_size: max_cache_size as u64,
+                default_ttl: u64::saturating_from(default_ttl),
+                max_cache_size: u64::saturating_from(max_cache_size),
                 max_entry_size: self.config.max_entry_size,
                 api_ttl: api_ttl_map,
                 tenant_isolated,
@@ -164,7 +165,7 @@ impl RedisCache {
         let payload = serde_json::to_vec(&envelope)
             .map_err(|error| mazbri_core::CoreError::Validation(error.to_string()))?;
         self.redis
-            .set_ex_bytes(&redis_key, &payload, ttl_secs as usize)
+            .set_ex_bytes(&redis_key, &payload, usize::saturating_from(ttl_secs))
             .await
             .map_err(Self::redis_unavailable)?;
         Ok(())
@@ -181,7 +182,7 @@ impl RedisCache {
         if ttl_secs <= 0 {
             return Ok(None);
         }
-        let entry = envelope.into_entry(ttl_secs as u64)?;
+        let entry = envelope.into_entry(u64::saturating_from(ttl_secs))?;
         Ok(Some(entry))
     }
 
@@ -263,8 +264,8 @@ impl RedisCache {
         );
         let _ = self.memory_cache.insert(memory_tenant_id, key, entry).await;
         CACHE_ENTRIES.inc();
-        CACHE_MEMORY_BYTES.add(value.len() as i64);
-        add_tenant_size_estimate(tenant_id, value.len() as i64);
+        CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
+        add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         recorder.record_success();
         Ok(())
     }
@@ -374,7 +375,7 @@ impl Cache for RedisCache {
         if deleted > 0 {
             CACHE_ENTRIES.dec();
             if let Some(entry) = removed {
-                CACHE_MEMORY_BYTES.add(-(entry.value.len() as i64));
+                CACHE_MEMORY_BYTES.add(-i64::saturating_from(entry.value.len()));
                 reset_tenant_size_estimate(tenant_id);
             }
         }
@@ -501,8 +502,8 @@ impl Cache for RedisCache {
                 .insert(memory_tenant_id, &key, entry)
                 .await;
             CACHE_ENTRIES.inc();
-            CACHE_MEMORY_BYTES.add(value.len() as i64);
-            add_tenant_size_estimate(tenant_id, value.len() as i64);
+            CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
+            add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         }
         recorder.record_success();
         Ok(())

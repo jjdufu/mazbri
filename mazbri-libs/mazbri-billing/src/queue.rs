@@ -2,6 +2,7 @@ use crate::error::BillingError;
 use crate::metrics::BILLING_QUEUE_DEPTH;
 use crate::types::{ChargeQueueItem, QueueConfig};
 use chrono::{Duration as ChronoDuration, Utc};
+use mazbri_core::num::SaturatingFrom;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -99,7 +100,7 @@ impl ChargeQueue {
               AND locked_at < NOW() - ($1::double precision * INTERVAL '1 second')
             ",
         )
-        .bind(stale_secs as f64)
+        .bind(mazbri_core::num::u64_to_f64(stale_secs))
         .execute(&self.db)
         .await?;
         let n = result.rows_affected();
@@ -202,7 +203,7 @@ impl ChargeQueue {
                 .await?;
         if retry_count < max_retries {
             const MAX_RETRY_DELAY_SECS: i64 = 3600;
-            let backoff_factor = 2i64.pow(retry_count.min(30) as u32);
+            let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.min(30)));
             let delay_secs =
                 (self.config.retry_interval_secs * backoff_factor).min(MAX_RETRY_DELAY_SECS);
             let scheduled_at = Utc::now() + ChronoDuration::seconds(delay_secs);

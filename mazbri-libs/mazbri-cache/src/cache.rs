@@ -1,6 +1,7 @@
 use super::metrics::EvictionRecorder;
 use chrono::{DateTime, Utc};
 use lru::LruCache;
+use mazbri_core::num::SaturatingFrom;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ pub struct CacheEntry {
 impl CacheEntry {
     #[must_use]
     pub fn new(value: Vec<u8>, ttl: u64, metadata: serde_json::Value) -> Self {
-        let expires_at = Utc::now() + chrono::Duration::seconds(ttl as i64);
+        let expires_at = Utc::now() + chrono::Duration::seconds(i64::saturating_from(ttl));
         Self {
             value,
             ttl,

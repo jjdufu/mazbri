@@ -1,3 +1,4 @@
+use crate::num::SaturatingFrom;
 use crate::{CircuitBreakerConfig, CircuitResult, CircuitState, CoreError};
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
@@ -132,9 +133,11 @@ impl DistributedCircuitBreaker {
             ",
         )
         .bind(&self.name)
-        .bind(self.config.failure_threshold as i64)
-        .bind(self.config.success_threshold as i64)
-        .bind(self.config.cooldown_duration.as_secs() as i64)
+        .bind(i64::saturating_from(self.config.failure_threshold))
+        .bind(i64::saturating_from(self.config.success_threshold))
+        .bind(i64::saturating_from(
+            self.config.cooldown_duration.as_secs(),
+        ))
         .bind(&self.node_id)
         .execute(&*self.db)
         .await
@@ -363,7 +366,7 @@ impl DistributedCircuitBreaker {
         let count: i64 =
             storage_sync::get_row_field_i64(&row, "failure_count", "increment_failure_count");
         self.invalidate_cache().await;
-        Ok(count as u64)
+        Ok(u64::saturating_from(count))
     }
     async fn increment_success_count(&self) -> Result<u64, CoreError> {
         let row = sqlx::query(
@@ -386,7 +389,7 @@ impl DistributedCircuitBreaker {
         let count: i64 =
             storage_sync::get_row_field_i64(&row, "success_count", "increment_success_count");
         self.invalidate_cache().await;
-        Ok(count as u64)
+        Ok(u64::saturating_from(count))
     }
     async fn reset_failure_count(&self) -> Result<(), CoreError> {
         sqlx::query(

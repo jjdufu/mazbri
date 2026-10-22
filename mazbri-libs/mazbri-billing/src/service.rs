@@ -446,7 +446,7 @@ impl BillingService {
                     .inc();
                 crate::metrics::BILLING_CHARGE_BATCH_ITEMS
                     .with_label_values(&["success"])
-                    .inc_by(items.len() as f64);
+                    .inc_by(mazbri_core::num::usize_to_f64(items.len()));
                 Ok(result)
             }
             Err(error) if error.to_string().contains("Insufficient balance") => {

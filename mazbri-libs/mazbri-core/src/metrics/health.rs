@@ -104,7 +104,7 @@ impl HealthMetricsUpdater {
             if let Some(expires_at) = cert.cert_expiry() {
                 TLS_CERT_EXPIRY_TIMESTAMP
                     .with_label_values(&[name])
-                    .set(expires_at.timestamp() as f64);
+                    .set(crate::num::i64_to_f64(expires_at.timestamp()));
             }
             cert.is_cert_valid()
         } else {

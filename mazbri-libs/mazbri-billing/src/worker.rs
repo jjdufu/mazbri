@@ -3,6 +3,7 @@ use crate::queue::ChargeQueue;
 use crate::service::BillingService;
 use crate::types::{ChargeQueueItem, QueueConfig};
 use futures::stream::{self, StreamExt};
+use mazbri_core::num::SaturatingFrom;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -244,7 +245,7 @@ async fn process_batch(
         tenants = tenant_count,
         success,
         failed,
-        elapsed_ms = started.elapsed().as_millis() as u64,
+        elapsed_ms = u64::saturating_from(started.elapsed().as_millis()),
         "charge queue batch done (tenant-grouped)"
     );
     Ok(batch_len)

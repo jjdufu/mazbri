@@ -77,7 +77,7 @@ impl ConnectionManager {
                     delay.min(30)
                 };
                 let jitter: f64 = rand::rng().random_range(0.5..1.0);
-                Duration::from_secs_f64(base_secs as f64 * jitter)
+                Duration::from_secs_f64(mazbri_core::num::u64_to_f64(base_secs) * jitter)
             }
             _ => Duration::from_secs(1),
         }

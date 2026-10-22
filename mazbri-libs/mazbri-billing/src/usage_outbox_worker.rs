@@ -5,6 +5,7 @@ use crate::service::{BillingService, UsageRecord};
 use crate::types::QueueConfig;
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::stream::{self, StreamExt};
+use mazbri_core::num::SaturatingFrom;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -232,7 +233,7 @@ async fn reclaim_stale_outbox(db: &PgPool, stale_secs: u64) -> Result<u64, Billi
           AND updated_at < NOW() - ($1::double precision * INTERVAL '1 second')
         ",
     )
-    .bind(stale_secs as f64)
+    .bind(mazbri_core::num::u64_to_f64(stale_secs))
     .execute(db)
     .await?;
     let n = result.rows_affected();
@@ -292,7 +293,7 @@ async fn process_batch(
         batch = batch_len,
         success = ok_ids.len(),
         failed = fail_count,
-        elapsed_ms = started.elapsed().as_millis() as u64,
+        elapsed_ms = u64::saturating_from(started.elapsed().as_millis()),
         "usage_outbox batch done"
     );
     Ok(batch_len)
@@ -364,13 +365,13 @@ async fn process_one(
             account_id,
             api_endpoint: item.api_endpoint.clone(),
             http_method: item.http_method.clone(),
-            response_status: item.response_status as u16,
+            response_status: u16::saturating_from(item.response_status),
             request_size: item.request_size,
             response_size: item.response_size,
             billing_service_duration_ms: item.billing_service_duration_ms,
             billing_result: CalculationResult {
                 amount: item.billable_amount,
-                units: item.billable_units.max(0) as u64,
+                units: u64::saturating_from(item.billable_units.max(0)),
                 // Only per-call billing remains; coerce any legacy outbox values.
                 billing_type: {
                     if item.billing_type != "call" {
@@ -449,7 +450,7 @@ async fn mark_failed(
         .execute(db)
         .await?;
     } else {
-        let backoff_factor = 2i64.pow(retry_count.clamp(0, 30) as u32);
+        let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.clamp(0, 30)));
         let delay_secs = (config.retry_interval_secs * backoff_factor).min(3600);
         let next_attempt_at = Utc::now() + ChronoDuration::seconds(delay_secs);
         sqlx::query(

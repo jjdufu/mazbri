@@ -1,7 +1,7 @@
 use super::{
-    CreateProductRequest, DateTime, PRODUCT_ID_LOCK_KEY, PRODUCT_ID_RESERVATION_TTL_SECS,
-    PermissionCache, PgRow, Postgres, ProductIdReservation, ProductService, ProductWriteError, Row,
-    Transaction, Utc, Uuid, classify_product_write_error, next_product_id_from_max,
+    CreateProductRequest, DateTime, PRODUCT_ID_LOCK_KEY, PRODUCT_ID_RESERVATION_TTL_SECS, PgRow,
+    Postgres, ProductIdReservation, ProductService, ProductWriteError, Row, Transaction, Utc, Uuid,
+    classify_product_write_error, next_product_id_from_max,
 };
 
 impl ProductService {

@@ -1,6 +1,6 @@
 use super::{
-    AuthorizationDetail, MAX_PRODUCT_ID_NUMBER, MIN_PRODUCT_ID_NUMBER, PermissionCache, PgRow,
-    Product, ProductWriteError, Row, TenantProductConfig, TenantProductDetail,
+    AuthorizationDetail, MAX_PRODUCT_ID_NUMBER, MIN_PRODUCT_ID_NUMBER, PgRow, Product,
+    ProductWriteError, Row, TenantProductConfig, TenantProductDetail,
 };
 
 pub(crate) fn next_product_id_from_max(

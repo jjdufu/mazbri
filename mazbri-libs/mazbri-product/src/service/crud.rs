@@ -1,8 +1,7 @@
 use super::{
-    CreateProductRequest, PermissionCache, Postgres, Product, ProductDeleteError,
-    ProductIdReservation, ProductService, ProductWriteError, QueryBuilder, Result, Row,
-    UpdateProductRequest, Utc, Uuid, classify_product_write_error, info, product_from_row,
-    validate_product_id,
+    CreateProductRequest, Postgres, Product, ProductDeleteError, ProductIdReservation,
+    ProductService, ProductWriteError, QueryBuilder, Result, Row, UpdateProductRequest, Utc, Uuid,
+    classify_product_write_error, info, product_from_row, validate_product_id,
 };
 
 impl ProductService {

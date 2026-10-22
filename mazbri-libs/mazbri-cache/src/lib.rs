@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 mod cache;
 mod config;
 mod metrics;
@@ -98,8 +99,8 @@ impl CacheService {
                     serde_json::from_value(api_ttl).unwrap_or_default()
                 };
                 Ok(Some(CacheConfig {
-                    default_ttl: default_ttl as u64,
-                    max_cache_size: max_cache_size as u64,
+                    default_ttl: u64::saturating_from(default_ttl),
+                    max_cache_size: u64::saturating_from(max_cache_size),
                     api_ttl: api_ttl_map,
                     tenant_isolated,
                     max_entry_size: 1_048_576,

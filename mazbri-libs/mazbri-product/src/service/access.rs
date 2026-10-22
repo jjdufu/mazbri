@@ -1,5 +1,5 @@
 use super::{
-    Duration, PermissionCache, PermissionEntry, ProductService, Result, Row, Uuid, debug, info,
+    Duration, PermissionEntry, ProductService, Result, Row, Uuid, debug, info,
     tenant_product_detail_from_row,
 };
 

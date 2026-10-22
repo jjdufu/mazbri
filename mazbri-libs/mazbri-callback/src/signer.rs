@@ -27,7 +27,8 @@ pub fn validate_timestamp(timestamp: i64, max_drift_secs: i64) -> Result<(), &'s
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| "system clock is before UNIX epoch")?
-        .as_secs() as i64;
+        .as_secs();
+    let now = i64::try_from(now).map_err(|_| "system clock is out of range")?;
     let drift = (timestamp - now).abs();
     if drift > max_drift_secs {
         return Err("Signature timestamp out of acceptable range");

@@ -1,6 +1,6 @@
 use super::{
-    PermissionCache, ProductService, ProductTenantAccess, Result, Row, TenantProductDetail, Uuid,
-    debug, info, tenant_product_detail_from_row,
+    ProductService, ProductTenantAccess, Result, Row, TenantProductDetail, Uuid, debug, info,
+    tenant_product_detail_from_row,
 };
 
 impl ProductService {
