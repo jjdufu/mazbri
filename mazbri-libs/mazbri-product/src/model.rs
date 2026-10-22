@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use mazbri_core::PayloadCodec;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
@@ -192,14 +191,6 @@ pub struct TenantProductConfig {
     pub cb_pro_fallback: bool,
     #[serde(default)]
     pub cbpro: CBProPolicyConfig,
-    #[serde(default = "default_request_codec")]
-    pub request_codec: PayloadCodec,
-    #[serde(default = "default_response_codec")]
-    pub response_codec: PayloadCodec,
-    #[serde(default = "default_codec_enabled")]
-    pub codec_enabled: bool,
-    #[serde(default = "default_codec_version")]
-    pub codec_version: u32,
 }
 impl Default for TenantProductConfig {
     fn default() -> Self {
@@ -208,10 +199,6 @@ impl Default for TenantProductConfig {
             currency: default_currency(),
             cb_pro_fallback: false,
             cbpro: CBProPolicyConfig::default(),
-            request_codec: default_request_codec(),
-            response_codec: default_response_codec(),
-            codec_enabled: default_codec_enabled(),
-            codec_version: default_codec_version(),
         }
     }
 }
@@ -221,15 +208,6 @@ impl TenantProductConfig {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         validate_cbpro_policy_config(&self.cbpro)?;
-        if self.codec_version == 0 {
-            return Err("codec_version must be greater than zero".to_string());
-        }
-        if self.codec_enabled && self.request_codec != self.response_codec {
-            return Err(
-                "request_codec and response_codec must match when codec_enabled is true"
-                    .to_string(),
-            );
-        }
         Ok(())
     }
 }
@@ -238,18 +216,6 @@ fn default_unit_price() -> String {
 }
 fn default_currency() -> String {
     "CNY".to_string()
-}
-fn default_request_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_response_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_codec_enabled() -> bool {
-    false
-}
-fn default_codec_version() -> u32 {
-    1
 }
 fn default_cbpro_mode() -> String {
     "fallback_only".to_string()

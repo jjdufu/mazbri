@@ -16,13 +16,13 @@ Official Rust client for tenant / partner integration with **mazbri-gateway**.
 - API-key → access token exchange
 - Encrypted / signed transport envelopes (when tenant crypto profile requires it)
 - Optional HTTP request binding (`X-Mazbri-*` HMAC-SHA256 headers) when `request_hmac_key` is set
-- Request/response codecs via `mazbri_core::PayloadCodec` (JSON / Fury)
+- JSON request/response payloads
 - Propagates standard HTTP client stack (`reqwest`)
 
 ## Quick start
 
 ```rust
-use mazbri_sdk::{ClientConfig, MazbriClient, PayloadCodec};
+use mazbri_sdk::{ClientConfig, MazbriClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,8 +32,6 @@ async fn main() -> anyhow::Result<()> {
         api_key: std::env::var("MAZBRI_API_KEY")?,
         tenant_key: /* 32-byte key from crypto export */ vec![],
         key_version: "1".into(),
-        request_codec: PayloadCodec::Json,
-        response_codec: PayloadCodec::Json,
         request_hmac_key: None,
         request_key_id: None,
     })

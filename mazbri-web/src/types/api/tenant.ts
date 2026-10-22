@@ -224,10 +224,6 @@ export interface TenantProductConfig {
   currency: string;
   cb_pro_fallback: boolean;
   cbpro: CBProPolicyConfig;
-  request_codec: PayloadCodec;
-  response_codec: PayloadCodec;
-  codec_enabled: boolean;
-  codec_version: number;
 }
 export interface UpdateTenantProductConfigRequest extends TenantProductConfig {
   expected_updated_at?: ISODateString;
@@ -293,7 +289,6 @@ export type TenantCryptoKeyStatus =
   | "deprecated"
   | "disabled"
   | "compromised";
-export type PayloadCodec = "json" | "fury";
 export interface TenantCryptoProfile {
   tenant_id: string;
   encryption_mode: TenantEncryptionMode;
@@ -304,10 +299,6 @@ export interface TenantCryptoProfile {
   current_key_version?: string;
   nonce_ttl_seconds: number;
   clock_skew_seconds: number;
-  request_codec: PayloadCodec;
-  response_codec: PayloadCodec;
-  codec_enabled: boolean;
-  codec_version: number;
   config: Record<string, unknown>;
   created_at: ISODateString;
   updated_at: ISODateString;
@@ -318,10 +309,6 @@ export interface UpdateTenantCryptoProfileRequest {
   nonceTtlSeconds: number;
   clockSkewSeconds: number;
   currentKeyVersion?: string;
-  requestCodec: PayloadCodec;
-  responseCodec: PayloadCodec;
-  codecEnabled: boolean;
-  codecVersion: number;
 }
 export interface TenantCryptoKey {
   id: string;

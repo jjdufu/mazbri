@@ -85,10 +85,6 @@ export const DEFAULT_TENANT_PRODUCT_CONFIG: TenantProductConfig = {
   currency: "CNY",
   cb_pro_fallback: false,
   cbpro: DEFAULT_CBPRO_POLICY_CONFIG,
-  request_codec: "json",
-  response_codec: "json",
-  codec_enabled: false,
-  codec_version: 1,
 };
 export function createDefaultCBProPolicyConfig(): CBProPolicyConfig {
   return {

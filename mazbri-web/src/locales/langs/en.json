@@ -285,10 +285,6 @@
       "productScope": "Product Authorization Config",
       "productUnitPrice": "Unit Price",
       "productCbProFallback": "CBPRO",
-      "productCodecEnabled": "Payload Codec Enabled",
-      "productRequestCodec": "Request Codec",
-      "productResponseCodec": "Response Codec",
-      "productCodecVersion": "Codec Version",
       "productCbProPolicy": "CBPRO"
     },
     "logOutTips": "Do you want to log out?",
@@ -2665,17 +2661,12 @@
       "formSections": {
         "basicControl": "Basic Control",
         "security": "Security Options",
-        "codec": "Codec Configuration",
         "timeParams": "Time Security Parameters"
       },
       "fields": {
         "encryptionMode": "Encryption Mode",
         "currentKeyVersion": "Current Key Version",
         "signatureCheck": "Signature Verification",
-        "codecEnabled": "Enable Payload Codec",
-        "requestCodec": "Request Codec",
-        "responseCodec": "Response Codec",
-        "codecVersion": "Codec Version",
         "nonceTtlSeconds": "Nonce TTL (seconds)",
         "clockSkewSeconds": "Timestamp Tolerance Window (seconds)"
       },
@@ -3157,18 +3148,12 @@
       "title": "Authorization / Subscription Config",
       "billingSection": "Billing Config",
       "fallbackSection": "CBPRO",
-      "codecSection": "Payload Codec",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "CBPRO not enabled on product",
-      "codecEnabled": "Enable Payload Codec",
-      "requestCodec": "Request Codec",
-      "responseCodec": "Response Codec",
-      "codecVersion": "Codec Version",
-      "codecEnabledHint": "",
       "conflictTitle": "Configuration Conflict",
       "cbProRuntimeHint": "",
       "saveSuccess": "Saved"

@@ -1,7 +1,6 @@
 pub mod channel_egress;
 mod circuit_breaker;
 mod client_ip;
-pub mod codec;
 pub mod config;
 pub mod config_watch;
 pub mod crypto;
@@ -39,11 +38,6 @@ pub use circuit_breaker::{
     CircuitBreakerConfig, CircuitBreakerEvent, CircuitResult, CircuitState,
 };
 pub use client_ip::resolve_client_ip;
-pub use codec::{
-    CodecError, FuryErrorEnvelope, FurySuccessEnvelope, PayloadCodec, deserialize_fury_error,
-    deserialize_fury_success, deserialize_payload, serialize_fury_error, serialize_fury_success,
-    serialize_payload,
-};
 pub use config::{
     CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, PgCredential, PgCredentials,
     PureBootstrap, RegistrationConfig, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,

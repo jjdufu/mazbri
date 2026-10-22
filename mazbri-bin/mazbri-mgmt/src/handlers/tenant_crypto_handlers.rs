@@ -81,9 +81,7 @@ pub async fn update_crypto_profile(
             "signature_version" : payload.signature_version, "nonce_ttl_seconds" : payload
             .nonce_ttl_seconds, "clock_skew_seconds" : payload
             .clock_skew_seconds, "current_key_version" : payload
-            .current_key_version, "request_codec" : payload.request_codec.as_str(),
-            "response_codec" : payload.response_codec.as_str(), "codec_enabled" :
-            payload.codec_enabled, "codec_version" : payload.codec_version }
+            .current_key_version }
         ),
         client_ip,
     )?;

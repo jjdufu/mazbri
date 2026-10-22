@@ -285,10 +285,6 @@
       "productScope": "产品授权配置",
       "productUnitPrice": "单价",
       "productCbProFallback": "CBPRO",
-      "productCodecEnabled": "协议编码开关",
-      "productRequestCodec": "请求编码",
-      "productResponseCodec": "响应编码",
-      "productCodecVersion": "协议版本",
       "productCbProPolicy": "CBPRO"
     },
     "logOutTips": "您是否要退出登录?",
@@ -2665,17 +2661,12 @@
       "formSections": {
         "basicControl": "基本控制",
         "security": "安全选项",
-        "codec": "编解码器配置",
         "timeParams": "时间安全参数"
       },
       "fields": {
         "encryptionMode": "加密模式",
         "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
-        "codecEnabled": "启用协议编码",
-        "requestCodec": "请求编码",
-        "responseCodec": "响应编码",
-        "codecVersion": "协议版本",
         "nonceTtlSeconds": "Nonce 有效期（秒）",
         "clockSkewSeconds": "时间戳容忍窗口（秒）"
       },
@@ -3162,18 +3153,12 @@
       "title": "授权/订阅配置",
       "billingSection": "计费配置",
       "fallbackSection": "CBPRO",
-      "codecSection": "协议编码",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "产品未开启 CBPRO",
-      "codecEnabled": "启用协议编码",
-      "requestCodec": "请求编码",
-      "responseCodec": "响应编码",
-      "codecVersion": "协议版本",
-      "codecEnabledHint": "",
       "conflictTitle": "配置冲突",
       "cbProRuntimeHint": "",
       "saveSuccess": "已保存"

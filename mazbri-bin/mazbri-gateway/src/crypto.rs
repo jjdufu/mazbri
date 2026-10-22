@@ -3,7 +3,6 @@ use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
 use crate::redis_client::RedisClient;
 use chrono::Utc;
-use mazbri_core::PayloadCodec;
 use mazbri_core::crypto::tenant_key::{
     RootProtectionMaterialBundle, decode_configured_key, unwrap_tenant_key,
     verify_secret_key_digest,
@@ -135,10 +134,6 @@ pub struct TenantCryptoProfile {
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub request_codec: String,
-    pub response_codec: String,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
 }
 
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
@@ -160,10 +155,6 @@ struct TenantCryptoSnapshotRow {
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub request_codec: String,
-    pub response_codec: String,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
     pub key_version: Option<String>,
     pub encrypted_secret_key: Option<String>,
     pub secret_key_digest: Option<String>,
@@ -258,10 +249,6 @@ impl TenantCryptoState {
                 current_key_version: None,
                 nonce_ttl_seconds: 300,
                 clock_skew_seconds: 300,
-                request_codec: "json".to_string(),
-                response_codec: "json".to_string(),
-                codec_enabled: false,
-                codec_version: 1,
             };
             self.profile_cache.insert(tenant_id, profile.clone());
             record_crypto_lookup_duration("profile", "miss", lookup_started_at.elapsed());
@@ -374,8 +361,7 @@ impl TenantCryptoState {
             r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
-                p.codec_enabled, p.codec_version, k.key_version, k.encrypted_secret_key,
+                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
@@ -484,8 +470,7 @@ impl TenantCryptoState {
             r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
-                p.codec_enabled, p.codec_version, k.key_version, k.encrypted_secret_key,
+                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
@@ -510,10 +495,6 @@ impl TenantCryptoState {
             current_key_version: snapshot.current_key_version.clone(),
             nonce_ttl_seconds: snapshot.nonce_ttl_seconds,
             clock_skew_seconds: snapshot.clock_skew_seconds,
-            request_codec: snapshot.request_codec.clone(),
-            response_codec: snapshot.response_codec.clone(),
-            codec_enabled: snapshot.codec_enabled,
-            codec_version: snapshot.codec_version,
         }
     }
 
@@ -644,12 +625,9 @@ impl TenantCryptoState {
                 })?;
                 timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
                 let parse_started_at = Instant::now();
-                let request_codec = profile.request_codec();
-                let req =
-                    mazbri_core::deserialize_payload::<GatewayRequest>(request_codec, &plaintext)
-                        .map_err(|_| {
-                        ProxyError::BadRequest("Decrypted request body is invalid".to_string())
-                    })?;
+                let req = serde_json::from_slice::<GatewayRequest>(&plaintext).map_err(|_| {
+                    ProxyError::BadRequest("Decrypted request body is invalid".to_string())
+                })?;
                 timing.parse = mazbri_core::num::millis_u64(parse_started_at.elapsed());
                 timing.transport_total = mazbri_core::num::millis_u64(started_at.elapsed());
                 Ok((req, profile, true, timing))
@@ -1051,24 +1029,6 @@ struct PlatformSigningKeyRow {
     pub material: String,
     pub not_before: Option<chrono::DateTime<Utc>>,
     pub not_after: Option<chrono::DateTime<Utc>>,
-}
-
-impl TenantCryptoProfile {
-    #[must_use]
-    pub fn request_codec(&self) -> PayloadCodec {
-        if !self.codec_enabled {
-            return PayloadCodec::Json;
-        }
-        PayloadCodec::parse(&self.request_codec).unwrap_or_default()
-    }
-
-    #[must_use]
-    pub fn response_codec(&self) -> PayloadCodec {
-        if !self.codec_enabled {
-            return PayloadCodec::Json;
-        }
-        PayloadCodec::parse(&self.response_codec).unwrap_or_default()
-    }
 }
 
 fn decode_root_materials(

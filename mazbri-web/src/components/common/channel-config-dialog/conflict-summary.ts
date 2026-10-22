@@ -70,26 +70,6 @@ export function summarizeTenantProductConflict(
       latest: latest.cb_pro_fallback,
     },
     {
-      labelKey: "common.conflict.productCodecEnabled",
-      attempted: attempted.codec_enabled,
-      latest: latest.codec_enabled,
-    },
-    {
-      labelKey: "common.conflict.productRequestCodec",
-      attempted: attempted.request_codec,
-      latest: latest.request_codec,
-    },
-    {
-      labelKey: "common.conflict.productResponseCodec",
-      attempted: attempted.response_codec,
-      latest: latest.response_codec,
-    },
-    {
-      labelKey: "common.conflict.productCodecVersion",
-      attempted: attempted.codec_version,
-      latest: latest.codec_version,
-    },
-    {
       labelKey: "common.conflict.productCbProPolicy",
       attempted: attempted.cbpro,
       latest: latest.cbpro,
