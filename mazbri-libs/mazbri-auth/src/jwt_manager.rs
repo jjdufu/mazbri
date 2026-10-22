@@ -70,7 +70,7 @@ impl JwtKeyManager {
             context,
         })
     }
-    fn derive_secret(&self, material: &JwtKeyMaterial) -> Result<String, JwtKeyError> {
+    fn derive_secret(material: &JwtKeyMaterial) -> Result<String, JwtKeyError> {
         let master_key = hex::decode(&material.master_key)
             .map_err(|e| JwtKeyError::InvalidFormat(format!("Invalid master key hex: {e}")))?;
         let salt = hex::decode(&material.salt)
@@ -106,7 +106,7 @@ impl JwtKeyManager {
             context = % self.context,
             "Deriving new JWT secret from database key material"
         );
-        let secret = self.derive_secret(&material)?;
+        let secret = Self::derive_secret(&material)?;
         {
             let mut cache = self.cache.write().await;
             *cache = Some(CachedSecret {

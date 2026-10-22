@@ -43,7 +43,7 @@ impl IpWhitelist {
             return Ok(WhitelistResult::NotConfigured);
         }
         for allowed_ip in &whitelist {
-            if self.ip_matches(ip_addr, allowed_ip)? {
+            if Self::ip_matches(ip_addr, allowed_ip)? {
                 return Ok(WhitelistResult::Allowed);
             }
         }
@@ -132,7 +132,7 @@ impl IpWhitelist {
     pub fn invalidate_all(&self) {
         self.cache.invalidate_all();
     }
-    fn ip_matches(&self, ip_addr: IpAddr, cidr: &str) -> AuthResult<bool> {
+    fn ip_matches(ip_addr: IpAddr, cidr: &str) -> AuthResult<bool> {
         let parts: Vec<&str> = cidr.split('/').collect();
         if parts.len() != 2 {
             return Err(AuthError::Core(mazbri_core::CoreError::Internal(format!(
@@ -153,15 +153,15 @@ impl IpWhitelist {
         })?;
         match (ip_addr, allowed_ip) {
             (IpAddr::V4(addr), IpAddr::V4(allowed)) => {
-                Ok(self.ipv4_matches(addr, allowed, prefix_len))
+                Ok(Self::ipv4_matches(addr, allowed, prefix_len))
             }
             (IpAddr::V6(addr), IpAddr::V6(allowed)) => {
-                Ok(self.ipv6_matches(addr, allowed, prefix_len))
+                Ok(Self::ipv6_matches(addr, allowed, prefix_len))
             }
             _ => Ok(false),
         }
     }
-    fn ipv4_matches(&self, addr: Ipv4Addr, allowed: Ipv4Addr, prefix_len: u8) -> bool {
+    fn ipv4_matches(addr: Ipv4Addr, allowed: Ipv4Addr, prefix_len: u8) -> bool {
         if prefix_len > 32 {
             return false;
         }
@@ -182,12 +182,7 @@ impl IpWhitelist {
         }
         true
     }
-    fn ipv6_matches(
-        &self,
-        addr: std::net::Ipv6Addr,
-        allowed: std::net::Ipv6Addr,
-        prefix_len: u8,
-    ) -> bool {
+    fn ipv6_matches(addr: std::net::Ipv6Addr, allowed: std::net::Ipv6Addr, prefix_len: u8) -> bool {
         if prefix_len > 128 {
             return false;
         }

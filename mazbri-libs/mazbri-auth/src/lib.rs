@@ -40,21 +40,16 @@ pub fn constant_time_argon2_verify(
             })
     } else {
         let dummy_salt = argon2::password_hash::SaltString::generate(&mut OsRng);
-        let dummy_hash = match Argon2::default().hash_password(password, &dummy_salt) {
-            Ok(h) => h.to_string(),
-            Err(_) => {
-                return Err(AuthError::Core(mazbri_core::CoreError::Internal(
-                    "Password verification failed".to_string(),
-                )));
-            }
+        let Ok(h) = Argon2::default().hash_password(password, &dummy_salt) else {
+            return Err(AuthError::Core(mazbri_core::CoreError::Internal(
+                "Password verification failed".to_string(),
+            )));
         };
-        let dummy_parsed = match PasswordHash::new(&dummy_hash) {
-            Ok(p) => p,
-            Err(_) => {
-                return Err(AuthError::Core(mazbri_core::CoreError::Internal(
-                    "Password verification failed".to_string(),
-                )));
-            }
+        let dummy_hash = h.to_string();
+        let Ok(dummy_parsed) = PasswordHash::new(&dummy_hash) else {
+            return Err(AuthError::Core(mazbri_core::CoreError::Internal(
+                "Password verification failed".to_string(),
+            )));
         };
         let _ = Argon2::default().verify_password(password, &dummy_parsed);
         Err(AuthError::Core(mazbri_core::CoreError::Internal(

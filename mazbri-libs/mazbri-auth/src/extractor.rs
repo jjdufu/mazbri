@@ -23,13 +23,20 @@ where
     S: Send + Sync,
 {
     type Rejection = AuthError;
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let context = parts.extensions.get::<TenantContext>().ok_or_else(|| {
-            AuthError::Core(mazbri_core::CoreError::Internal(
-                "Tenant context not found".to_string(),
-            ))
-        })?;
-        Ok(TenantId(context.tenant_id))
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<TenantContext>()
+            .map(|context| TenantId(context.tenant_id))
+            .ok_or_else(|| {
+                AuthError::Core(mazbri_core::CoreError::Internal(
+                    "Tenant context not found".to_string(),
+                ))
+            });
+        std::future::ready(result)
     }
 }
 impl FromRef<TenantContext> for TenantId {
