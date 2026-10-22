@@ -25,14 +25,8 @@ message UpstreamBody {
   }
 }
 
-enum BinaryEncoding {
-  BINARY_ENCODING_UNSPECIFIED = 0;
-  BINARY_ENCODING_RAW = 1;
-}
-
 message BinaryBody {
   bytes bytes = 1;
-  BinaryEncoding encoding = 2;
 }
 
 message UpstreamResponseBody {
@@ -72,7 +66,7 @@ message HttpUpstreamResponse {
 }
 
 // Code-free invoke: tenant business JSON + channel egress spec. Used by
-// BypassHttpProxyService/Execute. Microservice contracts keep HttpUpstreamRequest.
+// `BypassHttpProxyService/Execute`. Microservice contracts keep `HttpUpstreamRequest`.
 message InvokeBizError {
   string code = 1;
   string message = 2;

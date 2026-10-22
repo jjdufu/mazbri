@@ -19,9 +19,7 @@ pub const BYPASS_CONTRACT_ID: &str = "BYPASS-HTTP-PROXY";
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn grpc_path_for_contract(contract_id: &str) -> Result<&'static str, CoreError> {
     match contract_id {
-        BYPASS_CONTRACT_ID => {
-            Ok("/mazbri.upstream.bypass.http_proxy.v1.BypassHttpProxyService/Execute")
-        }
+        BYPASS_CONTRACT_ID => Ok(mazbri_upstream_contracts::BYPASS_EXECUTE_PATH),
         other => Err(CoreError::Config(format!(
             "unknown upstream contract_id '{other}': known=[{}]; register in gateway upstream_contract table \
              (and matching proto/service)",

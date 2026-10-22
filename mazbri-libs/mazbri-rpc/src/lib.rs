@@ -42,8 +42,8 @@ pub use code::{BillingCode, BillingInfo, CodeMeta, ServiceResponse};
 pub use common::HealthResponse;
 pub use error::RpcError;
 pub use http_upstream::{
-    BinaryEncoding, HttpUpstreamData, HttpUpstreamRequest, HttpUpstreamResponse,
-    HttpUpstreamService, HttpUpstreamServiceClient, UpstreamBody, UpstreamResponseBody,
+    HttpUpstreamData, HttpUpstreamRequest, HttpUpstreamResponse, HttpUpstreamService,
+    HttpUpstreamServiceClient, UpstreamBody, UpstreamResponseBody,
 };
 pub use ratelimit::{
     AckControlCommandsRequest, AckControlCommandsResponse, ControlCommand,

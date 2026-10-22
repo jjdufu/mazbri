@@ -13,12 +13,6 @@ pub enum UpstreamBody {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum BinaryEncoding {
-    Raw,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum UpstreamResponseBody {
     #[default]
@@ -26,11 +20,7 @@ pub enum UpstreamResponseBody {
     JsonValue(#[serde(with = "crate::serde_json_value_as_text")] serde_json::Value),
     JsonRaw(#[serde(with = "serde_bytes")] Vec<u8>),
     Text(String),
-    Binary {
-        #[serde(with = "serde_bytes")]
-        bytes: Vec<u8>,
-        encoding: BinaryEncoding,
-    },
+    Binary(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

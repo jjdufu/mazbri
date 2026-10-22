@@ -146,7 +146,7 @@ impl UpstreamHttp2ClientPool {
         Ok(response.into_inner())
     }
 
-    /// Code-free invoke: BypassHttpProxyService/Execute with `InvokeRequest`.
+    /// Code-free invoke: `BypassHttpProxyService/Execute` with `InvokeRequest`.
     ///
     /// # Errors
     ///

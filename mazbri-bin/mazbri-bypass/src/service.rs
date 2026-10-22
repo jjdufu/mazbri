@@ -8,7 +8,6 @@ use mazbri_core::{
     emit_access_log, hash_egress_spec_json, normalize_upstream_host, parse_and_validate_egress,
     parse_trace_context, response_flags_for_error,
 };
-use mazbri_upstream_contracts::bypass_http_proxy::bypass_http_proxy_service_server::BypassHttpProxyService;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeLimits, SsrfChecker, TokenCache,
@@ -19,7 +18,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
 use uuid::Uuid;
 
 fn hash_config_json(config_json: &str) -> String {
@@ -205,32 +204,29 @@ impl MazbriBypassServiceImpl {
     }
 }
 
-#[tonic::async_trait]
-impl BypassHttpProxyService for MazbriBypassServiceImpl {
-    async fn execute(
+impl MazbriBypassServiceImpl {
+    /// `BypassHttpProxyService/Execute`.
+    pub async fn execute(
         &self,
         request: Request<upstream_proto::InvokeRequest>,
-    ) -> Result<Response<upstream_proto::InvokeResponse>, Status> {
+    ) -> Response<upstream_proto::InvokeResponse> {
         let req = request.into_inner();
         let start_time = Instant::now();
         let response = self.execute_once(&req).await;
         emit_bypass_access(self.service_name.as_ref(), &req, start_time, &response);
-        Ok(Response::new(response))
+        Response::new(response)
     }
 
-    async fn health(
-        &self,
-        _request: Request<upstream_proto::HealthRequest>,
-    ) -> Result<Response<upstream_proto::HealthResponse>, Status> {
-        Ok(Response::new(upstream_proto::HealthResponse {
+    /// `BypassHttpProxyService/Health`.
+    #[must_use]
+    pub fn health(&self) -> Response<upstream_proto::HealthResponse> {
+        Response::new(upstream_proto::HealthResponse {
             status: "ok".to_string(),
             service: self.service_name.as_ref().to_string(),
             timestamp: chrono::Utc::now().timestamp(),
-        }))
+        })
     }
-}
 
-impl MazbriBypassServiceImpl {
     async fn execute_once(
         &self,
         req: &upstream_proto::InvokeRequest,
