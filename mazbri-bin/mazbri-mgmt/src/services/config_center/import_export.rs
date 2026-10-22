@@ -100,50 +100,20 @@ pub async fn export_configs(
             )
         })
 }
-pub async fn import_configs(
-    state: &AppState,
-    claims: &auth::AdminClaims,
-    client_ip: Option<String>,
-    _params: &ImportParams,
-    body: Body,
+/// ZIP 中提取出的待导入条目。
+struct ExtractedImport {
+    /// `(service_name, toml_content)`
+    files: Vec<(String, String)>,
+    errors: Vec<String>,
+    total_bytes: u64,
+}
+
+/// 从 ZIP 中提取 `service_name.toml` 条目。
+fn extract_import_files<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
     request_id: &str,
     trace_id: &str,
-) -> Result<serde_json::Value, ApiError> {
-    info!("Importing configs (by {})", claims.sub);
-    let user_id = auth::extract_user_id(claims)?;
-    let bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
-        .await
-        .map_err(|e| {
-            log_config_center_error(
-                "config_center_import_body_failed",
-                "INTERNAL_ERROR",
-                request_id,
-                trace_id,
-                &e,
-            );
-            validation_error(
-                "config_center_import_body_invalid",
-                "请求体读取失败",
-                request_id,
-                trace_id,
-            )
-        })?;
-    let reader = Cursor::new(bytes.as_ref());
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-        log_config_center_error(
-            "config_center_import_zip_invalid",
-            "VALIDATION_ERROR",
-            request_id,
-            trace_id,
-            &e,
-        );
-        validation_error(
-            "config_center_import_zip_invalid",
-            "ZIP 文件格式不合法",
-            request_id,
-            trace_id,
-        )
-    })?;
+) -> Result<ExtractedImport, ApiError> {
     let mut files_to_import: Vec<(String, String)> = Vec::new();
     let mut extraction_errors: Vec<String> = Vec::new();
     let mut total_extracted_size: u64 = 0;
@@ -215,54 +185,133 @@ pub async fn import_configs(
         };
         files_to_import.push((service_name.to_string(), content));
     }
-    let mut imported = 0u32;
-    let mut skipped = 0u32;
-    let mut errors = extraction_errors;
-    for (svc_name, content) in files_to_import {
-        let updated_by = claims.sub.clone();
-        let url_path = format!("/configs/{}", urlencoding::encode(&svc_name));
-        let upsert_res = cert_service_request(
-            state,
-            reqwest::Method::PUT,
-            &url_path,
-            Some(serde_json::json!(
-                { "content" : content, "is_sensitive" : false, "updated_by" :
-                updated_by, }
-            )),
-            client_ip.clone(),
+    Ok(ExtractedImport {
+        files: files_to_import,
+        errors: extraction_errors,
+        total_bytes: total_extracted_size,
+    })
+}
+
+/// 把单个配置写入 cert 配置中心；失败时返回面向用户的错误描述。
+async fn upsert_import_file(
+    state: &AppState,
+    claims: &auth::AdminClaims,
+    client_ip: Option<String>,
+    svc_name: &str,
+    content: String,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<(), String> {
+    let url_path = format!("/configs/{}", urlencoding::encode(svc_name));
+    let upsert_res = cert_service_request(
+        state,
+        reqwest::Method::PUT,
+        &url_path,
+        Some(serde_json::json!(
+            { "content" : content, "is_sensitive" : false, "updated_by" :
+            claims.sub.clone(), }
+        )),
+        client_ip,
+        request_id,
+        trace_id,
+    )
+    .await;
+    match upsert_res {
+        Ok(resp) if resp.status().is_success() => Ok(()),
+        Ok(resp) => {
+            let status = resp.status();
+            let error_text = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            log_config_center_error(
+                "config_center_import_upsert_failed",
+                "DEPENDENCY_ERROR",
+                request_id,
+                trace_id,
+                &format!("Status: {status}, Body: {error_text}"),
+            );
+            Err(format!("{svc_name}.toml: {error_text}"))
+        }
+        Err(e) => {
+            log_config_center_error(
+                "config_center_import_upsert_request_failed",
+                "DEPENDENCY_ERROR",
+                request_id,
+                trace_id,
+                &e,
+            );
+            Err(format!(
+                "Failed to connect to cert-service for {svc_name}.toml"
+            ))
+        }
+    }
+}
+
+pub async fn import_configs(
+    state: &AppState,
+    claims: &auth::AdminClaims,
+    client_ip: Option<String>,
+    _params: &ImportParams,
+    body: Body,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<serde_json::Value, ApiError> {
+    info!("Importing configs (by {})", claims.sub);
+    let user_id = auth::extract_user_id(claims)?;
+    let bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
+        .await
+        .map_err(|e| {
+            log_config_center_error(
+                "config_center_import_body_failed",
+                "INTERNAL_ERROR",
+                request_id,
+                trace_id,
+                &e,
+            );
+            validation_error(
+                "config_center_import_body_invalid",
+                "请求体读取失败",
+                request_id,
+                trace_id,
+            )
+        })?;
+    let reader = Cursor::new(bytes.as_ref());
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+        log_config_center_error(
+            "config_center_import_zip_invalid",
+            "VALIDATION_ERROR",
+            request_id,
+            trace_id,
+            &e,
+        );
+        validation_error(
+            "config_center_import_zip_invalid",
+            "ZIP 文件格式不合法",
             request_id,
             trace_id,
         )
-        .await;
-        match upsert_res {
-            Ok(resp) if resp.status().is_success() => imported += 1,
-            Ok(resp) => {
-                let status = resp.status();
-                let error_text = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "unknown error".to_string());
-                log_config_center_error(
-                    "config_center_import_upsert_failed",
-                    "DEPENDENCY_ERROR",
-                    request_id,
-                    trace_id,
-                    &format!("Status: {status}, Body: {error_text}"),
-                );
-                errors.push(format!("{svc_name}.toml: {error_text}"));
-                skipped += 1;
-            }
-            Err(e) => {
-                log_config_center_error(
-                    "config_center_import_upsert_request_failed",
-                    "DEPENDENCY_ERROR",
-                    request_id,
-                    trace_id,
-                    &e,
-                );
-                errors.push(format!(
-                    "Failed to connect to cert-service for {svc_name}.toml"
-                ));
+    })?;
+    let extracted = extract_import_files(&mut archive, request_id, trace_id)?;
+    let total_extracted_size = extracted.total_bytes;
+    let mut imported = 0u32;
+    let mut skipped = 0u32;
+    let mut errors = extracted.errors;
+    for (svc_name, content) in extracted.files {
+        match upsert_import_file(
+            state,
+            claims,
+            client_ip.clone(),
+            &svc_name,
+            content,
+            request_id,
+            trace_id,
+        )
+        .await
+        {
+            Ok(()) => imported += 1,
+            Err(message) => {
+                errors.push(message);
                 skipped += 1;
             }
         }
