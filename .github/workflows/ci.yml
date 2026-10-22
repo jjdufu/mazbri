@@ -170,3 +170,13 @@ jobs:
           fi
           jq -e '.packages["."]["release-type"]' release-please-config.json >/dev/null
           python3 -m py_compile .github/scripts/detect.py
+
+  noop:
+    name: Always-on no-op
+    # Keeps every run (including release-please PRs, whose other jobs are all
+    # skipped) with at least one job, so GitHub never marks it as failed.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: No-op
+        run: 'true'
