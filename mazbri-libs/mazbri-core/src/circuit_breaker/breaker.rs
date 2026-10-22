@@ -80,7 +80,8 @@ impl CircuitBreaker {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::saturating_from(d.as_millis()))
     }
-    pub async fn state(&self) -> CircuitState {
+    #[must_use]
+    pub fn state(&self) -> CircuitState {
         CircuitState::from_u8(self.state.load(Ordering::Acquire))
     }
     #[must_use]
@@ -91,16 +92,18 @@ impl CircuitBreaker {
     pub fn success_count(&self) -> u64 {
         self.success_count.load(Ordering::Relaxed)
     }
-    pub async fn time_since_last_state_change(&self) -> Duration {
+    #[must_use]
+    pub fn time_since_last_state_change(&self) -> Duration {
         let last_change_ms = self.last_state_change_ms.load(Ordering::Acquire);
         let now_ms = Self::now_ms();
         Duration::from_millis(u64::saturating_from((now_ms - last_change_ms).max(0)))
     }
-    pub async fn is_request_allowed(&self) -> bool {
+    #[must_use]
+    pub fn is_request_allowed(&self) -> bool {
         let current_state = CircuitState::from_u8(self.state.load(Ordering::Acquire));
         match current_state {
             CircuitState::Open => {
-                let elapsed = self.time_since_last_state_change().await;
+                let elapsed = self.time_since_last_state_change();
                 elapsed >= self.config.cooldown_duration
             }
             CircuitState::Closed | CircuitState::HalfOpen => true,
@@ -113,19 +116,19 @@ impl CircuitBreaker {
     {
         let current_state = CircuitState::from_u8(self.state.load(Ordering::Acquire));
         match current_state {
-            CircuitState::Open => self.handle_open_state().await,
+            CircuitState::Open => self.handle_open_state(),
             CircuitState::HalfOpen => {
                 let result = request_fn().await;
-                self.handle_half_open(result).await
+                self.handle_half_open(result)
             }
             CircuitState::Closed => {
                 let result = request_fn().await;
-                self.handle_closed(result).await
+                self.handle_closed(result)
             }
         }
     }
-    async fn handle_open_state<T>(&self) -> CircuitResult<T> {
-        let elapsed = self.time_since_last_state_change().await;
+    fn handle_open_state<T>(&self) -> CircuitResult<T> {
+        let elapsed = self.time_since_last_state_change();
         let cooldown_passed = elapsed >= self.config.cooldown_duration;
         if cooldown_passed {
             log_event(
@@ -135,7 +138,7 @@ impl CircuitBreaker {
                 Some(CircuitState::HalfOpen),
                 "Cooldown period elapsed, transitioning to half-open",
             );
-            self.transition_to(CircuitState::HalfOpen).await;
+            self.transition_to(CircuitState::HalfOpen);
             return CircuitResult::Rejected {
                 reason: "断路器转换到半开".to_string(),
                 retry_after: Duration::from_secs(0),
@@ -154,7 +157,7 @@ impl CircuitBreaker {
             retry_after,
         }
     }
-    async fn handle_half_open<T>(&self, result: Result<T, String>) -> CircuitResult<T> {
+    fn handle_half_open<T>(&self, result: Result<T, String>) -> CircuitResult<T> {
         match result {
             Ok(value) => {
                 let successes = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -178,7 +181,7 @@ impl CircuitBreaker {
                         Some(CircuitState::Closed),
                         &format!("Success threshold ({successes}) reached"),
                     );
-                    self.transition_to(CircuitState::Closed).await;
+                    self.transition_to(CircuitState::Closed);
                     self.reset_counters();
                 }
                 CircuitResult::Success(value)
@@ -199,13 +202,13 @@ impl CircuitBreaker {
                     Some(CircuitState::Open),
                     "Test request failed, reopening circuit",
                 );
-                self.transition_to(CircuitState::Open).await;
+                self.transition_to(CircuitState::Open);
                 self.reset_counters();
                 CircuitResult::Failure { error }
             }
         }
     }
-    async fn handle_closed<T>(&self, result: Result<T, String>) -> CircuitResult<T> {
+    fn handle_closed<T>(&self, result: Result<T, String>) -> CircuitResult<T> {
         match result {
             Ok(value) => {
                 self.reset_failure_count_if_nonzero();
@@ -239,14 +242,14 @@ impl CircuitBreaker {
                         Some(CircuitState::Open),
                         &format!("Failure threshold ({failures}) reached"),
                     );
-                    self.transition_to(CircuitState::Open).await;
+                    self.transition_to(CircuitState::Open);
                     self.reset_counters();
                 }
                 CircuitResult::Failure { error }
             }
         }
     }
-    pub async fn transition_to(&self, new_state: CircuitState) {
+    pub fn transition_to(&self, new_state: CircuitState) {
         let old_state = CircuitState::from_u8(self.state.swap(new_state.to_u8(), Ordering::AcqRel));
         self.last_state_change_ms
             .store(Self::now_ms(), Ordering::Release);
@@ -257,28 +260,14 @@ impl CircuitBreaker {
         );
     }
     fn reset_failure_count_if_nonzero(&self) {
-        loop {
-            let current = self.failure_count.load(Ordering::Acquire);
-            if current == 0 {
-                break;
-            }
-            match self.failure_count.compare_exchange(
-                current,
-                0,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(_) => continue,
-            }
-        }
+        self.failure_count.swap(0, Ordering::AcqRel);
     }
     fn reset_counters(&self) {
         self.failure_count.store(0, Ordering::Relaxed);
         self.success_count.store(0, Ordering::Relaxed);
     }
-    pub async fn reset(&self) {
+    pub fn reset(&self) {
         self.reset_counters();
-        self.transition_to(CircuitState::Closed).await;
+        self.transition_to(CircuitState::Closed);
     }
 }

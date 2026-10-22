@@ -140,8 +140,8 @@ pub fn decrypt_secret(value: &str, key: &[u8; 32]) -> Result<String, SupplierSec
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn encrypt_credentials_map(
-    creds: &mut std::collections::HashMap<String, String>,
+pub fn encrypt_credentials_map<S: std::hash::BuildHasher>(
+    creds: &mut std::collections::HashMap<String, String, S>,
     key: &[u8; 32],
 ) -> Result<(), SupplierSecretsError> {
     for v in creds.values_mut() {
@@ -158,8 +158,8 @@ pub fn encrypt_credentials_map(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn decrypt_credentials_map(
-    creds: &mut std::collections::HashMap<String, String>,
+pub fn decrypt_credentials_map<S: std::hash::BuildHasher>(
+    creds: &mut std::collections::HashMap<String, String, S>,
     key: &[u8; 32],
 ) -> Result<(), SupplierSecretsError> {
     for v in creds.values_mut() {

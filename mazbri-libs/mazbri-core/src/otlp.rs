@@ -38,7 +38,7 @@ impl Drop for OtlpGuard {
 }
 
 /// Options for building the OTLP HTTP exporter.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct OtlpExportOptions<'a> {
     pub endpoint: &'a str,
     pub service_name: &'a str,
@@ -409,6 +409,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "live Greptime OTLP; set MAZBRI_OTLP_SMOKE=1"]
     async fn otlp_export_to_greptime() {
+        use opentelemetry::KeyValue;
+        use opentelemetry::trace::{Span, Tracer as _};
         if std::env::var("MAZBRI_OTLP_SMOKE").ok().as_deref() != Some("1") {
             eprintln!("skip: set MAZBRI_OTLP_SMOKE=1");
             return;
@@ -425,9 +427,6 @@ mod tests {
             password: None,
         })
         .expect("build tracer");
-
-        use opentelemetry::KeyValue;
-        use opentelemetry::trace::{Span, Tracer as _};
         let mut span = tracer.start("otlp.smoke");
         span.set_attribute(KeyValue::new("mazbri.smoke", "true"));
         span.end();

@@ -171,7 +171,7 @@ impl MazbriClient {
         Resp: DeserializeOwned,
     {
         let result = self.send_request(request, None).await?;
-        let response = self.decode_envelope(result.response)?;
+        let response = Self::decode_envelope(result.response)?;
         Ok(CallResult {
             response,
             http_status: result.http_status,
@@ -252,7 +252,7 @@ impl MazbriClient {
         })
     }
 
-    fn decode_envelope<Resp>(&self, envelope: GatewayResponseEnvelope) -> Result<Resp, Error>
+    fn decode_envelope<Resp>(envelope: GatewayResponseEnvelope) -> Result<Resp, Error>
     where
         Resp: DeserializeOwned,
     {

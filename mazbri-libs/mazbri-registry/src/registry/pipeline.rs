@@ -55,7 +55,7 @@ impl ConfigPipeline {
             }
             Err(apply_err) => {
                 if let Some(ref old) = old_config {
-                    if let Ok(_) = self.config_handler.rollback(old).await {
+                    if self.config_handler.rollback(old).await.is_ok() {
                         Ok(ConfigPushResult {
                             accepted: true,
                             applied: false,

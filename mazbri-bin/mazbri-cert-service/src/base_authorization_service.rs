@@ -35,7 +35,7 @@ impl BaseAuthorizationState {
         if crate::license_service::has_v3_state(self.repo.get_pool()).await? {
             let decision =
                 crate::license_service::current_decision(self.repo.get_pool(), Utc::now()).await?;
-            if !decision.issuance_allowed {
+            if !decision.issuance_allowed() {
                 if decision.status == "grace" || decision.status == "expired" {
                     return Err(CertError::BaseAuthorizationExpired);
                 }

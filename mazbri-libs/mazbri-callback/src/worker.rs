@@ -45,11 +45,11 @@ pub struct CallbackWorker {
 impl CallbackWorker {
     #[must_use]
     pub fn new(pool: PgPool) -> Self {
-        Self::with_config(pool, CallbackWorkerConfig::default())
+        Self::with_config(pool, &CallbackWorkerConfig::default())
     }
 
     #[must_use]
-    pub fn with_config(pool: PgPool, config: CallbackWorkerConfig) -> Self {
+    pub fn with_config(pool: PgPool, config: &CallbackWorkerConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
@@ -152,6 +152,25 @@ impl CallbackWorker {
         Ok(())
     }
 
+    async fn mark_terminal(
+        &self,
+        task: &CallbackDeliveryLog,
+        status: &str,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        repository::update_delivery_status(
+            &self.pool,
+            task.id,
+            status,
+            task.retry_count,
+            None,
+            None,
+            Some(reason),
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn process_task(&self, task: CallbackDeliveryLog) -> anyhow::Result<()> {
         let sub_row = sqlx::query_as::<_, CallbackSubscription>(
             "SELECT id, tenant_id, product_id, callback_url, secret_key, retry_policy, is_active FROM mazbri_platform.callback_subscriptions WHERE id = $1",
@@ -166,16 +185,8 @@ impl CallbackWorker {
                     "Subscription {} not found or inactive for task {}",
                     task.subscription_id, task.id
                 );
-                repository::update_delivery_status(
-                    &self.pool,
-                    task.id,
-                    "abandoned",
-                    task.retry_count,
-                    None,
-                    None,
-                    Some("Subscription inactive"),
-                )
-                .await?;
+                self.mark_terminal(&task, "abandoned", "Subscription inactive")
+                    .await?;
                 return Ok(());
             }
         };
@@ -185,16 +196,8 @@ impl CallbackWorker {
                 "Callback {} skipped: timestamp validation failed: {}",
                 task.id, e
             );
-            repository::update_delivery_status(
-                &self.pool,
-                task.id,
-                "failed",
-                task.retry_count,
-                None,
-                None,
-                Some("Invalid signature timestamp"),
-            )
-            .await?;
+            self.mark_terminal(&task, "failed", "Invalid signature timestamp")
+                .await?;
             return Ok(());
         }
         let payload_str = serde_json::to_string(&task.payload)?;
@@ -205,16 +208,8 @@ impl CallbackWorker {
                     "Callback {} skipped: signature generation failed: {}",
                     task.id, e
                 );
-                repository::update_delivery_status(
-                    &self.pool,
-                    task.id,
-                    "failed",
-                    task.retry_count,
-                    None,
-                    None,
-                    Some("Signature generation failed"),
-                )
-                .await?;
+                self.mark_terminal(&task, "failed", "Signature generation failed")
+                    .await?;
                 return Ok(());
             }
         };

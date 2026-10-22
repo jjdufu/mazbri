@@ -28,7 +28,6 @@ impl CircuitState {
     }
     pub(crate) fn from_u8(value: u8) -> Self {
         match value {
-            circuit_values::CLOSED => CircuitState::Closed,
             circuit_values::HALF_OPEN => CircuitState::HalfOpen,
             circuit_values::OPEN => CircuitState::Open,
             _ => CircuitState::Closed,

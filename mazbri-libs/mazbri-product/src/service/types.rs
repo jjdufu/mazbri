@@ -54,13 +54,13 @@ impl std::error::Error for ProductWriteError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidProductId(error) => Some(error),
-            Self::DuplicateProductId(_) => None,
-            Self::ExhaustedProductIdSpace => None,
-            Self::ProductIdReservationNotFound(_) => None,
-            Self::ProductIdReservationExpired(_) => None,
-            Self::ProductIdReservationUnavailable(_) => None,
-            Self::ProductIdReservationOwnedByAnotherOperator(_) => None,
             Self::Database(error) => Some(error),
+            Self::DuplicateProductId(_)
+            | Self::ExhaustedProductIdSpace
+            | Self::ProductIdReservationNotFound(_)
+            | Self::ProductIdReservationExpired(_)
+            | Self::ProductIdReservationUnavailable(_)
+            | Self::ProductIdReservationOwnedByAnotherOperator(_) => None,
         }
     }
 }

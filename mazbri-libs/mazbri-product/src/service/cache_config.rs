@@ -108,9 +108,8 @@ impl ProductService {
                 .bind(product_id)
                 .fetch_optional(&self.db)
                 .await?;
-        let product_uuid = match product_uuid {
-            Some(uuid) => uuid,
-            None => return Ok(vec![]),
+        let Some(product_uuid) = product_uuid else {
+            return Ok(vec![]);
         };
         let rows = sqlx::query(
             r"

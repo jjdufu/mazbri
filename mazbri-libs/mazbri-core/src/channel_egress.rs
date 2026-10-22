@@ -361,9 +361,8 @@ fn clear_nested_specs(spec: &mut AuthSpec) {
 /// `None` means the caller should set `egress.auth = None`.
 #[must_use]
 pub fn sanitize_auth_spec(mut spec: AuthSpec) -> Option<AuthSpec> {
-    let profile = match AuthProfile::parse(&spec.profile) {
-        Ok(p) => p,
-        Err(_) => return Some(spec),
+    let Ok(profile) = AuthProfile::parse(&spec.profile) else {
+        return Some(spec);
     };
     spec.profile = profile.as_str().to_string();
     match profile {
@@ -716,178 +715,159 @@ fn is_allowed_http_method(method: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-')
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
-    let adapter = spec.adapter_kind()?;
-    if let Some(ref url) = spec.base_url {
-        let trimmed = url.trim();
-        if !trimmed.is_empty() {
-            validate_outbound_url(trimmed, "egress.base_url")?;
-        }
-    }
-    if let Some(ms) = spec.timeout_ms {
-        if ms == 0 {
-            return Err(ChannelEgressError::new("egress.timeout_ms 必须大于 0"));
-        }
-    }
-    if let Some(ref req) = spec.request {
-        if let Some(ref wrap) = req.wrap {
-            if !wrap.is_empty() && !KNOWN_WRAPS.contains(&wrap.as_str()) {
-                return Err(ChannelEgressError::new(format!(
-                    "unknown egress.request.wrap '{wrap}': known=[{}]",
-                    KNOWN_WRAPS.join(", ")
-                )));
-            }
-        }
-        if let Some(ref method) = req.method {
-            let m = method.trim().to_ascii_uppercase();
-            if !is_allowed_http_method(&m) {
-                return Err(ChannelEgressError::new(format!(
-                    "egress.request.method '{method}' 不受支持"
-                )));
-            }
-        }
-        if let Some(ref path) = req.path {
-            if !path.is_empty() && !path.starts_with('/') && !path.starts_with("http") {
-                return Err(ChannelEgressError::new(
-                    "egress.request.path 必须以 / 开头（或为绝对 URL）",
-                ));
-            }
-        }
-        if let Some(ref enc) = req.body_encoding {
-            let e = enc.trim();
-            if !e.is_empty() {
-                if !matches!(e, "json" | "form" | "none") {
-                    return Err(ChannelEgressError::new(format!(
-                        "unknown egress.request.body_encoding '{enc}': known=[json, form, none]"
-                    )));
-                }
-                if e == "form" && adapter != AdapterKind::HttpJson {
-                    return Err(ChannelEgressError::new(
-                        "egress.request.body_encoding=form 仅支持 adapter=http_json",
-                    ));
-                }
-                if e == "none"
-                    && !matches!(adapter, AdapterKind::HttpJson | AdapterKind::HttpEnvelope)
-                {
-                    return Err(ChannelEgressError::new(format!(
-                        "adapter {} requires json body",
-                        adapter.as_str()
-                    )));
-                }
-            }
-        }
-        if let Some(ref ct) = req.content_type {
-            if ct.chars().any(char::is_control) {
-                return Err(ChannelEgressError::new(
-                    "egress.request.content_type 含非法控制字符",
-                ));
-            }
-        }
-    }
-    if let Some(ref auth) = spec.auth {
-        let profile = auth.profile_kind()?;
-        if let Some(ref url) = auth.token_url {
-            if !url.trim().is_empty() {
-                validate_outbound_url(url.trim(), "egress.auth.token_url")?;
-            }
-        }
-        if profile.uses_ticket() {
-            let token_loc = auth
-                .token_url
-                .as_deref()
-                .filter(|s| !s.trim().is_empty())
-                .or(auth.token_path.as_deref().filter(|s| !s.trim().is_empty()));
-            if token_loc.is_none() {
-                return Err(ChannelEgressError::new(
-                    "egress.auth 换票 profile 需要 token_url 或 token_path",
-                ));
-            }
-        }
-        if profile.needs_http_challenge_or_sign()
-            && matches!(adapter, AdapterKind::Grpc | AdapterKind::WsUnary)
-        {
+fn validate_egress_request(
+    req: &EgressRequestSpec,
+    adapter: AdapterKind,
+) -> Result<(), ChannelEgressError> {
+    if let Some(ref wrap) = req.wrap {
+        if !wrap.is_empty() && !KNOWN_WRAPS.contains(&wrap.as_str()) {
             return Err(ChannelEgressError::new(format!(
-                "egress.auth.profile={} 仅支持 HTTP 适配器",
-                profile.as_str()
-            )));
-        }
-        if profile == AuthProfile::AwsSigV4 {
-            let aws = auth.aws.as_ref().ok_or_else(|| {
-                ChannelEgressError::new(
-                    "egress.auth.profile=aws_sigv4 需要 aws.region 与 aws.service",
-                )
-            })?;
-            if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
-                return Err(ChannelEgressError::new(
-                    "egress.auth.aws.region 与 aws.service 必填",
-                ));
-            }
-        }
-        if profile == AuthProfile::Jwt {
-            let algo = auth
-                .jwt
-                .as_ref()
-                .map(|j| j.algorithm.trim())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("HS256");
-            if !matches!(
-                algo,
-                "HS256" | "HS384" | "HS512" | "RS256" | "RS384" | "RS512"
-            ) {
-                return Err(ChannelEgressError::new(format!(
-                    "egress.auth.jwt.algorithm '{algo}' 不受支持"
-                )));
-            }
-        }
-        if profile == AuthProfile::Digest {
-            let algo = auth
-                .digest
-                .as_ref()
-                .map(|d| d.algorithm.trim())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("MD5");
-            if !matches!(algo, "MD5" | "SHA-256" | "SHA256") {
-                return Err(ChannelEgressError::new(format!(
-                    "egress.auth.digest.algorithm '{algo}' 不受支持"
-                )));
-            }
-        }
-        if profile == AuthProfile::Hawk {
-            let algo = auth
-                .hawk
-                .as_ref()
-                .map(|h| h.algorithm.trim())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("sha256");
-            if !algo.eq_ignore_ascii_case("sha256") {
-                return Err(ChannelEgressError::new(format!(
-                    "egress.auth.hawk.algorithm '{algo}' 仅支持 sha256"
-                )));
-            }
-        }
-        if let Some(ref inject) = auth.inject {
-            let to = inject.to.trim();
-            if !matches!(to, "header" | "query" | "metadata" | "first_frame" | "") {
-                return Err(ChannelEgressError::new(format!(
-                    "unknown egress.auth.inject.to '{to}'"
-                )));
-            }
-        }
-    }
-
-    if adapter.requires_operation() {
-        let op = spec.operation.as_deref().map_or("", str::trim);
-        if op.is_empty() {
-            return Err(ChannelEgressError::new(format!(
-                "egress.adapter={} 需要 egress.operation",
-                adapter.as_str()
+                "unknown egress.request.wrap '{wrap}': known=[{}]",
+                KNOWN_WRAPS.join(", ")
             )));
         }
     }
+    if let Some(ref method) = req.method {
+        let m = method.trim().to_ascii_uppercase();
+        if !is_allowed_http_method(&m) {
+            return Err(ChannelEgressError::new(format!(
+                "egress.request.method '{method}' 不受支持"
+            )));
+        }
+    }
+    if let Some(ref path) = req.path {
+        if !path.is_empty() && !path.starts_with('/') && !path.starts_with("http") {
+            return Err(ChannelEgressError::new(
+                "egress.request.path 必须以 / 开头（或为绝对 URL）",
+            ));
+        }
+    }
+    if let Some(ref enc) = req.body_encoding {
+        let e = enc.trim();
+        if !e.is_empty() {
+            if !matches!(e, "json" | "form" | "none") {
+                return Err(ChannelEgressError::new(format!(
+                    "unknown egress.request.body_encoding '{enc}': known=[json, form, none]"
+                )));
+            }
+            if e == "form" && adapter != AdapterKind::HttpJson {
+                return Err(ChannelEgressError::new(
+                    "egress.request.body_encoding=form 仅支持 adapter=http_json",
+                ));
+            }
+            if e == "none" && !matches!(adapter, AdapterKind::HttpJson | AdapterKind::HttpEnvelope)
+            {
+                return Err(ChannelEgressError::new(format!(
+                    "adapter {} requires json body",
+                    adapter.as_str()
+                )));
+            }
+        }
+    }
+    if let Some(ref ct) = req.content_type {
+        if ct.chars().any(char::is_control) {
+            return Err(ChannelEgressError::new(
+                "egress.request.content_type 含非法控制字符",
+            ));
+        }
+    }
+    Ok(())
+}
 
+fn validate_egress_auth(auth: &AuthSpec, adapter: AdapterKind) -> Result<(), ChannelEgressError> {
+    let profile = auth.profile_kind()?;
+    if let Some(ref url) = auth.token_url {
+        if !url.trim().is_empty() {
+            validate_outbound_url(url.trim(), "egress.auth.token_url")?;
+        }
+    }
+    if profile.uses_ticket() {
+        let token_loc = auth
+            .token_url
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .or(auth.token_path.as_deref().filter(|s| !s.trim().is_empty()));
+        if token_loc.is_none() {
+            return Err(ChannelEgressError::new(
+                "egress.auth 换票 profile 需要 token_url 或 token_path",
+            ));
+        }
+    }
+    if profile.needs_http_challenge_or_sign()
+        && matches!(adapter, AdapterKind::Grpc | AdapterKind::WsUnary)
+    {
+        return Err(ChannelEgressError::new(format!(
+            "egress.auth.profile={} 仅支持 HTTP 适配器",
+            profile.as_str()
+        )));
+    }
+    if profile == AuthProfile::AwsSigV4 {
+        let aws = auth.aws.as_ref().ok_or_else(|| {
+            ChannelEgressError::new("egress.auth.profile=aws_sigv4 需要 aws.region 与 aws.service")
+        })?;
+        if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
+            return Err(ChannelEgressError::new(
+                "egress.auth.aws.region 与 aws.service 必填",
+            ));
+        }
+    }
+    if profile == AuthProfile::Jwt {
+        let algo = auth
+            .jwt
+            .as_ref()
+            .map(|j| j.algorithm.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("HS256");
+        if !matches!(
+            algo,
+            "HS256" | "HS384" | "HS512" | "RS256" | "RS384" | "RS512"
+        ) {
+            return Err(ChannelEgressError::new(format!(
+                "egress.auth.jwt.algorithm '{algo}' 不受支持"
+            )));
+        }
+    }
+    if profile == AuthProfile::Digest {
+        let algo = auth
+            .digest
+            .as_ref()
+            .map(|d| d.algorithm.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("MD5");
+        if !matches!(algo, "MD5" | "SHA-256" | "SHA256") {
+            return Err(ChannelEgressError::new(format!(
+                "egress.auth.digest.algorithm '{algo}' 不受支持"
+            )));
+        }
+    }
+    if profile == AuthProfile::Hawk {
+        let algo = auth
+            .hawk
+            .as_ref()
+            .map(|h| h.algorithm.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("sha256");
+        if !algo.eq_ignore_ascii_case("sha256") {
+            return Err(ChannelEgressError::new(format!(
+                "egress.auth.hawk.algorithm '{algo}' 仅支持 sha256"
+            )));
+        }
+    }
+    if let Some(ref inject) = auth.inject {
+        let to = inject.to.trim();
+        if !matches!(to, "header" | "query" | "metadata" | "first_frame" | "") {
+            return Err(ChannelEgressError::new(format!(
+                "unknown egress.auth.inject.to '{to}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_adapter_options(
+    spec: &ChannelEgressSpec,
+    adapter: AdapterKind,
+) -> Result<(), ChannelEgressError> {
     match adapter {
         AdapterKind::Graphql => {
             let doc = spec.graphql.as_ref().map_or("", |g| g.document.trim());
@@ -954,6 +934,42 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
         _ => {}
     }
     Ok(())
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let adapter = spec.adapter_kind()?;
+    if let Some(ref url) = spec.base_url {
+        let trimmed = url.trim();
+        if !trimmed.is_empty() {
+            validate_outbound_url(trimmed, "egress.base_url")?;
+        }
+    }
+    if let Some(ms) = spec.timeout_ms {
+        if ms == 0 {
+            return Err(ChannelEgressError::new("egress.timeout_ms 必须大于 0"));
+        }
+    }
+    if let Some(ref req) = spec.request {
+        validate_egress_request(req, adapter)?;
+    }
+    if let Some(ref auth) = spec.auth {
+        validate_egress_auth(auth, adapter)?;
+    }
+
+    if adapter.requires_operation() {
+        let op = spec.operation.as_deref().map_or("", str::trim);
+        if op.is_empty() {
+            return Err(ChannelEgressError::new(format!(
+                "egress.adapter={} 需要 egress.operation",
+                adapter.as_str()
+            )));
+        }
+    }
+
+    validate_adapter_options(spec, adapter)
 }
 
 fn validate_outbound_url(raw: &str, field: &str) -> Result<(), ChannelEgressError> {

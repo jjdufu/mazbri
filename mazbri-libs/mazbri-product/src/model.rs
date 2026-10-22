@@ -63,6 +63,30 @@ pub struct TenantProduct {
     pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CBProLatencySimulation {
+    #[serde(default = "default_cbpro_latency_simulation_enabled")]
+    pub latency_simulation_enabled: bool,
+    #[serde(default = "default_cbpro_default_simulated_latency_ms")]
+    pub default_simulated_latency_ms: u64,
+    #[serde(default = "default_cbpro_latency_jitter_min_ms")]
+    pub latency_jitter_min_ms: u64,
+    #[serde(default = "default_cbpro_latency_jitter_max_ms")]
+    pub latency_jitter_max_ms: u64,
+    #[serde(default = "default_cbpro_max_simulated_delay_ms")]
+    pub max_simulated_delay_ms: u64,
+}
+impl Default for CBProLatencySimulation {
+    fn default() -> Self {
+        Self {
+            latency_simulation_enabled: default_cbpro_latency_simulation_enabled(),
+            default_simulated_latency_ms: default_cbpro_default_simulated_latency_ms(),
+            latency_jitter_min_ms: default_cbpro_latency_jitter_min_ms(),
+            latency_jitter_max_ms: default_cbpro_latency_jitter_max_ms(),
+            max_simulated_delay_ms: default_cbpro_max_simulated_delay_ms(),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CBProPolicyConfig {
     #[serde(default = "default_cbpro_mode")]
     pub mode: String,
@@ -82,16 +106,9 @@ pub struct CBProPolicyConfig {
     pub max_validate_interval_secs: u64,
     #[serde(default = "default_cbpro_prevalidate_before_expiry_secs")]
     pub prevalidate_before_expiry_secs: u64,
-    #[serde(default = "default_cbpro_latency_simulation_enabled")]
-    pub latency_simulation_enabled: bool,
-    #[serde(default = "default_cbpro_default_simulated_latency_ms")]
-    pub default_simulated_latency_ms: u64,
-    #[serde(default = "default_cbpro_latency_jitter_min_ms")]
-    pub latency_jitter_min_ms: u64,
-    #[serde(default = "default_cbpro_latency_jitter_max_ms")]
-    pub latency_jitter_max_ms: u64,
-    #[serde(default = "default_cbpro_max_simulated_delay_ms")]
-    pub max_simulated_delay_ms: u64,
+    /// 延迟模拟参数；flatten 保持 JSON 字段平铺不变。
+    #[serde(flatten)]
+    pub latency: CBProLatencySimulation,
     #[serde(default = "default_cbpro_cacheable_methods")]
     pub cacheable_methods: Vec<String>,
     #[serde(default)]
@@ -117,11 +134,7 @@ impl Default for CBProPolicyConfig {
             validate_every_hits: default_cbpro_validate_every_hits(),
             max_validate_interval_secs: default_cbpro_max_validate_interval_secs(),
             prevalidate_before_expiry_secs: default_cbpro_prevalidate_before_expiry_secs(),
-            latency_simulation_enabled: default_cbpro_latency_simulation_enabled(),
-            default_simulated_latency_ms: default_cbpro_default_simulated_latency_ms(),
-            latency_jitter_min_ms: default_cbpro_latency_jitter_min_ms(),
-            latency_jitter_max_ms: default_cbpro_latency_jitter_max_ms(),
-            max_simulated_delay_ms: default_cbpro_max_simulated_delay_ms(),
+            latency: CBProLatencySimulation::default(),
             cacheable_methods: default_cbpro_cacheable_methods(),
             allow_body_cache: false,
             ignore_query_keys: default_cbpro_ignore_query_keys(),
@@ -332,12 +345,12 @@ pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), St
     if config.max_validate_interval_secs < 1 {
         return Err("cbpro.max_validate_interval_secs must be at least 1".to_string());
     }
-    if config.latency_jitter_max_ms < config.latency_jitter_min_ms {
+    if config.latency.latency_jitter_max_ms < config.latency.latency_jitter_min_ms {
         return Err(
             "cbpro.latency_jitter_max_ms must be >= cbpro.latency_jitter_min_ms".to_string(),
         );
     }
-    if config.max_simulated_delay_ms < config.latency_jitter_max_ms {
+    if config.latency.max_simulated_delay_ms < config.latency.latency_jitter_max_ms {
         return Err(
             "cbpro.max_simulated_delay_ms must be >= cbpro.latency_jitter_max_ms".to_string(),
         );

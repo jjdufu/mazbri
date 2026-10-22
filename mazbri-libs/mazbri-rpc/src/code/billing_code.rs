@@ -44,15 +44,7 @@ impl BillingCode {
         let code = self.0;
         if code < 1000 {
             let sub_category = (code / 100) % 10;
-            return match sub_category {
-                0 => true,
-                1 => false,
-                2 => false,
-                3 => false,
-                4 => false,
-                5 => false,
-                _ => true,
-            };
+            return !matches!(sub_category, 1..=5);
         }
         if code < 2000 {
             return false;

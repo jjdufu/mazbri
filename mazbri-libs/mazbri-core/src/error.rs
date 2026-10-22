@@ -182,12 +182,11 @@ impl ErrorResponse for CoreError {
             CoreError::NotFound { .. } => StatusCode::NOT_FOUND,
             CoreError::Validation(_) => StatusCode::BAD_REQUEST,
             CoreError::Auth(_) => StatusCode::UNAUTHORIZED,
-            CoreError::PermissionDenied(_) => StatusCode::FORBIDDEN,
+            CoreError::PermissionDenied(_) | CoreError::QuotaExceeded(_) => StatusCode::FORBIDDEN,
             CoreError::RateLimit(_) | CoreError::RateLimited { .. } => {
                 StatusCode::TOO_MANY_REQUESTS
             }
             CoreError::InsufficientBalance { .. } => StatusCode::PAYMENT_REQUIRED,
-            CoreError::QuotaExceeded(_) => StatusCode::FORBIDDEN,
             CoreError::ServiceUnavailable { .. } | CoreError::CircuitBreakerOpen(_) => {
                 StatusCode::SERVICE_UNAVAILABLE
             }
@@ -250,11 +249,13 @@ impl ErrorResponse for CoreError {
             CoreError::Tls(_) => Some("TLS 连接失败".to_string()),
             CoreError::Billing(_) => Some("计费服务异常".to_string()),
             CoreError::Certificate(_) => Some("证书服务异常".to_string()),
-            CoreError::Config(msg) => Some(msg.clone()),
-            CoreError::Auth(msg) => Some(msg.clone()),
-            CoreError::PermissionDenied(msg) => Some(msg.clone()),
-            CoreError::RateLimit(msg) => Some(msg.clone()),
-            CoreError::Validation(msg) => Some(msg.clone()),
+            CoreError::Config(msg)
+            | CoreError::Auth(msg)
+            | CoreError::PermissionDenied(msg)
+            | CoreError::RateLimit(msg)
+            | CoreError::Validation(msg)
+            | CoreError::QuotaExceeded(msg)
+            | CoreError::CircuitBreakerOpen(msg) => Some(msg.clone()),
             CoreError::NotFound { resource, id } => {
                 Some(format!("资源 {resource} (id={id}) 未找到"))
             }
@@ -265,9 +266,7 @@ impl ErrorResponse for CoreError {
             CoreError::RateLimited { retry_after_secs } => {
                 Some(format!("请求过于频繁，{retry_after_secs} 秒后重试"))
             }
-            CoreError::QuotaExceeded(msg) => Some(msg.clone()),
             CoreError::ServiceUnavailable { service } => Some(format!("服务 {service} 暂不可用")),
-            CoreError::CircuitBreakerOpen(msg) => Some(msg.clone()),
         }
     }
     fn safe_message(&self) -> String {

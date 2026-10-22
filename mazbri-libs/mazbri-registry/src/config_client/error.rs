@@ -53,7 +53,7 @@ impl ErrorResponse for ConfigClientError {
             } => Some(json!(
                 { "service_name" : service_name, "message" : message }
             )),
-            _ => None,
+            Self::InvalidAddress(_) => None,
         }
     }
 }

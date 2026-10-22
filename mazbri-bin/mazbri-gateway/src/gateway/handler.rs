@@ -818,5 +818,5 @@ fn emit_gateway_access_log(
             error_class,
         })
         .build();
-    emit_access_log("gateway.access", event);
+    emit_access_log("gateway.access", &event);
 }

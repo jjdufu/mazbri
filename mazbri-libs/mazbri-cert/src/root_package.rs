@@ -119,9 +119,9 @@ pub fn derive_root_package_status(
     package_status: &str,
     active_material_count: i64,
     expires_at: Option<DateTime<Utc>>,
-    expired_at: Option<DateTime<Utc>>,
+    marked_expired_at: Option<DateTime<Utc>>,
 ) -> String {
-    let expired = is_root_package_expired(Utc::now(), expires_at, expired_at);
+    let expired = is_root_package_expired(Utc::now(), expires_at, marked_expired_at);
     if expired && package_status != "revoked" && package_status != "deleted" {
         "expired".to_string()
     } else if active_material_count > 0
@@ -146,9 +146,9 @@ pub fn derive_root_package_status(
 pub fn is_root_package_expired(
     now: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
-    expired_at: Option<DateTime<Utc>>,
+    marked_expired_at: Option<DateTime<Utc>>,
 ) -> bool {
-    expired_at.is_some() || expires_at.is_some_and(|expires_at| expires_at <= now)
+    marked_expired_at.is_some() || expires_at.is_some_and(|deadline| deadline <= now)
 }
 
 #[must_use]

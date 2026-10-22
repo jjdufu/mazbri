@@ -406,7 +406,7 @@ fn spawn_background_workers(
 ) -> Arc<crate::route_reload::RouteReloadStatus> {
     spawn_supervised("callback-worker", {
         let cb_cfg = config.callback.to_runtime();
-        let worker = CallbackWorker::with_config(db.clone(), cb_cfg.clone());
+        let worker = CallbackWorker::with_config(db.clone(), &cb_cfg);
         async move {
             worker.run().await;
         }

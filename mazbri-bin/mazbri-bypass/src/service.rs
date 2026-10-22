@@ -544,5 +544,5 @@ fn emit_bypass_access(
             error_class,
         })
         .build();
-    emit_access_log("mazbri-bypass.access", event);
+    emit_access_log("mazbri-bypass.access", &event);
 }

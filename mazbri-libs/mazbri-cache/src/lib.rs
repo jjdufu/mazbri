@@ -27,22 +27,20 @@ pub struct CacheService {
 }
 
 impl CacheService {
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn new(
+    #[must_use]
+    pub fn new(
         db: Arc<PgPool>,
         config: CacheConfig,
         redis: mazbri_core::redis::RedisClient,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let cache = Arc::new(RedisCache::with_client(db.clone(), config.clone(), redis));
         let ttl_manager = Arc::new(TtlManager::new(cache.clone()));
-        Ok(Self {
+        Self {
             db,
             config: Arc::new(config),
             cache,
             ttl_manager,
-        })
+        }
     }
     #[must_use]
     pub fn cache(&self) -> &Arc<RedisCache> {

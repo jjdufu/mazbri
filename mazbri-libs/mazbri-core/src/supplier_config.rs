@@ -383,7 +383,7 @@ impl SupplierConfig {
                 .as_deref()
                 .map(str::trim)
                 .as_ref()
-                .is_none_or(|s| !!s.is_empty())
+                .is_none_or(|s| s.is_empty())
         {
             return Err(ConfigValidationError::new(
                 "config.upstream_type=microservice 时 contract_id 必填",
@@ -395,69 +395,7 @@ impl SupplierConfig {
         }
 
         if let Some(ref auth) = self.auth_flow {
-            if let Some(ref p) = auth.profile {
-                let t = p.trim();
-                if !t.is_empty() && t != "none" {
-                    AuthProfile::parse(t).map_err(|e| {
-                        ConfigValidationError::new(format!("config.auth_flow.profile: {e}"))
-                    })?;
-                }
-            }
-            if auth.enabled {
-                let kind = auth.profile_kind()?;
-                if kind.uses_ticket() {
-                    if auth.token_url.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow 换票档 token_url 必填",
-                        ));
-                    }
-                    if !(auth.token_url.starts_with("http://")
-                        || auth.token_url.starts_with("https://"))
-                    {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
-                        ));
-                    }
-                    let method = auth.method.to_uppercase();
-                    if !method.is_empty() && method != "GET" && method != "POST" {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.method 仅支持 GET 或 POST",
-                        ));
-                    }
-                } else if !auth.token_url.trim().is_empty()
-                    && !(auth.token_url.starts_with("http://")
-                        || auth.token_url.starts_with("https://"))
-                {
-                    return Err(ConfigValidationError::new(
-                        "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
-                    ));
-                }
-                if kind.uses_inject() {
-                    let loc = auth.inject_to.to_lowercase();
-                    if !loc.is_empty()
-                        && !matches!(
-                            loc.as_str(),
-                            "header" | "query" | "metadata" | "first_frame"
-                        )
-                    {
-                        return Err(ConfigValidationError::new(format!(
-                            "config.auth_flow.inject_to 非法: '{loc}'，合法值: header | query | metadata | first_frame"
-                        )));
-                    }
-                }
-                if kind == AuthProfile::AwsSigV4 {
-                    let aws = auth.aws.as_ref().ok_or_else(|| {
-                        ConfigValidationError::new(
-                            "config.auth_flow.profile=aws_sigv4 需要 aws.region 与 aws.service",
-                        )
-                    })?;
-                    if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.aws.region 与 aws.service 必填",
-                        ));
-                    }
-                }
-            }
+            validate_auth_flow(auth)?;
         }
 
         if let Some(ref transform) = self.transform {
@@ -562,6 +500,71 @@ impl SupplierConfig {
         serde_json::to_value(self)
             .map_err(|e| ConfigValidationError::new(format!("config 序列化失败: {e}")))
     }
+}
+
+fn validate_auth_flow(auth: &AuthFlowConfig) -> Result<(), ConfigValidationError> {
+    if let Some(ref p) = auth.profile {
+        let t = p.trim();
+        if !t.is_empty() && t != "none" {
+            AuthProfile::parse(t).map_err(|e| {
+                ConfigValidationError::new(format!("config.auth_flow.profile: {e}"))
+            })?;
+        }
+    }
+    if auth.enabled {
+        let kind = auth.profile_kind()?;
+        if kind.uses_ticket() {
+            if auth.token_url.trim().is_empty() {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow 换票档 token_url 必填",
+                ));
+            }
+            if !(auth.token_url.starts_with("http://") || auth.token_url.starts_with("https://")) {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
+                ));
+            }
+            let method = auth.method.to_uppercase();
+            if !method.is_empty() && method != "GET" && method != "POST" {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.method 仅支持 GET 或 POST",
+                ));
+            }
+        } else if !auth.token_url.trim().is_empty()
+            && !auth.token_url.starts_with("http://")
+            && !auth.token_url.starts_with("https://")
+        {
+            return Err(ConfigValidationError::new(
+                "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
+            ));
+        }
+        if kind.uses_inject() {
+            let loc = auth.inject_to.to_lowercase();
+            if !loc.is_empty()
+                && !matches!(
+                    loc.as_str(),
+                    "header" | "query" | "metadata" | "first_frame"
+                )
+            {
+                return Err(ConfigValidationError::new(format!(
+                    "config.auth_flow.inject_to 非法: '{loc}'，合法值: header | query | metadata | first_frame"
+                )));
+            }
+        }
+        if kind == AuthProfile::AwsSigV4 {
+            let aws = auth.aws.as_ref().ok_or_else(|| {
+                ConfigValidationError::new(
+                    "config.auth_flow.profile=aws_sigv4 需要 aws.region 与 aws.service",
+                )
+            })?;
+            if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.aws.region 与 aws.service 必填",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_timeout_field(

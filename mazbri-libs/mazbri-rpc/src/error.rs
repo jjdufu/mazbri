@@ -43,9 +43,12 @@ impl RpcError {
             RpcError::NotFound { resource, id } => {
                 format!("资源 {resource} (id={id}) 未找到")
             }
-            RpcError::Validation { message, .. } => message.clone(),
-            RpcError::Unauthorized { message } => message.clone(),
-            RpcError::Forbidden { message } => message.clone(),
+            RpcError::Validation { message, .. }
+            | RpcError::Unauthorized { message }
+            | RpcError::Forbidden { message }
+            | RpcError::DatabaseError { message }
+            | RpcError::ServiceUnavailable { message, .. }
+            | RpcError::Internal { message } => message.clone(),
             RpcError::InsufficientBalance {
                 required,
                 available,
@@ -55,12 +58,9 @@ impl RpcError {
             RpcError::RateLimited { retry_after_secs } => {
                 format!("请求过于频繁，{retry_after_secs} 秒后重试")
             }
-            RpcError::DatabaseError { message } => message.clone(),
-            RpcError::ServiceUnavailable { message, .. } => message.clone(),
             RpcError::CircuitBreakerOpen { service } => {
                 format!("熔断器开启: {service}")
             }
-            RpcError::Internal { message } => message.clone(),
         }
     }
     #[must_use]

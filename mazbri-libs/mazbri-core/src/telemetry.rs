@@ -186,7 +186,7 @@ pub fn init_tracing_with_routes(
     };
 
     let (guard, cleanup_task, cleanup_shutdown) = if config.rotation_enabled {
-        setup_file_logging(config, service_name, env_filter, routes, otlp_tracer)?
+        setup_file_logging(config, service_name, &env_filter, routes, otlp_tracer)?
     } else {
         setup_console_only(&config.format, service_name, env_filter, otlp_tracer)
     };
@@ -237,7 +237,7 @@ fn base_log_name(service_name: &str) -> String {
 fn setup_file_logging(
     config: &crate::config::TracingConfig,
     service_name: &str,
-    env_filter: EnvFilter,
+    env_filter: &EnvFilter,
     routes: &[LogRoute],
     otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
 ) -> Result<FileLoggingHandles> {
@@ -277,7 +277,7 @@ fn setup_file_logging(
         config_format
     );
     let cleanup_task = spawn(async move {
-        check_and_rotate_logs(&log_dir_path, &basenames_for_task).await;
+        check_and_rotate_logs(&log_dir_path, &basenames_for_task);
         let mut timer = interval(Duration::from_secs(3600));
         timer.tick().await;
         loop {
@@ -285,20 +285,14 @@ fn setup_file_logging(
                 biased; _ = & mut shutdown_rx => {
                 tracing::info!("Log cleanup task received shutdown signal"); break; } _ =
                 timer.tick() => { check_and_rotate_logs(& log_dir_path, &
-                basenames_for_task). await; }
+                basenames_for_task); }
             }
         }
         tracing::info!("Log cleanup task stopped");
     });
     Ok((guards, Some(cleanup_task), Some(shutdown_tx)))
 }
-fn setup_json_layers(
-    log_dir: &Path,
-    base_name: &str,
-    env_filter: EnvFilter,
-    routes: &[LogRoute],
-    otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
-) -> Result<Vec<WorkerGuard>> {
+fn json_console_layers(env_filter: &EnvFilter) -> Vec<Box<dyn Layer<Registry> + Send + Sync>> {
     let console_info_filter = env_filter
         .clone()
         .and(filter_fn(|metadata| *metadata.level() <= Level::INFO));
@@ -325,7 +319,15 @@ fn setup_json_layers(
         .with_current_span(true)
         .with_span_list(true)
         .with_filter(console_debug_filter);
-
+    vec![console_layer_info.boxed(), console_layer_debug.boxed()]
+}
+fn setup_json_layers(
+    log_dir: &Path,
+    base_name: &str,
+    env_filter: &EnvFilter,
+    routes: &[LogRoute],
+    otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
+) -> Result<Vec<WorkerGuard>> {
     let (default_writer, default_guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
         log_dir.to_path_buf(),
         base_name.to_string(),
@@ -373,10 +375,10 @@ fn setup_json_layers(
     let mut file_layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> =
         vec![default_layer_info.boxed(), default_layer_debug.boxed()];
     for (index, route) in routes.iter().cloned().enumerate() {
-        let basename = route.basename_for(base_name);
+        let route_file = route.basename_for(base_name);
         let (writer, guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
             log_dir.to_path_buf(),
-            basename,
+            route_file,
         ));
         guards.push(guard);
         let prior_routes_info = routes[..index].to_vec();
@@ -423,19 +425,16 @@ fn setup_json_layers(
         file_layers.push(layer_info.boxed());
         file_layers.push(layer_debug.boxed());
     }
+    file_layers.extend(json_console_layers(env_filter));
     let otel_layer = otlp_tracer.map(build_filtered_otel_layer);
-    let subscriber = Registry::default()
-        .with(file_layers)
-        .with(console_layer_info)
-        .with(console_layer_debug)
-        .with(otel_layer);
+    let subscriber = Registry::default().with(file_layers).with(otel_layer);
     subscriber.try_init()?;
     Ok(guards)
 }
 fn setup_pretty_layers(
     log_dir: &Path,
     base_name: &str,
-    env_filter: EnvFilter,
+    env_filter: &EnvFilter,
     routes: &[LogRoute],
     otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
 ) -> Result<Vec<WorkerGuard>> {
@@ -461,10 +460,10 @@ fn setup_pretty_layers(
     let mut guards = vec![default_guard];
     let mut file_layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![default_layer.boxed()];
     for (index, route) in routes.iter().cloned().enumerate() {
-        let basename = route.basename_for(base_name);
+        let route_file = route.basename_for(base_name);
         let (writer, guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
             log_dir.to_path_buf(),
-            basename,
+            route_file,
         ));
         guards.push(guard);
         let prior_routes = routes[..index].to_vec();
@@ -632,12 +631,12 @@ fn setup_console_only(
     );
     (Vec::new(), None, None)
 }
-async fn check_and_rotate_logs(log_dir: &Path, basenames: &[String]) {
+fn check_and_rotate_logs(log_dir: &Path, basenames: &[String]) {
     for basename in basenames {
-        check_and_rotate_log(log_dir, basename).await;
+        check_and_rotate_log(log_dir, basename);
     }
 }
-async fn check_and_rotate_log(log_dir: &Path, basename: &str) {
+fn check_and_rotate_log(log_dir: &Path, basename: &str) {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let current_log_path = log_dir.join(format!("{basename}.log"));
     if current_log_path.exists()
@@ -657,9 +656,9 @@ async fn check_and_rotate_log(log_dir: &Path, basename: &str) {
 fn collect_log_basenames(base_name: &str, routes: &[LogRoute]) -> Vec<String> {
     let mut basenames = vec![base_name.to_string()];
     for route in routes {
-        let basename = route.basename_for(base_name);
-        if !basenames.contains(&basename) {
-            basenames.push(basename);
+        let route_file = route.basename_for(base_name);
+        if !basenames.contains(&route_file) {
+            basenames.push(route_file);
         }
     }
     basenames

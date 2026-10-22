@@ -19,7 +19,7 @@ pub async fn serve(
         "Starting tarpc cache server on {} (max connections: {})",
         addr, max_connections
     );
-    let cache_service = CacheService::new(db, cache_config.clone(), redis).await?;
+    let cache_service = CacheService::new(db, cache_config.clone(), redis);
     let cache = Arc::clone(cache_service.cache());
     let ttl_manager = Arc::clone(cache_service.ttl_manager());
     let service = CacheTarpcService::new(cache, ttl_manager);

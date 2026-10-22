@@ -29,9 +29,9 @@ pub struct BaseAuthorizationSummary {
 pub fn is_package_expired(
     now: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
-    expired_at: Option<DateTime<Utc>>,
+    marked_expired_at: Option<DateTime<Utc>>,
 ) -> bool {
-    expired_at.is_some() || expires_at.is_some_and(|expires_at| expires_at <= now)
+    marked_expired_at.is_some() || expires_at.is_some_and(|deadline| deadline <= now)
 }
 
 #[must_use]

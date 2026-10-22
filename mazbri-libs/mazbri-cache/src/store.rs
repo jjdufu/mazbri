@@ -97,9 +97,8 @@ impl RedisCache {
         &self,
         tenant_id: &str,
     ) -> Result<(CacheConfig, bool), mazbri_core::CoreError> {
-        let tenant_uuid = match Uuid::parse_str(tenant_id) {
-            Ok(uuid) => uuid,
-            Err(_) => return Ok(((*self.config).clone(), true)),
+        let Ok(tenant_uuid) = Uuid::parse_str(tenant_id) else {
+            return Ok(((*self.config).clone(), true));
         };
         let row = sqlx::query(
             r"

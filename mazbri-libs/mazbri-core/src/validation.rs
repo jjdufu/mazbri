@@ -86,9 +86,7 @@ impl StringValidator {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_value(&self, field_name: &str, value: &Option<String>) -> ValidationResult<()> {
-        let value = if let Some(v) = value {
-            v
-        } else {
+        let Some(value) = value else {
             if self.required {
                 return Err(vec![ValidationError {
                     field: field_name.to_string(),

@@ -278,9 +278,8 @@ impl ProductService {
                 .fetch_optional(&self.db)
                 .await
                 .map_err(ProductDeleteError::Database)?;
-        let product_uuid = match product_row {
-            Some((uuid,)) => uuid,
-            None => return Ok(false),
+        let Some((product_uuid,)) = product_row else {
+            return Ok(false);
         };
         let active_tenants: Vec<String> = sqlx::query_scalar(
             r"

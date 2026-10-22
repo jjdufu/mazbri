@@ -55,8 +55,7 @@ impl ConfigCenterRegistry {
             self.metadata.clone(),
             self.pipeline.clone(),
             self.pipeline_mutex.clone(),
-        )
-        .await;
+        );
         let mut handle_lock = self.heartbeat_handle.write().await;
         *handle_lock = Some(handle);
         self.ready.store(true, Ordering::Relaxed);
@@ -134,7 +133,7 @@ impl ServiceRegistry for ConfigCenterRegistry {
         {
             let mut handle = self.heartbeat_handle.write().await;
             if let Some(h) = handle.take() {
-                if let Ok(_) = tokio::time::timeout(timeout, h).await {
+                if tokio::time::timeout(timeout, h).await.is_ok() {
                     info!("心跳任务已停止");
                 } else {
                     warn!("心跳任务超时未停止");

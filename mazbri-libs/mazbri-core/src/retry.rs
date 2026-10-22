@@ -26,13 +26,7 @@ pub trait IsTransient {
 }
 impl IsTransient for tarpc::client::RpcError {
     fn is_transient(&self) -> bool {
-        match self {
-            tarpc::client::RpcError::Shutdown => true,
-            tarpc::client::RpcError::Send(_) => true,
-            tarpc::client::RpcError::Channel(_) => true,
-            tarpc::client::RpcError::DeadlineExceeded => true,
-            tarpc::client::RpcError::Server(_) => false,
-        }
+        !matches!(self, tarpc::client::RpcError::Server(_))
     }
 }
 /// # Errors

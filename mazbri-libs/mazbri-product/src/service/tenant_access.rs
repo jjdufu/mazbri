@@ -51,8 +51,7 @@ impl ProductService {
         );
         self.invalidate_permission_cache(tenant_id, product_id)
             .await;
-        self.invalidate_tenant_product_detail_cache(tenant_id, product_id)
-            .await;
+        self.invalidate_tenant_product_detail_cache(tenant_id, product_id);
         Ok(TenantProduct {
             id: row.get("id"),
             tenant_id: row.get("tenant_id"),
@@ -100,8 +99,7 @@ impl ProductService {
         if affected {
             self.invalidate_permission_cache(tenant_id, product_id)
                 .await;
-            self.invalidate_tenant_product_detail_cache(tenant_id, product_id)
-                .await;
+            self.invalidate_tenant_product_detail_cache(tenant_id, product_id);
             info!(
                 "Revoked tenant {} access to product {}",
                 tenant_id, product_id
@@ -175,8 +173,7 @@ impl ProductService {
         if let Some(row) = row {
             self.invalidate_permission_cache(tenant_id, product_id)
                 .await;
-            self.invalidate_tenant_product_detail_cache(tenant_id, product_id)
-                .await;
+            self.invalidate_tenant_product_detail_cache(tenant_id, product_id);
             return Ok(UpdateTenantProductConfigResult::Updated(TenantProduct {
                 id: row.get("id"),
                 tenant_id: row.get("tenant_id"),

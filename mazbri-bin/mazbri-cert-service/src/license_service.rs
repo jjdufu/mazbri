@@ -65,8 +65,8 @@ pub async fn has_v3_state(pool: &PgPool) -> CertResult<bool> {
 pub fn decision_json(decision: &LicenseDecision) -> serde_json::Value {
     serde_json::json!({
         "status": decision.status,
-        "active": decision.issuance_allowed,
-        "issuanceAllowed": decision.issuance_allowed,
+        "active": decision.issuance_allowed(),
+        "issuanceAllowed": decision.issuance_allowed(),
         "decryptionAllowed": decision.decryption_allowed,
         "sequence": decision.sequence,
         "keyVersion": decision.key_version,

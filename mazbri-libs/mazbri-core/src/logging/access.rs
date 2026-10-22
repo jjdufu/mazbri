@@ -32,7 +32,7 @@ pub struct AccessHttpFields {
     pub user_agent: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct AccessTimingFields {
     pub duration_ms: u64,
     pub upstream_service_time_ms: Option<u64>,
@@ -421,7 +421,7 @@ impl TraceHeaderSource for HeaderMap {
     }
 }
 
-impl TraceHeaderSource for HashMap<String, String> {
+impl<S: std::hash::BuildHasher> TraceHeaderSource for HashMap<String, String, S> {
     fn header_value(&self, name: &str) -> Option<String> {
         self.get(name)
             .map(String::as_str)
@@ -556,7 +556,7 @@ pub fn response_flags_for_error(error_code: &str, stage: &str, status_code: u16)
     "UF".to_string()
 }
 
-pub fn emit_access_log(target: &str, event: AccessLogEvent) {
+pub fn emit_access_log(target: &str, event: &AccessLogEvent) {
     match target {
         "gateway.access" => emit_access_log_gateway(event),
         "billing.access" => emit_access_log_billing(event),
@@ -617,19 +617,19 @@ macro_rules! emit_access_log_for_target {
     };
 }
 
-fn emit_access_log_gateway(event: AccessLogEvent) {
+fn emit_access_log_gateway(event: &AccessLogEvent) {
     emit_access_log_for_target!("gateway.access", event);
 }
 
-fn emit_access_log_billing(event: AccessLogEvent) {
+fn emit_access_log_billing(event: &AccessLogEvent) {
     emit_access_log_for_target!("billing.access", event);
 }
 
-fn emit_access_log_bypass(event: AccessLogEvent) {
+fn emit_access_log_bypass(event: &AccessLogEvent) {
     emit_access_log_for_target!("mazbri-bypass.access", event);
 }
 
-fn emit_access_log_generic(target: &str, event: AccessLogEvent) {
+fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
     info!(
         target: "access",
         log_target = %target,

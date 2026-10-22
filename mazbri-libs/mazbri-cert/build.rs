@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
@@ -33,7 +34,7 @@ fn main() {
     let mut bytes = format!("pub const LICENSE_KID: &str = \"{kid}\";\n");
     bytes.push_str("pub const PRODUCTION_PUBLIC_KEY: [u8; 32] = [");
     for index in (0..64).step_by(2) {
-        bytes.push_str(&format!("0x{},", &hex[index..index + 2]));
+        let _ = write!(bytes, "0x{},", &hex[index..index + 2]);
     }
     bytes.push_str("];\n");
 

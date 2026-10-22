@@ -143,7 +143,6 @@ pub struct LicenseRequestFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LicenseDecision {
     pub status: String,
-    pub issuance_allowed: bool,
     pub decryption_allowed: bool,
     pub sequence: Option<i64>,
     pub key_version: Option<String>,
@@ -156,6 +155,14 @@ pub struct LicenseDecision {
     pub seconds_to_grace_end: Option<i64>,
     pub clock_rollback: bool,
     pub mark_expired_sticky: bool,
+}
+
+impl LicenseDecision {
+    /// 仅在许可证处于有效期内（status == "active"）时允许签发。
+    #[must_use]
+    pub fn issuance_allowed(&self) -> bool {
+        self.status == "active"
+    }
 }
 
 pub fn license_error(code: &'static str, message: impl Into<String>) -> CertError {
@@ -611,20 +618,18 @@ pub fn decide_license(
     let sticky = expired_sticky_sequence == Some(license.payload.sequence);
     let in_active = license.not_before <= now && now < license.expires_at;
     let in_grace = license.expires_at <= now && now < license.grace_until;
-    let (status, issuance_allowed, mark_expired_sticky) = if sticky || (!in_active && !in_grace) {
-        let mark = !sticky && now >= license.grace_until;
-        ("expired", false, mark)
+    let (status, mark_expired_sticky) = if sticky || (!in_active && !in_grace) {
+        ("expired", !sticky && now >= license.grace_until)
     } else if in_grace {
-        ("grace", false, false)
+        ("grace", false)
     } else if in_active {
-        ("active", true, false)
+        ("active", false)
     } else {
-        ("pending", false, false)
+        ("pending", false)
     };
     let decryption_allowed = password_unseals && materials_present;
     LicenseDecision {
         status: status.to_string(),
-        issuance_allowed,
         decryption_allowed,
         sequence: Some(license.payload.sequence),
         key_version: Some(license.payload.key_version.clone()),
@@ -648,7 +653,6 @@ pub fn unconfigured_decision() -> LicenseDecision {
 fn empty_decision(status: &str, clock_rollback: bool) -> LicenseDecision {
     LicenseDecision {
         status: status.to_string(),
-        issuance_allowed: false,
         decryption_allowed: false,
         sequence: None,
         key_version: None,
@@ -854,7 +858,7 @@ mod tests {
         let now = verified.expires_at + Duration::days(1);
         let decision = decide_license(Some(&verified), true, now, None, None, true, true);
         assert_eq!(decision.status, "grace");
-        assert!(!decision.issuance_allowed);
+        assert!(!decision.issuance_allowed());
         assert!(decision.decryption_allowed);
         assert!(decision.seconds_to_expiry.is_some_and(|value| value <= 0));
         assert!(decision.seconds_to_grace_end.is_some_and(|value| value > 0));
@@ -887,7 +891,7 @@ mod tests {
             true,
         );
         assert_eq!(sticky.status, "expired");
-        assert!(!sticky.issuance_allowed);
+        assert!(!sticky.issuance_allowed());
         assert!(sticky.decryption_allowed);
     }
 
@@ -907,7 +911,7 @@ mod tests {
         let seen = now + Duration::hours(1);
         let decision = decide_license(Some(&verified), true, now, None, Some(seen), true, true);
         assert!(!decision.clock_rollback);
-        assert!(decision.issuance_allowed);
+        assert!(decision.issuance_allowed());
         let far = decide_license(
             Some(&verified),
             true,
@@ -918,7 +922,7 @@ mod tests {
             true,
         );
         assert!(far.clock_rollback);
-        assert!(far.issuance_allowed);
+        assert!(far.issuance_allowed());
     }
 
     #[test]
@@ -935,7 +939,7 @@ mod tests {
         let verified = verify_compact_license(&jws).expect("verify");
         let now = verified.not_before + Duration::days(1);
         let decision = decide_license(Some(&verified), true, now, None, None, true, true);
-        assert!(decision.issuance_allowed);
+        assert!(decision.issuance_allowed());
         assert_eq!(decision.expires_at, Some(verified.expires_at));
     }
 

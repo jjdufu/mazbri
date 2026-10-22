@@ -8,8 +8,7 @@ pub fn register_collector_once(
     collector: Box<dyn Collector>,
 ) -> Result<(), PrometheusError> {
     match registry.register(collector) {
-        Ok(()) => Ok(()),
-        Err(PrometheusError::AlreadyReg) => Ok(()),
+        Ok(()) | Err(PrometheusError::AlreadyReg) => Ok(()),
         Err(error) => Err(error),
     }
 }

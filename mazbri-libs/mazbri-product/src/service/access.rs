@@ -55,11 +55,7 @@ impl ProductService {
     pub(crate) fn tenant_product_detail_cache_key(tenant_id: Uuid, product_id: &str) -> String {
         format!("{tenant_id}|{product_id}")
     }
-    pub(crate) async fn invalidate_tenant_product_detail_cache(
-        &self,
-        tenant_id: Uuid,
-        product_id: &str,
-    ) {
+    pub(crate) fn invalidate_tenant_product_detail_cache(&self, tenant_id: Uuid, product_id: &str) {
         let cache_key = Self::tenant_product_detail_cache_key(tenant_id, product_id);
         self.tenant_product_detail_cache.invalidate(&cache_key);
         debug!(

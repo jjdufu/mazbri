@@ -86,7 +86,7 @@ fn log_access(
         event.request_id = request_id.to_string();
         event.trace_id = request_id.to_string();
     }
-    emit_access_log("billing.access", event);
+    emit_access_log("billing.access", &event);
 }
 impl BillingServiceTrait for BillingTarpcService {
     async fn record_usage(self, _context: Context, req: RecordUsageRequest) -> RecordUsageResponse {

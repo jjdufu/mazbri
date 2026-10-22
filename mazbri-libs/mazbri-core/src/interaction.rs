@@ -20,6 +20,7 @@ pub struct Attempt {
     pub end_time: Option<DateTime<Utc>>,
     pub status: Option<AttemptStatus>,
 }
+#[derive(Debug, Clone, Copy)]
 pub struct UpstreamAttempt<'a> {
     pub supplier_id: &'a str,
     pub supplier_code: &'a str,

@@ -179,7 +179,7 @@ mod tests {
         let payload = canonical_http_binding(
             "POST",
             "/api/v1/gateway",
-            1710000000,
+            1_710_000_000,
             &"n".repeat(16),
             br#"{"product_id":"p1","path":"/x"}"#,
         );
@@ -197,13 +197,14 @@ mod tests {
         let key = [7u8; 32];
         let nonce = "abcdefABCDEF12-_";
         let body = br#"{"product_id":"p1"}"#;
-        let canonical = canonical_http_binding("POST", "/api/v1/gateway", 1710000000, nonce, body);
+        let canonical =
+            canonical_http_binding("POST", "/api/v1/gateway", 1_710_000_000, nonce, body);
         let sig = sign_hmac_sha256_base64(&key, &canonical).unwrap();
         verify_hmac_sha256_base64(&key, &canonical, &sig).unwrap();
         let tampered = canonical_http_binding(
             "POST",
             "/api/v1/gateway",
-            1710000000,
+            1_710_000_000,
             nonce,
             br#"{"product_id":"p2"}"#,
         );

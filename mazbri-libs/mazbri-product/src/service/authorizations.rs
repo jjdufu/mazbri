@@ -56,12 +56,12 @@ impl ProductService {
     where
         F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
     {
-        let search_pattern = search.map(|value| format!("%{value}%"));
         const BASE_FROM: &str = "\
             FROM tenant_products tp \
             JOIN products p ON tp.product_id = p.id \
             JOIN tenants t ON tp.tenant_id = t.id \
             WHERE tp.enabled = true AND p.enabled = true";
+        let search_pattern = search.map(|value| format!("%{value}%"));
 
         let mut count_builder: QueryBuilder<'_, Postgres> =
             QueryBuilder::new(format!("SELECT COUNT(*) {BASE_FROM}"));
