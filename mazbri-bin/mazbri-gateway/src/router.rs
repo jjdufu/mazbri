@@ -654,7 +654,7 @@ async fn warmup_tarpc_clients(
 ) -> anyhow::Result<()> {
     warmup_tarpc_client_with_retry(
         tarpc_pool,
-        "ratelimit",
+        mazbri_core::ServiceName::Ratelimit.as_str(),
         services.ratelimit.url(),
         || async {
             let _ = tarpc_pool
@@ -664,28 +664,48 @@ async fn warmup_tarpc_clients(
         },
     )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "auth", services.auth.url(), || async {
-        let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Auth.as_str(),
+        services.auth.url(),
+        || async {
+            let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
+            Ok(())
+        },
+    )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "billing", services.billing.url(), || async {
-        let _ = tarpc_pool
-            .get_billing_client(services.billing.url())
-            .await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Billing.as_str(),
+        services.billing.url(),
+        || async {
+            let _ = tarpc_pool
+                .get_billing_client(services.billing.url())
+                .await?;
+            Ok(())
+        },
+    )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "cache", services.cache.url(), || async {
-        let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Cache.as_str(),
+        services.cache.url(),
+        || async {
+            let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
+            Ok(())
+        },
+    )
     .await?;
     if let Some(cbpro_url) = services.cbpro.as_ref() {
-        warmup_tarpc_client_with_retry(tarpc_pool, "cbpro", cbpro_url.url(), || async {
-            let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
-            Ok(())
-        })
+        warmup_tarpc_client_with_retry(
+            tarpc_pool,
+            mazbri_core::ServiceName::Cbpro.as_str(),
+            cbpro_url.url(),
+            || async {
+                let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
+                Ok(())
+            },
+        )
         .await?;
     }
     tracing::info!("Tarpc clients warmed up");

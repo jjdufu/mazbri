@@ -177,7 +177,7 @@ impl CBProExtClient {
                 available: false,
                 decision: None,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
@@ -185,7 +185,7 @@ impl CBProExtClient {
                 available: false,
                 decision: None,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
@@ -208,14 +208,14 @@ impl CBProExtClient {
             Ok(Err(error)) => ObservationResponse {
                 success: false,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
             Err(error) => ObservationResponse {
                 success: false,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },

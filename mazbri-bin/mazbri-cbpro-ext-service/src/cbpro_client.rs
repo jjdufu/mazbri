@@ -83,7 +83,7 @@ impl CBProClient {
                             source: FallbackSource::None,
                             age_secs: None,
                             error: Some(RpcError::ServiceUnavailable {
-                                service: "cbpro".into(),
+                                service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                                 message: format!("CBPro service error: {error}"),
                             }),
                         }
@@ -98,7 +98,7 @@ impl CBProClient {
                     source: FallbackSource::None,
                     age_secs: None,
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro connection failed: {error}"),
                     }),
                 }
@@ -123,7 +123,7 @@ impl CBProClient {
                             success: false,
                             cache_key: String::new(),
                             error: Some(RpcError::ServiceUnavailable {
-                                service: "cbpro".into(),
+                                service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                                 message: format!("CBPro service error: {error}"),
                             }),
                         }
@@ -136,7 +136,7 @@ impl CBProClient {
                     success: false,
                     cache_key: String::new(),
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro connection failed: {error}"),
                     }),
                 }

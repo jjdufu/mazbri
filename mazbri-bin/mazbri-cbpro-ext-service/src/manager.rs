@@ -164,7 +164,7 @@ impl CbProExtManager {
                 available: false,
                 decision: None,
                 error: Some(mazbri_rpc::RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
@@ -185,7 +185,7 @@ impl CbProExtManager {
                 accepted: false,
                 job_id: None,
                 error: Some(mazbri_rpc::RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
