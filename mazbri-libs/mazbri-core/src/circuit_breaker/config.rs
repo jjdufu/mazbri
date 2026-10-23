@@ -17,6 +17,7 @@ impl Default for CircuitBreakerConfig {
     }
 }
 impl CircuitBreakerConfig {
+    #[must_use]
     pub fn aggressive() -> Self {
         Self {
             failure_threshold: 3,
@@ -25,6 +26,7 @@ impl CircuitBreakerConfig {
             request_timeout: Duration::from_secs(10),
         }
     }
+    #[must_use]
     pub fn lenient() -> Self {
         Self {
             failure_threshold: 10,

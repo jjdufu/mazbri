@@ -6,11 +6,10 @@
 //! - `upstream_type`（必填）
 //! - `contract_id`（microservice 必填）
 //! - `timeouts.total_ms`（可选；数据面生效）
-//! - `auth_flow` / `transform`（transparent 可选）
+//! - `auth_flow`（transparent 可选）
 //!
-//! # 写入拒绝（禁止静默忽略）
-//! - `protocol`、`retries`、`plugins` 等
-//! - `timeouts.connect_ms` / `read_ms` / `write_ms`
+//! # 严格解析
+//! 所有结构 `deny_unknown_fields`：未知字段由 serde 直接报错。
 //!
 //! # 凭据（G-05）
 //! - 管理端写入前加密 `auth_flow.credentials`
@@ -31,33 +30,9 @@ pub const MAX_SUPPLIER_CONFIG_BYTES: usize = 64 * 1024;
 pub const UPSTREAM_TYPE_TRANSPARENT: &str = "transparent";
 pub const UPSTREAM_TYPE_MICROSERVICE: &str = "microservice";
 
-/// 写入允许的顶层字段。
-const ALLOWED_TOP_KEYS: &[&str] = &[
-    "upstream_type",
-    "contract_id",
-    "timeouts",
-    "auth_flow",
-    "transform",
-];
-
-/// 已裁剪、写入必须拒绝的顶层字段（G-02/G-03 / H-23）。
-/// 售前须写明：不支持插件市场、通用 LB、配置内 health_check 探活摘流等。
-const REJECTED_TOP_KEYS: &[&str] = &[
-    "protocol",
-    "retries",
-    "plugins",
-    "load_balancer",
-    "health_check",
-    "tls",
-    "disguise",
-];
-
-/// timeouts 仅允许 total_ms。
-const ALLOWED_TIMEOUT_KEYS: &[&str] = &["total_ms"];
-const REJECTED_TIMEOUT_KEYS: &[&str] = &["connect_ms", "read_ms", "write_ms"];
-
 /// 供应商运行时配置（共享模型）。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SupplierConfig {
     /// 上游接入模式：`transparent` | `microservice`（必填）。
     #[serde(default)]
@@ -74,13 +49,10 @@ pub struct SupplierConfig {
     /// 透明上游动态鉴权（bypass 消费）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_flow: Option<AuthFlowConfig>,
-
-    /// 请求/响应转换（bypass 消费）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<TransformConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TimeoutsConfig {
     /// 总超时毫秒（gateway / bypass 消费）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -88,6 +60,7 @@ pub struct TimeoutsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AuthFlowConfig {
     pub enabled: bool,
     /// 会话默认鉴权档。空 / none = 未声明。不含 UI inherit。
@@ -151,8 +124,11 @@ impl Default for AuthFlowConfig {
 }
 
 impl AuthFlowConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn profile_kind(&self) -> Result<AuthProfile, ConfigValidationError> {
-        let raw = self.profile.as_deref().map(str::trim).unwrap_or("");
+        let raw = self.profile.as_deref().map_or("", str::trim);
         AuthProfile::parse(raw).map_err(|e| ConfigValidationError::new(e.to_string()))
     }
 }
@@ -167,23 +143,6 @@ fn default_inject_location() -> String {
 
 fn default_inject_format() -> String {
     "Bearer {}".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TransformConfig {
-    pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rewrite_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_headers_set: Option<HashMap<String, String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_headers_remove: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_body_template: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub response_body_template: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub response_headers_set: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -204,125 +163,45 @@ impl From<SupplierSecretsError> for ConfigValidationError {
     }
 }
 
-/// 写入路径：拒绝已裁剪/未知顶层键与非法 timeouts 键。
-pub fn reject_unsupported_config_keys(
-    value: &serde_json::Value,
-) -> Result<(), ConfigValidationError> {
-    let Some(obj) = value.as_object() else {
-        return Err(ConfigValidationError::new("config 必须是 JSON 对象"));
-    };
-    for key in obj.keys() {
-        if REJECTED_TOP_KEYS.contains(&key.as_str()) {
-            return Err(ConfigValidationError::new(format!(
-                "config.{key} 已不受支持（写了也不会生效）：请删除该字段；\
-                 超时仅支持 timeouts.total_ms；重试请用路由 binding.switch_condition"
-            )));
-        }
-        if !ALLOWED_TOP_KEYS.contains(&key.as_str()) {
-            return Err(ConfigValidationError::new(format!(
-                "config.{key} 不受支持：允许字段为 {}",
-                ALLOWED_TOP_KEYS.join(", ")
-            )));
-        }
-    }
-    if let Some(timeouts) = obj.get("timeouts") {
-        let Some(t) = timeouts.as_object() else {
-            return Err(ConfigValidationError::new(
-                "config.timeouts 必须是 JSON 对象",
-            ));
-        };
-        for key in t.keys() {
-            if REJECTED_TIMEOUT_KEYS.contains(&key.as_str()) {
-                return Err(ConfigValidationError::new(format!(
-                    "config.timeouts.{key} 已不受支持：数据面仅消费 total_ms，请删除分项超时"
-                )));
-            }
-            if !ALLOWED_TIMEOUT_KEYS.contains(&key.as_str()) {
-                return Err(ConfigValidationError::new(format!(
-                    "config.timeouts.{key} 不受支持：仅允许 total_ms"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// 从存量 JSON 去掉已裁剪字段（读路径/兼容旧库；不用于「静默接受写入」）。
-pub fn strip_unsupported_config_fields(mut value: serde_json::Value) -> serde_json::Value {
-    if let Some(obj) = value.as_object_mut() {
-        for k in REJECTED_TOP_KEYS {
-            obj.remove(*k);
-        }
-        let unknown: Vec<String> = obj
-            .keys()
-            .filter(|k| !ALLOWED_TOP_KEYS.contains(&k.as_str()))
-            .cloned()
-            .collect();
-        for k in unknown {
-            obj.remove(&k);
-        }
-        if let Some(timeouts) = obj.get_mut("timeouts").and_then(|v| v.as_object_mut()) {
-            for k in REJECTED_TIMEOUT_KEYS {
-                timeouts.remove(*k);
-            }
-            let unknown_t: Vec<String> = timeouts
-                .keys()
-                .filter(|k| !ALLOWED_TIMEOUT_KEYS.contains(&k.as_str()))
-                .cloned()
-                .collect();
-            for k in unknown_t {
-                timeouts.remove(&k);
-            }
-        }
-    }
-    value
-}
-
 impl SupplierConfig {
+    #[must_use]
     pub fn is_transparent(&self) -> bool {
         self.upstream_type == UPSTREAM_TYPE_TRANSPARENT
     }
 
+    #[must_use]
     pub fn is_microservice(&self) -> bool {
         self.upstream_type == UPSTREAM_TYPE_MICROSERVICE
     }
 
-    /// 管理端写入：拒绝假字段 → 解析 → 校验。
-    pub fn parse_and_validate(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
-        reject_unsupported_config_keys(value)?;
-        Self::parse_and_validate_lenient(value)
-    }
-
-    /// 草稿箱写入：拒绝假字段并反序列化，不做发布级语义校验。
+    /// 严格解析 → 语义校验（发布、运行）。
     ///
-    /// 工作台自动保存允许 `auth_flow.enabled=true` 且 `token_url` 暂空；
-    /// 发布 / 试跑仍走 [`parse_and_validate`]。
-    pub fn parse_for_draft_write(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
-        reject_unsupported_config_keys(value)?;
-        Self::deserialize_config(value)
-    }
-
-    /// 读路径 / 存量兼容：先剥离已裁剪字段再校验（不拒绝旧数据）。
-    pub fn parse_and_validate_lenient(
-        value: &serde_json::Value,
-    ) -> Result<Self, ConfigValidationError> {
+    /// # Errors
+    ///
+    /// 未知字段、反序列化失败或语义校验失败时返回错误。
+    pub fn parse_and_validate(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
         let cfg = Self::deserialize_config(value)?;
         cfg.validate()?;
         Ok(cfg)
     }
 
+    /// 草稿箱写入：严格反序列化，不做发布级语义校验。
+    ///
+    /// 工作台自动保存允许 `auth_flow.enabled=true` 且 `token_url` 暂空；
+    /// 发布 / 试跑仍走 [`parse_and_validate`]。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub fn parse_for_draft_write(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
+        Self::deserialize_config(value)
+    }
+
     fn deserialize_config(value: &serde_json::Value) -> Result<Self, ConfigValidationError> {
-        let cleaned = strip_unsupported_config_fields(value.clone());
-        if cleaned
-            .as_object()
-            .is_some_and(|obj| obj.contains_key("plugins"))
-        {
-            return Err(ConfigValidationError::new(
-                "config.plugins 不受支持：平台横切能力为内建；\
-                 上游差异化使用 auth_flow/transform 或 microservice",
-            ));
+        if !value.is_object() {
+            return Err(ConfigValidationError::new("config 必须是 JSON 对象"));
         }
-        let raw = serde_json::to_vec(&cleaned)
+        let raw = serde_json::to_vec(value)
             .map_err(|e| ConfigValidationError::new(format!("config 序列化失败: {e}")))?;
         if raw.len() > MAX_SUPPLIER_CONFIG_BYTES {
             return Err(ConfigValidationError::new(format!(
@@ -331,11 +210,15 @@ impl SupplierConfig {
                 raw.len()
             )));
         }
-        serde_json::from_value(cleaned)
+        Self::deserialize(value)
             .map_err(|e| ConfigValidationError::new(format!("config JSON 反序列化失败: {e}")))
     }
 
     /// 结构与语义校验（写入路径必须调用）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
         match self.upstream_type.as_str() {
             UPSTREAM_TYPE_TRANSPARENT | UPSTREAM_TYPE_MICROSERVICE => {}
@@ -356,8 +239,8 @@ impl SupplierConfig {
                 .contract_id
                 .as_deref()
                 .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .is_none()
+                .as_ref()
+                .is_none_or(|s| s.is_empty())
         {
             return Err(ConfigValidationError::new(
                 "config.upstream_type=microservice 时 contract_id 必填",
@@ -369,106 +252,15 @@ impl SupplierConfig {
         }
 
         if let Some(ref auth) = self.auth_flow {
-            if let Some(ref p) = auth.profile {
-                let t = p.trim();
-                if !t.is_empty() && t != "none" {
-                    AuthProfile::parse(t).map_err(|e| {
-                        ConfigValidationError::new(format!("config.auth_flow.profile: {e}"))
-                    })?;
-                }
-            }
-            if auth.enabled {
-                let kind = auth.profile_kind()?;
-                if kind.uses_ticket() {
-                    if auth.token_url.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow 换票档 token_url 必填",
-                        ));
-                    }
-                    if !(auth.token_url.starts_with("http://")
-                        || auth.token_url.starts_with("https://"))
-                    {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
-                        ));
-                    }
-                    let method = auth.method.to_uppercase();
-                    if !method.is_empty() && method != "GET" && method != "POST" {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.method 仅支持 GET 或 POST",
-                        ));
-                    }
-                } else if !auth.token_url.trim().is_empty()
-                    && !(auth.token_url.starts_with("http://")
-                        || auth.token_url.starts_with("https://"))
-                {
-                    return Err(ConfigValidationError::new(
-                        "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
-                    ));
-                }
-                if kind.uses_inject() {
-                    let loc = auth.inject_to.to_lowercase();
-                    if !loc.is_empty()
-                        && !matches!(
-                            loc.as_str(),
-                            "header" | "query" | "metadata" | "first_frame"
-                        )
-                    {
-                        return Err(ConfigValidationError::new(format!(
-                            "config.auth_flow.inject_to 非法: '{loc}'，合法值: header | query | metadata | first_frame"
-                        )));
-                    }
-                }
-                if kind == AuthProfile::AwsSigV4 {
-                    let aws = auth.aws.as_ref().ok_or_else(|| {
-                        ConfigValidationError::new(
-                            "config.auth_flow.profile=aws_sigv4 需要 aws.region 与 aws.service",
-                        )
-                    })?;
-                    if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.auth_flow.aws.region 与 aws.service 必填",
-                        ));
-                    }
-                }
-            }
-        }
-
-        if let Some(ref transform) = self.transform {
-            if transform.enabled {
-                let has_any = transform.rewrite_path.is_some()
-                    || transform.request_body_template.is_some()
-                    || transform.response_body_template.is_some()
-                    || transform
-                        .request_headers_set
-                        .as_ref()
-                        .is_some_and(|m| !m.is_empty())
-                    || transform
-                        .request_headers_remove
-                        .as_ref()
-                        .is_some_and(|v| !v.is_empty())
-                    || transform
-                        .response_headers_set
-                        .as_ref()
-                        .is_some_and(|m| !m.is_empty());
-                if !has_any {
-                    return Err(ConfigValidationError::new(
-                        "config.transform.enabled=true 时至少配置一项转换规则",
-                    ));
-                }
-                if let Some(ref path) = transform.rewrite_path {
-                    if path.trim().is_empty() {
-                        return Err(ConfigValidationError::new(
-                            "config.transform.rewrite_path 不能为空字符串",
-                        ));
-                    }
-                }
-            }
+            validate_auth_flow(auth)?;
         }
 
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_upstream_url_for_type(
         &self,
         upstream_url: &str,
@@ -485,21 +277,21 @@ impl SupplierConfig {
         Ok(())
     }
 
+    #[must_use]
     pub fn normalize_disabled_sections(mut self) -> Self {
-        if let Some(ref auth) = self.auth_flow {
-            if !auth.enabled {
-                self.auth_flow = None;
-            }
-        }
-        if let Some(ref transform) = self.transform {
-            if !transform.enabled {
-                self.transform = None;
-            }
+        if let Some(ref auth) = self.auth_flow
+            && !auth.enabled
+        {
+            self.auth_flow = None;
         }
         self
     }
 
     /// 写入 DB 前加密 credentials（G-05）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn encrypt_credentials_for_storage(mut self) -> Result<Self, ConfigValidationError> {
         if let Some(ref mut auth) = self.auth_flow {
             let key = supplier_secrets_key()?;
@@ -509,6 +301,10 @@ impl SupplierConfig {
     }
 
     /// 数据面出站前解密 credentials。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn decrypt_credentials_for_runtime(mut self) -> Result<Self, ConfigValidationError> {
         if let Some(ref mut auth) = self.auth_flow {
             let key = supplier_secrets_key()?;
@@ -517,10 +313,78 @@ impl SupplierConfig {
         Ok(self)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn to_json_value(&self) -> Result<serde_json::Value, ConfigValidationError> {
         serde_json::to_value(self)
             .map_err(|e| ConfigValidationError::new(format!("config 序列化失败: {e}")))
     }
+}
+
+fn validate_auth_flow(auth: &AuthFlowConfig) -> Result<(), ConfigValidationError> {
+    if let Some(ref p) = auth.profile {
+        let t = p.trim();
+        if !t.is_empty() && t != "none" {
+            AuthProfile::parse(t).map_err(|e| {
+                ConfigValidationError::new(format!("config.auth_flow.profile: {e}"))
+            })?;
+        }
+    }
+    if auth.enabled {
+        let kind = auth.profile_kind()?;
+        if kind.uses_ticket() {
+            if auth.token_url.trim().is_empty() {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow 换票档 token_url 必填",
+                ));
+            }
+            if !(auth.token_url.starts_with("http://") || auth.token_url.starts_with("https://")) {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
+                ));
+            }
+            let method = auth.method.to_uppercase();
+            if !method.is_empty() && method != "GET" && method != "POST" {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.method 仅支持 GET 或 POST",
+                ));
+            }
+        } else if !auth.token_url.trim().is_empty()
+            && !auth.token_url.starts_with("http://")
+            && !auth.token_url.starts_with("https://")
+        {
+            return Err(ConfigValidationError::new(
+                "config.auth_flow.token_url 必须以 http:// 或 https:// 开头",
+            ));
+        }
+        if kind.uses_inject() {
+            let loc = auth.inject_to.to_lowercase();
+            if !loc.is_empty()
+                && !matches!(
+                    loc.as_str(),
+                    "header" | "query" | "metadata" | "first_frame"
+                )
+            {
+                return Err(ConfigValidationError::new(format!(
+                    "config.auth_flow.inject_to 非法: '{loc}'，合法值: header | query | metadata | first_frame"
+                )));
+            }
+        }
+        if kind == AuthProfile::AwsSigV4 {
+            let aws = auth.aws.as_ref().ok_or_else(|| {
+                ConfigValidationError::new(
+                    "config.auth_flow.profile=aws_sigv4 需要 aws.region 与 aws.service",
+                )
+            })?;
+            if aws.region.trim().is_empty() || aws.service.trim().is_empty() {
+                return Err(ConfigValidationError::new(
+                    "config.auth_flow.aws.region 与 aws.service 必填",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_timeout_field(
@@ -529,12 +393,12 @@ fn validate_timeout_field(
     min: u64,
     max: u64,
 ) -> Result<(), ConfigValidationError> {
-    if let Some(v) = value {
-        if v < min || v > max {
-            return Err(ConfigValidationError::new(format!(
-                "config.timeouts.{name} 必须在 {min}..={max} 范围内，当前为 {v}"
-            )));
-        }
+    if let Some(v) = value
+        && (v < min || v > max)
+    {
+        return Err(ConfigValidationError::new(format!(
+            "config.timeouts.{name} 必须在 {min}..={max} 范围内，当前为 {v}"
+        )));
     }
     Ok(())
 }
@@ -558,40 +422,37 @@ pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &s
     };
 
     let mut old_creds_map = HashMap::new();
-    if let Some(old_auth) = old_config.get("auth_flow").and_then(|v| v.as_object()) {
-        if let Some(old_creds) = old_auth.get("credentials").and_then(|v| v.as_object()) {
-            for (k, v) in old_creds {
-                if let Some(s) = v.as_str() {
-                    old_creds_map.insert(k.clone(), s.to_string());
-                }
+    if let Some(old_auth) = old_config.get("auth_flow").and_then(|v| v.as_object())
+        && let Some(old_creds) = old_auth.get("credentials").and_then(|v| v.as_object())
+    {
+        for (k, v) in old_creds {
+            if let Some(s) = v.as_str() {
+                old_creds_map.insert(k.clone(), s.to_string());
             }
         }
     }
 
     for (k, val) in new_creds_obj.iter_mut() {
-        if let Some(s) = val.as_str() {
-            if s == "••••••••" || s == "********" {
-                if let Some(old_val) = old_creds_map.get(k) {
-                    *val = serde_json::Value::String(old_val.clone());
-                }
-            }
+        if let Some(s) = val.as_str()
+            && (s == "••••••••" || s == "********")
+            && let Some(old_val) = old_creds_map.get(k)
+        {
+            *val = serde_json::Value::String(old_val.clone());
         }
     }
 }
 
-/// 脱敏 config 中 auth_flow.credentials（列表/详情/审计用；密文也打码）。
+/// 脱敏 config 中 `auth_flow.credentials（列表/详情/审计用；密文也打码`）。
+#[must_use]
 pub fn mask_config_credentials(mut config: serde_json::Value) -> serde_json::Value {
-    if let Some(obj) = config.as_object_mut() {
-        if let Some(auth_flow) = obj.get_mut("auth_flow") {
-            if let Some(auth_flow_obj) = auth_flow.as_object_mut() {
-                if let Some(credentials) = auth_flow_obj.get_mut("credentials") {
-                    if let Some(creds_obj) = credentials.as_object_mut() {
-                        for (_, val) in creds_obj.iter_mut() {
-                            *val = serde_json::Value::String("••••••••".to_string());
-                        }
-                    }
-                }
-            }
+    if let Some(obj) = config.as_object_mut()
+        && let Some(auth_flow) = obj.get_mut("auth_flow")
+        && let Some(auth_flow_obj) = auth_flow.as_object_mut()
+        && let Some(credentials) = auth_flow_obj.get_mut("credentials")
+        && let Some(creds_obj) = credentials.as_object_mut()
+    {
+        for (_, val) in creds_obj.iter_mut() {
+            *val = serde_json::Value::String("••••••••".to_string());
         }
     }
     config
@@ -625,7 +486,7 @@ mod tests {
         });
         let err = SupplierConfig::parse_and_validate(&json).unwrap_err();
         assert!(
-            err.to_string().contains("protocol") || err.to_string().contains("retries"),
+            err.to_string().contains("unknown field `protocol`"),
             "{err}"
         );
     }
@@ -637,7 +498,10 @@ mod tests {
             "timeouts": { "connect_ms": 2000, "total_ms": 15000 }
         });
         let err = SupplierConfig::parse_and_validate(&json).unwrap_err();
-        assert!(err.to_string().contains("connect_ms"), "{err}");
+        assert!(
+            err.to_string().contains("unknown field `connect_ms`"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -651,15 +515,21 @@ mod tests {
     }
 
     #[test]
-    fn lenient_strips_legacy_fields() {
+    fn draft_write_rejects_unknown_fields() {
         let json = serde_json::json!({
             "upstream_type": "transparent",
-            "protocol": "https",
-            "retries": { "max": 2 },
-            "timeouts": { "connect_ms": 1000, "total_ms": 8000 }
+            "disguise": {}
         });
-        let cfg = SupplierConfig::parse_and_validate_lenient(&json).unwrap();
-        assert_eq!(cfg.timeouts.as_ref().unwrap().total_ms, Some(8000));
+        let err = SupplierConfig::parse_for_draft_write(&json).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `disguise`"),
+            "{err}"
+        );
+        let nested = serde_json::json!({
+            "upstream_type": "transparent",
+            "auth_flow": { "enabled": false, "bogus": 1 }
+        });
+        assert!(SupplierConfig::parse_for_draft_write(&nested).is_err());
     }
 
     #[test]
@@ -785,10 +655,7 @@ mod tests {
             "plugins": [{ "name": "rate_limit" }]
         });
         let err = SupplierConfig::parse_and_validate(&json).unwrap_err();
-        assert!(
-            err.to_string().contains("plugins") || err.to_string().contains("不受支持"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("unknown field `plugins`"), "{err}");
     }
 
     #[test]

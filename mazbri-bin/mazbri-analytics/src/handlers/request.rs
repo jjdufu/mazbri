@@ -25,6 +25,7 @@ fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestLogQueryRequest {
     #[serde(default)]
     pub start_time: Option<String>,
@@ -76,8 +77,6 @@ pub struct RequestLogQueryRequest {
     pub channel_id: Option<String>,
     #[serde(default)]
     pub channel_code: Option<String>,
-    #[serde(default, alias = "target")]
-    pub event_target: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
     #[serde(default)]
@@ -193,7 +192,6 @@ fn normalize_ranged_bounds(
 pub struct RequestLogItem {
     pub timestamp: DateTime<Utc>,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     #[serde(rename = "target")]
@@ -243,7 +241,6 @@ impl From<RequestLogEntry> for RequestLogItem {
         Self {
             timestamp: entry.timestamp,
             service: entry.service,
-            env: entry.env,
             host: entry.host,
             instance_id: entry.instance_id,
             event_target: entry.event_target,
@@ -424,7 +421,6 @@ fn build_query_params(
         supplier_code: req.supplier_code.clone(),
         channel_id: req.channel_id.clone(),
         channel_code: req.channel_code.clone(),
-        event_target: req.event_target.clone(),
         path: req.path.clone(),
         route_template: req.route_template.clone(),
         tenant_id: req.tenant_id.clone(),
@@ -489,7 +485,7 @@ pub async fn query_request_logs(
 ) -> Response {
     info!(
         page = req.page, page_size = req.page_size, request_id = ? req.request_id, q
-        = ? req.q, event_target = ? req.event_target, path = ? req.path, tenant_id = ? req.tenant_id, product_id = ?
+        = ? req.q, path = ? req.path, tenant_id = ? req.tenant_id, product_id = ?
         req.product_id, supplier_id = ? req.supplier_id, channel_id = ? req.channel_id,
         "查询请求日志"
     );

@@ -1,5 +1,6 @@
 const REDACTED: &str = "[REDACTED]";
 
+#[must_use]
 pub fn redact_sensitive_key(key: &str) -> &str {
     match key.to_ascii_lowercase().as_str() {
         "tenantsecretkey"

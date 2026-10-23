@@ -41,3 +41,6 @@ urlencoding = "2"
 url = "2"
 
 dirs = "6"
+
+[lints]
+workspace = true

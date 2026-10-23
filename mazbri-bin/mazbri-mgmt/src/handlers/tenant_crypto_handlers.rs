@@ -62,7 +62,7 @@ pub async fn update_crypto_profile(
         &state.db,
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
         &code,
         &payload,
         actor_id,
@@ -81,9 +81,7 @@ pub async fn update_crypto_profile(
             "signature_version" : payload.signature_version, "nonce_ttl_seconds" : payload
             .nonce_ttl_seconds, "clock_skew_seconds" : payload
             .clock_skew_seconds, "current_key_version" : payload
-            .current_key_version, "request_codec" : payload.request_codec.as_str(),
-            "response_codec" : payload.response_codec.as_str(), "codec_enabled" :
-            payload.codec_enabled, "codec_version" : payload.codec_version }
+            .current_key_version }
         ),
         client_ip,
     )?;
@@ -109,7 +107,7 @@ pub async fn create_crypto_key(
         &state.db,
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
         &code,
         actor_id,
         false,
@@ -155,7 +153,7 @@ pub async fn rotate_crypto_key(
         &state.db,
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
         &code,
         actor_id,
         true,
@@ -212,7 +210,7 @@ pub async fn activate_crypto_key(
         pool: &state.db,
         cert_client: &state.cert_http_client,
         cert_service_url: &state.cert_service.url,
-        cert_service_token: Some(state.cert_service.token.as_str()),
+        cert_service_token: state.cert_service.token.as_str(),
         code: &code,
         version: &version,
         status: "active",
@@ -253,7 +251,7 @@ pub async fn deprecate_crypto_key(
         pool: &state.db,
         cert_client: &state.cert_http_client,
         cert_service_url: &state.cert_service.url,
-        cert_service_token: Some(state.cert_service.token.as_str()),
+        cert_service_token: state.cert_service.token.as_str(),
         code: &code,
         version: &version,
         status: "deprecated",
@@ -294,7 +292,7 @@ pub async fn disable_crypto_key(
         pool: &state.db,
         cert_client: &state.cert_http_client,
         cert_service_url: &state.cert_service.url,
-        cert_service_token: Some(state.cert_service.token.as_str()),
+        cert_service_token: state.cert_service.token.as_str(),
         code: &code,
         version: &version,
         status: "disabled",
@@ -393,7 +391,7 @@ pub async fn verify_crypto_keys(
         &state.db,
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
         actor_id,
     )
     .await?;
@@ -443,7 +441,7 @@ pub async fn create_request_key(
         &state.db,
         &state.cert_http_client,
         &state.cert_service.url,
-        Some(state.cert_service.token.as_str()),
+        &state.cert_service.token,
         &code,
         actor_id,
     )

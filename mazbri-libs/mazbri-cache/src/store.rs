@@ -7,6 +7,7 @@ use super::metrics::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use mazbri_core::CoreError;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::{RedisClient, sha256_hex};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -36,14 +37,13 @@ impl RedisCacheEnvelope {
     fn into_entry(self, ttl_secs: u64) -> Result<CacheEntry, CoreError> {
         let value = STANDARD.decode(&self.value).map_err(|e| {
             CoreError::Validation(format!(
-                "Cache base64 decode failed: {}. This indicates corrupted cache data.",
-                e
+                "Cache base64 decode failed: {e}. This indicates corrupted cache data."
             ))
         })?;
         Ok(CacheEntry {
             value,
             ttl: ttl_secs,
-            expires_at: Utc::now() + chrono::Duration::seconds(ttl_secs as i64),
+            expires_at: Utc::now() + chrono::Duration::seconds(i64::saturating_from(ttl_secs)),
             metadata: self.metadata,
         })
     }
@@ -62,6 +62,9 @@ impl RedisCache {
         CoreError::service_unavailable(format!("redis: {error}"))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(
         db: Arc<PgPool>,
         config: CacheConfig,
@@ -71,6 +74,7 @@ impl RedisCache {
         Ok(Self::with_client(db, config, redis))
     }
 
+    #[must_use]
     pub fn with_client(db: Arc<PgPool>, config: CacheConfig, redis: RedisClient) -> Self {
         let memory_cache = Arc::new(MemoryCache::new(10_000, config.max_entry_size));
         Self {
@@ -93,16 +97,15 @@ impl RedisCache {
         &self,
         tenant_id: &str,
     ) -> Result<(CacheConfig, bool), mazbri_core::CoreError> {
-        let tenant_uuid = match Uuid::parse_str(tenant_id) {
-            Ok(uuid) => uuid,
-            Err(_) => return Ok(((*self.config).clone(), true)),
+        let Ok(tenant_uuid) = Uuid::parse_str(tenant_id) else {
+            return Ok(((*self.config).clone(), true));
         };
         let row = sqlx::query(
-            r#"
+            r"
             SELECT enabled, default_ttl, max_cache_size, api_ttl, tenant_isolated
             FROM cache_configs
             WHERE tenant_id = $1
-            "#,
+            ",
         )
         .bind(tenant_uuid)
         .fetch_optional(&*self.db)
@@ -123,8 +126,8 @@ impl RedisCache {
         };
         Ok((
             CacheConfig {
-                default_ttl: default_ttl as u64,
-                max_cache_size: max_cache_size as u64,
+                default_ttl: u64::saturating_from(default_ttl),
+                max_cache_size: u64::saturating_from(max_cache_size),
                 max_entry_size: self.config.max_entry_size,
                 api_ttl: api_ttl_map,
                 tenant_isolated,
@@ -161,7 +164,7 @@ impl RedisCache {
         let payload = serde_json::to_vec(&envelope)
             .map_err(|error| mazbri_core::CoreError::Validation(error.to_string()))?;
         self.redis
-            .set_ex_bytes(&redis_key, &payload, ttl_secs as usize)
+            .set_ex_bytes(&redis_key, &payload, usize::saturating_from(ttl_secs))
             .await
             .map_err(Self::redis_unavailable)?;
         Ok(())
@@ -178,10 +181,13 @@ impl RedisCache {
         if ttl_secs <= 0 {
             return Ok(None);
         }
-        let entry = envelope.into_entry(ttl_secs as u64)?;
+        let entry = envelope.into_entry(u64::saturating_from(ttl_secs))?;
         Ok(Some(entry))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn clear_tenant_with_count(
         &self,
         tenant_id: &str,
@@ -205,6 +211,10 @@ impl RedisCache {
     }
 
     /// Set a value, optionally resolving TTL from tenant `api_ttl` via `endpoint`.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_with_endpoint(
         &self,
         tenant_id: &str,
@@ -253,12 +263,15 @@ impl RedisCache {
         );
         let _ = self.memory_cache.insert(memory_tenant_id, key, entry).await;
         CACHE_ENTRIES.inc();
-        CACHE_MEMORY_BYTES.add(value.len() as i64);
-        add_tenant_size_estimate(tenant_id, value.len() as i64);
+        CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
+        add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         recorder.record_success();
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn stats(
         &self,
         tenant_id: Option<&str>,
@@ -316,25 +329,21 @@ impl Cache for RedisCache {
             .get_bytes(&redis_key)
             .await
             .map_err(Self::redis_unavailable)?;
-        match cached {
-            Some(bytes) => match self.load_entry(&redis_key, bytes).await? {
-                Some(entry) => {
-                    let _ = self
-                        .memory_cache
-                        .insert(memory_tenant_id, key, entry.clone())
-                        .await;
-                    recorder.record_hit();
-                    Ok(Some(entry))
-                }
-                None => {
-                    recorder.record_miss();
-                    Ok(None)
-                }
-            },
-            None => {
+        if let Some(bytes) = cached {
+            if let Some(entry) = self.load_entry(&redis_key, bytes).await? {
+                let _ = self
+                    .memory_cache
+                    .insert(memory_tenant_id, key, entry.clone())
+                    .await;
+                recorder.record_hit();
+                Ok(Some(entry))
+            } else {
                 recorder.record_miss();
                 Ok(None)
             }
+        } else {
+            recorder.record_miss();
+            Ok(None)
         }
     }
 
@@ -365,7 +374,7 @@ impl Cache for RedisCache {
         if deleted > 0 {
             CACHE_ENTRIES.dec();
             if let Some(entry) = removed {
-                CACHE_MEMORY_BYTES.add(-(entry.value.len() as i64));
+                CACHE_MEMORY_BYTES.add(-i64::saturating_from(entry.value.len()));
                 reset_tenant_size_estimate(tenant_id);
             }
         }
@@ -492,8 +501,8 @@ impl Cache for RedisCache {
                 .insert(memory_tenant_id, &key, entry)
                 .await;
             CACHE_ENTRIES.inc();
-            CACHE_MEMORY_BYTES.add(value.len() as i64);
-            add_tenant_size_estimate(tenant_id, value.len() as i64);
+            CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
+            add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         }
         recorder.record_success();
         Ok(())

@@ -3,11 +3,13 @@ pub use crate::error::RpcError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CacheEntry {
     pub value: Vec<u8>,
     pub ttl_seconds: i32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CacheStats {
     pub total_entries: i64,
     pub total_size_bytes: i64,
@@ -23,6 +25,7 @@ pub struct GetRequest {
     pub key: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetResponse {
     pub found: bool,
     #[serde(with = "serde_bytes")]
@@ -44,6 +47,7 @@ pub struct SetRequest {
     pub endpoint: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetResponse {
     pub success: bool,
     #[serde(default)]
@@ -56,6 +60,7 @@ pub struct DeleteRequest {
     pub key: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteResponse {
     pub success: bool,
     pub was_found: bool,
@@ -68,6 +73,7 @@ pub struct ClearRequest {
     pub tenant_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ClearResponse {
     pub success: bool,
     pub entries_cleared: i32,
@@ -81,6 +87,7 @@ pub struct ExistsRequest {
     pub key: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ExistsResponse {
     pub exists: bool,
     #[serde(default)]
@@ -93,6 +100,7 @@ pub struct GetMultiRequest {
     pub keys: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetMultiResponse {
     pub values: HashMap<String, Vec<u8>>,
     #[serde(default)]
@@ -107,6 +115,7 @@ pub struct SetMultiRequest {
     pub entries: HashMap<String, CacheEntry>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetMultiResponse {
     pub success: bool,
     pub entries_set: i32,
@@ -120,6 +129,7 @@ pub struct GetStatsRequest {
     pub tenant_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetStatsResponse {
     pub stats: Option<CacheStats>,
     #[serde(default)]

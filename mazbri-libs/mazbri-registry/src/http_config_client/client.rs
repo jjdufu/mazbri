@@ -15,7 +15,7 @@ pub struct HttpConfigClient {
     http_client: Client,
     service_name: String,
     cert_service_url: String,
-    cert_service_token: Option<String>,
+    cert_service_token: String,
     cache: Arc<RwLock<ConfigCache>>,
     _heartbeat_interval: Duration,
     request_timeout: Duration,
@@ -24,37 +24,43 @@ pub struct HttpConfigClientBuilder {
     service_name: String,
     cert_service_url: String,
     http_client: Option<Client>,
-    cert_service_token: Option<String>,
+    cert_service_token: String,
     heartbeat_interval: Duration,
     request_timeout: Duration,
 }
 impl HttpConfigClientBuilder {
-    pub fn new(service_name: impl Into<String>, cert_service_url: impl Into<String>) -> Self {
+    pub fn new(
+        service_name: impl Into<String>,
+        cert_service_url: impl Into<String>,
+        cert_service_token: impl Into<String>,
+    ) -> Self {
         Self {
             service_name: service_name.into(),
             cert_service_url: cert_service_url.into(),
             http_client: None,
-            cert_service_token: None,
+            cert_service_token: cert_service_token.into(),
             heartbeat_interval: Duration::from_secs(30),
             request_timeout: Duration::from_secs(10),
         }
     }
+    #[must_use]
     pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
         self.heartbeat_interval = interval;
         self
     }
+    #[must_use]
     pub fn request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
         self
     }
+    #[must_use]
     pub fn http_client(mut self, client: Client) -> Self {
         self.http_client = Some(client);
         self
     }
-    pub fn cert_service_token(mut self, token: impl Into<String>) -> Self {
-        self.cert_service_token = Some(token.into());
-        self
-    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn build(self) -> Result<HttpConfigClient, HttpConfigClientError> {
         let http_client = match self.http_client {
             Some(client) => client,
@@ -87,12 +93,15 @@ impl HttpConfigClient {
         let cache = self.cache.read().await;
         (cache.content.clone(), cache.version, cache.last_updated)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_config(&self) -> Result<ConfigResponse, HttpConfigClientError> {
         let url = format!("{}/configs/{}", self.cert_service_url, self.service_name);
-        let mut request_builder = self.http_client.get(&url);
-        if let Some(ref token) = self.cert_service_token {
-            request_builder = request_builder.bearer_auth(token);
-        }
+        let request_builder = self
+            .http_client
+            .get(&url)
+            .bearer_auth(&self.cert_service_token);
         let response = request_builder
             .timeout(self.request_timeout)
             .send()
@@ -116,6 +125,9 @@ impl HttpConfigClient {
             version: 0,
         })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh(&self) -> Result<(), HttpConfigClientError> {
         let config = self.fetch_config().await?;
         let mut cache = self.cache.write().await;
@@ -128,6 +140,9 @@ impl HttpConfigClient {
         );
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn register_node(
         &self,
         ip: String,
@@ -146,10 +161,11 @@ impl HttpConfigClient {
             health_check_url,
         );
         drop(cache);
-        let mut request_builder = self.http_client.post(&url).json(&request);
-        if let Some(ref token) = self.cert_service_token {
-            request_builder = request_builder.bearer_auth(token);
-        }
+        let request_builder = self
+            .http_client
+            .post(&url)
+            .json(&request)
+            .bearer_auth(&self.cert_service_token);
         let response = request_builder
             .timeout(self.request_timeout)
             .send()
@@ -164,6 +180,9 @@ impl HttpConfigClient {
             .await
             .map_err(|e| HttpConfigClientError::ResponseParseFailed(e.to_string()))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn send_heartbeat(
         &self,
         ip: &str,
@@ -173,10 +192,11 @@ impl HttpConfigClient {
         let cache = self.cache.read().await;
         let request = heartbeat::build_heartbeat_request(&self.service_name, ip, port, &cache);
         drop(cache);
-        let mut request_builder = self.http_client.post(&url).json(&request);
-        if let Some(ref token) = self.cert_service_token {
-            request_builder = request_builder.bearer_auth(token);
-        }
+        let request_builder = self
+            .http_client
+            .post(&url)
+            .json(&request)
+            .bearer_auth(&self.cert_service_token);
         let response = request_builder
             .timeout(self.request_timeout)
             .send()

@@ -65,8 +65,8 @@ pub async fn has_v3_state(pool: &PgPool) -> CertResult<bool> {
 pub fn decision_json(decision: &LicenseDecision) -> serde_json::Value {
     serde_json::json!({
         "status": decision.status,
-        "active": decision.issuance_allowed,
-        "issuanceAllowed": decision.issuance_allowed,
+        "active": decision.issuance_allowed(),
+        "issuanceAllowed": decision.issuance_allowed(),
         "decryptionAllowed": decision.decryption_allowed,
         "sequence": decision.sequence,
         "keyVersion": decision.key_version,
@@ -296,13 +296,13 @@ async fn import_in_transaction(
 ) -> CertResult<LicenseDecision> {
     let mut tx = args.pool.begin().await?;
     let current = lock_state(&mut tx).await?;
-    if let Some(current) = &current {
-        if verified.payload.sequence <= current.max_accepted_sequence {
-            return Err(license_error(
-                LICENSE_SEQUENCE_NOT_NEWER,
-                "该许可证序号已导入",
-            ));
-        }
+    if let Some(current) = &current
+        && verified.payload.sequence <= current.max_accepted_sequence
+    {
+        return Err(license_error(
+            LICENSE_SEQUENCE_NOT_NEWER,
+            "该许可证序号已导入",
+        ));
     }
     let private_key = license::decode_key_material(&installation.private_key, "privateKey")?;
     let public_key = license::decode_key_material(&installation.public_key, "publicKey")?;

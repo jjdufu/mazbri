@@ -1,3 +1,4 @@
+use crate::num::SaturatingFrom;
 use crate::redis::config::RedisConfig;
 use crate::redis::error::{RedisError, Result};
 use crate::redis::keys::{
@@ -73,6 +74,9 @@ pub struct RedisClient {
 }
 
 impl RedisClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn connect(url: &str) -> anyhow::Result<Self> {
         Self::connect_with_config(&RedisConfig {
             url: url.to_string(),
@@ -81,6 +85,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn connect_with_config(config: &RedisConfig) -> anyhow::Result<Self> {
         let connect_timeout = Duration::from_millis(config.connect_timeout_ms.max(1));
         let command_timeout = Duration::from_millis(config.command_timeout_ms.max(1));
@@ -100,9 +107,9 @@ impl RedisClient {
                 if config.use_tls { "rediss" } else { "redis" }
             };
             if let Some(ref password) = config.password {
-                format!("{}://:{}@{}:{}/{}", scheme, password, host, port, db)
+                format!("{scheme}://:{password}@{host}:{port}/{db}")
             } else {
-                format!("{}://{}:{}/{}", scheme, host, port, db)
+                format!("{scheme}://{host}:{port}/{db}")
             }
         } else {
             anyhow::bail!("Redis configuration must specify either 'url' or 'host'");
@@ -198,18 +205,24 @@ impl RedisClient {
             || message.contains("already shutdown")
     }
 
+    #[must_use]
     pub fn nonce_key(&self, tenant_id: Uuid, key_version: &str, nonce: &str) -> String {
         nonce_key(&self.key_prefix, tenant_id, key_version, nonce)
     }
 
+    #[must_use]
     pub fn cache_key(&self, tenant_id: &str, cache_key_value: &str) -> String {
         crate::redis::keys::cache_key(&self.key_prefix, tenant_id, cache_key_value)
     }
 
+    #[must_use]
     pub fn permission_key(&self, tenant_id: Uuid, product_id: &str) -> String {
         permission_key(&self.key_prefix, tenant_id, product_id)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_nonce_if_absent(
         &self,
         tenant_id: Uuid,
@@ -217,11 +230,14 @@ impl RedisClient {
         nonce: &str,
         ttl_seconds: i32,
     ) -> Result<bool> {
-        let ttl_seconds = ttl_seconds.max(1) as usize;
+        let ttl_seconds = usize::saturating_from(ttl_seconds.max(1));
         let key = self.nonce_key(tenant_id, key_version, nonce);
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_gateway_binding_nonce_if_absent(
         &self,
         prefix: &str,
@@ -229,19 +245,22 @@ impl RedisClient {
         nonce: &str,
         ttl_seconds: i32,
     ) -> Result<bool> {
-        let ttl_seconds = ttl_seconds.max(1) as usize;
+        let ttl_seconds = usize::saturating_from(ttl_seconds.max(1));
         let key = gateway_binding_nonce_key(prefix, tenant_id, nonce);
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }
 
+    #[must_use]
     pub fn fallback_key(&self, cache_key: &str) -> String {
         fallback_key(&self.key_prefix, cache_key)
     }
 
+    #[must_use]
     pub fn idempotency_key(&self, fingerprint: &str) -> String {
         idempotency_key(&self.key_prefix, fingerprint)
     }
 
+    #[must_use]
     pub fn rate_limit_key(&self, parts: &[&str]) -> String {
         rate_limit_key(&self.key_prefix, parts)
     }
@@ -272,6 +291,9 @@ impl RedisClient {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn ping(&self) -> Result<()> {
         self.run("PING", |mut conn| async move {
             let _: String = redis::cmd("PING").query_async(&mut conn).await?;
@@ -280,11 +302,17 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bytes(&self, key: &str) -> Result<Option<Vec<u8>>> {
         self.run("GET", |mut conn| async move { conn.get(key).await })
             .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_ex_bytes(&self, key: &str, value: &[u8], ttl_secs: usize) -> Result<()> {
         self.run("SET EX", |mut conn| async move {
             let _: () = conn.set_ex(key, value, ttl_secs as u64).await?;
@@ -293,6 +321,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_nx_ex(&self, key: &str, value: &[u8], ttl_secs: usize) -> Result<bool> {
         self.run("SET NX EX", |mut conn| async move {
             let result: Option<String> = redis::cmd("SET")
@@ -308,16 +339,25 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn del(&self, key: &str) -> Result<u64> {
         self.run("DEL", |mut conn| async move { conn.del(key).await })
             .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn exists(&self, key: &str) -> Result<bool> {
         self.run("EXISTS", |mut conn| async move { conn.exists(key).await })
             .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn mget_bytes(&self, keys: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
         self.run("MGET", |mut conn| async move {
             redis::cmd("MGET").arg(keys).query_async(&mut conn).await
@@ -325,6 +365,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn eval_i64(&self, script: &str, keys: &[String], args: &[String]) -> Result<i64> {
         self.run("EVAL", |mut conn| async move {
             let mut command = redis::cmd("EVAL");
@@ -340,6 +383,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn eval_bool(&self, script: &str, keys: &[String], args: &[String]) -> Result<bool> {
         self.run("EVAL", |mut conn| async move {
             let mut command = redis::cmd("EVAL");
@@ -355,16 +401,25 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn ttl(&self, key: &str) -> Result<i64> {
         self.run("TTL", |mut conn| async move { conn.ttl(key).await })
             .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn pttl(&self, key: &str) -> Result<i64> {
         self.run("PTTL", |mut conn| async move { conn.pttl(key).await })
             .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn scan_match(&self, pattern: &str) -> Result<Vec<String>> {
         self.run("SCAN", |mut conn| async move {
             let mut cursor: u64 = 0;
@@ -389,6 +444,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn memory_usage(&self, key: &str) -> Result<u64> {
         self.run("MEMORY USAGE", |mut conn| async move {
             redis::cmd("MEMORY")
@@ -400,6 +458,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn dbsize(&self) -> Result<u64> {
         self.run("DBSIZE", |mut conn| async move {
             redis::cmd("DBSIZE").query_async(&mut conn).await
@@ -407,6 +468,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn del_multiple(&self, keys: &[String]) -> Result<u64> {
         if keys.is_empty() {
             return Ok(0);
@@ -417,6 +481,9 @@ impl RedisClient {
         .await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn memory_usages(&self, keys: &[String]) -> Result<Vec<Option<u64>>> {
         if keys.is_empty() {
             return Ok(Vec::new());

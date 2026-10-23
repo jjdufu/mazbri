@@ -45,6 +45,9 @@ impl ConfigCenterRegistry {
             pipeline_mutex: Arc::new(Mutex::new(())),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn start(&self) -> RegistryResult<()> {
         let handle = super::heartbeat::spawn_heartbeat_task(
             self.shutdown_token.clone(),
@@ -52,8 +55,7 @@ impl ConfigCenterRegistry {
             self.metadata.clone(),
             self.pipeline.clone(),
             self.pipeline_mutex.clone(),
-        )
-        .await;
+        );
         let mut handle_lock = self.heartbeat_handle.write().await;
         *handle_lock = Some(handle);
         self.ready.store(true, Ordering::Relaxed);
@@ -62,6 +64,7 @@ impl ConfigCenterRegistry {
     pub fn connection_manager(&self) -> &Arc<ConnectionManager> {
         &self.connection_manager
     }
+    #[must_use]
     pub fn map_http_error(e: HttpConfigClientError) -> RegistryError {
         match e {
             HttpConfigClientError::Core(core) => RegistryError::Core(core),
@@ -130,9 +133,10 @@ impl ServiceRegistry for ConfigCenterRegistry {
         {
             let mut handle = self.heartbeat_handle.write().await;
             if let Some(h) = handle.take() {
-                match tokio::time::timeout(timeout, h).await {
-                    Ok(_) => info!("心跳任务已停止"),
-                    Err(_) => warn!("心跳任务超时未停止"),
+                if tokio::time::timeout(timeout, h).await.is_ok() {
+                    info!("心跳任务已停止");
+                } else {
+                    warn!("心跳任务超时未停止");
                 }
             }
         }

@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::Deserialize;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdatePasswordPolicyRequest {
     pub min_length: Option<i32>,
     pub max_length: Option<i32>,

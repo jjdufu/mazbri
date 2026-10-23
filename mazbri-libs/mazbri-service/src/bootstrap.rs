@@ -12,6 +12,7 @@ use mazbri_core::metrics::health::{
     BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater,
     register_health_metrics,
 };
+use mazbri_core::num::SaturatingFrom;
 use mazbri_registry::{
     ConfigCenterRegistry, ConfigHandler, HttpConfigClientBuilder, ServiceRegistry,
 };
@@ -88,6 +89,9 @@ impl<C> ServiceRuntime<C>
 where
     C: ServiceConfig,
 {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn start_admin(
         &self,
         admin_config: &AdminConfig,
@@ -146,7 +150,7 @@ where
         let tls_config = TlsConfig {
             cert_service_url: bootstrap.cert_service.base().to_owned(),
             service_identity: service_name.as_str().to_owned(),
-            cert_service_token: Some(cert_service_token),
+            cert_service_token,
             ..Default::default()
         };
         tracing::info!(
@@ -175,13 +179,13 @@ where
         let output = service_init(ctx).await?;
         tokio::select! {
             result = output.server_future => { if let Err(e) = result {
-            tracing::error!("Server error: {}", e); } } _ = wait_for_termination_signal()
+            tracing::error!("Server error: {}", e); } } () = wait_for_termination_signal()
             => { tracing::info!("收到关闭信号"); }
         }
         if let Some(ref reg) = registry {
             reg.shutdown()
                 .await
-                .map_err(|e| anyhow::anyhow!("注册中心关闭失败: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("注册中心关闭失败: {e}"))?;
             tracing::info!("注册中心已关闭");
         }
         mtls.renewal_task.shutdown().await;
@@ -195,7 +199,7 @@ impl DbPoolInfo for PgPoolInfoBridge {
         self.0.size()
     }
     fn num_idle(&self) -> u32 {
-        self.0.num_idle() as u32
+        u32::saturating_from(self.0.num_idle())
     }
     fn is_healthy(&self) -> bool {
         let pool = self.0.clone();
@@ -271,7 +275,7 @@ pub(crate) fn start_admin_server(
                             checks.push(ReadinessCheckResult {
                                 name: "database".to_string(),
                                 status: CheckStatus::Failed,
-                                message: Some(format!("database connection failed: {}", e)),
+                                message: Some(format!("database connection failed: {e}")),
                             });
                         }
                     }
@@ -331,7 +335,7 @@ pub(crate) fn start_admin_server(
         }),
         config_center_connected,
     );
-    updater.spawn();
+    drop(updater.spawn());
     tracing::info!("Health metrics updater started for {}", service_name);
     Ok(Some(state))
 }
@@ -378,24 +382,23 @@ async fn init_registry<C: ServiceConfig>(
     );
     let token = get_cert_service_token()?;
     let http_client = Arc::new(
-        HttpConfigClientBuilder::new(service_name.as_str(), bootstrap.cert_service.base())
-            .cert_service_token(token)
+        HttpConfigClientBuilder::new(service_name.as_str(), bootstrap.cert_service.base(), token)
             .heartbeat_interval(std::time::Duration::from_secs(
                 registration.heartbeat_interval_secs,
             ))
             .build()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to create config client: {}", e))?,
+            .map_err(|e| anyhow::anyhow!("Failed to create config client: {e}"))?,
     );
     let registry = Arc::new(ConfigCenterRegistry::new(http_client, handler, metadata));
     registry
         .register(&registry.metadata())
         .await
-        .map_err(|e| anyhow::anyhow!("Node registration failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Node registration failed: {e}"))?;
     registry
         .start()
         .await
-        .map_err(|e| anyhow::anyhow!("Registry startup failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Registry startup failed: {e}"))?;
     tracing::info!(service = % service_name, "Node registered successfully, heartbeat started");
     Ok(Some(registry))
 }

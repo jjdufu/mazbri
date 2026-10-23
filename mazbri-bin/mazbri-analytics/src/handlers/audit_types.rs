@@ -8,6 +8,7 @@ fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditQueryRequest {
     #[serde(default)]
     pub start_time: Option<String>,
@@ -69,6 +70,7 @@ fn default_group_by() -> String {
     "day".to_string()
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuditAnalyticsRequest {
     #[serde(default)]
     pub start_time: Option<String>,
@@ -97,10 +99,10 @@ pub struct AuditAnalyticsResponse {
 }
 pub fn parse_time_string(s: &str) -> Option<DateTime<Utc>> {
     let s = s.trim();
-    if let Ok(ts) = s.parse::<i64>() {
-        if let Some(dt) = DateTime::from_timestamp(ts, 0) {
-            return Some(dt);
-        }
+    if let Ok(ts) = s.parse::<i64>()
+        && let Some(dt) = DateTime::from_timestamp(ts, 0)
+    {
+        return Some(dt);
     }
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return Some(dt.with_timezone(&Utc));
@@ -110,10 +112,10 @@ pub fn parse_time_string(s: &str) -> Option<DateTime<Utc>> {
         if let Ok((naive_dt, _)) = chrono::NaiveDateTime::parse_and_remainder(s, fmt) {
             return Some(naive_dt.and_utc());
         }
-        if let Ok((naive_date, _)) = chrono::NaiveDate::parse_and_remainder(s, fmt) {
-            if let Some(naive_dt) = naive_date.and_hms_opt(0, 0, 0) {
-                return Some(naive_dt.and_utc());
-            }
+        if let Ok((naive_date, _)) = chrono::NaiveDate::parse_and_remainder(s, fmt)
+            && let Some(naive_dt) = naive_date.and_hms_opt(0, 0, 0)
+        {
+            return Some(naive_dt.and_utc());
         }
     }
     None

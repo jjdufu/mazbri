@@ -128,10 +128,10 @@ pub async fn admin_auth_middleware(
             } else if token_type == Some("refresh") {
                 return unauthorized("invalid_token_type", "请使用访问令牌，而非 refresh token");
             }
-            if let Some(ref jti) = token_data.claims.jti {
-                if is_jti_revoked(&auth_state.redis, jti).await {
-                    return unauthorized("token_revoked", "令牌已注销");
-                }
+            if let Some(ref jti) = token_data.claims.jti
+                && is_jti_revoked(&auth_state.redis, jti).await
+            {
+                return unauthorized("token_revoked", "令牌已注销");
             }
             request.extensions_mut().insert(token_data.claims);
             next.run(request).await
@@ -155,12 +155,11 @@ pub fn extract_bearer_or_session_cookie(
     if let Some(auth_header) = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
+        && let Some(token) = auth_header.strip_prefix("Bearer ")
     {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            let token = token.trim();
-            if !token.is_empty() {
-                return Some(token.to_string());
-            }
+        let token = token.trim();
+        if !token.is_empty() {
+            return Some(token.to_string());
         }
     }
     let name = if prefer_refresh {
@@ -175,12 +174,12 @@ pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     for part in raw.split(';') {
         let part = part.trim();
-        if let Some((k, v)) = part.split_once('=') {
-            if k.trim() == name {
-                let v = v.trim();
-                if !v.is_empty() {
-                    return Some(v.to_string());
-                }
+        if let Some((k, v)) = part.split_once('=')
+            && k.trim() == name
+        {
+            let v = v.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
             }
         }
     }

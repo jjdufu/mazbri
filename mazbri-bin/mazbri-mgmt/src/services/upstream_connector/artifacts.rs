@@ -6,6 +6,7 @@ pub const MAX_ARTIFACT_BYTES: usize = 4 * 1024 * 1024;
 const KNOWN_ARTIFACT_TYPES: &[&str] = &["fds", "wsdl", "sdl"];
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateArtifactRequest {
     pub artifact_type: String,
     pub name: String,

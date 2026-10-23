@@ -33,6 +33,10 @@ impl SupplierSecretsError {
 }
 
 /// 当前进程使用的 32 字节密钥（懒加载）。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn supplier_secrets_key() -> Result<&'static [u8; 32], SupplierSecretsError> {
     static KEY: OnceLock<Result<[u8; 32], String>> = OnceLock::new();
     match KEY.get_or_init(load_key_once) {
@@ -42,24 +46,21 @@ pub fn supplier_secrets_key() -> Result<&'static [u8; 32], SupplierSecretsError>
 }
 
 fn load_key_once() -> Result<[u8; 32], String> {
-    match std::env::var(ENV_KEY) {
-        Ok(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(format!("{ENV_KEY} is empty"));
-            }
-            parse_key_material(trimmed)
+    if let Ok(raw) = std::env::var(ENV_KEY) {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(format!("{ENV_KEY} is empty"));
         }
-        Err(_) => {
-            tracing::warn!(
-                env = ENV_KEY,
-                "MAZBRI_SUPPLIER_SECRETS_KEY not set; using development-derived key (not for production)"
-            );
-            let digest = Sha256::digest(DEV_SEED.as_bytes());
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&digest);
-            Ok(key)
-        }
+        parse_key_material(trimmed)
+    } else {
+        tracing::warn!(
+            env = ENV_KEY,
+            "MAZBRI_SUPPLIER_SECRETS_KEY not set; using development-derived key (not for production)"
+        );
+        let digest = Sha256::digest(DEV_SEED.as_bytes());
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&digest);
+        Ok(key)
     }
 }
 
@@ -70,12 +71,12 @@ fn parse_key_material(s: &str) -> Result<[u8; 32], String> {
         key.copy_from_slice(&bytes);
         return Ok(key);
     }
-    if let Ok(bytes) = B64.decode(s.as_bytes()) {
-        if bytes.len() == 32 {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&bytes);
-            return Ok(key);
-        }
+    if let Ok(bytes) = B64.decode(s.as_bytes())
+        && bytes.len() == 32
+    {
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&bytes);
+        return Ok(key);
     }
     // 任意口令：SHA-256 派生
     let digest = Sha256::digest(s.as_bytes());
@@ -89,6 +90,9 @@ pub fn is_encrypted_secret(value: &str) -> bool {
     value.starts_with(ENCRYPTED_PREFIX)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn encrypt_secret(plaintext: &str, key: &[u8; 32]) -> Result<String, SupplierSecretsError> {
     if is_encrypted_secret(plaintext) {
         return Ok(plaintext.to_string());
@@ -107,6 +111,9 @@ pub fn encrypt_secret(plaintext: &str, key: &[u8; 32]) -> Result<String, Supplie
     Ok(format!("{ENCRYPTED_PREFIX}{}", B64.encode(blob)))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decrypt_secret(value: &str, key: &[u8; 32]) -> Result<String, SupplierSecretsError> {
     if !is_encrypted_secret(value) {
         return Ok(value.to_string());
@@ -129,8 +136,12 @@ pub fn decrypt_secret(value: &str, key: &[u8; 32]) -> Result<String, SupplierSec
 }
 
 /// 加密 `auth_flow.credentials` 中尚未加密的值。
-pub fn encrypt_credentials_map(
-    creds: &mut std::collections::HashMap<String, String>,
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub fn encrypt_credentials_map<S: std::hash::BuildHasher>(
+    creds: &mut std::collections::HashMap<String, String, S>,
     key: &[u8; 32],
 ) -> Result<(), SupplierSecretsError> {
     for v in creds.values_mut() {
@@ -143,8 +154,12 @@ pub fn encrypt_credentials_map(
 }
 
 /// 解密 `auth_flow.credentials`（数据面出站前）。
-pub fn decrypt_credentials_map(
-    creds: &mut std::collections::HashMap<String, String>,
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub fn decrypt_credentials_map<S: std::hash::BuildHasher>(
+    creds: &mut std::collections::HashMap<String, String, S>,
     key: &[u8; 32],
 ) -> Result<(), SupplierSecretsError> {
     for v in creds.values_mut() {

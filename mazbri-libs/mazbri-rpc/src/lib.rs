@@ -11,15 +11,15 @@ pub mod ratelimit;
 pub mod serde_json_value_as_text;
 pub use auth::{
     AuthService, AuthServiceClient, GetTenantInfoRequest, GetTenantInfoResponse, ResourceQuota,
-    TenantContext, TenantStatus, ValidateApiKeyRequest, ValidateApiKeyResponse,
-    ValidateTokenRequest, ValidateTokenResponse,
+    TenantContext, ValidateApiKeyRequest, ValidateApiKeyResponse, ValidateTokenRequest,
+    ValidateTokenResponse,
 };
 pub use billing::{
     AddFundsRequest, AddFundsResponse, Amount, Bill, BillLineItem, BillStatus, BillingCycle,
-    BillingPeriod, BillingService, BillingServiceClient, BillingType, CheckBalanceRequest,
-    CheckBalanceResponse, GetBalanceRequest, GetBalanceResponse, GetBillRequest, GetBillResponse,
-    GetUsageSummaryRequest, GetUsageSummaryResponse, ListBillsRequest, ListBillsResponse,
-    RecordUsageRequest, RecordUsageResponse, UsageBreakdown, UsageSummary,
+    BillingPeriod, BillingService, BillingServiceClient, CheckBalanceRequest, CheckBalanceResponse,
+    GetBalanceRequest, GetBalanceResponse, GetBillRequest, GetBillResponse, GetUsageSummaryRequest,
+    GetUsageSummaryResponse, ListBillsRequest, ListBillsResponse, RecordUsageRequest,
+    RecordUsageResponse, UsageBreakdown, UsageSummary,
 };
 pub use cache::{
     CacheEntry, CacheService, CacheServiceClient, CacheStats, ClearRequest, ClearResponse,
@@ -42,8 +42,8 @@ pub use code::{BillingCode, BillingInfo, CodeMeta, ServiceResponse};
 pub use common::HealthResponse;
 pub use error::RpcError;
 pub use http_upstream::{
-    BinaryEncoding, HttpUpstreamData, HttpUpstreamRequest, HttpUpstreamResponse,
-    HttpUpstreamService, HttpUpstreamServiceClient, UpstreamBody, UpstreamResponseBody,
+    HttpUpstreamData, HttpUpstreamRequest, HttpUpstreamResponse, HttpUpstreamService,
+    HttpUpstreamServiceClient, UpstreamBody, UpstreamResponseBody,
 };
 pub use ratelimit::{
     AckControlCommandsRequest, AckControlCommandsResponse, ControlCommand,

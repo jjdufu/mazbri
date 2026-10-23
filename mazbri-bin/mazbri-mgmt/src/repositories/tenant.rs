@@ -11,7 +11,7 @@ pub struct TenantRow {
     pub contact_person: Option<String>,
     pub contact_phone: Option<String>,
     pub contact_email: Option<String>,
-    pub status: String,
+    pub enabled: bool,
     pub token_expiration_secs: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -26,7 +26,7 @@ pub struct TenantCreateRow {
     pub contact_person: Option<String>,
     pub contact_phone: Option<String>,
     pub contact_email: Option<String>,
-    pub status: String,
+    pub enabled: bool,
     pub token_expiration_secs: Option<i32>,
     pub created_at: DateTime<Utc>,
 }
@@ -37,28 +37,28 @@ pub struct TenantUpdateRow {
     pub tenant_code: String,
     pub tenant_id: String,
     pub name: String,
-    pub status: String,
+    pub enabled: bool,
     pub contact_email: Option<String>,
     pub token_expiration_secs: Option<i32>,
     pub updated_at: DateTime<Utc>,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct TenantStatusRow {
+pub struct TenantEnabledRow {
     #[serde(skip_serializing)]
     pub id: uuid::Uuid,
     pub tenant_code: String,
     pub name: String,
-    pub status: String,
+    pub enabled: bool,
 }
 fn push_tenant_scope(
     builder: &mut QueryBuilder<'_, sqlx::Postgres>,
-    status: Option<&str>,
+    enabled: Option<bool>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
 ) -> Result<(), crate::list_query::ListQueryError> {
-    if let Some(s) = status {
-        builder.push(" AND status = ");
-        builder.push_bind(s.to_string());
+    if let Some(e) = enabled {
+        builder.push(" AND enabled = ");
+        builder.push_bind(e);
     }
     if let Some(p) = search_pattern {
         // q covers catalog in_q fields: tenant_id, name, tenant_code, contact_*
@@ -85,12 +85,12 @@ fn push_tenant_scope(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn count_tenants(
     pool: &PgPool,
-    status: Option<&str>,
+    enabled: Option<bool>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
 ) -> Result<i64, sqlx::Error> {
     let mut builder: QueryBuilder<_> = QueryBuilder::new("SELECT COUNT(*) FROM tenants WHERE 1=1");
-    push_tenant_scope(&mut builder, status, search_pattern, filters)
+    push_tenant_scope(&mut builder, enabled, search_pattern, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
     let total: i64 = builder.build().fetch_one(pool).await?.get(0);
     Ok(total)
@@ -100,16 +100,16 @@ pub async fn count_tenants(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_tenants(
     pool: &PgPool,
-    status: Option<&str>,
+    enabled: Option<bool>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
     page_size: i64,
     offset: i64,
 ) -> Result<Vec<TenantRow>, sqlx::Error> {
     let mut builder: QueryBuilder<_> = QueryBuilder::new(
-        "SELECT id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, status, token_expiration_secs, created_at, updated_at FROM tenants WHERE 1=1",
+        "SELECT id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, enabled, token_expiration_secs, created_at, updated_at FROM tenants WHERE 1=1",
     );
-    push_tenant_scope(&mut builder, status, search_pattern, filters)
+    push_tenant_scope(&mut builder, enabled, search_pattern, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
     builder.push(" ORDER BY created_at DESC LIMIT ");
     builder.push_bind(page_size);
@@ -126,7 +126,7 @@ pub async fn list_tenants(
             contact_person: row.get("contact_person"),
             contact_phone: row.get("contact_phone"),
             contact_email: row.get("contact_email"),
-            status: row.get("status"),
+            enabled: row.get("enabled"),
             token_expiration_secs: row.get("token_expiration_secs"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
@@ -185,9 +185,9 @@ pub async fn insert_tenant(
         TenantCreateRow,
     >(
             r"
-        INSERT INTO tenants (tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, status, token_expiration_secs)
-        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-        RETURNING id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, status, token_expiration_secs, created_at
+        INSERT INTO tenants (tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, token_expiration_secs)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, enabled, token_expiration_secs, created_at
     ",
         )
         .bind(params.tenant_code)
@@ -208,7 +208,7 @@ pub async fn find_by_id(pool: &PgPool, id: uuid::Uuid) -> Result<Option<TenantRo
         _,
         TenantRow,
     >(
-            "SELECT id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, status, token_expiration_secs, created_at, updated_at FROM tenants WHERE id = $1",
+            "SELECT id, tenant_code, tenant_id, name, contact_person, contact_phone, contact_email, enabled, token_expiration_secs, created_at, updated_at FROM tenants WHERE id = $1",
         )
         .bind(id)
         .fetch_optional(pool)
@@ -251,7 +251,7 @@ pub async fn update_tenant(
     builder.push_bind(id);
     builder
         .push(
-            " RETURNING id, tenant_code, tenant_id, name, status, contact_email, token_expiration_secs, updated_at",
+            " RETURNING id, tenant_code, tenant_id, name, enabled, contact_email, token_expiration_secs, updated_at",
         );
     let row = builder.build().fetch_optional(pool).await?;
     Ok(row.map(|row| TenantUpdateRow {
@@ -259,7 +259,7 @@ pub async fn update_tenant(
         tenant_code: row.get("tenant_code"),
         tenant_id: row.get("tenant_id"),
         name: row.get("name"),
-        status: row.get("status"),
+        enabled: row.get("enabled"),
         contact_email: row.get("contact_email"),
         token_expiration_secs: row.get("token_expiration_secs"),
         updated_at: row.get("updated_at"),
@@ -270,12 +270,12 @@ pub async fn update_tenant(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_status_row(
+pub async fn get_identity_row(
     pool: &PgPool,
     id: uuid::Uuid,
-) -> Result<Option<TenantStatusRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantStatusRow>(
-        "SELECT id, tenant_code, name, status FROM tenants WHERE id = $1",
+) -> Result<Option<TenantEnabledRow>, sqlx::Error> {
+    sqlx::query_as::<_, TenantEnabledRow>(
+        "SELECT id, tenant_code, name, enabled FROM tenants WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -297,18 +297,18 @@ pub async fn delete_by_id(pool: &PgPool, id: uuid::Uuid) -> Result<u64, sqlx::Er
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_status(
+pub async fn set_enabled(
     pool: &PgPool,
     id: uuid::Uuid,
-    status: &str,
-) -> Result<Option<TenantStatusRow>, sqlx::Error> {
+    enabled: bool,
+) -> Result<Option<TenantEnabledRow>, sqlx::Error> {
     sqlx::query_as::<
         _,
-        TenantStatusRow,
+        TenantEnabledRow,
     >(
-            "UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, tenant_code, name, status",
+            "UPDATE tenants SET enabled = $1, updated_at = NOW() WHERE id = $2 RETURNING id, tenant_code, name, enabled",
         )
-        .bind(status)
+        .bind(enabled)
         .bind(id)
         .fetch_optional(pool)
         .await

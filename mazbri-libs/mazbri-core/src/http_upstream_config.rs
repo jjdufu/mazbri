@@ -45,31 +45,40 @@ pub struct HttpUpstreamChannelConfig {
     pub base_url: Option<String>,
 }
 
+#[must_use]
 pub fn default_timeout_secs() -> u64 {
     15
 }
 
+#[must_use]
 pub fn default_connect_timeout_secs() -> u64 {
     3
 }
 
+#[must_use]
 pub fn default_json_raw_enabled() -> bool {
     true
 }
 
+#[must_use]
 pub fn default_json_raw_min_bytes() -> usize {
     32 * 1024
 }
 
 impl HttpUpstreamConfig {
+    #[must_use]
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 
+    #[must_use]
     pub fn connect_timeout(&self) -> Duration {
         Duration::from_secs(self.connect_timeout_secs)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<()> {
         validate_base_config(&self.base_url, self.timeout_secs, self.connect_timeout_secs)?;
         validate_channels(&self.channels)
@@ -77,11 +86,15 @@ impl HttpUpstreamConfig {
 }
 
 impl HttpUpstreamChannelConfig {
+    #[must_use]
     pub fn effective_base_url<'a>(&'a self, default_base_url: &'a str) -> &'a str {
         self.base_url.as_deref().unwrap_or(default_base_url)
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_base_config(
     base_url: &str,
     timeout_secs: u64,
@@ -91,20 +104,19 @@ pub fn validate_base_config(
         anyhow::bail!("upstream.base_url 不能为空");
     }
     if !(1..=300).contains(&timeout_secs) {
-        anyhow::bail!(
-            "upstream.timeout_secs must be between 1 and 300, got {}",
-            timeout_secs
-        );
+        anyhow::bail!("upstream.timeout_secs must be between 1 and 300, got {timeout_secs}");
     }
     if !(1..=30).contains(&connect_timeout_secs) {
         anyhow::bail!(
-            "upstream.connect_timeout_secs must be between 1 and 30, got {}",
-            connect_timeout_secs
+            "upstream.connect_timeout_secs must be between 1 and 30, got {connect_timeout_secs}"
         );
     }
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_channels(channels: &[HttpUpstreamChannelConfig]) -> Result<()> {
     if channels.is_empty() {
         anyhow::bail!("upstream.channels must contain at least one channel");
@@ -124,6 +136,9 @@ pub fn validate_channels(channels: &[HttpUpstreamChannelConfig]) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_channel_config(channel: &HttpUpstreamChannelConfig) -> Result<()> {
     validate_channel_code(&channel.channel_code)?;
     let _ = normalize_path_prefix(&channel.path_prefix)?;
@@ -138,6 +153,9 @@ pub fn validate_channel_config(channel: &HttpUpstreamChannelConfig) -> Result<()
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_channel_code(channel_code: &str) -> Result<()> {
     if channel_code.is_empty() || channel_code.len() > 100 {
         anyhow::bail!(
@@ -154,6 +172,9 @@ pub fn validate_channel_code(channel_code: &str) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn normalize_path_prefix(prefix: &str) -> Result<String> {
     let prefix = prefix.trim();
     if prefix.is_empty() {

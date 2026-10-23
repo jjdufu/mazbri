@@ -32,15 +32,15 @@ pub struct FallbackRequest {
     pub body: Option<serde_json::Value>,
 }
 impl FallbackRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_payload_size(&self) -> Result<(), String> {
         if let Some(ref body) = self.body {
-            let size = serde_json::to_vec(body)
-                .map(|v| v.len())
-                .unwrap_or(usize::MAX);
+            let size = serde_json::to_vec(body).map_or(usize::MAX, |v| v.len());
             if size > MAX_CACHE_PAYLOAD_SIZE {
                 return Err(format!(
-                    "Cache payload too large: {} bytes (max {} bytes)",
-                    size, MAX_CACHE_PAYLOAD_SIZE
+                    "Cache payload too large: {size} bytes (max {MAX_CACHE_PAYLOAD_SIZE} bytes)"
                 ));
             }
         }
@@ -48,6 +48,7 @@ impl FallbackRequest {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FallbackResponse {
     pub available: bool,
     /// Cached snapshot payload; encoded as JSON text for bincode compatibility.
@@ -74,20 +75,21 @@ pub struct StoreRequest {
     pub tags: Vec<String>,
 }
 impl StoreRequest {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_payload_size(&self) -> Result<(), String> {
-        let size = serde_json::to_vec(&self.data)
-            .map(|v| v.len())
-            .unwrap_or(usize::MAX);
+        let size = serde_json::to_vec(&self.data).map_or(usize::MAX, |v| v.len());
         if size > MAX_CACHE_PAYLOAD_SIZE {
             return Err(format!(
-                "Cache payload too large: {} bytes (max {} bytes)",
-                size, MAX_CACHE_PAYLOAD_SIZE
+                "Cache payload too large: {size} bytes (max {MAX_CACHE_PAYLOAD_SIZE} bytes)"
             ));
         }
         Ok(())
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StoreResponse {
     pub success: bool,
     pub cache_key: String,

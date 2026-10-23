@@ -1,5 +1,5 @@
 use super::metrics::BALANCE_PRECHECK_TOTAL;
-use super::post_response::{build_billing_calculator, content_length};
+use super::post_response::build_billing_calculator;
 use crate::router::AppState;
 use axum::{
     extract::{Request, State},
@@ -88,20 +88,10 @@ fn log_infra_failure(
 
 fn estimate_cost(
     product_detail: &mazbri_product::model::TenantProductDetail,
-    headers: &axum::http::HeaderMap,
-    tenant_context: &TenantContext,
-    product_id: &str,
-) -> Result<rust_decimal::Decimal, StatusCode> {
+) -> rust_decimal::Decimal {
     build_billing_calculator(Some(product_detail))
-        .calculate_call(content_length(headers) as u64, 0)
-        .map(|result| result.amount)
-        .map_err(|error| {
-            warn!(
-                tenant_id = % tenant_context.tenant_id, product_id = % product_id, error = % error,
-                "Balance check failed because estimated billing calculation failed"
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
+        .calculate_call()
+        .amount
 }
 
 fn log_allowed(
@@ -224,12 +214,7 @@ pub async fn balance_check_middleware(
     let product_detail =
         lookup_product_detail(&state, tenant_context.tenant_id, product_id).await?;
     let product_detail_lookup_ms = product_detail_lookup_started_at.elapsed().as_millis();
-    let estimated_cost = estimate_cost(
-        &product_detail,
-        request.headers(),
-        &tenant_context,
-        product_id,
-    )?;
+    let estimated_cost = estimate_cost(&product_detail);
     let check_balance_started_at = Instant::now();
     let required = crate::balance_cache::required_available(estimated_cost);
     let timeout_ms = state.balance_check_timeout_ms.max(50);

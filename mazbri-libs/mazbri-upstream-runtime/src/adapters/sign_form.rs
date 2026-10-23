@@ -7,20 +7,13 @@ use crate::types::{BizError, BodyKind, ExecuteError};
 
 use super::{AdapterCtx, AdapterOutcome, parse_json_body};
 
-pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
+fn build_signed_form(
+    ctx: &AdapterCtx<'_>,
+    operation: &str,
+    app_id: &str,
+    secret: &str,
+) -> Result<String, ExecuteError> {
     let spec = &ctx.input.spec;
-    let operation = spec
-        .operation
-        .as_deref()
-        .ok_or_else(|| ExecuteError::SpecInvalid("sign_form operation missing".into()))?;
-    let app_id = credential(&ctx.input.credentials, &["app_id", "client_id"])
-        .ok_or_else(|| ExecuteError::AuthTokenFailed("sign_form missing app_id".into()))?;
-    let secret = credential(
-        &ctx.input.credentials,
-        &["client_secret", "app_secret", "secret"],
-    )
-    .ok_or_else(|| ExecuteError::AuthTokenFailed("sign_form missing client_secret".into()))?;
-
     let charset = spec
         .sign_form
         .as_ref()
@@ -55,7 +48,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let sign = hmac_sha256_b64(secret, &to_sign);
     fields.insert("sign".into(), sign);
 
-    let form = fields
+    Ok(fields
         .iter()
         .map(|(k, v)| {
             format!(
@@ -65,9 +58,26 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             )
         })
         .collect::<Vec<_>>()
-        .join("&");
+        .join("&"))
+}
 
-    let path = spec.request_path(&ctx.input.path_prefix);
+pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
+    let spec = &ctx.input.spec;
+    let operation = spec
+        .operation
+        .as_deref()
+        .ok_or_else(|| ExecuteError::SpecInvalid("sign_form operation missing".into()))?;
+    let app_id = credential(&ctx.input.credentials, &["app_id", "client_id"])
+        .ok_or_else(|| ExecuteError::AuthTokenFailed("sign_form missing app_id".into()))?;
+    let secret = credential(
+        &ctx.input.credentials,
+        &["client_secret", "app_secret", "secret"],
+    )
+    .ok_or_else(|| ExecuteError::AuthTokenFailed("sign_form missing client_secret".into()))?;
+
+    let form = build_signed_form(ctx, operation, app_id, secret)?;
+
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),
@@ -81,7 +91,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let response = super::dispatch_http(
         ctx,
         HttpCall {
-            method: spec.request_method(),
+            method: spec.request.method.as_str(),
             url: &url,
             headers,
             body: Some(BodyKind::Form(form)),

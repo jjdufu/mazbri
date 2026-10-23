@@ -32,3 +32,6 @@ sha2 = { workspace = true }
 hmac = "0.12"
 
 reqwest = { workspace = true }
+
+[lints]
+workspace = true

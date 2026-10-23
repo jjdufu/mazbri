@@ -283,13 +283,8 @@
       "cacheApiTtlOverride": "API TTL Override",
       "cacheWarmupKeys": "Warmup Key List",
       "productScope": "Product Authorization Config",
-      "productBillingMode": "Billing Mode",
       "productUnitPrice": "Unit Price",
       "productCbProFallback": "CBPRO",
-      "productCodecEnabled": "Payload Codec Enabled",
-      "productRequestCodec": "Request Codec",
-      "productResponseCodec": "Response Codec",
-      "productCodecVersion": "Codec Version",
       "productCbProPolicy": "CBPRO"
     },
     "logOutTips": "Do you want to log out?",
@@ -2320,7 +2315,6 @@
       "basicInfoTitle": "Basic Information",
       "advancedInfoTitle": "Integration Config",
       "authSectionTitle": "Dynamic Auth",
-      "transformSectionTitle": "Transform",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "noCredentials": "No credentials",
@@ -2362,15 +2356,6 @@
       "injectPreviewTitle": "Inject preview",
       "injectLocation": "Inject to",
       "injectPreviewTip": "<DYNAMIC_TOKEN> is a sample; the gateway injects and maintains the real token.",
-      "transformTitle": "Transform",
-      "rewritePath": "Rewrite path",
-      "requestBodyTemplate": "Request body template",
-      "requestBodyTemplateHint": "e.g. {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
-      "responseBodyTemplate": "Response body template",
-      "requestHeadersSet": "Request headers set",
-      "requestHeadersRemove": "Request headers remove",
-      "responseHeadersSet": "Response headers set",
-      "addHeader": "Add header",
       "authHeaders": "Token request headers"
     }
   },
@@ -2444,7 +2429,6 @@
       "alertWebhook": "Webhook URL",
       "alertWebhookPlaceholder": "https://hooks.example.com/...",
       "includeAmount": "Include amount recon",
-      "includeRawLog": "Include gateway request logs",
       "warnBeforeBill": "Warn open diffs before bill",
       "lastRunAt": "Last scheduled run",
       "neverRun": "Never",
@@ -2476,12 +2460,9 @@
         "roleCol": "Role",
         "sourceBilling": "Billable usage (usage_records)",
         "sourceUpstream": "Upstream bypass pre-aggregate",
-        "sourceGatewayUnavailable": "Gateway customer calls (not included)",
         "roleBilling": "Billing side",
         "rolePrimary": "Primary",
-        "roleGateway": "Customer access",
         "roleReference": "Reference",
-        "roleUnavailable": "Disabled",
         "amountTitle": "Amount recon",
         "usageAmount": "Usage billable amount",
         "billItemsTotal": "Bill items total",
@@ -2493,20 +2474,17 @@
         "methodGateway": "Gateway customer calls: mazbri-gateway access logs only, aligned with customer-facing traffic.",
         "methodUpstream": "Upstream bypass pre-aggregate: upstream_hourly (bypass-only); reference, not primary.",
         "methodPrimary": "Primary comparison side this run: {peerLabel}.",
-        "methodSources": "Sources used: {list}",
         "sources": {
           "unknown": "Unknown source",
-          "oltp_usage_records": "Billable usage (usage_records)",
-          "olap_preagg_bypass": "Upstream bypass pre-aggregate",
-          "olap_preagg": "Upstream pre-aggregate",
-          "request_logs_gateway": "Gateway customer calls",
-          "olap_preagg_compat": "Upstream pre-aggregate (compat fallback)"
-        }
+          "request_logs_gateway": "Gateway customer calls"
+        },
+        "errorTitle": "Reconciliation source fetch failed"
       },
       "columns": {
         "date": "Date",
         "scope": "Scope",
         "oltp": "Billable usage",
+        "gateway": "Gateway",
         "olap": "Upstream preagg",
         "ratio": "Loss ratio",
         "status": "Status"
@@ -2515,7 +2493,8 @@
         "ok": "OK",
         "flagged": "Flagged",
         "acknowledged": "Acknowledged",
-        "resolved": "Resolved"
+        "resolved": "Resolved",
+        "error": "Error (source failed)"
       }
     },
     "adjustments": {
@@ -2594,7 +2573,6 @@
     },
     "itemColumns": {
       "description": "API",
-      "billingType": "Billing Type",
       "quantity": "Calls",
       "totalUnits": "Billable Units",
       "unitPrice": "Unit Price",
@@ -2616,9 +2594,6 @@
       "one": "Are you sure you want to delete bill \"{name}\"?",
       "all": "Are you sure you want to delete all {count} bills on the current page?",
       "selected": "Are you sure you want to delete the selected {count} bills?"
-    },
-    "billingTypes": {
-      "call": "Per Call"
     },
     "billKinds": {
       "customer": "Customer Bill",
@@ -2680,17 +2655,12 @@
       "formSections": {
         "basicControl": "Basic Control",
         "security": "Security Options",
-        "codec": "Codec Configuration",
         "timeParams": "Time Security Parameters"
       },
       "fields": {
         "encryptionMode": "Encryption Mode",
         "currentKeyVersion": "Current Key Version",
         "signatureCheck": "Signature Verification",
-        "codecEnabled": "Enable Payload Codec",
-        "requestCodec": "Request Codec",
-        "responseCodec": "Response Codec",
-        "codecVersion": "Codec Version",
         "nonceTtlSeconds": "Nonce TTL (seconds)",
         "clockSkewSeconds": "Timestamp Tolerance Window (seconds)"
       },
@@ -2880,7 +2850,6 @@
         "name": "Product Name",
         "description": "Product Description",
         "grantedAt": "Granted At",
-        "billingType": "Billing Type",
         "unitPrice": "Unit Price",
         "cbProFallback": "CBPRO"
       },
@@ -2889,8 +2858,6 @@
         "confirm": "Grant",
         "product": "Select Product",
         "productPlaceholder": "Please select or search a product to grant",
-        "billingMode": "Billing Mode",
-        "billingModePlaceholder": "Please select a billing mode",
         "unitPrice": "Unit Price",
         "unitPricePlaceholder": "e.g. 0.001",
         "cbProFallback": "CBPRO",
@@ -3160,7 +3127,6 @@
       "tenantName": "Tenant Name",
       "productCode": "Product Code",
       "productName": "Product Name",
-      "billingType": "Billing Type",
       "unitPrice": "Unit Price",
       "createdAt": "Granted At",
       "revokeConfirm": "Are you sure you want to revoke this authorization?",
@@ -3176,20 +3142,12 @@
       "title": "Authorization / Subscription Config",
       "billingSection": "Billing Config",
       "fallbackSection": "CBPRO",
-      "codecSection": "Payload Codec",
-      "billingMode": "Billing Mode",
-      "billingCall": "Per-call Billing",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "CBPRO not enabled on product",
-      "codecEnabled": "Enable Payload Codec",
-      "requestCodec": "Request Codec",
-      "responseCodec": "Response Codec",
-      "codecVersion": "Codec Version",
-      "codecEnabledHint": "",
       "conflictTitle": "Configuration Conflict",
       "cbProRuntimeHint": "",
       "saveSuccess": "Saved"
@@ -3201,9 +3159,6 @@
       "product": "Product",
       "selectTenant": "Please select a tenant",
       "selectProduct": "Please select a product",
-      "billingMode": "Billing Mode",
-      "selectBillingMode": "Please select a billing mode",
-      "billingCall": "Per-call Billing",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
@@ -3368,7 +3323,6 @@
       "authTokenUrl": "token_url is required when auth is enabled",
       "authTokenPath": "token_jsonpath is required when auth is enabled",
       "authInjectKey": "inject_key is required when auth is enabled",
-      "transformEmpty": "Configure at least one transform rule when enabled",
       "contractIdRequired": "Microservice mode requires contract_id"
     },
     "confirm": {
@@ -3530,7 +3484,6 @@
     "injectToMetadata": "metadata",
     "injectToFirstFrame": "first_frame",
     "authAttachHint": "Auth headers/signatures are attached by the engine on send and are not written into the Header List by default.",
-    "transformEnabled": "Enable transform",
     "bodyContentType": "Tenant body",
     "bodyTypeNone": "None",
     "bodyTypeJson": "JSON",
@@ -3617,7 +3570,6 @@
     "authTicketSection": "Token request",
     "authInjectSection": "Inject",
     "adapterParamsSection": "Adapter params",
-    "transformSection": "Transform",
     "pipelineSection": "Transform compare",
     "sectionUnconfigured": "Not configured",
     "sectionItemCount": "{n} items",

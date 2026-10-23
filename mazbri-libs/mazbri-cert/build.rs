@@ -1,13 +1,12 @@
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let default = manifest_dir.join("../../mazbri-license.pub");
-    let path = env::var_os("MAZBRI_LICENSE_PUB")
-        .map(PathBuf::from)
-        .unwrap_or(default);
+    let path = env::var_os("MAZBRI_LICENSE_PUB").map_or(default, PathBuf::from);
     println!("cargo:rerun-if-env-changed=MAZBRI_LICENSE_PUB");
     println!("cargo:rerun-if-changed={}", path.display());
 
@@ -35,7 +34,7 @@ fn main() {
     let mut bytes = format!("pub const LICENSE_KID: &str = \"{kid}\";\n");
     bytes.push_str("pub const PRODUCTION_PUBLIC_KEY: [u8; 32] = [");
     for index in (0..64).step_by(2) {
-        bytes.push_str(&format!("0x{},", &hex[index..index + 2]));
+        let _ = write!(bytes, "0x{},", &hex[index..index + 2]);
     }
     bytes.push_str("];\n");
 

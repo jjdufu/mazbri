@@ -118,10 +118,10 @@ pub(crate) fn build_proxy_cache_key(req: &GatewayRequest) -> String {
         }
     }
     hasher.update(b"\0");
-    if let Some(body) = &req.body {
-        if let Ok(bytes) = serde_json::to_vec(body) {
-            hasher.update(&bytes);
-        }
+    if let Some(body) = &req.body
+        && let Ok(bytes) = serde_json::to_vec(body)
+    {
+        hasher.update(&bytes);
     }
     format!("proxy:{}", hex::encode(hasher.finalize()))
 }

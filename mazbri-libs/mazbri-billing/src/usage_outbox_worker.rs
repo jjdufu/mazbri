@@ -1,10 +1,11 @@
-use crate::calculator::{BillingType, CalculationResult};
+use crate::calculator::CalculationResult;
 use crate::error::BillingError;
 use crate::queue::ChargeQueue;
 use crate::service::{BillingService, UsageRecord};
 use crate::types::QueueConfig;
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::stream::{self, StreamExt};
+use mazbri_core::num::SaturatingFrom;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -44,7 +45,6 @@ struct UsageOutboxItem {
     request_size: i64,
     response_size: i64,
     billing_service_duration_ms: i32,
-    billing_type: String,
     unit_price: Decimal,
     billable_units: i64,
     billable_amount: Decimal,
@@ -61,6 +61,7 @@ pub struct UsageOutboxWorker {
 }
 
 impl UsageOutboxWorker {
+    #[must_use]
     pub fn with_config(
         db: PgPool,
         billing_service: Arc<BillingService>,
@@ -137,6 +138,9 @@ impl UsageOutboxWorker {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn shutdown(self, timeout: Duration) -> Result<(), tokio::time::error::Elapsed> {
         let stop_fut = self.stop();
         tokio::time::timeout(timeout, stop_fut).await
@@ -220,15 +224,15 @@ async fn run_outbox_loop(
 
 async fn reclaim_stale_outbox(db: &PgPool, stale_secs: u64) -> Result<u64, BillingError> {
     let result = sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'pending',
             error_message = COALESCE(error_message, 'reclaimed stale processing')
         WHERE status = 'processing'
           AND updated_at < NOW() - ($1::double precision * INTERVAL '1 second')
-        "#,
+        ",
     )
-    .bind(stale_secs as f64)
+    .bind(mazbri_core::num::u64_to_f64(stale_secs))
     .execute(db)
     .await?;
     let n = result.rows_affected();
@@ -288,7 +292,7 @@ async fn process_batch(
         batch = batch_len,
         success = ok_ids.len(),
         failed = fail_count,
-        elapsed_ms = started.elapsed().as_millis() as u64,
+        elapsed_ms = u64::saturating_from(started.elapsed().as_millis()),
         "usage_outbox batch done"
     );
     Ok(batch_len)
@@ -297,11 +301,11 @@ async fn process_batch(
 async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, BillingError> {
     let mut tx = db.begin().await?;
     let rows = sqlx::query_as::<_, UsageOutboxItem>(
-        r#"
+        r"
         SELECT
             id, event_id, request_id, tenant_id, account_id, product_id,
             api_endpoint, http_method, response_status, request_size,
-            response_size, billing_service_duration_ms, billing_type, unit_price,
+            response_size, billing_service_duration_ms, unit_price,
             billable_units, billable_amount, billing_code
         FROM usage_outbox
         WHERE status IN ('pending', 'failed')
@@ -309,9 +313,9 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
         ORDER BY created_at ASC
         LIMIT $1
         FOR UPDATE SKIP LOCKED
-        "#,
+        ",
     )
-    .bind(limit as i64)
+    .bind(i64::from(limit))
     .fetch_all(&mut *tx)
     .await?;
     if rows.is_empty() {
@@ -320,11 +324,11 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
     }
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
     sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'processing'
         WHERE id = ANY($1)
-        "#,
+        ",
     )
     .bind(&ids)
     .execute(&mut *tx)
@@ -360,24 +364,13 @@ async fn process_one(
             account_id,
             api_endpoint: item.api_endpoint.clone(),
             http_method: item.http_method.clone(),
-            response_status: item.response_status as u16,
+            response_status: u16::saturating_from(item.response_status),
             request_size: item.request_size,
             response_size: item.response_size,
             billing_service_duration_ms: item.billing_service_duration_ms,
             billing_result: CalculationResult {
                 amount: item.billable_amount,
-                units: item.billable_units.max(0) as u64,
-                // Only per-call billing remains; coerce any legacy outbox values.
-                billing_type: {
-                    if item.billing_type != "call" {
-                        tracing::warn!(
-                            event_id = %item.event_id,
-                            billing_type = %item.billing_type,
-                            "Coercing legacy usage_outbox billing_type to call"
-                        );
-                    }
-                    BillingType::Call
-                },
+                units: u64::saturating_from(item.billable_units.max(0)),
                 unit_price: item.unit_price,
                 description: format!(
                     "usage_outbox request_id={} endpoint={}",
@@ -405,13 +398,13 @@ async fn process_one(
 
 async fn mark_processed_batch(db: &PgPool, ids: &[i64]) -> Result<(), BillingError> {
     sqlx::query(
-        r#"
+        r"
         UPDATE usage_outbox
         SET status = 'processed',
             processed_at = NOW(),
             error_message = NULL
         WHERE id = ANY($1)
-        "#,
+        ",
     )
     .bind(ids)
     .execute(db)
@@ -432,31 +425,31 @@ async fn mark_failed(
     let next_retry = retry_count + 1;
     if next_retry >= config.max_retries {
         sqlx::query(
-            r#"
+            r"
             UPDATE usage_outbox
             SET status = 'dead_letter',
                 retry_count = retry_count + 1,
                 error_message = $2
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(error)
         .execute(db)
         .await?;
     } else {
-        let backoff_factor = 2i64.pow(retry_count.clamp(0, 30) as u32);
+        let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.clamp(0, 30)));
         let delay_secs = (config.retry_interval_secs * backoff_factor).min(3600);
         let next_attempt_at = Utc::now() + ChronoDuration::seconds(delay_secs);
         sqlx::query(
-            r#"
+            r"
             UPDATE usage_outbox
             SET status = 'failed',
                 retry_count = retry_count + 1,
                 next_attempt_at = $2,
                 error_message = $3
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(id)
         .bind(next_attempt_at)

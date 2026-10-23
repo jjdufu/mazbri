@@ -74,9 +74,7 @@ export type WorkbenchEnvEntry = {
 };
 
 /** Array of KV rows (incl. disabled) or legacy string map. */
-export type WorkbenchEnvValue =
-  | Record<string, string>
-  | WorkbenchEnvEntry[];
+export type WorkbenchEnvValue = WorkbenchEnvEntry[];
 
 export interface ConnectorDraft {
   id: string;
@@ -174,8 +172,7 @@ export interface PublishRequest {
   authorization?: { tenant_ids?: string[]; enabled?: boolean };
   options?: {
     require_gate?: boolean;
-    force_publish?: boolean;
-    force_reason?: string | null;
+    force?: { force_publish: boolean; force_reason?: string | null };
     fail_if_route_exists?: boolean;
     probe_connectivity?: boolean;
   };
@@ -292,13 +289,6 @@ export function runDraft(
   data: {
     mode?: string;
     endpoint_id?: string;
-    request?: {
-      method: string;
-      path: string;
-      query?: Record<string, string>;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
     assertions?: AssertionSpec[];
   },
   opts?: ConnectorRequestOpts,
@@ -325,12 +315,6 @@ export function getRun(runId: string) {
 export function transformPreview(
   id: string,
   data: {
-    request?: {
-      method: string;
-      path: string;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
     endpoint_id?: string;
   },
   opts?: ConnectorRequestOpts,
@@ -423,13 +407,8 @@ export function rollbackVersion(
 export function liveRun(
   supplierId: string,
   data: {
-    mode?: string;
-    request?: {
-      method: string;
-      path: string;
-      headers?: Record<string, string>;
-      body?: unknown;
-    };
+    channel_code: string;
+    payload?: unknown;
   },
   opts?: ConnectorRequestOpts,
 ) {

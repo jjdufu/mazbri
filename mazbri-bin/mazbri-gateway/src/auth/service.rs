@@ -24,6 +24,7 @@ const MAX_API_KEY_LENGTH: usize = 512;
 const TENANT_INFO_CACHE_TTL_SECS: u64 = 5;
 const TOKEN_RESPONSE_CACHE_TTL_SECS: u64 = 120;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TokenRequest {
     pub api_key: String,
     #[serde(default = "default_grant_type")]
@@ -164,7 +165,7 @@ impl AuthService {
             tenant_code: tenant_code.to_string(),
             tenant_name: tenant_name.to_string(),
             account_type,
-            scopes: normalize_scopes(scopes),
+            scopes: normalize_scopes(scopes)?,
         };
         let mut header = Header::new(jsonwebtoken::Algorithm::HS256);
         header.kid = Some(self.keyring.current_kid().to_string());
@@ -256,7 +257,7 @@ impl AuthService {
         })?;
         let row = sqlx::query(
             r"
-            SELECT tenant_code, name, status, token_expiration_secs
+            SELECT tenant_code, name, enabled, token_expiration_secs
             FROM tenants
             WHERE id = $1
             ",
@@ -266,11 +267,10 @@ impl AuthService {
         .await
         .map_err(|e| TokenError::InternalError(format!("查询租户失败: {e}")))?
         .ok_or_else(|| TokenError::TenantNotFound(tenant_id.to_string()))?;
-        let status: String = row
-            .try_get("status")
+        let enabled: bool = row
+            .try_get("enabled")
             .map_err(|e| TokenError::InternalError(format!("获取租户状态失败: {e}")))?;
-        // Only active tenants may obtain/use tokens (disabled/suspended/pending blocked).
-        if status != "active" {
+        if !enabled {
             return Err(TokenError::TenantSuspended(tenant_id.to_string()));
         }
         let code: String = row
@@ -334,32 +334,29 @@ impl AuthService {
     }
 }
 
-/// Normalize UI/DB scopes (`read`/`write`/`admin`) into JWT scopes (`api:*`).
-///
-/// Empty scopes mean legacy full access (`api:read` + `api:write`) so existing keys keep working.
-pub(crate) fn normalize_scopes(raw: Vec<String>) -> Vec<String> {
-    if raw.is_empty() {
-        return vec!["api:read".to_string(), "api:write".to_string()];
-    }
-    let mut out = Vec::with_capacity(raw.len());
+/// Validate DB scopes: non-empty, only `api:read` | `api:write` | `api:admin` (deduplicated).
+pub(crate) fn normalize_scopes(raw: Vec<String>) -> Result<Vec<String>, TokenError> {
+    let mut out: Vec<String> = Vec::with_capacity(raw.len());
     for scope in raw {
-        let normalized = match scope.trim() {
-            "" => continue,
-            "read" | "api:read" => "api:read".to_string(),
-            "write" | "api:write" => "api:write".to_string(),
-            "admin" | "api:admin" => "api:admin".to_string(),
-            other if other.starts_with("api:") => other.to_string(),
-            other => format!("api:{other}"),
-        };
-        if !out.contains(&normalized) {
-            out.push(normalized);
+        match scope.as_str() {
+            "api:read" | "api:write" | "api:admin" => {
+                if !out.contains(&scope) {
+                    out.push(scope);
+                }
+            }
+            other => {
+                return Err(TokenError::InvalidApiKey(format!(
+                    "invalid scope '{other}'"
+                )));
+            }
         }
     }
     if out.is_empty() {
-        return vec!["api:read".to_string(), "api:write".to_string()];
+        return Err(TokenError::InvalidApiKey("api key has no scopes".into()));
     }
-    out
+    Ok(out)
 }
+
 pub async fn token_handler(
     State(state): State<crate::router::AppState>,
     Json(req): Json<TokenRequest>,
@@ -399,5 +396,32 @@ pub async fn token_handler(
             };
             (status, Json(resp)).into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::normalize_scopes;
+
+    #[test]
+    fn empty_scopes_rejected() {
+        assert!(normalize_scopes(vec![]).is_err());
+    }
+
+    #[test]
+    fn unknown_or_bare_scopes_rejected() {
+        assert!(normalize_scopes(vec!["read".into()]).is_err());
+        assert!(normalize_scopes(vec!["api:other".into()]).is_err());
+    }
+
+    #[test]
+    fn valid_scopes_deduplicated() {
+        let s = normalize_scopes(vec![
+            "api:read".into(),
+            "api:write".into(),
+            "api:read".into(),
+        ])
+        .unwrap();
+        assert_eq!(s, vec!["api:read".to_string(), "api:write".to_string()]);
     }
 }

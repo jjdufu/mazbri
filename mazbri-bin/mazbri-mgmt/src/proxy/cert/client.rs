@@ -25,10 +25,10 @@ pub(crate) async fn proxy_request(
         .and_then(|value| value.to_str().ok())
         .map(std::string::ToString::to_string);
     let mut url = format!("{}{}", config.cert_service_url, path);
-    if let Some(query) = request.uri().query() {
-        if !query.is_empty() {
-            url = format!("{url}?{query}");
-        }
+    if let Some(query) = request.uri().query()
+        && !query.is_empty()
+    {
+        url = format!("{url}?{query}");
     }
     let body_bytes = axum::body::to_bytes(request.into_body(), MAX_PROXY_BODY_BYTES)
         .await

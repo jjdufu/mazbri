@@ -3,7 +3,6 @@ use crate::repositories::tenant_crypto as repo;
 use crate::services::license::ensure_license_issuance_allowed;
 use crate::services::root_package::fetch_root_material_bundle;
 use crate::services::tenant::resolve_tenant_id;
-use mazbri_core::PayloadCodec;
 use mazbri_core::crypto::tenant_key::{
     COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID, decode_configured_key, default_key_metadata,
     generate_key_version, wrap_new_tenant_key,
@@ -21,6 +20,7 @@ pub struct TenantCryptoPurgeResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCryptoProfileRequest {
     pub encryption_mode: String,
     #[serde(default = "default_require_signature")]
@@ -35,17 +35,10 @@ pub struct UpdateCryptoProfileRequest {
     pub clock_skew_seconds: i32,
     #[serde(default)]
     pub current_key_version: Option<String>,
-    #[serde(default = "default_request_codec")]
-    pub request_codec: PayloadCodec,
-    #[serde(default = "default_response_codec")]
-    pub response_codec: PayloadCodec,
-    #[serde(default = "default_codec_enabled")]
-    pub codec_enabled: bool,
-    #[serde(default = "default_codec_version")]
-    pub codec_version: i32,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CryptoExportQuery {
     #[serde(default = "default_export_mode")]
     pub mode: String,
@@ -69,23 +62,11 @@ fn default_nonce_ttl_seconds() -> i32 {
 fn default_clock_skew_seconds() -> i32 {
     300
 }
-fn default_request_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_response_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_codec_enabled() -> bool {
-    false
-}
-fn default_codec_version() -> i32 {
-    1
-}
 
 async fn ensure_tenant_crypto_enabled(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<(), ApiError> {
     ensure_license_issuance_allowed(client, base_url, token).await
 }
@@ -93,7 +74,7 @@ async fn ensure_tenant_crypto_enabled(
 async fn load_root_materials(
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
 ) -> Result<(Vec<u8>, Vec<u8>), ApiError> {
     let bundle =
         fetch_root_material_bundle(cert_client, cert_service_url, cert_service_token).await?;
@@ -123,22 +104,6 @@ impl UpdateCryptoProfileRequest {
                 "clock_skew_seconds must be between 60 and 3600",
             ));
         }
-        if self.codec_version < 1 {
-            return Err(ApiError::validation(
-                "codec_version must be greater than zero",
-            ));
-        }
-        if self.codec_enabled && self.encryption_mode != "full" && self.encryption_mode != "request"
-        {
-            return Err(ApiError::validation(
-                "codec_enabled requires encryption_mode to be request or full",
-            ));
-        }
-        if self.codec_enabled && self.request_codec != self.response_codec {
-            return Err(ApiError::validation(
-                "request_codec and response_codec must match when codec is enabled",
-            ));
-        }
         if self.encryption_mode == "none" && self.require_signature {
             return Err(ApiError::validation(
                 "当传输加密模式(encryption_mode)为 'none' 时，无法启用签名校验(require_signature)。",
@@ -166,7 +131,7 @@ pub async fn update_profile(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     payload: &UpdateCryptoProfileRequest,
     actor_id: uuid::Uuid,
@@ -201,10 +166,6 @@ pub async fn update_profile(
             nonce_ttl_seconds: payload.nonce_ttl_seconds,
             clock_skew_seconds: payload.clock_skew_seconds,
             current_key_version: payload.current_key_version.as_deref(),
-            request_codec: payload.request_codec.as_str(),
-            response_codec: payload.response_codec.as_str(),
-            codec_enabled: payload.codec_enabled,
-            codec_version: payload.codec_version,
             actor_id,
         },
     )
@@ -231,7 +192,7 @@ pub async fn create_key(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     actor_id: uuid::Uuid,
     rotate: bool,
@@ -323,7 +284,7 @@ pub struct SetKeyStatusArgs<'a> {
     pub pool: &'a PgPool,
     pub cert_client: &'a reqwest::Client,
     pub cert_service_url: &'a str,
-    pub cert_service_token: Option<&'a str>,
+    pub cert_service_token: &'a str,
     pub code: &'a str,
     pub version: &'a str,
     pub status: &'a str,
@@ -477,7 +438,7 @@ pub async fn verify_crypto_keys(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
     let (master_key, integrity_key) =
@@ -557,10 +518,6 @@ pub async fn purge_all_crypto_materials(
         UPDATE tenant_crypto_profiles
         SET encryption_mode = 'none',
             current_key_version = NULL,
-            request_codec = 'json',
-            response_codec = 'json',
-            codec_enabled = false,
-            codec_version = 1,
             updated_by = $1,
             updated_at = NOW()
         WHERE encryption_mode <> 'none'
@@ -657,7 +614,7 @@ pub async fn create_request_key(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
-    cert_service_token: Option<&str>,
+    cert_service_token: &str,
     code: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
-pub(crate) async fn spawn_heartbeat_task(
+pub(crate) fn spawn_heartbeat_task(
     token: tokio_util::sync::CancellationToken,
     client: Arc<HttpConfigClient>,
     metadata: Arc<parking_lot::RwLock<ServiceMetadata>>,
@@ -18,7 +18,7 @@ pub(crate) async fn spawn_heartbeat_task(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
-                _ = token.cancelled() => {
+                () = token.cancelled() => {
                     info!("心跳任务收到关闭信号");
                     break;
                 }

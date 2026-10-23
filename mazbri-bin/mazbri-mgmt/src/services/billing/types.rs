@@ -87,6 +87,7 @@ impl std::fmt::Display for AccountStatus {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Cursor {
     pub created_at: DateTime<Utc>,
     pub id: uuid::Uuid,
@@ -150,13 +151,12 @@ pub(super) fn enrich_bill_row(
     mut bill: repo::BillRow,
     identities: &HashMap<uuid::Uuid, tenant_repo::TenantDisplayIdentity>,
 ) -> repo::BillRow {
-    if bill.bill_kind == "customer" {
-        if let Some(tenant_id) = bill.tenant_id {
-            if let Some(identity) = identities.get(&tenant_id) {
-                bill.tenant_name.clone_from(&identity.name);
-                bill.tenant_code.clone_from(&identity.tenant_code);
-            }
-        }
+    if bill.bill_kind == "customer"
+        && let Some(tenant_id) = bill.tenant_id
+        && let Some(identity) = identities.get(&tenant_id)
+    {
+        bill.tenant_name.clone_from(&identity.name);
+        bill.tenant_code.clone_from(&identity.tenant_code);
     }
     bill
 }

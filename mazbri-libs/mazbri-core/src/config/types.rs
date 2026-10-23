@@ -14,7 +14,7 @@ pub struct ServerConfig {
     #[serde(default = "default_max_server_connections")]
     pub max_connections: u32,
 
-    /// Set TCP_NODELAY on accepted connections (reduces Nagle latency).
+    /// Set `TCP_NODELAY` on accepted connections (reduces Nagle latency).
     #[serde(default = "default_true")]
     pub tcp_nodelay: bool,
 
@@ -51,12 +51,17 @@ fn default_http1_header_read_timeout_secs() -> u64 {
     30
 }
 impl ServerConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn socket_addr(&self) -> Result<SocketAddr, std::net::AddrParseError> {
         format!("{}:{}", self.host, self.port).parse()
     }
+    #[must_use]
     pub fn graceful_shutdown_timeout(&self) -> Duration {
         Duration::from_secs(self.graceful_shutdown_timeout_secs)
     }
+    #[must_use]
     pub fn tcp_keepalive(&self) -> Option<Duration> {
         if self.tcp_keepalive_secs == 0 {
             None
@@ -64,6 +69,7 @@ impl ServerConfig {
             Some(Duration::from_secs(self.tcp_keepalive_secs))
         }
     }
+    #[must_use]
     pub fn http1_header_read_timeout(&self) -> Option<Duration> {
         if self.http1_header_read_timeout_secs == 0 {
             None

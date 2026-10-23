@@ -16,7 +16,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         "params": ctx.input.payload,
         "id": ctx.input.request_id,
     });
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),
@@ -26,7 +26,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let response = super::dispatch_http(
         ctx,
         HttpCall {
-            method: spec.request_method(),
+            method: spec.request.method.as_str(),
             url: &url,
             headers: super::merge_request_headers(ctx.auth, spec),
             body: Some(BodyKind::Json(body)),
@@ -42,14 +42,14 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         });
     }
     let json = parse_json_body(&response.body)?;
-    if let Some(err) = json.get("error") {
-        if !err.is_null() {
-            return Ok(AdapterOutcome {
-                payload: serde_json::Value::Null,
-                biz_error: Some(map_jsonrpc_error(err)),
-                response,
-            });
-        }
+    if let Some(err) = json.get("error")
+        && !err.is_null()
+    {
+        return Ok(AdapterOutcome {
+            payload: serde_json::Value::Null,
+            biz_error: Some(map_jsonrpc_error(err)),
+            response,
+        });
     }
     let payload = json
         .get("result")

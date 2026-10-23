@@ -1,5 +1,5 @@
 //! Shared HTTP send used by adapters.
-//! If the call already has a Content-Type header, BodyKind does not overwrite it.
+//! If the call already has a Content-Type header, `BodyKind` does not overwrite it.
 
 use reqwest::Method;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -58,7 +58,7 @@ pub async fn send_http(
     })?;
 
     let mut header_map = HeaderMap::new();
-    for (k, v) in call.headers.iter() {
+    for (k, v) in &call.headers {
         if k.to_lowercase().starts_with("x-mazbri-") {
             continue;
         }
@@ -96,7 +96,7 @@ pub async fn send_http(
     let _elapsed = started.elapsed();
     let status_code = resp.status();
     let mut resp_headers = HashMap::new();
-    for (key, val) in resp.headers().iter() {
+    for (key, val) in resp.headers() {
         if let Ok(str_val) = val.to_str() {
             resp_headers.insert(key.to_string(), str_val.to_string());
         }

@@ -1,7 +1,7 @@
 use super::{
     ApiError, CreateDraftRequest, DraftDto, GATE_TTL_HOURS, PgPool, RecentGateRun, SupplierConfig,
     UpdateDraftRequest, Uuid, draft_to_dto, evaluate_endpoint_gates, parse_workbench_env, repo,
-    strip_workbench_env_from_config,
+    strip_workbench_env_from_config, validate_workbench_env,
 };
 
 // ---------- Draft CRUD ----------
@@ -26,7 +26,8 @@ pub async fn create_draft(
     let mut config = req.config.unwrap_or_else(|| serde_json::json!({}));
     strip_workbench_env_from_config(&mut config);
     let endpoints = req.endpoints.unwrap_or_else(|| serde_json::json!([]));
-    let workbench_env = req.workbench_env.unwrap_or_else(|| serde_json::json!({}));
+    let workbench_env = req.workbench_env.unwrap_or_else(|| serde_json::json!([]));
+    validate_workbench_env(&workbench_env)?;
     let upstream_url = req.upstream_url.clone();
     let upstream_type = req.upstream_type.clone();
     let source = req.source.unwrap_or_else(|| "manual".into());
@@ -128,6 +129,9 @@ pub async fn update_draft(
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
         .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
 
+    if let Some(env) = req.workbench_env.as_ref() {
+        validate_workbench_env(env)?;
+    }
     let mut config_opt = None;
     if let Some(ref raw) = req.config {
         let mut raw = raw.clone();
@@ -171,10 +175,10 @@ fn config_json_for_draft(
             .and_then(|v| serde_json::from_value::<mazbri_core::AuthFlowConfig>(v.clone()).ok()),
     ) {
         for (k, v) in &mut new_auth.credentials {
-            if v.contains('•') || v.is_empty() {
-                if let Some(old_v) = old_auth.credentials.get(k) {
-                    v.clone_from(old_v);
-                }
+            if (v.contains('•') || v.is_empty())
+                && let Some(old_v) = old_auth.credentials.get(k)
+            {
+                v.clone_from(old_v);
             }
         }
     }
@@ -186,7 +190,7 @@ fn config_json_for_draft(
 
 async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<DraftDto, ApiError> {
     let env = parse_workbench_env(&row.workbench_env);
-    let cfg = SupplierConfig::parse_and_validate_lenient(&row.config).ok();
+    let cfg = SupplierConfig::parse_and_validate(&row.config).ok();
     let recent = repo::list_recent_gate_runs(pool, row.id, GATE_TTL_HOURS)
         .await
         .map_err(|e| ApiError::internal(format!("gate runs: {e}")))?;

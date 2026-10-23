@@ -20,6 +20,7 @@ pub struct Attempt {
     pub end_time: Option<DateTime<Utc>>,
     pub status: Option<AttemptStatus>,
 }
+#[derive(Debug, Clone, Copy)]
 pub struct UpstreamAttempt<'a> {
     pub supplier_id: &'a str,
     pub supplier_code: &'a str,
@@ -39,6 +40,7 @@ pub struct InteractionEvent {
     pub final_status: Option<String>,
 }
 impl InteractionEvent {
+    #[must_use]
     pub fn new(request_id: &str, tenant_id: &str, product_id: &str) -> Self {
         Self {
             id: Uuid::new_v4(),

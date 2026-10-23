@@ -14,35 +14,38 @@ impl fmt::Display for ValidationError {
 }
 impl std::error::Error for ValidationError {}
 pub type ValidationResult<T> = Result<T, Vec<ValidationError>>;
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_service_config(content: &str) -> ValidationResult<()> {
     let value = match toml::from_str::<toml::Value>(content) {
         Ok(v) => v,
         Err(e) => {
             return Err(vec![ValidationError {
                 field: "content".to_string(),
-                message: format!("无效的 TOML 格式: {}", e),
+                message: format!("无效的 TOML 格式: {e}"),
                 code: "INVALID_TOML".to_string(),
             }]);
         }
     };
     let mut errors = Vec::new();
-    if let Some(server) = value.get("server") {
-        if let Err(e) = ServerConfig::deserialize(server.clone()) {
-            errors.push(ValidationError {
-                field: "server".to_string(),
-                message: format!("无效的 [server] 配置: {}", e),
-                code: "INVALID_SERVER_CONFIG".to_string(),
-            });
-        }
+    if let Some(server) = value.get("server")
+        && let Err(e) = ServerConfig::deserialize(server.clone())
+    {
+        errors.push(ValidationError {
+            field: "server".to_string(),
+            message: format!("无效的 [server] 配置: {e}"),
+            code: "INVALID_SERVER_CONFIG".to_string(),
+        });
     }
-    if let Some(database) = value.get("database") {
-        if let Err(e) = DatabaseConfig::deserialize(database.clone()) {
-            errors.push(ValidationError {
-                field: "database".to_string(),
-                message: format!("无效的 [database] 配置: {}", e),
-                code: "INVALID_DATABASE_CONFIG".to_string(),
-            });
-        }
+    if let Some(database) = value.get("database")
+        && let Err(e) = DatabaseConfig::deserialize(database.clone())
+    {
+        errors.push(ValidationError {
+            field: "database".to_string(),
+            message: format!("无效的 [database] 配置: {e}"),
+            code: "INVALID_DATABASE_CONFIG".to_string(),
+        });
     }
     if errors.is_empty() {
         Ok(())
@@ -56,6 +59,7 @@ pub struct StringValidator {
     required: bool,
 }
 impl StringValidator {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             min_length: None,
@@ -63,38 +67,41 @@ impl StringValidator {
             required: true,
         }
     }
+    #[must_use]
     pub fn min_length(mut self, length: usize) -> Self {
         self.min_length = Some(length);
         self
     }
+    #[must_use]
     pub fn max_length(mut self, length: usize) -> Self {
         self.max_length = Some(length);
         self
     }
+    #[must_use]
     pub fn required(mut self, required: bool) -> Self {
         self.required = required;
         self
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate_value(&self, field_name: &str, value: &Option<String>) -> ValidationResult<()> {
-        let value = match value {
-            Some(v) => v,
-            None => {
-                if self.required {
-                    return Err(vec![ValidationError {
-                        field: field_name.to_string(),
-                        message: "字段必填".to_string(),
-                        code: "REQUIRED".to_string(),
-                    }]);
-                }
-                return Ok(());
+        let Some(value) = value else {
+            if self.required {
+                return Err(vec![ValidationError {
+                    field: field_name.to_string(),
+                    message: "字段必填".to_string(),
+                    code: "REQUIRED".to_string(),
+                }]);
             }
+            return Ok(());
         };
         if let Some(min) = self.min_length
             && value.len() < min
         {
             return Err(vec![ValidationError {
                 field: field_name.to_string(),
-                message: format!("Minimum length is {} characters", min),
+                message: format!("Minimum length is {min} characters"),
                 code: "MIN_LENGTH".to_string(),
             }]);
         }
@@ -103,7 +110,7 @@ impl StringValidator {
         {
             return Err(vec![ValidationError {
                 field: field_name.to_string(),
-                message: format!("Maximum length is {} characters", max),
+                message: format!("Maximum length is {max} characters"),
                 code: "MAX_LENGTH".to_string(),
             }]);
         }
@@ -119,6 +126,7 @@ pub struct ValidationHelper {
     errors: Vec<ValidationError>,
 }
 impl ValidationHelper {
+    #[must_use]
     pub fn new() -> Self {
         Self { errors: Vec::new() }
     }
@@ -133,9 +141,13 @@ impl ValidationHelper {
         }
         self
     }
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn errors(self) -> Result<(), Vec<ValidationError>> {
         if self.errors.is_empty() {
             Ok(())
@@ -154,6 +166,9 @@ pub struct BoundedVec<T, const MAX: usize> {
     pub(crate) inner: Vec<T>,
 }
 impl<T, const MAX: usize> BoundedVec<T, MAX> {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(vec: Vec<T>) -> Result<Self, String> {
         if vec.len() > MAX {
             Err(format!("数组长度超过限制: {} > {}", vec.len(), MAX))
@@ -161,18 +176,22 @@ impl<T, const MAX: usize> BoundedVec<T, MAX> {
             Ok(Self { inner: vec })
         }
     }
+    #[must_use]
     pub fn as_slice(&self) -> &[T] {
         &self.inner
     }
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.inner.iter()
     }
+    #[must_use]
     pub fn to_vec(&self) -> Vec<T>
     where
         T: Clone,

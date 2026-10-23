@@ -86,7 +86,6 @@ export interface AuthorizationDetail {
   cb_pro_enabled?: boolean;
   unit_price: string;
   currency: string;
-  billing_type: string;
   cb_pro_fallback: boolean;
   config: TenantProductConfig;
   created_at: ISODateString;

@@ -20,3 +20,6 @@ sqlx = { workspace = true }
 chrono = { workspace = true }
 tarpc = { workspace = true }
 futures = { workspace = true }
+
+[lints]
+workspace = true

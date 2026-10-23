@@ -102,6 +102,10 @@ impl FromStr for ServiceName {
 }
 
 /// 配置中心目标名校验：规范服务名或 `global`。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_config_target(name: &str) -> Result<(), ServiceIdentityError> {
     if name.trim() == GLOBAL_CONFIG_NAME {
         return Ok(());

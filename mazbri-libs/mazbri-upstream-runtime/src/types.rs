@@ -12,7 +12,7 @@ pub const DEFAULT_MAX_BODY_CAPTURE: usize = 64 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMode {
-    /// Production bypass path (no detailed stages unless collect_trace).
+    /// Production bypass path (no detailed stages unless `collect_trace`).
     Production,
     /// Only fetch/inject auth token stages; no business upstream call.
     AuthOnly,
@@ -64,6 +64,7 @@ pub enum BodyKind {
 }
 
 impl BodyKind {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             BodyKind::Json(s) | BodyKind::Form(s) | BodyKind::Xml(s) => s,
@@ -71,6 +72,7 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn into_string(self) -> String {
         match self {
             BodyKind::Json(s) | BodyKind::Form(s) | BodyKind::Xml(s) => s,
@@ -78,10 +80,12 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn is_json(&self) -> bool {
         matches!(self, BodyKind::Json(_))
     }
 
+    #[must_use]
     pub fn content_type(&self) -> &str {
         match self {
             BodyKind::Json(_) => "application/json",
@@ -91,21 +95,10 @@ impl BodyKind {
         }
     }
 
+    #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
         self.into_string().into_bytes()
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutboundRequest {
-    pub method: String,
-    pub path: String,
-    #[serde(default)]
-    pub query: Vec<(String, String)>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    #[serde(default)]
-    pub body: Option<BodyKind>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,20 +111,6 @@ pub struct OutboundResponse {
     pub path: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct ExecuteInput {
-    pub supplier_code: String,
-    pub base_url: String,
-    /// Decrypted runtime config (may be None for plain passthrough).
-    pub config: Option<Arc<SupplierConfig>>,
-    pub request: OutboundRequest,
-    pub timeout: Duration,
-    pub mode: ExecuteMode,
-    pub options: ExecuteOptions,
-    /// Optional token cache key override (probe namespace). Defaults to supplier_code.
-    pub cache_key: Option<String>,
-}
-
 /// Production / workbench invoke: tenant JSON object + channel egress spec.
 #[derive(Debug, Clone)]
 pub struct InvokeInput {
@@ -142,14 +121,12 @@ pub struct InvokeInput {
     pub payload: serde_json::Value,
     pub spec: ChannelEgressSpec,
     pub config: Option<Arc<SupplierConfig>>,
-    pub fallback_base_url: String,
-    pub path_prefix: String,
     pub timeout: Duration,
     pub mode: ExecuteMode,
     pub options: ExecuteOptions,
-    /// Decrypted credential map (supplier auth_flow.credentials).
+    /// Decrypted credential map (supplier `auth_flow.credentials`).
     pub credentials: HashMap<String, String>,
-    /// gRPC FileDescriptorSet / optional WSDL bytes.
+    /// gRPC `FileDescriptorSet` / optional WSDL bytes.
     pub artifact_bytes: Option<Vec<u8>>,
     pub cache_key: Option<String>,
 }
@@ -216,22 +193,6 @@ pub struct StageResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecuteResult {
-    pub ok: bool,
-    pub latency_ms: u64,
-    pub stages: Vec<StageResult>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response: Option<OutboundResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_message: Option<String>,
-    /// Token used (raw) — only for internal inject; not serialized for API.
-    #[serde(skip)]
-    pub token: Option<String>,
-}
-
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ExecuteError {
     #[error("CONFIG_INVALID: {0}")]
@@ -240,8 +201,6 @@ pub enum ExecuteError {
     SsrfBlocked(String),
     #[error("AUTH_TOKEN_FAILED: {0}")]
     AuthTokenFailed(String),
-    #[error("TRANSFORM_FAILED: {0}")]
-    TransformFailed(String),
     #[error("UPSTREAM_TRANSPORT: {0}")]
     UpstreamTransport(String),
     #[error("UPSTREAM_HTTP: {0}")]
@@ -259,12 +218,12 @@ pub enum ExecuteError {
 }
 
 impl ExecuteError {
+    #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
             Self::ConfigInvalid(_) => "CONFIG_INVALID",
             Self::SsrfBlocked(_) => "SSRF_BLOCKED",
             Self::AuthTokenFailed(_) => "AUTH_TOKEN_FAILED",
-            Self::TransformFailed(_) => "TRANSFORM_FAILED",
             Self::UpstreamTransport(_) => "UPSTREAM_TRANSPORT",
             Self::UpstreamHttp(_) => "UPSTREAM_HTTP",
             Self::InvalidMethod(_) => "INVALID_METHOD",

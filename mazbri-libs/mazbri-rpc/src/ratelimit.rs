@@ -6,6 +6,7 @@ use std::collections::HashMap;
 /// Per-API / per-product QPS override carried in policy `api_limits`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub struct ApiLimitRule {
     #[serde(default)]
     pub qps: Option<u64>,
@@ -20,6 +21,7 @@ pub struct ApiLimitRule {
 /// knobs are intentionally absent.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(deny_unknown_fields)]
 pub struct PolicySnapshot {
     pub id: String,
     pub tenant_id: String,
@@ -32,7 +34,7 @@ pub struct PolicySnapshot {
     pub tenant_burst: i32,
     pub client_ip_qps: i32,
     pub client_ip_burst: i32,
-    /// Bit per second. `0` disables bandwidth enforcement. UI Mbps = bandwidth_bps / 1_000_000.
+    /// Bit per second. `0` disables bandwidth enforcement. UI Mbps = `bandwidth_bps` / `1_000_000`.
     pub bandwidth_bps: i64,
     #[serde(default)]
     pub api_limits: HashMap<String, ApiLimitRule>,
@@ -56,6 +58,7 @@ pub struct GetPolicySnapshotsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetPolicySnapshotsResponse {
     pub snapshots: Vec<PolicySnapshot>,
     pub server_time_unix: i64,
@@ -95,6 +98,7 @@ pub struct IngestUsageDeltasRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct IngestUsageDeltasResponse {
     pub success: bool,
     pub ingested: i64,
@@ -131,6 +135,7 @@ pub struct GetControlCommandsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetControlCommandsResponse {
     pub commands: Vec<ControlCommand>,
     pub server_time_unix: i64,
@@ -147,6 +152,7 @@ pub struct AckControlCommandsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AckControlCommandsResponse {
     pub success: bool,
     pub acknowledged: i64,

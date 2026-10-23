@@ -60,11 +60,6 @@ export function summarizeTenantProductConflict(
 ): string {
   return buildConflictSummary("common.conflict.productScope", updatedAt, [
     {
-      labelKey: "common.conflict.productBillingMode",
-      attempted: attempted.billing_type,
-      latest: latest.billing_type,
-    },
-    {
       labelKey: "common.conflict.productUnitPrice",
       attempted: attempted.unit_price,
       latest: latest.unit_price,
@@ -73,26 +68,6 @@ export function summarizeTenantProductConflict(
       labelKey: "common.conflict.productCbProFallback",
       attempted: attempted.cb_pro_fallback,
       latest: latest.cb_pro_fallback,
-    },
-    {
-      labelKey: "common.conflict.productCodecEnabled",
-      attempted: attempted.codec_enabled,
-      latest: latest.codec_enabled,
-    },
-    {
-      labelKey: "common.conflict.productRequestCodec",
-      attempted: attempted.request_codec,
-      latest: latest.request_codec,
-    },
-    {
-      labelKey: "common.conflict.productResponseCodec",
-      attempted: attempted.response_codec,
-      latest: latest.response_codec,
-    },
-    {
-      labelKey: "common.conflict.productCodecVersion",
-      attempted: attempted.codec_version,
-      latest: latest.codec_version,
     },
     {
       labelKey: "common.conflict.productCbProPolicy",

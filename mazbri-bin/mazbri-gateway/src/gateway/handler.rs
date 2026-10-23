@@ -128,7 +128,7 @@ pub async fn unified_gateway_handler(
         req: &req,
         request_id: &request_id,
     };
-    log_transport_stage(&ctx, request_was_encrypted, &crypto_profile, &crypto_timing);
+    log_transport_stage(&ctx, request_was_encrypted, &crypto_timing);
     let request_validate_started_at = Instant::now();
     req.validate()?;
     let request_validate_ms = mazbri_core::num::millis_u64(request_validate_started_at.elapsed());
@@ -160,12 +160,7 @@ pub async fn unified_gateway_handler(
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let response_error = (!(200..300).contains(&status)).then(|| fetched.response.error.clone());
-    let serialized = serialize_stage(
-        &ctx,
-        &crypto_profile,
-        &fetched.response,
-        response_error.as_deref(),
-    )?;
+    let serialized = serialize_stage(&ctx, &fetched.response, response_error.as_deref())?;
     let request_size = content_length(&headers) as u64;
     record_bandwidth(
         &ctx,
@@ -268,7 +263,6 @@ fn validate_claims_tenant(claims: &MazbriClaims, request_id: &str) -> Result<Uui
 fn log_transport_stage(
     ctx: &HandlerCtx<'_>,
     request_was_encrypted: bool,
-    crypto_profile: &TenantCryptoProfile,
     crypto_timing: &TenantCryptoTiming,
 ) {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
@@ -287,8 +281,7 @@ fn log_transport_stage(
             crypto_tenant_key_root_material_ms = crypto_timing.tenant_key_root_material,
             crypto_tenant_key_local_ms = crypto_timing.tenant_key_local,
             crypto_signature_ms = crypto_timing.signature, crypto_decrypt_ms =
-            crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse,
-            codec_version = crypto_profile.codec_version, message =
+            crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse, message =
             "Gateway transport stage completed"
         );
     } else {
@@ -298,8 +291,7 @@ fn log_transport_stage(
             % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
             req.product_id, method = % req.method, path = % req.path, encrypted_request =
             false, transport_profile_ms = crypto_timing.transport_profile,
-            transport_total_ms = crypto_timing.transport_total, codec_version =
-            crypto_profile.codec_version, message = "Gateway transport stage completed"
+            transport_total_ms = crypto_timing.transport_total, message = "Gateway transport stage completed"
         );
     }
 }
@@ -328,8 +320,7 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
         });
     };
     let idempotency_started_at = Instant::now();
-    let mut acquired = false;
-    match ctx
+    let acquired = match ctx
         .state
         .proxy_state
         .crypto_state
@@ -364,12 +355,13 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
             );
             return replay_response(record).map(IdempotencyStage::Replay);
         }
-        Ok(crate::crypto::IdempotencyOutcome::Acquired) => acquired = true,
+        Ok(crate::crypto::IdempotencyOutcome::Acquired) => true,
         Err(error) => {
-            // Fail-open already applied inside check; this branch is for unexpected types.
+            // Fail-closed: idempotency store unavailable → 503 (keyless requests never reach here).
             error!("[{}] Idempotency check failed: {}", request_id, error);
+            return Err(error);
         }
-    }
+    };
     let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
     info!(
         target: "gateway.stage",
@@ -523,21 +515,12 @@ fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse) {
 
 fn serialize_stage(
     ctx: &HandlerCtx<'_>,
-    crypto_profile: &TenantCryptoProfile,
     response: &UpstreamResponse,
     response_error: Option<&str>,
 ) -> Result<SerializedProxyResponse, ProxyError> {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
-    let response_codec = if crypto_profile.encryption_mode == "full"
-        || crypto_profile.encryption_mode == "request"
-    {
-        crypto_profile.response_codec()
-    } else {
-        mazbri_core::PayloadCodec::Json
-    };
     let response_serialize_started_at = Instant::now();
     let serialized_response = serialize_proxy_response(
-        response_codec,
         response.status,
         request_id,
         &response.body,
@@ -550,8 +533,7 @@ fn serialize_stage(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
         "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id,
         tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
-        req.product_id, method = % req.method, path = % req.path, response_codec = %
-        response_codec.as_str(), response_body_kind = serialized_response.body_kind,
+        req.product_id, method = % req.method, path = % req.path,  response_body_kind = serialized_response.body_kind,
         response_body_encoding = serialized_response.body_encoding, payload_bytes_len =
         response.body_bytes_len, encoded_bytes_len = serialized_response.response_bytes,
         message = "Gateway response serialization stage completed"
@@ -818,5 +800,5 @@ fn emit_gateway_access_log(
             error_class,
         })
         .build();
-    emit_access_log("gateway.access", event);
+    emit_access_log("gateway.access", &event);
 }

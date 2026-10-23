@@ -13,18 +13,18 @@ impl super::super::ConfigRepository {
     pub async fn query_by_filters(&self, filters: &BatchFilters) -> ConfigResult<Vec<ConfigEntry>> {
         let mut query = String::from("SELECT * FROM config_entries");
         let mut param_count = 0;
-        if let Some(ref service_names) = filters.service_names {
-            if !service_names.is_empty() {
-                param_count += 1;
-                let _ = write!(query, " WHERE service_name = ANY(${param_count})");
-            }
+        if let Some(ref service_names) = filters.service_names
+            && !service_names.is_empty()
+        {
+            param_count += 1;
+            let _ = write!(query, " WHERE service_name = ANY(${param_count})");
         }
         query.push_str(" ORDER BY service_name");
         let mut sql_query = sqlx::query_as::<_, ConfigEntry>(&query);
-        if let Some(ref service_names) = filters.service_names {
-            if !service_names.is_empty() {
-                sql_query = sql_query.bind(service_names);
-            }
+        if let Some(ref service_names) = filters.service_names
+            && !service_names.is_empty()
+        {
+            sql_query = sql_query.bind(service_names);
         }
         let entries = sql_query.fetch_all(&*self.db).await?;
         Ok(entries)

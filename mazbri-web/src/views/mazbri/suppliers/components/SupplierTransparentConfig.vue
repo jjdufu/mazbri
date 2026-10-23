@@ -1,6 +1,5 @@
 <template>
   <div class="advanced-config-container">
-    <template v-if="section !== 'transform'">
     <ElDivider v-if="section === 'all'" border-style="dashed" class="config-divider" />
 
 
@@ -32,152 +31,10 @@
         :seed-json="seedJson"
       />
     </div>
-    </template>
-
-    <ElDivider v-if="section === 'all'" border-style="dashed" class="config-divider" />
-
-    <template v-if="section !== 'auth'">
-    <ElFormItem :label="$t('supplier.config.transformTitle')" class="section-switch-item">
-      <ElSwitch v-model="config.transform.enabled" />
-    </ElFormItem>
-
-    <div :class="{ 'disabled-section-content': !config.transform.enabled }">
-      <ElFormItem :label="$t('supplier.config.rewritePath')">
-        <ElInput
-          v-model="config.transform.rewrite_path"
-          placeholder="/api/proxy"
-          :disabled="!config.transform.enabled"
-        />
-      </ElFormItem>
-      <ElFormItem :label="$t('supplier.config.requestHeadersSet')">
-        <div class="kv-block">
-          <div
-            v-for="(row, idx) in config.transform.request_headers_set"
-            :key="'rhs-' + idx"
-            class="kv-row"
-          >
-            <ElInput
-              v-model="row.key"
-              placeholder="Header-Name"
-              :disabled="!config.transform.enabled"
-            />
-            <ElInput
-              v-model="row.value"
-              placeholder="value"
-              :disabled="!config.transform.enabled"
-            />
-            <ElButton
-              link
-              type="danger"
-              :disabled="!config.transform.enabled"
-              @click="config.transform.request_headers_set.splice(idx, 1)"
-            >
-              <ArtSvgIcon icon="ri:delete-bin-line" />
-            </ElButton>
-          </div>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!config.transform.enabled"
-            @click="config.transform.request_headers_set.push({ key: '', value: '' })"
-          >
-            <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-            {{ $t("supplier.config.addHeader") }}
-          </ElButton>
-        </div>
-      </ElFormItem>
-      <ElFormItem :label="$t('supplier.config.requestHeadersRemove')">
-        <div class="kv-block">
-          <div
-            v-for="(name, idx) in config.transform.request_headers_remove"
-            :key="'rhr-' + idx"
-            class="kv-row"
-          >
-            <ElInput
-              v-model="config.transform.request_headers_remove[idx]"
-              placeholder="Header-To-Remove"
-              :disabled="!config.transform.enabled"
-            />
-            <ElButton
-              link
-              type="danger"
-              :disabled="!config.transform.enabled"
-              @click="config.transform.request_headers_remove.splice(idx, 1)"
-            >
-              <ArtSvgIcon icon="ri:delete-bin-line" />
-            </ElButton>
-          </div>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!config.transform.enabled"
-            @click="config.transform.request_headers_remove.push('')"
-          >
-            <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-            {{ $t("supplier.config.addHeader") }}
-          </ElButton>
-        </div>
-      </ElFormItem>
-      <ElFormItem :label="$t('supplier.config.requestBodyTemplate')">
-        <JsonTemplateEditor
-          v-model="config.transform.request_body_template"
-          :variables="transformReqVars"
-          :disabled="!config.transform.enabled"
-          height="160px"
-        />
-      </ElFormItem>
-      <ElFormItem :label="$t('supplier.config.responseBodyTemplate')">
-        <JsonTemplateEditor
-          v-model="config.transform.response_body_template"
-          :variables="transformResVars"
-          :disabled="!config.transform.enabled"
-          height="120px"
-        />
-      </ElFormItem>
-      <ElFormItem :label="$t('supplier.config.responseHeadersSet')">
-        <div class="kv-block">
-          <div
-            v-for="(row, idx) in config.transform.response_headers_set"
-            :key="'resph-' + idx"
-            class="kv-row"
-          >
-            <ElInput
-              v-model="row.key"
-              placeholder="Header-Name"
-              :disabled="!config.transform.enabled"
-            />
-            <ElInput
-              v-model="row.value"
-              placeholder="value"
-              :disabled="!config.transform.enabled"
-            />
-            <ElButton
-              link
-              type="danger"
-              :disabled="!config.transform.enabled"
-              @click="config.transform.response_headers_set.splice(idx, 1)"
-            >
-              <ArtSvgIcon icon="ri:delete-bin-line" />
-            </ElButton>
-          </div>
-          <ElButton
-            link
-            type="primary"
-            :disabled="!config.transform.enabled"
-            @click="config.transform.response_headers_set.push({ key: '', value: '' })"
-          >
-            <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-            {{ $t("supplier.config.addHeader") }}
-          </ElButton>
-        </div>
-      </ElFormItem>
-    </div>
-    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import JsonTemplateEditor from "./JsonTemplateEditor.vue";
 import {
   AUTH_PROFILES,
   applyPickerDefaults,
@@ -229,27 +86,16 @@ export interface AuthFlowForm {
   hawk: AuthHawkForm;
 }
 
-export interface TransformForm {
-  enabled: boolean;
-  rewrite_path: string;
-  request_body_template: string;
-  response_body_template: string;
-  request_headers_set: { key: string; value: string }[];
-  request_headers_remove: string[];
-  response_headers_set: { key: string; value: string }[];
-}
-
 export interface SupplierConfigForm {
   upstream_type: string;
 
   contract_id?: string;
   auth_flow: AuthFlowForm;
-  transform: TransformForm;
 }
 
 withDefaults(
   defineProps<{
-    section?: "all" | "auth" | "transform";
+    section?: "all" | "auth";
     seedJson?: string;
   }>(),
   { section: "all", seedJson: "" },
@@ -257,19 +103,6 @@ withDefaults(
 
 const config = defineModel<SupplierConfigForm>({ required: true });
 
-const transformReqVars = ["request.path", "request.body"];
-const transformResVars = ["response.body", "response.status"];
-
-
-if (!config.value.transform.request_headers_set) {
-  config.value.transform.request_headers_set = [];
-}
-if (!config.value.transform.request_headers_remove) {
-  config.value.transform.request_headers_remove = [];
-}
-if (!config.value.transform.response_headers_set) {
-  config.value.transform.response_headers_set = [];
-}
 if (!config.value.auth_flow.jwt) {
   config.value.auth_flow.jwt = {
     algorithm: "HS256",

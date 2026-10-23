@@ -46,8 +46,8 @@
       </template>
 
       <template #status="{ row }">
-        <StatusIndicator :type="getStatusType(normalizeTenantStatus(row.status))">
-          {{ getStatusLabel(normalizeTenantStatus(row.status), tenantStatusLabels) }}
+        <StatusIndicator :type="getStatusType(tenantStatusKey(row))">
+          {{ getStatusLabel(tenantStatusKey(row)) }}
         </StatusIndicator>
       </template>
       <template #created_at="{ row }">
@@ -59,7 +59,7 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
-            v-if="normalizeTenantStatus(row.status) === 'active'"
+            v-if="row.enabled"
             v-roles="['R_ADMIN', 'R_OPERATOR']"
             link
             type="warning"
@@ -112,14 +112,13 @@ import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import type {
   Tenant,
-  TenantStatus,
   TenantListResponse,
 } from "@/types/api/tenant";
 import {
   createTenant,
   fetchTenantList,
   deleteTenant,
-  setTenantStatus,
+  setTenantEnabled,
 } from "@/api/tenant";
 import { useUserStore } from "@/store/modules/user";
 import CreateDialog from "./modules/create-dialog.vue";
@@ -241,7 +240,7 @@ const tenantExportColumns: { key: keyof TenantExportRow; label: string }[] = [
 const table = useTable({
   core: {
     apiFn: fetchTenantList,
-    apiParams: { q: "", status: undefined },
+    apiParams: { q: "" },
     immediate: true,
     paginationKey: { current: "page", size: "page_size" },
   },
@@ -307,7 +306,7 @@ const getTenantCellText = (columnKey: string, row: Tenant) => {
     case "contact_email":
       return row.contact_email || "-";
     case "status":
-      return getStatusLabel(row.status, tenantStatusLabels.value);
+      return getStatusLabel(tenantStatusKey(row));
     case "created_at":
       return formatDate(row.created_at);
     case "operations":
@@ -338,16 +337,9 @@ const getTenantColumnWeight = (columnKey: string) => {
 };
 const userStore = useUserStore();
 
-function normalizeTenantStatus(status?: string): TenantStatus {
-  if (status === "active") return "active";
-  if (status === "pending") return "pending";
-  return "suspended";
+function tenantStatusKey(row: Tenant): "enabled" | "disabled" {
+  return row.enabled ? "enabled" : "disabled";
 }
-const tenantStatusLabels = computed(() => ({
-  active: $t("common.status.active"),
-  suspended: $t("common.status.suspended"),
-  pending: $t("common.status.pending"),
-}));
 useAdaptiveTableColumns({
   columns,
   containerRef: pageRef,
@@ -490,7 +482,7 @@ const handleExportCommand = (command: string) => {
     contact_person: row.contact_person || "",
     contact_phone: row.contact_phone || "",
     contact_email: row.contact_email || "",
-    status: row.status,
+    status: getStatusLabel(tenantStatusKey(row)),
     created_at: row.created_at,
   }));
   exportResourceCsv(
@@ -546,9 +538,7 @@ const handleToggleStatus = async (row: Tenant, enable: boolean) => {
         type: "warning",
       },
     );
-    await setTenantStatus(row.tenant_code, {
-      status: enable ? "active" : "suspended",
-    });
+    await setTenantEnabled(row.tenant_code, { enabled: enable });
     ElMessage.success(
       enable ? $t("common.feedback.enabled") : $t("common.feedback.disabled"),
     );

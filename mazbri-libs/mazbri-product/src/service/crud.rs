@@ -1,6 +1,13 @@
-use super::*;
+use super::{
+    CreateProductRequest, Postgres, Product, ProductDeleteError, ProductIdReservation,
+    ProductService, ProductWriteError, QueryBuilder, Result, Row, UpdateProductRequest, Utc, Uuid,
+    classify_product_write_error, info, product_from_row, validate_product_id,
+};
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_product(
         &self,
         req: CreateProductRequest,
@@ -22,6 +29,9 @@ impl ProductService {
         );
         Ok(product_from_row(&row))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn reserve_product_id(
         &self,
         reserved_by: &str,
@@ -29,27 +39,29 @@ impl ProductService {
         let mut tx = self.db.begin().await.map_err(ProductWriteError::Database)?;
         self.lock_product_id_space(&mut tx).await?;
         self.expire_stale_product_id_reservations(&mut tx).await?;
-        let reservation = match self
+        let reservation = if let Some(reservation) = self
             .reserve_available_product_id(&mut tx, reserved_by)
             .await?
         {
-            Some(reservation) => reservation,
-            None => {
-                let product_id = self.allocate_next_product_id(&mut tx).await?;
-                self.insert_product_id_reservation(&mut tx, &product_id, reserved_by)
-                    .await?
-            }
+            reservation
+        } else {
+            let product_id = self.allocate_next_product_id(&mut tx).await?;
+            self.insert_product_id_reservation(&mut tx, &product_id, reserved_by)
+                .await?
         };
         tx.commit().await.map_err(ProductWriteError::Database)?;
         Ok(reservation)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn release_product_id_reservation(
         &self,
         reservation_id: Uuid,
         reserved_by: &str,
     ) -> std::result::Result<bool, ProductWriteError> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE product_id_reservations
             SET status = 'available',
                 active_reservation_id = NULL,
@@ -62,7 +74,7 @@ impl ProductService {
               AND status = 'reserved'
               AND consumed_at IS NULL
             RETURNING id
-            "#,
+            ",
         )
         .bind(reservation_id)
         .bind(reserved_by)
@@ -71,6 +83,9 @@ impl ProductService {
         .map_err(ProductWriteError::Database)?;
         Ok(result.is_some())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn update_product(
         &self,
         product_id: &str,
@@ -148,6 +163,9 @@ impl ProductService {
             Ok(None)
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_product_by_id(&self, product_id: &str) -> Result<Option<Product>> {
         Ok(self.fetch_product_by_id(product_id).await?)
     }
@@ -156,14 +174,14 @@ impl ProductService {
         product_id: &str,
     ) -> std::result::Result<Option<Product>, sqlx::Error> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT id, product_id, name, description,
                    timeout_secs, enabled, cb_pro_enabled,
                    cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
                    created_at, updated_at
             FROM products
             WHERE product_id = $1
-            "#,
+            ",
         )
         .bind(product_id)
         .fetch_optional(&self.db)
@@ -174,16 +192,19 @@ impl ProductService {
             Ok(None)
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_products(&self) -> Result<Vec<Product>> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT id, product_id, name, description,
                    timeout_secs, enabled, cb_pro_enabled,
                    cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
                    created_at, updated_at
             FROM products
             ORDER BY created_at DESC
-            "#,
+            ",
         )
         .fetch_all(&self.db)
         .await?;
@@ -194,6 +215,10 @@ impl ProductService {
     ///
     /// `apply_extra` is called for both COUNT and SELECT builders (trusted
     /// SQL only — caller must validate filters before applying).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_products_page<F>(
         &self,
         search: Option<&str>,
@@ -204,7 +229,7 @@ impl ProductService {
     where
         F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
     {
-        let search_pattern = search.map(|value| format!("%{}%", value));
+        let search_pattern = search.map(|value| format!("%{value}%"));
 
         let mut count_builder: QueryBuilder<'_, Postgres> =
             QueryBuilder::new("SELECT COUNT(*) FROM products WHERE 1=1");
@@ -240,6 +265,9 @@ impl ProductService {
         let rows = list_builder.build().fetch_all(&self.db).await?;
         Ok((rows.iter().map(product_from_row).collect(), total))
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn delete_product(
         &self,
         product_id: &str,
@@ -250,17 +278,16 @@ impl ProductService {
                 .fetch_optional(&self.db)
                 .await
                 .map_err(ProductDeleteError::Database)?;
-        let product_uuid = match product_row {
-            Some((uuid,)) => uuid,
-            None => return Ok(false),
+        let Some((product_uuid,)) = product_row else {
+            return Ok(false);
         };
         let active_tenants: Vec<String> = sqlx::query_scalar(
-            r#"
+            r"
             SELECT t.tenant_code
             FROM tenant_products tp
             JOIN tenants t ON tp.tenant_id = t.id
             WHERE tp.product_id = $1 AND tp.enabled = true
-            "#,
+            ",
         )
         .bind(product_uuid)
         .fetch_all(&self.db)
@@ -270,11 +297,11 @@ impl ProductService {
             return Err(ProductDeleteError::HasActiveTenants(active_tenants));
         }
         let result = sqlx::query(
-            r#"
+            r"
             DELETE FROM products
             WHERE id = $1
             RETURNING id
-            "#,
+            ",
         )
         .bind(product_uuid)
         .fetch_optional(&self.db)

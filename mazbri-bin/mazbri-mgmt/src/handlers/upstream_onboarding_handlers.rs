@@ -61,6 +61,7 @@ pub async fn onboard_upstream_dry_run(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidateConfigBody {
     pub config: serde_json::Value,
     pub upstream_url: String,

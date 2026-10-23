@@ -1,6 +1,6 @@
 //! Optional OTLP trace export (HTTP/protobuf).
 //!
-//! Production path: services push spans **directly** to GreptimeDB
+//! Production path: services push spans **directly** to `GreptimeDB`
 //! (`http://…:4000/v1/otlp` + Greptime headers). Not routed via Vector.
 //!
 //! ## Span export filter
@@ -38,7 +38,7 @@ impl Drop for OtlpGuard {
 }
 
 /// Options for building the OTLP HTTP exporter.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct OtlpExportOptions<'a> {
     pub endpoint: &'a str,
     pub service_name: &'a str,
@@ -54,7 +54,7 @@ pub struct OtlpExportOptions<'a> {
 /// Whether a `tracing` span should be exported via OTLP.
 ///
 /// **Keep (useful for call path / latency / dependency hops):**
-/// - HTTP root: name `request` (mazbri middleware / tower-http TraceLayer)
+/// - HTTP root: name `request` (mazbri middleware / tower-http `TraceLayer`)
 /// - tarpc client/server RPC: names like `CacheService.get`, `AuthService.validate_api_key`
 /// - application targets: `mazbri*`, `ut*` modules
 ///
@@ -62,6 +62,7 @@ pub struct OtlpExportOptions<'a> {
 /// - `h2` / hyper / mio / rustls transport internals (`FramedRead::*`, `poll_ready`, …)
 /// - DEBUG / TRACE level spans
 /// - other dependency noise not matching the allow rules
+#[must_use]
 pub fn should_export_otlp_span(meta: &tracing::Metadata<'_>) -> bool {
     // Level ordering: ERROR < WARN < INFO < DEBUG < TRACE
     if *meta.level() > Level::INFO {
@@ -199,6 +200,10 @@ fn is_rpc_style_span_name(name: &str) -> bool {
 /// Note: `opentelemetry-otlp` 0.30 uses programmatic `with_endpoint` **as-is**
 /// (it does **not** append `/v1/traces`). We normalize here so conf can keep the
 /// documented Greptime base URL.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, OtlpGuard)> {
     let endpoint = normalize_otlp_traces_endpoint(options.endpoint)?;
     anyhow::ensure!(!endpoint.is_empty(), "otel_endpoint is empty");
@@ -249,6 +254,10 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
 /// - `…/v1/traces` → unchanged  
 /// - `…/v1/otlp` (Greptime base) → `…/v1/otlp/v1/traces`  
 /// - other base → `{base}/v1/traces`
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn normalize_otlp_traces_endpoint(endpoint: &str) -> Result<String> {
     let endpoint = endpoint.trim().trim_end_matches('/');
     anyhow::ensure!(!endpoint.is_empty(), "otel_endpoint is empty");
@@ -400,6 +409,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "live Greptime OTLP; set MAZBRI_OTLP_SMOKE=1"]
     async fn otlp_export_to_greptime() {
+        use opentelemetry::KeyValue;
+        use opentelemetry::trace::{Span, Tracer as _};
         if std::env::var("MAZBRI_OTLP_SMOKE").ok().as_deref() != Some("1") {
             eprintln!("skip: set MAZBRI_OTLP_SMOKE=1");
             return;
@@ -416,9 +427,6 @@ mod tests {
             password: None,
         })
         .expect("build tracer");
-
-        use opentelemetry::KeyValue;
-        use opentelemetry::trace::{Span, Tracer as _};
         let mut span = tracer.start("otlp.smoke");
         span.set_attribute(KeyValue::new("mazbri.smoke", "true"));
         span.end();

@@ -13,14 +13,6 @@
         <ElDivider content-position="left">{{
           $t("authorization.config.billingSection")
         }}</ElDivider>
-        <ElFormItem :label="$t('authorization.config.billingMode')">
-          <ElSelect v-model="form.billing_type" style="width: 100%">
-            <ElOption
-              :label="$t('authorization.config.billingCall')"
-              value="call"
-            />
-          </ElSelect>
-        </ElFormItem>
         <ElFormItem :label="$t('authorization.config.unitPrice')">
           <ElInput
             v-model="form.unit_price"
@@ -35,42 +27,6 @@
           <ElSwitch
             v-model="form.cb_pro_fallback"
             :disabled="!currentProduct?.cb_pro_enabled"
-          />
-        </ElFormItem>
-
-        <ElDivider content-position="left">{{
-          $t("authorization.config.codecSection")
-        }}</ElDivider>
-        <ElFormItem :label="$t('authorization.config.codecEnabled')">
-          <ElSwitch v-model="form.codec_enabled" />
-        </ElFormItem>
-        <ElFormItem :label="$t('authorization.config.requestCodec')">
-          <ElSelect
-            v-model="form.request_codec"
-            style="width: 100%"
-            :disabled="!form.codec_enabled"
-          >
-            <ElOption label="JSON" value="json" />
-            <ElOption label="Fury" value="fury" />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="$t('authorization.config.responseCodec')">
-          <ElSelect
-            v-model="form.response_codec"
-            style="width: 100%"
-            :disabled="!form.codec_enabled"
-          >
-            <ElOption label="JSON" value="json" />
-            <ElOption label="Fury" value="fury" />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="$t('authorization.config.codecVersion')">
-          <ElInputNumber
-            v-model="form.codec_version"
-            :min="1"
-            :max="99"
-            :step="1"
-            :disabled="!form.codec_enabled"
           />
         </ElFormItem>
       </ElForm>
@@ -90,7 +46,6 @@ import {
   createDefaultCBProPolicyConfig,
 } from "@/api/tenant";
 import type {
-  PayloadCodec,
   TenantProduct,
   TenantProductConfig,
 } from "@/types/api/tenant";
@@ -117,13 +72,8 @@ const visible = computed({
 const form = reactive<TenantProductConfig>({
   unit_price: "0.001",
   currency: "CNY",
-  billing_type: "call",
   cb_pro_fallback: false,
   cbpro: createDefaultCBProPolicyConfig(),
-  request_codec: "json" as PayloadCodec,
-  response_codec: "json" as PayloadCodec,
-  codec_enabled: false,
-  codec_version: 1,
 });
 const activeProduct = computed(() => currentProduct.value ?? props.product);
 const drawerTitle = computed(() =>
@@ -139,14 +89,9 @@ const syncFromProduct = (product: TenantProduct | null) => {
   };
   form.unit_price = product.config.unit_price;
   form.currency = "CNY";
-  form.billing_type = product.config.billing_type;
   form.cb_pro_fallback = product.cb_pro_enabled
     ? product.config.cb_pro_fallback
     : false;
-  form.request_codec = product.config.request_codec;
-  form.response_codec = product.config.response_codec;
-  form.codec_enabled = product.config.codec_enabled;
-  form.codec_version = product.config.codec_version;
   form.cbpro = mergeTenantProductConfig(product.config).cbpro;
 };
 const handleClose = () => {
@@ -173,16 +118,12 @@ const handleSave = async () => {
     ...form,
     currency: "CNY",
     cb_pro_fallback: product.cb_pro_enabled ? form.cb_pro_fallback : false,
-    codec_enabled: form.codec_enabled,
-    request_codec: form.request_codec,
-    response_codec: form.response_codec,
-    codec_version: form.codec_version,
     cbpro: mergeTenantProductConfig(form).cbpro,
   };
   await runWithLoading(saving, async () => {
     try {
       await updateTenantProductConfig(props.tenantCode, product.product_id, {
-        ...submittedPayload,
+        config: submittedPayload,
         expected_updated_at: product.updated_at,
       });
       ElMessage.success($t("authorization.config.saveSuccess"));

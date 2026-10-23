@@ -58,6 +58,7 @@ pub enum RootPackageAction {
 }
 
 impl RootPackageAction {
+    #[must_use]
     pub fn event_type(self) -> &'static str {
         match self {
             Self::Import => "package_import",
@@ -67,6 +68,9 @@ impl RootPackageAction {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decode_material_bytes(value: &str) -> CertResult<Vec<u8>> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -83,6 +87,9 @@ pub fn decode_material_bytes(value: &str) -> CertResult<Vec<u8>> {
     ))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_material_encoding(value: &str) -> CertResult<()> {
     let bytes = decode_material_bytes(value)?;
     if bytes.len() != 32 {
@@ -93,6 +100,7 @@ pub fn validate_material_encoding(value: &str) -> CertResult<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn material_digest(
     package_id: uuid::Uuid,
     material_type: &str,
@@ -106,13 +114,14 @@ pub fn material_digest(
     hasher.update(plaintext);
     hex::encode(hasher.finalize())
 }
+#[must_use]
 pub fn derive_root_package_status(
     package_status: &str,
     active_material_count: i64,
     expires_at: Option<DateTime<Utc>>,
-    expired_at: Option<DateTime<Utc>>,
+    marked_expired_at: Option<DateTime<Utc>>,
 ) -> String {
-    let expired = is_root_package_expired(Utc::now(), expires_at, expired_at);
+    let expired = is_root_package_expired(Utc::now(), expires_at, marked_expired_at);
     if expired && package_status != "revoked" && package_status != "deleted" {
         "expired".to_string()
     } else if active_material_count > 0
@@ -133,14 +142,16 @@ pub fn derive_root_package_status(
     }
 }
 
+#[must_use]
 pub fn is_root_package_expired(
     now: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
-    expired_at: Option<DateTime<Utc>>,
+    marked_expired_at: Option<DateTime<Utc>>,
 ) -> bool {
-    expired_at.is_some() || expires_at.is_some_and(|expires_at| expires_at <= now)
+    marked_expired_at.is_some() || expires_at.is_some_and(|deadline| deadline <= now)
 }
 
+#[must_use]
 pub fn is_root_package_renewable(status: &str) -> bool {
     status != "revoked" && status != "deleted"
 }
@@ -153,6 +164,9 @@ fn derive_storage_key(password: &str) -> [u8; 32] {
     key
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn wrap_root_material(
     storage_password: &str,
     package_id: uuid::Uuid,
@@ -178,6 +192,9 @@ pub fn wrap_root_material(
     ))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn unwrap_root_material(storage_password: &str, encrypted_secret: &str) -> CertResult<Vec<u8>> {
     let storage_key = derive_storage_key(storage_password);
     let encrypted = BASE64

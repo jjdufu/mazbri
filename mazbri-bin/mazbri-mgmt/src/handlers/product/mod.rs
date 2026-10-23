@@ -4,6 +4,7 @@ pub mod crud;
 pub mod transactions;
 use serde::Deserialize;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RechargeRequest {
     pub amount: i64,
     #[serde(default)]
@@ -14,6 +15,7 @@ pub struct RechargeRequest {
     pub description: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RefundRequest {
     pub amount: i64,
     #[serde(default)]
@@ -29,6 +31,7 @@ pub struct RefundResponse {
     pub balance_after: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TransactionListQuery {
     #[serde(default = "default_page_transactions")]
     pub page: u32,

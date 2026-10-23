@@ -67,7 +67,6 @@ export interface EnvConfig {
   VITE_BASE_URL: string;
   VITE_API_URL: string;
 
-  VITE_GATEWAY_URL?: string;
   VITE_USE_GZIP?: string;
   VITE_USE_CDN?: string;
 }

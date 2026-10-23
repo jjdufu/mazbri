@@ -1,7 +1,6 @@
 pub mod channel_egress;
 mod circuit_breaker;
 mod client_ip;
-pub mod codec;
 pub mod config;
 pub mod config_watch;
 pub mod crypto;
@@ -28,8 +27,8 @@ pub use channel_egress::{
     ADAPTER_HTTP_JSON, AUTH_API_KEY, AUTH_AWS_SIGV4, AUTH_BASIC, AUTH_BEARER, AUTH_DIGEST,
     AUTH_GETTOKEN, AUTH_GRPC_METADATA, AUTH_HAWK, AUTH_JWT, AUTH_NONE, AUTH_OAUTH_CC_FORM,
     AUTH_SIGN_FORM, AdapterKind, AuthAwsSpec, AuthDigestSpec, AuthHawkSpec, AuthInjectSpec,
-    AuthJwtSpec, AuthProfile, AuthSpec, ChannelEgressError, ChannelEgressSpec, EgressRequestSpec,
-    EgressResponseSpec, WRAP_METHOD_BIZ_CONTENT, default_http_json_egress, hash_egress_spec,
+    AuthJwtSpec, AuthProfile, AuthSpec, BodyEncoding, ChannelEgressError, ChannelEgressSpec,
+    EgressRequestSpec, EgressResponseSpec, WRAP_METHOD_BIZ_CONTENT, hash_egress_spec,
     hash_egress_spec_json, parse_and_validate_egress, parse_channel_config_egress,
     profile_is_undeclared, sanitize_auth_spec, sanitize_egress_auth,
     upsert_egress_in_channel_config, validate_channel_config_if_egress, validate_egress_spec,
@@ -39,11 +38,6 @@ pub use circuit_breaker::{
     CircuitBreakerConfig, CircuitBreakerEvent, CircuitResult, CircuitState,
 };
 pub use client_ip::resolve_client_ip;
-pub use codec::{
-    CodecError, FuryErrorEnvelope, FurySuccessEnvelope, PayloadCodec, deserialize_fury_error,
-    deserialize_fury_success, deserialize_payload, serialize_fury_error, serialize_fury_success,
-    serialize_payload,
-};
 pub use config::{
     CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, PgCredential, PgCredentials,
     PureBootstrap, RegistrationConfig, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
@@ -78,9 +72,8 @@ pub use service_identity::{
 pub use sqlx;
 pub use supplier_config::{
     AuthFlowConfig, ConfigValidationError, MAX_SUPPLIER_CONFIG_BYTES, SupplierConfig,
-    TimeoutsConfig, TransformConfig, UPSTREAM_TYPE_MICROSERVICE, UPSTREAM_TYPE_TRANSPARENT,
-    mask_config_credentials, merge_auth_credentials, reject_unsupported_config_keys,
-    strip_unsupported_config_fields,
+    TimeoutsConfig, UPSTREAM_TYPE_MICROSERVICE, UPSTREAM_TYPE_TRANSPARENT, mask_config_credentials,
+    merge_auth_credentials,
 };
 pub use tarpc_middleware::{TenantValidationError, validate_tenant_id};
 pub use telemetry::{

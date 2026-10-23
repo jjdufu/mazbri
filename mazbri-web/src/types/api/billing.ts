@@ -45,7 +45,6 @@ export interface Bill {
 export interface BillLineItem {
   item_id: string;
   description: string;
-  billing_type: string;
   quantity: number;
   total_units: number;
   unit_price: DecimalString;

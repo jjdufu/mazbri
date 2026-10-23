@@ -50,6 +50,9 @@ pub fn reset_tenant_size_estimate(tenant_id: &str) {
         entry.store(0, Ordering::Relaxed);
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_cache_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(CACHE_OPERATIONS_TOTAL.clone()))?;
     register_collector_once(
@@ -65,6 +68,7 @@ pub struct CacheOperationRecorder {
     operation: &'static str,
 }
 impl CacheOperationRecorder {
+    #[must_use]
     pub fn new(operation: &'static str) -> Self {
         Self { operation }
     }
@@ -103,6 +107,7 @@ pub struct EvictionRecorder {
     reason: &'static str,
 }
 impl EvictionRecorder {
+    #[must_use]
     pub fn new(reason: &'static str) -> Self {
         Self { reason }
     }

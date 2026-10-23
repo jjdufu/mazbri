@@ -219,10 +219,10 @@ pub(super) fn compute_simulated_sleep_ms(
         .min(decision.max_simulated_delay_ms)
 }
 pub(super) fn enqueue_cbpro_observation(state: &ProxyState, observation: ObservationRequest) {
-    if let Some(tx) = state.cbpro_observation_tx.as_ref() {
-        if let Err(error) = tx.try_send(observation) {
-            debug!(error = % error, "CBPro observation queue full, dropping event");
-        }
+    if let Some(tx) = state.cbpro_observation_tx.as_ref()
+        && let Err(error) = tx.try_send(observation)
+    {
+        debug!(error = % error, "CBPro observation queue full, dropping event");
     }
 }
 pub(super) fn build_fallback_cache_key(req: &GatewayRequest) -> String {

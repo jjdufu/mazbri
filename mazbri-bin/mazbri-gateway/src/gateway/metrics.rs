@@ -101,6 +101,14 @@ pub static GATEWAY_JWT_KID_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
         &["kid", "result"],
     )
 });
+pub static GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::with_opts(Opts::new(
+        "gateway_idempotency_unavailable_total",
+        "Keyed requests rejected with 503 because the idempotency store (Redis) failed",
+    ))
+    .expect("gateway_idempotency_unavailable_total metric")
+});
+
 pub static GATEWAY_OVERLOAD_REJECT_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     IntCounter::with_opts(Opts::new(
         "gateway_overload_reject_total",
@@ -172,6 +180,10 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     )?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_PANIC_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_OVERLOAD_REJECT_TOTAL.clone()))?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.clone()),
+    )?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_REQUEST_BINDING_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_JWT_KID_TOTAL.clone()))?;
     Ok(())

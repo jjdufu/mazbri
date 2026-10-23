@@ -74,6 +74,7 @@ pub struct AssertionResult {
     pub message: Option<String>,
 }
 
+#[must_use]
 pub fn evaluate_assertions(
     assertions: &[Assertion],
     response: Option<&OutboundResponse>,
@@ -85,49 +86,11 @@ pub fn evaluate_assertions(
         .collect()
 }
 
-fn evaluate_one(
+fn evaluate_jsonpath(
     assertion: &Assertion,
     response: Option<&OutboundResponse>,
-    latency_ms: u64,
 ) -> AssertionResult {
     match assertion {
-        Assertion::StatusIn { values, name } => {
-            let name = name.clone().unwrap_or_else(|| "status_in".into());
-            let Some(resp) = response else {
-                return fail(name, "no response");
-            };
-            if values.contains(&resp.status) {
-                pass(name)
-            } else {
-                fail(name, &format!("status {} not in {:?}", resp.status, values))
-            }
-        }
-        Assertion::StatusRange { min, max, name } => {
-            let name = name
-                .clone()
-                .unwrap_or_else(|| format!("status_range_{min}_{max}"));
-            let Some(resp) = response else {
-                return fail(name, "no response");
-            };
-            if resp.status >= *min && resp.status <= *max {
-                pass(name)
-            } else {
-                fail(
-                    name,
-                    &format!("status {} not in {}..={}", resp.status, min, max),
-                )
-            }
-        }
-        Assertion::LatencyMsLte { value, name } => {
-            let name = name
-                .clone()
-                .unwrap_or_else(|| format!("latency_ms_lte_{value}"));
-            if latency_ms <= *value {
-                pass(name)
-            } else {
-                fail(name, &format!("latency {latency_ms}ms > {value}ms"))
-            }
-        }
         Assertion::JsonpathExists { path, name } => {
             let name = name
                 .clone()
@@ -181,6 +144,56 @@ fn evaluate_one(
                 None => fail(name, "body is not JSON"),
             }
         }
+        _ => unreachable!("evaluate_jsonpath only handles jsonpath assertions"),
+    }
+}
+
+fn evaluate_one(
+    assertion: &Assertion,
+    response: Option<&OutboundResponse>,
+    latency_ms: u64,
+) -> AssertionResult {
+    match assertion {
+        Assertion::StatusIn { values, name } => {
+            let name = name.clone().unwrap_or_else(|| "status_in".into());
+            let Some(resp) = response else {
+                return fail(name, "no response");
+            };
+            if values.contains(&resp.status) {
+                pass(name)
+            } else {
+                fail(name, &format!("status {} not in {:?}", resp.status, values))
+            }
+        }
+        Assertion::StatusRange { min, max, name } => {
+            let name = name
+                .clone()
+                .unwrap_or_else(|| format!("status_range_{min}_{max}"));
+            let Some(resp) = response else {
+                return fail(name, "no response");
+            };
+            if resp.status >= *min && resp.status <= *max {
+                pass(name)
+            } else {
+                fail(
+                    name,
+                    &format!("status {} not in {}..={}", resp.status, min, max),
+                )
+            }
+        }
+        Assertion::LatencyMsLte { value, name } => {
+            let name = name
+                .clone()
+                .unwrap_or_else(|| format!("latency_ms_lte_{value}"));
+            if latency_ms <= *value {
+                pass(name)
+            } else {
+                fail(name, &format!("latency {latency_ms}ms > {value}ms"))
+            }
+        }
+        Assertion::JsonpathExists { .. }
+        | Assertion::JsonpathEquals { .. }
+        | Assertion::JsonpathMatches { .. } => evaluate_jsonpath(assertion, response),
         Assertion::BodyContains { value, name } => {
             let name = name.clone().unwrap_or_else(|| "body_contains".into());
             let body = body_str(response);
@@ -193,10 +206,10 @@ fn evaluate_one(
         Assertion::BodyNotContains { value, name } => {
             let name = name.clone().unwrap_or_else(|| "body_not_contains".into());
             let body = body_str(response);
-            if !body.contains(value) {
-                pass(name)
-            } else {
+            if body.contains(value) {
                 fail(name, "body unexpectedly contains substring")
+            } else {
+                pass(name)
             }
         }
         Assertion::HeaderEquals { key, value, name } => {

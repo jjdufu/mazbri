@@ -406,7 +406,7 @@ fn spawn_background_workers(
 ) -> Arc<crate::route_reload::RouteReloadStatus> {
     spawn_supervised("callback-worker", {
         let cb_cfg = config.callback.to_runtime();
-        let worker = CallbackWorker::with_config(db.clone(), cb_cfg.clone());
+        let worker = CallbackWorker::with_config(db.clone(), &cb_cfg);
         async move {
             worker.run().await;
         }
@@ -654,7 +654,7 @@ async fn warmup_tarpc_clients(
 ) -> anyhow::Result<()> {
     warmup_tarpc_client_with_retry(
         tarpc_pool,
-        "ratelimit",
+        mazbri_core::ServiceName::Ratelimit.as_str(),
         services.ratelimit.url(),
         || async {
             let _ = tarpc_pool
@@ -664,28 +664,48 @@ async fn warmup_tarpc_clients(
         },
     )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "auth", services.auth.url(), || async {
-        let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Auth.as_str(),
+        services.auth.url(),
+        || async {
+            let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
+            Ok(())
+        },
+    )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "billing", services.billing.url(), || async {
-        let _ = tarpc_pool
-            .get_billing_client(services.billing.url())
-            .await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Billing.as_str(),
+        services.billing.url(),
+        || async {
+            let _ = tarpc_pool
+                .get_billing_client(services.billing.url())
+                .await?;
+            Ok(())
+        },
+    )
     .await?;
-    warmup_tarpc_client_with_retry(tarpc_pool, "cache", services.cache.url(), || async {
-        let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
-        Ok(())
-    })
+    warmup_tarpc_client_with_retry(
+        tarpc_pool,
+        mazbri_core::ServiceName::Cache.as_str(),
+        services.cache.url(),
+        || async {
+            let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
+            Ok(())
+        },
+    )
     .await?;
     if let Some(cbpro_url) = services.cbpro.as_ref() {
-        warmup_tarpc_client_with_retry(tarpc_pool, "cbpro", cbpro_url.url(), || async {
-            let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
-            Ok(())
-        })
+        warmup_tarpc_client_with_retry(
+            tarpc_pool,
+            mazbri_core::ServiceName::Cbpro.as_str(),
+            cbpro_url.url(),
+            || async {
+                let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
+                Ok(())
+            },
+        )
         .await?;
     }
     tracing::info!("Tarpc clients warmed up");
@@ -700,7 +720,6 @@ async fn warmup_route_upstream_clients(
             upstream_http2_pool,
             "route-upstream",
             &service_url,
-            None,
         )
         .await?;
     }
@@ -722,8 +741,12 @@ async fn warmup_bypass_client(
     };
     let host_port = bypass.url();
     let endpoint = format!("https://{host_port}");
-    warmup_upstream_http2_client_with_retry(upstream_http2_pool, "mazbri-bypass", &endpoint, None)
-        .await?;
+    warmup_upstream_http2_client_with_retry(
+        upstream_http2_pool,
+        mazbri_core::ServiceName::Bypass.as_str(),
+        &endpoint,
+    )
+    .await?;
     tracing::info!(endpoint = %endpoint, "Bypass HTTP/2 client warmed up");
     Ok(())
 }
@@ -773,16 +796,12 @@ async fn warmup_upstream_http2_client_with_retry(
     upstream_http2_pool: &UpstreamHttp2ClientPool,
     service_label: &str,
     addr: &str,
-    server_name: Option<&str>,
 ) -> anyhow::Result<()> {
     const MAX_RETRIES: u32 = 2;
     const INITIAL_DELAY_MS: u64 = 150;
-    let server_name_suffix = server_name
-        .map(|value| format!(" (server_name={value})"))
-        .unwrap_or_default();
     let mut attempt: u32 = 0;
     loop {
-        match upstream_http2_pool.warmup_endpoint(addr, server_name).await {
+        match upstream_http2_pool.warmup_endpoint(addr).await {
             Ok(()) => return Ok(()),
             Err(error) => {
                 if attempt < MAX_RETRIES && is_transient_warmup_error(&error) {
@@ -790,7 +809,6 @@ async fn warmup_upstream_http2_client_with_retry(
                     tracing::warn!(
                         service = % service_label,
                         addr = % addr,
-                        server_name = ? server_name,
                         attempt = attempt + 1,
                         max_retries = MAX_RETRIES,
                         delay_ms,
@@ -802,7 +820,7 @@ async fn warmup_upstream_http2_client_with_retry(
                     continue;
                 }
                 return Err(anyhow::anyhow!(
-                    "Upstream HTTP/2 client warmup failed for {service_label} at {addr}{server_name_suffix}: {error}"
+                    "Upstream HTTP/2 client warmup failed for {service_label} at {addr}: {error}"
                 ));
             }
         }

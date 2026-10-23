@@ -22,6 +22,7 @@ pub struct MfaSettingsResponse {
     pub updated_at: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateMfaSettingsRequest {
     pub mfa_enabled_globally: Option<bool>,
     pub mfa_required_for_all: Option<bool>,

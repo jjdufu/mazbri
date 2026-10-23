@@ -23,6 +23,7 @@ const fn default_page() -> u32 {
     1
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BillListQuery {
     pub tenant_id: Option<uuid::Uuid>,
     #[serde(default)]
@@ -37,6 +38,7 @@ pub struct BillListQuery {
     pub limit: u32,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AccountListQuery {
     pub tenant_id: Option<uuid::Uuid>,
     pub status: Option<String>,
@@ -45,6 +47,7 @@ pub struct AccountListQuery {
     pub limit: u32,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdjustmentRequest {
     pub tenant_id: Uuid,
     pub amount: Decimal,
@@ -52,6 +55,7 @@ pub struct AdjustmentRequest {
     pub description: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GenerateBillRequest {
     #[serde(default)]
     pub bill_kind: String,
@@ -101,6 +105,7 @@ pub async fn get_bill(
     Ok(ApiResponse::ok(result).into_response())
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BillStatusUpdateRequest {
     pub status: String,
 }
@@ -406,13 +411,12 @@ pub async fn generate_bill(
     };
     let mut warnings: Vec<String> = Vec::new();
     let recon_runtime = state.billing_reconciliation_settings.get().await;
-    if recon_runtime.warn_on_open_discrepancies_before_bill {
-        if let Ok(Some(msg)) =
+    if recon_runtime.warn_on_open_discrepancies_before_bill
+        && let Ok(Some(msg)) =
             svc::open_discrepancy_warning_for_period(&state.billing_db, period_start, period_end)
                 .await
-        {
-            warnings.push(msg);
-        }
+    {
+        warnings.push(msg);
     }
 
     state.audit.log(create_audit_log(
@@ -432,6 +436,7 @@ pub async fn generate_bill(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReconciliationAuditRequest {
     pub reconciliation_date: chrono::NaiveDate,
     #[serde(default)]
@@ -482,7 +487,6 @@ pub async fn run_reconciliation_audit(
     let options = svc::ReconciliationAuditOptions {
         loss_ratio_threshold: threshold,
         include_amount_recon: recon_cfg.sources.include_amount_recon,
-        include_raw_log_source: recon_cfg.sources.include_raw_log_source,
     };
 
     let result = svc::execute_reconciliation_audit(
@@ -506,10 +510,10 @@ pub async fn run_reconciliation_audit(
                 "reconciliation_date": result.reconciliation_date.to_string(),
                 "scope_type": result.scope_type,
                 "scope_id": result.scope_id,
-                "oltp_call_count": result.oltp_call_count,
-                "olap_preagg_call_count": result.olap_preagg_call_count,
-                "raw_log_call_count": result.raw_log_call_count,
-                "raw_log_source": result.raw_log_source,
+                "billable_call_count": result.billable_call_count,
+                "upstream_preagg_call_count": result.upstream_preagg_call_count,
+                "gateway_call_count": result.gateway_call_count,
+                "error": result.error,
                 "loss_ratio": result.loss_ratio.to_string(),
                 "loss_ratio_threshold": result.loss_ratio_threshold.to_string(),
                 "status": result.status,
@@ -522,6 +526,7 @@ pub async fn run_reconciliation_audit(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReconciliationDiscrepancyListQuery {
     pub from: Option<chrono::NaiveDate>,
     pub to: Option<chrono::NaiveDate>,
@@ -536,7 +541,7 @@ pub struct ReconciliationDiscrepancyListQuery {
     pub filters: Option<String>,
     #[serde(default = "default_page")]
     pub page: u32,
-    #[serde(default = "default_limit", alias = "limit")]
+    #[serde(default = "default_limit")]
     pub page_size: u32,
 }
 
@@ -579,6 +584,7 @@ pub async fn list_reconciliation_discrepancies(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateReconciliationDiscrepancyRequest {
     pub status: String,
     #[serde(default)]
@@ -740,6 +746,7 @@ pub async fn update_reconciliation_settings(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateBillAdjustmentRequest {
     pub adjustment_type: String,
     pub amount: Decimal,
@@ -823,13 +830,14 @@ pub async fn list_bill_adjustments(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GlobalBillAdjustmentListQuery {
     pub bill_id: Option<uuid::Uuid>,
     pub tenant_id: Option<uuid::Uuid>,
     pub status: Option<String>,
     #[serde(default = "default_page")]
     pub page: u32,
-    #[serde(default = "default_limit", alias = "limit")]
+    #[serde(default = "default_limit")]
     pub page_size: u32,
 }
 

@@ -27,7 +27,7 @@ macro_rules! impl_get_client {
                 self.$clients_field.remove(addr);
             }
             info!(addr = %addr, "Creating new tarpc {} client (mTLS)", $service_name);
-            let target = mazbri_tls::resolve_connect_target(addr, None)
+            let target = mazbri_tls::resolve_connect_target(addr)
                 .await
                 .map_err(|e| CoreError::Config(e.to_string()))?;
             let transport = mazbri_tls::tls_connect_with_server_name(
@@ -143,7 +143,7 @@ impl TarpcClientPool {
             addr = % addr, slot,
             "Creating new tarpc HttpUpstream client (Bincode over mTLS)"
         );
-        let target = mazbri_tls::resolve_connect_target(addr, None)
+        let target = mazbri_tls::resolve_connect_target(addr)
             .await
             .map_err(|e| CoreError::Config(e.to_string()))?;
         let client = HttpUpstreamServiceClient::new(

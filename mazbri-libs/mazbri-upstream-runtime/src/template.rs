@@ -1,5 +1,6 @@
-//! Template rendering helpers shared by auth_flow and transform.
+//! Template rendering helpers used by `auth_flow` and adapters.
 
+#[must_use]
 pub fn extract_by_path(value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
     let path = path.trim();
     if path == "$" || path.is_empty() {
@@ -27,6 +28,7 @@ pub fn extract_by_path(value: &serde_json::Value, path: &str) -> Option<serde_js
     Some(current.clone())
 }
 
+#[must_use]
 pub fn render_body_template(template: &str, body_json: &str, path: &str) -> String {
     let mut rendered = template.to_string();
     rendered = rendered.replace("{{request.body}}", body_json);
@@ -36,6 +38,7 @@ pub fn render_body_template(template: &str, body_json: &str, path: &str) -> Stri
     rendered
 }
 
+#[must_use]
 pub fn render_response_template(template: &str, body_json: &str, status: u32) -> String {
     let mut rendered = template.to_string();
     rendered = rendered.replace("{{response.body}}", body_json);
@@ -46,6 +49,7 @@ pub fn render_response_template(template: &str, body_json: &str, status: u32) ->
     rendered
 }
 
+#[must_use]
 pub fn is_identity_response_template(template: &str) -> bool {
     matches!(template.trim(), "{{response.body}}" | "{{ response.body }}")
 }

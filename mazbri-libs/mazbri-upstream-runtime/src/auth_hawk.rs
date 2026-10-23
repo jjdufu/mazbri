@@ -1,4 +1,4 @@
-//! Hawk (MAC over method + url + optional body) — signed on the assembled HttpCall.
+//! Hawk (MAC over method + url + optional body) — signed on the assembled `HttpCall`.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -48,9 +48,7 @@ pub fn sign_hawk(
         r
     };
     let ts = now.timestamp();
-    let nonce = nonce_override
-        .map(str::to_string)
-        .unwrap_or_else(|| nonce(16));
+    let nonce = nonce_override.map_or_else(|| nonce(16), str::to_string);
     let ext = spec.ext.as_deref().unwrap_or("");
     let payload_hash = payload_hash(call);
     let normalized = format!(

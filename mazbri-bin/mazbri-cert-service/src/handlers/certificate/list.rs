@@ -29,6 +29,7 @@ pub struct PaginationInfo {
     pub total: i64,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ListCertificatesQuery {
     #[serde(default)]
     pub include_revoked: bool,

@@ -42,22 +42,18 @@ pub async fn disable(
         );
     }
     let mut verified = false;
-    if let Some(encrypted_secret) = &state.mfa_secret {
-        if let Ok(mfa_service) = mfa_cache.get().await {
-            if let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret) {
-                if mfa_service.verify_totp(&secret, verification_code) {
-                    verified = true;
-                }
-            }
-        }
+    if let Some(encrypted_secret) = &state.mfa_secret
+        && let Ok(mfa_service) = mfa_cache.get().await
+        && let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret)
+        && mfa_service.verify_totp(&secret, verification_code)
+    {
+        verified = true;
     }
-    if !verified {
-        if let Some(hash) = state.password_hash {
-            if mazbri_auth::constant_time_argon2_verify(verification_code.as_bytes(), &hash).is_ok()
-            {
-                verified = true;
-            }
-        }
+    if !verified
+        && let Some(hash) = state.password_hash
+        && mazbri_auth::constant_time_argon2_verify(verification_code.as_bytes(), &hash).is_ok()
+    {
+        verified = true;
     }
     if !verified {
         warn!("Invalid verification code for MFA disable: {}", username);
@@ -115,12 +111,11 @@ fn match_mfa_code(
     totp_code: Option<&str>,
     backup_code: Option<&str>,
 ) -> Option<MfaCodeMatch> {
-    if let (Some(code), Some(encrypted_secret)) = (totp_code, &state.mfa_secret) {
-        if let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret) {
-            if mfa_service.verify_totp(&secret, code) {
-                return Some(MfaCodeMatch::Totp);
-            }
-        }
+    if let (Some(code), Some(encrypted_secret)) = (totp_code, &state.mfa_secret)
+        && let Ok(secret) = mfa_service.decrypt_secret(encrypted_secret)
+        && mfa_service.verify_totp(&secret, code)
+    {
+        return Some(MfaCodeMatch::Totp);
     }
     let code = backup_code?;
     let hashed_codes: Vec<String> = state

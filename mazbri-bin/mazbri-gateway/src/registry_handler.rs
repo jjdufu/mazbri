@@ -59,5 +59,7 @@ impl ConfigHandler for GatewayConfigHandler {
     }
 }
 pub fn create_gateway_config_handler() -> std::sync::Arc<GatewayConfigHandler> {
-    std::sync::Arc::new(GatewayConfigHandler::new("gateway"))
+    std::sync::Arc::new(GatewayConfigHandler::new(
+        mazbri_core::ServiceName::Gateway.as_str(),
+    ))
 }

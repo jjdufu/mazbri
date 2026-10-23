@@ -1,15 +1,21 @@
 //! Secret masking for run traces / API responses.
+use std::hash::BuildHasher;
 
 use std::collections::HashMap;
 
 const MASK: &str = "••••••••";
 
+#[must_use]
 pub fn mask_secret(_value: &str) -> String {
     MASK.to_string()
 }
 
 /// Mask known secret header names.
-pub fn mask_headers(headers: &HashMap<String, String>, enabled: bool) -> HashMap<String, String> {
+#[must_use]
+pub fn mask_headers<S: BuildHasher + Clone + Default>(
+    headers: &HashMap<String, String, S>,
+    enabled: bool,
+) -> HashMap<String, String, S> {
     if !enabled {
         return headers.clone();
     }
@@ -29,7 +35,11 @@ pub fn mask_headers(headers: &HashMap<String, String>, enabled: bool) -> HashMap
         .collect()
 }
 
-pub fn mask_string_map(map: &HashMap<String, String>, enabled: bool) -> HashMap<String, String> {
+#[must_use]
+pub fn mask_string_map<S: BuildHasher + Clone + Default>(
+    map: &HashMap<String, String, S>,
+    enabled: bool,
+) -> HashMap<String, String, S> {
     if !enabled {
         return map.clone();
     }
@@ -49,6 +59,7 @@ pub fn mask_string_map(map: &HashMap<String, String>, enabled: bool) -> HashMap<
         .collect()
 }
 
+#[must_use]
 pub fn redact_body_preview(body: &str, max_bytes: usize, mask: bool) -> String {
     // Postgres JSON/JSONB rejects \u0000. gRPC/protobuf frames include NULs.
     let body = body.replace('\0', "");
@@ -77,15 +88,13 @@ pub fn redact_body_preview(body: &str, max_bytes: usize, mask: bool) -> String {
         "refresh_token",
     ] {
         // crude replace of "field":"value"
-        if let Ok(re) = regex_lite_replace(&out, field) {
-            out = re;
-        }
+        out = regex_lite_replace(&out, field);
     }
     out
 }
 
 /// Minimal field masker without pulling regex crate.
-fn regex_lite_replace(input: &str, field: &str) -> Result<String, ()> {
+fn regex_lite_replace(input: &str, field: &str) -> String {
     let patterns = [format!(r#""{field}":""#), format!(r#""{field}": ""#)];
     let mut result = input.to_string();
     for p in patterns {
@@ -101,7 +110,7 @@ fn regex_lite_replace(input: &str, field: &str) -> Result<String, ()> {
             }
         }
     }
-    Ok(result)
+    result
 }
 
 #[cfg(test)]

@@ -188,11 +188,11 @@ impl MfaKeyManager {
     pub async fn get_encryption_key(&mut self) -> Result<Zeroizing<[u8; 32]>, MfaError> {
         let material = self.fetch_key_material().await?;
         let current_hash = Self::material_hash(&material);
-        if let (Some(cached), Some(cached_hash)) = (&self.cached_key, &self.cached_hash) {
-            if cached_hash == &current_hash {
-                debug!("Using cached MFA encryption key");
-                return Ok(Zeroizing::new(**cached));
-            }
+        if let (Some(cached), Some(cached_hash)) = (&self.cached_key, &self.cached_hash)
+            && cached_hash == &current_hash
+        {
+            debug!("Using cached MFA encryption key");
+            return Ok(Zeroizing::new(**cached));
         }
         info!("Deriving new MFA encryption key from database key material");
         let key = Self::derive_key(&material)?;
@@ -350,11 +350,11 @@ impl MfaService {
                 "TOTP window check: offset={}, step={}, expected=***, input=***",
                 offset, check_timestamp
             );
-            if let Ok(expected_num) = expected_code.parse::<u32>() {
-                if expected_num == code_num {
-                    info!("TOTP verification successful with period={}", period);
-                    return true;
-                }
+            if let Ok(expected_num) = expected_code.parse::<u32>()
+                && expected_num == code_num
+            {
+                info!("TOTP verification successful with period={}", period);
+                return true;
             }
         }
         warn!(
@@ -400,13 +400,12 @@ impl MfaService {
     ) -> Result<Option<usize>, MfaError> {
         let mut found_idx: Option<usize> = None;
         for (idx, hashed) in hashed_codes.iter().enumerate() {
-            if let Ok(parsed) = argon2::PasswordHash::new(hashed) {
-                if argon2::Argon2::default()
+            if let Ok(parsed) = argon2::PasswordHash::new(hashed)
+                && argon2::Argon2::default()
                     .verify_password(code.as_bytes(), &parsed)
                     .is_ok()
-                {
-                    found_idx = Some(idx);
-                }
+            {
+                found_idx = Some(idx);
             }
         }
         Ok(found_idx)

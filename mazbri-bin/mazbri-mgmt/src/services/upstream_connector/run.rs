@@ -29,12 +29,12 @@ pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
         ssrf::validate_public_http_url(&row.upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-        if let Some(ref auth) = cfg.auth_flow {
-            if auth.enabled {
-                ssrf::validate_public_http_url(&auth.token_url)
-                    .await
-                    .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
-            }
+        if let Some(ref auth) = cfg.auth_flow
+            && auth.enabled
+        {
+            ssrf::validate_public_http_url(&auth.token_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
         }
     } else {
         warnings.push("microservice: 跳过 HTTP SSRF 校验".into());
@@ -195,7 +195,7 @@ pub(super) async fn probe_microservice_draft(
     } = params;
     let start = std::time::Instant::now();
 
-    let cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     let (contract_ok, validate_stage) = probe_contract_stage(&cfg);
     let (connect_ok, connect_stage) =
@@ -462,7 +462,7 @@ async fn prepare_run_input(
     default_timeout_ms: u64,
     max_body_bytes: usize,
 ) -> Result<PreparedRun, ApiError> {
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let mut cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     cfg = cfg
         .decrypt_credentials_for_runtime()
@@ -472,18 +472,8 @@ async fn prepare_run_input(
     // saved draft via the single builder (Tab fields + workbench_env).
     let env = parse_workbench_env(&row.workbench_env);
     let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
-    let path_prefix = ep
-        .and_then(|e| e.get("path_prefix").and_then(|v| v.as_str()))
-        .or_else(|| ep.and_then(|e| e.get("path").and_then(|v| v.as_str())))
-        .unwrap_or("/");
     let empty_ep = serde_json::json!({});
-    let built = build_workbench_spec(
-        ep.unwrap_or(&empty_ep),
-        &env,
-        Some(&cfg),
-        path_prefix,
-        &row.upstream_url,
-    )?;
+    let built = build_workbench_spec(ep.unwrap_or(&empty_ep), &env, Some(&cfg), &row.upstream_url)?;
     let payload = built.payload.clone();
     let payload_str = payload.to_string();
     if payload_str.len() > max_body_bytes {
@@ -528,8 +518,6 @@ async fn prepare_run_input(
         payload,
         spec,
         config: Some(Arc::new(cfg)),
-        fallback_base_url: built.upstream_url.clone(),
-        path_prefix: path_prefix.to_string(),
         timeout: Duration::from_millis(timeout_ms),
         mode,
         options: ExecuteOptions {

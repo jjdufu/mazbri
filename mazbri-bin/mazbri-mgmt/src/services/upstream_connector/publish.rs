@@ -362,18 +362,15 @@ async fn publish_channel(
         ep.unwrap_or(&empty_ep),
         ctx.env,
         Some(ctx.cfg),
-        path_prefix,
         ctx.upstream_url,
     )?;
     let egress = built.spec;
     if ctx.cfg.is_transparent() {
         mazbri_core::validate_egress_spec(&egress)
             .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-        if let Some(ref url) = egress.base_url {
-            ssrf::validate_public_http_url(url)
-                .await
-                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-        }
+        ssrf::validate_public_http_url(&egress.base_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }
     let channel_config = channel_config_with_egress(&serde_json::json!({}), &egress)?;
 
@@ -502,23 +499,23 @@ async fn publish_route(
         binding_ids.push(bid);
     }
 
-    if let Some(ref auth) = req.authorization {
-        if auth.enabled {
-            for tid in &auth.tenant_ids {
-                sqlx::query(
-                    r"
+    if let Some(ref auth) = req.authorization
+        && auth.enabled
+    {
+        for tid in &auth.tenant_ids {
+            sqlx::query(
+                r"
                     INSERT INTO tenant_products (tenant_id, product_id, enabled, custom_config)
                     VALUES ($1,$2,true,'{}'::jsonb)
                     ON CONFLICT (tenant_id, product_id)
                     DO UPDATE SET enabled = true, updated_at = NOW()
                     ",
-                )
-                .bind(tid)
-                .bind(product_uuid)
-                .execute(&mut **tx)
-                .await
-                .map_err(|e| ApiError::internal(format!("grant tenant: {e}")))?;
-            }
+            )
+            .bind(tid)
+            .bind(product_uuid)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| ApiError::internal(format!("grant tenant: {e}")))?;
         }
     }
     Ok((rid, binding_ids))
@@ -696,7 +693,7 @@ async fn prepare_publish(
 
     check_publish_gates(&eval.items, req, is_admin)?;
 
-    // Credentials stay in encrypted slots; workbench {{vars}} in auth/transform
+    // Credentials stay in encrypted slots; workbench {{vars}} in auth_flow
     // become literals. workbench_env is never copied into suppliers.config.
     let config_value = publish_cfg
         .to_json_value()

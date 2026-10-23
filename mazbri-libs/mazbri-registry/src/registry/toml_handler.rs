@@ -25,6 +25,9 @@ impl<T> TomlConfigHandler<T> {
             _service_name: service_name.into(),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn get_config(&self) -> RegistryResult<T>
     where
         T: Clone,
@@ -69,7 +72,7 @@ impl<T: DeserializeOwned + Clone + ValidateConfig + Send + Sync + 'static> Confi
         self.current_version
             .store(config.version, std::sync::atomic::Ordering::Relaxed);
         let mut hash_guard = self.current_content_hash.write();
-        *hash_guard = config.content_hash.clone();
+        hash_guard.clone_from(&config.content_hash);
         Ok(ConfigApplyResult {
             success: true,
             version: config.version,
@@ -96,7 +99,7 @@ impl<T: DeserializeOwned + Clone + ValidateConfig + Send + Sync + 'static> Confi
             std::sync::atomic::Ordering::Relaxed,
         );
         let mut hash_guard = self.current_content_hash.write();
-        *hash_guard = previous_config.content_hash.clone();
+        hash_guard.clone_from(&previous_config.content_hash);
         Ok(ConfigApplyResult {
             success: true,
             version: previous_config.version,

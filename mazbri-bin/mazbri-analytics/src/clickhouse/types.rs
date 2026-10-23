@@ -31,7 +31,6 @@ pub struct RequestLogRow {
     /// DateTime64(9) nanoseconds
     pub timestamp: i64,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     pub event_target: String,
@@ -81,7 +80,6 @@ impl From<RequestLogRow> for RequestLogEntry {
         Self {
             timestamp: datetime64_ns_to_utc(row.timestamp),
             service: row.service,
-            env: row.env,
             host: row.host,
             instance_id: row.instance_id,
             event_target: row.event_target,

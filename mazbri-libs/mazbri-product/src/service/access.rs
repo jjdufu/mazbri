@@ -1,25 +1,31 @@
-use super::*;
+use super::{
+    Duration, PermissionEntry, ProductService, Result, Row, Uuid, debug, info,
+    tenant_product_detail_from_row,
+};
 
 impl ProductService {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check_tenant_access(&self, tenant_id: Uuid, product_id: &str) -> Result<bool> {
         if let Ok(Some(entry)) = self.permission_cache.get(&tenant_id, product_id).await {
             debug!("Permission cache hit for: {}:{}", tenant_id, product_id);
             return Ok(entry.enabled);
         }
         let row = sqlx::query(
-            r#"
+            r"
             SELECT tp.enabled
             FROM tenant_products tp
             JOIN products p ON tp.product_id = p.id
             WHERE tp.tenant_id = $1 AND p.product_id = $2
                 AND p.enabled = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(product_id)
         .fetch_optional(&self.db)
         .await?;
-        let result = row.map(|r| r.get::<bool, _>("enabled")).unwrap_or(false);
+        let result = row.is_some_and(|r| r.get::<bool, _>("enabled"));
         let entry = PermissionEntry { enabled: result };
         let _ = self
             .permission_cache
@@ -49,11 +55,7 @@ impl ProductService {
     pub(crate) fn tenant_product_detail_cache_key(tenant_id: Uuid, product_id: &str) -> String {
         format!("{tenant_id}|{product_id}")
     }
-    pub(crate) async fn invalidate_tenant_product_detail_cache(
-        &self,
-        tenant_id: Uuid,
-        product_id: &str,
-    ) {
+    pub(crate) fn invalidate_tenant_product_detail_cache(&self, tenant_id: Uuid, product_id: &str) {
         let cache_key = Self::tenant_product_detail_cache_key(tenant_id, product_id);
         self.tenant_product_detail_cache.invalidate(&cache_key);
         debug!(
@@ -61,9 +63,12 @@ impl ProductService {
             tenant_id, product_id
         );
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn warm_tenant_product_detail_cache(&self) -> Result<usize> {
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 tp.id,
                 tp.tenant_id,
@@ -80,7 +85,6 @@ impl ProductService {
                 tp.custom_config,
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
-                COALESCE(tp.custom_config->>'billing_type', 'call') AS billing_type,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
@@ -88,7 +92,7 @@ impl ProductService {
             JOIN products p ON tp.product_id = p.id
             WHERE tp.enabled = true
               AND p.enabled = true
-            "#,
+            ",
         )
         .fetch_all(&self.db)
         .await?;

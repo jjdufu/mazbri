@@ -5,16 +5,22 @@ pub struct MetricsBuilder {
     prefix: Option<String>,
 }
 impl MetricsBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self { prefix: None }
     }
+    #[must_use]
     pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
+    #[must_use]
     pub fn counter(&self, name: &str, help: &str, labels: &[&str]) -> CounterVec {
         let full_name = self.full_name(name);
-        let fallback_name = format!("{}_fallback", full_name);
+        let fallback_name = format!("{full_name}_fallback");
         CounterVec::new(Opts::new(&full_name, help), labels).unwrap_or_else(|e| {
             if !FALLBACK_WARNED.load(Ordering::Relaxed) {
                 tracing::warn!(
@@ -27,9 +33,13 @@ impl MetricsBuilder {
                 .expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
+    #[must_use]
     pub fn gauge_vec(&self, name: &str, help: &str, labels: &[&str]) -> IntGaugeVec {
         let full_name = self.full_name(name);
-        let fallback_name = format!("{}_fallback", full_name);
+        let fallback_name = format!("{full_name}_fallback");
         IntGaugeVec::new(Opts::new(&full_name, help), labels).unwrap_or_else(|e| {
             if !FALLBACK_WARNED.load(Ordering::Relaxed) {
                 tracing::warn!(
@@ -42,9 +52,13 @@ impl MetricsBuilder {
                 .expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
+    #[must_use]
     pub fn gauge(&self, name: &str, help: &str) -> IntGauge {
         let full_name = self.full_name(name);
-        let fallback_name = format!("{}_fallback", full_name);
+        let fallback_name = format!("{full_name}_fallback");
         IntGauge::new(&full_name, help).unwrap_or_else(|e| {
             if !FALLBACK_WARNED.load(Ordering::Relaxed) {
                 tracing::warn!(
@@ -56,6 +70,10 @@ impl MetricsBuilder {
             IntGauge::new(&fallback_name, help).expect("Fallback metric creation should never fail")
         })
     }
+    /// # Panics
+    ///
+    /// 内部不变量被破坏时 panic（正常输入不会触发）。
+    #[must_use]
     pub fn histogram(
         &self,
         name: &str,
@@ -64,7 +82,7 @@ impl MetricsBuilder {
         labels: &[&str],
     ) -> HistogramVec {
         let full_name = self.full_name(name);
-        let fallback_name = format!("{}_fallback", full_name);
+        let fallback_name = format!("{full_name}_fallback");
         HistogramVec::new(
             HistogramOpts::new(&full_name, help).buckets(buckets),
             labels,
@@ -83,7 +101,7 @@ impl MetricsBuilder {
     }
     fn full_name(&self, name: &str) -> String {
         match &self.prefix {
-            Some(p) => format!("{}_{}", p, name),
+            Some(p) => format!("{p}_{name}"),
             None => name.to_string(),
         }
     }

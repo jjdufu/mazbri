@@ -35,7 +35,7 @@
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.status')">
           <ElSwitch
-            :model-value="tenant?.status === 'active'"
+            :model-value="tenant?.enabled ?? false"
             :loading="statusLoading"
             :disabled="!userStore.canWriteBusiness"
             :active-text="$t('tenant.detail.status.active')"
@@ -97,9 +97,8 @@ import { $t } from "@/locales";
 import type {
   Tenant,
   UpdateTenantRequest,
-  TenantStatus,
 } from "@/types/api/tenant";
-import { updateTenant, setTenantStatus } from "@/api/tenant";
+import { updateTenant, setTenantEnabled } from "@/api/tenant";
 import EditDialog from "@/components/common/EditDialog.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import GateSummaryCard from "./modules/gate-summary-card.vue";
@@ -193,8 +192,9 @@ const handleStatusChange = async (active: string | number | boolean) => {
       },
     );
     await runWithLoading(statusLoading, async () => {
-      const status: TenantStatus = boolActive ? "active" : "suspended";
-      await setTenantStatus(props.tenant!.tenant_code, { status });
+      await setTenantEnabled(props.tenant!.tenant_code, {
+        enabled: boolActive,
+      });
       ElMessage.success(
         boolActive
           ? $t("common.feedback.enabled")

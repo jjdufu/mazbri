@@ -1,5 +1,5 @@
 use crate::{
-    calculator::{BillingCalculator, BillingModel, CalculationResult, RateConfig},
+    calculator::{BillingCalculator, CalculationResult, RateConfig},
     error::{BillingError, BillingResult},
     metrics::{BILLING_BALANCE_QUERIES_TOTAL, BILLING_RECHARGES_TOTAL, DeductionRecorder},
     repository::{BillingRepository, DeductAndRecordResult, PgBillingRepository},
@@ -62,7 +62,7 @@ pub struct BillingService {
     pool: Option<Arc<PgPool>>,
     config: BillingServiceConfig,
     account_id_cache: Cache<Uuid, Option<Uuid>>,
-    rate_config_cache: Cache<String, (RateConfig, BillingModel)>,
+    rate_config_cache: Cache<String, RateConfig>,
 }
 impl std::fmt::Debug for BillingService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -108,10 +108,12 @@ impl BillingService {
                 .build(),
         }
     }
+    #[must_use]
     pub fn with_pgpool(pool: Arc<PgPool>, config: BillingServiceConfig) -> Self {
         Self::with_pgpools(Arc::clone(&pool), pool, config)
     }
     /// Dual-pool constructor: `read_pool` serves balance precheck; `write_pool` serves charges.
+    #[must_use]
     pub fn with_pgpools(
         write_pool: Arc<PgPool>,
         read_pool: Arc<PgPool>,
@@ -134,6 +136,7 @@ impl BillingService {
                 .build(),
         }
     }
+    #[must_use]
     pub fn db(&self) -> Option<&PgPool> {
         self.pool.as_deref()
     }
@@ -145,18 +148,27 @@ impl BillingService {
         self.account_id_cache.insert(tenant_id, account_id);
         account_id
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn record_usage(&self, record: UsageRecord) -> BillingResult<i64> {
         self.repo
             .record_usage(&record)
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn enqueue_usage_outbox(&self, event: UsageOutboxEvent) -> BillingResult<()> {
         self.repo
             .insert_usage_outbox(&event)
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check_balance(
         &self,
         tenant_id: Uuid,
@@ -193,6 +205,9 @@ impl BillingService {
             .inc();
         Ok(sufficient)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_balance(&self, tenant_id: Uuid, amount: Decimal) -> BillingResult<Decimal> {
         let recorder = DeductionRecorder::new(amount);
         match self
@@ -223,6 +238,9 @@ impl BillingService {
             }
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_balance(&self, tenant_id: Uuid) -> BillingResult<AccountBalance> {
         let row = match self
             .repo
@@ -251,6 +269,9 @@ impl BillingService {
         };
         Ok(row.into())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn add_funds(
         &self,
         tenant_id: Uuid,
@@ -275,6 +296,9 @@ impl BillingService {
             Err(error) => Err(error),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bill(
         &self,
         tenant_id: Uuid,
@@ -285,6 +309,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn list_bills(
         &self,
         tenant_id: Uuid,
@@ -298,6 +325,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_usage_summary(
         &self,
         tenant_id: Uuid,
@@ -309,6 +339,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bill_items(
         &self,
         tenant_id: Uuid,
@@ -324,6 +357,9 @@ impl BillingService {
                 other => BillingError::from(other),
             })
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_usage_breakdown(
         &self,
         tenant_id: Uuid,
@@ -335,6 +371,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn generate_bill(
         &self,
         tenant_id: Uuid,
@@ -346,6 +385,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_and_record(
         &self,
         tenant_id: Uuid,
@@ -376,6 +418,10 @@ impl BillingService {
         }
     }
     /// Batch charge for a single tenant (one balance UPDATE for the sum).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn deduct_and_record_batch(
         &self,
         tenant_id: Uuid,
@@ -400,7 +446,7 @@ impl BillingService {
                     .inc();
                 crate::metrics::BILLING_CHARGE_BATCH_ITEMS
                     .with_label_values(&["success"])
-                    .inc_by(items.len() as f64);
+                    .inc_by(mazbri_core::num::usize_to_f64(items.len()));
                 Ok(result)
             }
             Err(error) if error.to_string().contains("Insufficient balance") => {
@@ -419,6 +465,9 @@ impl BillingService {
             }
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_adjustment(
         &self,
         tenant_id: Uuid,
@@ -431,6 +480,9 @@ impl BillingService {
             .await
             .map_err(BillingError::from)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_calculator(
         &self,
         tenant_id: Uuid,
@@ -439,19 +491,19 @@ impl BillingService {
         let Some(_) = self.get_account_id(tenant_id).await else {
             return Err(BillingError::AccountNotFound(tenant_id));
         };
-        let (rate_config, billing_model) = if let Some(pid) = product_id {
+        let rate_config = if let Some(pid) = product_id {
             self.load_tenant_rate_config(tenant_id, pid).await?
         } else {
-            (RateConfig::default(), BillingModel::default())
+            RateConfig::default()
         };
-        Ok(BillingCalculator::new(rate_config, billing_model))
+        Ok(BillingCalculator::new(rate_config))
     }
     async fn load_tenant_rate_config(
         &self,
         tenant_id: Uuid,
         product_id: &str,
-    ) -> BillingResult<(RateConfig, BillingModel)> {
-        let cache_key = format!("{}:{}", tenant_id, product_id);
+    ) -> BillingResult<RateConfig> {
+        let cache_key = format!("{tenant_id}:{product_id}");
         if let Some(cached) = self.rate_config_cache.get(&cache_key) {
             return Ok(cached);
         }
@@ -461,39 +513,33 @@ impl BillingService {
             ))
         })?;
         let row = sqlx::query(
-            r#"SELECT COALESCE(tp.custom_config->>'unit_price', '0.001') as unit_price,
-                      COALESCE(tp.custom_config->>'billing_type', 'call') as billing_type
+            r"SELECT COALESCE(tp.custom_config->>'unit_price', '0.001') as unit_price
                FROM tenant_products tp
                JOIN products p ON tp.product_id = p.id
-               WHERE tp.tenant_id = $1 AND p.product_id = $2 AND tp.enabled = true"#,
+               WHERE tp.tenant_id = $1 AND p.product_id = $2 AND tp.enabled = true",
         )
         .bind(tenant_id)
         .bind(product_id)
         .fetch_optional(pool)
         .await
         .map_err(BillingError::from)?;
-        match row {
-            Some(row) => {
-                let unit_price: String = row.get("unit_price");
-                let billing_type: String = row.get("billing_type");
-                let rate_config = RateConfig {
-                    per_call_rate: unit_price.parse::<Decimal>().unwrap_or_else(|_| {
-                        Decimal::from_str_exact(RateConfig::DEFAULT_PER_CALL_RATE)
-                            .expect("default per-call rate constant is valid")
-                    }),
-                    tier_name: "custom".to_string(),
-                };
-                // Non-call legacy values are coerced to per-call inside from_billing_type.
-                let billing_model = BillingModel::from_billing_type(&billing_type);
-                let cached = (rate_config, billing_model);
-                self.rate_config_cache.insert(cache_key, cached.clone());
-                Ok(cached)
-            }
-            None => {
-                let cached = (RateConfig::default(), BillingModel::default());
-                self.rate_config_cache.insert(cache_key, cached.clone());
-                Ok(cached)
-            }
+        if let Some(row) = row {
+            let unit_price: String = row.get("unit_price");
+            let rate_config = RateConfig {
+                per_call_rate: unit_price.parse::<Decimal>().map_err(|e| {
+                    BillingError::InvalidConfig(format!(
+                        "tenant product unit_price '{unit_price}' is not a decimal: {e}"
+                    ))
+                })?,
+                tier_name: "custom".to_string(),
+            };
+            let cached = rate_config;
+            self.rate_config_cache.insert(cache_key, cached.clone());
+            Ok(cached)
+        } else {
+            let cached = RateConfig::default();
+            self.rate_config_cache.insert(cache_key, cached.clone());
+            Ok(cached)
         }
     }
 }
@@ -524,7 +570,6 @@ pub struct UsageSummaryInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct BillLineItem {
     pub api_endpoint: String,
-    pub billing_type: String,
     pub call_count: i64,
     pub total_units: i64,
     pub unit_price: Decimal,

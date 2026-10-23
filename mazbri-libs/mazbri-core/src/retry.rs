@@ -26,15 +26,12 @@ pub trait IsTransient {
 }
 impl IsTransient for tarpc::client::RpcError {
     fn is_transient(&self) -> bool {
-        match self {
-            tarpc::client::RpcError::Shutdown => true,
-            tarpc::client::RpcError::Send(_) => true,
-            tarpc::client::RpcError::Channel(_) => true,
-            tarpc::client::RpcError::DeadlineExceeded => true,
-            tarpc::client::RpcError::Server(_) => false,
-        }
+        !matches!(self, tarpc::client::RpcError::Server(_))
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn retry_rpc<F, Fut, T, E>(config: &RetryConfig, f: F) -> Result<T, E>
 where
     F: Fn() -> Fut,
@@ -47,7 +44,7 @@ where
             Ok(val) => return Ok(val),
             Err(e) => {
                 if e.is_transient() && attempt < config.max_retries {
-                    let cap = config.initial_delay_ms * (config.multiplier as u64).pow(attempt);
+                    let cap = config.initial_delay_ms * u64::from(config.multiplier).pow(attempt);
                     let delay_ms = rand::rng().random_range(0..=cap);
                     warn!(
                         attempt = attempt + 1, max_retries = config.max_retries,

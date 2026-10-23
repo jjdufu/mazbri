@@ -26,3 +26,6 @@ mazbri-rpc = { workspace = true }
 sha2 = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+
+[lints]
+workspace = true

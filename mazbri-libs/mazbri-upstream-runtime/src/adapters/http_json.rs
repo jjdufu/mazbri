@@ -1,20 +1,21 @@
 use crate::http_call::{HttpCall, append_query, join_url};
 use crate::types::{BodyKind, ExecuteError};
+use mazbri_core::BodyEncoding;
 use serde_json::Value;
 
 use super::{AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, parse_json_body};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
     let spec = &ctx.input.spec;
-    let method = spec.request_method();
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let method = spec.request.method.as_str();
+    let path = spec.request.path.as_str();
     let query = super::merge_request_query(ctx.auth, spec);
     let url = append_query(&join_url(ctx.base_url, path), &query);
-    let encoding = super::request_body_encoding(spec);
+    let encoding = spec.request.body_encoding;
     let mut headers = super::merge_request_headers(ctx.auth, spec);
     let body = outbound_body(method, encoding, &ctx.input.payload)?;
     if body.is_some() {
-        if encoding.is_some_and(|e| e.eq_ignore_ascii_case("form")) {
+        if encoding == BodyEncoding::Form {
             super::force_urlencoded_content_type(&mut headers);
         } else {
             super::apply_json_content_type_override(&mut headers, spec);
@@ -52,17 +53,16 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 /// GET/HEAD never send a body. `none` encoding skips the body. JSON + Null payload → `{}`.
 pub(crate) fn outbound_body(
     method: &str,
-    encoding: Option<&str>,
+    encoding: BodyEncoding,
     payload: &Value,
 ) -> Result<Option<BodyKind>, ExecuteError> {
     if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
         return Ok(None);
     }
-    if encoding.is_some_and(|e| e.eq_ignore_ascii_case("none")) {
-        return Ok(None);
-    }
-    if encoding.is_some_and(|e| e.eq_ignore_ascii_case("form")) {
-        return Ok(Some(BodyKind::Form(encode_form_object(payload)?)));
+    match encoding {
+        BodyEncoding::None => return Ok(None),
+        BodyEncoding::Form => return Ok(Some(BodyKind::Form(encode_form_object(payload)?))),
+        BodyEncoding::Json => {}
     }
     let raw = if payload.is_null() {
         "{}".to_string()
@@ -73,7 +73,7 @@ pub(crate) fn outbound_body(
     Ok(Some(BodyKind::Json(raw)))
 }
 
-/// Flat JSON object → `k=v&k=v` with sorted keys. Nested object/array is SpecInvalid.
+/// Flat JSON object → `k=v&k=v` with sorted keys. Nested object/array is `SpecInvalid`.
 pub(crate) fn encode_form_object(payload: &Value) -> Result<String, ExecuteError> {
     let obj = payload
         .as_object()
@@ -83,7 +83,7 @@ pub(crate) fn encode_form_object(payload: &Value) -> Result<String, ExecuteError
     let mut parts = Vec::with_capacity(keys.len());
     for k in keys {
         match &obj[k] {
-            Value::Null => continue,
+            Value::Null => {}
             Value::Object(_) | Value::Array(_) => {
                 return Err(ExecuteError::SpecInvalid(
                     "form body_encoding 第一期不支持嵌套 object/array".into(),
@@ -111,19 +111,19 @@ mod tests {
 
     #[test]
     fn get_never_has_body() {
-        let body = outbound_body("GET", Some("json"), &serde_json::json!({"a": 1})).unwrap();
+        let body = outbound_body("GET", BodyEncoding::Json, &serde_json::json!({"a": 1})).unwrap();
         assert!(body.is_none());
     }
 
     #[test]
     fn post_none_has_no_body() {
-        let body = outbound_body("POST", Some("none"), &Value::Null).unwrap();
+        let body = outbound_body("POST", BodyEncoding::None, &Value::Null).unwrap();
         assert!(body.is_none());
     }
 
     #[test]
     fn post_json_null_payload_is_empty_object() {
-        let body = outbound_body("POST", None, &Value::Null).unwrap();
+        let body = outbound_body("POST", BodyEncoding::Json, &Value::Null).unwrap();
         match body {
             Some(BodyKind::Json(s)) => assert_eq!(s, "{}"),
             _ => panic!("expected json {{}}"),
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn post_json_empty_object() {
-        let body = outbound_body("POST", Some("json"), &serde_json::json!({})).unwrap();
+        let body = outbound_body("POST", BodyEncoding::Json, &serde_json::json!({})).unwrap();
         match body {
             Some(BodyKind::Json(s)) => assert_eq!(s, "{}"),
             _ => panic!("expected json {{}}"),

@@ -2,7 +2,7 @@ use crate::repositories::appearance as repo;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::info;
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct AppearanceSettings {
     pub system_theme_mode: String,
     pub system_theme_color: String,
@@ -22,6 +22,7 @@ pub struct AppearanceSettings {
     pub updated_at: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateAppearanceRequest {
     pub system_theme_mode: Option<String>,
     pub system_theme_color: Option<String>,
@@ -63,30 +64,30 @@ fn row_to_settings(row: &repo::AppearanceRow) -> AppearanceSettings {
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_update(payload: &UpdateAppearanceRequest) -> Result<(), String> {
-    if let Some(mode) = &payload.system_theme_mode {
-        if !["auto", "light", "dark"].contains(&mode.as_str()) {
-            return Err("无效的主题模式".to_string());
-        }
+    if let Some(mode) = &payload.system_theme_mode
+        && !["auto", "light", "dark"].contains(&mode.as_str())
+    {
+        return Err("无效的主题模式".to_string());
     }
-    if let Some(color) = &payload.system_theme_color {
-        if !color.starts_with('#') || color.len() != 7 {
-            return Err("无效的主题颜色格式（必须是 #RRGGBB）".to_string());
-        }
+    if let Some(color) = &payload.system_theme_color
+        && (!color.starts_with('#') || color.len() != 7)
+    {
+        return Err("无效的主题颜色格式（必须是 #RRGGBB）".to_string());
     }
-    if let Some(width) = &payload.container_width {
-        if !["100%", "1200px"].contains(&width.as_str()) {
-            return Err("无效的容器宽度".to_string());
-        }
+    if let Some(width) = &payload.container_width
+        && !["100%", "1200px"].contains(&width.as_str())
+    {
+        return Err("无效的容器宽度".to_string());
     }
-    if let Some(width) = payload.menu_open_width {
-        if !(180..=320).contains(&width) {
-            return Err("菜单宽度必须在 180-320 之间".to_string());
-        }
+    if let Some(width) = payload.menu_open_width
+        && !(180..=320).contains(&width)
+    {
+        return Err("菜单宽度必须在 180-320 之间".to_string());
     }
-    if let Some(style) = &payload.dark_theme_style {
-        if !["obsidian", "graphite", "oceanic", "nordic"].contains(&style.as_str()) {
-            return Err("无效的暗色主题风格".to_string());
-        }
+    if let Some(style) = &payload.dark_theme_style
+        && !["obsidian", "graphite", "oceanic", "nordic"].contains(&style.as_str())
+    {
+        return Err("无效的暗色主题风格".to_string());
     }
     Ok(())
 }

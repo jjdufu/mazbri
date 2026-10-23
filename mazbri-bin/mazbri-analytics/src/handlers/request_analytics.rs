@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, info};
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestAnalyticsQuery {
     pub start_time: String,
     pub end_time: String,
@@ -138,6 +139,7 @@ pub async fn aggregate_request_logs(
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpstreamSummaryQuery {
     pub start_time: String,
     pub end_time: String,

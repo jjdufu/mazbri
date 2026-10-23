@@ -152,13 +152,14 @@ impl PasswordPolicy {
         }
     }
     fn hashes_match(stored_hash: &str, new_hash: &str) -> bool {
-        if stored_hash.starts_with("$argon2") && new_hash.starts_with("$argon2") {
-            if let (Ok(parsed_stored), Ok(parsed_new)) = (
+        if stored_hash.starts_with("$argon2")
+            && new_hash.starts_with("$argon2")
+            && let (Ok(parsed_stored), Ok(parsed_new)) = (
                 argon2::PasswordHash::new(stored_hash),
                 argon2::PasswordHash::new(new_hash),
-            ) {
-                return parsed_stored.hash == parsed_new.hash;
-            }
+            )
+        {
+            return parsed_stored.hash == parsed_new.hash;
         }
         false
     }
@@ -300,45 +301,45 @@ pub struct UpdatePasswordPolicyInput {
     pub lockout_duration_minutes: Option<i32>,
 }
 fn validate_update_fields(input: &UpdatePasswordPolicyInput) -> Option<axum::response::Response> {
-    if let Some(min) = input.min_length {
-        if !(6..=32).contains(&min) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "最小长度必须在 6-32 之间",
-            ));
-        }
+    if let Some(min) = input.min_length
+        && !(6..=32).contains(&min)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "最小长度必须在 6-32 之间",
+        ));
     }
-    if let Some(max) = input.max_length {
-        if !(32..=256).contains(&max) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "最大长度必须在 32-256 之间",
-            ));
-        }
+    if let Some(max) = input.max_length
+        && !(32..=256).contains(&max)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "最大长度必须在 32-256 之间",
+        ));
     }
-    if let Some(max_age) = input.max_age_days {
-        if !(0..=365).contains(&max_age) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "最大年龄必须在 0-365 天之间",
-            ));
-        }
+    if let Some(max_age) = input.max_age_days
+        && !(0..=365).contains(&max_age)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "最大年龄必须在 0-365 天之间",
+        ));
     }
-    if let Some(attempts) = input.max_login_attempts {
-        if !(3..=10).contains(&attempts) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "最大登录尝试次数必须在 3-10 之间",
-            ));
-        }
+    if let Some(attempts) = input.max_login_attempts
+        && !(3..=10).contains(&attempts)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "最大登录尝试次数必须在 3-10 之间",
+        ));
     }
-    if let Some(lockout) = input.lockout_duration_minutes {
-        if !(5..=1440).contains(&lockout) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "锁定时长必须在 5-1440 分钟之间",
-            ));
-        }
+    if let Some(lockout) = input.lockout_duration_minutes
+        && !(5..=1440).contains(&lockout)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "锁定时长必须在 5-1440 分钟之间",
+        ));
     }
     None
 }

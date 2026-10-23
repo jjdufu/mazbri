@@ -14,17 +14,16 @@ pub struct LicenseStatus {
 pub async fn fetch_license_status(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<LicenseStatus, ApiError> {
     let url = format!(
         "{}/authorizations/license/status",
         base_url.trim_end_matches('/')
     );
-    let mut request = client.get(url).timeout(std::time::Duration::from_secs(5));
-    if let Some(token) = token.filter(|value| !value.is_empty()) {
-        request = request.bearer_auth(token);
-    }
-    let response = request
+    let response = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(5))
+        .bearer_auth(token)
         .send()
         .await
         .map_err(|error| ApiError::internal(format!("Failed to query license status: {error}")))?;
@@ -57,7 +56,7 @@ pub fn ensure_license_issuance(status: &LicenseStatus) -> Result<(), ApiError> {
 pub async fn ensure_license_issuance_allowed(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<(), ApiError> {
     let status = fetch_license_status(client, base_url, token).await?;
     ensure_license_issuance(&status)

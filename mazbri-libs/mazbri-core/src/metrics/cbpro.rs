@@ -35,6 +35,9 @@ pub static CBPRO_CONFIG_CHANGES_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
         &["action"],
     )
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_cbpro_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(CBPRO_STATE_TRANSITIONS_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(CBPRO_PROTECTION_TRIGGERS_TOTAL.clone()))?;

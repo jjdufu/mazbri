@@ -5,6 +5,9 @@
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serializer};
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn serialize<S>(value: &serde_json::Value, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -13,6 +16,9 @@ where
     serializer.serialize_str(&raw)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn deserialize<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
 where
     D: Deserializer<'de>,
@@ -26,6 +32,9 @@ pub mod option {
     use super::*;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn serialize<S>(value: &Option<serde_json::Value>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -39,6 +48,9 @@ pub mod option {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<serde_json::Value>, D::Error>
     where
         D: Deserializer<'de>,

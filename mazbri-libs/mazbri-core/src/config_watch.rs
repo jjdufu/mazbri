@@ -56,6 +56,9 @@ impl Default for ConfigWatchConfig {
 }
 
 impl ConfigWatchConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<()> {
         if self.interval_secs == 0 {
             anyhow::bail!("config_watch.interval_secs 必须 ≥ 1");
@@ -74,6 +77,7 @@ impl ConfigWatchConfig {
 }
 
 /// 启动时还没有见过版本，第一次读到不算变更。
+#[must_use]
 pub fn should_reload(last_seen: Option<i64>, current: i64) -> bool {
     match last_seen {
         None => false,
@@ -81,6 +85,9 @@ pub fn should_reload(last_seen: Option<i64>, current: i64) -> bool {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn fetch_config_version(pool: &PgPool, key: &str) -> Result<Option<i64>, sqlx::Error> {
     let row = sqlx::query("SELECT version FROM route_sync_metadata WHERE key = $1")
         .bind(key)
@@ -105,31 +112,24 @@ pub fn spawn_config_watch<F, Fut>(
     });
 }
 
-async fn run_config_watch<F, Fut>(
-    pool: PgPool,
-    listen_database: DatabaseConfig,
-    cfg: ConfigWatchConfig,
+/// 启动时对齐当前版本；返回 (已见版本, 是否已告警缺失)。
+async fn initial_config_version(
+    pool: &PgPool,
     version_key: &'static str,
     label: &'static str,
-    on_change: F,
-) where
-    F: Fn() -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    let interval_secs = cfg.interval_secs.max(1);
-    let max_backoff = cfg.max_backoff_secs.max(interval_secs);
+    interval_secs: u64,
+    listen_notify: bool,
+) -> (Option<i64>, bool) {
     let mut last_seen: Option<i64> = None;
-    let mut consecutive_failures: u32 = 0;
     let mut missing_warned = false;
-
-    match fetch_config_version(&pool, version_key).await {
+    match fetch_config_version(pool, version_key).await {
         Ok(Some(version)) => {
             last_seen = Some(version);
             tracing::info!(
                 label,
                 version,
                 interval_secs,
-                listen_notify = cfg.listen_notify,
+                listen_notify,
                 "Config watch aligned to current version"
             );
         }
@@ -149,6 +149,25 @@ async fn run_config_watch<F, Fut>(
             );
         }
     }
+    (last_seen, missing_warned)
+}
+
+async fn run_config_watch<F, Fut>(
+    pool: PgPool,
+    listen_database: DatabaseConfig,
+    cfg: ConfigWatchConfig,
+    version_key: &'static str,
+    label: &'static str,
+    on_change: F,
+) where
+    F: Fn() -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let interval_secs = cfg.interval_secs.max(1);
+    let max_backoff = cfg.max_backoff_secs.max(interval_secs);
+    let mut consecutive_failures: u32 = 0;
+    let (mut last_seen, mut missing_warned) =
+        initial_config_version(&pool, version_key, label, interval_secs, cfg.listen_notify).await;
 
     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(8);
     if cfg.listen_notify {

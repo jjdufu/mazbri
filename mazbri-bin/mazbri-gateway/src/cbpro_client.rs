@@ -65,27 +65,27 @@ impl CBProClient {
     async fn get_client(&self) -> Result<CBProServiceClient, CoreError> {
         {
             let guard = self.client.read().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    debug!(url = %self.endpoint.url(), "Using cached CBPro client");
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                debug!(url = %self.endpoint.url(), "Using cached CBPro client");
+                return Ok(cached.client.clone());
             }
         }
 
         // Drop expired entry under write lock, then connect.
         {
             let mut guard = self.client.write().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                return Ok(cached.client.clone());
             }
             *guard = None;
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro client (mTLS)");
-        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url())
             .await
             .map_err(|e| CoreError::Config(e.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
@@ -209,7 +209,7 @@ impl CBProClient {
                     source: FallbackSource::None,
                     age_secs: None,
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro service error: {e}"),
                     }),
                 }
@@ -269,7 +269,7 @@ impl CBProClient {
                     success: false,
                     cache_key: String::new(),
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro service error: {e}"),
                     }),
                 }

@@ -23,6 +23,9 @@ pub trait ServiceRegistry: Send + Sync {
 }
 #[async_trait]
 pub trait ConfigHandler: Send + Sync {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     fn parse_config(&self, content: &str) -> RegistryResult<Box<dyn Any + Send>>;
     async fn validate(&self, content: &str) -> RegistryResult<ValidatedConfig>;
     async fn apply(&self, config: &ValidatedConfig) -> RegistryResult<ConfigApplyResult>;

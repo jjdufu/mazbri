@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use mazbri_auth::TenantContext;
+use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
 use sqlx::Row;
@@ -19,6 +20,7 @@ pub struct BillingMiddlewareState {
     pub charge_queue: Option<Arc<ChargeQueue>>,
 }
 impl BillingMiddlewareState {
+    #[must_use]
     pub fn new(
         billing_service: Arc<BillingService>,
         charge_queue: Option<Arc<ChargeQueue>>,
@@ -28,6 +30,7 @@ impl BillingMiddlewareState {
             charge_queue,
         }
     }
+    #[must_use]
     pub fn without_queue(billing_service: Arc<BillingService>) -> Self {
         Self {
             billing_service,
@@ -50,7 +53,7 @@ pub async fn usage_middleware(
         .and_then(|ctx| ctx.product_id.clone());
     let request_size = get_content_length(request.headers());
     let response = next.run(request).await;
-    let billing_service_duration_ms = start.elapsed().as_millis() as i32;
+    let billing_service_duration_ms = i32::saturating_from(start.elapsed().as_millis());
     let response_size = get_response_size(&response);
     let billing_code = get_billing_code_from_response(&response);
     let billable = billing_code.default_billable();
@@ -90,17 +93,7 @@ pub async fn usage_middleware(
                 return response;
             }
         };
-        let calc_result = match calculator.calculate_call(request_size as u64, response_size as u64)
-        {
-            Ok(calc_result) => calc_result,
-            Err(e) => {
-                error!(
-                    tenant_id = % tid, product_id = ? product_id, error = % e,
-                    "Skipping usage recording because billing calculation failed"
-                );
-                return response;
-            }
-        };
+        let calc_result = calculator.calculate_call();
         let amount = calc_result.amount;
         let usage_record = UsageRecord {
             event_id: None,
@@ -109,42 +102,20 @@ pub async fn usage_middleware(
             api_endpoint: uri.path().to_string(),
             http_method: method.to_string(),
             response_status: response.status().as_u16(),
-            request_size: request_size as i64,
-            response_size: response_size as i64,
+            request_size: i64::saturating_from(request_size),
+            response_size: i64::saturating_from(response_size),
             billing_service_duration_ms,
             billing_result: calc_result,
             product_id,
-            billing_code: Some(billing_code.0 as i16),
+            billing_code: Some(i16::saturating_from(billing_code.0)),
         };
-        match state.billing_service.record_usage(usage_record).await {
-            Ok(usage_record_id) => {
-                debug!(
-                    "Recorded usage for tenant {}: {} {} (record_id={})",
-                    tid,
-                    method,
-                    uri.path(),
-                    usage_record_id
-                );
-                if let Some(ref queue) = state.charge_queue {
-                    if amount > rust_decimal::Decimal::ZERO {
-                        if let Err(e) = queue
-                            .enqueue(tid, account_id, usage_record_id, amount, None)
-                            .await
-                        {
-                            error!("Failed to enqueue charge for tenant {}: {}", tid, e);
-                        } else {
-                            debug!("Enqueued charge for tenant {}", tid);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to record usage: {}", e);
-            }
-        }
+        persist_usage(&state, usage_record, amount, &method, uri.path()).await;
     }
     response
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn balance_check_middleware(
     State(state): State<BillingMiddlewareState>,
     request: Request,
@@ -261,4 +232,38 @@ async fn get_tenant_product_rate(
     row.try_get::<String, _>("unit_price")
         .ok()
         .and_then(|s: String| s.parse::<Decimal>().ok())
+}
+
+async fn persist_usage(
+    state: &BillingMiddlewareState,
+    usage_record: UsageRecord,
+    amount: rust_decimal::Decimal,
+    method: &axum::http::Method,
+    path: &str,
+) {
+    let tenant_id = usage_record.tenant_id;
+    let account_id = usage_record.account_id;
+    match state.billing_service.record_usage(usage_record).await {
+        Ok(usage_record_id) => {
+            debug!(
+                "Recorded usage for tenant {}: {} {} (record_id={})",
+                tenant_id, method, path, usage_record_id
+            );
+            if let Some(ref queue) = state.charge_queue
+                && amount > rust_decimal::Decimal::ZERO
+            {
+                if let Err(e) = queue
+                    .enqueue(tenant_id, account_id, usage_record_id, amount, None)
+                    .await
+                {
+                    error!("Failed to enqueue charge for tenant {}: {}", tenant_id, e);
+                } else {
+                    debug!("Enqueued charge for tenant {}", tenant_id);
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to record usage: {}", e);
+        }
+    }
 }

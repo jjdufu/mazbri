@@ -57,6 +57,7 @@ pub enum TransportCryptoError {
     UnsupportedAlgorithm,
 }
 
+#[must_use]
 pub fn canonical_signature_payload(
     envelope: &TransportEnvelope,
     tenant_id: &str,
@@ -92,6 +93,9 @@ pub fn canonical_signature_payload(
     payload
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sign_payload(key: &[u8], payload: &str) -> Result<String, TransportCryptoError> {
     let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
         .map_err(|_| TransportCryptoError::InvalidKeyLength)?;
@@ -99,6 +103,9 @@ pub fn sign_payload(key: &[u8], payload: &str) -> Result<String, TransportCrypto
     Ok(hex::encode(mac.finalize().into_bytes()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_payload_signature(
     key: &[u8],
     payload: &str,
@@ -123,6 +130,9 @@ pub fn verify_payload_signature(
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn encrypt_aes_256_gcm(
     key: &[u8],
     plaintext: &[u8],
@@ -135,6 +145,9 @@ pub fn encrypt_aes_256_gcm(
     encrypt_aes_256_gcm_with_iv(key, &iv, plaintext, aad)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn encrypt_aes_256_gcm_with_iv(
     key: &[u8],
     iv: &[u8],
@@ -170,6 +183,9 @@ pub fn encrypt_aes_256_gcm_with_iv(
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decrypt_aes_256_gcm(
     key: &[u8],
     iv_b64: &str,
@@ -210,11 +226,15 @@ pub fn decrypt_aes_256_gcm(
         .map_err(|_| TransportCryptoError::DecryptFailed)
 }
 
+#[must_use]
 pub fn generate_nonce_base64url() -> String {
     let nonce: [u8; NONCE_BYTES] = rand::random();
     URL_SAFE_NO_PAD.encode(nonce)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_transport_algorithms(
     envelope: &TransportEnvelope,
 ) -> Result<(), TransportCryptoError> {

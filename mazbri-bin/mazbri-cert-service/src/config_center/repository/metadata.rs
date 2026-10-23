@@ -344,10 +344,10 @@ impl super::super::ConfigRepository {
         if let Some(ref category_name) = query.category {
             sql_query = sql_query.bind(category_name);
         }
-        if let Some(ref tags) = query.tags {
-            if !tags.is_empty() {
-                sql_query = sql_query.bind(tags);
-            }
+        if let Some(ref tags) = query.tags
+            && !tags.is_empty()
+        {
+            sql_query = sql_query.bind(tags);
         }
         sql_query = sql_query.bind(query.limit).bind(query.offset);
         let rows = sql_query.fetch_all(&*self.db).await?;
@@ -389,16 +389,16 @@ fn search_where_clause(query: &ConfigSearchQuery) -> (String, usize) {
         param_idx += 1;
         conditions.push(format!("cc.name = ${param_idx}"));
     }
-    if let Some(ref tags) = query.tags {
-        if !tags.is_empty() {
-            param_idx += 1;
-            conditions
+    if let Some(ref tags) = query.tags
+        && !tags.is_empty()
+    {
+        param_idx += 1;
+        conditions
                 .push(
                     format!(
                         "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
                     ),
                 );
-        }
     }
     let where_clause = if conditions.is_empty() {
         "1 = 1".to_string()

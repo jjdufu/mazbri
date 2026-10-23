@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use mazbri_core::crypto::request_binding::{
     SIGNATURE_INPUT_HMAC_V1, canonical_http_binding, generate_binding_nonce,
     sign_hmac_sha256_base64,
@@ -8,14 +7,9 @@ use mazbri_core::crypto::transport::{
     decrypt_aes_256_gcm, encrypt_aes_256_gcm, generate_nonce_base64url, sign_payload,
     validate_transport_algorithms, verify_payload_signature,
 };
-use mazbri_core::{
-    FuryErrorEnvelope, FurySuccessEnvelope, PayloadCodec, deserialize_fury_error,
-    deserialize_fury_success, deserialize_payload, serialize_payload,
-};
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -24,8 +18,6 @@ pub struct ClientConfig {
     pub api_key: String,
     pub tenant_key: Vec<u8>,
     pub key_version: String,
-    pub request_codec: PayloadCodec,
-    pub response_codec: PayloadCodec,
     /// HMAC-SHA256 request-binding key (`tenant_request_keys`). When set, SDK sends binding headers.
     pub request_hmac_key: Option<Vec<u8>>,
     pub request_key_id: Option<String>,
@@ -60,7 +52,7 @@ pub enum Error {
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("serialization error: {0}")]
-    Serialization(#[from] mazbri_core::CodecError),
+    Serialization(#[from] serde_json::Error),
     #[error("crypto error: {0}")]
     Crypto(#[from] mazbri_core::crypto::transport::TransportCryptoError),
     #[error("token request failed: {0}")]
@@ -77,6 +69,9 @@ pub struct MazbriClient {
 }
 
 impl MazbriClient {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(config: ClientConfig) -> Result<Self, Error> {
         let client = Client::builder().build()?;
         let mut sdk = Self {
@@ -92,6 +87,9 @@ impl MazbriClient {
         Ok(sdk)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_token(&self) -> Result<TokenResponse, Error> {
         let url = self.token_url();
         let response = self
@@ -107,18 +105,20 @@ impl MazbriClient {
         let body = response.text().await?;
         let token: TokenResponse = serde_json::from_str(&body).map_err(|error| {
             Error::Token(format!(
-                "failed to parse token response (HTTP {}): {}",
-                status, error
+                "failed to parse token response (HTTP {status}): {error}"
             ))
         })?;
         if !token.success {
             return Err(Error::Token(token.error.unwrap_or_else(|| {
-                format!("token request rejected with HTTP {}", status)
+                format!("token request rejected with HTTP {status}")
             })));
         }
         Ok(token)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call<Req, Resp>(&self, request: &Req) -> Result<Resp, Error>
     where
         Req: Serialize,
@@ -127,6 +127,9 @@ impl MazbriClient {
         Ok(self.call_with_meta(request).await?.response)
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_envelope<Req>(
         &self,
         request: &Req,
@@ -137,6 +140,9 @@ impl MazbriClient {
         self.send_request(request, None).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_envelope_with_headers<Req>(
         &self,
         request: &Req,
@@ -148,13 +154,16 @@ impl MazbriClient {
         self.send_request(request, Some(headers)).await
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn call_with_meta<Req, Resp>(&self, request: &Req) -> Result<CallResult<Resp>, Error>
     where
         Req: Serialize,
         Resp: DeserializeOwned,
     {
         let result = self.send_request(request, None).await?;
-        let response = self.decode_envelope(result.response)?;
+        let response = Self::decode_envelope(result.response)?;
         Ok(CallResult {
             response,
             http_status: result.http_status,
@@ -193,7 +202,7 @@ impl MazbriClient {
         request: &impl Serialize,
         extra_headers: Option<&HeaderMap>,
     ) -> Result<CallResult<GatewayResponseEnvelope>, Error> {
-        let plaintext = serialize_payload(self.config.request_codec, request)?;
+        let plaintext = serde_json::to_vec(request)?;
         let envelope = self.encrypt_request(&plaintext)?;
         let body = serde_json::to_vec(&envelope).map_err(|error| {
             Error::Gateway(format!("failed to serialize encrypted envelope: {error}"))
@@ -224,9 +233,9 @@ impl MazbriClient {
                 &envelope.tag,
                 self.config.tenant_id.as_bytes(),
             )?;
-            self.deserialize_gateway_response(&plaintext)?
+            Self::deserialize_gateway_response(&plaintext)?
         } else {
-            self.deserialize_gateway_response(&raw)?
+            Self::deserialize_gateway_response(&raw)?
         };
         Ok(CallResult {
             response: payload,
@@ -235,7 +244,7 @@ impl MazbriClient {
         })
     }
 
-    fn decode_envelope<Resp>(&self, envelope: GatewayResponseEnvelope) -> Result<Resp, Error>
+    fn decode_envelope<Resp>(envelope: GatewayResponseEnvelope) -> Result<Resp, Error>
     where
         Resp: DeserializeOwned,
     {
@@ -257,44 +266,8 @@ impl MazbriClient {
         Ok(response)
     }
 
-    fn deserialize_gateway_response(&self, bytes: &[u8]) -> Result<GatewayResponseEnvelope, Error> {
-        match self.config.response_codec {
-            PayloadCodec::Json => {
-                let envelope = deserialize_payload::<GatewayResponseEnvelopeJsonWire>(
-                    PayloadCodec::Json,
-                    bytes,
-                )?;
-                Ok(envelope.into())
-            }
-            PayloadCodec::Fury => match deserialize_fury_success(bytes) {
-                Ok(envelope) => Ok(envelope.into()),
-                Err(success_error) => match deserialize_fury_error(bytes) {
-                    Ok(envelope) => Ok(envelope.into()),
-                    Err(error_error) => {
-                        let success_error = success_error.to_string();
-                        let error_error = error_error.to_string();
-                        let json_envelope =
-                                    deserialize_payload::<GatewayResponseEnvelopeJsonWire>(
-                                        PayloadCodec::Json,
-                                        bytes,
-                                    )
-                                    .map_err(|json_error| {
-                                        Error::Serialization(
-                                            mazbri_core::CodecError::Fury(format!(
-                                                "failed to decode gateway response as Fury (success: {success_error}; error: {error_error}); JSON fallback also failed ({json_error})"
-                                            )),
-                                        )
-                                    })?;
-                        warn!(
-                            success_error = % success_error,
-                            error_error = % error_error,
-                            "gateway response was not Fury, falling back to JSON"
-                        );
-                        Ok(json_envelope.into())
-                    }
-                },
-            },
-        }
+    fn deserialize_gateway_response(bytes: &[u8]) -> Result<GatewayResponseEnvelope, Error> {
+        Ok(serde_json::from_slice::<GatewayResponseEnvelopeJsonWire>(bytes)?.into())
     }
 
     fn token_url(&self) -> String {
@@ -383,41 +356,6 @@ impl From<GatewayResponseEnvelopeJsonWire> for GatewayResponseEnvelope {
             request_id: value.request_id,
             content_type: value.content_type,
             body_encoding: value.body_encoding,
-        }
-    }
-}
-
-impl From<FurySuccessEnvelope> for GatewayResponseEnvelope {
-    fn from(value: FurySuccessEnvelope) -> Self {
-        let data = match value.body_encoding.as_deref() {
-            Some("text") => String::from_utf8(value.data)
-                .map(serde_json::Value::String)
-                .ok(),
-            Some("binary") => Some(serde_json::Value::String(STANDARD.encode(&value.data))),
-            _ => serde_json::from_slice::<serde_json::Value>(&value.data).ok(),
-        };
-        Self {
-            success: value.success,
-            data,
-            error: None,
-            status: value.status,
-            request_id: Some(value.request_id),
-            content_type: value.content_type,
-            body_encoding: value.body_encoding,
-        }
-    }
-}
-
-impl From<FuryErrorEnvelope> for GatewayResponseEnvelope {
-    fn from(value: FuryErrorEnvelope) -> Self {
-        Self {
-            success: value.success,
-            data: None,
-            error: Some(value.error),
-            status: value.status,
-            request_id: Some(value.request_id),
-            content_type: None,
-            body_encoding: None,
         }
     }
 }

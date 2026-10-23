@@ -1,4 +1,5 @@
-//! Hand-written AWS SigV4 (no aws-sigv4 crate, no AWS SDK).
+//! Hand-written AWS `SigV4` (no aws-sigv4 crate, no AWS SDK).
+use std::fmt::Write as _;
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -35,8 +36,7 @@ pub fn sign_aws_sigv4(
     let payload = call
         .body
         .as_ref()
-        .map(|b| b.as_str().as_bytes())
-        .unwrap_or(b"");
+        .map_or(b"".as_slice(), |b| b.as_str().as_bytes());
     let payload_hash = hex::encode(Sha256::digest(payload));
 
     call.headers.insert("Host".into(), host.clone());
@@ -123,17 +123,17 @@ pub fn host_from_url(url: &str) -> Result<String, ExecuteError> {
 }
 
 fn canonical_uri(url: &str) -> String {
-    url::Url::parse(url)
-        .ok()
-        .map(|u| {
+    url::Url::parse(url).ok().map_or_else(
+        || "/".into(),
+        |u| {
             let p = u.path();
             if p.is_empty() {
                 "/".into()
             } else {
                 p.to_string()
             }
-        })
-        .unwrap_or_else(|| "/".into())
+        },
+    )
 }
 
 fn canonical_query(url: &str) -> String {
@@ -159,7 +159,9 @@ fn uri_encode(s: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(*b as char);
             }
-            _ => out.push_str(&format!("%{b:02X}")),
+            _ => {
+                let _ = write!(out, "%{b:02X}");
+            }
         }
     }
     out

@@ -12,29 +12,24 @@ pub struct MazbriClaims {
     pub tenant_code: String,
     pub tenant_name: String,
     pub account_type: AccountType,
-    #[serde(default)]
     pub scopes: Vec<String>,
 }
 impl MazbriClaims {
     /// True if the token has any of the required scopes (or `api:admin`).
     #[must_use]
     pub fn has_any_scope(&self, required: &[&str]) -> bool {
-        if self.scopes.iter().any(|s| s == "api:admin" || s == "admin") {
+        if self.scopes.iter().any(|s| s == "api:admin") {
             return true;
         }
-        required.iter().any(|need| {
-            self.scopes.iter().any(|have| {
-                have == need
-                    || (need.starts_with("api:") && have == &need[4..])
-                    || (!need.starts_with("api:") && have == &format!("api:{need}"))
-            })
-        })
+        required
+            .iter()
+            .any(|need| self.scopes.iter().any(|have| have == need))
     }
 
     /// Proxy data-plane requires write (or admin).
     #[must_use]
     pub fn can_invoke(&self) -> bool {
-        self.has_any_scope(&["api:write", "write"])
+        self.has_any_scope(&["api:write"])
     }
 }
 fn default_issuer() -> String {

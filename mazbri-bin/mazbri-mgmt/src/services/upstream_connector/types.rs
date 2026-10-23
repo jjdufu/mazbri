@@ -1,4 +1,4 @@
-use super::{Deserialize, HashMap, Serialize, Uuid, mask_config_credentials, repo};
+use super::{Deserialize, Serialize, Uuid, mask_config_credentials, repo};
 
 // ---------- API types ----------
 
@@ -57,6 +57,7 @@ pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateDraftRequest {
     pub draft_code: String,
     pub name: String,
@@ -81,6 +82,7 @@ pub(super) fn default_transparent() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateDraftRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -101,6 +103,7 @@ pub struct UpdateDraftRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunRequest {
     #[serde(default = "default_business")]
     pub mode: String,
@@ -109,8 +112,6 @@ pub struct RunRequest {
     #[serde(default)]
     pub testcase_id: Option<Uuid>,
     #[serde(default)]
-    pub request: Option<RunRequestBody>,
-    #[serde(default)]
     pub assertions: Option<Vec<serde_json::Value>>,
 }
 
@@ -118,25 +119,13 @@ pub(super) fn default_business() -> String {
     "business".into()
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct RunRequestBody {
-    #[serde(default = "default_get")]
-    pub method: String,
-    #[serde(default = "default_slash")]
-    pub path: String,
+/// 线上试跑：走已发布通道的 egress spec + `RuntimeEngine::invoke`（与 bypass 同路径）。
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveRunRequest {
+    pub channel_code: String,
     #[serde(default)]
-    pub query: HashMap<String, String>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    #[serde(default)]
-    pub body: Option<serde_json::Value>,
-}
-
-pub(super) fn default_get() -> String {
-    "GET".into()
-}
-pub(super) fn default_slash() -> String {
-    "/".into()
+    pub payload: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -161,6 +150,7 @@ pub struct RunDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishRequest {
     #[serde(default = "default_supplier_channels")]
     pub mode: String,
@@ -182,6 +172,7 @@ pub(super) fn default_supplier_channels() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishSupplier {
     pub supplier_code: String,
     pub name: String,
@@ -194,6 +185,7 @@ pub(super) fn default_active() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishChannel {
     #[serde(default)]
     pub endpoint_id: Option<String>,
@@ -208,6 +200,7 @@ pub struct PublishChannel {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishRoute {
     pub product_ref: ProductRef,
     #[serde(default)]
@@ -231,11 +224,13 @@ pub(super) fn default_version_tag() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProductRef {
     pub product_id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishAuth {
     #[serde(default)]
     pub tenant_ids: Vec<Uuid>,
@@ -244,11 +239,12 @@ pub struct PublishAuth {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PublishOptions {
     #[serde(default = "default_true")]
     pub require_gate: bool,
-    /// 绕过门禁强制发布（与 `force_reason` 成对出现）。
-    #[serde(flatten)]
+    /// 绕过门禁强制发布（嵌套 `force: { force_publish, force_reason }`）。
+    #[serde(default)]
     pub force: ForceOverride,
     #[serde(default = "default_true")]
     pub fail_if_route_exists: bool,
@@ -257,6 +253,7 @@ pub struct PublishOptions {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForceOverride {
     #[serde(default)]
     pub force_publish: bool,
@@ -293,6 +290,7 @@ pub struct PublishResult {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CurlImportRequest {
     pub curl: String,
     #[serde(default)]
@@ -302,6 +300,7 @@ pub struct CurlImportRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostmanImportRequest {
     pub collection: serde_json::Value,
     #[serde(default)]
@@ -311,6 +310,7 @@ pub struct PostmanImportRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenApiImportRequest {
     pub document: serde_json::Value,
     #[serde(default)]
@@ -320,8 +320,29 @@ pub struct OpenApiImportRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RollbackRequest {
     pub version_id: Uuid,
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+pub(super) fn default_slash() -> String {
+    "/".into()
+}
+
+#[cfg(test)]
+mod deny_unknown_tests {
+    use super::PublishOptions;
+    use serde_json::json;
+
+    #[test]
+    fn publish_force_is_nested() {
+        let o: PublishOptions = serde_json::from_value(json!({
+            "force": {"force_publish": true, "force_reason": "hotfix"}
+        }))
+        .expect("nested force parses");
+        assert!(o.force.force_publish);
+        assert!(serde_json::from_value::<PublishOptions>(json!({"force_publish": true})).is_err());
+    }
 }

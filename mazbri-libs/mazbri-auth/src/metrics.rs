@@ -41,6 +41,9 @@ pub static API_KEY_LAST_USED_DROPPED_TOTAL: LazyLock<IntCounter> = LazyLock::new
     )
     .expect("api_key_last_used_dropped_total metric definition is valid")
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_auth_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(AUTH_KEY_VALIDATION_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(AUTH_TOKEN_ISSUANCE_TOTAL.clone()))?;
@@ -57,6 +60,7 @@ pub struct KeyValidationRecorder {
     credential_type: &'static str,
 }
 impl KeyValidationRecorder {
+    #[must_use]
     pub fn new(credential_type: &'static str) -> Self {
         Self { credential_type }
     }
@@ -95,6 +99,7 @@ pub struct TokenRecorder {
     token_type: &'static str,
 }
 impl TokenRecorder {
+    #[must_use]
     pub fn new(token_type: &'static str) -> Self {
         Self { token_type }
     }
@@ -118,6 +123,7 @@ pub struct LoginAttemptsRecorder {
     method: &'static str,
 }
 impl LoginAttemptsRecorder {
+    #[must_use]
     pub fn new(method: &'static str) -> Self {
         Self { method }
     }

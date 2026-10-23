@@ -270,7 +270,6 @@ import { ElMessageBox, ElMessage } from "element-plus";
 import UserRouteGovernance from "@/views/mazbri/operations/user-routes/index.vue";
 import { $t } from "@/locales";
 import type { Product, UpdateProductRequest } from "@/types/api/product";
-import type { TenantStatus } from "@/types/api/tenant";
 import {
   fetchProductById,
   fetchProductTenants,

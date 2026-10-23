@@ -49,10 +49,12 @@ pub struct WrappedTenantKey {
     pub wrapping_key_id: String,
 }
 
+#[must_use]
 pub fn generate_tenant_secret_key() -> [u8; TENANT_SECRET_KEY_BYTES] {
     rand::random()
 }
 
+#[must_use]
 pub fn generate_key_version(existing_versions: &[String]) -> String {
     let max = existing_versions
         .iter()
@@ -63,6 +65,9 @@ pub fn generate_key_version(existing_versions: &[String]) -> String {
     format!("v{}", max.saturating_add(1))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_master_key_from_env() -> Result<Vec<u8>, TenantKeyError> {
     load_key_from_env(COMMERCIAL_ROOT_PROTECTION_MASTER_KEY_ENV).map_err(|error| match error {
         TenantKeyError::InvalidEncoding | TenantKeyError::InvalidKeyLength => error,
@@ -70,6 +75,9 @@ pub fn load_master_key_from_env() -> Result<Vec<u8>, TenantKeyError> {
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_integrity_key_from_env() -> Result<Vec<u8>, TenantKeyError> {
     load_key_from_env(COMMERCIAL_ROOT_PROTECTION_INTEGRITY_KEY_ENV).map_err(|error| match error {
         TenantKeyError::InvalidEncoding | TenantKeyError::InvalidKeyLength => error,
@@ -77,20 +85,19 @@ pub fn load_integrity_key_from_env() -> Result<Vec<u8>, TenantKeyError> {
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn fetch_root_protection_material_bundle(
     client: &reqwest::Client,
     base_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Result<RootProtectionMaterialBundle, TenantKeyError> {
     let url = format!(
         "{}/authorizations/root/current/materials",
         base_url.trim_end_matches('/')
     );
-    let mut request = client.get(url);
-    let token = token.map(str::to_owned).filter(|value| !value.is_empty());
-    if let Some(token) = token.as_deref() {
-        request = request.bearer_auth(token);
-    }
+    let request = client.get(url).bearer_auth(token);
     let response = request.send().await.map_err(|error| {
         TenantKeyError::RootMaterialRequestFailed(format!(
             "failed to query commercial root protection materials: {error}"
@@ -112,11 +119,17 @@ pub async fn fetch_root_protection_material_bundle(
         })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_key_from_env(name: &str) -> Result<Vec<u8>, TenantKeyError> {
     let value = std::env::var(name).map_err(|_| TenantKeyError::MasterKeyMissing)?;
     decode_configured_key(&value)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decode_configured_key(value: &str) -> Result<Vec<u8>, TenantKeyError> {
     let trimmed = value.trim();
     let decoded = if let Ok(bytes) = STANDARD.decode(trimmed) {
@@ -134,6 +147,9 @@ pub fn decode_configured_key(value: &str) -> Result<Vec<u8>, TenantKeyError> {
     Ok(decoded)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn wrap_new_tenant_key(
     tenant_id: &str,
     key_version: &str,
@@ -156,6 +172,9 @@ pub fn wrap_new_tenant_key(
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn unwrap_tenant_key(
     encrypted_secret_key: &str,
     tenant_id: &str,
@@ -180,6 +199,9 @@ pub fn unwrap_tenant_key(
     Ok(key)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_secret_key_digest(
     integrity_key: &[u8],
     tenant_id: &str,
@@ -190,6 +212,9 @@ pub fn verify_secret_key_digest(
     Ok(secret_key_digest(integrity_key, tenant_id, key_version, tenant_secret_key)? == digest)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn secret_key_digest(
     integrity_key: &[u8],
     tenant_id: &str,
@@ -205,10 +230,12 @@ pub fn secret_key_digest(
     Ok(sign_payload(integrity_key, &payload)?)
 }
 
+#[must_use]
 pub fn envelope_aad(tenant_id: &str, key_version: &str) -> String {
-    format!("{}:{}", tenant_id, key_version)
+    format!("{tenant_id}:{key_version}")
 }
 
+#[must_use]
 pub fn default_key_metadata() -> serde_json::Value {
     serde_json::json!({
         "dataAlgorithm": DATA_ALGORITHM,

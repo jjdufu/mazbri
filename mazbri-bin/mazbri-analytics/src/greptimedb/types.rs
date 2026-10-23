@@ -48,10 +48,10 @@ where
                     return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
                 }
             }
-            if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-                if let Some(ndt) = nd.and_hms_opt(0, 0, 0) {
-                    return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
-                }
+            if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+                && let Some(ndt) = nd.and_hms_opt(0, 0, 0)
+            {
+                return Ok(DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc));
             }
             Err(serde::de::Error::custom(format!(
                 "unexpected timestamp format: {s}"
@@ -101,7 +101,6 @@ pub struct RequestLogQueryParams {
     pub supplier_code: Option<String>,
     pub channel_id: Option<String>,
     pub channel_code: Option<String>,
-    pub event_target: Option<String>,
     pub path: Option<String>,
     pub route_template: Option<String>,
     pub client_ip: Option<String>,

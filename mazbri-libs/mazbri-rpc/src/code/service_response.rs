@@ -2,6 +2,7 @@ use super::billing_code::BillingCode;
 use super::billing_info::BillingInfo;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceResponse<T> {
     pub success: bool,
     #[serde(default)]

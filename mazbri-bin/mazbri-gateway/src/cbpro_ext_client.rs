@@ -59,25 +59,25 @@ impl CBProExtClient {
     async fn get_client(&self) -> Result<CBProExtServiceClient, CoreError> {
         {
             let guard = self.client.read().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    debug!(url = %self.endpoint.url(), "Using cached CBPro-Ext client");
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                debug!(url = %self.endpoint.url(), "Using cached CBPro-Ext client");
+                return Ok(cached.client.clone());
             }
         }
         {
             let mut guard = self.client.write().await;
-            if let Some(cached) = guard.as_ref() {
-                if cached.created_at.elapsed() < self.client_ttl {
-                    return Ok(cached.client.clone());
-                }
+            if let Some(cached) = guard.as_ref()
+                && cached.created_at.elapsed() < self.client_ttl
+            {
+                return Ok(cached.client.clone());
             }
             *guard = None;
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro-Ext client (mTLS)");
-        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url())
             .await
             .map_err(|error| CoreError::Config(error.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
@@ -177,7 +177,7 @@ impl CBProExtClient {
                 available: false,
                 decision: None,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
@@ -185,7 +185,7 @@ impl CBProExtClient {
                 available: false,
                 decision: None,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
@@ -208,14 +208,14 @@ impl CBProExtClient {
             Ok(Err(error)) => ObservationResponse {
                 success: false,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },
             Err(error) => ObservationResponse {
                 success: false,
                 error: Some(RpcError::ServiceUnavailable {
-                    service: "cbpro-ext".into(),
+                    service: mazbri_core::ServiceName::CbproExt.as_str().into(),
                     message: error.to_string(),
                 }),
             },

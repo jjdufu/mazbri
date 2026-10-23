@@ -30,7 +30,6 @@ pub struct BillRow {
 pub struct BillLineItemRow {
     pub item_id: String,
     pub description: String,
-    pub billing_type: String,
     pub quantity: i64,
     pub total_units: i64,
     pub unit_price: Decimal,
@@ -270,7 +269,7 @@ pub async fn list_bill_items(
     bill: &BillRow,
 ) -> Result<Vec<BillLineItemRow>, sqlx::Error> {
     let snapshot_rows = sqlx::query(
-        "SELECT item_key, description, billing_type, quantity, total_units, unit_price, total
+        "SELECT item_key, description, quantity, total_units, unit_price, total
          FROM bill_items
          WHERE bill_id = $1
          ORDER BY id ASC",
@@ -287,7 +286,6 @@ pub async fn list_bill_items(
                     .get::<String, _>("item_key")
                     .if_empty(format!("item-{}", index + 1)),
                 description: row.get("description"),
-                billing_type: row.get("billing_type"),
                 quantity: row.get("quantity"),
                 total_units: row.get("total_units"),
                 unit_price: row.get("unit_price"),
@@ -304,7 +302,6 @@ pub async fn list_bill_items(
     let rows = sqlx::query(
         "SELECT
             api_endpoint,
-            billing_type,
             COUNT(*) as quantity,
             COALESCE(SUM(billable_units), 0) as total_units,
             COALESCE(MIN(unit_price), 0) as unit_price,
@@ -313,7 +310,7 @@ pub async fn list_bill_items(
          WHERE tenant_id = $1
            AND recorded_at >= $2
            AND recorded_at <= $3
-         GROUP BY api_endpoint, billing_type
+         GROUP BY api_endpoint
          ORDER BY total DESC, api_endpoint ASC",
     )
     .bind(tenant_id)
@@ -327,7 +324,6 @@ pub async fn list_bill_items(
         .map(|(index, row)| BillLineItemRow {
             item_id: format!("item-{}", index + 1),
             description: row.get("api_endpoint"),
-            billing_type: row.get("billing_type"),
             quantity: row.get("quantity"),
             total_units: row.get("total_units"),
             unit_price: row.get("unit_price"),
@@ -664,11 +660,9 @@ pub struct ReconciliationDiscrepancyRow {
     pub reconciliation_date: chrono::NaiveDate,
     pub scope_type: String,
     pub scope_id: String,
-    pub oltp_call_count: i64,
-    pub olap_preagg_call_count: i64,
-    /// Historical/compat column; not an independent third source in current impl.
-    #[serde(skip_serializing)]
-    pub raw_log_call_count: i64,
+    pub billable_call_count: i64,
+    pub upstream_preagg_call_count: i64,
+    pub gateway_call_count: i64,
     pub discrepancy_ratio: Decimal,
     pub status: String,
     pub details: Option<serde_json::Value>,
@@ -682,9 +676,9 @@ pub struct InsertReconciliationDiscrepancyParams<'a> {
     pub reconciliation_date: chrono::NaiveDate,
     pub scope_type: &'a str,
     pub scope_id: &'a str,
-    pub oltp_call_count: i64,
-    pub olap_preagg_call_count: i64,
-    pub raw_log_call_count: i64,
+    pub billable_call_count: i64,
+    pub upstream_preagg_call_count: i64,
+    pub gateway_call_count: i64,
     pub discrepancy_ratio: Decimal,
     pub status: &'a str,
     pub details: Option<serde_json::Value>,
@@ -700,7 +694,7 @@ pub async fn insert_reconciliation_discrepancy(
     sqlx::query_scalar(
         "INSERT INTO reconciliation_discrepancies (
             reconciliation_date, scope_type, scope_id,
-            oltp_call_count, olap_preagg_call_count, raw_log_call_count,
+            billable_call_count, upstream_preagg_call_count, gateway_call_count,
             discrepancy_ratio, status, details
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id",
@@ -708,9 +702,9 @@ pub async fn insert_reconciliation_discrepancy(
     .bind(params.reconciliation_date)
     .bind(params.scope_type)
     .bind(params.scope_id)
-    .bind(params.oltp_call_count)
-    .bind(params.olap_preagg_call_count)
-    .bind(params.raw_log_call_count)
+    .bind(params.billable_call_count)
+    .bind(params.upstream_preagg_call_count)
+    .bind(params.gateway_call_count)
     .bind(params.discrepancy_ratio)
     .bind(params.status)
     .bind(params.details)
@@ -797,7 +791,7 @@ pub async fn list_reconciliation_discrepancies(
 ) -> Result<Vec<ReconciliationDiscrepancyRow>, sqlx::Error> {
     let mut builder: QueryBuilder<_> = QueryBuilder::new(
         "SELECT id, reconciliation_date, scope_type, scope_id, \
-                oltp_call_count, olap_preagg_call_count, raw_log_call_count, \
+                billable_call_count, upstream_preagg_call_count, gateway_call_count, \
                 discrepancy_ratio, status, details, \
                 resolution_note, resolved_at, resolved_by, created_at \
          FROM reconciliation_discrepancies WHERE 1=1",
@@ -819,7 +813,7 @@ pub async fn get_reconciliation_discrepancy(
 ) -> Result<Option<ReconciliationDiscrepancyRow>, sqlx::Error> {
     sqlx::query_as::<_, ReconciliationDiscrepancyRow>(
         "SELECT id, reconciliation_date, scope_type, scope_id,
-                oltp_call_count, olap_preagg_call_count, raw_log_call_count,
+                billable_call_count, upstream_preagg_call_count, gateway_call_count,
                 discrepancy_ratio, status, details,
                 resolution_note, resolved_at, resolved_by, created_at
          FROM reconciliation_discrepancies
@@ -852,7 +846,7 @@ pub async fn update_reconciliation_discrepancy(
              resolved_by = $4
          WHERE id = $1
          RETURNING id, reconciliation_date, scope_type, scope_id,
-                   oltp_call_count, olap_preagg_call_count, raw_log_call_count,
+                   billable_call_count, upstream_preagg_call_count, gateway_call_count,
                    discrepancy_ratio, status, details,
                    resolution_note, resolved_at, resolved_by, created_at",
     )

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    AuthorizationDetail, MAX_PRODUCT_ID_NUMBER, MIN_PRODUCT_ID_NUMBER, PgRow, Product,
+    ProductWriteError, Row, TenantProductConfig, TenantProductDetail,
+};
 
 pub(crate) fn next_product_id_from_max(
     max_product_id: Option<i64>,
@@ -28,7 +31,6 @@ pub(crate) fn tenant_product_detail_from_row(row: &PgRow) -> TenantProductDetail
         cb_cooldown_secs: row.get("cb_cooldown_secs"),
         unit_price: row.get("unit_price"),
         currency: row.get("currency"),
-        billing_type: row.get("billing_type"),
         cb_pro_fallback: row.get("cb_pro_fallback"),
         config,
         created_at: row.get("created_at"),
@@ -48,7 +50,6 @@ pub(crate) fn authorization_detail_from_row(row: &PgRow) -> AuthorizationDetail 
         enabled: row.get("enabled"),
         unit_price: row.get("unit_price"),
         currency: row.get("currency"),
-        billing_type: row.get("billing_type"),
         cb_pro_fallback: row.get("cb_pro_fallback"),
         config,
         created_at: row.get("created_at"),

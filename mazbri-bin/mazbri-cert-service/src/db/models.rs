@@ -58,6 +58,7 @@ pub struct CertificateSummary {
     pub fingerprint: Option<Vec<u8>>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerifyCertificateRequest {
     pub cert_pem: String,
 }
@@ -134,6 +135,7 @@ impl CertificateStatus {
     }
 }
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AutoRenewalConfig {
     pub id: Uuid,
     pub certificate_id: Uuid,
@@ -146,6 +148,7 @@ pub struct AutoRenewalConfig {
     pub updated_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigureAutoRenewalRequest {
     pub enabled: bool,
     #[serde(default = "default_threshold_days")]

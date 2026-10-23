@@ -2,8 +2,7 @@ use mazbri_auth::{AuthError, AuthService as AuthServiceInner, KeyValidationRecor
 use mazbri_rpc::RpcError;
 use mazbri_rpc::auth::{
     AuthService, GetTenantInfoRequest, GetTenantInfoResponse, HealthResponse, TenantContext,
-    TenantStatus, ValidateApiKeyRequest, ValidateApiKeyResponse, ValidateTokenRequest,
-    ValidateTokenResponse,
+    ValidateApiKeyRequest, ValidateApiKeyResponse, ValidateTokenRequest, ValidateTokenResponse,
 };
 use sqlx::types::chrono::Utc;
 use sqlx::{PgPool, Row};
@@ -74,7 +73,7 @@ impl AuthTarpcService {
         let uuid = Uuid::parse_str(tenant_id)
             .map_err(|e| format!("Invalid tenant ID format '{tenant_id}': {e}"))?;
         let row = sqlx::query(
-            "SELECT id, name, status, created_at
+            "SELECT id, name, enabled, created_at
              FROM tenants WHERE id = $1",
         )
         .bind(uuid)
@@ -83,11 +82,10 @@ impl AuthTarpcService {
         .map_err(|e| format!("Database error: {e}"))?;
         match row {
             Some(row) => {
-                let status: String = row.get("status");
                 let ctx = TenantContext {
                     tenant_id: row.get("id"),
                     tenant_name: row.get("name"),
-                    status: match_status(&status),
+                    enabled: row.get("enabled"),
                     metadata: HashMap::new(),
                     created_at: row
                         .get::<sqlx::types::chrono::DateTime<Utc>, _>("created_at")
@@ -97,15 +95,6 @@ impl AuthTarpcService {
             }
             None => Ok(None),
         }
-    }
-}
-fn match_status(status: &str) -> TenantStatus {
-    match status {
-        "active" => TenantStatus::Active,
-        // Product model: enable/disable only; legacy terminated maps to suspended.
-        "suspended" | "terminated" | "disabled" => TenantStatus::Suspended,
-        // "pending" 及未知状态
-        _ => TenantStatus::Pending,
     }
 }
 impl AuthService for AuthTarpcService {

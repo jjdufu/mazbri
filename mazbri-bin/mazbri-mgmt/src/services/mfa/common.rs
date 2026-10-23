@@ -22,10 +22,8 @@ pub(super) fn is_required_by_global(
     required_roles: Option<&Vec<String>>,
     user_role: &str,
 ) -> bool {
-    if mfa_enabled_globally {
-        if let Some(roles) = required_roles {
-            return roles.contains(&user_role.to_string());
-        }
+    if mfa_enabled_globally && let Some(roles) = required_roles {
+        return roles.contains(&user_role.to_string());
     }
     false
 }

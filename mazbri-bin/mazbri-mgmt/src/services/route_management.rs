@@ -142,10 +142,10 @@ fn validate_code(field: &str, value: &str) -> Result<(), ApiError> {
             "{field} 长度必须在 1 到 100 个字符之间"
         )));
     }
-    if let Some(first_char) = value.chars().next() {
-        if !first_char.is_ascii_uppercase() {
-            return Err(ApiError::validation(format!("{field} 必须以大写字母开头")));
-        }
+    if let Some(first_char) = value.chars().next()
+        && !first_char.is_ascii_uppercase()
+    {
+        return Err(ApiError::validation(format!("{field} 必须以大写字母开头")));
     }
     if !value
         .chars()
@@ -190,19 +190,19 @@ fn validate_channel_values(
             ));
         }
     }
-    if let Some(price) = cost_price {
-        if price < Decimal::ZERO {
-            return Err(ApiError::validation(
-                "Cost price must be greater than or equal to 0".to_string(),
-            ));
-        }
+    if let Some(price) = cost_price
+        && price < Decimal::ZERO
+    {
+        return Err(ApiError::validation(
+            "Cost price must be greater than or equal to 0".to_string(),
+        ));
     }
-    if let Some(limit) = qps_limit {
-        if limit < 0 {
-            return Err(ApiError::validation(
-                "QPS limit must be greater than or equal to 0".to_string(),
-            ));
-        }
+    if let Some(limit) = qps_limit
+        && limit < 0
+    {
+        return Err(ApiError::validation(
+            "QPS limit must be greater than or equal to 0".to_string(),
+        ));
     }
     Ok(())
 }
@@ -300,12 +300,12 @@ impl UpdateRouteRuleRequest {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ApiError> {
-        if let Some(priority) = self.priority {
-            if priority < 0 {
-                return Err(ApiError::validation(
-                    "Priority must be greater than or equal to 0".to_string(),
-                ));
-            }
+        if let Some(priority) = self.priority
+            && priority < 0
+        {
+            return Err(ApiError::validation(
+                "Priority must be greater than or equal to 0".to_string(),
+            ));
         }
         if let Some(value) = &self.status {
             validate_status(value)?;
@@ -331,12 +331,12 @@ impl UpdateRouteBindingRequest {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), ApiError> {
-        if let Some(order) = self.channel_order {
-            if order < 1 {
-                return Err(ApiError::validation(
-                    "Channel order must be greater than or equal to 1".to_string(),
-                ));
-            }
+        if let Some(order) = self.channel_order
+            && order < 1
+        {
+            return Err(ApiError::validation(
+                "Channel order must be greater than or equal to 1".to_string(),
+            ));
         }
         if let Some(value) = &self.switch_condition {
             validate_switch_condition(value)?;

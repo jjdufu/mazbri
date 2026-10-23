@@ -1,4 +1,4 @@
-use super::*;
+use super::{Arc, Cache, Duration, PermissionCache, PgPool, ProductConfig, ProductService};
 
 impl ProductService {
     pub fn new(

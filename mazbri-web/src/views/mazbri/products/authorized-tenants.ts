@@ -1,10 +1,10 @@
 import type { ProductTenantAccess } from "@/types/api/product";
-import type { Tenant, TenantStatus } from "@/types/api/tenant";
+import type { Tenant } from "@/types/api/tenant";
 export interface AuthorizedTenantRow {
   tenant_id: string;
   tenant_code: string;
   name: string;
-  status: TenantStatus;
+  status: "enabled" | "disabled" | "unknown";
   granted_at: string;
 }
 export function buildAuthorizedTenantRows(
@@ -20,7 +20,7 @@ export function buildAuthorizedTenantRows(
       tenant_id: tenant?.tenant_id ?? access.tenant_id,
       tenant_code: access.tenant_code,
       name: tenant?.name ?? access.tenant_code,
-      status: tenant?.status ?? "pending",
+      status: tenant ? (tenant.enabled ? "enabled" : "disabled") : "unknown",
       granted_at: access.created_at,
     };
   });

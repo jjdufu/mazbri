@@ -141,108 +141,6 @@
                   </CommonSwitchRow>
                 </div>
               </div>
-              <div class="form-row-item">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.codecEnabled")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <CommonSwitchRow>
-                    <ElSwitch
-                      v-model="form.codecEnabled"
-                      :disabled="
-                        !tenantCryptoEnabled ||
-                        (form.encryptionMode !== 'full' &&
-                          form.encryptionMode !== 'request')
-                      "
-                    />
-                    <span class="switch-text ml-2">
-                      {{
-                        form.codecEnabled
-                          ? $t("common.status.enabled")
-                          : $t("common.status.disabled")
-                      }}
-                    </span>
-                  </CommonSwitchRow>
-                </div>
-              </div>
-            </CommonFormGrid>
-          </div>
-
-          <div v-if="form.codecEnabled" class="settings-panel">
-            <CommonFormGrid :columns="2" gap="16px 32px">
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.requestCodec")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElSelect
-                    v-model="form.requestCodec"
-                    :disabled="
-                      !tenantCryptoEnabled ||
-                      !form.codecEnabled ||
-                      (form.encryptionMode !== 'full' &&
-                        form.encryptionMode !== 'request')
-                    "
-                  >
-                    <ElOption
-                      v-for="codec in codecOptions"
-                      :key="codec.value"
-                      :label="codec.label"
-                      :value="codec.value"
-                    />
-                  </ElSelect>
-                </div>
-              </div>
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.responseCodec")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElSelect
-                    v-model="form.responseCodec"
-                    :disabled="
-                      !tenantCryptoEnabled ||
-                      !form.codecEnabled ||
-                      (form.encryptionMode !== 'full' &&
-                        form.encryptionMode !== 'request')
-                    "
-                  >
-                    <ElOption
-                      v-for="codec in codecOptions"
-                      :key="codec.value"
-                      :label="codec.label"
-                      :value="codec.value"
-                    />
-                  </ElSelect>
-                </div>
-              </div>
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.codecVersion")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElInputNumber
-                    v-model="form.codecVersion"
-                    :min="1"
-                    :max="99"
-                    :step="1"
-                    :disabled="
-                      !tenantCryptoEnabled ||
-                      !form.codecEnabled ||
-                      (form.encryptionMode !== 'full' &&
-                        form.encryptionMode !== 'request')
-                    "
-                  />
-                </div>
-              </div>
             </CommonFormGrid>
           </div>
 
@@ -429,7 +327,6 @@ import type {
   TenantCryptoKey,
   TenantCryptoKeyCreateResponse,
   TenantEncryptionMode,
-  PayloadCodec,
 } from "@/types/api/tenant";
 import type { LicenseStatus } from "@/types/api/authorizations";
 import { logger } from "@/utils/sys";
@@ -474,10 +371,6 @@ const form = reactive({
   encryptionMode: "none" as TenantEncryptionMode,
   requireSignature: false,
   currentKeyVersion: undefined as string | undefined,
-  requestCodec: "json" as PayloadCodec,
-  responseCodec: "json" as PayloadCodec,
-  codecEnabled: false,
-  codecVersion: 1,
   nonceTtlSeconds: 300,
   clockSkewSeconds: 300,
 });
@@ -501,11 +394,6 @@ const cardOptions = computed(() => [
     desc: $t("tenant.transportEncryption.modesDesc.full"),
     icon: "ri:shield-keyhole-line",
   },
-]);
-
-const codecOptions = computed(() => [
-  { label: "JSON", value: "json" as const },
-  { label: "Fury", value: "fury" as const },
 ]);
 
 const activeKeys = computed(() =>
@@ -552,9 +440,6 @@ const keyColumns = ref<ColumnOption[]>([
 watch(
   () => form.encryptionMode,
   (mode) => {
-    if (mode !== "full" && mode !== "request") {
-      form.codecEnabled = false;
-    }
     if (mode === "none") {
       form.requireSignature = false;
     }
@@ -584,10 +469,6 @@ const loadData = async () => {
       form.encryptionMode = profile.encryption_mode;
       form.requireSignature = profile.encryption_mode === 'none' ? false : profile.require_signature;
       form.currentKeyVersion = profile.current_key_version;
-      form.requestCodec = profile.request_codec;
-      form.responseCodec = profile.response_codec;
-      form.codecEnabled = profile.codec_enabled;
-      form.codecVersion = profile.codec_version;
       form.nonceTtlSeconds = profile.nonce_ttl_seconds;
       form.clockSkewSeconds = profile.clock_skew_seconds;
     }

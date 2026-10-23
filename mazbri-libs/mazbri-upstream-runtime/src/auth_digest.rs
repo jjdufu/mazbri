@@ -1,4 +1,4 @@
-//! HTTP Digest (RFC 7616 qop=auth). Challenge-response lives in send_http.
+//! HTTP Digest (RFC 7616 qop=auth). Challenge-response lives in `send_http`.
 
 use md5::Md5;
 use sha2::{Digest, Sha256};

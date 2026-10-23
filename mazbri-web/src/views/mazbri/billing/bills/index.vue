@@ -201,9 +201,6 @@
                 :empty-text="$t('billing.detail.emptyItems')"
                 class="bill-detail-items-table"
               >
-                <template #billing_type="{ row }">
-                  {{ getBillingTypeLabel(row.billing_type) }}
-                </template>
                 <template #unit_price="{ row }">
                   {{ formatAmount(row.unit_price) }}
                 </template>
@@ -653,12 +650,6 @@ const billItemColumns = ref<ColumnOption<BillLineItem>[]>([
     label: $t("billing.itemColumns.description"),
     minWidth: 140,
   },
-  {
-    prop: "billing_type",
-    label: $t("billing.itemColumns.billingType"),
-    width: 110,
-    useSlot: true,
-  },
   { prop: "quantity", label: $t("billing.itemColumns.quantity"), width: 100 },
   {
     prop: "total_units",
@@ -799,12 +790,6 @@ const formatDateKey = (date?: string | null) => {
   if (Number.isNaN(parsed.getTime())) return "unknown-date";
   return parsed.toISOString().slice(0, 10).replace(/-/g, "");
 };
-const getBillingTypeLabel = (type: string) => {
-  const labels: Record<string, string> = {
-    call: $t("billing.billingTypes.call"),
-  };
-  return labels[type] || type || "-";
-};
 const getBillKindLabel = (kind?: string | null) => {
   const labels: Record<string, string> = {
     customer: $t("billing.billKinds.customer"),
@@ -880,7 +865,6 @@ const buildBillDetailCsvRows = (bill: Bill, items: BillLineItem[]) => [
   [],
   [
     $t("billing.itemColumns.description"),
-    $t("billing.itemColumns.billingType"),
     $t("billing.itemColumns.quantity"),
     $t("billing.itemColumns.totalUnits"),
     $t("billing.itemColumns.unitPrice"),
@@ -888,7 +872,6 @@ const buildBillDetailCsvRows = (bill: Bill, items: BillLineItem[]) => [
   ],
   ...items.map((item) => [
     item.description,
-    getBillingTypeLabel(item.billing_type),
     item.quantity,
     item.total_units,
     item.unit_price,

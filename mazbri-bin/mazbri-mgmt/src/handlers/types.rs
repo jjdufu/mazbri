@@ -65,14 +65,34 @@ pub struct CreateTenantRequest {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SetTenantStatusRequest {
-    pub status: String,
+pub struct SetTenantEnabledRequest {
+    pub enabled: bool,
     pub reason: Option<String>,
+}
+/// API key scope（存储与 JWT 统一使用 `api:*` 字面量）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
+pub enum ApiScope {
+    #[serde(rename = "api:read")]
+    Read,
+    #[serde(rename = "api:write")]
+    Write,
+    #[serde(rename = "api:admin")]
+    Admin,
+}
+impl ApiScope {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "api:read",
+            Self::Write => "api:write",
+            Self::Admin => "api:admin",
+        }
+    }
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
-    pub scopes: BoundedVec<String, { limits::MAX_API_KEY_SCOPES }>,
+    pub scopes: BoundedVec<ApiScope, { limits::MAX_API_KEY_SCOPES }>,
     pub expires_at: Option<i64>,
     #[serde(default)]
     pub expires_days: Option<i64>,
@@ -90,10 +110,10 @@ impl UpdateApiKeyRequest {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
-        if let Some(days) = self.expires_days {
-            if !(1..=3650).contains(&days) {
-                return Err("续期天数必须在 1 到 3650 天之间".to_string());
-            }
+        if let Some(days) = self.expires_days
+            && !(1..=3650).contains(&days)
+        {
+            return Err("续期天数必须在 1 到 3650 天之间".to_string());
         }
         Ok(())
     }
@@ -273,8 +293,7 @@ pub struct ResetPasswordRequest {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForcePasswordResetRequest {
-    #[serde(alias = "force_password_reset")]
-    pub force_reset: bool,
+    pub force_password_reset: bool,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

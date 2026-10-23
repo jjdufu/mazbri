@@ -51,8 +51,8 @@ async fn authenticate_request(
                 .check(auth.tenant_id, ip)
                 .await?
             {
-                super::ip_whitelist::WhitelistResult::NotConfigured => {}
-                super::ip_whitelist::WhitelistResult::Allowed => {}
+                super::ip_whitelist::WhitelistResult::NotConfigured
+                | super::ip_whitelist::WhitelistResult::Allowed => {}
                 super::ip_whitelist::WhitelistResult::Denied(ip_str) => {
                     return Err(AuthError::IpNotWhitelisted(ip_str));
                 }

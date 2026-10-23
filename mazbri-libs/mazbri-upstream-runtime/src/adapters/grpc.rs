@@ -31,21 +31,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .operation
         .as_deref()
         .ok_or_else(|| ExecuteError::SpecInvalid("grpc operation missing".into()))?;
-    let bytes = require_artifact(ctx.input)?;
-    let fds = FileDescriptorSet::decode(bytes)
-        .map_err(|e| ExecuteError::ArtifactMissing(format!("invalid FileDescriptorSet: {e}")))?;
-    let pool = DescriptorPool::from_file_descriptor_set(fds)
-        .map_err(|e| ExecuteError::ArtifactMissing(format!("descriptor pool: {e}")))?;
-    let (service_name, method_name) = operation.rsplit_once('/').ok_or_else(|| {
-        ExecuteError::SpecInvalid("grpc operation must be package.Service/Rpc".into())
-    })?;
-    let service = pool
-        .get_service_by_name(service_name)
-        .ok_or_else(|| ExecuteError::SpecInvalid(format!("unknown grpc service {service_name}")))?;
-    let method = service
-        .methods()
-        .find(|m| m.name() == method_name)
-        .ok_or_else(|| ExecuteError::SpecInvalid(format!("unknown grpc method {method_name}")))?;
+    let method = resolve_method(require_artifact(ctx.input)?, operation)?;
 
     let input_desc = method.input();
     let output_desc = method.output();
@@ -55,7 +41,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     dyn_msg
         .encode(&mut proto_buf)
         .map_err(|e| ExecuteError::AdapterFailed(format!("encode protobuf: {e}")))?;
-    let frame = grpc_frame(&proto_buf);
+    let frame = grpc_frame(&proto_buf)?;
 
     let url = format!(
         "{}/{}",
@@ -66,38 +52,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         return Err(ExecuteError::SsrfBlocked(e));
     }
 
-    let mut header_map = HeaderMap::new();
-    for (k, v) in &ctx.auth.metadata {
-        if let (Ok(hn), Ok(hv)) = (
-            HeaderName::from_bytes(k.as_bytes()),
-            HeaderValue::from_str(v),
-        ) {
-            header_map.insert(hn, hv);
-        }
-    }
-    for (k, v) in super::merge_request_headers(ctx.auth, spec) {
-        if let (Ok(hn), Ok(hv)) = (
-            HeaderName::from_bytes(k.as_bytes()),
-            HeaderValue::from_str(&v),
-        ) {
-            if !header_map.contains_key(&hn) {
-                header_map.insert(hn, hv);
-            }
-        }
-    }
-    crate::http_call::inject_x_request_id_header_map(&mut header_map, &ctx.input.request_id);
-    header_map.insert(
-        HeaderName::from_static("content-type"),
-        HeaderValue::from_static("application/grpc"),
-    );
-    header_map.insert(
-        HeaderName::from_static("te"),
-        HeaderValue::from_static("trailers"),
-    );
-    header_map.insert(
-        HeaderName::from_static("grpc-encoding"),
-        HeaderValue::from_static("identity"),
-    );
+    let header_map = build_grpc_headers(ctx);
 
     let http_client = if url.starts_with("http://") {
         plaintext_h2_client()?
@@ -175,12 +130,71 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     })
 }
 
-fn grpc_frame(msg: &[u8]) -> Vec<u8> {
+fn resolve_method(
+    bytes: &[u8],
+    operation: &str,
+) -> Result<prost_reflect::MethodDescriptor, ExecuteError> {
+    let fds = FileDescriptorSet::decode(bytes)
+        .map_err(|e| ExecuteError::ArtifactMissing(format!("invalid FileDescriptorSet: {e}")))?;
+    let pool = DescriptorPool::from_file_descriptor_set(fds)
+        .map_err(|e| ExecuteError::ArtifactMissing(format!("descriptor pool: {e}")))?;
+    let (service_name, method_name) = operation.rsplit_once('/').ok_or_else(|| {
+        ExecuteError::SpecInvalid("grpc operation must be package.Service/Rpc".into())
+    })?;
+    let service = pool
+        .get_service_by_name(service_name)
+        .ok_or_else(|| ExecuteError::SpecInvalid(format!("unknown grpc service {service_name}")))?;
+    service
+        .methods()
+        .find(|m| m.name() == method_name)
+        .ok_or_else(|| ExecuteError::SpecInvalid(format!("unknown grpc method {method_name}")))
+}
+
+fn build_grpc_headers(ctx: &AdapterCtx<'_>) -> HeaderMap {
+    let spec = &ctx.input.spec;
+    let mut header_map = HeaderMap::new();
+    for (k, v) in &ctx.auth.metadata {
+        if let (Ok(hn), Ok(hv)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
+            header_map.insert(hn, hv);
+        }
+    }
+    for (k, v) in super::merge_request_headers(ctx.auth, spec) {
+        if let (Ok(hn), Ok(hv)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(&v),
+        ) && !header_map.contains_key(&hn)
+        {
+            header_map.insert(hn, hv);
+        }
+    }
+    crate::http_call::inject_x_request_id_header_map(&mut header_map, &ctx.input.request_id);
+    header_map.insert(
+        HeaderName::from_static("content-type"),
+        HeaderValue::from_static("application/grpc"),
+    );
+    header_map.insert(
+        HeaderName::from_static("te"),
+        HeaderValue::from_static("trailers"),
+    );
+    header_map.insert(
+        HeaderName::from_static("grpc-encoding"),
+        HeaderValue::from_static("identity"),
+    );
+    header_map
+}
+
+fn grpc_frame(msg: &[u8]) -> Result<Vec<u8>, ExecuteError> {
+    let len = u32::try_from(msg.len()).map_err(|_| {
+        ExecuteError::AdapterFailed("grpc request message exceeds 4 GiB".to_string())
+    })?;
     let mut out = Vec::with_capacity(5 + msg.len());
     out.push(0);
-    out.extend_from_slice(&(msg.len() as u32).to_be_bytes());
+    out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(msg);
-    out
+    Ok(out)
 }
 
 fn decode_grpc_frame(buf: &[u8]) -> Result<&[u8], ExecuteError> {

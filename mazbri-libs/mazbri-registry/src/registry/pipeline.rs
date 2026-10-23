@@ -22,6 +22,9 @@ impl ConfigPipeline {
             previous_config: Arc::new(tokio::sync::RwLock::new(Some(previous))),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn process_config_change(
         &self,
         push: &ConfigPush,
@@ -33,7 +36,7 @@ impl ConfigPipeline {
                     accepted: false,
                     applied: false,
                     version: push.version,
-                    message: Some(format!("validate failed: {}", e)),
+                    message: Some(format!("validate failed: {e}")),
                 });
             }
         };
@@ -52,33 +55,32 @@ impl ConfigPipeline {
             }
             Err(apply_err) => {
                 if let Some(ref old) = old_config {
-                    match self.config_handler.rollback(old).await {
-                        Ok(_) => Ok(ConfigPushResult {
+                    if self.config_handler.rollback(old).await.is_ok() {
+                        Ok(ConfigPushResult {
                             accepted: true,
                             applied: false,
                             version: push.version,
                             message: Some(
                                 "config apply failed, rolled back to previous version".to_string(),
                             ),
-                        }),
-                        Err(_) => {
-                            tracing::error!(
-                                error = % apply_err, "config apply and rollback both failed"
-                            );
-                            Ok(ConfigPushResult {
-                                accepted: true,
-                                applied: false,
-                                version: push.version,
-                                message: Some("apply and rollback both failed".to_string()),
-                            })
-                        }
+                        })
+                    } else {
+                        tracing::error!(
+                            error = % apply_err, "config apply and rollback both failed"
+                        );
+                        Ok(ConfigPushResult {
+                            accepted: true,
+                            applied: false,
+                            version: push.version,
+                            message: Some("apply and rollback both failed".to_string()),
+                        })
                     }
                 } else {
                     Ok(ConfigPushResult {
                         accepted: true,
                         applied: false,
                         version: push.version,
-                        message: Some(format!("config apply failed: {}", apply_err)),
+                        message: Some(format!("config apply failed: {apply_err}")),
                     })
                 }
             }

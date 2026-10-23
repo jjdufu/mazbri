@@ -7,8 +7,8 @@ use crate::services::connector_metrics;
 use crate::services::ssrf;
 use mazbri_core::{SupplierConfig, UPSTREAM_TYPE_TRANSPARENT, mask_config_credentials};
 use mazbri_upstream_runtime::{
-    Assertion, AssertionResult, BodyKind, ExecuteInput, ExecuteMode, ExecuteOptions, InvokeInput,
-    OutboundRequest, OutboundResponse, RuntimeEngine, SsrfChecker, evaluate_assertions,
+    Assertion, AssertionResult, ExecuteMode, ExecuteOptions, InvokeInput, OutboundResponse,
+    RuntimeEngine, SsrfChecker, evaluate_assertions,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

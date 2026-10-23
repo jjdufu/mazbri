@@ -27,8 +27,6 @@ export interface AuditLogListQuery {
   action?: string;
   resource_type?: string;
   actor_id?: string;
-  actor_name?: string;
-
   q?: string;
 
   filters?: string;

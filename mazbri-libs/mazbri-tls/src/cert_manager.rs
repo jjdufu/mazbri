@@ -36,16 +36,16 @@ pub struct CertManager {
 impl CertManager {
     #[must_use]
     pub fn new(config: TlsConfig) -> Self {
-        let client = CertClient::new(
-            &config.cert_service_url,
-            config.cert_service_token.as_deref(),
-        );
+        let client = CertClient::new(&config.cert_service_url, &config.cert_service_token);
         Self {
             config,
             client,
             cert: Arc::new(RwLock::new(None)),
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn initialize(&self) -> TlsResult<ManagedCertificate> {
         info!(
             service_identity = % self.config.service_identity,
@@ -61,6 +61,9 @@ impl CertManager {
         }
         Ok(cert)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_certificate(&self) -> TlsResult<ManagedCertificate> {
         let guard = self.cert.read().await;
         guard
@@ -114,6 +117,7 @@ impl CertManager {
         );
         Ok(cert)
     }
+    #[must_use]
     pub fn spawn_renewal_task(&self) -> (tokio::task::JoinHandle<()>, oneshot::Sender<()>) {
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let manager = Self {
@@ -129,9 +133,9 @@ impl CertManager {
                         info!("Renewal task received shutdown signal");
                         break;
                     }
-                    _ = tokio::time::sleep(check_interval) => {
-                        if let Some(cert) = manager.cert.read().await.clone() {
-                            if cert.needs_renewal(manager.config.renewal_threshold_days) {
+                    () = tokio::time::sleep(check_interval) => {
+                        if let Some(cert) = manager.cert.read().await.clone()
+                            && cert.needs_renewal(manager.config.renewal_threshold_days) {
                                 info!(
                                     subject = %cert.subject,
                                     "Certificate needs renewal, renewing in background"
@@ -152,7 +156,6 @@ impl CertManager {
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -160,6 +163,7 @@ impl CertManager {
         });
         (handle, shutdown_tx)
     }
+    #[must_use]
     pub fn spawn_renewal_task_managed(&self) -> RenewalTaskHandle {
         let (handle, shutdown_tx) = self.spawn_renewal_task();
         RenewalTaskHandle {
@@ -167,6 +171,9 @@ impl CertManager {
             shutdown_tx,
         }
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_ca_cert(&self) -> TlsResult<String> {
         let cert = self.get_certificate().await?;
         Ok(cert.ca_cert_pem)

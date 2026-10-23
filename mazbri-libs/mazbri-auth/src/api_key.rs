@@ -57,7 +57,7 @@ impl LastUsedBatchWriter {
             loop {
                 tokio::select! {
                     _ = interval.tick() => { Self::flush(&buffer_task, &db_task).await; }
-                    _ = cancel.cancelled() => {
+                    () = cancel.cancelled() => {
                         debug!("LastUsedBatchWriter shutdown signal received, performing final flush");
                         Self::flush(&buffer_task, &db_task).await;
                         break;
@@ -93,7 +93,7 @@ impl LastUsedBatchWriter {
             let mut guard = self
                 .flush_task_handle
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.take()
         };
         if let Some(h) = handle {
@@ -103,7 +103,7 @@ impl LastUsedBatchWriter {
 
     async fn flush(buffer: &DashMap<Uuid, std::time::SystemTime>, db: &PgPool) {
         let mut ids = HashSet::new();
-        for entry in buffer.iter() {
+        for entry in buffer {
             ids.insert(*entry.key());
         }
         if ids.is_empty() {
@@ -152,6 +152,7 @@ struct CachedApiKeyAuth {
 }
 
 impl ApiKeyValidator {
+    #[must_use]
     pub fn new(db: Arc<PgPool>, config: Arc<AuthServiceConfig>) -> Self {
         let last_used_writer = LastUsedBatchWriter::new(db.clone());
         Self {
@@ -197,6 +198,9 @@ impl ApiKeyValidator {
         self.validation_cache.insert(cache_key, entry);
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn validate(&self, api_key: &str) -> AuthResult<ApiKeyAuth> {
         let started_at = std::time::Instant::now();
         let parts: Vec<&str> = api_key.split('_').collect();
@@ -209,7 +213,44 @@ impl ApiKeyValidator {
         let hash = parts[2];
         let cache_key = validation_cache_key(api_key, prefix);
 
-        if let Some(entry) = self.validation_cache.get(&cache_key) {
+        if let Some(auth) = self.cached_validation(&cache_key, prefix, started_at) {
+            return Ok(auth);
+        }
+        let row_opt = sqlx::query(
+            r"
+            SELECT
+                ac.id,
+                ac.tenant_id,
+                ac.credential_secret_hash,
+                ac.is_active,
+                ak.is_active AS api_key_active,
+                ac.expires_at,
+                ak.scopes AS scopes
+            FROM auth_credentials ac
+            LEFT JOIN api_keys ak ON ak.credential_id = ac.id
+            WHERE ac.credential_type = 'api_key'
+                AND ac.credential_id = $1
+            ",
+        )
+        .bind(prefix)
+        .fetch_optional(&*self.db)
+        .await?;
+
+        if let Some(row) = row_opt {
+            self.authenticate_row(&row, prefix, hash, cache_key, started_at)
+                .await
+        } else {
+            Err(reject_unknown_prefix(prefix, hash).await)
+        }
+    }
+
+    fn cached_validation(
+        &self,
+        cache_key: &str,
+        prefix: &str,
+        started_at: std::time::Instant,
+    ) -> Option<ApiKeyAuth> {
+        if let Some(entry) = self.validation_cache.get(cache_key) {
             if entry.expires_at > Instant::now() {
                 let auth = entry.auth.clone();
                 drop(entry);
@@ -218,109 +259,89 @@ impl ApiKeyValidator {
                     prefix = % prefix, tenant_id = % auth.tenant_id, total_elapsed_ms =
                     started_at.elapsed().as_millis(), "API key validation cache hit"
                 );
-                return Ok(auth);
+                return Some(auth);
             }
             drop(entry);
-            self.validation_cache.remove(&cache_key);
+            self.validation_cache.remove(cache_key);
         }
 
-        let row_opt = sqlx::query(
-            r#"
-            SELECT
-                ac.id,
-                ac.tenant_id,
-                ac.credential_secret_hash,
-                ac.is_active,
-                ak.is_active AS api_key_active,
-                ac.expires_at,
-                COALESCE(ak.scopes, ARRAY[]::TEXT[]) AS scopes
-            FROM auth_credentials ac
-            LEFT JOIN api_keys ak ON ak.credential_id = ac.id
-            WHERE ac.credential_type = 'api_key'
-                AND ac.credential_id = $1
-            "#,
-        )
-        .bind(prefix)
-        .fetch_optional(&*self.db)
-        .await?;
-
-        if let Some(row) = row_opt {
-            debug!(
-                prefix = % prefix, elapsed_ms = started_at.elapsed().as_millis(),
-                "API key metadata loaded from database"
-            );
-            let is_active: bool = row.try_get("is_active")?;
-            let api_key_active: Option<bool> = row.try_get("api_key_active")?;
-            if !is_active || api_key_active == Some(false) {
-                return Err(AuthError::ApiKeyDisabled(prefix.to_string()));
-            }
-            let expires_at: Option<chrono::DateTime<chrono::Utc>> = row.try_get("expires_at")?;
-            if let Some(exp) = expires_at
-                && exp < chrono::Utc::now()
-            {
-                return Err(AuthError::ApiKeyExpired(prefix.to_string()));
-            }
-            let credential_secret_hash: String = row.try_get("credential_secret_hash")?;
-            let hash_bytes = hash.as_bytes().to_vec();
-            let verify_started_at = std::time::Instant::now();
-            let verify_result = tokio::task::spawn_blocking(move || {
-                crate::constant_time_argon2_verify(&hash_bytes, &credential_secret_hash)
-            })
-            .await
-            .map_err(|e| {
-                AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                    "API key verify task failed: {}",
-                    e
-                )))
-            })?;
-            debug!(
-                prefix = % prefix, verify_elapsed_ms = verify_started_at.elapsed()
-                .as_millis(), total_elapsed_ms = started_at.elapsed().as_millis(),
-                "API key secret verification completed"
-            );
-            if verify_result.is_err() {
-                return Err(AuthError::InvalidApiKeyFormat(
-                    "Invalid API key".to_string(),
-                ));
-            }
-            let credential_id: Uuid = row.try_get("id")?;
-            let tenant_id: Uuid = row.try_get("tenant_id")?;
-            let scopes: Vec<String> = row.try_get("scopes").unwrap_or_default();
-            self.last_used_writer.record(credential_id);
-            let auth = ApiKeyAuth {
-                credential_id,
-                tenant_id,
-                api_key_prefix: prefix.to_string(),
-                scopes,
-            };
-            self.insert_cache(
-                cache_key,
-                CachedApiKeyAuth {
-                    auth: auth.clone(),
-                    expires_at: Instant::now()
-                        + Duration::from_secs(self.config.validation_cache_ttl_secs),
-                    prefix: prefix.to_string(),
-                },
-            );
-            debug!(
-                prefix = % prefix, tenant_id = % auth.tenant_id, total_elapsed_ms =
-                started_at.elapsed().as_millis(), "API key validated successfully"
-            );
-            Ok(auth)
-        } else {
-            const DUMMY_HASH: &str = "$argon2id$v=19$m=65536,t=3,p=4$pZTjh2UekhkaTDHbZbWhSQ$meFTW0nHJXRVXp7NIp0vNR7B4wY4chWoSdlYhtzYWdw";
-            let hash_bytes = hash.as_bytes().to_vec();
-            let _verify_result = tokio::task::spawn_blocking(move || {
-                crate::constant_time_argon2_verify(&hash_bytes, DUMMY_HASH)
-            })
-            .await;
-            Err(AuthError::ApiKeyNotFound(prefix.to_string()))
-        }
+        None
     }
 
-    pub fn cache_validation(&self, api_key: String, auth: ApiKeyAuth, ttl: Duration) {
+    async fn authenticate_row(
+        &self,
+        row: &sqlx::postgres::PgRow,
+        prefix: &str,
+        hash: &str,
+        cache_key: String,
+        started_at: std::time::Instant,
+    ) -> AuthResult<ApiKeyAuth> {
+        debug!(
+            prefix = % prefix, elapsed_ms = started_at.elapsed().as_millis(),
+            "API key metadata loaded from database"
+        );
+        let is_active: bool = row.try_get("is_active")?;
+        let api_key_active: Option<bool> = row.try_get("api_key_active")?;
+        if !is_active || api_key_active == Some(false) {
+            return Err(AuthError::ApiKeyDisabled(prefix.to_string()));
+        }
+        let expires_at: Option<chrono::DateTime<chrono::Utc>> = row.try_get("expires_at")?;
+        if let Some(exp) = expires_at
+            && exp < chrono::Utc::now()
+        {
+            return Err(AuthError::ApiKeyExpired(prefix.to_string()));
+        }
+        let credential_secret_hash: String = row.try_get("credential_secret_hash")?;
+        let hash_bytes = hash.as_bytes().to_vec();
+        let verify_started_at = std::time::Instant::now();
+        let verify_result = tokio::task::spawn_blocking(move || {
+            crate::constant_time_argon2_verify(&hash_bytes, &credential_secret_hash)
+        })
+        .await
+        .map_err(|e| {
+            AuthError::Core(mazbri_core::CoreError::Internal(format!(
+                "API key verify task failed: {e}"
+            )))
+        })?;
+        debug!(
+            prefix = % prefix, verify_elapsed_ms = verify_started_at.elapsed()
+            .as_millis(), total_elapsed_ms = started_at.elapsed().as_millis(),
+            "API key secret verification completed"
+        );
+        if verify_result.is_err() {
+            return Err(AuthError::InvalidApiKeyFormat(
+                "Invalid API key".to_string(),
+            ));
+        }
+        let credential_id: Uuid = row.try_get("id")?;
+        let tenant_id: Uuid = row.try_get("tenant_id")?;
+        let scopes: Vec<String> = row.try_get("scopes")?;
+        self.last_used_writer.record(credential_id);
+        let auth = ApiKeyAuth {
+            credential_id,
+            tenant_id,
+            api_key_prefix: prefix.to_string(),
+            scopes,
+        };
+        self.insert_cache(
+            cache_key,
+            CachedApiKeyAuth {
+                auth: auth.clone(),
+                expires_at: Instant::now()
+                    + Duration::from_secs(self.config.validation_cache_ttl_secs),
+                prefix: prefix.to_string(),
+            },
+        );
+        debug!(
+            prefix = % prefix, tenant_id = % auth.tenant_id, total_elapsed_ms =
+            started_at.elapsed().as_millis(), "API key validated successfully"
+        );
+        Ok(auth)
+    }
+
+    pub fn cache_validation(&self, api_key: &str, auth: ApiKeyAuth, ttl: Duration) {
         let prefix = auth.api_key_prefix.clone();
-        let cache_key = validation_cache_key(&api_key, &prefix);
+        let cache_key = validation_cache_key(api_key, &prefix);
         self.insert_cache(
             cache_key,
             CachedApiKeyAuth {
@@ -331,6 +352,9 @@ impl ApiKeyValidator {
         );
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn create_api_key(
         &self,
         tenant_id: Uuid,
@@ -339,23 +363,22 @@ impl ApiKeyValidator {
         let mut tx = self.db.begin().await?;
         let prefix = self.generate_prefix(&mut tx).await?;
         let random_bytes: [u8; 32] = rand::random();
-        let secret: String = random_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let secret = hex::encode(random_bytes);
         let salt = SaltString::generate(&mut OsRng);
         let password_hash = Argon2::default()
             .hash_password(secret.as_bytes(), &salt)
             .map_err(|e| {
                 AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                    "Failed to hash password: {}",
-                    e
+                    "Failed to hash password: {e}"
                 )))
             })?
             .to_string();
         let metadata = description.map(|d| serde_json::json!({ "description" : d }));
         sqlx::query(
-                r#"
+                r"
             INSERT INTO auth_credentials (tenant_id, credential_type, credential_id, credential_secret_hash, metadata)
             VALUES ($1, 'api_key', $2, $3, $4)
-            "#,
+            ",
             )
             .bind(tenant_id)
             .bind(&prefix)
@@ -364,9 +387,12 @@ impl ApiKeyValidator {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(format!("mazbri_{}_{}", prefix, secret))
+        Ok(format!("mazbri_{prefix}_{secret}"))
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn revoke_api_key(&self, prefix: &str) -> AuthResult<()> {
         let mut tx = self.db.begin().await?;
         let result = sqlx::query(
@@ -400,7 +426,7 @@ impl ApiKeyValidator {
         let byte_count = hex_length.div_ceil(2);
         for _ in 0..MAX_PREFIX_ATTEMPTS {
             let random_bytes: Vec<u8> = (0..byte_count).map(|_| rand::random::<u8>()).collect();
-            let hex_str: String = random_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            let hex_str = hex::encode(&random_bytes);
             let prefix = hex_str[..hex_length].to_string();
             let exists = sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS(SELECT 1 FROM auth_credentials WHERE credential_id = $1)",
@@ -441,6 +467,16 @@ pub struct ApiKeyAuth {
     pub credential_id: Uuid,
     pub tenant_id: Uuid,
     pub api_key_prefix: String,
-    /// Scopes stored on `api_keys.scopes` (may be empty for legacy keys).
+    /// Scopes stored on `api_keys.scopes` (non-empty; `api:read` | `api:write` | `api:admin`).
     pub scopes: Vec<String>,
+}
+
+async fn reject_unknown_prefix(prefix: &str, hash: &str) -> AuthError {
+    const DUMMY_HASH: &str = "$argon2id$v=19$m=65536,t=3,p=4$pZTjh2UekhkaTDHbZbWhSQ$meFTW0nHJXRVXp7NIp0vNR7B4wY4chWoSdlYhtzYWdw";
+    let hash_bytes = hash.as_bytes().to_vec();
+    let _verify_result = tokio::task::spawn_blocking(move || {
+        crate::constant_time_argon2_verify(&hash_bytes, DUMMY_HASH)
+    })
+    .await;
+    AuthError::ApiKeyNotFound(prefix.to_string())
 }

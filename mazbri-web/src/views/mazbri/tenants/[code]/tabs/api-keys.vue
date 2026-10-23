@@ -231,8 +231,7 @@ const apiKeyColumns = ref<ColumnOption<ApiKey>[]>([
 ]);
 const formRef = ref<FormInstance>();
 const renewFormRef = ref<FormInstance>();
-const createForm = reactive<CreateApiKeyRequest>({
-  scopes: [],
+const createForm = reactive<{ expires_days: number }>({
   expires_days: 365,
 });
 const renewForm = reactive({
@@ -281,7 +280,7 @@ const handleSubmitCreate = async () => {
   creating.value = true;
   try {
     const data: CreateApiKeyRequest = {
-      scopes: ["read", "write", "admin"],
+      scopes: ["api:read", "api:write"],
       expires_days: createForm.expires_days,
     };
     const res = await createApiKey(props.tenantCode, data);

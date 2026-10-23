@@ -6,6 +6,7 @@ import type {
   ConnectorRun,
   DraftGateItem,
   StageResult,
+  WorkbenchEnvEntry,
 } from "@/api/upstream-connectors";
 
 /** Hoppscotch Header List row. Edit-time truth is this array (order, dup keys, enabled, desc). Empty table is []. */
@@ -208,20 +209,9 @@ export function kvToEntries(rows: KvRow[]): KvRow[] {
   return rows.map(normalizeKvRow);
 }
 
-/** Load workbench_env: array of KvRow (incl. []) or legacy string map. */
-export function workbenchEnvToKv(value: unknown): KvRow[] {
-  if (Array.isArray(value)) {
-    return entriesToKv(value as Array<Partial<KvRow>>);
-  }
-  if (value && typeof value === "object") {
-    const rec: Record<string, string> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === "string") rec[k] = v;
-      else if (typeof v === "number" || typeof v === "boolean") rec[k] = String(v);
-    }
-    return mapToKv(rec);
-  }
-  return mapToKv({});
+/** Load workbench_env: array of KvRow (incl. []). */
+export function workbenchEnvToKv(value: WorkbenchEnvEntry[]): KvRow[] {
+  return entriesToKv(value);
 }
 
 /** Egress / engine map only. Last duplicate key wins. Disabled and blank keys dropped. */
@@ -541,14 +531,6 @@ export function workbenchEnvSurfaceParts(args: {
     request_body_tpl?: string;
     headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
   } | null;
-  transform?: {
-    rewrite_path?: string;
-    request_body_template?: string;
-    response_body_template?: string;
-    request_headers_set?: Array<{ key?: string; value?: string; enabled?: boolean }>;
-    response_headers_set?: Array<{ key?: string; value?: string; enabled?: boolean }>;
-    request_headers_remove?: string[];
-  } | null;
 }): string[] {
   const parts: string[] = [];
   if (args.upstreamUrl) parts.push(args.upstreamUrl);
@@ -594,17 +576,6 @@ export function workbenchEnvSurfaceParts(args: {
       if (s) parts.push(s);
     }
     pushKvParts(parts, auth.headers);
-  }
-  const tr = args.transform;
-  if (tr) {
-    if (tr.rewrite_path) parts.push(tr.rewrite_path);
-    if (tr.request_body_template) parts.push(tr.request_body_template);
-    if (tr.response_body_template) parts.push(tr.response_body_template);
-    pushKvParts(parts, tr.request_headers_set);
-    pushKvParts(parts, tr.response_headers_set);
-    for (const s of tr.request_headers_remove || []) {
-      if (s) parts.push(s);
-    }
   }
   return parts;
 }
@@ -1264,6 +1235,7 @@ export function normalizeWorkbenchEndpoint(
     id: ep.id || `ep-${index + 1}`,
     method: ep.method || "GET",
     path: typeof ep.path === "string" ? ep.path : "/",
+    body_encoding: resolvedBodyEncoding(ep),
     name: ep.name || ep.path || `ep-${index + 1}`,
     headers: ep.headers || {},
     query: ep.query || {},

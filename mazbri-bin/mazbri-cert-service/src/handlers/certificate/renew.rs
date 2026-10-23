@@ -13,6 +13,7 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use uuid::Uuid;
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RenewCertificateRequest {
     #[serde(default = "default_validity_days")]
     pub validity_days: i64,

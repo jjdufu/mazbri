@@ -8,7 +8,7 @@ mod service;
 mod types;
 mod usage_outbox_worker;
 mod worker;
-pub use calculator::{BillingCalculator, BillingModel, BillingType, CalculationResult, RateConfig};
+pub use calculator::{BillingCalculator, CalculationResult, RateConfig};
 pub use error::{BillingError, BillingResult as Result};
 use mazbri_core::CoreError;
 pub use metrics::{DeductionRecorder, register_billing_metrics};

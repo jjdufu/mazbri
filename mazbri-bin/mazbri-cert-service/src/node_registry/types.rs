@@ -16,6 +16,7 @@ pub struct RegisteredNode {
     pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegisterNodeData {
     pub service_name: String,
     pub ip: String,
@@ -26,6 +27,7 @@ pub struct RegisterNodeData {
     pub health_check_url: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HeartbeatData {
     pub service_name: String,
     pub config_version: i32,

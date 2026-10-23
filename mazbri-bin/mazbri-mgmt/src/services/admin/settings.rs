@@ -66,29 +66,27 @@ pub async fn update_system_settings(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
     let mut errors = Vec::new();
-    if let Some(ref site_name) = req.site_name {
-        if let Err(e) = repo::upsert_system_setting(
+    if let Some(ref site_name) = req.site_name
+        && let Err(e) = repo::upsert_system_setting(
             &mut tx,
             "site_name",
             &serde_json::json!(site_name),
             "general",
         )
         .await
-        {
-            errors.push(format!("site_name: {e}"));
-        }
+    {
+        errors.push(format!("site_name: {e}"));
     }
-    if let Some(ref site_url) = req.site_url {
-        if let Err(e) = repo::upsert_system_setting(
+    if let Some(ref site_url) = req.site_url
+        && let Err(e) = repo::upsert_system_setting(
             &mut tx,
             "site_url",
             &serde_json::json!(site_url),
             "general",
         )
         .await
-        {
-            errors.push(format!("site_url: {e}"));
-        }
+    {
+        errors.push(format!("site_url: {e}"));
     }
     if let Some(ref tenant_gateway_url) = req.tenant_gateway_url {
         let normalized = normalize_tenant_gateway_url(tenant_gateway_url)?;
@@ -103,41 +101,38 @@ pub async fn update_system_settings(
             errors.push(format!("tenant_gateway_url: {e}"));
         }
     }
-    if let Some(enable_audit_log) = req.enable_audit_log {
-        if let Err(e) = repo::upsert_system_setting(
+    if let Some(enable_audit_log) = req.enable_audit_log
+        && let Err(e) = repo::upsert_system_setting(
             &mut tx,
             "enable_audit_log",
             &serde_json::json!(enable_audit_log),
             "general",
         )
         .await
-        {
-            errors.push(format!("enable_audit_log: {e}"));
-        }
+    {
+        errors.push(format!("enable_audit_log: {e}"));
     }
-    if let Some(session_timeout) = req.session_timeout {
-        if let Err(e) = repo::upsert_system_setting(
+    if let Some(session_timeout) = req.session_timeout
+        && let Err(e) = repo::upsert_system_setting(
             &mut tx,
             "session_timeout",
             &serde_json::json!(session_timeout),
             "security",
         )
         .await
-        {
-            errors.push(format!("session_timeout: {e}"));
-        }
+    {
+        errors.push(format!("session_timeout: {e}"));
     }
-    if let Some(max_upload_size) = req.max_upload_size {
-        if let Err(e) = repo::upsert_system_setting(
+    if let Some(max_upload_size) = req.max_upload_size
+        && let Err(e) = repo::upsert_system_setting(
             &mut tx,
             "max_upload_size",
             &serde_json::json!(max_upload_size),
             "security",
         )
         .await
-        {
-            errors.push(format!("max_upload_size: {e}"));
-        }
+    {
+        errors.push(format!("max_upload_size: {e}"));
     }
     if !errors.is_empty() {
         let _ = tx.rollback().await;
@@ -182,20 +177,18 @@ pub async fn update_user_settings(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
     let mut errors = Vec::new();
-    if let Some(ref language) = req.language {
-        if let Err(e) =
+    if let Some(ref language) = req.language
+        && let Err(e) =
             repo::upsert_user_setting(&mut tx, user_id, "language", &serde_json::json!(language))
                 .await
-        {
-            errors.push(format!("language: {e}"));
-        }
+    {
+        errors.push(format!("language: {e}"));
     }
-    if let Some(ref email) = req.email {
-        if let Err(e) =
+    if let Some(ref email) = req.email
+        && let Err(e) =
             repo::upsert_user_setting(&mut tx, user_id, "email", &serde_json::json!(email)).await
-        {
-            errors.push(format!("email: {e}"));
-        }
+    {
+        errors.push(format!("email: {e}"));
     }
     if !errors.is_empty() {
         let _ = tx.rollback().await;

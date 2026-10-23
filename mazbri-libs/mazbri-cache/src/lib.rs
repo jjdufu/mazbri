@@ -1,3 +1,4 @@
+use mazbri_core::num::SaturatingFrom;
 mod cache;
 mod config;
 mod metrics;
@@ -26,39 +27,47 @@ pub struct CacheService {
 }
 
 impl CacheService {
-    pub async fn new(
+    #[must_use]
+    pub fn new(
         db: Arc<PgPool>,
         config: CacheConfig,
         redis: mazbri_core::redis::RedisClient,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let cache = Arc::new(RedisCache::with_client(db.clone(), config.clone(), redis));
         let ttl_manager = Arc::new(TtlManager::new(cache.clone()));
-        Ok(Self {
+        Self {
             db,
             config: Arc::new(config),
             cache,
             ttl_manager,
-        })
+        }
     }
+    #[must_use]
     pub fn cache(&self) -> &Arc<RedisCache> {
         &self.cache
     }
+    #[must_use]
     pub fn config(&self) -> &Arc<CacheConfig> {
         &self.config
     }
+    #[must_use]
     pub fn ttl_manager(&self) -> &Arc<TtlManager> {
         &self.ttl_manager
     }
+    #[must_use]
     pub fn db(&self) -> &Arc<PgPool> {
         &self.db
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn load_config(
         &self,
         tenant_id: uuid::Uuid,
     ) -> mazbri_core::Result<Option<CacheConfig>> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT
                 enabled,
                 default_ttl,
@@ -67,7 +76,7 @@ impl CacheService {
                 tenant_isolated
             FROM cache_configs
             WHERE tenant_id = $1
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_optional(&*self.db)
@@ -88,8 +97,8 @@ impl CacheService {
                     serde_json::from_value(api_ttl).unwrap_or_default()
                 };
                 Ok(Some(CacheConfig {
-                    default_ttl: default_ttl as u64,
-                    max_cache_size: max_cache_size as u64,
+                    default_ttl: u64::saturating_from(default_ttl),
+                    max_cache_size: u64::saturating_from(max_cache_size),
                     api_ttl: api_ttl_map,
                     tenant_isolated,
                     max_entry_size: 1_048_576,

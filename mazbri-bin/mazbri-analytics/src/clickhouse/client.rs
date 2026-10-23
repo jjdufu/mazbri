@@ -122,25 +122,25 @@ impl ClickHouseClient {
             "window_start >= parseDateTimeBestEffortOrNull(?)".to_string(),
             "window_start <= parseDateTimeBestEffortOrNull(?)".to_string(),
         ];
-        if let Some(sc) = supplier_code {
-            if !sc.trim().is_empty() {
-                conditions.push(format!("supplier_code = '{}'", sc.replace('\'', "''")));
-            }
+        if let Some(sc) = supplier_code
+            && !sc.trim().is_empty()
+        {
+            conditions.push(format!("supplier_code = '{}'", sc.replace('\'', "''")));
         }
-        if let Some(cc) = channel_code {
-            if !cc.trim().is_empty() {
-                conditions.push(format!("channel_code = '{}'", cc.replace('\'', "''")));
-            }
+        if let Some(cc) = channel_code
+            && !cc.trim().is_empty()
+        {
+            conditions.push(format!("channel_code = '{}'", cc.replace('\'', "''")));
         }
-        if let Some(si) = supplier_id {
-            if !si.trim().is_empty() {
-                conditions.push(format!("supplier_id = '{}'", si.replace('\'', "''")));
-            }
+        if let Some(si) = supplier_id
+            && !si.trim().is_empty()
+        {
+            conditions.push(format!("supplier_id = '{}'", si.replace('\'', "''")));
         }
-        if let Some(ci) = channel_id {
-            if !ci.trim().is_empty() {
-                conditions.push(format!("channel_id = '{}'", ci.replace('\'', "''")));
-            }
+        if let Some(ci) = channel_id
+            && !ci.trim().is_empty()
+        {
+            conditions.push(format!("channel_id = '{}'", ci.replace('\'', "''")));
         }
         // Qualify source columns with the table name so aliases like `AS total_calls`
         // do not shadow the base column inside sumIf(...) (ClickHouse ILLEGAL_AGGREGATION).

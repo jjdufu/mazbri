@@ -66,10 +66,10 @@ pub async fn list_configs(
     if let Some(ref sn) = service_name {
         let _ = write!(url_path, "&service_name={}", urlencoding::encode(sn));
     }
-    if let Some(ref search) = params.q {
-        if service_name.is_none() {
-            let _ = write!(url_path, "&q={}", urlencoding::encode(search));
-        }
+    if let Some(ref search) = params.q
+        && service_name.is_none()
+    {
+        let _ = write!(url_path, "&q={}", urlencoding::encode(search));
     }
     if let Some(ref ub) = updated_by {
         let _ = write!(url_path, "&updated_by={}", urlencoding::encode(ub));

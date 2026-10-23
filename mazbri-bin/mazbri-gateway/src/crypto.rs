@@ -3,7 +3,6 @@ use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
 use crate::redis_client::RedisClient;
 use chrono::Utc;
-use mazbri_core::PayloadCodec;
 use mazbri_core::crypto::tenant_key::{
     RootProtectionMaterialBundle, decode_configured_key, unwrap_tenant_key,
     verify_secret_key_digest,
@@ -135,10 +134,6 @@ pub struct TenantCryptoProfile {
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub request_codec: String,
-    pub response_codec: String,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
 }
 
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
@@ -160,10 +155,6 @@ struct TenantCryptoSnapshotRow {
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub request_codec: String,
-    pub response_codec: String,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
     pub key_version: Option<String>,
     pub encrypted_secret_key: Option<String>,
     pub secret_key_digest: Option<String>,
@@ -197,7 +188,7 @@ pub struct TenantCryptoState {
     http_client: reqwest::Client,
     redis: RedisClient,
     cert_service_url: String,
-    cert_service_token: Option<String>,
+    cert_service_token: String,
 }
 
 impl TenantCryptoState {
@@ -208,7 +199,7 @@ impl TenantCryptoState {
         db: Arc<PgPool>,
         redis: RedisClient,
         cert_service_url: &str,
-        cert_service_token: Option<String>,
+        cert_service_token: String,
     ) -> anyhow::Result<Self> {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
@@ -223,7 +214,7 @@ impl TenantCryptoState {
             key_cache: moka::sync::Cache::builder()
                 .max_capacity(100_000)
                 .support_invalidation_closures()
-                .time_to_live(Duration::from_secs(900))
+                .time_to_live(Duration::from_mins(15))
                 .build(),
             root_material_cache: moka::sync::Cache::builder()
                 .max_capacity(1)
@@ -258,10 +249,6 @@ impl TenantCryptoState {
                 current_key_version: None,
                 nonce_ttl_seconds: 300,
                 clock_skew_seconds: 300,
-                request_codec: "json".to_string(),
-                response_codec: "json".to_string(),
-                codec_enabled: false,
-                codec_version: 1,
             };
             self.profile_cache.insert(tenant_id, profile.clone());
             record_crypto_lookup_duration("profile", "miss", lookup_started_at.elapsed());
@@ -269,15 +256,15 @@ impl TenantCryptoState {
         };
         let profile = Self::profile_from_snapshot(&snapshot);
         self.profile_cache.insert(tenant_id, profile.clone());
-        if let Some(key_row) = Self::key_from_snapshot(&snapshot) {
-            if let Err(error) = self.materialize_key_row_with_root(&key_row).await {
-                warn!(
-                    tenant_id = % tenant_id,
-                    key_version = % key_row.key_version,
-                    error = % error,
-                    "Tenant crypto current key warmup failed"
-                );
-            }
+        if let Some(key_row) = Self::key_from_snapshot(&snapshot)
+            && let Err(error) = self.materialize_key_row_with_root(&key_row).await
+        {
+            warn!(
+                tenant_id = % tenant_id,
+                key_version = % key_row.key_version,
+                error = % error,
+                "Tenant crypto current key warmup failed"
+            );
         }
         record_crypto_lookup_duration("profile", "miss", lookup_started_at.elapsed());
         Ok(profile)
@@ -374,8 +361,7 @@ impl TenantCryptoState {
             r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
-                p.codec_enabled, p.codec_version, k.key_version, k.encrypted_secret_key,
+                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
@@ -465,7 +451,7 @@ impl TenantCryptoState {
         let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
             &self.http_client,
             &self.cert_service_url,
-            self.cert_service_token.as_deref(),
+            &self.cert_service_token,
         )
         .await
         .map_err(|error| {
@@ -484,8 +470,7 @@ impl TenantCryptoState {
             r"
             SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
                 p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, p.request_codec, p.response_codec,
-                p.codec_enabled, p.codec_version, k.key_version, k.encrypted_secret_key,
+                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
@@ -510,10 +495,6 @@ impl TenantCryptoState {
             current_key_version: snapshot.current_key_version.clone(),
             nonce_ttl_seconds: snapshot.nonce_ttl_seconds,
             clock_skew_seconds: snapshot.clock_skew_seconds,
-            request_codec: snapshot.request_codec.clone(),
-            response_codec: snapshot.response_codec.clone(),
-            codec_enabled: snapshot.codec_enabled,
-            codec_version: snapshot.codec_version,
         }
     }
 
@@ -644,12 +625,9 @@ impl TenantCryptoState {
                 })?;
                 timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
                 let parse_started_at = Instant::now();
-                let request_codec = profile.request_codec();
-                let req =
-                    mazbri_core::deserialize_payload::<GatewayRequest>(request_codec, &plaintext)
-                        .map_err(|_| {
-                        ProxyError::BadRequest("Decrypted request body is invalid".to_string())
-                    })?;
+                let req = serde_json::from_slice::<GatewayRequest>(&plaintext).map_err(|_| {
+                    ProxyError::BadRequest("Decrypted request body is invalid".to_string())
+                })?;
                 timing.parse = mazbri_core::num::millis_u64(parse_started_at.elapsed());
                 timing.transport_total = mazbri_core::num::millis_u64(started_at.elapsed());
                 Ok((req, profile, true, timing))
@@ -763,7 +741,7 @@ impl TenantCryptoState {
         let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
             &self.http_client,
             &self.cert_service_url,
-            self.cert_service_token.as_deref(),
+            &self.cert_service_token,
         )
         .await
         .map_err(|error| {
@@ -780,12 +758,13 @@ impl TenantCryptoState {
     /// - `InProgress`: same fingerprint still running → 409.
     /// - `Completed`: prior success body; return without re-billing.
     ///
-    /// Redis failure policy: **fail-open** (returns `Acquired`) so transient Redis
-    /// outage does not drop traffic; risk is weaker dedupe under Redis fault.
+    /// Redis failure policy: **fail-closed** — any Redis error returns
+    /// `ProxyError::IdempotencyUnavailable` (503 + Retry-After, code
+    /// `IDEMPOTENCY_UNAVAILABLE`), logged and counted. Only keyed requests call this.
     ///
     /// # Errors
     ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    /// Redis 不可用时返回 `ProxyError::IdempotencyUnavailable`。
     pub async fn check_idempotency(
         &self,
         fingerprint: &str,
@@ -800,19 +779,12 @@ impl TenantCryptoState {
         {
             Ok(true) => Ok(IdempotencyOutcome::Acquired),
             Ok(false) => match self.redis.get_bytes(&key).await {
-                Ok(Some(bytes)) => {
-                    if let Ok(record) = serde_json::from_slice::<IdempotencyRecord>(&bytes) {
-                        match record.status.as_str() {
-                            "done" => Ok(IdempotencyOutcome::Completed(record)),
-                            _ => Ok(IdempotencyOutcome::InProgress),
-                        }
-                    } else if bytes.as_slice() == b"1" || bytes.as_slice() == b"processing" {
-                        // Legacy marker from older builds → treat as in-progress / conflict
-                        Ok(IdempotencyOutcome::InProgress)
-                    } else {
-                        Ok(IdempotencyOutcome::InProgress)
+                Ok(Some(bytes)) => match serde_json::from_slice::<IdempotencyRecord>(&bytes) {
+                    Ok(record) if record.status == "done" => {
+                        Ok(IdempotencyOutcome::Completed(record))
                     }
-                }
+                    _ => Ok(IdempotencyOutcome::InProgress),
+                },
                 Ok(None) => {
                     // Race: key expired between NX miss and GET → re-acquire
                     match self
@@ -823,32 +795,13 @@ impl TenantCryptoState {
                         Ok(true) => Ok(IdempotencyOutcome::Acquired),
                         Ok(false) => Ok(IdempotencyOutcome::InProgress),
                         Err(error) => {
-                            tracing::warn!(
-                                fingerprint = %fingerprint,
-                                error = %error,
-                                "Idempotency re-acquire failed; fail-open"
-                            );
-                            Ok(IdempotencyOutcome::Acquired)
+                            Err(idempotency_unavailable("re-acquire", fingerprint, &error))
                         }
                     }
                 }
-                Err(error) => {
-                    tracing::warn!(
-                        fingerprint = %fingerprint,
-                        error = %error,
-                        "Idempotency GET failed; fail-open"
-                    );
-                    Ok(IdempotencyOutcome::Acquired)
-                }
+                Err(error) => Err(idempotency_unavailable("GET", fingerprint, &error)),
             },
-            Err(error) => {
-                tracing::warn!(
-                    fingerprint = %fingerprint,
-                    error = %error,
-                    "Idempotency SET NX failed; fail-open"
-                );
-                Ok(IdempotencyOutcome::Acquired)
-            }
+            Err(error) => Err(idempotency_unavailable("SET NX", fingerprint, &error)),
         }
     }
 
@@ -970,15 +923,15 @@ impl TenantCryptoState {
             return Ok(None);
         }
         let now = Utc::now();
-        if let Some(not_before) = row.not_before {
-            if now < not_before {
-                return Ok(None);
-            }
+        if let Some(not_before) = row.not_before
+            && now < not_before
+        {
+            return Ok(None);
         }
-        if let Some(not_after) = row.not_after {
-            if now >= not_after {
-                return Ok(None);
-            }
+        if let Some(not_after) = row.not_after
+            && now >= not_after
+        {
+            return Ok(None);
         }
         if row.alg != "hmac-sha256" {
             return Ok(None);
@@ -1060,24 +1013,6 @@ struct PlatformSigningKeyRow {
     pub not_after: Option<chrono::DateTime<Utc>>,
 }
 
-impl TenantCryptoProfile {
-    #[must_use]
-    pub fn request_codec(&self) -> PayloadCodec {
-        if !self.codec_enabled {
-            return PayloadCodec::Json;
-        }
-        PayloadCodec::parse(&self.request_codec).unwrap_or_default()
-    }
-
-    #[must_use]
-    pub fn response_codec(&self) -> PayloadCodec {
-        if !self.codec_enabled {
-            return PayloadCodec::Json;
-        }
-        PayloadCodec::parse(&self.response_codec).unwrap_or_default()
-    }
-}
-
 fn decode_root_materials(
     materials: &RootProtectionMaterialBundle,
 ) -> Result<(Vec<u8>, Vec<u8>), ProxyError> {
@@ -1139,4 +1074,58 @@ fn validate_timestamp(
         ));
     }
     Ok(())
+}
+
+/// Suggested Retry-After when the idempotency store is unavailable.
+pub const IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 1;
+
+/// Fail-closed: a keyed request must not run without the idempotency guard
+/// (would risk double charge). Logs, bumps the metric, returns 503 error.
+pub(crate) fn idempotency_unavailable(
+    op: &str,
+    fingerprint: &str,
+    error: &dyn std::fmt::Display,
+) -> ProxyError {
+    crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.inc();
+    tracing::error!(
+        target: "gateway.stage",
+        event = "idempotency_unavailable",
+        op = op,
+        fingerprint = %fingerprint,
+        error = %error,
+        "Idempotency store failed; rejecting keyed request (fail-closed)"
+    );
+    ProxyError::IdempotencyUnavailable {
+        retry_after_secs: IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS,
+    }
+}
+
+#[cfg(test)]
+mod idempotency_fail_closed_tests {
+    use super::idempotency_unavailable;
+    use crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn redis_failure_maps_to_503_with_retry_after_and_code() {
+        let before = GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get();
+        let err = idempotency_unavailable("SET NX", "fp-1", &"connection refused");
+        assert!(GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get() > before);
+        assert_eq!(err.error_code(), "IDEMPOTENCY_UNAVAILABLE");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok()),
+            Some("1")
+        );
+        let body = axum::body::to_bytes(response.into_body(), 1 << 16)
+            .await
+            .expect("body");
+        let text = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(text.contains("IDEMPOTENCY_UNAVAILABLE"));
+    }
 }

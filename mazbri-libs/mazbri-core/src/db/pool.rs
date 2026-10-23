@@ -59,7 +59,7 @@ fn build_connect_options_from_fields(
             "allow" => PgSslMode::Allow,
             "verify-ca" => PgSslMode::VerifyCa,
             "verify-full" => PgSslMode::VerifyFull,
-            _ => bail!("不支持的 ssl_mode: {}", ssl),
+            _ => bail!("不支持的 ssl_mode: {ssl}"),
         };
         options = options.ssl_mode(mode);
     }
@@ -103,6 +103,10 @@ pub fn listen_application_name(base: &str) -> String {
 /// sqlx `PgListener::connect_with` keeps a pool connection checked out. Callers that
 /// pass the business pool pin that slot until process exit. This builds a one-connection
 /// pool, same as `PgListener::connect`, so reconnects stay on that pool.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn connect_listener(
     config: &DatabaseConfig,
     base_dir: Option<&Path>,
@@ -133,6 +137,9 @@ pub async fn connect_listener(
     Ok(listener)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn create_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Result<Arc<PgPool>> {
     let options = build_connect_options(config, base_dir)?;
     let failure = connect_failure_context(&options, config);

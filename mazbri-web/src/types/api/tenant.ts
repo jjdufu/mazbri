@@ -1,10 +1,9 @@
-import type { TenantStatus, ISODateString, DecimalString } from "./common";
-export type { TenantStatus } from "./common";
+import type { ISODateString, DecimalString } from "./common";
 export interface Tenant {
   tenant_code: string;
   tenant_id: string;
   name: string;
-  status: TenantStatus;
+  enabled: boolean;
   contact_person?: string;
   contact_email?: string;
   contact_phone?: string;
@@ -25,7 +24,7 @@ export interface TenantListQuery {
   page?: number;
   page_size?: number;
   q?: string;
-  status?: TenantStatus;
+  filters?: string;
 }
 export interface CreateTenantRequest {
   tenant_code: string;
@@ -41,10 +40,10 @@ export interface UpdateTenantRequest {
   contact_person?: string;
   contact_email?: string;
   contact_phone?: string;
-  status?: TenantStatus;
 }
-export interface SetTenantStatusRequest {
-  status: TenantStatus;
+export interface SetTenantEnabledRequest {
+  enabled: boolean;
+  reason?: string;
 }
 export interface TenantAccount {
   tenant_id: string;
@@ -111,8 +110,6 @@ export interface TenantRateLimitConfig {
   tenant_id: string;
 
   max_concurrent: number;
-
-  tenant_qps?: number;
   max_bandwidth_mbps: number;
 
   api_limits: Record<string, number>;
@@ -199,6 +196,13 @@ export interface UpdateTenantCacheConfigRequest {
   warmup_keys: string[];
   expected_updated_at?: ISODateString;
 }
+export interface CBProLatencySimulation {
+  latency_simulation_enabled: boolean;
+  default_simulated_latency_ms: number;
+  latency_jitter_min_ms: number;
+  latency_jitter_max_ms: number;
+  max_simulated_delay_ms: number;
+}
 export interface CBProPolicyConfig {
   mode: "disabled" | "fallback_only" | "cost_saving";
   base_ttl_secs: number;
@@ -209,11 +213,7 @@ export interface CBProPolicyConfig {
   validate_every_hits: number;
   max_validate_interval_secs: number;
   prevalidate_before_expiry_secs: number;
-  latency_simulation_enabled: boolean;
-  default_simulated_latency_ms: number;
-  latency_jitter_min_ms: number;
-  latency_jitter_max_ms: number;
-  max_simulated_delay_ms: number;
+  latency: CBProLatencySimulation;
   cacheable_methods: string[];
   allow_body_cache: boolean;
   ignore_query_keys: string[];
@@ -224,15 +224,11 @@ export interface CBProPolicyConfig {
 export interface TenantProductConfig {
   unit_price: DecimalString;
   currency: string;
-  billing_type: string;
   cb_pro_fallback: boolean;
   cbpro: CBProPolicyConfig;
-  request_codec: PayloadCodec;
-  response_codec: PayloadCodec;
-  codec_enabled: boolean;
-  codec_version: number;
 }
-export interface UpdateTenantProductConfigRequest extends TenantProductConfig {
+export interface UpdateTenantProductConfigRequest {
+  config: TenantProductConfig;
   expected_updated_at?: ISODateString;
 }
 export interface TenantProduct {
@@ -296,7 +292,6 @@ export type TenantCryptoKeyStatus =
   | "deprecated"
   | "disabled"
   | "compromised";
-export type PayloadCodec = "json" | "fury";
 export interface TenantCryptoProfile {
   tenant_id: string;
   encryption_mode: TenantEncryptionMode;
@@ -307,10 +302,6 @@ export interface TenantCryptoProfile {
   current_key_version?: string;
   nonce_ttl_seconds: number;
   clock_skew_seconds: number;
-  request_codec: PayloadCodec;
-  response_codec: PayloadCodec;
-  codec_enabled: boolean;
-  codec_version: number;
   config: Record<string, unknown>;
   created_at: ISODateString;
   updated_at: ISODateString;
@@ -321,10 +312,6 @@ export interface UpdateTenantCryptoProfileRequest {
   nonceTtlSeconds: number;
   clockSkewSeconds: number;
   currentKeyVersion?: string;
-  requestCodec: PayloadCodec;
-  responseCodec: PayloadCodec;
-  codecEnabled: boolean;
-  codecVersion: number;
 }
 export interface TenantCryptoKey {
   id: string;

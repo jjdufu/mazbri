@@ -23,13 +23,20 @@ where
     S: Send + Sync,
 {
     type Rejection = AuthError;
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let context = parts.extensions.get::<TenantContext>().ok_or_else(|| {
-            AuthError::Core(mazbri_core::CoreError::Internal(
-                "Tenant context not found".to_string(),
-            ))
-        })?;
-        Ok(TenantId(context.tenant_id))
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<TenantContext>()
+            .map(|context| TenantId(context.tenant_id))
+            .ok_or_else(|| {
+                AuthError::Core(mazbri_core::CoreError::Internal(
+                    "Tenant context not found".to_string(),
+                ))
+            });
+        std::future::ready(result)
     }
 }
 impl FromRef<TenantContext> for TenantId {
@@ -38,6 +45,7 @@ impl FromRef<TenantContext> for TenantId {
     }
 }
 impl TenantContext {
+    #[must_use]
     pub fn new(tenant_id: Uuid, credential_type: CredentialType) -> Self {
         Self {
             tenant_id,
@@ -46,6 +54,7 @@ impl TenantContext {
             product_id: None,
         }
     }
+    #[must_use]
     pub fn with_credential(
         tenant_id: Uuid,
         credential_type: CredentialType,
@@ -58,15 +67,19 @@ impl TenantContext {
             product_id: None,
         }
     }
+    #[must_use]
     pub fn id(&self) -> Uuid {
         self.tenant_id
     }
+    #[must_use]
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
+    #[must_use]
     pub fn is_api_key(&self) -> bool {
         self.credential_type == CredentialType::ApiKey
     }
+    #[must_use]
     pub fn is_jwt(&self) -> bool {
         self.credential_type == CredentialType::Jwt
     }
@@ -75,6 +88,7 @@ impl TenantContext {
         self.product_id = Some(product_id);
         self
     }
+    #[must_use]
     pub fn product_id(&self) -> Option<&str> {
         self.product_id.as_deref()
     }

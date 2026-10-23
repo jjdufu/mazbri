@@ -4,8 +4,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{Duration, interval};
 use tracing::warn;
-#[path = "service_health_metrics_parser.rs"]
-mod service_health_metrics_parser;
 const HEALTH_SCRAPE_INTERVAL_SECS: u64 = 15;
 const HEALTH_SCRAPE_TIMEOUT_SECS: u64 = 5;
 const HEALTH_SCRAPE_BATCH_SIZE: usize = 2;
@@ -51,7 +49,7 @@ impl ServiceHealthCache {
     pub fn spawn_dynamic(
         self,
         cert_service_url: String,
-        token: Option<String>,
+        token: String,
     ) -> tokio::task::JoinHandle<()> {
         let cache = self.inner.clone();
         tokio::spawn(async move {
@@ -66,7 +64,7 @@ impl ServiceHealthCache {
             loop {
                 tick.tick().await;
 
-                let endpoints = fetch_registered_endpoints(&client, &nodes_url, token.as_deref())
+                let endpoints = fetch_registered_endpoints(&client, &nodes_url, &token)
                     .await
                     .unwrap_or_default();
                 let endpoint_list: Vec<(String, String)> = endpoints.into_iter().collect();
@@ -105,7 +103,7 @@ impl ServiceHealthCache {
                         Err(e) => {
                             warn!(
                                 service = % name, error = % e,
-                                "Failed to scrape service health metrics"
+                                "Failed to scrape service health"
                             );
                             let entry = map.entry(name).or_default();
                             entry.state = ServiceHealthState::Unknown;
@@ -130,13 +128,9 @@ struct RegisteredNode {
 async fn fetch_registered_endpoints(
     client: &reqwest::Client,
     nodes_url: &str,
-    token: Option<&str>,
+    token: &str,
 ) -> Option<HashMap<String, String>> {
-    let mut req = client.get(nodes_url);
-    if let Some(t) = token {
-        req = req.bearer_auth(t);
-    }
-    let resp = match req.send().await {
+    let resp = match client.get(nodes_url).bearer_auth(token).send().await {
         Ok(resp) => resp,
         Err(e) => {
             warn!(error = %e, "Failed to fetch registered nodes from registry");
@@ -165,32 +159,10 @@ fn collect_endpoints(nodes: Vec<RegisteredNode>) -> HashMap<String, String> {
         .collect()
 }
 
-#[derive(serde::Deserialize)]
-struct HealthResponse {
-    status: String,
-}
-async fn scrape_service_health(client: &reqwest::Client, admin_url: &str) -> anyhow::Result<bool> {
-    let url = if admin_url.contains("/metrics") || admin_url.contains("/health") {
-        admin_url.to_string()
-    } else {
-        format!("{}/metrics", admin_url.trim_end_matches('/'))
-    };
-    let resp = client.get(&url).send().await?;
-    if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
-        return Ok(false);
-    }
-    let resp = resp.error_for_status()?;
-    if url.contains("/health") {
-        let body = resp.text().await?;
-        if let Ok(res) = serde_json::from_str::<HealthResponse>(&body) {
-            let s = res.status.to_lowercase();
-            return Ok(s == "healthy" || s == "ok" || s == "ready");
-        }
-        let trimmed = body.trim().to_lowercase();
-        return Ok(trimmed == "ok" || trimmed == "healthy" || trimmed == "success");
-    }
-    let body = resp.text().await?;
-    service_health_metrics_parser::parse_health_metrics_body(&body)
+/// 直接请求注册的健康检查地址，2xx 视为健康。
+async fn scrape_service_health(client: &reqwest::Client, url: &str) -> anyhow::Result<bool> {
+    let resp = client.get(url).send().await?;
+    Ok(resp.status().is_success())
 }
 
 #[cfg(test)]

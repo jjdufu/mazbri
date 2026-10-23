@@ -21,6 +21,7 @@ const fn default_page_size() -> u32 {
     20
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigListParams {
     pub service_name: Option<String>,
     #[serde(default)]
@@ -38,6 +39,7 @@ pub struct ExportParams {}
 #[derive(Debug, Deserialize)]
 pub struct ImportParams {}
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateConfigRequest {
     pub service_name: String,
     pub content: String,
@@ -46,11 +48,13 @@ pub struct CreateConfigRequest {
     pub updated_by: String,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateConfigRequest {
     pub content: String,
     pub updated_by: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HistoryQueryParams {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
@@ -60,6 +64,7 @@ pub struct ServiceListParams {}
 #[derive(Debug, Deserialize)]
 pub struct NodeListParams {}
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ValidateTomlRequest {
     pub content: String,
 }
@@ -90,25 +95,11 @@ pub fn validate_toml(content: &str) -> Result<(), Box<axum::response::Response>>
         ))),
     }
 }
-/// Floor `index` to the nearest UTF-8 char boundary at or before it.
-///
-/// Compatible with the workspace MSRV (1.85); equivalent to `str::floor_char_boundary` (1.91+).
-fn floor_char_boundary(s: &str, index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
-    }
-    let mut i = index;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
-}
-
 #[must_use]
 pub fn parse_toml_error_position(error: &toml_edit::TomlError, content: &str) -> (usize, usize) {
     match error.span() {
         Some(range) if range.start <= content.len() => {
-            let pos = floor_char_boundary(content, range.start);
+            let pos = content.floor_char_boundary(range.start);
             let line = content[..pos].matches('\n').count() + 1;
             let last_newline = content[..pos].rfind('\n').map_or(0, |i| i + 1);
             let column = pos - last_newline + 1;

@@ -26,6 +26,7 @@ pub struct ObservationRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ObservationResponse {
     pub success: bool,
     #[serde(default)]
@@ -45,6 +46,7 @@ pub struct RuntimeDecisionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeDecision {
     pub cache_key: String,
     pub tenant_id: String,
@@ -70,6 +72,7 @@ pub struct RuntimeDecision {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeDecisionResponse {
     pub available: bool,
     #[serde(default)]
@@ -98,6 +101,7 @@ fn default_priority() -> i32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ValidationEnqueueResponse {
     pub accepted: bool,
     #[serde(default)]
@@ -125,6 +129,7 @@ pub struct ValidationResultRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ValidationResultResponse {
     pub recorded: bool,
     #[serde(default)]

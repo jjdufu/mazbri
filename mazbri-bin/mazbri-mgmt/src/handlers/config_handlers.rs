@@ -53,9 +53,7 @@ pub async fn update_ratelimit_config(
                 Some(serde_json::json!({
                     "tenant_code": code,
                     "tenant_id": tenant_id,
-                    // plan QPS: wire name max_concurrent, alias tenant_qps
                     "max_concurrent": payload.max_concurrent,
-                    "tenant_qps": payload.max_concurrent,
                     "max_bandwidth_mbps": payload.max_bandwidth_mbps,
                     "api_limits": &payload.api_limits,
                     "burst_size": payload.burst_size,

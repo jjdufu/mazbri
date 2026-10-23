@@ -2,7 +2,7 @@ use super::execution::{ProxyBody, UpstreamRouteMetadata};
 use super::serializer::{proxy_body_encoding, proxy_body_to_json_value};
 use crate::router::AppState;
 use axum::http::HeaderMap;
-use mazbri_billing::{BillingCalculator, BillingModel, RateConfig, UsageOutboxEvent};
+use mazbri_billing::{BillingCalculator, RateConfig, UsageOutboxEvent};
 use mazbri_callback::repository;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
@@ -140,16 +140,7 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
         return started_at.elapsed().as_millis();
     };
     let calculator = build_billing_calculator(ctx.product_detail);
-    let calc_result = match calculator.calculate_call(ctx.request_size, ctx.response_bytes) {
-        Ok(result) => result,
-        Err(error) => {
-            warn!(
-                tenant_id = % ctx.tenant_id, product_id = % ctx.req.product_id, error = % error,
-                "Skipping proxy usage charge because billing calculation failed"
-            );
-            return started_at.elapsed().as_millis();
-        }
-    };
+    let calc_result = calculator.calculate_call();
     let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::new_v4());
     // Fingerprint → deterministic event_id so outbox unique index dedupes transport retries.
     let event_id = if let Some(fp) = ctx.fingerprint {
@@ -261,17 +252,13 @@ pub(crate) fn build_billing_calculator(
     let unit_price = product_detail
         .and_then(|detail| detail.unit_price.parse::<Decimal>().ok())
         .unwrap_or(default_rate.per_call_rate);
-    let billing_type = product_detail.map_or("call", |detail| detail.billing_type.as_str());
-    BillingCalculator::new(
-        RateConfig {
-            per_call_rate: unit_price,
-            tier_name: product_detail.map_or_else(
-                || "default".to_string(),
-                |detail| detail.product_code.clone(),
-            ),
-        },
-        BillingModel::from_billing_type(billing_type),
-    )
+    BillingCalculator::new(RateConfig {
+        per_call_rate: unit_price,
+        tier_name: product_detail.map_or_else(
+            || "default".to_string(),
+            |detail| detail.product_code.clone(),
+        ),
+    })
 }
 pub(crate) fn billing_code_for_status(status: u16) -> BillingCode {
     match status {

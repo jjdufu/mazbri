@@ -13,29 +13,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .operation
         .as_deref()
         .ok_or_else(|| ExecuteError::SpecInvalid("ws_unary operation missing".into()))?;
-    let path = spec
-        .ws
-        .as_ref()
-        .and_then(|w| w.path.as_deref())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| spec.request_path(&ctx.input.path_prefix));
-    let mut url = join_url(ctx.base_url, path);
-    if url.starts_with("http://") {
-        url = format!("ws://{}", url.trim_start_matches("http://"));
-    } else if url.starts_with("https://") {
-        url = format!("wss://{}", url.trim_start_matches("https://"));
-    }
-    url = append_query(&url, &super::merge_request_query(ctx.auth, spec));
-    if let Err(e) = ctx
-        .ssrf
-        .validate_url(
-            &url.replace("ws://", "http://")
-                .replace("wss://", "https://"),
-        )
-        .await
-    {
-        return Err(ExecuteError::SsrfBlocked(e));
-    }
+    let url = ws_url(ctx).await?;
 
     let mut req = url
         .as_str()
@@ -92,7 +70,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
                         "ws closed before reply".into(),
                     ));
                 }
-                Some(Ok(_)) => continue,
+                Some(Ok(_)) => {}
                 Some(Err(e)) => {
                     return Err(ExecuteError::UpstreamTransport(format!("ws: {e}")));
                 }
@@ -104,7 +82,10 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let _ = ws.close(None).await;
     let json = wait?;
-    let code = json.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
+    let code = json
+        .get("code")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
     if code != 0 {
         let message = json
             .get("message")
@@ -129,10 +110,38 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     })
 }
 
+async fn ws_url(ctx: &AdapterCtx<'_>) -> Result<String, ExecuteError> {
+    let spec = &ctx.input.spec;
+    let path = spec
+        .ws
+        .as_ref()
+        .and_then(|w| w.path.as_deref())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(spec.request.path.as_str());
+    let mut url = join_url(ctx.base_url, path);
+    if url.starts_with("http://") {
+        url = format!("ws://{}", url.trim_start_matches("http://"));
+    } else if url.starts_with("https://") {
+        url = format!("wss://{}", url.trim_start_matches("https://"));
+    }
+    url = append_query(&url, &super::merge_request_query(ctx.auth, spec));
+    if let Err(e) = ctx
+        .ssrf
+        .validate_url(
+            &url.replace("ws://", "http://")
+                .replace("wss://", "https://"),
+        )
+        .await
+    {
+        return Err(ExecuteError::SsrfBlocked(e));
+    }
+    Ok(url)
+}
+
 fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
     OutboundResponse {
         status: 200,
-        headers: Default::default(),
+        headers: std::collections::HashMap::default(),
         body: serde_json::to_vec(json).unwrap_or_default(),
         final_url: url.to_string(),
         method: "WS".into(),

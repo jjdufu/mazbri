@@ -5,7 +5,7 @@ import type {
   TenantListQuery,
   CreateTenantRequest,
   UpdateTenantRequest,
-  SetTenantStatusRequest,
+  SetTenantEnabledRequest,
   TenantAccount,
   RechargeRequest,
   RechargeResponse,
@@ -68,11 +68,13 @@ export const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
   validate_every_hits: 10,
   max_validate_interval_secs: 300,
   prevalidate_before_expiry_secs: 30,
-  latency_simulation_enabled: false,
-  default_simulated_latency_ms: 120,
-  latency_jitter_min_ms: 0,
-  latency_jitter_max_ms: 20,
-  max_simulated_delay_ms: 1000,
+  latency: {
+    latency_simulation_enabled: false,
+    default_simulated_latency_ms: 120,
+    latency_jitter_min_ms: 0,
+    latency_jitter_max_ms: 20,
+    max_simulated_delay_ms: 1000,
+  },
   cacheable_methods: ["GET", "POST"],
   allow_body_cache: true,
   ignore_query_keys: [],
@@ -83,17 +85,13 @@ export const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
 export const DEFAULT_TENANT_PRODUCT_CONFIG: TenantProductConfig = {
   unit_price: "0.001",
   currency: "CNY",
-  billing_type: "call",
   cb_pro_fallback: false,
   cbpro: DEFAULT_CBPRO_POLICY_CONFIG,
-  request_codec: "json",
-  response_codec: "json",
-  codec_enabled: false,
-  codec_version: 1,
 };
 export function createDefaultCBProPolicyConfig(): CBProPolicyConfig {
   return {
     ...DEFAULT_CBPRO_POLICY_CONFIG,
+    latency: { ...DEFAULT_CBPRO_POLICY_CONFIG.latency },
     cacheable_methods: [...DEFAULT_CBPRO_POLICY_CONFIG.cacheable_methods],
     ignore_query_keys: [...DEFAULT_CBPRO_POLICY_CONFIG.ignore_query_keys],
     ignore_json_paths: [...DEFAULT_CBPRO_POLICY_CONFIG.ignore_json_paths],
@@ -120,6 +118,7 @@ function mergeCBProPolicyConfig(
     ignore_json_paths: config?.ignore_json_paths
       ? [...config.ignore_json_paths]
       : [...DEFAULT_CBPRO_POLICY_CONFIG.ignore_json_paths],
+    latency: { ...DEFAULT_CBPRO_POLICY_CONFIG.latency, ...config?.latency },
   };
 }
 export function mergeTenantProductConfig(
@@ -202,13 +201,13 @@ export function deleteTenant(code: string, signal?: AbortSignal) {
     signal,
   });
 }
-export function setTenantStatus(
+export function setTenantEnabled(
   code: string,
-  data: SetTenantStatusRequest,
+  data: SetTenantEnabledRequest,
   signal?: AbortSignal,
 ) {
   return request.put<void>({
-    url: `${BASE_PATH}/${code}/status`,
+    url: `${BASE_PATH}/${code}/enabled`,
     params: data,
     showSuccessMessage: true,
     signal,

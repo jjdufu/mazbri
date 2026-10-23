@@ -15,10 +15,6 @@ pub struct TenantCryptoProfileRow {
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub request_codec: String,
-    pub response_codec: String,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
     pub config: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -77,7 +73,7 @@ pub async fn upsert_profile_defaults(
         RETURNING tenant_id, encryption_mode, require_signature, require_request_binding, signature_version,
             request_algorithm, response_algorithm,
             signature_algorithm, current_key_version, nonce_ttl_seconds, clock_skew_seconds,
-            request_codec, response_codec, codec_enabled, codec_version, config, created_at, updated_at
+            config, created_at, updated_at
         ",
     )
     .bind(tenant_id)
@@ -94,10 +90,6 @@ pub struct UpdateCryptoProfileParams<'a> {
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
     pub current_key_version: Option<&'a str>,
-    pub request_codec: &'a str,
-    pub response_codec: &'a str,
-    pub codec_enabled: bool,
-    pub codec_version: i32,
     pub actor_id: uuid::Uuid,
 }
 
@@ -113,10 +105,9 @@ pub async fn update_profile(
         INSERT INTO tenant_crypto_profiles (
             tenant_id, encryption_mode, require_signature, require_request_binding, signature_version,
             nonce_ttl_seconds,
-            clock_skew_seconds, current_key_version, request_codec, response_codec,
-            codec_enabled, codec_version, created_by, updated_by
+            clock_skew_seconds, current_key_version, created_by, updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
         ON CONFLICT (tenant_id) DO UPDATE SET
             encryption_mode = EXCLUDED.encryption_mode,
             require_signature = EXCLUDED.require_signature,
@@ -125,16 +116,12 @@ pub async fn update_profile(
             nonce_ttl_seconds = EXCLUDED.nonce_ttl_seconds,
             clock_skew_seconds = EXCLUDED.clock_skew_seconds,
             current_key_version = EXCLUDED.current_key_version,
-            request_codec = EXCLUDED.request_codec,
-            response_codec = EXCLUDED.response_codec,
-            codec_enabled = EXCLUDED.codec_enabled,
-            codec_version = EXCLUDED.codec_version,
             updated_by = EXCLUDED.updated_by,
             updated_at = NOW()
         RETURNING tenant_id, encryption_mode, require_signature, require_request_binding, signature_version,
             request_algorithm, response_algorithm,
             signature_algorithm, current_key_version, nonce_ttl_seconds, clock_skew_seconds,
-            request_codec, response_codec, codec_enabled, codec_version, config, created_at, updated_at
+            config, created_at, updated_at
         ",
     )
     .bind(params.tenant_id)
@@ -145,10 +132,6 @@ pub async fn update_profile(
     .bind(params.nonce_ttl_seconds)
     .bind(params.clock_skew_seconds)
     .bind(params.current_key_version)
-    .bind(params.request_codec)
-    .bind(params.response_codec)
-    .bind(params.codec_enabled)
-    .bind(params.codec_version)
     .bind(params.actor_id)
     .fetch_one(pool)
     .await
@@ -381,8 +364,7 @@ pub async fn list_all_profiles(pool: &PgPool) -> Result<Vec<TenantCryptoProfileR
         SELECT tenant_id, encryption_mode, require_signature, require_request_binding, signature_version,
             request_algorithm, response_algorithm,
             signature_algorithm, current_key_version, nonce_ttl_seconds, clock_skew_seconds,
-            request_codec, response_codec, codec_enabled, codec_version, config, created_at,
-            updated_at
+            config, created_at, updated_at
         FROM tenant_crypto_profiles
         ORDER BY tenant_id
         ",

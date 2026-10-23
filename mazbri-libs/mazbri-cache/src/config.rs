@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     pub default_ttl: u64,
     pub max_cache_size: u64,
@@ -22,6 +23,7 @@ impl Default for CacheConfig {
     }
 }
 impl CacheConfig {
+    #[must_use]
     pub fn get_ttl(&self, endpoint: &str) -> std::time::Duration {
         if let Some(&ttl) = self.api_ttl.get(endpoint) {
             return std::time::Duration::from_secs(ttl);
@@ -36,6 +38,7 @@ impl CacheConfig {
         }
         std::time::Duration::from_secs(self.default_ttl)
     }
+    #[must_use]
     pub fn should_cache(&self, endpoint: &str) -> bool {
         if self.api_ttl.contains_key(endpoint) {
             return true;

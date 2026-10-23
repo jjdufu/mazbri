@@ -32,7 +32,7 @@ pub struct AccessHttpFields {
     pub user_agent: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct AccessTimingFields {
     pub duration_ms: u64,
     pub upstream_service_time_ms: Option<u64>,
@@ -57,7 +57,7 @@ pub struct AccessOutcomeFields {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
-    /// 与 metrics `result` 对齐：ok | timeout | upstream_error | ssrf | …
+    /// 与 metrics `result` 对齐：ok | timeout | `upstream_error` | ssrf | …
     #[serde(default)]
     pub error_class: String,
 }
@@ -67,7 +67,7 @@ pub struct AccessOutcomeFields {
 pub struct AccessUpstreamMetaFields {
     /// transparent | microservice | unknown
     pub upstream_mode: String,
-    /// 契约 ID（见 gateway upstream_contract::known_contract_ids）
+    /// 契约 ID（见 gateway `upstream_contract::known_contract_ids`）
     pub contract_id: String,
 }
 
@@ -75,7 +75,6 @@ pub struct AccessUpstreamMetaFields {
 pub struct AccessLogEvent {
     pub message: String,
     pub service: String,
-    pub env: String,
     pub host: String,
     pub instance_id: String,
     pub request_id: String,
@@ -130,7 +129,6 @@ impl AccessLogEvent {
 pub struct AccessLogEventBuilder {
     message: String,
     service: String,
-    env: String,
     host: String,
     instance_id: String,
     request_id: String,
@@ -182,7 +180,6 @@ impl AccessLogEventBuilder {
         Self {
             message: "request_completed".to_string(),
             service,
-            env: resolve_env(),
             host: resolve_host(),
             instance_id: resolve_instance_id(),
             request_id: context.request_id.to_string(),
@@ -314,7 +311,6 @@ impl AccessLogEventBuilder {
         AccessLogEvent {
             message: self.message,
             service: self.service,
-            env: self.env,
             host: self.host,
             instance_id: self.instance_id,
             request_id: self.request_id,
@@ -425,7 +421,7 @@ impl TraceHeaderSource for HeaderMap {
     }
 }
 
-impl TraceHeaderSource for HashMap<String, String> {
+impl<S: std::hash::BuildHasher> TraceHeaderSource for HashMap<String, String, S> {
     fn header_value(&self, name: &str) -> Option<String> {
         self.get(name)
             .map(String::as_str)
@@ -468,7 +464,7 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
     let traceparent_parts = traceparent
         .as_deref()
         .and_then(parse_traceparent_value)
-        .unwrap_or_else(|| ("".to_string(), "".to_string()));
+        .unwrap_or_else(|| (String::new(), String::new()));
     let tp_trace_id = traceparent_parts.0;
     let parent_from_traceparent = traceparent_parts.1;
 
@@ -491,14 +487,13 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
 
     let parent_span_id: Arc<str> = headers
         .header_value("x-span-id")
-        .or(if !parent_from_traceparent.is_empty() {
-            Some(parent_from_traceparent)
-        } else {
+        .or(if parent_from_traceparent.is_empty() {
             None
+        } else {
+            Some(parent_from_traceparent)
         })
         .or_else(|| headers.header_value("x-parent-span-id"))
-        .map(Arc::<str>::from)
-        .unwrap_or_else(|| Arc::from(""));
+        .map_or_else(|| Arc::from(""), Arc::<str>::from);
 
     TraceContext {
         request_id,
@@ -523,7 +518,6 @@ pub fn normalize_upstream_host(url_or_addr: &str) -> Option<String> {
     let without_scheme = trimmed
         .strip_prefix("http://")
         .or_else(|| trimmed.strip_prefix("https://"))
-        .or_else(|| trimmed.strip_prefix("tarpc://"))
         .unwrap_or(trimmed);
     let host = without_scheme
         .split(['/', '?', '#'])
@@ -562,7 +556,7 @@ pub fn response_flags_for_error(error_code: &str, stage: &str, status_code: u16)
     "UF".to_string()
 }
 
-pub fn emit_access_log(target: &str, event: AccessLogEvent) {
+pub fn emit_access_log(target: &str, event: &AccessLogEvent) {
     match target {
         "gateway.access" => emit_access_log_gateway(event),
         "billing.access" => emit_access_log_billing(event),
@@ -578,7 +572,6 @@ macro_rules! emit_access_log_for_target {
             target: $target,
             message = %$event.message,
             service = %$event.service,
-            env = %$event.env,
             host = %$event.host,
             instance_id = %$event.instance_id,
             request_id = %$event.request_id,
@@ -624,25 +617,24 @@ macro_rules! emit_access_log_for_target {
     };
 }
 
-fn emit_access_log_gateway(event: AccessLogEvent) {
+fn emit_access_log_gateway(event: &AccessLogEvent) {
     emit_access_log_for_target!("gateway.access", event);
 }
 
-fn emit_access_log_billing(event: AccessLogEvent) {
+fn emit_access_log_billing(event: &AccessLogEvent) {
     emit_access_log_for_target!("billing.access", event);
 }
 
-fn emit_access_log_bypass(event: AccessLogEvent) {
+fn emit_access_log_bypass(event: &AccessLogEvent) {
     emit_access_log_for_target!("mazbri-bypass.access", event);
 }
 
-fn emit_access_log_generic(target: &str, event: AccessLogEvent) {
+fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
     info!(
         target: "access",
         log_target = %target,
         message = %event.message,
         service = %event.service,
-        env = %event.env,
         host = %event.host,
         instance_id = %event.instance_id,
         request_id = %event.request_id,
@@ -685,10 +677,6 @@ fn emit_access_log_generic(target: &str, event: AccessLogEvent) {
         contract_id = %event.contract_id,
         error_class = %event.error_class,
     );
-}
-
-fn resolve_env() -> String {
-    "default".to_string()
 }
 
 fn resolve_host() -> String {

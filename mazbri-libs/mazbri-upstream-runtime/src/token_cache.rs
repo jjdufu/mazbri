@@ -78,6 +78,7 @@ pub struct TokenCache {
 }
 
 impl TokenCache {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cache: RwLock::new(HashMap::new()),
@@ -85,6 +86,9 @@ impl TokenCache {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_token<F, Fut>(&self, cache_key: &str, fetch_fn: F) -> Result<String, String>
     where
         F: FnOnce() -> Fut,
@@ -94,10 +98,10 @@ impl TokenCache {
 
         {
             let guard = self.cache.read().await;
-            if let Some(cached) = guard.get(cache_key) {
-                if cached.expires_at > now + chrono::Duration::seconds(30) {
-                    return Ok(cached.token.clone());
-                }
+            if let Some(cached) = guard.get(cache_key)
+                && cached.expires_at > now + chrono::Duration::seconds(30)
+            {
+                return Ok(cached.token.clone());
             }
         }
 
@@ -106,10 +110,10 @@ impl TokenCache {
             .work(&cache_key.to_string(), || async move {
                 {
                     let guard = self.cache.read().await;
-                    if let Some(cached) = guard.get(cache_key) {
-                        if cached.expires_at > Utc::now() + chrono::Duration::seconds(30) {
-                            return Ok(cached.clone());
-                        }
+                    if let Some(cached) = guard.get(cache_key)
+                        && cached.expires_at > Utc::now() + chrono::Duration::seconds(30)
+                    {
+                        return Ok(cached.clone());
                     }
                 }
 

@@ -16,29 +16,30 @@ pub struct UpdateMfaSettingsInput {
 }
 #[must_use]
 pub fn validate_update_fields(input: &UpdateMfaSettingsInput) -> Option<axum::response::Response> {
-    if let Some(digits) = input.totp_digits {
-        if digits != 6 && digits != 8 {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "TOTP 位数必须是 6 或 8",
-            ));
-        }
+    if let Some(digits) = input.totp_digits
+        && digits != 6
+        && digits != 8
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "TOTP 位数必须是 6 或 8",
+        ));
     }
-    if let Some(period) = input.totp_period {
-        if !(15..=60).contains(&period) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "TOTP 周期必须在 15-60 秒之间",
-            ));
-        }
+    if let Some(period) = input.totp_period
+        && !(15..=60).contains(&period)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "TOTP 周期必须在 15-60 秒之间",
+        ));
     }
-    if let Some(count) = input.backup_codes_count {
-        if !(5..=20).contains(&count) {
-            return Some(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "备用码数量必须在 5-20 之间",
-            ));
-        }
+    if let Some(count) = input.backup_codes_count
+        && !(5..=20).contains(&count)
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "备用码数量必须在 5-20 之间",
+        ));
     }
     if let Some(roles) = input.mfa_required_for_roles.as_ref() {
         for role in roles {

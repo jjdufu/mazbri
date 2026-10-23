@@ -23,6 +23,7 @@ pub struct IpWhitelist {
     cache: Cache<Uuid, Vec<String>>,
 }
 impl IpWhitelist {
+    #[must_use]
     pub fn new(db: Arc<PgPool>) -> Self {
         Self {
             db,
@@ -33,36 +34,31 @@ impl IpWhitelist {
         }
     }
 
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check(&self, tenant_id: Uuid, ip_addr: IpAddr) -> AuthResult<WhitelistResult> {
         let whitelist = self.load_whitelist(tenant_id).await?;
         if whitelist.is_empty() {
             return Ok(WhitelistResult::NotConfigured);
         }
         for allowed_ip in &whitelist {
-            if self.ip_matches(ip_addr, allowed_ip)? {
+            if Self::ip_matches(ip_addr, allowed_ip)? {
                 return Ok(WhitelistResult::Allowed);
             }
         }
         Ok(WhitelistResult::Denied(ip_addr.to_string()))
-    }
-    #[deprecated(since = "0.2.0", note = "Use check() instead")]
-    pub async fn is_allowed(&self, tenant_id: Uuid, ip_addr: IpAddr) -> AuthResult<bool> {
-        match self.check(tenant_id, ip_addr).await? {
-            WhitelistResult::NotConfigured => Ok(true),
-            WhitelistResult::Allowed => Ok(true),
-            WhitelistResult::Denied(_) => Ok(false),
-        }
     }
     async fn load_whitelist(&self, tenant_id: Uuid) -> AuthResult<Vec<String>> {
         if let Some(cached) = self.cache.get(&tenant_id).await {
             return Ok(cached);
         }
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT ip_address, cidr
             FROM ip_whitelist
             WHERE tenant_id = $1 AND is_active = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .fetch_all(&*self.db)
@@ -71,11 +67,14 @@ impl IpWhitelist {
         for row in rows {
             let ip_address: String = row.try_get("ip_address")?;
             let cidr: i32 = row.try_get("cidr")?;
-            whitelist.push(format!("{}/{}", ip_address, cidr));
+            whitelist.push(format!("{ip_address}/{cidr}"));
         }
         self.cache.insert(tenant_id, whitelist.clone()).await;
         Ok(whitelist)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn add_ip(
         &self,
         tenant_id: Uuid,
@@ -84,35 +83,38 @@ impl IpWhitelist {
         description: Option<String>,
     ) -> AuthResult<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO ip_whitelist (tenant_id, ip_address, cidr, description)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (tenant_id, ip_address, cidr) DO UPDATE
             SET description = COALESCE($4, ip_whitelist.description),
                 updated_at = NOW(),
                 is_active = true
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(ip_addr.to_string())
-        .bind(cidr as i32)
+        .bind(i32::from(cidr))
         .bind(description)
         .execute(&*self.db)
         .await?;
         self.invalidate_cache(tenant_id).await;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn remove_ip(&self, tenant_id: Uuid, ip_addr: IpAddr, cidr: u8) -> AuthResult<()> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE ip_whitelist
             SET is_active = false, updated_at = NOW()
             WHERE tenant_id = $1 AND ip_address = $2 AND cidr = $3
-            "#,
+            ",
         )
         .bind(tenant_id)
         .bind(ip_addr.to_string())
-        .bind(cidr as i32)
+        .bind(i32::from(cidr))
         .execute(&*self.db)
         .await?;
         if result.rows_affected() == 0 {
@@ -130,12 +132,11 @@ impl IpWhitelist {
     pub fn invalidate_all(&self) {
         self.cache.invalidate_all();
     }
-    fn ip_matches(&self, ip_addr: IpAddr, cidr: &str) -> AuthResult<bool> {
+    fn ip_matches(ip_addr: IpAddr, cidr: &str) -> AuthResult<bool> {
         let parts: Vec<&str> = cidr.split('/').collect();
         if parts.len() != 2 {
             return Err(AuthError::Core(mazbri_core::CoreError::Internal(format!(
-                "Invalid CIDR format: {}",
-                cidr
+                "Invalid CIDR format: {cidr}"
             ))));
         }
         let allowed_ip: IpAddr = parts[0].parse().map_err(|e| {
@@ -152,15 +153,15 @@ impl IpWhitelist {
         })?;
         match (ip_addr, allowed_ip) {
             (IpAddr::V4(addr), IpAddr::V4(allowed)) => {
-                Ok(self.ipv4_matches(addr, allowed, prefix_len))
+                Ok(Self::ipv4_matches(addr, allowed, prefix_len))
             }
             (IpAddr::V6(addr), IpAddr::V6(allowed)) => {
-                Ok(self.ipv6_matches(addr, allowed, prefix_len))
+                Ok(Self::ipv6_matches(addr, allowed, prefix_len))
             }
             _ => Ok(false),
         }
     }
-    fn ipv4_matches(&self, addr: Ipv4Addr, allowed: Ipv4Addr, prefix_len: u8) -> bool {
+    fn ipv4_matches(addr: Ipv4Addr, allowed: Ipv4Addr, prefix_len: u8) -> bool {
         if prefix_len > 32 {
             return false;
         }
@@ -181,12 +182,7 @@ impl IpWhitelist {
         }
         true
     }
-    fn ipv6_matches(
-        &self,
-        addr: std::net::Ipv6Addr,
-        allowed: std::net::Ipv6Addr,
-        prefix_len: u8,
-    ) -> bool {
+    fn ipv6_matches(addr: std::net::Ipv6Addr, allowed: std::net::Ipv6Addr, prefix_len: u8) -> bool {
         if prefix_len > 128 {
             return false;
         }

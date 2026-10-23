@@ -70,7 +70,7 @@ pub trait BillingRepository: Send + Sync + std::fmt::Debug {
         queue_id: Uuid,
     ) -> Result<DeductAndRecordResult, CoreError>;
     /// Batch charge for one tenant: single balance UPDATE for SUM(amount), then per-item ledger.
-    /// `items` is (queue_id, usage_record_id, amount).
+    /// `items` is (`queue_id`, `usage_record_id`, amount).
     async fn deduct_and_record_batch(
         &self,
         tenant_id: Uuid,
@@ -92,6 +92,7 @@ pub struct DeductAndRecordResult {
     pub balance_after: Decimal,
 }
 impl DeductAndRecordResult {
+    #[must_use]
     pub fn new_balance(&self) -> Decimal {
         self.balance_after
     }
@@ -104,6 +105,7 @@ pub struct PgBillingRepository {
     read_pool: Arc<PgPool>,
 }
 impl PgBillingRepository {
+    #[must_use]
     pub fn new(pool: Arc<PgPool>) -> Self {
         Self {
             pool: Arc::clone(&pool),
@@ -111,15 +113,18 @@ impl PgBillingRepository {
         }
     }
     /// Separate read/write pools so balance precheck cannot starve behind charge UPDATEs.
+    #[must_use]
     pub fn with_pools(write_pool: Arc<PgPool>, read_pool: Arc<PgPool>) -> Self {
         Self {
             pool: write_pool,
             read_pool,
         }
     }
+    #[must_use]
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
+    #[must_use]
     pub fn read_pool(&self) -> &PgPool {
         &self.read_pool
     }

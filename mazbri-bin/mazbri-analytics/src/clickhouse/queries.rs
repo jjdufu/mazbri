@@ -187,10 +187,6 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
         let validated = validate_like_param(product_id)?;
         conditions.push(format!("product_id = '{validated}'"));
     }
-    if let Some(ref event_target) = params.event_target {
-        let validated = validate_like_param(event_target)?;
-        conditions.push(format!("event_target = '{validated}'"));
-    }
     if let Some(ref supplier_id) = params.supplier_id {
         let validated = validate_uuid_param(supplier_id)?;
         conditions.push(format!("supplier_id = '{validated}'"));
@@ -246,7 +242,7 @@ pub fn build_request_log_conditions(params: &RequestLogQueryParams) -> Result<Ve
     Ok(conditions)
 }
 
-const REQUEST_LOG_SELECT_COLS: &str = "timestamp, `service`, env, host, instance_id, event_target, message, request_id, trace_id, span_id, parent_span_id, \
+const REQUEST_LOG_SELECT_COLS: &str = "timestamp, `service`, host, instance_id, event_target, message, request_id, trace_id, span_id, parent_span_id, \
          tenant_id, tenant_code, product_id, supplier_id, supplier_code, channel_id, channel_code, attempt_order, method, protocol, host_header, path, route_template, \
          status_code, duration_ms, upstream_host, upstream_status_code, upstream_service_time_ms, dependency_wait_ms, internal_ms, post_response_ms, request_bytes, response_bytes, client_ip, xff, user_agent, cache_hit, fallback_used, retry_count, error_code, error_stage, response_flags, log_file, raw";
 

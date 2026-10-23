@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-/// Default plan QPS (customer usage plan). JSON field: `max_concurrent` / alias `tenant_qps`.
+/// Default plan QPS (customer usage plan). JSON field: `max_concurrent`.
 #[must_use]
 pub fn default_max_concurrent() -> i32 {
     1000
@@ -40,8 +40,8 @@ pub fn default_tenant_isolated() -> bool {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimitConfigUpdateRequest {
-    /// Plan rate QPS (套餐速率). Wire name `max_concurrent` kept for compatibility; also accepts `tenant_qps`.
-    #[serde(default = "default_max_concurrent", alias = "tenant_qps")]
+    /// Plan rate QPS (套餐速率), JSON field `max_concurrent`.
+    #[serde(default = "default_max_concurrent")]
     pub max_concurrent: i32,
     /// Bandwidth cap in Mbps; 0 = unlimited.
     #[serde(default = "default_max_bandwidth_mbps")]
@@ -126,7 +126,7 @@ fn config_conflict_message(scope: &str, updated_at: chrono::DateTime<chrono::Utc
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_ratelimit_config(config: &RateLimitConfigUpdateRequest) -> Result<(), String> {
     if config.max_concurrent <= 0 {
-        return Err("plan QPS (max_concurrent / tenant_qps) must be greater than 0".to_string());
+        return Err("plan QPS (max_concurrent) must be greater than 0".to_string());
     }
     if config.max_bandwidth_mbps < 0 {
         return Err("max_bandwidth_mbps must be non-negative".to_string());
@@ -142,9 +142,7 @@ pub fn validate_ratelimit_config(config: &RateLimitConfigUpdateRequest) -> Resul
         return Err("client_ip_burst must be greater than 0".to_string());
     }
     if client_ip_qps > config.max_concurrent {
-        return Err(
-            "client_ip_qps must not exceed plan QPS (max_concurrent / tenant_qps)".to_string(),
-        );
+        return Err("client_ip_qps must not exceed plan QPS (max_concurrent)".to_string());
     }
     if client_ip_burst > config.burst_size {
         return Err("client_ip_burst must not exceed burst_size".to_string());
@@ -156,7 +154,7 @@ pub fn validate_ratelimit_config(config: &RateLimitConfigUpdateRequest) -> Resul
         }
         if *limit > config.max_concurrent {
             return Err(format!(
-                "api_limits entry '{path}' ({limit}) must not exceed plan QPS (max_concurrent / tenant_qps = {})",
+                "api_limits entry '{path}' ({limit}) must not exceed plan QPS (max_concurrent = {})",
                 config.max_concurrent
             ));
         }
@@ -187,15 +185,13 @@ pub const RATE_LIMIT_ENFORCEMENT_MODEL: &str = "local_per_instance";
 pub const RATE_LIMIT_CLUSTER_NOTE: &str = "Limits apply per gateway instance. Aggregate capacity scales approximately with replica count.";
 
 /// GET response for customer usage-plan rate limits.
-/// Product names: plan QPS (`max_concurrent` / `tenant_qps`), burst, abuse knobs, optional API overrides.
+/// Product names: plan QPS (`max_concurrent`), burst, abuse knobs, optional API overrides.
 #[derive(Debug, Serialize)]
 pub struct RateLimitConfigResponse {
     pub tenant_code: String,
     pub tenant_id: String,
-    /// Plan rate QPS (套餐速率). Legacy wire name `max_concurrent`.
+    /// Plan rate QPS (套餐速率).
     pub max_concurrent: i32,
-    /// Explicit alias of plan QPS (`max_concurrent`). Prefer this name in new clients.
-    pub tenant_qps: i32,
     /// Bandwidth cap Mbps; 0 = unlimited.
     pub max_bandwidth_mbps: i32,
     /// Optional per-API overrides; empty means no per-API dimension on gateway.
@@ -237,7 +233,6 @@ pub fn build_default_ratelimit_response(
         tenant_code,
         tenant_id: tenant_id_str,
         max_concurrent: tenant_qps,
-        tenant_qps,
         max_bandwidth_mbps: default_max_bandwidth_mbps(),
         api_limits: serde_json::json!({}),
         burst_size: burst,
@@ -262,7 +257,6 @@ pub fn row_to_ratelimit_response(
         tenant_code,
         tenant_id: tenant_id_str,
         max_concurrent: row.max_concurrent,
-        tenant_qps: row.max_concurrent,
         max_bandwidth_mbps: row.max_bandwidth_mbps,
         api_limits: row.api_limits.clone(),
         burst_size: row.burst_size,
@@ -521,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_qps_alias_fields_validate_ok() {
+    fn plan_qps_fields_validate_ok() {
         assert!(validate_ratelimit_config(&base_plan()).is_ok());
     }
 

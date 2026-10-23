@@ -47,10 +47,11 @@ pub(crate) fn record_failure(name: &str, error: &str) {
 }
 pub(crate) fn record_success_rate(name: &str, success_count: u64, total_requests: u64) {
     if total_requests > 0 {
-        let rate = (success_count as f64) / (total_requests as f64) * 100.0;
+        let rate =
+            crate::num::u64_to_f64(success_count) / crate::num::u64_to_f64(total_requests) * 100.0;
         CIRCUIT_BREAKER_SUCCESS_RATE
             .with_label_values(&[name])
-            .set(rate as i64);
+            .set(crate::num::f64_to_i64(rate));
         debug!(circuit_breaker = % name, success_rate = % rate, "Success rate recorded");
     }
 }

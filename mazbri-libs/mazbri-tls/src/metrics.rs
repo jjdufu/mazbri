@@ -58,6 +58,9 @@ pub static CERT_OPERATION_DURATION_SECONDS: LazyLock<HistogramVec> = LazyLock::n
     )
     .expect("Failed to create CERT_OPERATION_DURATION_SECONDS metric")
 });
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_cert_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(CERT_ISSUANCE_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(CERT_RENEWALS_TOTAL.clone()))?;
@@ -71,6 +74,7 @@ pub struct CertMetricsRecorder {
     operation: &'static str,
 }
 impl CertMetricsRecorder {
+    #[must_use]
     pub fn new(operation: &'static str) -> Self {
         Self { operation }
     }

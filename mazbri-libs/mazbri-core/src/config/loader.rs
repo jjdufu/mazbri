@@ -52,6 +52,9 @@ pub struct PgCredentials {
     pub cert_database: Option<PgCredential>,
 }
 pub trait ServiceConfig: Sized + DeserializeOwned {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     fn socket_addr(&self) -> Result<std::net::SocketAddr>
     where
         Self: std::fmt::Debug,
@@ -113,6 +116,9 @@ pub trait ServiceConfig: Sized + DeserializeOwned {
         }
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_credentials_flexible(path: &Path, db_name: &str) -> Result<PgCredential> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read credentials file: {}", path.display()))?;
@@ -135,6 +141,10 @@ pub fn load_credentials_flexible(path: &Path, db_name: &str) -> Result<PgCredent
         .ok_or_else(|| anyhow::anyhow!("在 {} 中未找到数据库 '{}' 的凭证", path.display(), db_name))
 }
 /// 彻底的纯环境变量获取 Token 方案
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn get_cert_service_token() -> Result<String> {
     let token = std::env::var("MAZBRI_CERT_SERVICE_TOKEN")
         .context("Missing mandatory environment variable: MAZBRI_CERT_SERVICE_TOKEN / 缺少必需的环境变量: MAZBRI_CERT_SERVICE_TOKEN")?;
@@ -148,6 +158,10 @@ pub fn get_cert_service_token() -> Result<String> {
 
 /// 解析命令行中的 `--bootstrap` 参数获取配置文件路径。
 /// 如果参数缺失或不合法，直接返回 Err。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn resolve_bootstrap_path_mandatory() -> Result<std::path::PathBuf> {
     let mut args = std::env::args();
     while let Some(arg) = args.next() {
@@ -155,10 +169,10 @@ pub fn resolve_bootstrap_path_mandatory() -> Result<std::path::PathBuf> {
             if let Some(val) = args.next() {
                 return Ok(std::path::PathBuf::from(val));
             }
-        } else if arg.starts_with("--bootstrap=") {
-            if let Some(val) = arg.strip_prefix("--bootstrap=") {
-                return Ok(std::path::PathBuf::from(val));
-            }
+        } else if arg.starts_with("--bootstrap=")
+            && let Some(val) = arg.strip_prefix("--bootstrap=")
+        {
+            return Ok(std::path::PathBuf::from(val));
         }
     }
     anyhow::bail!(

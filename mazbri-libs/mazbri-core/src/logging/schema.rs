@@ -240,9 +240,15 @@ impl StandardLogEvent {
         self.user_agent = Some(user_agent.into());
         self
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }

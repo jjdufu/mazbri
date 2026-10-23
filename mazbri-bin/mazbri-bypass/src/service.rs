@@ -8,7 +8,6 @@ use mazbri_core::{
     emit_access_log, hash_egress_spec_json, normalize_upstream_host, parse_and_validate_egress,
     parse_trace_context, response_flags_for_error,
 };
-use mazbri_upstream_contracts::bypass_http_proxy::bypass_http_proxy_service_server::BypassHttpProxyService;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeLimits, SsrfChecker, TokenCache,
@@ -19,7 +18,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
 use uuid::Uuid;
 
 fn hash_config_json(config_json: &str) -> String {
@@ -98,13 +97,12 @@ impl MazbriBypassServiceImpl {
             Some(full.to_string())
         };
 
-        if let Some(ref h) = hash {
-            if let Some(cached) = self.supplier_config_cache.get(h) {
-                if full.is_none() || cached.hash == *h {
-                    UpstreamMetricsRecorder::record_config_cache("hit");
-                    return Ok(Some(cached.config));
-                }
-            }
+        if let Some(ref h) = hash
+            && let Some(cached) = self.supplier_config_cache.get(h)
+            && (full.is_none() || cached.hash == *h)
+        {
+            UpstreamMetricsRecorder::record_config_cache("hit");
+            return Ok(Some(cached.config));
         }
 
         if let Some(ref json) = full {
@@ -142,12 +140,11 @@ impl MazbriBypassServiceImpl {
     fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<ChannelEgressSpec, String> {
         let hash = hash.trim();
         let full = full.trim();
-        if !hash.is_empty() {
-            if let Some(cached) = self.egress_spec_cache.get(hash) {
-                if full.is_empty() || cached.hash == hash {
-                    return Ok(cached.spec);
-                }
-            }
+        if !hash.is_empty()
+            && let Some(cached) = self.egress_spec_cache.get(hash)
+            && (full.is_empty() || cached.hash == hash)
+        {
+            return Ok(cached.spec);
         }
         if full.is_empty() {
             if hash.is_empty() {
@@ -205,43 +202,45 @@ impl MazbriBypassServiceImpl {
     }
 }
 
-#[tonic::async_trait]
-impl BypassHttpProxyService for MazbriBypassServiceImpl {
-    async fn execute(
+impl MazbriBypassServiceImpl {
+    /// `BypassHttpProxyService/Execute`.
+    pub async fn execute(
         &self,
         request: Request<upstream_proto::InvokeRequest>,
-    ) -> Result<Response<upstream_proto::InvokeResponse>, Status> {
+    ) -> Response<upstream_proto::InvokeResponse> {
         let req = request.into_inner();
         let start_time = Instant::now();
-        let response = self.execute_once(&req).await;
-        emit_bypass_access(self.service_name.as_ref(), &req, start_time, &response);
-        Ok(Response::new(response))
+        let (response, spec) =
+            match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
+                Ok(spec) => (self.execute_once(&req, &spec).await, Some(spec)),
+                Err(error) => (invoke_error(error), None),
+            };
+        emit_bypass_access(
+            self.service_name.as_ref(),
+            &req,
+            spec.as_ref(),
+            start_time,
+            &response,
+        );
+        Response::new(response)
     }
 
-    async fn health(
-        &self,
-        _request: Request<upstream_proto::HealthRequest>,
-    ) -> Result<Response<upstream_proto::HealthResponse>, Status> {
-        Ok(Response::new(upstream_proto::HealthResponse {
+    /// `BypassHttpProxyService/Health`.
+    #[must_use]
+    pub fn health(&self) -> Response<upstream_proto::HealthResponse> {
+        Response::new(upstream_proto::HealthResponse {
             status: "ok".to_string(),
             service: self.service_name.as_ref().to_string(),
             timestamp: chrono::Utc::now().timestamp(),
-        }))
+        })
     }
-}
 
-impl MazbriBypassServiceImpl {
     async fn execute_once(
         &self,
         req: &upstream_proto::InvokeRequest,
+        spec: &ChannelEgressSpec,
     ) -> upstream_proto::InvokeResponse {
         let start_time = Instant::now();
-        let spec = match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
-            Ok(s) => s,
-            Err(error) => {
-                return invoke_error(error);
-            }
-        };
         let config = match self
             .resolve_supplier_config(&req.supplier_config_hash, &req.supplier_config_json)
         {
@@ -273,17 +272,11 @@ impl MazbriBypassServiceImpl {
         };
 
         let mut credentials = HashMap::new();
-        if let Some(ref cfg) = config {
-            if let Some(ref auth) = cfg.auth_flow {
-                credentials = auth.credentials.clone();
-            }
+        if let Some(ref cfg) = config
+            && let Some(ref auth) = cfg.auth_flow
+        {
+            credentials = auth.credentials.clone();
         }
-
-        let fallback = if req.fallback_base_url.is_empty() {
-            spec.base_url.clone().unwrap_or_default()
-        } else {
-            req.fallback_base_url.clone()
-        };
 
         let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {
             Some(id) if !id.is_empty() => match self.load_artifact_bytes(id).await {
@@ -301,8 +294,6 @@ impl MazbriBypassServiceImpl {
             payload,
             spec: spec.clone(),
             config,
-            fallback_base_url: fallback,
-            path_prefix: req.path_prefix.clone(),
             timeout,
             mode: ExecuteMode::Production,
             options: ExecuteOptions {
@@ -462,10 +453,12 @@ fn classify_bypass_outcome(
 fn emit_bypass_access(
     service_name: &str,
     req: &upstream_proto::InvokeRequest,
+    spec: Option<&ChannelEgressSpec>,
     start_time: Instant,
     response: &upstream_proto::InvokeResponse,
 ) {
     let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
+    let route_path = spec.map(|s| s.request.path.clone()).unwrap_or_default();
     let headers = trace_headers(req);
     let trace_context = parse_trace_context(&headers);
     let adapter = response
@@ -479,7 +472,7 @@ fn emit_bypass_access(
     } else {
         (
             if response.success { 200 } else { 502 },
-            req.fallback_base_url.clone(),
+            spec.map(|s| s.base_url.clone()).unwrap_or_default(),
         )
     };
     let is_success = response.success && response.biz_error.is_none();
@@ -510,8 +503,8 @@ fn emit_bypass_access(
             method: "INVOKE".into(),
             protocol: "HTTP/2".to_string(),
             host_header: None,
-            path: req.path_prefix.clone(),
-            route_template: req.path_prefix.clone(),
+            path: route_path.clone(),
+            route_template: route_path,
             status_code,
             request_bytes: req.payload_json.len() as u64,
             response_bytes,
@@ -544,5 +537,5 @@ fn emit_bypass_access(
             error_class,
         })
         .build();
-    emit_access_log("mazbri-bypass.access", event);
+    emit_access_log("mazbri-bypass.access", &event);
 }

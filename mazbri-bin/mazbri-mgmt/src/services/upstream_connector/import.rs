@@ -72,31 +72,31 @@ pub(super) fn parse_curl(curl: &str) -> Result<ParsedCurl, ApiError> {
             i += 1;
             continue;
         }
-        if t == "-X" || t == "--request" {
-            if let Some(m) = tokens.get(i + 1) {
-                method = m.to_uppercase();
-                i += 2;
-                continue;
-            }
+        if (t == "-X" || t == "--request")
+            && let Some(m) = tokens.get(i + 1)
+        {
+            method = m.to_uppercase();
+            i += 2;
+            continue;
         }
-        if t == "-H" || t == "--header" {
-            if let Some(h) = tokens.get(i + 1) {
-                if let Some((k, v)) = h.split_once(':') {
-                    headers.insert(k.trim().to_string(), v.trim().to_string());
-                }
-                i += 2;
-                continue;
+        if (t == "-H" || t == "--header")
+            && let Some(h) = tokens.get(i + 1)
+        {
+            if let Some((k, v)) = h.split_once(':') {
+                headers.insert(k.trim().to_string(), v.trim().to_string());
             }
+            i += 2;
+            continue;
         }
-        if t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary" {
-            if let Some(d) = tokens.get(i + 1) {
-                body = Some(d.clone());
-                if method == "GET" {
-                    method = "POST".into();
-                }
-                i += 2;
-                continue;
+        if (t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary")
+            && let Some(d) = tokens.get(i + 1)
+        {
+            body = Some(d.clone());
+            if method == "GET" {
+                method = "POST".into();
             }
+            i += 2;
+            continue;
         }
         if !t.starts_with('-') && (t.starts_with("http://") || t.starts_with("https://")) {
             url = t.trim_matches('\'').trim_matches('"').to_string();
@@ -379,14 +379,13 @@ pub async fn import_openapi(
         .unwrap_or_else(|| format!("oas-{}", &Uuid::new_v4().to_string()[..8]));
 
     let mut base_url = String::new();
-    if let Some(servers) = req.document.get("servers").and_then(|v| v.as_array()) {
-        if let Some(u) = servers
+    if let Some(servers) = req.document.get("servers").and_then(|v| v.as_array())
+        && let Some(u) = servers
             .first()
             .and_then(|s| s.get("url"))
             .and_then(|v| v.as_str())
-        {
-            base_url = u.trim_end_matches('/').to_string();
-        }
+    {
+        base_url = u.trim_end_matches('/').to_string();
     }
 
     let mut endpoints = Vec::new();
@@ -560,7 +559,7 @@ pub async fn transform_preview(
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
         .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
 
-    let mut cfg = SupplierConfig::parse_and_validate_lenient(&row.config)
+    let mut cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     cfg = cfg
         .decrypt_credentials_for_runtime()
@@ -568,18 +567,8 @@ pub async fn transform_preview(
 
     let env = parse_workbench_env(&row.workbench_env);
     let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
-    let path_prefix = ep
-        .and_then(|e| e.get("path_prefix").and_then(|v| v.as_str()))
-        .or_else(|| ep.and_then(|e| e.get("path").and_then(|v| v.as_str())))
-        .unwrap_or("/");
     let empty_ep = serde_json::json!({});
-    let built = build_workbench_spec(
-        ep.unwrap_or(&empty_ep),
-        &env,
-        Some(&cfg),
-        path_prefix,
-        &row.upstream_url,
-    )?;
+    let built = build_workbench_spec(ep.unwrap_or(&empty_ep), &env, Some(&cfg), &row.upstream_url)?;
     let payload = built.payload.clone();
     let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
     let spec = built.spec.clone();
@@ -600,8 +589,6 @@ pub async fn transform_preview(
         payload,
         spec,
         config: Some(Arc::new(cfg)),
-        fallback_base_url: built.upstream_url.clone(),
-        path_prefix: path_prefix.to_string(),
         timeout: Duration::from_secs(5),
         mode: ExecuteMode::TransformPreview,
         options: ExecuteOptions {

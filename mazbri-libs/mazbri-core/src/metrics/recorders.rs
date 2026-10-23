@@ -9,6 +9,7 @@ pub struct CounterRecorder {
     label_values: Vec<&'static str>,
 }
 impl CounterRecorder {
+    #[must_use]
     pub fn new(counter: &'static CounterVec, label_values: &[&'static str]) -> Self {
         Self {
             counter,
@@ -38,6 +39,7 @@ pub struct HistogramRecorder {
     label_values: Vec<&'static str>,
 }
 impl HistogramRecorder {
+    #[must_use]
     pub fn new(histogram: &'static HistogramVec, label_values: &[&'static str]) -> Self {
         Self {
             histogram,

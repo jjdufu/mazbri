@@ -29,6 +29,7 @@ pub enum RequestBindingError {
     UnsupportedSignatureInput,
 }
 
+#[must_use]
 pub fn canonical_http_binding(
     method: &str,
     path_and_query: &str,
@@ -51,6 +52,7 @@ pub fn canonical_http_binding(
     payload
 }
 
+#[must_use]
 pub fn path_and_query_from_parts(path: &str, query: Option<&str>) -> String {
     match query {
         Some(q) if !q.is_empty() => format!("{path}?{q}"),
@@ -58,6 +60,9 @@ pub fn path_and_query_from_parts(path: &str, query: Option<&str>) -> String {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_binding_nonce(nonce: &str) -> Result<(), RequestBindingError> {
     if nonce.len() < NONCE_MIN_LEN || nonce.len() > NONCE_MAX_LEN {
         return Err(RequestBindingError::InvalidNonce);
@@ -71,12 +76,18 @@ pub fn validate_binding_nonce(nonce: &str) -> Result<(), RequestBindingError> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn parse_unix_timestamp(value: &str) -> Result<i64, RequestBindingError> {
     value
         .parse::<i64>()
         .map_err(|_| RequestBindingError::InvalidTimestamp)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_unix_timestamp(
     timestamp: i64,
     now_unix: i64,
@@ -92,6 +103,9 @@ pub fn validate_unix_timestamp(
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_signature_input(value: &str) -> Result<(), RequestBindingError> {
     if value == SIGNATURE_INPUT_HMAC_V1 {
         Ok(())
@@ -100,6 +114,9 @@ pub fn validate_signature_input(value: &str) -> Result<(), RequestBindingError> 
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn sign_hmac_sha256_base64(key: &[u8], payload: &str) -> Result<String, RequestBindingError> {
     let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
         .map_err(|_| RequestBindingError::InvalidKeyLength)?;
@@ -107,6 +124,9 @@ pub fn sign_hmac_sha256_base64(key: &[u8], payload: &str) -> Result<String, Requ
     Ok(STANDARD.encode(mac.finalize().into_bytes()))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_hmac_sha256_base64(
     key: &[u8],
     payload: &str,
@@ -133,12 +153,14 @@ pub fn verify_hmac_sha256_base64(
     }
 }
 
+#[must_use]
 pub fn generate_binding_nonce() -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let nonce: [u8; 16] = rand::random();
     URL_SAFE_NO_PAD.encode(nonce)
 }
 
+#[must_use]
 pub fn truncate_nonce_for_log(nonce: &str) -> String {
     const KEEP: usize = 8;
     if nonce.len() <= KEEP {
@@ -157,7 +179,7 @@ mod tests {
         let payload = canonical_http_binding(
             "POST",
             "/api/v1/gateway",
-            1710000000,
+            1_710_000_000,
             &"n".repeat(16),
             br#"{"product_id":"p1","path":"/x"}"#,
         );
@@ -175,13 +197,14 @@ mod tests {
         let key = [7u8; 32];
         let nonce = "abcdefABCDEF12-_";
         let body = br#"{"product_id":"p1"}"#;
-        let canonical = canonical_http_binding("POST", "/api/v1/gateway", 1710000000, nonce, body);
+        let canonical =
+            canonical_http_binding("POST", "/api/v1/gateway", 1_710_000_000, nonce, body);
         let sig = sign_hmac_sha256_base64(&key, &canonical).unwrap();
         verify_hmac_sha256_base64(&key, &canonical, &sig).unwrap();
         let tampered = canonical_http_binding(
             "POST",
             "/api/v1/gateway",
-            1710000000,
+            1_710_000_000,
             nonce,
             br#"{"product_id":"p2"}"#,
         );

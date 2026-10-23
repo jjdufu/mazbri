@@ -27,8 +27,9 @@ impl ErrorResponse for RegistryError {
     fn error_code(&self) -> &'static str {
         match self {
             Self::Core(e) => e.error_code(),
-            Self::ConfigInvalid(_) => error_codes::VALIDATION_ERROR,
-            Self::ConfigValidationFailed(_) => error_codes::VALIDATION_ERROR,
+            Self::ConfigInvalid(_) | Self::ConfigValidationFailed(_) => {
+                error_codes::VALIDATION_ERROR
+            }
             Self::ConfigApplyFailed(_) => error_codes::CONFIG_ERROR,
         }
     }

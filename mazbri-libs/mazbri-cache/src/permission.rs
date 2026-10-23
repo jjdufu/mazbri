@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use mazbri_auth::{PermissionCache, PermissionEntry};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use std::time::Duration;
 use uuid::Uuid;
@@ -11,6 +12,7 @@ pub struct RedisPermissionCache {
 }
 
 impl RedisPermissionCache {
+    #[must_use]
     pub fn new(redis: RedisClient, default_ttl: Duration) -> Self {
         Self { redis, default_ttl }
     }
@@ -51,7 +53,7 @@ impl PermissionCache for RedisPermissionCache {
         let ttl_secs = ttl.as_secs().max(self.default_ttl.as_secs()).max(1);
         let payload = serde_json::to_vec(&entry)?;
         self.redis
-            .set_ex_bytes(&cache_key, &payload, ttl_secs as usize)
+            .set_ex_bytes(&cache_key, &payload, usize::saturating_from(ttl_secs))
             .await?;
         Ok(())
     }

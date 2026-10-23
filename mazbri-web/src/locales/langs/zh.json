@@ -283,13 +283,8 @@
       "cacheApiTtlOverride": "API TTL 覆盖",
       "cacheWarmupKeys": "预热 Key 列表",
       "productScope": "产品授权配置",
-      "productBillingMode": "计费模式",
       "productUnitPrice": "单价",
       "productCbProFallback": "CBPRO",
-      "productCodecEnabled": "协议编码开关",
-      "productRequestCodec": "请求编码",
-      "productResponseCodec": "响应编码",
-      "productCodecVersion": "协议版本",
       "productCbProPolicy": "CBPRO"
     },
     "logOutTips": "您是否要退出登录?",
@@ -2320,7 +2315,6 @@
       "basicInfoTitle": "基本信息",
       "advancedInfoTitle": "集成配置",
       "authSectionTitle": "动态认证",
-      "transformSectionTitle": "转换引擎",
       "enabled": "已启用",
       "disabled": "未启用",
       "noCredentials": "无凭证",
@@ -2362,15 +2356,6 @@
       "injectPreviewTitle": "注入效果预览",
       "injectLocation": "注入位置",
       "injectPreviewTip": "<DYNAMIC_TOKEN> 仅为示例，网关将自动注入并维护真实令牌。",
-      "transformTitle": "转换引擎",
-      "rewritePath": "路径重写",
-      "requestBodyTemplate": "请求体模板",
-      "requestBodyTemplateHint": "如 {\"endpoint\":\"{{request.path}}\",\"params\":{{request.body}}}",
-      "responseBodyTemplate": "响应体模板",
-      "requestHeadersSet": "请求头设置",
-      "requestHeadersRemove": "请求头移除",
-      "responseHeadersSet": "响应头设置",
-      "addHeader": "添加请求头",
       "authHeaders": "换票请求头"
     }
   },
@@ -2444,7 +2429,6 @@
       "alertWebhook": "Webhook URL",
       "alertWebhookPlaceholder": "https://hooks.example.com/...",
       "includeAmount": "写入金额维对账",
-      "includeRawLog": "纳入网关请求日志",
       "warnBeforeBill": "出账前警告未关闭差异",
       "lastRunAt": "上次定时跑批",
       "neverRun": "尚未跑过",
@@ -2476,12 +2460,9 @@
         "roleCol": "角色",
         "sourceBilling": "计费用量（usage_records）",
         "sourceUpstream": "上游旁路预聚合",
-        "sourceGatewayUnavailable": "网关客户请求（本次未纳入）",
         "roleBilling": "出账侧",
         "rolePrimary": "主比对",
-        "roleGateway": "客户侧请求",
         "roleReference": "参考",
-        "roleUnavailable": "未启用",
         "amountTitle": "金额对账",
         "usageAmount": "用量应计金额",
         "billItemsTotal": "账单明细合计",
@@ -2493,20 +2474,17 @@
         "methodGateway": "网关客户请求：仅 mazbri-gateway 访问日志，与客户侧调用口径对齐。",
         "methodUpstream": "上游旁路预聚合：bypass 侧 upstream_hourly，仅作旁证，不是主比对。",
         "methodPrimary": "本次主比对侧：{peerLabel}。",
-        "methodSources": "参与数据源：{list}",
         "sources": {
           "unknown": "未知来源",
-          "oltp_usage_records": "计费用量（usage_records）",
-          "olap_preagg_bypass": "上游旁路预聚合",
-          "olap_preagg": "上游预聚合",
-          "request_logs_gateway": "网关客户请求",
-          "olap_preagg_compat": "上游预聚合（兼容回退）"
-        }
+          "request_logs_gateway": "网关客户请求"
+        },
+        "errorTitle": "对账数据源拉取失败"
       },
       "columns": {
         "date": "对账日期",
         "scope": "范围",
         "oltp": "计费用量",
+        "gateway": "网关请求",
         "olap": "上游预聚合",
         "ratio": "差异率",
         "status": "状态"
@@ -2515,7 +2493,8 @@
         "ok": "正常",
         "flagged": "异常",
         "acknowledged": "已确认",
-        "resolved": "已关闭"
+        "resolved": "已关闭",
+        "error": "异常（数据源失败）"
       }
     },
     "adjustments": {
@@ -2594,7 +2573,6 @@
     },
     "itemColumns": {
       "description": "接口",
-      "billingType": "计费类型",
       "quantity": "调用次数",
       "totalUnits": "计费单位",
       "unitPrice": "单价",
@@ -2616,9 +2594,6 @@
       "one": "确认删除账单「{name}」吗？",
       "all": "确认删除当前页全部 {count} 条账单吗？",
       "selected": "确认删除所选的 {count} 条账单吗？"
-    },
-    "billingTypes": {
-      "call": "按次"
     },
     "billKinds": {
       "customer": "客户账单",
@@ -2680,17 +2655,12 @@
       "formSections": {
         "basicControl": "基本控制",
         "security": "安全选项",
-        "codec": "编解码器配置",
         "timeParams": "时间安全参数"
       },
       "fields": {
         "encryptionMode": "加密模式",
         "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
-        "codecEnabled": "启用协议编码",
-        "requestCodec": "请求编码",
-        "responseCodec": "响应编码",
-        "codecVersion": "协议版本",
         "nonceTtlSeconds": "Nonce 有效期（秒）",
         "clockSkewSeconds": "时间戳容忍窗口（秒）"
       },
@@ -2885,7 +2855,6 @@
         "name": "产品名称",
         "description": "产品说明",
         "grantedAt": "授权时间",
-        "billingType": "计费模式",
         "unitPrice": "单价",
         "cbProFallback": "CBPRO"
       },
@@ -2894,8 +2863,6 @@
         "confirm": "开通",
         "product": "选择产品",
         "productPlaceholder": "请选择或搜索要开通的产品",
-        "billingMode": "计费模式",
-        "billingModePlaceholder": "请选择计费模式",
         "unitPrice": "单价",
         "unitPricePlaceholder": "例如 0.001",
         "cbProFallback": "CBPRO",
@@ -3165,7 +3132,6 @@
       "tenantName": "租户名称",
       "productCode": "产品编码",
       "productName": "产品名称",
-      "billingType": "计费模式",
       "unitPrice": "单价",
       "createdAt": "授权时间",
       "revokeConfirm": "确定要撤销此授权吗？",
@@ -3181,20 +3147,12 @@
       "title": "授权/订阅配置",
       "billingSection": "计费配置",
       "fallbackSection": "CBPRO",
-      "codecSection": "协议编码",
-      "billingMode": "计费模式",
-      "billingCall": "按调用计费",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "产品未开启 CBPRO",
-      "codecEnabled": "启用协议编码",
-      "requestCodec": "请求编码",
-      "responseCodec": "响应编码",
-      "codecVersion": "协议版本",
-      "codecEnabledHint": "",
       "conflictTitle": "配置冲突",
       "cbProRuntimeHint": "",
       "saveSuccess": "已保存"
@@ -3206,9 +3164,6 @@
       "product": "产品",
       "selectTenant": "请选择租户",
       "selectProduct": "请选择产品",
-      "billingMode": "计费模式",
-      "selectBillingMode": "请选择计费模式",
-      "billingCall": "按调用计费",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
@@ -3373,7 +3328,6 @@
       "authTokenUrl": "启用动态认证时 token_url 必填",
       "authTokenPath": "启用动态认证时 token_jsonpath 必填",
       "authInjectKey": "启用动态认证时 inject_key 必填",
-      "transformEmpty": "启用转换时至少配置一项规则",
       "contractIdRequired": "微服务模式必须填写 contract_id"
     },
     "confirm": {
@@ -3535,7 +3489,6 @@
     "injectToMetadata": "metadata",
     "injectToFirstFrame": "first_frame",
     "authAttachHint": "发送时由引擎附加鉴权头/签名，默认不写入请求头列表。",
-    "transformEnabled": "启用转换",
     "bodyContentType": "租户请求体",
     "bodyTypeNone": "无",
     "bodyTypeJson": "JSON",
@@ -3622,7 +3575,6 @@
     "authTicketSection": "换票",
     "authInjectSection": "注入",
     "adapterParamsSection": "适配器参数",
-    "transformSection": "转换",
     "pipelineSection": "转换对照",
     "sectionUnconfigured": "未配置",
     "sectionItemCount": "{n} 项",

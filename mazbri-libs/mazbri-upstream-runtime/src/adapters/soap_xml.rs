@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 use crate::auth::credential;
@@ -37,25 +38,24 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     if !headers
         .keys()
         .any(|k| k.eq_ignore_ascii_case("authorization"))
-    {
-        if let Some(secret) = credential(
+        && let Some(secret) = credential(
             &ctx.input.credentials,
             &["password", "secret", "client_secret"],
-        ) {
-            let user = credential(&ctx.input.credentials, &["username", "client_id", "app_id"])
-                .unwrap_or("");
-            headers.insert(
-                "Authorization".into(),
-                format!("Basic {}", basic_b64(user, secret)),
-            );
-        }
+        )
+    {
+        let user =
+            credential(&ctx.input.credentials, &["username", "client_id", "app_id"]).unwrap_or("");
+        headers.insert(
+            "Authorization".into(),
+            format!("Basic {}", basic_b64(user, secret)),
+        );
     }
     headers.insert("content-type".into(), "text/xml; charset=utf-8".into());
     headers
         .entry("SOAPAction".into())
         .or_insert_with(|| format!("\"{operation}\""));
 
-    let path = spec.request_path(&ctx.input.path_prefix);
+    let path = spec.request.path.as_str();
     let url = append_query(
         &join_url(ctx.base_url, path),
         &super::merge_request_query(ctx.auth, spec),
@@ -124,12 +124,12 @@ fn json_to_xml_children(
             }
             serde_json::Value::Array(items) => {
                 for item in items {
-                    out.push_str(&format!("<item>{}</item>", scalar_xml(item)?));
+                    let _ = write!(out, "<item>{}</item>", scalar_xml(item)?);
                 }
             }
             serde_json::Value::Object(_) => {
                 let inner = json_to_xml_children(v, number_fields, field_map)?;
-                out.push_str(&format!("<{tag}>{inner}</{tag}>"));
+                let _ = write!(out, "<{tag}>{inner}</{tag}>");
             }
             serde_json::Value::Number(n) => {
                 if !number_fields.is_empty() && !number_fields.iter().any(|f| f == k) {
@@ -137,13 +137,13 @@ fn json_to_xml_children(
                         "SOAP number field '{k}' not listed in soap.number_fields"
                     )));
                 }
-                out.push_str(&format!("<{tag}>{n}</{tag}>"));
+                let _ = write!(out, "<{tag}>{n}</{tag}>");
             }
             serde_json::Value::Bool(b) => {
-                out.push_str(&format!("<{tag}>{b}</{tag}>"));
+                let _ = write!(out, "<{tag}>{b}</{tag}>");
             }
             serde_json::Value::String(s) => {
-                out.push_str(&format!("<{tag}>{}</{tag}>", xml_escape(s)));
+                let _ = write!(out, "<{tag}>{}</{tag}>", xml_escape(s));
             }
         }
     }
@@ -212,10 +212,10 @@ fn find_in(elem: &XmlElem, name: &str) -> Option<XmlElem> {
         return Some(clone_elem(elem));
     }
     for child in &elem.children {
-        if let XmlNode::Elem(inner) = child {
-            if let Some(found) = find_in(inner, name) {
-                return Some(found);
-            }
+        if let XmlNode::Elem(inner) = child
+            && let Some(found) = find_in(inner, name)
+        {
+            return Some(found);
         }
     }
     None
@@ -292,8 +292,7 @@ fn tenant_name(tag: &str, field_map: &std::collections::HashMap<String, String>)
     field_map
         .iter()
         .find(|(_, xml_name)| xml_name == &tag)
-        .map(|(tenant_key, _)| tenant_key.clone())
-        .unwrap_or_else(|| tag.to_string())
+        .map_or_else(|| tag.to_string(), |(tenant_key, _)| tenant_key.clone())
 }
 
 fn text_content(elem: &XmlElem) -> String {
@@ -541,7 +540,7 @@ mod tests {
 
     #[test]
     fn compare_image_parses_bool_and_number() {
-        let xml = r#"<soap:Body><CompareImageResponse><matched>true</matched><filename>img_001.png</filename><distance>0</distance><threshold>10</threshold></CompareImageResponse></soap:Body>"#;
+        let xml = r"<soap:Body><CompareImageResponse><matched>true</matched><filename>img_001.png</filename><distance>0</distance><threshold>10</threshold></CompareImageResponse></soap:Body>";
         let value = xml_body_to_json(xml, "CompareImage", &empty_map());
         assert_eq!(value["matched"], true);
         assert_eq!(value["distance"], 0);

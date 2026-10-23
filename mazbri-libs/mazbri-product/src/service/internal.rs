@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    CreateProductRequest, DateTime, PRODUCT_ID_LOCK_KEY, PRODUCT_ID_RESERVATION_TTL_SECS, PgRow,
+    Postgres, ProductIdReservation, ProductService, ProductWriteError, Row, Transaction, Utc, Uuid,
+    classify_product_write_error, next_product_id_from_max,
+};
 
 impl ProductService {
     pub(crate) async fn insert_product_in_tx(
@@ -10,7 +14,7 @@ impl ProductService {
         let id = Uuid::new_v4();
         let now = Utc::now();
         sqlx::query(
-            r#"
+            r"
             INSERT INTO products (id, product_id, name, description,
                                 timeout_secs, enabled, cb_pro_enabled,
                                 cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
@@ -20,7 +24,7 @@ impl ProductService {
                       timeout_secs, enabled, cb_pro_enabled,
                       cb_failure_threshold, cb_success_threshold, cb_cooldown_secs,
                       created_at, updated_at
-            "#,
+            ",
         )
         .bind(id)
         .bind(product_id)
@@ -53,7 +57,7 @@ impl ProductService {
         tx: &mut Transaction<'_, Postgres>,
     ) -> std::result::Result<String, ProductWriteError> {
         let max_product_id = sqlx::query_scalar::<_, Option<i64>>(
-            r#"
+            r"
             SELECT MAX(product_id_value)
             FROM (
                 SELECT product_id::bigint AS product_id_value
@@ -64,7 +68,7 @@ impl ProductService {
             FROM product_id_reservations
             WHERE product_id ~ '^8[0-9]{9}$'
             ) AS allocated_product_ids
-            "#,
+            ",
         )
         .fetch_one(tx.as_mut())
         .await
@@ -76,7 +80,7 @@ impl ProductService {
         tx: &mut Transaction<'_, Postgres>,
     ) -> std::result::Result<(), ProductWriteError> {
         sqlx::query(
-            r#"
+            r"
             UPDATE product_id_reservations
             SET status = 'available',
                 active_reservation_id = NULL,
@@ -86,7 +90,7 @@ impl ProductService {
                 released_at = NOW()
             WHERE status = 'reserved'
               AND expires_at <= NOW()
-            "#,
+            ",
         )
         .execute(tx.as_mut())
         .await
@@ -99,14 +103,14 @@ impl ProductService {
         reserved_by: &str,
     ) -> std::result::Result<Option<ProductIdReservation>, ProductWriteError> {
         let available = sqlx::query(
-            r#"
+            r"
             SELECT id, product_id
             FROM product_id_reservations
             WHERE status = 'available'
             ORDER BY product_id::bigint ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
-            "#,
+            ",
         )
         .fetch_optional(tx.as_mut())
         .await
@@ -118,7 +122,7 @@ impl ProductService {
         let reserved_at = Utc::now();
         let expires_at = reserved_at + chrono::Duration::seconds(PRODUCT_ID_RESERVATION_TTL_SECS);
         let row = sqlx::query(
-            r#"
+            r"
             UPDATE product_id_reservations
             SET active_reservation_id = $2,
                 reserved_by = $3,
@@ -128,7 +132,7 @@ impl ProductService {
                 released_at = NULL
             WHERE id = $1
             RETURNING active_reservation_id, product_id, reserved_at, expires_at
-            "#,
+            ",
         )
         .bind(row.get::<Uuid, _>("id"))
         .bind(reservation_id)
@@ -156,13 +160,13 @@ impl ProductService {
         let reserved_at = Utc::now();
         let expires_at = reserved_at + chrono::Duration::seconds(PRODUCT_ID_RESERVATION_TTL_SECS);
         let row = sqlx::query(
-            r#"
+            r"
             INSERT INTO product_id_reservations (
                 id, product_id, active_reservation_id, reserved_by, status, reserved_at, expires_at
             )
             VALUES ($1, $2, $3, $4, 'reserved', $5, $6)
             RETURNING active_reservation_id, product_id, reserved_at, expires_at
-            "#,
+            ",
         )
         .bind(row_id)
         .bind(product_id)
@@ -187,12 +191,12 @@ impl ProductService {
         operator: &str,
     ) -> std::result::Result<ProductIdReservationRow, ProductWriteError> {
         let reservation = sqlx::query(
-                r#"
+                r"
             SELECT id, product_id, active_reservation_id, reserved_by, status, reserved_at, expires_at
             FROM product_id_reservations
             WHERE active_reservation_id = $1
             FOR UPDATE
-            "#,
+            ",
             )
             .bind(reservation_id)
             .fetch_optional(tx.as_mut())
@@ -218,7 +222,7 @@ impl ProductService {
         }
         if expires_at <= Utc::now() {
             sqlx::query(
-                r#"
+                r"
                 UPDATE product_id_reservations
                 SET status = 'available',
                     active_reservation_id = NULL,
@@ -227,7 +231,7 @@ impl ProductService {
                     expires_at = NULL,
                     released_at = NOW()
                 WHERE active_reservation_id = $1
-                "#,
+                ",
             )
             .bind(reservation_id)
             .execute(tx.as_mut())
@@ -249,11 +253,11 @@ impl ProductService {
         product_record_id: Uuid,
     ) -> std::result::Result<(), ProductWriteError> {
         sqlx::query(
-            r#"
+            r"
             UPDATE product_id_reservations
             SET status = 'consumed', consumed_at = NOW(), product_record_id = $2
             WHERE active_reservation_id = $1
-            "#,
+            ",
         )
         .bind(reservation_id)
         .bind(product_record_id)

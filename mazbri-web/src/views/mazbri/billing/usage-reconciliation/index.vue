@@ -101,12 +101,6 @@
 
                 <CommonSettingRow
                   mode="inline"
-                  :label="$t('billing.reconciliation.includeRawLog')"
-                >
-                  <ElSwitch v-model="settingsForm.sources.include_raw_log_source" />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
                   :label="$t('billing.reconciliation.alertOnFlagged')"
                 >
                   <ElSwitch v-model="settingsForm.alert.on_flagged" />
@@ -198,11 +192,14 @@
         <template #reconciliation_date="{ row }">
           {{ row.reconciliation_date }}
         </template>
-        <template #oltp_call_count="{ row }">
-          {{ formatCount(row.oltp_call_count) }}
+        <template #billable_call_count="{ row }">
+          {{ formatCount(row.billable_call_count) }}
         </template>
-        <template #olap_preagg_call_count="{ row }">
-          {{ formatCount(row.olap_preagg_call_count) }}
+        <template #gateway_call_count="{ row }">
+          {{ formatCount(row.gateway_call_count) }}
+        </template>
+        <template #upstream_preagg_call_count="{ row }">
+          {{ formatCount(row.upstream_preagg_call_count) }}
         </template>
         <template #discrepancy_ratio="{ row }">
           {{ formatRatio(row.discrepancy_ratio) }}
@@ -299,6 +296,14 @@
         </ElDescriptions>
 
 
+        <ElAlert
+          v-if="detailView?.errorText"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="$t('billing.reconciliation.detail.errorTitle')"
+          :description="detailView.errorText"
+        />
         <section
           v-if="detailView"
           class="usage-recon-detail__section usage-recon-detail__summary"
@@ -581,7 +586,7 @@ const settingsExpanded = ref(false);
 const settingsForm = reactive<ReconciliationSettings>({
   schedule: { enabled: false, interval_secs: 86400, use_previous_day: true },
   alert: { on_flagged: false, webhook_url: "" },
-  sources: { include_amount_recon: true, include_raw_log_source: true },
+  sources: { include_amount_recon: true },
   loss_ratio_threshold: 0.05,
   default_scope_type: "system",
   default_scope_id: "",
@@ -655,13 +660,19 @@ const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
     useSlot: true,
   },
   {
-    prop: "oltp_call_count",
+    prop: "billable_call_count",
     label: $t("billing.reconciliation.columns.oltp"),
     minWidth: 110,
     useSlot: true,
   },
   {
-    prop: "olap_preagg_call_count",
+    prop: "gateway_call_count",
+    label: $t("billing.reconciliation.columns.gateway"),
+    minWidth: 110,
+    useSlot: true,
+  },
+  {
+    prop: "upstream_preagg_call_count",
     label: $t("billing.reconciliation.columns.olap"),
     minWidth: 110,
     useSlot: true,
@@ -776,6 +787,7 @@ type DetailView = {
   callRows: DetailCallRow[];
   amount: DetailAmountView | null;
   methodologyLines: string[];
+  errorText: string | null;
 };
 
 const detailView = computed<DetailView | null>(() => {
@@ -783,20 +795,12 @@ const detailView = computed<DetailView | null>(() => {
   if (!row) return null;
 
   const details = asRecord(row.details) ?? {};
-  const oltpCalls = asNumber(details.oltp_calls, row.oltp_call_count);
-  const olapCalls = asNumber(
-    details.olap_preagg_calls,
-    row.olap_preagg_call_count,
-  );
-  const rawLogCalls = asNumber(details.raw_log_call_count, olapCalls);
-  const comparisonCalls = asNumber(details.comparison_call_count, olapCalls);
-  const comparisonSource =
-    asString(details.comparison_source) ??
-    asString(details.raw_log_source) ??
-    "olap_preagg";
-  const comparisonLabel = sourceLabel(comparisonSource);
-  const rawLogSource =
-    asString(details.raw_log_source) ?? comparisonSource;
+  const oltpCalls = row.billable_call_count;
+  const gatewayCalls = row.gateway_call_count;
+  const upstreamCalls = row.upstream_preagg_call_count;
+  const comparisonLabel = sourceLabel("request_logs_gateway");
+  const errorText =
+    row.status === "error" ? (asString(details.error) ?? "-") : null;
   const thresholdRaw = asString(details.loss_ratio_threshold);
   const threshold =
     thresholdRaw != null && Number.isFinite(Number(thresholdRaw))
@@ -808,11 +812,11 @@ const detailView = computed<DetailView | null>(() => {
       ? ratio > threshold
       : row.status === "flagged";
 
-  const callDiffAbs = Math.abs(oltpCalls - comparisonCalls);
+  const callDiffAbs = Math.abs(oltpCalls - gatewayCalls);
   let callDiffText: string;
   if (callDiffAbs === 0) {
     callDiffText = $t("billing.reconciliation.detail.callDiffMatch");
-  } else if (oltpCalls < comparisonCalls) {
+  } else if (oltpCalls < gatewayCalls) {
     callDiffText = $t("billing.reconciliation.detail.callDiffBillingLess", {
       count: formatCount(callDiffAbs),
       peerLabel: comparisonLabel,
@@ -824,11 +828,6 @@ const detailView = computed<DetailView | null>(() => {
     });
   }
 
-  const isGatewayPrimary =
-    comparisonSource === "request_logs_gateway" ||
-    comparisonSource.includes("request_logs");
-  const isOlapPrimary = !isGatewayPrimary;
-
   const callRows: DetailCallRow[] = [
     {
       label: $t("billing.reconciliation.detail.sourceBilling"),
@@ -838,40 +837,20 @@ const detailView = computed<DetailView | null>(() => {
       primary: false,
     },
     {
-      label: sourceLabel(
-        rawLogSource === "olap_preagg_compat"
-          ? "request_logs_gateway"
-          : rawLogSource,
-      ),
-      count: rawLogCalls,
-      countText: formatCount(rawLogCalls),
-      role: isGatewayPrimary
-        ? $t("billing.reconciliation.detail.rolePrimary")
-        : $t("billing.reconciliation.detail.roleGateway"),
-      primary: isGatewayPrimary,
+      label: comparisonLabel,
+      count: gatewayCalls,
+      countText: formatCount(gatewayCalls),
+      role: $t("billing.reconciliation.detail.rolePrimary"),
+      primary: true,
     },
     {
       label: $t("billing.reconciliation.detail.sourceUpstream"),
-      count: olapCalls,
-      countText: formatCount(olapCalls),
-      role: isOlapPrimary
-        ? $t("billing.reconciliation.detail.rolePrimary")
-        : $t("billing.reconciliation.detail.roleReference"),
-      primary: isOlapPrimary,
+      count: upstreamCalls,
+      countText: formatCount(upstreamCalls),
+      role: $t("billing.reconciliation.detail.roleReference"),
+      primary: false,
     },
   ];
-
-
-  if (
-    rawLogSource === "olap_preagg_compat" &&
-    rawLogCalls === olapCalls
-  ) {
-    callRows[1].label = $t(
-      "billing.reconciliation.detail.sourceGatewayUnavailable",
-    );
-    callRows[1].role = $t("billing.reconciliation.detail.roleUnavailable");
-    callRows[1].primary = false;
-  }
 
   let amount: DetailAmountView | null = null;
   const amountObj = asRecord(details.amount_recon);
@@ -897,20 +876,10 @@ const detailView = computed<DetailView | null>(() => {
       peerLabel: comparisonLabel,
     }),
   ];
-  const sources = Array.isArray(details.sources)
-    ? details.sources.filter((s): s is string => typeof s === "string")
-    : [];
-  if (sources.length > 0) {
-    methodologyLines.push(
-      $t("billing.reconciliation.detail.methodSources", {
-        list: sources.map((s) => sourceLabel(s)).join(" · "),
-      }),
-    );
-  }
 
   return {
     oltpCalls,
-    comparisonCalls,
+    comparisonCalls: gatewayCalls,
     comparisonLabel,
     threshold,
     overThreshold,
@@ -919,6 +888,7 @@ const detailView = computed<DetailView | null>(() => {
     callRows,
     amount,
     methodologyLines,
+    errorText,
   };
 });
 
@@ -949,6 +919,7 @@ const statusTagType = (
     case "ok":
       return "success";
     case "flagged":
+    case "error":
       return "danger";
     case "acknowledged":
       return "warning";
@@ -960,9 +931,12 @@ const statusTagType = (
 };
 
 const canAcknowledge = (status: string) =>
-  status === "ok" || status === "flagged";
+  status === "ok" || status === "flagged" || status === "error";
 const canResolve = (status: string) =>
-  status === "ok" || status === "flagged" || status === "acknowledged";
+  status === "ok" ||
+  status === "flagged" ||
+  status === "error" ||
+  status === "acknowledged";
 
 const loadData = async () => {
   await runWithLoading(loading, async () => {
@@ -1043,6 +1017,7 @@ const exportRowsToCsv = (rows: ReconciliationDiscrepancy[], suffix: string) => {
   const header = [
     $t("billing.reconciliation.columns.date"),
     $t("billing.reconciliation.columns.oltp"),
+    $t("billing.reconciliation.columns.gateway"),
     $t("billing.reconciliation.columns.olap"),
     $t("billing.reconciliation.columns.ratio"),
     $t("billing.reconciliation.columns.status"),
@@ -1051,8 +1026,9 @@ const exportRowsToCsv = (rows: ReconciliationDiscrepancy[], suffix: string) => {
   ];
   const body = rows.map((r) => [
     r.reconciliation_date,
-    r.oltp_call_count,
-    r.olap_preagg_call_count,
+    r.billable_call_count,
+    r.gateway_call_count,
+    r.upstream_preagg_call_count,
     formatRatio(r.discrepancy_ratio),
     statusLabel(r.status),
     r.resolution_note || "",

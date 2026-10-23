@@ -3,7 +3,6 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::middleware::auth::AdminClaims;
-use crate::sanitize::sanitize_json_value;
 use crate::services::config_center as service;
 use axum::{
     Extension, Json,
@@ -24,7 +23,7 @@ pub async fn get_history(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::get_history(
             &state,
             &service_name,
@@ -34,7 +33,7 @@ pub async fn get_history(
             &trace_id,
         )
         .await?,
-    )))
+    ))
 }
 /// # Errors
 ///
@@ -48,7 +47,7 @@ pub async fn rollback(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    Ok(Json(sanitize_json_value(
+    Ok(Json(
         service::rollback(
             &state,
             &claims,
@@ -59,5 +58,5 @@ pub async fn rollback(
             &trace_id,
         )
         .await?,
-    )))
+    ))
 }

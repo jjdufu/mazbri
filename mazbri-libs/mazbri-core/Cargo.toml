@@ -8,8 +8,6 @@ rust-version.workspace = true
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-fory = { workspace = true }
-fory_core = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 config = { workspace = true }
@@ -44,3 +42,6 @@ mazbri-rpc = { workspace = true }
 hostname = "0.4"
 
 toml = { workspace = true }
+
+[lints]
+workspace = true

@@ -50,6 +50,7 @@ pub enum LicenseOperation {
 }
 
 impl LicenseOperation {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bootstrap => "bootstrap",
@@ -142,7 +143,6 @@ pub struct LicenseRequestFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LicenseDecision {
     pub status: String,
-    pub issuance_allowed: bool,
     pub decryption_allowed: bool,
     pub sequence: Option<i64>,
     pub key_version: Option<String>,
@@ -157,6 +157,14 @@ pub struct LicenseDecision {
     pub mark_expired_sticky: bool,
 }
 
+impl LicenseDecision {
+    /// 仅在许可证处于有效期内（status == "active"）时允许签发。
+    #[must_use]
+    pub fn issuance_allowed(&self) -> bool {
+        self.status == "active"
+    }
+}
+
 pub fn license_error(code: &'static str, message: impl Into<String>) -> CertError {
     CertError::License {
         code,
@@ -164,6 +172,7 @@ pub fn license_error(code: &'static str, message: impl Into<String>) -> CertErro
     }
 }
 
+#[must_use]
 pub fn trusted_verifying_key(kid: &str) -> Option<VerifyingKey> {
     let bytes = match kid {
         LICENSE_KID => &PRODUCTION_PUBLIC_KEY,
@@ -174,6 +183,9 @@ pub fn trusted_verifying_key(kid: &str) -> Option<VerifyingKey> {
     VerifyingKey::from_bytes(bytes).ok()
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn verify_compact_license(raw: &str) -> CertResult<VerifiedLicense> {
     if raw.len() > LICENSE_MAX_FILE_BYTES || raw.bytes().any(|byte| byte.is_ascii_whitespace()) {
         return Err(license_error(LICENSE_SIGNATURE_INVALID, "许可证签名无效"));
@@ -256,7 +268,7 @@ fn interpret_payload(
             if payload
                 .previous_key_version
                 .as_ref()
-                .is_none_or(|value| value.is_empty())
+                .is_none_or(std::string::String::is_empty)
                 || payload.sealed_assets.is_none()
             {
                 return Err(license_error(LICENSE_SIGNATURE_INVALID, "许可证签名无效"));
@@ -277,6 +289,9 @@ fn interpret_payload(
     })
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn canonical_asset_json(assets: &LicenseAssets) -> CertResult<Vec<u8>> {
     validate_assets(assets)?;
     serde_json::to_vec(assets).map_err(|error| {
@@ -284,10 +299,14 @@ pub fn canonical_asset_json(assets: &LicenseAssets) -> CertResult<Vec<u8>> {
     })
 }
 
+#[must_use]
 pub fn asset_digest_hex(plaintext: &[u8]) -> String {
     hex::encode(Sha256::digest(plaintext))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_assets(assets: &LicenseAssets) -> CertResult<()> {
     if assets.key_password.trim().is_empty() {
         return Err(CertError::InvalidRequest(
@@ -309,6 +328,9 @@ pub fn validate_assets(assets: &LicenseAssets) -> CertResult<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn seal_for_installation(
     installation_public: &[u8; 32],
     aad: &str,
@@ -328,6 +350,9 @@ pub fn seal_for_installation(
     )
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn unseal_for_installation(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -370,14 +395,19 @@ pub fn unseal_for_installation(
     plaintext
 }
 
+#[must_use]
 pub fn asset_aad(installation_id: Uuid, key_version: &str, package_id: Uuid) -> String {
     format!("assets|{installation_id}|{key_version}|{package_id}")
 }
 
+#[must_use]
 pub fn key_password_aad(installation_id: Uuid, key_version: &str) -> String {
     format!("key-password|{installation_id}|{key_version}")
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn open_assets(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -407,6 +437,9 @@ pub fn open_assets(
     Ok(assets)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn seal_key_password(
     installation_public: &[u8; 32],
     installation_id: Uuid,
@@ -420,6 +453,9 @@ pub fn seal_key_password(
     )
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn open_key_password(
     installation_private: &[u8; 32],
     installation_public: &[u8; 32],
@@ -437,6 +473,9 @@ pub fn open_key_password(
         .map_err(|_| license_error(LICENSE_ASSET_DIGEST_MISMATCH, "许可证资产摘要不一致"))
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn decode_key_material(value: &str, label: &str) -> CertResult<[u8; 32]> {
     let bytes = BASE64
         .decode(value.as_bytes())
@@ -447,6 +486,9 @@ pub fn decode_key_material(value: &str, label: &str) -> CertResult<[u8; 32]> {
     Ok(array)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn load_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     let raw = std::fs::read(path).map_err(|_| {
         license_error(
@@ -471,6 +513,7 @@ pub fn load_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     Ok(file)
 }
 
+#[must_use]
 pub fn generate_installation_key() -> InstallationKeyFile {
     let secret_bytes: [u8; 32] = rand::random();
     let secret = StaticSecret::from(secret_bytes);
@@ -483,6 +526,9 @@ pub fn generate_installation_key() -> InstallationKeyFile {
     }
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn ensure_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     if path.exists() {
         return load_installation_key(path);
@@ -538,6 +584,9 @@ pub fn ensure_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
     Ok(file)
 }
 
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn require_installation_key_path(path: Option<&str>) -> CertResult<&str> {
     path.map(str::trim)
         .filter(|value| !value.is_empty())
@@ -549,6 +598,7 @@ pub fn require_installation_key_path(path: Option<&str>) -> CertResult<&str> {
         })
 }
 
+#[must_use]
 pub fn decide_license(
     verified: Option<&VerifiedLicense>,
     installation_matches: bool,
@@ -568,20 +618,18 @@ pub fn decide_license(
     let sticky = expired_sticky_sequence == Some(license.payload.sequence);
     let in_active = license.not_before <= now && now < license.expires_at;
     let in_grace = license.expires_at <= now && now < license.grace_until;
-    let (status, issuance_allowed, mark_expired_sticky) = if sticky || (!in_active && !in_grace) {
-        let mark = !sticky && now >= license.grace_until;
-        ("expired", false, mark)
+    let (status, mark_expired_sticky) = if sticky || (!in_active && !in_grace) {
+        ("expired", !sticky && now >= license.grace_until)
     } else if in_grace {
-        ("grace", false, false)
+        ("grace", false)
     } else if in_active {
-        ("active", true, false)
+        ("active", false)
     } else {
-        ("pending", false, false)
+        ("pending", false)
     };
     let decryption_allowed = password_unseals && materials_present;
     LicenseDecision {
         status: status.to_string(),
-        issuance_allowed,
         decryption_allowed,
         sequence: Some(license.payload.sequence),
         key_version: Some(license.payload.key_version.clone()),
@@ -597,6 +645,7 @@ pub fn decide_license(
     }
 }
 
+#[must_use]
 pub fn unconfigured_decision() -> LicenseDecision {
     empty_decision("unconfigured", false)
 }
@@ -604,7 +653,6 @@ pub fn unconfigured_decision() -> LicenseDecision {
 fn empty_decision(status: &str, clock_rollback: bool) -> LicenseDecision {
     LicenseDecision {
         status: status.to_string(),
-        issuance_allowed: false,
         decryption_allowed: false,
         sequence: None,
         key_version: None,
@@ -620,6 +668,7 @@ fn empty_decision(status: &str, clock_rollback: bool) -> LicenseDecision {
     }
 }
 
+#[must_use]
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -809,7 +858,7 @@ mod tests {
         let now = verified.expires_at + Duration::days(1);
         let decision = decide_license(Some(&verified), true, now, None, None, true, true);
         assert_eq!(decision.status, "grace");
-        assert!(!decision.issuance_allowed);
+        assert!(!decision.issuance_allowed());
         assert!(decision.decryption_allowed);
         assert!(decision.seconds_to_expiry.is_some_and(|value| value <= 0));
         assert!(decision.seconds_to_grace_end.is_some_and(|value| value > 0));
@@ -842,7 +891,7 @@ mod tests {
             true,
         );
         assert_eq!(sticky.status, "expired");
-        assert!(!sticky.issuance_allowed);
+        assert!(!sticky.issuance_allowed());
         assert!(sticky.decryption_allowed);
     }
 
@@ -862,7 +911,7 @@ mod tests {
         let seen = now + Duration::hours(1);
         let decision = decide_license(Some(&verified), true, now, None, Some(seen), true, true);
         assert!(!decision.clock_rollback);
-        assert!(decision.issuance_allowed);
+        assert!(decision.issuance_allowed());
         let far = decide_license(
             Some(&verified),
             true,
@@ -873,7 +922,7 @@ mod tests {
             true,
         );
         assert!(far.clock_rollback);
-        assert!(far.issuance_allowed);
+        assert!(far.issuance_allowed());
     }
 
     #[test]
@@ -890,7 +939,7 @@ mod tests {
         let verified = verify_compact_license(&jws).expect("verify");
         let now = verified.not_before + Duration::days(1);
         let decision = decide_license(Some(&verified), true, now, None, None, true, true);
-        assert!(decision.issuance_allowed);
+        assert!(decision.issuance_allowed());
         assert_eq!(decision.expires_at, Some(verified.expires_at));
     }
 

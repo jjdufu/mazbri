@@ -9,6 +9,9 @@ pub struct TlsTarpcListener {
     acceptor: TlsAcceptor,
 }
 impl TlsTarpcListener {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn bind(addr: SocketAddr, acceptor: TlsAcceptor) -> TlsResult<Self> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         info!(addr = % addr, "TLS tarpc listener bound");
@@ -47,6 +50,9 @@ impl TlsTarpcListener {
 }
 pub struct TlsTarpcConnector;
 impl TlsTarpcConnector {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn connect<Item, SinkItem, Codec>(
         addr: SocketAddr,
         connector: TlsConnector,
@@ -68,6 +74,9 @@ impl TlsTarpcConnector {
         Ok(tarpc::serde_transport::Transport::from((tls_stream, codec)))
     }
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn tls_listen<Item, SinkItem, Codec, F>(
     addr: SocketAddr,
     acceptor: TlsAcceptor,
@@ -89,6 +98,9 @@ where
     let listener = TlsTarpcListener::bind(addr, acceptor).await?;
     Ok(listener.listen(codec_factory))
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn tls_connect<Item, SinkItem, Codec>(
     addr: SocketAddr,
     connector: TlsConnector,
@@ -101,6 +113,9 @@ where
 {
     TlsTarpcConnector::connect(addr, connector, None, codec).await
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn tls_connect_with_server_name<Item, SinkItem, Codec>(
     addr: SocketAddr,
     connector: TlsConnector,

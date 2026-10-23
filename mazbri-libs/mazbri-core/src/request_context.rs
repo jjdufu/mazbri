@@ -18,6 +18,7 @@ pub fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+#[must_use]
 pub fn request_context(headers: &HeaderMap) -> RequestContext {
     let trace_context = crate::parse_trace_context(headers);
     RequestContext {
@@ -28,6 +29,7 @@ pub fn request_context(headers: &HeaderMap) -> RequestContext {
     }
 }
 
+#[must_use]
 pub fn request_ids(headers: &HeaderMap) -> (String, String) {
     let context = request_context(headers);
     (context.request_id, context.trace_id)

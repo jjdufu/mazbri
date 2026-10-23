@@ -2,6 +2,7 @@ use crate::repository::{self, CallbackDeliveryLog, CallbackSubscription};
 use crate::retry::calculate_next_retry;
 use crate::signer::{generate_signature, validate_timestamp};
 use chrono::Utc;
+use mazbri_core::num::SaturatingFrom;
 use reqwest::Client;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -42,11 +43,13 @@ pub struct CallbackWorker {
 }
 
 impl CallbackWorker {
+    #[must_use]
     pub fn new(pool: PgPool) -> Self {
-        Self::with_config(pool, CallbackWorkerConfig::default())
+        Self::with_config(pool, &CallbackWorkerConfig::default())
     }
 
-    pub fn with_config(pool: PgPool, config: CallbackWorkerConfig) -> Self {
+    #[must_use]
+    pub fn with_config(pool: PgPool, config: &CallbackWorkerConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
@@ -77,7 +80,7 @@ impl CallbackWorker {
             worker_count,
             batch_size = self.config.batch_size,
             max_concurrent = self.config.max_concurrent_deliveries,
-            poll_interval_ms = self.config.poll_interval.as_millis() as u64,
+            poll_interval_ms = u64::saturating_from(self.config.poll_interval.as_millis()),
             "Starting CallbackWorker fleet"
         );
         if worker_count == 1 {
@@ -149,6 +152,25 @@ impl CallbackWorker {
         Ok(())
     }
 
+    async fn mark_terminal(
+        &self,
+        task: &CallbackDeliveryLog,
+        status: &str,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        repository::update_delivery_status(
+            &self.pool,
+            task.id,
+            status,
+            task.retry_count,
+            None,
+            None,
+            Some(reason),
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn process_task(&self, task: CallbackDeliveryLog) -> anyhow::Result<()> {
         let sub_row = sqlx::query_as::<_, CallbackSubscription>(
             "SELECT id, tenant_id, product_id, callback_url, secret_key, retry_policy, is_active FROM mazbri_platform.callback_subscriptions WHERE id = $1",
@@ -163,16 +185,8 @@ impl CallbackWorker {
                     "Subscription {} not found or inactive for task {}",
                     task.subscription_id, task.id
                 );
-                repository::update_delivery_status(
-                    &self.pool,
-                    task.id,
-                    "abandoned",
-                    task.retry_count,
-                    None,
-                    None,
-                    Some("Subscription inactive"),
-                )
-                .await?;
+                self.mark_terminal(&task, "abandoned", "Subscription inactive")
+                    .await?;
                 return Ok(());
             }
         };
@@ -182,16 +196,8 @@ impl CallbackWorker {
                 "Callback {} skipped: timestamp validation failed: {}",
                 task.id, e
             );
-            repository::update_delivery_status(
-                &self.pool,
-                task.id,
-                "failed",
-                task.retry_count,
-                None,
-                None,
-                Some("Invalid signature timestamp"),
-            )
-            .await?;
+            self.mark_terminal(&task, "failed", "Invalid signature timestamp")
+                .await?;
             return Ok(());
         }
         let payload_str = serde_json::to_string(&task.payload)?;
@@ -202,16 +208,8 @@ impl CallbackWorker {
                     "Callback {} skipped: signature generation failed: {}",
                     task.id, e
                 );
-                repository::update_delivery_status(
-                    &self.pool,
-                    task.id,
-                    "failed",
-                    task.retry_count,
-                    None,
-                    None,
-                    Some("Signature generation failed"),
-                )
-                .await?;
+                self.mark_terminal(&task, "failed", "Signature generation failed")
+                    .await?;
                 return Ok(());
             }
         };
@@ -233,7 +231,7 @@ impl CallbackWorker {
                     "success",
                     task.retry_count,
                     None,
-                    Some(resp.status().as_u16() as i32),
+                    Some(i32::from(resp.status().as_u16())),
                     None,
                 )
                 .await?;
@@ -241,7 +239,7 @@ impl CallbackWorker {
             Ok(resp) => {
                 let status_code = resp.status().as_u16();
                 warn!("Callback {} failed with status {}", task.id, status_code);
-                self.handle_failure(task, sub, Some(status_code as i32), None)
+                self.handle_failure(task, sub, Some(i32::from(status_code)), None)
                     .await?;
             }
             Err(e) => {
@@ -260,12 +258,17 @@ impl CallbackWorker {
         status_code: Option<i32>,
         error_msg: Option<&str>,
     ) -> anyhow::Result<()> {
-        let max_retries = sub.retry_policy["max_retries"].as_u64().unwrap_or(5) as i32;
+        let max_retries =
+            i32::saturating_from(sub.retry_policy["max_retries"].as_u64().unwrap_or(5));
         let backoff_multiplier = sub.retry_policy["backoff_multiplier"]
             .as_f64()
             .unwrap_or(2.0);
         if task.retry_count < max_retries {
-            let next_retry = calculate_next_retry(task.retry_count as u32, 30, backoff_multiplier);
+            let next_retry = calculate_next_retry(
+                u32::saturating_from(task.retry_count),
+                30,
+                backoff_multiplier,
+            );
             info!(
                 "Scheduling retry for callback {} at {}",
                 task.id, next_retry

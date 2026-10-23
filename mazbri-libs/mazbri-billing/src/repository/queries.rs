@@ -27,20 +27,19 @@ impl BillingRepository for PgBillingRepository {
             "INSERT INTO usage_records (
                 tenant_id, account_id, api_endpoint, http_method, response_status,
                 request_size, response_size, billing_service_duration_ms,
-                billing_type, unit_price, billable_amount, billable_units,
+                unit_price, billable_amount, billable_units,
                 product_id, billing_code, event_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id",
         )
         .bind(record.tenant_id)
         .bind(record.account_id)
         .bind(&record.api_endpoint)
         .bind(&record.http_method)
-        .bind(record.response_status as i32)
+        .bind(i32::from(record.response_status))
         .bind(record.request_size)
         .bind(record.response_size)
         .bind(record.billing_service_duration_ms)
-        .bind(record.billing_result.billing_type.to_string())
         .bind(record.billing_result.unit_price)
         .bind(record.billing_result.amount)
         .bind(i64::try_from(record.billing_result.units).map_err(|e| {
@@ -63,13 +62,13 @@ impl BillingRepository for PgBillingRepository {
             "INSERT INTO usage_outbox (
                 event_id, request_id, tenant_id, account_id, product_id,
                 api_endpoint, http_method, response_status, request_size,
-                response_size, billing_service_duration_ms, billing_type, unit_price,
+                response_size, billing_service_duration_ms, unit_price,
                 billable_units, billable_amount, billing_code
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, $16
+                $10, $11, $12,
+                $13, $14, $15
             )
             ON CONFLICT (event_id) DO NOTHING",
         )
@@ -80,11 +79,10 @@ impl BillingRepository for PgBillingRepository {
         .bind(&event.product_id)
         .bind(&event.api_endpoint)
         .bind(&event.http_method)
-        .bind(event.response_status as i32)
+        .bind(i32::from(event.response_status))
         .bind(event.request_size)
         .bind(event.response_size)
         .bind(event.billing_service_duration_ms)
-        .bind(event.billing_result.billing_type.to_string())
         .bind(event.billing_result.unit_price)
         .bind(i64::try_from(event.billing_result.units).map_err(|e| {
             CoreError::Validation(format!(
@@ -152,33 +150,32 @@ impl BillingRepository for PgBillingRepository {
         }
         if page_size > MAX_PAGE_SIZE {
             return Err(CoreError::Validation(format!(
-                "page_size must not exceed {}",
-                MAX_PAGE_SIZE
+                "page_size must not exceed {MAX_PAGE_SIZE}"
             )));
         }
         let mut conditions = vec!["tenant_id = $1".to_string()];
         let mut param_count = 1;
         let start_filter = if let Some(start) = start_time {
             param_count += 1;
-            conditions.push(format!("created_at >= to_timestamp(${})", param_count));
+            conditions.push(format!("created_at >= to_timestamp(${param_count})"));
             Some(start)
         } else {
             None
         };
         let end_filter = if let Some(end) = end_time {
             param_count += 1;
-            conditions.push(format!("created_at <= to_timestamp(${})", param_count));
+            conditions.push(format!("created_at <= to_timestamp(${param_count})"));
             Some(end)
         } else {
             None
         };
         let status_filter = if let Some(s) = status {
-            if !s.is_empty() {
-                param_count += 1;
-                conditions.push(format!("status = ${}", param_count));
-                Some(s.to_string())
-            } else {
+            if s.is_empty() {
                 None
+            } else {
+                param_count += 1;
+                conditions.push(format!("status = ${param_count}"));
+                Some(s.to_string())
             }
         } else {
             None
@@ -204,7 +201,7 @@ impl BillingRepository for PgBillingRepository {
         if let Some(ref s) = status_filter {
             q = q.bind(s);
         }
-        q = q.bind(page_size as i64);
+        q = q.bind(i64::from(page_size));
         let rows = q
             .fetch_all(&*self.read_pool)
             .await
@@ -252,21 +249,17 @@ impl BillingRepository for PgBillingRepository {
         .fetch_optional(&*self.read_pool)
         .await
         .map_err(Self::map_error)?;
-        let bill_row = match bill_row {
-            Some(r) => r,
-            None => {
-                return Err(CoreError::NotFound {
-                    resource: "bill".to_string(),
-                    id: bill_id.to_string(),
-                });
-            }
+        let Some(bill_row) = bill_row else {
+            return Err(CoreError::NotFound {
+                resource: "bill".to_string(),
+                id: bill_id.to_string(),
+            });
         };
         let period_start: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_start");
         let period_end: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_end");
         let rows = sqlx::query(
             "SELECT
                 api_endpoint,
-                billing_type,
                 COUNT(*) as call_count,
                 COALESCE(SUM(billable_units), 0) as total_units,
                 COALESCE(SUM(billable_amount), 0) as total_amount,
@@ -275,7 +268,7 @@ impl BillingRepository for PgBillingRepository {
              WHERE tenant_id = $1
              AND recorded_at >= $2
              AND recorded_at <= $3
-             GROUP BY api_endpoint, billing_type
+             GROUP BY api_endpoint
              ORDER BY total_amount DESC",
         )
         .bind(tenant_id)

@@ -737,13 +737,13 @@ pub async fn refund_tenant_account(args: RefundTenantAccountArgs<'_>) -> axum::r
             "Amount must be a positive number",
         );
     }
-    if let Some(ref reason) = req.reason {
-        if reason.len() > 500 {
-            return crate::response::ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "Reason must not exceed 500 characters",
-            );
-        }
+    if let Some(ref reason) = req.reason
+        && reason.len() > 500
+    {
+        return crate::response::ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "Reason must not exceed 500 characters",
+        );
     }
     if !repo::tenant_exists(db, tenant_id).await {
         return crate::response::ApiResponse::err(
@@ -816,13 +816,13 @@ pub async fn list_tenant_transactions(
             format!("Tenant not found: {tenant_id_str}"),
         );
     }
-    if let Some(ref tt) = query.transaction_type {
-        if !["credit", "refund", "charge", "adjustment", "payment"].contains(&tt.as_str()) {
-            return crate::response::ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                "Transaction type must be one of: credit, refund, charge, adjustment, payment",
-            );
-        }
+    if let Some(ref tt) = query.transaction_type
+        && !["credit", "refund", "charge", "adjustment", "payment"].contains(&tt.as_str())
+    {
+        return crate::response::ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "Transaction type must be one of: credit, refund, charge, adjustment, payment",
+        );
     }
     let limit = query.limit.clamp(1, 100);
     match repo::get_tenant_transactions(

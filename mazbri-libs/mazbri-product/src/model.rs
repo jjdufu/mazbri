@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use mazbri_core::PayloadCodec;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
@@ -12,11 +11,13 @@ impl fmt::Display for ProductIdValidationError {
     }
 }
 impl std::error::Error for ProductIdValidationError {}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_product_id(product_id: &str) -> Result<(), ProductIdValidationError> {
     let bytes = product_id.as_bytes();
-    let is_valid = bytes.len() == 10
-        && bytes.first() == Some(&b'8')
-        && bytes.iter().all(|byte| byte.is_ascii_digit());
+    let is_valid =
+        bytes.len() == 10 && bytes.first() == Some(&b'8') && bytes.iter().all(u8::is_ascii_digit);
     if is_valid {
         Ok(())
     } else {
@@ -61,6 +62,32 @@ pub struct TenantProduct {
     pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CBProLatencySimulation {
+    #[serde(default = "default_cbpro_latency_simulation_enabled")]
+    pub latency_simulation_enabled: bool,
+    #[serde(default = "default_cbpro_default_simulated_latency_ms")]
+    pub default_simulated_latency_ms: u64,
+    #[serde(default = "default_cbpro_latency_jitter_min_ms")]
+    pub latency_jitter_min_ms: u64,
+    #[serde(default = "default_cbpro_latency_jitter_max_ms")]
+    pub latency_jitter_max_ms: u64,
+    #[serde(default = "default_cbpro_max_simulated_delay_ms")]
+    pub max_simulated_delay_ms: u64,
+}
+impl Default for CBProLatencySimulation {
+    fn default() -> Self {
+        Self {
+            latency_simulation_enabled: default_cbpro_latency_simulation_enabled(),
+            default_simulated_latency_ms: default_cbpro_default_simulated_latency_ms(),
+            latency_jitter_min_ms: default_cbpro_latency_jitter_min_ms(),
+            latency_jitter_max_ms: default_cbpro_latency_jitter_max_ms(),
+            max_simulated_delay_ms: default_cbpro_max_simulated_delay_ms(),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CBProPolicyConfig {
     #[serde(default = "default_cbpro_mode")]
     pub mode: String,
@@ -80,16 +107,9 @@ pub struct CBProPolicyConfig {
     pub max_validate_interval_secs: u64,
     #[serde(default = "default_cbpro_prevalidate_before_expiry_secs")]
     pub prevalidate_before_expiry_secs: u64,
-    #[serde(default = "default_cbpro_latency_simulation_enabled")]
-    pub latency_simulation_enabled: bool,
-    #[serde(default = "default_cbpro_default_simulated_latency_ms")]
-    pub default_simulated_latency_ms: u64,
-    #[serde(default = "default_cbpro_latency_jitter_min_ms")]
-    pub latency_jitter_min_ms: u64,
-    #[serde(default = "default_cbpro_latency_jitter_max_ms")]
-    pub latency_jitter_max_ms: u64,
-    #[serde(default = "default_cbpro_max_simulated_delay_ms")]
-    pub max_simulated_delay_ms: u64,
+    /// 延迟模拟参数（嵌套对象 `latency`）。
+    #[serde(default)]
+    pub latency: CBProLatencySimulation,
     #[serde(default = "default_cbpro_cacheable_methods")]
     pub cacheable_methods: Vec<String>,
     #[serde(default)]
@@ -115,11 +135,7 @@ impl Default for CBProPolicyConfig {
             validate_every_hits: default_cbpro_validate_every_hits(),
             max_validate_interval_secs: default_cbpro_max_validate_interval_secs(),
             prevalidate_before_expiry_secs: default_cbpro_prevalidate_before_expiry_secs(),
-            latency_simulation_enabled: default_cbpro_latency_simulation_enabled(),
-            default_simulated_latency_ms: default_cbpro_default_simulated_latency_ms(),
-            latency_jitter_min_ms: default_cbpro_latency_jitter_min_ms(),
-            latency_jitter_max_ms: default_cbpro_latency_jitter_max_ms(),
-            max_simulated_delay_ms: default_cbpro_max_simulated_delay_ms(),
+            latency: CBProLatencySimulation::default(),
             cacheable_methods: default_cbpro_cacheable_methods(),
             allow_body_cache: false,
             ignore_query_keys: default_cbpro_ignore_query_keys(),
@@ -173,60 +189,27 @@ pub struct TenantProductConfig {
     pub unit_price: String,
     #[serde(default = "default_currency")]
     pub currency: String,
-    #[serde(default = "default_billing_type")]
-    pub billing_type: String,
     #[serde(default)]
     pub cb_pro_fallback: bool,
     #[serde(default)]
     pub cbpro: CBProPolicyConfig,
-    #[serde(default = "default_request_codec")]
-    pub request_codec: PayloadCodec,
-    #[serde(default = "default_response_codec")]
-    pub response_codec: PayloadCodec,
-    #[serde(default = "default_codec_enabled")]
-    pub codec_enabled: bool,
-    #[serde(default = "default_codec_version")]
-    pub codec_version: u32,
 }
 impl Default for TenantProductConfig {
     fn default() -> Self {
         Self {
             unit_price: default_unit_price(),
             currency: default_currency(),
-            billing_type: default_billing_type(),
             cb_pro_fallback: false,
             cbpro: CBProPolicyConfig::default(),
-            request_codec: default_request_codec(),
-            response_codec: default_response_codec(),
-            codec_enabled: default_codec_enabled(),
-            codec_version: default_codec_version(),
         }
     }
 }
 impl TenantProductConfig {
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         validate_cbpro_policy_config(&self.cbpro)?;
-        match self.billing_type.as_str() {
-            "call" | "" => {}
-            "data" | "bandwidth" | "subscription" => {
-                return Err(format!(
-                    "billing_type '{}' is not supported; only 'call' (per-request) is available",
-                    self.billing_type
-                ));
-            }
-            other => {
-                return Err(format!("unsupported billing_type '{other}'; allowed: call"));
-            }
-        }
-        if self.codec_version == 0 {
-            return Err("codec_version must be greater than zero".to_string());
-        }
-        if self.codec_enabled && self.request_codec != self.response_codec {
-            return Err(
-                "request_codec and response_codec must match when codec_enabled is true"
-                    .to_string(),
-            );
-        }
         Ok(())
     }
 }
@@ -235,21 +218,6 @@ fn default_unit_price() -> String {
 }
 fn default_currency() -> String {
     "CNY".to_string()
-}
-fn default_billing_type() -> String {
-    "call".to_string()
-}
-fn default_request_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_response_codec() -> PayloadCodec {
-    PayloadCodec::Json
-}
-fn default_codec_enabled() -> bool {
-    false
-}
-fn default_codec_version() -> u32 {
-    1
 }
 fn default_cbpro_mode() -> String {
     "fallback_only".to_string()
@@ -305,6 +273,9 @@ fn default_cbpro_shadow_validate_enabled() -> bool {
 fn default_cbpro_background_analysis_enabled() -> bool {
     true
 }
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), String> {
     if !matches!(
         config.mode.trim(),
@@ -324,12 +295,13 @@ pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), St
     if config.max_validate_interval_secs < 1 {
         return Err("cbpro.max_validate_interval_secs must be at least 1".to_string());
     }
-    if config.latency_jitter_max_ms < config.latency_jitter_min_ms {
+    if config.latency.latency_jitter_max_ms < config.latency.latency_jitter_min_ms {
         return Err(
-            "cbpro.latency_jitter_max_ms must be >= cbpro.latency_jitter_min_ms".to_string(),
+            "cbpro.latency.latency_jitter_max_ms must be >= cbpro.latency.latency_jitter_min_ms"
+                .to_string(),
         );
     }
-    if config.max_simulated_delay_ms < config.latency_jitter_max_ms {
+    if config.latency.max_simulated_delay_ms < config.latency.latency_jitter_max_ms {
         return Err(
             "cbpro.max_simulated_delay_ms must be >= cbpro.latency_jitter_max_ms".to_string(),
         );
@@ -340,6 +312,7 @@ pub fn validate_cbpro_policy_config(config: &CBProPolicyConfig) -> Result<(), St
     Ok(())
 }
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GrantAccessRequest {
     pub tenant_id: uuid::Uuid,
     #[serde(default)]
@@ -364,7 +337,6 @@ pub struct TenantProductDetail {
     pub cb_cooldown_secs: i32,
     pub unit_price: String,
     pub currency: String,
-    pub billing_type: String,
     #[serde(default)]
     pub cb_pro_fallback: bool,
     #[serde(default)]
@@ -400,10 +372,46 @@ pub struct AuthorizationDetail {
     pub enabled: bool,
     pub unit_price: String,
     pub currency: String,
-    pub billing_type: String,
     pub cb_pro_fallback: bool,
     #[serde(default)]
     pub config: TenantProductConfig,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod deny_unknown_tests {
+    use super::{CBProPolicyConfig, TenantProductConfig};
+    use serde_json::json;
+
+    #[test]
+    fn cbpro_latency_is_nested_object() {
+        let cfg: CBProPolicyConfig = serde_json::from_value(json!({
+            "latency": { "latency_simulation_enabled": true, "default_simulated_latency_ms": 50 }
+        }))
+        .expect("nested latency parses");
+        assert!(cfg.latency.latency_simulation_enabled);
+        assert_eq!(cfg.latency.default_simulated_latency_ms, 50);
+        let value = serde_json::to_value(&cfg).expect("serialize");
+        assert!(value.get("latency").is_some());
+        assert!(value.get("latency_simulation_enabled").is_none());
+    }
+
+    #[test]
+    fn cbpro_flat_latency_field_is_rejected() {
+        let err = serde_json::from_value::<CBProPolicyConfig>(json!({
+            "latency_simulation_enabled": true
+        }))
+        .expect_err("flat latency field must be rejected");
+        assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn tenant_product_config_rejects_unknown_field() {
+        let err = serde_json::from_value::<TenantProductConfig>(json!({
+            "unit_price": "0.001", "currency": "CNY", "cb_pro_fallback": false, "bogus": 1
+        }))
+        .expect_err("unknown field must be rejected");
+        assert!(err.to_string().contains("unknown field"));
+    }
 }

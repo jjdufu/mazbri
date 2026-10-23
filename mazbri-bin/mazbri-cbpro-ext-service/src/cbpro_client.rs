@@ -44,7 +44,7 @@ impl CBProClient {
                 return Ok(client.clone());
             }
         }
-        let target = mazbri_tls::resolve_connect_target(self.endpoint.url(), None)
+        let target = mazbri_tls::resolve_connect_target(self.endpoint.url())
             .await
             .map_err(|error| CoreError::Config(error.to_string()))?;
         let transport = mazbri_tls::tls_connect_with_server_name(
@@ -83,7 +83,7 @@ impl CBProClient {
                             source: FallbackSource::None,
                             age_secs: None,
                             error: Some(RpcError::ServiceUnavailable {
-                                service: "cbpro".into(),
+                                service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                                 message: format!("CBPro service error: {error}"),
                             }),
                         }
@@ -98,7 +98,7 @@ impl CBProClient {
                     source: FallbackSource::None,
                     age_secs: None,
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro connection failed: {error}"),
                     }),
                 }
@@ -123,7 +123,7 @@ impl CBProClient {
                             success: false,
                             cache_key: String::new(),
                             error: Some(RpcError::ServiceUnavailable {
-                                service: "cbpro".into(),
+                                service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                                 message: format!("CBPro service error: {error}"),
                             }),
                         }
@@ -136,7 +136,7 @@ impl CBProClient {
                     success: false,
                     cache_key: String::new(),
                     error: Some(RpcError::ServiceUnavailable {
-                        service: "cbpro".into(),
+                        service: mazbri_core::ServiceName::Cbpro.as_str().into(),
                         message: format!("CBPro connection failed: {error}"),
                     }),
                 }

@@ -1,4 +1,5 @@
 import type { ISODateString } from "./common";
+export type ApiScope = "api:read" | "api:write" | "api:admin";
 export interface ApiKey {
   key_prefix: string;
   key_suffix: string;
@@ -19,7 +20,7 @@ export interface ApiKeyListResponse {
   };
 }
 export interface CreateApiKeyRequest {
-  scopes: string[];
+  scopes: ApiScope[];
   expires_at?: ISODateString;
   expires_days?: number;
   warmup_enabled?: boolean;
