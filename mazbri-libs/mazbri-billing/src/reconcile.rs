@@ -316,7 +316,7 @@ impl ReconcileJob {
         stats: &mut RunStats,
     ) -> Result<(), String> {
         let recs: Vec<(i64, Uuid)> = sqlx::query_as(
-            "SELECT id, event_id FROM usage_records WHERE created_at >= $1 AND created_at < $2 AND event_id IS NOT NULL",
+            "SELECT id, event_id FROM usage_records WHERE recorded_at >= $1 AND recorded_at < $2 AND event_id IS NOT NULL",
         )
         .bind(s)
         .bind(e)
