@@ -9,7 +9,9 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -235,6 +237,63 @@ pub(crate) async fn deliver_usage_event(
 }
 
 static DEFERRED_TX: OnceLock<mpsc::Sender<UsageOutboxEvent>> = OnceLock::new();
+/// Post-response billing tasks currently running (in-request retries included).
+static INFLIGHT_POST_TASKS: AtomicUsize = AtomicUsize::new(0);
+/// Deferred charges not yet delivered: `event_id` → (`request_id`, amount). Used for the
+/// shutdown drain and to log exactly which charges are lost if the drain times out.
+static DEFERRED_PENDING: LazyLock<Mutex<HashMap<Uuid, (Uuid, Decimal)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn pending_lock() -> std::sync::MutexGuard<'static, HashMap<Uuid, (Uuid, Decimal)>> {
+    DEFERRED_PENDING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Snapshot of outstanding billing work: (in-flight post-response tasks, deferred charges).
+pub(crate) fn outstanding_charges() -> (usize, usize) {
+    (
+        INFLIGHT_POST_TASKS.load(Ordering::Acquire),
+        pending_lock().len(),
+    )
+}
+
+/// Called after the HTTP server stopped accepting and finished in-flight requests:
+/// waits (bounded) until every post-response task and deferred charge is delivered,
+/// then logs whatever is left at ERROR with `event_id` and amount.
+pub async fn drain_on_shutdown(timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    let (inflight, deferred) = outstanding_charges();
+    info!(
+        inflight,
+        deferred,
+        timeout_ms = mazbri_core::num::millis_u64(timeout),
+        "Draining usage charges before exit"
+    );
+    loop {
+        let (inflight, deferred) = outstanding_charges();
+        if inflight == 0 && deferred == 0 {
+            info!("Usage charge drain complete; nothing pending");
+            return;
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (inflight, _) = outstanding_charges();
+    let remaining: Vec<(Uuid, (Uuid, Decimal))> =
+        pending_lock().iter().map(|(k, v)| (*k, *v)).collect();
+    for (event_id, (request_id, amount)) in &remaining {
+        error!(event_id = % event_id, request_id = % request_id, amount = % amount,
+            "Usage charge LOST at shutdown: deferred charge not delivered before drain timeout");
+    }
+    error!(
+        inflight,
+        deferred = remaining.len(),
+        "Usage charge drain timed out"
+    );
+}
 
 /// Hands an event to a single background task that keeps retrying until the DB is back.
 /// Limitation: in-memory only — events still queued when the gateway process exits are lost
@@ -245,14 +304,17 @@ fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
         let service = Arc::clone(service);
         tokio::spawn(async move {
             while let Some(mut event) = rx.recv().await {
+                let event_key = event.event_id;
                 loop {
                     match deliver_usage_event(&service, event, CHARGE_RETRY_ATTEMPTS).await {
                         Delivery::Done => {
-                            info!("Deferred usage charge delivered");
+                            pending_lock().remove(&event_key);
+                            info!(event_id = % event_key, "Deferred usage charge delivered");
                             break;
                         }
                         Delivery::AccountNotFound => {
-                            error!("Deferred usage charge dropped: tenant account not found");
+                            pending_lock().remove(&event_key);
+                            error!(event_id = % event_key, "Deferred usage charge dropped: tenant account not found");
                             break;
                         }
                         Delivery::Transient(back, err) => {
@@ -266,10 +328,15 @@ fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
         });
         tx
     });
+    pending_lock().insert(
+        event.event_id,
+        (event.request_id, event.billing_result.amount),
+    );
     if let Err(error) = sender.try_send(event) {
         let event = match error {
             mpsc::error::TrySendError::Full(e) | mpsc::error::TrySendError::Closed(e) => e,
         };
+        pending_lock().remove(&event.event_id);
         error!(
             event_id = % event.event_id, request_id = % event.request_id, tenant_id = % event.tenant_id,
             amount = % event.billing_result.amount,
@@ -296,10 +363,26 @@ pub(crate) struct PostResponseTaskArgs {
     /// When present, used as billing outbox dedupe key (fingerprint → deterministic `event_id`).
     pub(crate) fingerprint: Option<String>,
 }
+/// Counts a running post-response task; decremented on drop (also on panic).
+struct InflightGuard;
+impl InflightGuard {
+    fn new() -> Self {
+        INFLIGHT_POST_TASKS.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        INFLIGHT_POST_TASKS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTaskArgs) {
     let state = state.clone();
     let request_id = args.request_id.clone();
+    let guard = InflightGuard::new();
     tokio::spawn(async move {
+        let _guard = guard;
         let started_at = Instant::now();
         let callback_task = enqueue_callback_delivery(
             &state.proxy_state,
@@ -380,6 +463,22 @@ pub(crate) fn content_length(headers: &HeaderMap) -> usize {
 mod charge_retry_tests {
     use super::charge_backoff;
     use std::time::Duration;
+
+    #[test]
+    fn inflight_guard_counts() {
+        let before = super::outstanding_charges().0;
+        let g = super::InflightGuard::new();
+        assert_eq!(super::outstanding_charges().0, before + 1);
+        drop(g);
+        assert_eq!(super::outstanding_charges().0, before);
+    }
+
+    #[tokio::test]
+    async fn drain_returns_immediately_when_idle() {
+        let started = std::time::Instant::now();
+        super::drain_on_shutdown(Duration::from_secs(5)).await;
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 
     #[test]
     fn backoff_grows_and_caps() {

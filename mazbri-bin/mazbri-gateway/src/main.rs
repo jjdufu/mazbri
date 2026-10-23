@@ -137,8 +137,14 @@ async fn main() -> Result<()> {
         shutdown_timeout,
     ))
     .await?;
+    // Server no longer accepts or serves requests: flush post-response billing work.
+    // Keep (graceful_shutdown_timeout + this) below the container stop grace period.
+    gateway::post_response::drain_on_shutdown(USAGE_CHARGE_DRAIN_TIMEOUT).await;
     Ok(())
 }
+
+/// Upper bound for flushing deferred usage charges at shutdown.
+const USAGE_CHARGE_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 
 async fn graceful_shutdown(
     renewal_task: mazbri_tls::RenewalTaskHandle,
