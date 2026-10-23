@@ -466,8 +466,124 @@ pub(crate) async fn deduct_and_record(
     })
 }
 
-/// One-tenant batch charge: one balance row UPDATE for the sum, then per-item bookkeeping.
-/// Eliminates N serial row-lock round-trips under single-tenant high QPS.
+/// One planned charge line inside a tenant batch (pure, computed before any SQL).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannedCharge {
+    pub queue_id: Uuid,
+    pub usage_record_id: i64,
+    pub amount: Decimal,
+    pub balance_before: Decimal,
+    pub balance_after: Decimal,
+    /// `None` for zero/negative amounts: only queue/usage status is updated.
+    pub transaction_id: Option<Uuid>,
+}
+
+/// Walks the balance cursor in input order, exactly like the former per-item loop.
+pub(crate) fn plan_batch_charges(
+    balance_before_batch: Decimal,
+    items: &[(Uuid, i64, Decimal)],
+    mut new_id: impl FnMut() -> Uuid,
+) -> (Vec<PlannedCharge>, Decimal) {
+    let mut cursor = balance_before_batch;
+    let mut out = Vec::with_capacity(items.len());
+    for &(queue_id, usage_record_id, amount) in items {
+        if amount <= Decimal::ZERO {
+            out.push(PlannedCharge {
+                queue_id,
+                usage_record_id,
+                amount,
+                balance_before: cursor,
+                balance_after: cursor,
+                transaction_id: None,
+            });
+            continue;
+        }
+        let before = cursor;
+        cursor -= amount;
+        out.push(PlannedCharge {
+            queue_id,
+            usage_record_id,
+            amount,
+            balance_before: before,
+            balance_after: cursor,
+            transaction_id: Some(new_id()),
+        });
+    }
+    (out, cursor)
+}
+
+/// Set-based INSERT of `transactions` + `ledger_entries` rows for planned charges.
+async fn insert_batch_charge_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    account_id: Uuid,
+    charged: &[&PlannedCharge],
+    usage_ids: &[i64],
+    event_map: &std::collections::HashMap<i64, Option<Uuid>>,
+) -> Result<Vec<Uuid>, CoreError> {
+    let tx_ids: Vec<Uuid> = charged.iter().filter_map(|p| p.transaction_id).collect();
+    let amounts: Vec<Decimal> = charged.iter().map(|p| p.amount).collect();
+    let befores: Vec<Decimal> = charged.iter().map(|p| p.balance_before).collect();
+    let afters: Vec<Decimal> = charged.iter().map(|p| p.balance_after).collect();
+    let ref_ids: Vec<String> = usage_ids.iter().map(ToString::to_string).collect();
+    let tx_descs: Vec<String> = usage_ids
+        .iter()
+        .map(|id| format!("Usage charge for record {id}"))
+        .collect();
+    let ledger_descs: Vec<String> = usage_ids
+        .iter()
+        .map(|id| format!("Usage record {id}"))
+        .collect();
+    let event_ids: Vec<Option<Uuid>> = usage_ids
+        .iter()
+        .map(|id| event_map.get(id).copied().flatten())
+        .collect();
+
+    if !tx_ids.is_empty() {
+        sqlx::query(
+            r"INSERT INTO transactions
+               (id, tenant_id, account_id, transaction_type, amount,
+                balance_before, balance_after, reference_type, reference_id,
+                description, status)
+               SELECT u.id, $2, $3, 'charge', u.amount, u.bb, u.ba, 'usage', u.rid, u.descr, 'completed'
+               FROM UNNEST($1::uuid[], $4::numeric[], $5::numeric[], $6::numeric[], $7::text[], $8::text[])
+                    AS u(id, amount, bb, ba, rid, descr)",
+        )
+        .bind(&tx_ids)
+        .bind(tenant_id)
+        .bind(account_id)
+        .bind(&amounts)
+        .bind(&befores)
+        .bind(&afters)
+        .bind(&ref_ids)
+        .bind(&tx_descs)
+        .execute(&mut **tx)
+        .await
+        .map_err(PgBillingRepository::map_error)?;
+
+        sqlx::query(
+            r"INSERT INTO mazbri_billing.ledger_entries
+               (tenant_id, interaction_event_id, entry_type, amount, direction, balance_before, balance_after, description)
+               SELECT $1, u.ev, 'CHARGE', u.amount, 'DEBIT', u.bb, u.ba, u.descr
+               FROM UNNEST($2::uuid[], $3::numeric[], $4::numeric[], $5::numeric[], $6::text[])
+                    AS u(ev, amount, bb, ba, descr)",
+        )
+        .bind(tenant_id)
+        .bind(&event_ids)
+        .bind(&amounts)
+        .bind(&befores)
+        .bind(&afters)
+        .bind(&ledger_descs)
+        .execute(&mut **tx)
+        .await
+        .map_err(PgBillingRepository::map_error)?;
+    }
+
+    Ok(tx_ids)
+}
+
+/// One-tenant batch charge: one balance row UPDATE for the sum, then set-based bookkeeping
+/// (constant number of statements per batch instead of ~5 per item). Single transaction.
 pub(crate) async fn deduct_and_record_batch(
     repo: &PgBillingRepository,
     tenant_id: Uuid,
@@ -481,7 +597,11 @@ pub(crate) async fn deduct_and_record_batch(
             balance_after: Decimal::ZERO,
         });
     }
-    let total: Decimal = items.iter().map(|(_, _, amount)| *amount).sum();
+    let total: Decimal = items
+        .iter()
+        .map(|(_, _, amount)| *amount)
+        .filter(|a| *a > Decimal::ZERO)
+        .sum();
     if total <= Decimal::ZERO {
         return zero_charge_result(repo, tenant_id).await;
     }
@@ -493,39 +613,60 @@ pub(crate) async fn deduct_and_record_batch(
         .map_err(PgBillingRepository::map_error)?;
     let (balance_before_batch, balance_after_final) =
         debit_balance(&mut tx, tenant_id, total).await?;
-
-    let mut cursor = balance_before_batch;
-    let mut last_tx_id = Uuid::nil();
-    for &(queue_id, usage_record_id, amount) in items {
-        if amount <= Decimal::ZERO {
-            mark_queue_charged(&mut tx, queue_id, None).await?;
-            continue;
-        }
-        let item_before = cursor;
-        cursor -= amount;
-        let transaction_id = Uuid::new_v4();
-        last_tx_id = transaction_id;
-        record_usage_charge(
-            &mut tx,
-            &UsageCharge {
-                transaction_id,
-                tenant_id,
-                account_id,
-                amount,
-                balance_before: item_before,
-                balance_after: cursor,
-                usage_record_id,
-                queue_id,
-            },
-        )
-        .await?;
+    let (plan, cursor) = plan_batch_charges(balance_before_batch, items, Uuid::new_v4);
+    if cursor != balance_after_final {
+        return Err(CoreError::Validation(format!(
+            "batch balance cursor mismatch: cursor {cursor} != db {balance_after_final}"
+        )));
     }
 
-    debug_assert_eq!(cursor, balance_after_final);
+    let charged: Vec<&PlannedCharge> = plan.iter().filter(|p| p.transaction_id.is_some()).collect();
+    let usage_ids: Vec<i64> = charged.iter().map(|p| p.usage_record_id).collect();
+    let rows = sqlx::query("SELECT id, event_id FROM usage_records WHERE id = ANY($1)")
+        .bind(&usage_ids)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(PgBillingRepository::map_error)?;
+    let event_map: std::collections::HashMap<i64, Option<Uuid>> = rows
+        .iter()
+        .map(|r| (r.get::<i64, _>("id"), r.get::<Option<Uuid>, _>("event_id")))
+        .collect();
+
+    let tx_ids = insert_batch_charge_rows(
+        &mut tx, tenant_id, account_id, &charged, &usage_ids, &event_map,
+    )
+    .await?;
+
+    let queue_ids: Vec<Uuid> = plan.iter().map(|p| p.queue_id).collect();
+    let all_usage_ids: Vec<i64> = plan.iter().map(|p| p.usage_record_id).collect();
+    let queue_tx_ids: Vec<Option<Uuid>> = plan.iter().map(|p| p.transaction_id).collect();
+    sqlx::query(
+        r"UPDATE usage_charge_queue q
+           SET status = 'completed', transaction_id = COALESCE(u.tx, q.transaction_id), processed_at = NOW()
+           FROM UNNEST($1::uuid[], $2::uuid[]) AS u(id, tx)
+           WHERE q.id = u.id",
+    )
+    .bind(&queue_ids)
+    .bind(&queue_tx_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(PgBillingRepository::map_error)?;
+    sqlx::query(
+        // Join on the PK (usage_records.charge_queue_id has no index); the
+        // charge_queue_id predicate keeps the original matching semantics.
+        r"UPDATE usage_records r SET charge_status = 'charged', charged_at = NOW()
+           FROM UNNEST($1::uuid[], $2::bigint[]) AS u(qid, rid)
+           WHERE r.id = u.rid AND r.charge_queue_id = u.qid",
+    )
+    .bind(&queue_ids)
+    .bind(&all_usage_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(PgBillingRepository::map_error)?;
 
     tx.commit().await.map_err(PgBillingRepository::map_error)?;
     Ok(DeductAndRecordResult {
-        transaction_id: last_tx_id,
+        transaction_id: tx_ids.last().copied().unwrap_or_else(Uuid::nil),
         balance_before: balance_before_batch,
         balance_after: balance_after_final,
     })
@@ -597,4 +738,46 @@ pub(crate) async fn create_adjustment(
     .await?;
     tx.commit().await.map_err(PgBillingRepository::map_error)?;
     Ok(transaction_id)
+}
+
+#[cfg(test)]
+mod batch_plan_tests {
+    use super::*;
+    use std::str::FromStr;
+    fn d(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn cursor_walks_in_order_and_skips_zero() {
+        let q = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        let items = [
+            (q[0], 1, d("0.001")),
+            (q[1], 2, d("0")),
+            (q[2], 3, d("0.002")),
+        ];
+        let mut n = 0u128;
+        let (plan, cursor) = plan_batch_charges(d("10"), &items, || {
+            n += 1;
+            Uuid::from_u128(n)
+        });
+        assert_eq!(cursor, d("9.997"));
+        assert_eq!(plan[0].balance_before, d("10"));
+        assert_eq!(plan[0].balance_after, d("9.999"));
+        assert_eq!(plan[1].transaction_id, None);
+        assert_eq!(plan[1].balance_before, d("9.999"));
+        assert_eq!(plan[2].balance_before, d("9.999"));
+        assert_eq!(plan[2].balance_after, d("9.997"));
+        assert_eq!(plan[2].transaction_id, Some(Uuid::from_u128(2)));
+    }
+
+    #[test]
+    fn chain_is_contiguous() {
+        let items: Vec<_> = (0..500).map(|i| (Uuid::new_v4(), i, d("0.001"))).collect();
+        let (plan, cursor) = plan_batch_charges(d("100"), &items, Uuid::new_v4);
+        for w in plan.windows(2) {
+            assert_eq!(w[0].balance_after, w[1].balance_before);
+        }
+        assert_eq!(cursor, d("99.5"));
+    }
 }
