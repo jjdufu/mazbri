@@ -11,6 +11,11 @@ use uuid::Uuid;
 /// Marks a usage record queued; never downgrades a record that is already charged.
 const ENQUEUE_MARK_QUEUED_SQL: &str = "UPDATE usage_records SET charge_status = 'queued', charge_queue_id = $1 \
      WHERE id = $2 AND charge_status IS DISTINCT FROM 'charged'";
+/// One queue row per usage record, ever (requires `uq_usage_charge_queue_usage_record_id`).
+const ENQUEUE_INSERT_SQL: &str = "INSERT INTO usage_charge_queue \
+     (tenant_id, account_id, usage_record_id, amount, payload, max_retries) \
+     VALUES ($1, $2, $3, $4, $5, $6) \
+     ON CONFLICT (usage_record_id) DO NOTHING RETURNING id";
 #[derive(Clone)]
 pub struct ChargeQueue {
     db: PgPool,
@@ -44,50 +49,61 @@ impl ChargeQueue {
         payload: Option<serde_json::Value>,
     ) -> Result<Uuid, BillingError> {
         let mut tx = self.db.begin().await?;
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            r"SELECT id FROM usage_charge_queue
-               WHERE usage_record_id = $1
-                 AND status NOT IN ('completed', 'dead_letter')",
-        )
-        .bind(usage_record_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if let Some(id) = existing {
-            tx.commit().await?;
-            debug!(
-                "Charge queue item already exists for usage_record_id={}: {}",
-                usage_record_id, id
-            );
+        let queue_id = self
+            .enqueue_in_tx(&mut tx, tenant_id, account_id, usage_record_id, amount, payload)
+            .await?;
+        tx.commit().await?;
+        self.refresh_queue_depth_metrics().await;
+        Ok(queue_id)
+    }
+
+    /// Idempotent enqueue inside the caller's transaction: at most one queue row per
+    /// usage record (unique index on `usage_record_id`, `ON CONFLICT DO NOTHING`).
+    /// The caller commits; pairing this with marking the outbox row processed in the
+    /// same transaction prevents re-enqueue (double charge) after a crash.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn enqueue_in_tx(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        tenant_id: Uuid,
+        account_id: Uuid,
+        usage_record_id: i64,
+        amount: Decimal,
+        payload: Option<serde_json::Value>,
+    ) -> Result<Uuid, BillingError> {
+        let inserted: Option<Uuid> = sqlx::query_scalar(ENQUEUE_INSERT_SQL)
+            .bind(tenant_id)
+            .bind(account_id)
+            .bind(usage_record_id)
+            .bind(amount)
+            .bind(payload)
+            .bind(self.config.max_retries)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(queue_id) = inserted else {
+            let id: Uuid = sqlx::query_scalar(
+                "SELECT id FROM usage_charge_queue WHERE usage_record_id = $1",
+            )
+            .bind(usage_record_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            debug!(usage_record_id, queue_id = %id, "charge queue item already exists; skip");
             return Ok(id);
-        }
-        let queue_id: Uuid = sqlx::query_scalar(
-            r"INSERT INTO usage_charge_queue
-               (tenant_id, account_id, usage_record_id, amount, payload, max_retries)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               RETURNING id",
-        )
-        .bind(tenant_id)
-        .bind(account_id)
-        .bind(usage_record_id)
-        .bind(amount)
-        .bind(payload)
-        .bind(self.config.max_retries)
-        .fetch_one(&mut *tx)
-        .await?;
+        };
+        // Same transaction: the charge worker (FOR UPDATE SKIP LOCKED) cannot see the
+        // queue row before usage_records.charge_queue_id is set (stale 'queued' race fix).
         sqlx::query(ENQUEUE_MARK_QUEUED_SQL)
             .bind(queue_id)
             .bind(usage_record_id)
             .execute(&mut *tx)
             .await?;
-        // Commit both steps together: the charge worker (FOR UPDATE SKIP LOCKED) cannot see
-        // the queue row before usage_records.charge_queue_id is set, so its "charged" update
-        // always finds the record (fixes the stale 'queued' race under fast drain).
-        tx.commit().await?;
         debug!(
             "Enqueued charge: queue_id={}, tenant_id={}, usage_record_id={}, amount={}",
             queue_id, tenant_id, usage_record_id, amount
         );
-        self.refresh_queue_depth_metrics().await;
         Ok(queue_id)
     }
     /// Reclaim rows left in `processing` after a crash (multi-replica safe).
@@ -341,7 +357,13 @@ impl QueueStats {
 
 #[cfg(test)]
 mod enqueue_sql_tests {
-    use super::ENQUEUE_MARK_QUEUED_SQL;
+    use super::{ENQUEUE_INSERT_SQL, ENQUEUE_MARK_QUEUED_SQL};
+
+    #[test]
+    fn insert_is_idempotent_per_usage_record() {
+        assert!(ENQUEUE_INSERT_SQL.contains("ON CONFLICT (usage_record_id) DO NOTHING"));
+        assert!(ENQUEUE_INSERT_SQL.contains("RETURNING id"));
+    }
 
     #[test]
     fn mark_queued_never_downgrades_charged() {
