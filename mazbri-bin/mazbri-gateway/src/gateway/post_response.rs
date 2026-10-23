@@ -2,14 +2,17 @@ use super::execution::{ProxyBody, UpstreamRouteMetadata};
 use super::serializer::{proxy_body_encoding, proxy_body_to_json_value};
 use crate::router::AppState;
 use axum::http::HeaderMap;
+use mazbri_billing::BillingService;
 use mazbri_billing::{BillingCalculator, RateConfig, UsageOutboxEvent};
 use mazbri_callback::repository;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
 use mazbri_rpc::BillingCode;
 use rust_decimal::Decimal;
-use std::time::Instant;
-use tracing::{info, warn};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use super::state::{GatewayRequest, ProxyState};
@@ -128,17 +131,6 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
     if !billing_code.default_billable() {
         return started_at.elapsed().as_millis();
     }
-    let Some(account_id) = billing_state
-        .billing_service
-        .get_account_id(ctx.tenant_id)
-        .await
-    else {
-        warn!(
-            tenant_id = % ctx.tenant_id, product_id = % ctx.req.product_id,
-            "Skipping proxy usage charge because tenant account was not found"
-        );
-        return started_at.elapsed().as_millis();
-    };
     let calculator = build_billing_calculator(ctx.product_detail);
     let calc_result = calculator.calculate_call();
     let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::new_v4());
@@ -152,7 +144,7 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
         event_id,
         request_id: request_uuid,
         tenant_id: ctx.tenant_id,
-        account_id: Some(account_id),
+        account_id: None,
         product_id: Some(ctx.req.product_id.clone()),
         api_endpoint: ctx.req.path.clone(),
         http_method: ctx.req.method.clone(),
@@ -163,23 +155,129 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
         billing_result: calc_result.clone(),
         billing_code: Some(i16::saturating_from(billing_code.0)),
     };
-    if let Err(error) = billing_state
-        .billing_service
-        .enqueue_usage_outbox(usage_outbox_event)
-        .await
-    {
-        warn!(
-            request_id = % ctx.request_id, tenant_id = % ctx.tenant_id, product_id = % ctx.req
-            .product_id, error = % error, "Failed to enqueue usage outbox event"
-        );
-    } else if let Some(cache) = state.balance_cache.as_ref() {
-        // 乐观扣减 L1，避免每票 invalidate 把预检打回 L3；L2 短 TTL 自然过期
-        cache
-            .optimistic_subtract(ctx.tenant_id, calc_result.amount)
-            .await;
+    let service = &billing_state.billing_service;
+    match deliver_usage_event(service, usage_outbox_event, CHARGE_RETRY_ATTEMPTS).await {
+        Delivery::Done => {
+            if let Some(cache) = state.balance_cache.as_ref() {
+                // 乐观扣减 L1，避免每票 invalidate 把预检打回 L3；L2 短 TTL 自然过期
+                cache
+                    .optimistic_subtract(ctx.tenant_id, calc_result.amount)
+                    .await;
+            }
+        }
+        Delivery::AccountNotFound => {
+            warn!(
+                tenant_id = % ctx.tenant_id, product_id = % ctx.req.product_id,
+                "Skipping proxy usage charge because tenant account was not found"
+            );
+        }
+        Delivery::Transient(event, error) => {
+            warn!(
+                request_id = % ctx.request_id, tenant_id = % ctx.tenant_id, product_id = % ctx.req
+                .product_id, error = % error,
+                "Usage charge still failing after retries; deferring to background retry queue"
+            );
+            defer_usage_event(service, *event);
+        }
     }
     started_at.elapsed().as_millis()
 }
+/// In-request retries before handing the event to the background retry queue.
+const CHARGE_RETRY_ATTEMPTS: u32 = 4;
+/// Background retry queue capacity (events kept in memory while the DB is unavailable).
+const DEFERRED_QUEUE_CAPACITY: usize = 200_000;
+const DEFERRED_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Exponential backoff: 100, 200, 400, 800 ms … capped at 1.6 s.
+pub(crate) fn charge_backoff(attempt: u32) -> Duration {
+    Duration::from_millis((100u64 << attempt.min(4)).min(1_600))
+}
+
+pub(crate) enum Delivery {
+    Done,
+    AccountNotFound,
+    Transient(Box<UsageOutboxEvent>, String),
+}
+
+/// Resolve the account (if not yet resolved) and insert the outbox row, retrying transient
+/// DB errors (pool acquire timeouts etc.). The outbox insert is idempotent on `event_id`
+/// (`ON CONFLICT DO NOTHING`), so a retry after an ambiguous failure cannot double-charge.
+pub(crate) async fn deliver_usage_event(
+    service: &BillingService,
+    mut event: UsageOutboxEvent,
+    attempts: u32,
+) -> Delivery {
+    let mut last_error = String::new();
+    for attempt in 0..attempts.max(1) {
+        if attempt > 0 {
+            tokio::time::sleep(charge_backoff(attempt - 1)).await;
+        }
+        if event.account_id.is_none() {
+            match service.try_get_account_id(event.tenant_id).await {
+                Ok(Some(account_id)) => event.account_id = Some(account_id),
+                Ok(None) => return Delivery::AccountNotFound,
+                Err(error) => {
+                    last_error = format!("account lookup: {error}");
+                    warn!(attempt, tenant_id = % event.tenant_id, error = % error, "Usage charge account lookup failed; retrying");
+                    continue;
+                }
+            }
+        }
+        match service.enqueue_usage_outbox(event.clone()).await {
+            Ok(()) => return Delivery::Done,
+            Err(error) => {
+                last_error = format!("outbox enqueue: {error}");
+                warn!(attempt, event_id = % event.event_id, error = % error, "Failed to enqueue usage outbox event; retrying");
+            }
+        }
+    }
+    Delivery::Transient(Box::new(event), last_error)
+}
+
+static DEFERRED_TX: OnceLock<mpsc::Sender<UsageOutboxEvent>> = OnceLock::new();
+
+/// Hands an event to a single background task that keeps retrying until the DB is back.
+/// Limitation: in-memory only — events still queued when the gateway process exits are lost
+/// (an overflowing queue logs each lost event at ERROR with its `event_id` and amount).
+fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
+    let sender = DEFERRED_TX.get_or_init(|| {
+        let (tx, mut rx) = mpsc::channel::<UsageOutboxEvent>(DEFERRED_QUEUE_CAPACITY);
+        let service = Arc::clone(service);
+        tokio::spawn(async move {
+            while let Some(mut event) = rx.recv().await {
+                loop {
+                    match deliver_usage_event(&service, event, CHARGE_RETRY_ATTEMPTS).await {
+                        Delivery::Done => {
+                            info!("Deferred usage charge delivered");
+                            break;
+                        }
+                        Delivery::AccountNotFound => {
+                            error!("Deferred usage charge dropped: tenant account not found");
+                            break;
+                        }
+                        Delivery::Transient(back, err) => {
+                            warn!(error = % err, "Deferred usage charge still failing; will retry");
+                            event = *back;
+                            tokio::time::sleep(DEFERRED_RETRY_INTERVAL).await;
+                        }
+                    }
+                }
+            }
+        });
+        tx
+    });
+    if let Err(error) = sender.try_send(event) {
+        let event = match error {
+            mpsc::error::TrySendError::Full(e) | mpsc::error::TrySendError::Closed(e) => e,
+        };
+        error!(
+            event_id = % event.event_id, request_id = % event.request_id, tenant_id = % event.tenant_id,
+            amount = % event.billing_result.amount,
+            "Usage charge LOST: deferred retry queue full or closed"
+        );
+    }
+}
+
 pub(crate) struct PostResponseTaskArgs {
     pub(crate) request_id: String,
     pub(crate) tenant_id: Uuid,
@@ -276,4 +374,19 @@ pub(crate) fn content_length(headers: &HeaderMap) -> usize {
         .and_then(|value| value.to_str().ok())
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod charge_retry_tests {
+    use super::charge_backoff;
+    use std::time::Duration;
+
+    #[test]
+    fn backoff_grows_and_caps() {
+        assert_eq!(charge_backoff(0), Duration::from_millis(100));
+        assert_eq!(charge_backoff(1), Duration::from_millis(200));
+        assert_eq!(charge_backoff(3), Duration::from_millis(800));
+        assert_eq!(charge_backoff(4), Duration::from_millis(1_600));
+        assert_eq!(charge_backoff(30), Duration::from_millis(1_600));
+    }
 }

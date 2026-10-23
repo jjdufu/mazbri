@@ -140,13 +140,28 @@ impl BillingService {
     pub fn db(&self) -> Option<&PgPool> {
         self.pool.as_deref()
     }
+    /// Lookup errors (e.g. pool acquire timeout) are NOT cached, so a transient DB
+    /// failure no longer poisons the cache as "account not found" for the TTL.
     pub async fn get_account_id(&self, tenant_id: Uuid) -> Option<Uuid> {
+        self.try_get_account_id(tenant_id).await.ok().flatten()
+    }
+    /// Like [`Self::get_account_id`] but distinguishes "not found" (`Ok(None)`) from
+    /// a lookup failure (`Err`).
+    ///
+    /// # Errors
+    ///
+    /// 数据库访问失败（如连接池获取超时）时返回错误，且不写入缓存。
+    pub async fn try_get_account_id(&self, tenant_id: Uuid) -> BillingResult<Option<Uuid>> {
         if let Some(account_id) = self.account_id_cache.get(&tenant_id) {
-            return account_id;
+            return Ok(account_id);
         }
-        let account_id = self.repo.get_account_id(tenant_id).await.ok().flatten();
+        let account_id = self
+            .repo
+            .get_account_id(tenant_id)
+            .await
+            .map_err(BillingError::from)?;
         self.account_id_cache.insert(tenant_id, account_id);
-        account_id
+        Ok(account_id)
     }
     /// # Errors
     ///
