@@ -57,44 +57,10 @@ impl BillingRepository for PgBillingRepository {
         Ok(row.get("id"))
     }
     async fn insert_usage_outbox(&self, event: &UsageOutboxEvent) -> Result<(), CoreError> {
-        // ON CONFLICT event_id: fingerprint-based transport retries share event_id → no double charge.
-        sqlx::query(
-            "INSERT INTO usage_outbox (
-                event_id, request_id, tenant_id, account_id, product_id,
-                api_endpoint, http_method, response_status, request_size,
-                response_size, billing_service_duration_ms, unit_price,
-                billable_units, billable_amount, billing_code
-            ) VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9,
-                $10, $11, $12,
-                $13, $14, $15
-            )
-            ON CONFLICT (event_id) DO NOTHING",
-        )
-        .bind(event.event_id)
-        .bind(event.request_id)
-        .bind(event.tenant_id)
-        .bind(event.account_id)
-        .bind(&event.product_id)
-        .bind(&event.api_endpoint)
-        .bind(&event.http_method)
-        .bind(i32::from(event.response_status))
-        .bind(event.request_size)
-        .bind(event.response_size)
-        .bind(event.billing_service_duration_ms)
-        .bind(event.billing_result.unit_price)
-        .bind(i64::try_from(event.billing_result.units).map_err(|e| {
-            CoreError::Validation(format!(
-                "Billing units {} exceeds maximum representable value: {}",
-                event.billing_result.units, e
-            ))
-        })?)
-        .bind(event.billing_result.amount)
-        .bind(event.billing_code)
-        .execute(&*self.pool)
-        .await
-        .map_err(Self::map_error)?;
+        outbox_insert_query(event)?
+            .execute(&*self.pool)
+            .await
+            .map_err(Self::map_error)?;
         Ok(())
     }
     async fn check_balance(
@@ -385,4 +351,47 @@ impl BillingRepository for PgBillingRepository {
     ) -> Result<Uuid, CoreError> {
         transactions::create_adjustment(self, tenant_id, amount, direction, description).await
     }
+}
+
+/// Idempotent outbox insert (`ON CONFLICT (event_id) DO NOTHING`); usable with any executor
+/// (pool or transaction). Fingerprint-based transport retries and Redpanda redeliveries share
+/// `event_id`, so a duplicate can never create a second charge.
+pub(crate) fn outbox_insert_query(
+    event: &UsageOutboxEvent,
+) -> Result<sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>, CoreError> {
+    let units = i64::try_from(event.billing_result.units).map_err(|e| {
+        CoreError::Validation(format!(
+            "Billing units {} exceeds maximum representable value: {}",
+            event.billing_result.units, e
+        ))
+    })?;
+    Ok(sqlx::query(
+        "INSERT INTO usage_outbox (
+            event_id, request_id, tenant_id, account_id, product_id,
+            api_endpoint, http_method, response_status, request_size,
+            response_size, billing_service_duration_ms, unit_price,
+            billable_units, billable_amount, billing_code
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9,
+            $10, $11, $12,
+            $13, $14, $15
+        )
+        ON CONFLICT (event_id) DO NOTHING",
+    )
+    .bind(event.event_id)
+    .bind(event.request_id)
+    .bind(event.tenant_id)
+    .bind(event.account_id)
+    .bind(&event.product_id)
+    .bind(&event.api_endpoint)
+    .bind(&event.http_method)
+    .bind(i32::from(event.response_status))
+    .bind(event.request_size)
+    .bind(event.response_size)
+    .bind(event.billing_service_duration_ms)
+    .bind(event.billing_result.unit_price)
+    .bind(units)
+    .bind(event.billing_result.amount)
+    .bind(event.billing_code))
 }

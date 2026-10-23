@@ -33,6 +33,8 @@ lru = { workspace = true }
 futures = "0.3"
 
 hostname = "0.4"
+rskafka = { version = "0.6", default-features = false }
+reqwest = { workspace = true }
 
 [lints]
 workspace = true

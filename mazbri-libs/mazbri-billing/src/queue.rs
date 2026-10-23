@@ -50,7 +50,14 @@ impl ChargeQueue {
     ) -> Result<Uuid, BillingError> {
         let mut tx = self.db.begin().await?;
         let queue_id = self
-            .enqueue_in_tx(&mut tx, tenant_id, account_id, usage_record_id, amount, payload)
+            .enqueue_in_tx(
+                &mut tx,
+                tenant_id,
+                account_id,
+                usage_record_id,
+                amount,
+                payload,
+            )
             .await?;
         tx.commit().await?;
         self.refresh_queue_depth_metrics().await;
@@ -84,12 +91,11 @@ impl ChargeQueue {
             .fetch_optional(&mut *tx)
             .await?;
         let Some(queue_id) = inserted else {
-            let id: Uuid = sqlx::query_scalar(
-                "SELECT id FROM usage_charge_queue WHERE usage_record_id = $1",
-            )
-            .bind(usage_record_id)
-            .fetch_one(&mut *tx)
-            .await?;
+            let id: Uuid =
+                sqlx::query_scalar("SELECT id FROM usage_charge_queue WHERE usage_record_id = $1")
+                    .bind(usage_record_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
             debug!(usage_record_id, queue_id = %id, "charge queue item already exists; skip");
             return Ok(id);
         };

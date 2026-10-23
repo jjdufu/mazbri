@@ -27,7 +27,7 @@ pub struct UsageRecord {
     pub product_id: Option<String>,
     pub billing_code: Option<i16>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UsageOutboxEvent {
     pub event_id: Uuid,
     pub request_id: Uuid,
