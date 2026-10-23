@@ -7,6 +7,10 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tracing::{debug, warn};
 use uuid::Uuid;
+
+/// Marks a usage record queued; never downgrades a record that is already charged.
+const ENQUEUE_MARK_QUEUED_SQL: &str = "UPDATE usage_records SET charge_status = 'queued', charge_queue_id = $1 \
+     WHERE id = $2 AND charge_status IS DISTINCT FROM 'charged'";
 #[derive(Clone)]
 pub struct ChargeQueue {
     db: PgPool,
@@ -39,15 +43,17 @@ impl ChargeQueue {
         amount: Decimal,
         payload: Option<serde_json::Value>,
     ) -> Result<Uuid, BillingError> {
+        let mut tx = self.db.begin().await?;
         let existing: Option<Uuid> = sqlx::query_scalar(
             r"SELECT id FROM usage_charge_queue
                WHERE usage_record_id = $1
                  AND status NOT IN ('completed', 'dead_letter')",
         )
         .bind(usage_record_id)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *tx)
         .await?;
         if let Some(id) = existing {
+            tx.commit().await?;
             debug!(
                 "Charge queue item already exists for usage_record_id={}: {}",
                 usage_record_id, id
@@ -66,15 +72,17 @@ impl ChargeQueue {
         .bind(amount)
         .bind(payload)
         .bind(self.config.max_retries)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *tx)
         .await?;
-        sqlx::query(
-            "UPDATE usage_records SET charge_status = 'queued', charge_queue_id = $1 WHERE id = $2",
-        )
-        .bind(queue_id)
-        .bind(usage_record_id)
-        .execute(&self.db)
-        .await?;
+        sqlx::query(ENQUEUE_MARK_QUEUED_SQL)
+            .bind(queue_id)
+            .bind(usage_record_id)
+            .execute(&mut *tx)
+            .await?;
+        // Commit both steps together: the charge worker (FOR UPDATE SKIP LOCKED) cannot see
+        // the queue row before usage_records.charge_queue_id is set, so its "charged" update
+        // always finds the record (fixes the stale 'queued' race under fast drain).
+        tx.commit().await?;
         debug!(
             "Enqueued charge: queue_id={}, tenant_id={}, usage_record_id={}, amount={}",
             queue_id, tenant_id, usage_record_id, amount
@@ -328,5 +336,16 @@ impl QueueStats {
         BILLING_QUEUE_DEPTH
             .with_label_values(&["dead_letter"])
             .set(self.dead_letter);
+    }
+}
+
+#[cfg(test)]
+mod enqueue_sql_tests {
+    use super::ENQUEUE_MARK_QUEUED_SQL;
+
+    #[test]
+    fn mark_queued_never_downgrades_charged() {
+        assert!(ENQUEUE_MARK_QUEUED_SQL.contains("charge_status IS DISTINCT FROM 'charged'"));
+        assert!(ENQUEUE_MARK_QUEUED_SQL.contains("WHERE id = $2"));
     }
 }
