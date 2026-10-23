@@ -124,15 +124,12 @@ pub(crate) struct UsageChargeContext<'a> {
     pub(crate) interaction_event_id: Uuid,
     pub(crate) fingerprint: Option<&'a str>,
 }
-pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContext<'_>) -> u128 {
-    let started_at = Instant::now();
-    let Some(billing_state) = state.billing_state.as_ref() else {
-        return started_at.elapsed().as_millis();
-    };
+/// Builds the usage event for a completed request. Returns the event and whether the
+/// request is billable; the `event_id` is deterministic (fingerprint v5 or interaction id)
+/// so the access log, Redpanda record and outbox row all share the same key.
+pub(crate) fn build_usage_event(ctx: &UsageChargeContext<'_>) -> (UsageOutboxEvent, bool) {
     let billing_code = billing_code_for_status(ctx.status);
-    if !billing_code.default_billable() {
-        return started_at.elapsed().as_millis();
-    }
+    let billable = billing_code.default_billable();
     let calculator = build_billing_calculator(ctx.product_detail);
     let calc_result = calculator.calculate_call();
     let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::new_v4());
@@ -142,7 +139,7 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
     } else {
         ctx.interaction_event_id
     };
-    let usage_outbox_event = UsageOutboxEvent {
+    let event = UsageOutboxEvent {
         event_id,
         request_id: request_uuid,
         tenant_id: ctx.tenant_id,
@@ -154,9 +151,39 @@ pub(crate) async fn record_usage_charge(state: &AppState, ctx: UsageChargeContex
         request_size: i64::saturating_from(ctx.request_size),
         response_size: i64::saturating_from(ctx.response_bytes),
         billing_service_duration_ms: ctx.service_total_ms,
-        billing_result: calc_result.clone(),
+        billing_result: calc_result,
         billing_code: Some(i16::saturating_from(billing_code.0)),
     };
+    (event, billable)
+}
+
+pub(crate) async fn record_usage_charge(
+    state: &AppState,
+    ctx: UsageChargeContext<'_>,
+    prebuilt: Option<UsageOutboxEvent>,
+    produced: bool,
+) -> u128 {
+    let started_at = Instant::now();
+    let Some(billing_state) = state.billing_state.as_ref() else {
+        return started_at.elapsed().as_millis();
+    };
+    let (usage_outbox_event, billable) = match prebuilt {
+        Some(event) => (event, true),
+        None => build_usage_event(&ctx),
+    };
+    if !billable {
+        return started_at.elapsed().as_millis();
+    }
+    let calc_result = usage_outbox_event.billing_result.clone();
+    if produced {
+        // L1: already durable in Redpanda (acks=all); billing consumer writes the outbox.
+        if let Some(cache) = state.balance_cache.as_ref() {
+            cache
+                .optimistic_subtract(ctx.tenant_id, calc_result.amount)
+                .await;
+        }
+        return started_at.elapsed().as_millis();
+    }
     let service = &billing_state.billing_service;
     match deliver_usage_event(service, usage_outbox_event, CHARGE_RETRY_ATTEMPTS).await {
         Delivery::Done => {
@@ -362,6 +389,10 @@ pub(crate) struct PostResponseTaskArgs {
     pub(crate) upstream_route: Option<UpstreamRouteMetadata>,
     /// When present, used as billing outbox dedupe key (fingerprint → deterministic `event_id`).
     pub(crate) fingerprint: Option<String>,
+    /// Billable usage event already built in the request path (L1).
+    pub(crate) usage_event: Option<UsageOutboxEvent>,
+    /// True when `usage_event` was durably produced to Redpanda before the response.
+    pub(crate) usage_event_produced: bool,
 }
 /// Counts a running post-response task; decremented on drop (also on panic).
 struct InflightGuard;
@@ -412,6 +443,8 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
                 interaction_event_id: args.interaction_event_id,
                 fingerprint: args.fingerprint.as_deref(),
             },
+            args.usage_event,
+            args.usage_event_produced,
         );
         let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
         info!(

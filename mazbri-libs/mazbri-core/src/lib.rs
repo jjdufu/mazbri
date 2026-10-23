@@ -52,10 +52,10 @@ pub use error::{CoreError, ErrorResponse, Result, error_codes};
 pub use interaction::{Attempt, AttemptStatus, InteractionEvent};
 pub use log_writer_metrics::{LOGS_DROPPED_TOTAL, inc_logs_dropped, register_log_writer_metrics};
 pub use logging::{
-    AccessHttpFields, AccessLogEvent, AccessLogEventBuilder, AccessNetworkFields,
-    AccessOutcomeFields, AccessRouteFields, AccessTimingFields, AccessUpstreamMetaFields,
-    StandardLogEvent, TraceContext, current_span_id, emit_access_log, log_level,
-    normalize_request_id_uuid, normalize_upstream_host, parse_trace_context,
+    AccessBillingFields, AccessHttpFields, AccessLogEvent, AccessLogEventBuilder,
+    AccessNetworkFields, AccessOutcomeFields, AccessRouteFields, AccessTimingFields,
+    AccessUpstreamMetaFields, StandardLogEvent, TraceContext, current_span_id, emit_access_log,
+    log_level, normalize_request_id_uuid, normalize_upstream_host, parse_trace_context,
     response_flags_for_error,
 };
 pub use metrics::{

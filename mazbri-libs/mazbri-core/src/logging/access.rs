@@ -71,6 +71,19 @@ pub struct AccessUpstreamMetaFields {
     pub contract_id: String,
 }
 
+/// Billing correlation (L3 reconciliation): the usage event this request produced.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AccessBillingFields {
+    /// Usage event id (same key as `usage_outbox.event_id` / `usage_records.event_id`).
+    pub event_id: String,
+    /// Whether this request is billable (a usage charge is expected).
+    pub billable: bool,
+    /// Charged amount (decimal string) when billable.
+    pub price: String,
+    /// `BillingCode` numeric value.
+    pub billing_code: i16,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessLogEvent {
     pub message: String,
@@ -116,6 +129,14 @@ pub struct AccessLogEvent {
     pub upstream_mode: String,
     pub contract_id: String,
     pub error_class: String,
+    #[serde(default)]
+    pub event_id: String,
+    #[serde(default)]
+    pub billable: bool,
+    #[serde(default)]
+    pub price: String,
+    #[serde(default)]
+    pub billing_code: i16,
 }
 
 impl AccessLogEvent {
@@ -170,6 +191,7 @@ pub struct AccessLogEventBuilder {
     upstream_mode: String,
     contract_id: String,
     error_class: String,
+    billing: AccessBillingFields,
 }
 
 impl AccessLogEventBuilder {
@@ -221,6 +243,7 @@ impl AccessLogEventBuilder {
             upstream_mode: String::new(),
             contract_id: String::new(),
             error_class: String::new(),
+            billing: AccessBillingFields::default(),
         }
     }
 
@@ -307,6 +330,12 @@ impl AccessLogEventBuilder {
     }
 
     #[must_use]
+    pub fn billing(mut self, fields: AccessBillingFields) -> Self {
+        self.billing = fields;
+        self
+    }
+
+    #[must_use]
     pub fn build(self) -> AccessLogEvent {
         AccessLogEvent {
             message: self.message,
@@ -352,6 +381,10 @@ impl AccessLogEventBuilder {
             upstream_mode: self.upstream_mode,
             contract_id: self.contract_id,
             error_class: self.error_class,
+            event_id: self.billing.event_id,
+            billable: self.billing.billable,
+            price: self.billing.price,
+            billing_code: self.billing.billing_code,
         }
     }
 }
@@ -613,6 +646,10 @@ macro_rules! emit_access_log_for_target {
             upstream_mode = %$event.upstream_mode,
             contract_id = %$event.contract_id,
             error_class = %$event.error_class,
+            event_id = %$event.event_id,
+            billable = $event.billable,
+            price = %$event.price,
+            billing_code = $event.billing_code,
         );
     };
 }
@@ -676,6 +713,10 @@ fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
         upstream_mode = %event.upstream_mode,
         contract_id = %event.contract_id,
         error_class = %event.error_class,
+        event_id = %event.event_id,
+        billable = event.billable,
+        price = %event.price,
+        billing_code = event.billing_code,
     );
 }
 

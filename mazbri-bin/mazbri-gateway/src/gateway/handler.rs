@@ -23,10 +23,10 @@ use axum::{
 use mazbri_core::crypto::transport::TransportEnvelope;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
-    AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
-    AccessTimingFields, AccessUpstreamMetaFields, TraceContext, emit_access_log,
-    normalize_upstream_host, parse_trace_context, resolve_client_ip, response_flags_for_error,
-    validate_tenant_id,
+    AccessBillingFields, AccessHttpFields, AccessLogEvent, AccessNetworkFields,
+    AccessOutcomeFields, AccessRouteFields, AccessTimingFields, AccessUpstreamMetaFields,
+    TraceContext, emit_access_log, normalize_upstream_host, parse_trace_context, resolve_client_ip,
+    response_flags_for_error, validate_tenant_id,
 };
 use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
@@ -38,7 +38,9 @@ const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
 pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 
-use super::post_response::{PostResponseTaskArgs, content_length, spawn_post_response_tasks};
+use super::post_response::{
+    PostResponseTaskArgs, UsageChargeContext, content_length, spawn_post_response_tasks,
+};
 use super::state::GatewayRequestTiming;
 
 /// `unified_gateway_handler` 依次提取的请求扩展。
@@ -197,7 +199,8 @@ pub async fn unified_gateway_handler(
             tenant_uuid,
             tenant_product_detail: &tenant_product_detail,
         },
-    );
+    )
+    .await;
     build_response(http_status, encrypted_response, serialized.bytes)
 }
 
@@ -630,9 +633,12 @@ async fn complete_idempotency(ctx: &HandlerCtx<'_>, serialized: &SerializedProxy
     }
 }
 
-fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
+async fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
     let req = ctx.req;
     let fetched = done.fetched;
+    let service_total_ms = i32::saturating_from(done.timing.started_at.elapsed().as_millis());
+    let (usage_event, usage_event_produced, billing_fields) =
+        prepare_usage_event(ctx, done, service_total_ms).await;
     spawn_post_response_tasks(
         ctx.state,
         PostResponseTaskArgs {
@@ -648,9 +654,11 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
             tenant_product_detail: Some(done.tenant_product_detail.clone()),
             tenant_product_id: done.tenant_product_detail.product_id,
             interaction_event_id: fetched.interaction_event_id,
-            service_total_ms: i32::saturating_from(done.timing.started_at.elapsed().as_millis()),
+            service_total_ms,
             upstream_route: fetched.upstream_route.clone(),
             fingerprint: req.fingerprint.clone(),
+            usage_event,
+            usage_event_produced,
         },
     );
     let timing = done.timing;
@@ -707,7 +715,80 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
             internal_ms,
             post_response_ms: timing.post_response_ms,
         },
+        billing_fields,
     );
+}
+
+/// Builds the request's usage event, produces it to Redpanda when billable (L1) and returns
+/// (billable event for the post-response path, produced flag, access-log billing fields).
+async fn prepare_usage_event(
+    ctx: &HandlerCtx<'_>,
+    done: &CompletedRequest<'_>,
+    service_total_ms: i32,
+) -> (
+    Option<mazbri_billing::UsageOutboxEvent>,
+    bool,
+    AccessBillingFields,
+) {
+    let req = ctx.req;
+    let fetched = done.fetched;
+    let (usage_event, billable) = super::post_response::build_usage_event(&UsageChargeContext {
+        request_id: ctx.request_id,
+        tenant_id: done.tenant_uuid,
+        product_detail: Some(done.tenant_product_detail),
+        req,
+        request_size: done.request_size,
+        status: fetched.response.status,
+        response_bytes: done.serialized.response_bytes,
+        service_total_ms,
+        interaction_event_id: fetched.interaction_event_id,
+        fingerprint: req.fingerprint.as_deref(),
+    });
+    let billable = billable && ctx.state.billing_state.is_some();
+    let usage_event_produced = if billable {
+        produce_usage_event(ctx, &usage_event).await
+    } else {
+        false
+    };
+    let billing_fields = AccessBillingFields {
+        event_id: usage_event.event_id.to_string(),
+        billable,
+        price: if billable {
+            usage_event.billing_result.amount.to_string()
+        } else {
+            String::new()
+        },
+        billing_code: usage_event.billing_code.unwrap_or_default(),
+    };
+    (
+        billable.then_some(usage_event),
+        usage_event_produced,
+        billing_fields,
+    )
+}
+
+/// L1: synchronously produce the usage event to Redpanda (acks=all) before the response.
+/// Returns false (caller falls back to the outbox/deferred path) when disabled or on error.
+async fn produce_usage_event(
+    ctx: &HandlerCtx<'_>,
+    event: &mazbri_billing::UsageOutboxEvent,
+) -> bool {
+    let Some(producer) = ctx.state.usage_event_producer.as_ref() else {
+        return false;
+    };
+    match producer.produce(event).await {
+        Ok(_) => true,
+        Err(error) => {
+            warn!(
+                request_id = %ctx.request_id,
+                event_id = %event.event_id,
+                tenant_id = %event.tenant_id,
+                error = %error,
+                "Usage event produce failed; falling back to outbox path"
+            );
+            false
+        }
+    }
 }
 
 fn access_error_fields(done: &CompletedRequest<'_>) -> (String, String) {
@@ -733,6 +814,7 @@ fn emit_gateway_access_log(
     ctx: &HandlerCtx<'_>,
     done: &CompletedRequest<'_>,
     timing_fields: AccessTimingFields,
+    billing_fields: AccessBillingFields,
 ) {
     let (claims, req) = (ctx.claims, ctx.req);
     let fetched = done.fetched;
@@ -772,6 +854,7 @@ fn emit_gateway_access_log(
             user_agent: Some(done.user_agent.to_string()),
         })
         .timing(timing_fields)
+        .billing(billing_fields)
         .network(AccessNetworkFields {
             // Cache / CBPro did not call live upstream — do not imply an upstream host RTT.
             upstream_host: route

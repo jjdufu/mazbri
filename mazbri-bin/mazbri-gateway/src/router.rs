@@ -54,6 +54,8 @@ pub struct AppState {
     pub service_health_cache: Option<crate::service_health_cache::ServiceHealthCache>,
     pub admin_state: Option<Arc<AdminState>>,
     pub request_binding: crate::config::RequestBindingConfig,
+    /// L1: synchronous Redpanda producer for usage events (None = outbox path).
+    pub usage_event_producer: Option<Arc<mazbri_billing::UsageEventProducer>>,
 }
 pub struct RouterInit<'a> {
     pub service_name: String,
@@ -147,6 +149,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let (auth_state, auth_service) = init_auth(&config, &db, jwt_secret, tarpc_pool).await;
     let billing_state = create_billing_state(&config, &db).await;
     let balance_cache = build_balance_cache(&config, &redis);
+    let usage_event_producer = build_usage_event_producer(&config).await;
     let app_state = AppState {
         proxy_state,
         auth_state,
@@ -158,6 +161,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         service_health_cache,
         admin_state,
         request_binding: config.request_binding.clone(),
+        usage_event_producer,
     };
     let public_routes = build_public_routes(route_reload_status);
     let protected_routes = build_protected_routes(&app_state, &config);
@@ -1003,4 +1007,26 @@ fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
         message = "Request handler panicked; returning 500 JSON"
     );
     ProxyError::InternalError("Internal Server Error".to_string()).into_response()
+}
+
+/// Connects the L1 usage-event producer when `billing.usage_events.sink = "redpanda"`.
+/// A connect failure is logged and the gateway keeps the outbox path (never fails startup).
+async fn build_usage_event_producer(
+    config: &GatewayConfig,
+) -> Option<Arc<mazbri_billing::UsageEventProducer>> {
+    let cfg = &config.billing.usage_events;
+    if !config.billing.enabled || !cfg.redpanda_enabled() {
+        tracing::info!("Usage event sink: outbox (redpanda disabled)");
+        return None;
+    }
+    match mazbri_billing::UsageEventProducer::connect(cfg).await {
+        Ok(producer) => {
+            tracing::info!(topic = %cfg.topic, brokers = ?cfg.brokers, "Usage event sink: redpanda");
+            Some(Arc::new(producer))
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "Usage event producer connect failed; falling back to outbox path");
+            None
+        }
+    }
 }
