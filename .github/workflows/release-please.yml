@@ -71,7 +71,7 @@ jobs:
             latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" 2>/dev/null || echo '{}')"
             draft="$(printf '%s' "$latest" | jq -r '.draft')"
             t="$(printf '%s' "$latest" | jq -r '.tag_name // empty')"
-            published="$(printf '%s' "$latest" | jq -r --arg img "docker pull ${IMAGE_NAME}:" '(.body // "") | contains($img)')"
+            published="$(printf '%s' "$latest" | jq -r --arg img "docker pull ${IMAGE_NAME}" '(.body // "") | contains($img)')"
             if [ "$draft" = "false" ] && [ "$published" = "false" ] && [ -n "$t" ]; then
               pack_tag="$t"
             fi
