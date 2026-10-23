@@ -1,8 +1,10 @@
 use dashmap::DashMap;
-use mazbri_core::{CoreError, PooledClient};
+use mazbri_core::CoreError;
 use mazbri_tls::{ManagedCertificate, resolve_connect_target};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
+use std::time::Instant;
 use tonic::Request;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic_prost::ProstCodec;
@@ -14,9 +16,45 @@ use mazbri_upstream_contracts::shared::{
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// HTTP/2 connections per upstream endpoint; requests are spread round-robin so one
+/// connection's head-of-line / single-task scheduling no longer bounds the hop tail.
+pub const CHANNELS_PER_ENDPOINT: usize = 4;
+/// Refresh starts this fraction (1/N) of the TTL before expiry, in the background.
+const REFRESH_LEAD_DIVISOR: u64 = 10;
+
+/// A set of channels to one endpoint plus round-robin cursor and refresh state.
+struct ChannelSet {
+    channels: Vec<Channel>,
+    next: AtomicUsize,
+    created_at: Instant,
+    refreshing: AtomicBool,
+}
+
+impl ChannelSet {
+    fn new(channels: Vec<Channel>) -> Self {
+        Self {
+            channels,
+            next: AtomicUsize::new(0),
+            created_at: Instant::now(),
+            refreshing: AtomicBool::new(false),
+        }
+    }
+
+    fn pick(&self) -> Channel {
+        let i = self.next.fetch_add(1, Ordering::Relaxed) % self.channels.len();
+        self.channels[i].clone()
+    }
+}
+
+/// Whether a set of the given age should be refreshed in the background.
+fn needs_refresh(age_secs: u64, ttl_secs: u64) -> bool {
+    let lead = (ttl_secs / REFRESH_LEAD_DIVISOR).max(1);
+    age_secs.saturating_add(lead) >= ttl_secs
+}
+
 #[derive(Clone)]
 pub struct UpstreamHttp2ClientPool {
-    clients: Arc<DashMap<String, PooledClient<Channel>>>,
+    clients: Arc<DashMap<String, Arc<ChannelSet>>>,
     client_ttl_secs: u64,
     client_cert: ManagedCertificate,
 }
@@ -31,22 +69,54 @@ impl UpstreamHttp2ClientPool {
         }
     }
 
-    fn is_client_expired(&self, created_at: std::time::Instant) -> bool {
-        created_at.elapsed().as_secs() >= self.client_ttl_secs
+    /// Hot path: never rebuilds synchronously once a set exists. Near/after TTL the old
+    /// set keeps serving while a background task builds and swaps in a new one.
+    async fn get_channel(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
+        let set = self.clients.get(endpoint).map(|e| Arc::clone(e.value()));
+        if let Some(set) = set {
+            if needs_refresh(set.created_at.elapsed().as_secs(), self.client_ttl_secs)
+                && !set.refreshing.swap(true, Ordering::AcqRel)
+            {
+                let pool = self.clone();
+                let (contract, ep) = (contract_id.to_string(), endpoint.to_string());
+                let old = Arc::clone(&set);
+                tokio::spawn(async move {
+                    match pool.connect_set(&contract, &ep).await {
+                        Ok(new_set) => {
+                            pool.clients.insert(ep, Arc::new(new_set));
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, endpoint = %ep, "background upstream refresh failed; keep old channels");
+                            old.refreshing.store(false, Ordering::Release);
+                        }
+                    }
+                });
+            }
+            return Ok(set.pick());
+        }
+        let new_set = Arc::new(self.connect_set(contract_id, endpoint).await?);
+        let set = Arc::clone(
+            self.clients
+                .entry(endpoint.to_string())
+                .or_insert(new_set)
+                .value(),
+        );
+        Ok(set.pick())
     }
 
-    async fn get_channel(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
-        // 连接池 cache key 按 endpoint，与契约身份无关
-        let cache_key = endpoint.to_string();
-
-        if let Some(entry) = self.clients.get(&cache_key) {
-            if !self.is_client_expired(entry.created_at) {
-                return Ok(entry.client.clone());
-            }
-            drop(entry);
-            self.clients.remove(&cache_key);
+    async fn connect_set(
+        &self,
+        contract_id: &str,
+        endpoint: &str,
+    ) -> Result<ChannelSet, CoreError> {
+        let mut channels = Vec::with_capacity(CHANNELS_PER_ENDPOINT);
+        for _ in 0..CHANNELS_PER_ENDPOINT {
+            channels.push(self.connect_one(contract_id, endpoint).await?);
         }
+        Ok(ChannelSet::new(channels))
+    }
 
+    async fn connect_one(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
         let target = resolve_connect_target(endpoint)
             .await
             .map_err(|error| CoreError::Config(error.to_string()))?;
@@ -92,9 +162,6 @@ impl UpstreamHttp2ClientPool {
             .connect()
             .await
             .map_err(|error| CoreError::Network(error.to_string()))?;
-
-        self.clients
-            .insert(cache_key, PooledClient::new(channel.clone()));
 
         tracing::info!(
             contract_id = contract_id,
@@ -181,7 +248,9 @@ impl UpstreamHttp2ClientPool {
         let removed_count = self
             .clients
             .iter()
-            .filter(|entry| self.is_client_expired(entry.created_at))
+            .filter(|entry| {
+                entry.created_at.elapsed().as_secs() >= self.client_ttl_secs.saturating_mul(2)
+            })
             .map(|entry| entry.key().clone())
             .collect::<Vec<_>>()
             .into_iter()
@@ -205,5 +274,19 @@ impl UpstreamHttp2ClientPool {
                 pool.cleanup_stale();
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::needs_refresh;
+
+    #[test]
+    fn refresh_starts_before_ttl() {
+        assert!(!needs_refresh(0, 300));
+        assert!(!needs_refresh(269, 300));
+        assert!(needs_refresh(270, 300));
+        assert!(needs_refresh(400, 300));
+        assert!(needs_refresh(0, 0));
     }
 }
