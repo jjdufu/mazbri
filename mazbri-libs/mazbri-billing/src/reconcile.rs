@@ -263,7 +263,7 @@ impl ReconcileJob {
         let sql = format!(
             "SELECT event_id, request_id, tenant_id, product_id, method, path, status_code, request_bytes, response_bytes, duration_ms, price, billing_code \
              FROM {t} WHERE service = 'mazbri-gateway' AND billable = 1 AND event_id != '' \
-             AND timestamp >= toDateTime64('{s}', 9, 'UTC') AND timestamp < toDateTime64('{e}', 9, 'UTC') FORMAT JSONEachRow",
+             AND timestamp >= toDateTime64('{s}', 9) AND timestamp < toDateTime64('{e}', 9) FORMAT JSONEachRow",
             t = self.cfg.clickhouse_table,
             s = ch_ts(s),
             e = ch_ts(e)
@@ -329,7 +329,7 @@ impl ReconcileJob {
         let skew = ChronoDuration::seconds(self.cfg.skew_secs.max(0));
         let sql = format!(
             "SELECT event_id FROM {t} WHERE service = 'mazbri-gateway' AND event_id != '' \
-             AND timestamp >= toDateTime64('{s}', 9, 'UTC') AND timestamp < toDateTime64('{e}', 9, 'UTC') FORMAT JSONEachRow",
+             AND timestamp >= toDateTime64('{s}', 9) AND timestamp < toDateTime64('{e}', 9) FORMAT JSONEachRow",
             t = self.cfg.clickhouse_table,
             s = ch_ts(s - skew),
             e = ch_ts(e + skew)
@@ -357,6 +357,9 @@ fn ts(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).single().unwrap_or_else(Utc::now)
 }
 
+/// UTC wall-clock text. vector writes `timestamp` as UTC text into a `DateTime64(9)` column
+/// without an explicit zone, so CH stores it as server-local (e.g. Asia/Shanghai) wall time.
+/// We therefore compare against the same naive text (no tz argument in `toDateTime64`).
 fn ch_ts(t: DateTime<Utc>) -> String {
     t.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
 }
