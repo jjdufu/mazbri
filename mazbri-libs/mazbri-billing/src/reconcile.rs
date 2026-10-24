@@ -358,7 +358,7 @@ fn ts(secs: i64) -> DateTime<Utc> {
 }
 
 /// UTC wall-clock text, always paired with an explicit `'UTC'` zone in `toDateTime64` so the
-/// bound is the same instant regardless of the ClickHouse server zone. `request_logs.timestamp`
+/// bound is the same instant regardless of the `ClickHouse` server zone. `request_logs.timestamp`
 /// is `DateTime64(9, 'UTC')` and vector writes epoch seconds, so both sides are unambiguous.
 fn ch_ts(t: DateTime<Utc>) -> String {
     t.format("%Y-%m-%d %H:%M:%S%.6f").to_string()

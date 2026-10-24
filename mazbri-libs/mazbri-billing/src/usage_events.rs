@@ -348,17 +348,20 @@ async fn partition_loop(
             }
             continue;
         }
-        let cur = match offset {
-            Some(o) => o,
-            None => {
-                let o = match load_offset(&db, &cfg.topic, partition).await {
-                    Some(o) => o,
-                    None => pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0),
-                };
-                info!(partition, offset = o, "usage event partition consumer running");
-                offset = Some(o);
-                o
-            }
+        let cur = if let Some(o) = offset {
+            o
+        } else {
+            let o = match load_offset(&db, &cfg.topic, partition).await {
+                Some(o) => o,
+                None => pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0),
+            };
+            info!(
+                partition,
+                offset = o,
+                "usage event partition consumer running"
+            );
+            offset = Some(o);
+            o
         };
         let fetched = tokio::select! {
             r = pc.fetch_records(cur, 1..cfg.fetch_max_bytes.max(1024), cfg.fetch_max_wait_ms.max(10)) => r,
@@ -373,7 +376,9 @@ async fn partition_loop(
                 let earliest = pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0);
                 warn!(
                     partition,
-                    offset = cur, earliest, "offset out of range; resetting to earliest"
+                    offset = cur,
+                    earliest,
+                    "offset out of range; resetting to earliest"
                 );
                 offset = Some(earliest);
                 continue;
