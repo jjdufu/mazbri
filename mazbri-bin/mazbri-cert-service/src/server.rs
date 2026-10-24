@@ -15,7 +15,6 @@ use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub base_authorization: Arc<BaseAuthorizationState>,
@@ -148,7 +147,7 @@ pub fn create_app(state: AppState) -> Router {
         .merge(category_routes)
         .layer(
             ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
+                .layer(mazbri_service::http_trace_layer())
                 .layer(axum::middleware::from_fn(
                     mazbri_service::request_id_middleware,
                 ))

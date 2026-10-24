@@ -1,5 +1,5 @@
+use crate::trace_layer::is_probe_unavailable;
 use axum::http::HeaderValue;
-use axum::http::StatusCode;
 use axum::{extract::Request, middleware::Next, response::Response};
 use mazbri_core::{
     ACTIVE_CONNECTIONS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL, TraceContext,
@@ -103,14 +103,10 @@ pub async fn error_handler_middleware(req: Request, next: Next) -> Response {
     response
 }
 
-/// 探针接口（`/health`、`/ready`）返回 503 属于预期的状态上报，不是服务端故障。
-fn is_probe_unavailable(path: &str, status: StatusCode) -> bool {
-    status == StatusCode::SERVICE_UNAVAILABLE && matches!(path, "/health" | "/ready")
-}
-
 #[cfg(test)]
 mod probe_log_tests {
     use super::*;
+    use axum::http::StatusCode;
 
     #[test]
     fn probe_503_is_not_server_error_log() {

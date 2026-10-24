@@ -36,7 +36,6 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::{
     compression::CompressionLayer,
     cors::{AllowOrigin, CorsLayer},
-    trace::TraceLayer,
 };
 #[derive(Clone)]
 pub struct AppState {
@@ -88,7 +87,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let compression_layer = compression_layer_for(&config, max_connections);
     let base_middleware = ServiceBuilder::new()
         .layer(CatchPanicLayer::custom(handle_panic))
-        .layer(TraceLayer::new_for_http())
+        .layer(mazbri_service::http_trace_layer())
         .layer(axum::middleware::from_fn(error_handler_middleware))
         .layer(axum::middleware::from_fn(normalize_limit_errors_middleware))
         .layer(axum::middleware::from_fn(metrics_middleware))
