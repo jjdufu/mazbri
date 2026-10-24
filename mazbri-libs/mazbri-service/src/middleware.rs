@@ -1,11 +1,12 @@
 use axum::http::HeaderValue;
+use axum::http::StatusCode;
 use axum::{extract::Request, middleware::Next, response::Response};
 use mazbri_core::{
     ACTIVE_CONNECTIONS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL, TraceContext,
     parse_trace_context,
 };
 use std::time::Instant;
-use tracing::{Instrument, debug, error, info_span};
+use tracing::{Instrument, debug, error, info_span, warn};
 pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
     let trace_context = parse_trace_context(req.headers());
     insert_trace_headers(req.headers_mut(), &trace_context);
@@ -92,10 +93,42 @@ pub async fn metrics_middleware(req: Request, next: Next) -> Response {
 pub async fn error_handler_middleware(req: Request, next: Next) -> Response {
     let uri = req.uri().clone();
     let response = next.run(req).await;
-    if response.status().is_server_error() {
+    if is_probe_unavailable(uri.path(), response.status()) {
+        warn!(uri = % uri, status = % response.status(), "Health probe reported unavailable");
+    } else if response.status().is_server_error() {
         error!(uri = % uri, status = % response.status(), "Server error occurred");
     } else if response.status().is_client_error() {
         debug!(uri = % uri, status = % response.status(), "Client error occurred");
     }
     response
+}
+
+/// 探针接口（`/health`、`/ready`）返回 503 属于预期的状态上报，不是服务端故障。
+fn is_probe_unavailable(path: &str, status: StatusCode) -> bool {
+    status == StatusCode::SERVICE_UNAVAILABLE && matches!(path, "/health" | "/ready")
+}
+
+#[cfg(test)]
+mod probe_log_tests {
+    use super::*;
+
+    #[test]
+    fn probe_503_is_not_server_error_log() {
+        assert!(is_probe_unavailable(
+            "/health",
+            StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(is_probe_unavailable(
+            "/ready",
+            StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(!is_probe_unavailable(
+            "/health",
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!is_probe_unavailable(
+            "/v1/x",
+            StatusCode::SERVICE_UNAVAILABLE
+        ));
+    }
 }

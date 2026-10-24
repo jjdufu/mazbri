@@ -29,7 +29,7 @@ macro_rules! impl_get_client {
             info!(addr = %addr, "Creating new tarpc {} client (mTLS)", $service_name);
             let target = mazbri_tls::resolve_connect_target(addr)
                 .await
-                .map_err(|e| CoreError::Config(e.to_string()))?;
+                .map_err(mazbri_tls::TlsError::into_core)?;
             let transport = mazbri_tls::tls_connect_with_server_name(
                 target.socket_addr,
                 self.tls_connector.clone(),
@@ -145,7 +145,7 @@ impl TarpcClientPool {
         );
         let target = mazbri_tls::resolve_connect_target(addr)
             .await
-            .map_err(|e| CoreError::Config(e.to_string()))?;
+            .map_err(mazbri_tls::TlsError::into_core)?;
         let client = HttpUpstreamServiceClient::new(
             client::Config::default(),
             mazbri_tls::tls_connect_with_server_name(

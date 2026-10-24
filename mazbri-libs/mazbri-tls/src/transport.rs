@@ -145,12 +145,12 @@ pub async fn resolve_connect_target(endpoint: &str) -> TlsResult<ConnectTarget> 
         .port()
         .ok_or_else(|| TlsError::Config(format!("Endpoint '{endpoint}' missing port")))?;
     let display_addr = format!("{host}:{port}");
-    let mut addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
-        TlsError::HandshakeFailed(format!("Failed to resolve '{display_addr}': {e}"))
-    })?;
-    let socket_addr = addrs.next().ok_or_else(|| {
-        TlsError::HandshakeFailed(format!("No resolved addresses for '{display_addr}'"))
-    })?;
+    let mut addrs = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| TlsError::Resolve(format!("Failed to resolve '{display_addr}': {e}")))?;
+    let socket_addr = addrs
+        .next()
+        .ok_or_else(|| TlsError::Resolve(format!("No resolved addresses for '{display_addr}'")))?;
     let server_name = if host.parse::<IpAddr>().is_ok() {
         None
     } else {

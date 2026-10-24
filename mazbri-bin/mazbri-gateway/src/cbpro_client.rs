@@ -87,7 +87,7 @@ impl CBProClient {
         debug!(url = %self.endpoint.url(), "Creating new CBPro client (mTLS)");
         let target = mazbri_tls::resolve_connect_target(self.endpoint.url())
             .await
-            .map_err(|e| CoreError::Config(e.to_string()))?;
+            .map_err(mazbri_tls::TlsError::into_core)?;
         let transport = mazbri_tls::tls_connect_with_server_name(
             target.socket_addr,
             self.tls_connector.clone(),

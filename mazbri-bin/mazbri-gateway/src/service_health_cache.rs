@@ -1,12 +1,12 @@
 use mazbri_core::ServiceName;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{Duration, interval};
 use tracing::warn;
 const HEALTH_SCRAPE_INTERVAL_SECS: u64 = 15;
 const HEALTH_SCRAPE_TIMEOUT_SECS: u64 = 5;
-const HEALTH_SCRAPE_BATCH_SIZE: usize = 2;
+const HEALTH_SCRAPE_BATCH_SIZE: usize = 8;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ServiceHealthState {
     #[default]
@@ -58,7 +58,8 @@ impl ServiceHealthCache {
                 .timeout(Duration::from_secs(HEALTH_SCRAPE_TIMEOUT_SECS))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
-            let mut next_batch_start = 0usize;
+            let mut cursor = 0usize;
+            let mut known: HashSet<String> = HashSet::new();
             let nodes_url = format!("{}/nodes", cert_service_url.trim_end_matches('/'));
 
             loop {
@@ -67,21 +68,19 @@ impl ServiceHealthCache {
                 let endpoints = fetch_registered_endpoints(&client, &nodes_url, &token)
                     .await
                     .unwrap_or_default();
-                let endpoint_list: Vec<(String, String)> = endpoints.into_iter().collect();
-                let endpoint_count = endpoint_list.len();
-                if endpoint_count == 0 {
+                let targets = select_scrape_targets(endpoints, &known, &mut cursor);
+                if targets.is_empty() {
                     continue;
                 }
-
-                let batch_size = endpoint_count.min(HEALTH_SCRAPE_BATCH_SIZE);
-                let mut results = Vec::with_capacity(batch_size);
-                for offset in 0..batch_size {
-                    let index = (next_batch_start + offset) % endpoint_count;
-                    let (name, url) = &endpoint_list[index];
-                    let result = scrape_service_health(&client, url).await;
-                    results.push((name.clone(), result));
-                }
-                next_batch_start = (next_batch_start + batch_size) % endpoint_count;
+                let results = futures::future::join_all(targets.into_iter().map(|(name, url)| {
+                    let client = client.clone();
+                    async move {
+                        let result = scrape_service_health(&client, &url).await;
+                        (name, result)
+                    }
+                }))
+                .await;
+                known.extend(results.iter().map(|(name, _)| name.clone()));
 
                 let mut map = cache.write().await;
                 for (name, result) in results {
@@ -115,6 +114,32 @@ impl ServiceHealthCache {
             }
         })
     }
+}
+
+/// 选出本轮要探测的节点：按服务名排序；首轮或出现未探测过的新节点时全量探测，
+/// 否则从 `cursor` 起轮转取 `HEALTH_SCRAPE_BATCH_SIZE` 个。
+fn select_scrape_targets(
+    endpoints: HashMap<String, String>,
+    known: &HashSet<String>,
+    cursor: &mut usize,
+) -> Vec<(String, String)> {
+    let mut sorted: Vec<(String, String)> = endpoints.into_iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let count = sorted.len();
+    if count == 0 {
+        return sorted;
+    }
+    if sorted.iter().any(|(name, _)| !known.contains(name)) || count <= HEALTH_SCRAPE_BATCH_SIZE {
+        return sorted;
+    }
+    let start = *cursor % count;
+    *cursor = (start + HEALTH_SCRAPE_BATCH_SIZE) % count;
+    sorted
+        .into_iter()
+        .cycle()
+        .skip(start)
+        .take(HEALTH_SCRAPE_BATCH_SIZE)
+        .collect()
 }
 
 /// cert `/nodes` 返回的节点（只取需要的字段）。
@@ -198,6 +223,46 @@ mod tests {
             let _ = axum::serve(listener, router).await;
         });
         Ok(format!("http://{addr}/health"))
+    }
+
+    fn eps(n: usize) -> HashMap<String, String> {
+        (0..n)
+            .map(|i| (format!("svc-{i:02}"), format!("http://h{i}/health")))
+            .collect()
+    }
+
+    #[test]
+    fn first_round_and_new_nodes_scrape_all_sorted() {
+        let mut cursor = 0;
+        let known = HashSet::new();
+        let t = select_scrape_targets(eps(12), &known, &mut cursor);
+        assert_eq!(t.len(), 12);
+        assert!(t.windows(2).all(|w| w[0].0 < w[1].0));
+
+        let mut known: HashSet<String> = eps(11).into_keys().collect();
+        let t = select_scrape_targets(eps(12), &known, &mut cursor);
+        assert_eq!(t.len(), 12, "new node triggers full scrape");
+        known.insert("svc-11".into());
+        let t = select_scrape_targets(eps(12), &known, &mut cursor);
+        assert_eq!(t.len(), HEALTH_SCRAPE_BATCH_SIZE);
+    }
+
+    #[test]
+    fn steady_state_rotates_in_name_order() {
+        let known: HashSet<String> = eps(12).into_keys().collect();
+        let mut cursor = 0;
+        let a = select_scrape_targets(eps(12), &known, &mut cursor);
+        let b = select_scrape_targets(eps(12), &known, &mut cursor);
+        assert_eq!(a.first().map(|x| x.0.as_str()), Some("svc-00"));
+        assert_eq!(b.first().map(|x| x.0.as_str()), Some("svc-08"));
+        assert_eq!(b.last().map(|x| x.0.as_str()), Some("svc-03"));
+    }
+
+    #[test]
+    fn small_cluster_always_scrapes_all() {
+        let known: HashSet<String> = eps(7).into_keys().collect();
+        let mut cursor = 0;
+        assert_eq!(select_scrape_targets(eps(7), &known, &mut cursor).len(), 7);
     }
 
     #[tokio::test]

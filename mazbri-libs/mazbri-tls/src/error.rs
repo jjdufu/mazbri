@@ -23,6 +23,9 @@ pub enum TlsError {
     RenewFailed(String),
     #[error("TLS 握手失败: {0}")]
     HandshakeFailed(String),
+    /// 目标主机名暂时无法解析（如 compose/k8s 服务尚未注册 DNS），可重试。
+    #[error("地址解析失败: {0}")]
+    Resolve(String),
     #[error("无效的证书格式: {0}")]
     InvalidCertificate(String),
 }
@@ -33,6 +36,7 @@ impl ErrorResponse for TlsError {
             Self::Config(_) | Self::InvalidCertificate(_) => StatusCode::BAD_REQUEST,
             Self::CertificateNotFound(_) => StatusCode::NOT_FOUND,
             Self::CertificateExpired(_) | Self::CertificateRevoked => StatusCode::GONE,
+            Self::Resolve(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::IssueFailed(_) | Self::RenewFailed(_) | Self::HandshakeFailed(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -47,6 +51,7 @@ impl ErrorResponse for TlsError {
             Self::IssueFailed(_) => "TLS_ISSUE_FAILED",
             Self::RenewFailed(_) => "TLS_RENEW_FAILED",
             Self::HandshakeFailed(_) => "TLS_HANDSHAKE_FAILED",
+            Self::Resolve(_) => "TLS_RESOLVE_FAILED",
             Self::InvalidCertificate(_) => "TLS_INVALID_CERTIFICATE",
         })
     }
@@ -81,5 +86,40 @@ impl From<reqwest::Error> for TlsError {
 impl From<std::io::Error> for TlsError {
     fn from(e: std::io::Error) -> Self {
         Self::Core(mazbri_core::CoreError::from(e))
+    }
+}
+
+impl TlsError {
+    /// 转成 `CoreError`，保留可重试语义：解析失败映射为 `CoreError::Network`。
+    #[must_use]
+    pub fn into_core(self) -> mazbri_core::CoreError {
+        match self {
+            Self::Core(e) => e,
+            Self::Resolve(_) => mazbri_core::CoreError::Network(self.to_string()),
+            Self::Config(_) => mazbri_core::CoreError::Config(self.to_string()),
+            other => mazbri_core::CoreError::Tls(other.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod into_core_tests {
+    use super::*;
+    use mazbri_core::CoreError;
+
+    #[test]
+    fn resolve_maps_to_network() {
+        assert!(matches!(
+            TlsError::Resolve("x:1".into()).into_core(),
+            CoreError::Network(_)
+        ));
+        assert!(matches!(
+            TlsError::Config("bad".into()).into_core(),
+            CoreError::Config(_)
+        ));
+        assert!(matches!(
+            TlsError::HandshakeFailed("h".into()).into_core(),
+            CoreError::Tls(_)
+        ));
     }
 }

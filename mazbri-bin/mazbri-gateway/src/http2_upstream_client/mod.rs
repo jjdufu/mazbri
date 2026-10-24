@@ -134,7 +134,7 @@ impl UpstreamHttp2ClientPool {
     async fn connect_one(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
         let target = resolve_connect_target(endpoint)
             .await
-            .map_err(|error| CoreError::Config(error.to_string()))?;
+            .map_err(mazbri_tls::TlsError::into_core)?;
 
         let server_name = target.server_name.clone().ok_or_else(|| {
             CoreError::Config(format!(
