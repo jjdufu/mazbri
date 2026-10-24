@@ -86,7 +86,7 @@ async fn check_and_renew_in_transaction(
             Ok(v) => v,
             Err(e) => {
                 metrics.record_renewal_failed();
-                warn!(subject = %cert.subject, error = %e, "续期跳过：subject 非规范服务名");
+                warn!(subject = %cert.subject, error = %e, "续期跳过：subject 非规范服务名或不需要 mTLS");
                 continue;
             }
         };

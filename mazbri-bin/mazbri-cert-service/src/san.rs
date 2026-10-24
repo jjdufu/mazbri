@@ -33,6 +33,8 @@ pub enum SanError {
     MissingNamespace,
     #[error("binary 模式需要 [san].binary_suffix")]
     MissingBinarySuffix,
+    #[error("服务 {0} 只使用 HTTP + Bearer token，不需要 mTLS 证书")]
+    MtlsNotRequired(String),
     #[error("非法 DNS 名: {0}")]
     InvalidDnsName(String),
 }
@@ -159,7 +161,11 @@ impl SanPolicy {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn sans_for_subject(&self, subject: &str) -> Result<Vec<String>, SanError> {
-        Ok(self.sans_for(subject.parse::<ServiceName>()?))
+        let svc = subject.parse::<ServiceName>()?;
+        if !svc.requires_mtls() {
+            return Err(SanError::MtlsNotRequired(svc.as_str().to_owned()));
+        }
+        Ok(self.sans_for(svc))
     }
 }
 
@@ -167,6 +173,7 @@ impl From<SanError> for crate::error::CertError {
     fn from(err: SanError) -> Self {
         match err {
             SanError::Subject(e) => Self::SubjectNotCanonical(e.to_string()),
+            SanError::MtlsNotRequired(name) => Self::SubjectMtlsNotRequired(name),
             other => Self::SanConfig(other.to_string()),
         }
     }
@@ -198,7 +205,7 @@ mod tests {
     #[test]
     fn compose_is_container_name() -> Result<(), SanError> {
         let p = SanPolicy::from_config(&cfg(SanMode::Compose), &no_env())?;
-        assert_eq!(p.sans_for_subject("mazbri-cert")?, vec!["mazbri-cert"]);
+        assert_eq!(p.sans_for_subject("mazbri-auth")?, vec!["mazbri-auth"]);
         Ok(())
     }
 
@@ -287,6 +294,18 @@ mod tests {
             p.sans_for_subject("global"),
             Err(SanError::Subject(_))
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_http_only_services() -> Result<(), SanError> {
+        let p = SanPolicy::from_config(&cfg(SanMode::Compose), &no_env())?;
+        for name in ["mazbri-cert", "mazbri-mgmt", "mazbri-analytics"] {
+            assert!(
+                matches!(p.sans_for_subject(name), Err(SanError::MtlsNotRequired(ref n)) if n == name),
+                "{name}"
+            );
+        }
         Ok(())
     }
 }
