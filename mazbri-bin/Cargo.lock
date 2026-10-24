@@ -2932,6 +2932,7 @@ dependencies = [
  "tarpc",
  "tokio",
  "tower",
+ "tower-http",
  "tracing",
  "uuid",
 ]

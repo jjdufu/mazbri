@@ -132,29 +132,12 @@ pub async fn health_check(
     let redis_health = redis_health(&state).await;
 
     let mut services = std::collections::HashMap::new();
-    let mut any_unhealthy = db_health.status == HealthStatus::Unhealthy
-        || redis_health.status == HealthStatus::Unhealthy;
-    let mut any_unknown =
-        db_health.status == HealthStatus::Unknown || redis_health.status == HealthStatus::Unknown;
-
     for (name, _) in state.proxy_state.services_config.list_services() {
         let health = cached_service_health(cache, &name).await;
-        if health.status == HealthStatus::Unhealthy {
-            any_unhealthy = true;
-        }
-        if health.status == HealthStatus::Unknown {
-            any_unknown = true;
-        }
         services.insert(name, health);
     }
-
-    let status = if !startup_ready || any_unhealthy {
-        HealthStatus::Unhealthy
-    } else if any_unknown {
-        HealthStatus::Unknown
-    } else {
-        HealthStatus::Healthy
-    };
+    // 存活/健康只看自身：下游状态仅展示，不影响状态码（下游可能跨主机、晚启动或滚动重启）。
+    let status = self_health_status(startup_ready, &db_health.status, &redis_health.status);
     let status_code = if status == HealthStatus::Healthy {
         StatusCode::OK
     } else {
@@ -194,4 +177,31 @@ pub async fn ready_check(State(state): State<AppState>) -> (StatusCode, Json<ser
             "timestamp" : chrono::Utc::now().to_rfc3339() }
         )),
     )
+}
+
+/// gateway 自身健康：启动完成且 DB、Redis 可用；下游状态不参与。
+fn self_health_status(
+    startup_ready: bool,
+    database: &HealthStatus,
+    redis: &HealthStatus,
+) -> HealthStatus {
+    if !startup_ready || *database != HealthStatus::Healthy || *redis != HealthStatus::Healthy {
+        HealthStatus::Unhealthy
+    } else {
+        HealthStatus::Healthy
+    }
+}
+
+#[cfg(test)]
+mod self_health_tests {
+    use super::*;
+
+    #[test]
+    fn healthy_only_when_self_ready() {
+        use HealthStatus::{Healthy, Unhealthy, Unknown};
+        assert_eq!(self_health_status(true, &Healthy, &Healthy), Healthy);
+        assert_eq!(self_health_status(false, &Healthy, &Healthy), Unhealthy);
+        assert_eq!(self_health_status(true, &Unhealthy, &Healthy), Unhealthy);
+        assert_eq!(self_health_status(true, &Healthy, &Unknown), Unhealthy);
+    }
 }

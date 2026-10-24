@@ -169,7 +169,7 @@ const rules: FormRules = {
 const loadServices = async () => {
   try {
     const data = await fetchCanonicalServiceNames();
-    services.value = data.services;
+    services.value = data.mtls_services;
   } catch (error) {
     logger.error("Failed to load service names:", error);
     services.value = [];

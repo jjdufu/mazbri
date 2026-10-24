@@ -3,6 +3,8 @@ import { API_BASE_PATH, API_PATHS } from "@/config/api";
 
 export interface CanonicalServiceNames {
   services: string[];
+  /** 需要 mTLS 证书的服务（不含 cert/mgmt/analytics） */
+  mtls_services: string[];
   global: string;
 }
 

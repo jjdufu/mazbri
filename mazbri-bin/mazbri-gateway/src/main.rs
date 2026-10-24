@@ -21,6 +21,7 @@ mod startup_metrics;
 mod supplier_config_cache;
 mod tarpc_client;
 mod upstream_contract;
+mod warmup;
 use crate::auth::{JwtKeyManager, register_auth_middleware_metrics};
 use crate::config::GatewayConfig;
 use crate::crypto::register_crypto_metrics;

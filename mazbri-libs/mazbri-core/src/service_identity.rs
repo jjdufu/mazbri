@@ -65,6 +65,25 @@ impl ServiceName {
     pub fn all_names() -> Vec<&'static str> {
         CANONICAL_SERVICES.iter().map(|s| s.as_str()).collect()
     }
+
+    /// 是否需要 mTLS 服务证书。
+    ///
+    /// cert（CA 本身）、mgmt、analytics 只提供/调用明文 HTTP + Bearer token，
+    /// 不走 `ServiceBootstrap::init_mtls`，也不是任何 gRPC/mTLS 链路的对端。
+    #[must_use]
+    pub const fn requires_mtls(self) -> bool {
+        !matches!(self, Self::Cert | Self::Mgmt | Self::Analytics)
+    }
+
+    /// 需要签发 mTLS 证书的规范服务名（保持 `CANONICAL_SERVICES` 顺序）。
+    #[must_use]
+    pub fn mtls_names() -> Vec<&'static str> {
+        CANONICAL_SERVICES
+            .iter()
+            .filter(|s| s.requires_mtls())
+            .map(|s| s.as_str())
+            .collect()
+    }
 }
 
 impl fmt::Display for ServiceName {
@@ -151,6 +170,26 @@ mod tests {
     fn short_names() {
         assert_eq!(ServiceName::CbproExt.short(), "cbpro-ext");
         assert_eq!(ServiceName::Mgmt.short(), "mgmt");
+    }
+
+    #[test]
+    fn mtls_excludes_http_only_services() {
+        for svc in [ServiceName::Cert, ServiceName::Mgmt, ServiceName::Analytics] {
+            assert!(!svc.requires_mtls(), "{svc}");
+        }
+        assert_eq!(
+            ServiceName::mtls_names(),
+            vec![
+                "mazbri-auth",
+                "mazbri-ratelimit",
+                "mazbri-cache",
+                "mazbri-billing",
+                "mazbri-cbpro",
+                "mazbri-cbpro-ext",
+                "mazbri-bypass",
+                "mazbri-gateway",
+            ]
+        );
     }
 
     #[test]

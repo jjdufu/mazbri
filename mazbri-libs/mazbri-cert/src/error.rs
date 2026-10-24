@@ -14,6 +14,8 @@ pub enum CertError {
     NotFound(String),
     #[error("证书主体不在规范服务列表: {0}")]
     SubjectNotCanonical(String),
+    #[error("服务 {0} 不需要 mTLS 证书（仅 HTTP + Bearer token）")]
+    SubjectMtlsNotRequired(String),
     #[error("SAN 配置错误: {0}")]
     SanConfig(String),
     #[error("证书已作废: {0}")]
@@ -53,6 +55,7 @@ impl ErrorResponse for CertError {
             | Self::InvalidSubject(_)
             | Self::InvalidRequest(_)
             | Self::SubjectNotCanonical(_)
+            | Self::SubjectMtlsNotRequired(_)
             | Self::VerificationFailed(_) => StatusCode::BAD_REQUEST,
             Self::BaseAuthorizationNotActive
             | Self::BaseAuthorizationExpired
@@ -70,6 +73,7 @@ impl ErrorResponse for CertError {
         core_error_response_match!(self, error_code, {
             Self::NotFound(_) => "CERTIFICATE_NOT_FOUND",
             Self::SubjectNotCanonical(_) => "SUBJECT_NOT_CANONICAL",
+            Self::SubjectMtlsNotRequired(_) => "SUBJECT_MTLS_NOT_REQUIRED",
             Self::SanConfig(_) => "SAN_CONFIG_ERROR",
             Self::AlreadyRevoked(_) => "CERTIFICATE_ALREADY_REVOKED",
             Self::InvalidSubject(_) => "INVALID_SUBJECT",
@@ -90,7 +94,11 @@ impl ErrorResponse for CertError {
             Self::NotFound(id) => Some(json!({ "certificate_id" : id })),
             Self::SubjectNotCanonical(reason) => Some(json!({
                 "reason" : reason,
-                "allowed" : mazbri_core::ServiceName::all_names(),
+                "allowed" : mazbri_core::ServiceName::mtls_names(),
+            })),
+            Self::SubjectMtlsNotRequired(name) => Some(json!({
+                "subject" : name,
+                "allowed" : mazbri_core::ServiceName::mtls_names(),
             })),
             _ => None,
         })

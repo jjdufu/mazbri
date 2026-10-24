@@ -31,7 +31,6 @@ use tower_http::{
     compression::CompressionLayer,
     cors::{AllowOrigin, CorsLayer},
     limit::RequestBodyLimitLayer,
-    trace::TraceLayer,
 };
 use tracing::info;
 #[cfg(not(mazbri_skip_frontend_embed))]
@@ -554,7 +553,7 @@ fn create_router(
     auth_state: &Arc<middleware::auth::AdminAuthState>,
 ) -> Router {
     let base_middleware = ServiceBuilder::new()
-        .layer(TraceLayer::new_for_http())
+        .layer(mazbri_service::http_trace_layer())
         .layer(axum::middleware::from_fn(
             mazbri_service::error_handler_middleware,
         ))

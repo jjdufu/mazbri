@@ -22,13 +22,11 @@ use mazbri_admin::AdminState;
 use mazbri_billing::{BillingMiddlewareState, BillingService, BillingServiceConfig, ChargeQueue};
 use mazbri_cache::RedisPermissionCache;
 use mazbri_callback::CallbackWorker;
-use mazbri_core::CoreError;
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{error_handler_middleware, metrics_middleware, request_id_middleware};
 use serde::Deserialize as _;
 use sqlx::PgPool;
 use std::future::Future;
-use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
@@ -38,7 +36,6 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::{
     compression::CompressionLayer,
     cors::{AllowOrigin, CorsLayer},
-    trace::TraceLayer,
 };
 #[derive(Clone)]
 pub struct AppState {
@@ -90,7 +87,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let compression_layer = compression_layer_for(&config, max_connections);
     let base_middleware = ServiceBuilder::new()
         .layer(CatchPanicLayer::custom(handle_panic))
-        .layer(TraceLayer::new_for_http())
+        .layer(mazbri_service::http_trace_layer())
         .layer(axum::middleware::from_fn(error_handler_middleware))
         .layer(axum::middleware::from_fn(normalize_limit_errors_middleware))
         .layer(axum::middleware::from_fn(metrics_middleware))
@@ -305,15 +302,23 @@ async fn load_routes_and_warmup(
             "Loaded gateway route rules from database"
         );
     }
-    if let Err(error) = warmup_tarpc_clients(tarpc_pool, &config.services).await {
-        tracing::warn!(error = % error, "Tarpc client warmup failed");
-    }
-    if let Err(error) = warmup_route_upstream_clients(upstream_http2_pool, &route_engine).await {
-        tracing::warn!(error = % error, "Route upstream client warmup failed");
-    }
-    if let Err(error) = warmup_bypass_client(upstream_http2_pool, &config.services).await {
-        tracing::warn!(error = % error, "Bypass HTTP/2 client warmup failed");
-    }
+    // Only microservice suppliers are dialled directly by the gateway (mTLS gRPC on
+    // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
+    // which is warmed separately; warming their raw IP/HTTP URL would fail mTLS.
+    let direct_upstreams = route_engine.unique_service_urls_where(|channel| {
+        !mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
+            .is_ok_and(|cfg| cfg.is_transparent())
+    });
+    tracing::info!(
+        direct_upstreams = direct_upstreams.len(),
+        "Spawning background downstream warmups"
+    );
+    crate::warmup::spawn_warmups(
+        tarpc_pool,
+        upstream_http2_pool,
+        &config.services,
+        direct_upstreams,
+    );
     Ok(route_engine)
 }
 
@@ -653,227 +658,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
     }
     cors
 }
-async fn warmup_tarpc_clients(
-    tarpc_pool: &TarpcClientPool,
-    services: &crate::config::ServicesConfig,
-) -> anyhow::Result<()> {
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        mazbri_core::ServiceName::Ratelimit.as_str(),
-        services.ratelimit.url(),
-        || async {
-            let _ = tarpc_pool
-                .get_ratelimit_client(services.ratelimit.url())
-                .await?;
-            Ok(())
-        },
-    )
-    .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        mazbri_core::ServiceName::Auth.as_str(),
-        services.auth.url(),
-        || async {
-            let _ = tarpc_pool.get_auth_client(services.auth.url()).await?;
-            Ok(())
-        },
-    )
-    .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        mazbri_core::ServiceName::Billing.as_str(),
-        services.billing.url(),
-        || async {
-            let _ = tarpc_pool
-                .get_billing_client(services.billing.url())
-                .await?;
-            Ok(())
-        },
-    )
-    .await?;
-    warmup_tarpc_client_with_retry(
-        tarpc_pool,
-        mazbri_core::ServiceName::Cache.as_str(),
-        services.cache.url(),
-        || async {
-            let _ = tarpc_pool.get_cache_client(services.cache.url()).await?;
-            Ok(())
-        },
-    )
-    .await?;
-    if let Some(cbpro_url) = services.cbpro.as_ref() {
-        warmup_tarpc_client_with_retry(
-            tarpc_pool,
-            mazbri_core::ServiceName::Cbpro.as_str(),
-            cbpro_url.url(),
-            || async {
-                let _ = tarpc_pool.get_http_upstream_client(cbpro_url.url()).await?;
-                Ok(())
-            },
-        )
-        .await?;
-    }
-    tracing::info!("Tarpc clients warmed up");
-    Ok(())
-}
-async fn warmup_route_upstream_clients(
-    upstream_http2_pool: &UpstreamHttp2ClientPool,
-    route_engine: &mazbri_routing::RouteEngine,
-) -> anyhow::Result<()> {
-    // Only microservice suppliers are dialled directly by the gateway (mTLS gRPC on
-    // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
-    // which forwards to their plain HTTP URL; that path is warmed by
-    // `warmup_bypass_client`, so warming the raw URL here is wrong (and fails on
-    // IP/HTTP URLs with "requires a DNS server name for mTLS").
-    let urls = route_engine.unique_service_urls_where(|channel| {
-        !mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
-            .is_ok_and(|cfg| cfg.is_transparent())
-    });
-    let mut failed = 0usize;
-    for service_url in &urls {
-        if let Err(error) = warmup_upstream_http2_client_with_retry(
-            upstream_http2_pool,
-            "route-upstream",
-            service_url,
-        )
-        .await
-        {
-            failed += 1;
-            tracing::warn!(endpoint = %service_url, error = %error, "Route upstream warmup failed");
-        }
-    }
-    tracing::info!(
-        route_count = route_engine.route_count(),
-        direct_upstreams = urls.len(),
-        failed,
-        "Route upstream HTTP/2 clients warmed up"
-    );
-    Ok(())
-}
-
-/// transparent 出站走 bypass：预热与 execute 相同的 endpoint 形式，避免首包冷握手。
-async fn warmup_bypass_client(
-    upstream_http2_pool: &UpstreamHttp2ClientPool,
-    services: &crate::config::ServicesConfig,
-) -> anyhow::Result<()> {
-    let Some(ref bypass) = services.bypass else {
-        tracing::info!("No bypass_url configured; skip bypass HTTP/2 warmup");
-        return Ok(());
-    };
-    let host_port = bypass.url();
-    let endpoint = format!("https://{host_port}");
-    warmup_upstream_http2_client_with_retry(
-        upstream_http2_pool,
-        mazbri_core::ServiceName::Bypass.as_str(),
-        &endpoint,
-    )
-    .await?;
-    tracing::info!(endpoint = %endpoint, "Bypass HTTP/2 client warmed up");
-    Ok(())
-}
-async fn warmup_tarpc_client_with_retry<F, Fut>(
-    _tarpc_pool: &TarpcClientPool,
-    service_label: &str,
-    addr: &str,
-    warmup: F,
-) -> anyhow::Result<()>
-where
-    F: Fn() -> Fut,
-    Fut: Future<Output = anyhow::Result<()>>,
-{
-    const MAX_RETRIES: u32 = 2;
-    const INITIAL_DELAY_MS: u64 = 150;
-    let mut attempt: u32 = 0;
-    loop {
-        match warmup().await {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                let transient = error
-                    .downcast_ref::<CoreError>()
-                    .is_some_and(is_transient_warmup_error);
-                if attempt < MAX_RETRIES && transient {
-                    let delay_ms = INITIAL_DELAY_MS * 2u64.pow(attempt);
-                    tracing::warn!(
-                        service = % service_label,
-                        addr = % addr,
-                        attempt = attempt + 1,
-                        max_retries = MAX_RETRIES,
-                        delay_ms,
-                        error = % error,
-                        "Tarpc client warmup failed; retrying"
-                    );
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    attempt += 1;
-                    continue;
-                }
-                return Err(anyhow::anyhow!(
-                    "Tarpc client warmup failed for {service_label} at {addr}: {error}"
-                ));
-            }
-        }
-    }
-}
-async fn warmup_upstream_http2_client_with_retry(
-    upstream_http2_pool: &UpstreamHttp2ClientPool,
-    service_label: &str,
-    addr: &str,
-) -> anyhow::Result<()> {
-    const MAX_RETRIES: u32 = 2;
-    const INITIAL_DELAY_MS: u64 = 150;
-    let mut attempt: u32 = 0;
-    loop {
-        match upstream_http2_pool.warmup_endpoint(addr).await {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                if attempt < MAX_RETRIES && is_transient_warmup_error(&error) {
-                    let delay_ms = INITIAL_DELAY_MS * 2u64.pow(attempt);
-                    tracing::warn!(
-                        service = % service_label,
-                        addr = % addr,
-                        attempt = attempt + 1,
-                        max_retries = MAX_RETRIES,
-                        delay_ms,
-                        error = % error,
-                        "Upstream HTTP/2 client warmup failed; retrying"
-                    );
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    attempt += 1;
-                    continue;
-                }
-                return Err(anyhow::anyhow!(
-                    "Upstream HTTP/2 client warmup failed for {service_label} at {addr}: {error}"
-                ));
-            }
-        }
-    }
-}
-fn is_transient_warmup_error(error: &CoreError) -> bool {
-    match error {
-        CoreError::Io(io_error) => matches!(
-            io_error.kind(),
-            ErrorKind::ConnectionRefused
-                | ErrorKind::ConnectionReset
-                | ErrorKind::BrokenPipe
-                | ErrorKind::NotConnected
-                | ErrorKind::TimedOut
-                | ErrorKind::WouldBlock
-                | ErrorKind::Interrupted
-                | ErrorKind::UnexpectedEof
-        ),
-        CoreError::Network(_) | CoreError::ServiceUnavailable { .. } => true,
-        CoreError::Tls(message) => {
-            let message = message.to_ascii_lowercase();
-            message.contains("connection refused")
-                || message.contains("connection reset")
-                || message.contains("broken pipe")
-                || message.contains("timed out")
-                || message.contains("temporary failure")
-                || message.contains("i/o timeout")
-        }
-        _ => false,
-    }
-}
-
 fn spawn_supervised<F>(name: &'static str, fut: F)
 where
     F: Future<Output = ()> + Send + 'static,
