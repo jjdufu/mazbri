@@ -38,6 +38,7 @@ tracing = {version = "0.1"}
 anyhow = {version = "1.0"}
 chrono = {version = "0.4", features = ["serde"]}
 uuid = {version = "1.21", features = ["v4", "serde"]}
+mimalloc = { version = "0.1", default-features = false }
 
 [lints]
 workspace = true

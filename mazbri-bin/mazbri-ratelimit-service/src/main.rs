@@ -29,3 +29,10 @@ async fn main() -> Result<()> {
     })
     .await
 }
+
+/// Process-wide allocator: mimalloc. Under glibc malloc the service kept
+/// ~107MiB anon after request bursts (spread over per-thread glibc arenas)
+/// and only returned it sporadically; mimalloc returns freed segments to the
+/// OS and matches the gateway allocator.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
