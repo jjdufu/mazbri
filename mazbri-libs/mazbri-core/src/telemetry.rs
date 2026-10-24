@@ -292,7 +292,23 @@ fn setup_file_logging(
     });
     Ok((guards, Some(cleanup_task), Some(shutdown_tx)))
 }
-fn json_console_layers(env_filter: &EnvFilter) -> Vec<Box<dyn Layer<Registry> + Send + Sync>> {
+/// Console (stdout) JSON layers.
+///
+/// stdout is written through a dedicated non-blocking appender thread: writing
+/// `io::stdout` directly from tokio workers serialises every worker on the
+/// process-wide `Stdout` lock and blocks them in `write(2)` whenever the docker
+/// log pipe applies backpressure (observed: all 8 workers parked 130-250ms).
+/// The appender is lossy, so a slow consumer drops lines instead of stalling.
+fn json_console_layers(
+    env_filter: &EnvFilter,
+    guards: &mut Vec<WorkerGuard>,
+) -> Vec<Box<dyn Layer<Registry> + Send + Sync>> {
+    let (stdout_writer, stdout_guard) =
+        tracing_appender::non_blocking::NonBlockingBuilder::default()
+            .lossy(true)
+            .thread_name("stdout-log-appender")
+            .finish(io::stdout());
+    guards.push(stdout_guard);
     let console_info_filter = env_filter
         .clone()
         .and(filter_fn(|metadata| *metadata.level() <= Level::INFO));
@@ -302,7 +318,7 @@ fn json_console_layers(env_filter: &EnvFilter) -> Vec<Box<dyn Layer<Registry> + 
 
     let console_layer_info = fmt::layer()
         .json()
-        .with_writer(io::stdout)
+        .with_writer(stdout_writer.clone())
         .with_target(true)
         .with_file(false)
         .with_line_number(false)
@@ -312,7 +328,7 @@ fn json_console_layers(env_filter: &EnvFilter) -> Vec<Box<dyn Layer<Registry> + 
 
     let console_layer_debug = fmt::layer()
         .json()
-        .with_writer(io::stdout)
+        .with_writer(stdout_writer.clone())
         .with_target(true)
         .with_file(true)
         .with_line_number(true)
@@ -425,7 +441,7 @@ fn setup_json_layers(
         file_layers.push(layer_info.boxed());
         file_layers.push(layer_debug.boxed());
     }
-    file_layers.extend(json_console_layers(env_filter));
+    file_layers.extend(json_console_layers(env_filter, &mut guards));
     let otel_layer = otlp_tracer.map(build_filtered_otel_layer);
     let subscriber = Registry::default().with(file_layers).with(otel_layer);
     subscriber.try_init()?;
