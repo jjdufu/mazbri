@@ -161,8 +161,9 @@ fn reconciliation_day_bounds(
     Ok((day_start, day_end))
 }
 
-/// Upstream pre-aggregation (supplier-side): populated from bypass access logs only
-/// after `mv_upstream_hourly_usage` filter — one hop per actual upstream call. 参考值。
+/// Upstream (supplier-side) call count: computed on read by analytics from the deduplicated
+/// bypass access log (`request_logs FINAL WHERE service = 'mazbri-bypass'`) — one row per actual
+/// upstream call. 参考值。
 async fn fetch_preagg_call_count(
     analytics_client: &AnalyticsHttpClient,
     day_start: chrono::DateTime<chrono::Utc>,
@@ -234,7 +235,7 @@ pub async fn execute_reconciliation_audit(
         "upstream_preagg_calls": upstream_preagg_call_count,
         "audit_date": reconciliation_date.to_string(),
         "loss_ratio_threshold": loss_ratio_threshold.to_string(),
-        "notes": "billable=usage_records; gateway=gateway request_logs (primary); upstream_preagg=upstream_hourly (reference)",
+        "notes": "billable=usage_records; gateway=gateway request_logs (primary); upstream_preagg=bypass request_logs FINAL (reference)",
     });
     if let (Some(reason), Some(obj)) = (&error_reason, details.as_object_mut()) {
         obj.insert(

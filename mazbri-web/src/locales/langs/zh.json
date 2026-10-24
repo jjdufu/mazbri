@@ -2472,7 +2472,7 @@
         "rawSnapshotTitle": "原始快照（技术排障）",
         "methodBilling": "计费用量：当日写入的 usage_records（可计费调用），作为出账依据。",
         "methodGateway": "网关客户请求：仅 mazbri-gateway 访问日志，与客户侧调用口径对齐。",
-        "methodUpstream": "上游旁路预聚合：bypass 侧 upstream_hourly，仅作旁证，不是主比对。",
+        "methodUpstream": "上游旁路实时统计：bypass 侧 request_logs（去重后）现算，仅作旁证，不是主比对。",
         "methodPrimary": "本次主比对侧：{peerLabel}。",
         "sources": {
           "unknown": "未知来源",
@@ -2485,7 +2485,7 @@
         "scope": "范围",
         "oltp": "计费用量",
         "gateway": "网关请求",
-        "olap": "上游预聚合",
+        "olap": "上游（旁路）",
         "ratio": "差异率",
         "status": "状态"
       },

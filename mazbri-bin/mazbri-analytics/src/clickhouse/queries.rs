@@ -360,67 +360,12 @@ pub fn get_time_bucket_expression(group_by: &str) -> String {
     }
 }
 
-/// Time bucket expression for `request_log_stats` / `audit_log_stats`
-/// (column is `time_window`, not `timestamp`).
-#[must_use]
-pub fn get_stats_time_bucket_expression(group_by: &str) -> String {
-    match group_by {
-        "hour" => "toStartOfHour(time_window)".to_string(),
-        _ => "toStartOfDay(time_window)".to_string(),
-    }
-}
-
 #[must_use]
 pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
         "SELECT toDateTime({time_expr}) AS time, toUInt64(count()) AS count \
         FROM request_logs FINAL{where_clause} \
         GROUP BY time ORDER BY time"
-    )
-}
-
-pub fn build_stats_aggregation_conditions(params: &RequestLogAggregationParams) -> Vec<String> {
-    let mut conditions: Vec<String> = Vec::new();
-    conditions.push(format!(
-        "time_window >= '{}'",
-        params.start_time.format("%Y-%m-%d %H:%M:%S")
-    ));
-    conditions.push(format!(
-        "time_window <= '{}'",
-        params.end_time.format("%Y-%m-%d %H:%M:%S")
-    ));
-    conditions
-}
-
-#[must_use]
-pub fn build_request_log_stats_summary_sql(where_clause: &str) -> String {
-    format!(
-        "SELECT \
-            toUInt64(ifNull(SUM(total_count), 0)) AS total, \
-            ifNull(SUM(sum_duration_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_duration_ms, \
-            ifNull(SUM(sum_upstream_service_time_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_upstream_service_time_ms, \
-            ifNull(SUM(sum_dependency_wait_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_dependency_wait_ms, \
-            ifNull(SUM(sum_internal_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_internal_ms, \
-            ifNull(SUM(sum_post_response_ms) / NULLIF(SUM(total_count), 0), 0) AS avg_post_response_ms \
-         FROM request_log_stats{where_clause}"
-    )
-}
-
-#[must_use]
-pub fn build_request_log_stats_by_status_sql(where_clause: &str) -> String {
-    format!(
-        "SELECT toString(status_code) AS key, toUInt64(ifNull(SUM(total_count), 0)) AS cnt \
-        FROM request_log_stats{where_clause} \
-        GROUP BY status_code"
-    )
-}
-
-#[must_use]
-pub fn build_request_log_route_stats_sql(where_clause: &str) -> String {
-    format!(
-        "SELECT route_template AS key, toUInt64(ifNull(SUM(total_count), 0)) AS cnt \
-        FROM request_log_stats{where_clause} \
-        GROUP BY route_template ORDER BY cnt DESC LIMIT 50"
     )
 }
 
@@ -465,5 +410,76 @@ pub fn get_stats_time_expression(group_by: &str) -> &'static str {
     match group_by {
         "hour" => "formatDateTime(time_window, '%Y-%m-%d %H:00')",
         _ => "formatDateTime(time_window, '%Y-%m-%d')",
+    }
+}
+
+/// Upstream (supplier-side) usage summary, computed on read from the deduplicated access log.
+///
+/// Only `mazbri-bypass` rows are counted: every customer -> upstream hop is logged exactly once
+/// on bypass, while the gateway row of the same request would double count it. `FINAL` collapses
+/// at-least-once redeliveries (`request_logs` is a `ReplacingMergeTree`), so supplier bills and the
+/// reconciliation reference count are exact. `extra_conditions` are joined with `AND` after the service filter.
+#[must_use]
+pub fn build_upstream_usage_summary_sql(extra_conditions: &[String]) -> String {
+    let mut conditions = vec!["service = 'mazbri-bypass'".to_string()];
+    conditions.extend(extra_conditions.iter().cloned());
+    format!(
+        "SELECT \
+            supplier_id, supplier_code, channel_id, channel_code, \
+            toUInt64(count()) AS total_calls, \
+            toUInt64(countIf(status_code >= 200 AND status_code < 400)) AS success_calls, \
+            toUInt64(countIf(status_code < 200 OR status_code >= 400)) AS failed_calls, \
+            toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes, \
+            toUInt64(sum(duration_ms)) AS total_latency_ms \
+         FROM request_logs FINAL \
+         WHERE {} \
+         GROUP BY supplier_id, supplier_code, channel_id, channel_code",
+        conditions.join(" AND ")
+    )
+}
+
+#[cfg(test)]
+mod upstream_usage_sql_tests {
+    use super::build_upstream_usage_summary_sql;
+
+    fn squash(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    #[test]
+    fn reads_deduplicated_bypass_rows_only() {
+        let sql = squash(&build_upstream_usage_summary_sql(&[]));
+        assert!(sql.contains("FROM request_logs FINAL WHERE service = 'mazbri-bypass' GROUP BY"));
+        assert!(!sql.contains("upstream_hourly_usage"));
+        assert!(!sql.contains("mazbri-gateway"));
+    }
+
+    #[test]
+    fn aggregates_calls_bytes_and_latency_per_supplier_channel() {
+        let sql = squash(&build_upstream_usage_summary_sql(&[]));
+        for frag in [
+            "toUInt64(count()) AS total_calls",
+            "toUInt64(countIf(status_code >= 200 AND status_code < 400)) AS success_calls",
+            "toUInt64(countIf(status_code < 200 OR status_code >= 400)) AS failed_calls",
+            "toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes",
+            "toUInt64(sum(duration_ms)) AS total_latency_ms",
+            "GROUP BY supplier_id, supplier_code, channel_id, channel_code",
+        ] {
+            assert!(sql.contains(frag), "missing `{frag}` in {sql}");
+        }
+    }
+
+    #[test]
+    fn appends_time_and_scope_filters_after_service() {
+        let conds = vec![
+            "timestamp >= parseDateTimeBestEffortOrNull(?)".to_string(),
+            "timestamp <= parseDateTimeBestEffortOrNull(?)".to_string(),
+            "supplier_id = 's1'".to_string(),
+        ];
+        let sql = squash(&build_upstream_usage_summary_sql(&conds));
+        assert!(sql.contains(
+            "WHERE service = 'mazbri-bypass' AND timestamp >= parseDateTimeBestEffortOrNull(?) \
+             AND timestamp <= parseDateTimeBestEffortOrNull(?) AND supplier_id = 's1' GROUP BY"
+        ));
     }
 }
