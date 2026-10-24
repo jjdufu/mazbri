@@ -120,6 +120,11 @@ pub struct AuthService {
     db: Arc<PgPool>,
     tenant_cache: Arc<DashMap<String, CachedTenantDbInfo>>,
     token_cache: Arc<DashMap<String, CachedTokenResponse>>,
+    /// Per-API-key single-flight gate: concurrent cache misses for the same key
+    /// wait for the first caller and then reuse its cached response, instead of
+    /// each issuing its own `validate_api_key` RPC (each costs auth one argon2
+    /// verify, ~19 MiB of memory).
+    token_inflight: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 impl AuthService {
     #[must_use]
@@ -138,6 +143,7 @@ impl AuthService {
             db: Arc::new(db),
             tenant_cache: Arc::new(DashMap::new()),
             token_cache: Arc::new(DashMap::new()),
+            token_inflight: Arc::new(DashMap::new()),
         }
     }
     /// # Errors
@@ -179,13 +185,40 @@ impl AuthService {
         &self,
         api_key: &str,
     ) -> Result<TokenResponse, TokenError> {
+        if let Some(response) = self.cached_token(api_key) {
+            return Ok(response);
+        }
+        let gate = Arc::clone(
+            self.token_inflight
+                .entry(api_key.to_string())
+                .or_default()
+                .value(),
+        );
+        let result = {
+            let _guard = gate.lock().await;
+            // A concurrent caller may have refreshed the cache while we waited.
+            if let Some(response) = self.cached_token(api_key) {
+                Ok(response)
+            } else {
+                self.authenticate_uncached(api_key).await
+            }
+        };
+        // Drop the gate once no other caller holds/awaits it (map + our clone).
+        self.token_inflight
+            .remove_if(api_key, |_, g| Arc::strong_count(g) <= 2);
+        result
+    }
+    fn cached_token(&self, api_key: &str) -> Option<TokenResponse> {
         if let Some(entry) = self.token_cache.get(api_key) {
             if entry.expires_at > Instant::now() {
-                return Ok(entry.response.clone());
+                return Some(entry.response.clone());
             }
             drop(entry);
             self.token_cache.remove(api_key);
         }
+        None
+    }
+    async fn authenticate_uncached(&self, api_key: &str) -> Result<TokenResponse, TokenError> {
         let request = ValidateApiKeyRequest {
             api_key: api_key.to_string(),
         };
