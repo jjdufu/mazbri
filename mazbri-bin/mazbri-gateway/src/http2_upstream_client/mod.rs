@@ -9,6 +9,11 @@ use tonic::Request;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic_prost::ProstCodec;
 
+use crate::gateway::metrics::{
+    GATEWAY_UPSTREAM_H2_CONNECT_SECONDS, GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL,
+    GATEWAY_UPSTREAM_H2_ERRORS_TOTAL, GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS,
+    GATEWAY_UPSTREAM_H2_STREAMS_IN_USE, classify_h2_error,
+};
 use crate::upstream_contract::grpc_path_for_contract;
 use mazbri_upstream_contracts::shared::{
     HttpUpstreamRequest, HttpUpstreamResponse, InvokeRequest, InvokeResponse,
@@ -81,7 +86,7 @@ impl UpstreamHttp2ClientPool {
                 let (contract, ep) = (contract_id.to_string(), endpoint.to_string());
                 let old = Arc::clone(&set);
                 tokio::spawn(async move {
-                    match pool.connect_set(&contract, &ep).await {
+                    match pool.connect_set(&contract, &ep, "refresh").await {
                         Ok(new_set) => {
                             pool.clients.insert(ep, Arc::new(new_set));
                         }
@@ -94,7 +99,7 @@ impl UpstreamHttp2ClientPool {
             }
             return Ok(set.pick());
         }
-        let new_set = Arc::new(self.connect_set(contract_id, endpoint).await?);
+        let new_set = Arc::new(self.connect_set(contract_id, endpoint, "initial").await?);
         let set = Arc::clone(
             self.clients
                 .entry(endpoint.to_string())
@@ -108,10 +113,20 @@ impl UpstreamHttp2ClientPool {
         &self,
         contract_id: &str,
         endpoint: &str,
+        reason: &str,
     ) -> Result<ChannelSet, CoreError> {
         let mut channels = Vec::with_capacity(CHANNELS_PER_ENDPOINT);
         for _ in 0..CHANNELS_PER_ENDPOINT {
-            channels.push(self.connect_one(contract_id, endpoint).await?);
+            let started = Instant::now();
+            let result = self.connect_one(contract_id, endpoint).await;
+            let label = if result.is_ok() { "ok" } else { "error" };
+            GATEWAY_UPSTREAM_H2_CONNECT_SECONDS
+                .with_label_values(&[endpoint, label])
+                .observe(started.elapsed().as_secs_f64());
+            GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL
+                .with_label_values(&[endpoint, reason, label])
+                .inc();
+            channels.push(result?);
         }
         Ok(ChannelSet::new(channels))
     }
@@ -193,24 +208,8 @@ impl UpstreamHttp2ClientPool {
         endpoint: &str,
         request: HttpUpstreamRequest,
     ) -> Result<HttpUpstreamResponse, CoreError> {
-        let channel = self.get_channel(contract_id, endpoint).await?;
-        let grpc_path = grpc_path_for_contract(contract_id)?;
-        let path = http::uri::PathAndQuery::from_static(grpc_path);
-
-        let mut client = tonic::client::Grpc::new(channel);
-        client
-            .ready()
+        self.call::<HttpUpstreamRequest, HttpUpstreamResponse>(contract_id, endpoint, request)
             .await
-            .map_err(|error| CoreError::Network(error.to_string()))?;
-        let codec = ProstCodec::<HttpUpstreamRequest, HttpUpstreamResponse>::default();
-        let request = Request::new(request);
-
-        let response = client
-            .unary(request, path, codec)
-            .await
-            .map_err(|error| CoreError::Network(error.to_string()))?;
-
-        Ok(response.into_inner())
     }
 
     /// Code-free invoke: `BypassHttpProxyService/Execute` with `InvokeRequest`.
@@ -224,23 +223,50 @@ impl UpstreamHttp2ClientPool {
         endpoint: &str,
         request: InvokeRequest,
     ) -> Result<InvokeResponse, CoreError> {
+        self.call::<InvokeRequest, InvokeResponse>(contract_id, endpoint, request)
+            .await
+    }
+
+    /// Shared unary call with pool metrics: ready-wait, in-use streams, error kinds.
+    async fn call<Req, Resp>(
+        &self,
+        contract_id: &str,
+        endpoint: &str,
+        request: Req,
+    ) -> Result<Resp, CoreError>
+    where
+        Req: tonic_prost::prost::Message + Send + Sync + 'static,
+        Resp: tonic_prost::prost::Message + Default + Send + Sync + 'static,
+    {
         let channel = self.get_channel(contract_id, endpoint).await?;
         let grpc_path = grpc_path_for_contract(contract_id)?;
         let path = http::uri::PathAndQuery::from_static(grpc_path);
 
         let mut client = tonic::client::Grpc::new(channel);
-        client
-            .ready()
-            .await
-            .map_err(|error| CoreError::Network(error.to_string()))?;
-        let codec = ProstCodec::<InvokeRequest, InvokeResponse>::default();
-        let request = Request::new(request);
-
-        let response = client
-            .unary(request, path, codec)
-            .await
-            .map_err(|error| CoreError::Network(error.to_string()))?;
-
+        let ready_started = Instant::now();
+        let ready = client.ready().await;
+        GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS
+            .with_label_values(&[endpoint])
+            .observe(ready_started.elapsed().as_secs_f64());
+        ready.map_err(|error| {
+            let msg = format!("{error:?}");
+            GATEWAY_UPSTREAM_H2_ERRORS_TOTAL
+                .with_label_values(&[endpoint, "ready", classify_h2_error(&msg)])
+                .inc();
+            CoreError::Network(error.to_string())
+        })?;
+        let codec = ProstCodec::<Req, Resp>::default();
+        let in_use = GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.with_label_values(&[endpoint]);
+        in_use.inc();
+        let response = client.unary(Request::new(request), path, codec).await;
+        in_use.dec();
+        let response = response.map_err(|status| {
+            let msg = format!("{} {:?}", status.message(), status);
+            GATEWAY_UPSTREAM_H2_ERRORS_TOTAL
+                .with_label_values(&[endpoint, "call", classify_h2_error(&msg)])
+                .inc();
+            CoreError::Network(status.to_string())
+        })?;
         Ok(response.into_inner())
     }
 

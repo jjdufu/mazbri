@@ -69,6 +69,7 @@ async fn main() -> Result<()> {
     info!("Configuration loaded from config center");
     info!("Server configuration: {:?}", config.server);
     register_all_metrics()?;
+    mazbri_core::metrics::spawn_runtime_metrics("mazbri-gateway");
     info!("Initializing mTLS for Gateway...");
     let cert_manager = mazbri_tls::CertManager::new(tls_config.clone());
     let cert = cert_manager

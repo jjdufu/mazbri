@@ -4,6 +4,7 @@ pub mod defaults;
 pub mod health;
 pub mod recorders;
 pub mod registry;
+pub mod runtime;
 pub use builders::MetricsBuilder;
 pub use cbpro::{
     CBPRO_CONFIG_CHANGES_TOTAL, CBPRO_CURRENT_STATE, CBPRO_ERROR_RATE_PERCENTAGE,
@@ -21,3 +22,4 @@ pub use health::{
 };
 pub use recorders::{CounterRecorder, HistogramRecorder, MetricsRecorder};
 pub use registry::register_collector_once;
+pub use runtime::{register_runtime_metrics, spawn_runtime_metrics};

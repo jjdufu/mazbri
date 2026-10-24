@@ -47,6 +47,7 @@ async fn main() -> Result<()> {
         mazbri_billing::register_billing_metrics()
             .map_err(|e| anyhow::anyhow!("Failed to register billing metrics: {e}"))?;
         tracing::info!("计费指标已注册");
+        mazbri_core::metrics::spawn_runtime_metrics("mazbri-billing");
         let addr = runtime.ctx.config.server.socket_addr()?;
         tracing::info!("tarpc server listening on {} (mTLS mandatory)", addr);
         let worker_config = runtime.ctx.config.worker.clone();
