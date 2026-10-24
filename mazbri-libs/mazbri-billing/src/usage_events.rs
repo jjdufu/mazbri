@@ -10,16 +10,24 @@
 //!
 //! rskafka has no idempotent producer / consumer groups: idempotency is provided by the
 //! `event_id` unique key (outbox) and `usage_record_id` unique key (charge queue), and offsets
-//! live in Postgres. A per-partition advisory lock keeps one consumer per partition.
+//! live in Postgres. A per-partition advisory lock keeps one consumer per partition; all of an
+//! instance's partition locks are held on ONE dedicated session ([`PartitionLocks`]), which
+//! re-tries/renews them every few seconds, and every batch commit is fenced against
+//! `pg_locks` so a consumer that lost its session can never advance an offset.
+//!
+//! Partitioning: the record key is the `event_id` (random UUID), so events spread evenly
+//! over all partitions even for a single tenant. Per-tenant ordering is not needed: the
+//! outbox/charge pipeline is idempotent per event and serializes balance updates itself.
 use crate::service::UsageOutboxEvent;
 use chrono::Utc;
 use rskafka::client::partition::{Compression, OffsetAt, PartitionClient, UnknownTopicHandling};
 use rskafka::client::{ClientBuilder, Credentials, SaslConfig};
 use rskafka::record::Record;
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::{Connection, PgConnection, PgPool};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
@@ -94,7 +102,7 @@ impl UsageEventsConfig {
     }
 }
 
-/// Stable partition for a tenant key (FNV-1a), so one tenant's events stay ordered.
+/// Stable partition for a key (FNV-1a). The producer keys by `event_id`.
 #[must_use]
 pub fn partition_for(key: &[u8], partitions: i32) -> i32 {
     let mut h: u32 = 0x811c_9dc5;
@@ -124,12 +132,12 @@ impl UsageEventProducer {
         })
     }
 
-    /// Produce one event (key = tenant id, acks=all). Returns the offset.
+    /// Produce one event (key = `event_id`, acks=all). Returns the offset.
     ///
     /// # Errors
     /// Serialization, broker error or timeout; the caller falls back to the outbox path.
     pub async fn produce(&self, event: &UsageOutboxEvent) -> Result<i64, String> {
-        let key = event.tenant_id.to_string().into_bytes();
+        let key = event.event_id.to_string().into_bytes();
         let n = i32::try_from(self.partitions.len()).unwrap_or(1);
         let idx = usize::try_from(partition_for(&key, n)).unwrap_or(0);
         let value = serde_json::to_vec(event).map_err(|e| e.to_string())?;
@@ -177,7 +185,8 @@ impl UsageEventConsumer {
         Self { cfg, db }
     }
 
-    /// Spawns the per-partition loops; they stop when `shutdown` flips to `true`.
+    /// Spawns the shared lock holder plus the per-partition loops; they stop when
+    /// `shutdown` flips to `true` (partition loops first, then the locks are released).
     #[must_use]
     pub fn spawn(self, shutdown: watch::Receiver<bool>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
@@ -194,58 +203,165 @@ impl UsageEventConsumer {
                 }
             };
             info!(topic = %self.cfg.topic, partitions = clients.len(), "usage event consumer started");
+            let partitions: Vec<i32> = clients.iter().map(|c| c.partition()).collect();
+            let locks = Arc::new(PartitionLocks::new(&self.cfg.topic, &partitions));
+            let (lock_stop_tx, lock_stop_rx) = watch::channel(false);
+            let holder = tokio::spawn(Arc::clone(&locks).run(self.db.clone(), lock_stop_rx));
             let mut handles = Vec::new();
-            for pc in clients {
-                let (cfg, db, sd) = (self.cfg.clone(), self.db.clone(), shutdown.clone());
-                handles.push(tokio::spawn(partition_loop(cfg, db, pc, sd)));
+            for (slot, pc) in clients.into_iter().enumerate() {
+                let (cfg, db, sd, lk) = (
+                    self.cfg.clone(),
+                    self.db.clone(),
+                    shutdown.clone(),
+                    Arc::clone(&locks),
+                );
+                handles.push(tokio::spawn(partition_loop(cfg, db, pc, sd, lk, slot)));
             }
             for h in handles {
                 let _ = h.await;
             }
+            let _ = lock_stop_tx.send(true);
+            let _ = holder.await;
             info!("usage event consumer stopped");
         })
     }
 }
+
+/// How often the holder renews (liveness probe) and retries locks it does not own.
+const LOCK_RENEW_INTERVAL: Duration = Duration::from_secs(3);
+
+/// All partition advisory locks of one billing instance, held on a single dedicated
+/// session (not a pool connection, so a lock can never leak back into the pool).
+pub struct PartitionLocks {
+    keys: Vec<i64>,
+    owned: Vec<AtomicBool>,
+    /// Backend pid of the session holding the locks (0 = no session).
+    pid: AtomicI32,
+}
+
+impl PartitionLocks {
+    fn new(topic: &str, partitions: &[i32]) -> Self {
+        let base = i64::from(partition_for(topic.as_bytes(), i32::MAX)) * 1000;
+        Self {
+            keys: partitions.iter().map(|p| base + i64::from(*p)).collect(),
+            owned: partitions.iter().map(|_| AtomicBool::new(false)).collect(),
+            pid: AtomicI32::new(0),
+        }
+    }
+
+    fn is_owned(&self, slot: usize) -> bool {
+        self.owned[slot].load(Ordering::Acquire)
+    }
+
+    fn drop_all(&self) {
+        for o in &self.owned {
+            o.store(false, Ordering::Release);
+        }
+        self.pid.store(0, Ordering::Release);
+    }
+
+    /// Holder loop: (re)connect, `SELECT pg_backend_pid()` as liveness, then
+    /// `pg_try_advisory_lock` for every not-yet-owned key. Any session error drops all
+    /// ownership (partition loops pause) and reconnects.
+    async fn run(self: Arc<Self>, db: PgPool, mut stop: watch::Receiver<bool>) {
+        let opts = db.connect_options();
+        let mut conn: Option<PgConnection> = None;
+        loop {
+            if *stop.borrow() {
+                break;
+            }
+            if conn.is_none() {
+                match PgConnection::connect_with(&opts).await {
+                    Ok(c) => conn = Some(c),
+                    Err(e) => warn!(error = %e, "partition lock session connect failed"),
+                }
+            }
+            if let Some(c) = conn.as_mut()
+                && let Err(e) = self.renew(c).await
+            {
+                warn!(error = %e, "partition lock session lost; releasing ownership");
+                self.drop_all();
+                conn = None;
+            }
+            tokio::select! {
+                () = tokio::time::sleep(LOCK_RENEW_INTERVAL) => {}
+                _ = stop.changed() => {}
+            }
+        }
+        self.drop_all();
+        if let Some(mut c) = conn {
+            let _ = sqlx::query("SELECT pg_advisory_unlock_all()")
+                .execute(&mut c)
+                .await;
+            let _ = c.close().await;
+        }
+    }
+
+    async fn renew(&self, c: &mut PgConnection) -> Result<(), sqlx::Error> {
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *c)
+            .await?;
+        self.pid.store(pid, Ordering::Release);
+        for (slot, key) in self.keys.iter().enumerate() {
+            if self.is_owned(slot) {
+                continue;
+            }
+            let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+                .bind(key)
+                .fetch_one(&mut *c)
+                .await?;
+            if got {
+                info!(slot, key, pid, "usage event partition lock acquired");
+                self.owned[slot].store(true, Ordering::Release);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Fencing check run inside the batch transaction: the lock for `key` is still granted to
+/// the holder session `pid` (bigint advisory key = classid:high32, objid:low32, objsubid 1).
+const LOCK_FENCE_SQL: &str = "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' \
+     AND granted AND pid = $1 AND objsubid = 1 \
+     AND classid::bigint = ($2 >> 32) AND objid::bigint = ($2 & 4294967295))";
 
 async fn partition_loop(
     cfg: UsageEventsConfig,
     db: PgPool,
     pc: Arc<PartitionClient>,
     mut shutdown: watch::Receiver<bool>,
+    locks: Arc<PartitionLocks>,
+    slot: usize,
 ) {
     let partition = pc.partition();
-    // One consumer per partition across billing replicas (session advisory lock).
-    let lock_key =
-        i64::from(partition_for(cfg.topic.as_bytes(), i32::MAX)) * 1000 + i64::from(partition);
-    let Ok(mut lock_conn) = db.acquire().await else {
-        error!(
-            partition,
-            "usage event consumer: cannot acquire lock connection"
-        );
-        return;
-    };
-    loop {
-        let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(lock_key)
-            .fetch_one(&mut *lock_conn)
-            .await
-            .unwrap_or(false);
-        if got {
-            break;
-        }
-        tokio::select! {
-            () = tokio::time::sleep(Duration::from_secs(5)) => {}
-            _ = shutdown.changed() => return,
-        }
-    }
-    let mut offset = match load_offset(&db, &cfg.topic, partition).await {
-        Some(o) => o,
-        None => pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0),
-    };
-    info!(partition, offset, "usage event partition consumer running");
+    let key = locks.keys[slot];
+    // None = not owned; offset is (re)loaded from PG every time ownership is (re)gained.
+    let mut offset: Option<i64> = None;
     while !*shutdown.borrow() {
+        if !locks.is_owned(slot) {
+            if offset.take().is_some() {
+                warn!(partition, "usage event partition lock lost; pausing");
+            }
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_millis(200)) => {}
+                _ = shutdown.changed() => break,
+            }
+            continue;
+        }
+        let cur = match offset {
+            Some(o) => o,
+            None => {
+                let o = match load_offset(&db, &cfg.topic, partition).await {
+                    Some(o) => o,
+                    None => pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0),
+                };
+                info!(partition, offset = o, "usage event partition consumer running");
+                offset = Some(o);
+                o
+            }
+        };
         let fetched = tokio::select! {
-            r = pc.fetch_records(offset, 1..cfg.fetch_max_bytes.max(1024), cfg.fetch_max_wait_ms.max(10)) => r,
+            r = pc.fetch_records(cur, 1..cfg.fetch_max_bytes.max(1024), cfg.fetch_max_wait_ms.max(10)) => r,
             _ = shutdown.changed() => break,
         };
         let (records, _hwm) = match fetched {
@@ -257,9 +373,9 @@ async fn partition_loop(
                 let earliest = pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0);
                 warn!(
                     partition,
-                    offset, earliest, "offset out of range; resetting to earliest"
+                    offset = cur, earliest, "offset out of range; resetting to earliest"
                 );
-                offset = earliest;
+                offset = Some(earliest);
                 continue;
             }
             Err(e) => {
@@ -268,11 +384,12 @@ async fn partition_loop(
                 continue;
             }
         };
-        let records: Vec<_> = records.into_iter().filter(|r| r.offset >= offset).collect();
+        let records: Vec<_> = records.into_iter().filter(|r| r.offset >= cur).collect();
         let Some(last) = records.last().map(|r| r.offset) else {
             continue;
         };
-        match store_batch(&db, &cfg.topic, partition, &records, last + 1).await {
+        let fence = (locks.pid.load(Ordering::Acquire), key);
+        match store_batch(&db, &cfg.topic, partition, &records, last + 1, fence).await {
             Ok(inserted) => {
                 debug!(
                     partition,
@@ -281,18 +398,15 @@ async fn partition_loop(
                     next = last + 1,
                     "usage events stored"
                 );
-                offset = last + 1;
+                offset = Some(last + 1);
             }
             Err(e) => {
                 warn!(partition, error = %e, "usage event batch store failed; will refetch");
+                offset = None;
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
     }
-    let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(lock_key)
-        .execute(&mut *lock_conn)
-        .await;
 }
 
 async fn load_offset(db: &PgPool, topic: &str, partition: i32) -> Option<i64> {
@@ -312,8 +426,20 @@ async fn store_batch(
     partition: i32,
     records: &[rskafka::record::RecordAndOffset],
     next_offset: i64,
+    (lock_pid, lock_key): (i32, i64),
 ) -> Result<u64, String> {
     let mut tx = db.begin().await.map_err(|e| e.to_string())?;
+    let still_owner: bool = sqlx::query_scalar(LOCK_FENCE_SQL)
+        .bind(lock_pid)
+        .bind(lock_key)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !still_owner {
+        return Err(format!(
+            "partition lock {lock_key} no longer held by pid {lock_pid}; batch fenced"
+        ));
+    }
     let mut inserted = 0;
     for r in records {
         let Some(value) = r.record.value.as_deref() else {
@@ -357,6 +483,25 @@ mod tests {
             assert_eq!(p, partition_for(b"fc391546-7925-4139-b06e-6cfe9f3c8a70", n));
         }
         assert_eq!(partition_for(b"x", 0), 0);
+    }
+
+    #[test]
+    fn event_id_keys_spread_over_partitions() {
+        let mut counts = [0u32; 3];
+        for _ in 0..3000 {
+            let id = uuid::Uuid::new_v4().to_string();
+            counts[usize::try_from(partition_for(id.as_bytes(), 3)).unwrap()] += 1;
+        }
+        assert!(counts.iter().all(|c| *c > 800), "{counts:?}");
+    }
+
+    #[test]
+    fn lock_keys_distinct_and_fence_sql_shape() {
+        let l = PartitionLocks::new("mazbri-usage-events", &[0, 1, 2]);
+        assert_eq!(l.keys.len(), 3);
+        assert!(l.keys[0] != l.keys[1] && l.keys[1] != l.keys[2]);
+        assert!(!l.is_owned(0));
+        assert!(LOCK_FENCE_SQL.contains("pg_locks") && LOCK_FENCE_SQL.contains("objsubid = 1"));
     }
 
     #[test]
