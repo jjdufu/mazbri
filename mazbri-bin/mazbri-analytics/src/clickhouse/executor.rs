@@ -5,9 +5,7 @@ use super::queries::{
     build_audit_analytics_sql, build_audit_log_conditions, build_audit_log_stats_sql,
     build_audit_logs_count_sql, build_audit_logs_data_sql,
     build_audit_stats_aggregation_conditions, build_request_log_conditions,
-    build_request_log_route_stats_sql, build_request_log_stats_by_status_sql,
-    build_request_log_stats_summary_sql, build_request_logs_count_sql, build_request_logs_data_sql,
-    build_stats_aggregation_conditions, build_where_clause, get_stats_time_bucket_expression,
+    build_request_logs_count_sql, build_request_logs_data_sql, build_where_clause,
     get_stats_time_expression, get_time_bucket_expression, get_time_expression,
 };
 use super::types::{
@@ -22,7 +20,6 @@ use crate::greptimedb::{
 use std::collections::HashMap;
 
 const MAX_RAW_FALLBACK_QUERIES: usize = 4;
-const MAX_DEGRADED_RAW_FALLBACK_QUERIES: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StatsQueryDisposition {
@@ -51,33 +48,10 @@ impl RawRequestAggregationPlan {
             + usize::from(self.include_status_breakdown)
             + usize::from(self.include_time_breakdown)
     }
-
-    fn degrade_for_request_path(self) -> Self {
-        if self.query_budget() <= MAX_DEGRADED_RAW_FALLBACK_QUERIES {
-            return self;
-        }
-        Self {
-            include_path_breakdown: false,
-            include_status_breakdown: true,
-            include_time_breakdown: false,
-        }
-    }
 }
 
 fn classify_audit_stats_results(results: &[AuditAnalyticsResult]) -> StatsQueryDisposition {
     if results.is_empty() {
-        StatsQueryDisposition::EmptyResult
-    } else {
-        StatsQueryDisposition::UseStats
-    }
-}
-
-fn classify_request_stats_aggregation(agg: &RequestLogAggregation) -> StatsQueryDisposition {
-    if agg.total_requests == 0
-        && agg.by_route.is_empty()
-        && agg.by_status.is_empty()
-        && agg.by_time.is_empty()
-    {
         StatsQueryDisposition::EmptyResult
     } else {
         StatsQueryDisposition::UseStats
@@ -262,56 +236,26 @@ impl ClickHouseClient {
         &self,
         params: &RequestLogAggregationParams,
     ) -> Result<RequestLogAggregation> {
-        // Stats MV has no `service` dimension and would double-count gateway+bypass.
-        if params.tenant_id.is_some() || params.service.is_some() {
-            tracing::debug!(
-                tenant = ?params.tenant_id,
-                service = ?params.service,
-                "tenant/service filter present, using raw request_logs aggregation"
-            );
-            return self.aggregate_request_logs_from_raw(params, false).await;
-        }
-        match self.aggregate_request_logs_from_stats(params).await {
-            Ok(agg) => match classify_request_stats_aggregation(&agg) {
-                StatsQueryDisposition::UseStats => {
-                    tracing::debug!("Using stats tables for request log aggregation");
-                    Ok(agg)
-                }
-                StatsQueryDisposition::EmptyResult => {
-                    tracing::info!("Stats tables returned an empty request aggregation result");
-                    Ok(agg)
-                }
-            },
-            Err(error) => {
-                tracing::warn!(
-                    error = % error,
-                    "Stats request aggregation query failed, falling back to raw query"
-                );
-                self.aggregate_request_logs_from_raw(params, true).await
-            }
-        }
+        // Always aggregate from the deduplicated detail table (request_logs FINAL). The former
+        // per-minute stats MV counted every at-least-once redelivery and had no `service`
+        // dimension (gateway + bypass rows of one request were both counted).
+        self.aggregate_request_logs_from_raw(params).await
     }
 
     async fn aggregate_request_logs_from_raw(
         &self,
         params: &RequestLogAggregationParams,
-        degrade_for_request_path: bool,
     ) -> Result<RequestLogAggregation> {
         let conditions = build_aggregation_conditions(params)?;
         let where_clause = format!(" WHERE {}", conditions.join(" AND "));
-        let raw_query_plan = if degrade_for_request_path {
-            RawRequestAggregationPlan::from_params(params).degrade_for_request_path()
-        } else {
-            RawRequestAggregationPlan::from_params(params)
-        };
+        let raw_query_plan = RawRequestAggregationPlan::from_params(params);
         debug_assert!(raw_query_plan.query_budget() <= MAX_RAW_FALLBACK_QUERIES);
         tracing::info!(
             query_budget = raw_query_plan.query_budget(),
             include_path_breakdown = raw_query_plan.include_path_breakdown,
             include_status_breakdown = raw_query_plan.include_status_breakdown,
             include_time_breakdown = raw_query_plan.include_time_breakdown,
-            degraded_for_request_path = degrade_for_request_path,
-            "Executing raw request aggregation fallback within query budget"
+            "Executing request aggregation on request_logs FINAL"
         );
         let summary_sql = build_aggregation_summary_sql(&where_clause);
         let summary_results = self.execute_query::<SummaryRow>(&summary_sql).await?;
@@ -369,66 +313,6 @@ impl ClickHouseClient {
             by_route.len(),
             by_status.len(),
             by_time.len()
-        );
-
-        Ok(assemble_aggregation(
-            params,
-            &summary,
-            (by_route, by_status, by_time),
-        ))
-    }
-
-    async fn aggregate_request_logs_from_stats(
-        &self,
-        params: &RequestLogAggregationParams,
-    ) -> Result<RequestLogAggregation> {
-        let conditions = build_stats_aggregation_conditions(params);
-        let where_clause = build_where_clause(&conditions);
-        let summary_sql = build_request_log_stats_summary_sql(&where_clause);
-        let summary_results = self.execute_query::<SummaryRow>(&summary_sql).await?;
-        let summary = summary_results.into_iter().next().unwrap_or_default();
-
-        if summary.total == 0 {
-            return Ok(assemble_aggregation(
-                params,
-                &SummaryRow::default(),
-                (HashMap::new(), HashMap::new(), Vec::new()),
-            ));
-        }
-
-        let by_route = if params.group_by_route {
-            let route_sql = build_request_log_route_stats_sql(&where_clause);
-            self.query_grouped_counts(&route_sql).await?
-        } else {
-            HashMap::new()
-        };
-
-        let status_sql = build_request_log_stats_by_status_sql(&where_clause);
-        let by_status_raw: HashMap<String, u64> = self.query_grouped_counts(&status_sql).await?;
-        let by_status = parse_status_counts(by_status_raw, " from stats");
-
-        let by_time = if let Some(ref group_by) = params.group_by_time {
-            let time_expr = get_stats_time_bucket_expression(group_by);
-            let time_sql = format!(
-                "SELECT toDateTime({time_expr}) AS time, toUInt64(ifNull(SUM(total_count), 0)) AS count \
-                FROM request_log_stats{where_clause} \
-                GROUP BY time ORDER BY time"
-            );
-            let time_rows = self.execute_query::<TimeBucketRow>(&time_sql).await?;
-            time_rows
-                .into_iter()
-                .map(TimeBucketRow::into_time_bucket)
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        tracing::debug!(
-            "Aggregated from stats: total={}, avg_duration={:.2}ms, avg_upstream_service_time={:.2}ms, avg_dependency_wait={:.2}ms",
-            summary.total,
-            summary.avg_duration_ms,
-            summary.avg_upstream_service_time_ms,
-            summary.avg_dependency_wait_ms
         );
 
         Ok(assemble_aggregation(

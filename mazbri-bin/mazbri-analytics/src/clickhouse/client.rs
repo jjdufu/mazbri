@@ -119,8 +119,8 @@ impl ClickHouseClient {
         channel_id: Option<&str>,
     ) -> Result<Vec<super::types::UpstreamHourlyUsageRow>> {
         let mut conditions = vec![
-            "window_start >= parseDateTimeBestEffortOrNull(?)".to_string(),
-            "window_start <= parseDateTimeBestEffortOrNull(?)".to_string(),
+            "timestamp >= parseDateTimeBestEffortOrNull(?)".to_string(),
+            "timestamp <= parseDateTimeBestEffortOrNull(?)".to_string(),
         ];
         if let Some(sc) = supplier_code
             && !sc.trim().is_empty()
@@ -142,21 +142,7 @@ impl ClickHouseClient {
         {
             conditions.push(format!("channel_id = '{}'", ci.replace('\'', "''")));
         }
-        // Qualify source columns with the table name so aliases like `AS total_calls`
-        // do not shadow the base column inside sumIf(...) (ClickHouse ILLEGAL_AGGREGATION).
-        let sql = format!(
-            "SELECT \
-                supplier_id, supplier_code, channel_id, channel_code, \
-                toUInt64(sum(upstream_hourly_usage_table.total_calls)) AS total_calls, \
-                toUInt64(sumIf(upstream_hourly_usage_table.total_calls, status_code >= 200 AND status_code < 400)) AS success_calls, \
-                toUInt64(sumIf(upstream_hourly_usage_table.total_calls, status_code < 200 OR status_code >= 400)) AS failed_calls, \
-                toUInt64(sum(upstream_hourly_usage_table.total_payload_bytes)) AS total_payload_bytes, \
-                toUInt64(sum(upstream_hourly_usage_table.total_latency_ms)) AS total_latency_ms \
-             FROM upstream_hourly_usage_table \
-             WHERE {} \
-             GROUP BY supplier_id, supplier_code, channel_id, channel_code",
-            conditions.join(" AND ")
-        );
+        let sql = super::queries::build_upstream_usage_summary_sql(&conditions);
         self.inner
             .query(&sql)
             .bind(start_time)

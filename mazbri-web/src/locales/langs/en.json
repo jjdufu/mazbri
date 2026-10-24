@@ -2472,7 +2472,7 @@
         "rawSnapshotTitle": "Raw snapshot (for debugging)",
         "methodBilling": "Billable usage: usage_records for the day (charge basis).",
         "methodGateway": "Gateway customer calls: mazbri-gateway access logs only, aligned with customer-facing traffic.",
-        "methodUpstream": "Upstream bypass pre-aggregate: upstream_hourly (bypass-only); reference, not primary.",
+        "methodUpstream": "Upstream bypass on-read count: bypass-side request_logs (deduplicated); reference, not primary.",
         "methodPrimary": "Primary comparison side this run: {peerLabel}.",
         "sources": {
           "unknown": "Unknown source",
@@ -2485,7 +2485,7 @@
         "scope": "Scope",
         "oltp": "Billable usage",
         "gateway": "Gateway",
-        "olap": "Upstream preagg",
+        "olap": "Upstream (bypass)",
         "ratio": "Loss ratio",
         "status": "Status"
       },
