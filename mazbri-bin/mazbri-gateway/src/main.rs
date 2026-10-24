@@ -279,3 +279,9 @@ fn apply_tcp_keepalive(
     let keepalive = keepalive.with_interval(idle);
     sock.set_tcp_keepalive(&keepalive)
 }
+
+/// Process-wide allocator: mimalloc (per-thread free lists, no shared arena
+/// lock). With glibc malloc all tokio workers convoyed on the arena lock
+/// (`__lll_lock_wait_private` from `free`) for 50-73ms under 400 QPS.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
