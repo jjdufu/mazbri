@@ -101,9 +101,17 @@ impl RouteEngine {
     }
     #[must_use]
     pub fn unique_service_urls(&self) -> Vec<String> {
+        self.unique_service_urls_where(|_| true)
+    }
+    /// Distinct supplier upstream URLs of channels accepted by `keep`.
+    #[must_use]
+    pub fn unique_service_urls_where(
+        &self,
+        keep: impl Fn(&CandidateChannel) -> bool,
+    ) -> Vec<String> {
         let mut urls = HashSet::new();
         for channels in self.routes.values() {
-            for channel in channels {
+            for channel in channels.iter().filter(|c| keep(c)) {
                 urls.insert(channel.supplier_upstream_url.clone());
             }
         }

@@ -25,6 +25,7 @@ use mazbri_callback::CallbackWorker;
 use mazbri_core::CoreError;
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{error_handler_middleware, metrics_middleware, request_id_middleware};
+use serde::Deserialize as _;
 use sqlx::PgPool;
 use std::future::Future;
 use std::io::ErrorKind;
@@ -719,16 +720,32 @@ async fn warmup_route_upstream_clients(
     upstream_http2_pool: &UpstreamHttp2ClientPool,
     route_engine: &mazbri_routing::RouteEngine,
 ) -> anyhow::Result<()> {
-    for service_url in route_engine.unique_service_urls() {
-        warmup_upstream_http2_client_with_retry(
+    // Only microservice suppliers are dialled directly by the gateway (mTLS gRPC on
+    // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
+    // which forwards to their plain HTTP URL; that path is warmed by
+    // `warmup_bypass_client`, so warming the raw URL here is wrong (and fails on
+    // IP/HTTP URLs with "requires a DNS server name for mTLS").
+    let urls = route_engine.unique_service_urls_where(|channel| {
+        !mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
+            .is_ok_and(|cfg| cfg.is_transparent())
+    });
+    let mut failed = 0usize;
+    for service_url in &urls {
+        if let Err(error) = warmup_upstream_http2_client_with_retry(
             upstream_http2_pool,
             "route-upstream",
-            &service_url,
+            service_url,
         )
-        .await?;
+        .await
+        {
+            failed += 1;
+            tracing::warn!(endpoint = %service_url, error = %error, "Route upstream warmup failed");
+        }
     }
     tracing::info!(
         route_count = route_engine.route_count(),
+        direct_upstreams = urls.len(),
+        failed,
         "Route upstream HTTP/2 clients warmed up"
     );
     Ok(())
