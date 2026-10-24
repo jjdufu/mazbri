@@ -1,5 +1,6 @@
 use super::*;
 use mazbri_core::num::SaturatingFrom;
+use std::sync::Arc;
 
 pub(super) async fn execute_http_upstream_request(
     state: &ProxyState,
@@ -129,6 +130,68 @@ fn should_send_full_and_mark(state: &ProxyState, cache_key: &str, hash: &str) ->
     send_full
 }
 
+/// Parsed egress spec + its serialized JSON and SHA256, cached per channel and reused
+/// while the source `channel_config` is unchanged (content equality = config version).
+struct EgressEntry {
+    source: serde_json::Value,
+    spec: mazbri_core::ChannelEgressSpec,
+    json: String,
+    hash: String,
+}
+
+/// Serialized supplier config + SHA256, cached per supplier while the config is unchanged.
+struct SupplierEntry {
+    source: mazbri_core::SupplierConfig,
+    json: String,
+    hash: String,
+}
+
+static EGRESS_CACHE: std::sync::LazyLock<dashmap::DashMap<String, Arc<EgressEntry>>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+static SUPPLIER_CACHE: std::sync::LazyLock<dashmap::DashMap<String, Arc<SupplierEntry>>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+
+fn sha_hex(json: &str) -> String {
+    crate::supplier_config_cache::SupplierConfigSendCache::hash_config_json(json)
+}
+
+fn cached_egress(channel_id: &str, source: &serde_json::Value) -> Result<Arc<EgressEntry>, String> {
+    if let Some(e) = EGRESS_CACHE.get(channel_id)
+        && e.source == *source
+    {
+        return Ok(Arc::clone(e.value()));
+    }
+    let spec = mazbri_core::parse_channel_config_egress(source).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&spec).unwrap_or_else(|_| "{}".into());
+    let entry = Arc::new(EgressEntry {
+        source: source.clone(),
+        spec,
+        hash: sha_hex(&json),
+        json,
+    });
+    EGRESS_CACHE.insert(channel_id.to_string(), Arc::clone(&entry));
+    Ok(entry)
+}
+
+fn cached_supplier(
+    supplier_code: &str,
+    source: &mazbri_core::SupplierConfig,
+) -> Arc<SupplierEntry> {
+    if let Some(e) = SUPPLIER_CACHE.get(supplier_code)
+        && e.source == *source
+    {
+        return Arc::clone(e.value());
+    }
+    let json = serde_json::to_string(source).unwrap_or_else(|_| "{}".to_string());
+    let entry = Arc::new(SupplierEntry {
+        source: source.clone(),
+        hash: sha_hex(&json),
+        json,
+    });
+    SUPPLIER_CACHE.insert(supplier_code.to_string(), Arc::clone(&entry));
+    entry
+}
+
 /// transparent 免代码路径：组装发往 bypass 的 `InvokeRequest`，返回 `(bypass 地址, 请求)`。
 fn build_invoke_request(
     target: &TransparentTarget<'_>,
@@ -143,8 +206,8 @@ fn build_invoke_request(
         config,
         timeout_secs,
     } = *target;
-    let spec = mazbri_core::parse_channel_config_egress(&channel.channel_config)
-        .map_err(|e| e.to_string())?;
+    let egress = cached_egress(&channel.channel_id, &channel.channel_config)?;
+    let spec = &egress.spec;
     headers.insert("x-mazbri-upstream-mode".to_string(), spec.adapter.clone());
 
     let payload = match req.body.as_ref() {
@@ -158,12 +221,9 @@ fn build_invoke_request(
         }
     };
     let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
-    let egress_json = serde_json::to_string(&spec).unwrap_or_else(|_| "{}".into());
-    let egress_hash =
-        crate::supplier_config_cache::SupplierConfigSendCache::hash_config_json(&egress_json);
-    let config_json = serde_json::to_string(config).unwrap_or_else(|_| "{}".to_string());
-    let config_hash =
-        crate::supplier_config_cache::SupplierConfigSendCache::hash_config_json(&config_json);
+    let supplier = cached_supplier(&channel.supplier_code, config);
+    let egress_hash = egress.hash.clone();
+    let config_hash = supplier.hash.clone();
     let send_spec_full = should_send_full_and_mark(
         state,
         &format!("egress:{}", channel.channel_id),
@@ -204,7 +264,7 @@ fn build_invoke_request(
         payload_json,
         egress_spec_hash: egress_hash,
         egress_spec_json: if send_spec_full {
-            egress_json
+            egress.json.clone()
         } else {
             String::new()
         },
@@ -212,7 +272,7 @@ fn build_invoke_request(
         supplier_code: channel.supplier_code.clone(),
         supplier_config_hash: config_hash,
         supplier_config_json: if send_cfg_full {
-            config_json
+            supplier.json.clone()
         } else {
             String::new()
         },

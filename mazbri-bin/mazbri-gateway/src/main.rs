@@ -69,6 +69,7 @@ async fn main() -> Result<()> {
     info!("Configuration loaded from config center");
     info!("Server configuration: {:?}", config.server);
     register_all_metrics()?;
+    mazbri_core::metrics::spawn_runtime_metrics("mazbri-gateway");
     info!("Initializing mTLS for Gateway...");
     let cert_manager = mazbri_tls::CertManager::new(tls_config.clone());
     let cert = cert_manager
@@ -137,8 +138,14 @@ async fn main() -> Result<()> {
         shutdown_timeout,
     ))
     .await?;
+    // Server no longer accepts or serves requests: flush post-response billing work.
+    // Keep (graceful_shutdown_timeout + this) below the container stop grace period.
+    gateway::post_response::drain_on_shutdown(USAGE_CHARGE_DRAIN_TIMEOUT).await;
     Ok(())
 }
+
+/// Upper bound for flushing deferred usage charges at shutdown.
+const USAGE_CHARGE_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 
 async fn graceful_shutdown(
     renewal_task: mazbri_tls::RenewalTaskHandle,
@@ -272,3 +279,9 @@ fn apply_tcp_keepalive(
     let keepalive = keepalive.with_interval(idle);
     sock.set_tcp_keepalive(&keepalive)
 }
+
+/// Process-wide allocator: mimalloc (per-thread free lists, no shared arena
+/// lock). With glibc malloc all tokio workers convoyed on the arena lock
+/// (`__lll_lock_wait_private` from `free`) for 50-73ms under 400 QPS.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

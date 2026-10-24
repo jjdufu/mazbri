@@ -3,9 +3,11 @@ mod error;
 mod metrics;
 mod middleware;
 mod queue;
+mod reconcile;
 mod repository;
 mod service;
 mod types;
+mod usage_events;
 mod usage_outbox_worker;
 mod worker;
 pub use calculator::{BillingCalculator, CalculationResult, RateConfig};
@@ -14,6 +16,7 @@ use mazbri_core::CoreError;
 pub use metrics::{DeductionRecorder, register_billing_metrics};
 pub use middleware::{BillingMiddlewareState, balance_check_middleware, usage_middleware};
 pub use queue::{ChargeQueue, QueueStats};
+pub use reconcile::{ReconcileConfig, ReconcileJob};
 pub use repository::{
     AccountBalanceRow, BillingRepository, DeductAndRecordResult, PgBillingRepository,
 };
@@ -22,6 +25,7 @@ pub use service::{
     UsageBreakdownItem, UsageOutboxEvent, UsageRecord, UsageSummaryInfo,
 };
 pub use types::{ChargeQueueItem, ChargeStatus, QueueConfig};
+pub use usage_events::{UsageEventConsumer, UsageEventProducer, UsageEventsConfig};
 pub use usage_outbox_worker::UsageOutboxWorker;
 pub use worker::ChargeWorker;
 impl From<BillingError> for CoreError {

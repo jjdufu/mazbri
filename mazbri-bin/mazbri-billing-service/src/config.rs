@@ -16,6 +16,12 @@ pub struct BillingServiceConfig {
     pub worker: WorkerConfig,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
+    /// L1: Redpanda usage-event consumer (`sink = "redpanda"` enables it).
+    #[serde(default)]
+    pub usage_events: mazbri_billing::UsageEventsConfig,
+    /// L3: hourly access-log (`ClickHouse`) vs `usage_records` reconciliation.
+    #[serde(default)]
+    pub reconcile: mazbri_billing::ReconcileConfig,
 }
 
 impl ServiceConfig for BillingServiceConfig {

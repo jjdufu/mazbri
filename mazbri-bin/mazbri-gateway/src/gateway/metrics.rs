@@ -159,6 +159,70 @@ pub fn classify_error_class(status: u16, is_success: bool, error_code: &str) -> 
     classify_proxy_result(status, Some(error_code)).to_string()
 }
 
+/// gateway→upstream (bypass) HTTP/2 pool: gRPC calls currently holding a stream.
+pub static GATEWAY_UPSTREAM_H2_STREAMS_IN_USE: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        MetricsBuilder::new().gauge_vec(
+            "gateway_upstream_h2_streams_in_use",
+            "In-flight gRPC calls (HTTP/2 streams) per upstream endpoint",
+            &["endpoint"],
+        )
+    });
+/// Time spent in `Grpc::ready()` (waiting for channel/connection capacity) before a call.
+pub static GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
+    MetricsBuilder::new().histogram(
+        "gateway_upstream_h2_ready_wait_seconds",
+        "Wait for the HTTP/2 channel to accept a new stream (connection readiness)",
+        vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
+        &["endpoint"],
+    )
+});
+/// Explicit connection establishment (TCP + mTLS + h2 handshake) duration.
+pub static GATEWAY_UPSTREAM_H2_CONNECT_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
+    MetricsBuilder::new().histogram(
+        "gateway_upstream_h2_connect_seconds",
+        "Upstream HTTP/2 connect (TCP+mTLS+h2) duration",
+        vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0],
+        &["endpoint", "result"],
+    )
+});
+/// Connection (re)establishments: reason = initial | refresh, result = ok | error.
+pub static GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "gateway_upstream_h2_connects_total",
+        "Upstream HTTP/2 connection (re)establishments",
+        &["endpoint", "reason", "result"],
+    )
+});
+/// Call/readiness errors by kind (goaway | reset | `broken_pipe` | refused | timeout | other).
+/// Transparent tonic reconnects that never surface an error are not visible here.
+pub static GATEWAY_UPSTREAM_H2_ERRORS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "gateway_upstream_h2_errors_total",
+        "Upstream HTTP/2 call errors by classified kind",
+        &["endpoint", "stage", "kind"],
+    )
+});
+
+/// Classify a transport error message into a low-cardinality kind.
+#[must_use]
+pub fn classify_h2_error(message: &str) -> &'static str {
+    let m = message.to_ascii_lowercase();
+    if m.contains("goaway") || m.contains("go_away") || m.contains("go away") {
+        "goaway"
+    } else if m.contains("reset") || m.contains("rst_stream") {
+        "reset"
+    } else if m.contains("broken pipe") {
+        "broken_pipe"
+    } else if m.contains("refused") {
+        "refused"
+    } else if m.contains("timeout") || m.contains("timed out") || m.contains("deadline") {
+        "timeout"
+    } else {
+        "other"
+    }
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -186,6 +250,11 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     )?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_REQUEST_BINDING_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_JWT_KID_TOTAL.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_CONNECT_SECONDS.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_ERRORS_TOTAL.clone()))?;
     Ok(())
 }
 
@@ -242,5 +311,20 @@ pub async fn metrics_handler() -> impl IntoResponse {
             tracing::error!("Failed to encode metrics: {}", e);
             format!("# ERROR: Failed to encode metrics: {e}\n")
         }
+    }
+}
+
+#[cfg(test)]
+mod h2_metric_tests {
+    use super::classify_h2_error;
+
+    #[test]
+    fn classifies_transport_errors() {
+        assert_eq!(classify_h2_error("connection error: GoAway(..)"), "goaway");
+        assert_eq!(classify_h2_error("stream error: RST_STREAM"), "reset");
+        assert_eq!(classify_h2_error("Broken pipe (os error 32)"), "broken_pipe");
+        assert_eq!(classify_h2_error("Connection refused"), "refused");
+        assert_eq!(classify_h2_error("deadline has elapsed"), "timeout");
+        assert_eq!(classify_h2_error("weird"), "other");
     }
 }

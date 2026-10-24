@@ -248,7 +248,7 @@ const REQUEST_LOG_SELECT_COLS: &str = "timestamp, `service`, host, instance_id, 
 
 #[must_use]
 pub fn build_request_logs_count_sql(where_clause: &str) -> String {
-    format!("SELECT toUInt64(count()) AS total FROM request_logs{where_clause}")
+    format!("SELECT toUInt64(count()) AS total FROM request_logs FINAL{where_clause}")
 }
 
 pub fn build_request_logs_data_sql(
@@ -260,7 +260,7 @@ pub fn build_request_logs_data_sql(
     let offset = validate_numeric_param(i64::saturating_from(offset), 1_000_000)?;
     Ok(format!(
         "SELECT {REQUEST_LOG_SELECT_COLS} \
-         FROM request_logs{where_clause} ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
+         FROM request_logs FINAL{where_clause} ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
     ))
 }
 
@@ -274,7 +274,7 @@ pub fn build_request_logs_latest_universe_count_sql(
     Ok(format!(
         "SELECT toUInt64(count()) AS total FROM (\
             SELECT {REQUEST_LOG_SELECT_COLS} \
-            FROM request_logs{universe_where} \
+            FROM request_logs FINAL{universe_where} \
             ORDER BY timestamp DESC LIMIT {universe_limit}\
          ) AS latest_universe{outer_where}"
     ))
@@ -293,7 +293,7 @@ pub fn build_request_logs_latest_universe_data_sql(
     Ok(format!(
         "SELECT {REQUEST_LOG_SELECT_COLS} FROM (\
             SELECT {REQUEST_LOG_SELECT_COLS} \
-            FROM request_logs{universe_where} \
+            FROM request_logs FINAL{universe_where} \
             ORDER BY timestamp DESC LIMIT {universe_limit}\
          ) AS latest_universe{outer_where} \
          ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
@@ -330,7 +330,7 @@ pub fn build_aggregation_summary_sql(where_clause: &str) -> String {
         ifNotFinite(AVG(dependency_wait_ms), 0) AS avg_dependency_wait_ms, \
         ifNotFinite(AVG(internal_ms), 0) AS avg_internal_ms, \
         ifNotFinite(AVG(post_response_ms), 0) AS avg_post_response_ms \
-        FROM request_logs{where_clause}"
+        FROM request_logs FINAL{where_clause}"
     )
 }
 
@@ -338,7 +338,7 @@ pub fn build_aggregation_summary_sql(where_clause: &str) -> String {
 pub fn build_aggregation_by_route_sql(where_clause: &str) -> String {
     format!(
         "SELECT route_template AS key, toUInt64(count()) AS cnt \
-        FROM request_logs{where_clause} \
+        FROM request_logs FINAL{where_clause} \
         GROUP BY route_template ORDER BY cnt DESC LIMIT 50"
     )
 }
@@ -347,7 +347,7 @@ pub fn build_aggregation_by_route_sql(where_clause: &str) -> String {
 pub fn build_aggregation_by_status_sql(where_clause: &str) -> String {
     format!(
         "SELECT toString(status_code) AS key, toUInt64(count()) AS cnt \
-        FROM request_logs{where_clause} \
+        FROM request_logs FINAL{where_clause} \
         GROUP BY status_code"
     )
 }
@@ -374,7 +374,7 @@ pub fn get_stats_time_bucket_expression(group_by: &str) -> String {
 pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
         "SELECT toDateTime({time_expr}) AS time, toUInt64(count()) AS count \
-        FROM request_logs{where_clause} \
+        FROM request_logs FINAL{where_clause} \
         GROUP BY time ORDER BY time"
     )
 }

@@ -17,6 +17,10 @@ use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+/// Marks one outbox row processed; runs in the same transaction as the enqueue.
+const MARK_OUTBOX_PROCESSED_SQL: &str = "UPDATE usage_outbox SET status = 'processed', \
+     processed_at = NOW(), error_message = NULL WHERE id = $1";
+
 struct TaskState {
     handles: Vec<JoinHandle<()>>,
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -285,9 +289,6 @@ async fn process_batch(
             }
         }
     }
-    if !ok_ids.is_empty() {
-        mark_processed_batch(db, &ok_ids).await?;
-    }
     info!(
         batch = batch_len,
         success = ok_ids.len(),
@@ -382,9 +383,13 @@ async fn process_one(
         };
         billing_service.record_usage(usage_record).await?
     };
+    // Enqueue and mark the outbox row processed atomically: a crash can no longer leave
+    // the charge enqueued while the outbox row is reclaimed and re-enqueued.
+    let mut tx = db.begin().await?;
     if item.billable_amount > Decimal::ZERO {
-        let _ = charge_queue
-            .enqueue(
+        charge_queue
+            .enqueue_in_tx(
+                &mut tx,
                 item.tenant_id,
                 account_id,
                 usage_record_id,
@@ -393,22 +398,11 @@ async fn process_one(
             )
             .await?;
     }
-    Ok(())
-}
-
-async fn mark_processed_batch(db: &PgPool, ids: &[i64]) -> Result<(), BillingError> {
-    sqlx::query(
-        r"
-        UPDATE usage_outbox
-        SET status = 'processed',
-            processed_at = NOW(),
-            error_message = NULL
-        WHERE id = ANY($1)
-        ",
-    )
-    .bind(ids)
-    .execute(db)
-    .await?;
+    sqlx::query(MARK_OUTBOX_PROCESSED_SQL)
+        .bind(item.id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -470,5 +464,16 @@ impl Clone for UsageOutboxWorker {
             running: self.running.clone(),
             task_state: self.task_state.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod outbox_sql_tests {
+    use super::MARK_OUTBOX_PROCESSED_SQL;
+
+    #[test]
+    fn mark_processed_targets_single_row() {
+        assert!(MARK_OUTBOX_PROCESSED_SQL.contains("status = 'processed'"));
+        assert!(MARK_OUTBOX_PROCESSED_SQL.contains("WHERE id = $1"));
     }
 }

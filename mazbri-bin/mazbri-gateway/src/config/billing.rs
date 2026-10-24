@@ -11,6 +11,11 @@ pub struct BillingMiddlewareConfig {
     /// `[billing.balance_check]`
     #[serde(default)]
     pub balance_check: BalanceCheckConfig,
+    /// `[billing.usage_events]`: L1 durable usage-event sink. `sink = "redpanda"` produces
+    /// each billable usage event synchronously (acks=all) before the response is returned;
+    /// on produce failure the request falls back to the outbox/deferred-retry path.
+    #[serde(default)]
+    pub usage_events: mazbri_billing::UsageEventsConfig,
 }
 
 /// `[billing.balance_check]`：余额预检。
@@ -69,6 +74,7 @@ impl Default for BillingMiddlewareConfig {
             enabled: true,
             usage_record_enabled: true,
             balance_check: BalanceCheckConfig::default(),
+            usage_events: mazbri_billing::UsageEventsConfig::default(),
         }
     }
 }

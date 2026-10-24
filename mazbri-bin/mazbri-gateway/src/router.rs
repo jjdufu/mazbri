@@ -25,6 +25,7 @@ use mazbri_callback::CallbackWorker;
 use mazbri_core::CoreError;
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{error_handler_middleware, metrics_middleware, request_id_middleware};
+use serde::Deserialize as _;
 use sqlx::PgPool;
 use std::future::Future;
 use std::io::ErrorKind;
@@ -54,6 +55,8 @@ pub struct AppState {
     pub service_health_cache: Option<crate::service_health_cache::ServiceHealthCache>,
     pub admin_state: Option<Arc<AdminState>>,
     pub request_binding: crate::config::RequestBindingConfig,
+    /// L1: synchronous Redpanda producer for usage events (None = outbox path).
+    pub usage_event_producer: Option<Arc<mazbri_billing::UsageEventProducer>>,
 }
 pub struct RouterInit<'a> {
     pub service_name: String,
@@ -147,6 +150,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let (auth_state, auth_service) = init_auth(&config, &db, jwt_secret, tarpc_pool).await;
     let billing_state = create_billing_state(&config, &db).await;
     let balance_cache = build_balance_cache(&config, &redis);
+    let usage_event_producer = build_usage_event_producer(&config).await;
     let app_state = AppState {
         proxy_state,
         auth_state,
@@ -158,6 +162,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         service_health_cache,
         admin_state,
         request_binding: config.request_binding.clone(),
+        usage_event_producer,
     };
     let public_routes = build_public_routes(route_reload_status);
     let protected_routes = build_protected_routes(&app_state, &config);
@@ -715,16 +720,32 @@ async fn warmup_route_upstream_clients(
     upstream_http2_pool: &UpstreamHttp2ClientPool,
     route_engine: &mazbri_routing::RouteEngine,
 ) -> anyhow::Result<()> {
-    for service_url in route_engine.unique_service_urls() {
-        warmup_upstream_http2_client_with_retry(
+    // Only microservice suppliers are dialled directly by the gateway (mTLS gRPC on
+    // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
+    // which forwards to their plain HTTP URL; that path is warmed by
+    // `warmup_bypass_client`, so warming the raw URL here is wrong (and fails on
+    // IP/HTTP URLs with "requires a DNS server name for mTLS").
+    let urls = route_engine.unique_service_urls_where(|channel| {
+        !mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
+            .is_ok_and(|cfg| cfg.is_transparent())
+    });
+    let mut failed = 0usize;
+    for service_url in &urls {
+        if let Err(error) = warmup_upstream_http2_client_with_retry(
             upstream_http2_pool,
             "route-upstream",
-            &service_url,
+            service_url,
         )
-        .await?;
+        .await
+        {
+            failed += 1;
+            tracing::warn!(endpoint = %service_url, error = %error, "Route upstream warmup failed");
+        }
     }
     tracing::info!(
         route_count = route_engine.route_count(),
+        direct_upstreams = urls.len(),
+        failed,
         "Route upstream HTTP/2 clients warmed up"
     );
     Ok(())
@@ -1003,4 +1024,26 @@ fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
         message = "Request handler panicked; returning 500 JSON"
     );
     ProxyError::InternalError("Internal Server Error".to_string()).into_response()
+}
+
+/// Connects the L1 usage-event producer when `billing.usage_events.sink = "redpanda"`.
+/// A connect failure is logged and the gateway keeps the outbox path (never fails startup).
+async fn build_usage_event_producer(
+    config: &GatewayConfig,
+) -> Option<Arc<mazbri_billing::UsageEventProducer>> {
+    let cfg = &config.billing.usage_events;
+    if !config.billing.enabled || !cfg.redpanda_enabled() {
+        tracing::info!("Usage event sink: outbox (redpanda disabled)");
+        return None;
+    }
+    match mazbri_billing::UsageEventProducer::connect(cfg).await {
+        Ok(producer) => {
+            tracing::info!(topic = %cfg.topic, brokers = ?cfg.brokers, "Usage event sink: redpanda");
+            Some(Arc::new(producer))
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "Usage event producer connect failed; falling back to outbox path");
+            None
+        }
+    }
 }
