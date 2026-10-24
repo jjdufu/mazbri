@@ -28,12 +28,20 @@ env:
 jobs:
   frontend:
     name: Frontend typecheck, build, test
-    # release-please PRs only touch CHANGELOG/manifest; the code was gated on
-    # the PR that preceded them.
+    # release-please PRs only touch CHANGELOG/manifest/VERSION; the code was
+    # gated on the PR (and push to main) that preceded them. The release commit
+    # lands on main either squashed ("chore(main): release X") or as a merge
+    # commit ("Merge pull request #N from <owner>/release-please--branches--main").
+    # github.workflow == 'CI' limits the push skip to this workflow's own run:
+    # when release.yml reuses this file as its gate (workflow_call), github.*
+    # is the caller's context (workflow "Release Please", event push) and the
+    # gate must still run everything.
     if: >-
       !startsWith(github.head_ref, 'release-please--') &&
-      !(github.event_name == 'push' &&
-        startsWith(github.event.head_commit.message, 'chore(main): release'))
+      !(github.event_name == 'push' && github.workflow == 'CI' &&
+        (startsWith(github.event.head_commit.message, 'chore(main): release') ||
+         (startsWith(github.event.head_commit.message, 'Merge pull request #') &&
+          contains(github.event.head_commit.message, '/release-please--branches--main'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -81,10 +89,13 @@ jobs:
 
   libs:
     name: mazbri-libs clippy -D warnings + test
+    # same skip rule as frontend (see comment there)
     if: >-
       !startsWith(github.head_ref, 'release-please--') &&
-      !(github.event_name == 'push' &&
-        startsWith(github.event.head_commit.message, 'chore(main): release'))
+      !(github.event_name == 'push' && github.workflow == 'CI' &&
+        (startsWith(github.event.head_commit.message, 'chore(main): release') ||
+         (startsWith(github.event.head_commit.message, 'Merge pull request #') &&
+          contains(github.event.head_commit.message, '/release-please--branches--main'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -101,6 +112,8 @@ jobs:
         with:
           workspaces: mazbri-libs
           shared-key: libs
+          # PR caches are scoped to refs/pull/N/merge and never reused; only main saves
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy (strict)
         working-directory: mazbri-libs
@@ -136,6 +149,8 @@ jobs:
         with:
           workspaces: mazbri-bin
           shared-key: bin
+          # PR caches are scoped to refs/pull/N/merge and never reused; only main saves
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy (strict)
         working-directory: mazbri-bin
