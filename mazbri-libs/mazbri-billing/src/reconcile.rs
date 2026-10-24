@@ -262,7 +262,7 @@ impl ReconcileJob {
     ) -> Result<(), String> {
         let sql = format!(
             "SELECT event_id, request_id, tenant_id, product_id, method, path, status_code, request_bytes, response_bytes, duration_ms, price, billing_code \
-             FROM {t} WHERE service = 'mazbri-gateway' AND billable = 1 AND event_id != '' \
+             FROM {t} FINAL WHERE service = 'mazbri-gateway' AND billable = 1 AND event_id != '' \
              AND timestamp >= toDateTime64('{s}', 9, 'UTC') AND timestamp < toDateTime64('{e}', 9, 'UTC') FORMAT JSONEachRow",
             t = self.cfg.clickhouse_table,
             s = ch_ts(s),
