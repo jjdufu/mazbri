@@ -46,5 +46,8 @@ moka = { version = "0.12", features = ["sync"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
 uuid = { version = "1.21", features = ["v4"] }
 
+[dev-dependencies]
+toml = "0.8"
+
 [lints]
 workspace = true

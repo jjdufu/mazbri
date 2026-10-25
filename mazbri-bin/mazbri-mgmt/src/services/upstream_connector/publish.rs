@@ -1,8 +1,8 @@
 use super::{
     ApiError, AuditAction, AuditLogRequest, AuditResourceType, AuditService, Decimal,
     DraftGateItem, FromStr, GATE_REASON_SKIPPED, GATE_TTL_HOURS, PgPool, PublishChannel,
-    PublishRequest, PublishResult, RecentGateRun, Row, SupplierConfig, Uuid, apply_env_str,
-    apply_env_to_supplier_config, build_workbench_spec, channel_config_with_egress,
+    PublishRequest, PublishResult, RecentGateRun, Row, SsrfChecker, SupplierConfig, Uuid,
+    apply_env_str, apply_env_to_supplier_config, build_workbench_spec, channel_config_with_egress,
     connector_metrics, endpoint_by_id, evaluate_endpoint_gates, info, mask_config_credentials,
     parse_workbench_env, repo, ssrf,
 };
@@ -16,6 +16,8 @@ const SAMPLE_CURL: &str = "curl -sS -X POST 'https://<gateway-host>/api/v1/gatew
 /// `publish_draft` 的入参。
 pub struct PublishDraftParams<'a> {
     pub audit: &'a AuditService,
+    /// `[ssrf]` 配置生成的 checker，用于发布前 URL 预检。
+    pub ssrf: &'a SsrfChecker,
     pub id: Uuid,
     pub req: PublishRequest,
     pub actor: &'a str,
@@ -33,6 +35,7 @@ pub async fn publish_draft(
 ) -> Result<PublishResult, ApiError> {
     let PublishDraftParams {
         audit,
+        ssrf: checker,
         id,
         req,
         actor,
@@ -46,7 +49,7 @@ pub async fn publish_draft(
         publish_cfg,
         expanded_url,
         config_value,
-    } = prepare_publish(pool, id, &req, is_admin).await?;
+    } = prepare_publish(pool, checker, id, &req, is_admin).await?;
 
     let (supplier_code, name) = supplier_identity(&req)?;
 
@@ -70,6 +73,7 @@ pub async fn publish_draft(
         env: &env,
         cfg: &publish_cfg,
         upstream_url: &expanded_url,
+        ssrf: checker,
     };
     let (channel_ids, channels_snapshot) =
         publish_channels(&mut tx, supplier_id, &req, &ctx).await?;
@@ -214,6 +218,7 @@ struct ChannelBuildCtx<'a> {
     env: &'a std::collections::HashMap<String, String>,
     cfg: &'a SupplierConfig,
     upstream_url: &'a str,
+    ssrf: &'a SsrfChecker,
 }
 
 fn check_publish_gates(
@@ -368,7 +373,7 @@ async fn publish_channel(
     if ctx.cfg.is_transparent() {
         mazbri_core::validate_egress_spec(&egress)
             .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-        ssrf::validate_public_http_url(&egress.base_url)
+        ssrf::validate_public_http_url(ctx.ssrf, &egress.base_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }
@@ -641,6 +646,7 @@ struct PreparedPublish {
 /// 读取草稿、展开变量并完成配置 / SSRF / 门禁校验。
 async fn prepare_publish(
     pool: &PgPool,
+    checker: &SsrfChecker,
     id: Uuid,
     req: &PublishRequest,
     is_admin: bool,
@@ -686,7 +692,7 @@ async fn prepare_publish(
     }
 
     if publish_cfg.is_transparent() {
-        ssrf::validate_public_http_url(&expanded_url)
+        ssrf::validate_public_http_url(checker, &expanded_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }

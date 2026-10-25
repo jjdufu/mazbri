@@ -11,6 +11,9 @@ pub struct BypassServiceConfig {
     pub upstream: UpstreamConfig,
     #[serde(default)]
     pub admin: mazbri_admin::AdminConfig,
+    /// `[ssrf]` 出站 SSRF 策略；缺省即 `allow_private_network = false`。
+    #[serde(default)]
+    pub ssrf: mazbri_upstream_runtime::SsrfConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,5 +102,50 @@ impl ValidateConfig for BypassServiceConfig {
     fn validate(&self) -> Result<()> {
         self.upstream.validate()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: &str = r#"
+[server]
+host = "0.0.0.0"
+port = 8888
+
+[database]
+host = "127.0.0.1"
+port = 5432
+name = "mazbri_platform"
+username = "u"
+password = "p"
+
+[upstream]
+"#;
+
+    fn parse(extra: &str) -> Result<BypassServiceConfig, toml::de::Error> {
+        toml::from_str(&format!("{BASE}\n{extra}"))
+    }
+
+    #[test]
+    fn ssrf_section_absent_defaults_to_deny_private() {
+        let cfg = parse("").expect("parse");
+        assert!(!cfg.ssrf.allow_private_network);
+        assert!(!cfg.ssrf.checker().allow_private());
+    }
+
+    #[test]
+    fn ssrf_allow_private_network_true() {
+        let cfg = parse("[ssrf]\nallow_private_network = true\n").expect("parse");
+        assert!(cfg.ssrf.allow_private_network);
+        assert!(cfg.ssrf.checker().allow_private());
+    }
+
+    #[test]
+    fn ssrf_explicit_false_and_unknown_key_rejected() {
+        let cfg = parse("[ssrf]\nallow_private_network = false\n").expect("parse");
+        assert!(!cfg.ssrf.allow_private_network);
+        assert!(parse("[ssrf]\nallow_private = true\n").is_err());
     }
 }

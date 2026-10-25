@@ -3,7 +3,7 @@ use mazbri_core::{
     upsert_egress_in_channel_config,
 };
 
-use super::{ApiError, Arc, Duration, OnceLock, RuntimeEngine, SsrfChecker};
+use super::{ApiError, Arc, Duration, RuntimeEngine, SsrfChecker};
 
 pub(crate) fn endpoint_by_id<'a>(
     endpoints: &'a serde_json::Value,
@@ -120,28 +120,29 @@ pub(crate) fn channel_config_with_egress(
 pub(crate) const GATE_TTL_HOURS: i32 = 24;
 pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
 
-pub(crate) fn runtime_engine() -> &'static RuntimeEngine {
-    static ENGINE: OnceLock<RuntimeEngine> = OnceLock::new();
-    ENGINE.get_or_init(|| {
-        let ssrf = SsrfChecker::new();
-        let client = ssrf
-            .configure_http_client(
-                reqwest::Client::builder()
-                    .timeout(Duration::from_secs(30))
-                    .connect_timeout(Duration::from_secs(10))
-                    .redirect(reqwest::redirect::Policy::none()),
-            )
-            .build()
-            .unwrap_or_else(|e| {
-                tracing::error!(
-                    error = %e,
-                    "Failed to build connector runtime HTTP client; using default client"
-                );
-                // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
-                reqwest::Client::new()
-            });
-        RuntimeEngine::new(Arc::new(client), ssrf)
-    })
+/// 构建 connector 试跑 / live run 共用的 [`RuntimeEngine`]。
+///
+/// `ssrf` 由 mgmt `[ssrf]` 配置生成（启动时构建一次，存于 `AppState::connector_runtime`），
+/// 同时用于连接期 DNS 过滤与 `validate_public_http_url` 预检。
+#[must_use]
+pub fn build_connector_runtime(ssrf: SsrfChecker) -> RuntimeEngine {
+    let client = ssrf
+        .configure_http_client(
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .connect_timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none()),
+        )
+        .build()
+        .unwrap_or_else(|e| {
+            tracing::error!(
+                error = %e,
+                "Failed to build connector runtime HTTP client; using default client"
+            );
+            // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
+            reqwest::Client::new()
+        });
+    RuntimeEngine::new(Arc::new(client), ssrf)
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ use crate::audit::{AuditAction, AuditLogRequest, AuditResourceType, AuditService
 use crate::error::ApiError;
 use crate::services::ssrf;
 use mazbri_core::{SupplierConfig, mask_config_credentials};
+use mazbri_upstream_runtime::SsrfChecker;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -203,6 +204,7 @@ fn validate_supplier_fields(
 
 /// 组装并校验供应商配置（合并 `upstream_type`、SSRF 检查、凭据加密）。
 async fn build_supplier_config(
+    checker: &SsrfChecker,
     supplier: &OnboardingSupplier,
     upstream_url: &str,
 ) -> Result<SupplierConfig, ApiError> {
@@ -237,13 +239,13 @@ async fn build_supplier_config(
         .map_err(|e| ApiError::validation(format!("UPSTREAM_CONFIG_INVALID: {e}")))?;
 
     if cfg.is_transparent() {
-        ssrf::validate_public_http_url(upstream_url)
+        ssrf::validate_public_http_url(checker, upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
         if let Some(ref auth) = cfg.auth_flow
             && auth.enabled
         {
-            ssrf::validate_public_http_url(&auth.token_url)
+            ssrf::validate_public_http_url(checker, &auth.token_url)
                 .await
                 .map_err(|e| {
                     ApiError::validation(format!(
@@ -387,10 +389,11 @@ async fn check_onboarding_targets(
 /// 与 `dry_run` / 真实提交共用的校验管线。
 async fn prepare(
     pool: &PgPool,
+    checker: &SsrfChecker,
     req: &UpstreamOnboardingRequest,
 ) -> Result<PreparedOnboarding, ApiError> {
     let (supplier_code, name, upstream_url) = validate_supplier_fields(&req.supplier)?;
-    let cfg = build_supplier_config(&req.supplier, &upstream_url).await?;
+    let cfg = build_supplier_config(checker, &req.supplier, &upstream_url).await?;
     let (channel_code, channel_name, path_prefix, cost_price, qps_limit) =
         validate_channel_fields(&req.channel)?;
     let (product_uuid, product_external_id) = check_onboarding_targets(
@@ -584,6 +587,7 @@ async fn insert_route_and_grants(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn onboard(
     pool: &PgPool,
+    checker: &SsrfChecker,
     audit: &AuditService,
     req: &UpstreamOnboardingRequest,
     user_id: uuid::Uuid,
@@ -591,7 +595,7 @@ pub async fn onboard(
     client_ip: Option<String>,
 ) -> Result<OnboardingResult, ApiError> {
     info!(by = %username, "Upstream onboarding requested");
-    let prepared = prepare(pool, req).await?;
+    let prepared = prepare(pool, checker, req).await?;
     let warnings = Vec::new();
 
     let plan = onboarding_plan(&prepared);
@@ -676,11 +680,12 @@ pub async fn onboard(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn dry_run(
     pool: &PgPool,
+    checker: &SsrfChecker,
     req: &UpstreamOnboardingRequest,
 ) -> Result<OnboardingResult, ApiError> {
     let mut forced = req.clone();
     forced.options.dry_run = true;
-    let prepared = prepare(pool, &forced).await?;
+    let prepared = prepare(pool, checker, &forced).await?;
     Ok(OnboardingResult {
         supplier_id: None,
         channel_id: None,
@@ -710,6 +715,7 @@ pub async fn dry_run(
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn validate_config_payload(
+    checker: &SsrfChecker,
     config: &serde_json::Value,
     upstream_url: &str,
 ) -> Result<serde_json::Value, ApiError> {
@@ -719,7 +725,7 @@ pub async fn validate_config_payload(
     cfg.validate_upstream_url_for_type(upstream_url)
         .map_err(|e| ApiError::validation(e.to_string()))?;
     if cfg.is_transparent() {
-        ssrf::validate_public_http_url(upstream_url)
+        ssrf::validate_public_http_url(checker, upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
     }

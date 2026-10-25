@@ -115,7 +115,7 @@ pub async fn validate_draft(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_operator(&claims)?;
-    let data = svc::validate_draft(&state.db, id).await?;
+    let data = svc::validate_draft(&state.db, state.connector_runtime.ssrf(), id).await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -129,7 +129,13 @@ pub async fn transform_preview(
     Json(payload): Json<svc::RunRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_operator(&claims)?;
-    let data = Box::pin(svc::transform_preview(&state.db, id, payload)).await?;
+    let data = Box::pin(svc::transform_preview(
+        &state.db,
+        &state.connector_runtime,
+        id,
+        payload,
+    ))
+    .await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -158,6 +164,7 @@ pub async fn create_run(
         &state.db,
         svc::RunDraftParams {
             audit: &state.audit,
+            engine: &state.connector_runtime,
             id,
             req: payload,
             actor: &claims.sub,
@@ -213,6 +220,7 @@ pub async fn publish_draft(
         &state.db,
         svc::PublishDraftParams {
             audit: &state.audit,
+            ssrf: state.connector_runtime.ssrf(),
             id,
             req: payload,
             actor: &claims.sub,
@@ -365,6 +373,7 @@ pub async fn live_run(
         &state.db,
         svc::LiveRunParams {
             audit: &state.audit,
+            engine: &state.connector_runtime,
             supplier_id,
             req: payload,
             actor: &claims.sub,

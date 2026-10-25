@@ -192,6 +192,10 @@ pub struct MgmtApiConfig {
     /// 产品详情缓存：数据库通知叫醒，轮询保底。
     #[serde(default)]
     pub config_watch: mazbri_core::config_watch::ConfigWatchConfig,
+    /// `[ssrf]` 上游 URL 预检与 connector 试跑出站策略（与 bypass 同语义）；
+    /// 缺省即 `allow_private_network = false`。
+    #[serde(default)]
+    pub ssrf: mazbri_upstream_runtime::SsrfConfig,
 }
 impl ValidateConfig for MgmtApiConfig {
     fn validate(&self) -> Result<()> {
@@ -279,5 +283,68 @@ impl ValidateConfig for MgmtApiConfig {
         }
         self.config_watch.validate()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod ssrf_config_tests {
+    use super::MgmtApiConfig;
+
+    const BASE: &str = r#"
+service_name = "mazbri-mgmt"
+
+[server]
+host = "0.0.0.0"
+port = 8888
+
+[database]
+name = "mazbri_platform"
+
+[auth_database]
+name = "mazbri_auth"
+
+[ratelimit_database]
+name = "mazbri_ratelimit"
+
+[cache_database]
+name = "mazbri_cache"
+
+[billing_database]
+name = "mazbri_billing"
+
+[admin_database]
+name = "mazbri_admin"
+
+[redis]
+url = "redis://127.0.0.1:6379"
+
+[cert_service]
+url = "http://mazbri-cert:8888"
+
+[admin]
+port = 9000
+"#;
+
+    fn parse(extra: &str) -> Result<MgmtApiConfig, toml::de::Error> {
+        toml::from_str(&format!("{BASE}\n{extra}"))
+    }
+
+    #[test]
+    fn ssrf_section_absent_defaults_to_deny_private() {
+        let cfg = parse("").expect("parse");
+        assert!(!cfg.ssrf.allow_private_network);
+        assert!(!cfg.ssrf.checker().allow_private());
+    }
+
+    #[test]
+    fn ssrf_allow_private_network_true() {
+        let cfg = parse("[ssrf]\nallow_private_network = true\n").expect("parse");
+        assert!(cfg.ssrf.allow_private_network);
+        assert!(cfg.ssrf.checker().allow_private());
+    }
+
+    #[test]
+    fn ssrf_unknown_key_rejected() {
+        assert!(parse("[ssrf]\nallow_private = true\n").is_err());
     }
 }

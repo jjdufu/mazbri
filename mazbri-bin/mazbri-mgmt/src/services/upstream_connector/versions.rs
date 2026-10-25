@@ -1,8 +1,8 @@
 use super::{
     ApiError, Arc, AuditAction, AuditLogRequest, AuditResourceType, AuditService, Duration,
     ExecuteMode, ExecuteOptions, InvokeInput, LiveRunRequest, PgPool, RollbackRequest, Row, RunDto,
-    SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes, mask_config_credentials,
-    repo, runtime_engine,
+    RuntimeEngine, SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes,
+    mask_config_credentials, repo,
 };
 use mazbri_core::num::SaturatingFrom;
 
@@ -161,6 +161,8 @@ pub async fn rollback(
 /// `live_run` 的入参。
 pub struct LiveRunParams<'a> {
     pub audit: &'a AuditService,
+    /// 按 `[ssrf]` 配置构建的共享 runtime（含 SSRF checker）。
+    pub engine: &'a RuntimeEngine,
     pub supplier_id: Uuid,
     pub req: LiveRunRequest,
     pub actor: &'a str,
@@ -176,6 +178,7 @@ pub struct LiveRunParams<'a> {
 pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto, ApiError> {
     let LiveRunParams {
         audit,
+        engine,
         supplier_id,
         req,
         actor,
@@ -186,7 +189,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
     } = params;
     let input =
         prepare_live_input(pool, supplier_id, req, default_timeout_ms, max_body_bytes).await?;
-    let result = runtime_engine().invoke(input).await;
+    let result = engine.invoke(input).await;
     let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
 
     connector_metrics::record_run("live", result.ok, result.error_code.as_deref());
