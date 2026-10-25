@@ -1,8 +1,8 @@
 use super::{
     ApiError, Arc, CreateDraftRequest, CurlImportRequest, DraftDto, Duration, ExecuteMode,
     ExecuteOptions, HashMap, InvokeInput, OpenApiImportRequest, PgPool, PostmanImportRequest, Row,
-    RunRequest, SupplierConfig, Uuid, build_workbench_spec, create_draft, endpoint_by_id,
-    get_draft, parse_workbench_env, repo, runtime_engine, workbench_endpoint_key,
+    RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec, create_draft,
+    endpoint_by_id, get_draft, parse_workbench_env, repo, workbench_endpoint_key,
 };
 
 // ---------- Import ----------
@@ -551,6 +551,7 @@ pub async fn export_postman(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn transform_preview(
     pool: &PgPool,
+    engine: &RuntimeEngine,
     id: Uuid,
     req: RunRequest,
 ) -> Result<serde_json::Value, ApiError> {
@@ -601,7 +602,7 @@ pub async fn transform_preview(
         artifact_bytes: None,
         cache_key: None,
     };
-    let result = runtime_engine().invoke(input).await;
+    let result = engine.invoke(input).await;
     Ok(serde_json::json!({
         "ok": result.ok,
         "stages": result.stages,

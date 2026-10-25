@@ -1,10 +1,10 @@
 use super::{
     ApiError, Arc, Assertion, AssertionResult, AuditAction, AuditLogRequest, AuditResourceType,
     AuditService, DEFAULT_RUN_LIMIT, Duration, ExecuteMode, ExecuteOptions, HashMap, InvokeInput,
-    OutboundResponse, PgPool, RunDto, RunRequest, SupplierConfig, UPSTREAM_TYPE_TRANSPARENT, Uuid,
-    build_workbench_spec, connector_metrics, endpoint_by_id, evaluate_assertions,
-    load_artifact_bytes, mask_config_credentials, parse_workbench_env, repo, runtime_engine, ssrf,
-    workbench_endpoint_key,
+    OutboundResponse, PgPool, RunDto, RunRequest, RuntimeEngine, SsrfChecker, SupplierConfig,
+    UPSTREAM_TYPE_TRANSPARENT, Uuid, build_workbench_spec, connector_metrics, endpoint_by_id,
+    evaluate_assertions, load_artifact_bytes, mask_config_credentials, parse_workbench_env, repo,
+    ssrf, workbench_endpoint_key,
 };
 use mazbri_core::num::SaturatingFrom;
 
@@ -13,7 +13,11 @@ use mazbri_core::num::SaturatingFrom;
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value, ApiError> {
+pub async fn validate_draft(
+    pool: &PgPool,
+    checker: &SsrfChecker,
+    id: Uuid,
+) -> Result<serde_json::Value, ApiError> {
     let row = repo::get_draft(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
@@ -26,13 +30,13 @@ pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
 
     if cfg.is_transparent() {
-        ssrf::validate_public_http_url(&row.upstream_url)
+        ssrf::validate_public_http_url(checker, &row.upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
         if let Some(ref auth) = cfg.auth_flow
             && auth.enabled
         {
-            ssrf::validate_public_http_url(&auth.token_url)
+            ssrf::validate_public_http_url(checker, &auth.token_url)
                 .await
                 .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
         }
@@ -53,6 +57,8 @@ pub async fn validate_draft(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
 /// `run_draft` 的入参。
 pub struct RunDraftParams<'a> {
     pub audit: &'a AuditService,
+    /// 按 `[ssrf]` 配置构建的共享 runtime（含 SSRF checker）。
+    pub engine: &'a RuntimeEngine,
     pub id: Uuid,
     pub req: RunRequest,
     pub actor: &'a str,
@@ -68,6 +74,7 @@ pub struct RunDraftParams<'a> {
 pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunDto, ApiError> {
     let RunDraftParams {
         audit,
+        engine,
         id,
         req,
         actor,
@@ -109,7 +116,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
         fingerprint,
     } = prepare_run_input(pool, &row, &req, default_timeout_ms, max_body_bytes).await?;
 
-    let result = runtime_engine().invoke(input).await;
+    let result = engine.invoke(input).await;
 
     let assertion_results = run_draft_assertions(&req, &row.endpoints, &result);
 

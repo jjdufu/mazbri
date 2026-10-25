@@ -6,6 +6,7 @@ use crate::middleware::auth::AdminAuthState;
 use crate::services::connector_rate_limit::SlidingWindowLimiter;
 use crate::services::{BillingReconciliationSettingsCache, MfaSettingsCache, PasswordPolicyCache};
 use mazbri_product::ProductService;
+use mazbri_upstream_runtime::RuntimeEngine;
 use std::sync::Arc;
 
 /// mgmt 访问 cert 所需的地址与凭据；token 非可选。
@@ -39,4 +40,7 @@ pub struct AppState {
     pub billing_reconciliation_settings: Arc<BillingReconciliationSettingsCache>,
     /// Global limiter for connector draft/live runs.
     pub connector_run_limiter: Arc<SlidingWindowLimiter>,
+    /// Connector 试跑 / live run 共用 runtime；SSRF 策略来自 `[ssrf]`，
+    /// `connector_runtime.ssrf()` 同时用于 `validate_public_http_url` 预检。
+    pub connector_runtime: Arc<RuntimeEngine>,
 }

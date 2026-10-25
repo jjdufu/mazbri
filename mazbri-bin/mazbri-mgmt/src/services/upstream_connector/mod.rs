@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
 use uuid::Uuid;
@@ -31,6 +31,7 @@ mod versions;
 mod workbench_spec;
 
 pub use artifacts::*;
+pub use common::build_connector_runtime;
 pub(crate) use common::*;
 pub use draft::*;
 pub use import::*;

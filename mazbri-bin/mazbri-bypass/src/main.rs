@@ -28,7 +28,9 @@ async fn main() -> Result<()> {
 
         let admin_state = runtime.start_admin(&runtime.ctx.config.admin, Some(db.clone()))?;
 
-        let ssrf_checker = SsrfChecker::new();
+        // `[ssrf].allow_private_network`（默认 false）：单机部署经前置代理/网关转内网时开启。
+        runtime.ctx.config.ssrf.log_startup("mazbri-bypass");
+        let ssrf_checker: SsrfChecker = runtime.ctx.config.ssrf.checker();
         // Connect-time DNS filter closes most SSRF rebinding windows (TOCTOU).
         let client = ssrf_checker
             .configure_http_client(

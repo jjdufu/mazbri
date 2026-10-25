@@ -30,6 +30,7 @@ pub async fn onboard_upstream(
     }
     let data = svc::onboard(
         &state.db,
+        state.connector_runtime.ssrf(),
         &state.audit,
         &payload,
         extract_user_id(&claims)?,
@@ -56,7 +57,7 @@ pub async fn onboard_upstream_dry_run(
     if !is_operator_or_above(&claims) {
         return Err(ApiError::Forbidden);
     }
-    let data = svc::dry_run(&state.db, &payload).await?;
+    let data = svc::dry_run(&state.db, state.connector_runtime.ssrf(), &payload).await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -73,7 +74,7 @@ pub struct ValidateConfigBody {
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn validate_supplier_config(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<String>,
     Json(body): Json<ValidateConfigBody>,
@@ -83,7 +84,12 @@ pub async fn validate_supplier_config(
     }
     let _supplier_id = uuid::Uuid::parse_str(&id)
         .map_err(|e| ApiError::validation(format!("供应商 ID 无效: {e}")))?;
-    let validated = svc::validate_config_payload(&body.config, &body.upstream_url).await?;
+    let validated = svc::validate_config_payload(
+        state.connector_runtime.ssrf(),
+        &body.config,
+        &body.upstream_url,
+    )
+    .await?;
     Ok(ApiResponse::ok(serde_json::json!({
         "valid": true,
         "config": validated,

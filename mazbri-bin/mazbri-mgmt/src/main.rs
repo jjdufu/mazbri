@@ -465,6 +465,11 @@ async fn main() -> Result<()> {
         ),
     );
     spawn_connector_run_cleanup(&db, &config.connector_probe);
+    // `[ssrf].allow_private_network`（默认 false）：与 bypass 同语义，开启时 WARN。
+    config.ssrf.log_startup("mazbri-mgmt");
+    let connector_runtime = Arc::new(
+        mazbri_mgmt::services::upstream_connector::build_connector_runtime(config.ssrf.checker()),
+    );
     // Hot-reloadable reconciliation settings (bootstrap conf = defaults only).
     let billing_reconciliation_settings = Arc::new(
         mazbri_mgmt::services::BillingReconciliationSettingsCache::new(
@@ -497,6 +502,7 @@ async fn main() -> Result<()> {
         mfa_settings_cache,
         billing_reconciliation_settings,
         connector_run_limiter,
+        connector_runtime,
     };
     let _shutdown_handle = create_shutdown_manager();
     let app = create_router(app_state, &auth_state);
