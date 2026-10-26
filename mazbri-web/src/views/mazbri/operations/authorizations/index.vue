@@ -21,18 +21,18 @@
           :filter-catalog="authorizationsCatalog"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_OPERATOR']"
+          :import-roles="['R_ADMIN', 'R_FINANCE']"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_OPERATOR']"
+          :export-roles="['R_ADMIN', 'R_FINANCE']"
           :show-primary="true"
           :primary-label="$t('authorization.list.actions.create')"
-          :primary-roles="['R_ADMIN', 'R_OPERATOR']"
+          :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
           :delete-label="$t('common.actions.delete')"
-          :delete-roles="['R_ADMIN', 'R_OPERATOR']"
+          :delete-roles="['R_ADMIN', 'R_FINANCE']"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -50,7 +50,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="primary"
             @click="handleConfigure(row)"
@@ -58,7 +58,7 @@
             {{ $t("authorization.list.actions.modify") }}
           </ElButton>
           <ElPopconfirm
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             :title="$t('authorization.list.revokeConfirm')"
             @confirm="handleRevoke(row)"
           >

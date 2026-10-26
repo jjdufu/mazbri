@@ -25,14 +25,14 @@
         >
           <template #actions>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="primary"
               @click="handleEdit"
             >
               {{ $t("common.actions.modify") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="danger"
               @click="handleDelete"
             >

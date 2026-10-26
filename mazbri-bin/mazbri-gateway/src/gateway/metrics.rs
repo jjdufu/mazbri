@@ -250,11 +250,26 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     )?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_REQUEST_BINDING_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_JWT_KID_TOTAL.clone()))?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.clone()))?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS.clone()))?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_CONNECT_SECONDS.clone()))?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL.clone()))?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_H2_ERRORS_TOTAL.clone()))?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.clone()),
+    )?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS.clone()),
+    )?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_UPSTREAM_H2_CONNECT_SECONDS.clone()),
+    )?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL.clone()),
+    )?;
+    register_collector_once(
+        &REGISTRY,
+        Box::new(GATEWAY_UPSTREAM_H2_ERRORS_TOTAL.clone()),
+    )?;
     Ok(())
 }
 
@@ -322,7 +337,10 @@ mod h2_metric_tests {
     fn classifies_transport_errors() {
         assert_eq!(classify_h2_error("connection error: GoAway(..)"), "goaway");
         assert_eq!(classify_h2_error("stream error: RST_STREAM"), "reset");
-        assert_eq!(classify_h2_error("Broken pipe (os error 32)"), "broken_pipe");
+        assert_eq!(
+            classify_h2_error("Broken pipe (os error 32)"),
+            "broken_pipe"
+        );
         assert_eq!(classify_h2_error("Connection refused"), "refused");
         assert_eq!(classify_h2_error("deadline has elapsed"), "timeout");
         assert_eq!(classify_h2_error("weird"), "other");

@@ -40,7 +40,7 @@
             @command="handleSubscriptionExport"
           />
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             type="primary"
             @click="createVisible = true"
           >
@@ -48,7 +48,7 @@
             {{ $t("callbacks.actions.addSubscription") }}
           </ElButton>
           <TableDeleteDropdown
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             :total-count="tableData.length"
             :selected-count="selectedRows.length"
             @command="(type) => handleDeleteCommand(type, tableData)"
@@ -67,7 +67,7 @@
         <template #operations="{ row }">
           <TableActionRow>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="danger"
               @click="handleDelete(row)"
@@ -106,7 +106,7 @@
         <template #operations="{ row }">
           <TableActionRow>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="primary"
               :disabled="row.status === 'success'"

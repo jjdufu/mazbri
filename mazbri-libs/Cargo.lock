@@ -809,6 +809,7 @@ dependencies = [
  "rand_core 0.10.1",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -969,6 +970,7 @@ dependencies = [
  "sha2 0.11.1",
  "signature 3.0.0",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2054,6 +2056,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mazbri-audit"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "ed25519-dalek",
+ "hex",
+ "mazbri-core",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "mazbri-auth"
 version = "0.1.0"
 dependencies = [
@@ -2199,6 +2221,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions 0.30.0",
  "opentelemetry_sdk 0.30.0",
+ "pin-project-lite",
  "prometheus",
  "rand 0.10.2",
  "redis",

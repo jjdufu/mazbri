@@ -26,6 +26,7 @@
           {{ $t("userManagement.resetPasswordDialog.forceReset") }}
         </ElCheckbox>
       </ElFormItem>
+      <MfaRequiredHint block />
     </ElForm>
   </EditDialog>
 </template>
@@ -36,6 +37,7 @@ import { $t } from "@/locales";
 import type { AdminUser, ResetPasswordRequest } from "@/types/api/admin";
 import { resetAdminPassword, forcePasswordReset } from "@/api/admin";
 import EditDialog from "@/components/common/EditDialog.vue";
+import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
 defineOptions({ name: "ResetPasswordDialog" });

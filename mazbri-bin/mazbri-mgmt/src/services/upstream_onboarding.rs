@@ -634,7 +634,7 @@ pub async fn onboard(
     .unwrap_or(0);
 
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::UpstreamOnboarding,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(supplier_id.to_string()),

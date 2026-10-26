@@ -9,7 +9,7 @@
         </template>
         <template #actions>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             :loading="saving"
             type="primary"
             @click="handleSave"
@@ -84,7 +84,7 @@
               $t("tenant.cachePolicy.warmupList")
             }}</span>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="primary"
               @click="addWarmupKey"
@@ -111,7 +111,7 @@
             <template #operations="{ $index }">
               <TableActionRow>
                 <ElButton
-                  v-roles="['R_ADMIN', 'R_OPERATOR']"
+                  v-roles="['R_ADMIN', 'R_FINANCE']"
                   link
                   type="danger"
                   @click="removeWarmupKey($index)"
@@ -129,7 +129,7 @@
               $t("tenant.cachePolicy.apiOverrides")
             }}</span>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="primary"
               @click="addOverride"
@@ -163,7 +163,7 @@
             <template #operations="{ $index }">
               <TableActionRow>
                 <ElButton
-                  v-roles="['R_ADMIN', 'R_OPERATOR']"
+                  v-roles="['R_ADMIN', 'R_FINANCE']"
                   link
                   type="danger"
                   @click="removeOverride($index)"

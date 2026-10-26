@@ -70,9 +70,6 @@ export function updatePasswordPolicy(data: UpdatePasswordPolicyRequest) {
   });
 }
 export interface MfaSettings {
-  mfa_enabled_globally: boolean;
-  mfa_required_for_all: boolean;
-  mfa_required_for_roles: string[];
   totp_issuer: string;
   totp_digits: number;
   totp_period: number;
@@ -80,9 +77,6 @@ export interface MfaSettings {
   updated_at?: string;
 }
 export interface UpdateMfaSettingsRequest {
-  mfa_enabled_globally?: boolean;
-  mfa_required_for_all?: boolean;
-  mfa_required_for_roles?: string[];
   totp_issuer?: string;
   totp_digits?: number;
   totp_period?: number;

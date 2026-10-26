@@ -136,7 +136,7 @@ pub async fn rollback(
     .map_err(|e| ApiError::internal(format!("insert rollback version: {e}")))?;
 
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::ConnectorRollback,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(supplier_id.to_string()),
@@ -216,7 +216,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
     .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
 
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(supplier_id.to_string()),

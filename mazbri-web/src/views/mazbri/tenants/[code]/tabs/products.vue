@@ -26,7 +26,7 @@
         </ElButton>
         <ElButton
           v-if="productActions.grant"
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           type="primary"
           @click="handleGrant"
         >
@@ -59,7 +59,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="primary"
             @click="handleConfigure(row)"
@@ -68,7 +68,7 @@
           </ElButton>
           <ElButton
             v-if="productActions.revoke"
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleRevoke(row)"

@@ -37,7 +37,10 @@ pub async fn auth_middleware_inner(
 ) -> Response {
     if let Some(token) = extract_bearer_token(request.headers()) {
         match auth_state.token_manager.validate(&token).await {
-            Ok(true) => return next.run(request).await,
+            Ok(true) => {
+                crate::audit::note_authenticated();
+                return next.run(request).await;
+            }
             Ok(false) => {
                 return (
                     StatusCode::UNAUTHORIZED,

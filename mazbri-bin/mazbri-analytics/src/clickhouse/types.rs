@@ -3,7 +3,7 @@
 //! These structs mirror `ClickHouse` column types exactly (widths and nullability).
 //! Domain models in `crate::models` stay chrono/API-friendly; convert at the boundary.
 
-use crate::models::{AuditLogEntry, RequestLogEntry};
+use crate::models::RequestLogEntry;
 use chrono::{DateTime, TimeZone, Utc};
 use mazbri_core::num::SaturatingFrom;
 use serde::Deserialize;
@@ -124,50 +124,6 @@ impl From<RequestLogRow> for RequestLogEntry {
             raw: row.raw,
         }
     }
-}
-
-#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
-pub struct AuditLogRow {
-    /// DateTime64(9) nanoseconds
-    pub timestamp: i64,
-    pub admin_id: i64,
-    pub admin_username: String,
-    pub action: String,
-    pub resource_type: String,
-    pub resource_id: String,
-    pub description: String,
-    pub ip_address: String,
-    pub user_agent: String,
-    pub request_id: String,
-    pub old_value: String,
-    pub new_value: String,
-}
-
-impl From<AuditLogRow> for AuditLogEntry {
-    fn from(row: AuditLogRow) -> Self {
-        Self {
-            timestamp: datetime64_ns_to_utc(row.timestamp),
-            admin_id: row.admin_id,
-            admin_username: row.admin_username,
-            action: row.action,
-            resource_type: row.resource_type,
-            resource_id: row.resource_id,
-            description: row.description,
-            ip_address: row.ip_address,
-            user_agent: row.user_agent,
-            request_id: row.request_id,
-            old_value: row.old_value,
-            new_value: row.new_value,
-        }
-    }
-}
-
-#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
-pub struct AuditAnalyticsRow {
-    pub period: String,
-    pub action: String,
-    pub resource_type: String,
-    pub count: u64,
 }
 
 #[derive(Debug, Default, clickhouse::Row, Deserialize)]

@@ -160,6 +160,25 @@ pub async fn create_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Re
     Ok(Arc::new(pool))
 }
 
+/// 惰性连接池：启动时不建连接，首次使用时才连接。
+///
+/// 用于审计写入等旁路依赖：目标库暂时不可用时服务仍能启动，写入失败由调用方兜底。
+///
+/// # Errors
+///
+/// 连接参数（凭据文件等）无效时返回错误。
+pub fn create_lazy_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Result<Arc<PgPool>> {
+    let options = build_connect_options(config, base_dir)?;
+    let pool = PgPoolOptions::new()
+        .min_connections(config.min_connections)
+        .max_connections(config.max_connections)
+        .acquire_timeout(config.acquire_timeout())
+        .idle_timeout(Duration::from_secs(config.idle_timeout_secs))
+        .max_lifetime(Duration::from_secs(config.max_lifetime_secs))
+        .connect_lazy_with(options);
+    Ok(Arc::new(pool))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

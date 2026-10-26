@@ -16,6 +16,7 @@ mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
 mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
 mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
 mazbri-cert = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cert" }
+mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit" }
 
 tokio = {version = "1.35", features = ["full"]}
 
@@ -67,6 +68,9 @@ subtle = "2.6"
 parking_lot = {version = "0.12"}
 
 prometheus = {version = "0.14"}
+
+[dev-dependencies]
+mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit", features = ["testing"] }
 
 [lints]
 workspace = true

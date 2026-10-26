@@ -16,6 +16,7 @@ use axum::{
 pub async fn reset_admin_password(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
@@ -40,6 +41,7 @@ pub async fn reset_admin_password(
 pub async fn force_password_reset(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,

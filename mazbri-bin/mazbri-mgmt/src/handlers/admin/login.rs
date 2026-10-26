@@ -10,7 +10,7 @@ use axum::{
     extract::{ConnectInfo, State},
     response::Response,
 };
-use tracing::{debug, info};
+use tracing::debug;
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -20,12 +20,6 @@ pub async fn admin_login(
     headers: axum::http::HeaderMap,
     Json(req): Json<AdminLoginRequest>,
 ) -> Result<Response, ApiError> {
-    info!(
-        "Login request received: username='{}', password_len={}, content_type={:?}",
-        req.username,
-        req.password.len(),
-        headers.get("content-type").and_then(|v| v.to_str().ok())
-    );
     debug!("Login attempt for user '{}'", req.username);
     let client_ip = crate::audit::extract_client_ip(&headers, Some(addr));
     let jwt_secret = &state.auth_state.jwt_secret;
@@ -53,13 +47,14 @@ pub async fn admin_refresh_token(
     State(state): State<AppState>,
     Extension(claims): Extension<crate::middleware::auth::AdminClaims>,
 ) -> Result<Response, ApiError> {
-    let data = admin::admin_refresh_token(
-        &state.admin_db,
-        &claims,
-        &state.auth_state.jwt_secret,
-        state.config.auth.jwt_expiration_secs,
-        &state.redis,
-    )
+    let data = admin::admin_refresh_token(admin::AdminRefreshParams {
+        db: &state.admin_db,
+        redis: &state.redis,
+        claims: &claims,
+        jwt_secret: &state.auth_state.jwt_secret,
+        jwt_expiration_secs_fallback: state.config.auth.jwt_expiration_secs,
+        password_policy_cache: &state.password_policy_cache,
+    })
     .await?;
     Ok(json_with_session_cookies(
         data,

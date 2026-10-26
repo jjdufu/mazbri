@@ -21,16 +21,16 @@
           :filter-catalog="productsCatalog"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_OPERATOR']"
+          :import-roles="['R_ADMIN', 'R_FINANCE']"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
           :show-primary="true"
           :primary-label="$t('product.actions.add')"
-          :primary-roles="['R_ADMIN', 'R_OPERATOR']"
+          :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_OPERATOR']"
+          :delete-roles="['R_ADMIN', 'R_FINANCE']"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -57,7 +57,7 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleDelete(row)"

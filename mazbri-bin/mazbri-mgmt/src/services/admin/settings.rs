@@ -152,8 +152,13 @@ pub async fn update_system_settings(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_user_settings(db: &PgPool) -> Result<serde_json::Value, ApiError> {
-    let mut settings = repo::get_user_settings(db)
+///
+/// 只读取调用者本人（令牌中的 `user_id`）的个人设置。
+pub async fn get_user_settings(
+    db: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<serde_json::Value, ApiError> {
+    let mut settings = repo::get_user_settings(db, user_id)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to fetch user settings: {e}")))?;
     if !settings.contains_key("language") {
@@ -164,14 +169,14 @@ pub async fn get_user_settings(db: &PgPool) -> Result<serde_json::Value, ApiErro
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+///
+/// 只更新调用者本人（令牌中的 `user_id`）的个人设置，不再固定写入 `admin` 账号。
 pub async fn update_user_settings(
     db: Arc<PgPool>,
+    user_id: uuid::Uuid,
     req: &UserSettingsUpdate,
 ) -> Result<serde_json::Value, ApiError> {
     info!("Updating user settings");
-    let user_id = repo::get_admin_user_id_by_username(&db)
-        .await
-        .map_err(|e| ApiError::internal(format!("Admin user not found: {e}")))?;
     let mut tx = db
         .begin()
         .await

@@ -86,7 +86,6 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let concurrency_limit = Arc::new(Semaphore::new(max_connections));
     let compression_layer = compression_layer_for(&config, max_connections);
     let base_middleware = ServiceBuilder::new()
-        .layer(CatchPanicLayer::custom(handle_panic))
         .layer(mazbri_service::http_trace_layer())
         .layer(axum::middleware::from_fn(error_handler_middleware))
         .layer(axum::middleware::from_fn(normalize_limit_errors_middleware))
@@ -163,11 +162,24 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     };
     let public_routes = build_public_routes(route_reload_status);
     let protected_routes = build_protected_routes(&app_state, &config);
-    Ok(Router::new()
+    let router = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .layer(base_middleware)
-        .with_state(app_state))
+        .layer(base_middleware);
+    Ok(isolate_request_panics(router).with_state(app_state))
+}
+/// 请求级 panic 隔离（最外层）：`CatchPanicLayer` 把 panic 转成 500 JSON，
+/// 其内侧紧邻的标记层把整条处理链声明为可恢复范围，使进程级 panic 策略放行 unwind。
+/// 两层必须相邻且顺序固定；请求中再 `spawn` 出的后台任务不在此范围内，panic 仍致命。
+fn isolate_request_panics<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router
+        .layer(axum::middleware::from_fn(
+            mazbri_core::panic_policy::recoverable_request_middleware,
+        ))
+        .layer(CatchPanicLayer::custom(handle_panic))
 }
 async fn init_product_service(
     db: &PgPool,
@@ -658,37 +670,20 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
     }
     cors
 }
+/// 启动常驻后台任务；任务不应返回，返回时记录告警。
+///
+/// panic 不在这里捕获：进程级 panic 策略（`mazbri_core::panic_policy`）把后台任务的
+/// panic 视为致命并终止进程，避免关键循环在 `panic = "unwind"` 下悄悄停止。
 fn spawn_supervised<F>(name: &'static str, fut: F)
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    use futures::FutureExt;
-    use std::panic::AssertUnwindSafe;
-
     tokio::spawn(async move {
-        let result = AssertUnwindSafe(fut).catch_unwind().await;
-        match result {
-            Ok(()) => {
-                tracing::warn!(
-                    task = name,
-                    "Background task exited unexpectedly (non-panic)."
-                );
-            }
-            Err(panic_payload) => {
-                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                    (*s).to_string()
-                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown panic payload".to_string()
-                };
-                tracing::error!(
-                    task = name,
-                    panic = %msg,
-                    "CRITICAL: Background task panicked and exited."
-                );
-            }
-        }
+        fut.await;
+        tracing::warn!(
+            task = name,
+            "Background task exited unexpectedly (non-panic)."
+        );
     });
 }
 
@@ -831,3 +826,6 @@ async fn build_usage_event_producer(
         }
     }
 }
+#[cfg(test)]
+#[path = "router_panic_tests.rs"]
+mod panic_isolation_tests;

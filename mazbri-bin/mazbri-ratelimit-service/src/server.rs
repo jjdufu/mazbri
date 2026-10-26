@@ -12,13 +12,14 @@ pub async fn serve_with_config(
     db: Arc<PgPool>,
     tls_acceptor: Option<TlsAcceptor>,
     audit_enabled: bool,
+    audit_sink: Option<mazbri_audit::sink::AuditSink>,
     max_connections: u32,
 ) -> Result<()> {
     info!(
         "Starting tarpc rate limit server on {} (max connections: {})",
         addr, max_connections
     );
-    let service = RateLimitTarpcService::new(db, audit_enabled);
+    let service = RateLimitTarpcService::new(db, audit_enabled, audit_sink);
     mazbri_service::run_tarpc_server!(
         addr,
         service,

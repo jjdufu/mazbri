@@ -16,11 +16,13 @@ use std::net::SocketAddr;
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_history(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
     Query(params): Query<HistoryQueryParams>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
@@ -41,10 +43,12 @@ pub async fn get_history(
 pub async fn rollback(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path((service_name, version)): Path<(String, i32)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(

@@ -22,7 +22,7 @@ pub struct PublishDraftParams<'a> {
     pub req: PublishRequest,
     pub actor: &'a str,
     pub user_id: Uuid,
-    pub is_admin: bool,
+    pub can_force_publish: bool,
     pub client_ip: Option<String>,
 }
 
@@ -40,7 +40,7 @@ pub async fn publish_draft(
         req,
         actor,
         user_id,
-        is_admin,
+        can_force_publish,
         client_ip,
     } = params;
     let PreparedPublish {
@@ -49,7 +49,7 @@ pub async fn publish_draft(
         publish_cfg,
         expanded_url,
         config_value,
-    } = prepare_publish(pool, checker, id, &req, is_admin).await?;
+    } = prepare_publish(pool, checker, id, &req, can_force_publish).await?;
 
     let (supplier_code, name) = supplier_identity(&req)?;
 
@@ -224,7 +224,7 @@ struct ChannelBuildCtx<'a> {
 fn check_publish_gates(
     items: &[DraftGateItem],
     req: &PublishRequest,
-    is_admin: bool,
+    can_force_publish: bool,
 ) -> Result<(), ApiError> {
     if req.options.require_gate {
         let missing: Vec<&DraftGateItem> = items
@@ -233,7 +233,7 @@ fn check_publish_gates(
             .collect();
         if !missing.is_empty() {
             if req.options.force.force_publish {
-                if !is_admin {
+                if !can_force_publish {
                     return Err(ApiError::Forbidden);
                 }
                 if req
@@ -649,7 +649,7 @@ async fn prepare_publish(
     checker: &SsrfChecker,
     id: Uuid,
     req: &PublishRequest,
-    is_admin: bool,
+    can_force_publish: bool,
 ) -> Result<PreparedPublish, ApiError> {
     let draft = repo::get_draft(pool, id)
         .await
@@ -697,7 +697,7 @@ async fn prepare_publish(
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }
 
-    check_publish_gates(&eval.items, req, is_admin)?;
+    check_publish_gates(&eval.items, req, can_force_publish)?;
 
     // Credentials stay in encrypted slots; workbench {{vars}} in auth_flow
     // become literals. workbench_env is never copied into suppliers.config.
@@ -731,7 +731,7 @@ struct PublishAuditInfo<'a> {
 
 fn publish_audit_request(info: &PublishAuditInfo<'_>) -> AuditLogRequest {
     AuditLogRequest {
-        user_id: info.user_id,
+        user_id: Some(info.user_id),
         action: if info.req.options.force.force_publish {
             AuditAction::ConnectorForcePublish
         } else {

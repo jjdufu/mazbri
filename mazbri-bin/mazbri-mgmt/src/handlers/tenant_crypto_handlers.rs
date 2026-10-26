@@ -1,7 +1,8 @@
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id};
+use crate::handlers::mfa_guard::require_mfa_code;
+use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::tenant_crypto as svc;
 use axum::{
@@ -141,6 +142,7 @@ pub async fn rotate_crypto_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -345,6 +347,17 @@ pub async fn delete_crypto_key(
     Ok(ApiResponse::ok(data))
 }
 
+/// 导出授权：常规导出属于业务权限；迁移模式（含加密后的私钥材料与密钥事件）仅超级管理员。
+fn authorize_crypto_export(claims: &AdminClaims, mode: &str) -> Result<(), ApiError> {
+    if !can_manage_tenants(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    if svc::is_migration_export(mode) && !is_admin(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -354,9 +367,13 @@ pub async fn export_crypto_data(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Query(query): Query<svc::CryptoExportQuery>,
-) -> Result<impl IntoResponse, ApiError> {
-    if !can_manage_tenants(&claims) {
-        return Err(ApiError::Forbidden);
+) -> Result<axum::response::Response, ApiError> {
+    authorize_crypto_export(&claims, &query.mode)?;
+    // 迁移模式导出包含可恢复密钥材料：仅超级管理员且必须通过 MFA。
+    if svc::is_migration_export(&query.mode)
+        && let Err(response) = require_mfa_code(&state, &claims, &headers).await
+    {
+        return Ok(*response);
     }
     let actor_id = extract_user_id(&claims)?;
     let data = svc::export_crypto_data(&state.db, &query, actor_id).await?;
@@ -371,7 +388,7 @@ pub async fn export_crypto_data(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors
@@ -450,7 +467,7 @@ pub async fn create_request_key(
     log_tenant_crypto_audit(
         &state,
         &claims,
-        AuditAction::TenantCryptoKeyCreate,
+        AuditAction::RequestKeyCreate,
         tenant_id.to_string(),
         serde_json::json!({
             "tenant_code": code,
@@ -482,7 +499,7 @@ pub async fn retire_request_key(
     log_tenant_crypto_audit(
         &state,
         &claims,
-        AuditAction::TenantCryptoKeyCreate,
+        AuditAction::RequestKeyRetire,
         tenant_id.to_string(),
         serde_json::json!({
             "tenant_code": code,
@@ -493,4 +510,40 @@ pub async fn retire_request_key(
         client_ip,
     )?;
     Ok(ApiResponse::ok(data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claims(role: &str) -> AdminClaims {
+        AdminClaims {
+            iss: "test".into(),
+            aud: None,
+            sub: "tester".into(),
+            user_id: uuid::Uuid::nil().to_string(),
+            role: role.into(),
+            iat: 0,
+            exp: i64::MAX,
+            jti: None,
+            token_type: None,
+        }
+    }
+
+    #[test]
+    fn migration_export_is_super_admin_only() {
+        assert!(authorize_crypto_export(&claims("R_ADMIN"), "migration").is_ok());
+        assert!(authorize_crypto_export(&claims("R_ADMIN"), "regular").is_ok());
+        assert!(authorize_crypto_export(&claims("R_FINANCE"), "regular").is_ok());
+        assert!(matches!(
+            authorize_crypto_export(&claims("R_FINANCE"), "migration"),
+            Err(ApiError::Forbidden)
+        ));
+        for mode in ["regular", "migration"] {
+            assert!(matches!(
+                authorize_crypto_export(&claims("R_VIEWER"), mode),
+                Err(ApiError::Forbidden)
+            ));
+        }
+    }
 }

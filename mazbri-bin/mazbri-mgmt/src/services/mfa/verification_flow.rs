@@ -1,12 +1,12 @@
-use super::common::{MfaServiceErrorMode, get_mfa_service, ok_json};
+use super::common::{MfaServiceErrorMode, consume_stage_token, get_mfa_service, ok_json};
 use crate::audit::{AuditAction, AuditService, user_audit};
-use crate::handlers::types::AdminJwtClaims;
 use crate::mfa::{MfaService, MfaServiceCache};
+use crate::middleware::auth::AdminClaims;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
-use chrono::Utc;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -35,7 +35,9 @@ pub async fn disable(
     if !state.mfa_enabled {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
     }
+    // 超管标记 mfa_required 的账号禁止自行关闭；管理员重置 MFA 后仍保持该标记。
     if state.mfa_required {
+        crate::audit::set_failure_reason("mfa_required_by_policy");
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
             mazbri_i18n::mfa::required_cannot_disable(),
@@ -57,6 +59,7 @@ pub async fn disable(
     }
     if !verified {
         warn!("Invalid verification code for MFA disable: {}", username);
+        crate::audit::set_failure_reason("mfa_invalid_code");
         return ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::invalid_totp_or_password(),
@@ -71,7 +74,7 @@ pub async fn disable(
     }
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaDisable,
         Some(serde_json::json!(
             { "action" : "mfa_disabled", "username" : username, }
         )),
@@ -85,13 +88,14 @@ pub async fn disable(
 }
 pub struct VerifyParams<'a> {
     pub pool: &'a PgPool,
+    pub redis: &'a RedisClient,
     pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub jwt_secret: &'a str,
+    pub refresh_token_expiration_secs: u64,
+    /// 已按 `mfa_pending` 类型校验过的临时令牌声明。
+    pub temp_claims: &'a AdminClaims,
     pub user_id: uuid::Uuid,
-    pub username: &'a str,
-    pub user_id_str: &'a str,
-    pub role: &'a str,
     pub totp_code: Option<&'a str>,
     pub backup_code: Option<&'a str>,
     pub client_ip: Option<String>,
@@ -156,6 +160,12 @@ async fn record_failed_attempt(
             mazbri_i18n::mfa::database_error(),
         );
     }
+    if lockout_until.is_some() {
+        crate::audit::set_failure_reason("mfa_lock_triggered");
+        crate::audit::mark_security_event();
+    } else {
+        crate::audit::set_failure_reason("mfa_invalid_code");
+    }
     warn!(
         "MFA verification failed for user: {} (attempt {}/{})",
         username,
@@ -191,33 +201,23 @@ async fn consume_backup_code(
     }
 }
 
-/// MFA 校验通过后签发完整访问令牌。
+/// MFA 校验通过后签发访问令牌与刷新令牌。
 async fn issue_verified_token(
     pool: &PgPool,
     jwt_secret: &str,
     username: &str,
     user_id_str: &str,
     role: &str,
-) -> Result<String, Box<axum::response::Response>> {
-    let now = Utc::now().timestamp();
+    refresh_token_expiration_secs: u64,
+) -> Result<(String, String, u64), Box<axum::response::Response>> {
     let access_ttl =
         crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
-    let expiration = now + i64::saturating_from(access_ttl);
-    let full_claims = AdminJwtClaims {
-        iss: "mazbri-mgmt-api".to_string(),
-        sub: username.to_string(),
-        user_id: user_id_str.to_string(),
-        role: role.to_string(),
-        iat: now,
-        exp: expiration,
-        jti: Some(uuid::Uuid::new_v4().to_string()),
-        token_type: None,
-    };
-    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &full_claims,
-        &encoding_key,
+    let token = crate::services::admin::generate_admin_jwt(
+        username,
+        user_id_str,
+        role,
+        jwt_secret,
+        i64::saturating_from(access_ttl),
     )
     .map_err(|error| {
         error!("Failed to generate JWT: {}", error);
@@ -225,7 +225,22 @@ async fn issue_verified_token(
             StatusCode::INTERNAL_SERVER_ERROR,
             mazbri_i18n::mfa::failed_generate_token(),
         ))
-    })
+    })?;
+    let refresh_token = crate::services::admin::issue_refresh_token(
+        username,
+        user_id_str,
+        role,
+        jwt_secret,
+        i64::saturating_from(refresh_token_expiration_secs),
+    )
+    .map_err(|error| {
+        error!("Failed to generate refresh token: {}", error);
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    Ok((token, refresh_token, access_ttl))
 }
 
 pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
@@ -234,9 +249,9 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let audit = params.audit;
     let jwt_secret = params.jwt_secret;
     let user_id = params.user_id;
-    let username = params.username;
-    let user_id_str = params.user_id_str;
-    let role = params.role;
+    let username = params.temp_claims.sub.as_str();
+    let user_id_str = params.temp_claims.user_id.as_str();
+    let role = params.temp_claims.role.as_str();
     let totp_code = params.totp_code;
     let backup_code = params.backup_code;
     let client_ip = params.client_ip;
@@ -276,12 +291,17 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     };
 
     if mfa_service.is_locked(state.mfa_attempts, state.mfa_locked_until) {
+        crate::audit::set_failure_reason("mfa_locked");
         return ApiResponse::err(StatusCode::FORBIDDEN, mazbri_i18n::mfa::locked());
     }
     let Some(matched) = match_mfa_code(&mfa_service, &state, totp_code, backup_code) else {
         return record_failed_attempt(pool, &mfa_service, user_id, username, state.mfa_attempts)
             .await;
     };
+    // 一次性：验证码通过后立即原子消费临时令牌，重放/并发请求在此被拒绝。
+    if let Err(response) = consume_stage_token(params.redis, params.temp_claims).await {
+        return *response;
+    }
     let used_backup_code_idx = match matched {
         MfaCodeMatch::Totp => None,
         MfaCodeMatch::Backup(index) => {
@@ -295,19 +315,62 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             username, error
         );
     }
-    let token = match issue_verified_token(pool, jwt_secret, username, user_id_str, role).await {
-        Ok(token) => token,
+    finish_verified_login(FinishVerifiedLoginParams {
+        pool,
+        audit,
+        jwt_secret,
+        refresh_token_expiration_secs: params.refresh_token_expiration_secs,
+        user_id,
+        username,
+        user_id_str,
+        role,
+        created_at: state.created_at,
+        used_backup_code: used_backup_code_idx.is_some(),
+        client_ip,
+    })
+    .await
+}
+
+struct FinishVerifiedLoginParams<'a> {
+    pool: &'a PgPool,
+    audit: &'a AuditService,
+    jwt_secret: &'a str,
+    refresh_token_expiration_secs: u64,
+    user_id: uuid::Uuid,
+    username: &'a str,
+    user_id_str: &'a str,
+    role: &'a str,
+    created_at: chrono::DateTime<chrono::Utc>,
+    used_backup_code: bool,
+    client_ip: Option<String>,
+}
+
+async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::response::Response {
+    let (token, refresh_token, access_ttl) = match issue_verified_token(
+        params.pool,
+        params.jwt_secret,
+        params.username,
+        params.user_id_str,
+        params.role,
+        params.refresh_token_expiration_secs,
+    )
+    .await
+    {
+        Ok(issued) => issued,
         Err(response) => return *response,
     };
-    if let Err(error) = audit
+    if let Err(error) = params
+        .audit
         .log_critical(user_audit(
-            user_id,
+            params.user_id,
             AuditAction::UserLogin,
-            Some(serde_json::json!(
-                { "username" : username, "role" : role, "mfa_verified" : true,
-                "used_backup_code" : used_backup_code_idx.is_some(), }
-            )),
-            client_ip,
+            Some(serde_json::json!({
+                "username": params.username,
+                "role": params.role,
+                "mfa_verified": true,
+                "used_backup_code": params.used_backup_code,
+            })),
+            params.client_ip,
         ))
         .await
     {
@@ -316,12 +379,19 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             error
         );
     }
-    info!("MFA verification successful for user: {}", username);
-    let user = serde_json::json!(
-        { "id" : user_id_str, "username" : username, "role" : role, "created_at" : state
-        .created_at.to_rfc3339() }
-    );
-    ok_json(serde_json::json!({ "token" : token, "expires_in" : 86400, "user" : user }))
+    info!("MFA verification successful for user: {}", params.username);
+    let user = serde_json::json!({
+        "id": params.user_id_str,
+        "username": params.username,
+        "role": params.role,
+        "created_at": params.created_at.to_rfc3339(),
+    });
+    ok_json(serde_json::json!({
+        "token": token,
+        "refresh_token": refresh_token,
+        "expires_in": access_ttl,
+        "user": user,
+    }))
 }
 pub async fn status(pool: &PgPool, user_id: uuid::Uuid) -> axum::response::Response {
     let row = match repo::get_mfa_status(pool, user_id).await {

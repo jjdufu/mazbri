@@ -133,13 +133,13 @@ proxy_handler_with_audit! {
     name = renew_certificate_proxy, method = Method::POST, path = "/renew/{}", path_param
     = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.clone(),
     audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} renewing certificate {}",
+    "Admin {} renewing certificate {}", require_mfa = false,
 }
 proxy_handler_with_audit! {
     name = revoke_certificate_proxy, method = Method::POST, path = "/revoke/{}",
     path_param = id, audit_action = AuditAction::CertificateRevoke, resource_id_fn = id
     .clone(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} revoking certificate {}",
+    "Admin {} revoking certificate {}", require_mfa = true,
 }
 pub async fn issue_certificate_proxy(
     State(state): State<AppState>,
@@ -149,6 +149,11 @@ pub async fn issue_certificate_proxy(
 ) -> Result<Response, ApiError> {
     if !can_manage_certificates(&claims) {
         return Err(ApiError::Forbidden);
+    }
+    if let Err(response) =
+        crate::handlers::mfa_guard::require_mfa_code(&state, &claims, request.headers()).await
+    {
+        return Ok(*response);
     }
     info!("Admin {} issuing certificate", claims.sub);
     require_license_issuance(&state).await?;

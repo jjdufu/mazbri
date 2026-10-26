@@ -14,6 +14,9 @@ pub enum ApiError {
     Forbidden,
     #[error("授权未生效，请先导入或续期许可证")]
     LicenseIssuanceNotAllowed,
+    /// 目标是超级管理员：不允许经由账号管理接口重置密码 / MFA、改角色或停用。
+    #[error("超级管理员账号受保护")]
+    SuperAdminProtected,
 }
 impl ApiError {
     pub fn internal(msg: impl Into<String>) -> Self {
@@ -36,7 +39,9 @@ impl ErrorResponse for ApiError {
         match self {
             ApiError::Core(e) => e.status_code(),
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
-            ApiError::Forbidden | ApiError::LicenseIssuanceNotAllowed => StatusCode::FORBIDDEN,
+            ApiError::Forbidden
+            | ApiError::LicenseIssuanceNotAllowed
+            | ApiError::SuperAdminProtected => StatusCode::FORBIDDEN,
         }
     }
     fn error_code(&self) -> &'static str {
@@ -45,6 +50,7 @@ impl ErrorResponse for ApiError {
             ApiError::Unauthorized => error_codes::AUTH_ERROR,
             ApiError::Forbidden => error_codes::PERMISSION_DENIED,
             ApiError::LicenseIssuanceNotAllowed => "license_issuance_not_allowed",
+            ApiError::SuperAdminProtected => "super_admin_protected",
         }
     }
     fn detail(&self) -> Option<String> {
@@ -53,12 +59,20 @@ impl ErrorResponse for ApiError {
             ApiError::LicenseIssuanceNotAllowed => {
                 Some("授权未生效，请先导入或续期许可证".to_string())
             }
+            ApiError::SuperAdminProtected => Some(
+                "超级管理员账号受保护：不能通过账号管理重置其密码或 MFA、修改角色或停用"
+                    .to_string(),
+            ),
             _ => None,
         }
     }
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        ErrorResponse::into_response(self)
+        let code = self.error_code();
+        let message = self.safe_message();
+        let mut response = ErrorResponse::into_response(self);
+        crate::audit::AuditErrorInfo::attach(&mut response, code, &message);
+        response
     }
 }

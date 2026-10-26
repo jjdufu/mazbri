@@ -25,4 +25,6 @@ opt-level = 3
 lto = "thin"
 codegen-units = 16
 strip = true
-panic = "abort"
+# unwind 让请求级 CatchPanicLayer / tarpc 响应任务真正隔离单个请求的 panic；
+# 后台任务等其余 panic 由 mazbri_core::panic_policy 的 hook 直接 abort 进程。
+panic = "unwind"

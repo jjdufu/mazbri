@@ -15,8 +15,7 @@ fn admin_row_to_json(row: &repo::AdminRow) -> serde_json::Value {
         { "id" : row.id, "username" : row.username, "display_name" : row.display_name,
         "email" : row.email, "role" : row.role, "is_active" : row.is_active,
         "password_changed_at" : row.password_changed_at, "force_password_reset" : row
-        .force_password_reset, "mfa_enabled" : row.mfa.mfa_enabled, "mfa_required" : row
-        .mfa.mfa_required, "created_at" : row.created_at, "updated_at" : row.updated_at,
+        .force_password_reset, "mfa_enabled" : row.mfa.mfa_enabled, "mfa_required" : row.mfa.mfa_required, "created_at" : row.created_at, "updated_at" : row.updated_at,
         "last_login_at" : row.last_login_at, }
     )
 }
@@ -141,11 +140,15 @@ pub async fn create_admin(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminCreate,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(row.id.to_string()),
-        details: Some(serde_json::json!({ "username" : row.username, "role" : row.role, })),
+        details: Some(serde_json::json!({
+            "username": row.username,
+            "role": row.role,
+            "mfa_required": row.mfa.mfa_required,
+        })),
         ip_address: client_ip,
         ..Default::default()
     });
@@ -192,23 +195,17 @@ pub async fn update_admin(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    // 超级管理员：只允许修改显示名 / 邮箱；角色与强制改密等安全属性不可经由账号管理修改。
+    if req.role.as_ref().is_some_and(|role| role != &current.role)
+        || req.force_password_reset.is_some()
+        || req.mfa_required.is_some()
+    {
+        helpers::ensure_not_super_admin_target(&current.role)?;
+    }
     if let Some(ref role) = req.role
         && role != &current.role
     {
         helpers::validate_assignable_role(claims, role)?;
-    }
-    if let Some(ref new_role) = req.role
-        && current.role == "R_ADMIN"
-        && new_role != "R_ADMIN"
-    {
-        let admin_count = repo::count_admins_by_role(pool, "R_ADMIN")
-            .await
-            .unwrap_or(0);
-        if admin_count <= 1 {
-            return Err(ApiError::validation(
-                "不能更改最后一个管理员的角色".to_string(),
-            ));
-        }
     }
     let has_updates = req.display_name.is_some()
         || req.email.is_some()
@@ -235,7 +232,7 @@ pub async fn update_admin(
     info!("Admin updated: {} by {}", current.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminUpdate,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -272,9 +269,7 @@ pub async fn delete_admin(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    if current.role == "R_ADMIN" {
-        return Err(ApiError::validation("无法删除管理员用户".to_string()));
-    }
+    helpers::ensure_not_super_admin_target(&current.role)?;
     repo::delete_admin(pool, id).await.map_err(|e| {
         tracing::error!("Failed to delete admin: {}", e);
         ApiError::internal("删除管理员失败".to_string())
@@ -282,7 +277,7 @@ pub async fn delete_admin(
     info!("Admin deleted: {} by {}", current.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminDelete,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -317,6 +312,7 @@ pub async fn reset_password(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)?;
     let password_hash = helpers::hash_password(&req.new_password).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
         ApiError::internal("处理密码失败".to_string())
@@ -343,7 +339,7 @@ pub async fn reset_password(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminPasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -374,6 +370,7 @@ pub async fn force_password_reset(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)?;
     repo::update_force_password_reset(pool, id, req.force_password_reset)
         .await
         .map_err(|e| {
@@ -392,8 +389,8 @@ pub async fn force_password_reset(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
-        action: AuditAction::AdminPasswordReset,
+        user_id: Some(audit_user_id),
+        action: AuditAction::AdminForcePasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(
@@ -432,16 +429,7 @@ pub async fn set_status(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    if admin.role == "R_ADMIN" && !req.is_active {
-        let active_admin_count = repo::count_active_admins_by_role(pool, "R_ADMIN")
-            .await
-            .unwrap_or(0);
-        if active_admin_count <= 1 {
-            return Err(ApiError::validation(
-                "不能禁用最后一个活跃管理员".to_string(),
-            ));
-        }
-    }
+    helpers::ensure_not_super_admin_target(&admin.role)?;
     if admin.is_active == req.is_active {
         return Ok(serde_json::json!({ "message" : "状态未变化" }));
     }
@@ -458,7 +446,7 @@ pub async fn set_status(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminStatusChange,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -491,6 +479,7 @@ pub async fn reset_mfa(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)?;
     if !admin.mfa_enabled {
         return Ok(serde_json::json!({ "message" : "该用户未启用 MFA" }));
     }
@@ -501,8 +490,8 @@ pub async fn reset_mfa(
     info!("MFA reset for admin: {} by {}", admin.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
-        action: AuditAction::AdminUpdate,
+        user_id: Some(audit_user_id),
+        action: AuditAction::AdminMfaReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(

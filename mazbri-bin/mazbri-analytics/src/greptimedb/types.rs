@@ -1,4 +1,4 @@
-pub use crate::models::{AuditLogEntry, RequestLogEntry};
+pub use crate::models::RequestLogEntry;
 use chrono::{DateTime, Utc};
 use mazbri_core::num::SaturatingFrom;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -59,31 +59,6 @@ where
         }
         _ => Err(serde::de::Error::custom("unexpected timestamp type")),
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuditQueryParams {
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
-    pub admin_id: Option<i64>,
-    pub action: Option<String>,
-    pub resource_type: Option<String>,
-    pub limit: usize,
-    pub offset: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct AuditQueryResult {
-    pub logs: Vec<AuditLogEntry>,
-    pub total: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct AuditAnalyticsParams {
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
-    pub group_by: String,
-    pub admin_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,12 +136,4 @@ pub struct RequestLogAggregation {
     pub by_route: std::collections::HashMap<String, u64>,
     pub by_status: std::collections::HashMap<u16, u64>,
     pub by_time: Vec<TimeBucket>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuditAnalyticsResult {
-    pub period: String,
-    pub action: String,
-    pub resource_type: String,
-    pub count: u64,
 }

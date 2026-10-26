@@ -1,9 +1,12 @@
 use super::auth_flow::generate_admin_jwt;
 use crate::error::ApiError;
 use crate::handlers::types::{AdminUser, ChangePasswordRequest, FirstLoginChangePasswordRequest};
+use crate::middleware::admin_token;
+use crate::middleware::auth::AdminClaims;
 use crate::repositories::admin as repo;
-use crate::services::PasswordPolicyCache;
+use crate::services::{MfaSettingsCache, PasswordPolicyCache};
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use tracing::{error, info, warn};
 /// 校验首次登录时可选的新用户名；返回需写入的用户名（去除首尾空白）。
@@ -40,17 +43,53 @@ async fn validate_new_username<'a>(
     Ok(Some(trimmed))
 }
 
+/// 强制改密（首次登录）参数。
+pub struct FirstLoginChangePasswordParams<'a> {
+    pub db: &'a PgPool,
+    pub redis: &'a RedisClient,
+    pub jwt_secret: &'a str,
+    pub password_policy_cache: &'a PasswordPolicyCache,
+    pub mfa_settings_cache: &'a MfaSettingsCache,
+    pub jwt_expiration_secs: u64,
+    /// 中间件已按 `password_reset` 类型校验过的临时令牌声明。
+    pub claims: &'a AdminClaims,
+    pub user_id: uuid::Uuid,
+    pub req: &'a FirstLoginChangePasswordRequest,
+}
+
+/// 强制改密成功后：若账号需要 MFA，返回 MFA 阶段响应（新的一次性临时令牌），
+/// 否则签发正式访问令牌。改密本身不能跳过 MFA。
+async fn post_password_change_stage(
+    params: &FirstLoginChangePasswordParams<'_>,
+    final_username: &str,
+) -> Result<Option<serde_json::Value>, ApiError> {
+    let user_row = repo::get_admin_user_by_username(params.db, final_username)
+        .await
+        .map_err(|e| {
+            error!("Failed to reload user after password change: {}", e);
+            ApiError::internal("内部服务器错误".to_string())
+        })?
+        .ok_or_else(|| ApiError::internal("内部服务器错误".to_string()))?;
+    let mfa_settings = params.mfa_settings_cache.get().await;
+    let stage = super::auth_flow::determine_mfa(&user_row, &mfa_settings, params.jwt_secret)?;
+    Ok(stage.map(|mut value| {
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("password_changed".to_string(), serde_json::json!(true));
+        }
+        value
+    }))
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn first_login_change_password(
-    db: &PgPool,
-    jwt_secret: &str,
-    password_policy_cache: &PasswordPolicyCache,
-    jwt_expiration_secs: u64,
-    user_id: uuid::Uuid,
-    req: &FirstLoginChangePasswordRequest,
+    params: FirstLoginChangePasswordParams<'_>,
 ) -> Result<serde_json::Value, ApiError> {
+    let db = params.db;
+    let user_id = params.user_id;
+    let req = params.req;
+    let password_policy_cache = params.password_policy_cache;
     let policy = password_policy_cache.get().await;
     let validation = policy.validate(&req.new_password);
     if !validation.is_valid {
@@ -108,23 +147,18 @@ pub async fn first_login_change_password(
     {
         return Err(ApiError::validation(reuse_error));
     }
+    // 一次性：在修改密码前原子消费临时令牌，重放/并发请求在此被拒绝。
+    if let Err(rejection) = admin_token::consume_temporary(params.redis, params.claims).await {
+        crate::audit::set_failure_reason(rejection.reason());
+        crate::audit::mark_security_event();
+        return Err(ApiError::Unauthorized);
+    }
     repo::update_password(db, user_id, passed_username, &new_password_hash)
         .await
         .map_err(|e| {
             error!("Failed to update password: {}", e);
             ApiError::internal("更新密码失败".to_string())
         })?;
-    let token = generate_admin_jwt(
-        &final_username,
-        &user_id.to_string(),
-        &user_row.role,
-        jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
-    )
-    .map_err(|e| {
-        error!("Failed to generate admin JWT: {}", e);
-        ApiError::internal("生成认证令牌失败".to_string())
-    })?;
     let user = AdminUser {
         id: user_id.to_string(),
         username: final_username,
@@ -138,6 +172,29 @@ pub async fn first_login_change_password(
         warn!("Failed to record password history: {}", e);
     }
     info!("首次登录修改密码成功: {}", user_row.username);
+    finish_first_login(&params, user).await
+}
+
+/// 改密完成后的下一阶段：需要 MFA 时进入 MFA 阶段，否则签发正式访问令牌。
+async fn finish_first_login(
+    params: &FirstLoginChangePasswordParams<'_>,
+    user: AdminUser,
+) -> Result<serde_json::Value, ApiError> {
+    if let Some(stage) = post_password_change_stage(params, &user.username).await? {
+        return Ok(stage);
+    }
+    let jwt_expiration_secs = params.jwt_expiration_secs;
+    let token = generate_admin_jwt(
+        &user.username,
+        &user.id,
+        &user.role,
+        params.jwt_secret,
+        i64::saturating_from(jwt_expiration_secs),
+    )
+    .map_err(|e| {
+        error!("Failed to generate admin JWT: {}", e);
+        ApiError::internal("生成认证令牌失败".to_string())
+    })?;
     Ok(serde_json::json!(
         { "user" : user, "token" : token, "expires_in" : jwt_expiration_secs,
         "message" : "密码修改成功" }

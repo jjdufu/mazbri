@@ -10,6 +10,20 @@ pub(crate) fn get_cert_proxy_config(state: &AppState) -> CertProxyConfig {
         cert_service_token: state.cert_service.token.clone(),
     }
 }
+/// 透传 `x-request-id`，便于跨服务关联同一请求的审计与日志。
+pub(crate) fn forward_request_id(
+    req: reqwest::RequestBuilder,
+    headers: &axum::http::HeaderMap,
+) -> reqwest::RequestBuilder {
+    match headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty() && value.len() <= 128)
+    {
+        Some(request_id) => req.header("x-request-id", request_id),
+        None => req,
+    }
+}
 pub(crate) async fn proxy_request(
     client: &Client,
     config: &CertProxyConfig,
@@ -19,6 +33,7 @@ pub(crate) async fn proxy_request(
     peer_addr: Option<std::net::SocketAddr>,
 ) -> Response {
     let client_ip = extract_client_ip(request.headers(), peer_addr);
+    let forwarded_headers = request.headers().clone();
     let content_type = request
         .headers()
         .get(header::CONTENT_TYPE)
@@ -52,6 +67,7 @@ pub(crate) async fn proxy_request(
     if let Some(ip) = client_ip {
         req = req.header("x-forwarded-for", ip);
     }
+    req = forward_request_id(req, &forwarded_headers);
     req = req.bearer_auth(&config.cert_service_token);
     if method == Method::POST || method == Method::PUT {
         req = req.body(body_bytes);
@@ -61,7 +77,7 @@ pub(crate) async fn proxy_request(
             req = req.header(header::CONTENT_TYPE, "application/json");
         }
     }
-    match req.send().await {
+    match crate::audit::actor_header::send_to_cert(req).await {
         Ok(response) => {
             let status = StatusCode::from_u16(response.status().as_u16())
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

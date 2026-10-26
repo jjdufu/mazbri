@@ -972,6 +972,7 @@ dependencies = [
  "fiat-crypto",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1145,6 +1146,7 @@ dependencies = [
  "ed25519",
  "sha2 0.11.1",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2303,6 +2305,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mazbri-audit"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "ed25519-dalek",
+ "hex",
+ "mazbri-core",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "mazbri-auth"
 version = "0.1.0"
 dependencies = [
@@ -2630,6 +2652,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-cert",
  "mazbri-core",
  "mazbri-rpc",
@@ -2678,6 +2701,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions 0.30.0",
  "opentelemetry_sdk 0.30.0",
+ "pin-project-lite",
  "prometheus",
  "rand 0.10.1",
  "redis",
@@ -2783,6 +2807,7 @@ dependencies = [
  "ipnetwork",
  "jsonwebtoken",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-auth",
  "mazbri-billing",
  "mazbri-cache",
@@ -2850,6 +2875,7 @@ dependencies = [
  "dotenvy",
  "futures",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-core",
  "mazbri-registry",
  "mazbri-rpc",

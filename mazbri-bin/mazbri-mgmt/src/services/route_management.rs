@@ -875,7 +875,7 @@ pub async fn emergency_switch_route(
         { "route_rule" : new_rule, "bindings" : new_bindings, }
     );
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::RouteEmergencySwitch,
         resource_type: AuditResourceType::RouteRule,
         resource_id: Some(route_rule_id.to_string()),
@@ -1056,7 +1056,7 @@ fn change_audit_log(
     ip_address: Option<String>,
 ) -> AuditLogRequest {
     AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action,
         resource_type,
         resource_id: Some(resource_id),

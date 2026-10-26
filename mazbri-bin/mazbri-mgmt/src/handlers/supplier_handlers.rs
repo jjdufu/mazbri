@@ -2,7 +2,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::types::ListParams;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_operator_or_above};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::supplier as svc;
 use axum::{
@@ -31,7 +31,7 @@ pub async fn create_supplier(
     headers: HeaderMap,
     Json(payload): Json<svc::CreateSupplierRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -68,7 +68,7 @@ pub async fn update_supplier(
     Path(id): Path<String>,
     Json(payload): Json<svc::UpdateSupplierRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let user_id = extract_user_id(&claims)?;
@@ -95,7 +95,7 @@ pub async fn delete_supplier(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let user_id = extract_user_id(&claims)?;

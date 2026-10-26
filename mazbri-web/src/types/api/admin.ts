@@ -52,6 +52,7 @@ export interface UpdateAdminRequest {
   email?: string;
   role?: AdminRole;
   status?: AdminStatus;
+  mfa_required?: boolean;
   force_password_reset?: boolean;
 }
 export interface ResetPasswordRequest {

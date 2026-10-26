@@ -437,7 +437,7 @@
       :result="publishResult"
       :result-desc="publishResultDesc"
       :gate="gate"
-      :is-admin="isAdmin"
+      :can-force-publish="canForcePublish"
       :leftover-tokens="leftoverTokens"
       :unresolved-vars="unresolvedAll"
       @confirm="doPublish"
@@ -694,7 +694,7 @@ const configForm = ref<SupplierConfigForm>({
 });
 
 const userStore = useUserStore();
-const isAdmin = computed(() => userStore.isAdmin);
+const canForcePublish = computed(() => userStore.canWriteBusiness);
 
 const gate = computed(() =>
   gateViewFromServer(endpoints.value, draft.value?.gate),

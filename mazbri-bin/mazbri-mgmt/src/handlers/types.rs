@@ -183,20 +183,6 @@ pub struct AdminUser {
     pub role: String,
     pub created_at: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AdminJwtClaims {
-    pub iss: String,
-    pub sub: String,
-    pub user_id: String,
-    pub role: String,
-    pub iat: i64,
-    pub exp: i64,
-    /// Token id for logout / denylist (H-11).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jti: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_type: Option<String>,
-}
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SystemSettingsUpdate {
@@ -268,6 +254,7 @@ pub struct CreateAdminRequest {
     pub email: Option<String>,
     pub password: String,
     pub role: String,
+    /// 仅超级管理员可为其他用户设置；创建时目标不能是 `R_ADMIN`。
     #[serde(default)]
     pub mfa_required: bool,
     #[serde(default = "default_force_password_reset")]
@@ -282,6 +269,7 @@ pub struct UpdateAdminRequest {
     pub display_name: Option<String>,
     pub email: Option<String>,
     pub role: Option<String>,
+    /// 仅超级管理员可为其他非超管用户设置/清除。
     pub mfa_required: Option<bool>,
     pub force_password_reset: Option<bool>,
 }

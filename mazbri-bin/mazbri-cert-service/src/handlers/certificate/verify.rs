@@ -1,39 +1,34 @@
-use super::common::{CertificateState, extract_client_ip};
+use super::common::CertificateState;
 use crate::db::{VerifyCertificateRequest, VerifyCertificateResponse};
 use crate::error::CertError;
 use axum::{
     Json,
-    extract::{ConnectInfo, State},
-    http::{HeaderMap, StatusCode},
+    extract::State,
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
 use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
 pub async fn verify_certificate(
     State(state): State<CertificateState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
     Json(request): Json<VerifyCertificateRequest>,
 ) -> Response {
-    match verify_certificate_inner(state, headers, Some(addr), request).await {
+    match verify_certificate_inner(state, request).await {
         Ok(response) => response,
         Err(e) => e.into_response(),
     }
 }
 async fn verify_certificate_inner(
     state: CertificateState,
-    headers: HeaderMap,
-    socket_addr: Option<SocketAddr>,
     request: VerifyCertificateRequest,
 ) -> Result<Response, CertError> {
-    let actor_ip =
-        extract_client_ip(&headers, socket_addr).and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
     let cert_pem = request.cert_pem.trim();
     if !cert_pem.contains("-----BEGIN CERTIFICATE-----") {
+        crate::audit::note_failure("invalid_pem");
         return Ok(invalid_pem_response());
     }
     let Ok(fingerprint) = compute_cert_fingerprint(cert_pem) else {
+        crate::audit::note_failure("invalid_pem");
         return Ok(invalid_pem_response());
     };
     let cert = state.repo.find_by_fingerprint(&fingerprint).await?;
@@ -41,7 +36,7 @@ async fn verify_certificate_inner(
         Some(c) => build_verification_response(&c),
         None => certificate_not_found_response(),
     };
-    log_verification_audit(&state, actor_ip, &response).await;
+    note_verification_outcome(&response);
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 fn invalid_pem_response() -> Response {
@@ -118,20 +113,20 @@ fn certificate_not_found_response() -> VerifyCertificateResponse {
         matches: None,
     }
 }
-async fn log_verification_audit(
-    state: &CertificateState,
-    actor_ip: Option<std::net::IpAddr>,
-    response: &VerifyCertificateResponse,
-) {
-    let _ = state
-        .repo
-        .create_audit_log(
-            "verify",
-            actor_ip,
-            response.subject.as_deref(),
-            None,
-            if response.valid { "success" } else { "failure" },
-            response.error.as_deref(),
-        )
-        .await;
+/// 只有失败才会被审计层落库（`/verify` 为 failures-only 接口）。
+fn note_verification_outcome(response: &VerifyCertificateResponse) {
+    if response.valid {
+        return;
+    }
+    let reason = if response.subject.is_none() {
+        "not_found"
+    } else if response.expires_at.is_some_and(|at| at < Utc::now()) {
+        "expired"
+    } else {
+        "revoked"
+    };
+    crate::audit::note_failure(reason);
+    if let Some(subject) = &response.subject {
+        crate::audit::note_detail("subject", subject.clone());
+    }
 }

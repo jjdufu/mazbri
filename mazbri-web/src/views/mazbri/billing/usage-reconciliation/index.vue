@@ -161,7 +161,7 @@
         :show-delete="true"
         :delete-total-count="items.length"
         :delete-selected-count="selectedRows.length"
-        :delete-roles="['R_ADMIN']"
+        :delete-roles="['R_ADMIN', 'R_FINANCE']"
         :fit="false"
         table-layout="auto"
         table-class="surface-panel-table usage-recon-table"
@@ -250,7 +250,7 @@
               {{ $t("billing.reconciliation.resolve") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="danger"
               @click="handleDeleteRow(row)"

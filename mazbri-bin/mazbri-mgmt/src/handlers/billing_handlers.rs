@@ -1,7 +1,8 @@
 use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::handlers::mfa_guard::require_mfa_code;
-use crate::middleware::auth::AdminClaims;
+use crate::middleware::auth::{AdminClaims, is_business_admin};
+use crate::middleware::route_access::ALL_ROLES;
 use crate::response::ApiResponse;
 use crate::services::billing as svc;
 use axum::{
@@ -121,10 +122,10 @@ pub async fn update_bill_status(
     Path(id): Path<Uuid>,
     Json(payload): Json<BillStatusUpdateRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can update bill status",
+            "Only super administrators or administrators can update bill status",
         )
         .into_response());
     }
@@ -156,13 +157,14 @@ pub async fn delete_bill(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin can delete bills",
+            "Only super administrators or administrators can delete bills",
         )
         .into_response());
     }
@@ -218,10 +220,10 @@ pub async fn create_adjustment(
     headers: HeaderMap,
     Json(payload): Json<AdjustmentRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can create adjustments",
+            "Only super administrators or administrators can create adjustments",
         )
         .into_response());
     }
@@ -377,10 +379,10 @@ pub async fn generate_bill(
     headers: HeaderMap,
     Json(payload): Json<GenerateBillRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can generate bills",
+            "Only super administrators or administrators can generate bills",
         )
         .into_response());
     }
@@ -460,10 +462,10 @@ pub async fn run_reconciliation_audit(
     headers: HeaderMap,
     Json(payload): Json<ReconciliationAuditRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can run reconciliation audit",
+            "Only super administrators or administrators can run reconciliation audit",
         )
         .into_response());
     }
@@ -554,13 +556,10 @@ pub async fn list_reconciliation_discrepancies(
     Query(query): Query<ReconciliationDiscrepancyListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
     // Admin/Finance full access; Viewer read-only list.
-    if !matches!(
-        claims.role.as_str(),
-        "R_ADMIN" | "R_FINANCE" | "R_VIEWER" | "R_OPERATOR"
-    ) {
+    if !ALL_ROLES.contains(&claims.role.as_str()) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin, Finance, Operator or Viewer can list reconciliation discrepancies",
+            "Only known admin roles can list reconciliation discrepancies",
         )
         .into_response());
     }
@@ -602,10 +601,10 @@ pub async fn update_reconciliation_discrepancy(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateReconciliationDiscrepancyRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can update reconciliation discrepancies",
+            "Only super administrators or administrators can update reconciliation discrepancies",
         )
         .into_response());
     }
@@ -647,13 +646,14 @@ pub async fn delete_reconciliation_discrepancy(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin can delete reconciliation discrepancies",
+            "Only super administrators or administrators can delete reconciliation discrepancies",
         )
         .into_response());
     }
@@ -692,13 +692,10 @@ pub async fn get_reconciliation_settings(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !matches!(
-        claims.role.as_str(),
-        "R_ADMIN" | "R_FINANCE" | "R_OPERATOR" | "R_VIEWER"
-    ) {
+    if !ALL_ROLES.contains(&claims.role.as_str()) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin, Finance, Operator or Viewer can view reconciliation settings",
+            "Only known admin roles can view reconciliation settings",
         )
         .into_response());
     }
@@ -716,10 +713,10 @@ pub async fn update_reconciliation_settings(
     headers: HeaderMap,
     Json(payload): Json<crate::services::BillingReconciliationRuntimeSettings>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can update reconciliation settings",
+            "Only super administrators or administrators can update reconciliation settings",
         )
         .into_response());
     }
@@ -764,10 +761,10 @@ pub async fn create_bill_adjustment(
     Path(id): Path<Uuid>,
     Json(payload): Json<CreateBillAdjustmentRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can create bill adjustments",
+            "Only super administrators or administrators can create bill adjustments",
         )
         .into_response());
     }
@@ -815,13 +812,10 @@ pub async fn list_bill_adjustments(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !matches!(
-        claims.role.as_str(),
-        "R_ADMIN" | "R_FINANCE" | "R_VIEWER" | "R_OPERATOR"
-    ) {
+    if !ALL_ROLES.contains(&claims.role.as_str()) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin, Finance, Operator or Viewer can list bill adjustments",
+            "Only known admin roles can list bill adjustments",
         )
         .into_response());
     }
@@ -849,13 +843,10 @@ pub async fn list_global_bill_adjustments(
     Extension(claims): Extension<AdminClaims>,
     Query(query): Query<GlobalBillAdjustmentListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !matches!(
-        claims.role.as_str(),
-        "R_ADMIN" | "R_FINANCE" | "R_VIEWER" | "R_OPERATOR"
-    ) {
+    if !ALL_ROLES.contains(&claims.role.as_str()) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin, Finance, Operator or Viewer can list bill adjustments",
+            "Only known admin roles can list bill adjustments",
         )
         .into_response());
     }
@@ -881,10 +872,10 @@ pub async fn void_bill_adjustment(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can void bill adjustments",
+            "Only super administrators or administrators can void bill adjustments",
         )
         .into_response());
     }
@@ -919,12 +910,16 @@ pub async fn generate_bill_async(
     headers: HeaderMap,
     Json(payload): Json<GenerateBillRequest>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if claims.role != "R_ADMIN" && claims.role != "R_FINANCE" {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only Admin or Finance can generate bills",
+            "Only super administrators or administrators can generate bills",
         )
         .into_response());
+    }
+    // 与同步生成账单（generate_bill）一致：异步入口同样要求 MFA，避免绕过。
+    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+        return Ok(*response);
     }
 
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {

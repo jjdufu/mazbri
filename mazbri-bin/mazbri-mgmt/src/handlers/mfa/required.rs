@@ -23,14 +23,15 @@ pub async fn mfa_required_setup(
     Json(req): Json<MfaRequiredSetupRequest>,
 ) -> axum::response::Response {
     let client_ip = extract_client_ip(&headers, Some(addr));
-    svc::required_setup(
-        &state.admin_db,
-        &state.mfa_cache,
-        &state.audit,
-        &state.auth_state.jwt_secret,
-        &req.temp_token,
+    svc::required_setup(svc::RequiredSetupParams {
+        pool: &state.admin_db,
+        redis: &state.redis,
+        mfa_cache: &state.mfa_cache,
+        audit: &state.audit,
+        jwt_secret: &state.auth_state.jwt_secret,
+        temp_token: &req.temp_token,
         client_ip,
-    )
+    })
     .await
 }
 pub async fn mfa_required_enable(
@@ -42,10 +43,12 @@ pub async fn mfa_required_enable(
     let client_ip = extract_client_ip(&headers, Some(addr));
     svc::required_enable(svc::RequiredEnableParams {
         pool: &state.admin_db,
+        redis: &state.redis,
         mfa_cache: &state.mfa_cache,
         audit: &state.audit,
         jwt_secret: &state.auth_state.jwt_secret,
         jwt_expiration_secs: state.config.auth.jwt_expiration_secs,
+        refresh_token_expiration_secs: state.config.auth.refresh_token_expiration_secs,
         temp_token: &req.temp_token,
         totp_code: &req.totp_code,
         client_ip,

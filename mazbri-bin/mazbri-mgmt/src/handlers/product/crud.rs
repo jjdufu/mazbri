@@ -25,7 +25,7 @@ pub async fn create_product(
     Json(req): Json<CreateProductRequest>,
 ) -> axum::response::Response {
     if !can_manage_tenants(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以创建产品");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以创建产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
@@ -50,7 +50,7 @@ pub async fn create_product_reservation(
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "只有 admin 或 operator 可以预留产品编码",
+            "只有超级管理员或管理员可以预留产品编码",
         );
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
@@ -76,7 +76,7 @@ pub async fn release_product_reservation(
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "只有 admin 或 operator 可以释放产品编码",
+            "只有超级管理员或管理员可以释放产品编码",
         );
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
@@ -108,7 +108,7 @@ pub async fn update_product(
     Json(req): Json<UpdateProductRequest>,
 ) -> axum::response::Response {
     if !can_manage_tenants(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以更新产品");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以更新产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
@@ -133,7 +133,7 @@ pub async fn delete_product(
     Path(product_id): Path<String>,
 ) -> axum::response::Response {
     if !can_manage_tenants(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 或 operator 可以删除产品");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以删除产品");
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");

@@ -2,7 +2,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantEnabledRequest};
-use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
+use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id};
 use crate::response::ApiResponse;
 use crate::services::tenant as svc;
 use axum::{
@@ -92,11 +92,12 @@ pub async fn delete_tenant(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Hard delete: sole admin role only (not operator).
-    if !is_admin(&claims) {
+    // 硬删除：超级管理员与管理员（业务权限）。
+    if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let user_id = extract_user_id(&claims)?;

@@ -40,17 +40,7 @@ async fn revoke_certificate_inner(
     }
     let actor_ip = actor_ip_str.and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
     let record = state.repo.revoke_certificate(id).await?;
-    let _ = state
-        .repo
-        .create_audit_log(
-            "revoke",
-            actor_ip,
-            Some(&record.subject),
-            Some(record.id),
-            "success",
-            None,
-        )
-        .await;
+    crate::audit::note_detail("subject", record.subject.clone());
     tracing::info!(
         subject = % record.subject, cert_id = % record.id, ip = ? actor_ip,
         "证书已作废"

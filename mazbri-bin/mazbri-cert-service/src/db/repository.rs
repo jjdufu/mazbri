@@ -205,34 +205,6 @@ impl CertificateRepository {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn create_audit_log(
-        &self,
-        action: &str,
-        actor_ip: Option<std::net::IpAddr>,
-        target_subject: Option<&str>,
-        target_cert_id: Option<Uuid>,
-        result: &str,
-        error_message: Option<&str>,
-    ) -> CertResult<()> {
-        sqlx::query(
-                r"
-            INSERT INTO audit_logs (action, actor_ip, target_subject, target_cert_id, result, error_message)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ",
-            )
-            .bind(action)
-            .bind(actor_ip)
-            .bind(target_subject)
-            .bind(target_cert_id)
-            .bind(result)
-            .bind(error_message)
-            .execute(&*self.db)
-            .await?;
-        Ok(())
-    }
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_active_ca(&self) -> CertResult<Option<CaStorageRecord>> {
         let record = sqlx::query_as::<_, CaStorageRecord>(
             "SELECT * FROM ca_storage WHERE is_active = true ORDER BY created_at DESC LIMIT 1",

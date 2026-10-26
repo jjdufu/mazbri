@@ -14,6 +14,7 @@ pub mod logging;
 pub mod metrics;
 pub mod num;
 pub mod otlp;
+pub mod panic_policy;
 pub mod pool_types;
 pub mod redis;
 pub mod request_context;
@@ -46,7 +47,7 @@ pub use config::{
 pub use crypto::supplier_secrets::{
     ENCRYPTED_PREFIX, decrypt_secret, encrypt_secret, is_encrypted_secret, supplier_secrets_key,
 };
-pub use db::{connect_listener, create_pool};
+pub use db::{connect_listener, create_lazy_pool, create_pool};
 pub use distributed_circuit_breaker::DistributedCircuitBreaker;
 pub use error::{CoreError, ErrorResponse, Result, error_codes};
 pub use interaction::{Attempt, AttemptStatus, InteractionEvent};

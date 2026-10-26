@@ -25,7 +25,7 @@
           :filter-catalog="routesCatalog"
           @search="handleSearch"
         />
-        <ElButton v-roles="['R_ADMIN', 'R_OPERATOR']" @click="openRouteImport">
+        <ElButton v-roles="['R_ADMIN', 'R_FINANCE']" @click="openRouteImport">
           <template #icon><ArtSvgIcon icon="ri:upload-line" /></template>
           {{ $t("common.actions.import") }}
         </ElButton>
@@ -37,7 +37,7 @@
           "
         />
         <ElButton
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           type="primary"
           @click="openCreateRoute"
         >
@@ -49,7 +49,7 @@
           }}
         </ElButton>
         <TableDeleteDropdown
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           :total-count="deletableRows.length"
           :selected-count="deletableSelectedRows.length"
           @command="
@@ -107,7 +107,7 @@
             $t("routes.actions.bindings")
           }}</ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="primary"
             :disabled="isExampleRoute(row)"
@@ -116,7 +116,7 @@
             {{ $t("common.actions.modify") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             :disabled="isExampleRoute(row)"
@@ -136,7 +136,7 @@
       <div class="dialog-toolbar">
         <span class="dialog-toolbar__title">{{ currentRuleTitle }}</span>
         <ElButton
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           type="primary"
           :disabled="!currentRule || isExampleRoute(currentRule)"
           @click="openCreateBinding"
@@ -165,7 +165,7 @@
         <template #operations="{ row }">
           <TableActionRow>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="primary"
               :disabled="isCurrentRuleExample"
@@ -174,7 +174,7 @@
               {{ $t("common.actions.modify") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="danger"
               :disabled="isCurrentRuleExample"
@@ -183,7 +183,7 @@
               {{ $t("common.actions.delete") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               link
               type="danger"
               :disabled="isCurrentRuleExample"

@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod auth;
 pub mod base_authorization {
     pub use crate::base_authorization_service::*;

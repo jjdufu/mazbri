@@ -73,10 +73,6 @@
           style="width: 100%"
         >
           <ElOption
-            :label="$t('userManagement.roles.operatorWithScope')"
-            value="R_OPERATOR"
-          />
-          <ElOption
             :label="$t('userManagement.roles.financeWithScope')"
             value="R_FINANCE"
           />
@@ -92,6 +88,13 @@
           {{ $t("userManagement.createDialog.tips.forcePasswordReset") }}
         </CommonInlineHint>
       </ElFormItem>
+      <ElFormItem :label="$t('userManagement.createDialog.fields.mfaRequired')">
+        <ElSwitch v-model="form.mfa_required" />
+        <CommonInlineHint class="ml-2">
+          {{ $t("userManagement.createDialog.tips.mfaRequired") }}
+        </CommonInlineHint>
+      </ElFormItem>
+      <MfaRequiredHint block />
     </ElForm>
   </EditDialog>
 </template>
@@ -104,6 +107,7 @@ import type { CreateAdminRequest } from "@/types/api/admin";
 import { createAdmin } from "@/api/admin";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
 import { generatePasswordWithFetch } from "@/utils/password";
@@ -119,7 +123,8 @@ const form = reactive<CreateAdminRequest>({
   display_name: "",
   email: "",
   password: "",
-  role: "R_OPERATOR",
+  role: "R_VIEWER",
+  mfa_required: false,
   force_password_reset: true,
 });
 const rules: FormRules = {
@@ -207,7 +212,8 @@ const resetForm = () => {
   form.display_name = "";
   form.email = "";
   form.password = "";
-  form.role = "R_OPERATOR";
+  form.role = "R_VIEWER";
+  form.mfa_required = false;
   form.force_password_reset = true;
   formRef.value?.resetFields();
 };

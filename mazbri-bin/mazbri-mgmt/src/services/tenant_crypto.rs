@@ -48,6 +48,12 @@ fn default_export_mode() -> String {
     "regular".to_string()
 }
 
+/// 迁移模式导出包含加密后的私钥材料与密钥事件，仅限超级管理员并要求 MFA。
+#[must_use]
+pub fn is_migration_export(mode: &str) -> bool {
+    mode == "migration"
+}
+
 fn default_require_signature() -> bool {
     true
 }

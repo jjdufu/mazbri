@@ -292,6 +292,7 @@ async fn run_scheduled_reconciliation(
     billing_db: &sqlx::PgPool,
     analytics: &mazbri_mgmt::analytics_client::AnalyticsHttpClient,
     settings_cache: &mazbri_mgmt::services::BillingReconciliationSettingsCache,
+    audit: &audit::AuditService,
 ) {
     let settings = settings_cache.get().await;
     let day = if settings.schedule.use_previous_day {
@@ -326,6 +327,7 @@ async fn run_scheduled_reconciliation(
                 discrepancy_id = %result.discrepancy_id,
                 "scheduled reconciliation audit completed"
             );
+            let mut alert_sent = None;
             if settings.alert.on_flagged
                 && result.status == "flagged"
                 && !settings.alert.webhook_url.trim().is_empty()
@@ -340,20 +342,45 @@ async fn run_scheduled_reconciliation(
                     "loss_ratio": result.loss_ratio.to_string(),
                     "status": result.status,
                 });
-                if let Err(e) = reqwest::Client::new()
+                let sent = reqwest::Client::new()
                     .post(settings.alert.webhook_url.trim())
                     .json(&body)
                     .send()
-                    .await
-                {
+                    .await;
+                if let Err(e) = &sent {
                     tracing::warn!("reconciliation alert webhook failed: {e}");
                 }
+                alert_sent = Some(sent.is_ok());
             }
+            log_reconciliation_run(
+                audit,
+                mazbri_mgmt::services::billing::scheduled_reconciliation_audit(
+                    Ok(&result),
+                    alert_sent,
+                ),
+            )
+            .await;
         }
         Err(e) => {
             tracing::warn!("scheduled reconciliation audit failed: {e}");
+            log_reconciliation_run(
+                audit,
+                mazbri_mgmt::services::billing::scheduled_reconciliation_audit(
+                    Err(&e.to_string()),
+                    None,
+                ),
+            )
+            .await;
         }
     }
+}
+
+/// 定时对账的系统审计：遵循「启用审计日志」开关，失败（非成功）总是记录。
+async fn log_reconciliation_run(audit: &audit::AuditService, request: audit::AuditLogRequest) {
+    if request.status == audit::AuditStatus::Success && !audit.audit_enabled().await {
+        return;
+    }
+    audit.log(request);
 }
 
 /// Always-on supervisor: enable/interval from admin DB (web UI), not fixed at process start.
@@ -361,6 +388,7 @@ fn spawn_reconciliation_supervisor(
     billing_db: PgArc,
     analytics: Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
     settings_cache: Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
+    audit: audit::AuditService,
 ) {
     info!(
         "billing reconciliation settings supervisor started (reads runtime settings from admin DB)"
@@ -383,8 +411,13 @@ fn spawn_reconciliation_supervisor(
             if last_run_at.elapsed() < interval {
                 continue;
             }
-            run_scheduled_reconciliation(billing_db.as_ref(), analytics.as_ref(), &settings_cache)
-                .await;
+            run_scheduled_reconciliation(
+                billing_db.as_ref(),
+                analytics.as_ref(),
+                &settings_cache,
+                &audit,
+            )
+            .await;
             // Advance even on error to avoid tight error loops every 30s.
             last_run_at = Instant::now();
         }
@@ -414,6 +447,21 @@ async fn serve_mgmt(app: Router, config: &MgmtApiConfig) -> Result<()> {
     Ok(())
 }
 
+/// 注册指标并初始化审计的可信代理名单。
+fn init_metrics_and_audit(config: &MgmtApiConfig) -> Result<()> {
+    register_metrics()?;
+    if let Err(e) = mazbri_mgmt::services::connector_metrics::register_connector_metrics() {
+        tracing::warn!("connector metrics register skipped/failed: {e}");
+    }
+    if let Err(e) = audit::register_audit_metrics() {
+        tracing::warn!("audit metrics register skipped/failed: {e}");
+    }
+    audit::init_trusted_proxies(&config.audit.trusted_proxies)
+        .map_err(|e| anyhow::anyhow!("audit.trusted_proxies: {e}"))?;
+    audit::actor_header::init_actor_signer(&config.audit)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let config_dir = Path::new(".");
@@ -430,10 +478,7 @@ async fn main() -> Result<()> {
     info!("Mazbri Management API V2 starting...");
     info!("Configuration: {:?}", config.server);
     validate_security_config();
-    register_metrics()?;
-    if let Err(e) = mazbri_mgmt::services::connector_metrics::register_connector_metrics() {
-        tracing::warn!("connector metrics register skipped/failed: {e}");
-    }
+    init_metrics_and_audit(&config)?;
     let db = create_pool(&config.database, Some(config_dir)).await?;
     info!("Connected to database");
     let redis = connect_redis(&config).await?;
@@ -445,7 +490,11 @@ async fn main() -> Result<()> {
         state.set_ready(true);
         info!("Service marked as ready");
     }
-    let audit = audit::AuditService::new(dbs.admin.clone());
+    let (audit, audit_writer) = audit::AuditService::new(
+        dbs.admin.clone(),
+        &config.audit,
+        Path::new(&config.tracing.log_dir),
+    );
     let password_policy_cache = Arc::new(mazbri_mgmt::services::PasswordPolicyCache::new(
         dbs.admin.clone(),
     ));
@@ -481,6 +530,7 @@ async fn main() -> Result<()> {
         dbs.billing.clone(),
         analytics_client.clone(),
         billing_reconciliation_settings.clone(),
+        audit.clone(),
     );
     let app_state = handlers::AppState {
         config: config.clone(),
@@ -493,7 +543,7 @@ async fn main() -> Result<()> {
         billing_db: dbs.billing,
         admin_db: dbs.admin,
         product_service,
-        audit,
+        audit: audit.clone(),
         auth_state: Arc::clone(&auth_state),
         analytics_client,
         cert_http_client,
@@ -505,8 +555,12 @@ async fn main() -> Result<()> {
         connector_runtime,
     };
     let _shutdown_handle = create_shutdown_manager();
-    let app = create_router(app_state, &auth_state);
-    serve_mgmt(app, &config).await
+    let app = create_router(app_state, &auth_state, audit);
+    let served = serve_mgmt(app, &config).await;
+    audit_writer
+        .shutdown(Duration::from_secs(config.audit.shutdown_drain_secs))
+        .await;
+    served
 }
 fn build_mgmt_cors_layer() -> CorsLayer {
     // 带 --dev 时放行本地 Vite 端口；不带时 CORS 为空名单。
@@ -557,6 +611,7 @@ fn build_mgmt_cors_layer() -> CorsLayer {
 fn create_router(
     state: handlers::AppState,
     auth_state: &Arc<middleware::auth::AdminAuthState>,
+    audit_service: audit::AuditService,
 ) -> Router {
     let base_middleware = ServiceBuilder::new()
         .layer(mazbri_service::http_trace_layer())
@@ -576,17 +631,21 @@ fn create_router(
     let protected_api_routes = Router::new()
         .nest("/certificates", proxy::cert::create_cert_proxy_routes())
         .merge(handlers::create_routes())
+        // 授权在认证之内：先由 admin_auth_middleware 验证令牌并注入声明，
+        // 再按集中式访问控制表做角色判定（未登记路由默认拒绝）。
+        .layer(axum::middleware::from_fn(
+            middleware::route_access::route_access_middleware,
+        ))
         .layer(axum::middleware::from_fn(
             middleware::auth::admin_auth_middleware,
         ))
         .layer(axum::Extension(Arc::clone(auth_state)));
-    Router::new()
+    let routes = Router::new()
         .nest("/api/v1/mgmt", protected_api_routes)
         .route("/health", get(health_check))
-        .fallback(vue_spa_fallback)
-        .layer(axum::middleware::from_fn(
-            middleware::ip::client_ip_middleware,
-        ))
+        .fallback(vue_spa_fallback);
+    // 审计层在 request_id 之内、鉴权之外：可拿到请求流水号，也能记录 401/403。
+    audit::apply_audit_layers(routes, audit_service)
         .layer(base_middleware)
         .with_state(state)
 }

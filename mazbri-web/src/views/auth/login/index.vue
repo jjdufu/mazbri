@@ -90,10 +90,12 @@ const handleLogin = async (credentials: {
 };
 const handleChangePassword = async () => {
   await baseHandlePassword();
-  loginStep.value = "login";
-  changePasswordFormData.currentPassword = "";
-  changePasswordFormData.newPassword = "";
-  changePasswordFormData.confirmPassword = "";
+  // 改密后可能进入 MFA 验证/强制设置；仅在回到登录步时清空表单。
+  if (loginStep.value === "login") {
+    changePasswordFormData.currentPassword = "";
+    changePasswordFormData.newPassword = "";
+    changePasswordFormData.confirmPassword = "";
+  }
 };
 </script>
 

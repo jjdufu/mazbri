@@ -1,7 +1,11 @@
 use crate::mfa::{MfaError, MfaService, MfaServiceCache};
+use crate::middleware::admin_token::{self, TokenKind, TokenRejection};
+use crate::middleware::auth::AdminClaims;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
+use axum::response::Response;
+use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::error;
@@ -16,16 +20,6 @@ pub(super) struct SetupArtifacts {
     pub hashed_codes: Vec<String>,
     pub qr_code_url: String,
     pub totp_digits: u32,
-}
-pub(super) fn is_required_by_global(
-    mfa_enabled_globally: bool,
-    required_roles: Option<&Vec<String>>,
-    user_role: &str,
-) -> bool {
-    if mfa_enabled_globally && let Some(roles) = required_roles {
-        return roles.contains(&user_role.to_string());
-    }
-    false
 }
 pub(super) async fn get_mfa_service(
     mfa_cache: &Arc<MfaServiceCache>,
@@ -140,6 +134,7 @@ pub(super) async fn verify_and_enable_mfa(
     };
     if !mfa_service.verify_totp(&secret, totp_code) {
         tracing::warn!("Invalid TOTP code for user: {}", username);
+        crate::audit::set_failure_reason("mfa_invalid_code");
         return Err(Box::new(ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::invalid_totp(),
@@ -158,4 +153,75 @@ pub(super) async fn verify_and_enable_mfa(
 pub(super) fn ok_json(value: serde_json::Value) -> axum::response::Response {
     // Session tokens go into HttpOnly cookies when present; body keeps user/MFA fields only.
     crate::middleware::auth::json_with_session_cookies(value, None)
+}
+
+fn stage_rejection(rejection: TokenRejection, token: &str, jwt_secret: &str) -> Response {
+    tracing::warn!(
+        reason = rejection.reason(),
+        "Rejected login-stage temp token / 拒绝登录阶段临时令牌"
+    );
+    admin_token::audit_rejection(rejection, token, jwt_secret);
+    let status = if rejection == TokenRejection::CheckUnavailable {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::UNAUTHORIZED
+    };
+    ApiResponse::err(status, mazbri_i18n::mfa::invalid_temp_token())
+}
+
+/// 校验登录阶段临时令牌：算法/iss/aud/exp/`token_type` 必须与 `kind` 严格匹配，且未被使用。
+///
+/// # Errors
+///
+/// 校验失败时返回 401（黑名单不可用时 503），并写入审计失败原因。
+pub(crate) async fn authenticate_stage_token(
+    redis: &RedisClient,
+    jwt_secret: &str,
+    temp_token: &str,
+    kind: TokenKind,
+) -> Result<(AdminClaims, uuid::Uuid), Box<Response>> {
+    let claims = admin_token::decode_kind(temp_token, jwt_secret, kind)
+        .map_err(|rejection| Box::new(stage_rejection(rejection, temp_token, jwt_secret)))?;
+    let user_id = uuid::Uuid::parse_str(&claims.user_id)
+        .ok()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| {
+            Box::new(stage_rejection(
+                TokenRejection::Invalid,
+                temp_token,
+                jwt_secret,
+            ))
+        })?;
+    // 临时令牌已验签：后续结果（成功/失败）归属该账号。
+    crate::audit::set_actor(Some(user_id), Some(&claims.sub), Some(&claims.role));
+    admin_token::ensure_not_revoked(redis, &claims)
+        .await
+        .map_err(|rejection| Box::new(stage_rejection(rejection, temp_token, jwt_secret)))?;
+    Ok((claims, user_id))
+}
+
+/// 原子消费临时令牌（一次性）；并发重放只有一个请求能成功。
+///
+/// # Errors
+///
+/// 已被使用返回 401；黑名单不可用返回 503。
+pub(crate) async fn consume_stage_token(
+    redis: &RedisClient,
+    claims: &AdminClaims,
+) -> Result<(), Box<Response>> {
+    admin_token::consume_temporary(redis, claims)
+        .await
+        .map_err(|rejection| {
+            crate::audit::set_failure_reason(rejection.reason());
+            crate::audit::mark_security_event();
+            let status = if rejection == TokenRejection::CheckUnavailable {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::UNAUTHORIZED
+            };
+            Box::new(ApiResponse::err(
+                status,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            ))
+        })
 }

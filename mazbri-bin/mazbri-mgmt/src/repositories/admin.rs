@@ -1,11 +1,14 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::{PgPool, Row};
-/// 管理员 MFA 开关：是否已绑定、是否被要求绑定。
-#[derive(Debug, Clone, Copy, serde::Serialize, sqlx::FromRow)]
+
+/// MFA 启用/强制标记，供 `AdminUserFullRow` / `AdminRow` 扁平展开，避免超限 bool 计数。
+#[derive(Debug, Clone, Copy, Default, Serialize, sqlx::FromRow)]
 pub struct AdminMfaFlags {
     pub mfa_enabled: bool,
     pub mfa_required: bool,
 }
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserFullRow {
     pub id: uuid::Uuid,
@@ -21,6 +24,18 @@ pub struct AdminUserFullRow {
     pub mfa_locked_until: Option<DateTime<Utc>>,
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
+}
+/// 刷新令牌时复核会话所需的账号状态（只读当前值，不含口令哈希）。
+#[derive(Debug, sqlx::FromRow)]
+pub struct AdminSessionStateRow {
+    pub username: String,
+    pub role: String,
+    pub is_active: bool,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub force_password_reset: bool,
+    pub password_changed_at: DateTime<Utc>,
+    pub mfa_enabled: bool,
+    pub mfa_verified_at: Option<DateTime<Utc>>,
 }
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserPasswordRow {
@@ -47,13 +62,34 @@ pub async fn get_admin_user_by_username(
     sqlx::query_as::<_, AdminUserFullRow>(
         r"
         SELECT id, username, password_hash, role, is_active, created_at, password_changed_at,
-               force_password_reset, mfa_enabled, mfa_locked_until, mfa_required,
+               force_password_reset, mfa_enabled, mfa_required, mfa_locked_until,
                login_attempts, locked_until
         FROM admin_users
         WHERE username = $1
     ",
     )
     .bind(username)
+    .fetch_optional(pool)
+    .await
+}
+/// 读取刷新令牌复核所需的账号状态。
+///
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_admin_session_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<AdminSessionStateRow>, sqlx::Error> {
+    sqlx::query_as::<_, AdminSessionStateRow>(
+        r"
+        SELECT username, role, is_active, locked_until, force_password_reset,
+               password_changed_at, mfa_enabled, mfa_verified_at
+        FROM admin_users
+        WHERE id = $1
+    ",
+    )
+    .bind(user_id)
     .fetch_optional(pool)
     .await
 }
@@ -241,23 +277,16 @@ pub async fn upsert_system_setting(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_admin_user_id_by_username(pool: &PgPool) -> Result<uuid::Uuid, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM admin_users WHERE username = 'admin' LIMIT 1")
-        .fetch_one(pool)
-        .await
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_user_settings(
     pool: &PgPool,
+    user_id: uuid::Uuid,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, sqlx::Error> {
     let query = r"
         SELECT key, value
         FROM user_settings
-        WHERE user_id = (SELECT id FROM admin_users WHERE username = 'admin' LIMIT 1)
+        WHERE user_id = $1
     ";
-    let rows = sqlx::query(query).fetch_all(pool).await?;
+    let rows = sqlx::query(query).bind(user_id).fetch_all(pool).await?;
     Ok(rows
         .into_iter()
         .map(|row| {

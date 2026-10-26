@@ -23,6 +23,7 @@ pub async fn export_configs(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ExportParams>,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     service::export_configs(&state, &claims, client_ip, &params, &request_id, &trace_id).await
@@ -33,11 +34,13 @@ pub async fn export_configs(
 pub async fn import_configs(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ImportParams>,
     body: Body,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(

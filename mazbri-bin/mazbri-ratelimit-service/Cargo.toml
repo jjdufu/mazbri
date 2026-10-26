@@ -17,6 +17,7 @@ mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
 mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
 mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
 mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit" }
 
 tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
 tokio-serde = {version = "0.9", features = ["bincode", "json"]}
@@ -39,6 +40,9 @@ anyhow = {version = "1.0"}
 chrono = {version = "0.4", features = ["serde"]}
 uuid = {version = "1.21", features = ["v4", "serde"]}
 mimalloc = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit", features = ["testing"] }
 
 [lints]
 workspace = true

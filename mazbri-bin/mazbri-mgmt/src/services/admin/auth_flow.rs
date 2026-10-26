@@ -1,7 +1,8 @@
-use crate::audit::{AuditAction, AuditService, user_audit};
+use crate::audit::{self, AuditAction, AuditService, user_audit};
 use crate::error::ApiError;
-use crate::handlers::types::{AdminJwtClaims, AdminLoginRequest, AdminLogoutRequest, AdminUser};
-use crate::middleware::auth::{AdminClaims, is_jti_revoked, revoke_jti};
+use crate::handlers::types::{AdminLoginRequest, AdminLogoutRequest, AdminUser};
+use crate::middleware::admin_token::{self, TokenKind, TokenSubject};
+use crate::middleware::auth::{AdminClaims, revoke_jti};
 use crate::repositories::admin as repo;
 use crate::services::{MfaSettings, MfaSettingsCache, PasswordPolicy, PasswordPolicyCache};
 use chrono::{Duration, Utc};
@@ -31,6 +32,7 @@ pub async fn resolve_access_token_expiration_secs(db: &PgPool, fallback_secs: u6
     }
 }
 
+/// 签发正式访问令牌（`token_type = "access"`）。
 pub(crate) fn generate_admin_jwt(
     username: &str,
     user_id: &str,
@@ -38,44 +40,57 @@ pub(crate) fn generate_admin_jwt(
     jwt_secret: &str,
     expiration_secs: i64,
 ) -> Result<String, String> {
-    let now = Utc::now().timestamp();
-    let expiration = now + expiration_secs;
-    let claims = AdminJwtClaims {
-        iss: "mazbri-mgmt-api".to_string(),
-        sub: username.to_string(),
-        user_id: user_id.to_string(),
-        role: role.to_string(),
-        iat: now,
-        exp: expiration,
-        jti: Some(Uuid::new_v4().to_string()),
-        token_type: None,
-    };
-    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
-    jsonwebtoken::encode(&jsonwebtoken::Header::default(), &claims, &encoding_key)
-        .map_err(|e| format!("Failed to encode JWT: {e}"))
+    admin_token::issue(
+        TokenKind::Access,
+        TokenSubject {
+            username,
+            user_id,
+            role,
+        },
+        jwt_secret,
+        expiration_secs,
+    )
 }
-fn refresh_admin_jwt(
+pub(crate) fn issue_refresh_token(
     username: &str,
     user_id: &str,
     role: &str,
     jwt_secret: &str,
     expiration_secs: i64,
 ) -> Result<String, String> {
-    let now = Utc::now().timestamp();
-    let expiration = now + expiration_secs;
-    let claims = AdminJwtClaims {
-        iss: "mazbri-mgmt-api".to_string(),
-        sub: username.to_string(),
-        user_id: user_id.to_string(),
-        role: role.to_string(),
-        iat: now,
-        exp: expiration,
-        jti: Some(Uuid::new_v4().to_string()),
-        token_type: Some("refresh".to_string()),
-    };
-    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
-    jsonwebtoken::encode(&jsonwebtoken::Header::default(), &claims, &encoding_key)
-        .map_err(|e| format!("Failed to encode refresh JWT: {e}"))
+    admin_token::issue(
+        TokenKind::Refresh,
+        TokenSubject {
+            username,
+            user_id,
+            role,
+        },
+        jwt_secret,
+        expiration_secs,
+    )
+}
+/// 签发登录中间阶段的一次性临时令牌（MFA 验证 / MFA 设置 / 强制改密）。
+pub(crate) fn issue_stage_token(
+    kind: TokenKind,
+    username: &str,
+    user_id: uuid::Uuid,
+    role: &str,
+    jwt_secret: &str,
+) -> Result<String, ApiError> {
+    let user_id = user_id.to_string();
+    admin_token::issue_temporary(
+        kind,
+        TokenSubject {
+            username,
+            user_id: &user_id,
+            role,
+        },
+        jwt_secret,
+    )
+    .map_err(|e| {
+        error!("Failed to generate {} temp JWT: {}", kind.as_str(), e);
+        ApiError::internal("生成认证令牌失败".to_string())
+    })
 }
 fn resolve_password_hash(user_row: &repo::AdminUserFullRow) -> Result<String, ApiError> {
     match user_row.password_hash.as_deref() {
@@ -86,6 +101,7 @@ fn resolve_password_hash(user_row: &repo::AdminUserFullRow) -> Result<String, Ap
                  / 用户 {} 在数据库中没有 password_hash，密码验证失败。",
                 user_row.username, user_row.username
             );
+            audit::set_failure_reason("password_hash_missing");
             Err(ApiError::validation("密码验证失败".to_string()))
         }
     }
@@ -110,12 +126,15 @@ async fn handle_failed_login(
                 "Failed to update login failure count for user {}: {}. Lockout bypass possible!",
                 username, e
             );
+            audit::set_failure_reason("db_error");
             return Err(ApiError::internal("登录验证失败，请稍后重试".to_string()));
         }
         warn!(
             "User {} locked after {} failed login attempts",
             username, new_attempts
         );
+        audit::set_failure_reason("lock_triggered");
+        audit::mark_security_event();
         return Err(ApiError::validation(format!(
             "登录失败次数过多。账户已被锁定 {} 分钟。",
             policy.lockout_duration_minutes
@@ -128,104 +147,60 @@ async fn handle_failed_login(
         );
     }
     let remaining_attempts = policy.max_login_attempts.saturating_sub(new_attempts);
+    audit::set_failure_reason("invalid_password");
     Err(ApiError::validation(format!(
         "用户名或密码无效。剩余 {remaining_attempts} 次尝试。"
     )))
 }
-fn determine_mfa(
+/// 密码校验通过后判断是否需要进入 MFA 阶段；需要时返回带一次性临时令牌的阶段响应。
+///
+/// # Errors
+///
+/// MFA 已锁定或令牌签发失败时返回错误。
+pub(crate) fn determine_mfa(
     user_row: &repo::AdminUserFullRow,
-    username: &str,
-    role: &str,
-    user_id: uuid::Uuid,
     mfa_settings: &MfaSettings,
     jwt_secret: &str,
-    jwt_expiration_secs: i64,
 ) -> Result<Option<serde_json::Value>, ApiError> {
-    let role_string = role.to_string();
-    let (mfa_required_by_global_settings, totp_digits) = if mfa_settings.mfa_enabled_globally {
-        if mfa_settings.mfa_required_for_all {
-            (true, mfa_settings.totp_digits)
-        } else if !mfa_settings.mfa_required_for_roles.is_empty() {
-            (
-                mfa_settings.mfa_required_for_roles.contains(&role_string),
-                mfa_settings.totp_digits,
-            )
-        } else {
-            (false, mfa_settings.totp_digits)
+    let username = user_row.username.as_str();
+    let role = user_row.role.as_str();
+    let user_id = user_row.id;
+    let totp_digits = mfa_settings.totp_digits;
+    if user_row.mfa.mfa_enabled {
+        if let Some(mfa_lock_until) = user_row.mfa_locked_until
+            && mfa_lock_until > Utc::now()
+        {
+            warn!("Login blocked: MFA locked for user: {}", username);
+            audit::set_failure_reason("mfa_locked");
+            return Err(ApiError::validation(
+                "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
+            ));
         }
-    } else {
-        (false, mfa_settings.totp_digits)
-    };
-    if user_row.mfa.mfa_enabled || mfa_required_by_global_settings {
-        if user_row.mfa.mfa_enabled {
-            if let Some(mfa_lock_until) = user_row.mfa_locked_until
-                && mfa_lock_until > Utc::now()
-            {
-                warn!("Login blocked: MFA locked for user: {}", username);
-                return Err(ApiError::validation(
-                    "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
-                ));
-            }
-            let temp_token = generate_admin_jwt(
-                username,
-                &user_id.to_string(),
-                &role_string,
-                jwt_secret,
-                jwt_expiration_secs,
-            )
-            .map_err(|e| {
-                error!("Failed to generate temp MFA JWT: {}", e);
-                ApiError::internal("生成认证令牌失败".to_string())
-            })?;
-            info!("Password verified, MFA required for user: {}", username);
-            return Ok(Some(serde_json::json!(
-                { "mfa_required" : true, "temp_token" : temp_token, "totp_digits"
-                : totp_digits, "message" : "需要 MFA 验证" }
-            )));
-        }
-        if mfa_required_by_global_settings && !user_row.mfa.mfa_enabled {
-            let temp_token = generate_admin_jwt(
-                username,
-                &user_id.to_string(),
-                &role_string,
-                jwt_secret,
-                jwt_expiration_secs,
-            )
-            .map_err(|e| {
-                error!("Failed to generate temp MFA setup JWT: {}", e);
-                ApiError::internal("生成认证令牌失败".to_string())
-            })?;
-            info!(
-                "Password verified, MFA setup required for user: {} (role: {})",
-                username, role
-            );
-            return Ok(Some(serde_json::json!(
-                { "mfa_setup_required" : true, "temp_token" : temp_token,
-                "message" : "安全策略要求设置 MFA" }
-            )));
-        }
-    }
-    if user_row.mfa.mfa_required && !user_row.mfa.mfa_enabled {
-        let temp_token = generate_admin_jwt(
-            username,
-            &user_id.to_string(),
-            &role_string,
-            jwt_secret,
-            jwt_expiration_secs,
-        )
-        .map_err(|e| {
-            error!("Failed to generate temp MFA setup JWT: {}", e);
-            ApiError::internal("生成认证令牌失败".to_string())
-        })?;
-        info!(
-            "Password verified, MFA setup required for user: {}",
-            username
-        );
+        let temp_token =
+            issue_stage_token(TokenKind::MfaPending, username, user_id, role, jwt_secret)?;
+        info!("Password verified, MFA required for user: {}", username);
+        audit::add_detail("login_stage", serde_json::json!("mfa_required"));
         return Ok(Some(serde_json::json!(
-            { "mfa_setup_required" : true, "temp_token" : temp_token, "message" :
-            "安全策略要求设置 MFA" }
+            { "mfa_required" : true, "temp_token" : temp_token, "totp_digits"
+            : totp_digits, "message" : "需要 MFA 验证" }
         )));
     }
+    // 超管为该账号设置了 mfa_required 且尚未绑定时，进入强制设置阶段。
+    if user_row.mfa.mfa_required {
+        let temp_token =
+            issue_stage_token(TokenKind::MfaSetup, username, user_id, role, jwt_secret)?;
+        info!(
+            "Password verified, MFA setup required for user: {} (per-user mfa_required)",
+            username
+        );
+        audit::add_detail("login_stage", serde_json::json!("mfa_setup_required"));
+        return Ok(Some(serde_json::json!({
+            "mfa_setup_required": true,
+            "temp_token": temp_token,
+            "message": "安全策略要求设置 MFA",
+        })));
+    }
+    // 未绑定且未要求 MFA：直接登录；敏感功能仍按功能要求 MFA。
     Ok(None)
 }
 struct GenerateLoginResponseParams<'a> {
@@ -255,7 +230,7 @@ async fn generate_login_response(
         error!("Failed to generate admin JWT: {}", e);
         ApiError::internal("生成认证令牌失败".to_string())
     })?;
-    let refresh_token = refresh_admin_jwt(
+    let refresh_token = issue_refresh_token(
         params.username,
         &params.user_id.to_string(),
         params.role,
@@ -306,6 +281,7 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
         Ok(row) => row,
         Err(e) => {
             error!("Database error during login: {}", e);
+            audit::set_failure_reason("db_error");
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             return Err(ApiError::internal(
                 "Database error during login".to_string(),
@@ -313,12 +289,16 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
         }
     };
     let Some(user_row) = user_row else {
+        // 不存在的账号名可能是误输入的密码，落库前脱敏。
+        audit::mask_attempted_username();
+        audit::set_failure_reason("user_not_found");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         return Err(ApiError::Unauthorized);
     };
     let username = &user_row.username;
     if !user_row.is_active {
         warn!("Login attempt for disabled user: {}", username);
+        audit::set_failure_reason("account_disabled");
         return Err(ApiError::validation("账户已禁用".to_string()));
     }
     if let Some(lock_until) = user_row.locked_until
@@ -329,6 +309,7 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
             "Login attempt for locked user: {}, locked until: {}",
             username, lock_until
         );
+        audit::set_failure_reason("account_locked");
         return Err(ApiError::validation(format!(
             "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
         )));
@@ -363,6 +344,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     let audit = params.audit;
     let req = params.req;
     let client_ip = params.client_ip;
+    audit::set_attempted_username(&req.username);
     let user_row = load_login_user(db, &req.username).await?;
     let user_id = user_row.id;
     let username = &user_row.username;
@@ -375,18 +357,17 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         let policy = password_policy_cache.get().await;
         return handle_failed_login(db, user_id, &user_row, &policy, username).await;
     }
+    // 密码已验证：身份确认，后续阶段（重置密码/MFA/成功）均归属该账号。
+    audit::set_actor(Some(user_id), Some(username), Some(role));
     if user_row.force_password_reset {
-        let temp_token = generate_admin_jwt(
+        audit::add_detail("login_stage", serde_json::json!("password_reset_required"));
+        let temp_token = issue_stage_token(
+            TokenKind::PasswordReset,
             username,
-            &user_id.to_string(),
+            user_id,
             role,
             jwt_secret,
-            i64::saturating_from(jwt_expiration_secs),
-        )
-        .map_err(|e| {
-            error!("Failed to generate temp password reset JWT: {}", e);
-            ApiError::internal("生成认证令牌失败".to_string())
-        })?;
+        )?;
         info!(
             "Password verified, password reset required for user: {}",
             username
@@ -404,6 +385,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
             "Login blocked: password expired for user: {} (days until expiry: {})",
             username, days_until_expiry
         );
+        audit::set_failure_reason("password_expired");
         return Err(ApiError::validation(
             "密码已过期。请联系管理员重置密码。".to_string(),
         ));
@@ -417,15 +399,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         );
     }
     let mfa_settings = mfa_settings_cache.get().await;
-    if let Some(mfa_response) = determine_mfa(
-        &user_row,
-        username,
-        role,
-        user_id,
-        &mfa_settings,
-        jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
-    )? {
+    if let Some(mfa_response) = determine_mfa(&user_row, &mfa_settings, jwt_secret)? {
         return Ok(mfa_response);
     }
     let created_at = user_row.created_at.to_rfc3339();
@@ -443,49 +417,6 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     })
     .await
 }
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn admin_refresh_token(
-    db: &PgPool,
-    claims: &AdminClaims,
-    jwt_secret: &str,
-    jwt_expiration_secs_fallback: u64,
-    redis: &RedisClient,
-) -> Result<serde_json::Value, ApiError> {
-    match &claims.token_type {
-        Some(tt) if tt == "refresh" => {}
-        _ => {
-            return Err(ApiError::validation(
-                "无效的令牌类型，需要 refresh token".to_string(),
-            ));
-        }
-    }
-    if let Some(ref jti) = claims.jti
-        && is_jti_revoked(redis, jti).await
-    {
-        return Err(ApiError::Unauthorized);
-    }
-    let jwt_expiration_secs =
-        resolve_access_token_expiration_secs(db, jwt_expiration_secs_fallback).await;
-    let new_token = generate_admin_jwt(
-        &claims.sub,
-        &claims.user_id,
-        &claims.role,
-        jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
-    )
-    .map_err(|e| {
-        error!("Failed to generate access JWT during refresh: {}", e);
-        ApiError::internal("生成认证令牌失败".to_string())
-    })?;
-    info!(
-        "Token refreshed for user: {} (role: {})",
-        claims.sub, claims.role
-    );
-    Ok(serde_json::json!({ "token" : new_token, "expires_in" : jwt_expiration_secs }))
-}
-
 /// Logout: revoke access jti (+ optional refresh) and audit (H-11).
 ///
 /// # Errors
@@ -506,19 +437,13 @@ pub async fn admin_logout(
             error!("Failed to revoke access token jti: {}", e);
         }
     }
-    if let Some(ref refresh_token) = req.refresh_token {
-        let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_ref());
-        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
-        validation.set_issuer(&["mazbri-mgmt-api"]);
-        if let Ok(token_data) =
-            jsonwebtoken::decode::<AdminClaims>(refresh_token, &decoding_key, &validation)
-            && token_data.claims.token_type.as_deref() == Some("refresh")
-            && let Some(ref jti) = token_data.claims.jti
-        {
-            let ttl = (token_data.claims.exp - now).max(1);
-            if let Err(e) = revoke_jti(redis, jti, ttl).await {
-                error!("Failed to revoke refresh token jti: {}", e);
-            }
+    if let Some(ref refresh_token) = req.refresh_token
+        && let Ok(refresh_claims) = admin_token::decode_refresh(refresh_token, jwt_secret)
+        && let Some(ref jti) = refresh_claims.jti
+    {
+        let ttl = (refresh_claims.exp - now).max(1);
+        if let Err(e) = revoke_jti(redis, jti, ttl).await {
+            error!("Failed to revoke refresh token jti: {}", e);
         }
     }
     let user_id = Uuid::parse_str(&claims.user_id).unwrap_or(Uuid::nil());

@@ -167,7 +167,10 @@
       "placeholder": "Please enter the MFA one-time code",
       "confirm": "Confirm",
       "cancel": "Cancel",
-      "inputErrorMessage": "Please enter a 6-8 digit code"
+      "inputErrorMessage": "Please enter a 6-8 digit code",
+      "notEnabledTitle": "MFA Required",
+      "notEnabledMessage": "This operation requires MFA verification, but MFA is not enabled for your account. Bind and enable MFA on the Account Security page first.",
+      "goToSetup": "Set up MFA"
     },
     "fields": {
       "status": "Status",
@@ -253,9 +256,8 @@
       "revoked": "Revoked"
     },
     "roleLabels": {
-      "admin": "Administrator",
-      "operator": "Operator",
-      "finance": "Finance",
+      "admin": "Super Administrator",
+      "finance": "Administrator",
       "viewer": "Read-only User"
     },
     "conflict": {
@@ -328,7 +330,8 @@
       "remove": "Remove"
     },
     "save": "Save",
-    "saveSuccess": "Saved"
+    "saveSuccess": "Saved",
+    "accountSecurity": "Account Security"
   },
   "config": {
     "globalComponents": {
@@ -587,10 +590,9 @@
     "title": "Welcome back",
     "subTitle": "Please enter your account and password to login",
     "roles": {
-      "admin": "Admin",
-      "operator": "Operator",
-      "finance": "Finance",
-      "viewer": "Viewer"
+      "admin": "Super Administrator",
+      "finance": "Administrator",
+      "viewer": "Read-only User"
     },
     "placeholder": {
       "username": "Please enter your account",
@@ -620,6 +622,23 @@
       "btnText": "Verify",
       "backToLogin": "Back to login"
     },
+    "changePassword": {
+      "title": "Change Password",
+      "subTitle": "First time login requires password change",
+      "newUsername": "New Username (Optional)",
+      "usernameLengthError": "Username must be between 3 and 50 characters",
+      "currentPassword": "Enter current password",
+      "currentPasswordRequired": "Please enter current password",
+      "newPassword": "Enter new password",
+      "newPasswordRequired": "Please enter new password",
+      "confirmPassword": "Confirm new password",
+      "confirmPasswordRequired": "Please confirm the new password",
+      "passwordMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 8 characters",
+      "passwordMinLength": "Password must be at least 8 characters",
+      "btnText": "Confirm",
+      "success": "Password changed successfully"
+    },
     "mfaSetup": {
       "title": "Set Up Two-Factor Authentication",
       "subTitle": "Scan the QR code with your authenticator to set up MFA",
@@ -640,23 +659,6 @@
       "copyFailed": "Copy failed, please copy manually",
       "btnText": "Enable MFA",
       "backToLogin": "Back to login"
-    },
-    "changePassword": {
-      "title": "Change Password",
-      "subTitle": "First time login requires password change",
-      "newUsername": "New Username (Optional)",
-      "usernameLengthError": "Username must be between 3 and 50 characters",
-      "currentPassword": "Enter current password",
-      "currentPasswordRequired": "Please enter current password",
-      "newPassword": "Enter new password",
-      "newPasswordRequired": "Please enter new password",
-      "confirmPassword": "Confirm new password",
-      "confirmPasswordRequired": "Please confirm the new password",
-      "passwordMismatch": "Passwords do not match",
-      "passwordTooShort": "Password must be at least 8 characters",
-      "passwordMinLength": "Password must be at least 8 characters",
-      "btnText": "Confirm",
-      "success": "Password changed successfully"
     }
   },
   "forgetPassword": {
@@ -816,7 +818,9 @@
       "passwordPolicy": "Security Settings",
       "controlPanel": "Control Panel",
       "configCenter": "Config Center",
-      "connectorWorkbench": "Code-free Access"
+      "connectorWorkbench": "Code-free Access",
+      "account": "My Account",
+      "accountSecurity": "Account Security"
     }
   },
   "systemSettings": {
@@ -928,10 +932,6 @@
       "mfa": {
         "title": "MFA Configuration"
       },
-      "mfaScope": {
-        "title": "Enable MFA",
-        "description": "Default MFA scope."
-      },
       "totp": {
         "title": "TOTP Parameters",
         "description": "Control the authenticator display name, code digits, and refresh interval."
@@ -953,7 +953,6 @@
       "historyCheck": "Password History Check (times)",
       "lockThreshold": "Lock Threshold (times)",
       "lockDuration": "Lock Duration (minutes)",
-      "globalMfa": "Enable Scope",
       "issuerName": "Issuer Name",
       "totpDigits": "Code Digits (digits)",
       "totpPeriod": "Code Period (seconds)",
@@ -963,9 +962,6 @@
       "issuerName": "Mazbri"
     },
     "options": {
-      "disabled": "Disabled",
-      "adminOnly": "Admin Only",
-      "allUsers": "All Users",
       "totpDigits6": "6 digits",
       "totpDigits8": "8 digits",
       "totpPeriod30": "30 seconds",
@@ -995,7 +991,7 @@
       }
     },
     "messages": {
-      "noPermission": "Only admins can configure security settings.",
+      "noPermission": "Only the super administrator can configure security settings.",
       "savedSuccess": "Settings saved"
     }
   },
@@ -1333,11 +1329,19 @@
       "resourceType": "Resource Type",
       "status": "Status",
       "ipAddress": "IP Address",
-      "details": "Details"
+      "details": "Details",
+      "failureReason": "Failure Reason",
+      "actorRole": "Role",
+      "requestId": "Request ID",
+      "route": "Route",
+      "statusCode": "HTTP Status",
+      "durationMs": "Duration (ms)",
+      "service": "Service"
     },
     "status": {
       "success": "Success",
-      "failure": "Failure"
+      "failure": "Failure",
+      "denied": "Denied"
     },
     "explicitActions": {
       "adminLogin": "System User Login",
@@ -1431,7 +1435,68 @@
       "authorizationActivate": "Activate Authorization Package",
       "authorizationRevoke": "Revoke Authorization Package",
       "authorizationRotate": "Rotate Authorization Package",
-      "authorizationDisable": "Disable Authorization Package"
+      "authorizationDisable": "Disable Authorization Package",
+      "billStatusUpdate": "Update Bill Status",
+      "billingReconciliationDiscrepancyDelete": "Delete Reconciliation Discrepancy",
+      "tenantRatelimitCommandCreate": "Create Rate Limit Command",
+      "tenantRatelimitCommandCancel": "Cancel Rate Limit Command",
+      "tenantCryptoKeyDelete": "Delete Tenant Crypto Key",
+      "upstreamOnboarding": "Upstream Onboarding",
+      "supplierValidateConfig": "Validate Supplier Config",
+      "connectorRun": "Run Connector",
+      "connectorPublish": "Publish Connector",
+      "connectorForcePublish": "Force Publish Connector",
+      "connectorRollback": "Roll Back Connector",
+      "connectorImport": "Import Connector",
+      "adminForcePasswordReset": "Force Admin Password Reset",
+      "adminMfaReset": "Reset Admin MFA",
+      "userMfaSetup": "Set Up MFA",
+      "userMfaEnable": "Enable MFA",
+      "userMfaDisable": "Disable MFA",
+      "userMfaRegenerateCodes": "Regenerate MFA Backup Codes",
+      "userMfaRequiredSetup": "Required MFA Setup",
+      "userMfaRequiredEnable": "Required MFA Enable",
+      "userTokenRefresh": "Refresh Token",
+      "tenantRequestKeyCreate": "Create Request Signing Key",
+      "tenantRequestKeyRetire": "Retire Request Signing Key",
+      "tenantRequestKeyList": "View Request Signing Keys",
+      "tenantCryptoKeyList": "View Tenant Crypto Keys",
+      "tenantEnabledChange": "Enable/Disable Tenant",
+      "apikeyList": "View API Keys",
+      "certificateViewFull": "View Full Certificate",
+      "certificateAutoRenewalUpdate": "Update Certificate Auto-Renewal",
+      "authorizationLicenseRequest": "Export License Request",
+      "auditList": "View Audit Logs",
+      "auditView": "View Audit Log Detail",
+      "auditExport": "Export Audit Logs",
+      "connectorDraftCreate": "Create Connector Draft",
+      "connectorDraftUpdate": "Update Connector Draft",
+      "connectorDraftDelete": "Delete Connector Draft",
+      "connectorDraftValidate": "Validate Connector Draft",
+      "connectorTransformPreview": "Preview Connector Transform",
+      "connectorDraftFromSupplier": "Create Draft From Supplier",
+      "connectorArtifactCreate": "Create Connector Artifact",
+      "connectorExport": "Export Connector",
+      "configCenterValidate": "Validate Config",
+      "upstreamOnboardingDryRun": "Upstream Onboarding Dry Run",
+      "productTenantConfigUpdate": "Update Tenant Product Config",
+      "billGenerateAsync": "Generate Bill (Async)",
+      "reconciliationRun": "Scheduled usage reconciliation",
+      "certificateVerify": "Certificate verification failed",
+      "authorizationRootMaterialRead": "Read root authorization materials",
+      "configCenterTagCreate": "Create config tag",
+      "configCenterTagUpdate": "Update config tag",
+      "configCenterTagDelete": "Delete config tag",
+      "configCenterCategoryCreate": "Create config category",
+      "configCenterCategoryUpdate": "Update config category",
+      "configCenterCategoryDelete": "Delete config category",
+      "ratelimitCommandAck": "Acknowledge rate-limit commands",
+      "apiRead": "API Read",
+      "apiGet": "API Read",
+      "apiPost": "API Submit",
+      "apiPut": "API Update",
+      "apiPatch": "API Modify",
+      "apiDelete": "API Delete"
     },
     "resources": {
       "admin": "Administrator",
@@ -1449,7 +1514,17 @@
       "channel": "Channel",
       "routeRule": "Route Rule",
       "routeChannelBinding": "Route Channel Binding",
-      "callback": "Callback"
+      "callback": "Callback",
+      "auditLog": "Audit Log",
+      "connector": "Connector",
+      "authorization": "Authorization",
+      "billing": "Billing",
+      "ratelimit": "Rate limit"
+    },
+    "services": {
+      "mgmt": "Management",
+      "cert": "Certificate service",
+      "ratelimit": "Rate-limit service"
     },
     "verbs": {
       "login": "Login",
@@ -1567,7 +1642,8 @@
     "values": {
       "yes": "Yes",
       "no": "No",
-      "none": "None"
+      "none": "None",
+      "anonymous": "Anonymous"
     },
     "routeConfig": {
       "purpose": "Purpose: ",
@@ -1608,8 +1684,62 @@
         "status": "Status",
         "ipAddress": "IP Address",
         "userAgent": "Client Identifier",
-        "errorMessage": "Error Message"
-      }
+        "errorMessage": "Error Message",
+        "actorRole": "Role",
+        "actorType": "Actor Type",
+        "failureReason": "Failure Reason",
+        "requestId": "Request ID",
+        "method": "Method",
+        "path": "Route",
+        "statusCode": "HTTP Status",
+        "durationMs": "Duration (ms)",
+        "service": "Service",
+        "requestSummary": "Request Summary"
+      },
+      "changesTitle": "Changes",
+      "changesField": "Field",
+      "changesBefore": "Before",
+      "changesAfter": "After"
+    },
+    "failureReasons": {
+      "missingToken": "Missing token",
+      "invalidToken": "Invalid token",
+      "invalidTokenType": "Invalid token type",
+      "tokenExpired": "Token expired",
+      "tokenRevoked": "Token revoked",
+      "tokenTypeMismatch": "Token type mismatch",
+      "legacyToken": "Legacy token (no longer accepted)",
+      "tokenCheckFailed": "Token status check failed",
+      "forbidden": "Forbidden",
+      "unauthorized": "Unauthorized",
+      "userNotFound": "User not found",
+      "invalidPassword": "Invalid password",
+      "accountDisabled": "Account disabled",
+      "accountLocked": "Account locked",
+      "lockTriggered": "Lock triggered",
+      "passwordExpired": "Password expired",
+      "mfaInvalidCode": "Invalid MFA code",
+      "mfaLocked": "MFA locked",
+      "mfaRequired": "MFA required",
+      "rateLimited": "Rate limited",
+      "clientDisconnected": "Client disconnected",
+      "serverError": "Server error",
+      "clientError": "Client error",
+      "dbError": "Database error",
+      "panic": "Service panic",
+      "mfaCheckError": "MFA check failed",
+      "mfaNotEnabled": "MFA not enabled",
+      "mfaLockTriggered": "MFA lock triggered",
+      "invalidTempToken": "Invalid temporary token",
+      "passwordHashMissing": "Password not set",
+      "businessFailure": "Business failure",
+      "mfaRequiredByPolicy": "MFA enforced by policy (cannot disable)",
+      "passwordResetRequired": "Password reset required",
+      "credentialsChanged": "Password changed after token was issued",
+      "mfaStateChanged": "MFA state changed after token was issued",
+      "mfaSetupRequired": "MFA setup required",
+      "insufficientPermissions": "Insufficient role permissions",
+      "routeNotAuthorized": "Route has no access policy (denied by default)"
     }
   },
   "feedback": {
@@ -2177,7 +2307,8 @@
         "status": "Status",
         "mfa": "MFA",
         "lastLogin": "Last Login",
-        "createdAt": "Created At"
+        "createdAt": "Created At",
+        "mfaRequired": "Require MFA"
       }
     },
     "createDialog": {
@@ -2188,7 +2319,8 @@
         "email": "Email",
         "password": "Password",
         "role": "Role",
-        "firstLogin": "First Login"
+        "firstLogin": "First Login",
+        "mfaRequired": "Require MFA"
       },
       "placeholders": {
         "username": "Please enter a username",
@@ -2202,7 +2334,8 @@
       },
       "tips": {
         "passwordGenerated": "Generated automatically based on the password policy",
-        "forcePasswordReset": "Password must be changed on first login"
+        "forcePasswordReset": "Password must be changed on first login",
+        "mfaRequired": "When enabled, the user must bind MFA on next login before entering the system"
       },
       "validation": {
         "usernameRequired": "Please enter a username",
@@ -2252,7 +2385,8 @@
         "status": "Status",
         "mfaStatus": "MFA Status",
         "forcePasswordReset": "Force Password Reset",
-        "lastLogin": "Last Login"
+        "lastLogin": "Last Login",
+        "mfaRequired": "Require MFA"
       },
       "validation": {
         "emailRequired": "Please enter an email",
@@ -2261,13 +2395,11 @@
       }
     },
     "roles": {
-      "admin": "Administrator",
-      "operator": "Operator",
-      "finance": "Finance",
-      "viewer": "Viewer",
-      "operatorWithScope": "Operator (read/write business)",
-      "financeWithScope": "Finance (billing reconciliation)",
-      "viewerWithScope": "Viewer (read-only)"
+      "admin": "Super Administrator",
+      "finance": "Administrator",
+      "viewer": "Read-only User",
+      "financeWithScope": "Administrator (read/write business)",
+      "viewerWithScope": "Read-only User (view only)"
     },
     "messages": {
       "resetMfaTitle": "Reset MFA",
@@ -2779,9 +2911,7 @@
         "refundAmountRequired": "Please enter a refund amount",
         "refundAmountPositive": "Refund amount must be greater than 0",
         "refundReasonRequired": "Please enter a refund reason"
-      },
-      "mfaDisabledTitle": "MFA Not Enabled",
-      "mfaDisabledMessage": "Recharge is disabled. Please contact an administrator to enable MFA."
+      }
     },
     "createDialog": {
       "placeholders": {
@@ -3801,6 +3931,69 @@
       "latencyGt500": "Latency > 500ms",
       "statusGte500": "Status ≥ 500",
       "statusEq0": "Status = 0"
+    }
+  },
+  "mfaRequiredHint": {
+    "enabled": "An MFA code is required to perform this operation.",
+    "notEnabled": "This operation requires MFA, which is not enabled for your account.",
+    "goToSetup": "Set up MFA"
+  },
+  "accountSecurity": {
+    "page": {
+      "title": "Account Security",
+      "subtitle": "Manage two-factor authentication (MFA) and the password of your account"
+    },
+    "mfa": {
+      "title": "Two-Factor Authentication (MFA)",
+      "statusEnabled": "Enabled",
+      "statusDisabled": "Not enabled",
+      "description": "Sensitive operations (funds, deletion, forced publishing, keys and certificates, super admin settings, etc.) require an MFA code; accounts without MFA cannot perform them. Regular sign-in and viewing are not affected.",
+      "verifiedAt": "Enabled at",
+      "backupCodesRemaining": "Backup codes left"
+    },
+    "setup": {
+      "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
+      "stepScan": "Scan the QR code below with the app, or enter the secret manually.",
+      "stepEnter": "Enter the code shown in the app and click Enable.",
+      "secretLabel": "Secret (for manual entry)",
+      "codeLabel": "Code ({digits} digits)",
+      "codePlaceholder": "Enter the code from your authenticator",
+      "codeInvalid": "Please enter a {digits}-digit code"
+    },
+    "backupCodes": {
+      "title": "Backup codes",
+      "hint": "Backup codes are shown only once and each can be used once. Save them now; use them to sign in if you lose your phone.",
+      "regenerateConfirm": "All existing backup codes will stop working after regeneration. Continue?"
+    },
+    "disable": {
+      "title": "Disable MFA",
+      "message": "After disabling, you will not be able to perform operations that require MFA. Enter your current MFA code or login password to confirm.",
+      "placeholder": "MFA code or login password",
+      "required": "Please enter an MFA code or your login password"
+    },
+    "password": {
+      "title": "Change Password",
+      "current": "Current password",
+      "new": "New password",
+      "confirm": "Confirm new password",
+      "currentRequired": "Please enter the current password",
+      "newRequired": "Please enter a new password",
+      "confirmRequired": "Please enter the new password again",
+      "mismatch": "The new passwords do not match",
+      "policyHint": "The new password must satisfy the password policy (length, character types, history)."
+    },
+    "actions": {
+      "bind": "Set up MFA",
+      "enable": "Enable",
+      "disable": "Disable MFA",
+      "regenerateCodes": "Regenerate backup codes",
+      "copy": "Copy",
+      "copyAll": "Copy all",
+      "changePassword": "Change password"
+    },
+    "messages": {
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed, please copy manually"
     }
   }
 }

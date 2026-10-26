@@ -20,11 +20,11 @@ pub async fn fetch_license_status(
         "{}/authorizations/license/status",
         base_url.trim_end_matches('/')
     );
-    let response = client
+    let request = client
         .get(url)
         .timeout(std::time::Duration::from_secs(5))
-        .bearer_auth(token)
-        .send()
+        .bearer_auth(token);
+    let response = crate::audit::actor_header::send_to_cert(request)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to query license status: {error}")))?;
     if !response.status().is_success() {

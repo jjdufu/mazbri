@@ -22,6 +22,7 @@ pub struct AdminRow {
 pub struct AdminBriefRow {
     pub id: uuid::Uuid,
     pub username: String,
+    pub role: String,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AdminRoleRow {
@@ -40,6 +41,7 @@ pub struct AdminStatusRow {
 pub struct AdminMfaRow {
     pub id: uuid::Uuid,
     pub username: String,
+    pub role: String,
     pub mfa_enabled: bool,
 }
 const ADMIN_COLUMNS: &str = "\
@@ -182,7 +184,7 @@ pub async fn find_brief_by_id(
     pool: &PgPool,
     id: uuid::Uuid,
 ) -> Result<Option<AdminBriefRow>, sqlx::Error> {
-    sqlx::query_as::<_, AdminBriefRow>("SELECT id, username FROM admin_users WHERE id = $1")
+    sqlx::query_as::<_, AdminBriefRow>("SELECT id, username, role FROM admin_users WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -221,30 +223,10 @@ pub async fn find_mfa_by_id(
     id: uuid::Uuid,
 ) -> Result<Option<AdminMfaRow>, sqlx::Error> {
     sqlx::query_as::<_, AdminMfaRow>(
-        "SELECT id, username, mfa_enabled FROM admin_users WHERE id = $1",
+        "SELECT id, username, role, mfa_enabled FROM admin_users WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
-    .await
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn count_admins_by_role(pool: &PgPool, role: &str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM admin_users WHERE role = $1")
-        .bind(role)
-        .fetch_one(pool)
-        .await
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn count_active_admins_by_role(pool: &PgPool, role: &str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM admin_users WHERE role = $1 AND is_active = true",
-    )
-    .bind(role)
-    .fetch_one(pool)
     .await
 }
 /// # Errors
@@ -276,10 +258,6 @@ pub async fn update_admin(
     if let Some(mfa_req) = mfa_required {
         builder.push(", mfa_required = ");
         builder.push_bind(mfa_req);
-        if !mfa_req {
-            builder.push(", mfa_enabled = false");
-            builder.push(", mfa_secret = NULL");
-        }
     }
     if let Some(force_reset) = force_password_reset {
         builder.push(", force_password_reset = ");
