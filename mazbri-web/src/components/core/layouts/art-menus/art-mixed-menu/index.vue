@@ -14,7 +14,7 @@
       @wheel="handleWheel"
     >
       <div
-        class="box-border flex-c flex-shrink-0 flex-nowrap h-15 whitespace-nowrap"
+        class="box-border flex-c flex-shrink-0 flex-nowrap h-12 whitespace-nowrap"
       >
         <template v-for="item in processedMenuList" :key="item.meta.title">
           <div

@@ -1,7 +1,12 @@
 @use "@styles/core/mixin.scss" as *;
 
-$menu-height: 42px;
-$menu-icon-size: 20px;
+$menu-height: 36px;
+$menu-icon-size: 16px;
+$menu-item-gap: 2px;
+$section-title-color: rgba(255, 255, 255, 0.45);
+$section-title-size: 12px;
+// item margin-left (8px) + base padding (20px) + icon offset (-7px)
+$section-title-indent: 21px;
 $menu-font-size: 14px;
 $hover-bg-color: var(--art-gray-200);
 $popup-menu-height: 40px;
@@ -126,7 +131,7 @@ $popup-menu-radius: 6px;
   .el-sub-menu__title,
   .el-menu-item {
     height: $menu-height !important;
-    margin-bottom: 4px;
+    margin-bottom: $menu-item-gap;
     line-height: $menu-height !important;
 
     span {
@@ -139,6 +144,53 @@ $popup-menu-radius: 6px;
   .el-sub-menu__icon-arrow {
     width: 13px !important;
     font-size: 13px !important;
+  }
+
+  // Flat section label (non-clickable) for top-level groups
+  .el-menu-item-group.sidebar-section {
+    > .el-menu-item-group__title {
+      box-sizing: border-box;
+      padding: 16px 12px 6px $section-title-indent !important;
+      overflow: hidden;
+      font-size: $section-title-size;
+      font-weight: 500;
+      line-height: 16px;
+      color: $section-title-color;
+      text-overflow: ellipsis;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      pointer-events: none;
+      cursor: default;
+      user-select: none;
+      background: transparent !important;
+    }
+
+    > ul {
+      padding: 0;
+    }
+  }
+
+  .el-menu > .el-menu-item-group.sidebar-section:first-child {
+    > .el-menu-item-group__title {
+      padding-top: 6px !important;
+    }
+  }
+
+  // Collapsed (icon-only) menu: section label becomes a thin divider
+  .el-menu--collapse > .el-menu-item-group.sidebar-section {
+    > .el-menu-item-group__title {
+      height: 0;
+      padding: 0 !important;
+      margin: 6px 14px;
+      font-size: 0;
+      line-height: 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    &:first-child > .el-menu-item-group__title {
+      margin-top: 2px;
+      border-top-color: transparent;
+    }
   }
 
   .el-menu-design {
@@ -154,6 +206,10 @@ $popup-menu-radius: 6px;
 
   .el-menu-dark {
     @include theme-menu-base;
+
+    .sidebar-section > .el-menu-item-group__title {
+      color: rgba(255, 255, 255, 0.4);
+    }
     @include menu-active(#fff, #27282d, #fff);
     @include menu-active-collapse(#fff, #27282d, #fff);
     @include menu-hover(#0f1015);

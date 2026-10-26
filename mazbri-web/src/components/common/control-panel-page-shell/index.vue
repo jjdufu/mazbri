@@ -3,6 +3,10 @@
     <section
       v-if="title || slots.actions"
       class="control-panel-page-shell__header"
+      :class="{
+        'is-title-only':
+          !slots.actions && !subtitle && !slots.subtitle && !slots.titleExtra,
+      }"
     >
       <div class="control-panel-page-shell__copy">
         <div v-if="title" class="control-panel-page-shell__title-row">
@@ -60,8 +64,8 @@ const slots = useSlots();
 .control-panel-page-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   width: 100%;
   min-width: 0;
 
@@ -69,9 +73,9 @@ const slots = useSlots();
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     min-width: 0;
-    padding: 4px 2px 0;
+    padding: 2px 2px 0;
   }
 
   &__title-row {
@@ -83,7 +87,7 @@ const slots = useSlots();
 
   &__title-icon {
     color: var(--theme-color);
-    font-size: 18px;
+    font-size: 16px;
     flex-shrink: 0;
     transform: translateY(-1px);
   }
@@ -103,7 +107,7 @@ const slots = useSlots();
   &__title {
     margin: 0;
     color: var(--art-gray-900);
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.35;
   }
@@ -131,7 +135,7 @@ const slots = useSlots();
   &__body {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     width: 100%;
     min-width: 0;
   }
@@ -153,6 +157,20 @@ const slots = useSlots();
     font-weight: 600;
   }
 
+  // Wide screens show the header breadcrumb (hidden below lg/1024px), so the
+  // page title text + icon is redundant there. Subtitle / titleExtra / actions
+  // stay visible; a header with nothing else in it is dropped entirely.
+  @media (min-width: 1024px) {
+    &__title-icon,
+    &__title {
+      display: none;
+    }
+
+    &__header.is-title-only {
+      display: none;
+    }
+  }
+
   @media (max-width: 900px) {
     &__header {
       flex-direction: column;
@@ -168,10 +186,6 @@ const slots = useSlots();
   @media (max-width: 768px) {
     padding: 12px;
     gap: 12px;
-
-    &__title {
-      font-size: 18px;
-    }
   }
 }
 </style>

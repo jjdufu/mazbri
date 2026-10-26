@@ -2016,7 +2016,7 @@ watch(
 .connector-workbench-page {
   display: flex;
   flex-direction: column;
-  height: var(--art-full-height, calc(100vh - 60px));
+  height: var(--art-full-height, calc(100vh - 48px));
   min-height: 0;
   min-width: 0;
   width: 100%;
@@ -2290,7 +2290,7 @@ watch(
 @media (max-width: 1100px) {
   .connector-workbench-page {
     height: auto;
-    min-height: var(--art-full-height, calc(100vh - 60px));
+    min-height: var(--art-full-height, calc(100vh - 48px));
   }
   .wb-runbar {
     flex-wrap: wrap;
