@@ -3,8 +3,27 @@
     v-for="(item, index) in filteredMenuItems"
     :key="getUniqueKey(item, index)"
   >
+    <ElMenuItemGroup
+      v-if="level === 0 && hasChildren(item)"
+      class="sidebar-section"
+    >
+      <template #title>
+        <span class="sidebar-section__title">
+          {{ formatMenuTitle(item.meta.title) }}
+        </span>
+      </template>
+
+      <SidebarSubmenu
+        :list="item.children"
+        :is-mobile="isMobile"
+        :level="level + 1"
+        :theme="theme"
+        @close="closeMenu"
+      />
+    </ElMenuItemGroup>
+
     <ElSubMenu
-      v-if="hasChildren(item)"
+      v-else-if="hasChildren(item)"
       :index="item.path || item.meta.title"
       :level="level"
     >

@@ -63,7 +63,7 @@ withDefaults(
 
 .common-detail-hero__title {
   margin-top: 6px;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.25;
   color: var(--el-text-color-primary);
@@ -90,7 +90,7 @@ withDefaults(
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--el-text-color-primary);
 }

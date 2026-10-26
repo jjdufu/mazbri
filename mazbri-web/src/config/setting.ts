@@ -31,7 +31,7 @@ export const SETTING_DEFAULT_CONFIG = {
   tabStyle: "tab-default",
   customRadius: "1",
   darkThemeStyle: "obsidian",
-  containerWidth: ContainerWidthEnum.BOXED,
+  containerWidth: ContainerWidthEnum.FULL,
   festivalDate: "",
 };
 export function getSettingDefaults() {

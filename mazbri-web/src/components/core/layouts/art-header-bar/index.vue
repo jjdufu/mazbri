@@ -8,14 +8,14 @@
     ]"
   >
     <div
-      class="relative box-border flex-b h-15 leading-15 select-none"
+      class="relative box-border flex-b h-12 leading-12 select-none"
       :class="[
         tabStyle === 'tab-card' || tabStyle === 'tab-google'
           ? 'border-b border-[var(--art-card-border)]'
           : '',
       ]"
     >
-      <div class="flex-c flex-1 min-w-0 leading-15" style="display: flex">
+      <div class="flex-c flex-1 min-w-0 leading-12" style="display: flex">
         <div v-if="isTopMenu" class="flex-c c-p" @click="toHome">
           <ArtLogo class="pl-4.5" />
           <p v-if="width >= 1400" class="my-0 mx-2 ml-2 text-lg">

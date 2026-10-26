@@ -1,9 +1,9 @@
 <template>
   <div
+    ref="tableRootRef"
     class="art-table"
     :class="{ 'is-empty': isEmpty, 'art-table--cell-copy': cellCopy }"
     :style="containerStyle"
-    ref="tableRootRef"
     @click="onTableBodyClick"
   >
     <ElTable

@@ -474,9 +474,9 @@
 
     <EmergencySwitchDialog
       v-model="switchDialogVisible"
+      v-model:reason="switchForm.reason"
       :saving="switching"
       :channel-name="channelName(switchForm.channel_id)"
-      v-model:reason="switchForm.reason"
       @confirm="submitEmergencySwitch"
     />
   </div>

@@ -1028,10 +1028,11 @@ onMounted(() => {
 }
 
 .settings-panel {
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--custom-radius);
-  padding: 16px 20px;
+  // Flat section inside the card: no nested bordered/gray box.
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 0 0;
 }
 
 .section-heading {

@@ -92,7 +92,7 @@
           :data="catalog?.services || []"
           :loading="loading"
           :columns="serviceColumns"
-          border
+          class="surface-panel-table"
           stripe
         >
         </ArtTable>
@@ -450,6 +450,27 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .monitoring-page {
+  // One outer card only: give its body a comfortable inset (shared default
+  // for table cards is 0, which left tiles/charts flush with the border).
+  > :deep(.surface-panel-card > .el-card__body) {
+    padding: 16px;
+  }
+
+  // Metric tiles: borderless, subtle gray fill, no (hover) shadow.
+  :deep(.metric-summary-card) {
+    background: var(--art-gray-100) !important;
+    border: none !important;
+    box-shadow: none !important;
+
+    &:hover {
+      box-shadow: none !important;
+    }
+
+    .el-card__body {
+      padding: 12px 16px;
+    }
+  }
+
   .service-select {
     width: 180px;
   }
@@ -459,18 +480,18 @@ onBeforeUnmount(() => {
   }
 
   .chart-grid {
-    margin-top: 18px;
+    margin-top: 20px;
     row-gap: 16px;
   }
 
   .monitor-section {
-    margin-top: 18px;
+    margin-top: 20px;
   }
 
   .chart-box {
     width: 100%;
     height: 280px;
-    border: 1px solid var(--el-border-color-lighter);
+    background: var(--art-gray-100);
     border-radius: 6px;
   }
 

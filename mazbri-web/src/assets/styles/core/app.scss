@@ -135,8 +135,8 @@
   .surface-panel-card,
   .surface-settings-card,
   .surface-toolbar-card {
-    box-shadow: 0px 0px 4px 0px rgba(0, 0, 0, 0.04) !important;
-    border: 1px solid var(--art-gray-200) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+    border: 1px solid var(--art-card-border) !important;
   }
 
   .layout-sidebar {
@@ -145,8 +145,8 @@
 
   .el-card {
     @include art-card-base(
-      var(--art-gray-200),
-      (0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.08)),
+      var(--art-card-border),
+      (0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06)),
       4px
     );
   }
@@ -196,7 +196,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-top: 12px;
+  margin-top: 8px;
   border-radius: calc(var(--custom-radius) / 2 + 2px) !important;
 
   .el-card__body {
@@ -219,20 +219,16 @@
 
 .surface-toolbar-card {
   .el-card__body {
-    padding: 16px 18px;
+    padding: 10px 12px;
   }
 }
 
 .surface-panel-card,
 .surface-settings-card {
   .el-card__header {
-    padding: 18px 20px;
-    border-bottom: 1px solid var(--art-card-border);
-    background: color-mix(
-      in srgb,
-      var(--theme-color) 3%,
-      var(--default-box-color)
-    );
+    padding: 14px 16px 10px;
+    border-bottom: none;
+    background: transparent;
   }
 
   .el-card__body {
@@ -241,13 +237,13 @@
   }
 
   .el-empty {
-    padding: 28px 20px;
+    padding: 20px 16px;
   }
 }
 
 .surface-settings-card {
   .el-card__body {
-    padding: 20px;
+    padding: 16px;
   }
 }
 
@@ -270,7 +266,7 @@
 .surface-card-heading {
   margin: 0;
   color: var(--art-gray-900);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -309,7 +305,7 @@
   justify-content: center;
   align-items: center;
   gap: 8px 0;
-  padding: 16px 20px 20px;
+  padding: 10px 16px 12px;
   margin-top: 0 !important;
   max-width: 100%;
   min-width: 0;
@@ -395,8 +391,8 @@
 
 .surface-panel-card .surface-panel-table .el-table__cell,
 .surface-panel-table.el-table .el-table__cell {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-top: 9px;
+  padding-bottom: 9px;
 }
 
 .surface-panel-card .surface-panel-table .el-table__cell:last-child,
@@ -404,12 +400,21 @@
   border-right: none !important;
 }
 
+// Align the table's first / last column with the 16px card header inset.
+.surface-panel-table.el-table .el-table__cell:first-child > .cell {
+  padding-left: 16px;
+}
+
+.surface-panel-table.el-table .el-table__cell:last-child > .cell {
+  padding-right: 16px;
+}
+
 .surface-panel-card .art-table .el-table {
   margin-top: 0;
 }
 
 .surface-panel-card #art-table-header {
-  padding: 16px 16px 0;
+  padding: 10px 16px 0;
 }
 
 @media (max-width: 768px) {
@@ -424,7 +429,7 @@
 }
 
 .art-full-height {
-  height: var(--art-full-height, calc(100vh - 60px));
+  height: var(--art-full-height, calc(100vh - 48px));
   min-height: 500px;
   display: flex;
   flex-direction: column;
