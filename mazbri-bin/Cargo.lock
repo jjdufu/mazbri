@@ -972,6 +972,7 @@ dependencies = [
  "fiat-crypto",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1145,6 +1146,7 @@ dependencies = [
  "ed25519",
  "sha2 0.11.1",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2306,7 +2308,9 @@ dependencies = [
 name = "mazbri-audit"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
+ "ed25519-dalek",
  "hex",
  "mazbri-core",
  "prometheus",
@@ -2314,6 +2318,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "uuid",
@@ -2647,6 +2652,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-cert",
  "mazbri-core",
  "mazbri-rpc",

@@ -116,6 +116,33 @@ fn spawn_authorization_sync(state: &server::AppState) -> tokio::task::JoinHandle
     })
 }
 
+/// 提供 HTTP 服务直到收到 Ctrl+C，然后停止后台任务。
+async fn serve_until_shutdown(
+    listener: tokio::net::TcpListener,
+    app: axum::Router,
+    cleanup_handle: tokio::task::JoinHandle<()>,
+    sync_handle: tokio::task::JoinHandle<()>,
+) -> Result<()> {
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("Failed to install Ctrl+C handler: {}", e);
+        } else {
+            info!("收到关闭信号");
+        }
+        cleanup_handle.abort();
+        sync_handle.abort();
+        info!("已发送关闭信号给清理任务");
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), cleanup_handle).await;
+        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), sync_handle).await;
+    })
+    .await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let config_dir = Path::new(".");
@@ -172,6 +199,11 @@ async fn main() -> Result<()> {
             error
         );
     }
+    let (audit, audit_handle) = mazbri_cert_service::audit::CertAudit::start(
+        &config.audit,
+        Path::new(&config.tracing.log_dir),
+        Some(config_dir),
+    )?;
     let state = server::AppState {
         base_authorization,
         auth_state,
@@ -181,6 +213,7 @@ async fn main() -> Result<()> {
         san_policy,
         root_material_cache: Arc::new(Mutex::new(None)),
         root_material_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+        audit,
     };
     if let Err(error) = state.current_root_material_bundle().await {
         tracing::warn!(error = % error, "Root material cache warmup failed");
@@ -192,23 +225,14 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("证书服务监听于 {}", addr);
     let sync_handle = spawn_authorization_sync(&state);
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(async move {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            tracing::error!("Failed to install Ctrl+C handler: {}", e);
-        } else {
-            info!("收到关闭信号");
-        }
-        cleanup_handle.abort();
-        sync_handle.abort();
-        info!("已发送关闭信号给清理任务");
-        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), cleanup_handle).await;
-        let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), sync_handle).await;
-    })
-    .await?;
+    serve_until_shutdown(listener, app, cleanup_handle, sync_handle).await?;
+    if let Some(handle) = audit_handle {
+        handle
+            .shutdown(std::time::Duration::from_secs(
+                config.audit.shutdown_drain_secs,
+            ))
+            .await;
+    }
     info!("证书服务关闭完成");
     Ok(())
 }

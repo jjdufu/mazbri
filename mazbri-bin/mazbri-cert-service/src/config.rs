@@ -23,6 +23,9 @@ pub struct CertAppConfig {
     #[serde(default)]
     pub auth: CertAuthConfig,
     pub admin: mazbri_admin::AdminConfig,
+    /// 统一审计（可省略：旧配置照常启动，审计只写本地兜底文件）。
+    #[serde(default)]
+    pub audit: crate::audit::CertAuditConfig,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,6 +74,7 @@ fn default_cert_validity_days() -> i64 {
 impl ValidateConfig for CertAppConfig {
     fn validate(&self) -> Result<()> {
         self.cert_service.validate()?;
+        self.audit.validate()?;
         if self
             .cert
             .key_password

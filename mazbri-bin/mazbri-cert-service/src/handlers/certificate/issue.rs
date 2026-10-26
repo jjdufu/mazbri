@@ -62,17 +62,9 @@ async fn issue_certificate_inner(
         )
         .await?;
     let key_pem = ca_manager.decrypt_key(&record.key_pem)?;
-    let _ = state
-        .repo
-        .create_audit_log(
-            "issue",
-            actor_ip,
-            Some(subject),
-            Some(record.id),
-            "success",
-            None,
-        )
-        .await;
+    crate::audit::note_resource_id(record.id.to_string());
+    crate::audit::note_detail("subject", subject);
+    crate::audit::note_detail("dns_names", dns_names.clone());
     info!(
         subject = % subject, cert_id = % record.id, dns_names = ? dns_names, ip = ?
         actor_ip, "证书已发放"

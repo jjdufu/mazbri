@@ -91,17 +91,15 @@ async fn configure_auto_renewal_inner(
             request.validity_days,
         )
         .await?;
-    let _ = state
-        .repo
-        .create_audit_log(
-            "configure_auto_renewal",
-            actor_ip,
-            Some(&cert.subject),
-            Some(id),
-            "success",
-            None,
-        )
-        .await;
+    crate::audit::note_detail("subject", cert.subject.clone());
+    crate::audit::note_detail(
+        "auto_renewal",
+        serde_json::json!({
+            "enabled": request.enabled,
+            "threshold_days": request.threshold_days,
+            "validity_days": request.validity_days,
+        }),
+    );
     tracing::info!(
         cert_id = % id, subject = % cert.subject, enabled = request.enabled,
         threshold_days = request.threshold_days, validity_days = request.validity_days,

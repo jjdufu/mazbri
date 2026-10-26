@@ -77,17 +77,8 @@ async fn renew_certificate_inner(
         .update_certificate(id, &cert_pem, &key_encrypted, expires_at, &dns_names)
         .await?;
     let key_pem = ca_manager.decrypt_key(&record.key_pem)?;
-    let _ = state
-        .repo
-        .create_audit_log(
-            "renew",
-            actor_ip,
-            Some(&record.subject),
-            Some(record.id),
-            "success",
-            None,
-        )
-        .await;
+    crate::audit::note_detail("subject", record.subject.clone());
+    crate::audit::note_detail("expires_at", record.expires_at.to_rfc3339());
     tracing::info!(
         subject = % record.subject, cert_id = % record.id, dns_names = ? dns_names, ip =
         ? actor_ip, "证书已续期"

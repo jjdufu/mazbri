@@ -25,6 +25,7 @@ pub struct AppState {
     pub san_policy: Arc<crate::san::SanPolicy>,
     pub root_material_cache: Arc<Mutex<Option<RootProtectionMaterialBundle>>>,
     pub root_material_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    pub audit: Arc<crate::audit::CertAudit>,
 }
 
 impl AppState {
@@ -150,6 +151,11 @@ pub fn create_app(state: AppState) -> Router {
                 .layer(mazbri_service::http_trace_layer())
                 .layer(axum::middleware::from_fn(
                     mazbri_service::request_id_middleware,
+                ))
+                // 审计层需要看到 error_handler 处理后的最终状态码，且能读到 x-request-id。
+                .layer(axum::middleware::from_fn_with_state(
+                    state.audit.clone(),
+                    crate::audit::audit_middleware,
                 ))
                 .layer(axum::middleware::from_fn(
                     mazbri_service::error_handler_middleware,
