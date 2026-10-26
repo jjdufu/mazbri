@@ -850,3 +850,181 @@ async fn disable_is_allowed_when_no_policy_requires_mfa() {
     set_mfa_policy(&deps.db, &original).await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// 以服务函数执行一次刷新，返回结果与审计草稿（含 `failure_reason`）。
+async fn refresh_via_service(
+    deps: &Deps,
+    refresh_token: &str,
+) -> (Result<Value, crate::error::ApiError>, AuditDraft) {
+    use crate::services::admin::{AdminRefreshParams, admin_refresh_token};
+    let claims = decode_refresh(refresh_token, SECRET).expect("refresh token decodes");
+    let password_policy_cache = PasswordPolicyCache::new(deps.db.clone());
+    let mfa_settings_cache = MfaSettingsCache::new(deps.db.clone());
+    let scope = AuditScope::new();
+    let result = scope
+        .clone()
+        .run(admin_refresh_token(AdminRefreshParams {
+            db: &deps.db,
+            redis: &deps.redis,
+            claims: &claims,
+            jwt_secret: SECRET,
+            jwt_expiration_secs_fallback: 3600,
+            password_policy_cache: &password_policy_cache,
+            mfa_settings_cache: &mfa_settings_cache,
+        }))
+        .await;
+    (result, scope.take())
+}
+
+/// 新建非 MFA 用户并登录，返回用户与刷新令牌。
+async fn user_with_refresh_token(deps: &Deps) -> (TestUser, String) {
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_OPERATOR",
+            ..Default::default()
+        },
+    )
+    .await;
+    let response = login(deps, &user).await;
+    let refresh = response["refresh_token"]
+        .as_str()
+        .expect("non-MFA login returns refresh token")
+        .to_string();
+    (user, refresh)
+}
+
+async fn with_policy_disabled(deps: &Deps) -> MfaPolicySnapshot {
+    let original = snapshot_mfa_policy(&deps.db).await;
+    set_mfa_policy(
+        &deps.db,
+        &MfaPolicySnapshot {
+            enabled_globally: false,
+            required_for_all: false,
+            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
+        },
+    )
+    .await;
+    original
+}
+
+/// 正常会话可以刷新；管理员调整角色后，新访问令牌使用数据库中的当前角色。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn refresh_allows_healthy_session_and_uses_current_role() {
+    let deps = deps().await;
+    let original = with_policy_disabled(&deps).await;
+    let (user, refresh) = user_with_refresh_token(&deps).await;
+    let (first, _) = refresh_via_service(&deps, &refresh).await;
+    sqlx::query("UPDATE admin_users SET role = 'R_FINANCE' WHERE id = $1")
+        .bind(user.id)
+        .execute(&*deps.db)
+        .await
+        .expect("change role");
+    let (after_role_change, _) = refresh_via_service(&deps, &refresh).await;
+    set_mfa_policy(&deps.db, &original).await;
+
+    let first = first.expect("healthy session refreshes");
+    let first_token = first["token"].as_str().expect("token");
+    assert_eq!(token_kind_of(first_token).as_deref(), Some("access"));
+    let renewed = after_role_change.expect("role change still refreshes");
+    let renewed_claims = decode_kind(
+        renewed["token"].as_str().expect("token"),
+        SECRET,
+        TokenKind::Access,
+    )
+    .expect("access token");
+    assert_eq!(renewed_claims.role, "R_FINANCE");
+}
+
+/// 刷新令牌签发后账号状态变化：每种变化都拒绝（401）并记录对应审计原因。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn refresh_is_denied_after_account_state_changes() {
+    let deps = deps().await;
+    let original = with_policy_disabled(&deps).await;
+    let max_age_days = PasswordPolicyCache::new(deps.db.clone())
+        .get()
+        .await
+        .max_age_days;
+    let mut cases = vec![
+        (
+            "UPDATE admin_users SET is_active = false WHERE id = $1",
+            "account_disabled",
+        ),
+        (
+            "UPDATE admin_users SET locked_until = NOW() + INTERVAL '1 hour' WHERE id = $1",
+            "account_locked",
+        ),
+        (
+            "UPDATE admin_users SET force_password_reset = true WHERE id = $1",
+            "password_reset_required",
+        ),
+        (
+            "UPDATE admin_users SET password_changed_at = NOW() + INTERVAL '5 seconds' WHERE id = $1",
+            "credentials_changed",
+        ),
+        (
+            "UPDATE admin_users SET mfa_enabled = true, mfa_secret = 'placeholder', \
+             mfa_verified_at = NOW() + INTERVAL '5 seconds' WHERE id = $1",
+            "mfa_state_changed",
+        ),
+        (
+            "UPDATE admin_users SET mfa_required = true WHERE id = $1",
+            "mfa_setup_required",
+        ),
+        ("DELETE FROM admin_users WHERE id = $1", "user_not_found"),
+    ];
+    if max_age_days > 0 {
+        // 改密时间远早于令牌签发时间：只会命中 password_expired，不会被判为 credentials_changed。
+        cases.push((
+            "UPDATE admin_users SET password_changed_at = NOW() - INTERVAL '3650 days' WHERE id = $1",
+            "password_expired",
+        ));
+    }
+    let mut outcomes = Vec::new();
+    for (sql, expected) in &cases {
+        let (case_user, case_refresh) = user_with_refresh_token(&deps).await;
+        sqlx::query(sql)
+            .bind(case_user.id)
+            .execute(&*deps.db)
+            .await
+            .expect("mutate user");
+        let (result, draft) = refresh_via_service(&deps, &case_refresh).await;
+        outcomes.push((
+            *expected,
+            matches!(result, Err(crate::error::ApiError::Unauthorized)),
+            draft.failure_reason,
+        ));
+    }
+    set_mfa_policy(&deps.db, &original).await;
+    for (expected, unauthorized, reason) in outcomes {
+        assert!(
+            unauthorized,
+            "{expected}: refresh must be rejected with 401"
+        );
+        assert_eq!(reason.as_deref(), Some(expected));
+    }
+}
+
+/// 会话建立后全局策略改为强制 MFA：刷新被拒绝，必须重新登录并设置 MFA。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn refresh_is_denied_when_policy_now_requires_mfa() {
+    let deps = deps().await;
+    let original = with_policy_disabled(&deps).await;
+    let (_, refresh) = user_with_refresh_token(&deps).await;
+    set_mfa_policy(
+        &deps.db,
+        &MfaPolicySnapshot {
+            enabled_globally: true,
+            required_for_all: true,
+            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
+        },
+    )
+    .await;
+    let (result, draft) = refresh_via_service(&deps, &refresh).await;
+    set_mfa_policy(&deps.db, &original).await;
+    assert!(matches!(result, Err(crate::error::ApiError::Unauthorized)));
+    assert_eq!(draft.failure_reason.as_deref(), Some("mfa_setup_required"));
+}

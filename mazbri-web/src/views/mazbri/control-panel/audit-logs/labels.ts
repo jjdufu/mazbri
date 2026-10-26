@@ -261,6 +261,10 @@ export const FAILURE_REASON_LABELS: Record<string, string> = {
   invalid_temp_token: "auditLogs.failureReasons.invalidTempToken",
   password_hash_missing: "auditLogs.failureReasons.passwordHashMissing",
   mfa_required_by_policy: "auditLogs.failureReasons.mfaRequiredByPolicy",
+  password_reset_required: "auditLogs.failureReasons.passwordResetRequired",
+  credentials_changed: "auditLogs.failureReasons.credentialsChanged",
+  mfa_state_changed: "auditLogs.failureReasons.mfaStateChanged",
+  mfa_setup_required: "auditLogs.failureReasons.mfaSetupRequired",
   business_failure: "auditLogs.failureReasons.businessFailure",
 };
 

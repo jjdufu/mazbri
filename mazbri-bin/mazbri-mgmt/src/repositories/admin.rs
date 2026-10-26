@@ -22,6 +22,19 @@ pub struct AdminUserFullRow {
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
 }
+/// 刷新令牌时复核会话所需的账号状态（只读当前值，不含口令哈希）。
+#[derive(Debug, sqlx::FromRow)]
+pub struct AdminSessionStateRow {
+    pub username: String,
+    pub role: String,
+    pub is_active: bool,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub force_password_reset: bool,
+    pub password_changed_at: DateTime<Utc>,
+    #[sqlx(flatten)]
+    pub mfa: AdminMfaFlags,
+    pub mfa_verified_at: Option<DateTime<Utc>>,
+}
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserPasswordRow {
     pub id: uuid::Uuid,
@@ -54,6 +67,27 @@ pub async fn get_admin_user_by_username(
     ",
     )
     .bind(username)
+    .fetch_optional(pool)
+    .await
+}
+/// 读取刷新令牌复核所需的账号状态。
+///
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_admin_session_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<AdminSessionStateRow>, sqlx::Error> {
+    sqlx::query_as::<_, AdminSessionStateRow>(
+        r"
+        SELECT username, role, is_active, locked_until, force_password_reset,
+               password_changed_at, mfa_enabled, mfa_required, mfa_verified_at
+        FROM admin_users
+        WHERE id = $1
+    ",
+    )
+    .bind(user_id)
     .fetch_optional(pool)
     .await
 }

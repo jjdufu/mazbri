@@ -1719,7 +1719,11 @@
       "invalidTempToken": "临时令牌无效",
       "passwordHashMissing": "账号未设置密码",
       "businessFailure": "业务处理失败",
-      "mfaRequiredByPolicy": "策略要求 MFA（不可关闭）"
+      "mfaRequiredByPolicy": "策略要求 MFA（不可关闭）",
+      "passwordResetRequired": "需要重置密码",
+      "credentialsChanged": "令牌签发后密码已变更",
+      "mfaStateChanged": "令牌签发后 MFA 状态已变更",
+      "mfaSetupRequired": "需要先设置 MFA"
     }
   },
   "feedback": {

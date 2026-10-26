@@ -47,13 +47,15 @@ pub async fn admin_refresh_token(
     State(state): State<AppState>,
     Extension(claims): Extension<crate::middleware::auth::AdminClaims>,
 ) -> Result<Response, ApiError> {
-    let data = admin::admin_refresh_token(
-        &state.admin_db,
-        &claims,
-        &state.auth_state.jwt_secret,
-        state.config.auth.jwt_expiration_secs,
-        &state.redis,
-    )
+    let data = admin::admin_refresh_token(admin::AdminRefreshParams {
+        db: &state.admin_db,
+        redis: &state.redis,
+        claims: &claims,
+        jwt_secret: &state.auth_state.jwt_secret,
+        jwt_expiration_secs_fallback: state.config.auth.jwt_expiration_secs,
+        password_policy_cache: &state.password_policy_cache,
+        mfa_settings_cache: &state.mfa_settings_cache,
+    })
     .await?;
     Ok(json_with_session_cookies(
         data,

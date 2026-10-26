@@ -417,63 +417,6 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     })
     .await
 }
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn admin_refresh_token(
-    db: &PgPool,
-    claims: &AdminClaims,
-    jwt_secret: &str,
-    jwt_expiration_secs_fallback: u64,
-    redis: &RedisClient,
-) -> Result<serde_json::Value, ApiError> {
-    match &claims.token_type {
-        Some(tt) if tt == "refresh" => {}
-        _ => {
-            return Err(ApiError::validation(
-                "无效的令牌类型，需要 refresh token".to_string(),
-            ));
-        }
-    }
-    revocation_check(redis, claims).await?;
-    let jwt_expiration_secs =
-        resolve_access_token_expiration_secs(db, jwt_expiration_secs_fallback).await;
-    let new_token = generate_admin_jwt(
-        &claims.sub,
-        &claims.user_id,
-        &claims.role,
-        jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
-    )
-    .map_err(|e| {
-        error!("Failed to generate access JWT during refresh: {}", e);
-        ApiError::internal("生成认证令牌失败".to_string())
-    })?;
-    info!(
-        "Token refreshed for user: {} (role: {})",
-        claims.sub, claims.role
-    );
-    Ok(serde_json::json!({ "token" : new_token, "expires_in" : jwt_expiration_secs }))
-}
-
-/// 刷新前再次确认刷新令牌未被吊销（中间件已查过一次，这里防止绕过中间件的调用方）。
-/// 与中间件一致采用 fail-closed：Redis 故障返回 503 并记录 `token_check_failed`。
-async fn revocation_check(redis: &RedisClient, claims: &AdminClaims) -> Result<(), ApiError> {
-    match admin_token::ensure_not_revoked(redis, claims).await {
-        Ok(()) => Ok(()),
-        Err(rejection) => {
-            audit::set_failure_reason(rejection.reason());
-            if rejection == admin_token::TokenRejection::CheckUnavailable {
-                Err(ApiError::Core(mazbri_core::CoreError::ServiceUnavailable {
-                    service: "token revocation store".to_string(),
-                }))
-            } else {
-                Err(ApiError::Unauthorized)
-            }
-        }
-    }
-}
-
 /// Logout: revoke access jti (+ optional refresh) and audit (H-11).
 ///
 /// # Errors

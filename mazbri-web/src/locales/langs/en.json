@@ -1719,7 +1719,11 @@
       "invalidTempToken": "Invalid temporary token",
       "passwordHashMissing": "Password not set",
       "businessFailure": "Business failure",
-      "mfaRequiredByPolicy": "MFA enforced by policy (cannot disable)"
+      "mfaRequiredByPolicy": "MFA enforced by policy (cannot disable)",
+      "passwordResetRequired": "Password reset required",
+      "credentialsChanged": "Password changed after token was issued",
+      "mfaStateChanged": "MFA state changed after token was issued",
+      "mfaSetupRequired": "MFA setup required"
     }
   },
   "feedback": {
