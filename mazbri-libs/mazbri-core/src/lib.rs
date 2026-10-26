@@ -14,6 +14,7 @@ pub mod logging;
 pub mod metrics;
 pub mod num;
 pub mod otlp;
+pub mod panic_policy;
 pub mod pool_types;
 pub mod redis;
 pub mod request_context;

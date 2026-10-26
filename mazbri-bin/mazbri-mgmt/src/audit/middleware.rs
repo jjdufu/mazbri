@@ -23,12 +23,19 @@ use tower_http::catch_panic::CatchPanicLayer;
 /// 仅对不超过该大小的 JSON 请求体提取顶层字段名。
 const SUMMARY_MAX_BODY: usize = 16 * 1024;
 
-/// 按固定顺序挂载审计相关中间件（由外到内）：客户端 IP → 审计 → panic 捕获。
+/// 按固定顺序挂载审计相关中间件（由外到内）：客户端 IP → 审计 → panic 捕获 → 可恢复标记。
+///
+/// 可恢复标记紧贴 `CatchPanicLayer` 内侧，使进程级 panic 策略
+/// （`mazbri_core::panic_policy`）把处理链内的 panic 判定为请求级、交由本层转成 500；
+/// 审计层位于捕获层外侧，因此 panic 请求仍会以 `panic` 失败原因落审计。
 pub fn apply_audit_layers<S>(router: Router<S>, service: AuditService) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     router
+        .layer(axum::middleware::from_fn(
+            mazbri_core::panic_policy::recoverable_request_middleware,
+        ))
         .layer(CatchPanicLayer::custom(panic_response))
         .layer(axum::middleware::from_fn_with_state(
             service,
@@ -602,7 +609,11 @@ mod tests {
                 .route("/tenants/{code}/enabled", axum::routing::put(slow_handler))
                 .route("/products", get(denied))
                 .route("/auth/login", post(failed_login))
-                .route("/settings", axum::routing::put(panicking));
+                .route("/settings", axum::routing::put(panicking))
+                .route(
+                    "/scope-probe",
+                    get(|| async { mazbri_core::panic_policy::in_recoverable_scope().to_string() }),
+                );
             apply_audit_layers(
                 Router::new().nest("/api/v1/mgmt", mgmt),
                 self.service.clone(),
@@ -762,6 +773,41 @@ mod tests {
         assert_eq!(rows[0].status, AuditStatus::Failure);
         assert_eq!(rows[0].failure_reason.as_deref(), Some("panic"));
         assert_eq!(rows[0].status_code, Some(500));
+    }
+
+    #[tokio::test]
+    async fn handlers_run_inside_recoverable_panic_scope() {
+        let harness = Harness::new(true);
+        let app = harness.app();
+        assert!(!mazbri_core::panic_policy::in_recoverable_scope());
+        let response = app
+            .clone()
+            .oneshot(request("GET", "/api/v1/mgmt/scope-probe", ""))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"true");
+        assert!(!mazbri_core::panic_policy::in_recoverable_scope());
+        drop(app);
+        let _ = harness.rows().await;
+    }
+
+    #[test]
+    fn recoverable_marker_sits_directly_inside_catch_panic_layer() {
+        let source = include_str!("middleware.rs");
+        let start = source.find("pub fn apply_audit_layers").unwrap();
+        let body = &source[start..];
+        let marker = body.find("recoverable_request_middleware").unwrap();
+        let catcher = body
+            .find("CatchPanicLayer::custom(panic_response)")
+            .unwrap();
+        let audit = body.find("audit_middleware,").unwrap();
+        // Router::layer 越晚越靠外：标记层（最内）→ panic 捕获 → 审计。
+        assert!(marker < catcher && catcher < audit);
+        assert_eq!(body[marker..catcher].matches(".layer(").count(), 1);
     }
 
     #[tokio::test]

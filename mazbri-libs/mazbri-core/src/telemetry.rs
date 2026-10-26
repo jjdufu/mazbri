@@ -190,6 +190,9 @@ pub fn init_tracing_with_routes(
     } else {
         setup_console_only(&config.format, service_name, env_filter, otlp_tracer)
     };
+    // 所有服务入口都经由这里初始化日志，因此在此统一安装 panic 策略：
+    // 请求范围内的 panic 可恢复，其余 panic 终止进程（见 `panic_policy`）。
+    crate::panic_policy::install(service_name, panic_fallback_file(config, service_name));
     Ok(LogGuard {
         _guards: guard,
         _cleanup_task: cleanup_task,
@@ -221,6 +224,22 @@ fn resolve_log_instance_id_with(
     .map(|value| value.trim().to_string())
     .find(|value| !value.is_empty())
 }
+fn resolve_log_dir(config: &crate::config::TracingConfig) -> PathBuf {
+    if Path::new(&config.log_dir).is_absolute() {
+        PathBuf::from(&config.log_dir)
+    } else {
+        PathBuf::from("/tmp").join(&config.log_dir)
+    }
+}
+/// 致命 panic 的 JSONL 兜底文件；仅在启用文件日志时使用（与普通日志同目录）。
+fn panic_fallback_file(
+    config: &crate::config::TracingConfig,
+    service_name: &str,
+) -> Option<PathBuf> {
+    config.rotation_enabled.then(|| {
+        resolve_log_dir(config).join(format!("{}-panic.jsonl", base_log_name(service_name)))
+    })
+}
 fn base_log_name(service_name: &str) -> String {
     match resolve_log_instance_id() {
         Some(instance_id) => {
@@ -241,11 +260,7 @@ fn setup_file_logging(
     routes: &[LogRoute],
     otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
 ) -> Result<FileLoggingHandles> {
-    let log_dir_buf = if Path::new(&config.log_dir).is_absolute() {
-        PathBuf::from(&config.log_dir)
-    } else {
-        PathBuf::from("/tmp").join(&config.log_dir)
-    };
+    let log_dir_buf = resolve_log_dir(config);
     let log_dir = log_dir_buf.as_path();
     fs::create_dir_all(log_dir)?;
     let base_name = base_log_name(service_name);

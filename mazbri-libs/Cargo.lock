@@ -2199,6 +2199,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions 0.30.0",
  "opentelemetry_sdk 0.30.0",
+ "pin-project-lite",
  "prometheus",
  "rand 0.10.2",
  "redis",
