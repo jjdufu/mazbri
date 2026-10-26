@@ -3,13 +3,15 @@
 mod config;
 mod ip;
 mod middleware;
-mod redact;
 pub mod route_map;
 pub mod scope;
 mod service;
 mod settings;
-pub mod sink;
 mod types;
+
+// 记录模型、脱敏与异步写入已抽到公共 crate `mazbri-audit`，保留原模块路径以减少改动面。
+use mazbri_audit::redact;
+pub use mazbri_audit::sink;
 
 pub use config::AuditConfig;
 pub use ip::{TrustedProxies, extract_client_ip, init_trusted_proxies, resolve_client_ip};

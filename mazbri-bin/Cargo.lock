@@ -2303,6 +2303,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mazbri-audit"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "mazbri-core",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "mazbri-auth"
 version = "0.1.0"
 dependencies = [
@@ -2784,6 +2801,7 @@ dependencies = [
  "ipnetwork",
  "jsonwebtoken",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-auth",
  "mazbri-billing",
  "mazbri-cache",

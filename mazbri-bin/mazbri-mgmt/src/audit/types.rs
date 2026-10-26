@@ -1,3 +1,4 @@
+pub use mazbri_audit::record::{ActorType, AuditRecord, AuditStatus};
 use serde::{Deserialize, Serialize};
 /// 定义审计动作枚举及其稳定字符串（单一来源，避免枚举与映射漂移）。
 macro_rules! audit_actions {
@@ -157,54 +158,6 @@ audit_actions! {
     BillGenerateAsync => "bill.generate_async",
 }
 impl std::fmt::Display for AuditAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum ActorType {
-    #[default]
-    Admin,
-    System,
-    /// 未通过认证的请求（登录失败、缺少令牌等）。
-    Anonymous,
-}
-impl ActorType {
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ActorType::Admin => "admin",
-            ActorType::System => "system",
-            ActorType::Anonymous => "anonymous",
-        }
-    }
-}
-impl std::fmt::Display for ActorType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum AuditStatus {
-    #[default]
-    Success,
-    Failure,
-    /// 认证或授权拒绝（HTTP 401 / 403）。
-    Denied,
-}
-impl AuditStatus {
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AuditStatus::Success => "success",
-            AuditStatus::Failure => "failure",
-            AuditStatus::Denied => "denied",
-        }
-    }
-}
-impl std::fmt::Display for AuditStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
@@ -383,36 +336,9 @@ impl Default for AuditLogRequest {
         }
     }
 }
-/// 最终落库（或写入兜底文件）的一行审计记录，字段均已脱敏、截断。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuditRecord {
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub user_id: Option<uuid::Uuid>,
-    pub actor_type: String,
-    pub actor_username: Option<String>,
-    pub actor_role: Option<String>,
-    pub action: String,
-    pub resource_type: Option<String>,
-    pub resource_id: Option<String>,
-    pub details: Option<serde_json::Value>,
-    pub status: AuditStatus,
-    pub error_message: Option<String>,
-    pub failure_reason: Option<String>,
-    pub ip_address: Option<String>,
-    pub user_agent: Option<String>,
-    pub old_value: Option<serde_json::Value>,
-    pub new_value: Option<serde_json::Value>,
-    pub request_id: Option<String>,
-    pub method: Option<String>,
-    pub path: Option<String>,
-    pub status_code: Option<i16>,
-    pub duration_ms: Option<i32>,
-    pub request_summary: Option<serde_json::Value>,
-}
-impl AuditRecord {
+impl From<AuditLogRequest> for AuditRecord {
     /// 由请求作用域之外的业务事件（后台任务等）直接构造记录。
-    #[must_use]
-    pub fn from_request(request: AuditLogRequest) -> Self {
+    fn from(request: AuditLogRequest) -> Self {
         let mut record = Self {
             created_at: chrono::Utc::now(),
             user_id: request.user_id.filter(|id| !id.is_nil()),
@@ -439,30 +365,5 @@ impl AuditRecord {
         };
         record.sanitize();
         record
-    }
-
-    /// 脱敏 JSON 字段并截断字符串，保证写入前不含凭据且长度受控。
-    pub fn sanitize(&mut self) {
-        for value in [
-            &mut self.details,
-            &mut self.old_value,
-            &mut self.new_value,
-            &mut self.request_summary,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            super::redact::redact_value(value);
-        }
-        super::redact::truncate_opt(&mut self.actor_username, 100);
-        super::redact::truncate_opt(&mut self.actor_role, 50);
-        super::redact::truncate_opt(&mut self.resource_id, 100);
-        super::redact::truncate_opt(&mut self.error_message, 512);
-        super::redact::truncate_opt(&mut self.failure_reason, 64);
-        super::redact::truncate_opt(&mut self.ip_address, 64);
-        super::redact::truncate_opt(&mut self.user_agent, 512);
-        super::redact::truncate_opt(&mut self.request_id, 64);
-        super::redact::truncate_opt(&mut self.method, 10);
-        super::redact::truncate_opt(&mut self.path, 512);
     }
 }

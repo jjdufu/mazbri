@@ -16,7 +16,8 @@ members = [
     "mazbri-registry",
     "mazbri-callback",
     "mazbri-cert",
-    "mazbri-upstream-runtime"
+    "mazbri-upstream-runtime",
+    "mazbri-audit"
 ]
 resolver = "2"
 
@@ -45,6 +46,7 @@ mazbri-product = { version = "0.1.0", path = "mazbri-product" }
 mazbri-billing = { version = "0.1.0", path = "mazbri-billing" }
 mazbri-service = { version = "0.1.0", path = "mazbri-service" }
 mazbri-callback = { version = "0.1.0", path = "mazbri-callback" }
+mazbri-audit = { version = "0.1.0", path = "mazbri-audit" }
 
 clap = {version = "4", features = ["derive"]}
 tokio = {version = "1.35", features = ["full"]}

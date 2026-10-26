@@ -1,6 +1,6 @@
 //! 审计记录写入：有界队列 + 单写线程批量落库 + 重试 + 本地 JSONL 兜底 + 停机排空。
 
-use super::types::AuditRecord;
+use crate::record::AuditRecord;
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use prometheus::{CounterVec, IntGauge};
 use sqlx::{Postgres, QueryBuilder};
@@ -415,12 +415,12 @@ impl Writer {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod testing {
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
     use super::{AuditStore, StoreError, StoreFuture};
-    use crate::audit::types::AuditRecord;
-    use std::sync::Mutex;
+    use crate::record::AuditRecord;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Mutex, PoisonError};
 
     /// 内存存储：可配置前 N 次失败或外键冲突。
     #[derive(Default)]
@@ -433,7 +433,10 @@ pub(crate) mod testing {
 
     impl MemoryStore {
         pub fn rows(&self) -> Vec<AuditRecord> {
-            self.rows.lock().unwrap().clone()
+            self.rows
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
         }
     }
 
@@ -460,7 +463,10 @@ pub(crate) mod testing {
                 if take_one(&self.fail_times) {
                     return Err(StoreError::Other("simulated failure".into()));
                 }
-                self.rows.lock().unwrap().extend_from_slice(records);
+                self.rows
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .extend_from_slice(records);
                 Ok(())
             })
         }
@@ -471,16 +477,16 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::MemoryStore;
     use super::{AuditSink, FallbackWriter, SinkOptions};
-    use crate::audit::types::{AuditLogRequest, AuditRecord};
+    use crate::record::{ActorType, AuditRecord};
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     fn record() -> AuditRecord {
-        AuditRecord::from_request(AuditLogRequest {
-            user_id: Some(uuid::Uuid::new_v4()),
-            ..AuditLogRequest::default()
-        })
+        let mut record = AuditRecord::new(&ActorType::Admin, "user.update");
+        record.user_id = Some(uuid::Uuid::new_v4());
+        record.resource_type = Some("system".to_string());
+        record
     }
 
     fn options() -> SinkOptions {

@@ -379,7 +379,7 @@ impl AuditService {
     /// 提交业务事件：请求内并入该请求的唯一审计记录；请求外（后台任务）异步入队。
     pub fn log(&self, request: AuditLogRequest) {
         if let Some(request) = scope::push_event(request, false) {
-            self.sink.enqueue(AuditRecord::from_request(request));
+            self.sink.enqueue(AuditRecord::from(request));
         }
     }
 
@@ -392,11 +392,7 @@ impl AuditService {
         match scope::push_event(request, true) {
             None => Ok(()),
             Some(request) => {
-                if self
-                    .sink
-                    .write_now(AuditRecord::from_request(request))
-                    .await
-                {
+                if self.sink.write_now(AuditRecord::from(request)).await {
                     Ok(())
                 } else {
                     Err(sqlx::Error::Protocol(

@@ -1,0 +1,28 @@
+[package]
+name = "mazbri-audit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+# 暴露内存版 AuditStore（仅供下游 crate 的测试使用）。
+testing = []
+
+[dependencies]
+mazbri-core = { workspace = true }
+
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+prometheus = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[lints]
+workspace = true
