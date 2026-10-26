@@ -82,7 +82,7 @@ impl AuditStore for PgAuditStore {
                 "INSERT INTO audit_logs (created_at, user_id, actor_type, actor_username, \
                  actor_role, action, resource_type, resource_id, details, status, error_message, \
                  failure_reason, ip_address, user_agent, old_value, new_value, request_id, \
-                 method, path, status_code, duration_ms, request_summary) ",
+                 method, path, status_code, duration_ms, request_summary, service) ",
             );
             builder.push_values(records, |mut row, record| {
                 row.push_bind(record.created_at)
@@ -106,7 +106,8 @@ impl AuditStore for PgAuditStore {
                     .push_bind(&record.path)
                     .push_bind(record.status_code)
                     .push_bind(record.duration_ms)
-                    .push_bind(&record.request_summary);
+                    .push_bind(&record.request_summary)
+                    .push_bind(&record.service);
             });
             builder
                 .build()
@@ -483,7 +484,11 @@ mod tests {
     use std::time::Duration;
 
     fn record() -> AuditRecord {
-        let mut record = AuditRecord::new(&ActorType::Admin, "user.update");
+        let mut record = AuditRecord::new(
+            crate::record::SERVICE_MGMT,
+            &ActorType::Admin,
+            "user.update",
+        );
         record.user_id = Some(uuid::Uuid::new_v4());
         record.resource_type = Some("system".to_string());
         record

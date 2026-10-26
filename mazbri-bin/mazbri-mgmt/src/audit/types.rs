@@ -362,6 +362,7 @@ impl From<AuditLogRequest> for AuditRecord {
             status_code: None,
             duration_ms: None,
             request_summary: None,
+            service: mazbri_audit::record::SERVICE_MGMT.to_string(),
         };
         record.sanitize();
         record

@@ -75,11 +75,34 @@ pub struct AuditRecord {
     pub status_code: Option<i16>,
     pub duration_ms: Option<i32>,
     pub request_summary: Option<serde_json::Value>,
+    /// 写入该记录的服务（`audit_logs.service`）。兜底文件中旧记录缺省为 mgmt。
+    #[serde(default = "default_service")]
+    pub service: String,
 }
+
+/// 管理后台。
+pub const SERVICE_MGMT: &str = "mgmt";
+/// 证书服务。
+pub const SERVICE_CERT: &str = "cert";
+/// 限流服务。
+pub const SERVICE_RATELIMIT: &str = "ratelimit";
+
+fn default_service() -> String {
+    SERVICE_MGMT.to_string()
+}
+
+/// 与数据库 `chk_audit_logs_service` 一致：小写字母开头，`[a-z0-9_-]`，最长 32。
+fn is_valid_service(service: &str) -> bool {
+    let mut chars = service.chars();
+    service.len() <= 32
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
 impl AuditRecord {
     /// 只填动作与操作人类型的空白记录，其余字段由调用方补齐后再 [`Self::sanitize`]。
     #[must_use]
-    pub fn new(actor_type: &ActorType, action: impl Into<String>) -> Self {
+    pub fn new(service: &str, actor_type: &ActorType, action: impl Into<String>) -> Self {
         Self {
             created_at: chrono::Utc::now(),
             user_id: None,
@@ -103,6 +126,7 @@ impl AuditRecord {
             status_code: None,
             duration_ms: None,
             request_summary: None,
+            service: service.to_string(),
         }
     }
 
@@ -129,5 +153,47 @@ impl AuditRecord {
         crate::redact::truncate_opt(&mut self.request_id, 64);
         crate::redact::truncate_opt(&mut self.method, 10);
         crate::redact::truncate_opt(&mut self.path, 512);
+        if !is_valid_service(&self.service) {
+            // 非法值会被数据库 CHECK 拒绝并拖累整批写入，这里归一为 unknown。
+            self.service = "unknown".to_string();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActorType, AuditRecord, SERVICE_CERT, is_valid_service};
+
+    #[test]
+    fn service_names_match_database_check() {
+        for ok in ["mgmt", "cert", "ratelimit", "a", "svc_1-x"] {
+            assert!(is_valid_service(ok), "{ok}");
+        }
+        for bad in ["", "Mgmt", "1svc", "bad service", "x".repeat(33).as_str()] {
+            assert!(!is_valid_service(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn sanitize_normalizes_invalid_service() {
+        let mut record = AuditRecord::new(SERVICE_CERT, &ActorType::System, "certificate.issue");
+        record.sanitize();
+        assert_eq!(record.service, "cert");
+        record.service = "Bad Service".to_string();
+        record.sanitize();
+        assert_eq!(record.service, "unknown");
+    }
+
+    #[test]
+    fn legacy_fallback_lines_default_to_mgmt() {
+        let mut value = serde_json::to_value(AuditRecord::new(
+            SERVICE_CERT,
+            &ActorType::Admin,
+            "user.update",
+        ))
+        .expect("serialize");
+        value.as_object_mut().expect("object").remove("service");
+        let record: AuditRecord = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(record.service, "mgmt");
     }
 }

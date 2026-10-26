@@ -7,7 +7,9 @@ pub mod record;
 pub mod redact;
 pub mod sink;
 
-pub use record::{ActorType, AuditRecord, AuditStatus};
+pub use record::{
+    ActorType, AuditRecord, AuditStatus, SERVICE_CERT, SERVICE_MGMT, SERVICE_RATELIMIT,
+};
 pub use sink::{
     AuditSink, AuditStore, AuditWriterHandle, FallbackWriter, PgAuditStore, SinkOptions,
 };

@@ -451,6 +451,7 @@ fn build_record(
         status_code: status.and_then(|code| i16::try_from(code.as_u16()).ok()),
         duration_ms: Some(elapsed_ms(ctx.started)),
         request_summary: ctx.request_summary.clone(),
+        service: mazbri_audit::record::SERVICE_MGMT.to_string(),
     };
     record.sanitize();
     BuiltRecord { record, security }
