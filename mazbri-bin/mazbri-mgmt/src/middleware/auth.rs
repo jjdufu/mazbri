@@ -341,62 +341,63 @@ pub fn require_role(claims: &AdminClaims, required_roles: &[&str]) -> Result<(),
         )))
     }
 }
+/// 超级管理员角色代码（显示名“超级管理员”，全系统唯一，不可新建）。
+pub const ROLE_SUPER_ADMIN: &str = "R_ADMIN";
+/// 管理员角色代码（显示名“管理员”，拥有全部业务权限；代码沿用历史值 `R_FINANCE`）。
+pub const ROLE_ADMIN: &str = "R_FINANCE";
+/// 只读用户角色代码。
+pub const ROLE_VIEWER: &str = "R_VIEWER";
+
 #[must_use]
 pub fn can_manage_certificates(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN"
+    is_admin(claims)
 }
 #[must_use]
 pub fn can_manage_tenants(claims: &AdminClaims) -> bool {
-    matches!(claims.role.as_str(), "R_ADMIN" | "R_OPERATOR")
+    is_business_admin(claims)
 }
 #[must_use]
 pub fn can_access_settings(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN"
+    is_admin(claims)
 }
 #[must_use]
 pub fn can_manage_admins(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN"
+    is_admin(claims)
 }
+/// 是否为超级管理员（`R_ADMIN`）。
 #[must_use]
 pub fn is_admin(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN"
+    claims.role == ROLE_SUPER_ADMIN
 }
+/// 是否拥有业务读写权限：超级管理员或管理员（`R_ADMIN` / `R_FINANCE`）。
 #[must_use]
-pub fn is_operator_or_above(claims: &AdminClaims) -> bool {
-    matches!(claims.role.as_str(), "R_ADMIN" | "R_OPERATOR")
+pub fn is_business_admin(claims: &AdminClaims) -> bool {
+    matches!(claims.role.as_str(), ROLE_SUPER_ADMIN | ROLE_ADMIN)
 }
 #[must_use]
 pub fn can_write_business(claims: &AdminClaims) -> bool {
-    matches!(claims.role.as_str(), "R_ADMIN" | "R_OPERATOR")
+    is_business_admin(claims)
 }
 #[must_use]
 pub fn can_access_control_panel(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN"
+    is_admin(claims)
 }
 #[must_use]
 pub fn can_assign_role(claims: &AdminClaims, target_role: &str) -> bool {
-    let role_level = |role: &str| -> u8 {
-        match role {
-            "R_ADMIN" => 3,
-            "R_OPERATOR" | "R_FINANCE" => 2,
-            "R_VIEWER" => 1,
-            _ => 0,
-        }
-    };
-    role_level(&claims.role) >= role_level(target_role)
+    get_role_level(&claims.role) >= get_role_level(target_role)
 }
 #[must_use]
 pub fn get_role_level(role: &str) -> u8 {
     match role {
-        "R_ADMIN" => 3,
-        "R_OPERATOR" | "R_FINANCE" => 2,
-        "R_VIEWER" => 1,
+        ROLE_SUPER_ADMIN => 3,
+        ROLE_ADMIN => 2,
+        ROLE_VIEWER => 1,
         _ => 0,
     }
 }
 #[must_use]
 pub fn is_read_only(claims: &AdminClaims) -> bool {
-    claims.role == "R_VIEWER"
+    claims.role == ROLE_VIEWER
 }
 fn unauthorized(error: &str, message: &str) -> Response {
     let mut response = (
@@ -574,5 +575,66 @@ mod route_auth_tests {
             request_token(&headers, TokenKind::PasswordReset).as_deref(),
             Some("header-value")
         );
+    }
+}
+
+#[cfg(test)]
+mod role_helper_tests {
+    use super::*;
+
+    fn claims(role: &str) -> AdminClaims {
+        AdminClaims {
+            iss: "mazbri-mgmt".to_string(),
+            aud: None,
+            sub: "tester".to_string(),
+            user_id: uuid::Uuid::nil().to_string(),
+            role: role.to_string(),
+            iat: 0,
+            exp: 0,
+            jti: None,
+            token_type: None,
+        }
+    }
+
+    #[test]
+    fn super_admin_only_helpers() {
+        assert!(is_admin(&claims(ROLE_SUPER_ADMIN)));
+        for role in [ROLE_ADMIN, ROLE_VIEWER, "R_OPERATOR", ""] {
+            let c = claims(role);
+            assert!(!is_admin(&c), "{role}");
+            assert!(!can_manage_admins(&c), "{role}");
+            assert!(!can_manage_certificates(&c), "{role}");
+            assert!(!can_access_settings(&c), "{role}");
+            assert!(!can_access_control_panel(&c), "{role}");
+        }
+    }
+
+    #[test]
+    fn business_helpers_cover_super_admin_and_admin_only() {
+        for role in [ROLE_SUPER_ADMIN, ROLE_ADMIN] {
+            let c = claims(role);
+            assert!(is_business_admin(&c), "{role}");
+            assert!(can_manage_tenants(&c), "{role}");
+            assert!(can_write_business(&c), "{role}");
+        }
+        // 历史角色 R_OPERATOR 已移除，不再拥有任何业务权限。
+        for role in [ROLE_VIEWER, "R_OPERATOR", ""] {
+            let c = claims(role);
+            assert!(!is_business_admin(&c), "{role}");
+            assert!(!can_manage_tenants(&c), "{role}");
+            assert!(!can_write_business(&c), "{role}");
+        }
+        assert!(is_read_only(&claims(ROLE_VIEWER)));
+    }
+
+    #[test]
+    fn role_levels_ignore_legacy_operator() {
+        assert_eq!(get_role_level(ROLE_SUPER_ADMIN), 3);
+        assert_eq!(get_role_level(ROLE_ADMIN), 2);
+        assert_eq!(get_role_level(ROLE_VIEWER), 1);
+        assert_eq!(get_role_level("R_OPERATOR"), 0);
+        assert!(can_assign_role(&claims(ROLE_SUPER_ADMIN), ROLE_ADMIN));
+        assert!(!can_assign_role(&claims(ROLE_ADMIN), ROLE_SUPER_ADMIN));
+        assert!(!can_assign_role(&claims(ROLE_VIEWER), ROLE_ADMIN));
     }
 }

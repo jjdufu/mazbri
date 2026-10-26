@@ -87,7 +87,7 @@ mod tests {
             required_for_all: true,
             required_for_roles: &listed,
         };
-        for role in ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"] {
+        for role in ["R_ADMIN", "R_VIEWER", "R_FINANCE"] {
             assert!(policy.requires_role(role), "{role}");
             assert!(policy.requires_user(role, false), "{role}");
         }
@@ -103,9 +103,9 @@ mod tests {
         };
         assert!(policy.requires_role("R_ADMIN"));
         assert!(policy.requires_role("R_FINANCE"));
-        assert!(!policy.requires_role("R_OPERATOR"));
+        assert!(!policy.requires_role("R_VIEWER"));
         assert!(!policy.requires_role(""));
-        assert!(policy.requires_user("R_OPERATOR", true));
+        assert!(policy.requires_user("R_VIEWER", true));
     }
 
     #[test]
@@ -120,10 +120,10 @@ mod tests {
         let settings = super::super::MfaSettings {
             mfa_enabled_globally: true,
             mfa_required_for_all: false,
-            mfa_required_for_roles: roles(&["R_OPERATOR"]),
+            mfa_required_for_roles: roles(&["R_FINANCE"]),
             totp_digits: 6,
         };
-        assert!(settings.policy().requires_role("R_OPERATOR"));
+        assert!(settings.policy().requires_role("R_FINANCE"));
         assert!(!settings.policy().requires_role("R_VIEWER"));
     }
 }

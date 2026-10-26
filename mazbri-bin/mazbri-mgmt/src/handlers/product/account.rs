@@ -1,7 +1,7 @@
 use crate::audit::extract_client_ip;
 use crate::handlers::AppState;
 use crate::handlers::mfa_guard::require_mfa_code;
-use crate::middleware::auth::AdminClaims;
+use crate::middleware::auth::{AdminClaims, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::product as service;
 use axum::{
@@ -10,7 +10,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 fn can_manage_account_finance(claims: &AdminClaims) -> bool {
-    matches!(claims.role.as_str(), "R_ADMIN" | "R_OPERATOR" | "R_FINANCE")
+    is_business_admin(claims)
 }
 pub async fn get_tenant_account(
     State(state): State<AppState>,
@@ -32,10 +32,7 @@ pub async fn recharge_tenant_account(
 ) -> axum::response::Response {
     let client_ip = extract_client_ip(&headers, Some(addr));
     if !can_manage_account_finance(&claims) {
-        return ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            "只有 admin、operator 或 finance 可以充值账户",
-        );
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以充值账户");
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
         return *response;
@@ -73,10 +70,7 @@ pub async fn refund_tenant_account(
 ) -> axum::response::Response {
     let client_ip = extract_client_ip(&headers, Some(addr));
     if !can_manage_account_finance(&claims) {
-        return ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            "只有 admin、operator 或 finance 可以退款账户",
-        );
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以退款账户");
     }
     if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
         return *response;

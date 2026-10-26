@@ -43,7 +43,7 @@ pub fn validate_update_fields(input: &UpdateMfaSettingsInput) -> Option<axum::re
     }
     if let Some(roles) = input.mfa_required_for_roles.as_ref() {
         for role in roles {
-            if !["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"].contains(&role.as_str()) {
+            if !crate::middleware::route_access::ALL_ROLES.contains(&role.as_str()) {
                 return Some(ApiResponse::err(
                     StatusCode::BAD_REQUEST,
                     "mfa_required_for_roles 中包含无效角色",

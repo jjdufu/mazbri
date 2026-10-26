@@ -157,4 +157,4 @@ macro_rules! proxy_handler_with_audit {
     };
 }
 
-pub(crate) const FORBIDDEN_CERT: &str = "只有 admin 可以访问证书管理";
+pub(crate) const FORBIDDEN_CERT: &str = "仅超级管理员可以访问证书管理";

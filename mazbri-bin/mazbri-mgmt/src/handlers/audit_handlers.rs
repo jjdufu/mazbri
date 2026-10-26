@@ -1,6 +1,6 @@
 use super::AppState;
 use crate::audit::AuditLogQuery;
-use crate::middleware::auth::AdminClaims;
+use crate::middleware::auth::{AdminClaims, is_admin};
 use crate::response::ApiResponse;
 use axum::{
     Extension,
@@ -9,8 +9,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use tracing::{debug, error};
+/// 审计日志仅超级管理员可访问。
 fn can_access_audit_logs(claims: &AdminClaims) -> bool {
-    claims.role == "R_ADMIN" || claims.role == "R_OPERATOR"
+    is_admin(claims)
 }
 pub async fn list_audit_logs(
     State(state): State<AppState>,
@@ -18,7 +19,7 @@ pub async fn list_audit_logs(
     Query(query): Query<AuditLogQuery>,
 ) -> axum::response::Response {
     if !can_access_audit_logs(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 可以访问审计日志");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅超级管理员可以访问审计日志");
     }
     debug!(
         "Listing audit logs (by {}) with query: {:?}",
@@ -43,7 +44,7 @@ pub async fn get_audit_log(
     Path(id): Path<uuid::Uuid>,
 ) -> axum::response::Response {
     if !can_access_audit_logs(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 可以访问审计日志");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅超级管理员可以访问审计日志");
     }
     debug!("Getting audit log {} (by {})", id, claims.sub);
     match state.audit.get_by_id(id).await {
@@ -66,7 +67,7 @@ pub async fn export_audit_logs(
     Query(query): Query<AuditLogQuery>,
 ) -> Response {
     if !can_access_audit_logs(&claims) {
-        return ApiResponse::err(StatusCode::FORBIDDEN, "只有 admin 可以访问审计日志");
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅超级管理员可以访问审计日志");
     }
     debug!(
         "Exporting audit logs (by {}) with query: {:?}",

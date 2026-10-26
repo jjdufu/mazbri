@@ -228,7 +228,7 @@ async fn login_issues_dedicated_temp_token_types() {
     let mfa_user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             mfa_enabled: true,
             ..Default::default()
         },
@@ -248,7 +248,7 @@ async fn login_issues_dedicated_temp_token_types() {
     let setup_user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             mfa_required: true,
             ..Default::default()
         },
@@ -264,7 +264,7 @@ async fn login_issues_dedicated_temp_token_types() {
     let reset_user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             mfa_enabled: true,
             force_password_reset: true,
             ..Default::default()
@@ -287,7 +287,7 @@ async fn temp_tokens_are_rejected_on_protected_routes() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             mfa_enabled: true,
             ..Default::default()
         },
@@ -327,7 +327,7 @@ fn subject(user: &TestUser) -> TokenSubject<'_> {
     TokenSubject {
         username: &user.username,
         user_id: Box::leak(user.id.to_string().into_boxed_str()),
-        role: "R_ADMIN",
+        role: "R_FINANCE",
     }
 }
 
@@ -339,7 +339,7 @@ async fn each_route_accepts_only_its_own_token_type() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             ..Default::default()
         },
     )
@@ -431,7 +431,7 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             ..Default::default()
         },
     )
@@ -442,7 +442,7 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
         aud: None,
         sub: user.username.clone(),
         user_id: user.id.to_string(),
-        role: "R_ADMIN".to_string(),
+        role: "R_FINANCE".to_string(),
         iat: now,
         exp: now + 3600,
         jti: Some(uuid::Uuid::new_v4().to_string()),
@@ -489,7 +489,7 @@ async fn temp_tokens_are_single_use() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             ..Default::default()
         },
     )
@@ -546,7 +546,7 @@ async fn expired_temp_token_is_rejected() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             ..Default::default()
         },
     )
@@ -558,7 +558,7 @@ async fn expired_temp_token_is_rejected() {
         aud: Some(kind.audience().to_string()),
         sub: user.username.clone(),
         user_id: user.id.to_string(),
-        role: "R_ADMIN".to_string(),
+        role: "R_FINANCE".to_string(),
         iat: now - 600,
         exp: now - 300,
         jti: Some(uuid::Uuid::new_v4().to_string()),
@@ -621,7 +621,7 @@ async fn forced_password_change_cannot_skip_mfa_and_is_single_use() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             mfa_enabled: true,
             force_password_reset: true,
             ..Default::default()
@@ -659,7 +659,7 @@ async fn forced_password_change_without_mfa_issues_access_token() {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             force_password_reset: true,
             ..Default::default()
         },
@@ -671,7 +671,7 @@ async fn forced_password_change_without_mfa_issues_access_token() {
         .await
         .expect("password changed");
     // 与登录、required_setup 使用同一判定函数。
-    if mfa_settings.policy().requires_role("R_OPERATOR") {
+    if mfa_settings.policy().requires_role("R_FINANCE") {
         assert_eq!(response["mfa_setup_required"], true);
         assert!(response.get("token").is_none());
     } else {
@@ -881,7 +881,7 @@ async fn user_with_refresh_token(deps: &Deps) -> (TestUser, String) {
     let user = create_user(
         &deps.db,
         NewUser {
-            role: "R_OPERATOR",
+            role: "R_FINANCE",
             ..Default::default()
         },
     )
@@ -1048,7 +1048,7 @@ async fn user_settings_are_scoped_to_the_caller() {
     let other = create_user(
         &deps.db,
         NewUser {
-            role: "R_ADMIN",
+            role: "R_FINANCE",
             ..NewUser::default()
         },
     )

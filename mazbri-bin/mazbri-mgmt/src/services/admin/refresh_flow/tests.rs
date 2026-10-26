@@ -28,7 +28,7 @@ fn now() -> DateTime<Utc> {
 fn healthy_user() -> AdminSessionStateRow {
     AdminSessionStateRow {
         username: "alice".to_string(),
-        role: "R_OPERATOR".to_string(),
+        role: "R_FINANCE".to_string(),
         is_active: true,
         locked_until: None,
         force_password_reset: false,
@@ -190,7 +190,7 @@ fn account_level_mfa_requirement_is_denied() {
 #[test]
 fn global_mfa_policy_uses_shared_policy_function() {
     let user = healthy_user();
-    let listed = vec!["R_OPERATOR".to_string()];
+    let listed = vec!["R_FINANCE".to_string()];
     let unlisted = vec!["R_ADMIN".to_string()];
     let by_role = MfaPolicy {
         enabled_globally: true,

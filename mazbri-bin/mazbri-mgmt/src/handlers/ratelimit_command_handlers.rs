@@ -1,6 +1,6 @@
 use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
-use crate::middleware::auth::{AdminClaims, can_manage_tenants, is_admin};
+use crate::middleware::auth::{AdminClaims, can_manage_tenants};
 use crate::response::ApiResponse;
 use crate::services::ratelimit_commands as svc;
 use axum::extract::{ConnectInfo, Path, Query, State};
@@ -36,10 +36,10 @@ pub async fn create_control_command(
     Json(payload): Json<svc::CreateControlCommandRequest>,
 ) -> axum::response::Response {
     // Temporary controls are higher privilege than routine tenant config edits.
-    if !is_admin(&claims) {
+    if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "Only administrators can issue rate-limit control commands",
+            "Only super administrators or administrators can issue rate-limit control commands",
         );
     }
     let Ok(operator_id) = Uuid::parse_str(&claims.user_id) else {
@@ -114,10 +114,10 @@ pub async fn cancel_control_command(
     headers: HeaderMap,
     Path((code, command_id)): Path<(String, String)>,
 ) -> axum::response::Response {
-    if !is_admin(&claims) {
+    if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "Only administrators can cancel rate-limit control commands",
+            "Only super administrators or administrators can cancel rate-limit control commands",
         );
     }
     let Ok(operator_id) = Uuid::parse_str(&claims.user_id) else {

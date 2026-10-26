@@ -1,6 +1,5 @@
 use super::{
-    ACCT, ADMIN, ALL_ROLES, Access, Denial, FIN, OPS, RULES, decide, lookup,
-    route_access_middleware,
+    ADMIN, ALL_ROLES, Access, BIZ, Denial, RULES, decide, lookup, route_access_middleware,
 };
 use crate::audit::AuditScope;
 use crate::audit::route_map::{self, RouteKind, route_sources::source_routes};
@@ -164,7 +163,7 @@ fn previously_unguarded_routes_are_now_restricted() {
     ] {
         assert_eq!(
             access_of(method, path),
-            Access::Roles(OPS),
+            Access::Roles(BIZ),
             "{method} {path}"
         );
     }
@@ -187,27 +186,28 @@ fn previously_unguarded_routes_are_now_restricted() {
 
 #[test]
 fn table_mirrors_existing_handler_checks() {
-    // 抽样核对：与处理器内既有校验一致，避免集中表收紧后改变既有行为。
+    // 抽样核对：与处理器内校验一致（处理器是第二道防线，两处必须同步修改）。
     for (method, path, expected) in [
         ("POST", "/admins", ADMIN),
         ("GET", "/admins", ADMIN),
-        ("GET", "/audit-logs/export", OPS),
-        ("POST", "/billing/bills/generate", FIN),
-        ("DELETE", "/billing/bills/{id}", ADMIN),
-        ("POST", "/tenants/{code}/account/recharge", ACCT),
-        ("DELETE", "/tenants/{code}", ADMIN),
-        ("POST", "/tenants/{code}/ratelimit/commands", ADMIN),
-        ("GET", "/tenants/{code}/ratelimit/commands", OPS),
-        ("POST", "/upstream-connectors/drafts/{id}/publish", OPS),
+        ("GET", "/audit-logs/export", ADMIN),
+        ("POST", "/billing/bills/generate", BIZ),
+        ("DELETE", "/billing/bills/{id}", BIZ),
+        ("POST", "/tenants/{code}/account/recharge", BIZ),
+        ("DELETE", "/tenants/{code}", BIZ),
+        ("POST", "/tenants/{code}/ratelimit/commands", BIZ),
+        ("GET", "/tenants/{code}/ratelimit/commands", BIZ),
+        ("POST", "/upstream-connectors/drafts/{id}/publish", BIZ),
         (
             "POST",
             "/upstream-connectors/suppliers/{supplier_id}/rollback",
-            ADMIN,
+            BIZ,
         ),
         ("GET", "/certificates/{id}/full", ADMIN),
         ("PUT", "/settings/mfa", ADMIN),
         ("PUT", "/settings/system", ADMIN),
-        ("POST", "/products", OPS),
+        ("POST", "/products", BIZ),
+        ("GET", "/tenant-crypto/export", BIZ),
     ] {
         assert_eq!(
             access_of(method, path),
@@ -218,10 +218,82 @@ fn table_mirrors_existing_handler_checks() {
 }
 
 #[test]
+fn only_three_roles_exist() {
+    assert_eq!(ALL_ROLES, ["R_ADMIN", "R_FINANCE", "R_VIEWER"]);
+    assert_eq!(BIZ, ["R_ADMIN", "R_FINANCE"]);
+    assert_eq!(ADMIN, ["R_ADMIN"]);
+    for rule in RULES {
+        if let Access::Roles(roles) = rule.access {
+            assert!(
+                roles == ADMIN || roles == BIZ,
+                "{} {} 只能使用 ADMIN 或 BIZ 角色集合",
+                rule.method,
+                rule.path
+            );
+        }
+    }
+}
+
+#[test]
+fn audit_logs_are_super_admin_only() {
+    let audit: Vec<_> = RULES
+        .iter()
+        .filter(|rule| rule.path.starts_with("/audit-logs"))
+        .collect();
+    assert_eq!(audit.len(), 3);
+    for rule in audit {
+        assert_eq!(rule.access, Access::Roles(ADMIN), "{}", rule.path);
+    }
+}
+
+#[test]
+fn decision_four_routes_are_granted_to_business_admins() {
+    for (method, path) in [
+        ("DELETE", "/tenants/{code}"),
+        ("DELETE", "/billing/reconciliation/discrepancies/{id}"),
+        ("DELETE", "/billing/bills/{id}"),
+        ("POST", "/tenants/{code}/ratelimit/commands"),
+        ("POST", "/tenants/{code}/ratelimit/commands/{id}/cancel"),
+        (
+            "POST",
+            "/upstream-connectors/suppliers/{supplier_id}/rollback",
+        ),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::Roles(BIZ),
+            "{method} {path}"
+        );
+    }
+}
+
+#[test]
+fn system_routes_stay_super_admin_only() {
+    for rule in RULES {
+        let system = rule.path.starts_with("/admins")
+            || rule.path.starts_with("/certificates")
+            || (rule.path.starts_with("/config-center/")
+                && rule.path != "/config-center/service-names")
+            || (rule.path.starts_with("/settings/")
+                && rule.path != "/settings/user"
+                && rule.method != "GET");
+        if system {
+            assert_eq!(
+                rule.access,
+                Access::Roles(ADMIN),
+                "{} {}",
+                rule.method,
+                rule.path
+            );
+        }
+    }
+}
+
+#[test]
 fn lookup_accepts_full_paths_and_head() {
     assert_eq!(
         lookup(&Method::GET, "/api/v1/mgmt/tenants/{code}/api-keys"),
-        Some(Access::Roles(OPS))
+        Some(Access::Roles(BIZ))
     );
     assert_eq!(lookup(&Method::HEAD, "/tenants"), Some(Access::AnyRole));
     assert_eq!(lookup(&Method::OPTIONS, "/tenants"), None);
@@ -248,13 +320,19 @@ fn decide_matrix() {
         decide(Some(Access::AnyRole), None),
         Err(Denial::MissingIdentity)
     );
-    let ops = Some(Access::Roles(OPS));
-    assert_eq!(decide(ops, Some("R_ADMIN")), Ok(()));
-    assert_eq!(decide(ops, Some("R_OPERATOR")), Ok(()));
-    assert_eq!(decide(ops, Some("R_FINANCE")), Err(Denial::Role(OPS)));
-    assert_eq!(decide(ops, Some("R_VIEWER")), Err(Denial::Role(OPS)));
-    assert_eq!(decide(ops, Some("r_admin")), Err(Denial::Role(OPS)));
-    assert_eq!(Denial::Role(OPS).reason(), "insufficient_permissions");
+    let biz = Some(Access::Roles(BIZ));
+    assert_eq!(decide(biz, Some("R_ADMIN")), Ok(()));
+    assert_eq!(decide(biz, Some("R_FINANCE")), Ok(()));
+    assert_eq!(decide(biz, Some("R_VIEWER")), Err(Denial::Role(BIZ)));
+    assert_eq!(decide(biz, Some("R_OPERATOR")), Err(Denial::Role(BIZ)));
+    assert_eq!(decide(biz, Some("r_admin")), Err(Denial::Role(BIZ)));
+    let admin = Some(Access::Roles(ADMIN));
+    assert_eq!(decide(admin, Some("R_FINANCE")), Err(Denial::Role(ADMIN)));
+    assert_eq!(
+        decide(Some(Access::AnyRole), Some("R_OPERATOR")),
+        Err(Denial::Role(ALL_ROLES))
+    );
+    assert_eq!(Denial::Role(BIZ).reason(), "insufficient_permissions");
     assert_eq!(Denial::Unregistered.reason(), "route_not_authorized");
 }
 
@@ -266,7 +344,7 @@ fn denial_reasons_have_frontend_labels() {
     for denial in [
         Denial::Unregistered,
         Denial::MissingIdentity,
-        Denial::Role(OPS),
+        Denial::Role(BIZ),
     ] {
         let needle = format!("  {}: \"auditLogs.failureReasons.", denial.reason());
         assert!(
@@ -349,7 +427,7 @@ async fn middleware_enforces_table_and_denies_by_default() {
     let app = test_app(&hits);
     let keys = "/api/v1/mgmt/tenants/t1/api-keys";
 
-    for role in ["R_VIEWER", "R_FINANCE"] {
+    for role in ["R_VIEWER", "R_OPERATOR"] {
         for method in ["GET", "POST"] {
             assert_eq!(
                 call(&app, method, keys, Some(role)).await,
@@ -360,7 +438,7 @@ async fn middleware_enforces_table_and_denies_by_default() {
     }
     assert_eq!(hits.load(Ordering::SeqCst), 0, "被拒绝的请求不得进入处理器");
 
-    for role in ["R_ADMIN", "R_OPERATOR"] {
+    for role in ["R_ADMIN", "R_FINANCE"] {
         assert_eq!(call(&app, "POST", keys, Some(role)).await.0, StatusCode::OK);
     }
     assert_eq!(
@@ -386,7 +464,7 @@ async fn middleware_enforces_table_and_denies_by_default() {
             &app,
             "GET",
             "/api/v1/mgmt/config-center/configs",
-            Some("R_OPERATOR")
+            Some("R_FINANCE")
         )
         .await,
         (StatusCode::FORBIDDEN, "insufficient_permissions".into())

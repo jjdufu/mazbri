@@ -1,7 +1,7 @@
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_operator_or_above};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::upstream_onboarding as svc;
 use axum::response::Response;
@@ -25,7 +25,7 @@ pub async fn onboard_upstream(
     headers: HeaderMap,
     Json(payload): Json<svc::UpstreamOnboardingRequest>,
 ) -> Result<Response, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::onboard(
@@ -54,7 +54,7 @@ pub async fn onboard_upstream_dry_run(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::UpstreamOnboardingRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::dry_run(&state.db, state.connector_runtime.ssrf(), &payload).await?;
@@ -79,7 +79,7 @@ pub async fn validate_supplier_config(
     Path(id): Path<String>,
     Json(body): Json<ValidateConfigBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let _supplier_id = uuid::Uuid::parse_str(&id)

@@ -2,7 +2,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::types::ListParams;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_operator_or_above};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::route_management as svc;
 use axum::{
@@ -60,7 +60,7 @@ pub async fn create_channel(
     headers: HeaderMap,
     Json(payload): Json<svc::CreateChannelRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::create_channel(
@@ -94,7 +94,7 @@ pub async fn update_channel(
     Path(id): Path<String>,
     Json(payload): Json<svc::UpdateChannelRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::update_channel(
@@ -118,7 +118,7 @@ pub async fn delete_channel(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::delete_channel(
@@ -151,7 +151,7 @@ pub async fn create_route_rule(
     headers: HeaderMap,
     Json(payload): Json<svc::CreateRouteRuleRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::create_route_rule(
@@ -185,7 +185,7 @@ pub async fn update_route_rule(
     Path(id): Path<String>,
     Json(payload): Json<svc::UpdateRouteRuleRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::update_route_rule(
@@ -209,7 +209,7 @@ pub async fn delete_route_rule(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::delete_route_rule(
@@ -233,7 +233,7 @@ pub async fn emergency_switch_route(
     Path(id): Path<String>,
     Json(payload): Json<svc::EmergencySwitchRequest>,
 ) -> Result<Response, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::emergency_switch_route(
@@ -269,7 +269,7 @@ pub async fn create_route_binding(
     Path(route_rule_id): Path<String>,
     Json(payload): Json<svc::CreateRouteBindingRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::create_route_binding(
@@ -294,7 +294,7 @@ pub async fn update_route_binding(
     Path(id): Path<String>,
     Json(payload): Json<svc::UpdateRouteBindingRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::update_route_binding(
@@ -318,7 +318,7 @@ pub async fn delete_route_binding(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_operator_or_above(&claims) {
+    if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
     let data = svc::delete_route_binding(

@@ -30,7 +30,7 @@ pub async fn grant_tenant_access(
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "只有 admin 或 operator 可以授予访问权限",
+            "只有超级管理员或管理员可以授予访问权限",
         );
     }
     let tenant_id =
@@ -69,7 +69,7 @@ pub async fn revoke_tenant_access(
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "只有 admin 或 operator 可以撤销访问权限",
+            "只有超级管理员或管理员可以撤销访问权限",
         );
     }
     let tenant_id =
@@ -104,7 +104,7 @@ pub async fn update_tenant_product_config(
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
-            "只有 admin 或 operator 可以调整通道授权配置",
+            "只有超级管理员或管理员可以调整通道授权配置",
         );
     }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
