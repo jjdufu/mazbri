@@ -596,6 +596,11 @@ fn create_router(
     let protected_api_routes = Router::new()
         .nest("/certificates", proxy::cert::create_cert_proxy_routes())
         .merge(handlers::create_routes())
+        // 授权在认证之内：先由 admin_auth_middleware 验证令牌并注入声明，
+        // 再按集中式访问控制表做角色判定（未登记路由默认拒绝）。
+        .layer(axum::middleware::from_fn(
+            middleware::route_access::route_access_middleware,
+        ))
         .layer(axum::middleware::from_fn(
             middleware::auth::admin_auth_middleware,
         ))

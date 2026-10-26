@@ -265,6 +265,8 @@ export const FAILURE_REASON_LABELS: Record<string, string> = {
   credentials_changed: "auditLogs.failureReasons.credentialsChanged",
   mfa_state_changed: "auditLogs.failureReasons.mfaStateChanged",
   mfa_setup_required: "auditLogs.failureReasons.mfaSetupRequired",
+  insufficient_permissions: "auditLogs.failureReasons.insufficientPermissions",
+  route_not_authorized: "auditLogs.failureReasons.routeNotAuthorized",
   business_failure: "auditLogs.failureReasons.businessFailure",
 };
 

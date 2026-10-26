@@ -1723,7 +1723,9 @@
       "passwordResetRequired": "Password reset required",
       "credentialsChanged": "Password changed after token was issued",
       "mfaStateChanged": "MFA state changed after token was issued",
-      "mfaSetupRequired": "MFA setup required"
+      "mfaSetupRequired": "MFA setup required",
+      "insufficientPermissions": "Insufficient role permissions",
+      "routeNotAuthorized": "Route has no access policy (denied by default)"
     }
   },
   "feedback": {

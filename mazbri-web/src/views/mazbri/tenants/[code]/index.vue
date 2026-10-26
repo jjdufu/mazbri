@@ -26,7 +26,7 @@
     </div>
 
     <div
-      v-if="tenantCode && isTabLoaded('api-keys')"
+      v-if="canViewApiKeys && tenantCode && isTabLoaded('api-keys')"
       v-show="activeTab === 'api-keys'"
       class="mt-5"
     >
@@ -91,6 +91,7 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { normalizeTenantCode } from "@/utils/tenant-code";
+import { useUserStore } from "@/store/modules/user";
 defineOptions({ name: "TenantDetail" });
 const router = useRouter();
 const route = useRoute();
@@ -99,11 +100,16 @@ const tenant = ref<Tenant | null>(null);
 const tenantStatusKey = computed(() =>
   tenant.value?.enabled === false ? "disabled" : "enabled",
 );
+// 与后端集中式访问控制表（route_access）一致：API 密钥的查看 / 签发 / 吊销
+// 仅限管理员与操作员；其它角色不展示该标签页，也不允许通过 ?tab=api-keys 进入。
+const API_KEY_ROLES: readonly string[] = ["R_ADMIN", "R_OPERATOR"];
+const userRoles: readonly string[] = useUserStore().getUserInfo.roles ?? [];
+const canViewApiKeys = userRoles.some((role) => API_KEY_ROLES.includes(role));
 const { activeTab, handleTabChange } = useTabRouteSync({
   defaultValue: "basic",
   allowedValues: [
     "basic",
-    "api-keys",
+    ...(canViewApiKeys ? ["api-keys"] : []),
     "whitelist",
     "access-strategy",
     "products",
@@ -114,7 +120,9 @@ const { activeTab, handleTabChange } = useTabRouteSync({
 const loadedTabs = ref(new Set(["basic"]));
 const tabOptions = [
   { label: $t("tenant.detail.tabs.basic"), value: "basic" },
-  { label: $t("tenant.detail.tabs.apiKeys"), value: "api-keys" },
+  ...(canViewApiKeys
+    ? [{ label: $t("tenant.detail.tabs.apiKeys"), value: "api-keys" }]
+    : []),
   { label: $t("tenant.detail.tabs.whitelist"), value: "whitelist" },
   { label: $t("tenant.detail.tabs.accessStrategy"), value: "access-strategy" },
   { label: $t("tenant.detail.tabs.products"), value: "products" },

@@ -995,8 +995,9 @@ pub fn fallback_resource_type(matched_path: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
+pub(crate) mod route_sources {
+    //! 测试辅助：直接解析路由源码，保证各类“每条路由都必须登记”的检查
+    //! 与真实路由表同源（新增路由忘记登记会让相关测试失败）。
     use std::collections::BTreeSet;
 
     const ROUTE_SOURCES: &[(&str, &str)] = &[
@@ -1064,12 +1065,20 @@ mod tests {
         found
     }
 
-    fn source_routes() -> BTreeSet<(String, String)> {
+    /// 从路由源码中解析出的全部 (METHOD, 相对路径)，供路由映射类覆盖测试共用。
+    pub(crate) fn source_routes() -> BTreeSet<(String, String)> {
         ROUTE_SOURCES
             .iter()
             .flat_map(|(prefix, source)| extract_routes(prefix, source))
             .collect()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::route_sources::source_routes;
+    use super::{ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
+    use std::collections::BTreeSet;
 
     #[test]
     fn route_coverage_every_route_is_mapped() {

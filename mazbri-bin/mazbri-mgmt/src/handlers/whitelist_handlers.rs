@@ -1,7 +1,8 @@
 use super::AppState;
 use super::types::AddToWhitelistRequest;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
-use crate::middleware::auth::AdminClaims;
+use crate::error::ApiError;
+use crate::middleware::auth::{AdminClaims, can_manage_tenants};
 use crate::response::ApiResponse;
 use crate::services::whitelist as svc;
 use axum::{
@@ -36,6 +37,10 @@ pub async fn add_to_whitelist(
     Path(code): Path<String>,
     Json(payload): Json<AddToWhitelistRequest>,
 ) -> axum::response::Response {
+    // 白名单决定哪些来源 IP 可调用租户接口，属于租户写操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return ApiError::Forbidden.into_response();
+    }
     info!("Adding IP whitelist for tenant: {}", code);
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
@@ -80,6 +85,10 @@ pub async fn remove_from_whitelist(
     headers: HeaderMap,
     Path((code, ip)): Path<(String, String)>,
 ) -> axum::response::Response {
+    // 白名单决定哪些来源 IP 可调用租户接口，属于租户写操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return ApiError::Forbidden.into_response();
+    }
     info!("Removing IP {} from whitelist for tenant: {}", ip, code);
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");

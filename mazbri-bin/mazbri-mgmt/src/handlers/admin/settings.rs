@@ -2,7 +2,7 @@ use super::super::AppState;
 use super::super::types::{SystemSettingsUpdate, UserSettingsUpdate};
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::error::ApiError;
-use crate::middleware::auth::{AdminClaims, can_access_settings};
+use crate::middleware::auth::{AdminClaims, can_access_settings, extract_user_id};
 use crate::response::ApiResponse;
 use crate::services::admin;
 use axum::{
@@ -70,8 +70,10 @@ pub async fn update_system_settings(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_user_settings(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let data = admin::get_user_settings(&state.admin_db).await?;
+    let user_id = extract_user_id(&claims)?;
+    let data = admin::get_user_settings(&state.admin_db, user_id).await?;
     Ok(ApiResponse::ok(data))
 }
 /// # Errors
@@ -85,9 +87,8 @@ pub async fn update_user_settings(
     Json(req): Json<UserSettingsUpdate>,
 ) -> Result<impl IntoResponse, ApiError> {
     info!("Updating user settings");
-    let user_id = uuid::Uuid::parse_str(&claims.user_id)
-        .map_err(|e| ApiError::internal(format!("Token 中的用户 ID 无效: {e}")))?;
-    let data = admin::update_user_settings(state.admin_db.clone(), &req).await?;
+    let user_id = extract_user_id(&claims)?;
+    let data = admin::update_user_settings(state.admin_db.clone(), user_id, &req).await?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     state.audit.log(create_audit_log(
         user_id,

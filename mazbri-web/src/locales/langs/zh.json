@@ -1723,7 +1723,9 @@
       "passwordResetRequired": "需要重置密码",
       "credentialsChanged": "令牌签发后密码已变更",
       "mfaStateChanged": "令牌签发后 MFA 状态已变更",
-      "mfaSetupRequired": "需要先设置 MFA"
+      "mfaSetupRequired": "需要先设置 MFA",
+      "insufficientPermissions": "角色权限不足",
+      "routeNotAuthorized": "接口未登记访问策略（默认拒绝）"
     }
   },
   "feedback": {

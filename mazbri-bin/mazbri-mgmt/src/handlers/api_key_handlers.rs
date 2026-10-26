@@ -23,6 +23,10 @@ pub async fn create_api_key(
     Path(code): Path<String>,
     Json(payload): Json<CreateApiKeyRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
     let user_id = extract_user_id(&claims)?;
     let data = svc::create_api_key(
         &state.db,
@@ -41,8 +45,13 @@ pub async fn create_api_key(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_api_keys(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
     let data = svc::list_api_keys(&state.db, &state.auth_db, &code).await?;
     Ok(ApiResponse::ok(data))
 }
@@ -56,6 +65,10 @@ pub async fn revoke_api_key(
     headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
     let user_id = extract_user_id(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::revoke_api_key(svc::RevokeApiKeyParams {

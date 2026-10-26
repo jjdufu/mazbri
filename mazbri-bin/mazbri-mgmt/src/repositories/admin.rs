@@ -275,23 +275,16 @@ pub async fn upsert_system_setting(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_admin_user_id_by_username(pool: &PgPool) -> Result<uuid::Uuid, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM admin_users WHERE username = 'admin' LIMIT 1")
-        .fetch_one(pool)
-        .await
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_user_settings(
     pool: &PgPool,
+    user_id: uuid::Uuid,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, sqlx::Error> {
     let query = r"
         SELECT key, value
         FROM user_settings
-        WHERE user_id = (SELECT id FROM admin_users WHERE username = 'admin' LIMIT 1)
+        WHERE user_id = $1
     ";
-    let rows = sqlx::query(query).fetch_all(pool).await?;
+    let rows = sqlx::query(query).bind(user_id).fetch_all(pool).await?;
     Ok(rows
         .into_iter()
         .map(|row| {

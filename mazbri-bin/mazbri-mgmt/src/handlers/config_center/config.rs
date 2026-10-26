@@ -16,10 +16,12 @@ use std::net::SocketAddr;
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_configs(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ConfigListParams>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
@@ -31,10 +33,12 @@ pub async fn list_configs(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_config(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
@@ -51,6 +55,7 @@ pub async fn create_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<CreateConfigRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     let data = service::create_config(&state, &claims, &payload, client_ip, &request_id, &trace_id)
@@ -68,6 +73,7 @@ pub async fn update_config(
     Path(service_name): Path<String>,
     Json(payload): Json<UpdateConfigRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
@@ -93,6 +99,7 @@ pub async fn delete_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(

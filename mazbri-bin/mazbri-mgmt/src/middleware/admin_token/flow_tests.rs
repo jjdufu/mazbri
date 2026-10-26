@@ -1028,3 +1028,54 @@ async fn refresh_is_denied_when_policy_now_requires_mfa() {
     assert!(matches!(result, Err(crate::error::ApiError::Unauthorized)));
     assert_eq!(draft.failure_reason.as_deref(), Some("mfa_setup_required"));
 }
+
+/// 个人设置只作用于调用者本人：此前读写都固定指向 `admin` 账号，任何角色都能改管理员的邮箱。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn user_settings_are_scoped_to_the_caller() {
+    use crate::handlers::types::UserSettingsUpdate;
+    use crate::services::admin::{get_user_settings, update_user_settings};
+
+    let deps = deps().await;
+    let viewer = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_VIEWER",
+            ..NewUser::default()
+        },
+    )
+    .await;
+    let other = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_ADMIN",
+            ..NewUser::default()
+        },
+    )
+    .await;
+    let other_before = get_user_settings(&deps.db, other.id)
+        .await
+        .expect("read other");
+
+    let update = UserSettingsUpdate {
+        language: Some("en".into()),
+        email: Some(format!("{}@example.test", viewer.username)),
+    };
+    update_user_settings(deps.db.clone(), viewer.id, &update)
+        .await
+        .expect("update own settings");
+
+    let mine = get_user_settings(&deps.db, viewer.id)
+        .await
+        .expect("read own");
+    assert_eq!(mine["settings"]["language"], "en");
+    assert_eq!(
+        mine["settings"]["email"],
+        json!(format!("{}@example.test", viewer.username))
+    );
+    let other_after = get_user_settings(&deps.db, other.id)
+        .await
+        .expect("read other");
+    assert_eq!(other_before, other_after, "不得改动其他账号的个人设置");
+    assert_eq!(other_after["settings"]["language"], "zh");
+}
