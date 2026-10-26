@@ -1314,7 +1314,8 @@
       "requestId": "Request ID",
       "route": "Route",
       "statusCode": "HTTP Status",
-      "durationMs": "Duration (ms)"
+      "durationMs": "Duration (ms)",
+      "service": "Service"
     },
     "status": {
       "success": "Success",
@@ -1460,6 +1461,15 @@
       "productTenantConfigUpdate": "Update Tenant Product Config",
       "billGenerateAsync": "Generate Bill (Async)",
       "reconciliationRun": "Scheduled usage reconciliation",
+      "certificateVerify": "Certificate verification failed",
+      "authorizationRootMaterialRead": "Read root authorization materials",
+      "configCenterTagCreate": "Create config tag",
+      "configCenterTagUpdate": "Update config tag",
+      "configCenterTagDelete": "Delete config tag",
+      "configCenterCategoryCreate": "Create config category",
+      "configCenterCategoryUpdate": "Update config category",
+      "configCenterCategoryDelete": "Delete config category",
+      "ratelimitCommandAck": "Acknowledge rate-limit commands",
       "apiRead": "API Read",
       "apiGet": "API Read",
       "apiPost": "API Submit",
@@ -1487,7 +1497,13 @@
       "auditLog": "Audit Log",
       "connector": "Connector",
       "authorization": "Authorization",
-      "billing": "Billing"
+      "billing": "Billing",
+      "ratelimit": "Rate limit"
+    },
+    "services": {
+      "mgmt": "Management",
+      "cert": "Certificate service",
+      "ratelimit": "Rate-limit service"
     },
     "verbs": {
       "login": "Login",
@@ -1656,6 +1672,7 @@
         "path": "Route",
         "statusCode": "HTTP Status",
         "durationMs": "Duration (ms)",
+        "service": "Service",
         "requestSummary": "Request Summary"
       },
       "changesTitle": "Changes",

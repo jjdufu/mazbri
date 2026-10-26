@@ -4,6 +4,8 @@ import {
   ACTION_LABELS,
   FAILURE_REASON_LABELS,
   RESOURCE_TYPE_LABELS,
+  SERVICE_LABELS,
+  AUDIT_SERVICES,
   diffChanges,
   guardCsvFormula,
   statusLabelKey,
@@ -38,6 +40,8 @@ const allKeys = [
   ...Object.values(ACTION_LABELS),
   ...Object.values(RESOURCE_TYPE_LABELS),
   ...Object.values(FAILURE_REASON_LABELS),
+  ...Object.values(SERVICE_LABELS),
+  "auditLogs.columns.service",
   statusLabelKey("success"),
   statusLabelKey("failure"),
   statusLabelKey("denied"),
@@ -54,10 +58,21 @@ for (const action of [
   "audit.export",
   "certificate.view_full",
   "admin.force_password_reset",
+  "certificate.verify",
+  "config_center.tag_create",
+  "ratelimit.command_ack",
+  "billing.reconciliation_run",
 ]) {
   assert.ok(ACTION_LABELS[action], `missing action label ${action}`);
 }
-for (const type of ["audit_log", "connector", "authorization", "billing"]) {
+assert.deepEqual(AUDIT_SERVICES, ["mgmt", "cert", "ratelimit"]);
+for (const type of [
+  "audit_log",
+  "connector",
+  "authorization",
+  "billing",
+  "ratelimit",
+]) {
   assert.ok(RESOURCE_TYPE_LABELS[type], `missing resource label ${type}`);
 }
 

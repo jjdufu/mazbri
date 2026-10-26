@@ -177,4 +177,56 @@ mod tests {
             assert!(action(&method, path).is_none(), "{path}");
         }
     }
+
+    /// 每个审计路由的代表请求；新增路由时请同步补充，确保前端有对应标签。
+    const ROUTE_SAMPLES: &[(&str, &str)] = &[
+        ("POST", "/issue"),
+        ("POST", "/renew/1"),
+        ("POST", "/revoke/1"),
+        ("PUT", "/certificates/1/auto-renewal"),
+        ("GET", "/certificates/1/full"),
+        ("POST", "/verify"),
+        ("POST", "/authorizations/license/request"),
+        ("POST", "/authorizations/license/import"),
+        ("GET", "/authorizations/root/current/materials"),
+        ("POST", "/configs/batch/update"),
+        ("POST", "/configs/batch/delete"),
+        ("PUT", "/configs/s"),
+        ("DELETE", "/configs/s"),
+        ("POST", "/configs/s/tags"),
+        ("DELETE", "/configs/s/tags"),
+        ("PUT", "/configs/s/category"),
+        ("POST", "/configs/s/rollback"),
+        ("POST", "/tags"),
+        ("PUT", "/tags/1"),
+        ("DELETE", "/tags/1"),
+        ("POST", "/categories"),
+        ("PUT", "/categories/1"),
+        ("DELETE", "/categories/1"),
+    ];
+
+    const FRONTEND_LABELS: &str =
+        include_str!("../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts");
+
+    #[test]
+    fn every_cert_action_and_resource_has_frontend_label() {
+        for (method, path) in ROUTE_SAMPLES {
+            let method = Method::from_bytes(method.as_bytes()).expect("method");
+            let (route, _) = classify(&method, path).expect(path);
+            assert!(
+                FRONTEND_LABELS.contains(&format!("\"{}\":", route.action)),
+                "labels.ts 缺少 {}",
+                route.action
+            );
+            assert!(
+                FRONTEND_LABELS.contains(&format!("{}:", route.resource_type)),
+                "labels.ts 缺少资源类型 {}",
+                route.resource_type
+            );
+        }
+        assert!(
+            FRONTEND_LABELS.contains("cert:"),
+            "labels.ts 缺少服务标签 cert"
+        );
+    }
 }

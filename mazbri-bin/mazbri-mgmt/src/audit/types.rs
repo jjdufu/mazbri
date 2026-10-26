@@ -236,6 +236,8 @@ pub struct AuditLogQuery {
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
     pub status: Option<String>,
+    /// 写入服务（`mgmt` / `cert` / `ratelimit`）。
+    pub service: Option<String>,
     #[serde(default = "default_page")]
     pub page: u32,
     #[serde(default = "default_limit")]
@@ -281,6 +283,8 @@ pub struct AuditLogResponse {
     pub status_code: Option<i16>,
     pub duration_ms: Option<i32>,
     pub request_summary: Option<serde_json::Value>,
+    /// 写入该记录的服务（`mgmt` / `cert` / `ratelimit`）；同一请求的 mgmt 与 cert 记录以 `request_id` 关联。
+    pub service: String,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditLogListResponse {

@@ -515,6 +515,18 @@ export const auditLogsCatalog: ResourceFilterCatalog = {
       enum_values: ["success", "failure", "denied", "error"],
     },
     {
+      field: "service",
+      value_type: "enum",
+      ops: ENUM_OPS,
+      label_key: "auditLogs.columns.service",
+      enum_values: ["mgmt", "cert", "ratelimit"],
+      enum_label_keys: [
+        "auditLogs.services.mgmt",
+        "auditLogs.services.cert",
+        "auditLogs.services.ratelimit",
+      ],
+    },
+    {
       field: "failure_reason",
       value_type: "string",
       ops: ["eq", "contains"],

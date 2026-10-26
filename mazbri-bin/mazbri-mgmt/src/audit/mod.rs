@@ -23,8 +23,8 @@ pub use scope::{
     set_actor, set_attempted_username, set_failure_reason,
 };
 pub use service::{
-    ACTION_LABELS, AuditService, RESOURCE_TYPE_LABELS, api_key_audit, config_center_audit,
-    create_audit_log, tenant_audit, user_audit,
+    ACTION_LABELS, AuditService, EXTERNAL_SERVICE_ACTIONS, RESOURCE_TYPE_LABELS, api_key_audit,
+    config_center_audit, create_audit_log, tenant_audit, user_audit,
 };
 pub use settings::AuditSettingsCache;
 pub use sink::{AuditWriterHandle, register_audit_metrics};

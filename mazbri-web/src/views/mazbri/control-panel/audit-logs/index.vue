@@ -60,6 +60,9 @@
           {{ $t(statusLabelKey(row.status)) }}
         </StatusIndicator>
       </template>
+      <template #service="{ row }">
+        <ElTag size="small" type="info">{{ formatService(row.service) }}</ElTag>
+      </template>
       <template #failure_reason="{ row }">
         {{ formatFailureReason(row.failure_reason) }}
       </template>
@@ -109,6 +112,9 @@
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">{{
           formatIpAddress(currentLog?.ip_address)
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.service')">{{
+          formatService(currentLog?.service)
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">{{
           currentLog?.request_id || "-"
@@ -231,6 +237,7 @@ import {
   ACTION_LABELS,
   FAILURE_REASON_LABELS,
   RESOURCE_TYPE_LABELS,
+  SERVICE_LABELS,
   diffChanges,
   guardCsvFormula,
   statusLabelKey,
@@ -264,6 +271,12 @@ const ACTION_VERB_LABELS: Record<string, string> = {
   import: "auditLogs.verbs.import",
   change: "auditLogs.verbs.change",
   reset: "auditLogs.verbs.reset",
+};
+const formatService = (service?: string | null) => {
+  if (!service) {
+    return "-";
+  }
+  return SERVICE_LABELS[service] ? $t(SERVICE_LABELS[service]) : service;
 };
 const formatResourceType = (type: string) => {
   if (!type) {
@@ -432,6 +445,12 @@ const columns = ref<ColumnOption<AuditLog>[]>([
     prop: "status",
     label: $t("auditLogs.columns.status"),
     width: 80,
+    useSlot: true,
+  },
+  {
+    prop: "service",
+    label: $t("auditLogs.columns.service"),
+    width: 104,
     useSlot: true,
   },
   {
@@ -702,6 +721,7 @@ const handleExport = async (command: string) => {
             row.duration_ms === null || row.duration_ms === undefined
               ? "-"
               : String(row.duration_ms),
+          service: formatService(row.service),
           details: formatDetailValue(row.details),
         };
         return Object.fromEntries(
@@ -730,6 +750,7 @@ const handleExport = async (command: string) => {
           { key: "route", label: $t("auditLogs.columns.route") },
           { key: "status_code", label: $t("auditLogs.columns.statusCode") },
           { key: "duration_ms", label: $t("auditLogs.columns.durationMs") },
+          { key: "service", label: $t("auditLogs.columns.service") },
           { key: "details", label: $t("auditLogs.columns.details") },
         ],
         filename,

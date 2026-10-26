@@ -23,7 +23,10 @@ export interface AuditLog {
   duration_ms?: number | null;
   /** 请求体摘要（仅 content_type / 长度 / 顶层字段名，不含值） */
   request_summary?: Record<string, unknown> | null;
+  /** 写入服务；同一请求的 mgmt 与 cert 记录通过 request_id 关联 */
+  service: AuditService;
 }
+export type AuditService = "mgmt" | "cert" | "ratelimit";
 export type AuditStatus = "success" | "failure" | "denied";
 export interface AuditLogListResponse {
   logs: AuditLog[];
@@ -44,6 +47,7 @@ export interface AuditLogListQuery {
   start_time?: number;
   end_time?: number;
   status?: AuditStatus;
+  service?: AuditService;
 }
 export interface AuditLogDetail extends AuditLog {
   changes?: {
@@ -190,6 +194,16 @@ export type AuditAction =
   | "upstream.onboarding_dry_run"
   | "product.tenant_config_update"
   | "bill.generate_async"
+  | "billing.reconciliation_run"
+  | "certificate.verify"
+  | "authorization.root_material_read"
+  | "config_center.tag_create"
+  | "config_center.tag_update"
+  | "config_center.tag_delete"
+  | "config_center.category_create"
+  | "config_center.category_update"
+  | "config_center.category_delete"
+  | "ratelimit.command_ack"
   | "api.read"
   | "api.get"
   | "api.post"
@@ -216,4 +230,5 @@ export type ResourceType =
   | "audit_log"
   | "connector"
   | "authorization"
-  | "billing";
+  | "billing"
+  | "ratelimit";

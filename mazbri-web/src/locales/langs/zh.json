@@ -1314,7 +1314,8 @@
       "requestId": "请求流水号",
       "route": "路由",
       "statusCode": "HTTP 状态码",
-      "durationMs": "耗时（毫秒）"
+      "durationMs": "耗时（毫秒）",
+      "service": "服务"
     },
     "status": {
       "success": "成功",
@@ -1460,6 +1461,15 @@
       "productTenantConfigUpdate": "更新租户产品配置",
       "billGenerateAsync": "异步生成账单",
       "reconciliationRun": "定时用量对账",
+      "certificateVerify": "证书校验失败",
+      "authorizationRootMaterialRead": "读取根授权素材",
+      "configCenterTagCreate": "新增配置标签",
+      "configCenterTagUpdate": "更新配置标签",
+      "configCenterTagDelete": "删除配置标签",
+      "configCenterCategoryCreate": "新增配置分类",
+      "configCenterCategoryUpdate": "更新配置分类",
+      "configCenterCategoryDelete": "删除配置分类",
+      "ratelimitCommandAck": "确认限流控制命令",
       "apiRead": "API 读取",
       "apiGet": "API 读取",
       "apiPost": "API 提交",
@@ -1487,7 +1497,13 @@
       "auditLog": "审计日志",
       "connector": "连接器",
       "authorization": "授权",
-      "billing": "账单"
+      "billing": "账单",
+      "ratelimit": "限流"
+    },
+    "services": {
+      "mgmt": "管理后台",
+      "cert": "证书服务",
+      "ratelimit": "限流服务"
     },
     "verbs": {
       "login": "登录",
@@ -1656,6 +1672,7 @@
         "path": "路由",
         "statusCode": "HTTP 状态码",
         "durationMs": "耗时（毫秒）",
+        "service": "服务",
         "requestSummary": "请求摘要"
       },
       "changesTitle": "变更对比",

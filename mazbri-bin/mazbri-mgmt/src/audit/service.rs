@@ -209,6 +209,16 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("product.tenant_config_update", "更新租户产品配置"),
     ("bill.generate_async", "异步生成账单"),
     ("billing.reconciliation_run", "定时用量对账"),
+    // ---- 其他服务写入的动作（cert / ratelimit，见 EXTERNAL_SERVICE_ACTIONS） ----
+    ("certificate.verify", "证书校验失败"),
+    ("authorization.root_material_read", "读取根授权素材"),
+    ("config_center.tag_create", "新增配置标签"),
+    ("config_center.tag_update", "更新配置标签"),
+    ("config_center.tag_delete", "删除配置标签"),
+    ("config_center.category_create", "新增配置分类"),
+    ("config_center.category_update", "更新配置分类"),
+    ("config_center.category_delete", "删除配置分类"),
+    ("ratelimit.command_ack", "确认限流控制命令"),
     ("api.read", "API 读取"),
     ("api.get", "API 读取"),
     ("api.post", "API 提交"),
@@ -238,6 +248,31 @@ pub const RESOURCE_TYPE_LABELS: &[(&str, &str)] = &[
     ("connector", "连接器"),
     ("authorization", "授权"),
     ("billing", "账单"),
+    ("ratelimit", "限流"),
+];
+
+/// 由 cert-service / ratelimit-service 写入、mgmt 枚举中没有的动作（标签同步测试覆盖；
+/// cert 侧另有测试保证其动作全部出现在前端 labels.ts）。
+pub const EXTERNAL_SERVICE_ACTIONS: &[&str] = &[
+    "certificate.issue",
+    "certificate.renew",
+    "certificate.revoke",
+    "certificate.auto_renewal_update",
+    "certificate.view_full",
+    "certificate.verify",
+    "authorization.license_request",
+    "authorization.import",
+    "authorization.root_material_read",
+    "config_center.update",
+    "config_center.delete",
+    "config_center.rollback",
+    "config_center.tag_create",
+    "config_center.tag_update",
+    "config_center.tag_delete",
+    "config_center.category_create",
+    "config_center.category_update",
+    "config_center.category_delete",
+    "ratelimit.command_ack",
 ];
 
 fn build_case_sql(column: &str, labels: &[(&str, &str)], otherwise: &str) -> String {
@@ -312,7 +347,7 @@ fn push_audit_keyword_filter(builder: &mut QueryBuilder<'_, Postgres>, keyword: 
 const SELECT_COLUMNS: &str = "id, user_id, username, actor_type, actor_role, action, \
      resource_type, resource_id, details, status, error_message, failure_reason, \
      ip_address, user_agent, old_value, new_value, request_id, method, path, \
-     status_code, duration_ms, request_summary, created_at";
+     status_code, duration_ms, request_summary, created_at, service";
 
 /// 审计服务：业务事件入口 + 查询。可廉价克隆。
 #[derive(Clone)]
@@ -511,6 +546,7 @@ const CSV_HEADER: &[&str] = &[
     "path",
     "status_code",
     "duration_ms",
+    "service",
 ];
 
 fn push_csv_row(csv: &mut String, log: &AuditLogResponse) {
@@ -541,6 +577,7 @@ fn push_csv_row(csv: &mut String, log: &AuditLogResponse) {
             .map_or_else(|| "N/A".to_string(), |code| code.to_string()),
         log.duration_ms
             .map_or_else(|| "N/A".to_string(), |ms| ms.to_string()),
+        log.service.clone(),
     ];
     let line: Vec<String> = fields.iter().map(|field| csv_escape(field)).collect();
     csv.push_str(&line.join(","));
@@ -699,6 +736,7 @@ fn push_audit_conditions(
         ("action", query.action.as_ref()),
         ("resource_type", query.resource_type.as_ref()),
         ("resource_id", query.resource_id.as_ref()),
+        ("service", query.service.as_ref()),
     ];
     for (column, value) in eq_filters {
         if let Some(value) = value {
@@ -739,6 +777,7 @@ fn audit_row_to_response(row: &sqlx::postgres::PgRow) -> AuditLogResponse {
     let status: Option<String> = row.get("status");
     let details: Option<serde_json::Value> = row.get("details");
     let details = details.unwrap_or_else(|| serde_json::json!({}));
+    let service: Option<String> = row.get("service");
     AuditLogResponse {
         id: row.get("id"),
         timestamp: row.get("created_at"),
@@ -761,6 +800,7 @@ fn audit_row_to_response(row: &sqlx::postgres::PgRow) -> AuditLogResponse {
         status_code: row.get("status_code"),
         duration_ms: row.get("duration_ms"),
         request_summary: row.get("request_summary"),
+        service: service.unwrap_or_else(|| mazbri_audit::record::SERVICE_MGMT.to_string()),
     }
 }
 
@@ -818,6 +858,11 @@ mod label_tests {
                 .filter_map(|route| route.action.map(|action| action.as_str().to_string())),
         );
         actions.push("api.read".to_string());
+        actions.extend(
+            super::EXTERNAL_SERVICE_ACTIONS
+                .iter()
+                .map(ToString::to_string),
+        );
         for method in ["get", "post", "put", "patch", "delete"] {
             actions.push(route_map::fallback_action(method));
         }
@@ -844,7 +889,13 @@ mod label_tests {
                 "labels.ts 缺少 {action}"
             );
         }
-        for resource in ["audit_log", "connector", "authorization", "billing"] {
+        for resource in [
+            "audit_log",
+            "connector",
+            "authorization",
+            "billing",
+            "ratelimit",
+        ] {
             assert!(
                 FRONTEND_LABELS.contains(&format!("{resource}:")),
                 "labels.ts 缺少资源类型 {resource}"
@@ -1014,5 +1065,45 @@ mod pg_tests {
             .unwrap();
         assert!(csv.contains("invalid_password_"));
         assert!(!csv.contains("pw-secret-x"));
+    }
+}
+
+#[cfg(test)]
+mod service_filter_tests {
+    use super::{CSV_HEADER, SELECT_COLUMNS, push_audit_where};
+    use crate::audit::types::AuditLogQuery;
+
+    #[test]
+    fn service_query_param_is_bound_equality() {
+        let query: AuditLogQuery =
+            serde_json::from_value(serde_json::json!({"service": "cert"})).expect("query");
+        assert_eq!(query.service.as_deref(), Some("cert"));
+        let head = "SELECT id FROM audit_logs_view WHERE 1=1";
+        let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
+        push_audit_where(&mut builder, &query).expect("where");
+        let sql = builder.sql().trim_start_matches(head).to_string();
+        assert!(sql.contains("AND service = $1"), "{sql}");
+        assert!(
+            !sql.contains("cert"),
+            "value must be bound, not inlined: {sql}"
+        );
+    }
+
+    #[test]
+    fn service_filter_from_catalog() {
+        let query = AuditLogQuery {
+            filters: Some(r#"[{"field":"service","op":"eq","value":"ratelimit"}]"#.into()),
+            ..AuditLogQuery::default()
+        };
+        let head = "SELECT id FROM audit_logs_view WHERE 1=1";
+        let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
+        push_audit_where(&mut builder, &query).expect("where");
+        assert!(builder.sql().contains("service"));
+    }
+
+    #[test]
+    fn service_is_selected_and_exported() {
+        assert!(SELECT_COLUMNS.contains("service"));
+        assert_eq!(CSV_HEADER.last(), Some(&"service"));
     }
 }

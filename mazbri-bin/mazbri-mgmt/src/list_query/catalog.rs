@@ -1130,6 +1130,14 @@ const AUDIT_LOGS_FIELDS: &[FilterFieldDef] = &[
         sql_expr: "request_id",
     },
     FilterFieldDef {
+        field: "service",
+        value_type: FilterValueType::Enum,
+        ops: ENUM_OPS,
+        in_q: false,
+        requires_time_window: false,
+        sql_expr: "service",
+    },
+    FilterFieldDef {
         field: "ip_address",
         value_type: FilterValueType::String,
         ops: &[FilterOp::Eq, FilterOp::Contains],

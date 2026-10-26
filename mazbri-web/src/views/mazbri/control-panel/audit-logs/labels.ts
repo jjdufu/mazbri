@@ -179,6 +179,20 @@ export const ACTION_LABELS: Record<string, string> = {
     "auditLogs.explicitActions.productTenantConfigUpdate",
   "bill.generate_async": "auditLogs.explicitActions.billGenerateAsync",
   "billing.reconciliation_run": "auditLogs.explicitActions.reconciliationRun",
+  // cert-service / ratelimit-service 写入的动作
+  "certificate.verify": "auditLogs.explicitActions.certificateVerify",
+  "authorization.root_material_read":
+    "auditLogs.explicitActions.authorizationRootMaterialRead",
+  "config_center.tag_create": "auditLogs.explicitActions.configCenterTagCreate",
+  "config_center.tag_update": "auditLogs.explicitActions.configCenterTagUpdate",
+  "config_center.tag_delete": "auditLogs.explicitActions.configCenterTagDelete",
+  "config_center.category_create":
+    "auditLogs.explicitActions.configCenterCategoryCreate",
+  "config_center.category_update":
+    "auditLogs.explicitActions.configCenterCategoryUpdate",
+  "config_center.category_delete":
+    "auditLogs.explicitActions.configCenterCategoryDelete",
+  "ratelimit.command_ack": "auditLogs.explicitActions.ratelimitCommandAck",
   "api.read": "auditLogs.explicitActions.apiRead",
   "api.get": "auditLogs.explicitActions.apiGet",
   "api.post": "auditLogs.explicitActions.apiPost",
@@ -209,7 +223,18 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   connector: "auditLogs.resources.connector",
   authorization: "auditLogs.resources.authorization",
   billing: "auditLogs.resources.billing",
+  ratelimit: "auditLogs.resources.ratelimit",
 };
+
+/** 写入服务 → i18n key（与后端 `mazbri_audit::record::SERVICE_*` 一致）。 */
+export const SERVICE_LABELS: Record<string, string> = {
+  mgmt: "auditLogs.services.mgmt",
+  cert: "auditLogs.services.cert",
+  ratelimit: "auditLogs.services.ratelimit",
+};
+
+/** 审计服务取值（筛选下拉的枚举）。 */
+export const AUDIT_SERVICES = Object.keys(SERVICE_LABELS);
 
 export type AuditStatusValue = "success" | "failure" | "denied";
 
