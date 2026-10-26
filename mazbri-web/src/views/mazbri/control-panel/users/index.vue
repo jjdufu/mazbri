@@ -385,7 +385,6 @@ const handleSearch = () => {
 const normalizeRole = (value?: string) => {
   const normalized = value?.trim().toUpperCase();
   return normalized === "R_ADMIN" ||
-    normalized === "R_OPERATOR" ||
     normalized === "R_VIEWER" ||
     normalized === "R_FINANCE"
     ? normalized

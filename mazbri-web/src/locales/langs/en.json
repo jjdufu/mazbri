@@ -253,9 +253,8 @@
       "revoked": "Revoked"
     },
     "roleLabels": {
-      "admin": "Administrator",
-      "operator": "Operator",
-      "finance": "Finance",
+      "admin": "Super Administrator",
+      "finance": "Administrator",
       "viewer": "Read-only User"
     },
     "conflict": {
@@ -587,10 +586,9 @@
     "title": "Welcome back",
     "subTitle": "Please enter your account and password to login",
     "roles": {
-      "admin": "Admin",
-      "operator": "Operator",
-      "finance": "Finance",
-      "viewer": "Viewer"
+      "admin": "Super Administrator",
+      "finance": "Administrator",
+      "viewer": "Read-only User"
     },
     "placeholder": {
       "username": "Please enter your account",
@@ -995,7 +993,7 @@
       }
     },
     "messages": {
-      "noPermission": "Only admins can configure security settings.",
+      "noPermission": "Only the super administrator can configure security settings.",
       "savedSuccess": "Settings saved"
     }
   },
@@ -2377,13 +2375,11 @@
       }
     },
     "roles": {
-      "admin": "Administrator",
-      "operator": "Operator",
-      "finance": "Finance",
-      "viewer": "Viewer",
-      "operatorWithScope": "Operator (read/write business)",
-      "financeWithScope": "Finance (billing reconciliation)",
-      "viewerWithScope": "Viewer (read-only)"
+      "admin": "Super Administrator",
+      "finance": "Administrator",
+      "viewer": "Read-only User",
+      "financeWithScope": "Administrator (read/write business)",
+      "viewerWithScope": "Read-only User (view only)"
     },
     "messages": {
       "resetMfaTitle": "Reset MFA",

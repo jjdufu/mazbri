@@ -101,8 +101,8 @@ const tenantStatusKey = computed(() =>
   tenant.value?.enabled === false ? "disabled" : "enabled",
 );
 // 与后端集中式访问控制表（route_access）一致：API 密钥的查看 / 签发 / 吊销
-// 仅限管理员与操作员；其它角色不展示该标签页，也不允许通过 ?tab=api-keys 进入。
-const API_KEY_ROLES: readonly string[] = ["R_ADMIN", "R_OPERATOR"];
+// 仅限超级管理员与管理员；只读用户不展示该标签页，也不允许通过 ?tab=api-keys 进入。
+const API_KEY_ROLES: readonly string[] = ["R_ADMIN", "R_FINANCE"];
 const userRoles: readonly string[] = useUserStore().getUserInfo.roles ?? [];
 const canViewApiKeys = userRoles.some((role) => API_KEY_ROLES.includes(role));
 const { activeTab, handleTabChange } = useTabRouteSync({

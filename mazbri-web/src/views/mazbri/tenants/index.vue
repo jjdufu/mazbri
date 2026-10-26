@@ -25,17 +25,17 @@
           :filter-catalog="tenantsCatalog"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_OPERATOR']"
+          :import-roles="['R_ADMIN', 'R_FINANCE']"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_OPERATOR']"
+          :export-roles="['R_ADMIN', 'R_FINANCE']"
           :show-primary="true"
           :primary-label="$t('tenant.actions.addTenant')"
-          :primary-roles="['R_ADMIN', 'R_OPERATOR']"
+          :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN']"
+          :delete-roles="['R_ADMIN', 'R_FINANCE']"
           :delete-label="$t('common.actions.delete')"
           @search="handleSearch"
           @import="openImport"
@@ -60,7 +60,7 @@
           }}</ElButton>
           <ElButton
             v-if="row.enabled"
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="warning"
             @click="handleToggleStatus(row, false)"
@@ -69,7 +69,7 @@
           </ElButton>
           <ElButton
             v-else
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="success"
             @click="handleToggleStatus(row, true)"
@@ -77,7 +77,7 @@
             {{ $t("tenant.actions.enable") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -382,7 +382,7 @@ const exportItems = computed(() => [
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<Tenant>({
     deleteApi: async (row) => {
-      if (!userStore.isAdmin) {
+      if (!userStore.canWriteBusiness) {
         throw new Error("forbidden");
       }
       await deleteTenant(row.tenant_code);
@@ -551,7 +551,7 @@ const handleToggleStatus = async (row: Tenant, enable: boolean) => {
 };
 
 const handleDelete = async (row: Tenant) => {
-  if (!userStore.isAdmin) {
+  if (!userStore.canWriteBusiness) {
     ElMessage.error($t("common.feedback.unknownError"));
     return;
   }

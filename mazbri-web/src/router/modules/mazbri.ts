@@ -10,7 +10,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
       order: 1,
       isHide: true,
       keepAlive: false,
-      roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
   },
   {
@@ -21,7 +21,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
       title: "menus.mazbri.opsManagement",
       icon: "ri:building-2-line",
       order: 3,
-      roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
     children: [
       {
@@ -32,7 +32,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.tenantList",
           icon: "ri:building-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -44,7 +44,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:building-line",
           isHide: true,
           keepAlive: true,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -55,7 +55,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.productAuthorization",
           icon: "ri:shield-user-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
 
@@ -69,7 +69,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/product-authorization",
           keepAlive: true,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -80,7 +80,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.upstreamSupply",
           icon: "ri:building-4-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -93,7 +93,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR"],
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
       {
@@ -106,7 +106,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -119,7 +119,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR"],
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
       {
@@ -132,7 +132,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -145,7 +145,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/ops/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR"],
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
       {
@@ -156,7 +156,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.callbackList",
           icon: "ri:webhook-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -167,7 +167,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.billList",
           icon: "ri:file-list-3-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -178,7 +178,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.usageReconciliation",
           icon: "ri:file-search-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
     ],
@@ -191,7 +191,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
       title: "menus.mazbri.opsMonitoring",
       icon: "ri:bar-chart-box-line",
       order: 5,
-      roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
     children: [
       {
@@ -202,7 +202,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.serviceMonitoring",
           icon: "ri:pulse-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -213,7 +213,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.upstreamCallMonitor",
           icon: "ri:send-plane-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -224,7 +224,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.customerCallMonitor",
           icon: "ri:user-received-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_OPERATOR", "R_VIEWER", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
     ],

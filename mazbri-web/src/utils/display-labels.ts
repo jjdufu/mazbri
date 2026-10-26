@@ -20,8 +20,7 @@ const STATUS_TYPE_MAP: Record<string, TagType> = {
 };
 const ROLE_TYPE_MAP: Record<string, TagType> = {
   R_ADMIN: "danger",
-  R_OPERATOR: "primary",
-  R_FINANCE: "warning",
+  R_FINANCE: "primary",
   R_VIEWER: "info",
 };
 export function getStatusType(status: string): TagType {
@@ -65,7 +64,6 @@ export function getRoleLabel(
 ): string {
   const defaultLabels: Record<string, string> = {
     R_ADMIN: $t("common.roleLabels.admin"),
-    R_OPERATOR: $t("common.roleLabels.operator"),
     R_FINANCE: $t("common.roleLabels.finance"),
     R_VIEWER: $t("common.roleLabels.viewer"),
   };

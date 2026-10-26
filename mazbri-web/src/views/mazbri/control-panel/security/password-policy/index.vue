@@ -463,7 +463,6 @@ const mfaMode = computed({
       mfaForm.mfa_required_for_all = true;
       mfaForm.mfa_required_for_roles = [
         "R_ADMIN",
-        "R_OPERATOR",
         "R_FINANCE",
         "R_VIEWER",
       ];

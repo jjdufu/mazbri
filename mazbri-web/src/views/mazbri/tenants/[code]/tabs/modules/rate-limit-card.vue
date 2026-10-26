@@ -13,7 +13,7 @@
         </template>
         <template #actions>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             type="primary"
             :loading="saving"
             @click="handleSave"
@@ -43,7 +43,7 @@
 
 
       <div
-        v-roles="['R_ADMIN', 'R_OPERATOR']"
+        v-roles="['R_ADMIN', 'R_FINANCE']"
         class="template-bar"
       >
         <span class="template-label">{{ $t("rateLimit.templates.label") }}</span>
@@ -198,7 +198,7 @@
             <div class="section-actions-row">
               <span />
               <ElButton
-                v-roles="['R_ADMIN', 'R_OPERATOR']"
+                v-roles="['R_ADMIN', 'R_FINANCE']"
                 link
                 type="primary"
                 :disabled="!form.enabled"
@@ -236,7 +236,7 @@
               <template #operations="{ $index }">
                 <TableActionRow>
                   <ElButton
-                    v-roles="['R_ADMIN', 'R_OPERATOR']"
+                    v-roles="['R_ADMIN', 'R_FINANCE']"
                     link
                     type="danger"
                     :disabled="!form.enabled"
@@ -296,7 +296,7 @@
             </ElButton>
           </div>
 
-          <div v-roles="['R_ADMIN']" class="ops-actions-panel mb-4">
+          <div v-roles="['R_ADMIN', 'R_FINANCE']" class="ops-actions-panel mb-4">
             <div class="ops-action-row">
               <ElInputNumber
                 v-model="denyMinutes"
@@ -398,7 +398,7 @@
               <TableActionRow>
                 <ElButton
                   v-if="row.status === 'active'"
-                  v-roles="['R_ADMIN']"
+                  v-roles="['R_ADMIN', 'R_FINANCE']"
                   link
                   type="danger"
                   :loading="opsBusy"

@@ -12,7 +12,7 @@
       <template #actions>
         <ElButton
           v-if="apiKeyActions.create"
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           type="primary"
           @click="handleCreate"
         >
@@ -44,7 +44,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="success"
             @click="handleRenew(row)"
@@ -53,7 +53,7 @@
           </ElButton>
           <ElButton
             v-if="apiKeyActions.delete"
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleDelete(row)"

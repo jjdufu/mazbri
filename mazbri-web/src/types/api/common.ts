@@ -30,5 +30,5 @@ export type CertificateStatus =
   | "revoked";
 export type ISODateString = string;
 export type DecimalString = string;
-export type AdminRole = "R_ADMIN" | "R_OPERATOR" | "R_VIEWER" | "R_FINANCE";
+export type AdminRole = "R_ADMIN" | "R_FINANCE" | "R_VIEWER";
 export type { AdminUser } from "./admin";

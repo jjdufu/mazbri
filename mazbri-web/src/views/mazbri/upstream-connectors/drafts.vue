@@ -24,15 +24,15 @@
           v-model="searchParams.q"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_OPERATOR']"
+          :import-roles="['R_ADMIN', 'R_FINANCE']"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_OPERATOR']"
+          :export-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_OPERATOR']"
+          :delete-roles="['R_ADMIN', 'R_FINANCE']"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -56,7 +56,7 @@
             {{ $t("upstreamConnector.continueEdit") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleDelete(row)"

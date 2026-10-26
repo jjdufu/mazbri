@@ -23,12 +23,12 @@
           :label="$t('tenant.whitelist.export')"
           @command="(type) => handleExport(type as 'all' | 'selected')"
         />
-        <ElButton v-roles="['R_ADMIN', 'R_OPERATOR']" @click="handleImport">
+        <ElButton v-roles="['R_ADMIN', 'R_FINANCE']" @click="handleImport">
           <template #icon><ArtSvgIcon icon="ri:upload-line" /></template>
           {{ $t("tenant.whitelist.import") }}
         </ElButton>
         <ElButton
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           type="primary"
           @click="handleAdd"
         >
@@ -36,7 +36,7 @@
           {{ $t("tenant.whitelist.add") }}
         </ElButton>
         <TableDeleteDropdown
-          v-roles="['R_ADMIN', 'R_OPERATOR']"
+          v-roles="['R_ADMIN', 'R_FINANCE']"
           :total-count="entries.length"
           :selected-count="selectedRows.length"
           @command="(type) => handleDeleteCommand(type, entries)"
@@ -85,7 +85,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_OPERATOR']"
+            v-roles="['R_ADMIN', 'R_FINANCE']"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -101,7 +101,7 @@
         $t("tenant.whitelist.selectedCount", { count: selectedRows.length })
       }}</ElTag>
       <ElButton
-        v-roles="['R_ADMIN', 'R_OPERATOR']"
+        v-roles="['R_ADMIN', 'R_FINANCE']"
         type="danger"
         link
         class="ml-3"

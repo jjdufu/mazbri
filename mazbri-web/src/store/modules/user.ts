@@ -28,13 +28,8 @@ export const useUserStore = defineStore(
     const getSettingState = computed(() => useSettingStore().$state);
     const getWorktabState = computed(() => useWorktabStore().$state);
     const isAdmin = computed(() => info.value.role === "R_ADMIN");
-    const isOperatorOrAbove = computed(
-      () => info.value.role === "R_ADMIN" || info.value.role === "R_OPERATOR",
-    );
+    // 超级管理员（R_ADMIN）与管理员（R_FINANCE）拥有全部业务读写权限，与后端 route_access 的 BIZ 一致。
     const canWriteBusiness = computed(
-      () => info.value.role === "R_ADMIN" || info.value.role === "R_OPERATOR",
-    );
-    const canManageFinance = computed(
       () => info.value.role === "R_ADMIN" || info.value.role === "R_FINANCE",
     );
     const requiresMfa = computed(
@@ -173,9 +168,7 @@ export const useUserStore = defineStore(
       getSettingState,
       getWorktabState,
       isAdmin,
-      isOperatorOrAbove,
       canWriteBusiness,
-      canManageFinance,
       requiresMfa,
       needsPasswordReset,
       setUserInfo,

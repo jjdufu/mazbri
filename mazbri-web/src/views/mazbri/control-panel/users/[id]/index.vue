@@ -109,10 +109,6 @@
           >
             <ElSelect v-model="editForm.role" style="width: 100%">
               <ElOption
-                :label="$t('userManagement.roles.operator')"
-                value="R_OPERATOR"
-              />
-              <ElOption
                 :label="$t('userManagement.roles.finance')"
                 value="R_FINANCE"
               />

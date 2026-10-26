@@ -5,7 +5,7 @@
         <SurfaceCardHeader :title="$t('tenant.detail.basicInfo.title')">
           <template #actions>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="primary"
               @click="handleEdit"
               >{{ $t("common.actions.modify") }}</ElButton

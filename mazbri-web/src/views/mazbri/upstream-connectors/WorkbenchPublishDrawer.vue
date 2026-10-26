@@ -181,7 +181,7 @@ const props = defineProps<{
   result?: PublishResult | null;
   resultDesc?: string;
   gate: { ok: number; total: number; items: GateEpStatus[] };
-  isAdmin: boolean;
+  canForcePublish: boolean;
   leftoverTokens: string[];
   unresolvedVars: string[];
 }>();
@@ -201,7 +201,7 @@ const gateAllMet = computed(
 );
 
 const showForce = computed(
-  () => props.isAdmin && form.value.require_gate && !gateAllMet.value,
+  () => props.canForcePublish && form.value.require_gate && !gateAllMet.value,
 );
 
 function gateReasonText(reason: string) {

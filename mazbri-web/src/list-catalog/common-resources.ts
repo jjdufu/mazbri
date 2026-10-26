@@ -356,7 +356,7 @@ export const usersCatalog: ResourceFilterCatalog = {
       value_type: "enum",
       ops: ENUM_OPS,
       label_key: "userManagement.list.columns.role",
-      enum_values: ["R_ADMIN", "R_OPERATOR", "R_FINANCE", "R_VIEWER"],
+      enum_values: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
     {
       field: "status",

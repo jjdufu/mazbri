@@ -48,7 +48,7 @@
           <template #actions>
             <ElButton
               v-if="accountActions.recharge"
-              v-roles="['R_ADMIN', 'R_OPERATOR', 'R_FINANCE']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="primary"
               @click="handleRecharge"
             >
@@ -59,7 +59,7 @@
             </ElButton>
             <ElButton
               v-if="accountActions.refund"
-              v-roles="['R_ADMIN', 'R_OPERATOR', 'R_FINANCE']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="warning"
               @click="handleRefund"
             >

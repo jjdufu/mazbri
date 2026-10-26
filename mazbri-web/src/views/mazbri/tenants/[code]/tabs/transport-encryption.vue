@@ -38,7 +38,7 @@
             </template>
             <template #actions>
               <ElButton
-                v-roles="['R_ADMIN', 'R_OPERATOR']"
+                v-roles="['R_ADMIN', 'R_FINANCE']"
                 type="primary"
                 :loading="saving"
                 :disabled="!tenantCryptoEnabled"

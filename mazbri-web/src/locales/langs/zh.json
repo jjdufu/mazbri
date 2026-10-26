@@ -253,9 +253,8 @@
       "revoked": "已吊销"
     },
     "roleLabels": {
-      "admin": "管理员",
-      "operator": "操作员",
-      "finance": "财务",
+      "admin": "超级管理员",
+      "finance": "管理员",
       "viewer": "只读用户"
     },
     "conflict": {
@@ -587,9 +586,8 @@
     "title": "欢迎回来",
     "subTitle": "输入您的账号和密码登录",
     "roles": {
-      "admin": "管理员",
-      "operator": "操作员",
-      "finance": "财务",
+      "admin": "超级管理员",
+      "finance": "管理员",
       "viewer": "只读用户"
     },
     "placeholder": {
@@ -995,7 +993,7 @@
       }
     },
     "messages": {
-      "noPermission": "仅管理员可配置安全设置。",
+      "noPermission": "仅超级管理员可配置安全设置。",
       "savedSuccess": "设置已保存"
     }
   },
@@ -2377,13 +2375,11 @@
       }
     },
     "roles": {
-      "admin": "管理员",
-      "operator": "操作员",
-      "finance": "财务",
+      "admin": "超级管理员",
+      "finance": "管理员",
       "viewer": "只读用户",
-      "operatorWithScope": "操作员 (业务读写)",
-      "financeWithScope": "财务 (账务对账)",
-      "viewerWithScope": "只读用户 (仅查看)"
+      "financeWithScope": "管理员（业务读写）",
+      "viewerWithScope": "只读用户（仅查看）"
     },
     "messages": {
       "resetMfaTitle": "重置 MFA",

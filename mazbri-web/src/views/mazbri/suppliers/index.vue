@@ -32,7 +32,7 @@
           :primary-label="$t('upstreamConnector.codeFreeAccess')"
           :primary-icon="'ri:plug-line'"
           :primary-button-type="'primary'"
-          :primary-roles="['R_ADMIN', 'R_OPERATOR']"
+          :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
@@ -45,7 +45,7 @@
 
           <template #before-delete>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="success"
               @click="emit('access')"
             >

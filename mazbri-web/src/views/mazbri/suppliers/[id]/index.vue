@@ -36,21 +36,21 @@
             </ElTag>
             <ElButton
               v-if="upstreamType === 'transparent'"
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               :loading="openingWorkbench"
               @click="openWorkbenchEdit"
             >
               {{ $t("upstreamConnector.editInWorkbench") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="primary"
               @click="enterEdit"
             >
               {{ $t("common.actions.modify") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_OPERATOR']"
+              v-roles="['R_ADMIN', 'R_FINANCE']"
               type="danger"
               @click="handleDelete"
             >

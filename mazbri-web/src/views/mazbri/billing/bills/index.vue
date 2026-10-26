@@ -32,7 +32,7 @@
           :show-delete="true"
           :delete-total-count="bills.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN']"
+          :delete-roles="['R_ADMIN', 'R_FINANCE']"
           :fit="false"
           table-layout="auto"
           table-class="surface-panel-table bill-list-table"
@@ -100,7 +100,7 @@
                 {{ $t("billing.actions.markOverdue") }}
               </ElButton>
               <ElButton
-                v-roles="['R_ADMIN']"
+                v-roles="['R_ADMIN', 'R_FINANCE']"
                 link
                 type="danger"
                 @click="handleDeleteRow(row)"
