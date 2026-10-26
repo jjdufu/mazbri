@@ -122,6 +122,7 @@ export function useLoginFlow() {
   }
   async function handleLoginResponse(
     response: LoginResponse,
+    showLoginMsg = true,
   ): Promise<LoginStep | "complete"> {
     if (response.mfa_setup_required && response.temp_token) {
       transitionTo("mfaSetup", response.temp_token);
@@ -142,15 +143,13 @@ export function useLoginFlow() {
       return "changePassword";
     }
     if (response.user?.force_password_reset) {
-      transitionTo(
-        "changePassword",
-        response.temp_token || response.token || "",
-      );
+      // 改密阶段只接受专用的 password_reset 临时令牌，不再回退使用正式 token。
+      transitionTo("changePassword", response.temp_token || "");
       userRole.value = response.user.role || "";
       changePasswordFormData.currentPassword = formData.password;
       return "changePassword";
     }
-    await completeLogin(response);
+    await completeLogin(response, showLoginMsg);
     return "complete";
   }
   async function handleLogin(credentials?: {
@@ -171,7 +170,6 @@ export function useLoginFlow() {
     response: LoginResponse,
     showLoginMsg = true,
   ): Promise<void> {
-
     const sessionOk =
       !!response.user &&
       (!!response.token ||
@@ -261,10 +259,16 @@ export function useLoginFlow() {
   }
   async function handleMfaSetup(): Promise<void> {
     await runWithLoading(mfaSetupLoading, async () => {
-      const response = await mfaRequiredSetup({ temp_token: tempToken.value });
-      Object.assign(mfaSetupData, response);
-      if (response.totp_digits) {
-        totpDigits.value = response.totp_digits;
+      const { temp_token: nextToken, ...setup } = await mfaRequiredSetup({
+        temp_token: tempToken.value,
+      });
+      // 后端每次 required-setup 都会消费旧令牌并轮换出新的 mfa_setup 令牌，供 required-enable 使用。
+      if (nextToken) {
+        tempToken.value = nextToken;
+      }
+      Object.assign(mfaSetupData, setup);
+      if (setup.totp_digits) {
+        totpDigits.value = setup.totp_digits;
       }
     }).catch((error) => {
       handleLoginError(error);
@@ -299,7 +303,8 @@ export function useLoginFlow() {
         tempToken.value,
       );
       ElMessage.success(t("login.changePassword.success"));
-      await completeLogin(response, false);
+      // 改密后若仍需 MFA 验证/设置，后端返回下一阶段的临时令牌而不是正式会话。
+      await handleLoginResponse(response, false);
     }).catch((error) => {
       handleLoginError(error);
     });

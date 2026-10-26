@@ -60,7 +60,6 @@ export function logout(
   _data?: { refresh_token?: string },
   signal?: AbortSignal,
 ) {
-
   return request.post<void>({
     url: `${AUTH_PATH}/logout`,
     data: {},
@@ -68,10 +67,9 @@ export function logout(
     showErrorMessage: false,
   });
 }
-export function getMfaSetup(tempToken: string, signal?: AbortSignal) {
+export function getMfaSetup(signal?: AbortSignal) {
   return request.post<MfaSetupResponse>({
     url: `${AUTH_PATH}/mfa/setup`,
-    params: { temp_token: tempToken },
     signal,
   });
 }

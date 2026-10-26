@@ -35,6 +35,8 @@ export interface MfaSetupResponse {
   qr_code_url: string;
   backup_codes: string[];
   totp_digits?: number;
+  /** 登录强制设置 MFA 流程中轮换出的新 mfa_setup 临时令牌 */
+  temp_token?: string;
 }
 export interface MfaVerifyRequest {
   temp_token: string;
