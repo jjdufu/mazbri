@@ -146,8 +146,6 @@ pub static ROUTES: &[RouteAudit] = &[
         R::User,
         None,
     ),
-    auth("/auth/mfa/required-setup", A::MfaRequiredSetup),
-    auth("/auth/mfa/required-enable", A::MfaRequiredEnable),
     // ---- products ----
     read("/products", R::Product),
     write("POST", "/products", A::ProductCreate, R::Product, None),

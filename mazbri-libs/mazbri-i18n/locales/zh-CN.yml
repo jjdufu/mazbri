@@ -2,9 +2,6 @@ zh-CN:
   api:
     mfa:
       not_setup: "MFA 未设置。请先调用 /auth/mfa/setup。"
-      already_enabled: "MFA 已启用。请使用 /auth/mfa/verify。"
-      not_required: "该用户不需要 MFA。请使用 /auth/mfa/setup。"
-      required_setup_needed: "MFA 未设置。请先调用 /auth/mfa/required-setup。"
       already_enabled_disable: "MFA 已启用。请先禁用以重新配置。"
       server_not_configured: "服务器未正确配置 MFA"
       failed_setup: "设置 MFA 失败"
@@ -15,7 +12,6 @@ zh-CN:
       failed_enable: "启用 MFA 失败"
       enabled_success: "MFA 启用成功"
       not_enabled: "MFA 未启用"
-      required_cannot_disable: "管理员要求启用 MFA，无法禁用。"
       invalid_totp_or_password: "无效的 TOTP 代码或密码"
       failed_disable: "禁用 MFA 失败"
       disabled_success: "MFA 禁用成功"

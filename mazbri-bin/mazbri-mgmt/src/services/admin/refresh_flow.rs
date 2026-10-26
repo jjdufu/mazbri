@@ -5,17 +5,18 @@
 //! 持续换发新的访问令牌，管理员的处置要等到刷新令牌自然过期才生效。
 //!
 //! 不变式：刷新令牌只由 `generate_login_response` 签发，而该函数只在
-//! `determine_mfa` 判定"不需要 MFA"时被调用；MFA 验证、强制设置 MFA、
+//! `determine_mfa` 判定"不需要 MFA"（账号未绑定 MFA）时被调用；MFA 验证、
 //! 首次登录改密等阶段只签发访问令牌。因此"持有刷新令牌"等价于
-//! "该会话建立时未经过 MFA"。只要账号现在已绑定 MFA、在令牌签发后完成过 MFA
-//! 验证/绑定，或策略现在要求 MFA，就必须拒绝刷新，让用户重新走完整登录流程。
+//! "该会话建立时未经过 MFA"。只要账号现在已绑定 MFA，或在令牌签发后完成过
+//! MFA 验证/绑定，就必须拒绝刷新，让用户重新走完整登录流程。
+//! （已不存在全局/账号级强制 MFA 策略，MFA 改为按功能要求。）
 
 use crate::audit;
 use crate::error::ApiError;
 use crate::middleware::admin_token;
 use crate::middleware::auth::AdminClaims;
 use crate::repositories::admin as repo;
-use crate::services::{MfaPolicy, MfaSettingsCache, PasswordPolicy, PasswordPolicyCache};
+use crate::services::{PasswordPolicy, PasswordPolicyCache};
 use chrono::{DateTime, Utc};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
@@ -36,8 +37,6 @@ pub(crate) enum RefreshDenial {
     CredentialsChanged,
     /// 令牌签发后账号绑定了 MFA 或完成了 MFA 验证。
     MfaStateChanged,
-    /// 全局策略或账号级设置现在要求 MFA，而该会话未经过 MFA。
-    MfaSetupRequired,
 }
 
 impl RefreshDenial {
@@ -50,7 +49,6 @@ impl RefreshDenial {
             Self::PasswordExpired => "password_expired",
             Self::CredentialsChanged => "credentials_changed",
             Self::MfaStateChanged => "mfa_state_changed",
-            Self::MfaSetupRequired => "mfa_setup_required",
         }
     }
 }
@@ -58,7 +56,6 @@ impl RefreshDenial {
 /// 复核刷新会话所需的上下文（纯数据，便于不依赖数据库的单元测试）。
 pub(crate) struct RefreshContext<'a> {
     pub password_policy: &'a PasswordPolicy,
-    pub mfa_policy: MfaPolicy<'a>,
     /// 刷新令牌签发时间（秒级 Unix 时间戳）。
     pub issued_at: i64,
     pub now: DateTime<Utc>,
@@ -97,14 +94,8 @@ pub(crate) fn evaluate_refresh_session<'u>(
     let mfa_touched_after_issue = user
         .mfa_verified_at
         .is_some_and(|at| at.timestamp() > ctx.issued_at);
-    if user.mfa.mfa_enabled || mfa_touched_after_issue {
+    if user.mfa_enabled || mfa_touched_after_issue {
         return Err(RefreshDenial::MfaStateChanged);
-    }
-    if ctx
-        .mfa_policy
-        .requires_user(&user.role, user.mfa.mfa_required)
-    {
-        return Err(RefreshDenial::MfaSetupRequired);
     }
     Ok(user)
 }
@@ -116,7 +107,6 @@ pub struct AdminRefreshParams<'a> {
     pub jwt_secret: &'a str,
     pub jwt_expiration_secs_fallback: u64,
     pub password_policy_cache: &'a PasswordPolicyCache,
-    pub mfa_settings_cache: &'a MfaSettingsCache,
 }
 
 /// 用刷新令牌换发访问令牌。
@@ -154,10 +144,8 @@ pub async fn admin_refresh_token(
             ApiError::internal("刷新令牌失败，请稍后重试".to_string())
         })?;
     let password_policy = params.password_policy_cache.get().await;
-    let mfa_settings = params.mfa_settings_cache.get().await;
     let ctx = RefreshContext {
         password_policy: &password_policy,
-        mfa_policy: mfa_settings.policy(),
         issued_at: claims.iat,
         now: Utc::now(),
     };

@@ -82,11 +82,7 @@ fn audiences_and_types_are_unique() {
 
 #[test]
 fn temporary_tokens_live_five_minutes_regardless_of_requested_ttl() {
-    for kind in [
-        TokenKind::MfaPending,
-        TokenKind::MfaSetup,
-        TokenKind::PasswordReset,
-    ] {
+    for kind in [TokenKind::MfaPending, TokenKind::PasswordReset] {
         let token = issue(kind, subject(), SECRET, 86_400).expect("issue");
         let claims = decode_kind(&token, SECRET, kind).expect("decode");
         assert_eq!(claims.exp - claims.iat, TEMP_TOKEN_TTL_SECS);
@@ -100,11 +96,7 @@ fn temporary_tokens_live_five_minutes_regardless_of_requested_ttl() {
 #[test]
 fn access_token_cannot_be_used_as_any_temporary_token() {
     let access = issue_kind(TokenKind::Access);
-    for kind in [
-        TokenKind::MfaPending,
-        TokenKind::MfaSetup,
-        TokenKind::PasswordReset,
-    ] {
+    for kind in [TokenKind::MfaPending, TokenKind::PasswordReset] {
         assert_eq!(
             decode_kind(&access, SECRET, kind).map(|_| ()),
             Err(TokenRejection::TypeMismatch)

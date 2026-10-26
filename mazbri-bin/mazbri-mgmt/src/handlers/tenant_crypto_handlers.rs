@@ -1,6 +1,7 @@
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::error::ApiError;
 use crate::handlers::AppState;
+use crate::handlers::mfa_guard::require_mfa_code;
 use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::tenant_crypto as svc;
@@ -141,6 +142,7 @@ pub async fn rotate_crypto_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -365,8 +367,14 @@ pub async fn export_crypto_data(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Query(query): Query<svc::CryptoExportQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
     authorize_crypto_export(&claims, &query.mode)?;
+    // 迁移模式导出包含可恢复密钥材料：仅超级管理员且必须通过 MFA。
+    if svc::is_migration_export(&query.mode)
+        && let Err(response) = require_mfa_code(&state, &claims, &headers).await
+    {
+        return Ok(*response);
+    }
     let actor_id = extract_user_id(&claims)?;
     let data = svc::export_crypto_data(&state.db, &query, actor_id).await?;
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -380,7 +388,7 @@ pub async fn export_crypto_data(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors

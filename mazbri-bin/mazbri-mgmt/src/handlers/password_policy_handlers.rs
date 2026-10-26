@@ -31,6 +31,7 @@ pub async fn update_password_policy(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Json(payload): Json<UpdatePasswordPolicyRequest>,
 ) -> axum::response::Response {

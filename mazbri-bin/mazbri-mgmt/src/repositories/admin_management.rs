@@ -11,9 +11,7 @@ pub struct AdminRow {
     pub is_active: bool,
     pub password_changed_at: DateTime<Utc>,
     pub force_password_reset: bool,
-    #[serde(flatten)]
-    #[sqlx(flatten)]
-    pub mfa: super::admin::AdminMfaFlags,
+    pub mfa_enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_login_at: Option<DateTime<Utc>>,
@@ -46,7 +44,7 @@ pub struct AdminMfaRow {
 }
 const ADMIN_COLUMNS: &str = "\
     id, username, display_name, email, role, is_active, \
-    password_changed_at, force_password_reset, mfa_enabled, mfa_required, \
+    password_changed_at, force_password_reset, mfa_enabled, \
     created_at, updated_at, last_login_at";
 fn push_admin_scope(
     builder: &mut QueryBuilder<'_, sqlx::Postgres>,
@@ -139,7 +137,6 @@ pub struct InsertAdminParams<'a> {
     pub password_hash: &'a str,
     pub role: &'a str,
     pub force_password_reset: bool,
-    pub mfa_required: bool,
 }
 
 /// # Errors
@@ -151,8 +148,8 @@ pub async fn insert_admin(
 ) -> Result<AdminRow, sqlx::Error> {
     let query = format!(
         r"
-        INSERT INTO admin_users (username, display_name, email, password_hash, role, is_active, password_changed_at, force_password_reset, mfa_required)
-        VALUES ($1, $2, $3, $4, $5, true, NOW(), $6, $7)
+        INSERT INTO admin_users (username, display_name, email, password_hash, role, is_active, password_changed_at, force_password_reset)
+        VALUES ($1, $2, $3, $4, $5, true, NOW(), $6)
         RETURNING {ADMIN_COLUMNS}
         "
     );
@@ -163,7 +160,6 @@ pub async fn insert_admin(
         .bind(params.password_hash)
         .bind(params.role)
         .bind(params.force_password_reset)
-        .bind(params.mfa_required)
         .fetch_one(pool)
         .await
 }
@@ -238,7 +234,6 @@ pub async fn update_admin(
     display_name: Option<&str>,
     email: Option<&str>,
     role: Option<&str>,
-    mfa_required: Option<bool>,
     force_password_reset: Option<bool>,
 ) -> Result<AdminRow, sqlx::Error> {
     let mut builder: QueryBuilder<_> =
@@ -254,14 +249,6 @@ pub async fn update_admin(
     if let Some(v) = role {
         builder.push(", role = ");
         builder.push_bind(v);
-    }
-    if let Some(mfa_req) = mfa_required {
-        builder.push(", mfa_required = ");
-        builder.push_bind(mfa_req);
-        if !mfa_req {
-            builder.push(", mfa_enabled = false");
-            builder.push(", mfa_secret = NULL");
-        }
     }
     if let Some(force_reset) = force_password_reset {
         builder.push(", force_password_reset = ");

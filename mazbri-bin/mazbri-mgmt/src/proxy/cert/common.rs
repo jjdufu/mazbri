@@ -115,7 +115,7 @@ macro_rules! proxy_handler_with_audit {
         name = $name:ident, method = $method:expr, path = $path:literal, path_param =
         $param_name:ident, audit_action = $audit_action:expr, resource_id_fn =
         $resource_id_fn:expr, audit_details = $audit_details:expr, log =
-        $log_msg:literal,
+        $log_msg:literal, require_mfa = $require_mfa:literal,
     ) => {
         pub async fn $name(
             State(state): State<AppState>,
@@ -126,6 +126,13 @@ macro_rules! proxy_handler_with_audit {
         ) -> Result<Response, ApiError> {
             if !can_manage_certificates(&claims) {
                 return Err(ApiError::Forbidden);
+            }
+            if $require_mfa
+                && let Err(response) =
+                    crate::handlers::mfa_guard::require_mfa_code(&state, &claims, request.headers())
+                        .await
+            {
+                return Ok(*response);
             }
             info!($log_msg, claims.sub, $param_name);
             require_license_issuance(&state).await?;

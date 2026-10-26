@@ -3,6 +3,7 @@
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
+use crate::handlers::mfa_guard::require_mfa_code;
 use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin, is_read_only};
 use crate::response::ApiResponse;
 use crate::services::upstream_connector as svc;
@@ -214,6 +215,12 @@ pub async fn publish_draft(
     Json(payload): Json<svc::PublishRequest>,
 ) -> Result<Response, ApiError> {
     require_business_admin(&claims)?;
+    // 只有强制发布（跳过发布检查）要求 MFA；普通发布不受影响。
+    if payload.options.force.force_publish
+        && let Err(response) = require_mfa_code(&state, &claims, &headers).await
+    {
+        return Ok(*response);
+    }
     let data = svc::publish_draft(
         &state.db,
         svc::PublishDraftParams {
@@ -329,6 +336,7 @@ pub async fn rollback(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(supplier_id): Path<Uuid>,
     Json(payload): Json<svc::RollbackRequest>,

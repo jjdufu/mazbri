@@ -151,8 +151,9 @@ fn router(redis: Arc<RedisClient>) -> Router {
     let api = Router::new()
         .route("/auth/login", post(public))
         .route("/auth/mfa/verify", post(public))
-        .route("/auth/mfa/required-setup", post(public))
-        .route("/auth/mfa/required-enable", post(public))
+        // 已删除的强制设置 MFA 路由：挂成受保护路由，用于断言它们不再是公开白名单。
+        .route("/auth/mfa/required-setup", post(echo))
+        .route("/auth/mfa/required-enable", post(echo))
         .route("/auth/refresh", post(echo))
         .route("/auth/first-login-change-password", post(echo))
         .route("/auth/me", get(echo))
@@ -254,11 +255,13 @@ async fn login_issues_dedicated_temp_token_types() {
         },
     )
     .await;
+    // 账号级 mfa_required 遗留列不再强制设置 MFA：未绑定 MFA 的账号直接拿到访问令牌。
     let response = login(&deps, &setup_user).await;
-    assert_eq!(response["mfa_setup_required"], true);
+    assert!(response.get("mfa_setup_required").is_none());
+    assert!(response.get("temp_token").is_none());
     assert_eq!(
-        token_kind_of(&temp_token_of(&response)).as_deref(),
-        Some("mfa_setup")
+        token_kind_of(response["token"].as_str().expect("access token")).as_deref(),
+        Some("access")
     );
 
     let reset_user = create_user(
@@ -312,11 +315,7 @@ async fn temp_tokens_are_rejected_on_protected_routes() {
     )
     .await;
     assert_denied(&outcome, "token_type_mismatch");
-    for kind in [
-        TokenKind::MfaSetup,
-        TokenKind::PasswordReset,
-        TokenKind::Refresh,
-    ] {
+    for kind in [TokenKind::PasswordReset, TokenKind::Refresh] {
         let token = issue(kind, subject(&user), SECRET, 3600).expect("issue");
         let outcome = call(&app, "GET", "/admin-users", Cred::Bearer(&token)).await;
         assert_denied(&outcome, "token_type_mismatch");
@@ -399,15 +398,16 @@ async fn each_route_accepts_only_its_own_token_type() {
 async fn whitelist_is_exact_match_on_full_route() {
     let deps = deps().await;
     let app = router(deps.redis.clone());
-    for path in [
-        "/auth/login",
-        "/auth/mfa/verify",
-        "/auth/mfa/required-setup",
-        "/auth/mfa/required-enable",
-    ] {
+    for path in ["/auth/login", "/auth/mfa/verify"] {
         let outcome = call(&app, "POST", path, Cred::None).await;
         assert_eq!(outcome.status, StatusCode::OK, "{path}");
         assert_eq!(outcome.body["public"], true);
+    }
+    // 强制设置 MFA 流程已移除：这两个路径不再在公开白名单里。
+    for path in ["/auth/mfa/required-setup", "/auth/mfa/required-enable"] {
+        let outcome = call(&app, "POST", path, Cred::None).await;
+        assert_eq!(outcome.status, StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(outcome.body["error"], "missing_token");
     }
     // 旧实现按 ends_with 放行：`/hypothetical/{a}/{b}` 可被 `/hypothetical/auth/login` 无令牌访问。
     for path in [
@@ -494,11 +494,7 @@ async fn temp_tokens_are_single_use() {
         },
     )
     .await;
-    for kind in [
-        TokenKind::MfaPending,
-        TokenKind::MfaSetup,
-        TokenKind::PasswordReset,
-    ] {
+    for kind in [TokenKind::MfaPending, TokenKind::PasswordReset] {
         let token = issue_temporary(kind, subject(&user), SECRET).expect("issue");
         let claims = decode_kind(&token, SECRET, kind).expect("decode");
         ensure_not_revoked(&deps.redis, &claims)
@@ -665,29 +661,25 @@ async fn forced_password_change_without_mfa_issues_access_token() {
         },
     )
     .await;
-    let mfa_settings = MfaSettingsCache::new(deps.db.clone()).get().await;
     let reset = temp_token_of(&login(&deps, &user).await);
     let response = change_password_first_login(&deps, &user, &user.password, &reset)
         .await
         .expect("password changed");
-    // 与登录、required_setup 使用同一判定函数。
-    if mfa_settings.policy().requires_role("R_FINANCE") {
-        assert_eq!(response["mfa_setup_required"], true);
-        assert!(response.get("token").is_none());
-    } else {
-        let token = response["token"].as_str().expect("access token");
-        assert!(decode_kind(token, SECRET, TokenKind::Access).is_ok());
-    }
+    // 不再有强制设置 MFA 阶段：未绑定 MFA 时改密后直接签发访问令牌。
+    assert!(response.get("mfa_setup_required").is_none());
+    let token = response["token"].as_str().expect("access token");
+    assert!(decode_kind(token, SECRET, TokenKind::Access).is_ok());
 }
 
-/// 全局 MFA 策略快照，用于测试结束后还原（测试需 `--test-threads=1` 运行）。
-struct MfaPolicySnapshot {
+/// `mfa_settings` 中遗留的全局策略列快照（列保留但已不再被读取），用于测试结束后还原
+/// （测试需 `--test-threads=1` 运行）。
+struct LegacyMfaPolicyColumns {
     enabled_globally: bool,
     required_for_all: bool,
     required_for_roles: Option<Vec<String>>,
 }
 
-async fn snapshot_mfa_policy(db: &PgPool) -> MfaPolicySnapshot {
+async fn snapshot_legacy_policy(db: &PgPool) -> LegacyMfaPolicyColumns {
     let (enabled_globally, required_for_all, required_for_roles): (
         bool,
         bool,
@@ -699,14 +691,14 @@ async fn snapshot_mfa_policy(db: &PgPool) -> MfaPolicySnapshot {
     .fetch_one(db)
     .await
     .expect("mfa_settings row");
-    MfaPolicySnapshot {
+    LegacyMfaPolicyColumns {
         enabled_globally,
         required_for_all,
         required_for_roles,
     }
 }
 
-async fn set_mfa_policy(db: &PgPool, policy: &MfaPolicySnapshot) {
+async fn set_legacy_policy(db: &PgPool, policy: &LegacyMfaPolicyColumns) {
     sqlx::query(
         "UPDATE mfa_settings SET mfa_enabled_globally = $1, mfa_required_for_all = $2, \
          mfa_required_for_roles = $3 WHERE id = '00000000-0000-0000-0000-000000000102'",
@@ -719,68 +711,55 @@ async fn set_mfa_policy(db: &PgPool, policy: &MfaPolicySnapshot) {
     .expect("update mfa_settings");
 }
 
-/// `mfa_required_for_all = true` 时，即使角色不在 `mfa_required_for_roles` 中：
-/// 登录要求设置 MFA、required-setup 接受该账号、自行关闭 MFA 被拒绝。
-/// 修复前 required-setup 只看角色列表，会返回「无需 MFA」导致账号卡死在设置阶段。
+fn strictest_legacy_policy() -> LegacyMfaPolicyColumns {
+    LegacyMfaPolicyColumns {
+        enabled_globally: true,
+        required_for_all: true,
+        required_for_roles: Some(vec![
+            "R_ADMIN".to_string(),
+            "R_FINANCE".to_string(),
+            "R_VIEWER".to_string(),
+        ]),
+    }
+}
+
+/// 强制 MFA 已移除：即使遗留列被设为最严格（全局开启 + 全员强制）且账号级
+/// `mfa_required = true`，登录仍不进入设置阶段，本人也可以关闭已绑定的 MFA。
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn required_for_all_is_honored_by_login_setup_and_disable() {
+async fn legacy_policy_columns_no_longer_force_mfa() {
     use crate::mfa::MfaServiceCache;
-    use crate::services::mfa::{RequiredSetupParams, disable, required_setup};
+    use crate::services::mfa::disable;
 
     let deps = deps().await;
-    let original = snapshot_mfa_policy(&deps.db).await;
-    set_mfa_policy(
-        &deps.db,
-        &MfaPolicySnapshot {
-            enabled_globally: true,
-            required_for_all: true,
-            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
-        },
-    )
-    .await;
+    let original = snapshot_legacy_policy(&deps.db).await;
+    set_legacy_policy(&deps.db, &strictest_legacy_policy()).await;
 
     let fresh = create_user(
         &deps.db,
         NewUser {
             role: "R_FINANCE",
+            mfa_required: true,
             ..Default::default()
         },
     )
     .await;
-    // 新建缓存实例，避免命中其他测试留下的 300 秒 TTL 旧策略。
     let login_response = login(&deps, &fresh).await;
-    let setup_token = login_response["temp_token"].as_str().map(str::to_string);
-    let mfa_cache = Arc::new(MfaServiceCache::new(
-        deps.db.clone(),
-        crate::config::MfaConfig::default(),
-    ));
-    let setup_status = match &setup_token {
-        Some(token) => Some(
-            required_setup(RequiredSetupParams {
-                pool: &deps.db,
-                redis: &deps.redis,
-                mfa_cache: &mfa_cache,
-                audit: &deps.audit,
-                jwt_secret: SECRET,
-                temp_token: token,
-                client_ip: None,
-            })
-            .await
-            .status(),
-        ),
-        None => None,
-    };
 
     let enrolled = create_user(
         &deps.db,
         NewUser {
             role: "R_FINANCE",
             mfa_enabled: true,
+            mfa_required: true,
             ..Default::default()
         },
     )
     .await;
+    let mfa_cache = Arc::new(MfaServiceCache::new(
+        deps.db.clone(),
+        crate::config::MfaConfig::default(),
+    ));
     let disable_status = disable(
         &deps.db,
         &mfa_cache,
@@ -792,63 +771,22 @@ async fn required_for_all_is_honored_by_login_setup_and_disable() {
     )
     .await
     .status();
+    let still_enabled: bool =
+        sqlx::query_scalar("SELECT mfa_enabled FROM admin_users WHERE id = $1")
+            .bind(enrolled.id)
+            .fetch_one(&*deps.db)
+            .await
+            .expect("mfa_enabled");
 
-    set_mfa_policy(&deps.db, &original).await;
+    set_legacy_policy(&deps.db, &original).await;
 
-    assert_eq!(login_response["mfa_setup_required"], true);
-    assert!(login_response.get("token").is_none());
+    assert!(login_response.get("mfa_setup_required").is_none());
     assert_eq!(
-        setup_token.as_deref().and_then(token_kind_of).as_deref(),
-        Some("mfa_setup")
+        token_kind_of(login_response["token"].as_str().expect("access token")).as_deref(),
+        Some("access")
     );
-    assert_eq!(setup_status, Some(StatusCode::OK));
-    assert_eq!(disable_status, StatusCode::FORBIDDEN);
-}
-
-/// 全局策略关闭时，未被账号级强制的用户可以关闭 MFA（对照组，确认上面的拒绝来自策略）。
-#[tokio::test]
-#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn disable_is_allowed_when_no_policy_requires_mfa() {
-    use crate::mfa::MfaServiceCache;
-    use crate::services::mfa::disable;
-
-    let deps = deps().await;
-    let original = snapshot_mfa_policy(&deps.db).await;
-    set_mfa_policy(
-        &deps.db,
-        &MfaPolicySnapshot {
-            enabled_globally: false,
-            required_for_all: true,
-            required_for_roles: Some(vec!["R_FINANCE".to_string()]),
-        },
-    )
-    .await;
-    let enrolled = create_user(
-        &deps.db,
-        NewUser {
-            role: "R_FINANCE",
-            mfa_enabled: true,
-            ..Default::default()
-        },
-    )
-    .await;
-    let mfa_cache = Arc::new(MfaServiceCache::new(
-        deps.db.clone(),
-        crate::config::MfaConfig::default(),
-    ));
-    let status = disable(
-        &deps.db,
-        &mfa_cache,
-        &deps.audit,
-        enrolled.id,
-        &enrolled.username,
-        &enrolled.password,
-        None,
-    )
-    .await
-    .status();
-    set_mfa_policy(&deps.db, &original).await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(disable_status, StatusCode::OK);
+    assert!(!still_enabled);
 }
 
 /// 以服务函数执行一次刷新，返回结果与审计草稿（含 `failure_reason`）。
@@ -859,7 +797,6 @@ async fn refresh_via_service(
     use crate::services::admin::{AdminRefreshParams, admin_refresh_token};
     let claims = decode_refresh(refresh_token, SECRET).expect("refresh token decodes");
     let password_policy_cache = PasswordPolicyCache::new(deps.db.clone());
-    let mfa_settings_cache = MfaSettingsCache::new(deps.db.clone());
     let scope = AuditScope::new();
     let result = scope
         .clone()
@@ -870,7 +807,6 @@ async fn refresh_via_service(
             jwt_secret: SECRET,
             jwt_expiration_secs_fallback: 3600,
             password_policy_cache: &password_policy_cache,
-            mfa_settings_cache: &mfa_settings_cache,
         }))
         .await;
     (result, scope.take())
@@ -894,26 +830,11 @@ async fn user_with_refresh_token(deps: &Deps) -> (TestUser, String) {
     (user, refresh)
 }
 
-async fn with_policy_disabled(deps: &Deps) -> MfaPolicySnapshot {
-    let original = snapshot_mfa_policy(&deps.db).await;
-    set_mfa_policy(
-        &deps.db,
-        &MfaPolicySnapshot {
-            enabled_globally: false,
-            required_for_all: false,
-            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
-        },
-    )
-    .await;
-    original
-}
-
 /// 正常会话可以刷新；管理员调整角色后，新访问令牌使用数据库中的当前角色。
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
 async fn refresh_allows_healthy_session_and_uses_current_role() {
     let deps = deps().await;
-    let original = with_policy_disabled(&deps).await;
     let (user, refresh) = user_with_refresh_token(&deps).await;
     let (first, _) = refresh_via_service(&deps, &refresh).await;
     sqlx::query("UPDATE admin_users SET role = 'R_FINANCE' WHERE id = $1")
@@ -922,7 +843,6 @@ async fn refresh_allows_healthy_session_and_uses_current_role() {
         .await
         .expect("change role");
     let (after_role_change, _) = refresh_via_service(&deps, &refresh).await;
-    set_mfa_policy(&deps.db, &original).await;
 
     let first = first.expect("healthy session refreshes");
     let first_token = first["token"].as_str().expect("token");
@@ -942,7 +862,6 @@ async fn refresh_allows_healthy_session_and_uses_current_role() {
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
 async fn refresh_is_denied_after_account_state_changes() {
     let deps = deps().await;
-    let original = with_policy_disabled(&deps).await;
     let max_age_days = PasswordPolicyCache::new(deps.db.clone())
         .get()
         .await
@@ -969,10 +888,6 @@ async fn refresh_is_denied_after_account_state_changes() {
              mfa_verified_at = NOW() + INTERVAL '5 seconds' WHERE id = $1",
             "mfa_state_changed",
         ),
-        (
-            "UPDATE admin_users SET mfa_required = true WHERE id = $1",
-            "mfa_setup_required",
-        ),
         ("DELETE FROM admin_users WHERE id = $1", "user_not_found"),
     ];
     if max_age_days > 0 {
@@ -997,7 +912,6 @@ async fn refresh_is_denied_after_account_state_changes() {
             draft.failure_reason,
         ));
     }
-    set_mfa_policy(&deps.db, &original).await;
     for (expected, unauthorized, reason) in outcomes {
         assert!(
             unauthorized,
@@ -1007,26 +921,27 @@ async fn refresh_is_denied_after_account_state_changes() {
     }
 }
 
-/// 会话建立后全局策略改为强制 MFA：刷新被拒绝，必须重新登录并设置 MFA。
+/// 会话建立后遗留策略列被设为最严格、账号被标记 `mfa_required`：刷新仍然成功
+/// （不再有 `mfa_setup_required` 拒绝原因；只有已绑定/新完成 MFA 才会拒绝刷新）。
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn refresh_is_denied_when_policy_now_requires_mfa() {
+async fn refresh_ignores_legacy_mfa_policy_columns() {
     let deps = deps().await;
-    let original = with_policy_disabled(&deps).await;
-    let (_, refresh) = user_with_refresh_token(&deps).await;
-    set_mfa_policy(
-        &deps.db,
-        &MfaPolicySnapshot {
-            enabled_globally: true,
-            required_for_all: true,
-            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
-        },
-    )
-    .await;
+    let (user, refresh) = user_with_refresh_token(&deps).await;
+    let original = snapshot_legacy_policy(&deps.db).await;
+    set_legacy_policy(&deps.db, &strictest_legacy_policy()).await;
+    sqlx::query("UPDATE admin_users SET mfa_required = true WHERE id = $1")
+        .bind(user.id)
+        .execute(&*deps.db)
+        .await
+        .expect("flag user");
     let (result, draft) = refresh_via_service(&deps, &refresh).await;
-    set_mfa_policy(&deps.db, &original).await;
-    assert!(matches!(result, Err(crate::error::ApiError::Unauthorized)));
-    assert_eq!(draft.failure_reason.as_deref(), Some("mfa_setup_required"));
+    set_legacy_policy(&deps.db, &original).await;
+    assert!(
+        result.is_ok(),
+        "legacy policy columns must not block refresh"
+    );
+    assert_eq!(draft.failure_reason, None);
 }
 
 /// 个人设置只作用于调用者本人：此前读写都固定指向 `admin` 账号，任何角色都能改管理员的邮箱。

@@ -34,6 +34,7 @@ pub async fn export_configs(
 pub async fn import_configs(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ImportParams>,

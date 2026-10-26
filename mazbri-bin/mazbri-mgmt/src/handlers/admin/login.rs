@@ -54,7 +54,6 @@ pub async fn admin_refresh_token(
         jwt_secret: &state.auth_state.jwt_secret,
         jwt_expiration_secs_fallback: state.config.auth.jwt_expiration_secs,
         password_policy_cache: &state.password_policy_cache,
-        mfa_settings_cache: &state.mfa_settings_cache,
     })
     .await?;
     Ok(json_with_session_cookies(

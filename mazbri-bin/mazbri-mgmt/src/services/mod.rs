@@ -12,7 +12,6 @@ pub mod connector_metrics;
 pub mod connector_rate_limit;
 pub mod license;
 pub mod mfa;
-pub mod mfa_policy;
 pub mod mfa_settings_cache;
 pub mod mfa_settings_service;
 pub mod password_policy;
@@ -30,6 +29,5 @@ pub mod whitelist;
 pub use billing_reconciliation_settings::{
     BillingReconciliationRuntimeSettings, BillingReconciliationSettingsCache,
 };
-pub use mfa_policy::MfaPolicy;
 pub use mfa_settings_cache::{MfaSettings, MfaSettingsCache};
 pub use password_policy::{PasswordPolicy, PasswordPolicyCache};

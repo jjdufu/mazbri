@@ -15,8 +15,7 @@ fn admin_row_to_json(row: &repo::AdminRow) -> serde_json::Value {
         { "id" : row.id, "username" : row.username, "display_name" : row.display_name,
         "email" : row.email, "role" : row.role, "is_active" : row.is_active,
         "password_changed_at" : row.password_changed_at, "force_password_reset" : row
-        .force_password_reset, "mfa_enabled" : row.mfa.mfa_enabled, "mfa_required" : row
-        .mfa.mfa_required, "created_at" : row.created_at, "updated_at" : row.updated_at,
+        .force_password_reset, "mfa_enabled" : row.mfa_enabled, "created_at" : row.created_at, "updated_at" : row.updated_at,
         "last_login_at" : row.last_login_at, }
     )
 }
@@ -120,7 +119,6 @@ pub async fn create_admin(
             password_hash: &password_hash,
             role: &req.role,
             force_password_reset: req.force_password_reset,
-            mfa_required: req.mfa_required,
         },
     )
     .await
@@ -195,7 +193,6 @@ pub async fn update_admin(
     // 超级管理员：只允许修改显示名 / 邮箱；角色与强制改密等安全属性不可经由账号管理修改。
     if req.role.as_ref().is_some_and(|role| role != &current.role)
         || req.force_password_reset.is_some()
-        || req.mfa_required.is_some()
     {
         helpers::ensure_not_super_admin_target(&current.role)?;
     }
@@ -207,7 +204,6 @@ pub async fn update_admin(
     let has_updates = req.display_name.is_some()
         || req.email.is_some()
         || req.role.is_some()
-        || req.mfa_required.is_some()
         || req.force_password_reset.is_some();
     if !has_updates {
         return Err(ApiError::validation("没有要更新的字段".to_string()));
@@ -218,7 +214,6 @@ pub async fn update_admin(
         req.display_name.as_deref(),
         req.email.as_deref(),
         req.role.as_deref(),
-        req.mfa_required,
         req.force_password_reset,
     )
     .await
@@ -236,7 +231,7 @@ pub async fn update_admin(
         details: Some(serde_json::json!(
             { "username" : current.username, "updated_fields" : { "display_name"
             : req.display_name.is_some(), "email" : req.email.is_some(), "role" :
-            req.role.is_some(), "mfa_required" : req.mfa_required.is_some(), "force_password_reset" : req.force_password_reset.is_some() } }
+            req.role.is_some(), "force_password_reset" : req.force_password_reset.is_some() } }
         )),
         ip_address: client_ip,
         ..Default::default()

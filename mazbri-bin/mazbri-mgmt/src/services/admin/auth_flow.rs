@@ -166,7 +166,7 @@ pub(crate) fn determine_mfa(
     let role = user_row.role.as_str();
     let user_id = user_row.id;
     let totp_digits = mfa_settings.totp_digits;
-    if user_row.mfa.mfa_enabled {
+    if user_row.mfa_enabled {
         if let Some(mfa_lock_until) = user_row.mfa_locked_until
             && mfa_lock_until > Utc::now()
         {
@@ -185,22 +185,8 @@ pub(crate) fn determine_mfa(
             : totp_digits, "message" : "需要 MFA 验证" }
         )));
     }
-    if mfa_settings
-        .policy()
-        .requires_user(role, user_row.mfa.mfa_required)
-    {
-        let temp_token =
-            issue_stage_token(TokenKind::MfaSetup, username, user_id, role, jwt_secret)?;
-        info!(
-            "Password verified, MFA setup required for user: {} (role: {})",
-            username, role
-        );
-        audit::add_detail("login_stage", serde_json::json!("mfa_setup_required"));
-        return Ok(Some(serde_json::json!(
-            { "mfa_setup_required" : true, "temp_token" : temp_token,
-            "message" : "安全策略要求设置 MFA" }
-        )));
-    }
+    // 未绑定 MFA 的账号直接登录；登录不再强制设置 MFA，
+    // 敏感功能在调用时按功能要求 MFA（见 `handlers::mfa_guard`）。
     Ok(None)
 }
 struct GenerateLoginResponseParams<'a> {

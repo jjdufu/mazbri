@@ -35,18 +35,8 @@ pub async fn disable(
     if !state.mfa_enabled {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
     }
-    // 与登录同一判定：全局策略或账号级强制 MFA 时都不允许自行关闭。
-    if state
-        .global
-        .policy()
-        .requires_user(&state.role, state.mfa_required)
-    {
-        crate::audit::set_failure_reason("mfa_required_by_policy");
-        return ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            mazbri_i18n::mfa::required_cannot_disable(),
-        );
-    }
+    // 不再有强制 MFA 策略：本人随时可以关闭（需 TOTP 或登录密码确认）；
+    // 关闭后受 MFA 保护的功能会以 MFA_NOT_ENABLED 拒绝，直到重新绑定。
     let mut verified = false;
     if let Some(encrypted_secret) = &state.mfa_secret
         && let Ok(mfa_service) = mfa_cache.get().await

@@ -2,9 +2,6 @@ en-US:
   api:
     mfa:
       not_setup: "MFA not set up. Please call /auth/mfa/setup first."
-      already_enabled: "MFA already enabled. Please use /auth/mfa/verify."
-      not_required: "MFA not required for this user. Please use /auth/mfa/setup."
-      required_setup_needed: "MFA not set up. Please call /auth/mfa/required-setup first."
       already_enabled_disable: "MFA already enabled. Disable first to reconfigure."
       server_not_configured: "MFA is not properly configured on server"
       failed_setup: "Failed to setup MFA"
@@ -15,7 +12,6 @@ en-US:
       failed_enable: "Failed to enable MFA"
       enabled_success: "MFA enabled successfully"
       not_enabled: "MFA is not enabled"
-      required_cannot_disable: "MFA is required by administrator. Cannot disable."
       invalid_totp_or_password: "Invalid TOTP code or password"
       failed_disable: "Failed to disable MFA"
       disabled_success: "MFA disabled successfully"

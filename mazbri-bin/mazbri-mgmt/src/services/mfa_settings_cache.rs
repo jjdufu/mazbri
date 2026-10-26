@@ -1,41 +1,18 @@
 use moka::future::Cache;
-use sqlx::{FromRow, PgPool};
+use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
+/// 登录 MFA 阶段需要的全局 TOTP 设置。
+///
+/// MFA 不再有全局总开关与强制策略：任何账号都可以随时自助绑定，
+/// 敏感操作按功能逐项要求 MFA（见 `handlers::mfa_guard`）。
 #[derive(Clone, Debug)]
 pub struct MfaSettings {
-    pub mfa_enabled_globally: bool,
-    pub mfa_required_for_all: bool,
-    pub mfa_required_for_roles: Vec<String>,
     pub totp_digits: i32,
 }
 impl Default for MfaSettings {
     fn default() -> Self {
-        Self {
-            mfa_enabled_globally: false,
-            mfa_required_for_all: false,
-            mfa_required_for_roles: vec![],
-            totp_digits: 6,
-        }
-    }
-}
-#[derive(FromRow)]
-struct MfaSettingsRow {
-    mfa_enabled_globally: bool,
-    mfa_required_for_all: bool,
-    #[sqlx(default)]
-    mfa_required_for_roles: Vec<String>,
-    #[sqlx(default)]
-    totp_digits: Option<i32>,
-}
-impl From<MfaSettingsRow> for MfaSettings {
-    fn from(row: MfaSettingsRow) -> Self {
-        Self {
-            mfa_enabled_globally: row.mfa_enabled_globally,
-            mfa_required_for_all: row.mfa_required_for_all,
-            mfa_required_for_roles: row.mfa_required_for_roles,
-            totp_digits: row.totp_digits.unwrap_or(6),
-        }
+        Self { totp_digits: 6 }
     }
 }
 pub struct MfaSettingsCache {
@@ -62,9 +39,9 @@ impl MfaSettingsCache {
         self.cache.invalidate(&()).await;
     }
     async fn load_from_db(&self) -> MfaSettings {
-        match sqlx::query_as::<_, MfaSettingsRow>(
+        match sqlx::query_scalar::<_, i32>(
             r"
-            SELECT mfa_enabled_globally, mfa_required_for_all, mfa_required_for_roles, totp_digits
+            SELECT totp_digits
             FROM mfa_settings
             WHERE id = '00000000-0000-0000-0000-000000000102'
         ",
@@ -72,7 +49,7 @@ impl MfaSettingsCache {
         .fetch_optional(&*self.db)
         .await
         {
-            Ok(Some(row)) => row.into(),
+            Ok(Some(totp_digits)) => MfaSettings { totp_digits },
             Ok(None) => MfaSettings::default(),
             Err(e) => {
                 tracing::error!("Failed to query MFA settings: {}", e);

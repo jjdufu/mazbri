@@ -7,11 +7,10 @@
 //! | 访问令牌 | `access` | `mazbri-mgmt-api` | 访问受保护接口 |
 //! | 刷新令牌 | `refresh` | `mazbri-mgmt-refresh` | 仅 `/auth/refresh` |
 //! | MFA 待验证 | `mfa_pending` | `mazbri-mgmt-mfa-verify` | 仅 `/auth/mfa/verify` |
-//! | MFA 强制设置 | `mfa_setup` | `mazbri-mgmt-mfa-setup` | 仅 `/auth/mfa/required-*` |
 //! | 强制改密 | `password_reset` | `mazbri-mgmt-password-reset` | 仅 `/auth/first-login-change-password` |
 //!
 //! 解码时固定 HS256，并强制校验 `iss`、`aud`、`exp` 与 `token_type`；
-//! 三种临时令牌有效期为 [`TEMP_TOKEN_TTL_SECS`]，使用成功后 `jti` 进入黑名单（一次性）。
+//! 两种临时令牌有效期为 [`TEMP_TOKEN_TTL_SECS`]，使用成功后 `jti` 进入黑名单（一次性）。
 
 use super::auth::{AdminClaims, revoked_jti_key};
 use jsonwebtoken::errors::ErrorKind;
@@ -21,7 +20,7 @@ use mazbri_core::redis::RedisClient;
 
 /// 管理端令牌签发者。
 pub const ISSUER: &str = "mazbri-mgmt-api";
-/// 临时令牌（MFA 验证 / MFA 设置 / 强制改密）有效期（秒）。
+/// 临时令牌（MFA 验证 / 强制改密）有效期（秒）。
 pub const TEMP_TOKEN_TTL_SECS: i64 = 300;
 /// 管理端令牌唯一允许的签名算法。
 const ALGORITHM: Algorithm = Algorithm::HS256;
@@ -34,16 +33,14 @@ pub enum TokenKind {
     Access,
     Refresh,
     MfaPending,
-    MfaSetup,
     PasswordReset,
 }
 
 impl TokenKind {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 4] = [
         Self::Access,
         Self::Refresh,
         Self::MfaPending,
-        Self::MfaSetup,
         Self::PasswordReset,
     ];
 
@@ -54,7 +51,6 @@ impl TokenKind {
             Self::Access => "access",
             Self::Refresh => "refresh",
             Self::MfaPending => "mfa_pending",
-            Self::MfaSetup => "mfa_setup",
             Self::PasswordReset => "password_reset",
         }
     }
@@ -66,7 +62,6 @@ impl TokenKind {
             Self::Access => "mazbri-mgmt-api",
             Self::Refresh => "mazbri-mgmt-refresh",
             Self::MfaPending => "mazbri-mgmt-mfa-verify",
-            Self::MfaSetup => "mazbri-mgmt-mfa-setup",
             Self::PasswordReset => "mazbri-mgmt-password-reset",
         }
     }
@@ -74,10 +69,7 @@ impl TokenKind {
     /// 是否为一次性临时令牌。
     #[must_use]
     pub const fn is_temporary(self) -> bool {
-        matches!(
-            self,
-            Self::MfaPending | Self::MfaSetup | Self::PasswordReset
-        )
+        matches!(self, Self::MfaPending | Self::PasswordReset)
     }
 }
 

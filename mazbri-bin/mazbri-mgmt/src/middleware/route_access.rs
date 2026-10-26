@@ -77,8 +77,6 @@ pub const RULES: &[RouteRule] = &[
     rule("POST", "/auth/mfa/disable", SelfService),
     rule("POST", "/auth/mfa/enable", SelfService),
     rule("POST", "/auth/mfa/regenerate-codes", SelfService),
-    rule("POST", "/auth/mfa/required-enable", Public),
-    rule("POST", "/auth/mfa/required-setup", Public),
     rule("POST", "/auth/mfa/setup", SelfService),
     rule("GET", "/auth/mfa/status", SelfService),
     rule("POST", "/auth/mfa/verify", Public),

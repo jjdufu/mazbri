@@ -62,6 +62,7 @@ pub async fn revoke_api_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, ApiError> {

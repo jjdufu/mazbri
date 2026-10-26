@@ -2,14 +2,14 @@
 //! 端到端测试见 `middleware::admin_token::flow_tests::refresh_*`（需 PostgreSQL + Redis）。
 
 use super::*;
-use crate::repositories::admin::{AdminMfaFlags, AdminSessionStateRow};
+use crate::repositories::admin::AdminSessionStateRow;
 use chrono::Duration;
 
 const FRONTEND_LABELS: &str = include_str!(
     "../../../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts"
 );
 
-const ALL_DENIALS: [RefreshDenial; 8] = [
+const ALL_DENIALS: [RefreshDenial; 7] = [
     RefreshDenial::UserNotFound,
     RefreshDenial::AccountDisabled,
     RefreshDenial::AccountLocked,
@@ -17,7 +17,6 @@ const ALL_DENIALS: [RefreshDenial; 8] = [
     RefreshDenial::PasswordExpired,
     RefreshDenial::CredentialsChanged,
     RefreshDenial::MfaStateChanged,
-    RefreshDenial::MfaSetupRequired,
 ];
 
 fn now() -> DateTime<Utc> {
@@ -33,10 +32,7 @@ fn healthy_user() -> AdminSessionStateRow {
         locked_until: None,
         force_password_reset: false,
         password_changed_at: now() - Duration::days(10),
-        mfa: AdminMfaFlags {
-            mfa_enabled: false,
-            mfa_required: false,
-        },
+        mfa_enabled: false,
         mfa_verified_at: None,
     }
 }
@@ -45,14 +41,10 @@ fn issued_an_hour_ago() -> i64 {
     (now() - Duration::hours(1)).timestamp()
 }
 
-fn evaluate(
-    user: Option<&AdminSessionStateRow>,
-    policy: MfaPolicy<'_>,
-) -> Result<(), RefreshDenial> {
+fn evaluate(user: Option<&AdminSessionStateRow>) -> Result<(), RefreshDenial> {
     let password_policy = PasswordPolicy::default();
     let ctx = RefreshContext {
         password_policy: &password_policy,
-        mfa_policy: policy,
         issued_at: issued_an_hour_ago(),
         now: now(),
     };
@@ -62,7 +54,7 @@ fn evaluate(
 fn deny(mutate: impl FnOnce(&mut AdminSessionStateRow)) -> Result<(), RefreshDenial> {
     let mut user = healthy_user();
     mutate(&mut user);
-    evaluate(Some(&user), MfaPolicy::default())
+    evaluate(Some(&user))
 }
 
 #[test]
@@ -72,10 +64,7 @@ fn healthy_session_is_allowed() {
 
 #[test]
 fn missing_user_is_denied() {
-    assert_eq!(
-        evaluate(None, MfaPolicy::default()),
-        Err(RefreshDenial::UserNotFound)
-    );
+    assert_eq!(evaluate(None), Err(RefreshDenial::UserNotFound));
 }
 
 #[test]
@@ -116,7 +105,6 @@ fn expired_password_is_denied_and_zero_max_age_disables_expiry() {
             Some(&user),
             &RefreshContext {
                 password_policy: policy,
-                mfa_policy: MfaPolicy::default(),
                 issued_at: issued_an_hour_ago(),
                 now: now(),
             },
@@ -140,7 +128,6 @@ fn password_changed_after_issue_is_denied_but_same_second_is_allowed() {
             Some(&user),
             &RefreshContext {
                 password_policy: &password_policy,
-                mfa_policy: MfaPolicy::default(),
                 issued_at,
                 now: now(),
             },
@@ -160,7 +147,7 @@ fn password_changed_after_issue_is_denied_but_same_second_is_allowed() {
 #[test]
 fn mfa_enabled_since_login_is_denied() {
     assert_eq!(
-        deny(|u| u.mfa.mfa_enabled = true),
+        deny(|u| u.mfa_enabled = true),
         Err(RefreshDenial::MfaStateChanged)
     );
 }
@@ -180,48 +167,16 @@ fn mfa_activity_after_issue_is_denied_even_if_now_disabled() {
 }
 
 #[test]
-fn account_level_mfa_requirement_is_denied() {
-    assert_eq!(
-        deny(|u| u.mfa.mfa_required = true),
-        Err(RefreshDenial::MfaSetupRequired)
-    );
-}
-
-#[test]
-fn global_mfa_policy_uses_shared_policy_function() {
+fn unbound_mfa_never_blocks_refresh() {
+    // 已移除全局/账号级强制 MFA 策略：未绑定 MFA 的健康会话始终可以刷新，
+    // 不再有 mfa_setup_required 拒绝原因。
     let user = healthy_user();
-    let listed = vec!["R_FINANCE".to_string()];
-    let unlisted = vec!["R_ADMIN".to_string()];
-    let by_role = MfaPolicy {
-        enabled_globally: true,
-        required_for_all: false,
-        required_for_roles: &listed,
-    };
-    let for_all = MfaPolicy {
-        enabled_globally: true,
-        required_for_all: true,
-        required_for_roles: &unlisted,
-    };
-    let switched_off = MfaPolicy {
-        enabled_globally: false,
-        required_for_all: true,
-        required_for_roles: &listed,
-    };
-    let other_role = MfaPolicy {
-        enabled_globally: true,
-        required_for_all: false,
-        required_for_roles: &unlisted,
-    };
-    assert_eq!(
-        evaluate(Some(&user), by_role),
-        Err(RefreshDenial::MfaSetupRequired)
+    assert_eq!(evaluate(Some(&user)), Ok(()));
+    assert!(
+        ALL_DENIALS
+            .iter()
+            .all(|d| d.reason() != "mfa_setup_required")
     );
-    assert_eq!(
-        evaluate(Some(&user), for_all),
-        Err(RefreshDenial::MfaSetupRequired)
-    );
-    assert_eq!(evaluate(Some(&user), switched_off), Ok(()));
-    assert_eq!(evaluate(Some(&user), other_role), Ok(()));
 }
 
 #[test]
@@ -238,7 +193,7 @@ fn checks_follow_login_order() {
     assert_eq!(
         deny(|u| {
             u.locked_until = Some(now() + Duration::minutes(5));
-            u.mfa.mfa_enabled = true;
+            u.mfa_enabled = true;
         }),
         Err(RefreshDenial::AccountLocked)
     );

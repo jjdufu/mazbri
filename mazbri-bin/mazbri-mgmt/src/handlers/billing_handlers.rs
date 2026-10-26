@@ -157,6 +157,7 @@ pub async fn delete_bill(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
@@ -645,6 +646,7 @@ pub async fn delete_reconciliation_discrepancy(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
@@ -914,6 +916,10 @@ pub async fn generate_bill_async(
             "Only super administrators or administrators can generate bills",
         )
         .into_response());
+    }
+    // 与同步生成账单（generate_bill）一致：异步入口同样要求 MFA，避免绕过。
+    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+        return Ok(*response);
     }
 
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {

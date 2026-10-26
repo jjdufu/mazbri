@@ -141,7 +141,6 @@ async fn ensure_not_revoked_fails_closed_when_store_errors() {
         TokenKind::Access,
         TokenKind::Refresh,
         TokenKind::MfaPending,
-        TokenKind::MfaSetup,
         TokenKind::PasswordReset,
     ] {
         let token = issue(kind, subject(), SECRET, 600).expect("issue");

@@ -29,6 +29,7 @@ pub async fn get_system_settings(
 pub async fn update_system_settings(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(req): Json<SystemSettingsUpdate>,

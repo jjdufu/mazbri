@@ -254,8 +254,6 @@ pub struct CreateAdminRequest {
     pub email: Option<String>,
     pub password: String,
     pub role: String,
-    #[serde(default)]
-    pub mfa_required: bool,
     #[serde(default = "default_force_password_reset")]
     pub force_password_reset: bool,
 }
@@ -268,7 +266,6 @@ pub struct UpdateAdminRequest {
     pub display_name: Option<String>,
     pub email: Option<String>,
     pub role: Option<String>,
-    pub mfa_required: Option<bool>,
     pub force_password_reset: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
@@ -328,8 +325,6 @@ pub struct LoginResponse {
     pub refresh_token: Option<String>,
     #[serde(default)]
     pub mfa_required: bool,
-    #[serde(default)]
-    pub mfa_setup_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temp_token: Option<String>,
 }

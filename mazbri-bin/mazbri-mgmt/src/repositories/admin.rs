@@ -1,11 +1,5 @@
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
-/// 管理员 MFA 开关：是否已绑定、是否被要求绑定。
-#[derive(Debug, Clone, Copy, serde::Serialize, sqlx::FromRow)]
-pub struct AdminMfaFlags {
-    pub mfa_enabled: bool,
-    pub mfa_required: bool,
-}
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserFullRow {
     pub id: uuid::Uuid,
@@ -16,8 +10,7 @@ pub struct AdminUserFullRow {
     pub created_at: DateTime<Utc>,
     pub password_changed_at: DateTime<Utc>,
     pub force_password_reset: bool,
-    #[sqlx(flatten)]
-    pub mfa: AdminMfaFlags,
+    pub mfa_enabled: bool,
     pub mfa_locked_until: Option<DateTime<Utc>>,
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
@@ -31,8 +24,7 @@ pub struct AdminSessionStateRow {
     pub locked_until: Option<DateTime<Utc>>,
     pub force_password_reset: bool,
     pub password_changed_at: DateTime<Utc>,
-    #[sqlx(flatten)]
-    pub mfa: AdminMfaFlags,
+    pub mfa_enabled: bool,
     pub mfa_verified_at: Option<DateTime<Utc>>,
 }
 #[derive(Debug, sqlx::FromRow)]
@@ -60,7 +52,7 @@ pub async fn get_admin_user_by_username(
     sqlx::query_as::<_, AdminUserFullRow>(
         r"
         SELECT id, username, password_hash, role, is_active, created_at, password_changed_at,
-               force_password_reset, mfa_enabled, mfa_locked_until, mfa_required,
+               force_password_reset, mfa_enabled, mfa_locked_until,
                login_attempts, locked_until
         FROM admin_users
         WHERE username = $1
@@ -82,7 +74,7 @@ pub async fn get_admin_session_state(
     sqlx::query_as::<_, AdminSessionStateRow>(
         r"
         SELECT username, role, is_active, locked_until, force_password_reset,
-               password_changed_at, mfa_enabled, mfa_required, mfa_verified_at
+               password_changed_at, mfa_enabled, mfa_verified_at
         FROM admin_users
         WHERE id = $1
     ",

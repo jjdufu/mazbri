@@ -43,6 +43,7 @@ pub async fn get_history(
 pub async fn rollback(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path((service_name, version)): Path<(String, i32)>,

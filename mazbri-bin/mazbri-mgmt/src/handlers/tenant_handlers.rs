@@ -92,6 +92,7 @@ pub async fn delete_tenant(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
