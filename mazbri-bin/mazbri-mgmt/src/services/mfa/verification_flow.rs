@@ -1,12 +1,12 @@
-use super::common::{MfaServiceErrorMode, get_mfa_service, ok_json};
+use super::common::{MfaServiceErrorMode, consume_stage_token, get_mfa_service, ok_json};
 use crate::audit::{AuditAction, AuditService, user_audit};
-use crate::handlers::types::AdminJwtClaims;
 use crate::mfa::{MfaService, MfaServiceCache};
+use crate::middleware::auth::AdminClaims;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
-use chrono::Utc;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -86,13 +86,13 @@ pub async fn disable(
 }
 pub struct VerifyParams<'a> {
     pub pool: &'a PgPool,
+    pub redis: &'a RedisClient,
     pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub jwt_secret: &'a str,
+    /// 已按 `mfa_pending` 类型校验过的临时令牌声明。
+    pub temp_claims: &'a AdminClaims,
     pub user_id: uuid::Uuid,
-    pub username: &'a str,
-    pub user_id_str: &'a str,
-    pub role: &'a str,
     pub totp_code: Option<&'a str>,
     pub backup_code: Option<&'a str>,
     pub client_ip: Option<String>,
@@ -198,34 +198,24 @@ async fn consume_backup_code(
     }
 }
 
-/// MFA 校验通过后签发完整访问令牌。
+/// MFA 校验通过后签发正式访问令牌，返回令牌与有效期（秒）。
 async fn issue_verified_token(
     pool: &PgPool,
     jwt_secret: &str,
     username: &str,
     user_id_str: &str,
     role: &str,
-) -> Result<String, Box<axum::response::Response>> {
-    let now = Utc::now().timestamp();
+) -> Result<(String, u64), Box<axum::response::Response>> {
     let access_ttl =
         crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
-    let expiration = now + i64::saturating_from(access_ttl);
-    let full_claims = AdminJwtClaims {
-        iss: "mazbri-mgmt-api".to_string(),
-        sub: username.to_string(),
-        user_id: user_id_str.to_string(),
-        role: role.to_string(),
-        iat: now,
-        exp: expiration,
-        jti: Some(uuid::Uuid::new_v4().to_string()),
-        token_type: None,
-    };
-    let encoding_key = jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_ref());
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &full_claims,
-        &encoding_key,
+    crate::services::admin::generate_admin_jwt(
+        username,
+        user_id_str,
+        role,
+        jwt_secret,
+        i64::saturating_from(access_ttl),
     )
+    .map(|token| (token, access_ttl))
     .map_err(|error| {
         error!("Failed to generate JWT: {}", error);
         Box::new(ApiResponse::err(
@@ -241,9 +231,9 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let audit = params.audit;
     let jwt_secret = params.jwt_secret;
     let user_id = params.user_id;
-    let username = params.username;
-    let user_id_str = params.user_id_str;
-    let role = params.role;
+    let username = params.temp_claims.sub.as_str();
+    let user_id_str = params.temp_claims.user_id.as_str();
+    let role = params.temp_claims.role.as_str();
     let totp_code = params.totp_code;
     let backup_code = params.backup_code;
     let client_ip = params.client_ip;
@@ -290,6 +280,10 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         return record_failed_attempt(pool, &mfa_service, user_id, username, state.mfa_attempts)
             .await;
     };
+    // 一次性：验证码通过后立即原子消费临时令牌，重放/并发请求在此被拒绝。
+    if let Err(response) = consume_stage_token(params.redis, params.temp_claims).await {
+        return *response;
+    }
     let used_backup_code_idx = match matched {
         MfaCodeMatch::Totp => None,
         MfaCodeMatch::Backup(index) => {
@@ -303,10 +297,11 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             username, error
         );
     }
-    let token = match issue_verified_token(pool, jwt_secret, username, user_id_str, role).await {
-        Ok(token) => token,
-        Err(response) => return *response,
-    };
+    let (token, access_ttl) =
+        match issue_verified_token(pool, jwt_secret, username, user_id_str, role).await {
+            Ok(issued) => issued,
+            Err(response) => return *response,
+        };
     if let Err(error) = audit
         .log_critical(user_audit(
             user_id,
@@ -329,7 +324,7 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         { "id" : user_id_str, "username" : username, "role" : role, "created_at" : state
         .created_at.to_rfc3339() }
     );
-    ok_json(serde_json::json!({ "token" : token, "expires_in" : 86400, "user" : user }))
+    ok_json(serde_json::json!({ "token" : token, "expires_in" : access_ttl, "user" : user }))
 }
 pub async fn status(pool: &PgPool, user_id: uuid::Uuid) -> axum::response::Response {
     let row = match repo::get_mfa_status(pool, user_id).await {

@@ -23,14 +23,17 @@ pub async fn first_login_change_password(
 ) -> Result<Response, ApiError> {
     let user_id = uuid::Uuid::parse_str(&claims.user_id)
         .map_err(|e| ApiError::internal(format!("Token 中的用户 ID 无效: {e}")))?;
-    let data = admin::first_login_change_password(
-        &state.admin_db,
-        &state.auth_state.jwt_secret,
-        &state.password_policy_cache,
-        state.config.auth.jwt_expiration_secs,
+    let data = admin::first_login_change_password(admin::FirstLoginChangePasswordParams {
+        db: &state.admin_db,
+        redis: &state.redis,
+        jwt_secret: &state.auth_state.jwt_secret,
+        password_policy_cache: &state.password_policy_cache,
+        mfa_settings_cache: &state.mfa_settings_cache,
+        jwt_expiration_secs: state.config.auth.jwt_expiration_secs,
+        claims: &claims,
         user_id,
-        &req,
-    )
+        req: &req,
+    })
     .await?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     state.audit.log(create_audit_log(

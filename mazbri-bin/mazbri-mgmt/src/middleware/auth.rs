@@ -1,11 +1,11 @@
+use super::admin_token::{self, TokenKind, TokenRejection};
 use crate::audit::AuditErrorInfo;
 use axum::{
     Extension,
-    extract::Request,
+    extract::{MatchedPath, Request},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use jsonwebtoken::{DecodingKey, Validation, decode};
 use mazbri_auth::JwtKeyManager;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
@@ -22,15 +22,18 @@ const DEFAULT_REFRESH_MAX_AGE_SECS: u64 = 604_800;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminClaims {
     pub iss: String,
+    /// 令牌用途对应的受众（见 [`super::admin_token::TokenKind::audience`]）；旧令牌缺失。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
     pub sub: String,
     pub user_id: String,
     pub role: String,
     pub iat: i64,
     pub exp: i64,
     /// Present on tokens issued after H-11; older tokens may omit it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_type: Option<String>,
 }
 #[derive(Clone)]
@@ -78,81 +81,132 @@ pub async fn revoke_jti(redis: &RedisClient, jti: &str, ttl_secs: i64) -> Result
         .await
         .map_err(|e| format!("Failed to revoke token: {e}"))
 }
-fn normalize_path(path: &str) -> String {
-    let mut result = String::with_capacity(path.len());
-    let mut prev_was_slash = false;
-    for ch in path.chars() {
-        if ch == '/' {
-            if !prev_was_slash {
-                result.push(ch);
-            }
-            prev_was_slash = true;
-        } else {
-            result.push(ch);
-            prev_was_slash = false;
+/// 无需请求头令牌的接口（完整路径精确匹配）。
+///
+/// 其中 MFA 相关接口凭请求体中的专用临时令牌调用，由处理器按类型严格校验。
+/// `/auth/mfa/setup` 不在此列：它属于已登录用户的 MFA 设置，需要访问令牌。
+pub const PUBLIC_ROUTES: [&str; 4] = [
+    "/api/v1/mgmt/auth/login",
+    "/api/v1/mgmt/auth/mfa/verify",
+    "/api/v1/mgmt/auth/mfa/required-setup",
+    "/api/v1/mgmt/auth/mfa/required-enable",
+];
+/// 只接受刷新令牌的接口。
+pub const REFRESH_ROUTE: &str = "/api/v1/mgmt/auth/refresh";
+/// 只接受强制改密临时令牌（`Authorization: Bearer`）的接口。
+pub const PASSWORD_RESET_ROUTE: &str = "/api/v1/mgmt/auth/first-login-change-password";
+
+/// 路由对令牌的要求。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteAuth {
+    Public,
+    Requires(TokenKind),
+}
+
+/// 按路由模板（`MatchedPath`，完整路径）精确判定所需令牌类型；
+/// 未知/缺失路径一律要求访问令牌（默认拒绝其它类型）。
+#[must_use]
+pub fn route_auth(matched_path: Option<&str>) -> RouteAuth {
+    match matched_path {
+        Some(path) if PUBLIC_ROUTES.contains(&path) => RouteAuth::Public,
+        Some(REFRESH_ROUTE) => RouteAuth::Requires(TokenKind::Refresh),
+        Some(PASSWORD_RESET_ROUTE) => RouteAuth::Requires(TokenKind::PasswordReset),
+        _ => RouteAuth::Requires(TokenKind::Access),
+    }
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    let token = headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")?
+        .trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+fn request_token(headers: &HeaderMap, kind: TokenKind) -> Option<String> {
+    match kind {
+        TokenKind::Refresh => extract_bearer_or_session_cookie(headers, true),
+        TokenKind::Access => extract_bearer_or_session_cookie(headers, false),
+        // 临时令牌只通过 Bearer 头传递，不读取会话 Cookie。
+        TokenKind::MfaPending | TokenKind::MfaSetup | TokenKind::PasswordReset => {
+            bearer_token(headers)
         }
     }
-    result
 }
+
+/// 校验令牌类型、签名、iss/aud/exp 与黑名单。
+async fn authenticate(
+    auth_state: &AdminAuthState,
+    token: &str,
+    kind: TokenKind,
+) -> Result<AdminClaims, TokenRejection> {
+    let claims = if kind == TokenKind::Refresh {
+        admin_token::decode_refresh(token, &auth_state.jwt_secret)?
+    } else {
+        admin_token::decode_kind(token, &auth_state.jwt_secret, kind)?
+    };
+    // 签名已校验，身份可信：先记录操作人，后续拒绝也能归属到具体账号。
+    audit_actor_from_claims(&claims);
+    if kind.is_temporary() {
+        admin_token::ensure_temporary_unused(&auth_state.redis, &claims).await?;
+    } else if let Some(jti) = claims.jti.as_deref()
+        && is_jti_revoked(&auth_state.redis, jti).await
+    {
+        return Err(TokenRejection::Revoked);
+    }
+    Ok(claims)
+}
+
+fn rejection_response(rejection: TokenRejection, token: &str, secret: &str) -> Response {
+    admin_token::audit_rejection(rejection, token, secret);
+    let status = if rejection == TokenRejection::CheckUnavailable {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::UNAUTHORIZED
+    };
+    let mut response = (
+        status,
+        axum::Json(serde_json::json!({
+            "error": rejection.reason(),
+            "message": rejection.message(),
+        })),
+    )
+        .into_response();
+    AuditErrorInfo::attach(&mut response, rejection.reason(), rejection.message());
+    response
+}
+
+/// 管理端认证中间件：按完整路由模板正向放行。
+///
+/// - 公开接口（[`PUBLIC_ROUTES`]）直接放行；
+/// - `/auth/refresh` 只接受刷新令牌；
+/// - `/auth/first-login-change-password` 只接受 `password_reset` 临时令牌；
+/// - 其余接口只接受 `access` 令牌，refresh、临时令牌、缺少类型的旧令牌一律 401。
 pub async fn admin_auth_middleware(
     Extension(auth_state): Extension<Arc<AdminAuthState>>,
     mut request: Request,
     next: axum::middleware::Next,
 ) -> Response {
-    let path = normalize_path(request.uri().path());
-    if path.ends_with("/auth/login")
-        || path.ends_with("/auth/mfa/verify")
-        || path.ends_with("/auth/mfa/setup")
-        || path.ends_with("/auth/mfa/required-setup")
-        || path.ends_with("/auth/mfa/required-enable")
-        || path == "/health"
-    {
-        return next.run(request).await;
-    }
-    let is_refresh = path.ends_with("/auth/refresh");
-    let Some(token) = extract_bearer_or_session_cookie(request.headers(), is_refresh) else {
+    let matched = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str);
+    let kind = match route_auth(matched) {
+        RouteAuth::Public => return next.run(request).await,
+        RouteAuth::Requires(kind) => kind,
+    };
+    let Some(token) = request_token(request.headers(), kind) else {
+        crate::audit::set_failure_reason("missing_token");
         return unauthorized("missing_token", "缺少认证令牌");
     };
-    let decoding_key = DecodingKey::from_secret(auth_state.jwt_secret.as_ref());
-    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
-    validation.set_issuer(&["mazbri-mgmt-api"]);
-    match decode::<AdminClaims>(&token, &decoding_key, &validation) {
-        Ok(token_data) => {
-            // 签名已校验，身份可信：先记录操作人，后续拒绝也能归属到具体账号。
-            audit_actor_from_claims(&token_data.claims);
-            let token_type = token_data.claims.token_type.as_deref();
-            if is_refresh {
-                if token_type != Some("refresh") {
-                    return unauthorized(
-                        "invalid_token_type",
-                        "无效的令牌类型，需要 refresh token",
-                    );
-                }
-            } else if token_type == Some("refresh") {
-                return unauthorized("invalid_token_type", "请使用访问令牌，而非 refresh token");
-            }
-            if let Some(ref jti) = token_data.claims.jti
-                && is_jti_revoked(&auth_state.redis, jti).await
-            {
-                return unauthorized("token_revoked", "令牌已注销");
-            }
-            request.extensions_mut().insert(token_data.claims);
+    match authenticate(&auth_state, &token, kind).await {
+        Ok(claims) => {
+            request.extensions_mut().insert(claims);
             next.run(request).await
         }
-        Err(e) => {
-            let (reason, error_msg) = match e.kind() {
-                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
-                    audit_actor_from_expired(&token, &decoding_key);
-                    ("token_expired", "令牌已过期")
-                }
-                jsonwebtoken::errors::ErrorKind::InvalidToken => ("invalid_token", "无效的令牌"),
-                _ => ("invalid_token", "令牌验证失败"),
-            };
-            let mut response = unauthorized("invalid_token", error_msg);
-            crate::audit::set_failure_reason(reason);
-            AuditErrorInfo::attach(&mut response, reason, error_msg);
-            response
-        }
+        Err(rejection) => rejection_response(rejection, &token, &auth_state.jwt_secret),
     }
 }
 
@@ -163,16 +217,6 @@ fn audit_actor_from_claims(claims: &AdminClaims) {
         Some(&claims.sub),
         Some(&claims.role),
     );
-}
-
-/// 令牌过期但签名有效时，仍可用于审计归属。
-fn audit_actor_from_expired(token: &str, key: &DecodingKey) {
-    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
-    validation.set_issuer(&["mazbri-mgmt-api"]);
-    validation.validate_exp = false;
-    if let Ok(data) = decode::<AdminClaims>(token, key, &validation) {
-        audit_actor_from_claims(&data.claims);
-    }
 }
 
 /// Prefer `Authorization: Bearer`, then session cookies (`mazbri_at` / `mazbri_rt`).
@@ -436,4 +480,108 @@ pub fn extract_user_id_response(
         ));
     }
     Ok(uid)
+}
+
+#[cfg(test)]
+mod route_auth_tests {
+    use super::*;
+    use crate::audit::route_map::{API_PREFIX, ROUTES};
+
+    #[test]
+    fn public_routes_are_exact_full_paths() {
+        for path in PUBLIC_ROUTES {
+            assert_eq!(route_auth(Some(path)), RouteAuth::Public);
+        }
+        // 不再接受后缀匹配或相对路径。
+        for path in [
+            "/auth/login",
+            "/api/v1/mgmt/admin-users/auth/login",
+            "/api/v1/mgmt/hypothetical/{a}/{b}",
+            "/api/v1/mgmt/auth/login/",
+            "/api/v1/mgmt//auth/login",
+            "/other/api/v1/mgmt/auth/login",
+            "/api/v1/mgmt/auth/mfa/verify/extra",
+        ] {
+            assert_eq!(
+                route_auth(Some(path)),
+                RouteAuth::Requires(TokenKind::Access),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn mfa_setup_requires_access_token() {
+        assert_eq!(
+            route_auth(Some("/api/v1/mgmt/auth/mfa/setup")),
+            RouteAuth::Requires(TokenKind::Access)
+        );
+    }
+
+    #[test]
+    fn special_routes_require_their_own_token_type() {
+        assert_eq!(
+            route_auth(Some(REFRESH_ROUTE)),
+            RouteAuth::Requires(TokenKind::Refresh)
+        );
+        assert_eq!(
+            route_auth(Some(PASSWORD_RESET_ROUTE)),
+            RouteAuth::Requires(TokenKind::PasswordReset)
+        );
+    }
+
+    #[test]
+    fn missing_matched_path_defaults_to_access() {
+        assert_eq!(route_auth(None), RouteAuth::Requires(TokenKind::Access));
+    }
+
+    #[test]
+    fn every_known_route_except_auth_entrypoints_requires_access() {
+        let special = [
+            "/auth/login",
+            "/auth/mfa/verify",
+            "/auth/mfa/required-setup",
+            "/auth/mfa/required-enable",
+            "/auth/refresh",
+            "/auth/first-login-change-password",
+        ];
+        for route in ROUTES {
+            let full = format!("{API_PREFIX}{}", route.path);
+            if special.contains(&route.path) {
+                assert_ne!(
+                    route_auth(Some(&full)),
+                    RouteAuth::Requires(TokenKind::Access),
+                    "{full}"
+                );
+            } else {
+                assert_eq!(
+                    route_auth(Some(&full)),
+                    RouteAuth::Requires(TokenKind::Access),
+                    "{full}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn temp_tokens_are_only_read_from_bearer_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("mazbri_at=cookie-value"),
+        );
+        assert_eq!(request_token(&headers, TokenKind::PasswordReset), None);
+        assert_eq!(
+            request_token(&headers, TokenKind::Access).as_deref(),
+            Some("cookie-value")
+        );
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer header-value"),
+        );
+        assert_eq!(
+            request_token(&headers, TokenKind::PasswordReset).as_deref(),
+            Some("header-value")
+        );
+    }
 }

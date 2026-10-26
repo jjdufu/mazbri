@@ -1,70 +1,44 @@
 use super::common::{
-    MfaServiceErrorMode, get_mfa_service, is_required_by_global, ok_json, prepare_setup_artifacts,
-    store_setup_artifacts, verify_and_enable_mfa,
+    MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service,
+    is_required_by_global, ok_json, prepare_setup_artifacts, store_setup_artifacts,
+    verify_and_enable_mfa,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
-use crate::handlers::types::{AdminJwtClaims, AdminUser};
+use crate::handlers::types::AdminUser;
 use crate::mfa::MfaServiceCache;
+use crate::middleware::admin_token::TokenKind;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
+use crate::services::admin::issue_stage_token;
 use axum::http::StatusCode;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
-use tracing::{error, info, warn};
-fn decode_temp_token(
-    jwt_secret: &str,
-    temp_token: &str,
-) -> Result<AdminJwtClaims, Box<axum::response::Response>> {
-    let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_ref());
-    let validation = jsonwebtoken::Validation::default();
-    match jsonwebtoken::decode::<AdminJwtClaims>(temp_token, &decoding_key, &validation) {
-        Ok(data) => {
-            crate::audit::set_actor(
-                uuid::Uuid::parse_str(&data.claims.user_id).ok(),
-                Some(&data.claims.sub),
-                Some(&data.claims.role),
-            );
-            Ok(data.claims)
-        }
-        Err(error) => {
-            warn!("Invalid temp token for MFA required flow: {}", error);
-            crate::audit::set_failure_reason("invalid_temp_token");
-            Err(Box::new(ApiResponse::err(
-                StatusCode::UNAUTHORIZED,
-                mazbri_i18n::mfa::invalid_temp_token(),
-            )))
-        }
-    }
+use tracing::{error, info};
+pub struct RequiredSetupParams<'a> {
+    pub pool: &'a PgPool,
+    pub redis: &'a RedisClient,
+    pub mfa_cache: &'a Arc<MfaServiceCache>,
+    pub audit: &'a AuditService,
+    pub jwt_secret: &'a str,
+    pub temp_token: &'a str,
+    pub client_ip: Option<String>,
 }
-fn parse_claim_user_id(
-    claims: &AdminJwtClaims,
-) -> Result<uuid::Uuid, Box<axum::response::Response>> {
-    match uuid::Uuid::parse_str(&claims.user_id) {
-        Ok(user_id) => Ok(user_id),
-        Err(error) => {
-            warn!("Invalid user_id in temp token claims: {}", error);
-            Err(Box::new(ApiResponse::err(
-                StatusCode::UNAUTHORIZED,
-                mazbri_i18n::mfa::invalid_temp_token(),
-            )))
-        }
-    }
-}
-pub async fn required_setup(
-    pool: &PgPool,
-    mfa_cache: &Arc<MfaServiceCache>,
-    audit: &AuditService,
-    jwt_secret: &str,
-    temp_token: &str,
-    client_ip: Option<String>,
-) -> axum::response::Response {
-    let claims = match decode_temp_token(jwt_secret, temp_token) {
-        Ok(claims) => claims,
-        Err(response) => return *response,
-    };
-    let user_id = match parse_claim_user_id(&claims) {
-        Ok(user_id) => user_id,
+
+/// 强制 MFA 设置第一步：校验 `mfa_setup` 临时令牌，生成 TOTP 密钥；
+/// 旧临时令牌被消费，响应中返回一个新的 `mfa_setup` 令牌供 `required-enable` 使用。
+pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::Response {
+    let pool = params.pool;
+    let (claims, user_id) = match authenticate_stage_token(
+        params.redis,
+        params.jwt_secret,
+        params.temp_token,
+        TokenKind::MfaSetup,
+    )
+    .await
+    {
+        Ok(authenticated) => authenticated,
         Err(response) => return *response,
     };
     let state = match repo::get_mfa_required_setup_state(pool, user_id).await {
@@ -91,36 +65,53 @@ pub async fn required_setup(
     if !state.mfa_required && !mfa_required_by_global {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_required());
     }
-    let mfa_service = match get_mfa_service(mfa_cache, MfaServiceErrorMode::InternalError).await {
-        Ok(service) => service,
-        Err(response) => return *response,
-    };
+    let mfa_service =
+        match get_mfa_service(params.mfa_cache, MfaServiceErrorMode::InternalError).await {
+            Ok(service) => service,
+            Err(response) => return *response,
+        };
     let artifacts = match prepare_setup_artifacts(&mfa_service, &claims.sub) {
         Ok(artifacts) => artifacts,
         Err(response) => return *response,
     };
+    if let Err(response) = consume_stage_token(params.redis, &claims).await {
+        return *response;
+    }
+    let Ok(next_token) = issue_stage_token(
+        TokenKind::MfaSetup,
+        &claims.sub,
+        user_id,
+        &claims.role,
+        params.jwt_secret,
+    ) else {
+        return ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        );
+    };
     if let Err(response) = store_setup_artifacts(pool, user_id, &artifacts).await {
         return *response;
     }
-    audit.log(user_audit(
+    params.audit.log(user_audit(
         user_id,
         AuditAction::MfaRequiredSetup,
         Some(serde_json::json!(
             { "action" : "mfa_required_setup_initiated", "username" : claims
             .sub, }
         )),
-        client_ip,
+        params.client_ip,
     ));
     info!("MFA required setup initiated for user: {}", claims.sub);
     ok_json(serde_json::json!(
         { "secret" : artifacts.secret, "qr_code_url" : artifacts.qr_code_url,
-        "backup_codes" : artifacts.backup_codes, "temp_token" : temp_token,
+        "backup_codes" : artifacts.backup_codes, "temp_token" : next_token,
         "totp_digits" : artifacts.totp_digits }
     ))
 }
 
 pub struct RequiredEnableParams<'a> {
     pub pool: &'a PgPool,
+    pub redis: &'a RedisClient,
     pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub jwt_secret: &'a str,
@@ -187,14 +178,13 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     let totp_code = params.totp_code;
     let client_ip = params.client_ip;
 
-    let claims = match decode_temp_token(jwt_secret, temp_token) {
-        Ok(claims) => claims,
-        Err(response) => return *response,
-    };
-    let user_id = match parse_claim_user_id(&claims) {
-        Ok(user_id) => user_id,
-        Err(response) => return *response,
-    };
+    let (claims, user_id) =
+        match authenticate_stage_token(params.redis, jwt_secret, temp_token, TokenKind::MfaSetup)
+            .await
+        {
+            Ok(authenticated) => authenticated,
+            Err(response) => return *response,
+        };
     let (state, encrypted_secret) = match load_required_enable_state(pool, user_id).await {
         Ok(loaded) => loaded,
         Err(response) => return *response,
@@ -215,12 +205,19 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     {
         return *response;
     }
+    // 一次性：验证码通过后原子消费临时令牌，再签发正式访问令牌。
+    if let Err(response) = consume_stage_token(params.redis, &claims).await {
+        return *response;
+    }
+    let access_ttl =
+        crate::services::admin::resolve_access_token_expiration_secs(pool, jwt_expiration_secs)
+            .await;
     let token = match crate::services::admin::generate_admin_jwt(
         &claims.sub,
         &claims.user_id,
         &state.role,
         jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
+        i64::saturating_from(access_ttl),
     ) {
         Ok(token) => token,
         Err(error) => {
@@ -248,7 +245,7 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     };
     ok_json(serde_json::json!(
         { "message" : mazbri_i18n::mfa::enabled_success(), "messageKey" :
-        "api.mfa.enabled_success", "token" : token, "expires_in" : 86400, "user" :
+        "api.mfa.enabled_success", "token" : token, "expires_in" : access_ttl, "user" :
         user }
     ))
 }
