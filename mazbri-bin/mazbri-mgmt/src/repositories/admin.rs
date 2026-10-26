@@ -1,5 +1,14 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::{PgPool, Row};
+
+/// MFA 启用/强制标记，供 `AdminUserFullRow` / `AdminRow` 扁平展开，避免超限 bool 计数。
+#[derive(Debug, Clone, Copy, Default, Serialize, sqlx::FromRow)]
+pub struct AdminMfaFlags {
+    pub mfa_enabled: bool,
+    pub mfa_required: bool,
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserFullRow {
     pub id: uuid::Uuid,
@@ -10,7 +19,8 @@ pub struct AdminUserFullRow {
     pub created_at: DateTime<Utc>,
     pub password_changed_at: DateTime<Utc>,
     pub force_password_reset: bool,
-    pub mfa_enabled: bool,
+    #[sqlx(flatten)]
+    pub mfa: AdminMfaFlags,
     pub mfa_locked_until: Option<DateTime<Utc>>,
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
@@ -52,7 +62,7 @@ pub async fn get_admin_user_by_username(
     sqlx::query_as::<_, AdminUserFullRow>(
         r"
         SELECT id, username, password_hash, role, is_active, created_at, password_changed_at,
-               force_password_reset, mfa_enabled, mfa_locked_until,
+               force_password_reset, mfa_enabled, mfa_required, mfa_locked_until,
                login_attempts, locked_until
         FROM admin_users
         WHERE username = $1

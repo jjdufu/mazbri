@@ -2,6 +2,10 @@ en-US:
   api:
     mfa:
       not_setup: "MFA not set up. Please call /auth/mfa/setup first."
+      already_enabled: "MFA already enabled. Please use /auth/mfa/verify."
+      not_required: "MFA not required for this user. Please use /auth/mfa/setup."
+      required_setup_needed: "MFA not set up. Please call /auth/mfa/required-setup first."
+      required_cannot_disable: "MFA is required by administrator. Cannot disable."
       already_enabled_disable: "MFA already enabled. Disable first to reconfigure."
       server_not_configured: "MFA is not properly configured on server"
       failed_setup: "Failed to setup MFA"

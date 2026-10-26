@@ -33,6 +33,7 @@ pub async fn mfa_verify(
         mfa_cache: &state.mfa_cache,
         audit: &state.audit,
         jwt_secret,
+        refresh_token_expiration_secs: state.config.auth.refresh_token_expiration_secs,
         temp_claims: &claims,
         user_id,
         totp_code: req.totp_code.as_deref(),

@@ -35,8 +35,14 @@ pub async fn disable(
     if !state.mfa_enabled {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
     }
-    // 不再有强制 MFA 策略：本人随时可以关闭（需 TOTP 或登录密码确认）；
-    // 关闭后受 MFA 保护的功能会以 MFA_NOT_ENABLED 拒绝，直到重新绑定。
+    // 超管标记 mfa_required 的账号禁止自行关闭；管理员重置 MFA 后仍保持该标记。
+    if state.mfa_required {
+        crate::audit::set_failure_reason("mfa_required_by_policy");
+        return ApiResponse::err(
+            StatusCode::FORBIDDEN,
+            mazbri_i18n::mfa::required_cannot_disable(),
+        );
+    }
     let mut verified = false;
     if let Some(encrypted_secret) = &state.mfa_secret
         && let Ok(mfa_service) = mfa_cache.get().await
@@ -86,6 +92,7 @@ pub struct VerifyParams<'a> {
     pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub jwt_secret: &'a str,
+    pub refresh_token_expiration_secs: u64,
     /// 已按 `mfa_pending` 类型校验过的临时令牌声明。
     pub temp_claims: &'a AdminClaims,
     pub user_id: uuid::Uuid,
@@ -194,31 +201,46 @@ async fn consume_backup_code(
     }
 }
 
-/// MFA 校验通过后签发正式访问令牌，返回令牌与有效期（秒）。
+/// MFA 校验通过后签发访问令牌与刷新令牌。
 async fn issue_verified_token(
     pool: &PgPool,
     jwt_secret: &str,
     username: &str,
     user_id_str: &str,
     role: &str,
-) -> Result<(String, u64), Box<axum::response::Response>> {
+    refresh_token_expiration_secs: u64,
+) -> Result<(String, String, u64), Box<axum::response::Response>> {
     let access_ttl =
         crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
-    crate::services::admin::generate_admin_jwt(
+    let token = crate::services::admin::generate_admin_jwt(
         username,
         user_id_str,
         role,
         jwt_secret,
         i64::saturating_from(access_ttl),
     )
-    .map(|token| (token, access_ttl))
     .map_err(|error| {
         error!("Failed to generate JWT: {}", error);
         Box::new(ApiResponse::err(
             StatusCode::INTERNAL_SERVER_ERROR,
             mazbri_i18n::mfa::failed_generate_token(),
         ))
-    })
+    })?;
+    let refresh_token = crate::services::admin::issue_refresh_token(
+        username,
+        user_id_str,
+        role,
+        jwt_secret,
+        i64::saturating_from(refresh_token_expiration_secs),
+    )
+    .map_err(|error| {
+        error!("Failed to generate refresh token: {}", error);
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    Ok((token, refresh_token, access_ttl))
 }
 
 pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
@@ -293,20 +315,62 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             username, error
         );
     }
-    let (token, access_ttl) =
-        match issue_verified_token(pool, jwt_secret, username, user_id_str, role).await {
-            Ok(issued) => issued,
-            Err(response) => return *response,
-        };
-    if let Err(error) = audit
+    finish_verified_login(FinishVerifiedLoginParams {
+        pool,
+        audit,
+        jwt_secret,
+        refresh_token_expiration_secs: params.refresh_token_expiration_secs,
+        user_id,
+        username,
+        user_id_str,
+        role,
+        created_at: state.created_at,
+        used_backup_code: used_backup_code_idx.is_some(),
+        client_ip,
+    })
+    .await
+}
+
+struct FinishVerifiedLoginParams<'a> {
+    pool: &'a PgPool,
+    audit: &'a AuditService,
+    jwt_secret: &'a str,
+    refresh_token_expiration_secs: u64,
+    user_id: uuid::Uuid,
+    username: &'a str,
+    user_id_str: &'a str,
+    role: &'a str,
+    created_at: chrono::DateTime<chrono::Utc>,
+    used_backup_code: bool,
+    client_ip: Option<String>,
+}
+
+async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::response::Response {
+    let (token, refresh_token, access_ttl) = match issue_verified_token(
+        params.pool,
+        params.jwt_secret,
+        params.username,
+        params.user_id_str,
+        params.role,
+        params.refresh_token_expiration_secs,
+    )
+    .await
+    {
+        Ok(issued) => issued,
+        Err(response) => return *response,
+    };
+    if let Err(error) = params
+        .audit
         .log_critical(user_audit(
-            user_id,
+            params.user_id,
             AuditAction::UserLogin,
-            Some(serde_json::json!(
-                { "username" : username, "role" : role, "mfa_verified" : true,
-                "used_backup_code" : used_backup_code_idx.is_some(), }
-            )),
-            client_ip,
+            Some(serde_json::json!({
+                "username": params.username,
+                "role": params.role,
+                "mfa_verified": true,
+                "used_backup_code": params.used_backup_code,
+            })),
+            params.client_ip,
         ))
         .await
     {
@@ -315,12 +379,19 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
             error
         );
     }
-    info!("MFA verification successful for user: {}", username);
-    let user = serde_json::json!(
-        { "id" : user_id_str, "username" : username, "role" : role, "created_at" : state
-        .created_at.to_rfc3339() }
-    );
-    ok_json(serde_json::json!({ "token" : token, "expires_in" : access_ttl, "user" : user }))
+    info!("MFA verification successful for user: {}", params.username);
+    let user = serde_json::json!({
+        "id": params.user_id_str,
+        "username": params.username,
+        "role": params.role,
+        "created_at": params.created_at.to_rfc3339(),
+    });
+    ok_json(serde_json::json!({
+        "token": token,
+        "refresh_token": refresh_token,
+        "expires_in": access_ttl,
+        "user": user,
+    }))
 }
 pub async fn status(pool: &PgPool, user_id: uuid::Uuid) -> axum::response::Response {
     let row = match repo::get_mfa_status(pool, user_id).await {

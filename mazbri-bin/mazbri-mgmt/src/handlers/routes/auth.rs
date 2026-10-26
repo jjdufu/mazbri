@@ -25,4 +25,6 @@ pub fn routes() -> Router<AppState> {
             "/auth/mfa/regenerate-codes",
             post(mfa::regenerate_backup_codes),
         )
+        .route("/auth/mfa/required-setup", post(mfa::mfa_required_setup))
+        .route("/auth/mfa/required-enable", post(mfa::mfa_required_enable))
 }

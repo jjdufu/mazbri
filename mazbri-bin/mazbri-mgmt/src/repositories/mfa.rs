@@ -9,8 +9,24 @@ pub struct MfaSetupState {
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaDisableState {
     pub mfa_enabled: bool,
+    pub mfa_required: bool,
     pub mfa_secret: Option<String>,
     pub password_hash: Option<String>,
+}
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MfaRequiredSetupState {
+    pub mfa_enabled: bool,
+    pub mfa_required: bool,
+    pub mfa_secret: Option<String>,
+    pub role: String,
+}
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MfaRequiredEnableState {
+    pub mfa_enabled: bool,
+    pub mfa_required: bool,
+    pub mfa_secret: Option<String>,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaVerifyState {
@@ -93,7 +109,7 @@ pub async fn get_mfa_disable_state(
 ) -> Result<Option<MfaDisableState>, sqlx::Error> {
     sqlx::query_as::<_, MfaDisableState>(
         r"
-        SELECT mfa_enabled, mfa_secret, password_hash
+        SELECT mfa_enabled, mfa_required, mfa_secret, password_hash
         FROM admin_users
         WHERE id = $1
     ",
@@ -248,4 +264,42 @@ pub async fn update_backup_codes(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_mfa_required_setup_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<MfaRequiredSetupState>, sqlx::Error> {
+    sqlx::query_as::<_, MfaRequiredSetupState>(
+        r"
+        SELECT mfa_enabled, mfa_required, mfa_secret, role
+        FROM admin_users
+        WHERE id = $1
+    ",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_mfa_required_enable_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<MfaRequiredEnableState>, sqlx::Error> {
+    sqlx::query_as::<_, MfaRequiredEnableState>(
+        r"
+        SELECT mfa_enabled, mfa_required, mfa_secret, role, created_at
+        FROM admin_users
+        WHERE id = $1
+    ",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
 }

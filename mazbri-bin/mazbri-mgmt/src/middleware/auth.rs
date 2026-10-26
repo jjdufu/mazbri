@@ -81,7 +81,12 @@ pub async fn revoke_jti(redis: &RedisClient, jti: &str, ttl_secs: i64) -> Result
 ///
 /// 其中 MFA 相关接口凭请求体中的专用临时令牌调用，由处理器按类型严格校验。
 /// `/auth/mfa/setup` 不在此列：它属于已登录用户的 MFA 设置，需要访问令牌。
-pub const PUBLIC_ROUTES: [&str; 2] = ["/api/v1/mgmt/auth/login", "/api/v1/mgmt/auth/mfa/verify"];
+pub const PUBLIC_ROUTES: [&str; 4] = [
+    "/api/v1/mgmt/auth/login",
+    "/api/v1/mgmt/auth/mfa/verify",
+    "/api/v1/mgmt/auth/mfa/required-setup",
+    "/api/v1/mgmt/auth/mfa/required-enable",
+];
 /// 只接受刷新令牌的接口。
 pub const REFRESH_ROUTE: &str = "/api/v1/mgmt/auth/refresh";
 /// 只接受强制改密临时令牌（`Authorization: Bearer`）的接口。
@@ -121,7 +126,9 @@ fn request_token(headers: &HeaderMap, kind: TokenKind) -> Option<String> {
         TokenKind::Refresh => extract_bearer_or_session_cookie(headers, true),
         TokenKind::Access => extract_bearer_or_session_cookie(headers, false),
         // 临时令牌只通过 Bearer 头传递，不读取会话 Cookie。
-        TokenKind::MfaPending | TokenKind::PasswordReset => bearer_token(headers),
+        TokenKind::MfaPending | TokenKind::MfaSetup | TokenKind::PasswordReset => {
+            bearer_token(headers)
+        }
     }
 }
 
@@ -525,6 +532,8 @@ mod route_auth_tests {
         let special = [
             "/auth/login",
             "/auth/mfa/verify",
+            "/auth/mfa/required-setup",
+            "/auth/mfa/required-enable",
             "/auth/refresh",
             "/auth/first-login-change-password",
         ];

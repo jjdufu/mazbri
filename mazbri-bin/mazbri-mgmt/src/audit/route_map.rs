@@ -134,6 +134,8 @@ pub static ROUTES: &[RouteAudit] = &[
     ),
     write("POST", "/auth/refresh", A::UserTokenRefresh, R::User, None),
     secure("POST", "/auth/logout", A::UserLogout, R::User, None),
+    auth("/auth/mfa/required-setup", A::MfaRequiredSetup),
+    auth("/auth/mfa/required-enable", A::MfaRequiredEnable),
     auth("/auth/mfa/setup", A::MfaSetup),
     secure("POST", "/auth/mfa/enable", A::MfaEnable, R::User, None),
     secure("POST", "/auth/mfa/disable", A::MfaDisable, R::User, None),

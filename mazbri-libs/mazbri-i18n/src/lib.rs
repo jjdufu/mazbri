@@ -96,6 +96,22 @@ pub mod mfa {
     pub fn failed_update_backup() -> String {
         rust_i18n::t!("api.mfa.failed_update_backup").to_string()
     }
+    #[must_use]
+    pub fn required_cannot_disable() -> String {
+        rust_i18n::t!("api.mfa.required_cannot_disable").to_string()
+    }
+    #[must_use]
+    pub fn already_enabled() -> String {
+        rust_i18n::t!("api.mfa.already_enabled").to_string()
+    }
+    #[must_use]
+    pub fn not_required() -> String {
+        rust_i18n::t!("api.mfa.not_required").to_string()
+    }
+    #[must_use]
+    pub fn required_setup_needed() -> String {
+        rust_i18n::t!("api.mfa.required_setup_needed").to_string()
+    }
 }
 pub mod auth {
     #[must_use]

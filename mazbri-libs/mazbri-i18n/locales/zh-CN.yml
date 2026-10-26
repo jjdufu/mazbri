@@ -2,6 +2,10 @@ zh-CN:
   api:
     mfa:
       not_setup: "MFA 未设置。请先调用 /auth/mfa/setup。"
+      already_enabled: "MFA 已启用。请使用 /auth/mfa/verify。"
+      not_required: "该用户不需要 MFA。请使用 /auth/mfa/setup。"
+      required_setup_needed: "MFA 未设置。请先调用 /auth/mfa/required-setup。"
+      required_cannot_disable: "管理员要求启用 MFA，无法禁用。"
       already_enabled_disable: "MFA 已启用。请先禁用以重新配置。"
       server_not_configured: "服务器未正确配置 MFA"
       failed_setup: "设置 MFA 失败"
