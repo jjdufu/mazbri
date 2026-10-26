@@ -82,8 +82,8 @@
                 $t("common.actions.details")
               }}</ElButton>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
                 v-if="canMarkPaid(row.status)"
+                v-roles="['R_ADMIN', 'R_FINANCE']"
                 link
                 type="success"
                 @click="handleUpdateStatus(row, 'paid')"
@@ -91,8 +91,8 @@
                 {{ $t("billing.actions.markPaid") }}
               </ElButton>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
                 v-if="canMarkOverdue(row.status)"
+                v-roles="['R_ADMIN', 'R_FINANCE']"
                 link
                 type="warning"
                 @click="handleUpdateStatus(row, 'overdue')"

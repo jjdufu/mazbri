@@ -185,6 +185,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   formatHint: "",
+  validator: undefined,
 });
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
