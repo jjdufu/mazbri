@@ -21,16 +21,6 @@ pub(super) struct SetupArtifacts {
     pub qr_code_url: String,
     pub totp_digits: u32,
 }
-pub(super) fn is_required_by_global(
-    mfa_enabled_globally: bool,
-    required_roles: Option<&Vec<String>>,
-    user_role: &str,
-) -> bool {
-    if mfa_enabled_globally && let Some(roles) = required_roles {
-        return roles.contains(&user_role.to_string());
-    }
-    false
-}
 pub(super) async fn get_mfa_service(
     mfa_cache: &Arc<MfaServiceCache>,
     mode: MfaServiceErrorMode,

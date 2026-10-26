@@ -1,7 +1,6 @@
 use super::common::{
-    MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service,
-    is_required_by_global, ok_json, prepare_setup_artifacts, store_setup_artifacts,
-    verify_and_enable_mfa,
+    MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service, ok_json,
+    prepare_setup_artifacts, store_setup_artifacts, verify_and_enable_mfa,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminUser;
@@ -57,12 +56,11 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
     if state.mfa_enabled {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::already_enabled());
     }
-    let mfa_required_by_global = is_required_by_global(
-        state.mfa_enabled_globally,
-        state.mfa_required_for_roles.as_ref(),
-        &state.role,
-    );
-    if !state.mfa_required && !mfa_required_by_global {
+    if !state
+        .global
+        .policy()
+        .requires_user(&state.role, state.mfa_required)
+    {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_required());
     }
     let mfa_service =
@@ -148,12 +146,11 @@ async fn load_required_enable_state(
             mazbri_i18n::mfa::already_enabled_simple(),
         )));
     }
-    let mfa_required_by_global = is_required_by_global(
-        state.mfa_enabled_globally,
-        state.mfa_required_for_roles.as_ref(),
-        &state.role,
-    );
-    if !state.mfa_required && !mfa_required_by_global {
+    if !state
+        .global
+        .policy()
+        .requires_user(&state.role, state.mfa_required)
+    {
         return Err(Box::new(ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::not_required(),

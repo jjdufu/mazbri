@@ -1,6 +1,14 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+/// `mfa_settings` 单行中的全局强制策略列（经 `LEFT JOIN` + `COALESCE` 读取）。
+/// 判定逻辑统一在 [`crate::services::MfaPolicy`]，见 [`MfaGlobalPolicyRow::policy`]。
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MfaGlobalPolicyRow {
+    pub mfa_enabled_globally: bool,
+    pub mfa_required_for_all: bool,
+    pub mfa_required_for_roles: Option<Vec<String>>,
+}
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaSetupState {
     pub mfa_enabled: bool,
@@ -12,6 +20,10 @@ pub struct MfaDisableState {
     pub mfa_required: bool,
     pub mfa_secret: Option<String>,
     pub password_hash: Option<String>,
+    pub role: String,
+    #[sqlx(flatten)]
+    #[serde(flatten)]
+    pub global: MfaGlobalPolicyRow,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaVerifyState {
@@ -34,8 +46,9 @@ pub struct MfaRequiredSetupState {
     pub mfa_required: bool,
     pub mfa_secret: Option<String>,
     pub role: String,
-    pub mfa_enabled_globally: bool,
-    pub mfa_required_for_roles: Option<Vec<String>>,
+    #[sqlx(flatten)]
+    #[serde(flatten)]
+    pub global: MfaGlobalPolicyRow,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaRequiredEnableState {
@@ -44,8 +57,9 @@ pub struct MfaRequiredEnableState {
     pub mfa_secret: Option<String>,
     pub role: String,
     pub created_at: DateTime<Utc>,
-    pub mfa_enabled_globally: bool,
-    pub mfa_required_for_roles: Option<Vec<String>>,
+    #[sqlx(flatten)]
+    #[serde(flatten)]
+    pub global: MfaGlobalPolicyRow,
 }
 /// # Errors
 ///
@@ -113,9 +127,13 @@ pub async fn get_mfa_disable_state(
 ) -> Result<Option<MfaDisableState>, sqlx::Error> {
     sqlx::query_as::<_, MfaDisableState>(
         r"
-        SELECT mfa_enabled, mfa_secret, password_hash, mfa_required
-        FROM admin_users
-        WHERE id = $1
+        SELECT au.mfa_enabled, au.mfa_secret, au.password_hash, au.mfa_required, au.role,
+               COALESCE(ms.mfa_enabled_globally, false) AS mfa_enabled_globally,
+               COALESCE(ms.mfa_required_for_all, false) AS mfa_required_for_all,
+               ms.mfa_required_for_roles
+        FROM admin_users au
+        LEFT JOIN mfa_settings ms ON ms.id = '00000000-0000-0000-0000-000000000102'
+        WHERE au.id = $1
     ",
     )
     .bind(user_id)
@@ -279,7 +297,7 @@ pub async fn get_mfa_required_setup_state(
     sqlx::query_as::<_, MfaRequiredSetupState>(
         r"
         SELECT au.mfa_enabled, au.mfa_required, au.mfa_secret, au.role,
-               ms.mfa_enabled_globally, ms.mfa_required_for_roles
+               ms.mfa_enabled_globally, ms.mfa_required_for_all, ms.mfa_required_for_roles
         FROM admin_users au
         CROSS JOIN mfa_settings ms
         WHERE au.id = $1 AND ms.id = '00000000-0000-0000-0000-000000000102'
@@ -299,7 +317,7 @@ pub async fn get_mfa_required_enable_state(
     sqlx::query_as::<_, MfaRequiredEnableState>(
         r"
         SELECT au.mfa_enabled, au.mfa_required, au.mfa_secret, au.role, au.created_at,
-               ms.mfa_enabled_globally, ms.mfa_required_for_roles
+               ms.mfa_enabled_globally, ms.mfa_required_for_all, ms.mfa_required_for_roles
         FROM admin_users au
         CROSS JOIN mfa_settings ms
         WHERE au.id = $1 AND ms.id = '00000000-0000-0000-0000-000000000102'

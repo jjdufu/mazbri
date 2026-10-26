@@ -1718,7 +1718,8 @@
       "mfaLockTriggered": "触发 MFA 锁定",
       "invalidTempToken": "临时令牌无效",
       "passwordHashMissing": "账号未设置密码",
-      "businessFailure": "业务处理失败"
+      "businessFailure": "业务处理失败",
+      "mfaRequiredByPolicy": "策略要求 MFA（不可关闭）"
     }
   },
   "feedback": {

@@ -5,6 +5,10 @@
 //!  cargo test -p mazbri-mgmt flow_tests -- --ignored --test-threads=1`
 //!
 //! 数据库需先导入 `admin/init.sql`（含 `common/functions.sql`）。测试不打印任何令牌。
+//! MFA 设置类测试还要求 `system_settings` 中的 `mfa_master_key`/`mfa_salt` 为合法十六进制
+//! （生产由 init-dbs 替换 `:'mfa_master_key'`/`:'mfa_salt'`；测试库请写入临时随机值，
+//! 例如 `UPDATE system_settings SET value = to_jsonb(md5(random()::text) || md5(random()::text))
+//! WHERE key IN ('mfa_master_key', 'mfa_salt')`）。
 
 use super::*;
 use crate::audit::{AuditConfig, AuditScope, AuditService, scope::AuditDraft};
@@ -666,17 +670,183 @@ async fn forced_password_change_without_mfa_issues_access_token() {
     let response = change_password_first_login(&deps, &user, &user.password, &reset)
         .await
         .expect("password changed");
-    let globally_required = mfa_settings.mfa_enabled_globally
-        && (mfa_settings.mfa_required_for_all
-            || mfa_settings
-                .mfa_required_for_roles
-                .iter()
-                .any(|r| r == "R_OPERATOR"));
-    if globally_required {
+    // 与登录、required_setup 使用同一判定函数。
+    if mfa_settings.policy().requires_role("R_OPERATOR") {
         assert_eq!(response["mfa_setup_required"], true);
         assert!(response.get("token").is_none());
     } else {
         let token = response["token"].as_str().expect("access token");
         assert!(decode_kind(token, SECRET, TokenKind::Access).is_ok());
     }
+}
+
+/// 全局 MFA 策略快照，用于测试结束后还原（测试需 `--test-threads=1` 运行）。
+struct MfaPolicySnapshot {
+    enabled_globally: bool,
+    required_for_all: bool,
+    required_for_roles: Option<Vec<String>>,
+}
+
+async fn snapshot_mfa_policy(db: &PgPool) -> MfaPolicySnapshot {
+    let (enabled_globally, required_for_all, required_for_roles): (
+        bool,
+        bool,
+        Option<Vec<String>>,
+    ) = sqlx::query_as(
+        "SELECT mfa_enabled_globally, mfa_required_for_all, mfa_required_for_roles \
+         FROM mfa_settings WHERE id = '00000000-0000-0000-0000-000000000102'",
+    )
+    .fetch_one(db)
+    .await
+    .expect("mfa_settings row");
+    MfaPolicySnapshot {
+        enabled_globally,
+        required_for_all,
+        required_for_roles,
+    }
+}
+
+async fn set_mfa_policy(db: &PgPool, policy: &MfaPolicySnapshot) {
+    sqlx::query(
+        "UPDATE mfa_settings SET mfa_enabled_globally = $1, mfa_required_for_all = $2, \
+         mfa_required_for_roles = $3 WHERE id = '00000000-0000-0000-0000-000000000102'",
+    )
+    .bind(policy.enabled_globally)
+    .bind(policy.required_for_all)
+    .bind(policy.required_for_roles.as_deref())
+    .execute(db)
+    .await
+    .expect("update mfa_settings");
+}
+
+/// `mfa_required_for_all = true` 时，即使角色不在 `mfa_required_for_roles` 中：
+/// 登录要求设置 MFA、required-setup 接受该账号、自行关闭 MFA 被拒绝。
+/// 修复前 required-setup 只看角色列表，会返回「无需 MFA」导致账号卡死在设置阶段。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn required_for_all_is_honored_by_login_setup_and_disable() {
+    use crate::mfa::MfaServiceCache;
+    use crate::services::mfa::{RequiredSetupParams, disable, required_setup};
+
+    let deps = deps().await;
+    let original = snapshot_mfa_policy(&deps.db).await;
+    set_mfa_policy(
+        &deps.db,
+        &MfaPolicySnapshot {
+            enabled_globally: true,
+            required_for_all: true,
+            required_for_roles: Some(vec!["R_ADMIN".to_string()]),
+        },
+    )
+    .await;
+
+    let fresh = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    // 新建缓存实例，避免命中其他测试留下的 300 秒 TTL 旧策略。
+    let login_response = login(&deps, &fresh).await;
+    let setup_token = login_response["temp_token"].as_str().map(str::to_string);
+    let mfa_cache = Arc::new(MfaServiceCache::new(
+        deps.db.clone(),
+        crate::config::MfaConfig::default(),
+    ));
+    let setup_status = match &setup_token {
+        Some(token) => Some(
+            required_setup(RequiredSetupParams {
+                pool: &deps.db,
+                redis: &deps.redis,
+                mfa_cache: &mfa_cache,
+                audit: &deps.audit,
+                jwt_secret: SECRET,
+                temp_token: token,
+                client_ip: None,
+            })
+            .await
+            .status(),
+        ),
+        None => None,
+    };
+
+    let enrolled = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            mfa_enabled: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let disable_status = disable(
+        &deps.db,
+        &mfa_cache,
+        &deps.audit,
+        enrolled.id,
+        &enrolled.username,
+        &enrolled.password,
+        None,
+    )
+    .await
+    .status();
+
+    set_mfa_policy(&deps.db, &original).await;
+
+    assert_eq!(login_response["mfa_setup_required"], true);
+    assert!(login_response.get("token").is_none());
+    assert_eq!(
+        setup_token.as_deref().and_then(token_kind_of).as_deref(),
+        Some("mfa_setup")
+    );
+    assert_eq!(setup_status, Some(StatusCode::OK));
+    assert_eq!(disable_status, StatusCode::FORBIDDEN);
+}
+
+/// 全局策略关闭时，未被账号级强制的用户可以关闭 MFA（对照组，确认上面的拒绝来自策略）。
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn disable_is_allowed_when_no_policy_requires_mfa() {
+    use crate::mfa::MfaServiceCache;
+    use crate::services::mfa::disable;
+
+    let deps = deps().await;
+    let original = snapshot_mfa_policy(&deps.db).await;
+    set_mfa_policy(
+        &deps.db,
+        &MfaPolicySnapshot {
+            enabled_globally: false,
+            required_for_all: true,
+            required_for_roles: Some(vec!["R_FINANCE".to_string()]),
+        },
+    )
+    .await;
+    let enrolled = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            mfa_enabled: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let mfa_cache = Arc::new(MfaServiceCache::new(
+        deps.db.clone(),
+        crate::config::MfaConfig::default(),
+    ));
+    let status = disable(
+        &deps.db,
+        &mfa_cache,
+        &deps.audit,
+        enrolled.id,
+        &enrolled.username,
+        &enrolled.password,
+        None,
+    )
+    .await
+    .status();
+    set_mfa_policy(&deps.db, &original).await;
+    assert_eq!(status, StatusCode::OK);
 }

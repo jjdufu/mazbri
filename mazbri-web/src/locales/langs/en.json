@@ -1718,7 +1718,8 @@
       "mfaLockTriggered": "MFA lock triggered",
       "invalidTempToken": "Invalid temporary token",
       "passwordHashMissing": "Password not set",
-      "businessFailure": "Business failure"
+      "businessFailure": "Business failure",
+      "mfaRequiredByPolicy": "MFA enforced by policy (cannot disable)"
     }
   },
   "feedback": {

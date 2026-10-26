@@ -35,7 +35,13 @@ pub async fn disable(
     if !state.mfa_enabled {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
     }
-    if state.mfa_required {
+    // 与登录同一判定：全局策略或账号级强制 MFA 时都不允许自行关闭。
+    if state
+        .global
+        .policy()
+        .requires_user(&state.role, state.mfa_required)
+    {
+        crate::audit::set_failure_reason("mfa_required_by_policy");
         return ApiResponse::err(
             StatusCode::FORBIDDEN,
             mazbri_i18n::mfa::required_cannot_disable(),

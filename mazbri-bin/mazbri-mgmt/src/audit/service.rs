@@ -855,6 +855,57 @@ mod label_tests {
         }
     }
 
+    /// 收集生产代码中 `set_failure_reason("…")` 的字面量（跳过测试文件与 `#[cfg(test)]` 之后的内容）。
+    fn literal_failure_reasons() -> Vec<String> {
+        fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).expect("read src dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    walk(&path, out);
+                    continue;
+                }
+                let is_rust = path.extension().is_some_and(|ext| ext == "rs");
+                let stem = path
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                if !is_rust || stem.ends_with("tests") {
+                    continue;
+                }
+                let source = std::fs::read_to_string(&path).expect("read source");
+                let production = source.split("#[cfg(test)]").next().unwrap_or_default();
+                let needle = "set_failure_reason(\"";
+                let mut rest = production;
+                while let Some(pos) = rest.find(needle) {
+                    rest = &rest[pos + needle.len()..];
+                    if let Some(end) = rest.find('"') {
+                        out.push(rest[..end].to_string());
+                    }
+                }
+            }
+        }
+        let mut reasons = Vec::new();
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut reasons,
+        );
+        reasons.sort();
+        reasons.dedup();
+        reasons
+    }
+
+    #[test]
+    fn every_literal_failure_reason_has_frontend_label() {
+        let reasons = literal_failure_reasons();
+        assert!(reasons.len() > 5, "扫描结果异常: {reasons:?}");
+        for reason in reasons {
+            assert!(
+                FRONTEND_LABELS.contains(&format!("  {reason}: \"auditLogs.failureReasons.")),
+                "labels.ts FAILURE_REASON_LABELS 缺少 {reason}"
+            );
+        }
+    }
+
     #[test]
     fn labels_are_sql_safe() {
         for (key, label) in ACTION_LABELS.iter().chain(RESOURCE_TYPE_LABELS) {

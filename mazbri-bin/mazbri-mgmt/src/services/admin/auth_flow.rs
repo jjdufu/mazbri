@@ -166,12 +166,6 @@ pub(crate) fn determine_mfa(
     let role = user_row.role.as_str();
     let user_id = user_row.id;
     let totp_digits = mfa_settings.totp_digits;
-    let mfa_required_by_global_settings = mfa_settings.mfa_enabled_globally
-        && (mfa_settings.mfa_required_for_all
-            || mfa_settings
-                .mfa_required_for_roles
-                .iter()
-                .any(|r| r == role));
     if user_row.mfa.mfa_enabled {
         if let Some(mfa_lock_until) = user_row.mfa_locked_until
             && mfa_lock_until > Utc::now()
@@ -191,7 +185,10 @@ pub(crate) fn determine_mfa(
             : totp_digits, "message" : "需要 MFA 验证" }
         )));
     }
-    if mfa_required_by_global_settings || user_row.mfa.mfa_required {
+    if mfa_settings
+        .policy()
+        .requires_user(role, user_row.mfa.mfa_required)
+    {
         let temp_token =
             issue_stage_token(TokenKind::MfaSetup, username, user_id, role, jwt_secret)?;
         info!(

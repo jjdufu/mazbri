@@ -260,6 +260,7 @@ export const FAILURE_REASON_LABELS: Record<string, string> = {
   mfa_lock_triggered: "auditLogs.failureReasons.mfaLockTriggered",
   invalid_temp_token: "auditLogs.failureReasons.invalidTempToken",
   password_hash_missing: "auditLogs.failureReasons.passwordHashMissing",
+  mfa_required_by_policy: "auditLogs.failureReasons.mfaRequiredByPolicy",
   business_failure: "auditLogs.failureReasons.businessFailure",
 };
 
