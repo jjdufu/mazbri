@@ -1,31 +1,19 @@
 use super::client::ClickHouseClient;
 use super::queries::{
     build_aggregation_by_route_sql, build_aggregation_by_status_sql, build_aggregation_by_time_sql,
-    build_aggregation_conditions, build_aggregation_summary_sql, build_audit_analytics_conditions,
-    build_audit_analytics_sql, build_audit_log_conditions, build_audit_log_stats_sql,
-    build_audit_logs_count_sql, build_audit_logs_data_sql,
-    build_audit_stats_aggregation_conditions, build_request_log_conditions,
+    build_aggregation_conditions, build_aggregation_summary_sql, build_request_log_conditions,
     build_request_logs_count_sql, build_request_logs_data_sql, build_where_clause,
-    get_stats_time_expression, get_time_bucket_expression, get_time_expression,
+    get_time_bucket_expression,
 };
-use super::types::{
-    AuditAnalyticsRow, AuditLogRow, GroupedCountRow, RequestLogRow, SummaryRow, TimeBucketRow,
-};
+use super::types::{GroupedCountRow, RequestLogRow, SummaryRow, TimeBucketRow};
 use crate::error::Result;
 use crate::greptimedb::{
-    AuditAnalyticsParams, AuditAnalyticsResult, AuditLogEntry, AuditQueryParams, AuditQueryResult,
     RequestLogAggregation, RequestLogAggregationParams, RequestLogEntry, RequestLogQueryParams,
     RequestLogQueryResult,
 };
 use std::collections::HashMap;
 
 const MAX_RAW_FALLBACK_QUERIES: usize = 4;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StatsQueryDisposition {
-    UseStats,
-    EmptyResult,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RawRequestAggregationPlan {
@@ -50,119 +38,7 @@ impl RawRequestAggregationPlan {
     }
 }
 
-fn classify_audit_stats_results(results: &[AuditAnalyticsResult]) -> StatsQueryDisposition {
-    if results.is_empty() {
-        StatsQueryDisposition::EmptyResult
-    } else {
-        StatsQueryDisposition::UseStats
-    }
-}
-
 impl ClickHouseClient {
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn query_audit_logs(&self, params: &AuditQueryParams) -> Result<AuditQueryResult> {
-        self.with_query_timeout("audit_logs", self.query_audit_logs_inner(params))
-            .await
-    }
-
-    async fn query_audit_logs_inner(&self, params: &AuditQueryParams) -> Result<AuditQueryResult> {
-        let conditions = build_audit_log_conditions(params)?;
-        let where_clause = build_where_clause(&conditions);
-        let count_sql = build_audit_logs_count_sql(&where_clause);
-        let total = self.execute_count_query_inner(&count_sql).await?;
-        let data_sql = build_audit_logs_data_sql(&where_clause, params.limit, params.offset)?;
-        let rows = self.execute_query::<AuditLogRow>(&data_sql).await?;
-        let logs: Vec<AuditLogEntry> = rows.into_iter().map(Into::into).collect();
-        tracing::debug!("Queried {} audit logs (total: {})", logs.len(), total);
-        Ok(AuditQueryResult { logs, total })
-    }
-
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn query_audit_analytics(
-        &self,
-        params: &AuditAnalyticsParams,
-    ) -> Result<Vec<AuditAnalyticsResult>> {
-        self.with_query_timeout("audit_analytics", self.query_audit_analytics_inner(params))
-            .await
-    }
-
-    async fn query_audit_analytics_inner(
-        &self,
-        params: &AuditAnalyticsParams,
-    ) -> Result<Vec<AuditAnalyticsResult>> {
-        if should_use_raw_audit_analytics(params) {
-            tracing::debug!("admin_id filter present, using raw audit log query");
-            return self.query_audit_analytics_from_raw(params).await;
-        }
-        match self.query_audit_analytics_from_stats(params).await {
-            Ok(results) => match classify_audit_stats_results(&results) {
-                StatsQueryDisposition::UseStats => {
-                    tracing::debug!("Using stats tables for audit analytics");
-                    Ok(results)
-                }
-                StatsQueryDisposition::EmptyResult => {
-                    tracing::info!("Stats tables returned an empty audit result set");
-                    Ok(results)
-                }
-            },
-            Err(error) => {
-                tracing::warn!(
-                    error = % error,
-                    "Stats audit analytics query failed, falling back to raw query"
-                );
-                self.query_audit_analytics_from_raw(params).await
-            }
-        }
-    }
-
-    async fn query_audit_analytics_from_raw(
-        &self,
-        params: &AuditAnalyticsParams,
-    ) -> Result<Vec<AuditAnalyticsResult>> {
-        let time_expr = get_time_expression(&params.group_by);
-        let conditions = build_audit_analytics_conditions(params);
-        let where_clause = build_where_clause(&conditions);
-        let sql = build_audit_analytics_sql(time_expr, &where_clause);
-        let rows = self.execute_query::<AuditAnalyticsRow>(&sql).await?;
-        let results = rows
-            .into_iter()
-            .map(|r| AuditAnalyticsResult {
-                period: r.period,
-                action: r.action,
-                resource_type: r.resource_type,
-                count: r.count,
-            })
-            .collect::<Vec<_>>();
-        tracing::debug!("Analytics query returned {} results", results.len());
-        Ok(results)
-    }
-
-    async fn query_audit_analytics_from_stats(
-        &self,
-        params: &AuditAnalyticsParams,
-    ) -> Result<Vec<AuditAnalyticsResult>> {
-        let time_expr = get_stats_time_expression(&params.group_by);
-        let conditions = build_audit_stats_aggregation_conditions(params);
-        let where_clause = build_where_clause(&conditions);
-        let sql = build_audit_log_stats_sql(time_expr, &where_clause);
-        let rows = self.execute_query::<AuditAnalyticsRow>(&sql).await?;
-        let results = rows
-            .into_iter()
-            .map(|r| AuditAnalyticsResult {
-                period: r.period,
-                action: r.action,
-                resource_type: r.resource_type,
-                count: r.count,
-            })
-            .collect::<Vec<_>>();
-        tracing::debug!("Stats audit analytics returned {} results", results.len());
-        Ok(results)
-    }
-
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -330,10 +206,6 @@ impl ClickHouseClient {
         }
         Ok(result)
     }
-}
-
-fn should_use_raw_audit_analytics(params: &AuditAnalyticsParams) -> bool {
-    params.admin_id.is_some()
 }
 
 fn assemble_aggregation(

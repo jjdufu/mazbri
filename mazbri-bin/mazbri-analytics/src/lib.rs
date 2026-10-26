@@ -8,4 +8,4 @@ pub mod metrics;
 pub mod models;
 pub use config::{AnalyticsConfig, ClickHouseConfig, GreptimeDBConfig};
 pub use metrics::register_analytics_metrics;
-pub use models::{AuditLogEntry, RequestLogEntry};
+pub use models::RequestLogEntry;

@@ -1,40 +1,9 @@
 use crate::error::Result;
+use crate::greptimedb::{RequestLogAggregationParams, RequestLogQueryParams};
 use crate::greptimedb::{
-    AuditAnalyticsParams, AuditQueryParams, RequestLogAggregationParams, RequestLogQueryParams,
-};
-use crate::greptimedb::{
-    sanitize_like_value, validate_identifier_param, validate_like_param, validate_numeric_param,
-    validate_uuid_param,
+    sanitize_like_value, validate_like_param, validate_numeric_param, validate_uuid_param,
 };
 use mazbri_core::num::SaturatingFrom;
-
-pub fn build_audit_log_conditions(params: &AuditQueryParams) -> Result<Vec<String>> {
-    let mut conditions: Vec<String> = Vec::new();
-    if let Some(start_time) = &params.start_time {
-        conditions.push(format!(
-            "timestamp >= '{}'",
-            start_time.format("%Y-%m-%d %H:%M:%S%.3f")
-        ));
-    }
-    if let Some(end_time) = &params.end_time {
-        conditions.push(format!(
-            "timestamp <= '{}'",
-            end_time.format("%Y-%m-%d %H:%M:%S%.3f")
-        ));
-    }
-    if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {admin_id}"));
-    }
-    if let Some(ref action) = params.action {
-        let validated = validate_identifier_param(action)?;
-        conditions.push(format!("action = '{validated}'"));
-    }
-    if let Some(ref resource_type) = params.resource_type {
-        let validated = validate_identifier_param(resource_type)?;
-        conditions.push(format!("resource_type = '{validated}'"));
-    }
-    Ok(conditions)
-}
 
 #[must_use]
 pub fn build_where_clause(conditions: &[String]) -> String {
@@ -43,68 +12,6 @@ pub fn build_where_clause(conditions: &[String]) -> String {
     } else {
         format!(" WHERE {}", conditions.join(" AND "))
     }
-}
-
-#[must_use]
-pub fn build_audit_logs_count_sql(where_clause: &str) -> String {
-    format!("SELECT toUInt64(count()) AS total FROM audit_logs{where_clause}")
-}
-
-pub fn build_audit_logs_data_sql(
-    where_clause: &str,
-    limit: usize,
-    offset: usize,
-) -> Result<String> {
-    let limit = validate_numeric_param(i64::saturating_from(limit), 10000)?;
-    let offset = validate_numeric_param(i64::saturating_from(offset), 1_000_000)?;
-    Ok(format!(
-        "SELECT timestamp, admin_id, admin_username, action, resource_type, \
-         resource_id, description, ip_address, user_agent, request_id, \
-         old_value, new_value \
-         FROM audit_logs{where_clause} ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
-    ))
-}
-
-#[must_use]
-pub fn get_time_expression(group_by: &str) -> &'static str {
-    match group_by {
-        "hour" => "formatDateTime(timestamp, '%Y-%m-%d %H:00')",
-        _ => "formatDateTime(timestamp, '%Y-%m-%d')",
-    }
-}
-
-pub fn build_audit_analytics_conditions(params: &AuditAnalyticsParams) -> Vec<String> {
-    let mut conditions: Vec<String> = Vec::new();
-    if let Some(start_time) = &params.start_time {
-        conditions.push(format!(
-            "timestamp >= '{}'",
-            start_time.format("%Y-%m-%d %H:%M:%S%.3f")
-        ));
-    }
-    if let Some(end_time) = &params.end_time {
-        conditions.push(format!(
-            "timestamp <= '{}'",
-            end_time.format("%Y-%m-%d %H:%M:%S%.3f")
-        ));
-    }
-    if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {admin_id}"));
-    }
-    conditions
-}
-
-#[must_use]
-pub fn build_audit_analytics_sql(time_expr: &str, where_clause: &str) -> String {
-    format!(
-        "SELECT \
-            {time_expr} AS period, \
-            action, \
-            resource_type, \
-            toUInt64(count()) AS count \
-        FROM audit_logs{where_clause} \
-        GROUP BY period, action, resource_type \
-        ORDER BY period DESC, count DESC"
-    )
 }
 
 /// Service predicates only — used as the inner scope for "latest N" universe queries.
@@ -367,50 +274,6 @@ pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> Str
         FROM request_logs FINAL{where_clause} \
         GROUP BY time ORDER BY time"
     )
-}
-
-pub fn build_audit_stats_aggregation_conditions(params: &AuditAnalyticsParams) -> Vec<String> {
-    let mut conditions: Vec<String> = Vec::new();
-    if let Some(start_time) = &params.start_time {
-        conditions.push(format!(
-            "time_window >= '{}'",
-            start_time.format("%Y-%m-%d %H:%M:%S")
-        ));
-    }
-    if let Some(end_time) = &params.end_time {
-        conditions.push(format!(
-            "time_window <= '{}'",
-            end_time.format("%Y-%m-%d %H:%M:%S")
-        ));
-    }
-    if let Some(admin_id) = params.admin_id {
-        conditions.push(format!("admin_id = {admin_id}"));
-    }
-    conditions
-}
-
-#[must_use]
-pub fn build_audit_log_stats_sql(time_expr: &str, where_clause: &str) -> String {
-    format!(
-        "SELECT \
-            {time_expr} AS period, \
-            action, \
-            resource_type, \
-            toUInt64(ifNull(SUM(total_count), 0)) AS count \
-        FROM audit_log_stats{where_clause} \
-        GROUP BY period, action, resource_type \
-        ORDER BY period DESC, count DESC"
-    )
-}
-
-/// Period expression for audit stats analytics — must return String to match
-/// `RowBinary` field `period: String` (same shape as raw audit analytics).
-#[must_use]
-pub fn get_stats_time_expression(group_by: &str) -> &'static str {
-    match group_by {
-        "hour" => "formatDateTime(time_window, '%Y-%m-%d %H:00')",
-        _ => "formatDateTime(time_window, '%Y-%m-%d')",
-    }
 }
 
 /// Upstream (supplier-side) usage summary, computed on read from the deduplicated access log.
