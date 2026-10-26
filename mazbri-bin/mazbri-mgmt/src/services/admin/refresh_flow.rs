@@ -1,15 +1,14 @@
 //! 刷新令牌换发访问令牌：除校验令牌本身外，每次都按数据库当前状态复核账号。
 //!
 //! 刷新令牌有效期远长于访问令牌（默认 7 天）。如果只看令牌签名与黑名单，
-//! 账号被禁用、锁定、要求改密、密码过期或改密、MFA 状态变化之后，旧会话仍可以
-//! 持续换发新的访问令牌，管理员的处置要等到刷新令牌自然过期才生效。
+//! 账号被禁用、锁定、要求改密、密码过期或改密、以及签发后 MFA 状态变化之后，
+//! 旧会话仍可以持续换发新的访问令牌，管理员的处置要等到刷新令牌自然过期才生效。
 //!
-//! 不变式：刷新令牌只由 `generate_login_response` 签发，而该函数只在
-//! `determine_mfa` 判定"不需要 MFA"（账号未绑定 MFA）时被调用；MFA 验证、
-//! 首次登录改密等阶段只签发访问令牌。因此"持有刷新令牌"等价于
-//! "该会话建立时未经过 MFA"。只要账号现在已绑定 MFA，或在令牌签发后完成过
-//! MFA 验证/绑定，就必须拒绝刷新，让用户重新走完整登录流程。
-//! （已不存在全局/账号级强制 MFA 策略，MFA 改为按功能要求。）
+//! 刷新令牌在无 MFA 登录、MFA 验证通过（`verify`）以及强制 MFA 启用
+//! （`required-enable`）后签发。已绑定 MFA 的会话可以正常刷新；仅当令牌签发后
+//! MFA 状态发生变化（`mfa_verified_at` 晚于令牌 `iat`，即启用/重绑/再次验证）
+//! 时拒绝刷新，迫使重新走完整登录。账号级 `mfa_required` 与遗留全局策略列
+//! 不单独阻断刷新。
 
 use crate::audit;
 use crate::error::ApiError;
@@ -35,7 +34,7 @@ pub(crate) enum RefreshDenial {
     PasswordExpired,
     /// 令牌签发后密码被修改（本人改密或管理员重置）。
     CredentialsChanged,
-    /// 令牌签发后账号绑定了 MFA 或完成了 MFA 验证。
+    /// 令牌签发后 MFA 状态发生变化（新绑定/重绑或再次完成验证）。
     MfaStateChanged,
 }
 
@@ -91,10 +90,12 @@ pub(crate) fn evaluate_refresh_session<'u>(
     if user.password_changed_at.timestamp() > ctx.issued_at {
         return Err(RefreshDenial::CredentialsChanged);
     }
+    // 已绑定 MFA 的会话可以刷新；仅当签发后 MFA 状态变化（verified_at > iat）才拒绝。
+    // 典型场景：无 MFA 时拿到刷新令牌后又自助绑定，或管理员重置后用户重新绑定。
     let mfa_touched_after_issue = user
         .mfa_verified_at
         .is_some_and(|at| at.timestamp() > ctx.issued_at);
-    if user.mfa_enabled || mfa_touched_after_issue {
+    if mfa_touched_after_issue {
         return Err(RefreshDenial::MfaStateChanged);
     }
     Ok(user)

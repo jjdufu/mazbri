@@ -145,10 +145,14 @@ fn password_changed_after_issue_is_denied_but_same_second_is_allowed() {
 }
 
 #[test]
-fn mfa_enabled_since_login_is_denied() {
+fn mfa_enabled_alone_does_not_block_refresh() {
+    // Goal B：已绑定 MFA 的会话可以刷新；仅签发后状态变化才拒绝。
     assert_eq!(
-        deny(|u| u.mfa_enabled = true),
-        Err(RefreshDenial::MfaStateChanged)
+        deny(|u| {
+            u.mfa_enabled = true;
+            u.mfa_verified_at = Some(now() - Duration::days(3));
+        }),
+        Ok(())
     );
 }
 
@@ -168,8 +172,7 @@ fn mfa_activity_after_issue_is_denied_even_if_now_disabled() {
 
 #[test]
 fn unbound_mfa_never_blocks_refresh() {
-    // 已移除全局/账号级强制 MFA 策略：未绑定 MFA 的健康会话始终可以刷新，
-    // 不再有 mfa_setup_required 拒绝原因。
+    // 未绑定 MFA 的健康会话始终可以刷新；账号级 mfa_required 不单独拒绝刷新。
     let user = healthy_user();
     assert_eq!(evaluate(Some(&user)), Ok(()));
     assert!(
