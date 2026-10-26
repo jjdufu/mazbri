@@ -10,8 +10,7 @@ export {
   type MfaStatus,
   type MfaEnableRequest,
   type MfaDisableRequest,
-  type MfaRequiredSetupRequest,
-  type MfaRequiredEnableRequest,
+  type MfaBackupCodesResponse,
 } from "./auth";
 export * from "./tenant";
 export * from "./product";

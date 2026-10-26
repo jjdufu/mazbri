@@ -10,7 +10,6 @@ export interface AdminUser {
   status?: AdminStatus;
   force_password_reset: boolean;
   mfa_enabled: boolean;
-  mfa_required: boolean;
   password_changed_at: ISODateString;
   created_at: ISODateString;
   updated_at: ISODateString;
@@ -45,7 +44,6 @@ export interface CreateAdminRequest {
   email?: string;
   password: string;
   role: AdminRole;
-  mfa_required?: boolean;
   force_password_reset?: boolean;
 }
 export interface UpdateAdminRequest {

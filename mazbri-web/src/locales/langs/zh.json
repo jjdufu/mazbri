@@ -167,7 +167,10 @@
       "placeholder": "请输入 MFA 动态口令",
       "confirm": "确认",
       "cancel": "取消",
-      "inputErrorMessage": "请输入 6-8 位数字口令"
+      "inputErrorMessage": "请输入 6-8 位数字口令",
+      "notEnabledTitle": "需要启用 MFA",
+      "notEnabledMessage": "此操作需要 MFA 二次验证，当前账号尚未启用 MFA。请先在「账号安全」页面绑定并启用 MFA 后再操作。",
+      "goToSetup": "前往绑定"
     },
     "fields": {
       "status": "状态",
@@ -327,7 +330,8 @@
       "remove": "移除"
     },
     "save": "保存",
-    "saveSuccess": "已保存"
+    "saveSuccess": "已保存",
+    "accountSecurity": "账号安全"
   },
   "config": {
     "globalComponents": {
@@ -618,27 +622,6 @@
       "btnText": "验证",
       "backToLogin": "返回登录"
     },
-    "mfaSetup": {
-      "title": "设置两步验证",
-      "subTitle": "请用验证器扫描二维码完成 MFA 设置",
-      "qrPlaceholder": "使用验证器应用扫描二维码",
-      "secretLabel": "您的密钥（仅显示一次）：",
-      "secretPlaceholder": "您的密钥（仅显示一次)",
-      "codePlaceholder": "请输入验证码",
-      "codeHint": "输入 {digits} 位验证码",
-      "backupCodesLabel": "备用码（请妥善保存）：",
-      "backupCodesPlaceholder": "备用码(设置后显示)",
-      "copy": "复制",
-      "copyAll": "全部复制",
-      "copied": "已复制",
-      "getQrCode": "获取二维码",
-      "gettingQrCode": "正在获取二维码...",
-      "secretCopied": "密钥已复制到剪贴板",
-      "backupCodesCopied": "备用码已复制到剪贴板",
-      "copyFailed": "复制失败，请手动复制",
-      "btnText": "启用 MFA",
-      "backToLogin": "返回登录"
-    },
     "changePassword": {
       "title": "修改密码",
       "subTitle": "首次登录需要修改密码",
@@ -814,7 +797,9 @@
       "passwordPolicy": "安全设置",
       "controlPanel": "控制面板",
       "configCenter": "配置中心",
-      "connectorWorkbench": "免代码接入"
+      "connectorWorkbench": "免代码接入",
+      "account": "个人账号",
+      "accountSecurity": "账号安全"
     }
   },
   "systemSettings": {
@@ -926,10 +911,6 @@
       "mfa": {
         "title": "MFA 配置"
       },
-      "mfaScope": {
-        "title": "启用MFA",
-        "description": "设置 MFA 默认适用范围。"
-      },
       "totp": {
         "title": "TOTP 参数",
         "description": "控制验证器显示名称、验证码位数与刷新周期。"
@@ -951,7 +932,6 @@
       "historyCheck": "历史密码检查（次）",
       "lockThreshold": "锁定阈值（次）",
       "lockDuration": "锁定时长（分钟）",
-      "globalMfa": "启用范围",
       "issuerName": "发行者名称",
       "totpDigits": "验证码位数（位）",
       "totpPeriod": "验证码周期（秒）",
@@ -961,9 +941,6 @@
       "issuerName": "Mazbri"
     },
     "options": {
-      "disabled": "未启用",
-      "adminOnly": "仅管理员",
-      "allUsers": "所有用户",
       "totpDigits6": "6 位",
       "totpDigits8": "8 位",
       "totpPeriod30": "30 秒",
@@ -2896,9 +2873,7 @@
         "refundAmountRequired": "请输入退款金额",
         "refundAmountPositive": "退款金额必须大于 0",
         "refundReasonRequired": "请输入退款原因"
-      },
-      "mfaDisabledTitle": "MFA 未启用",
-      "mfaDisabledMessage": "禁止充值，请联系管理员启用 MFA。"
+      }
     },
     "createDialog": {
       "placeholders": {
@@ -3918,6 +3893,69 @@
       "latencyGt500": "时延 > 500ms",
       "statusGte500": "状态 ≥ 500",
       "statusEq0": "状态 = 0"
+    }
+  },
+  "mfaRequiredHint": {
+    "enabled": "执行此操作时需输入 MFA 验证码。",
+    "notEnabled": "此操作需要 MFA 验证，当前账号尚未启用 MFA。",
+    "goToSetup": "前往绑定"
+  },
+  "accountSecurity": {
+    "page": {
+      "title": "账号安全",
+      "subtitle": "管理当前登录账号的两步验证（MFA）与登录密码"
+    },
+    "mfa": {
+      "title": "两步验证（MFA）",
+      "statusEnabled": "已启用",
+      "statusDisabled": "未启用",
+      "description": "资金、删除、强制下发、密钥与证书、超级管理员配置等敏感操作需要输入 MFA 验证码；未启用 MFA 的账号无法执行这些操作。日常登录与查看不受影响。",
+      "verifiedAt": "启用时间",
+      "backupCodesRemaining": "剩余备用码"
+    },
+    "setup": {
+      "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
+      "stepScan": "用验证器扫描下方二维码，或手动输入密钥。",
+      "stepEnter": "输入验证器显示的验证码并点击「启用」。",
+      "secretLabel": "密钥（手动输入时使用）",
+      "codeLabel": "验证码（{digits} 位）",
+      "codePlaceholder": "请输入验证器中的验证码",
+      "codeInvalid": "请输入 {digits} 位数字验证码"
+    },
+    "backupCodes": {
+      "title": "备用码",
+      "hint": "备用码仅显示这一次，每个只能使用一次，请立即妥善保存。手机丢失时可用备用码登录。",
+      "regenerateConfirm": "重新生成后，原有备用码将全部失效。确定继续吗？"
+    },
+    "disable": {
+      "title": "停用 MFA",
+      "message": "停用后将无法执行需要 MFA 的敏感操作。请输入当前 MFA 验证码或登录密码确认。",
+      "placeholder": "MFA 验证码或登录密码",
+      "required": "请输入 MFA 验证码或登录密码"
+    },
+    "password": {
+      "title": "修改密码",
+      "current": "当前密码",
+      "new": "新密码",
+      "confirm": "确认新密码",
+      "currentRequired": "请输入当前密码",
+      "newRequired": "请输入新密码",
+      "confirmRequired": "请再次输入新密码",
+      "mismatch": "两次输入的新密码不一致",
+      "policyHint": "新密码需符合系统密码策略（长度、字符类型、历史密码限制）。"
+    },
+    "actions": {
+      "bind": "绑定 MFA",
+      "enable": "启用",
+      "disable": "停用 MFA",
+      "regenerateCodes": "重新生成备用码",
+      "copy": "复制",
+      "copyAll": "全部复制",
+      "changePassword": "修改密码"
+    },
+    "messages": {
+      "copied": "已复制到剪贴板",
+      "copyFailed": "复制失败，请手动复制"
     }
   }
 }

@@ -3,6 +3,9 @@
     :title="$t('securityPolicy.page.title')"
     icon="ri:lock-password-line"
   >
+    <template v-if="canEdit" #subtitle>
+      <MfaRequiredHint />
+    </template>
     <template #actions>
       <ElButton
         v-if="canEdit"
@@ -199,13 +202,8 @@
             <SurfaceCardHeader>
               <template #left>
                 <div class="card-header-title">
-                  <ArtSvgIcon
-                    icon="ri:smartphone-line"
-                    class="card-header-icon"
-                  />
-                  <span>{{
-                    $t("securityPolicy.sections.mfaScope.title")
-                  }}</span>
+                  <ArtSvgIcon icon="ri:key-2-line" class="card-header-icon" />
+                  <span>{{ $t("securityPolicy.sections.totp.title") }}</span>
                 </div>
               </template>
             </SurfaceCardHeader>
@@ -214,48 +212,11 @@
             <CommonSettingRow
               mode="inline"
               mobile-stack
-              class="mfa-scope-row"
-              :label="$t('securityPolicy.fields.globalMfa')"
-            >
-              <ElRadioGroup v-model="mfaMode" class="mfa-scope-radios">
-                <ElRadio value="disabled">{{
-                  $t("securityPolicy.options.disabled")
-                }}</ElRadio>
-                <ElRadio value="admin_only">{{
-                  $t("securityPolicy.options.adminOnly")
-                }}</ElRadio>
-                <ElRadio value="all_users">{{
-                  $t("securityPolicy.options.allUsers")
-                }}</ElRadio>
-              </ElRadioGroup>
-            </CommonSettingRow>
-          </div>
-        </ElCard>
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon icon="ri:key-2-line" class="card-header-icon" />
-                  <span>{{ $t("securityPolicy.sections.totp.title") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div
-            class="settings-panel"
-            :class="{ 'is-disabled': mfaConfigDisabled }"
-          >
-            <CommonSettingRow
-              mode="inline"
-              mobile-stack
               :label="$t('securityPolicy.fields.issuerName')"
             >
               <ExpandOnFocusInput
                 v-model="mfaForm.totp_issuer"
                 :placeholder="$t('securityPolicy.placeholders.issuerName')"
-                :disabled="mfaConfigDisabled"
                 :compact-width="120"
               />
             </CommonSettingRow>
@@ -266,7 +227,6 @@
             >
               <ElSelect
                 v-model="mfaForm.totp_digits"
-                :disabled="mfaConfigDisabled"
                 class="setting-select"
               >
                 <ElOption
@@ -286,7 +246,6 @@
             >
               <ElSelect
                 v-model="mfaForm.totp_period"
-                :disabled="mfaConfigDisabled"
                 class="setting-select"
               >
                 <ElOption
@@ -309,7 +268,6 @@
                 :min="5"
                 :max="20"
                 :step="1"
-                :disabled="mfaConfigDisabled"
                 class="setting-input-number"
               />
             </CommonSettingRow>
@@ -330,10 +288,7 @@
               </template>
             </SurfaceCardHeader>
           </template>
-          <div
-            class="settings-panel"
-            :class="{ 'is-disabled': mfaConfigDisabled }"
-          >
+          <div class="settings-panel">
             <div class="mfa-instructions">
               <ElSteps :active="3" direction="vertical" class="mfa-steps">
                 <ElStep :title="$t('securityPolicy.steps.install.title')">
@@ -380,6 +335,7 @@ import ControlPanelPageShell from "@/components/common/control-panel-page-shell/
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
+import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useUserStore } from "@/store/modules/user";
 import {
@@ -434,43 +390,11 @@ const editForm = reactive<UpdatePasswordPolicyRequest>({
 });
 
 const mfaForm = reactive<MfaSettings>({
-  mfa_enabled_globally: false,
-  mfa_required_for_all: false,
-  mfa_required_for_roles: ["R_ADMIN"],
   totp_issuer: "Mazbri",
   totp_digits: 6,
   totp_period: 30,
   backup_codes_count: 10,
 });
-
-const mfaMode = computed({
-  get() {
-    if (!mfaForm.mfa_enabled_globally) return "disabled";
-    if (mfaForm.mfa_required_for_all) return "all_users";
-    return "admin_only";
-  },
-  set(val: string) {
-    if (val === "disabled") {
-      mfaForm.mfa_enabled_globally = false;
-      mfaForm.mfa_required_for_all = false;
-      mfaForm.mfa_required_for_roles = [];
-    } else if (val === "admin_only") {
-      mfaForm.mfa_enabled_globally = true;
-      mfaForm.mfa_required_for_all = false;
-      mfaForm.mfa_required_for_roles = ["R_ADMIN"];
-    } else {
-      mfaForm.mfa_enabled_globally = true;
-      mfaForm.mfa_required_for_all = true;
-      mfaForm.mfa_required_for_roles = [
-        "R_ADMIN",
-        "R_FINANCE",
-        "R_VIEWER",
-      ];
-    }
-  },
-});
-
-const mfaConfigDisabled = computed(() => mfaMode.value === "disabled");
 
 const loadData = async () => {
   await runWithLoading(loading, async () => {
@@ -501,9 +425,6 @@ const loadMfaData = async () => {
   try {
     const res = await fetchMfaSettings();
     const data = res.data;
-    mfaForm.mfa_enabled_globally = data.mfa_enabled_globally;
-    mfaForm.mfa_required_for_all = data.mfa_required_for_all;
-    mfaForm.mfa_required_for_roles = data.mfa_required_for_roles || ["R_ADMIN"];
     mfaForm.totp_issuer = data.totp_issuer || "Mazbri";
     mfaForm.totp_digits = data.totp_digits || 6;
     mfaForm.totp_period = data.totp_period || 30;
@@ -515,9 +436,6 @@ const loadMfaData = async () => {
 
 const saveMfa = async () => {
   const payload: UpdateMfaSettingsRequest = {
-    mfa_enabled_globally: mfaForm.mfa_enabled_globally,
-    mfa_required_for_all: mfaForm.mfa_required_for_all,
-    mfa_required_for_roles: mfaForm.mfa_required_for_roles,
     totp_issuer: mfaForm.totp_issuer,
     totp_digits: mfaForm.totp_digits,
     totp_period: mfaForm.totp_period,
@@ -611,12 +529,6 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-
-  &.is-disabled {
-    opacity: 0.55;
-    pointer-events: none;
-    filter: grayscale(0.2);
-  }
 }
 
 :deep(.common-setting-row--inline) {
@@ -632,31 +544,6 @@ onActivated(() => {
 :deep(.common-setting-row__control) {
   display: flex;
   justify-content: flex-end;
-}
-
-
-:deep(.mfa-scope-row.common-setting-row--inline) {
-  align-items: flex-start;
-}
-
-:deep(.mfa-scope-row .common-setting-row__control) {
-  justify-content: flex-start;
-  flex: 1;
-  min-width: 0;
-}
-
-.mfa-scope-radios {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-
-  :deep(.el-radio) {
-    margin-right: 0;
-    height: auto;
-    white-space: nowrap;
-  }
 }
 
 

@@ -234,6 +234,7 @@
             class="text-input"
           />
         </ElFormItem>
+        <MfaRequiredHint block />
       </ElForm>
     </EditDialog>
 
@@ -330,6 +331,7 @@
         >
           {{ $t("tenant.account.refundExceedsBalance") }}
         </CommonInlineHint>
+        <MfaRequiredHint block />
       </ElForm>
     </EditDialog>
   </div>
@@ -338,7 +340,6 @@
 <script setup lang="ts">
 import {
   ElMessage,
-  ElMessageBox,
   type FormInstance,
   type FormRules,
 } from "element-plus";
@@ -359,9 +360,9 @@ import {
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonActionPanel from "@/components/common/action-panel/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
-import { isHttpError } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { formatAmount, formatDateTime } from "@/utils/format";
@@ -641,28 +642,6 @@ const handleSubmitRecharge = async () => {
     await loadAccount();
     await loadTransactions();
   } catch (error) {
-    if (
-      isHttpError(error) &&
-      typeof error.data === "object" &&
-      error.data !== null &&
-      (
-        error.data as {
-          code?: string;
-        }
-      ).code === "MFA_NOT_ENABLED"
-    ) {
-      await ElMessageBox.alert(
-        $t("tenant.account.mfaDisabledMessage"),
-        $t("tenant.account.mfaDisabledTitle"),
-        {
-          type: "warning",
-          confirmButtonText: $t("common.confirm"),
-          closeOnClickModal: false,
-          closeOnPressEscape: false,
-        },
-      );
-      return;
-    }
     logger.error("Failed to recharge:", error);
   } finally {
     recharging.value = false;

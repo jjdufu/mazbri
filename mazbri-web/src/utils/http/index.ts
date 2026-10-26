@@ -14,6 +14,7 @@ import {
   showSuccess,
 } from "./error";
 import { MfaDialogService } from "./mfa-dialog-service";
+import { getMfaNotEnabledSetupPath } from "./mfa-setup-path";
 import {
   isBaseResponse,
   isMgmtApiResponse,
@@ -299,6 +300,12 @@ async function request<T = any>(
     }
     return unwrapResponsePayload<T>(res.data as BaseResponse<T> | T);
   } catch (error) {
+    const mfaSetupPath = getMfaNotEnabledSetupPath(error);
+    if (mfaSetupPath !== null) {
+      // 敏感操作要求 MFA 但账号尚未绑定：统一引导到账号安全页，不再重复弹错误提示。
+      void MfaDialogService.promptSetup(mfaSetupPath);
+      return Promise.reject(error);
+    }
     if (error instanceof HttpError && error.code !== ApiStatus.unauthorized) {
       const showMsg = config.showErrorMessage !== false;
       showError(error, showMsg);

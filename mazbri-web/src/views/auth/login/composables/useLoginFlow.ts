@@ -4,14 +4,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
 import { useSettingStore } from "@/store/modules/setting";
-import {
-  login,
-  verifyMfa,
-  firstLoginChangePassword,
-  mfaRequiredSetup,
-  mfaRequiredEnable,
-} from "@/api/auth";
-import type { LoginResponse, MfaSetupResponse } from "@/types/api";
+import { login, verifyMfa, firstLoginChangePassword } from "@/api/auth";
+import type { LoginResponse } from "@/types/api";
 import { HttpError } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
 import {
@@ -20,10 +14,7 @@ import {
   type ErrorCode,
 } from "@/constants/error-codes";
 import { runWithLoading } from "@/composables/useAsyncState";
-export type LoginStep = "login" | "mfa" | "mfaSetup" | "changePassword";
-export interface MfaSetupFormData extends MfaSetupResponse {
-  totp_code: string;
-}
+export type LoginStep = "login" | "mfa" | "changePassword";
 export interface LoginFormData {
   username: string;
   password: string;
@@ -90,7 +81,6 @@ export function useLoginFlow() {
   const totpDigits: Ref<number> = ref(6);
   const loading: Ref<boolean> = ref(false);
   const mfaLoading: Ref<boolean> = ref(false);
-  const mfaSetupLoading: Ref<boolean> = ref(false);
   const changePasswordLoading: Ref<boolean> = ref(false);
   const isPassing: Ref<boolean> = ref(false);
   const isClickPass: Ref<boolean> = ref(false);
@@ -101,12 +91,6 @@ export function useLoginFlow() {
   });
   const mfaFormData: Reactive<MfaFormData> = reactive({
     totpCode: "",
-  });
-  const mfaSetupData: Reactive<MfaSetupFormData> = reactive({
-    secret: "",
-    qr_code_url: "",
-    backup_codes: [],
-    totp_code: "",
   });
   const changePasswordFormData: Reactive<ChangePasswordFormData> = reactive({
     currentPassword: "",
@@ -124,11 +108,6 @@ export function useLoginFlow() {
     response: LoginResponse,
     showLoginMsg = true,
   ): Promise<LoginStep | "complete"> {
-    if (response.mfa_setup_required && response.temp_token) {
-      transitionTo("mfaSetup", response.temp_token);
-      await handleMfaSetup();
-      return "mfaSetup";
-    }
     if (response.mfa_required && response.temp_token) {
       transitionTo("mfa", response.temp_token);
       if (response.totp_digits) {
@@ -257,38 +236,6 @@ export function useLoginFlow() {
       handleLoginError(error);
     });
   }
-  async function handleMfaSetup(): Promise<void> {
-    await runWithLoading(mfaSetupLoading, async () => {
-      const { temp_token: nextToken, ...setup } = await mfaRequiredSetup({
-        temp_token: tempToken.value,
-      });
-      // 后端每次 required-setup 都会消费旧令牌并轮换出新的 mfa_setup 令牌，供 required-enable 使用。
-      if (nextToken) {
-        tempToken.value = nextToken;
-      }
-      Object.assign(mfaSetupData, setup);
-      if (setup.totp_digits) {
-        totpDigits.value = setup.totp_digits;
-      }
-    }).catch((error) => {
-      handleLoginError(error);
-    });
-  }
-  async function handleMfaSetupEnable(): Promise<void> {
-    if (!mfaSetupData.totp_code) {
-      ElMessage.warning(t("login.mfa.placeholder"));
-      return;
-    }
-    await runWithLoading(mfaSetupLoading, async () => {
-      const response = await mfaRequiredEnable({
-        temp_token: tempToken.value,
-        totp_code: mfaSetupData.totp_code,
-      });
-      await completeLogin(response);
-    }).catch((error) => {
-      handleLoginError(error);
-    });
-  }
   async function handleChangePassword(): Promise<void> {
     await runWithLoading(changePasswordLoading, async () => {
       const trimmedNewUname = changePasswordFormData.newUsername.trim();
@@ -303,7 +250,7 @@ export function useLoginFlow() {
         tempToken.value,
       );
       ElMessage.success(t("login.changePassword.success"));
-      // 改密后若仍需 MFA 验证/设置，后端返回下一阶段的临时令牌而不是正式会话。
+      // 改密后若账号已启用 MFA，后端返回 MFA 验证阶段的临时令牌而不是正式会话。
       await handleLoginResponse(response, false);
     }).catch((error) => {
       handleLoginError(error);
@@ -321,11 +268,9 @@ export function useLoginFlow() {
     totpDigits,
     loading,
     mfaLoading,
-    mfaSetupLoading,
     changePasswordLoading,
     formData,
     mfaFormData,
-    mfaSetupData,
     changePasswordFormData,
     isPassing,
     isClickPass,
@@ -333,8 +278,6 @@ export function useLoginFlow() {
     handleLoginResponse,
     handleLogin,
     handleMfaVerify,
-    handleMfaSetup,
-    handleMfaSetupEnable,
     handleChangePassword,
     handleBackToLogin,
     completeLogin,

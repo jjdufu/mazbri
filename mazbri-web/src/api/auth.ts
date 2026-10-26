@@ -3,9 +3,11 @@ import type {
   AdminUser,
   LoginResponse,
   FirstLoginChangePasswordRequest,
+  ChangePasswordRequest,
   MfaSetupResponse,
   MfaVerifyRequest,
   MfaStatus,
+  MfaBackupCodesResponse,
 } from "@/types/api";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 const AUTH_PATH = `${API_BASE_PATH}${API_PATHS.AUTH}`;
@@ -42,14 +44,12 @@ export function firstLoginChangePassword(
     headers: tempToken ? { Authorization: `Bearer ${tempToken}` } : undefined,
   });
 }
+/** 已登录用户自助修改密码：后端为 `PUT /auth/change-password`，需携带确认密码。 */
 export function changePassword(
-  data: {
-    current_password: string;
-    new_password: string;
-  },
+  data: ChangePasswordRequest,
   signal?: AbortSignal,
 ) {
-  return request.post<void>({
+  return request.put<void>({
     url: `${AUTH_PATH}/change-password`,
     params: data,
     showSuccessMessage: true,
@@ -112,29 +112,10 @@ export function getMfaStatus(signal?: AbortSignal) {
     signal,
   });
 }
-export function mfaRequiredSetup(
-  data: {
-    temp_token: string;
-  },
-  signal?: AbortSignal,
-) {
-  return request.post<MfaSetupResponse>({
-    url: `${AUTH_PATH}/mfa/required-setup`,
-    params: data,
-    signal,
-  });
-}
-export function mfaRequiredEnable(
-  data: {
-    temp_token: string;
-    totp_code: string;
-  },
-  signal?: AbortSignal,
-) {
-  return request.post<LoginResponse>({
-    url: `${AUTH_PATH}/mfa/required-enable`,
-    params: data,
-    showSuccessMessage: true,
+/** 重新生成备用码（要求已启用 MFA）；旧备用码立即作废。 */
+export function regenerateBackupCodes(signal?: AbortSignal) {
+  return request.post<MfaBackupCodesResponse>({
+    url: `${AUTH_PATH}/mfa/regenerate-codes`,
     signal,
   });
 }

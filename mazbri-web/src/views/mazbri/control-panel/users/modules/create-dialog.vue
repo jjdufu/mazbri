@@ -88,6 +88,7 @@
           {{ $t("userManagement.createDialog.tips.forcePasswordReset") }}
         </CommonInlineHint>
       </ElFormItem>
+      <MfaRequiredHint block />
     </ElForm>
   </EditDialog>
 </template>
@@ -100,6 +101,7 @@ import type { CreateAdminRequest } from "@/types/api/admin";
 import { createAdmin } from "@/api/admin";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
 import { generatePasswordWithFetch } from "@/utils/password";

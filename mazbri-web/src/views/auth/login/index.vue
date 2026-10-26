@@ -27,16 +27,6 @@
           @back="handleBackToLogin"
         />
 
-        <MfaSetupForm
-          v-else-if="loginStep === 'mfaSetup'"
-          v-model:setup-data="mfaSetupData"
-          :loading="mfaSetupLoading"
-          :totp-digits="totpDigits"
-          @get-qr="handleMfaSetup"
-          @enable="handleMfaSetupEnable"
-          @back="handleBackToLogin"
-        />
-
         <ChangePasswordForm
           v-else-if="loginStep === 'changePassword'"
           v-model:form-data="changePasswordFormData"
@@ -55,7 +45,6 @@ import { useSettingStore } from "@/store/modules/setting";
 import { useLoginFlow } from "./composables/useLoginFlow";
 import LoginForm from "./modules/LoginForm.vue";
 import MfaVerifyForm from "./modules/MfaVerifyForm.vue";
-import MfaSetupForm from "./modules/MfaSetupForm.vue";
 import ChangePasswordForm from "./modules/ChangePasswordForm.vue";
 defineOptions({ name: "Login" });
 const settingStore = useSettingStore();
@@ -69,16 +58,12 @@ const {
   tempToken,
   userRole,
   totpDigits,
-  mfaSetupLoading,
-  mfaSetupData,
   changePasswordLoading,
   changePasswordFormData,
   isPassing,
   isClickPass,
   handleLogin: baseHandleLogin,
   handleMfaVerify,
-  handleMfaSetup,
-  handleMfaSetupEnable,
   handleChangePassword: baseHandlePassword,
   handleBackToLogin,
 } = useLoginFlow();
