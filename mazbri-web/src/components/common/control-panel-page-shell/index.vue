@@ -65,7 +65,7 @@ const slots = useSlots();
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px;
+  padding: 12px 16px;
   width: 100%;
   min-width: 0;
 
