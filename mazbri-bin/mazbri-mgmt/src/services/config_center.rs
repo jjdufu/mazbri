@@ -112,17 +112,22 @@ pub(super) async fn cert_service_request(
     if let Some(ip) = client_ip {
         request_builder = request_builder.header("x-forwarded-for", ip);
     }
+    if !request_id.is_empty() {
+        request_builder = request_builder.header("x-request-id", request_id);
+    }
     if let Some(body) = body {
         request_builder = request_builder.json(&body);
     }
-    request_builder.send().await.map_err(|e| {
-        dependency_internal_error(
-            "config_center_cert_service_request_failed",
-            request_id,
-            trace_id,
-            &e,
-        )
-    })
+    crate::audit::actor_header::send_to_cert(request_builder)
+        .await
+        .map_err(|e| {
+            dependency_internal_error(
+                "config_center_cert_service_request_failed",
+                request_id,
+                trace_id,
+                &e,
+            )
+        })
 }
 fn ensure_toml(content: &str, request_id: &str, trace_id: &str) -> Result<(), ApiError> {
     validate_toml(content).map_err(|_| {

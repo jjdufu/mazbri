@@ -1,5 +1,6 @@
 //! 管理端统一审计：路由映射 + 请求级中间件 + 业务事件合并 + 异步批量落库。
 
+pub mod actor_header;
 mod config;
 mod ip;
 mod middleware;

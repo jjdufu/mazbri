@@ -425,6 +425,7 @@ fn init_metrics_and_audit(config: &MgmtApiConfig) -> Result<()> {
     }
     audit::init_trusted_proxies(&config.audit.trusted_proxies)
         .map_err(|e| anyhow::anyhow!("audit.trusted_proxies: {e}"))?;
+    audit::actor_header::init_actor_signer(&config.audit)?;
     Ok(())
 }
 

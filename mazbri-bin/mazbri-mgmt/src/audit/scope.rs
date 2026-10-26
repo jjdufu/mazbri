@@ -33,6 +33,15 @@ pub struct AuditDraft {
 #[derive(Debug, Clone, Default)]
 pub struct AuditScope {
     inner: Arc<Mutex<AuditDraft>>,
+    /// 请求来源（`x-request-id` 与解析后的客户端 IP），供出站调用签发操作人声明。
+    origin: Arc<RequestOrigin>,
+}
+
+/// 请求来源信息；中间件创建作用域时写入，之后只读。
+#[derive(Debug, Clone, Default)]
+pub struct RequestOrigin {
+    pub request_id: Option<String>,
+    pub client_ip: Option<String>,
 }
 
 tokio::task_local! {
@@ -43,6 +52,39 @@ impl AuditScope {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 带请求来源信息的作用域（审计中间件使用）。
+    #[must_use]
+    pub fn with_origin(request_id: Option<String>, client_ip: Option<String>) -> Self {
+        Self {
+            inner: Arc::default(),
+            origin: Arc::new(RequestOrigin {
+                request_id,
+                client_ip,
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn origin(&self) -> &RequestOrigin {
+        &self.origin
+    }
+
+    /// 当前请求的操作人身份（用于签发下游 `x-mazbri-actor` 头）。
+    #[must_use]
+    pub fn actor_identity(&self) -> mazbri_audit::actor::ActorIdentity {
+        let actor = self.lock().actor.clone();
+        let (user_id, username, role) = actor
+            .map(|actor| (actor.user_id, actor.username, actor.role))
+            .unwrap_or_default();
+        mazbri_audit::actor::ActorIdentity {
+            user_id,
+            username,
+            role,
+            request_id: self.origin.request_id.clone(),
+            ip: self.origin.client_ip.clone(),
+        }
     }
 
     /// 当前任务所在请求的作用域（请求之外返回 `None`）。
@@ -173,6 +215,26 @@ mod tests {
         set_attempted_username("alice");
         assert!(AuditScope::current().is_none());
         assert!(push_event(AuditLogRequest::default(), false).is_some());
+    }
+
+    #[tokio::test]
+    async fn actor_identity_combines_actor_and_origin() {
+        let scope = AuditScope::with_origin(Some("req-9".into()), Some("192.0.2.7".into()));
+        let id = uuid::Uuid::from_u128(3);
+        scope
+            .clone()
+            .run(async move {
+                set_actor(Some(id), Some("bob"), Some("R_ADMIN"));
+                let identity = crate::audit::actor_header::current_identity();
+                assert_eq!(identity.username.as_deref(), Some("bob"));
+            })
+            .await;
+        let identity = scope.actor_identity();
+        assert_eq!(identity.user_id, Some(id));
+        assert_eq!(identity.role.as_deref(), Some("R_ADMIN"));
+        assert_eq!(identity.request_id.as_deref(), Some("req-9"));
+        assert_eq!(identity.ip.as_deref(), Some("192.0.2.7"));
+        assert_eq!(scope.origin().request_id.as_deref(), Some("req-9"));
     }
 
     #[tokio::test]

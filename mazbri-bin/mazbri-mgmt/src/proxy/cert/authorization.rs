@@ -102,7 +102,7 @@ pub async fn import_license_proxy(
                 ApiError::validation(format!("Invalid license content type: {error}"))
             })?,
     );
-    match req.multipart(form).send().await {
+    match crate::audit::actor_header::send_to_cert(req.multipart(form)).await {
         Ok(response) => {
             let status = StatusCode::from_u16(response.status().as_u16())
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

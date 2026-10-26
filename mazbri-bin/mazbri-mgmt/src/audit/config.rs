@@ -1,4 +1,4 @@
-//! `[audit]` 配置段：可信代理与异步写入参数。
+//! `[audit]` 配置段：可信代理、异步写入参数与下游操作人声明签名密钥。
 
 use serde::Deserialize;
 
@@ -16,6 +16,9 @@ const fn default_settings_cache_ttl_secs() -> u64 {
 }
 const fn default_shutdown_drain_secs() -> u64 {
     5
+}
+const fn default_actor_token_ttl_secs() -> i64 {
+    30
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +45,13 @@ pub struct AuditConfig {
     /// 优雅停机时等待队列排空的最长时间（秒）。
     #[serde(default = "default_shutdown_drain_secs")]
     pub shutdown_drain_secs: u64,
+    /// 调用 cert-service 时签发 `x-mazbri-actor` 头所用的 Ed25519 私钥（PKCS#8 PEM 文件）。
+    /// 缺省则不签发（cert 宽松模式下记为未验证操作人，严格模式下拒绝 mgmt 专属写操作）。
+    #[serde(default)]
+    pub actor_signing_key_file: Option<String>,
+    /// 操作人声明有效期（秒），范围 [1, 60]。
+    #[serde(default = "default_actor_token_ttl_secs")]
+    pub actor_token_ttl_secs: i64,
 }
 
 impl Default for AuditConfig {
@@ -54,6 +64,8 @@ impl Default for AuditConfig {
             fallback_file: None,
             settings_cache_ttl_secs: default_settings_cache_ttl_secs(),
             shutdown_drain_secs: default_shutdown_drain_secs(),
+            actor_signing_key_file: None,
+            actor_token_ttl_secs: default_actor_token_ttl_secs(),
         }
     }
 }
@@ -73,6 +85,9 @@ impl mazbri_core::config::ValidateConfig for AuditConfig {
         }
         if !(1..=3600).contains(&self.settings_cache_ttl_secs) {
             anyhow::bail!("audit.settings_cache_ttl_secs must be in [1, 3600]");
+        }
+        if !(1..=mazbri_audit::actor::MAX_TTL_SECS).contains(&self.actor_token_ttl_secs) {
+            anyhow::bail!("audit.actor_token_ttl_secs must be in [1, 60]");
         }
         Ok(())
     }

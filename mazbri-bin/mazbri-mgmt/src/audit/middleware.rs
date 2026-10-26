@@ -177,7 +177,7 @@ pub async fn audit_middleware(
         user_agent: header_str(&parts.headers, header::USER_AGENT.as_str()),
         request_summary,
     };
-    let scope = AuditScope::new();
+    let scope = AuditScope::with_origin(ctx.request_id.clone(), ctx.ip.clone());
     let mut request = Request::from_parts(parts, body);
     request.extensions_mut().insert(scope.clone());
     let mut guard = DisconnectGuard {
