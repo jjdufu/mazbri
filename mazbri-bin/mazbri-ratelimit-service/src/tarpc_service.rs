@@ -136,6 +136,8 @@ fn command_row_to_command(row: &sqlx::postgres::PgRow) -> Result<ControlCommand,
 pub struct RateLimitTarpcService {
     pool: Arc<PgPool>,
     audit_enabled: bool,
+    /// 统一审计写入端（未配置 `[rate_limit.audit.database]` 时为 `None`）。
+    audit_sink: Option<mazbri_audit::sink::AuditSink>,
 }
 
 /// 已校验的用量增量：`(delta, tenant_id, window_start)`。
@@ -399,10 +401,31 @@ struct AggregatedCounter {
 }
 impl RateLimitTarpcService {
     #[must_use]
-    pub fn new(db: Arc<PgPool>, audit_enabled: bool) -> Self {
+    pub fn new(
+        db: Arc<PgPool>,
+        audit_enabled: bool,
+        audit_sink: Option<mazbri_audit::sink::AuditSink>,
+    ) -> Self {
         Self {
             pool: db,
             audit_enabled,
+            audit_sink,
+        }
+    }
+
+    /// 控制命令确认写入统一审计（异步入队，不阻塞 RPC）。
+    fn audit_command_ack(
+        &self,
+        gateway_id: &str,
+        command_ids: &[String],
+        outcome: Result<i64, (&str, &str)>,
+    ) {
+        if let Some(sink) = &self.audit_sink {
+            sink.enqueue(crate::audit::command_ack_record(
+                gateway_id,
+                command_ids,
+                outcome,
+            ));
         }
     }
 }
@@ -601,6 +624,11 @@ impl RateLimitService for RateLimitTarpcService {
             let command_uuid = match Uuid::parse_str(command_id) {
                 Ok(uuid) => uuid,
                 Err(error) => {
+                    self.audit_command_ack(
+                        &request.gateway_id,
+                        &request.command_ids,
+                        Err(("client_error", "invalid command id")),
+                    );
                     return AckControlCommandsResponse {
                         success: false,
                         acknowledged: 0,
@@ -628,6 +656,11 @@ impl RateLimitService for RateLimitTarpcService {
         let acknowledged = match result {
             Ok(result) => i64::saturating_from(result.rows_affected()),
             Err(error) => {
+                self.audit_command_ack(
+                    &request.gateway_id,
+                    &request.command_ids,
+                    Err(("db_error", "database error")),
+                );
                 return AckControlCommandsResponse {
                     success: false,
                     acknowledged: 0,
@@ -635,6 +668,7 @@ impl RateLimitService for RateLimitTarpcService {
                 };
             }
         };
+        self.audit_command_ack(&request.gateway_id, &request.command_ids, Ok(acknowledged));
         debug!(
             gateway_id = % request.gateway_id,
             acknowledged,

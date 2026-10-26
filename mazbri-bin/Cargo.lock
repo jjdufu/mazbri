@@ -2875,6 +2875,7 @@ dependencies = [
  "dotenvy",
  "futures",
  "mazbri-admin",
+ "mazbri-audit",
  "mazbri-core",
  "mazbri-registry",
  "mazbri-rpc",

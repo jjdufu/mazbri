@@ -5,8 +5,15 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuditConfig {
+    /// 限流审计总开关：`rate_limit_events` 用量审计 + 统一审计（控制命令确认）。
     #[serde(default = "default_audit_enabled")]
     pub enabled: bool,
+    /// 统一审计写库（`mazbri_admin`，账号 `mazbri_audit_writer`）；缺省则不写统一审计。
+    #[serde(default)]
+    pub database: Option<mazbri_core::DatabaseConfig>,
+    /// 统一审计落库失败时的本地 JSONL 兜底文件；缺省则输出到错误日志。
+    #[serde(default)]
+    pub fallback_file: Option<String>,
 }
 
 fn default_audit_enabled() -> bool {
@@ -17,6 +24,8 @@ impl Default for AuditConfig {
     fn default() -> Self {
         Self {
             enabled: default_audit_enabled(),
+            database: None,
+            fallback_file: None,
         }
     }
 }
@@ -60,6 +69,7 @@ impl ValidateConfig for RateLimitServiceConfig {
 }
 
 impl RateLimitServiceConfig {
+    #[must_use]
     pub fn is_audit_enabled(&self) -> bool {
         self.rate_limit.audit.enabled
     }
