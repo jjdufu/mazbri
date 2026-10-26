@@ -178,6 +178,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "product.tenant_config_update":
     "auditLogs.explicitActions.productTenantConfigUpdate",
   "bill.generate_async": "auditLogs.explicitActions.billGenerateAsync",
+  "billing.reconciliation_run": "auditLogs.explicitActions.reconciliationRun",
   "api.read": "auditLogs.explicitActions.apiRead",
   "api.get": "auditLogs.explicitActions.apiGet",
   "api.post": "auditLogs.explicitActions.apiPost",

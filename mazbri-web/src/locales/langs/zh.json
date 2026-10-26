@@ -1459,6 +1459,7 @@
       "upstreamOnboardingDryRun": "上游接入预演",
       "productTenantConfigUpdate": "更新租户产品配置",
       "billGenerateAsync": "异步生成账单",
+      "reconciliationRun": "定时用量对账",
       "apiRead": "API 读取",
       "apiGet": "API 读取",
       "apiPost": "API 提交",

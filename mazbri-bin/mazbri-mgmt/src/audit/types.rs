@@ -156,6 +156,7 @@ audit_actions! {
     UpstreamOnboardingDryRun => "upstream.onboarding_dry_run",
     TenantProductConfigUpdate => "product.tenant_config_update",
     BillGenerateAsync => "bill.generate_async",
+    ReconciliationRun => "billing.reconciliation_run",
 }
 impl std::fmt::Display for AuditAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

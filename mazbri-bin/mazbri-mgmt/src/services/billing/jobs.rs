@@ -702,6 +702,49 @@ pub async fn open_discrepancy_warning_for_period(
     }
 }
 
+/// 定时对账（后台 supervisor）的系统审计事件：`actor_type = system`，无操作人。
+///
+/// `outcome` 为对账结果或错误描述；`alert_sent` 表示 flagged 告警 webhook 是否发送成功。
+#[must_use]
+pub fn scheduled_reconciliation_audit(
+    outcome: Result<&ReconciliationAuditResult, &str>,
+    alert_sent: Option<bool>,
+) -> crate::audit::AuditLogRequest {
+    use crate::audit::{ActorType, AuditAction, AuditLogRequest, AuditResourceType, AuditStatus};
+    let base = AuditLogRequest {
+        actor_type: ActorType::System,
+        action: AuditAction::ReconciliationRun,
+        resource_type: AuditResourceType::Billing,
+        ..AuditLogRequest::default()
+    };
+    match outcome {
+        Ok(result) => AuditLogRequest {
+            resource_id: Some(result.discrepancy_id.to_string()),
+            details: Some(serde_json::json!({
+                "trigger": "schedule",
+                "reconciliation_date": result.reconciliation_date.to_string(),
+                "scope_type": result.scope_type,
+                "scope_id": result.scope_id,
+                "result_status": result.status,
+                "billable_call_count": result.billable_call_count,
+                "upstream_preagg_call_count": result.upstream_preagg_call_count,
+                "gateway_call_count": result.gateway_call_count,
+                "loss_ratio": result.loss_ratio.to_string(),
+                "loss_ratio_threshold": result.loss_ratio_threshold.to_string(),
+                "alert_sent": alert_sent,
+            })),
+            ..base
+        },
+        Err(error) => AuditLogRequest {
+            details: Some(serde_json::json!({ "trigger": "schedule" })),
+            status: AuditStatus::Failure,
+            error_message: Some(error.chars().take(500).collect()),
+            failure_reason: Some("server_error".to_string()),
+            ..base
+        },
+    }
+}
+
 #[cfg(test)]
 mod recon_classify_tests {
     use super::classify_reconciliation;
@@ -734,5 +777,52 @@ mod recon_classify_tests {
     fn over_threshold_is_flagged() {
         let (status, _, _) = classify_reconciliation(100, &Ok(80), &Ok(80), threshold());
         assert_eq!(status, "flagged");
+    }
+}
+
+#[cfg(test)]
+mod scheduled_reconciliation_audit_tests {
+    use super::{Decimal, ReconciliationAuditResult, scheduled_reconciliation_audit};
+    use crate::audit::{ActorType, AuditAction, AuditResourceType, AuditStatus};
+
+    fn result() -> ReconciliationAuditResult {
+        ReconciliationAuditResult {
+            discrepancy_id: uuid::Uuid::nil(),
+            reconciliation_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 25).expect("date"),
+            scope_type: "global".to_string(),
+            scope_id: String::new(),
+            billable_call_count: 10,
+            upstream_preagg_call_count: 9,
+            gateway_call_count: 10,
+            error: None,
+            loss_ratio: Decimal::new(1, 1),
+            loss_ratio_threshold: Decimal::new(5, 2),
+            status: "flagged".to_string(),
+        }
+    }
+
+    #[test]
+    fn success_is_system_event_with_summary() {
+        let r = result();
+        let req = scheduled_reconciliation_audit(Ok(&r), Some(true));
+        assert_eq!(req.actor_type, ActorType::System);
+        assert!(req.user_id.is_none());
+        assert_eq!(req.action, AuditAction::ReconciliationRun);
+        assert_eq!(req.resource_type, AuditResourceType::Billing);
+        assert_eq!(req.status, AuditStatus::Success);
+        let details = req.details.expect("details");
+        assert_eq!(details["result_status"], "flagged");
+        assert_eq!(details["reconciliation_date"], "2026-10-25");
+        assert_eq!(details["alert_sent"], true);
+    }
+
+    #[test]
+    fn failure_records_truncated_error() {
+        let long = "x".repeat(800);
+        let req = scheduled_reconciliation_audit(Err(&long), None);
+        assert_eq!(req.status, AuditStatus::Failure);
+        assert_eq!(req.failure_reason.as_deref(), Some("server_error"));
+        assert_eq!(req.error_message.map(|m| m.len()), Some(500));
+        assert!(req.resource_id.is_none());
     }
 }

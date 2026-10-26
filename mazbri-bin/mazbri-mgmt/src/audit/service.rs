@@ -208,6 +208,7 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("upstream.onboarding_dry_run", "上游接入预演"),
     ("product.tenant_config_update", "更新租户产品配置"),
     ("bill.generate_async", "异步生成账单"),
+    ("billing.reconciliation_run", "定时用量对账"),
     ("api.read", "API 读取"),
     ("api.get", "API 读取"),
     ("api.post", "API 提交"),

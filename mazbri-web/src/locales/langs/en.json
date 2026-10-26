@@ -1459,6 +1459,7 @@
       "upstreamOnboardingDryRun": "Upstream Onboarding Dry Run",
       "productTenantConfigUpdate": "Update Tenant Product Config",
       "billGenerateAsync": "Generate Bill (Async)",
+      "reconciliationRun": "Scheduled usage reconciliation",
       "apiRead": "API Read",
       "apiGet": "API Read",
       "apiPost": "API Submit",

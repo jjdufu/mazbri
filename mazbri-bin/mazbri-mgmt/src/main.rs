@@ -292,6 +292,7 @@ async fn run_scheduled_reconciliation(
     billing_db: &sqlx::PgPool,
     analytics: &mazbri_mgmt::analytics_client::AnalyticsHttpClient,
     settings_cache: &mazbri_mgmt::services::BillingReconciliationSettingsCache,
+    audit: &audit::AuditService,
 ) {
     let settings = settings_cache.get().await;
     let day = if settings.schedule.use_previous_day {
@@ -326,6 +327,7 @@ async fn run_scheduled_reconciliation(
                 discrepancy_id = %result.discrepancy_id,
                 "scheduled reconciliation audit completed"
             );
+            let mut alert_sent = None;
             if settings.alert.on_flagged
                 && result.status == "flagged"
                 && !settings.alert.webhook_url.trim().is_empty()
@@ -340,20 +342,45 @@ async fn run_scheduled_reconciliation(
                     "loss_ratio": result.loss_ratio.to_string(),
                     "status": result.status,
                 });
-                if let Err(e) = reqwest::Client::new()
+                let sent = reqwest::Client::new()
                     .post(settings.alert.webhook_url.trim())
                     .json(&body)
                     .send()
-                    .await
-                {
+                    .await;
+                if let Err(e) = &sent {
                     tracing::warn!("reconciliation alert webhook failed: {e}");
                 }
+                alert_sent = Some(sent.is_ok());
             }
+            log_reconciliation_run(
+                audit,
+                mazbri_mgmt::services::billing::scheduled_reconciliation_audit(
+                    Ok(&result),
+                    alert_sent,
+                ),
+            )
+            .await;
         }
         Err(e) => {
             tracing::warn!("scheduled reconciliation audit failed: {e}");
+            log_reconciliation_run(
+                audit,
+                mazbri_mgmt::services::billing::scheduled_reconciliation_audit(
+                    Err(&e.to_string()),
+                    None,
+                ),
+            )
+            .await;
         }
     }
+}
+
+/// 定时对账的系统审计：遵循「启用审计日志」开关，失败（非成功）总是记录。
+async fn log_reconciliation_run(audit: &audit::AuditService, request: audit::AuditLogRequest) {
+    if request.status == audit::AuditStatus::Success && !audit.audit_enabled().await {
+        return;
+    }
+    audit.log(request);
 }
 
 /// Always-on supervisor: enable/interval from admin DB (web UI), not fixed at process start.
@@ -361,6 +388,7 @@ fn spawn_reconciliation_supervisor(
     billing_db: PgArc,
     analytics: Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
     settings_cache: Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
+    audit: audit::AuditService,
 ) {
     info!(
         "billing reconciliation settings supervisor started (reads runtime settings from admin DB)"
@@ -383,8 +411,13 @@ fn spawn_reconciliation_supervisor(
             if last_run_at.elapsed() < interval {
                 continue;
             }
-            run_scheduled_reconciliation(billing_db.as_ref(), analytics.as_ref(), &settings_cache)
-                .await;
+            run_scheduled_reconciliation(
+                billing_db.as_ref(),
+                analytics.as_ref(),
+                &settings_cache,
+                &audit,
+            )
+            .await;
             // Advance even on error to avoid tight error loops every 30s.
             last_run_at = Instant::now();
         }
@@ -497,6 +530,7 @@ async fn main() -> Result<()> {
         dbs.billing.clone(),
         analytics_client.clone(),
         billing_reconciliation_settings.clone(),
+        audit.clone(),
     );
     let app_state = handlers::AppState {
         config: config.clone(),
