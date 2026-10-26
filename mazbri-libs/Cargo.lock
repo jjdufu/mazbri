@@ -809,6 +809,7 @@ dependencies = [
  "rand_core 0.10.1",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -969,6 +970,7 @@ dependencies = [
  "sha2 0.11.1",
  "signature 3.0.0",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2057,7 +2059,9 @@ dependencies = [
 name = "mazbri-audit"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
+ "ed25519-dalek",
  "hex",
  "mazbri-core",
  "prometheus",
@@ -2065,6 +2069,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
  "uuid",
