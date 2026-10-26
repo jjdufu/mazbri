@@ -204,7 +204,7 @@ pub(crate) async fn authenticate_stage_token(
         })?;
     // 临时令牌已验签：后续结果（成功/失败）归属该账号。
     crate::audit::set_actor(Some(user_id), Some(&claims.sub), Some(&claims.role));
-    admin_token::ensure_temporary_unused(redis, &claims)
+    admin_token::ensure_not_revoked(redis, &claims)
         .await
         .map_err(|rejection| Box::new(stage_rejection(rejection, temp_token, jwt_secret)))?;
     Ok((claims, user_id))

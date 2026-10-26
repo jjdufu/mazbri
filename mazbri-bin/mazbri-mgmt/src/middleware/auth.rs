@@ -67,10 +67,6 @@ pub fn revoked_jti_key(jti: &str) -> String {
     format!("admin:revoked_jti:{jti}")
 }
 
-pub async fn is_jti_revoked(redis: &RedisClient, jti: &str) -> bool {
-    redis.exists(&revoked_jti_key(jti)).await.unwrap_or(false)
-}
-
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -149,13 +145,8 @@ async fn authenticate(
     };
     // 签名已校验，身份可信：先记录操作人，后续拒绝也能归属到具体账号。
     audit_actor_from_claims(&claims);
-    if kind.is_temporary() {
-        admin_token::ensure_temporary_unused(&auth_state.redis, &claims).await?;
-    } else if let Some(jti) = claims.jti.as_deref()
-        && is_jti_revoked(&auth_state.redis, jti).await
-    {
-        return Err(TokenRejection::Revoked);
-    }
+    // 所有类型统一 fail-closed：黑名单查询失败时拒绝（503），不放行。
+    admin_token::ensure_not_revoked(&auth_state.redis, &claims).await?;
     Ok(claims)
 }
 

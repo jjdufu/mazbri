@@ -497,7 +497,7 @@ async fn temp_tokens_are_single_use() {
     ] {
         let token = issue_temporary(kind, subject(&user), SECRET).expect("issue");
         let claims = decode_kind(&token, SECRET, kind).expect("decode");
-        ensure_temporary_unused(&deps.redis, &claims)
+        ensure_not_revoked(&deps.redis, &claims)
             .await
             .expect("fresh token unused");
         consume_temporary(&deps.redis, &claims)
@@ -508,7 +508,7 @@ async fn temp_tokens_are_single_use() {
             Err(TokenRejection::Revoked)
         );
         assert_eq!(
-            ensure_temporary_unused(&deps.redis, &claims).await,
+            ensure_not_revoked(&deps.redis, &claims).await,
             Err(TokenRejection::Revoked)
         );
         assert!(

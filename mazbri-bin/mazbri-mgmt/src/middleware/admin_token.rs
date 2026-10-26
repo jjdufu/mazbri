@@ -281,13 +281,18 @@ fn denylist_ttl(claims: &AdminClaims) -> usize {
     usize::saturating_from(remaining).saturating_add(usize::saturating_from(EXP_LEEWAY_SECS))
 }
 
-/// 临时令牌在执行业务前检查是否已被使用（存储不可用时按拒绝处理）。
+/// 检查令牌 `jti` 是否已进入黑名单（访问令牌、刷新令牌与临时令牌共用）。
+///
+/// 采用失败即拒绝（fail-closed）：Redis 不可用或超时时无法确认令牌未被吊销，
+/// 返回 [`TokenRejection::CheckUnavailable`]，由调用方映射为 503 + `token_check_failed`，
+/// 绝不在依赖故障时放行已登出 / 已吊销的令牌。不做本地缓存：任何“未吊销”的
+/// 正向缓存都会让刚登出的令牌在缓存期内继续可用。
 ///
 /// # Errors
 ///
-/// 已使用返回 [`TokenRejection::Revoked`]；缺少 `jti` 返回 [`TokenRejection::Invalid`]；
-/// Redis 不可用返回 [`TokenRejection::CheckUnavailable`]。
-pub async fn ensure_temporary_unused(
+/// 已吊销 / 已使用返回 [`TokenRejection::Revoked`]；缺少 `jti` 返回
+/// [`TokenRejection::Invalid`]；Redis 不可用返回 [`TokenRejection::CheckUnavailable`]。
+pub async fn ensure_not_revoked(
     redis: &RedisClient,
     claims: &AdminClaims,
 ) -> Result<(), TokenRejection> {
@@ -344,5 +349,7 @@ pub fn audit_rejection(rejection: TokenRejection, token: &str, secret: &str) {
 
 #[cfg(test)]
 mod flow_tests;
+#[cfg(test)]
+mod revocation_tests;
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@ use crate::audit::{self, AuditAction, AuditService, user_audit};
 use crate::error::ApiError;
 use crate::handlers::types::{AdminLoginRequest, AdminLogoutRequest, AdminUser};
 use crate::middleware::admin_token::{self, TokenKind, TokenSubject};
-use crate::middleware::auth::{AdminClaims, is_jti_revoked, revoke_jti};
+use crate::middleware::auth::{AdminClaims, revoke_jti};
 use crate::repositories::admin as repo;
 use crate::services::{MfaSettings, MfaSettingsCache, PasswordPolicy, PasswordPolicyCache};
 use chrono::{Duration, Utc};
@@ -438,11 +438,7 @@ pub async fn admin_refresh_token(
             ));
         }
     }
-    if let Some(ref jti) = claims.jti
-        && is_jti_revoked(redis, jti).await
-    {
-        return Err(ApiError::Unauthorized);
-    }
+    revocation_check(redis, claims).await?;
     let jwt_expiration_secs =
         resolve_access_token_expiration_secs(db, jwt_expiration_secs_fallback).await;
     let new_token = generate_admin_jwt(
@@ -461,6 +457,24 @@ pub async fn admin_refresh_token(
         claims.sub, claims.role
     );
     Ok(serde_json::json!({ "token" : new_token, "expires_in" : jwt_expiration_secs }))
+}
+
+/// 刷新前再次确认刷新令牌未被吊销（中间件已查过一次，这里防止绕过中间件的调用方）。
+/// 与中间件一致采用 fail-closed：Redis 故障返回 503 并记录 `token_check_failed`。
+async fn revocation_check(redis: &RedisClient, claims: &AdminClaims) -> Result<(), ApiError> {
+    match admin_token::ensure_not_revoked(redis, claims).await {
+        Ok(()) => Ok(()),
+        Err(rejection) => {
+            audit::set_failure_reason(rejection.reason());
+            if rejection == admin_token::TokenRejection::CheckUnavailable {
+                Err(ApiError::Core(mazbri_core::CoreError::ServiceUnavailable {
+                    service: "token revocation store".to_string(),
+                }))
+            } else {
+                Err(ApiError::Unauthorized)
+            }
+        }
+    }
 }
 
 /// Logout: revoke access jti (+ optional refresh) and audit (H-11).
