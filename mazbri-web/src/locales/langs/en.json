@@ -638,6 +638,27 @@
       "passwordMinLength": "Password must be at least 8 characters",
       "btnText": "Confirm",
       "success": "Password changed successfully"
+    },
+    "mfaSetup": {
+      "title": "Set Up Two-Factor Authentication",
+      "subTitle": "Scan the QR code with your authenticator to set up MFA",
+      "qrPlaceholder": "Scan the QR code with your authenticator app",
+      "secretLabel": "Your secret key (shown only once):",
+      "secretPlaceholder": "Your secret key (shown only once)",
+      "codePlaceholder": "Enter verification code",
+      "codeHint": "Enter the {digits}-digit code",
+      "backupCodesLabel": "Backup codes (save securely):",
+      "backupCodesPlaceholder": "Backup codes (shown after setup)",
+      "copy": "Copy",
+      "copyAll": "Copy all",
+      "copied": "Copied",
+      "getQrCode": "Get QR Code",
+      "gettingQrCode": "Getting QR code...",
+      "secretCopied": "Secret copied to clipboard",
+      "backupCodesCopied": "Backup codes copied to clipboard",
+      "copyFailed": "Copy failed, please copy manually",
+      "btnText": "Enable MFA",
+      "backToLogin": "Back to login"
     }
   },
   "forgetPassword": {
@@ -2286,7 +2307,8 @@
         "status": "Status",
         "mfa": "MFA",
         "lastLogin": "Last Login",
-        "createdAt": "Created At"
+        "createdAt": "Created At",
+        "mfaRequired": "Require MFA"
       }
     },
     "createDialog": {
@@ -2297,7 +2319,8 @@
         "email": "Email",
         "password": "Password",
         "role": "Role",
-        "firstLogin": "First Login"
+        "firstLogin": "First Login",
+        "mfaRequired": "Require MFA"
       },
       "placeholders": {
         "username": "Please enter a username",
@@ -2311,7 +2334,8 @@
       },
       "tips": {
         "passwordGenerated": "Generated automatically based on the password policy",
-        "forcePasswordReset": "Password must be changed on first login"
+        "forcePasswordReset": "Password must be changed on first login",
+        "mfaRequired": "When enabled, the user must bind MFA on next login before entering the system"
       },
       "validation": {
         "usernameRequired": "Please enter a username",
@@ -2361,7 +2385,8 @@
         "status": "Status",
         "mfaStatus": "MFA Status",
         "forcePasswordReset": "Force Password Reset",
-        "lastLogin": "Last Login"
+        "lastLogin": "Last Login",
+        "mfaRequired": "Require MFA"
       },
       "validation": {
         "emailRequired": "Please enter an email",

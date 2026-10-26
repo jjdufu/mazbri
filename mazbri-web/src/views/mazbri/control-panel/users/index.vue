@@ -58,6 +58,14 @@
           $t("common.status.disabled")
         }}</ElTag>
       </template>
+      <template #mfa_required="{ row }">
+        <ElTag v-if="row.mfa_required" type="warning" size="small">{{
+          $t("common.status.enabled")
+        }}</ElTag>
+        <ElTag v-else type="info" size="small">{{
+          $t("common.status.disabled")
+        }}</ElTag>
+      </template>
       <template #last_login_at="{ row }">
         {{ row.last_login_at ? formatDate(row.last_login_at) : "-" }}
       </template>
@@ -165,6 +173,7 @@ interface AdminExportRow extends Record<string, unknown> {
   role: AdminRole;
   status: string;
   mfa_enabled: boolean;
+  mfa_required: boolean;
   force_password_reset: boolean;
   created_at: string;
 }
@@ -255,6 +264,13 @@ const columns = ref<ColumnOption<AdminUser>[]>([
     useSlot: true,
   },
   {
+    prop: "mfa_required",
+    label: $t("userManagement.list.columns.mfaRequired"),
+    width: 100,
+    align: "center",
+    useSlot: true,
+  },
+  {
     prop: "last_login_at",
     label: $t("userManagement.list.columns.lastLogin"),
     width: 180,
@@ -313,6 +329,7 @@ const adminExportColumns: { key: keyof AdminExportRow; label: string }[] = [
   { key: "role", label: $t("userManagement.list.columns.role") },
   { key: "status", label: $t("userManagement.list.columns.status") },
   { key: "mfa_enabled", label: $t("userManagement.list.columns.mfa") },
+  { key: "mfa_required", label: $t("userManagement.list.columns.mfaRequired") },
   {
     key: "force_password_reset",
     label: $t("userManagement.createDialog.fields.firstLogin"),
@@ -462,6 +479,7 @@ const handleExportCommand = (command: string) => {
     role: row.role,
     status: getUserStatus(row),
     mfa_enabled: row.mfa_enabled,
+    mfa_required: row.mfa_required,
     force_password_reset: row.force_password_reset,
     created_at: row.created_at,
   }));

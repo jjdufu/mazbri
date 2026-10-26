@@ -119,3 +119,31 @@ export function regenerateBackupCodes(signal?: AbortSignal) {
     signal,
   });
 }
+
+export function mfaRequiredSetup(
+  data: {
+    temp_token: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<MfaSetupResponse>({
+    url: `${AUTH_PATH}/mfa/required-setup`,
+    params: data,
+    signal,
+  });
+}
+export function mfaRequiredEnable(
+  data: {
+    temp_token: string;
+    totp_code: string;
+  },
+  signal?: AbortSignal,
+) {
+  return request.post<LoginResponse>({
+    url: `${AUTH_PATH}/mfa/required-enable`,
+    params: data,
+    showSuccessMessage: true,
+    signal,
+  });
+}
+

@@ -2,6 +2,6 @@
 
 export type AdminUser = { id: string, username: string, role: string, created_at: string, };
 
-export type LoginResponse = { user: AdminUser | null, token: string | null, expires_in: bigint | null, refresh_token: string | null, mfa_required: boolean, temp_token: string | null, };
+export type LoginResponse = { user: AdminUser | null, token: string | null, expires_in: bigint | null, refresh_token: string | null, mfa_required: boolean, mfa_setup_required: boolean, temp_token: string | null, };
 
 export type UpdateApiKeyRequest = { expires_days: bigint | null, };

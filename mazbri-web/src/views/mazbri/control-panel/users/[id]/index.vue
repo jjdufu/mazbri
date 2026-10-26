@@ -60,6 +60,17 @@
           </ElTag>
         </ElDescriptionsItem>
         <ElDescriptionsItem
+          :label="$t('userManagement.detail.labels.mfaRequired')"
+        >
+          <ElTag :type="admin?.mfa_required ? 'warning' : 'info'">
+            {{
+              admin?.mfa_required
+                ? $t("common.status.enabled")
+                : $t("common.status.disabled")
+            }}
+          </ElTag>
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
           :label="$t('userManagement.detail.labels.forcePasswordReset')"
         >
           <ElTag :type="admin?.force_password_reset ? 'warning' : 'success'">
@@ -122,6 +133,15 @@
             :label="$t('userManagement.detail.labels.forcePasswordReset')"
           >
             <ElSwitch v-model="editForm.force_password_reset" />
+          </ElFormItem>
+          <ElFormItem
+            v-if="admin?.role !== 'R_ADMIN'"
+            :label="$t('userManagement.detail.labels.mfaRequired')"
+          >
+            <ElSwitch v-model="editForm.mfa_required" />
+            <CommonInlineHint class="ml-2">
+              {{ $t("userManagement.createDialog.tips.mfaRequired") }}
+            </CommonInlineHint>
           </ElFormItem>
         </ElForm>
       </EditDialog>
@@ -198,6 +218,7 @@ const formRef = ref<FormInstance>();
 const editForm = reactive<UpdateAdminRequest>({
   email: "",
   role: "R_ADMIN",
+  mfa_required: false,
   force_password_reset: false,
 });
 const rules: FormRules = {
@@ -229,6 +250,7 @@ const loadData = async () => {
       editForm.email = admin.value.email ?? undefined;
       editForm.role = admin.value.role;
       editForm.force_password_reset = admin.value.force_password_reset;
+      editForm.mfa_required = admin.value.mfa_required;
     });
   } catch (error) {
     logger.error("Failed to load admin:", error);
@@ -239,6 +261,7 @@ const handleEdit = () => {
   editForm.email = admin.value.email ?? undefined;
   editForm.role = admin.value.role;
   editForm.force_password_reset = admin.value.force_password_reset;
+  editForm.mfa_required = admin.value.mfa_required;
   editVisible.value = true;
 };
 const handleSave = async () => {

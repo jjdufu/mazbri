@@ -88,6 +88,12 @@
           {{ $t("userManagement.createDialog.tips.forcePasswordReset") }}
         </CommonInlineHint>
       </ElFormItem>
+      <ElFormItem :label="$t('userManagement.createDialog.fields.mfaRequired')">
+        <ElSwitch v-model="form.mfa_required" />
+        <CommonInlineHint class="ml-2">
+          {{ $t("userManagement.createDialog.tips.mfaRequired") }}
+        </CommonInlineHint>
+      </ElFormItem>
       <MfaRequiredHint block />
     </ElForm>
   </EditDialog>
@@ -118,6 +124,7 @@ const form = reactive<CreateAdminRequest>({
   email: "",
   password: "",
   role: "R_VIEWER",
+  mfa_required: false,
   force_password_reset: true,
 });
 const rules: FormRules = {
@@ -206,6 +213,7 @@ const resetForm = () => {
   form.email = "";
   form.password = "";
   form.role = "R_VIEWER";
+  form.mfa_required = false;
   form.force_password_reset = true;
   formRef.value?.resetFields();
 };

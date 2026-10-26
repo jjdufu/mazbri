@@ -27,6 +27,16 @@
           @back="handleBackToLogin"
         />
 
+        <MfaSetupForm
+          v-else-if="loginStep === 'mfaSetup'"
+          v-model:setup-data="mfaSetupData"
+          :loading="mfaSetupLoading"
+          :totp-digits="totpDigits"
+          @get-qr="handleMfaSetup"
+          @enable="handleMfaSetupEnable"
+          @back="handleBackToLogin"
+        />
+
         <ChangePasswordForm
           v-else-if="loginStep === 'changePassword'"
           v-model:form-data="changePasswordFormData"
@@ -45,6 +55,7 @@ import { useSettingStore } from "@/store/modules/setting";
 import { useLoginFlow } from "./composables/useLoginFlow";
 import LoginForm from "./modules/LoginForm.vue";
 import MfaVerifyForm from "./modules/MfaVerifyForm.vue";
+import MfaSetupForm from "./modules/MfaSetupForm.vue";
 import ChangePasswordForm from "./modules/ChangePasswordForm.vue";
 defineOptions({ name: "Login" });
 const settingStore = useSettingStore();
@@ -58,12 +69,16 @@ const {
   tempToken,
   userRole,
   totpDigits,
+  mfaSetupLoading,
+  mfaSetupData,
   changePasswordLoading,
   changePasswordFormData,
   isPassing,
   isClickPass,
   handleLogin: baseHandleLogin,
   handleMfaVerify,
+  handleMfaSetup,
+  handleMfaSetupEnable,
   handleChangePassword: baseHandlePassword,
   handleBackToLogin,
 } = useLoginFlow();
@@ -75,10 +90,12 @@ const handleLogin = async (credentials: {
 };
 const handleChangePassword = async () => {
   await baseHandlePassword();
-  loginStep.value = "login";
-  changePasswordFormData.currentPassword = "";
-  changePasswordFormData.newPassword = "";
-  changePasswordFormData.confirmPassword = "";
+  // 改密后可能进入 MFA 验证/强制设置；仅在回到登录步时清空表单。
+  if (loginStep.value === "login") {
+    changePasswordFormData.currentPassword = "";
+    changePasswordFormData.newPassword = "";
+    changePasswordFormData.confirmPassword = "";
+  }
 };
 </script>
 
