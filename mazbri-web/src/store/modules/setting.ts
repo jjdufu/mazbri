@@ -15,6 +15,11 @@ import { fetchSystemSettings } from "@/api/settings";
 import { useThemeStore } from "./theme";
 import { useLayoutStore } from "./layout";
 import { useDisplayStore } from "./display";
+/**
+ * Bumped every time server appearance settings are applied. Module-level (not
+ * store state) so it is never persisted to localStorage.
+ */
+export const appearanceServerRevision = ref(0);
 export const useSettingStore = defineStore(
   "settingStore",
   () => {
@@ -204,6 +209,7 @@ export const useSettingStore = defineStore(
       displayStore.customRadius =
         settings.custom_radius || displayStore.customRadius;
       applyToDom();
+      appearanceServerRevision.value += 1;
     };
     const applyToDom = () => {
       themeStore.applyThemeToDom();

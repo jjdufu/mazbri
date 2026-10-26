@@ -1,6 +1,18 @@
-import { ref, reactive, computed, watch } from "vue";
+import {
+  ref,
+  reactive,
+  computed,
+  watch,
+  onBeforeUnmount,
+  onDeactivated,
+  onActivated,
+  onMounted,
+} from "vue";
 import { useI18n } from "vue-i18n";
-import { useSettingStore } from "@/store/modules/setting";
+import {
+  useSettingStore,
+  appearanceServerRevision,
+} from "@/store/modules/setting";
 import { ContainerWidthEnum, SystemThemeEnum } from "@/enums/appEnum";
 import { headerBarConfig } from "@/config/modules/headerBar";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -8,6 +20,7 @@ import { logger } from "@/utils/sys";
 import type { UpdateAppearanceRequest } from "@/types/api/appearance";
 import { useTheme } from "@/hooks/core/useTheme";
 import { useAppearanceSettingsConfig } from "./useAppearanceSettingsConfig";
+import { createAppearancePreview } from "./appearancePreview";
 export interface LocalAppearanceSettings {
   systemThemeMode: SystemThemeEnum;
   systemThemeColor: string;
@@ -135,23 +148,60 @@ export function useAppearanceSettings() {
     customRadius: "0",
     darkThemeStyle: "obsidian",
   });
+  const readStoreAppearance = (): LocalAppearanceSettings => ({
+    systemThemeMode: settingStore.systemThemeMode,
+    systemThemeColor: settingStore.systemThemeColor,
+    containerWidth: settingStore.containerWidth,
+    boxBorderMode: settingStore.boxBorderMode,
+    showWorkTab: settingStore.showWorkTab,
+    showMenuButton: settingStore.showMenuButton,
+    showRefreshButton: settingStore.showRefreshButton,
+    showCrumbs: settingStore.showCrumbs,
+    showLanguage: settingStore.showLanguage,
+    showNprogress: settingStore.showNprogress,
+    watermarkVisible: settingStore.watermarkVisible,
+    menuOpenWidth: settingStore.menuOpenWidth,
+    tabStyle: settingStore.tabStyle,
+    pageTransition: settingStore.pageTransition,
+    customRadius: settingStore.customRadius,
+    darkThemeStyle:
+      settingStore.darkThemeStyle as LocalAppearanceSettings["darkThemeStyle"],
+  });
+  // Applies values to the in-memory stores + DOM only (preview). The appearance
+  // stores are not persisted, so nothing here reaches the server or survives a
+  // reload; App.vue reloads the server values on startup.
+  const applyAppearanceValues = (values: LocalAppearanceSettings) => {
+    switchThemeStyles(values.systemThemeMode);
+    settingStore.setElementTheme(values.systemThemeColor);
+    settingStore.darkThemeStyle = values.darkThemeStyle;
+    settingStore.boxBorderMode = values.boxBorderMode;
+    settingStore.showWorkTab = values.showWorkTab;
+    settingStore.showMenuButton = values.showMenuButton;
+    settingStore.showRefreshButton = values.showRefreshButton;
+    settingStore.showCrumbs = values.showCrumbs;
+    settingStore.showLanguage = values.showLanguage;
+    settingStore.showNprogress = values.showNprogress;
+    settingStore.watermarkVisible = values.watermarkVisible;
+    settingStore.menuOpenWidth = values.menuOpenWidth;
+    settingStore.tabStyle = values.tabStyle;
+    settingStore.pageTransition = values.pageTransition;
+    settingStore.setCustomRadius(values.customRadius);
+    settingStore.setContainerWidth(values.containerWidth as ContainerWidthEnum);
+    const boxMode = values.boxBorderMode ? "border-mode" : "shadow-mode";
+    document.documentElement.setAttribute("data-box-mode", boxMode);
+    settingStore.applyToDom();
+  };
+  let pageActive = false;
+  const appearancePreview = createAppearancePreview(localAppearanceSettings, {
+    read: readStoreAppearance,
+    apply: applyAppearanceValues,
+    isActive: () => pageActive,
+  });
   const loadAppearanceSettings = () => {
-    localAppearanceSettings.systemThemeMode = settingStore.systemThemeMode;
-    localAppearanceSettings.systemThemeColor = settingStore.systemThemeColor;
-    localAppearanceSettings.containerWidth = settingStore.containerWidth;
-    localAppearanceSettings.boxBorderMode = settingStore.boxBorderMode;
-    localAppearanceSettings.showWorkTab = settingStore.showWorkTab;
-    localAppearanceSettings.showMenuButton = settingStore.showMenuButton;
-    localAppearanceSettings.showRefreshButton = settingStore.showRefreshButton;
-    localAppearanceSettings.showCrumbs = settingStore.showCrumbs;
-    localAppearanceSettings.showLanguage = settingStore.showLanguage;
-    localAppearanceSettings.showNprogress = settingStore.showNprogress;
-    localAppearanceSettings.watermarkVisible = settingStore.watermarkVisible;
-    localAppearanceSettings.menuOpenWidth = settingStore.menuOpenWidth;
-    localAppearanceSettings.tabStyle = settingStore.tabStyle;
-    localAppearanceSettings.pageTransition = settingStore.pageTransition;
-    localAppearanceSettings.customRadius = settingStore.customRadius;
+    const current = readStoreAppearance();
+    Object.assign(localAppearanceSettings, current);
     localAppearanceSettings.darkThemeStyle = "obsidian";
+    appearancePreview.commit();
   };
   const buildAppearanceRequest = (): UpdateAppearanceRequest => ({
     system_theme_mode: localAppearanceSettings.systemThemeMode,
@@ -172,29 +222,7 @@ export function useAppearanceSettings() {
     dark_theme_style: localAppearanceSettings.darkThemeStyle,
   });
   const applyAppearanceLocally = () => {
-    switchThemeStyles(localAppearanceSettings.systemThemeMode);
-    settingStore.setElementTheme(localAppearanceSettings.systemThemeColor);
-    settingStore.darkThemeStyle = localAppearanceSettings.darkThemeStyle;
-    settingStore.boxBorderMode = localAppearanceSettings.boxBorderMode;
-    settingStore.showWorkTab = localAppearanceSettings.showWorkTab;
-    settingStore.showMenuButton = localAppearanceSettings.showMenuButton;
-    settingStore.showRefreshButton = localAppearanceSettings.showRefreshButton;
-    settingStore.showCrumbs = localAppearanceSettings.showCrumbs;
-    settingStore.showLanguage = localAppearanceSettings.showLanguage;
-    settingStore.showNprogress = localAppearanceSettings.showNprogress;
-    settingStore.watermarkVisible = localAppearanceSettings.watermarkVisible;
-    settingStore.menuOpenWidth = localAppearanceSettings.menuOpenWidth;
-    settingStore.tabStyle = localAppearanceSettings.tabStyle;
-    settingStore.pageTransition = localAppearanceSettings.pageTransition;
-    settingStore.setCustomRadius(localAppearanceSettings.customRadius);
-    settingStore.setContainerWidth(
-      localAppearanceSettings.containerWidth as ContainerWidthEnum,
-    );
-    const boxMode = localAppearanceSettings.boxBorderMode
-      ? "border-mode"
-      : "shadow-mode";
-    document.documentElement.setAttribute("data-box-mode", boxMode);
-    settingStore.applyToDom();
+    applyAppearanceValues({ ...localAppearanceSettings });
   };
   const saveAppearanceSettings = async (options?: {
     silent?: boolean;
@@ -208,6 +236,7 @@ export function useAppearanceSettings() {
       ) {
         settingStore.setElementTheme(localAppearanceSettings.systemThemeColor);
       }
+      appearancePreview.commit();
       if (!options?.silent) {
         ElMessage.success(t("systemSettings.messages.appearanceSaved"));
       }
@@ -215,6 +244,8 @@ export function useAppearanceSettings() {
     } catch (error) {
       logger.error("Server save failed, applying locally");
       applyAppearanceLocally();
+      // Kept for this session only (existing "saved locally" semantics).
+      appearancePreview.commit();
       if (!options?.silent) {
         ElMessage.warning(t("systemSettings.messages.appearanceSavedLocally"));
       }
@@ -242,6 +273,7 @@ export function useAppearanceSettings() {
         await settingStore.resetServerSettings();
       } catch {
         localStorage.removeItem("setting");
+        appearancePreview.revert();
       }
       loadAppearanceSettings();
       ElMessage.success(t("systemSettings.messages.appearanceResetSuccess"));
@@ -253,25 +285,29 @@ export function useAppearanceSettings() {
       appearanceSaving.value = false;
     }
   };
-  watch(
-    () => localAppearanceSettings.customRadius,
-    (newRadius) => {
-      settingStore.setCustomRadius(newRadius);
-    },
-  );
-  watch(
-    () => localAppearanceSettings.systemThemeMode,
-    (newThemeMode) => {
-      switchThemeStyles(newThemeMode);
-    },
-  );
-  watch(
-    () => localAppearanceSettings.darkThemeStyle,
-    (newStyle) => {
-      settingStore.darkThemeStyle = newStyle;
-      settingStore.applyToDom();
-    },
-  );
+  // Re-sync local values + baseline whenever server settings are applied
+  // (initial load finishing late, saves from elsewhere such as the header
+  // theme toggle, save/reset on this page).
+  watch(appearanceServerRevision, () => {
+    if (pageActive) {
+      loadAppearanceSettings();
+    }
+  });
+  const activate = () => {
+    pageActive = true;
+  };
+  const deactivate = () => {
+    if (!pageActive) {
+      return;
+    }
+    // Leaving without saving: drop the live preview.
+    appearancePreview.revert();
+    pageActive = false;
+  };
+  onMounted(activate);
+  onActivated(activate);
+  onDeactivated(deactivate);
+  onBeforeUnmount(deactivate);
   watch(
     () => settingStore.systemThemeMode,
     (newThemeMode) => {
