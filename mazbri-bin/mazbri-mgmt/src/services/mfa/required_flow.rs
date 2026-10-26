@@ -19,9 +19,17 @@ fn decode_temp_token(
     let decoding_key = jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_ref());
     let validation = jsonwebtoken::Validation::default();
     match jsonwebtoken::decode::<AdminJwtClaims>(temp_token, &decoding_key, &validation) {
-        Ok(data) => Ok(data.claims),
+        Ok(data) => {
+            crate::audit::set_actor(
+                uuid::Uuid::parse_str(&data.claims.user_id).ok(),
+                Some(&data.claims.sub),
+                Some(&data.claims.role),
+            );
+            Ok(data.claims)
+        }
         Err(error) => {
             warn!("Invalid temp token for MFA required flow: {}", error);
+            crate::audit::set_failure_reason("invalid_temp_token");
             Err(Box::new(ApiResponse::err(
                 StatusCode::UNAUTHORIZED,
                 mazbri_i18n::mfa::invalid_temp_token(),
@@ -96,7 +104,7 @@ pub async fn required_setup(
     }
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaRequiredSetup,
         Some(serde_json::json!(
             { "action" : "mfa_required_setup_initiated", "username" : claims
             .sub, }
@@ -225,7 +233,7 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     };
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaRequiredEnable,
         Some(serde_json::json!(
             { "action" : "mfa_required_enabled", "username" : claims.sub, }
         )),

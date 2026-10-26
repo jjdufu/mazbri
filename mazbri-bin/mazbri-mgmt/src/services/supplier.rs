@@ -443,7 +443,7 @@ fn change_audit_log(
     ip_address: Option<String>,
 ) -> AuditLogRequest {
     AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action,
         resource_type,
         resource_id: Some(resource_id),

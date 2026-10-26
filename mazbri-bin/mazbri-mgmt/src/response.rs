@@ -21,11 +21,14 @@ impl<T: Serialize> ApiResponse<T> {
 impl ApiResponse<()> {
     pub fn err(status: StatusCode, message: impl Into<String>) -> Response {
         let message = message.into();
-        (
+        let code = format!("http_{}", status.as_u16());
+        let mut response = (
             status,
             Json(serde_json::json!({ "success" : false, "error" : message, })),
         )
-            .into_response()
+            .into_response();
+        crate::audit::AuditErrorInfo::attach(&mut response, &code, &message);
+        response
     }
 }
 impl<T: Serialize> IntoResponse for ApiResponse<T> {

@@ -450,7 +450,7 @@ pub async fn create_request_key(
     log_tenant_crypto_audit(
         &state,
         &claims,
-        AuditAction::TenantCryptoKeyCreate,
+        AuditAction::RequestKeyCreate,
         tenant_id.to_string(),
         serde_json::json!({
             "tenant_code": code,
@@ -482,7 +482,7 @@ pub async fn retire_request_key(
     log_tenant_crypto_audit(
         &state,
         &claims,
-        AuditAction::TenantCryptoKeyCreate,
+        AuditAction::RequestKeyRetire,
         tenant_id.to_string(),
         serde_json::json!({
             "tenant_code": code,

@@ -140,6 +140,7 @@ pub(super) async fn verify_and_enable_mfa(
     };
     if !mfa_service.verify_totp(&secret, totp_code) {
         tracing::warn!("Invalid TOTP code for user: {}", username);
+        crate::audit::set_failure_reason("mfa_invalid_code");
         return Err(Box::new(ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::invalid_totp(),

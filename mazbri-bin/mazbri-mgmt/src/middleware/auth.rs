@@ -1,3 +1,4 @@
+use crate::audit::AuditErrorInfo;
 use axum::{
     Extension,
     extract::Request,
@@ -117,6 +118,8 @@ pub async fn admin_auth_middleware(
     validation.set_issuer(&["mazbri-mgmt-api"]);
     match decode::<AdminClaims>(&token, &decoding_key, &validation) {
         Ok(token_data) => {
+            // 签名已校验，身份可信：先记录操作人，后续拒绝也能归属到具体账号。
+            audit_actor_from_claims(&token_data.claims);
             let token_type = token_data.claims.token_type.as_deref();
             if is_refresh {
                 if token_type != Some("refresh") {
@@ -137,13 +140,38 @@ pub async fn admin_auth_middleware(
             next.run(request).await
         }
         Err(e) => {
-            let error_msg = match e.kind() {
-                jsonwebtoken::errors::ErrorKind::ExpiredSignature => "令牌已过期",
-                jsonwebtoken::errors::ErrorKind::InvalidToken => "无效的令牌",
-                _ => "令牌验证失败",
+            let (reason, error_msg) = match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    audit_actor_from_expired(&token, &decoding_key);
+                    ("token_expired", "令牌已过期")
+                }
+                jsonwebtoken::errors::ErrorKind::InvalidToken => ("invalid_token", "无效的令牌"),
+                _ => ("invalid_token", "令牌验证失败"),
             };
-            unauthorized("invalid_token", error_msg)
+            let mut response = unauthorized("invalid_token", error_msg);
+            crate::audit::set_failure_reason(reason);
+            AuditErrorInfo::attach(&mut response, reason, error_msg);
+            response
         }
+    }
+}
+
+/// 把已验签令牌中的身份写入审计作用域（不记录令牌本身）。
+fn audit_actor_from_claims(claims: &AdminClaims) {
+    crate::audit::set_actor(
+        uuid::Uuid::parse_str(&claims.user_id).ok(),
+        Some(&claims.sub),
+        Some(&claims.role),
+    );
+}
+
+/// 令牌过期但签名有效时，仍可用于审计归属。
+fn audit_actor_from_expired(token: &str, key: &DecodingKey) {
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+    validation.set_issuer(&["mazbri-mgmt-api"]);
+    validation.validate_exp = false;
+    if let Ok(data) = decode::<AdminClaims>(token, key, &validation) {
+        audit_actor_from_claims(&data.claims);
     }
 }
 
@@ -336,18 +364,22 @@ pub fn is_read_only(claims: &AdminClaims) -> bool {
     claims.role == "R_VIEWER"
 }
 fn unauthorized(error: &str, message: &str) -> Response {
-    (
+    let mut response = (
         StatusCode::UNAUTHORIZED,
         axum::Json(serde_json::json!({ "error" : error, "message" : message })),
     )
-        .into_response()
+        .into_response();
+    AuditErrorInfo::attach(&mut response, error, message);
+    response
 }
 fn forbidden(error: &str, message: &str) -> Response {
-    (
+    let mut response = (
         StatusCode::FORBIDDEN,
         axum::Json(serde_json::json!({ "error" : error, "message" : message })),
     )
-        .into_response()
+        .into_response();
+    AuditErrorInfo::attach(&mut response, error, message);
+    response
 }
 /// # Errors
 ///

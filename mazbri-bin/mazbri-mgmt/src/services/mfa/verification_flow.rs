@@ -57,6 +57,7 @@ pub async fn disable(
     }
     if !verified {
         warn!("Invalid verification code for MFA disable: {}", username);
+        crate::audit::set_failure_reason("mfa_invalid_code");
         return ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::invalid_totp_or_password(),
@@ -71,7 +72,7 @@ pub async fn disable(
     }
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaDisable,
         Some(serde_json::json!(
             { "action" : "mfa_disabled", "username" : username, }
         )),
@@ -155,6 +156,12 @@ async fn record_failed_attempt(
             StatusCode::INTERNAL_SERVER_ERROR,
             mazbri_i18n::mfa::database_error(),
         );
+    }
+    if lockout_until.is_some() {
+        crate::audit::set_failure_reason("mfa_lock_triggered");
+        crate::audit::mark_security_event();
+    } else {
+        crate::audit::set_failure_reason("mfa_invalid_code");
     }
     warn!(
         "MFA verification failed for user: {} (attempt {}/{})",
@@ -276,6 +283,7 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     };
 
     if mfa_service.is_locked(state.mfa_attempts, state.mfa_locked_until) {
+        crate::audit::set_failure_reason("mfa_locked");
         return ApiResponse::err(StatusCode::FORBIDDEN, mazbri_i18n::mfa::locked());
     }
     let Some(matched) = match_mfa_code(&mfa_service, &state, totp_code, backup_code) else {

@@ -4,7 +4,7 @@ use super::types::{CreateApiKeyRequest, UpdateApiKeyRequest};
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::middleware::ClientIp;
-use crate::middleware::auth::{AdminClaims, extract_user_id};
+use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id};
 use crate::response::{ApiResponse, created};
 use crate::services::api_key as svc;
 use axum::{
@@ -76,9 +76,14 @@ pub async fn revoke_api_key(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_api_key(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path((code, key_prefix)): Path<(String, String)>,
     Json(payload): Json<UpdateApiKeyRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // 续期 API 密钥属于租户写操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
     payload.validate().map_err(ApiError::validation)?;
     let data = svc::update_api_key(&state.db, &state.auth_db, &code, &key_prefix, &payload).await?;
     Ok(ApiResponse::ok(data))

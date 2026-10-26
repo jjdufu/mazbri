@@ -731,7 +731,7 @@ struct PublishAuditInfo<'a> {
 
 fn publish_audit_request(info: &PublishAuditInfo<'_>) -> AuditLogRequest {
     AuditLogRequest {
-        user_id: info.user_id,
+        user_id: Some(info.user_id),
         action: if info.req.options.force.force_publish {
             AuditAction::ConnectorForcePublish
         } else {

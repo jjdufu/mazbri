@@ -2,18 +2,29 @@ import type { ISODateString } from "./common";
 export interface AuditLog {
   id: string;
   timestamp: ISODateString;
-  actor_id: string;
-  actor_type: "admin" | "system";
+  actor_id?: string | null;
+  actor_type: "admin" | "system" | "anonymous";
   actor_name?: string;
+  actor_role?: string | null;
   action: string;
   resource_type: string;
   resource_id?: string;
   details: Record<string, unknown>;
   ip_address?: string;
   user_agent?: string;
-  status: "success" | "failure";
+  status: AuditStatus;
   error_message?: string;
+  failure_reason?: string | null;
+  request_id?: string | null;
+  method?: string | null;
+  /** 路由模板（不含查询串） */
+  path?: string | null;
+  status_code?: number | null;
+  duration_ms?: number | null;
+  /** 请求体摘要（仅 content_type / 长度 / 顶层字段名，不含值） */
+  request_summary?: Record<string, unknown> | null;
 }
+export type AuditStatus = "success" | "failure" | "denied";
 export interface AuditLogListResponse {
   logs: AuditLog[];
   total: number;
@@ -32,13 +43,13 @@ export interface AuditLogListQuery {
   filters?: string;
   start_time?: number;
   end_time?: number;
-  status?: "success" | "failure";
+  status?: AuditStatus;
 }
 export interface AuditLogDetail extends AuditLog {
   changes?: {
-    before?: Record<string, unknown>;
-    after?: Record<string, unknown>;
-  };
+    before?: unknown;
+    after?: unknown;
+  } | null;
   related_logs?: AuditLog[];
 }
 export type AuditAction =
@@ -61,7 +72,6 @@ export type AuditAction =
   | "user.logout"
   | "user.update"
   | "user.delete"
-  | "user.settings_update"
   | "quota.update"
   | "plan.change"
   | "product.grant"
@@ -73,14 +83,16 @@ export type AuditAction =
   | "product.reservation_release"
   | "account.recharge"
   | "account.refund"
+  | "bill.generate"
+  | "bill.delete"
+  | "bill.status_update"
   | "account.adjustment"
   | "billing.reconciliation_audit"
   | "billing.reconciliation_discrepancy_update"
+  | "billing.reconciliation_discrepancy_delete"
   | "billing.bill_adjustment_create"
   | "billing.bill_adjustment_void"
   | "billing.reconciliation_settings_update"
-  | "bill.generate"
-  | "bill.delete"
   | "certificate.issue"
   | "certificate.renew"
   | "certificate.revoke"
@@ -107,10 +119,12 @@ export type AuditAction =
   | "tenant.crypto_verify"
   | "password.first_login_change"
   | "password.change"
+  | "user.settings_update"
   | "tenant.ratelimit_update"
   | "tenant.ratelimit_delete"
   | "tenant.cache_update"
   | "callback.delivery_retry"
+  | "route.emergency_switch"
   | "supplier.create"
   | "supplier.update"
   | "supplier.delete"
@@ -120,7 +134,6 @@ export type AuditAction =
   | "route_rule.create"
   | "route_rule.update"
   | "route_rule.delete"
-  | "route.emergency_switch"
   | "route_channel_binding.create"
   | "route_channel_binding.update"
   | "route_channel_binding.delete"
@@ -133,7 +146,56 @@ export type AuditAction =
   | "authorization.activate"
   | "authorization.revoke"
   | "authorization.rotate"
-  | "authorization.disable";
+  | "authorization.disable"
+  | "tenant.ratelimit_command_create"
+  | "tenant.ratelimit_command_cancel"
+  | "tenant.crypto_key_delete"
+  | "upstream.onboarding"
+  | "supplier.validate_config"
+  | "connector.run"
+  | "connector.publish"
+  | "connector.force_publish"
+  | "connector.rollback"
+  | "connector.import"
+  | "admin.force_password_reset"
+  | "admin.mfa_reset"
+  | "user.mfa_setup"
+  | "user.mfa_enable"
+  | "user.mfa_disable"
+  | "user.mfa_regenerate_codes"
+  | "user.mfa_required_setup"
+  | "user.mfa_required_enable"
+  | "user.token_refresh"
+  | "tenant.request_key_create"
+  | "tenant.request_key_retire"
+  | "tenant.request_key_list"
+  | "tenant.crypto_key_list"
+  | "tenant.enabled_change"
+  | "apikey.list"
+  | "certificate.view_full"
+  | "certificate.auto_renewal_update"
+  | "authorization.license_request"
+  | "audit.list"
+  | "audit.view"
+  | "audit.export"
+  | "connector.draft_create"
+  | "connector.draft_update"
+  | "connector.draft_delete"
+  | "connector.draft_validate"
+  | "connector.transform_preview"
+  | "connector.draft_from_supplier"
+  | "connector.artifact_create"
+  | "connector.export"
+  | "config_center.validate"
+  | "upstream.onboarding_dry_run"
+  | "product.tenant_config_update"
+  | "bill.generate_async"
+  | "api.read"
+  | "api.get"
+  | "api.post"
+  | "api.put"
+  | "api.patch"
+  | "api.delete";
 export type ResourceType =
   | "admin"
   | "tenant"
@@ -150,4 +212,8 @@ export type ResourceType =
   | "channel"
   | "route_rule"
   | "route_channel_binding"
-  | "callback";
+  | "callback"
+  | "audit_log"
+  | "connector"
+  | "authorization"
+  | "billing";

@@ -217,7 +217,14 @@ export const billsCatalog: ResourceFilterCatalog = {
       ops: ENUM_OPS,
       in_q: true,
       label_key: "billing.columns.status",
-      enum_values: ["draft", "issued", "paid", "overdue", "processing", "cancelled"],
+      enum_values: [
+        "draft",
+        "issued",
+        "paid",
+        "overdue",
+        "processing",
+        "cancelled",
+      ],
     },
     {
       field: "total",
@@ -505,7 +512,21 @@ export const auditLogsCatalog: ResourceFilterCatalog = {
       value_type: "enum",
       ops: ENUM_OPS,
       label_key: "auditLogs.columns.status",
-      enum_values: ["success", "failure", "error"],
+      enum_values: ["success", "failure", "denied", "error"],
+    },
+    {
+      field: "failure_reason",
+      value_type: "string",
+      ops: ["eq", "contains"],
+      in_q: true,
+      label_key: "auditLogs.columns.failureReason",
+    },
+    {
+      field: "request_id",
+      value_type: "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "auditLogs.columns.requestId",
     },
     {
       field: "ip_address",

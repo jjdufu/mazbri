@@ -47,7 +47,7 @@
         {{ formatDate(row.timestamp) }}
       </template>
       <template #actor_name="{ row }">
-        {{ row.actor_name || "-" }}
+        {{ formatActorName(row) }}
       </template>
       <template #action="{ row }">
         <ElTag size="small">{{ formatAction(row.action) }}</ElTag>
@@ -56,15 +56,12 @@
         {{ formatResourceType(row.resource_type) }}
       </template>
       <template #status="{ row }">
-        <StatusIndicator
-          :type="row.status === 'success' ? 'success' : 'danger'"
-        >
-          {{
-            row.status === "success"
-              ? $t("auditLogs.status.success")
-              : $t("auditLogs.status.failure")
-          }}
+        <StatusIndicator :type="statusTagType(row.status)">
+          {{ $t(statusLabelKey(row.status)) }}
         </StatusIndicator>
+      </template>
+      <template #failure_reason="{ row }">
+        {{ formatFailureReason(row.failure_reason) }}
       </template>
       <template #ip_address="{ row }">
         {{ formatIpAddress(row.ip_address) }}
@@ -88,7 +85,10 @@
           formatDate(currentLog?.timestamp || "")
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorName')">{{
-          currentLog?.actor_name || "-"
+          currentLog ? formatActorName(currentLog) : "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorRole')">{{
+          currentLog?.actor_role || "-"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.action')">{{
           formatAction(currentLog?.action || "")
@@ -103,23 +103,46 @@
           currentLog?.resource_id || "-"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.status')">
-          <ElTag
-            :type="currentLog?.status === 'success' ? 'success' : 'danger'"
-          >
-            {{
-              currentLog?.status === "success"
-                ? $t("auditLogs.status.success")
-                : $t("auditLogs.status.failure")
-            }}
+          <ElTag :type="statusTagType(currentLog?.status || '')">
+            {{ $t(statusLabelKey(currentLog?.status || "")) }}
           </ElTag>
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">{{
           formatIpAddress(currentLog?.ip_address)
         }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">{{
+          currentLog?.request_id || "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.method')">{{
+          currentLog?.method || "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.path')">{{
+          currentLog?.path || "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.statusCode')">{{
+          currentLog?.status_code ?? "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.durationMs')">{{
+          currentLog?.duration_ms ?? "-"
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem
+          :label="$t('auditLogs.detail.fields.failureReason')"
+          >{{
+            formatFailureReason(currentLog?.failure_reason)
+          }}</ElDescriptionsItem
+        >
         <ElDescriptionsItem
           :label="$t('auditLogs.detail.fields.userAgent')"
           :span="2"
           >{{ currentLog?.user_agent || "-" }}</ElDescriptionsItem
+        >
+        <ElDescriptionsItem
+          v-if="currentLog?.request_summary"
+          :label="$t('auditLogs.detail.fields.requestSummary')"
+          :span="2"
+          >{{
+            formatDetailValue(currentLog?.request_summary)
+          }}</ElDescriptionsItem
         >
         <ElDescriptionsItem
           v-if="currentLog?.error_message"
@@ -140,6 +163,36 @@
             {{ item.value }}
           </ElDescriptionsItem>
         </ElDescriptions>
+      </div>
+      <div v-if="changeRows.length" class="mt-4">
+        <h4 class="mb-2">{{ $t("auditLogs.detail.changesTitle") }}</h4>
+        <ElTable :data="changeRows" border size="small">
+          <ElTableColumn
+            prop="label"
+            :label="$t('auditLogs.detail.changesField')"
+            min-width="120"
+          />
+          <ElTableColumn
+            :label="$t('auditLogs.detail.changesBefore')"
+            min-width="160"
+          >
+            <template #default="{ row }">
+              <span :class="{ 'audit-changed': row.changed }">{{
+                row.before
+              }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn
+            :label="$t('auditLogs.detail.changesAfter')"
+            min-width="160"
+          >
+            <template #default="{ row }">
+              <span :class="{ 'audit-changed': row.changed }">{{
+                row.after
+              }}</span>
+            </template>
+          </ElTableColumn>
+        </ElTable>
       </div>
     </CenteredDialog>
   </ControlPanelPageShell>
@@ -174,6 +227,15 @@ import { formatDateTime as formatDate } from "@/utils/format";
 import { downloadCsv } from "@/utils/csv";
 import { stripUrlScheme } from "@/utils/sensitive";
 import { $t } from "@/locales";
+import {
+  ACTION_LABELS,
+  FAILURE_REASON_LABELS,
+  RESOURCE_TYPE_LABELS,
+  diffChanges,
+  guardCsvFormula,
+  statusLabelKey,
+  statusTagType,
+} from "./labels";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 defineOptions({ name: "AuditLogs" });
 type ExportCommand = "all" | "selected";
@@ -183,136 +245,6 @@ const tableData = ref<AuditLog[]>([]);
 const selectedRows = ref<AuditLog[]>([]);
 const detailVisible = ref(false);
 const currentLog = ref<AuditLogDetail | null>(null);
-const ACTION_LABELS: Record<string, string> = {
-  "admin.login": "auditLogs.explicitActions.adminLogin",
-  "admin.logout": "auditLogs.explicitActions.adminLogout",
-  "admin.create": "auditLogs.explicitActions.adminCreate",
-  "admin.update": "auditLogs.explicitActions.adminUpdate",
-  "admin.delete": "auditLogs.explicitActions.adminDelete",
-  "admin.password_reset": "auditLogs.explicitActions.adminPasswordReset",
-  "admin.status_change": "auditLogs.explicitActions.adminStatusChange",
-  "tenant.create": "auditLogs.explicitActions.tenantCreate",
-  "tenant.update": "auditLogs.explicitActions.tenantUpdate",
-  "tenant.delete": "auditLogs.explicitActions.tenantDelete",
-  "tenant.suspend": "auditLogs.explicitActions.tenantSuspend",
-  "tenant.activate": "auditLogs.explicitActions.tenantActivate",
-  "apikey.create": "auditLogs.explicitActions.apiKeyCreate",
-  "apikey.update": "auditLogs.explicitActions.apiKeyUpdate",
-  "apikey.revoke": "auditLogs.explicitActions.apiKeyRevoke",
-  "user.login": "auditLogs.explicitActions.userLogin",
-  "user.logout": "auditLogs.explicitActions.userLogout",
-  "user.update": "auditLogs.explicitActions.userUpdate",
-  "user.delete": "auditLogs.explicitActions.userDelete",
-  "user.settings_update": "auditLogs.explicitActions.userSettingsUpdate",
-  "quota.update": "auditLogs.explicitActions.quotaUpdate",
-  "plan.change": "auditLogs.explicitActions.planChange",
-  "product.grant": "auditLogs.explicitActions.productGrant",
-  "product.revoke": "auditLogs.explicitActions.productRevoke",
-  "product.create": "auditLogs.explicitActions.productCreate",
-  "product.update": "auditLogs.explicitActions.productUpdate",
-  "product.delete": "auditLogs.explicitActions.productDelete",
-  "product.reservation_create":
-    "auditLogs.explicitActions.productReservationCreate",
-  "product.reservation_release":
-    "auditLogs.explicitActions.productReservationRelease",
-  "account.recharge": "auditLogs.explicitActions.accountRecharge",
-  "account.refund": "auditLogs.explicitActions.accountRefund",
-  "account.adjustment": "auditLogs.explicitActions.accountAdjustment",
-  "billing.reconciliation_audit":
-    "auditLogs.explicitActions.reconciliationAudit",
-  "billing.reconciliation_discrepancy_update":
-    "auditLogs.explicitActions.reconciliationDiscrepancyUpdate",
-  "billing.bill_adjustment_create":
-    "auditLogs.explicitActions.billAdjustmentCreate",
-  "billing.bill_adjustment_void":
-    "auditLogs.explicitActions.billAdjustmentVoid",
-  "billing.reconciliation_settings_update":
-    "auditLogs.explicitActions.reconciliationSettingsUpdate",
-  "bill.generate": "auditLogs.explicitActions.billGenerate",
-  "bill.delete": "auditLogs.explicitActions.billDelete",
-  "certificate.issue": "auditLogs.explicitActions.certificateIssue",
-  "certificate.renew": "auditLogs.explicitActions.certificateRenew",
-  "certificate.revoke": "auditLogs.explicitActions.certificateRevoke",
-  "settings.update": "auditLogs.explicitActions.settingsUpdate",
-  "password_policy.update": "auditLogs.explicitActions.passwordPolicyUpdate",
-  "config_center.create": "auditLogs.explicitActions.configCenterCreate",
-  "config_center.update": "auditLogs.explicitActions.configCenterUpdate",
-  "config_center.delete": "auditLogs.explicitActions.configCenterDelete",
-  "config_center.rollback": "auditLogs.explicitActions.configCenterRollback",
-  "config_center.export": "auditLogs.explicitActions.configCenterExport",
-  "config_center.import": "auditLogs.explicitActions.configCenterImport",
-  "appearance.update": "auditLogs.explicitActions.appearanceUpdate",
-  "appearance.reset": "auditLogs.explicitActions.appearanceReset",
-  "mfa_settings.update": "auditLogs.explicitActions.mfaSettingsUpdate",
-  "tenant.whitelist_add": "auditLogs.explicitActions.whitelistAdd",
-  "tenant.whitelist_remove": "auditLogs.explicitActions.whitelistRemove",
-  "tenant.crypto_profile_update":
-    "auditLogs.explicitActions.tenantCryptoProfileUpdate",
-  "tenant.crypto_key_create": "auditLogs.explicitActions.tenantCryptoKeyCreate",
-  "tenant.crypto_key_rotate": "auditLogs.explicitActions.tenantCryptoKeyRotate",
-  "tenant.crypto_key_activate":
-    "auditLogs.explicitActions.tenantCryptoKeyActivate",
-  "tenant.crypto_key_deprecate":
-    "auditLogs.explicitActions.tenantCryptoKeyDeprecate",
-  "tenant.crypto_key_disable":
-    "auditLogs.explicitActions.tenantCryptoKeyDisable",
-  "tenant.crypto_export": "auditLogs.explicitActions.tenantCryptoExport",
-  "tenant.crypto_verify": "auditLogs.explicitActions.tenantCryptoVerify",
-  "password.first_login_change":
-    "auditLogs.explicitActions.passwordFirstLoginChange",
-  "password.change": "auditLogs.explicitActions.passwordChange",
-  "tenant.ratelimit_update": "auditLogs.explicitActions.tenantRateLimitUpdate",
-  "tenant.ratelimit_delete": "auditLogs.explicitActions.tenantRateLimitDelete",
-  "tenant.cache_update": "auditLogs.explicitActions.tenantCacheUpdate",
-  "callback.delivery_retry": "auditLogs.explicitActions.callbackDeliveryRetry",
-  "supplier.create": "auditLogs.explicitActions.supplierCreate",
-  "supplier.update": "auditLogs.explicitActions.supplierUpdate",
-  "supplier.delete": "auditLogs.explicitActions.supplierDelete",
-  "channel.create": "auditLogs.explicitActions.channelCreate",
-  "channel.update": "auditLogs.explicitActions.channelUpdate",
-  "channel.delete": "auditLogs.explicitActions.channelDelete",
-  "route_rule.create": "auditLogs.explicitActions.routeRuleCreate",
-  "route_rule.update": "auditLogs.explicitActions.routeRuleUpdate",
-  "route_rule.delete": "auditLogs.explicitActions.routeRuleDelete",
-  "route_channel_binding.create":
-    "auditLogs.explicitActions.routeChannelBindingCreate",
-  "route_channel_binding.update":
-    "auditLogs.explicitActions.routeChannelBindingUpdate",
-  "route_channel_binding.delete":
-    "auditLogs.explicitActions.routeChannelBindingDelete",
-  "callback.subscription_create":
-    "auditLogs.explicitActions.callbackSubscriptionCreate",
-  "callback.subscription_update":
-    "auditLogs.explicitActions.callbackSubscriptionUpdate",
-  "callback.subscription_delete":
-    "auditLogs.explicitActions.callbackSubscriptionDelete",
-  "route.emergency_switch": "auditLogs.explicitActions.routeEmergencySwitch",
-  "authorization.import": "auditLogs.explicitActions.authorizationImport",
-  "authorization.export": "auditLogs.explicitActions.authorizationExport",
-  "authorization.renew": "auditLogs.explicitActions.authorizationRenew",
-  "authorization.activate": "auditLogs.explicitActions.authorizationActivate",
-  "authorization.revoke": "auditLogs.explicitActions.authorizationRevoke",
-  "authorization.rotate": "auditLogs.explicitActions.authorizationRotate",
-  "authorization.disable": "auditLogs.explicitActions.authorizationDisable",
-};
-const RESOURCE_TYPE_LABELS: Record<string, string> = {
-  admin: "auditLogs.resources.admin",
-  tenant: "auditLogs.resources.tenant",
-  product: "auditLogs.resources.product",
-  apikey: "auditLogs.resources.apiKey",
-  certificate: "auditLogs.resources.certificate",
-  system: "auditLogs.resources.system",
-  user: "auditLogs.resources.user",
-  quota: "auditLogs.resources.quota",
-  plan: "auditLogs.resources.plan",
-  account: "auditLogs.resources.account",
-  config_center: "auditLogs.resources.configCenter",
-  supplier: "auditLogs.resources.supplier",
-  channel: "auditLogs.resources.channel",
-  route_rule: "auditLogs.resources.routeRule",
-  route_channel_binding: "auditLogs.resources.routeChannelBinding",
-  callback: "auditLogs.resources.callback",
-};
 const ACTION_VERB_LABELS: Record<string, string> = {
   login: "auditLogs.verbs.login",
   logout: "auditLogs.verbs.logout",
@@ -365,7 +297,8 @@ const searchForm = reactive({
 });
 const hasActiveSearch = computed(
   () =>
-    Boolean(searchForm.q?.trim()) || listFilters.value.length > 0 ||
+    Boolean(searchForm.q?.trim()) ||
+    listFilters.value.length > 0 ||
     Boolean(timeRange.value?.length === 2),
 );
 const emptyDescription = computed(() =>
@@ -499,6 +432,12 @@ const columns = ref<ColumnOption<AuditLog>[]>([
     prop: "status",
     label: $t("auditLogs.columns.status"),
     width: 80,
+    useSlot: true,
+  },
+  {
+    prop: "failure_reason",
+    label: $t("auditLogs.columns.failureReason"),
+    minWidth: 112,
     useSlot: true,
   },
   {
@@ -643,6 +582,28 @@ const formatRouteSnapshot = (snapshot: Record<string, unknown>) => {
   ].filter(Boolean);
   return parts.join("；");
 };
+const formatActorName = (log: AuditLog) => {
+  if (log.actor_name) return log.actor_name;
+  return log.actor_type === "anonymous"
+    ? $t("auditLogs.values.anonymous")
+    : "-";
+};
+const formatFailureReason = (reason?: string | null) => {
+  if (!reason) return "-";
+  return FAILURE_REASON_LABELS[reason]
+    ? $t(FAILURE_REASON_LABELS[reason])
+    : reason.replaceAll("_", " ");
+};
+const changeRows = computed(() => {
+  const changes = currentLog.value?.changes;
+  if (!changes) return [];
+  return diffChanges(changes.before, changes.after).map((row) => ({
+    label: formatDetailLabel(row.key),
+    before: formatDetailValue(row.before),
+    after: formatDetailValue(row.after),
+    changed: row.changed,
+  }));
+});
 const auditDetailRows = computed(() => {
   const details = currentLog.value?.details || {};
   return Object.entries(details)
@@ -721,28 +682,54 @@ const handleExport = async (command: string) => {
     const exportCommand = command as ExportCommand;
     if (exportCommand === "selected") {
       const rows = selectedRows.value;
-      const csvRows: AuditLogCsvRow[] = rows.map((row) => ({
-        timestamp: formatDate(row.timestamp),
-        actor_name: row.actor_name || "-",
-        action: formatAction(row.action),
-        resource_type: formatResourceType(row.resource_type),
-        status:
-          row.status === "success"
-            ? $t("auditLogs.status.success")
-            : $t("auditLogs.status.failure"),
-        ip_address: formatIpAddress(row.ip_address),
-        details: formatDetailValue(row.details),
-      }));
+      const csvRows: AuditLogCsvRow[] = rows.map((row) => {
+        const record: AuditLogCsvRow = {
+          timestamp: formatDate(row.timestamp),
+          actor_name: formatActorName(row),
+          actor_role: row.actor_role || "-",
+          action: formatAction(row.action),
+          resource_type: formatResourceType(row.resource_type),
+          status: $t(statusLabelKey(row.status)),
+          failure_reason: formatFailureReason(row.failure_reason),
+          ip_address: formatIpAddress(row.ip_address),
+          request_id: row.request_id || "-",
+          route: [row.method, row.path].filter(Boolean).join(" ") || "-",
+          status_code:
+            row.status_code === null || row.status_code === undefined
+              ? "-"
+              : String(row.status_code),
+          duration_ms:
+            row.duration_ms === null || row.duration_ms === undefined
+              ? "-"
+              : String(row.duration_ms),
+          details: formatDetailValue(row.details),
+        };
+        return Object.fromEntries(
+          Object.entries(record).map(([key, value]) => [
+            key,
+            guardCsvFormula(value),
+          ]),
+        );
+      });
       const filename = `audit_logs_selected_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.csv`;
       exportResourceCsv(
         csvRows,
         [
           { key: "timestamp", label: $t("auditLogs.columns.timestamp") },
           { key: "actor_name", label: $t("auditLogs.columns.actorName") },
+          { key: "actor_role", label: $t("auditLogs.columns.actorRole") },
           { key: "action", label: $t("auditLogs.columns.action") },
           { key: "resource_type", label: $t("auditLogs.columns.resourceType") },
           { key: "status", label: $t("auditLogs.columns.status") },
+          {
+            key: "failure_reason",
+            label: $t("auditLogs.columns.failureReason"),
+          },
           { key: "ip_address", label: $t("auditLogs.columns.ipAddress") },
+          { key: "request_id", label: $t("auditLogs.columns.requestId") },
+          { key: "route", label: $t("auditLogs.columns.route") },
+          { key: "status_code", label: $t("auditLogs.columns.statusCode") },
+          { key: "duration_ms", label: $t("auditLogs.columns.durationMs") },
           { key: "details", label: $t("auditLogs.columns.details") },
         ],
         filename,
@@ -764,3 +751,10 @@ onMounted(() => {
   loadData();
 });
 </script>
+
+<style scoped>
+.audit-changed {
+  font-weight: 600;
+  color: var(--el-color-warning);
+}
+</style>

@@ -196,6 +196,9 @@ pub struct MgmtApiConfig {
     /// 缺省即 `allow_private_network = false`。
     #[serde(default)]
     pub ssrf: mazbri_upstream_runtime::SsrfConfig,
+    /// `[audit]` 统一审计中间件：可信代理、异步写入队列与兜底文件；缺省即不信任任何转发头。
+    #[serde(default)]
+    pub audit: crate::audit::AuditConfig,
 }
 impl ValidateConfig for MgmtApiConfig {
     fn validate(&self) -> Result<()> {
@@ -282,6 +285,7 @@ impl ValidateConfig for MgmtApiConfig {
             );
         }
         self.config_watch.validate()?;
+        self.audit.validate()?;
         Ok(())
     }
 }
@@ -346,5 +350,30 @@ port = 9000
     #[test]
     fn ssrf_unknown_key_rejected() {
         assert!(parse("[ssrf]\nallow_private = true\n").is_err());
+    }
+
+    #[test]
+    fn audit_section_absent_trusts_no_proxy() {
+        use mazbri_core::config::ValidateConfig;
+        let cfg = parse("").expect("parse");
+        assert_eq!(cfg.audit.trusted_proxies, Vec::<String>::new());
+        assert!(cfg.audit.queue_capacity > 0);
+        cfg.audit.validate().expect("default audit config valid");
+    }
+
+    #[test]
+    fn audit_trusted_proxies_parse_and_validate() {
+        use mazbri_core::config::ValidateConfig;
+        let cfg = parse("[audit]\ntrusted_proxies = [\"10.0.0.1\", \"172.16.0.0/12\", \"::1\"]\n")
+            .expect("parse");
+        assert_eq!(cfg.audit.trusted_proxies.len(), 3);
+        cfg.audit.validate().expect("valid proxies");
+        let bad = parse("[audit]\ntrusted_proxies = [\"not-an-ip\"]\n").expect("parse");
+        assert!(bad.audit.validate().is_err());
+    }
+
+    #[test]
+    fn audit_unknown_key_rejected() {
+        assert!(parse("[audit]\ntrusted_proxy = []\n").is_err());
     }
 }

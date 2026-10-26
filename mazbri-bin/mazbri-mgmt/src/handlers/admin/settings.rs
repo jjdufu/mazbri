@@ -38,6 +38,11 @@ pub async fn update_system_settings(
     }
     info!("Updating system settings (by {})", claims.sub);
     let data = admin::update_system_settings(state.admin_db.clone(), &req).await?;
+    // 审计开关变更立即生效，且变更本身始终作为安全事件落库。
+    state.audit.invalidate_settings().await;
+    if req.enable_audit_log.is_some() {
+        crate::audit::mark_security_event();
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let audit_user_id = uuid::Uuid::parse_str(&claims.user_id).unwrap_or(uuid::Uuid::nil());
     state.audit.log(create_audit_log(

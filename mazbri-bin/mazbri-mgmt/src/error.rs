@@ -59,6 +59,10 @@ impl ErrorResponse for ApiError {
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        ErrorResponse::into_response(self)
+        let code = self.error_code();
+        let message = self.safe_message();
+        let mut response = ErrorResponse::into_response(self);
+        crate::audit::AuditErrorInfo::attach(&mut response, code, &message);
+        response
     }
 }

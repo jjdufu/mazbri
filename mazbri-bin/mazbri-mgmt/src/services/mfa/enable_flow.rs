@@ -57,7 +57,7 @@ pub async fn enable(
 
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaEnable,
         Some(serde_json::json!(
             { "action" : "mfa_enabled", "username" : username, }
         )),

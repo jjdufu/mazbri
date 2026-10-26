@@ -141,7 +141,7 @@ pub async fn create_admin(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminCreate,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(row.id.to_string()),
@@ -235,7 +235,7 @@ pub async fn update_admin(
     info!("Admin updated: {} by {}", current.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminUpdate,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -282,7 +282,7 @@ pub async fn delete_admin(
     info!("Admin deleted: {} by {}", current.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminDelete,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -343,7 +343,7 @@ pub async fn reset_password(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminPasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -392,8 +392,8 @@ pub async fn force_password_reset(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
-        action: AuditAction::AdminPasswordReset,
+        user_id: Some(audit_user_id),
+        action: AuditAction::AdminForcePasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(
@@ -458,7 +458,7 @@ pub async fn set_status(
     );
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
+        user_id: Some(audit_user_id),
         action: AuditAction::AdminStatusChange,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
@@ -501,8 +501,8 @@ pub async fn reset_mfa(
     info!("MFA reset for admin: {} by {}", admin.username, claims.sub);
     let audit_user_id = helpers::extract_audit_user_id(claims)?;
     audit.log(AuditLogRequest {
-        user_id: audit_user_id,
-        action: AuditAction::AdminUpdate,
+        user_id: Some(audit_user_id),
+        action: AuditAction::AdminMfaReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(

@@ -1,4 +1,4 @@
-use crate::audit::{AuditAction, AuditService, user_audit};
+use crate::audit::{self, AuditAction, AuditService, user_audit};
 use crate::error::ApiError;
 use crate::handlers::types::{AdminJwtClaims, AdminLoginRequest, AdminLogoutRequest, AdminUser};
 use crate::middleware::auth::{AdminClaims, is_jti_revoked, revoke_jti};
@@ -86,6 +86,7 @@ fn resolve_password_hash(user_row: &repo::AdminUserFullRow) -> Result<String, Ap
                  / 用户 {} 在数据库中没有 password_hash，密码验证失败。",
                 user_row.username, user_row.username
             );
+            audit::set_failure_reason("password_hash_missing");
             Err(ApiError::validation("密码验证失败".to_string()))
         }
     }
@@ -110,12 +111,15 @@ async fn handle_failed_login(
                 "Failed to update login failure count for user {}: {}. Lockout bypass possible!",
                 username, e
             );
+            audit::set_failure_reason("db_error");
             return Err(ApiError::internal("登录验证失败，请稍后重试".to_string()));
         }
         warn!(
             "User {} locked after {} failed login attempts",
             username, new_attempts
         );
+        audit::set_failure_reason("lock_triggered");
+        audit::mark_security_event();
         return Err(ApiError::validation(format!(
             "登录失败次数过多。账户已被锁定 {} 分钟。",
             policy.lockout_duration_minutes
@@ -128,6 +132,7 @@ async fn handle_failed_login(
         );
     }
     let remaining_attempts = policy.max_login_attempts.saturating_sub(new_attempts);
+    audit::set_failure_reason("invalid_password");
     Err(ApiError::validation(format!(
         "用户名或密码无效。剩余 {remaining_attempts} 次尝试。"
     )))
@@ -162,6 +167,7 @@ fn determine_mfa(
                 && mfa_lock_until > Utc::now()
             {
                 warn!("Login blocked: MFA locked for user: {}", username);
+                audit::set_failure_reason("mfa_locked");
                 return Err(ApiError::validation(
                     "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
                 ));
@@ -178,6 +184,7 @@ fn determine_mfa(
                 ApiError::internal("生成认证令牌失败".to_string())
             })?;
             info!("Password verified, MFA required for user: {}", username);
+            audit::add_detail("login_stage", serde_json::json!("mfa_required"));
             return Ok(Some(serde_json::json!(
                 { "mfa_required" : true, "temp_token" : temp_token, "totp_digits"
                 : totp_digits, "message" : "需要 MFA 验证" }
@@ -199,6 +206,7 @@ fn determine_mfa(
                 "Password verified, MFA setup required for user: {} (role: {})",
                 username, role
             );
+            audit::add_detail("login_stage", serde_json::json!("mfa_setup_required"));
             return Ok(Some(serde_json::json!(
                 { "mfa_setup_required" : true, "temp_token" : temp_token,
                 "message" : "安全策略要求设置 MFA" }
@@ -221,6 +229,7 @@ fn determine_mfa(
             "Password verified, MFA setup required for user: {}",
             username
         );
+        audit::add_detail("login_stage", serde_json::json!("mfa_setup_required"));
         return Ok(Some(serde_json::json!(
             { "mfa_setup_required" : true, "temp_token" : temp_token, "message" :
             "安全策略要求设置 MFA" }
@@ -306,6 +315,7 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
         Ok(row) => row,
         Err(e) => {
             error!("Database error during login: {}", e);
+            audit::set_failure_reason("db_error");
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             return Err(ApiError::internal(
                 "Database error during login".to_string(),
@@ -313,12 +323,16 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
         }
     };
     let Some(user_row) = user_row else {
+        // 不存在的账号名可能是误输入的密码，落库前脱敏。
+        audit::mask_attempted_username();
+        audit::set_failure_reason("user_not_found");
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         return Err(ApiError::Unauthorized);
     };
     let username = &user_row.username;
     if !user_row.is_active {
         warn!("Login attempt for disabled user: {}", username);
+        audit::set_failure_reason("account_disabled");
         return Err(ApiError::validation("账户已禁用".to_string()));
     }
     if let Some(lock_until) = user_row.locked_until
@@ -329,6 +343,7 @@ async fn load_login_user(db: &PgPool, username: &str) -> Result<repo::AdminUserF
             "Login attempt for locked user: {}, locked until: {}",
             username, lock_until
         );
+        audit::set_failure_reason("account_locked");
         return Err(ApiError::validation(format!(
             "账户已被临时锁定。请在 {remaining_seconds} 秒后重试。"
         )));
@@ -363,6 +378,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     let audit = params.audit;
     let req = params.req;
     let client_ip = params.client_ip;
+    audit::set_attempted_username(&req.username);
     let user_row = load_login_user(db, &req.username).await?;
     let user_id = user_row.id;
     let username = &user_row.username;
@@ -375,7 +391,10 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         let policy = password_policy_cache.get().await;
         return handle_failed_login(db, user_id, &user_row, &policy, username).await;
     }
+    // 密码已验证：身份确认，后续阶段（重置密码/MFA/成功）均归属该账号。
+    audit::set_actor(Some(user_id), Some(username), Some(role));
     if user_row.force_password_reset {
+        audit::add_detail("login_stage", serde_json::json!("password_reset_required"));
         let temp_token = generate_admin_jwt(
             username,
             &user_id.to_string(),
@@ -404,6 +423,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
             "Login blocked: password expired for user: {} (days until expiry: {})",
             username, days_until_expiry
         );
+        audit::set_failure_reason("password_expired");
         return Err(ApiError::validation(
             "密码已过期。请联系管理员重置密码。".to_string(),
         ));

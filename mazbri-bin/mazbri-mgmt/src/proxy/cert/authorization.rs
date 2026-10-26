@@ -91,6 +91,7 @@ pub async fn import_license_proxy(
     {
         req = req.header("x-mazbri-admin-id", admin_id);
     }
+    req = super::client::forward_request_id(req, &headers);
     req = req.bearer_auth(&config.cert_service_token);
     let form = ReqwestMultipartForm::new().part(
         "license_file",

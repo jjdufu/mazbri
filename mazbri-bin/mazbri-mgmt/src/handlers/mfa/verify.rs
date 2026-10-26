@@ -27,6 +27,7 @@ pub async fn mfa_verify(
         Ok(data) => data.claims,
         Err(e) => {
             warn!("Invalid temp token: {}", e);
+            crate::audit::set_failure_reason("invalid_temp_token");
             return crate::response::ApiResponse::err(
                 axum::http::StatusCode::UNAUTHORIZED,
                 mazbri_i18n::mfa::invalid_temp_token(),
@@ -46,6 +47,8 @@ pub async fn mfa_verify(
         Ok(uid) => uid,
         Err(e) => return e.into_response(),
     };
+    // 临时令牌已验签：MFA 结果（成功/失败）归属该账号。
+    crate::audit::set_actor(Some(user_id), Some(&claims.sub), Some(&claims.role));
     svc::verify(svc::VerifyParams {
         pool: &state.admin_db,
         mfa_cache: &state.mfa_cache,

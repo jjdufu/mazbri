@@ -51,7 +51,7 @@ pub async fn setup(
     }
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaSetup,
         Some(serde_json::json!(
             { "action" : "mfa_setup_initiated", "username" : username, }
         )),
@@ -108,7 +108,7 @@ pub async fn regenerate_backup_codes(
     }
     audit.log(user_audit(
         user_id,
-        AuditAction::UserUpdate,
+        AuditAction::MfaRegenerateCodes,
         Some(serde_json::json!(
             { "action" : "mfa_backup_codes_regenerated", "username" :
             username, }

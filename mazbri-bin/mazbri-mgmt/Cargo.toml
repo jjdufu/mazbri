@@ -29,7 +29,7 @@ mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-
 time = { version = "=0.3.47", features = ["formatting", "parsing"] }
 axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
 tower = {version = "0.5.3", features = ["full", "discover", "load"]}
-tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip", "fs", "limit"]}
+tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip", "fs", "limit", "catch-panic"]}
 
 tokio = {version = "1.35", features = ["full"]}
 

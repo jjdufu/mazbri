@@ -157,7 +157,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
     .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
 
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(id.to_string()),
@@ -253,7 +253,7 @@ pub(super) async fn probe_microservice_draft(
     .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
 
     audit.log(AuditLogRequest {
-        user_id,
+        user_id: Some(user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(row.id.to_string()),
