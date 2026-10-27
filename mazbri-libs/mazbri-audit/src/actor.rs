@@ -1,8 +1,9 @@
 //! 跨服务操作人声明（`x-mazbri-actor` 请求头）。
 //!
 //! mgmt 用 v2 HMAC-SHA256 签名（密钥由主令牌 HKDF 派生）。cert 同时接受 v2，
-//! 以及在配置了公钥文件时的 v1 Ed25519。未配置 v1 公钥时，`v1.` 头是
-//! [`ActorError::Malformed`]，任何路由都按无效声明拒绝。
+//! 以及在配置了公钥文件时的 v1 Ed25519。未配置 v1 公钥时，结构完整的 `v1.` 头返回
+//! [`ActorError::UnknownKey`]：验签方无法验证，应当按"没有可信声明"处理（与缺少声明
+//! 相同），绝不能信任其中的声明内容。结构本身不合法的头仍是 [`ActorError::Malformed`]。
 //!
 //! 格式：
 //! - v1：`v1.<base64url(JSON claims)>.<base64url(Ed25519 签名)>`，签名覆盖 `v1.<claims>`
@@ -121,6 +122,9 @@ pub enum ActorError {
     Path,
     #[error("actor header replayed")]
     Replayed,
+    /// 声明格式正确，但验签方没有对应版本的密钥（未配置 v1 公钥时收到 v1 声明）。
+    #[error("actor header signed with a key this verifier does not have")]
+    UnknownKey,
 }
 
 impl ActorError {
@@ -137,6 +141,7 @@ impl ActorError {
             Self::Method => "actor_method_mismatch",
             Self::Path => "actor_path_mismatch",
             Self::Replayed => "actor_replayed",
+            Self::UnknownKey => "actor_unverifiable",
         }
     }
 }
@@ -401,7 +406,7 @@ impl std::fmt::Debug for ActorVerifier {
 }
 
 impl ActorVerifier {
-    /// `v1` 缺省时不接受 `v1.` 头（返回 [`ActorError::Malformed`]）。
+    /// `v1` 缺省时无法验证 `v1.` 头（返回 [`ActorError::UnknownKey`]）。
     /// `v2_masters` 是当前主令牌和可选的上一代，各自派生一把 HMAC 密钥。
     #[must_use]
     pub fn new(audience: &str, v1: Option<VerifyingKey>, v2_masters: &[&str]) -> Self {
@@ -496,8 +501,8 @@ impl ActorVerifier {
                 continue;
             };
             saw_key = true;
-            let mut mac = HmacSha256::new_from_slice(secret.as_ref())
-                .expect("HMAC accepts any key length");
+            let mut mac =
+                HmacSha256::new_from_slice(secret.as_ref()).expect("HMAC accepts any key length");
             mac.update(signed.as_bytes());
             // verify_slice 对单把密钥是常量时间；两代密钥都算完再取值，不提前返回。
             ok |= mac.verify_slice(signature).is_ok();
@@ -513,14 +518,15 @@ impl ActorVerifier {
     }
 
     fn verify_ed25519(&self, signed: &str, signature: &[u8]) -> Result<(), ActorError> {
+        let signature = Signature::from_slice(signature).map_err(|_| ActorError::Malformed)?;
         let Some(key) = self.keys.iter().find_map(|key| match key {
             VerifyKey::Ed25519(key) => Some(key),
             VerifyKey::Hmac(_) => None,
         }) else {
-            // 没配 v1 公钥时，v1. 必须是 Malformed，不能变成“无法验签后放行”。
-            return Err(ActorError::Malformed);
+            // 没配 v1 公钥：返回 UnknownKey，调用方必须按"没有可信声明"处理（不信任
+            // 声明内容，严格模式下 mgmt-only 路由照样拒绝），不能当作验签通过。
+            return Err(ActorError::UnknownKey);
         };
-        let signature = Signature::from_slice(signature).map_err(|_| ActorError::Malformed)?;
         key.verify_strict(signed.as_bytes(), &signature)
             .map_err(|_| ActorError::BadSignature)
     }
@@ -738,7 +744,11 @@ mod tests {
         assert!(ActorSigner::from_pkcs8_pem(&pub_pem, ISSUER_MGMT).is_err());
         assert!(ActorVerifier::from_spki_pem("garbage", AUDIENCE_CERT).is_err());
         assert!(s.ed25519_verifying_key().is_some());
-        assert!(hmac_signer("example-master").ed25519_verifying_key().is_none());
+        assert!(
+            hmac_signer("example-master")
+                .ed25519_verifying_key()
+                .is_none()
+        );
     }
 
     /// 用 openssl 生成的真实密钥文件互通：
@@ -835,16 +845,11 @@ mod tests {
     }
 
     #[test]
-    fn previous_master_verifies_and_v1_without_key_is_malformed() {
+    fn previous_master_verifies_and_v1_without_key_is_unverifiable() {
         let previous = "previous-master";
         let current = "example-master";
-        let signed_by_previous = hmac_signer(previous).sign_at(
-            AUDIENCE_CERT,
-            &identity(),
-            "POST",
-            "/issue",
-            1_000,
-        );
+        let signed_by_previous =
+            hmac_signer(previous).sign_at(AUDIENCE_CERT, &identity(), "POST", "/issue", 1_000);
         let both = ActorVerifier::new(AUDIENCE_CERT, None, &[current, previous]);
         assert!(
             both.verify_at(&signed_by_previous, "POST", "/issue", 1_001)
@@ -859,6 +864,13 @@ mod tests {
         assert!(v1.starts_with(V1_PREFIX));
         assert_eq!(
             only_current.verify_at(&v1, "POST", "/issue", 1_001),
+            Err(ActorError::UnknownKey)
+        );
+        assert_eq!(ActorError::UnknownKey.as_str(), "actor_unverifiable");
+        // 结构不合法的 v1 头仍是 Malformed，不会因为没有公钥而被降级成 UnknownKey。
+        let (signed, _) = v1.rsplit_once('.').expect("v1 has signature");
+        assert_eq!(
+            only_current.verify_at(&format!("{signed}.AAAA"), "POST", "/issue", 1_001),
             Err(ActorError::Malformed)
         );
     }
