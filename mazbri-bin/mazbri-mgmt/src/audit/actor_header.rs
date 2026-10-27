@@ -1,13 +1,12 @@
-//! 调用 cert-service 时签发 `x-mazbri-actor` 头（Ed25519，`aud=mazbri-cert`，≤60 秒，
+//! 调用 cert-service 时签发 `x-mazbri-actor` 头（v2 HMAC，`aud=mazbri-cert`，≤60 秒，
 //! 绑定方法与路径+查询，带 jti），让 cert 侧审计能可信地记录真实操作人。
 //!
-//! 签名器在启动时由 [`init_actor_signer`] 从 `[audit].actor_signing_key_file` 加载；
-//! 未配置时出站请求不带该头（cert 宽松模式下仍放行）。
+//! 签名器在启动时由 [`init_actor_signer`] 从主令牌派生，不再读取密钥文件。
 
-use std::path::Path;
 use std::sync::OnceLock;
 
 use mazbri_audit::actor::{ACTOR_HEADER, AUDIENCE_CERT, ActorIdentity, ActorSigner, ISSUER_MGMT};
+use mazbri_core::get_cert_service_token;
 use reqwest::header::HeaderValue;
 
 use super::AuditConfig;
@@ -15,31 +14,34 @@ use super::scope::AuditScope;
 
 static SIGNER: OnceLock<ActorSigner> = OnceLock::new();
 
-/// 加载签名私钥。配置了但无法加载时返回错误（启动失败），未配置时返回 `Ok(false)`。
+/// 用主令牌构造 v2 HMAC 签名器。配置了旧密钥文件时只告警，不读取文件。
 ///
 /// # Errors
 ///
-/// 私钥文件不可读或不是 Ed25519 PKCS#8 PEM。
+/// 缺少 `MAZBRI_CERT_SERVICE_TOKEN` 或值为空时返回错误。
 pub fn init_actor_signer(config: &AuditConfig) -> anyhow::Result<bool> {
-    let Some(path) = config
-        .actor_signing_key_file
-        .as_deref()
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-    else {
-        tracing::warn!(
-            "audit.actor_signing_key_file is not configured; requests to cert-service carry no actor header"
-        );
-        return Ok(false);
-    };
-    let signer = ActorSigner::from_file(Path::new(path), ISSUER_MGMT)
-        .map_err(|error| anyhow::anyhow!("audit.actor_signing_key_file: {error}"))?
-        .with_ttl_secs(config.actor_token_ttl_secs);
+    warn_if_legacy_signing_key(config);
+    let master = get_cert_service_token()?;
+    let signer = v2_signer(&master, config.actor_token_ttl_secs);
     if SIGNER.set(signer).is_err() {
         tracing::warn!("actor signer already initialized; keeping the first key");
     }
-    tracing::info!("actor header signing for cert-service enabled");
+    tracing::info!("actor header signing for cert-service enabled (v2)");
     Ok(true)
+}
+
+fn warn_if_legacy_signing_key(config: &AuditConfig) {
+    let configured = config
+        .actor_signing_key_file
+        .as_deref()
+        .is_some_and(|path| !path.trim().is_empty());
+    if configured {
+        tracing::warn!("audit.actor_signing_key_file 已废弃，已忽略，改用 v2");
+    }
+}
+
+fn v2_signer(master: &str, ttl_secs: i64) -> ActorSigner {
+    ActorSigner::hmac_v2(master, ISSUER_MGMT).with_ttl_secs(ttl_secs)
 }
 
 /// 当前请求的操作人；请求之外（后台任务）返回空身份，即系统操作。
@@ -122,8 +124,8 @@ mod tests {
 
     #[test]
     fn decorate_signs_path_query_and_forwards_request_id() {
-        let signer = ActorSigner::from_seed(&[9u8; 32], ISSUER_MGMT);
-        let verifier = ActorVerifier::new(AUDIENCE_CERT, signer.ed25519_verifying_key(), &[]);
+        let signer = ActorSigner::hmac_v2("example-master", ISSUER_MGMT);
+        let verifier = ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"]);
         let mut request = reqwest::Client::new()
             .put("http://cert.local:8443/configs/mazbri-gateway?dry_run=1")
             .build()
@@ -141,6 +143,7 @@ mod tests {
             .get(ACTOR_HEADER)
             .and_then(|v| v.to_str().ok())
             .expect("actor header");
+        assert!(token.starts_with("v2."), "{token}");
         let claims = verifier
             .verify(token, "PUT", "/configs/mazbri-gateway?dry_run=1")
             .expect("valid");
@@ -170,5 +173,19 @@ mod tests {
     #[test]
     fn current_identity_outside_request_is_system() {
         assert_eq!(current_identity(), ActorIdentity::default());
+    }
+
+    #[test]
+    fn legacy_signing_key_file_is_ignored() {
+        let config = AuditConfig {
+            actor_signing_key_file: Some("/no/such/mgmt-actor-ed25519.pem".to_string()),
+            ..AuditConfig::default()
+        };
+        warn_if_legacy_signing_key(&config);
+        let signer = v2_signer("example-master", config.actor_token_ttl_secs);
+        assert!(signer.ed25519_verifying_key().is_none());
+        let token = signer.sign(AUDIENCE_CERT, &ActorIdentity::default(), "GET", "/ca");
+        assert!(token.starts_with("v2."), "{token}");
+        assert!(!std::path::Path::new("/no/such/mgmt-actor-ed25519.pem").exists());
     }
 }
