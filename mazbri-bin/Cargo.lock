@@ -2312,6 +2312,8 @@ dependencies = [
  "chrono",
  "ed25519-dalek",
  "hex",
+ "hkdf",
+ "hmac",
  "mazbri-core",
  "prometheus",
  "serde",
@@ -2322,6 +2324,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -2664,6 +2667,7 @@ dependencies = [
  "rcgen",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2 0.10.9",
  "sqlx",
  "subtle",
@@ -2676,6 +2680,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "x509-parser",
  "zeroize",

@@ -2,9 +2,10 @@ use crate::config_center::ConfigRepository;
 use crate::node_registry::{
     HeartbeatData, NodeRegistryRepository, RegisterNodeData, RegisteredNode,
 };
+use crate::token::scope::{ScopeContext, enforce_owner};
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -34,8 +35,17 @@ pub struct HeartbeatResponse {
 }
 pub async fn register_node(
     State(state): State<NodeState>,
+    Extension(scope): Extension<ScopeContext>,
     Json(req): Json<RegisterNodeData>,
 ) -> Response {
+    if let Err(response) = enforce_owner(
+        scope.owner_mode,
+        scope.caller,
+        &req.service_name,
+        "/nodes/register",
+    ) {
+        return *response;
+    }
     match state.repo.register(&req).await {
         Ok(node) => {
             info!(
@@ -56,8 +66,17 @@ pub async fn register_node(
 }
 pub async fn heartbeat(
     State(state): State<NodeState>,
+    Extension(scope): Extension<ScopeContext>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Response {
+    if let Err(response) = enforce_owner(
+        scope.owner_mode,
+        scope.caller,
+        &req.service_name,
+        "/nodes/heartbeat",
+    ) {
+        return *response;
+    }
     let latest_version = match state
         .config_repo
         .get_service_version(&req.service_name)

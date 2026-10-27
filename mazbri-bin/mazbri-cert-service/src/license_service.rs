@@ -1,6 +1,6 @@
 use crate::base_authorization_service::BaseAuthorizationState;
 use crate::ca::CaManager;
-use crate::config::{CertAuthConfig, CertConfig};
+use crate::config::CertConfig;
 use crate::error::{CertError, CertResult};
 use crate::root_package::{
     COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE,
@@ -236,7 +236,6 @@ pub struct ImportArgs<'a> {
     pub state: &'a BaseAuthorizationState,
     pub raw_license: &'a str,
     pub actor_id: Option<Uuid>,
-    pub recovery_secret: Option<&'a str>,
 }
 
 /// # Errors
@@ -412,21 +411,12 @@ async fn apply_rekey(
 }
 
 async fn activate_runtime(args: &ImportArgs<'_>, password: &str, assets: &LicenseAssets) {
-    let static_tokens = args
-        .recovery_secret
-        .map(|value| vec![value.to_string()])
-        .unwrap_or_default();
-    if static_tokens.is_empty() {
-        tracing::warn!("许可证已写入，但缺少服务 token，启动恢复时会再次装载 CA");
-        return;
-    }
     let cert_config = CertConfig {
         ca_validity_days: assets.ca_validity_days,
         cert_validity_days: assets.cert_validity_days,
         key_password: Some(password.to_string()),
     };
-    let auth_config = CertAuthConfig { static_tokens };
-    if let Err(error) = args.state.activate(cert_config, auth_config).await {
+    if let Err(error) = args.state.activate(cert_config).await {
         tracing::warn!(error = %error, "许可证已写入，但 CA 运行态装载失败，重启后会再次恢复");
     }
 }
@@ -960,11 +950,7 @@ async fn record_event_tx(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn restore_v3(
-    state: &BaseAuthorizationState,
-    pool: &PgPool,
-    recovery_tokens: &[String],
-) -> CertResult<bool> {
+pub async fn restore_v3(state: &BaseAuthorizationState, pool: &PgPool) -> CertResult<bool> {
     let Some(row) = load_state(pool).await? else {
         return Ok(false);
     };
@@ -982,18 +968,11 @@ pub async fn restore_v3(
         ));
     }
     let password = open_stored_password(&installation, &row, &verified)?;
-    let Some(token) = recovery_tokens.first() else {
-        return Err(CertError::BaseAuthorizationNotActive);
-    };
     let cert_config = CertConfig {
         ca_validity_days: 3650,
         cert_validity_days: 365,
         key_password: Some(password),
     };
-    let auth_config = CertAuthConfig {
-        static_tokens: recovery_tokens.to_vec(),
-    };
-    let _ = token;
-    state.activate(cert_config, auth_config).await?;
+    state.activate(cert_config).await?;
     Ok(true)
 }

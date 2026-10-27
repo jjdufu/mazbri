@@ -4,25 +4,22 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::auth::AuthState;
 use crate::ca::{CaManager, CaStore};
-use crate::config::{CertAuthConfig, CertConfig};
+use crate::config::CertConfig;
 use crate::db::CertificateRepository;
 use crate::error::{CertError, CertResult};
 
 pub struct BaseAuthorizationState {
     repo: Arc<CertificateRepository>,
-    auth_state: Arc<AuthState>,
     ca_manager: RwLock<Option<Arc<CaManager>>>,
     cert_config: RwLock<Option<Arc<CertConfig>>>,
 }
 
 impl BaseAuthorizationState {
     #[must_use]
-    pub fn new(repo: Arc<CertificateRepository>, auth_state: Arc<AuthState>) -> Self {
+    pub fn new(repo: Arc<CertificateRepository>) -> Self {
         Self {
             repo,
-            auth_state,
             ca_manager: RwLock::new(None),
             cert_config: RwLock::new(None),
         }
@@ -48,17 +45,11 @@ impl BaseAuthorizationState {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn activate(
-        &self,
-        cert_config: CertConfig,
-        auth_config: CertAuthConfig,
-    ) -> CertResult<Arc<CaManager>> {
-        validate_runtime_config(&cert_config, &auth_config)?;
+    pub async fn activate(&self, cert_config: CertConfig) -> CertResult<Arc<CaManager>> {
+        validate_runtime_config(&cert_config)?;
         let cert_config = Arc::new(cert_config);
         let ca_store = CaStore::new(self.repo.clone(), cert_config.clone());
         let ca_manager = Arc::new(ca_store.initialize().await?);
-        self.auth_state.update_config(&auth_config).await;
-        self.auth_state.token_manager.validate_config().await?;
         *self.cert_config.write().await = Some(cert_config);
         *self.ca_manager.write().await = Some(ca_manager.clone());
         Ok(ca_manager)
@@ -116,8 +107,7 @@ impl BaseAuthorizationState {
         if !crate::license_service::has_v3_state(pool).await? {
             return Ok(false);
         }
-        let static_tokens = self.auth_state.token_manager.static_tokens().await;
-        crate::license_service::restore_v3(self, pool, &static_tokens).await
+        crate::license_service::restore_v3(self, pool).await
     }
 }
 
@@ -136,7 +126,7 @@ pub fn management_writes_decision(decision: &LicenseDecision) -> CertResult<()> 
     }
 }
 
-fn validate_runtime_config(cert: &CertConfig, auth: &CertAuthConfig) -> CertResult<()> {
+fn validate_runtime_config(cert: &CertConfig) -> CertResult<()> {
     if cert
         .key_password
         .as_ref()
@@ -154,11 +144,6 @@ fn validate_runtime_config(cert: &CertConfig, auth: &CertAuthConfig) -> CertResu
     if cert.cert_validity_days >= cert.ca_validity_days {
         return Err(CertError::InvalidRequest(
             "cert_validity_days must be less than ca_validity_days".to_string(),
-        ));
-    }
-    if auth.static_tokens.is_empty() {
-        return Err(CertError::InvalidRequest(
-            "static_tokens is required".to_string(),
         ));
     }
     Ok(())

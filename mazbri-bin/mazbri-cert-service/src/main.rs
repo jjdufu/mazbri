@@ -11,9 +11,9 @@ use mazbri_cert_service::handlers::certificate::common::update_certificate_inven
 use mazbri_cert_service::node_registry::NodeRegistryRepository;
 use mazbri_cert_service::san::{EnvSource, SanPolicy};
 use mazbri_cert_service::server;
-use mazbri_cert_service::token::TokenManager;
+use mazbri_cert_service::token::TokenTable;
 use mazbri_core::ServiceName;
-use mazbri_core::config::{build_log_routes, get_cert_service_token, load_toml};
+use mazbri_core::config::{build_log_routes, load_toml};
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use mazbri_core::init_tracing_with_routes;
 use parking_lot::Mutex;
@@ -145,6 +145,9 @@ async fn serve_until_shutdown(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if let Some(code) = mazbri_cert_service::tool::maybe_run() {
+        std::process::exit(code);
+    }
     let config_dir = Path::new(".");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
     let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
@@ -157,12 +160,16 @@ async fn main() -> Result<()> {
     }
     let service_name = config.service_name.as_str().to_owned();
     let log_routes = build_log_routes(&config.log_routes)?;
-    let cert_service_token = get_cert_service_token()?;
-    config.auth.static_tokens = vec![cert_service_token];
     config.cert.key_password = None;
+    let tokens = Arc::new(TokenTable::from_env()?);
     let admin_state = start_admin_server(&config, &service_name)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
+    if !config.auth.static_tokens.is_empty() {
+        tracing::warn!("[auth].static_tokens 已废弃，忽略");
+    }
+    warn_on_mode_combination(&config);
     mazbri_tls::register_cert_metrics()?;
+    mazbri_cert_service::token::register_token_scope_metrics()?;
     info!("Mazbri 证书服务启动中...");
     info!(host = % config.server.host, port = % config.server.port, "服务器配置");
     let db = mazbri_core::create_pool(&config.database, Some(config_dir)).await?;
@@ -174,12 +181,9 @@ async fn main() -> Result<()> {
         state.set_ready(true);
         info!("Service marked as ready for authorization import");
     }
-    let token_manager = Arc::new(TokenManager::new(Arc::new(config.auth.clone())));
-    token_manager.validate_config().await?;
-    let auth_state = Arc::new(AuthState::new(token_manager.clone(), &config.auth));
+    let auth_state = Arc::new(AuthState::new(tokens.clone(), config.auth.scope_mode));
     let base_authorization = Arc::new(base_authorization::BaseAuthorizationState::new(
         repo.clone(),
-        auth_state.clone(),
     ));
     let node_repo = Arc::new(NodeRegistryRepository::new(db.clone()));
     info!("节点注册仓库已初始化");
@@ -203,6 +207,7 @@ async fn main() -> Result<()> {
         &config.audit,
         Path::new(&config.tracing.log_dir),
         Some(config_dir),
+        tokens,
     )?;
     let state = server::AppState {
         base_authorization,
@@ -235,4 +240,18 @@ async fn main() -> Result<()> {
     }
     info!("证书服务关闭完成");
     Ok(())
+}
+
+/// `[audit] actor_mode` 与 `[auth] scope_mode` 相互独立，四种组合都安全；
+/// strict + audit 时提示路由级权限仍只是观察模式。
+fn warn_on_mode_combination(config: &CertAppConfig) {
+    if config.audit.actor_mode == mazbri_cert_service::audit::ActorMode::Strict
+        && config.auth.scope_mode == mazbri_cert_service::token::ScopeMode::Audit
+    {
+        // 这一组合是安全的（服务不带声明续期时归属校验强制按 enforce 执行），只是提示：
+        // 路由级权限表仍处于观察模式，越权访问只告警不拒绝。
+        tracing::warn!(
+            "[audit] actor_mode = \"strict\" 而 [auth] scope_mode = \"audit\"：mgmt-only 路由要求有效操作人声明，其余路由的服务权限仍只告警；确认无越权告警后请改为 enforce"
+        );
+    }
 }

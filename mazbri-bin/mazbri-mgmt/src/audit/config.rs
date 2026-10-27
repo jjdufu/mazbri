@@ -45,8 +45,7 @@ pub struct AuditConfig {
     /// 优雅停机时等待队列排空的最长时间（秒）。
     #[serde(default = "default_shutdown_drain_secs")]
     pub shutdown_drain_secs: u64,
-    /// 调用 cert-service 时签发 `x-mazbri-actor` 头所用的 Ed25519 私钥（PKCS#8 PEM 文件）。
-    /// 缺省则不签发（cert 宽松模式下记为未验证操作人，严格模式下拒绝 mgmt 专属写操作）。
+    /// 已废弃。配置了只告警并忽略，v2 声明改由主令牌派生，不再读取该文件。
     #[serde(default)]
     pub actor_signing_key_file: Option<String>,
     /// 操作人声明有效期（秒），范围 [1, 60]。

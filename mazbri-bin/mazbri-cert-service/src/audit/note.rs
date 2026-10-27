@@ -31,6 +31,13 @@ pub fn note_authenticated() {
     with_note(|note| note.authenticated = true);
 }
 
+/// 补充已识别的调用方。不能代替 [`note_authenticated`]：没有操作人声明时，
+/// 审计靠 `authenticated` 区分 system 和 anonymous。
+pub fn note_caller(caller: &str, generation: &str) {
+    note_detail("caller", caller);
+    note_detail("caller_generation", generation);
+}
+
 /// 记录被操作资源的 ID（覆盖路径中解析出的 ID）。
 pub fn note_resource_id(id: impl Into<String>) {
     let id = id.into();

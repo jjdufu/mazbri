@@ -19,9 +19,13 @@ pub mod root_package {
 pub mod san;
 pub mod server;
 pub mod token;
+pub mod tool;
 
 pub mod base_authorization_service;
 pub mod root_package_service;
+
+#[cfg(test)]
+mod scope_http_tests;
 
 pub use config::CertAppConfig;
 pub use error::{CertError, CertResult};
