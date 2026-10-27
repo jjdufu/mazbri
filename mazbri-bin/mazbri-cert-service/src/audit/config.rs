@@ -24,6 +24,8 @@ pub enum ActorMode {
     #[default]
     Lenient,
     /// mgmt 专属写接口必须携带有效声明；任何接口携带无效声明都返回 401。
+    /// 唯一例外：已识别的服务不带声明续期证书时放行，但归属校验强制按 enforce 执行
+    /// （只能续期自己的）。与 `[auth] scope_mode` 相互独立，可以单独打开。
     Strict,
 }
 

@@ -39,7 +39,7 @@ pub async fn register_node(
     Json(req): Json<RegisterNodeData>,
 ) -> Response {
     if let Err(response) = enforce_owner(
-        scope.mode,
+        scope.owner_mode,
         scope.caller,
         &req.service_name,
         "/nodes/register",
@@ -70,7 +70,7 @@ pub async fn heartbeat(
     Json(req): Json<HeartbeatRequest>,
 ) -> Response {
     if let Err(response) = enforce_owner(
-        scope.mode,
+        scope.owner_mode,
         scope.caller,
         &req.service_name,
         "/nodes/heartbeat",

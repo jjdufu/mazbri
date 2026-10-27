@@ -324,42 +324,162 @@ async fn empty_renew_body_is_not_unsupported_media_type() {
     assert!(!denied(status, &body), "{status} {body}");
 }
 
+const CERT_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+/// 结构完整、但只能用 v1 公钥验证的声明（本测试不配置 v1 公钥）。
+fn unverifiable_v1_claim() -> String {
+    format!("v1.e30.{}", "A".repeat(86))
+}
+
+fn with_actor(mut request: Request<Body>, claim: &str) -> Request<Body> {
+    request.headers_mut().insert(
+        mazbri_audit::actor::ACTOR_HEADER,
+        claim.parse().expect("header"),
+    );
+    request
+}
+
+/// 不带操作人声明时，两项开关四种组合下的结果。
+/// "pass" 指既不是 401（声明）也不是 403（权限），测试环境没有数据库，处理器随后报错。
 #[tokio::test]
-async fn strict_actor_does_not_replace_scope_enforcement() {
-    let app = build_app(ScopeMode::Enforce, ActorMode::Strict);
+async fn scope_and_actor_switches_are_independent() {
     let gateway = token("mazbri-gateway");
+    let wait = token("mazbri-wait-deps");
+    let renew = format!("/renew/{CERT_ID}");
+    let revoke = format!("/revoke/{CERT_ID}");
+    for scope_mode in [ScopeMode::Audit, ScopeMode::Enforce] {
+        for actor_mode in [ActorMode::Lenient, ActorMode::Strict] {
+            let app = build_app(scope_mode, actor_mode);
+            let combo = format!("{}+{}", scope_mode.as_str(), actor_mode.as_str());
+            let strict = actor_mode == ActorMode::Strict;
+            let enforce = scope_mode == ScopeMode::Enforce;
+            // 服务撤销（mgmt-only，无归属校验）：strict 要声明，enforce 拒绝。
+            let (status, body) = call(&app, request("POST", &revoke, Some(&gateway), b"")).await;
+            if strict {
+                assert_eq!(status, StatusCode::UNAUTHORIZED, "{combo} revoke: {body}");
+            } else if enforce {
+                assert!(denied(status, &body), "{combo} revoke: {status} {body}");
+            } else {
+                assert!(
+                    status != StatusCode::UNAUTHORIZED && !denied(status, &body),
+                    "{combo} revoke: {status} {body}"
+                );
+            }
+            // 服务续期（处理器校验归属）：四种组合都放到处理器。
+            let (status, body) = call(&app, request("POST", &renew, Some(&gateway), b"")).await;
+            assert!(
+                status != StatusCode::UNAUTHORIZED && !denied(status, &body),
+                "{combo} service renew: {status} {body}"
+            );
+            // wait-deps / Admin 续期没有归属豁免：strict 下都要声明。
+            let (status, body) = call(&app, request("POST", &renew, Some(&wait), b"")).await;
+            if strict {
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "{combo} wait renew: {body}"
+                );
+            } else if enforce {
+                assert!(denied(status, &body), "{combo} wait renew: {status} {body}");
+            }
+            let (status, body) = call(&app, request("POST", &renew, Some(MASTER), b"")).await;
+            if strict {
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "{combo} admin renew: {body}"
+                );
+            } else {
+                assert!(
+                    status != StatusCode::UNAUTHORIZED && !denied(status, &body),
+                    "{combo} admin renew: {status} {body}"
+                );
+            }
+        }
+    }
+}
+
+async fn probe(axum::Extension(scope): axum::Extension<crate::token::ScopeContext>) -> String {
+    format!("{}/{}", scope.mode.as_str(), scope.owner_mode.as_str())
+}
+
+/// 真实的审计层 + 认证层，处理器只回显 `ScopeContext` 里的两个模式。
+fn probe_app(scope_mode: ScopeMode, actor_mode: ActorMode) -> axum::Router {
+    use axum::middleware::from_fn_with_state;
+    use axum::routing::post;
+    let tokens = Arc::new(TokenTable::from_masters(MASTER, None).expect("tokens"));
+    let audit_config = CertAuditConfig {
+        actor_mode,
+        ..CertAuditConfig::default()
+    };
+    let (audit, _) = CertAudit::start(
+        &audit_config,
+        std::env::temp_dir().as_path(),
+        None,
+        Arc::clone(&tokens),
+    )
+    .expect("audit");
+    axum::Router::new()
+        .route("/renew/{id}", post(probe))
+        .route("/revoke/{id}", post(probe))
+        .route_layer(from_fn_with_state(
+            Arc::new(AuthState::new(tokens, scope_mode)),
+            crate::auth::auth_middleware,
+        ))
+        .layer(from_fn_with_state(audit, crate::audit::audit_middleware))
+}
+
+/// strict + audit 下服务凭归属豁免续期时，归属校验被强制为 enforce（只能续期自己的证书）；
+/// 其它情况下归属校验沿用 `scope_mode`。
+#[tokio::test]
+async fn strict_owner_exemption_forces_owner_enforcement() {
+    let gateway = token("mazbri-gateway");
+    let renew = format!("/renew/{CERT_ID}");
+    let cases = [
+        (ScopeMode::Audit, ActorMode::Lenient, "audit/audit"),
+        (ScopeMode::Audit, ActorMode::Strict, "audit/enforce"),
+        (ScopeMode::Enforce, ActorMode::Lenient, "enforce/enforce"),
+        (ScopeMode::Enforce, ActorMode::Strict, "enforce/enforce"),
+    ];
+    for (scope_mode, actor_mode, expected) in cases {
+        let app = probe_app(scope_mode, actor_mode);
+        let (status, body) = call(&app, request("POST", &renew, Some(&gateway), b"")).await;
+        assert_eq!(status, StatusCode::OK, "{expected}: {body}");
+        assert_eq!(body, expected);
+    }
+    // Admin 带不上豁免，lenient 下归属模式沿用 scope_mode。
+    let app = probe_app(ScopeMode::Audit, ActorMode::Lenient);
+    let (_, body) = call(&app, request("POST", &renew, Some(MASTER), b"")).await;
+    assert_eq!(body, "audit/audit");
+}
+
+/// 未配置 v1 公钥时，结构完整的 v1 声明按"无法验证"处理（等同缺少声明），
+/// 不是无效声明：服务续期仍可凭归属豁免通过，mgmt-only 的撤销仍要求有效声明。
+#[tokio::test]
+async fn v1_claim_without_key_is_unverifiable_not_trusted() {
+    let gateway = token("mazbri-gateway");
+    let claim = unverifiable_v1_claim();
+    let app = probe_app(ScopeMode::Audit, ActorMode::Strict);
     let (status, body) = call(
         &app,
-        request(
-            "POST",
-            "/revoke/00000000-0000-0000-0000-000000000001",
-            Some(&gateway),
-            b"",
+        with_actor(
+            request("POST", &format!("/renew/{CERT_ID}"), Some(&gateway), b""),
+            &claim,
         ),
     )
     .await;
-    assert!(denied(status, &body), "enforce scope: {status} {body}");
-    assert_ne!(status, StatusCode::UNAUTHORIZED, "{body}");
-    let audit = build_app(ScopeMode::Audit, ActorMode::Strict);
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, "audit/enforce");
     let (status, body) = call(
-        &audit,
-        request(
-            "POST",
-            "/revoke/00000000-0000-0000-0000-000000000001",
-            Some(&gateway),
-            b"",
+        &app,
+        with_actor(
+            request("POST", &format!("/revoke/{CERT_ID}"), Some(MASTER), b""),
+            &claim,
         ),
     )
     .await;
-    assert!(
-        !denied(status, &body),
-        "audit+strict must not scope-deny: {status} {body}"
-    );
-    assert_ne!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "audit layer must not reject service renew/revoke: {body}"
-    );
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("actor_unverifiable"), "{body}");
 }
 
 /// 认证层被挂到 fallback 上（拿不到 `MatchedPath`）时不能放行越权：

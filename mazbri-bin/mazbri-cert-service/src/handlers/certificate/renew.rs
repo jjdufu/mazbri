@@ -113,7 +113,12 @@ async fn renew_certificate_inner(
     validity_days: i64,
 ) -> Result<Response, CertError> {
     let existing = state.repo.get_by_id(id).await?;
-    if !owner_visible(scope.mode, scope.caller, &existing.subject, "/renew/{id}") {
+    if !owner_visible(
+        scope.owner_mode,
+        scope.caller,
+        &existing.subject,
+        "/renew/{id}",
+    ) {
         // 与真正不存在时的响应完全相同；真实原因只进日志、指标和审计。
         crate::audit::note_failure("not_owner");
         return Err(CertError::NotFound(id.to_string()));

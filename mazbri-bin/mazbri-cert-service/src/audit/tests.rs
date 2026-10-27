@@ -328,7 +328,7 @@ async fn strict_unknown_caller_still_rejected_on_mgmt_only() {
 }
 
 #[tokio::test]
-async fn strict_rejects_invalid_and_v1_without_key_for_any_caller() {
+async fn strict_rejects_invalid_and_treats_v1_without_key_as_absent() {
     let verifier = ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"]);
     let (app, _, _) = harness_with(ActorMode::Strict, service_table(), Some(verifier));
     let v2 = ActorSigner::hmac_v2("example-master", ISSUER_MGMT).sign(
@@ -348,6 +348,8 @@ async fn strict_rejects_invalid_and_v1_without_key_for_any_caller() {
         .body(Body::empty())
         .expect("req");
     assert_eq!(call(&app, bad).await, StatusCode::UNAUTHORIZED);
+    // 未配置 v1 公钥：v1 声明无法验证，等同缺少声明。非 mgmt-only 路由放行，
+    // 声明内容不被信任；mgmt-only 路由（撤销）仍要求有效声明。
     let v1 = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/issue");
     let legacy = Request::builder()
         .method("POST")
@@ -356,11 +358,20 @@ async fn strict_rejects_invalid_and_v1_without_key_for_any_caller() {
         .header(ACTOR_HEADER, v1)
         .body(Body::empty())
         .expect("req");
+    assert_eq!(call(&app, legacy).await, StatusCode::CREATED);
+    let v1 = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/revoke/c-4");
+    let legacy = Request::builder()
+        .method("POST")
+        .uri("/revoke/c-4")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .header(ACTOR_HEADER, v1)
+        .body(Body::empty())
+        .expect("req");
     assert_eq!(call(&app, legacy).await, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
-async fn strict_does_not_block_service_token_on_revoke() {
+async fn strict_requires_claim_for_service_revoke_but_not_own_renew() {
     let (app, store, handle) = harness_with(
         ActorMode::Strict,
         service_table(),
@@ -372,8 +383,26 @@ async fn strict_does_not_block_service_token_on_revoke() {
         .header(header::AUTHORIZATION, "Bearer svc")
         .body(Body::empty())
         .expect("req");
-    assert_eq!(call(&app, revoke).await, StatusCode::OK);
+    // 撤销没有归属校验：服务不带声明在 strict 下被拒，与 scope_mode 无关。
+    assert_eq!(call(&app, revoke).await, StatusCode::UNAUTHORIZED);
+    // 续期由处理器校验归属：服务可以不带声明，归属校验被强制为 enforce。
+    let renew = Request::builder()
+        .method("POST")
+        .uri("/renew/c-9")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, renew).await, StatusCode::OK);
     let rows = drain(handle, &store).await;
-    assert_eq!(rows[0].actor_type, "system");
-    assert_eq!(detail(&rows[0], "caller"), Some("mazbri-auth"));
+    let renewed = rows
+        .iter()
+        .find(|row| row.action == "certificate.renew")
+        .expect("renew record");
+    assert_eq!(renewed.actor_type, "system");
+    assert_eq!(detail(renewed, "caller"), Some("mazbri-auth"));
+    let revoked = rows
+        .iter()
+        .find(|row| row.action == "certificate.revoke")
+        .expect("revoke record");
+    assert_eq!(revoked.failure_reason.as_deref(), Some("actor_missing"));
 }

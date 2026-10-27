@@ -10,19 +10,49 @@ use axum::http::Method;
 pub struct RouteSpec {
     pub action: &'static str,
     pub resource_type: &'static str,
-    /// 只允许 mgmt 调用（严格模式下必须携带有效操作人声明）。
-    pub mgmt_only: bool,
+    /// 谁可以调用、严格模式下是否必须携带操作人声明。
+    pub access: Access,
     /// 只记录失败（`/verify` 调用量大，成功不落库）。
     pub failures_only: bool,
     /// 关键事件：同步落库。
     pub critical: bool,
 }
 
+/// 接口的调用方约束。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// 服务与 mgmt 共用的接口，严格模式下也不要求声明。
+    Shared,
+    /// 只允许 mgmt 调用：严格模式下必须携带有效操作人声明。
+    MgmtOnly,
+    /// mgmt 接口，同时允许服务操作自己的资源，处理器按资源归属再校验（目前只有续期）。
+    /// 严格模式下已识别的服务可以不带声明，但归属校验会被强制为 enforce。
+    MgmtOrOwner,
+}
+
+impl RouteSpec {
+    /// 严格模式下（除归属豁免外）需要有效操作人声明。
+    #[must_use]
+    pub const fn mgmt_only(&self) -> bool {
+        !matches!(self.access, Access::Shared)
+    }
+
+    /// 处理器会按资源归属再校验调用方。
+    #[must_use]
+    pub const fn owner_checked(&self) -> bool {
+        matches!(self.access, Access::MgmtOrOwner)
+    }
+}
+
 const fn spec(action: &'static str, resource_type: &'static str, mgmt_only: bool) -> RouteSpec {
     RouteSpec {
         action,
         resource_type,
-        mgmt_only,
+        access: if mgmt_only {
+            Access::MgmtOnly
+        } else {
+            Access::Shared
+        },
         failures_only: false,
         critical: false,
     }
@@ -30,6 +60,11 @@ const fn spec(action: &'static str, resource_type: &'static str, mgmt_only: bool
 
 const fn critical(mut route: RouteSpec) -> RouteSpec {
     route.critical = true;
+    route
+}
+
+const fn owner_checked(mut route: RouteSpec) -> RouteSpec {
+    route.access = Access::MgmtOrOwner;
     route
 }
 
@@ -44,7 +79,10 @@ pub fn classify(method: &Method, path: &str) -> Option<(RouteSpec, Option<String
     let id = |value: &str| Some(value.to_string());
     let found = match (method.as_str(), segments.as_slice()) {
         ("POST", ["issue"]) => (spec("certificate.issue", CERT, false), None),
-        ("POST", ["renew", cert_id]) => (spec("certificate.renew", CERT, true), id(cert_id)),
+        ("POST", ["renew", cert_id]) => (
+            owner_checked(spec("certificate.renew", CERT, true)),
+            id(cert_id),
+        ),
         ("POST", ["revoke", cert_id]) => (
             critical(spec("certificate.revoke", CERT, true)),
             id(cert_id),
@@ -121,7 +159,7 @@ mod tests {
     fn classifies_write_routes_with_resource_ids() {
         let (route, id) = classify(&Method::POST, "/revoke/abc").expect("revoke");
         assert_eq!(route.action, "certificate.revoke");
-        assert!(route.mgmt_only && route.critical);
+        assert!(route.mgmt_only() && route.critical);
         assert_eq!(id.as_deref(), Some("abc"));
         let (route, id) = classify(&Method::PUT, "/configs/mazbri-gateway").expect("config");
         assert_eq!(route.action, "config_center.update");
@@ -156,7 +194,7 @@ mod tests {
             (Method::GET, "/authorizations/root/current/materials"),
         ] {
             let (route, _) = classify(&method, path).expect(path);
-            assert!(!route.mgmt_only, "{path}");
+            assert!(!route.mgmt_only(), "{path}");
         }
         let (verify, _) = classify(&Method::POST, "/verify").expect("verify");
         assert!(verify.failures_only);

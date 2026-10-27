@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
+use crate::token::scope::OwnerCheckEnforced;
 use crate::token::{Caller, ResolvedToken, TokenTable};
 use axum::Json;
 use axum::body::Body;
@@ -30,7 +31,7 @@ use mazbri_audit::sink::{
 
 pub use config::{ActorMode, CertAuditConfig};
 pub use note::{note_authenticated, note_caller, note_detail, note_failure, note_resource_id};
-pub use route::{RouteSpec, classify};
+pub use route::{Access, RouteSpec, classify};
 
 use note::{NOTE, Note, NoteHandle};
 
@@ -42,7 +43,8 @@ const MAX_ERROR_BODY_BYTES: u64 = 16 * 1024;
 enum ActorCheck {
     Verified(Box<ActorClaims>),
     Absent,
-    /// 带了声明但未配置公钥（宽松模式）。
+    /// 带了声明但本服务没有对应的验签密钥（v1 声明而未配置 v1 公钥）。
+    /// 与缺少声明同等对待：声明内容不可信，严格模式下 mgmt-only 路由照样拒绝。
     Unverifiable,
     Invalid(ActorError),
 }
@@ -198,14 +200,20 @@ impl CertAudit {
             .map_or_else(|| uri.path(), |value| value.as_str());
         match verifier.verify(token, request.method().as_str(), path_and_query) {
             Ok(claims) => ActorCheck::Verified(Box::new(claims)),
+            Err(ActorError::UnknownKey) => ActorCheck::Unverifiable,
             Err(error) => ActorCheck::Invalid(error),
         }
     }
 
     /// 严格模式下应拒绝的请求。
     ///
-    /// 已识别的非 Admin 不因缺少声明被拒；Admin 和识别不出的调用方在 `mgmt_only` 上仍拒绝。
-    /// 无效声明对任何调用方都拒绝。
+    /// - 无效声明：对任何调用方、任何路由都拒绝；
+    /// - 缺少/无法验证的声明：`mgmt_only` 路由上拒绝，唯一例外是已识别的服务访问
+    ///   `Access::MgmtOrOwner` 路由（续期），见 [`Self::owner_check_exempt`]；
+    /// - Admin、wait-deps、识别不出的调用方在 `mgmt_only` 上一律需要有效声明。
+    ///
+    /// 与 `[auth] scope_mode` 无关：两项开关独立，四种组合都不会让服务凭缺少声明
+    /// 越权到别人的资源上。
     fn must_reject(
         &self,
         route: Option<&RouteSpec>,
@@ -219,10 +227,25 @@ impl CertAudit {
             ActorCheck::Invalid(_) => true,
             ActorCheck::Verified(_) => false,
             ActorCheck::Absent | ActorCheck::Unverifiable => {
-                route.is_some_and(|spec| spec.mgmt_only)
-                    && !matches!(caller, Some(Caller::Service(_) | Caller::WaitDeps))
+                route.is_some_and(RouteSpec::mgmt_only)
+                    && !self.owner_check_exempt(route, check, caller)
             }
         }
+    }
+
+    /// 严格模式下，服务不带声明访问"处理器校验归属"的 mgmt-only 路由（续期）时豁免。
+    /// 豁免的同时中间件会放入 [`OwnerCheckEnforced`]，让归属校验按 enforce 执行，
+    /// 因此即使 `scope_mode = "audit"`，服务也只能续期自己的证书。
+    fn owner_check_exempt(
+        &self,
+        route: Option<&RouteSpec>,
+        check: &ActorCheck,
+        caller: Option<Caller>,
+    ) -> bool {
+        self.mode == ActorMode::Strict
+            && matches!(check, ActorCheck::Absent | ActorCheck::Unverifiable)
+            && route.is_some_and(RouteSpec::owner_checked)
+            && matches!(caller, Some(Caller::Service(_)))
     }
 
     async fn emit(&self, mut record: AuditRecord, critical: bool) {
@@ -478,6 +501,9 @@ pub async fn audit_middleware(
     let Some((spec, path_resource_id)) = route else {
         return next.run(request).await;
     };
+    if audit.owner_check_exempt(Some(&spec), &check, caller) {
+        request.extensions_mut().insert(OwnerCheckEnforced);
+    }
     let handle: NoteHandle = Arc::default();
     let response = NOTE.scope(Arc::clone(&handle), next.run(request)).await;
     let note = std::mem::take(&mut *handle.lock().unwrap_or_else(PoisonError::into_inner));

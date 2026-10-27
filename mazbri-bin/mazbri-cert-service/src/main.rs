@@ -167,6 +167,7 @@ async fn main() -> Result<()> {
     if !config.auth.static_tokens.is_empty() {
         tracing::warn!("[auth].static_tokens 已废弃，忽略");
     }
+    warn_on_mode_combination(&config);
     mazbri_tls::register_cert_metrics()?;
     mazbri_cert_service::token::register_token_scope_metrics()?;
     info!("Mazbri 证书服务启动中...");
@@ -239,4 +240,18 @@ async fn main() -> Result<()> {
     }
     info!("证书服务关闭完成");
     Ok(())
+}
+
+/// `[audit] actor_mode` 与 `[auth] scope_mode` 相互独立，四种组合都安全；
+/// strict + audit 时提示路由级权限仍只是观察模式。
+fn warn_on_mode_combination(config: &CertAppConfig) {
+    if config.audit.actor_mode == mazbri_cert_service::audit::ActorMode::Strict
+        && config.auth.scope_mode == mazbri_cert_service::token::ScopeMode::Audit
+    {
+        // 这一组合是安全的（服务不带声明续期时归属校验强制按 enforce 执行），只是提示：
+        // 路由级权限表仍处于观察模式，越权访问只告警不拒绝。
+        tracing::warn!(
+            "[audit] actor_mode = \"strict\" 而 [auth] scope_mode = \"audit\"：mgmt-only 路由要求有效操作人声明，其余路由的服务权限仍只告警；确认无越权告警后请改为 enforce"
+        );
+    }
 }

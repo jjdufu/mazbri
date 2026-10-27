@@ -38,8 +38,17 @@ impl ScopeMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScopeContext {
     pub caller: Caller,
+    /// 路由级权限表的模式（`[auth] scope_mode`）。
     pub mode: ScopeMode,
+    /// 处理器归属校验使用的模式。通常等于 `mode`；严格声明模式下服务凭归属豁免
+    /// 进入 mgmt-only 接口时，审计层会放入 [`OwnerCheckEnforced`]，这里强制为 enforce。
+    pub owner_mode: ScopeMode,
 }
+
+/// 审计层放入请求扩展的标记：本次请求是凭"处理器会校验归属"豁免了操作人声明，
+/// 归属校验必须按 enforce 执行。它只会让校验更严格，不会放宽任何判定。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OwnerCheckEnforced;
 
 /// 权限判定。`NeedsHandlerCheck` 表示归属在 body 或数据库里，由处理器再查。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

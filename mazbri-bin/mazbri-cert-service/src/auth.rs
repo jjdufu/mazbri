@@ -1,6 +1,6 @@
 use crate::base_authorization_service::BaseAuthorizationState;
 use crate::token::metrics::record_previous_used;
-use crate::token::scope::{self, ScopeContext, ScopeDecision};
+use crate::token::scope::{self, OwnerCheckEnforced, ScopeContext, ScopeDecision};
 use crate::token::{Generation, ResolvedToken, ScopeMode, TokenTable};
 use axum::{
     Json,
@@ -68,9 +68,15 @@ pub async fn auth_middleware_inner(
     if request.extensions().get::<ResolvedToken>().is_none() {
         request.extensions_mut().insert(resolved);
     }
+    let owner_mode = if request.extensions().get::<OwnerCheckEnforced>().is_some() {
+        ScopeMode::Enforce
+    } else {
+        auth_state.scope_mode
+    };
     request.extensions_mut().insert(ScopeContext {
         caller: resolved.caller,
         mode: auth_state.scope_mode,
+        owner_mode,
     });
     crate::audit::note_authenticated();
     crate::audit::note_caller(resolved.caller.name(), resolved.generation.as_str());
