@@ -31,7 +31,7 @@ urlencoding = { workspace = true }
 aes-gcm = { workspace = true }
 base64 = "0.22"
 hex = { workspace = true }
-hmac = "0.12"
+hmac = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 redis = { workspace = true }

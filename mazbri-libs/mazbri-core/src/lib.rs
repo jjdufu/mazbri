@@ -1,3 +1,4 @@
+pub mod cert_token;
 pub mod channel_egress;
 mod circuit_breaker;
 mod client_ip;
@@ -24,6 +25,10 @@ pub mod supplier_config;
 pub mod tarpc_middleware;
 mod telemetry;
 pub mod validation;
+pub use cert_token::{
+    CERT_TOKEN_DOMAIN, DERIVED_CALLERS, MASTER_ENV, MasterTokenError, PREVIOUS_ENV, WAIT_DEPS_CALLER,
+    deployment_env_var, derive_service_token, resolve_derived_caller, secret_key, validate_master,
+};
 pub use channel_egress::{
     ADAPTER_HTTP_JSON, AUTH_API_KEY, AUTH_AWS_SIGV4, AUTH_BASIC, AUTH_BEARER, AUTH_DIGEST,
     AUTH_GETTOKEN, AUTH_GRPC_METADATA, AUTH_HAWK, AUTH_JWT, AUTH_NONE, AUTH_OAUTH_CC_FORM,
