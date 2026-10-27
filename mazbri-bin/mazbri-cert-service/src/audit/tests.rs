@@ -45,7 +45,7 @@ fn signer() -> ActorSigner {
 
 fn harness(mode: ActorMode) -> (Router, Arc<MemoryStore>, AuditWriterHandle) {
     let store = Arc::new(MemoryStore::default());
-    let verifier = ActorVerifier::new(signer().verifying_key(), AUDIENCE_CERT);
+    let verifier = ActorVerifier::new(AUDIENCE_CERT, signer().ed25519_verifying_key(), &[]);
     let (audit, handle) = CertAudit::with_store(store.clone(), mode, Some(verifier));
     let app = Router::new()
         .route("/issue", post(issue))

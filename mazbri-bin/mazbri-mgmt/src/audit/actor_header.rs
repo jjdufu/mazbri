@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn decorate_signs_path_query_and_forwards_request_id() {
         let signer = ActorSigner::from_seed(&[9u8; 32], ISSUER_MGMT);
-        let verifier = ActorVerifier::new(signer.verifying_key(), AUDIENCE_CERT);
+        let verifier = ActorVerifier::new(AUDIENCE_CERT, signer.ed25519_verifying_key(), &[]);
         let mut request = reqwest::Client::new()
             .put("http://cert.local:8443/configs/mazbri-gateway?dry_run=1")
             .build()
