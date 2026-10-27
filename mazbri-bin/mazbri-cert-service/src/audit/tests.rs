@@ -1,7 +1,7 @@
 use super::*;
+use crate::token::{Caller, Generation, TokenTable};
 use axum::Router;
 use axum::routing::{get, post, put};
-use crate::token::{Caller, Generation, TokenTable};
 use mazbri_audit::actor::{ActorIdentity, ActorSigner, ISSUER_MGMT};
 use mazbri_audit::sink::testing::MemoryStore;
 use tower::ServiceExt;
@@ -53,7 +53,15 @@ fn admin_table() -> Arc<TokenTable> {
 }
 
 fn harness(mode: ActorMode) -> (Router, Arc<MemoryStore>, AuditWriterHandle) {
-    harness_with(mode, admin_table(), Some(ActorVerifier::new(AUDIENCE_CERT, signer().ed25519_verifying_key(), &[])))
+    harness_with(
+        mode,
+        admin_table(),
+        Some(ActorVerifier::new(
+            AUDIENCE_CERT,
+            signer().ed25519_verifying_key(),
+            &[],
+        )),
+    )
 }
 
 fn harness_with(
@@ -297,7 +305,10 @@ async fn strict_service_renew_without_actor_is_system_not_rejected() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].actor_type, "system");
     assert_eq!(detail(&rows[0], "caller"), Some("mazbri-auth"));
-    assert_eq!(detail(&rows[0], "actor_verification"), Some("actor_missing"));
+    assert_eq!(
+        detail(&rows[0], "actor_verification"),
+        Some("actor_missing")
+    );
 }
 
 #[tokio::test]

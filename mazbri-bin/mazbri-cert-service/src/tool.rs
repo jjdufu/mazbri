@@ -35,13 +35,7 @@ pub fn maybe_run() -> Option<i32> {
     let terminal = std::io::stdout().is_terminal();
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
-    dispatch(
-        &args,
-        master.as_deref(),
-        terminal,
-        &mut stdout,
-        &mut stderr,
-    )
+    dispatch(&args, master.as_deref(), terminal, &mut stdout, &mut stderr)
 }
 
 /// 供测试注入参数和输出。`args` 含 argv0。
@@ -91,7 +85,10 @@ fn run_token(
     stderr: &mut dyn Write,
 ) -> i32 {
     if args.first().and_then(|arg| arg.to_str()) != Some("derive") {
-        let _ = writeln!(stderr, "用法: mazbri-cert-service token derive (--all | --service NAME)... [--format env|k8s-secret]");
+        let _ = writeln!(
+            stderr,
+            "用法: mazbri-cert-service token derive (--all | --service NAME)... [--format env|k8s-secret]"
+        );
         return EXIT_USAGE;
     }
     let opts = match parse_derive(&args[1..]) {
@@ -135,9 +132,7 @@ fn parse_derive(args: &[OsString]) -> Result<DeriveOpts, String> {
     let mut namespace = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        let text = arg
-            .to_str()
-            .ok_or_else(|| "参数不是 UTF-8".to_string())?;
+        let text = arg.to_str().ok_or_else(|| "参数不是 UTF-8".to_string())?;
         match text {
             "--all" => all = true,
             "--format" => {
@@ -254,8 +249,8 @@ mod tests {
     fn run(parts: &[&str], master: Option<&str>) -> (i32, String, String) {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let code = dispatch(&args(parts), master, false, &mut stdout, &mut stderr)
-            .expect("token command");
+        let code =
+            dispatch(&args(parts), master, false, &mut stdout, &mut stderr).expect("token command");
         (
             code,
             String::from_utf8(stdout).expect("stdout utf8"),
@@ -286,7 +281,11 @@ mod tests {
             lines[0],
             "MAZBRI_CERT_TOKEN_GATEWAY=fd132f20dd841ab4ed9d2e780f38f79c64cc2f44c2f9b83e3dd8ff6b617001a1"
         );
-        assert!(lines.iter().any(|line| line.starts_with("MAZBRI_CERT_TOKEN_WAIT_DEPS=")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("MAZBRI_CERT_TOKEN_WAIT_DEPS="))
+        );
         assert!(!stdout.contains("example-master"));
     }
 
@@ -319,10 +318,7 @@ mod tests {
 
     #[test]
     fn missing_or_blank_master_and_unknown_service_fail() {
-        let (code, _, stderr) = run(
-            &["mazbri-cert-service", "token", "derive", "--all"],
-            None,
-        );
+        let (code, _, stderr) = run(&["mazbri-cert-service", "token", "derive", "--all"], None);
         assert_ne!(code, 0);
         assert!(stderr.contains(MASTER_ENV), "{stderr}");
         let (code, _, _) = run(
@@ -331,7 +327,13 @@ mod tests {
         );
         assert_ne!(code, 0);
         let (code, _, stderr) = run(
-            &["mazbri-cert-service", "token", "derive", "--service", "nope"],
+            &[
+                "mazbri-cert-service",
+                "token",
+                "derive",
+                "--service",
+                "nope",
+            ],
             Some("example-master"),
         );
         assert_eq!(code, EXIT_USAGE, "{stderr}");
@@ -342,7 +344,16 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let args = args(&["mazbri-cert-service", "--bootstrap", "x.toml"]);
-        assert!(dispatch(&args, Some("example-master"), false, &mut stdout, &mut stderr).is_none());
+        assert!(
+            dispatch(
+                &args,
+                Some("example-master"),
+                false,
+                &mut stdout,
+                &mut stderr
+            )
+            .is_none()
+        );
     }
 
     #[test]

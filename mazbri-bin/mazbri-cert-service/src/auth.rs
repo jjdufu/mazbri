@@ -82,7 +82,12 @@ pub async fn auth_middleware_inner(
         .get::<MatchedPath>()
         .map(|path| path.as_str().to_string())
     else {
-        return next.run(request).await;
+        // 正常挂在 route_layer 上时一定有 MatchedPath。拿不到说明有人把认证层挂到了
+        // fallback/nest 之外，权限表无法判定：enforce 下只放行 Admin，audit 下告警放行。
+        return match unmatched_route(&auth_state, resolved) {
+            Ok(()) => next.run(request).await,
+            Err(response) => *response,
+        };
     };
     let (request, params) = match path_params(request, &route).await {
         Ok(ready) => ready,
@@ -94,17 +99,30 @@ pub async fn auth_middleware_inner(
         .collect();
     match scope::check(resolved.caller, request.method().as_str(), &route, &pairs) {
         ScopeDecision::Allow | ScopeDecision::NeedsHandlerCheck => next.run(request).await,
-        ScopeDecision::Deny(reason) => match scope::deny(
-            auth_state.scope_mode,
-            resolved.caller,
-            &route,
-            reason,
-        ) {
-            Ok(()) => next.run(request).await,
-            Err(response) => *response,
-        },
+        ScopeDecision::Deny(reason) => {
+            match scope::deny(auth_state.scope_mode, resolved.caller, &route, reason) {
+                Ok(()) => next.run(request).await,
+                Err(response) => *response,
+            }
+        }
     }
 }
+
+/// 没有路由模板时的判定。指标和日志里的 route 用固定占位符，避免原始路径撑爆标签。
+fn unmatched_route(auth_state: &AuthState, resolved: ResolvedToken) -> Result<(), Box<Response>> {
+    if resolved.caller.is_admin() {
+        return Ok(());
+    }
+    scope::deny(
+        auth_state.scope_mode,
+        resolved.caller,
+        UNMATCHED_ROUTE,
+        "no_matched_path",
+    )
+}
+
+/// 没有 `MatchedPath` 时写进日志和指标的 route 值。
+pub const UNMATCHED_ROUTE: &str = "<unmatched>";
 
 async fn path_params(
     request: Request,

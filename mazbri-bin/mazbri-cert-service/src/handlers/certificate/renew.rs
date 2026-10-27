@@ -1,7 +1,7 @@
 use super::common::{CertificateState, extract_client_ip, update_certificate_inventory_metrics};
 use crate::db::CertificateResponse;
 use crate::error::CertError;
-use crate::token::scope::{ScopeContext, enforce_owner};
+use crate::token::scope::{ScopeContext, owner_visible};
 use axum::{
     Json,
     body::Bytes,
@@ -51,11 +51,26 @@ pub async fn renew_certificate(
         }
     }
 }
+/// 解析续期请求体。
+///
+/// - 空 body（或只有空白）：不论有没有 Content-Type，都用默认有效期。客户端续期时通常不带 body。
+/// - 非空 body：Content-Type 必须是 JSON（`application/json` 或 `application/*+json`），
+///   否则 415，与改造前 `Json` 提取器的行为一致；JSON 无效则 400。
 fn parse_renew_body(headers: &HeaderMap, body: &[u8]) -> Result<i64, Box<Response>> {
-    let no_content_type = !headers.contains_key(header::CONTENT_TYPE);
-    let empty = body.iter().all(u8::is_ascii_whitespace);
-    if no_content_type || empty {
+    if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(default_validity_days());
+    }
+    if !is_json_content_type(headers) {
+        return Err(Box::new(
+            (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(serde_json::json!({
+                    "error": "unsupported_media_type",
+                    "message": "请求体需要 Content-Type: application/json"
+                })),
+            )
+                .into_response(),
+        ));
     }
     match serde_json::from_slice::<RenewCertificateRequest>(body) {
         Ok(request) => Ok(request.validity_days),
@@ -72,6 +87,23 @@ fn parse_renew_body(headers: &HeaderMap, body: &[u8]) -> Result<i64, Box<Respons
     }
 }
 
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    let Some(value) = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let essence = value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    essence == "application/json"
+        || (essence.starts_with("application/") && essence.ends_with("+json"))
+}
+
 async fn renew_certificate_inner(
     state: CertificateState,
     headers: HeaderMap,
@@ -81,9 +113,10 @@ async fn renew_certificate_inner(
     validity_days: i64,
 ) -> Result<Response, CertError> {
     let existing = state.repo.get_by_id(id).await?;
-    if let Err(response) = enforce_owner(scope.mode, scope.caller, &existing.subject, "/renew/{id}")
-    {
-        return Ok(*response);
+    if !owner_visible(scope.mode, scope.caller, &existing.subject, "/renew/{id}") {
+        // 与真正不存在时的响应完全相同；真实原因只进日志、指标和审计。
+        crate::audit::note_failure("not_owner");
+        return Err(CertError::NotFound(id.to_string()));
     }
     if existing.revoked {
         return Err(CertError::AlreadyRevoked(id.to_string()));
@@ -124,4 +157,85 @@ async fn renew_certificate_inner(
         }),
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn headers(content_type: Option<&'static str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(value) = content_type {
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(value));
+        }
+        headers
+    }
+
+    fn status(result: Result<i64, Box<Response>>) -> Result<i64, StatusCode> {
+        result.map_err(|response| response.status())
+    }
+
+    #[test]
+    fn empty_body_uses_default_with_or_without_content_type() {
+        let default = default_validity_days();
+        assert_eq!(status(parse_renew_body(&headers(None), b"")), Ok(default));
+        assert_eq!(
+            status(parse_renew_body(&headers(None), b" \n")),
+            Ok(default)
+        );
+        assert_eq!(
+            status(parse_renew_body(&headers(Some("application/json")), b"")),
+            Ok(default)
+        );
+        assert_eq!(
+            status(parse_renew_body(&headers(Some("text/plain")), b"")),
+            Ok(default)
+        );
+    }
+
+    #[test]
+    fn non_empty_body_requires_json_content_type() {
+        let body = br#"{"validity_days":30}"#;
+        assert_eq!(
+            status(parse_renew_body(&headers(None), body)),
+            Err(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+        );
+        assert_eq!(
+            status(parse_renew_body(&headers(Some("text/plain")), body)),
+            Err(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+        );
+        assert_eq!(
+            status(parse_renew_body(&headers(Some("application/json")), body)),
+            Ok(30)
+        );
+        assert_eq!(
+            status(parse_renew_body(
+                &headers(Some("Application/JSON; charset=utf-8")),
+                body
+            )),
+            Ok(30)
+        );
+        assert_eq!(
+            status(parse_renew_body(
+                &headers(Some("application/merge-patch+json")),
+                body
+            )),
+            Ok(30)
+        );
+        assert_eq!(
+            status(parse_renew_body(
+                &headers(Some("application/json")),
+                b"{nope"
+            )),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        assert_eq!(
+            status(parse_renew_body(
+                &headers(Some("application/json")),
+                br#"{"unknown":1}"#
+            )),
+            Err(StatusCode::BAD_REQUEST)
+        );
+    }
 }

@@ -5,13 +5,13 @@ use mazbri_admin::{AdminServerBuilder, AdminState};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
 use mazbri_cert_service::config::CertAppConfig;
-use mazbri_cert_service::token::TokenTable;
 use mazbri_cert_service::config_center::ConfigRepository;
 use mazbri_cert_service::db::CertificateRepository;
 use mazbri_cert_service::handlers::certificate::common::update_certificate_inventory_metrics;
 use mazbri_cert_service::node_registry::NodeRegistryRepository;
 use mazbri_cert_service::san::{EnvSource, SanPolicy};
 use mazbri_cert_service::server;
+use mazbri_cert_service::token::TokenTable;
 use mazbri_core::ServiceName;
 use mazbri_core::config::{build_log_routes, load_toml};
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
@@ -162,8 +162,6 @@ async fn main() -> Result<()> {
     let log_routes = build_log_routes(&config.log_routes)?;
     config.cert.key_password = None;
     let tokens = Arc::new(TokenTable::from_env()?);
-    let owned_masters: Vec<String> = tokens.masters().into_iter().map(str::to_string).collect();
-    let master_refs: Vec<&str> = owned_masters.iter().map(String::as_str).collect();
     let admin_state = start_admin_server(&config, &service_name)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     if !config.auth.static_tokens.is_empty() {
@@ -183,7 +181,9 @@ async fn main() -> Result<()> {
         info!("Service marked as ready for authorization import");
     }
     let auth_state = Arc::new(AuthState::new(tokens.clone(), config.auth.scope_mode));
-    let base_authorization = Arc::new(base_authorization::BaseAuthorizationState::new(repo.clone()));
+    let base_authorization = Arc::new(base_authorization::BaseAuthorizationState::new(
+        repo.clone(),
+    ));
     let node_repo = Arc::new(NodeRegistryRepository::new(db.clone()));
     info!("节点注册仓库已初始化");
     let config_repo = Arc::new(ConfigRepository::new(db.clone()));
@@ -207,7 +207,6 @@ async fn main() -> Result<()> {
         Path::new(&config.tracing.log_dir),
         Some(config_dir),
         tokens,
-        &master_refs,
     )?;
     let state = server::AppState {
         base_authorization,

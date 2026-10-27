@@ -1,12 +1,15 @@
 //! 令牌 → 调用方表。只在进程启动时构造一次，之后只读。
 //!
-//! `resolve` 对全部条目做常量时间比较并累积 `Choice`，不因命中哪一条而提前返回。
+//! 表里只存令牌的 SHA-256 摘要，不存令牌原文。`resolve` 先对来访令牌算一次摘要，
+//! 再对全部条目做定长 32 字节的常量时间比较并累积 `Choice`，不因命中哪一条或
+//! 令牌长度不同而提前返回。
 
 use mazbri_core::cert_token::{
     DERIVED_CALLERS, MASTER_ENV, PREVIOUS_ENV, WAIT_DEPS_CALLER, derive_service_token,
     validate_master,
 };
 use mazbri_core::{MasterTokenError, ServiceName};
+use sha2::{Digest, Sha256};
 use std::str::FromStr;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroizing;
@@ -68,9 +71,16 @@ pub struct ResolvedToken {
     pub generation: Generation,
 }
 
+/// 令牌的 SHA-256 摘要。定长，比较时不泄露来访令牌的长度。
+type TokenDigest = Zeroizing<[u8; 32]>;
+
+fn token_digest(token: &str) -> TokenDigest {
+    Zeroizing::new(Sha256::digest(token.as_bytes()).into())
+}
+
 /// 启动时建好的令牌表。Debug 只输出条目数量和调用方，绝不输出令牌值。
 pub struct TokenTable {
-    entries: Vec<(Zeroizing<String>, Caller, Generation)>,
+    entries: Vec<(TokenDigest, Caller, Generation)>,
     masters: Vec<Zeroizing<String>>,
 }
 
@@ -131,7 +141,7 @@ impl TokenTable {
         Self {
             entries: entries
                 .into_iter()
-                .map(|(token, caller, generation)| (Zeroizing::new(token), caller, generation))
+                .map(|(token, caller, generation)| (token_digest(&token), caller, generation))
                 .collect(),
             masters: Vec::new(),
         }
@@ -143,14 +153,14 @@ impl TokenTable {
         self.masters.iter().map(|value| value.as_str()).collect()
     }
 
-    /// 对全部条目做 `ct_eq`，用 `Choice` 累积命中项，循环结束后才取值。
+    /// 对全部条目的摘要做 `ct_eq`，用 `Choice` 累积命中项，循环结束后才取值。
     #[must_use]
     pub fn resolve(&self, presented: &str) -> Option<ResolvedToken> {
-        let presented = presented.as_bytes();
+        let presented = token_digest(presented);
         let mut matched = Choice::from(0);
         let mut index = 0u32;
-        for (i, (token, _, _)) in self.entries.iter().enumerate() {
-            let eq = ct_eq_token(presented, token.as_bytes());
+        for (i, (digest, _, _)) in self.entries.iter().enumerate() {
+            let eq = presented.as_slice().ct_eq(digest.as_slice());
             matched |= eq;
             let i_u32 = u32::try_from(i).unwrap_or(u32::MAX);
             index = u32::conditional_select(&index, &i_u32, eq);
@@ -179,22 +189,14 @@ impl TokenTable {
 }
 
 fn push_generation(
-    entries: &mut Vec<(Zeroizing<String>, Caller, Generation)>,
+    entries: &mut Vec<(TokenDigest, Caller, Generation)>,
     master: &str,
     generation: Generation,
 ) {
-    entries.push((
-        Zeroizing::new(master.to_string()),
-        Caller::Admin,
-        generation,
-    ));
+    entries.push((token_digest(master), Caller::Admin, generation));
     for caller in DERIVED_CALLERS {
-        let token = derive_service_token(master, caller);
-        entries.push((
-            Zeroizing::new(token),
-            caller_from_name(caller),
-            generation,
-        ));
+        let token = Zeroizing::new(derive_service_token(master, caller));
+        entries.push((token_digest(&token), caller_from_name(caller), generation));
     }
 }
 
@@ -203,13 +205,6 @@ fn caller_from_name(name: &str) -> Caller {
         return Caller::WaitDeps;
     }
     Caller::Service(ServiceName::from_str(name).expect("DERIVED_CALLERS 只含规范服务名"))
-}
-
-fn ct_eq_token(presented: &[u8], stored: &[u8]) -> Choice {
-    if presented.len() != stored.len() {
-        return Choice::from(0);
-    }
-    presented.ct_eq(stored)
 }
 
 #[cfg(test)]
@@ -232,7 +227,9 @@ mod tests {
             Some(Generation::Current)
         );
         assert_eq!(
-            table.resolve(PREVIOUS).map(|hit| (hit.caller, hit.generation)),
+            table
+                .resolve(PREVIOUS)
+                .map(|hit| (hit.caller, hit.generation)),
             Some((Caller::Admin, Generation::Previous))
         );
         for caller in DERIVED_CALLERS {
@@ -251,6 +248,17 @@ mod tests {
         assert!(!rendered.contains(MASTER));
         assert!(!rendered.contains(&derive_service_token(MASTER, "mazbri-gateway")));
         assert!(rendered.contains("mazbri-gateway:current"));
+    }
+
+    #[test]
+    fn prefixes_and_extensions_of_tokens_do_not_match() {
+        let table = TokenTable::from_masters(MASTER, None).expect("table");
+        let gateway = derive_service_token(MASTER, "mazbri-gateway");
+        assert!(table.resolve(&gateway[..63]).is_none());
+        assert!(table.resolve(&format!("{gateway}0")).is_none());
+        assert!(table.resolve(&MASTER[..MASTER.len() - 1]).is_none());
+        assert!(table.resolve(&format!("{MASTER} ")).is_none());
+        assert!(table.resolve(&gateway.to_uppercase()).is_none());
     }
 
     #[test]

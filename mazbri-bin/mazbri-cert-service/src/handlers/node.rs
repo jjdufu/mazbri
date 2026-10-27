@@ -38,8 +38,12 @@ pub async fn register_node(
     Extension(scope): Extension<ScopeContext>,
     Json(req): Json<RegisterNodeData>,
 ) -> Response {
-    if let Err(response) = enforce_owner(scope.mode, scope.caller, &req.service_name, "/nodes/register")
-    {
+    if let Err(response) = enforce_owner(
+        scope.mode,
+        scope.caller,
+        &req.service_name,
+        "/nodes/register",
+    ) {
         return *response;
     }
     match state.repo.register(&req).await {
@@ -65,8 +69,12 @@ pub async fn heartbeat(
     Extension(scope): Extension<ScopeContext>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Response {
-    if let Err(response) = enforce_owner(scope.mode, scope.caller, &req.service_name, "/nodes/heartbeat")
-    {
+    if let Err(response) = enforce_owner(
+        scope.mode,
+        scope.caller,
+        &req.service_name,
+        "/nodes/heartbeat",
+    ) {
         return *response;
     }
     let latest_version = match state

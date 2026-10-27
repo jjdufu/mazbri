@@ -129,12 +129,14 @@ mod tests {
 
     #[test]
     fn parses_scope_mode_and_deprecated_static_tokens() {
-        let config: CertAuthConfig = toml::from_str(
-            "scope_mode = \"enforce\"\nstatic_tokens = \"alpha, beta\"",
-        )
-        .expect("auth");
+        let config: CertAuthConfig =
+            toml::from_str("scope_mode = \"enforce\"\nstatic_tokens = \"alpha, beta\"")
+                .expect("auth");
         assert_eq!(config.scope_mode, ScopeMode::Enforce);
-        assert_eq!(config.static_tokens, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            config.static_tokens,
+            vec!["alpha".to_string(), "beta".to_string()]
+        );
         let config: CertAuthConfig = toml::from_str("").expect("default");
         assert_eq!(config.scope_mode, ScopeMode::Audit);
         assert_eq!(config.static_tokens, Vec::<String>::new());

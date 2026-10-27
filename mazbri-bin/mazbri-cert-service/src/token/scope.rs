@@ -12,8 +12,8 @@ use mazbri_core::ServiceName;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::metrics::record_scope_denied;
 use super::Caller;
+use super::metrics::record_scope_denied;
 
 /// 越权时的处理模式。默认 audit：只告警放行。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -101,6 +101,19 @@ pub fn enforce_owner(
     deny(mode, caller, route, "owner_mismatch")
 }
 
+/// 按资源 ID 访问时的归属校验：不匹配时调用方应当按"资源不存在"处理（返回 404），
+/// 不让非属主借 403/404 的差异探测别人的资源 ID 是否存在。
+///
+/// 返回 `true` 表示放行。enforce 下不匹配返回 `false`；audit 下只告警，返回 `true`。
+/// 真实原因 `not_owner` 只写日志和 `cert_scope_denied_total`，不进响应。
+#[must_use]
+pub fn owner_visible(mode: ScopeMode, caller: Caller, owner_name: &str, route: &str) -> bool {
+    if caller.is_admin() || owner_name.trim() == caller.name() {
+        return true;
+    }
+    deny(mode, caller, route, "not_owner").is_ok()
+}
+
 pub(crate) fn deny(
     mode: ScopeMode,
     caller: Caller,
@@ -145,14 +158,21 @@ pub fn insufficient_scope_response() -> Response {
 }
 
 fn can_list_nodes(caller: Caller) -> bool {
-    matches!(caller, Caller::Service(ServiceName::Gateway) | Caller::WaitDeps)
+    matches!(
+        caller,
+        Caller::Service(ServiceName::Gateway) | Caller::WaitDeps
+    )
 }
 
 fn own_param(caller: Caller, params: &[(&str, &str)], name: &str, trim: bool) -> ScopeDecision {
     if !caller.is_service() {
         return ScopeDecision::Deny("route_forbidden");
     }
-    let Some(value) = params.iter().find(|(key, _)| *key == name).map(|(_, value)| *value) else {
+    let Some(value) = params
+        .iter()
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| *value)
+    else {
         return ScopeDecision::Deny("missing_param");
     };
     let value = if trim { value.trim() } else { value };
@@ -217,6 +237,41 @@ mod tests {
     }
 
     #[test]
+    fn owner_visible_hides_foreign_resources_only_in_enforce() {
+        let auth = Caller::Service(ServiceName::Auth);
+        assert!(owner_visible(
+            ScopeMode::Enforce,
+            auth,
+            " mazbri-auth ",
+            "/renew/{id}"
+        ));
+        assert!(!owner_visible(
+            ScopeMode::Enforce,
+            auth,
+            "mazbri-gateway",
+            "/renew/{id}"
+        ));
+        assert!(owner_visible(
+            ScopeMode::Audit,
+            auth,
+            "mazbri-gateway",
+            "/renew/{id}"
+        ));
+        assert!(owner_visible(
+            ScopeMode::Enforce,
+            Caller::Admin,
+            "mazbri-gateway",
+            "/renew/{id}"
+        ));
+        assert!(!owner_visible(
+            ScopeMode::Enforce,
+            Caller::WaitDeps,
+            "mazbri-gateway",
+            "/renew/{id}"
+        ));
+    }
+
+    #[test]
     fn node_list_and_root_materials_follow_the_matrix() {
         let gateway = Caller::Service(ServiceName::Gateway);
         let auth = Caller::Service(ServiceName::Auth);
@@ -230,7 +285,12 @@ mod tests {
             ScopeDecision::Deny("route_forbidden")
         );
         assert_eq!(
-            check(gateway, "GET", "/authorizations/root/current/materials", &[]),
+            check(
+                gateway,
+                "GET",
+                "/authorizations/root/current/materials",
+                &[]
+            ),
             ScopeDecision::Allow
         );
         assert_eq!(
@@ -238,7 +298,12 @@ mod tests {
             ScopeDecision::Deny("route_forbidden")
         );
         assert_eq!(
-            check(Caller::WaitDeps, "GET", "/authorizations/root/current/materials", &[]),
+            check(
+                Caller::WaitDeps,
+                "GET",
+                "/authorizations/root/current/materials",
+                &[]
+            ),
             ScopeDecision::Deny("route_forbidden")
         );
         assert_eq!(

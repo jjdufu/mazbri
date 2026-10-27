@@ -124,10 +124,7 @@ mod tests {
         )
         .expect("strict with key");
         assert!(config.validate().is_ok());
-        assert_eq!(
-            config.verify_key_file(),
-            Some("/etc/mazbri/keys/a.pem")
-        );
+        assert_eq!(config.verify_key_file(), Some("/etc/mazbri/keys/a.pem"));
         assert!(toml::from_str::<CertAuditConfig>("actor_mode = \"off\"").is_err());
         assert!(toml::from_str::<CertAuditConfig>("unknown = 1").is_err());
     }

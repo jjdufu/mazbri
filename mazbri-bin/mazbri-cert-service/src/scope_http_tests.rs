@@ -28,8 +28,6 @@ fn token(caller: &str) -> String {
 
 fn build_app(scope_mode: ScopeMode, actor_mode: ActorMode) -> axum::Router {
     let tokens = Arc::new(TokenTable::from_masters(MASTER, Some(PREVIOUS)).expect("tokens"));
-    let owned: Vec<String> = tokens.masters().into_iter().map(str::to_string).collect();
-    let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
     let pool = Arc::new(
         PgPoolOptions::new()
             .acquire_timeout(std::time::Duration::from_millis(50))
@@ -46,7 +44,6 @@ fn build_app(scope_mode: ScopeMode, actor_mode: ActorMode) -> axum::Router {
         std::env::temp_dir().as_path(),
         None,
         Arc::clone(&tokens),
-        &refs,
     )
     .expect("audit");
     let san = SanPolicy::from_config(
@@ -116,31 +113,35 @@ async fn identifies_master_derived_and_previous_tokens() {
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert!(body.contains("invalid_token"), "{body}");
     let mut raw = request("GET", "/configs/mazbri-gateway", None, b"");
-    raw.headers_mut().insert(
-        "authorization",
-        "Token nope".parse().expect("header"),
-    );
+    raw.headers_mut()
+        .insert("authorization", "Token nope".parse().expect("header"));
     let (status, _) = call(&app, raw).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, body) = call(
-        &app,
-        request("GET", "/ca", Some(MASTER), b""),
-    )
-    .await;
-    assert!(!denied(status, &body), "admin should pass scope: {status} {body}");
-    let (status, body) = call(
-        &app,
-        request("GET", "/ca", Some(PREVIOUS), b""),
-    )
-    .await;
-    assert!(!denied(status, &body), "previous admin should pass scope: {status} {body}");
+    let (status, body) = call(&app, request("GET", "/ca", Some(MASTER), b"")).await;
+    assert!(
+        !denied(status, &body),
+        "admin should pass scope: {status} {body}"
+    );
+    let (status, body) = call(&app, request("GET", "/ca", Some(PREVIOUS), b"")).await;
+    assert!(
+        !denied(status, &body),
+        "previous admin should pass scope: {status} {body}"
+    );
     let previous_gateway = derive_service_token(PREVIOUS, "mazbri-gateway");
     let (status, body) = call(
         &app,
-        request("GET", "/configs/mazbri-gateway", Some(&previous_gateway), b""),
+        request(
+            "GET",
+            "/configs/mazbri-gateway",
+            Some(&previous_gateway),
+            b"",
+        ),
     )
     .await;
-    assert!(!denied(status, &body), "previous derived token: {status} {body}");
+    assert!(
+        !denied(status, &body),
+        "previous derived token: {status} {body}"
+    );
 }
 
 #[tokio::test]
@@ -155,24 +156,69 @@ async fn enforce_matrix_and_matched_path_distinguishes_search() {
         ("GET", "/configs/mazbri-gateway", auth.as_str(), true),
         ("GET", "/configs/search", gateway.as_str(), true),
         ("GET", "/configs/mazbri-gateway", wait.as_str(), true),
-        ("GET", "/certificates/by-subject/mazbri-gateway", gateway.as_str(), false),
-        ("GET", "/certificates/by-subject/%20mazbri-gateway%20", gateway.as_str(), false),
-        ("GET", "/certificates/by-subject/mazbri-auth", gateway.as_str(), true),
+        (
+            "GET",
+            "/certificates/by-subject/mazbri-gateway",
+            gateway.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/certificates/by-subject/%20mazbri-gateway%20",
+            gateway.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/certificates/by-subject/mazbri-auth",
+            gateway.as_str(),
+            true,
+        ),
         ("GET", "/nodes", gateway.as_str(), false),
         ("GET", "/nodes", wait.as_str(), false),
         ("GET", "/nodes", auth.as_str(), true),
-        ("GET", "/authorizations/root/current/materials", gateway.as_str(), false),
-        ("GET", "/authorizations/root/current/materials", auth.as_str(), true),
-        ("GET", "/authorizations/root/current/materials", wait.as_str(), true),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            gateway.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            auth.as_str(),
+            true,
+        ),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            wait.as_str(),
+            true,
+        ),
         ("POST", "/issue", gateway.as_str(), true),
         ("POST", "/issue", MASTER, false),
-        ("POST", "/revoke/00000000-0000-0000-0000-000000000001", auth.as_str(), true),
+        (
+            "POST",
+            "/revoke/00000000-0000-0000-0000-000000000001",
+            auth.as_str(),
+            true,
+        ),
         ("GET", "/configs", gateway.as_str(), true),
         ("PUT", "/configs/mazbri-gateway", gateway.as_str(), true),
         ("GET", "/nodes/mazbri-gateway", gateway.as_str(), true),
         ("POST", "/nodes/register", wait.as_str(), true),
-        ("POST", "/renew/00000000-0000-0000-0000-000000000001", wait.as_str(), true),
-        ("POST", "/renew/00000000-0000-0000-0000-000000000001", gateway.as_str(), false),
+        (
+            "POST",
+            "/renew/00000000-0000-0000-0000-000000000001",
+            wait.as_str(),
+            true,
+        ),
+        (
+            "POST",
+            "/renew/00000000-0000-0000-0000-000000000001",
+            gateway.as_str(),
+            false,
+        ),
     ];
     for (method, uri, bearer, expect_deny) in cases {
         let (status, body) = call(&app, request(method, uri, Some(bearer), b"")).await;
@@ -221,13 +267,12 @@ async fn audit_mode_allows_and_logs_caller_not_token() {
     )
     .await;
     drop(guard);
-    assert!(!denied(status, &body), "audit must not 403: {status} {body}");
-    let text = String::from_utf8(
-        logs.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-    )
-    .expect("logs");
+    assert!(
+        !denied(status, &body),
+        "audit must not 403: {status} {body}"
+    );
+    let text = String::from_utf8(logs.lock().unwrap_or_else(PoisonError::into_inner).clone())
+        .expect("logs");
     assert!(text.contains("mazbri-gateway"), "{text}");
     assert!(text.contains("scope violation"), "{text}");
     assert!(!text.contains(&gateway), "log leaked token: {text}");
@@ -237,7 +282,8 @@ async fn audit_mode_allows_and_logs_caller_not_token() {
 #[tokio::test]
 async fn ownership_checks_follow_scope_mode() {
     let register = br#"{"service_name":"mazbri-gateway","ip":"127.0.0.1","port":9000,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":null}"#;
-    let heartbeat = br#"{"service_name":"mazbri-auth","config_version":0,"ip":"127.0.0.1","port":9000}"#;
+    let heartbeat =
+        br#"{"service_name":"mazbri-auth","config_version":0,"ip":"127.0.0.1","port":9000}"#;
     let enforce = build_app(ScopeMode::Enforce, ActorMode::Lenient);
     let gateway = token("mazbri-gateway");
     let (status, body) = call(
@@ -305,8 +351,49 @@ async fn strict_actor_does_not_replace_scope_enforcement() {
         ),
     )
     .await;
-    assert!(!denied(status, &body), "audit+strict must not scope-deny: {status} {body}");
-    assert_ne!(status, StatusCode::UNAUTHORIZED, "audit layer must not reject service renew/revoke: {body}");
+    assert!(
+        !denied(status, &body),
+        "audit+strict must not scope-deny: {status} {body}"
+    );
+    assert_ne!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "audit layer must not reject service renew/revoke: {body}"
+    );
+}
+
+/// 认证层被挂到 fallback 上（拿不到 `MatchedPath`）时不能放行越权：
+/// enforce 只放行 Admin，audit 告警放行。
+fn fallback_app(scope_mode: ScopeMode) -> axum::Router {
+    let tokens = Arc::new(TokenTable::from_masters(MASTER, None).expect("tokens"));
+    let auth_state = Arc::new(AuthState::new(tokens, scope_mode));
+    axum::Router::new()
+        .fallback(|| async { StatusCode::OK })
+        .layer(axum::middleware::from_fn_with_state(
+            auth_state,
+            crate::auth::auth_middleware,
+        ))
+}
+
+#[tokio::test]
+async fn missing_matched_path_fails_closed_in_enforce() {
+    let gateway = token("mazbri-gateway");
+    let wait = token("mazbri-wait-deps");
+    let enforce = fallback_app(ScopeMode::Enforce);
+    let (status, body) = call(&enforce, request("GET", "/anything", Some(MASTER), b"")).await;
+    assert_eq!(status, StatusCode::OK, "admin passes: {body}");
+    for bearer in [gateway.as_str(), wait.as_str()] {
+        let (status, body) = call(&enforce, request("GET", "/anything", Some(bearer), b"")).await;
+        assert!(
+            denied(status, &body),
+            "no_matched_path must 403: {status} {body}"
+        );
+    }
+    let (status, body) = call(&enforce, request("GET", "/anything", None, b"")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    let audit = fallback_app(ScopeMode::Audit);
+    let (status, body) = call(&audit, request("GET", "/anything", Some(&gateway), b"")).await;
+    assert_eq!(status, StatusCode::OK, "audit warns and passes: {body}");
 }
 
 #[derive(Clone)]

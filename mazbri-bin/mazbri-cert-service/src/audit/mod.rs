@@ -15,13 +15,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
+use crate::token::{Caller, ResolvedToken, TokenTable};
 use axum::Json;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use crate::token::{Caller, ResolvedToken, TokenTable};
 use mazbri_audit::actor::{ACTOR_HEADER, AUDIENCE_CERT, ActorClaims, ActorError, ActorVerifier};
 use mazbri_audit::record::{ActorType, AuditRecord, AuditStatus, SERVICE_CERT};
 use mazbri_audit::sink::{
@@ -97,6 +97,8 @@ fn sink_options(config: &CertAuditConfig) -> SinkOptions {
 impl CertAudit {
     /// 加载公钥、建立惰性连接池并启动写线程（需在 tokio 运行时内调用）。
     ///
+    /// v2 HMAC 验签密钥直接从 `tokens` 里的主令牌派生，调用方不需要另外复制主令牌。
+    ///
     /// # Errors
     ///
     /// 配置了公钥但无法加载，或审计库连接参数无效。
@@ -105,19 +107,17 @@ impl CertAudit {
         log_dir: &Path,
         base_dir: Option<&Path>,
         tokens: Arc<TokenTable>,
-        masters: &[&str],
     ) -> anyhow::Result<(Arc<Self>, Option<AuditWriterHandle>)> {
         let v1 = if let Some(path) = config.verify_key_file() {
             tracing::warn!("v1 Ed25519 已废弃，mgmt 全部升级到 v2 后请移除");
             Some(
-                mazbri_audit::actor::load_ed25519_verifying_key_file(Path::new(path)).map_err(
-                    |error| anyhow::anyhow!("audit.actor_verify_key_file: {error}"),
-                )?,
+                mazbri_audit::actor::load_ed25519_verifying_key_file(Path::new(path))
+                    .map_err(|error| anyhow::anyhow!("audit.actor_verify_key_file: {error}"))?,
             )
         } else {
             None
         };
-        let verifier = Some(ActorVerifier::new(AUDIENCE_CERT, v1, masters));
+        let verifier = Some(ActorVerifier::new(AUDIENCE_CERT, v1, &tokens.masters()));
         let fallback_path = config
             .fallback_file
             .as_ref()
