@@ -70,7 +70,9 @@ pub fn derive_service_token(master: &str, caller: &str) -> String {
 pub fn resolve_derived_caller(name: &str) -> Option<&'static str> {
     let trimmed = name.trim();
     if DERIVED_CALLERS.contains(&trimmed) {
-        return DERIVED_CALLERS.into_iter().find(|caller| *caller == trimmed);
+        return DERIVED_CALLERS
+            .into_iter()
+            .find(|caller| *caller == trimmed);
     }
     match trimmed {
         "gateway" => Some(ServiceName::Gateway.as_str()),
@@ -159,7 +161,11 @@ mod tests {
         for (caller, token) in expected {
             assert_eq!(derive_service_token(EXAMPLE_MASTER, caller), token);
             assert_eq!(token.len(), 64);
-            assert!(token.chars().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()));
+            assert!(
+                token
+                    .chars()
+                    .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+            );
         }
     }
 
@@ -177,8 +183,14 @@ mod tests {
             validate_master(MASTER_ENV, "example master"),
             Err(MasterTokenError::Blank(MASTER_ENV))
         );
-        assert_eq!(validate_master(MASTER_ENV, ""), Err(MasterTokenError::Blank(MASTER_ENV)));
-        assert_eq!(validate_master(MASTER_ENV, EXAMPLE_MASTER), Ok(EXAMPLE_MASTER));
+        assert_eq!(
+            validate_master(MASTER_ENV, ""),
+            Err(MasterTokenError::Blank(MASTER_ENV))
+        );
+        assert_eq!(
+            validate_master(MASTER_ENV, EXAMPLE_MASTER),
+            Ok(EXAMPLE_MASTER)
+        );
         // 派生函数本身不 trim：带空白的输入与示例向量不同。
         assert_ne!(
             derive_service_token(" example-master", "mazbri-gateway"),
@@ -190,7 +202,12 @@ mod tests {
     fn derived_callers_match_canonical_services() {
         let mut expected: Vec<&str> = CANONICAL_SERVICES
             .into_iter()
-            .filter(|svc| !matches!(svc, ServiceName::Cert | ServiceName::Mgmt | ServiceName::Analytics))
+            .filter(|svc| {
+                !matches!(
+                    svc,
+                    ServiceName::Cert | ServiceName::Mgmt | ServiceName::Analytics
+                )
+            })
             .map(ServiceName::as_str)
             .collect();
         expected.push(WAIT_DEPS_CALLER);
@@ -207,10 +224,19 @@ mod tests {
     #[test]
     fn aliases_resolve_to_canonical_caller_not_double_prefixed() {
         assert_eq!(resolve_derived_caller("gateway"), Some("mazbri-gateway"));
-        assert_eq!(resolve_derived_caller("mazbri-gateway"), Some("mazbri-gateway"));
+        assert_eq!(
+            resolve_derived_caller("mazbri-gateway"),
+            Some("mazbri-gateway")
+        );
         assert_eq!(resolve_derived_caller("wait-deps"), Some(WAIT_DEPS_CALLER));
-        assert_eq!(resolve_derived_caller("mazbri-wait-deps"), Some(WAIT_DEPS_CALLER));
-        assert_eq!(resolve_derived_caller("cbpro-ext"), Some("mazbri-cbpro-ext"));
+        assert_eq!(
+            resolve_derived_caller("mazbri-wait-deps"),
+            Some(WAIT_DEPS_CALLER)
+        );
+        assert_eq!(
+            resolve_derived_caller("cbpro-ext"),
+            Some("mazbri-cbpro-ext")
+        );
         assert_eq!(resolve_derived_caller("cert"), None);
         assert_eq!(resolve_derived_caller("mazbri-cert"), None);
         assert_eq!(resolve_derived_caller("mazbri-mazbri-gateway"), None);

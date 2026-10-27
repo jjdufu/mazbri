@@ -26,8 +26,9 @@ pub mod tarpc_middleware;
 mod telemetry;
 pub mod validation;
 pub use cert_token::{
-    CERT_TOKEN_DOMAIN, DERIVED_CALLERS, MASTER_ENV, MasterTokenError, PREVIOUS_ENV, WAIT_DEPS_CALLER,
-    deployment_env_var, derive_service_token, resolve_derived_caller, secret_key, validate_master,
+    CERT_TOKEN_DOMAIN, DERIVED_CALLERS, MASTER_ENV, MasterTokenError, PREVIOUS_ENV,
+    WAIT_DEPS_CALLER, deployment_env_var, derive_service_token, resolve_derived_caller, secret_key,
+    validate_master,
 };
 pub use channel_egress::{
     ADAPTER_HTTP_JSON, AUTH_API_KEY, AUTH_AWS_SIGV4, AUTH_BASIC, AUTH_BEARER, AUTH_DIGEST,
