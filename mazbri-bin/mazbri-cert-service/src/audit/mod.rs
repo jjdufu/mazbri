@@ -21,6 +21,7 @@ use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use crate::token::{Caller, ResolvedToken, TokenTable};
 use mazbri_audit::actor::{ACTOR_HEADER, AUDIENCE_CERT, ActorClaims, ActorError, ActorVerifier};
 use mazbri_audit::record::{ActorType, AuditRecord, AuditStatus, SERVICE_CERT};
 use mazbri_audit::sink::{
@@ -28,7 +29,7 @@ use mazbri_audit::sink::{
 };
 
 pub use config::{ActorMode, CertAuditConfig};
-pub use note::{note_authenticated, note_detail, note_failure, note_resource_id};
+pub use note::{note_authenticated, note_caller, note_detail, note_failure, note_resource_id};
 pub use route::{RouteSpec, classify};
 
 use note::{NOTE, Note, NoteHandle};
@@ -68,6 +69,7 @@ impl ActorCheck {
 pub struct CertAudit {
     mode: ActorMode,
     verifier: Option<ActorVerifier>,
+    tokens: Arc<TokenTable>,
     sink: Option<AuditSink>,
     fallback: Arc<FallbackWriter>,
 }
@@ -77,6 +79,7 @@ impl std::fmt::Debug for CertAudit {
         f.debug_struct("CertAudit")
             .field("mode", &self.mode)
             .field("verifier", &self.verifier.is_some())
+            .field("tokens", &self.tokens)
             .field("database", &self.sink.is_some())
             .finish_non_exhaustive()
     }
@@ -101,18 +104,20 @@ impl CertAudit {
         config: &CertAuditConfig,
         log_dir: &Path,
         base_dir: Option<&Path>,
+        tokens: Arc<TokenTable>,
+        masters: &[&str],
     ) -> anyhow::Result<(Arc<Self>, Option<AuditWriterHandle>)> {
-        let verifier = if let Some(path) = config.verify_key_file() {
+        let v1 = if let Some(path) = config.verify_key_file() {
+            tracing::warn!("v1 Ed25519 已废弃，mgmt 全部升级到 v2 后请移除");
             Some(
-                ActorVerifier::from_file(Path::new(path), AUDIENCE_CERT)
-                    .map_err(|error| anyhow::anyhow!("audit.actor_verify_key_file: {error}"))?,
+                mazbri_audit::actor::load_ed25519_verifying_key_file(Path::new(path)).map_err(
+                    |error| anyhow::anyhow!("audit.actor_verify_key_file: {error}"),
+                )?,
             )
         } else {
-            tracing::warn!(
-                "audit.actor_verify_key_file is not configured; actor headers are recorded as unverifiable"
-            );
             None
         };
+        let verifier = Some(ActorVerifier::new(AUDIENCE_CERT, v1, masters));
         let fallback_path = config
             .fallback_file
             .as_ref()
@@ -135,6 +140,7 @@ impl CertAudit {
             Arc::new(Self {
                 mode: config.actor_mode,
                 verifier,
+                tokens,
                 sink,
                 fallback,
             }),
@@ -142,11 +148,12 @@ impl CertAudit {
         ))
     }
 
-    /// 测试用：指定存储与验签器。
+    /// 测试用：指定存储、令牌表与验签器。
     #[cfg(test)]
     fn with_store(
         store: Arc<dyn AuditStore>,
         mode: ActorMode,
+        tokens: Arc<TokenTable>,
         verifier: Option<ActorVerifier>,
     ) -> (Arc<Self>, AuditWriterHandle) {
         let fallback = Arc::new(FallbackWriter::new(None));
@@ -162,11 +169,17 @@ impl CertAudit {
             Arc::new(Self {
                 mode,
                 verifier,
+                tokens,
                 sink: Some(sink),
                 fallback,
             }),
             handle,
         )
+    }
+
+    fn identify(&self, headers: &HeaderMap) -> Option<ResolvedToken> {
+        let token = crate::auth::extract_bearer_token(headers)?;
+        self.tokens.resolve(&token)
     }
 
     fn check_actor(&self, request: &Request) -> ActorCheck {
@@ -190,14 +203,25 @@ impl CertAudit {
     }
 
     /// 严格模式下应拒绝的请求。
-    fn must_reject(&self, route: Option<&RouteSpec>, check: &ActorCheck) -> bool {
+    ///
+    /// 已识别的非 Admin 不因缺少声明被拒；Admin 和识别不出的调用方在 `mgmt_only` 上仍拒绝。
+    /// 无效声明对任何调用方都拒绝。
+    fn must_reject(
+        &self,
+        route: Option<&RouteSpec>,
+        check: &ActorCheck,
+        caller: Option<Caller>,
+    ) -> bool {
         if self.mode != ActorMode::Strict {
             return false;
         }
         match check {
             ActorCheck::Invalid(_) => true,
-            ActorCheck::Absent | ActorCheck::Unverifiable => route.is_some_and(|r| r.mgmt_only),
             ActorCheck::Verified(_) => false,
+            ActorCheck::Absent | ActorCheck::Unverifiable => {
+                route.is_some_and(|spec| spec.mgmt_only)
+                    && !matches!(caller, Some(Caller::Service(_) | Caller::WaitDeps))
+            }
         }
     }
 
@@ -330,6 +354,7 @@ fn build_record(
     path_resource_id: Option<String>,
     check: &ActorCheck,
     mode: ActorMode,
+    identified: Option<ResolvedToken>,
     outcome: Outcome,
 ) -> AuditRecord {
     let Outcome {
@@ -376,6 +401,13 @@ fn build_record(
     if let Some(peer) = &ctx.peer_ip {
         details.insert("peer_ip".into(), peer.clone().into());
     }
+    if let Some(resolved) = identified {
+        details.insert("caller".into(), resolved.caller.name().into());
+        details.insert(
+            "caller_generation".into(),
+            resolved.generation.as_str().into(),
+        );
+    }
     record.details = Some(serde_json::Value::Object(details));
     record
 }
@@ -395,25 +427,31 @@ fn rejection_response(check: &ActorCheck) -> Response {
 /// 审计中间件；放在 `request_id_middleware` 之后、`error_handler_middleware` 之前。
 pub async fn audit_middleware(
     State(audit): State<Arc<CertAudit>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     let started = Instant::now();
     let route = classify(request.method(), request.uri().path());
+    let identified = audit.identify(request.headers());
+    if let Some(resolved) = identified {
+        request.extensions_mut().insert(resolved);
+    }
     let check = audit.check_actor(&request);
+    let caller = identified.map(|resolved| resolved.caller);
     if let ActorCheck::Invalid(error) = &check {
         tracing::warn!(
             reason = error.as_str(),
             path = request.uri().path(),
+            caller = caller.map_or("unknown", Caller::name),
             mode = audit.mode.as_str(),
             "invalid actor header"
         );
     }
-    if route.is_none() && !audit.must_reject(None, &check) {
+    if route.is_none() && !audit.must_reject(None, &check, caller) {
         return next.run(request).await;
     }
     let ctx = RequestCtx::capture(&request, started);
-    if audit.must_reject(route.as_ref().map(|(spec, _)| spec), &check) {
+    if audit.must_reject(route.as_ref().map(|(spec, _)| spec), &check, caller) {
         let response = rejection_response(&check);
         if let Some((spec, path_resource_id)) = route {
             let outcome = Outcome {
@@ -424,7 +462,15 @@ pub async fn audit_middleware(
                 },
                 error: ErrorBody::default(),
             };
-            let record = build_record(&ctx, &spec, path_resource_id, &check, audit.mode, outcome);
+            let record = build_record(
+                &ctx,
+                &spec,
+                path_resource_id,
+                &check,
+                audit.mode,
+                identified,
+                outcome,
+            );
             audit.emit(record, spec.critical).await;
         }
         return response;
@@ -442,7 +488,15 @@ pub async fn audit_middleware(
         note,
         error,
     };
-    let record = build_record(&ctx, &spec, path_resource_id, &check, audit.mode, outcome);
+    let record = build_record(
+        &ctx,
+        &spec,
+        path_resource_id,
+        &check,
+        audit.mode,
+        identified,
+        outcome,
+    );
     if spec.failures_only && record.status == AuditStatus::Success {
         return response;
     }

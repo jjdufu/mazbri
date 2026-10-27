@@ -221,6 +221,15 @@ fn now_secs() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
+/// 从 SPKI PEM 文件加载 v1 Ed25519 公钥，不构造验签器。
+///
+/// # Errors
+///
+/// 文件不可读或不是 Ed25519 公钥时返回错误。
+pub fn load_ed25519_verifying_key_file(path: &Path) -> Result<VerifyingKey, ActorKeyError> {
+    load_ed25519_verifying_key(&read_key_file(path)?)
+}
+
 fn load_ed25519_verifying_key(pem: &str) -> Result<VerifyingKey, ActorKeyError> {
     let der = pem_der(pem, "PUBLIC KEY")?;
     let bytes = der
@@ -426,7 +435,11 @@ impl ActorVerifier {
     ///
     /// 文件不可读或格式无效时返回错误。
     pub fn from_file(path: &Path, audience: &str) -> Result<Self, ActorKeyError> {
-        Self::from_spki_pem(&read_key_file(path)?, audience)
+        Ok(Self::new(
+            audience,
+            Some(load_ed25519_verifying_key_file(path)?),
+            &[],
+        ))
     }
 
     /// 校验签名、受众、时效、方法/路径绑定与重放。

@@ -60,13 +60,11 @@ pub async fn import_license(
     };
     let raw = std::str::from_utf8(&bytes)
         .map_err(|_| CertError::InvalidRequest("许可证文件必须是 ASCII".to_string()))?;
-    let tokens = state.auth_state.token_manager.static_tokens().await;
     let decision = license_service::import_license(ImportArgs {
         pool: state.repo.get_pool(),
         state: &state.base_authorization,
         raw_license: raw,
         actor_id: extract_admin_id(&headers),
-        recovery_secret: tokens.first().map(String::as_str),
     })
     .await?;
     state.invalidate_root_material_cache();

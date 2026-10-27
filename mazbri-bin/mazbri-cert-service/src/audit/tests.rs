@@ -1,6 +1,7 @@
 use super::*;
 use axum::Router;
 use axum::routing::{get, post, put};
+use crate::token::{Caller, Generation, TokenTable};
 use mazbri_audit::actor::{ActorIdentity, ActorSigner, ISSUER_MGMT};
 use mazbri_audit::sink::testing::MemoryStore;
 use tower::ServiceExt;
@@ -43,14 +44,30 @@ fn signer() -> ActorSigner {
     ActorSigner::from_seed(&[3u8; 32], ISSUER_MGMT)
 }
 
+fn admin_table() -> Arc<TokenTable> {
+    Arc::new(TokenTable::from_entries(vec![(
+        "test".to_string(),
+        Caller::Admin,
+        Generation::Current,
+    )]))
+}
+
 fn harness(mode: ActorMode) -> (Router, Arc<MemoryStore>, AuditWriterHandle) {
+    harness_with(mode, admin_table(), Some(ActorVerifier::new(AUDIENCE_CERT, signer().ed25519_verifying_key(), &[])))
+}
+
+fn harness_with(
+    mode: ActorMode,
+    tokens: Arc<TokenTable>,
+    verifier: Option<ActorVerifier>,
+) -> (Router, Arc<MemoryStore>, AuditWriterHandle) {
     let store = Arc::new(MemoryStore::default());
-    let verifier = ActorVerifier::new(AUDIENCE_CERT, signer().ed25519_verifying_key(), &[]);
-    let (audit, handle) = CertAudit::with_store(store.clone(), mode, Some(verifier));
+    let (audit, handle) = CertAudit::with_store(store.clone(), mode, tokens, verifier);
     let app = Router::new()
         .route("/issue", post(issue))
         .route("/verify", post(verify))
         .route("/revoke/{id}", post(|| async { StatusCode::OK }))
+        .route("/renew/{id}", post(|| async { StatusCode::OK }))
         .route("/configs/{service}", put(broken))
         .route("/configs/{service}", get(|| async { StatusCode::OK }))
         .layer(axum::middleware::from_fn(fake_auth))
@@ -196,6 +213,7 @@ async fn strict_rejects_missing_actor_on_mgmt_only_routes() {
     assert_eq!(denied.action, "certificate.revoke");
     assert_eq!(denied.status, AuditStatus::Denied);
     assert_eq!(denied.actor_type, "anonymous");
+    assert_eq!(detail(denied, "caller"), Some("admin"));
     assert_eq!(denied.failure_reason.as_deref(), Some("actor_missing"));
     assert_eq!(detail(denied, "actor_mode"), Some("strict"));
     assert!(rows.iter().any(|row| row.action == "certificate.issue"));
@@ -248,4 +266,103 @@ fn parses_flat_and_nested_error_bodies() {
     assert_eq!(nested.code.as_deref(), Some("NOT_FOUND"));
     assert_eq!(nested.message.as_deref(), Some("gone"));
     assert!(parse_error_body(b"not json").code.is_none());
+}
+
+fn service_table() -> Arc<TokenTable> {
+    Arc::new(TokenTable::from_entries(vec![
+        (
+            "svc".to_string(),
+            Caller::Service(mazbri_core::ServiceName::Auth),
+            Generation::Current,
+        ),
+        ("test".to_string(), Caller::Admin, Generation::Current),
+    ]))
+}
+
+#[tokio::test]
+async fn strict_service_renew_without_actor_is_system_not_rejected() {
+    let (app, store, handle) = harness_with(
+        ActorMode::Strict,
+        service_table(),
+        Some(ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"])),
+    );
+    let renew = Request::builder()
+        .method("POST")
+        .uri("/renew/c-1")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, renew).await, StatusCode::OK);
+    let rows = drain(handle, &store).await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].actor_type, "system");
+    assert_eq!(detail(&rows[0], "caller"), Some("mazbri-auth"));
+    assert_eq!(detail(&rows[0], "actor_verification"), Some("actor_missing"));
+}
+
+#[tokio::test]
+async fn strict_unknown_caller_still_rejected_on_mgmt_only() {
+    let (app, _, _) = harness_with(
+        ActorMode::Strict,
+        service_table(),
+        Some(ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"])),
+    );
+    let revoke = Request::builder()
+        .method("POST")
+        .uri("/revoke/c-1")
+        .header(header::AUTHORIZATION, "Bearer unknown")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, revoke).await, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn strict_rejects_invalid_and_v1_without_key_for_any_caller() {
+    let verifier = ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"]);
+    let (app, _, _) = harness_with(ActorMode::Strict, service_table(), Some(verifier));
+    let v2 = ActorSigner::hmac_v2("example-master", ISSUER_MGMT).sign(
+        AUDIENCE_CERT,
+        &admin(),
+        "POST",
+        "/revoke/c-3",
+    );
+    assert!(v2.starts_with("v2."));
+    let ok = request("POST", "/revoke/c-3")
+        .header(ACTOR_HEADER, v2)
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, ok).await, StatusCode::OK);
+    let bad = request("POST", "/issue")
+        .header(ACTOR_HEADER, "v2.not-valid")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, bad).await, StatusCode::UNAUTHORIZED);
+    let v1 = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/issue");
+    let legacy = Request::builder()
+        .method("POST")
+        .uri("/issue")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .header(ACTOR_HEADER, v1)
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, legacy).await, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn strict_does_not_block_service_token_on_revoke() {
+    let (app, store, handle) = harness_with(
+        ActorMode::Strict,
+        service_table(),
+        Some(ActorVerifier::new(AUDIENCE_CERT, None, &["example-master"])),
+    );
+    let revoke = Request::builder()
+        .method("POST")
+        .uri("/revoke/c-9")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, revoke).await, StatusCode::OK);
+    let rows = drain(handle, &store).await;
+    assert_eq!(rows[0].actor_type, "system");
+    assert_eq!(detail(&rows[0], "caller"), Some("mazbri-auth"));
 }

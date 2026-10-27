@@ -42,7 +42,7 @@ impl ActorMode {
 pub struct CertAuditConfig {
     #[serde(default)]
     pub actor_mode: ActorMode,
-    /// mgmt 操作人声明公钥（SPKI PEM，`openssl pkey -pubout` 输出）。严格模式必填。
+    /// 已废弃。配置了就加载 v1 Ed25519 公钥；v2 HMAC 由主令牌派生，不依赖此文件。
     #[serde(default)]
     pub actor_verify_key_file: Option<String>,
     /// 落库失败时的兜底 JSONL；缺省 `<tracing.log_dir>/cert-audit-fallback.jsonl`。
@@ -89,11 +89,8 @@ impl CertAuditConfig {
 
     /// # Errors
     ///
-    /// 参数越界，或严格模式未配置公钥文件。
+    /// 参数越界时返回错误。严格模式不再要求 v1 公钥文件。
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.actor_mode == ActorMode::Strict && self.verify_key_file().is_none() {
-            anyhow::bail!("audit.actor_mode = \"strict\" requires audit.actor_verify_key_file");
-        }
         if self.queue_capacity == 0 {
             anyhow::bail!("audit.queue_capacity must be greater than 0");
         }
@@ -119,14 +116,18 @@ mod tests {
     }
 
     #[test]
-    fn strict_requires_verify_key() {
+    fn strict_does_not_require_verify_key() {
         let config: CertAuditConfig = toml::from_str("actor_mode = \"strict\"").expect("strict");
-        assert!(config.validate().is_err());
+        assert!(config.validate().is_ok());
         let config: CertAuditConfig = toml::from_str(
             "actor_mode = \"strict\"\nactor_verify_key_file = \"/etc/mazbri/keys/a.pem\"",
         )
         .expect("strict with key");
         assert!(config.validate().is_ok());
+        assert_eq!(
+            config.verify_key_file(),
+            Some("/etc/mazbri/keys/a.pem")
+        );
         assert!(toml::from_str::<CertAuditConfig>("actor_mode = \"off\"").is_err());
         assert!(toml::from_str::<CertAuditConfig>("unknown = 1").is_err());
     }

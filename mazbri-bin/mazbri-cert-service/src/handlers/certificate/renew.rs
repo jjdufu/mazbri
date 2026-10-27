@@ -1,10 +1,12 @@
 use super::common::{CertificateState, extract_client_ip, update_certificate_inventory_metrics};
 use crate::db::CertificateResponse;
 use crate::error::CertError;
+use crate::token::scope::{ScopeContext, enforce_owner};
 use axum::{
     Json,
-    extract::{ConnectInfo, Path, State},
-    http::{HeaderMap, StatusCode},
+    body::Bytes,
+    extract::{ConnectInfo, Extension, Path, State},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
@@ -24,20 +26,19 @@ fn default_validity_days() -> i64 {
 pub async fn renew_certificate(
     State(state): State<CertificateState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(scope): Extension<ScopeContext>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(request): Json<RenewCertificateRequest>,
+    body: Bytes,
 ) -> Response {
     let metrics = CertMetricsRecorder::new("renew");
     let _timer = metrics.start_timer();
-    match renew_certificate_inner(
-        state.clone(),
-        headers,
-        Some(addr),
-        id,
-        request.validity_days,
-    )
-    .await
+    let validity_days = match parse_renew_body(&headers, &body) {
+        Ok(days) => days,
+        Err(response) => return *response,
+    };
+    match renew_certificate_inner(state.clone(), headers, Some(addr), scope, id, validity_days)
+        .await
     {
         Ok(response) => {
             metrics.record_renewal_success();
@@ -50,14 +51,40 @@ pub async fn renew_certificate(
         }
     }
 }
+fn parse_renew_body(headers: &HeaderMap, body: &[u8]) -> Result<i64, Box<Response>> {
+    let no_content_type = !headers.contains_key(header::CONTENT_TYPE);
+    let empty = body.iter().all(u8::is_ascii_whitespace);
+    if no_content_type || empty {
+        return Ok(default_validity_days());
+    }
+    match serde_json::from_slice::<RenewCertificateRequest>(body) {
+        Ok(request) => Ok(request.validity_days),
+        Err(error) => Err(Box::new(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "invalid_body",
+                    "message": error.to_string()
+                })),
+            )
+                .into_response(),
+        )),
+    }
+}
+
 async fn renew_certificate_inner(
     state: CertificateState,
     headers: HeaderMap,
     socket_addr: Option<SocketAddr>,
+    scope: ScopeContext,
     id: Uuid,
     validity_days: i64,
 ) -> Result<Response, CertError> {
     let existing = state.repo.get_by_id(id).await?;
+    if let Err(response) = enforce_owner(scope.mode, scope.caller, &existing.subject, "/renew/{id}")
+    {
+        return Ok(*response);
+    }
     if existing.revoked {
         return Err(CertError::AlreadyRevoked(id.to_string()));
     }

@@ -5,15 +5,15 @@ use mazbri_admin::{AdminServerBuilder, AdminState};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
 use mazbri_cert_service::config::CertAppConfig;
+use mazbri_cert_service::token::TokenTable;
 use mazbri_cert_service::config_center::ConfigRepository;
 use mazbri_cert_service::db::CertificateRepository;
 use mazbri_cert_service::handlers::certificate::common::update_certificate_inventory_metrics;
 use mazbri_cert_service::node_registry::NodeRegistryRepository;
 use mazbri_cert_service::san::{EnvSource, SanPolicy};
 use mazbri_cert_service::server;
-use mazbri_cert_service::token::TokenManager;
 use mazbri_core::ServiceName;
-use mazbri_core::config::{build_log_routes, get_cert_service_token, load_toml};
+use mazbri_core::config::{build_log_routes, load_toml};
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use mazbri_core::init_tracing_with_routes;
 use parking_lot::Mutex;
@@ -145,6 +145,9 @@ async fn serve_until_shutdown(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if let Some(code) = mazbri_cert_service::tool::maybe_run() {
+        std::process::exit(code);
+    }
     let config_dir = Path::new(".");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
     let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
@@ -157,12 +160,17 @@ async fn main() -> Result<()> {
     }
     let service_name = config.service_name.as_str().to_owned();
     let log_routes = build_log_routes(&config.log_routes)?;
-    let cert_service_token = get_cert_service_token()?;
-    config.auth.static_tokens = vec![cert_service_token];
     config.cert.key_password = None;
+    let tokens = Arc::new(TokenTable::from_env()?);
+    let owned_masters: Vec<String> = tokens.masters().into_iter().map(str::to_string).collect();
+    let master_refs: Vec<&str> = owned_masters.iter().map(String::as_str).collect();
     let admin_state = start_admin_server(&config, &service_name)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
+    if !config.auth.static_tokens.is_empty() {
+        tracing::warn!("[auth].static_tokens 已废弃，忽略");
+    }
     mazbri_tls::register_cert_metrics()?;
+    mazbri_cert_service::token::register_token_scope_metrics()?;
     info!("Mazbri 证书服务启动中...");
     info!(host = % config.server.host, port = % config.server.port, "服务器配置");
     let db = mazbri_core::create_pool(&config.database, Some(config_dir)).await?;
@@ -174,13 +182,8 @@ async fn main() -> Result<()> {
         state.set_ready(true);
         info!("Service marked as ready for authorization import");
     }
-    let token_manager = Arc::new(TokenManager::new(Arc::new(config.auth.clone())));
-    token_manager.validate_config().await?;
-    let auth_state = Arc::new(AuthState::new(token_manager.clone(), &config.auth));
-    let base_authorization = Arc::new(base_authorization::BaseAuthorizationState::new(
-        repo.clone(),
-        auth_state.clone(),
-    ));
+    let auth_state = Arc::new(AuthState::new(tokens.clone(), config.auth.scope_mode));
+    let base_authorization = Arc::new(base_authorization::BaseAuthorizationState::new(repo.clone()));
     let node_repo = Arc::new(NodeRegistryRepository::new(db.clone()));
     info!("节点注册仓库已初始化");
     let config_repo = Arc::new(ConfigRepository::new(db.clone()));
@@ -203,6 +206,8 @@ async fn main() -> Result<()> {
         &config.audit,
         Path::new(&config.tracing.log_dir),
         Some(config_dir),
+        tokens,
+        &master_refs,
     )?;
     let state = server::AppState {
         base_authorization,

@@ -1,4 +1,5 @@
 use crate::san::SanConfig;
+use crate::token::ScopeMode;
 use anyhow::Result;
 use mazbri_core::config::ValidateConfig;
 use mazbri_core::{
@@ -46,8 +47,12 @@ impl CertConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CertAuthConfig {
+    /// 已废弃。启动时若非空只告警并忽略，令牌只从环境变量读取。
     #[serde(default, deserialize_with = "deserialize_static_tokens")]
     pub static_tokens: Vec<String>,
+    /// audit：越权只告警放行；enforce：越权返回 403 `insufficient_scope`。
+    #[serde(default)]
+    pub scope_mode: ScopeMode,
 }
 fn deserialize_static_tokens<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
@@ -114,5 +119,25 @@ impl ValidateConfig for CertAppConfig {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::ScopeMode;
+
+    #[test]
+    fn parses_scope_mode_and_deprecated_static_tokens() {
+        let config: CertAuthConfig = toml::from_str(
+            "scope_mode = \"enforce\"\nstatic_tokens = \"alpha, beta\"",
+        )
+        .expect("auth");
+        assert_eq!(config.scope_mode, ScopeMode::Enforce);
+        assert_eq!(config.static_tokens, vec!["alpha".to_string(), "beta".to_string()]);
+        let config: CertAuthConfig = toml::from_str("").expect("default");
+        assert_eq!(config.scope_mode, ScopeMode::Audit);
+        assert_eq!(config.static_tokens, Vec::<String>::new());
+        assert!(toml::from_str::<CertAuthConfig>("unknown = 1").is_err());
     }
 }

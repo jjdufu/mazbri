@@ -71,6 +71,8 @@ prometheus = {version = "0.14"}
 
 [dev-dependencies]
 mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit", features = ["testing"] }
+serde_yaml = "0.9"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [lints]
 workspace = true

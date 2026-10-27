@@ -107,7 +107,7 @@ pub fn create_app(state: AppState) -> Router {
             get(handlers::license::get_license_status),
         )
         .with_state(Arc::new(state.clone()))
-        .layer(middleware::from_fn_with_state(
+        .route_layer(middleware::from_fn_with_state(
             state.auth_state.clone(),
             crate::auth::auth_middleware,
         ));
@@ -117,7 +117,7 @@ pub fn create_app(state: AppState) -> Router {
             get(handlers::root_package::get_current_root_materials),
         )
         .with_state(Arc::new(state.clone()))
-        .layer(middleware::from_fn_with_state(
+        .route_layer(middleware::from_fn_with_state(
             state.auth_state.clone(),
             crate::auth::auth_middleware,
         ));
@@ -133,7 +133,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/nodes", get(handlers::node::list_nodes))
         .route("/nodes/{service}", get(handlers::node::discover_service))
         .with_state(node_state)
-        .layer(auth_layer.clone());
+        .route_layer(auth_layer.clone());
     let cert_routes = cert_routes(&state);
     let config_routes = config_routes(&state);
     let (tag_routes, category_routes) = tag_and_category_routes(&state);
@@ -207,7 +207,7 @@ fn cert_routes(state: &AppState) -> Router<AppState> {
         )
         .route("/ca", get(handlers::ca::get_ca_certificate))
         .with_state(cert_state)
-        .layer(middleware::from_fn_with_state(
+        .route_layer(middleware::from_fn_with_state(
             state.auth_state.clone(),
             crate::auth::auth_middleware,
         ))
@@ -268,7 +268,7 @@ fn config_routes(state: &AppState) -> Router<AppState> {
         .route("/configs/search", get(handlers::config::search_configs))
         .merge(config_write_routes)
         .with_state(config_state)
-        .layer(auth_layer)
+        .route_layer(auth_layer)
 }
 
 fn tag_and_category_routes(state: &AppState) -> (Router<AppState>, Router<AppState>) {
@@ -284,7 +284,7 @@ fn tag_and_category_routes(state: &AppState) -> (Router<AppState>, Router<AppSta
         .route("/tags/{id}", put(handlers::tag::update_tag))
         .route("/tags/{id}", delete(handlers::tag::delete_tag))
         .with_state(tag_state)
-        .layer(auth_layer.clone());
+        .route_layer(auth_layer.clone());
     let category_state = CategoryState {
         repo: state.config_repo.clone(),
     };
@@ -302,6 +302,6 @@ fn tag_and_category_routes(state: &AppState) -> (Router<AppState>, Router<AppSta
             delete(handlers::category::delete_category),
         )
         .with_state(category_state)
-        .layer(auth_layer);
+        .route_layer(auth_layer);
     (tag_routes, category_routes)
 }
