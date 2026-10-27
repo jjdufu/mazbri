@@ -6,8 +6,9 @@
 use std::sync::OnceLock;
 
 use mazbri_audit::actor::{ACTOR_HEADER, AUDIENCE_CERT, ActorIdentity, ActorSigner, ISSUER_MGMT};
-use mazbri_core::get_cert_service_token;
+use mazbri_core::{MASTER_ENV, validate_master};
 use reqwest::header::HeaderValue;
+use zeroize::Zeroizing;
 
 use super::AuditConfig;
 use super::scope::AuditScope;
@@ -18,16 +19,26 @@ static SIGNER: OnceLock<ActorSigner> = OnceLock::new();
 ///
 /// # Errors
 ///
-/// 缺少 `MAZBRI_CERT_SERVICE_TOKEN` 或值为空时返回错误。
+/// 缺少 `MAZBRI_CERT_SERVICE_TOKEN`，或值为空 / 含空白字符时返回错误（mgmt 拒绝启动）。
 pub fn init_actor_signer(config: &AuditConfig) -> anyhow::Result<bool> {
     warn_if_legacy_signing_key(config);
-    let master = get_cert_service_token()?;
+    let master = master_from_env(std::env::var(MASTER_ENV).ok())?;
     let signer = v2_signer(&master, config.actor_token_ttl_secs);
     if SIGNER.set(signer).is_err() {
         tracing::warn!("actor signer already initialized; keeping the first key");
     }
     tracing::info!("actor header signing for cert-service enabled (v2)");
     Ok(true)
+}
+
+/// 与 cert 端 `TokenTable` 使用同一套校验（`validate_master`）：不 trim，含空白即拒绝。
+/// 否则 cert 因主令牌含空白拒绝启动，而 mgmt 用 trim 后的值派生 HMAC 密钥，
+/// 两端各自"能启动"却签不出对方认可的声明。
+fn master_from_env(raw: Option<String>) -> anyhow::Result<Zeroizing<String>> {
+    let raw =
+        Zeroizing::new(raw.ok_or_else(|| anyhow::anyhow!("缺少必需的环境变量 {MASTER_ENV}"))?);
+    validate_master(MASTER_ENV, &raw)?;
+    Ok(raw)
 }
 
 fn warn_if_legacy_signing_key(config: &AuditConfig) {
@@ -111,6 +122,16 @@ fn decorate(
 mod tests {
     use super::*;
     use mazbri_audit::actor::ActorVerifier;
+
+    #[test]
+    fn master_must_be_present_non_empty_and_whitespace_free() {
+        assert!(master_from_env(None).is_err());
+        for bad in ["", " ", "abc ", " abc", "a b", "abc\n", "\tabc"] {
+            assert!(master_from_env(Some(bad.to_string())).is_err(), "{bad:?}");
+        }
+        let ok = master_from_env(Some("example-master".to_string())).expect("valid master");
+        assert_eq!(ok.as_str(), "example-master");
+    }
 
     fn identity() -> ActorIdentity {
         ActorIdentity {
