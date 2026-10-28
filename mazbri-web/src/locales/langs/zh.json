@@ -664,7 +664,8 @@
       "placeholder": "验证码或备用码",
       "invalidCode": "请输入正确位数的数字验证码，或 8 位备用码",
       "btnText": "验证",
-      "backToLogin": "返回登录"
+      "backToLogin": "返回登录",
+      "sessionExpired": "验证会话已过期或已失效，请重新输入账号密码登录"
     },
     "changePassword": {
       "title": "修改密码",
@@ -681,7 +682,9 @@
       "passwordTooShort": "密码长度不能少于 8 位",
       "passwordMinLength": "密码长度不能少于 8 位",
       "btnText": "确认修改",
-      "success": "密码修改成功"
+      "success": "密码修改成功",
+      "sessionExpired": "改密凭证已过期或已失效，请重新登录（若密码已修改成功，请使用新密码登录）",
+      "backToLogin": "返回登录"
     },
     "mfaSetup": {
       "title": "设置两步验证",
@@ -1793,7 +1796,11 @@
       "mfaInvalidRequest": "MFA 请求不合法",
       "sessionStale": "会话已过期，需要刷新",
       "insufficientPermissions": "角色权限不足",
-      "routeNotAuthorized": "接口未登记访问策略（默认拒绝）"
+      "routeNotAuthorized": "接口未登记访问策略（默认拒绝）",
+      "passwordResetNotRequired": "不需要强制改密",
+      "passwordUpdateIndeterminate": "密码更新结果未决",
+      "passwordResetPostCommitFailed": "改密已提交但签发失败",
+      "mfaVerifyPostCommitFailed": "验证已提交但签发失败"
     }
   },
   "feedback": {

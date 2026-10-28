@@ -43,6 +43,7 @@
           :loading="changePasswordLoading"
           :user-role="userRole"
           @submit="handleChangePassword"
+          @back="handleBackToLogin"
         />
       </div>
     </div>
@@ -95,6 +96,7 @@ const handleChangePassword = async () => {
     changePasswordFormData.currentPassword = "";
     changePasswordFormData.newPassword = "";
     changePasswordFormData.confirmPassword = "";
+    changePasswordFormData.newUsername = "";
   }
 };
 </script>

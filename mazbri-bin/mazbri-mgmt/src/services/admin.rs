@@ -11,3 +11,6 @@ pub use refresh_flow::{AdminRefreshParams, admin_refresh_token};
 pub use settings::{
     get_system_settings, get_user_settings, update_system_settings, update_user_settings,
 };
+
+#[cfg(test)]
+pub(crate) use passwords::commit_first_login_password_reset;

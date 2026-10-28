@@ -341,21 +341,25 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         Ok(verified) => verified,
         Err(error) => return factor_login_error(&error),
     };
-    if let Err(response) = consume_stage_token(params.redis, params.temp_claims).await {
-        if let Some(restore) = &verified.backup_restore
-            && !crate::services::mfa::second_factor::restore_backup_code(pool, user_id, restore)
-                .await
-        {
-            crate::audit::set_failure_reason("mfa_backup_restore_failed");
-            crate::audit::mark_security_event();
+    let consumed = match consume_stage_token(params.redis, params.temp_claims).await {
+        Ok(consumed) => consumed,
+        Err(response) => {
+            // 消费失败说明因子写入需要撤销；备用码回写保持原顺序。
+            if let Some(restore) = &verified.backup_restore
+                && !crate::services::mfa::second_factor::restore_backup_code(pool, user_id, restore)
+                    .await
+            {
+                crate::audit::set_failure_reason("mfa_backup_restore_failed");
+                crate::audit::mark_security_event();
+            }
+            return *response;
         }
-        return *response;
-    }
+    };
     let used_backup_code = matches!(
         verified.method,
         crate::services::mfa::second_factor::FactorMethod::BackupCode
     );
-    finish_verified_login(FinishVerifiedLoginParams {
+    let response = finish_verified_login(FinishVerifiedLoginParams {
         pool,
         audit,
         jwt_secret,
@@ -369,7 +373,9 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         used_backup_code,
         client_ip,
     })
-    .await
+    .await;
+    consumed.retain();
+    response
 }
 
 struct FinishVerifiedLoginParams<'a> {
@@ -400,7 +406,14 @@ async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::r
     .await
     {
         Ok(issued) => issued,
-        Err(response) => return *response,
+        Err(_response) => {
+            error!("failed to issue session after MFA verify");
+            crate::audit::set_failure_reason("mfa_verify_post_commit_failed");
+            return ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            );
+        }
     };
     if let Err(error) = params
         .audit

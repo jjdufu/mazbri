@@ -66,6 +66,12 @@
           {{ t("login.changePassword.btnText") }}
         </ElButton>
       </div>
+
+      <div class="mt-4 text-center">
+        <ElButton type="text" @click="emit('back')">
+          {{ t("login.changePassword.backToLogin") }}
+        </ElButton>
+      </div>
     </ElForm>
   </div>
 </template>
@@ -83,6 +89,7 @@ interface Props {
 }
 interface Emits {
   (e: "submit"): void;
+  (e: "back"): void;
 }
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();

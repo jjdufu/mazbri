@@ -303,6 +303,10 @@ export const FAILURE_REASON_LABELS: Record<string, string> = {
   insufficient_permissions: "auditLogs.failureReasons.insufficientPermissions",
   route_not_authorized: "auditLogs.failureReasons.routeNotAuthorized",
   business_failure: "auditLogs.failureReasons.businessFailure",
+  password_reset_not_required: "auditLogs.failureReasons.passwordResetNotRequired",
+  password_update_indeterminate: "auditLogs.failureReasons.passwordUpdateIndeterminate",
+  password_reset_post_commit_failed: "auditLogs.failureReasons.passwordResetPostCommitFailed",
+  mfa_verify_post_commit_failed: "auditLogs.failureReasons.mfaVerifyPostCommitFailed",
 };
 
 /** CSV 公式注入防护：以 = + - @ 制表符 回车 开头的单元格前置单引号。 */

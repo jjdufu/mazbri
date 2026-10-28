@@ -115,6 +115,71 @@ pub(super) async fn store_setup_artifacts(
     }
     Ok(())
 }
+
+/// 强制 MFA 设置写密钥。仅当 `mfa_enabled = false` 时更新。
+///
+/// # Errors
+///
+/// 数据库执行失败时返回错误。调用方负责分类并决定是否回滚阶段令牌。
+pub(super) async fn store_required_setup_secret(
+    conn: &mut sqlx::PgConnection,
+    user_id: uuid::Uuid,
+    encrypted_secret: &str,
+    hashed_codes: &[String],
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r"
+        UPDATE admin_users
+        SET mfa_secret = $1,
+            mfa_backup_codes = $2,
+            mfa_backup_codes_version = mfa_backup_codes_version + 1,
+            updated_at = NOW()
+        WHERE id = $3
+          AND mfa_enabled = false
+        ",
+    )
+    .bind(encrypted_secret)
+    .bind(serde_json::json!(hashed_codes))
+    .bind(user_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+/// 强制启用：同一条语句写启用、步长和 `auth_epoch`。0 行表示已启用、用户不在或步长未命中。
+///
+/// # Errors
+///
+/// 数据库执行失败时返回错误。调用方负责分类并决定是否回滚阶段令牌。
+pub(super) async fn commit_required_mfa_enable(
+    conn: &mut sqlx::PgConnection,
+    user_id: uuid::Uuid,
+    step_at: i64,
+    changed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        r"
+        UPDATE admin_users
+        SET mfa_enabled = true,
+            mfa_changed_at = $2,
+            mfa_totp_last_step_at = $3,
+            mfa_attempts = 0,
+            mfa_locked_until = NULL,
+            auth_epoch = auth_epoch + 1,
+            updated_at = NOW()
+        WHERE id = $1
+          AND mfa_enabled = false
+          AND (mfa_totp_last_step_at IS NULL OR mfa_totp_last_step_at < $3)
+        RETURNING auth_epoch
+        ",
+    )
+    .bind(user_id)
+    .bind(changed_at)
+    .bind(step_at)
+    .fetch_optional(&mut *conn)
+    .await
+}
+
 pub(crate) struct SessionRotation {
     pub sxp: i64,
     pub old_refresh: AdminClaims,
@@ -311,48 +376,6 @@ pub(super) async fn commit_voluntary_enable(
     }
 }
 
-pub(super) async fn advance_enable_step(
-    pool: &PgPool,
-    user_id: uuid::Uuid,
-    step_at: i64,
-) -> Result<(), Box<axum::response::Response>> {
-    match repo::advance_totp_step(pool, user_id, step_at).await {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(Box::new(reused_enable_response())),
-        Err(error) => {
-            error!("Failed to advance MFA step: {error}");
-            Err(Box::new(ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_enable(),
-            )))
-        }
-    }
-}
-
-pub(super) async fn commit_required_enable(
-    pool: &PgPool,
-    user_id: uuid::Uuid,
-    changed_at: chrono::DateTime<chrono::Utc>,
-) -> Result<i64, Box<axum::response::Response>> {
-    match repo::mark_mfa_enabled(pool, user_id, changed_at).await {
-        Ok(Some(epoch)) => Ok(epoch),
-        Ok(None) => {
-            error!("required enable write matched no disabled row for {user_id}");
-            Err(Box::new(ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_enable(),
-            )))
-        }
-        Err(error) => {
-            error!("Failed to enable MFA: {}", error);
-            Err(Box::new(ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_enable(),
-            )))
-        }
-    }
-}
-
 pub(super) fn ok_json(value: serde_json::Value) -> axum::response::Response {
     // Session tokens go into HttpOnly cookies when present; body keeps user/MFA fields only.
     crate::middleware::auth::json_with_session_cookies(value, None)
@@ -369,7 +392,15 @@ fn stage_rejection(rejection: TokenRejection, token: &str, jwt_secret: &str) -> 
     } else {
         StatusCode::UNAUTHORIZED
     };
-    ApiResponse::err(status, mazbri_i18n::mfa::invalid_temp_token())
+    ApiResponse::err(status, stage_status_message(rejection))
+}
+
+fn stage_status_message(rejection: TokenRejection) -> String {
+    if rejection == TokenRejection::CheckUnavailable {
+        rejection.message().to_string()
+    } else {
+        mazbri_i18n::mfa::invalid_temp_token()
+    }
 }
 
 /// 校验登录阶段临时令牌：算法/iss/aud/exp/`token_type` 必须与 `kind` 严格匹配，且未被使用。
@@ -407,24 +438,149 @@ pub(crate) async fn authenticate_stage_token(
 ///
 /// # Errors
 ///
-/// 已被使用返回 401；黑名单不可用返回 503。
+/// 已被使用或用途不符返回 401；黑名单不可用返回 503，文案为 [`TokenRejection::message`]。
 pub(crate) async fn consume_stage_token(
     redis: &RedisClient,
     claims: &AdminClaims,
-) -> Result<(), Box<Response>> {
+) -> Result<admin_token::ConsumedTemporaryToken, Box<Response>> {
     admin_token::consume_temporary(redis, claims)
         .await
         .map_err(|rejection| {
             crate::audit::set_failure_reason(rejection.reason());
-            crate::audit::mark_security_event();
+            if matches!(
+                rejection,
+                TokenRejection::TypeMismatch | TokenRejection::Revoked
+            ) {
+                crate::audit::mark_security_event();
+            }
             let status = if rejection == TokenRejection::CheckUnavailable {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
                 StatusCode::UNAUTHORIZED
             };
-            Box::new(ApiResponse::err(
-                status,
-                mazbri_i18n::mfa::invalid_temp_token(),
-            ))
+            Box::new(ApiResponse::err(status, stage_status_message(rejection)))
         })
+}
+
+/// 强制设置：获取连接、CAS 写密钥，并按写库阶段回滚或保留阶段令牌。
+///
+/// # Errors
+///
+/// 确定未提交返回 500；0 行或结果未决返回 401 且不回滚。
+pub(crate) async fn write_required_setup(
+    redis: &RedisClient,
+    pool: &PgPool,
+    consumed: admin_token::ConsumedTemporaryToken,
+    user_id: uuid::Uuid,
+    encrypted_secret: &str,
+    hashed_codes: &[String],
+) -> Result<(), Box<Response>> {
+    let mut conn = match pool.acquire().await {
+        Ok(conn) => conn,
+        Err(error) => {
+            let failure = admin_token::StageWriteFailure::from_acquire(error);
+            admin_token::settle_stage_token(consumed, true, redis).await;
+            error!(
+                "Failed to acquire connection for required MFA setup: {}",
+                failure.error()
+            );
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_store(),
+            )));
+        }
+    };
+    let cas = store_required_setup_secret(&mut conn, user_id, encrypted_secret, hashed_codes).await;
+    drop(conn);
+    match cas {
+        Ok(true) => {
+            consumed.retain();
+            Ok(())
+        }
+        Ok(false) => {
+            consumed.retain();
+            Err(Box::new(ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            )))
+        }
+        Err(error) => {
+            Err(fail_required_write(consumed, error, redis, mazbri_i18n::mfa::failed_store()).await)
+        }
+    }
+}
+
+/// 强制启用：获取连接、CAS 写启用和步长，并按写库阶段回滚或保留阶段令牌。
+///
+/// # Errors
+///
+/// 确定未提交返回 500；0 行或结果未决返回 401 且不回滚。成功返回新的 `auth_epoch`。
+pub(crate) async fn write_required_enable(
+    redis: &RedisClient,
+    pool: &PgPool,
+    consumed: admin_token::ConsumedTemporaryToken,
+    user_id: uuid::Uuid,
+    step_at: i64,
+    changed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, Box<Response>> {
+    let mut conn = match pool.acquire().await {
+        Ok(conn) => conn,
+        Err(error) => {
+            let failure = admin_token::StageWriteFailure::from_acquire(error);
+            admin_token::settle_stage_token(consumed, true, redis).await;
+            error!(
+                "Failed to acquire connection for required MFA enable: {}",
+                failure.error()
+            );
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_enable(),
+            )));
+        }
+    };
+    let cas = commit_required_mfa_enable(&mut conn, user_id, step_at, changed_at).await;
+    drop(conn);
+    match cas {
+        Ok(Some(epoch)) => {
+            consumed.retain();
+            Ok(epoch)
+        }
+        Ok(None) => {
+            consumed.retain();
+            Err(Box::new(ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            )))
+        }
+        Err(error) => {
+            Err(
+                fail_required_write(consumed, error, redis, mazbri_i18n::mfa::failed_enable())
+                    .await,
+            )
+        }
+    }
+}
+
+async fn fail_required_write(
+    consumed: admin_token::ConsumedTemporaryToken,
+    error: sqlx::Error,
+    redis: &RedisClient,
+    uncommitted_message: String,
+) -> Box<Response> {
+    let failure = admin_token::classify_acquired_execute_error(error);
+    let rollback = matches!(failure, admin_token::StageWriteFailure::Uncommitted(_));
+    admin_token::settle_stage_token(consumed, rollback, redis).await;
+    if rollback {
+        error!("Failed required MFA write: {}", failure.error());
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            uncommitted_message,
+        ))
+    } else {
+        error!("Indeterminate required MFA write: {}", failure.error());
+        Box::new(ApiResponse::err(
+            StatusCode::UNAUTHORIZED,
+            mazbri_i18n::mfa::invalid_temp_token(),
+        ))
+    }
 }

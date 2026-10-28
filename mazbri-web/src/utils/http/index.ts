@@ -34,6 +34,10 @@ import {
 } from "./response";
 import { $t } from "@/locales";
 import { BaseResponse } from "@/types";
+import {
+  isGenericUnauthorizedMessage,
+  shouldAttemptSessionRefreshOn401,
+} from "./auth-route-policy";
 const REQUEST_TIMEOUT = 15000;
 const LOGOUT_DELAY = 500;
 const UNAUTHORIZED_DEBOUNCE_TIME = 3000;
@@ -53,7 +57,7 @@ interface UnauthorizedRuntimeBoundary {
 }
 function scheduleStoreLogout(): void {
   setTimeout(() => {
-    useUserStore().logOut();
+    useUserStore().logOut({ skipRemote: true });
   }, LOGOUT_DELAY);
 }
 const defaultUnauthorizedRuntimeBoundary: UnauthorizedRuntimeBoundary = {
@@ -158,6 +162,7 @@ export function triggerUnauthorizedFlowForTest(message?: string): HttpError {
 interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showErrorMessage?: boolean;
   showSuccessMessage?: boolean;
+  suppressUnauthorizedToast?: boolean;
   signal?: AbortSignal;
   _mfaRetry?: boolean;
   _mfaFreshRetry?: boolean;
@@ -246,7 +251,14 @@ axiosInstance.interceptors.response.use(
     if (isBaseResponse(payload)) {
       const { code, msg } = payload;
       if (code === ApiStatus.success) return response;
-      if (code === ApiStatus.unauthorized) handleUnauthorizedError(msg);
+      if (code === ApiStatus.unauthorized) {
+        if (shouldAttemptSessionRefreshOn401(response.config.url)) {
+          handleUnauthorizedError(msg);
+        }
+        throw createBackendHttpError(msg, code, {
+          data: payload,
+        });
+      }
       throw createBackendHttpError(msg, code, {
         data: payload,
       });
@@ -269,7 +281,13 @@ axiosInstance.interceptors.response.use(
     await hydrateJsonBlobBody(error);
     const originalRequest = error.config as MfaAwareRequestConfig | undefined;
     const status = error.response?.status;
-    if (status === ApiStatus.unauthorized && originalRequest && !originalRequest._retry) {
+    const canRefreshSession =
+      status === ApiStatus.unauthorized &&
+      originalRequest !== undefined &&
+      !originalRequest._retry &&
+      shouldAttemptSessionRefreshOn401(originalRequest.url);
+
+    if (canRefreshSession && originalRequest) {
       if (isRefreshing) {
         return new Promise<void>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -277,22 +295,18 @@ axiosInstance.interceptors.response.use(
       }
       originalRequest._retry = true;
       isRefreshing = true;
+      let refreshed: string | null = null;
       try {
-        const refreshed = await refreshAccessToken();
-        if (refreshed) {
-          processQueue(null, true);
-          return axiosInstance(originalRequest);
-        }
-        processQueue(error, false);
-        handleUnauthorizedError();
-        return Promise.reject(handleError(error));
-      } catch (refreshError) {
-        processQueue(refreshError, false);
-        handleUnauthorizedError();
-        return Promise.reject(refreshError);
+        refreshed = await refreshAccessToken();
       } finally {
         isRefreshing = false;
       }
+      if (refreshed) {
+        processQueue(null, true);
+        return axiosInstance(originalRequest);
+      }
+      processQueue(error, false);
+      handleUnauthorizedError();
     }
     if (
       status === ApiStatus.serviceUnavailable ||
@@ -338,6 +352,7 @@ axiosInstance.interceptors.response.use(
 function handleUnauthorizedError(message?: string): never {
   const error = createBackendHttpError(message, ApiStatus.unauthorized, {
     displayMessage: $t("httpMsg.unauthorized"),
+    handledBySessionBoundary: true,
   });
   if (!isUnauthorizedErrorShown) {
     isUnauthorizedErrorShown = true;
@@ -386,9 +401,23 @@ async function request<T = any>(
     if (isMfaStepUpCancelled(error)) {
       return Promise.reject(error);
     }
-    if (error instanceof HttpError && error.code !== ApiStatus.unauthorized) {
-      const showMsg = config.showErrorMessage !== false;
-      showError(error, showMsg);
+    if (error instanceof HttpError && !error.handledBySessionBoundary) {
+      const suppress401 =
+        error.code === ApiStatus.unauthorized &&
+        config.suppressUnauthorizedToast === true;
+      const showMsg = config.showErrorMessage !== false && !suppress401;
+      const visible =
+        showMsg &&
+        error.code === ApiStatus.unauthorized &&
+        isGenericUnauthorizedMessage(error.message)
+          ? new HttpError($t("errorPolicy.auth"), error.code, {
+              data: error.data,
+              url: error.url,
+              method: error.method,
+              rawMessage: error.rawMessage,
+            })
+          : error;
+      showError(visible, showMsg);
     }
     return Promise.reject(error);
   }

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { LanguageEnum } from "@/enums/appEnum";
 import { router } from "@/router";
+import { RoutesAlias } from "@/router/routesAlias";
 import { useSettingStore } from "./setting";
 import { useWorktabStore } from "./worktab";
 import { AppRouteRecord } from "@/types/router";
@@ -116,23 +117,28 @@ export const useUserStore = defineStore(
       sessionStorage.removeItem("iframeRoutes");
       useMenuStore().setHomePath("");
     };
-    const logOut = async () => {
-
-      try {
-        await apiLogout({});
-      } catch {
-        void 0;
+    const logOut = async (options?: { skipRemote?: boolean }) => {
+      if (!options?.skipRemote) {
+        try {
+          await apiLogout({});
+        } catch {
+          void 0;
+        }
       }
       useMfaStepUpStore().reset();
       clearUserState();
       resetRouterState(500);
       const currentRoute = router.currentRoute.value;
-      const redirect =
-        currentRoute.path !== "/login" ? currentRoute.fullPath : undefined;
-      router.push({
-        name: "Login",
-        query: redirect ? { redirect } : undefined,
-      });
+      if (
+        currentRoute.name !== "Login" &&
+        currentRoute.path !== RoutesAlias.Login
+      ) {
+        const redirect = currentRoute.fullPath;
+        router.push({
+          name: "Login",
+          query: redirect ? { redirect } : undefined,
+        });
+      }
     };
     const checkAndClearWorktabs = () => {
       const lastUserId = localStorage.getItem(StorageConfig.LAST_USER_ID_KEY);
