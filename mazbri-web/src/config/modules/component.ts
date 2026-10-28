@@ -25,6 +25,14 @@ export const globalComponentsConfig: GlobalComponentConfig[] = [
     ),
     enabled: true,
   },
+  {
+    name: $t("config.globalComponents.mfaStepUpDialog"),
+    key: "mfa-step-up-dialog",
+    component: defineAsyncComponent(
+      () => import("@/components/common/mfa-step-up-dialog/index.vue"),
+    ),
+    enabled: true,
+  },
 ];
 export interface GlobalComponentConfig {
   name: string;

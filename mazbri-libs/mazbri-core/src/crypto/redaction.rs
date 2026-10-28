@@ -14,8 +14,8 @@ const SENSITIVE_EXACT_KEYS: &[&str] = &[
     "apikey",
     "x_api_key",
     "x_mbr_signature",
-    "x_mazbri_mfa_code",
     "mfa_code",
+    "hmackey",
     "otp",
     "otp_code",
     "verification_code",
@@ -95,7 +95,8 @@ mod tests {
             "private_key",
             "X-API-Key",
             "Authorization",
-            "x-mazbri-mfa-code",
+            "hmacKey",
+            "current_password",
         ] {
             assert!(is_sensitive_key(key), "{key} should be sensitive");
             assert_eq!(redact_sensitive_key(key), REDACTED);
@@ -106,6 +107,7 @@ mod tests {
     fn business_fields_are_kept() {
         for key in [
             "code",
+            "purpose",
             "tenant_code",
             "key_prefix",
             "username",

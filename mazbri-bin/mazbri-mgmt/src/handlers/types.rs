@@ -288,6 +288,11 @@ pub struct ForcePasswordResetRequest {
 pub struct SetAdminStatusRequest {
     pub is_active: bool,
 }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MfaSetupRequest {
+    pub current_password: String,
+}
 #[derive(Debug, Serialize)]
 pub struct MfaSetupResponse {
     pub secret: String,
@@ -298,11 +303,6 @@ pub struct MfaSetupResponse {
 #[serde(deny_unknown_fields)]
 pub struct MfaEnableRequest {
     pub totp_code: String,
-}
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MfaDisableRequest {
-    pub verification_code: String,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

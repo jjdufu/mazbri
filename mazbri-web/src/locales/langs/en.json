@@ -163,14 +163,57 @@
       "strong": "Strong"
     },
     "mfaDialog": {
-      "title": "MFA Confirmation",
-      "placeholder": "Please enter the MFA one-time code",
+      "title": "MFA step-up",
+      "freshTitle": "MFA verification required again",
+      "placeholder": "Code or 8-character backup code",
       "confirm": "Confirm",
       "cancel": "Cancel",
-      "inputErrorMessage": "Please enter a 6-8 digit code",
+      "stepUpMessage": "Enter the authenticator code or an 8-character backup code to open a step-up window. Ordinary sensitive actions do not ask again while the window is valid.",
+      "freshMessage": "This action needs its own verification.",
+      "freshOnce": "The verification is valid only for this one action and cannot be reused for the next one.",
+      "freshPurpose": "Action: {purpose}",
+      "backupHint": "Backup codes are 8 characters, exclude 0, 1, I and O, and are uppercased automatically.",
+      "invalidFormat": "Enter a {digits}-digit code, or an 8-character backup code",
+      "invalidCode": "Incorrect code",
+      "invalidWithAttempts": "Incorrect code. {n} attempts remaining",
+      "reused": "This code was already used. Wait for the authenticator to refresh, or use an unused backup code.",
+      "locked": "MFA is locked. Try again later. Verification is unavailable while locked, and any open step-up window is closed.",
+      "unavailable": "The step-up dialog is unavailable. Refresh the page and try again.",
+      "inputErrorMessage": "Enter a numeric code of the expected length, or an 8-character backup code",
       "notEnabledTitle": "MFA Required",
       "notEnabledMessage": "This operation requires MFA verification, but MFA is not enabled for your account. Bind and enable MFA on the Account Security page first.",
-      "goToSetup": "Set up MFA"
+      "goToSetup": "Set up MFA",
+      "purposes": {
+        "crypto_migration_export": "Export recoverable key material",
+        "api_key_create": "Create API key",
+        "crypto_key_reveal": "Create or rotate a tenant key",
+        "request_key_create": "Create request signing key",
+        "mfa_disable": "Disable MFA",
+        "mfa_regenerate_codes": "Regenerate backup codes",
+        "admin_reset_mfa": "Reset another admin's MFA",
+        "admin_reset_password": "Reset another admin's password",
+        "mfa_requirement_lift": "Lift required MFA",
+        "mfa_settings_update": "Update MFA settings",
+        "certificate_issue": "Issue certificate",
+        "certificate_renew": "Renew certificate",
+        "certificate_full": "Download full certificate"
+      }
+    },
+    "mfaStepUp": {
+      "inactive": "Not elevated",
+      "lockTitle": "End step-up",
+      "lockMessage": "Sensitive actions will require verification again. End the step-up window now?",
+      "tooltipInactive": "No step-up window. Click to verify",
+      "tooltipActive": "Step-up window expires: {time}",
+      "tooltipWarning": "Step-up window expires soon: {time}",
+      "tooltipNoExpiry": "Step-up window is active",
+      "ariaInactive": "Not elevated. Click to verify",
+      "ariaActive": "Elevated. Click to end step-up",
+      "ariaWarning": "Step-up expires soon. Click to end it",
+      "liveInactive": "MFA step-up window is closed",
+      "liveActive": "MFA step-up window is active",
+      "liveWarning": "MFA step-up window is about to expire",
+      "liveHidden": "MFA is not enabled"
     },
     "fields": {
       "status": "Status",
@@ -337,7 +380,8 @@
     "globalComponents": {
       "screenLock": "Screen Lock",
       "fireworksEffect": "Fireworks Effect",
-      "watermarkEffect": "Watermark Effect"
+      "watermarkEffect": "Watermark Effect",
+      "mfaStepUpDialog": "MFA step-up"
     },
     "headerBar": {
       "menuButton": "Toggle the left menu expand/collapse button",
@@ -616,9 +660,9 @@
     },
     "mfa": {
       "title": "Two-Factor Authentication",
-      "subTitle": "Please enter the code from your authenticator",
-      "placeholder": "Enter verification code",
-      "invalidCode": "Invalid verification code format",
+      "subTitle": "Enter the authenticator code, or an 8-character backup code",
+      "placeholder": "Code or backup code",
+      "invalidCode": "Enter a numeric code of the expected length, or an 8-character backup code",
       "btnText": "Verify",
       "backToLogin": "Back to login"
     },
@@ -934,7 +978,8 @@
       },
       "totp": {
         "title": "TOTP Parameters",
-        "description": "Control the authenticator display name, code digits, and refresh interval."
+        "description": "Control the authenticator display name, code digits, and refresh interval.",
+        "digitsPeriodWarning": "Changing the number of digits or the period makes already enrolled authenticators stop matching immediately. Confirm a backup code still works, or be ready to bind again, before saving."
       },
       "process": {
         "title": "Usage Flow",
@@ -1456,6 +1501,8 @@
       "userMfaRegenerateCodes": "Regenerate MFA Backup Codes",
       "userMfaRequiredSetup": "Required MFA Setup",
       "userMfaRequiredEnable": "Required MFA Enable",
+      "userMfaStepUp": "MFA step-up",
+      "userMfaStepUpEnd": "End MFA step-up",
       "userTokenRefresh": "Refresh Token",
       "tenantRequestKeyCreate": "Create Request Signing Key",
       "tenantRequestKeyRetire": "Retire Request Signing Key",
@@ -1738,6 +1785,13 @@
       "credentialsChanged": "Password changed after token was issued",
       "mfaStateChanged": "MFA state changed after token was issued",
       "mfaSetupRequired": "MFA setup required",
+      "mfaCodeReused": "Verification code already used",
+      "mfaCheckUnavailable": "MFA status temporarily unavailable",
+      "mfaStepUpInvalidated": "Step-up window invalidated",
+      "mfaFreshRequired": "Fresh MFA verification required",
+      "mfaBackupRestoreFailed": "Backup code restore failed",
+      "mfaInvalidRequest": "Invalid MFA request",
+      "sessionStale": "Session is stale and must be refreshed",
       "insufficientPermissions": "Insufficient role permissions",
       "routeNotAuthorized": "Route has no access policy (denied by default)"
     }
@@ -3934,7 +3988,7 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "An MFA code is required to perform this operation.",
+    "enabled": "MFA is enabled. Sensitive actions need an active step-up window; see the header pill.",
     "notEnabled": "This operation requires MFA, which is not enabled for your account.",
     "goToSetup": "Set up MFA"
   },
@@ -3947,9 +4001,19 @@
       "title": "Two-Factor Authentication (MFA)",
       "statusEnabled": "Enabled",
       "statusDisabled": "Not enabled",
-      "description": "Sensitive operations (funds, deletion, forced publishing, keys and certificates, super admin settings, etc.) require an MFA code; accounts without MFA cannot perform them. Regular sign-in and viewing are not affected.",
-      "verifiedAt": "Enabled at",
-      "backupCodesRemaining": "Backup codes left"
+      "description": "Sensitive operations (funds, deletion, forced publishing, keys and certificates, super admin settings, etc.) require an active MFA step-up window; accounts without MFA cannot perform them. Regular sign-in and viewing are not affected.",
+      "changedAt": "Changed at",
+      "stepUpStatus": "Step-up",
+      "stepUpInactive": "Not elevated",
+      "stepUpActive": "Elevated, {time} left",
+      "stepUpWarning": "Expiring soon, {time} left",
+      "stepUpExpiry": "expires {time}",
+      "backupCodesRemaining": "Backup codes left",
+      "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled.",
+      "freshHint": "Disabling MFA, regenerating backup codes, and creating or downloading keys need a separate verification. That verification is valid only for this one action.",
+      "attemptsHint": "A wrong code uses up a remaining attempt. MFA locks when none remain.",
+      "lockHint": "While MFA is locked you cannot verify, and any open step-up window is closed immediately. Try again after the lock expires.",
+      "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code."
     },
     "setup": {
       "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
@@ -3958,18 +4022,20 @@
       "secretLabel": "Secret (for manual entry)",
       "codeLabel": "Code ({digits} digits)",
       "codePlaceholder": "Enter the code from your authenticator",
-      "codeInvalid": "Please enter a {digits}-digit code"
+      "codeInvalid": "Please enter a {digits}-digit code",
+      "passwordTitle": "Confirm current password",
+      "passwordMessage": "Enter your current password before binding. A wrong password counts as a failed login.",
+      "passwordPlaceholder": "Current password",
+      "passwordRequired": "Please enter your current password"
     },
     "backupCodes": {
       "title": "Backup codes",
-      "hint": "Backup codes are shown only once and each can be used once. Save them now; use them to sign in if you lose your phone.",
-      "regenerateConfirm": "All existing backup codes will stop working after regeneration. Continue?"
+      "hint": "Backup codes are shown only once and each can be used once. They are 8 uppercase letters or digits (excluding 0, 1, I and O) and are uppercased as you type. Use them to sign in, open a step-up window, or complete an action that must be verified just once. Save them now.",
+      "regenerateConfirm": "All existing backup codes will stop working. This action needs its own MFA verification, valid only for this regeneration. Continue?"
     },
     "disable": {
       "title": "Disable MFA",
-      "message": "After disabling, you will not be able to perform operations that require MFA. Enter your current MFA code or login password to confirm.",
-      "placeholder": "MFA code or login password",
-      "required": "Please enter an MFA code or your login password"
+      "message": "After disabling, you cannot perform operations that require MFA, and the current step-up window will close. Continue?"
     },
     "password": {
       "title": "Change Password",

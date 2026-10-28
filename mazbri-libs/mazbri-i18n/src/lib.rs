@@ -45,6 +45,30 @@ pub mod mfa {
         rust_i18n::t!("api.mfa.invalid_totp").to_string()
     }
     #[must_use]
+    pub fn code_reused() -> String {
+        rust_i18n::t!("api.mfa.code_reused").to_string()
+    }
+    #[must_use]
+    pub fn step_up_required() -> String {
+        rust_i18n::t!("api.mfa.step_up_required").to_string()
+    }
+    #[must_use]
+    pub fn fresh_required() -> String {
+        rust_i18n::t!("api.mfa.fresh_required").to_string()
+    }
+    #[must_use]
+    pub fn check_unavailable() -> String {
+        rust_i18n::t!("api.mfa.check_unavailable").to_string()
+    }
+    #[must_use]
+    pub fn invalid_request() -> String {
+        rust_i18n::t!("api.mfa.invalid_request").to_string()
+    }
+    #[must_use]
+    pub fn settings_rebind_warning() -> String {
+        rust_i18n::t!("api.mfa.settings_rebind_warning").to_string()
+    }
+    #[must_use]
     pub fn failed_enable() -> String {
         rust_i18n::t!("api.mfa.failed_enable").to_string()
     }
@@ -55,10 +79,6 @@ pub mod mfa {
     #[must_use]
     pub fn not_enabled() -> String {
         rust_i18n::t!("api.mfa.not_enabled").to_string()
-    }
-    #[must_use]
-    pub fn invalid_totp_or_password() -> String {
-        rust_i18n::t!("api.mfa.invalid_totp_or_password").to_string()
     }
     #[must_use]
     pub fn failed_disable() -> String {

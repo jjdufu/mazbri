@@ -1,9 +1,9 @@
 use super::{
-    AdminClaims, ApiError, AppState, AuditAction, AuditResourceType, ConnectInfo, FORBIDDEN_CERT,
-    IntoResponse, MAX_PROXY_BODY_BYTES, Method, Path, Request, Response, State,
-    can_manage_certificates, create_audit_log, enrich_audit_details, extract_client_ip,
-    extract_user_id, forbidden, get_cert_proxy_config, info, json, parse_json_body, proxy_request,
-    require_license_issuance,
+    AdminClaims, ApiError, AppState, AuditAction, AuditResourceType, CertificateLookup,
+    ConnectInfo, FORBIDDEN_CERT, IntoResponse, MAX_PROXY_BODY_BYTES, Method, Path, Request,
+    Response, State, can_manage_certificates, create_audit_log, enrich_audit_details,
+    extract_client_ip, extract_user_id, forbidden, get_cert_proxy_config, info, json,
+    lookup_certificate, parse_json_body, proxy_request, require_license_issuance,
 };
 
 pub async fn get_certificate_proxy(
@@ -66,6 +66,39 @@ pub async fn get_full_certificate_proxy(
     }
     if let Err(error) = require_license_issuance(&state).await {
         return error.into_response();
+    }
+    let config = get_cert_proxy_config(&state);
+    match lookup_certificate(&state.cert_http_client, &config, &id).await {
+        CertificateLookup::Present => {}
+        CertificateLookup::Missing => {
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                axum::Json(serde_json::json!({
+                    "success": false,
+                    "error": "certificate not found",
+                })),
+            )
+                .into_response();
+        }
+        CertificateLookup::Unavailable => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(serde_json::json!({
+                    "success": false,
+                    "error": "证书服务不可用",
+                })),
+            )
+                .into_response();
+        }
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::CertificateFull,
+    )
+    .await
+    {
+        return (*response).into_response();
     }
     let config = get_cert_proxy_config(&state);
     proxy_request(
@@ -133,13 +166,13 @@ proxy_handler_with_audit! {
     name = renew_certificate_proxy, method = Method::POST, path = "/renew/{}", path_param
     = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.clone(),
     audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} renewing certificate {}", require_mfa = false,
+    "Admin {} renewing certificate {}", require_mfa = "fresh_renew",
 }
 proxy_handler_with_audit! {
     name = revoke_certificate_proxy, method = Method::POST, path = "/revoke/{}",
     path_param = id, audit_action = AuditAction::CertificateRevoke, resource_id_fn = id
     .clone(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} revoking certificate {}", require_mfa = true,
+    "Admin {} revoking certificate {}", require_mfa = "step_up",
 }
 pub async fn issue_certificate_proxy(
     State(state): State<AppState>,
@@ -150,17 +183,24 @@ pub async fn issue_certificate_proxy(
     if !can_manage_certificates(&claims) {
         return Err(ApiError::Forbidden);
     }
-    if let Err(response) =
-        crate::handlers::mfa_guard::require_mfa_code(&state, &claims, request.headers()).await
-    {
-        return Ok(*response);
-    }
     info!("Admin {} issuing certificate", claims.sub);
     require_license_issuance(&state).await?;
     let (parts, body) = request.into_parts();
     let body_bytes = axum::body::to_bytes(body, MAX_PROXY_BODY_BYTES)
         .await
         .unwrap_or_default();
+    if serde_json::from_slice::<serde_json::Value>(&body_bytes).is_err() {
+        return Err(ApiError::validation("请求体不是合法 JSON".to_string()));
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::CertificateIssue,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&parts.headers, Some(addr));
     let audit_details = enrich_audit_details(
         parse_json_body(&body_bytes),

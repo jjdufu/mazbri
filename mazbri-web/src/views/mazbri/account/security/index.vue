@@ -33,14 +33,41 @@
           <CommonInlineHint block size="xs">
             {{ $t("accountSecurity.mfa.description") }}
           </CommonInlineHint>
+          <CommonInlineHint v-if="mfaEnabled" block size="xs">
+            {{ $t("accountSecurity.mfa.freshHint") }}
+          </CommonInlineHint>
+          <CommonInlineHint v-if="mfaEnabled" block size="xs">
+            {{ $t("accountSecurity.mfa.attemptsHint") }}
+          </CommonInlineHint>
+          <CommonInlineHint v-if="mfaEnabled" block size="xs">
+            {{ $t("accountSecurity.mfa.lockHint") }}
+          </CommonInlineHint>
+          <CommonInlineHint v-if="mfaEnabled" block size="xs">
+            {{ $t("accountSecurity.mfa.replayHint") }}
+          </CommonInlineHint>
 
           <template v-if="mfaEnabled">
+            <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
+              {{ $t("accountSecurity.mfa.forcedHint") }}
+            </CommonInlineHint>
             <CommonSettingRow
               mode="inline"
               mobile-stack
-              :label="$t('accountSecurity.mfa.verifiedAt')"
+              :label="$t('accountSecurity.mfa.changedAt')"
             >
-              <span class="setting-value">{{ verifiedAtText }}</span>
+              <span class="setting-value">{{ changedAtText }}</span>
+            </CommonSettingRow>
+            <CommonSettingRow
+              mode="inline"
+              mobile-stack
+              :label="$t('accountSecurity.mfa.stepUpStatus')"
+            >
+              <span
+                class="setting-value"
+                :class="{ 'is-warning': stepUpWarning }"
+              >
+                {{ stepUpText }}
+              </span>
             </CommonSettingRow>
             <CommonSettingRow
               mode="inline"
@@ -135,6 +162,7 @@
                 {{ $t("accountSecurity.actions.regenerateCodes") }}
               </ElButton>
               <ElButton
+                v-if="!mfaRequired"
                 type="danger"
                 plain
                 :loading="actionLoading"
@@ -242,6 +270,7 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import { storeToRefs } from "pinia";
 import QrcodeVue from "qrcode.vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
@@ -258,19 +287,31 @@ import {
 } from "@/api/auth";
 import type {
   ChangePasswordRequest,
+  MfaSessionRefresh,
   MfaSetupResponse,
   MfaStatus,
 } from "@/types/api";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useUserStore } from "@/store/modules/user";
+import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { copyTextToClipboard } from "@/utils/clipboard";
-import { formatDateTime } from "@/utils/format";
+import {
+  formatExpiryUtc8,
+  formatMmSs,
+  isWarning,
+  readSessionExpiresIn,
+} from "@/utils/http/mfa-step-up-state";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
+import { HttpError } from "@/utils/http/error";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
 
 defineOptions({ name: "AccountSecurity" });
 
 const userStore = useUserStore();
+const stepUpStore = useMfaStepUpStore();
+const { active: stepUpActive, remainingSecs: stepUpRemaining, expiresAt: stepUpExpiresAt } =
+  storeToRefs(stepUpStore);
 const statusLoading = ref(false);
 const actionLoading = ref(false);
 const passwordLoading = ref(false);
@@ -281,12 +322,56 @@ const setupCode = ref("");
 const backupCodes = ref<string[]>([]);
 
 const mfaEnabled = computed(() => Boolean(status.value?.enabled));
+const mfaRequired = computed(() => Boolean(status.value?.mfa_required));
 const backupCodesRemaining = computed(
   () => status.value?.backup_codes_remaining ?? 0,
 );
-const verifiedAtText = computed(() =>
-  status.value?.verified_at ? formatDateTime(status.value.verified_at) : "-",
+const changedAtText = computed(() => {
+  const changedAt = status.value?.changed_at;
+  if (!changedAt) return "-";
+  return formatExpiryUtc8(changedAt) || "-";
+});
+const stepUpWarning = computed(
+  () => stepUpActive.value && isWarning(stepUpRemaining.value),
 );
+const stepUpText = computed(() => {
+  if (!stepUpActive.value || stepUpRemaining.value <= 0) {
+    return $t("accountSecurity.mfa.stepUpInactive");
+  }
+  const time = formatMmSs(stepUpRemaining.value);
+  const statusText = $t(
+    stepUpWarning.value
+      ? "accountSecurity.mfa.stepUpWarning"
+      : "accountSecurity.mfa.stepUpActive",
+    { time },
+  );
+  const expiry = stepUpExpiresAt.value
+    ? formatExpiryUtc8(stepUpExpiresAt.value)
+    : "";
+  return expiry
+    ? `${statusText} · ${$t("accountSecurity.mfa.stepUpExpiry", { time: expiry })}`
+    : statusText;
+});
+function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
+  if (!payload) return;
+  const expiresIn = readSessionExpiresIn(payload);
+  if (expiresIn != null) {
+    userStore.setToken(payload.token, expiresIn);
+  }
+}
+function logActionError(message: string, error: unknown): void {
+  if (isMfaStepUpCancelled(error)) return;
+  logger.error(message, error);
+}
+function isWindowUnavailable(error: unknown): boolean {
+  if (!(error instanceof HttpError) || error.code !== 503) return false;
+  const data = error.data;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    (data as { code?: unknown }).code === "MFA_CHECK_UNAVAILABLE"
+  );
+}
 const setupDigits = computed(() => setupData.value?.totp_digits ?? 6);
 
 async function loadStatus(): Promise<void> {
@@ -316,14 +401,34 @@ async function copyText(text: string): Promise<void> {
 }
 
 async function handleStartSetup(): Promise<void> {
+  let currentPassword = "";
+  try {
+    const { value } = await ElMessageBox.prompt(
+      $t("accountSecurity.setup.passwordMessage"),
+      $t("accountSecurity.setup.passwordTitle"),
+      {
+        inputType: "password",
+        inputPlaceholder: $t("accountSecurity.setup.passwordPlaceholder"),
+        inputValidator: (input: string) =>
+          input.trim().length > 0 ||
+          $t("accountSecurity.setup.passwordRequired"),
+        confirmButtonText: $t("common.confirm"),
+        cancelButtonText: $t("common.cancel"),
+        closeOnClickModal: false,
+      },
+    );
+    currentPassword = String(value);
+  } catch {
+    return;
+  }
   await runWithLoading(actionLoading, async () => {
-    const data = await getMfaSetup();
+    const data = await getMfaSetup(currentPassword);
     setupData.value = data;
     setupCode.value = "";
     // 绑定阶段生成的备用码在启用成功后才生效，先展示让用户保存。
     backupCodes.value = data.backup_codes ?? [];
   }).catch((error) => {
-    logger.error("Failed to start MFA setup:", error);
+    logActionError("Failed to start MFA setup:", error);
   });
 }
 
@@ -342,12 +447,24 @@ async function handleEnable(): Promise<void> {
     return;
   }
   await runWithLoading(actionLoading, async () => {
-    await enableMfa({ totp_code: code });
+    const enabled = await enableMfa({ totp_code: code });
+    applyMfaSessionExpiry(enabled);
     setupData.value = null;
     setupCode.value = "";
-    await Promise.all([loadStatus(), refreshUserInfo()]);
-  }).catch((error) => {
-    logger.error("Failed to enable MFA:", error);
+    await Promise.all([
+      loadStatus(),
+      refreshUserInfo(),
+      stepUpStore.refresh().catch(() => undefined),
+    ]);
+  }).catch(async (error) => {
+    if (isWindowUnavailable(error)) {
+      await Promise.all([
+        loadStatus(),
+        refreshUserInfo(),
+        stepUpStore.refresh().catch(() => undefined),
+      ]);
+    }
+    logActionError("Failed to enable MFA:", error);
   });
 }
 
@@ -366,37 +483,36 @@ async function handleRegenerate(): Promise<void> {
     backupCodes.value = result.backup_codes ?? [];
     await loadStatus();
   }).catch((error) => {
-    logger.error("Failed to regenerate backup codes:", error);
+    logActionError("Failed to regenerate backup codes:", error);
   });
 }
 
 async function handleDisable(): Promise<void> {
-  let verificationCode: string;
   try {
-    const { value } = await ElMessageBox.prompt(
+    await ElMessageBox.confirm(
       $t("accountSecurity.disable.message"),
       $t("accountSecurity.disable.title"),
       {
         type: "warning",
-        inputType: "password",
-        inputPlaceholder: $t("accountSecurity.disable.placeholder"),
-        inputValidator: (input: string) =>
-          input.trim().length > 0 || $t("accountSecurity.disable.required"),
         confirmButtonText: $t("accountSecurity.actions.disable"),
         cancelButtonText: $t("common.cancel"),
         closeOnClickModal: false,
       },
     );
-    verificationCode = String(value).trim();
   } catch {
     return;
   }
   await runWithLoading(actionLoading, async () => {
-    await disableMfa({ verification_code: verificationCode });
+    const refreshed = await disableMfa();
+    applyMfaSessionExpiry(refreshed);
     backupCodes.value = [];
-    await Promise.all([loadStatus(), refreshUserInfo()]);
+    await Promise.all([
+      loadStatus(),
+      refreshUserInfo(),
+      stepUpStore.refresh().catch(() => undefined),
+    ]);
   }).catch((error) => {
-    logger.error("Failed to disable MFA:", error);
+    logActionError("Failed to disable MFA:", error);
   });
 }
 
@@ -453,6 +569,7 @@ async function handleChangePassword(): Promise<void> {
 
 onMounted(() => {
   void loadStatus();
+  void stepUpStore.refresh().catch(() => undefined);
 });
 </script>
 

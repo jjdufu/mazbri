@@ -1,0 +1,165 @@
+/**
+ * MFA 守卫错误分类与弹窗队列决策。入参与 axios 错误上的响应体一致，不依赖 Vue。
+ */
+
+export interface MfaStepUpClassification {
+  kind: "step_up";
+  reason: string | null;
+}
+
+export interface MfaFreshClassification {
+  kind: "fresh";
+  purpose: string;
+}
+
+export interface MfaNotEnabledClassification {
+  kind: "not_enabled";
+  setupPath: string | null;
+}
+
+export type MfaErrorClassification =
+  | MfaStepUpClassification
+  | MfaFreshClassification
+  | MfaNotEnabledClassification;
+
+export interface MfaInterceptConfig {
+  url?: string;
+  _mfaRetry?: boolean;
+  _mfaFreshRetry?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function httpStatus(record: Record<string, unknown>): number | null {
+  if (typeof record.status === "number" && Number.isFinite(record.status)) {
+    return record.status;
+  }
+  if (record.status === "503") return 503;
+  return null;
+}
+
+/**
+ * 区分 step_up / fresh / not_enabled。
+ * MFA_LOCKED、MFA_CHECK_UNAVAILABLE、HTTP 503 返回 null，走普通错误，不弹验证码框。
+ */
+export function classifyMfaError(body: unknown): MfaErrorClassification | null {
+  if (!isRecord(body)) return null;
+  if (httpStatus(body) === 503) return null;
+
+  let record = body;
+  if (typeof body.code === "number" && isRecord(body.data)) {
+    if (body.code === 503) return null;
+    record = body.data;
+    if (httpStatus(record) === 503) return null;
+  }
+
+  const code = record.code;
+  if (code === "MFA_LOCKED" || code === "MFA_CHECK_UNAVAILABLE") return null;
+  if (code === "MFA_REQUIRED") {
+    return {
+      kind: "step_up",
+      reason: typeof record.reason === "string" ? record.reason : null,
+    };
+  }
+  if (code === "MFA_FRESH_REQUIRED") {
+    return {
+      kind: "fresh",
+      purpose: typeof record.purpose === "string" ? record.purpose : "",
+    };
+  }
+  if (code === "MFA_NOT_ENABLED") {
+    return {
+      kind: "not_enabled",
+      setupPath:
+        typeof record.setup_path === "string" ? record.setup_path : null,
+    };
+  }
+  return null;
+}
+
+function isStepUpRequest(url: unknown): boolean {
+  return typeof url === "string" && url.includes("/auth/mfa/step-up");
+}
+
+/** 已用 _mfaRetry 重试过，或请求本身就是 step-up，则不再拦截。 */
+export function shouldInterceptStepUp(
+  config: MfaInterceptConfig | null | undefined,
+): boolean {
+  if (!config) return false;
+  if (config._mfaRetry) return false;
+  if (isStepUpRequest(config.url)) return false;
+  return true;
+}
+
+/** 已用 _mfaFreshRetry 重试过，或请求本身就是 step-up，则不再拦截。 */
+export function shouldInterceptFresh(
+  config: MfaInterceptConfig | null | undefined,
+): boolean {
+  if (!config) return false;
+  if (config._mfaFreshRetry) return false;
+  if (isStepUpRequest(config.url)) return false;
+  return true;
+}
+
+/** type 含 json 时 JSON.parse(await data.text())；否则 null。解析失败也返回 null。 */
+export async function parseJsonBlob(data: Blob): Promise<unknown | null> {
+  if (!data.type.toLowerCase().includes("json")) return null;
+  try {
+    return JSON.parse(await data.text()) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 前面的 ensureFresh 成功后，排队中的 ensureStepUp 已由后端顺带开窗，不再弹窗。
+ * 返回仍需继续弹窗的任务（例如另一个 purpose 的 fresh）。
+ */
+export function afterFreshResolved<T extends { kind: string }>(
+  pending: readonly T[],
+): T[] {
+  return pending.filter((item) => item.kind !== "step_up");
+}
+
+/** 未执行的 step_up 不能挡在后来的 fresh 前面。正在显示的弹窗不在这个数组里。 */
+export function insertDialogTask<T extends { kind: string }>(
+  pending: T[],
+  task: T,
+): void {
+  if (task.kind === "fresh") {
+    const index = pending.findIndex((item) => item.kind === "step_up");
+    if (index >= 0) {
+      pending.splice(index, 0, task);
+      return;
+    }
+  }
+  pending.push(task);
+}
+
+export async function drainDialogQueue<
+  T extends {
+    kind: string;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  },
+>(pending: T[], run: (task: T) => Promise<void>): Promise<void> {
+  while (pending.length > 0) {
+    const task = pending.shift();
+    if (!task) break;
+    try {
+      await run(task);
+      task.resolve();
+      if (task.kind === "fresh") {
+        const remaining = afterFreshResolved(pending);
+        const keep = new Set<T>(remaining);
+        const skipped = pending.filter((item) => !keep.has(item));
+        pending.splice(0, pending.length, ...remaining);
+        for (const item of skipped) item.resolve();
+      }
+    } catch (error) {
+      task.reject(error);
+    }
+  }
+}

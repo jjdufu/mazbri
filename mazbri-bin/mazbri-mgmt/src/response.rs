@@ -41,3 +41,26 @@ pub fn created<T: Serialize>(data: T) -> Response {
     let value = serde_json::to_value(ApiResponse::ok(data)).unwrap_or_default();
     (StatusCode::CREATED, Json(value)).into_response()
 }
+
+/// 带业务 `code` 的失败体。`extra` 里的字段合并进顶层，不包一层 `data`。
+pub fn coded_err(
+    status: StatusCode,
+    code: &str,
+    message: impl Into<String>,
+    extra: &serde_json::Value,
+) -> Response {
+    let message = message.into();
+    let mut body = serde_json::json!({
+        "success": false,
+        "code": code,
+        "error": message,
+    });
+    if let (Some(obj), Some(extra_obj)) = (body.as_object_mut(), extra.as_object()) {
+        for (key, value) in extra_obj {
+            obj.insert(key.clone(), value.clone());
+        }
+    }
+    let mut response = (status, Json(body)).into_response();
+    crate::audit::AuditErrorInfo::attach(&mut response, code, &message);
+    response
+}

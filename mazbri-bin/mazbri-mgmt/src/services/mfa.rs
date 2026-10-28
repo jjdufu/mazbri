@@ -1,12 +1,17 @@
 mod common;
 mod enable_flow;
 mod required_flow;
+pub(crate) mod second_factor;
 mod setup_flow;
+pub(crate) mod step_up;
 mod verification_flow;
-pub(crate) use common::authenticate_stage_token;
-pub use enable_flow::enable;
+
+pub(crate) use common::{authenticate_stage_token, guard_session_rotation};
+pub use enable_flow::{EnableParams, enable};
 pub use required_flow::{
     RequiredEnableParams, RequiredSetupParams, required_enable, required_setup,
 };
-pub use setup_flow::{regenerate_backup_codes, setup};
-pub use verification_flow::{VerifyParams, disable, status, verify};
+pub use setup_flow::{SetupParams, regenerate_backup_codes, setup};
+pub use verification_flow::{
+    DisableParams, VerifyParams, disable, ensure_mfa_can_be_disabled, status, verify,
+};

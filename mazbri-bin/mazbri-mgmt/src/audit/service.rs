@@ -183,6 +183,8 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("user.mfa_regenerate_codes", "重新生成 MFA 备用码"),
     ("user.mfa_required_setup", "强制 MFA 初始化"),
     ("user.mfa_required_enable", "强制 MFA 启用"),
+    ("user.mfa_step_up", "MFA 提权"),
+    ("user.mfa_step_up_end", "结束 MFA 提权"),
     ("user.token_refresh", "刷新令牌"),
     ("tenant.request_key_create", "创建请求签名密钥"),
     ("tenant.request_key_retire", "退役请求签名密钥"),

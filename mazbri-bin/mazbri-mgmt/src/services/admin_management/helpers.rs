@@ -83,6 +83,8 @@ mod tests {
             exp: i64::MAX,
             jti: None,
             token_type: None,
+            sid: uuid::Uuid::nil().to_string(),
+            sxp: None,
         }
     }
 

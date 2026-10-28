@@ -27,6 +27,17 @@ pub async fn create_api_key(
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
+    svc::precheck_create_api_key(&state.db, &state.auth_db, &code, payload.scopes.as_slice())
+        .await?;
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::ApiKeyCreate,
+    )
+    .await
+    {
+        return Ok((*response).into_response());
+    }
     let user_id = extract_user_id(&claims)?;
     let data = svc::create_api_key(
         &state.db,
@@ -62,7 +73,7 @@ pub async fn revoke_api_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -93,12 +104,15 @@ pub async fn update_api_key(
     Extension(claims): Extension<AdminClaims>,
     Path((code, key_prefix)): Path<(String, String)>,
     Json(payload): Json<UpdateApiKeyRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
     // 续期 API 密钥属于租户写操作，与租户管理权限一致。
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     payload.validate().map_err(ApiError::validation)?;
+    if let Err(response) = crate::handlers::mfa_guard::require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::update_api_key(&state.db, &state.auth_db, &code, &key_prefix, &payload).await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }

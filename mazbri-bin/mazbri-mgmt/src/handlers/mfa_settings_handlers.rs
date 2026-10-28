@@ -32,13 +32,30 @@ pub async fn get_mfa_settings(State(state): State<AppState>) -> axum::response::
 pub async fn update_mfa_settings(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(payload): Json<UpdateMfaSettingsRequest>,
 ) -> axum::response::Response {
     if claims.role != "R_ADMIN" {
         return ApiResponse::err(StatusCode::FORBIDDEN, "仅管理员可修改 MFA 设置");
+    }
+    let input = service::UpdateMfaSettingsInput {
+        totp_issuer: payload.totp_issuer.clone(),
+        totp_digits: payload.totp_digits,
+        totp_period: payload.totp_period,
+        backup_codes_count: payload.backup_codes_count,
+    };
+    if let Some(error) = service::validate_update_fields(&input) {
+        return error;
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::MfaSettingsUpdate,
+    )
+    .await
+    {
+        return *response;
     }
     let totp_issuer = payload.totp_issuer.clone();
     let totp_digits = payload.totp_digits;

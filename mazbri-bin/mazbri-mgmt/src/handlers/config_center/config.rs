@@ -51,7 +51,7 @@ pub async fn get_config(
 pub async fn create_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<CreateConfigRequest>,
@@ -69,7 +69,7 @@ pub async fn create_config(
 pub async fn update_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
@@ -97,7 +97,7 @@ pub async fn update_config(
 pub async fn delete_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,

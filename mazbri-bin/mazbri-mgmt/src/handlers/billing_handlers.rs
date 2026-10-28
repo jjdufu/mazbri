@@ -1,6 +1,6 @@
 use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
-use crate::handlers::mfa_guard::require_mfa_code;
+use crate::handlers::mfa_guard::require_step_up;
 use crate::middleware::auth::{AdminClaims, is_business_admin};
 use crate::middleware::route_access::ALL_ROLES;
 use crate::response::ApiResponse;
@@ -157,7 +157,7 @@ pub async fn delete_bill(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
@@ -227,7 +227,7 @@ pub async fn create_adjustment(
         )
         .into_response());
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return Ok(*response);
     }
     let amount_text = payload.amount.to_string();
@@ -386,7 +386,7 @@ pub async fn generate_bill(
         )
         .into_response());
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return Ok(*response);
     }
     let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) else {
@@ -646,7 +646,7 @@ pub async fn delete_reconciliation_discrepancy(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
@@ -768,7 +768,7 @@ pub async fn create_bill_adjustment(
         )
         .into_response());
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return Ok(*response);
     }
     let operator_id = uuid::Uuid::parse_str(&claims.user_id).ok();
@@ -879,7 +879,7 @@ pub async fn void_bill_adjustment(
         )
         .into_response());
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return Ok(*response);
     }
     let result = svc::void_bill_adjustment(&state.billing_db, id).await?;
@@ -918,7 +918,7 @@ pub async fn generate_bill_async(
         .into_response());
     }
     // 与同步生成账单（generate_bill）一致：异步入口同样要求 MFA，避免绕过。
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return Ok(*response);
     }
 

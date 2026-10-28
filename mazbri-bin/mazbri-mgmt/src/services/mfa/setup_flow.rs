@@ -7,17 +7,32 @@ use crate::mfa::MfaServiceCache;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::{error, info};
-pub async fn setup(
-    pool: &PgPool,
-    mfa_cache: &Arc<MfaServiceCache>,
-    audit: &AuditService,
-    user_id: uuid::Uuid,
-    username: &str,
-    client_ip: Option<String>,
-) -> axum::response::Response {
+pub struct SetupParams<'a> {
+    pub pool: &'a PgPool,
+    pub password_policy_cache: &'a crate::services::PasswordPolicyCache,
+    pub mfa_cache: &'a Arc<MfaServiceCache>,
+    pub audit: &'a AuditService,
+    pub user_id: uuid::Uuid,
+    pub username: &'a str,
+    pub current_password: &'a str,
+    pub client_ip: Option<String>,
+}
+
+pub async fn setup(params: SetupParams<'_>) -> axum::response::Response {
+    let SetupParams {
+        pool,
+        password_policy_cache,
+        mfa_cache,
+        audit,
+        user_id,
+        username,
+        current_password,
+        client_ip,
+    } = params;
     let state = match repo::get_mfa_setup_state(pool, user_id).await {
         Ok(state) => state,
         Err(error) => {
@@ -36,6 +51,11 @@ pub async fn setup(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::already_enabled_disable(),
         );
+    }
+    if let Err(response) =
+        verify_current_password(pool, password_policy_cache, user_id, current_password).await
+    {
+        return *response;
     }
     let mfa_service =
         match get_mfa_service(mfa_cache, MfaServiceErrorMode::ServerNotConfigured).await {
@@ -64,6 +84,81 @@ pub async fn setup(
         .totp_digits }
     ))
 }
+async fn verify_current_password(
+    pool: &PgPool,
+    password_policy_cache: &crate::services::PasswordPolicyCache,
+    user_id: uuid::Uuid,
+    current_password: &str,
+) -> Result<(), Box<axum::response::Response>> {
+    let user = match crate::repositories::admin::get_admin_user_by_id(pool, user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::NOT_FOUND,
+                mazbri_i18n::mfa::user_not_found(),
+            )));
+        }
+        Err(error) => {
+            error!("Database error during MFA setup password check: {error}");
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
+    let locked = match sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+        "SELECT locked_until FROM admin_users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(row) => row.flatten(),
+        Err(error) => {
+            error!("Database error reading account lock during MFA setup: {error}");
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
+    if locked.is_some_and(|until| until > chrono::Utc::now()) {
+        crate::audit::set_failure_reason("account_locked");
+        return Err(Box::new(
+            crate::error::ApiError::validation("账户已锁定，请稍后再试".to_string())
+                .into_response(),
+        ));
+    }
+    let Some(hash) = user.password_hash.as_deref() else {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::internal_error(),
+        )));
+    };
+    if mazbri_auth::constant_time_argon2_verify(current_password.as_bytes(), hash).is_err() {
+        let policy = password_policy_cache.get().await;
+        if let Err(error) = crate::repositories::admin::record_login_failure(
+            pool,
+            user_id,
+            policy.max_login_attempts,
+            i64::from(policy.lockout_duration_minutes),
+        )
+        .await
+        {
+            error!("failed to record setup password failure: {error}");
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+        crate::audit::set_failure_reason("invalid_password");
+        return Err(Box::new(
+            crate::error::ApiError::validation("当前密码不正确".to_string()).into_response(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn regenerate_backup_codes(
     pool: &PgPool,
     mfa_cache: &Arc<MfaServiceCache>,

@@ -1,15 +1,16 @@
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::handlers::mfa_guard::require_mfa_code;
+use crate::handlers::mfa_guard::{require_fresh_mfa, require_step_up};
 use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
 use crate::response::ApiResponse;
+use crate::services::mfa::step_up::FreshPurpose;
 use crate::services::tenant_crypto as svc;
 use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 
 fn log_tenant_crypto_audit(
@@ -53,12 +54,15 @@ pub async fn update_crypto_profile(
     headers: HeaderMap,
     Path(code): Path<String>,
     Json(payload): Json<svc::UpdateCryptoProfileRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::update_profile(
         &state.db,
         &state.cert_http_client,
@@ -86,7 +90,7 @@ pub async fn update_crypto_profile(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors
@@ -98,12 +102,15 @@ pub async fn create_crypto_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(code): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_fresh_mfa(&state, &claims, FreshPurpose::CryptoKeyReveal).await {
+        return Ok(*response);
+    }
     let data = svc::create_key(
         &state.db,
         &state.cert_http_client,
@@ -132,7 +139,7 @@ pub async fn create_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(crate::response::created(data))
+    Ok(crate::response::created(data).into_response())
 }
 
 /// # Errors
@@ -142,15 +149,17 @@ pub async fn rotate_crypto_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_fresh_mfa(&state, &claims, FreshPurpose::CryptoKeyReveal).await {
+        return Ok(*response);
+    }
     let data = svc::create_key(
         &state.db,
         &state.cert_http_client,
@@ -179,7 +188,7 @@ pub async fn rotate_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(crate::response::created(data))
+    Ok(crate::response::created(data).into_response())
 }
 
 /// # Errors
@@ -202,12 +211,15 @@ pub async fn activate_crypto_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path((code, version)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::set_key_status(svc::SetKeyStatusArgs {
         pool: &state.db,
         cert_client: &state.cert_http_client,
@@ -231,7 +243,7 @@ pub async fn activate_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors
@@ -243,12 +255,15 @@ pub async fn deprecate_crypto_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path((code, version)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::set_key_status(svc::SetKeyStatusArgs {
         pool: &state.db,
         cert_client: &state.cert_http_client,
@@ -272,7 +287,7 @@ pub async fn deprecate_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors
@@ -284,12 +299,15 @@ pub async fn disable_crypto_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path((code, version)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::set_key_status(svc::SetKeyStatusArgs {
         pool: &state.db,
         cert_client: &state.cert_http_client,
@@ -314,7 +332,7 @@ pub async fn disable_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors
@@ -326,12 +344,15 @@ pub async fn delete_crypto_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path((code, version)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::delete_crypto_key(&state.db, &code, &version, actor_id).await?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     log_tenant_crypto_audit(
@@ -344,7 +365,7 @@ pub async fn delete_crypto_key(
         ),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// 导出授权：常规导出属于业务权限；迁移模式（含加密后的私钥材料与密钥事件）仅超级管理员。
@@ -371,7 +392,8 @@ pub async fn export_crypto_data(
     authorize_crypto_export(&claims, &query.mode)?;
     // 迁移模式导出包含可恢复密钥材料：仅超级管理员且必须通过 MFA。
     if svc::is_migration_export(&query.mode)
-        && let Err(response) = require_mfa_code(&state, &claims, &headers).await
+        && let Err(response) =
+            require_fresh_mfa(&state, &claims, FreshPurpose::CryptoMigrationExport).await
     {
         return Ok(*response);
     }
@@ -448,12 +470,16 @@ pub async fn create_request_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(code): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_fresh_mfa(&state, &claims, FreshPurpose::RequestKeyCreate).await
+    {
+        return Ok(*response);
+    }
     let data = svc::create_request_key(
         &state.db,
         &state.cert_http_client,
@@ -476,7 +502,7 @@ pub async fn create_request_key(
         }),
         client_ip,
     )?;
-    Ok(crate::response::created(data))
+    Ok(crate::response::created(data).into_response())
 }
 
 /// # Errors
@@ -488,12 +514,15 @@ pub async fn retire_request_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path((code, kid)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    if let Err(response) = require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let data = svc::retire_request_key(&state.db, &code, &kid, actor_id).await?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     log_tenant_crypto_audit(
@@ -509,7 +538,7 @@ pub async fn retire_request_key(
         }),
         client_ip,
     )?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 #[cfg(test)]
@@ -527,6 +556,8 @@ mod tests {
             exp: i64::MAX,
             jti: None,
             token_type: None,
+            sid: uuid::Uuid::nil().to_string(),
+            sxp: None,
         }
     }
 

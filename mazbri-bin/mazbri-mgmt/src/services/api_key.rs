@@ -72,6 +72,35 @@ async fn ensure_tenant_exists(
     }
     Ok(())
 }
+/// 创建前的不写库检查。失败时调用方不得消费 fresh。
+///
+/// # Errors
+///
+/// 租户不存在、scopes 为空、已有激活密钥或数据库查询失败时返回错误。
+pub async fn precheck_create_api_key(
+    db: &PgPool,
+    auth_db: &PgPool,
+    id_or_code: &str,
+    scopes: &[crate::handlers::types::ApiScope],
+) -> Result<(), ApiError> {
+    let tenant_id = crate::services::tenant::resolve_tenant_id(db, id_or_code).await?;
+    ensure_tenant_exists(db, tenant_id, id_or_code).await?;
+    if scopes.is_empty() {
+        return Err(ApiError::validation("scopes 不能为空".to_string()));
+    }
+    let existing_count = repo::count_active_api_keys(auth_db, tenant_id)
+        .await
+        .map_err(|error| {
+            tracing::error!("failed to count active API keys: {error}");
+            ApiError::internal("检查 API 密钥失败".to_string())
+        })?;
+    if existing_count > 0 {
+        return Err(ApiError::validation(
+            "该租户已存在 API 密钥，请先删除现有密钥后再创建新密钥".to_string(),
+        ));
+    }
+    Ok(())
+}
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -85,19 +114,8 @@ pub async fn create_api_key(
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
     info!("Creating API key for tenant: {}", id_or_code);
+    precheck_create_api_key(db, auth_db, id_or_code, payload.scopes.as_slice()).await?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(db, id_or_code).await?;
-    ensure_tenant_exists(db, tenant_id, id_or_code).await?;
-    if payload.scopes.as_slice().is_empty() {
-        return Err(ApiError::validation("scopes 不能为空".to_string()));
-    }
-    let existing_count = repo::count_active_api_keys(auth_db, tenant_id)
-        .await
-        .unwrap_or(0);
-    if existing_count > 0 {
-        return Err(ApiError::validation(
-            "该租户已存在 API 密钥，请先删除现有密钥后再创建新密钥".to_string(),
-        ));
-    }
     let (full_api_key, prefix, secret_hash, key_hash, key_suffix) = generate_api_key_material()?;
     let expires_at_db = parse_expiration(payload.expires_at, payload.expires_days);
     let mut tx = auth_db

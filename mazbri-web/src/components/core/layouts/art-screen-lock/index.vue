@@ -126,6 +126,7 @@ import type { FormInstance, FormRules } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ErrorCodes } from "@/constants/error-codes";
 import { useUserStore } from "@/store/modules/user";
+import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { logger, mittBus } from "@/utils/sys";
 import { globalUiTriggers } from "@/utils/sys/global-ui";
 const { t } = useI18n();
@@ -317,6 +318,18 @@ const handleLock = async () => {
       error,
     });
     ElMessage.error(t("lockScreen.initFailed"));
+    return;
+  }
+  try {
+    await useMfaStepUpStore().lock();
+  } catch (error) {
+    logger.warn("Failed to end MFA step-up when locking screen", {
+      service: "mazbri-mgmt-web",
+      event: "screen_lock_mfa_step_up_end_failed",
+      severity: "warn",
+      error_code: ErrorCodes.INTERNAL_ERROR,
+      error,
+    });
   }
 };
 const handleUnlock = async () => {

@@ -1,10 +1,11 @@
 use super::auth_flow::generate_admin_jwt;
 use crate::error::ApiError;
 use crate::handlers::types::{AdminUser, ChangePasswordRequest, FirstLoginChangePasswordRequest};
-use crate::middleware::admin_token;
+use crate::middleware::admin_token::{self, SessionBinding};
 use crate::middleware::auth::AdminClaims;
 use crate::repositories::admin as repo;
 use crate::services::{MfaSettingsCache, PasswordPolicyCache};
+use chrono::Utc;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
@@ -51,6 +52,7 @@ pub struct FirstLoginChangePasswordParams<'a> {
     pub password_policy_cache: &'a PasswordPolicyCache,
     pub mfa_settings_cache: &'a MfaSettingsCache,
     pub jwt_expiration_secs: u64,
+    pub refresh_token_expiration_secs: u64,
     /// 中间件已按 `password_reset` 类型校验过的临时令牌声明。
     pub claims: &'a AdminClaims,
     pub user_id: uuid::Uuid,
@@ -71,7 +73,9 @@ async fn post_password_change_stage(
         })?
         .ok_or_else(|| ApiError::internal("内部服务器错误".to_string()))?;
     let mfa_settings = params.mfa_settings_cache.get().await;
-    let stage = super::auth_flow::determine_mfa(&user_row, &mfa_settings, params.jwt_secret)?;
+    let binding = SessionBinding::stage(params.claims.sid.clone());
+    let stage =
+        super::auth_flow::determine_mfa(&user_row, &mfa_settings, &binding, params.jwt_secret)?;
     Ok(stage.map(|mut value| {
         if let Some(obj) = value.as_object_mut() {
             obj.insert("password_changed".to_string(), serde_json::json!(true));
@@ -183,20 +187,48 @@ async fn finish_first_login(
     if let Some(stage) = post_password_change_stage(params, &user.username).await? {
         return Ok(stage);
     }
-    let jwt_expiration_secs = params.jwt_expiration_secs;
+    let issued_at = Utc::now().timestamp();
+    let binding = SessionBinding {
+        sid: params.claims.sid.clone(),
+        sxp: Some(
+            issued_at
+                .saturating_add(i64::saturating_from(params.refresh_token_expiration_secs).max(1)),
+        ),
+    };
+    let access_ttl = super::auth_flow::resolve_access_token_expiration_secs(
+        params.db,
+        params.jwt_expiration_secs,
+    )
+    .await;
     let token = generate_admin_jwt(
         &user.username,
         &user.id,
         &user.role,
+        &binding,
         params.jwt_secret,
-        i64::saturating_from(jwt_expiration_secs),
+        i64::saturating_from(access_ttl),
+        issued_at,
     )
     .map_err(|e| {
         error!("Failed to generate admin JWT: {}", e);
         ApiError::internal("生成认证令牌失败".to_string())
     })?;
+    let refresh = super::auth_flow::issue_refresh_token(
+        &user.username,
+        &user.id,
+        &user.role,
+        &binding,
+        params.jwt_secret,
+        issued_at,
+    )
+    .map_err(|e| {
+        error!("Failed to generate refresh JWT: {}", e);
+        ApiError::internal("生成刷新令牌失败".to_string())
+    })?;
     Ok(serde_json::json!(
-        { "user" : user, "token" : token, "expires_in" : jwt_expiration_secs,
+        { "user" : user, "token" : token.token, "refresh_token" : refresh.token,
+        "expires_in" : token.exp.saturating_sub(token.iat).max(1),
+        "refresh_max_age" : refresh.exp.saturating_sub(refresh.iat).max(1),
         "message" : "密码修改成功" }
     ))
 }

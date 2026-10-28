@@ -218,6 +218,33 @@ pub async fn find_status_by_id(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+#[derive(Debug, sqlx::FromRow)]
+pub struct AdminEditState {
+    pub id: uuid::Uuid,
+    pub username: String,
+    pub role: String,
+    pub mfa_required: bool,
+    pub force_password_reset: bool,
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn find_edit_state(
+    pool: &PgPool,
+    id: uuid::Uuid,
+) -> Result<Option<AdminEditState>, sqlx::Error> {
+    sqlx::query_as::<_, AdminEditState>(
+        "SELECT id, username, role, mfa_required, force_password_reset FROM admin_users WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
 pub async fn find_mfa_by_id(
     pool: &PgPool,
     id: uuid::Uuid,
@@ -232,17 +259,34 @@ pub async fn find_mfa_by_id(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_admin(
-    pool: &PgPool,
-    id: uuid::Uuid,
-    display_name: Option<&str>,
-    email: Option<&str>,
-    role: Option<&str>,
-    mfa_required: Option<bool>,
-    force_password_reset: Option<bool>,
-) -> Result<AdminRow, sqlx::Error> {
+pub struct AdminUpdate<'a> {
+    pub id: uuid::Uuid,
+    pub display_name: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub role: Option<&'a str>,
+    pub mfa_required: Option<bool>,
+    pub force_password_reset: Option<bool>,
+    pub bump_epoch: bool,
+}
+
+/// # Errors
+///
+/// 数据库更新失败时返回错误。
+pub async fn update_admin(pool: &PgPool, update: AdminUpdate<'_>) -> Result<AdminRow, sqlx::Error> {
+    let AdminUpdate {
+        id,
+        display_name,
+        email,
+        role,
+        mfa_required,
+        force_password_reset,
+        bump_epoch,
+    } = update;
     let mut builder: QueryBuilder<_> =
         QueryBuilder::new("UPDATE admin_users SET updated_at = NOW()");
+    if bump_epoch {
+        builder.push(", auth_epoch = auth_epoch + 1");
+    }
     if let Some(v) = display_name {
         builder.push(", display_name = ");
         builder.push_bind(v);
@@ -288,7 +332,7 @@ pub async fn update_password(
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-            "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = false, updated_at = NOW() WHERE id = $2",
+            "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = false, auth_epoch = auth_epoch + 1, updated_at = NOW() WHERE id = $2",
         )
         .bind(password_hash)
         .bind(id)
@@ -305,7 +349,7 @@ pub async fn update_force_password_reset(
     force_reset: bool,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE admin_users SET force_password_reset = $1, updated_at = NOW() WHERE id = $2",
+        "UPDATE admin_users SET force_password_reset = $1, auth_epoch = CASE WHEN force_password_reset = false AND $1 = true THEN auth_epoch + 1 ELSE auth_epoch END, updated_at = NOW() WHERE id = $2",
     )
     .bind(force_reset)
     .bind(id)
@@ -321,7 +365,9 @@ pub async fn update_status(
     id: uuid::Uuid,
     is_active: bool,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE admin_users SET is_active = $1, updated_at = NOW() WHERE id = $2")
+    sqlx::query(
+        "UPDATE admin_users SET is_active = $1, auth_epoch = CASE WHEN is_active IS DISTINCT FROM $1 THEN auth_epoch + 1 ELSE auth_epoch END, updated_at = NOW() WHERE id = $2",
+    )
         .bind(is_active)
         .bind(id)
         .execute(pool)
@@ -339,7 +385,10 @@ pub async fn reset_mfa(pool: &PgPool, id: uuid::Uuid) -> Result<(), sqlx::Error>
             mfa_enabled = false,
             mfa_secret = NULL,
             mfa_backup_codes = NULL,
-            mfa_verified_at = NULL,
+            mfa_totp_last_step_at = NULL,
+            mfa_changed_at = NOW(),
+            mfa_backup_codes_version = mfa_backup_codes_version + 1,
+            auth_epoch = auth_epoch + 1,
             mfa_attempts = 0,
             mfa_locked_until = NULL,
             updated_at = NOW()

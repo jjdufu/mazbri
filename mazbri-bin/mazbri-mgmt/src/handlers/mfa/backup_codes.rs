@@ -18,6 +18,31 @@ pub async fn regenerate_backup_codes(
         Ok(uid) => uid,
         Err(e) => return e.into_response(),
     };
+    match crate::repositories::mfa::is_mfa_enabled(&state.admin_db, user_id).await {
+        Ok(Some(true)) => {}
+        Ok(_) => {
+            return crate::response::ApiResponse::err(
+                axum::http::StatusCode::NOT_FOUND,
+                mazbri_i18n::mfa::user_not_found(),
+            );
+        }
+        Err(error) => {
+            tracing::error!("failed to read MFA state before regenerating codes: {error}");
+            return crate::response::ApiResponse::err(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            );
+        }
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::MfaRegenerateCodes,
+    )
+    .await
+    {
+        return *response;
+    }
     svc::regenerate_backup_codes(
         &state.admin_db,
         &state.mfa_cache,

@@ -12,11 +12,13 @@
     >
       <ElFormItem prop="totpCode">
         <ElInput
-          v-model.trim="formModel.totpCode"
+          :model-value="formModel.totpCode"
           class="custom-height"
           :placeholder="t('login.mfa.placeholder')"
-          :maxlength="totpDigits"
+          maxlength="8"
           :prefix-icon="Key"
+          autocomplete="one-time-code"
+          @update:model-value="onCodeInput"
         />
       </ElFormItem>
 
@@ -46,6 +48,7 @@ import { ref, reactive, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { FormInstance, FormRules } from "element-plus";
 import { Key } from "@element-plus/icons-vue";
+import { classifySubmittedCode } from "@/utils/http/mfa-step-up-state";
 interface FormData {
   totpCode: string;
 }
@@ -75,12 +78,20 @@ watch(
   },
   { deep: true },
 );
+function onCodeInput(value: string): void {
+  formModel.totpCode = value.trim().toUpperCase();
+}
 const mfaRules = computed<FormRules>(() => ({
   totpCode: [
     { required: true, message: t("login.mfa.placeholder"), trigger: "blur" },
     {
-      len: props.totpDigits,
-      message: t("login.mfa.invalidCode"),
+      validator: (_rule, value: string, callback) => {
+        if (classifySubmittedCode(value ?? "", props.totpDigits)) {
+          callback();
+          return;
+        }
+        callback(new Error(t("login.mfa.invalidCode")));
+      },
       trigger: "blur",
     },
   ],

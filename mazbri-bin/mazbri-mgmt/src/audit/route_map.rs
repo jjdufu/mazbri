@@ -141,6 +141,15 @@ pub static ROUTES: &[RouteAudit] = &[
     secure("POST", "/auth/mfa/disable", A::MfaDisable, R::User, None),
     auth("/auth/mfa/verify", A::UserLogin),
     read("/auth/mfa/status", R::User),
+    read("/auth/mfa/step-up", R::User),
+    secure("POST", "/auth/mfa/step-up", A::MfaStepUp, R::User, None),
+    secure(
+        "DELETE",
+        "/auth/mfa/step-up",
+        A::MfaStepUpEnd,
+        R::User,
+        None,
+    ),
     secure(
         "POST",
         "/auth/mfa/regenerate-codes",

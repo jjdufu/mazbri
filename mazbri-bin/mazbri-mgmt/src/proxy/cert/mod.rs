@@ -26,7 +26,8 @@ mod client;
 mod routes;
 
 use client::{
-    enrich_audit_details, forbidden, get_cert_proxy_config, parse_json_body, proxy_request,
+    CertificateLookup, enrich_audit_details, forbidden, get_cert_proxy_config, lookup_certificate,
+    parse_json_body, proxy_request,
 };
 pub(crate) use common::*;
 // Handlers must be in parent namespace for `routes` (`use super::*` + macro-expanded names).

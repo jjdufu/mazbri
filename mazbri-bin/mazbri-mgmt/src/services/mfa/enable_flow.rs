@@ -1,21 +1,46 @@
-use super::common::{MfaServiceErrorMode, get_mfa_service, ok_json, verify_and_enable_mfa};
+use super::common::{
+    MfaServiceErrorMode, commit_voluntary_enable, get_mfa_service, guard_session_rotation,
+    resign_bound_session, revoke_old_refresh, unavailable_with_session, verify_totp_for_enable,
+};
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::mfa::MfaServiceCache;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::info;
-pub async fn enable(
-    pool: &PgPool,
-    mfa_cache: &Arc<MfaServiceCache>,
-    audit: &AuditService,
-    user_id: uuid::Uuid,
-    username: &str,
-    totp_code: &str,
-    client_ip: Option<String>,
-) -> axum::response::Response {
+pub struct EnableParams<'a> {
+    pub pool: &'a PgPool,
+    pub redis: &'a mazbri_core::redis::RedisClient,
+    pub mfa_cache: &'a Arc<MfaServiceCache>,
+    pub audit: &'a AuditService,
+    pub claims: &'a crate::middleware::auth::AdminClaims,
+    pub jwt_secret: &'a str,
+    pub access_ttl_fallback: u64,
+    pub totp_code: &'a str,
+    pub refresh_token: Option<&'a str>,
+    pub client_ip: Option<String>,
+}
+
+pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
+    let EnableParams {
+        pool,
+        redis,
+        mfa_cache,
+        audit,
+        claims,
+        jwt_secret,
+        access_ttl_fallback,
+        totp_code,
+        refresh_token,
+        client_ip,
+    } = params;
+    let Ok(user_id) = uuid::Uuid::parse_str(&claims.user_id) else {
+        return crate::error::ApiError::Unauthorized.into_response();
+    };
+    let username = claims.sub.as_str();
     let state = match repo::get_mfa_setup_state(pool, user_id).await {
         Ok(state) => state,
         Err(error) => {
@@ -38,34 +63,137 @@ pub async fn enable(
     let Some(encrypted_secret) = state.mfa_secret else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_setup());
     };
+    let issued_at = chrono::Utc::now().timestamp();
+    let rotation = match guard_session_rotation(claims, refresh_token, jwt_secret, issued_at) {
+        Ok(rotation) => rotation,
+        Err(response) => return *response,
+    };
     let mfa_service = match get_mfa_service(mfa_cache, MfaServiceErrorMode::InternalError).await {
         Ok(service) => service,
         Err(response) => return *response,
     };
-    if let Err(response) = verify_and_enable_mfa(
+    let step_at = match verify_totp_for_enable(&mfa_service, &encrypted_secret, totp_code, username)
+    {
+        Ok(step_at) => step_at,
+        Err(response) => return *response,
+    };
+    let changed_at =
+        chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
+    let epoch = match commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
+        Ok(epoch) => epoch,
+        Err(response) => return *response,
+    };
+    finish_enabled_session(FinishEnable {
         pool,
+        redis,
+        audit,
+        claims,
+        jwt_secret,
+        access_ttl_fallback,
+        old_refresh: &rotation.old_refresh,
+        client_ip,
         user_id,
-        &mfa_service,
-        &encrypted_secret,
-        totp_code,
         username,
+        issued_at,
+        sxp: rotation.sxp,
+        epoch,
+        digits: mfa_service.config().digits,
+        step_up_ttl: mfa_service.config().step_up_ttl_secs,
+    })
+    .await
+}
+
+struct FinishEnable<'a> {
+    pool: &'a PgPool,
+    redis: &'a mazbri_core::redis::RedisClient,
+    audit: &'a AuditService,
+    claims: &'a crate::middleware::auth::AdminClaims,
+    jwt_secret: &'a str,
+    access_ttl_fallback: u64,
+    old_refresh: &'a crate::middleware::auth::AdminClaims,
+    client_ip: Option<String>,
+    user_id: uuid::Uuid,
+    username: &'a str,
+    issued_at: i64,
+    sxp: i64,
+    epoch: i64,
+    digits: u32,
+    step_up_ttl: u64,
+}
+
+async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Response {
+    let resigned = match resign_bound_session(
+        params.pool,
+        params.claims,
+        params.jwt_secret,
+        params.access_ttl_fallback,
+        params.sxp,
+        params.issued_at,
     )
     .await
     {
-        return *response;
-    }
-
-    audit.log(user_audit(
-        user_id,
+        Ok(resigned) => resigned,
+        Err(response) => return *response,
+    };
+    revoke_old_refresh(params.redis, params.old_refresh, params.issued_at).await;
+    let window_ttl = crate::services::mfa::step_up::effective_ttl(
+        params.step_up_ttl,
+        params.sxp,
+        params.issued_at,
+    );
+    let window_opened = match window_ttl {
+        Some(ttl) => {
+            crate::services::mfa::step_up::open_totp_window(
+                params.redis,
+                &params.claims.sid,
+                &params.user_id.to_string(),
+                params.epoch,
+                params.issued_at,
+                params.step_up_ttl,
+                params.sxp,
+            )
+            .await
+            .is_ok()
+                && ttl > 0
+        }
+        None => false,
+    };
+    params.audit.log(user_audit(
+        params.user_id,
         AuditAction::MfaEnable,
-        Some(serde_json::json!(
-            { "action" : "mfa_enabled", "username" : username, }
-        )),
-        client_ip,
+        Some(serde_json::json!({
+            "action": "mfa_enabled",
+            "username": params.username,
+            "sid": params.claims.sid,
+        })),
+        params.client_ip,
     ));
-    info!("MFA enabled for user: {}", username);
-    ok_json(serde_json::json!(
-        { "message" : mazbri_i18n::mfa::enabled_success(), "messageKey" :
-        "api.mfa.enabled_success" }
-    ))
+    info!("MFA enabled for user: {}", params.username);
+    if !window_opened {
+        tracing::error!("failed to open step-up window after enable");
+        return unavailable_with_session(
+            &resigned.access_token,
+            &resigned.refresh_token,
+            u64::try_from(resigned.expires_in).unwrap_or(1),
+            resigned.refresh_max_age,
+        );
+    }
+    let until = params
+        .issued_at
+        .saturating_add(i64::try_from(window_ttl.unwrap_or(1)).unwrap_or(i64::MAX));
+    crate::middleware::auth::json_with_session_cookies(
+        serde_json::json!({
+            "message": mazbri_i18n::mfa::enabled_success(),
+            "messageKey": "api.mfa.enabled_success",
+            "token": resigned.access_token,
+            "refresh_token": resigned.refresh_token,
+            "expires_in": resigned.expires_in,
+            "expires_at": chrono::DateTime::<chrono::Utc>::from_timestamp(until, 0)
+                .unwrap_or_else(chrono::Utc::now)
+                .to_rfc3339(),
+            "remaining_secs": window_ttl.unwrap_or(1),
+            "totp_digits": params.digits,
+        }),
+        Some(resigned.refresh_max_age),
+    )
 }

@@ -15,12 +15,23 @@ use axum::{
 pub async fn reset_admin_mfa(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
+    if let Err(error) = svc::precheck_mfa_reset(&state.admin_db, &claims, id).await {
+        return Ok(error.into_response());
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::AdminResetMfa,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::reset_mfa(&state.admin_db, &state.audit, &claims, id, client_ip).await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }

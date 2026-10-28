@@ -35,7 +35,7 @@ pub struct AdminSessionStateRow {
     pub force_password_reset: bool,
     pub password_changed_at: DateTime<Utc>,
     pub mfa_enabled: bool,
-    pub mfa_verified_at: Option<DateTime<Utc>>,
+    pub mfa_changed_at: Option<DateTime<Utc>>,
 }
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserPasswordRow {
@@ -72,6 +72,64 @@ pub async fn get_admin_user_by_username(
     .fetch_optional(pool)
     .await
 }
+/// 提权守卫复核所需的账号状态。不含口令哈希。
+///
+/// `flags` 位：1 启用，2 强制改密，4 已绑定 MFA，8 有 secret。
+#[derive(Debug, sqlx::FromRow)]
+pub struct StepUpSubjectRow {
+    pub locked_until: Option<DateTime<Utc>>,
+    pub password_changed_at: DateTime<Utc>,
+    pub role: String,
+    pub mfa_locked_until: Option<DateTime<Utc>>,
+    pub auth_epoch: i64,
+    pub flags: i32,
+}
+
+impl StepUpSubjectRow {
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        self.flags & 1 != 0
+    }
+
+    #[must_use]
+    pub const fn force_password_reset(&self) -> bool {
+        self.flags & 2 != 0
+    }
+
+    #[must_use]
+    pub const fn mfa_enabled(&self) -> bool {
+        self.flags & 4 != 0
+    }
+
+    #[must_use]
+    pub const fn has_secret(&self) -> bool {
+        self.flags & 8 != 0
+    }
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_step_up_subject(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<StepUpSubjectRow>, sqlx::Error> {
+    sqlx::query_as::<_, StepUpSubjectRow>(
+        r"
+        SELECT locked_until, password_changed_at, role, mfa_locked_until, auth_epoch,
+               (CASE WHEN is_active THEN 1 ELSE 0 END)
+               + (CASE WHEN force_password_reset THEN 2 ELSE 0 END)
+               + (CASE WHEN mfa_enabled THEN 4 ELSE 0 END)
+               + (CASE WHEN mfa_secret IS NOT NULL THEN 8 ELSE 0 END) AS flags
+        FROM admin_users
+        WHERE id = $1
+        ",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
 /// 读取刷新令牌复核所需的账号状态。
 ///
 /// # Errors
@@ -84,7 +142,7 @@ pub async fn get_admin_session_state(
     sqlx::query_as::<_, AdminSessionStateRow>(
         r"
         SELECT username, role, is_active, locked_until, force_password_reset,
-               password_changed_at, mfa_enabled, mfa_verified_at
+               password_changed_at, mfa_enabled, mfa_changed_at
         FROM admin_users
         WHERE id = $1
     ",
@@ -167,6 +225,50 @@ pub async fn update_login_failure(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 原子增加登录失败次数。锁已过期时从 0 起算。
+///
+/// # Errors
+///
+/// 数据库更新失败时返回错误。
+pub async fn record_login_failure(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    max_attempts: i32,
+    lockout_minutes: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        WITH base AS (
+            SELECT id,
+                   CASE
+                       WHEN locked_until IS NOT NULL AND locked_until <= NOW() THEN 0
+                       ELSE login_attempts
+                   END AS n
+            FROM admin_users
+            WHERE id = $1
+        )
+        UPDATE admin_users AS u
+        SET login_attempts = base.n + 1,
+            locked_until = CASE
+                WHEN base.n + 1 >= $2 THEN NOW() + ($3 * interval '1 minute')
+                WHEN u.locked_until IS NOT NULL AND u.locked_until <= NOW() THEN NULL
+                ELSE u.locked_until
+            END
+        FROM base
+        WHERE u.id = base.id
+        ",
+    )
+    .bind(user_id)
+    .bind(max_attempts)
+    .bind(lockout_minutes)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// # Errors
+///
+/// 数据库更新失败时返回错误。
 pub async fn reset_login_attempts(pool: &PgPool, user_id: uuid::Uuid) -> Result<(), sqlx::Error> {
     let query = r"
         UPDATE admin_users
@@ -203,6 +305,7 @@ pub async fn update_password(
             password_hash = $2,
             password_changed_at = NOW(),
             force_password_reset = false,
+            auth_epoch = auth_epoch + 1,
             updated_at = NOW()
         WHERE id = $3
     ";

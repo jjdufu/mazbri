@@ -30,11 +30,15 @@ pub struct AdminClaims {
     pub role: String,
     pub iat: i64,
     pub exp: i64,
-    /// Present on tokens issued after H-11; older tokens may omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_type: Option<String>,
+    /// 密码验证成功时生成的会话号。缺失即解码失败。
+    pub sid: String,
+    /// 会话绝对到期（刷新令牌 `exp`）。只有临时令牌可以省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sxp: Option<i64>,
 }
 #[derive(Clone)]
 pub struct AdminAuthState {
@@ -266,6 +270,25 @@ fn append_set_cookie(headers: &mut HeaderMap, cookie: &str) {
     if let Ok(value) = HeaderValue::from_str(cookie) {
         headers.append(header::SET_COOKIE, value);
     }
+}
+
+/// 把已签发的 access / refresh 写进响应的 `Set-Cookie`。调用方自己决定 HTTP 状态。
+pub fn set_session_cookies(
+    response: &mut Response,
+    access_token: &str,
+    refresh_token: &str,
+    access_max_age: u64,
+    refresh_max_age: u64,
+) {
+    let headers = response.headers_mut();
+    append_set_cookie(
+        headers,
+        &format_set_cookie(ACCESS_COOKIE, access_token, access_max_age, false),
+    );
+    append_set_cookie(
+        headers,
+        &format_set_cookie(REFRESH_COOKIE, refresh_token, refresh_max_age, false),
+    );
 }
 
 /// Build JSON success response; if `token`/`refresh_token` present, set `HttpOnly` cookies
@@ -593,6 +616,8 @@ mod role_helper_tests {
             exp: 0,
             jti: None,
             token_type: None,
+            sid: uuid::Uuid::nil().to_string(),
+            sxp: None,
         }
     }
 

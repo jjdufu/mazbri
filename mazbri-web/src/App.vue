@@ -6,6 +6,7 @@
 
 <script setup lang="ts">
 import { useUserStore } from "./store/modules/user";
+import { useMfaStepUpStore } from "./store/modules/mfa-step-up";
 import { useSettingStore } from "./store/modules/setting";
 import zh from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
@@ -18,6 +19,7 @@ import { ErrorCodes } from "./constants/error-codes";
 import { startExpandOnFocusInputAuto } from "./composables/useExpandOnFocusInputs";
 const router = useRouter();
 const userStore = useUserStore();
+const mfaStepUpStore = useMfaStepUpStore();
 const settingStore = useSettingStore();
 const { language } = storeToRefs(userStore);
 const locales = {
@@ -40,6 +42,11 @@ const initializeSettings = async () => {
           error,
         },
       );
+    }
+    try {
+      await mfaStepUpStore.refresh();
+    } catch {
+      // refresh 已记录日志。已登录初始化只同步提权状态，不开窗。
     }
   }
   settingStore.applyToDom();

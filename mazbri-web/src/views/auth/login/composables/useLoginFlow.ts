@@ -3,7 +3,9 @@ import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
+import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { useSettingStore } from "@/store/modules/setting";
+import { classifySubmittedCode } from "@/utils/http/mfa-step-up-state";
 import {
   login,
   verifyMfa,
@@ -187,6 +189,11 @@ export function useLoginFlow() {
     userStore.setLoginStatus(true);
     userStore.setUserInfo(response.user);
     try {
+      await useMfaStepUpStore().refresh();
+    } catch {
+      // 登录完成只同步提权状态，不开窗。失败不阻断进入系统。
+    }
+    try {
       await settingStore.loadFromServer();
     } catch (error) {
       logger.warn(
@@ -246,12 +253,16 @@ export function useLoginFlow() {
   }
   async function handleMfaVerify(formData?: MfaFormData): Promise<void> {
     await runWithLoading(mfaLoading, async () => {
-      const totpCode = formData?.totpCode || mfaFormData.totpCode;
+      const rawCode = formData?.totpCode || mfaFormData.totpCode;
+      const parsed = classifySubmittedCode(rawCode, totpDigits.value);
+      if (!parsed) {
+        ElMessage.warning(t("login.mfa.invalidCode"));
+        return;
+      }
       const response = await verifyMfa({
         temp_token: tempToken.value,
-        totp_code: totpCode,
+        ...parsed,
       });
-      userStore.setMfaVerified(true);
       await completeLogin(response);
     }).catch((error) => {
       handleLoginError(error);

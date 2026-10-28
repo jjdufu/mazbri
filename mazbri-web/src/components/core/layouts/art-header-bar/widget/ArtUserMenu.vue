@@ -1,4 +1,5 @@
 <template>
+  <ArtMfaStepUpPill />
   <ElTooltip :content="t('common.accountSecurity')" placement="bottom">
     <ArtIconButton
       icon="ri:shield-user-line"
@@ -20,6 +21,7 @@ import { useRouter } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
 import { ACCOUNT_SECURITY_PATH } from "@/utils/http/mfa-dialog-service";
+import ArtMfaStepUpPill from "./ArtMfaStepUpPill.vue";
 defineOptions({ name: "ArtUserMenu" });
 const { t } = useI18n();
 const router = useRouter();

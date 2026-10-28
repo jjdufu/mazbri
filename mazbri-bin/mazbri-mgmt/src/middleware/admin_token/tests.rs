@@ -5,11 +5,21 @@ use base64::Engine as _;
 const SECRET: &str = "unit-test-placeholder-secret-not-real";
 const OTHER_SECRET: &str = "unit-test-other-placeholder-secret";
 
+fn binding() -> &'static SessionBinding {
+    use std::sync::OnceLock;
+    static BINDING: OnceLock<SessionBinding> = OnceLock::new();
+    BINDING.get_or_init(|| SessionBinding {
+        sid: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12".to_string(),
+        sxp: Some(i64::MAX / 4),
+    })
+}
+
 fn subject() -> TokenSubject<'static> {
     TokenSubject {
         username: "alice",
         user_id: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a11",
         role: "R_ADMIN",
+        binding: binding(),
     }
 }
 
@@ -30,6 +40,8 @@ fn claims_with(
         exp: now + exp_offset,
         jti: Some(uuid::Uuid::new_v4().to_string()),
         token_type: token_type.map(str::to_string),
+        sid: binding().sid.clone(),
+        sxp: Some(now + exp_offset),
     }
 }
 
@@ -208,24 +220,54 @@ fn legacy_tokens_without_type_are_never_access_tokens() {
 }
 
 #[test]
-fn legacy_refresh_token_is_accepted_only_by_refresh_decoder() {
+fn refresh_without_audience_is_rejected() {
     let claims = claims_with(ISSUER, None, Some("refresh"), 3600);
     let token = sign(&claims, Algorithm::HS256, SECRET);
-    let decoded = decode_refresh(&token, SECRET).expect("legacy refresh accepted");
-    assert_eq!(decoded.token_type.as_deref(), Some("refresh"));
+    assert!(decode_refresh(&token, SECRET).is_err());
+    assert!(decode_kind(&token, SECRET, TokenKind::Access).is_err());
+}
+
+#[test]
+fn access_and_refresh_require_sxp_but_stage_tokens_do_not() {
+    let mut access = claims_with(
+        ISSUER,
+        Some(TokenKind::Access.audience()),
+        Some(TokenKind::Access.as_str()),
+        3600,
+    );
+    access.sxp = None;
+    let token = sign(&access, Algorithm::HS256, SECRET);
     assert_eq!(
         decode_kind(&token, SECRET, TokenKind::Access).map(|_| ()),
-        Err(TokenRejection::TypeMismatch)
+        Err(TokenRejection::Legacy)
     );
 
-    let expired = sign(
-        &claims_with(ISSUER, None, Some("refresh"), -3600),
-        Algorithm::HS256,
-        SECRET,
+    let mut stage = claims_with(
+        ISSUER,
+        Some(TokenKind::MfaSetup.audience()),
+        Some(TokenKind::MfaSetup.as_str()),
+        300,
     );
+    stage.sxp = None;
+    let stage_token = sign(&stage, Algorithm::HS256, SECRET);
+    let decoded = decode_kind(&stage_token, SECRET, TokenKind::MfaSetup).expect("stage");
+    assert!(decoded.sxp.is_none());
+    assert_eq!(decoded.sid, binding().sid);
+}
+
+#[test]
+fn missing_sid_is_rejected() {
+    let mut claims = claims_with(
+        ISSUER,
+        Some(TokenKind::Access.audience()),
+        Some(TokenKind::Access.as_str()),
+        3600,
+    );
+    claims.sid = "not-a-uuid".to_string();
+    let token = sign(&claims, Algorithm::HS256, SECRET);
     assert_eq!(
-        decode_refresh(&expired, SECRET).map(|_| ()),
-        Err(TokenRejection::Expired)
+        decode_kind(&token, SECRET, TokenKind::Access).map(|_| ()),
+        Err(TokenRejection::Invalid)
     );
 }
 
@@ -283,4 +325,86 @@ fn every_rejection_reason_has_frontend_audit_label() {
             "FAILURE_REASON_LABELS 缺少 {reason}"
         );
     }
+}
+
+fn issue_bound(kind: TokenKind, binding: &SessionBinding, issued_at: i64, ttl: i64) -> IssuedToken {
+    issue_at(
+        kind,
+        TokenSubject {
+            username: "alice",
+            user_id: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a11",
+            role: "R_FINANCE",
+            binding,
+        },
+        SECRET,
+        ttl,
+        issued_at,
+    )
+    .expect("issue")
+}
+
+#[test]
+fn required_setup_reissue_keeps_sid() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let first = SessionBinding::stage(sid);
+    let issued = issue_bound(TokenKind::MfaSetup, &first, now, 300);
+    let claims = decode_kind(&issued.token, SECRET, TokenKind::MfaSetup).expect("decode");
+    let next = SessionBinding::stage(claims.sid.clone());
+    let rotated = issue_bound(TokenKind::MfaSetup, &next, now + 1, 300);
+    let again = decode_kind(&rotated.token, SECRET, TokenKind::MfaSetup).expect("decode");
+    assert_eq!(again.sid, sid);
+    assert!(again.sxp.is_none());
+}
+
+#[test]
+fn password_change_then_mfa_keeps_sid() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let reset = SessionBinding::stage(sid);
+    let reset_token = issue_bound(TokenKind::PasswordReset, &reset, now, 300);
+    let reset_claims =
+        decode_kind(&reset_token.token, SECRET, TokenKind::PasswordReset).expect("decode");
+    let mfa = SessionBinding::stage(reset_claims.sid.clone());
+    let pending = issue_bound(TokenKind::MfaPending, &mfa, now + 1, 300);
+    let pending_claims =
+        decode_kind(&pending.token, SECRET, TokenKind::MfaPending).expect("decode");
+    assert_eq!(pending_claims.sid, sid);
+}
+
+#[test]
+fn refresh_keeps_sid_and_sxp() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let sxp = now + 3_600;
+    let binding = SessionBinding {
+        sid: sid.to_string(),
+        sxp: Some(sxp),
+    };
+    let access = issue_bound(TokenKind::Access, &binding, now, 900);
+    let claims = decode_kind(&access.token, SECRET, TokenKind::Access).expect("decode");
+    let copied = SessionBinding {
+        sid: claims.sid.clone(),
+        sxp: claims.sxp,
+    };
+    let refreshed = issue_bound(TokenKind::Access, &copied, now + 30, 900);
+    let again = decode_kind(&refreshed.token, SECRET, TokenKind::Access).expect("decode");
+    assert_eq!(again.sid, sid);
+    assert_eq!(again.sxp, Some(sxp));
+    assert!(again.exp <= sxp);
+}
+
+#[test]
+fn first_login_refresh_exp_equals_sxp() {
+    let issued_at = chrono::Utc::now().timestamp();
+    let refresh_ttl = 604_800;
+    let sxp = issued_at + refresh_ttl;
+    let binding = SessionBinding {
+        sid: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12".to_string(),
+        sxp: Some(sxp),
+    };
+    let refresh = issue_bound(TokenKind::Refresh, &binding, issued_at, refresh_ttl);
+    let claims = decode_kind(&refresh.token, SECRET, TokenKind::Refresh).expect("decode");
+    assert_eq!(claims.exp, claims.sxp.unwrap_or(0));
+    assert_eq!(claims.exp, sxp);
 }

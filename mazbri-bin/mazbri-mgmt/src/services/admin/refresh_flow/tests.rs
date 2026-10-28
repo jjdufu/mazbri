@@ -33,7 +33,7 @@ fn healthy_user() -> AdminSessionStateRow {
         force_password_reset: false,
         password_changed_at: now() - Duration::days(10),
         mfa_enabled: false,
-        mfa_verified_at: None,
+        mfa_changed_at: None,
     }
 }
 
@@ -150,7 +150,7 @@ fn mfa_enabled_alone_does_not_block_refresh() {
     assert_eq!(
         deny(|u| {
             u.mfa_enabled = true;
-            u.mfa_verified_at = Some(now() - Duration::days(3));
+            u.mfa_changed_at = Some(now() - Duration::days(3));
         }),
         Ok(())
     );
@@ -160,12 +160,12 @@ fn mfa_enabled_alone_does_not_block_refresh() {
 fn mfa_activity_after_issue_is_denied_even_if_now_disabled() {
     // 例如：令牌签发后用户绑定了 MFA，随后被管理员重置为未绑定。
     assert_eq!(
-        deny(|u| u.mfa_verified_at = Some(now() - Duration::minutes(1))),
+        deny(|u| u.mfa_changed_at = Some(now() - Duration::minutes(1))),
         Err(RefreshDenial::MfaStateChanged)
     );
     // 签发前的历史记录不影响。
     assert_eq!(
-        deny(|u| u.mfa_verified_at = Some(now() - Duration::days(3))),
+        deny(|u| u.mfa_changed_at = Some(now() - Duration::days(3))),
         Ok(())
     );
 }

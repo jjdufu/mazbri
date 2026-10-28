@@ -6,13 +6,13 @@
 //!
 //! 刷新令牌在无 MFA 登录、MFA 验证通过（`verify`）以及强制 MFA 启用
 //! （`required-enable`）后签发。已绑定 MFA 的会话可以正常刷新；仅当令牌签发后
-//! MFA 状态发生变化（`mfa_verified_at` 晚于令牌 `iat`，即启用/重绑/再次验证）
+//! MFA 因子状态发生变化（`mfa_changed_at` 晚于令牌 `iat`，即启用、关闭或超管重置）
 //! 时拒绝刷新，迫使重新走完整登录。账号级 `mfa_required` 与遗留全局策略列
 //! 不单独阻断刷新。
 
 use crate::audit;
 use crate::error::ApiError;
-use crate::middleware::admin_token;
+use crate::middleware::admin_token::{self, SessionBinding};
 use crate::middleware::auth::AdminClaims;
 use crate::repositories::admin as repo;
 use crate::services::{PasswordPolicy, PasswordPolicyCache};
@@ -93,7 +93,7 @@ pub(crate) fn evaluate_refresh_session<'u>(
     // 已绑定 MFA 的会话可以刷新；仅当签发后 MFA 状态变化（verified_at > iat）才拒绝。
     // 典型场景：无 MFA 时拿到刷新令牌后又自助绑定，或管理员重置后用户重新绑定。
     let mfa_touched_after_issue = user
-        .mfa_verified_at
+        .mfa_changed_at
         .is_some_and(|at| at.timestamp() > ctx.issued_at);
     if mfa_touched_after_issue {
         return Err(RefreshDenial::MfaStateChanged);
@@ -160,6 +160,7 @@ pub async fn admin_refresh_token(
             );
             audit::set_failure_reason(denial.reason());
             audit::mark_security_event();
+            crate::services::mfa::step_up::close_session(params.redis, &claims.sid).await;
             return Err(ApiError::Unauthorized);
         }
     };
@@ -172,12 +173,27 @@ pub async fn admin_refresh_token(
     }
     let jwt_expiration_secs =
         resolve_access_token_expiration_secs(params.db, params.jwt_expiration_secs_fallback).await;
+    let Some(sxp) = claims.sxp else {
+        audit::set_failure_reason("legacy_token");
+        return Err(ApiError::Unauthorized);
+    };
+    if uuid::Uuid::parse_str(&claims.sid).is_err() {
+        audit::set_failure_reason("invalid_token");
+        return Err(ApiError::Unauthorized);
+    }
+    let binding = SessionBinding {
+        sid: claims.sid.clone(),
+        sxp: Some(sxp),
+    };
+    let issued_at = Utc::now().timestamp();
     let new_token = generate_admin_jwt(
         &user.username,
         &claims.user_id,
         &user.role,
+        &binding,
         params.jwt_secret,
         i64::saturating_from(jwt_expiration_secs),
+        issued_at,
     )
     .map_err(|e| {
         error!("Failed to generate access JWT during refresh: {}", e);
@@ -187,7 +203,8 @@ pub async fn admin_refresh_token(
         "Token refreshed for user: {} (role: {})",
         user.username, user.role
     );
-    Ok(serde_json::json!({ "token" : new_token, "expires_in" : jwt_expiration_secs }))
+    let expires_in = new_token.exp.saturating_sub(new_token.iat).max(1);
+    Ok(serde_json::json!({ "token" : new_token.token, "expires_in" : expires_in }))
 }
 
 /// 刷新前再次确认刷新令牌未被吊销（中间件已查过一次，这里防止绕过中间件的调用方）。

@@ -16,12 +16,31 @@ use axum::{
 pub async fn reset_admin_password(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<ResetPasswordRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
+    if let Err(error) = svc::precheck_password_reset(
+        &state.admin_db,
+        &state.password_policy_cache,
+        &claims,
+        id,
+        &req,
+    )
+    .await
+    {
+        return Ok(error.into_response());
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::AdminResetPassword,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::reset_password(
         &state.admin_db,
@@ -33,7 +52,7 @@ pub async fn reset_admin_password(
         client_ip,
     )
     .await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
 ///
@@ -41,7 +60,7 @@ pub async fn reset_admin_password(
 pub async fn force_password_reset(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
