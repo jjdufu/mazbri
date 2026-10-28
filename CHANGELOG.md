@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.9](https://github.com/jjdufu/mazbri/compare/v0.2.8...v0.2.9) (2026-10-28)
+
+
+### Bug Fixes
+
+* **auth:** 阶段令牌写库失败可回滚，并隔离登录 401 ([89479db](https://github.com/jjdufu/mazbri/commit/89479dbb02c7623ab66396df06ae6c709e114766))
+* **auth:** 阶段令牌写库失败可回滚，并隔离登录 401 ([43d47f2](https://github.com/jjdufu/mazbri/commit/43d47f2f32bc6536e21db22fd4d1e2603625f0b6))
+
 ## [0.2.8](https://github.com/jjdufu/mazbri/compare/v0.2.7...v0.2.8) (2026-10-28)
 
 
