@@ -30,6 +30,8 @@ pub struct MfaConfig {
     pub max_attempts: i32,
     pub lockout_duration: i64,
     pub backup_codes_count: usize,
+    /// 提权窗口固定时长（秒）。只来自 bootstrap，不进运行时 `system_settings`。
+    pub step_up_ttl_secs: u64,
 }
 impl Default for MfaConfig {
     fn default() -> Self {
@@ -42,6 +44,7 @@ impl Default for MfaConfig {
             max_attempts: 5,
             lockout_duration: 900,
             backup_codes_count: 8,
+            step_up_ttl_secs: 900,
         }
     }
 }
@@ -217,11 +220,20 @@ impl ValidateConfig for MgmtApiConfig {
         if self.mfa.max_attempts < 1 {
             anyhow::bail!("mfa.max_attempts must be at least 1");
         }
-        if self.mfa.lockout_duration < 0 {
-            anyhow::bail!("mfa.lockout_duration must be non-negative");
+        if self.mfa.lockout_duration < 1 {
+            anyhow::bail!(
+                "mfa.lockout_duration must be at least 1, got {}",
+                self.mfa.lockout_duration
+            );
         }
         if self.mfa.backup_codes_count < 1 {
             anyhow::bail!("mfa.backup_codes_count must be at least 1");
+        }
+        if !(60..=3600).contains(&self.mfa.step_up_ttl_secs) {
+            anyhow::bail!(
+                "mfa.step_up_ttl_secs must be between 60 and 3600, got {}",
+                self.mfa.step_up_ttl_secs
+            );
         }
         if self.auth.jwt_expiration_secs == 0 {
             anyhow::bail!("auth.jwt_expiration_secs must be greater than 0");
@@ -375,5 +387,23 @@ port = 9000
     #[test]
     fn audit_unknown_key_rejected() {
         assert!(parse("[audit]\ntrusted_proxy = []\n").is_err());
+    }
+
+    #[test]
+    fn mfa_step_up_ttl_defaults_and_bounds() {
+        use mazbri_core::config::ValidateConfig;
+        let cfg = parse("").expect("parse");
+        assert_eq!(cfg.mfa.step_up_ttl_secs, 900);
+        assert_eq!(cfg.mfa.lockout_duration, 900);
+        cfg.validate().expect("default mfa config valid");
+
+        let zero = parse("[mfa]\nlockout_duration = 0\n").expect("parse");
+        assert!(zero.validate().is_err());
+        let short = parse("[mfa]\nstep_up_ttl_secs = 59\n").expect("parse");
+        assert!(short.validate().is_err());
+        let long = parse("[mfa]\nstep_up_ttl_secs = 3601\n").expect("parse");
+        assert!(long.validate().is_err());
+        let edge = parse("[mfa]\nstep_up_ttl_secs = 60\n").expect("parse");
+        edge.validate().expect("lower bound");
     }
 }
