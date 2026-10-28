@@ -10,5 +10,11 @@ pub async fn mfa_status(
         Ok(uid) => uid,
         Err(e) => return e.into_response(),
     };
-    svc::status(&state.admin_db, user_id).await
+    svc::status(
+        &state.admin_db,
+        &state.mfa_cache,
+        state.config.mfa.digits,
+        user_id,
+    )
+    .await
 }

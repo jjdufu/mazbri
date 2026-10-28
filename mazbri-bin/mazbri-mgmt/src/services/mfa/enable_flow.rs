@@ -1,11 +1,13 @@
-use super::common::{MfaServiceErrorMode, get_mfa_service, verify_and_enable_mfa};
+use super::common::{
+    MfaServiceErrorMode, commit_voluntary_enable, get_mfa_service, guard_session_rotation,
+    resign_bound_session, revoke_old_refresh, unavailable_with_session, verify_totp_for_enable,
+};
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::mfa::MfaServiceCache;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use mazbri_core::num::SaturatingFrom;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::info;
@@ -61,30 +63,23 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
     let Some(encrypted_secret) = state.mfa_secret else {
         return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_setup());
     };
+    let issued_at = chrono::Utc::now().timestamp();
+    let rotation = match guard_session_rotation(claims, refresh_token, jwt_secret, issued_at) {
+        Ok(rotation) => rotation,
+        Err(response) => return *response,
+    };
     let mfa_service = match get_mfa_service(mfa_cache, MfaServiceErrorMode::InternalError).await {
         Ok(service) => service,
         Err(response) => return *response,
     };
-    let Some(sxp) = claims.sxp else {
-        return crate::error::ApiError::Unauthorized.into_response();
+    let step_at = match verify_totp_for_enable(&mfa_service, &encrypted_secret, totp_code, username)
+    {
+        Ok(step_at) => step_at,
+        Err(response) => return *response,
     };
-    let issued_at = chrono::Utc::now().timestamp();
-    if sxp <= issued_at {
-        return crate::error::ApiError::Unauthorized.into_response();
-    }
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    let epoch = match verify_and_enable_mfa(
-        pool,
-        user_id,
-        &mfa_service,
-        &encrypted_secret,
-        totp_code,
-        username,
-        changed_at,
-    )
-    .await
-    {
+    let epoch = match commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
         Ok(epoch) => epoch,
         Err(response) => return *response,
     };
@@ -95,12 +90,12 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
         claims,
         jwt_secret,
         access_ttl_fallback,
-        refresh_token,
+        old_refresh: &rotation.old_refresh,
         client_ip,
         user_id,
         username,
         issued_at,
-        sxp,
+        sxp: rotation.sxp,
         epoch,
         digits: mfa_service.config().digits,
         step_up_ttl: mfa_service.config().step_up_ttl_secs,
@@ -115,7 +110,7 @@ struct FinishEnable<'a> {
     claims: &'a crate::middleware::auth::AdminClaims,
     jwt_secret: &'a str,
     access_ttl_fallback: u64,
-    refresh_token: Option<&'a str>,
+    old_refresh: &'a crate::middleware::auth::AdminClaims,
     client_ip: Option<String>,
     user_id: uuid::Uuid,
     username: &'a str,
@@ -127,73 +122,42 @@ struct FinishEnable<'a> {
 }
 
 async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Response {
-    let binding = crate::middleware::admin_token::SessionBinding {
-        sid: params.claims.sid.clone(),
-        sxp: Some(params.sxp),
-    };
-    let access_ttl = crate::services::admin::resolve_access_token_expiration_secs(
+    let resigned = match resign_bound_session(
         params.pool,
+        params.claims,
+        params.jwt_secret,
         params.access_ttl_fallback,
-    )
-    .await;
-    let token = match crate::services::admin::generate_admin_jwt(
-        params.username,
-        &params.claims.user_id,
-        &params.claims.role,
-        &binding,
-        params.jwt_secret,
-        i64::saturating_from(access_ttl),
-        params.issued_at,
-    ) {
-        Ok(token) => token,
-        Err(error) => {
-            tracing::error!("failed to resign access token after MFA enable: {error}");
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_generate_token(),
-            );
-        }
-    };
-    let refresh = match crate::services::admin::issue_refresh_token(
-        params.username,
-        &params.claims.user_id,
-        &params.claims.role,
-        &binding,
-        params.jwt_secret,
-        params.issued_at,
-    ) {
-        Ok(token) => token,
-        Err(error) => {
-            tracing::error!("failed to resign refresh token after MFA enable: {error}");
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_generate_token(),
-            );
-        }
-    };
-    if let Err(error) = crate::services::mfa::step_up::open_totp_window(
-        params.redis,
-        &params.claims.sid,
-        &params.user_id.to_string(),
-        params.epoch,
-        params.issued_at,
-        params.step_up_ttl,
         params.sxp,
+        params.issued_at,
     )
     .await
     {
-        tracing::error!("failed to open step-up window after enable: {error}");
-    }
-    if let Some(old) = params.refresh_token
-        && let Ok(old_claims) =
-            crate::middleware::admin_token::decode_refresh(old, params.jwt_secret)
-        && let Some(jti) = old_claims.jti
-    {
-        let ttl = (old_claims.exp - params.issued_at).max(1);
-        if let Err(error) = crate::middleware::auth::revoke_jti(params.redis, &jti, ttl).await {
-            tracing::warn!("failed to revoke previous refresh token after enable: {error}");
+        Ok(resigned) => resigned,
+        Err(response) => return *response,
+    };
+    revoke_old_refresh(params.redis, params.old_refresh, params.issued_at).await;
+    let window_ttl = crate::services::mfa::step_up::effective_ttl(
+        params.step_up_ttl,
+        params.sxp,
+        params.issued_at,
+    );
+    let window_opened = match window_ttl {
+        Some(ttl) => {
+            crate::services::mfa::step_up::open_totp_window(
+                params.redis,
+                &params.claims.sid,
+                &params.user_id.to_string(),
+                params.epoch,
+                params.issued_at,
+                params.step_up_ttl,
+                params.sxp,
+            )
+            .await
+            .is_ok()
+                && ttl > 0
         }
-    }
+        None => false,
+    };
     params.audit.log(user_audit(
         params.user_id,
         AuditAction::MfaEnable,
@@ -205,21 +169,31 @@ async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Res
         params.client_ip,
     ));
     info!("MFA enabled for user: {}", params.username);
-    let max_age = u64::try_from(params.sxp.saturating_sub(params.issued_at).max(1)).unwrap_or(1);
+    if !window_opened {
+        tracing::error!("failed to open step-up window after enable");
+        return unavailable_with_session(
+            &resigned.access_token,
+            &resigned.refresh_token,
+            u64::try_from(resigned.expires_in).unwrap_or(1),
+            resigned.refresh_max_age,
+        );
+    }
+    let until = params
+        .issued_at
+        .saturating_add(i64::try_from(window_ttl.unwrap_or(1)).unwrap_or(i64::MAX));
     crate::middleware::auth::json_with_session_cookies(
         serde_json::json!({
             "message": mazbri_i18n::mfa::enabled_success(),
             "messageKey": "api.mfa.enabled_success",
-            "token": token.token,
-            "refresh_token": refresh.token,
-            "expires_in": token.exp.saturating_sub(token.iat).max(1),
-            "remaining_secs": crate::services::mfa::step_up::effective_ttl(
-                params.step_up_ttl,
-                params.sxp,
-                params.issued_at,
-            ),
+            "token": resigned.access_token,
+            "refresh_token": resigned.refresh_token,
+            "expires_in": resigned.expires_in,
+            "expires_at": chrono::DateTime::<chrono::Utc>::from_timestamp(until, 0)
+                .unwrap_or_else(chrono::Utc::now)
+                .to_rfc3339(),
+            "remaining_secs": window_ttl.unwrap_or(1),
             "totp_digits": params.digits,
         }),
-        Some(max_age),
+        Some(resigned.refresh_max_age),
     )
 }

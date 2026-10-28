@@ -302,6 +302,7 @@ import {
   readSessionExpiresIn,
 } from "@/utils/http/mfa-step-up-state";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
+import { HttpError } from "@/utils/http/error";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
 
@@ -361,6 +362,15 @@ function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
 function logActionError(message: string, error: unknown): void {
   if (isMfaStepUpCancelled(error)) return;
   logger.error(message, error);
+}
+function isWindowUnavailable(error: unknown): boolean {
+  if (!(error instanceof HttpError) || error.code !== 503) return false;
+  const data = error.data;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    (data as { code?: unknown }).code === "MFA_CHECK_UNAVAILABLE"
+  );
 }
 const setupDigits = computed(() => setupData.value?.totp_digits ?? 6);
 
@@ -446,7 +456,14 @@ async function handleEnable(): Promise<void> {
       refreshUserInfo(),
       stepUpStore.refresh().catch(() => undefined),
     ]);
-  }).catch((error) => {
+  }).catch(async (error) => {
+    if (isWindowUnavailable(error)) {
+      await Promise.all([
+        loadStatus(),
+        refreshUserInfo(),
+        stepUpStore.refresh().catch(() => undefined),
+      ]);
+    }
     logActionError("Failed to enable MFA:", error);
   });
 }

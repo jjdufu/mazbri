@@ -98,6 +98,36 @@ pub async fn store_mfa_secret(
     Ok(())
 }
 
+/// 步长已经推进之后写启用。不再比较步长。已启用或行不存在时返回 `Ok(None)`。
+///
+/// # Errors
+///
+/// 数据库更新失败时返回错误。
+pub async fn mark_mfa_enabled(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    changed_at: DateTime<Utc>,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        r"
+        UPDATE admin_users
+        SET mfa_enabled = true,
+            mfa_changed_at = $2,
+            mfa_attempts = 0,
+            mfa_locked_until = NULL,
+            auth_epoch = auth_epoch + 1,
+            updated_at = NOW()
+        WHERE id = $1
+          AND mfa_enabled = false
+        RETURNING auth_epoch
+        ",
+    )
+    .bind(user_id)
+    .bind(changed_at)
+    .fetch_optional(pool)
+    .await
+}
+
 /// 启用 MFA。步长不晚于上次时返回 `Ok(None)`；成功返回新的 `auth_epoch`。
 ///
 /// # Errors

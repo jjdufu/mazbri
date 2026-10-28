@@ -122,3 +122,44 @@ export function afterFreshResolved<T extends { kind: string }>(
 ): T[] {
   return pending.filter((item) => item.kind !== "step_up");
 }
+
+/** 未执行的 step_up 不能挡在后来的 fresh 前面。正在显示的弹窗不在这个数组里。 */
+export function insertDialogTask<T extends { kind: string }>(
+  pending: T[],
+  task: T,
+): void {
+  if (task.kind === "fresh") {
+    const index = pending.findIndex((item) => item.kind === "step_up");
+    if (index >= 0) {
+      pending.splice(index, 0, task);
+      return;
+    }
+  }
+  pending.push(task);
+}
+
+export async function drainDialogQueue<
+  T extends {
+    kind: string;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  },
+>(pending: T[], run: (task: T) => Promise<void>): Promise<void> {
+  while (pending.length > 0) {
+    const task = pending.shift();
+    if (!task) break;
+    try {
+      await run(task);
+      task.resolve();
+      if (task.kind === "fresh") {
+        const remaining = afterFreshResolved(pending);
+        const keep = new Set<T>(remaining);
+        const skipped = pending.filter((item) => !keep.has(item));
+        pending.splice(0, pending.length, ...remaining);
+        for (const item of skipped) item.resolve();
+      }
+    } catch (error) {
+      task.reject(error);
+    }
+  }
+}

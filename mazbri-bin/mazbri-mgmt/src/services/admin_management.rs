@@ -204,7 +204,30 @@ pub async fn admin_update_lifts_mfa_requirement(
     {
         helpers::ensure_not_super_admin_target(&current.role)?;
     }
+    if let Some(role) = req.role.as_deref()
+        && role != current.role
+    {
+        helpers::validate_assignable_role(claims, role)?;
+    }
     Ok(current.mfa_required && req.mfa_required == Some(false))
+}
+
+/// 这次编辑是否会递增 `auth_epoch`。未变化的标记和已经为 true 的强制改密不加。
+#[must_use]
+pub fn auth_epoch_should_bump(
+    current_role: &str,
+    current_mfa_required: bool,
+    current_force_password_reset: bool,
+    requested_role: Option<&str>,
+    requested_mfa_required: Option<bool>,
+    requested_force_password_reset: Option<bool>,
+) -> bool {
+    let role_changed = requested_role.is_some_and(|role| role != current_role);
+    let mfa_required_changed =
+        requested_mfa_required.is_some_and(|value| value != current_mfa_required);
+    let force_reset_raised =
+        requested_force_password_reset == Some(true) && !current_force_password_reset;
+    role_changed || mfa_required_changed || force_reset_raised
 }
 
 /// # Errors
@@ -256,22 +279,20 @@ pub async fn update_admin(
             ApiError::internal("检查管理员失败".to_string())
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    let role_changed = req
-        .role
-        .as_ref()
-        .is_some_and(|role| role != &current_flags.role);
-    let mfa_required_changed = req
-        .mfa_required
-        .is_some_and(|value| value != current_flags.mfa_required);
-    let force_reset_raised =
-        req.force_password_reset == Some(true) && !current_flags.force_password_reset;
+    let bump_epoch = auth_epoch_should_bump(
+        &current_flags.role,
+        current_flags.mfa_required,
+        current_flags.force_password_reset,
+        req.role.as_deref(),
+        req.mfa_required,
+        req.force_password_reset,
+    );
     let lifts_mfa_requirement = current_flags.mfa_required && req.mfa_required == Some(false);
     if lifts_mfa_requirement && !fresh_for_lift {
         return Err(ApiError::validation(
             "解除强制 MFA 需要重新验证".to_string(),
         ));
     }
-    let bump_epoch = role_changed || mfa_required_changed || force_reset_raised;
     let row = repo::update_admin(
         pool,
         repo::AdminUpdate {
@@ -468,7 +489,10 @@ pub async fn reset_password(
         action: AuditAction::AdminPasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
-        details: Some(serde_json::json!({ "username" : admin.username, })),
+        details: Some(serde_json::json!({
+            "username": admin.username,
+            "auth_epoch_bumped": true,
+        })),
         ip_address: client_ip,
         ..Default::default()
     });
@@ -488,7 +512,7 @@ pub async fn force_password_reset(
     if !can_manage_admins(claims) {
         return Err(ApiError::Forbidden);
     }
-    let admin = repo::find_brief_by_id(pool, id)
+    let admin = repo::find_edit_state(pool, id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to check admin: {}", e);
@@ -496,6 +520,14 @@ pub async fn force_password_reset(
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
     helpers::ensure_not_super_admin_target(&admin.role)?;
+    let bumped = auth_epoch_should_bump(
+        &admin.role,
+        admin.mfa_required,
+        admin.force_password_reset,
+        None,
+        None,
+        Some(req.force_password_reset),
+    );
     repo::update_force_password_reset(pool, id, req.force_password_reset)
         .await
         .map_err(|e| {
@@ -518,10 +550,16 @@ pub async fn force_password_reset(
         action: AuditAction::AdminForcePasswordReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
-        details: Some(serde_json::json!(
-            { "username" : admin.username, "force_password_reset" : req
-            .force_password_reset, }
-        )),
+        details: Some({
+            let mut details = serde_json::json!({
+                "username": admin.username,
+                "force_password_reset": req.force_password_reset,
+            });
+            if bumped && let Some(obj) = details.as_object_mut() {
+                obj.insert("auth_epoch_bumped".to_string(), serde_json::json!(true));
+            }
+            details
+        }),
         ip_address: client_ip,
         ..Default::default()
     });
@@ -575,7 +613,10 @@ pub async fn set_status(
         action: AuditAction::AdminStatusChange,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
-        details: Some(serde_json::json!({ "username" : admin.username, })),
+        details: Some(serde_json::json!({
+            "username": admin.username,
+            "auth_epoch_bumped": true,
+        })),
         ip_address: client_ip,
         ..Default::default()
     });
@@ -619,11 +660,74 @@ pub async fn reset_mfa(
         action: AuditAction::AdminMfaReset,
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
-        details: Some(serde_json::json!(
-            { "username" : admin.username, "action" : "mfa_reset", }
-        )),
+        details: Some(serde_json::json!({
+            "username": admin.username,
+            "action": "mfa_reset",
+            "auth_epoch_bumped": true,
+        })),
         ip_address: client_ip,
         ..Default::default()
     });
     Ok(serde_json::json!({ "message" : "MFA 已重置" }))
+}
+
+#[cfg(test)]
+mod epoch_bump_tests {
+    use super::auth_epoch_should_bump;
+
+    #[test]
+    fn unchanged_mfa_required_does_not_bump() {
+        assert!(!auth_epoch_should_bump(
+            "R_FINANCE",
+            true,
+            false,
+            None,
+            Some(true),
+            None,
+        ));
+    }
+
+    #[test]
+    fn force_reset_already_true_does_not_bump() {
+        assert!(!auth_epoch_should_bump(
+            "R_FINANCE",
+            false,
+            true,
+            None,
+            None,
+            Some(true),
+        ));
+    }
+
+    #[test]
+    fn email_only_does_not_bump() {
+        assert!(!auth_epoch_should_bump(
+            "R_FINANCE",
+            false,
+            false,
+            None,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn raising_force_reset_or_changing_role_bumps() {
+        assert!(auth_epoch_should_bump(
+            "R_FINANCE",
+            false,
+            false,
+            None,
+            None,
+            Some(true),
+        ));
+        assert!(auth_epoch_should_bump(
+            "R_FINANCE",
+            false,
+            false,
+            Some("R_VIEWER"),
+            None,
+            None,
+        ));
+    }
 }

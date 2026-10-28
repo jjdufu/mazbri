@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   afterFreshResolved,
   classifyMfaError,
+  drainDialogQueue,
+  insertDialogTask,
   parseJsonBlob,
   shouldInterceptFresh,
   shouldInterceptStepUp,
@@ -117,6 +119,39 @@ test("Blob 且 type 含 json 时解析后再分类 MFA_REQUIRED", async () => {
     type: "text/plain",
   });
   assert.equal(await parseJsonBlob(text), null);
+});
+
+test("队列为 [step_up, fresh] 时 fresh 先执行，成功后 step_up 不再弹", async () => {
+  const pending: Array<{
+    kind: string;
+    id: string;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }> = [];
+  const resolved: string[] = [];
+  const executed: string[] = [];
+  insertDialogTask(pending, {
+    kind: "step_up",
+    id: "step",
+    resolve: () => resolved.push("step"),
+    reject: () => undefined,
+  });
+  insertDialogTask(pending, {
+    kind: "fresh",
+    id: "fresh",
+    resolve: () => resolved.push("fresh"),
+    reject: () => undefined,
+  });
+  assert.deepEqual(
+    pending.map((item) => item.kind),
+    ["fresh", "step_up"],
+  );
+  await drainDialogQueue(pending, async (task) => {
+    executed.push(task.kind);
+  });
+  assert.deepEqual(executed, ["fresh"]);
+  assert.deepEqual(resolved, ["fresh", "step"]);
+  assert.equal(pending.length, 0);
 });
 
 test("ensureFresh 成功后，排队的 ensureStepUp 不再弹窗", () => {

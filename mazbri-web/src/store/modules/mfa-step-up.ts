@@ -180,6 +180,16 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     return data;
   }
 
+  /** 立刻停掉本地倒计时。锁定或刷新失败时胶囊也不能继续显示绿色。 */
+  function clearElevation(): void {
+    active.value = false;
+    remainingSecs.value = 0;
+    clientDeadline.value = null;
+    expiresAt.value = null;
+    reason.value = "invalidated";
+    clearTimers();
+  }
+
   async function lock(): Promise<void> {
     const ticket = epoch;
     const { endMfaStepUp } = await import("@/api/auth");
@@ -278,6 +288,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     refresh,
     stepUp,
     lock,
+    clearElevation,
     reset,
     remainingNow,
   };

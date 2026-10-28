@@ -127,13 +127,13 @@ macro_rules! proxy_handler_with_audit {
             if !can_manage_certificates(&claims) {
                 return Err(ApiError::Forbidden);
             }
+            info!($log_msg, claims.sub, $param_name);
+            require_license_issuance(&state).await?;
             if let Err(response) =
                 super::common::enforce_cert_mfa(&state, &claims, $require_mfa).await
             {
                 return Ok(*response);
             }
-            info!($log_msg, claims.sub, $param_name);
-            require_license_issuance(&state).await?;
             let client_ip = extract_client_ip(request.headers(), Some(addr));
             let config = get_cert_proxy_config(&state);
             let resolved_path = $path.replace("{}", &$param_name);

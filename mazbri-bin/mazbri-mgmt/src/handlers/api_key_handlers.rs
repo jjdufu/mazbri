@@ -27,6 +27,8 @@ pub async fn create_api_key(
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
+    svc::precheck_create_api_key(&state.db, &state.auth_db, &code, payload.scopes.as_slice())
+        .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
         &state,
         &claims,

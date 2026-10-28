@@ -4,7 +4,8 @@ use crate::middleware::auth::AdminClaims;
 use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -114,14 +115,150 @@ pub(super) async fn store_setup_artifacts(
     }
     Ok(())
 }
-pub(super) async fn verify_and_enable_mfa(
+pub(crate) struct SessionRotation {
+    pub sxp: i64,
+    pub old_refresh: AdminClaims,
+}
+
+fn unauthorized() -> axum::response::Response {
+    crate::error::ApiError::Unauthorized.into_response()
+}
+
+/// 重签前确认当前 access 仍在绝对到期内，并且 `mazbri_rt` 能解出旧 refresh。
+///
+/// 失败不写库、不消费 fresh、不推进步长。
+///
+/// # Errors
+///
+/// `sid` 不是 UUID、没有未来的 `sxp`、cookie 缺失或刷新令牌无法解码时返回 401。
+pub(crate) fn guard_session_rotation(
+    claims: &AdminClaims,
+    refresh_token: Option<&str>,
+    jwt_secret: &str,
+    now: i64,
+) -> Result<SessionRotation, Box<axum::response::Response>> {
+    if uuid::Uuid::parse_str(&claims.sid).is_err() {
+        return Err(Box::new(unauthorized()));
+    }
+    let Some(sxp) = claims.sxp else {
+        return Err(Box::new(unauthorized()));
+    };
+    if sxp <= now {
+        return Err(Box::new(unauthorized()));
+    }
+    let Some(token) = refresh_token.filter(|value| !value.is_empty()) else {
+        return Err(Box::new(unauthorized()));
+    };
+    let old_refresh =
+        admin_token::decode_refresh(token, jwt_secret).map_err(|_| Box::new(unauthorized()))?;
+    Ok(SessionRotation { sxp, old_refresh })
+}
+
+pub(super) struct ResignedSession {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: i64,
+    pub refresh_max_age: u64,
+}
+
+pub(super) async fn resign_bound_session(
     pool: &PgPool,
-    user_id: uuid::Uuid,
+    claims: &AdminClaims,
+    jwt_secret: &str,
+    access_ttl_fallback: u64,
+    sxp: i64,
+    issued_at: i64,
+) -> Result<ResignedSession, Box<axum::response::Response>> {
+    if sxp <= issued_at {
+        return Err(Box::new(unauthorized()));
+    }
+    let binding = admin_token::SessionBinding {
+        sid: claims.sid.clone(),
+        sxp: Some(sxp),
+    };
+    let access_ttl =
+        crate::services::admin::resolve_access_token_expiration_secs(pool, access_ttl_fallback)
+            .await;
+    let token = crate::services::admin::generate_admin_jwt(
+        &claims.sub,
+        &claims.user_id,
+        &claims.role,
+        &binding,
+        jwt_secret,
+        i64::saturating_from(access_ttl),
+        issued_at,
+    )
+    .map_err(|error| {
+        error!("failed to resign access token: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    let refresh = crate::services::admin::issue_refresh_token(
+        &claims.sub,
+        &claims.user_id,
+        &claims.role,
+        &binding,
+        jwt_secret,
+        issued_at,
+    )
+    .map_err(|error| {
+        error!("failed to resign refresh token: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    let refresh_max_age = u64::try_from(sxp.saturating_sub(issued_at).max(1)).unwrap_or(1);
+    Ok(ResignedSession {
+        access_token: token.token,
+        refresh_token: refresh.token,
+        expires_in: token.exp.saturating_sub(token.iat).max(1),
+        refresh_max_age,
+    })
+}
+
+pub(super) async fn revoke_old_refresh(redis: &RedisClient, old: &AdminClaims, issued_at: i64) {
+    let Some(jti) = old.jti.as_deref() else {
+        return;
+    };
+    let ttl = (old.exp - issued_at).max(1);
+    if let Err(error) = crate::middleware::auth::revoke_jti(redis, jti, ttl).await {
+        error!("Failed to revoke refresh token jti: {error}");
+    }
+}
+
+pub(super) fn unavailable_with_session(
+    access_token: &str,
+    refresh_token: &str,
+    access_max_age: u64,
+    refresh_max_age: u64,
+) -> axum::response::Response {
+    crate::audit::set_failure_reason("mfa_check_unavailable");
+    crate::audit::mark_security_event();
+    let mut response = crate::response::coded_err(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "MFA_CHECK_UNAVAILABLE",
+        mazbri_i18n::mfa::check_unavailable(),
+        &serde_json::json!({}),
+    );
+    crate::middleware::auth::set_session_cookies(
+        &mut response,
+        access_token,
+        refresh_token,
+        access_max_age,
+        refresh_max_age,
+    );
+    response
+}
+
+/// 只验 TOTP 并返回步长。不写启用、不推进步长。
+pub(super) fn verify_totp_for_enable(
     mfa_service: &MfaService,
     encrypted_secret: &str,
     totp_code: &str,
     username: &str,
-    changed_at: chrono::DateTime<chrono::Utc>,
 ) -> Result<i64, Box<axum::response::Response>> {
     let secret = match mfa_service.decrypt_secret(encrypted_secret) {
         Ok(secret) => secret,
@@ -141,13 +278,69 @@ pub(super) async fn verify_and_enable_mfa(
             mazbri_i18n::mfa::invalid_totp(),
         )));
     };
+    Ok(step_at)
+}
+
+pub(super) fn reused_enable_response() -> axum::response::Response {
+    crate::audit::set_failure_reason("mfa_code_reused");
+    crate::response::coded_err(
+        StatusCode::BAD_REQUEST,
+        "MFA_CODE_REUSED",
+        mazbri_i18n::mfa::code_reused(),
+        &serde_json::json!({}),
+    )
+}
+
+/// 自愿启用：验码通过后，用同一条语句推进步长并写启用。
+pub(super) async fn commit_voluntary_enable(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    step_at: i64,
+    changed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, Box<axum::response::Response>> {
     match repo::enable_mfa(pool, user_id, step_at, changed_at).await {
         Ok(Some(epoch)) => Ok(epoch),
-        Ok(None) => {
-            crate::audit::set_failure_reason("mfa_code_reused");
+        Ok(None) => Err(Box::new(reused_enable_response())),
+        Err(error) => {
+            error!("Failed to enable MFA: {}", error);
             Err(Box::new(ApiResponse::err(
-                StatusCode::BAD_REQUEST,
-                mazbri_i18n::mfa::code_reused(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_enable(),
+            )))
+        }
+    }
+}
+
+pub(super) async fn advance_enable_step(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    step_at: i64,
+) -> Result<(), Box<axum::response::Response>> {
+    match repo::advance_totp_step(pool, user_id, step_at).await {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(Box::new(reused_enable_response())),
+        Err(error) => {
+            error!("Failed to advance MFA step: {error}");
+            Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_enable(),
+            )))
+        }
+    }
+}
+
+pub(super) async fn commit_required_enable(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    changed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, Box<axum::response::Response>> {
+    match repo::mark_mfa_enabled(pool, user_id, changed_at).await {
+        Ok(Some(epoch)) => Ok(epoch),
+        Ok(None) => {
+            error!("required enable write matched no disabled row for {user_id}");
+            Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_enable(),
             )))
         }
         Err(error) => {

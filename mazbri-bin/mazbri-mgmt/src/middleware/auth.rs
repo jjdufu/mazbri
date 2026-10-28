@@ -272,6 +272,25 @@ fn append_set_cookie(headers: &mut HeaderMap, cookie: &str) {
     }
 }
 
+/// 把已签发的 access / refresh 写进响应的 `Set-Cookie`。调用方自己决定 HTTP 状态。
+pub fn set_session_cookies(
+    response: &mut Response,
+    access_token: &str,
+    refresh_token: &str,
+    access_max_age: u64,
+    refresh_max_age: u64,
+) {
+    let headers = response.headers_mut();
+    append_set_cookie(
+        headers,
+        &format_set_cookie(ACCESS_COOKIE, access_token, access_max_age, false),
+    );
+    append_set_cookie(
+        headers,
+        &format_set_cookie(REFRESH_COOKIE, refresh_token, refresh_max_age, false),
+    );
+}
+
 /// Build JSON success response; if `token`/`refresh_token` present, set `HttpOnly` cookies
 /// and **omit** those fields from the body (XSS cannot read them from JS storage).
 pub fn json_with_session_cookies(

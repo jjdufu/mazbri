@@ -1,6 +1,7 @@
 use super::common::{
-    MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service, ok_json,
-    prepare_setup_artifacts, store_setup_artifacts, verify_and_enable_mfa,
+    MfaServiceErrorMode, advance_enable_step, authenticate_stage_token, commit_required_enable,
+    consume_stage_token, get_mfa_service, ok_json, prepare_setup_artifacts, resign_bound_session,
+    store_setup_artifacts, unavailable_with_session, verify_totp_for_enable,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminUser;
@@ -10,7 +11,6 @@ use crate::repositories::mfa as repo;
 use crate::response::ApiResponse;
 use crate::services::admin::issue_stage_token;
 use axum::http::StatusCode;
-use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -162,58 +162,6 @@ async fn load_required_enable_state(
     Ok((state, encrypted_secret))
 }
 
-fn issue_bound_session(
-    claims: &crate::middleware::auth::AdminClaims,
-    role: &str,
-    jwt_secret: &str,
-    access_ttl: u64,
-    refresh_ttl: u64,
-    issued_at: i64,
-) -> Result<
-    (
-        crate::middleware::admin_token::IssuedToken,
-        crate::middleware::admin_token::IssuedToken,
-    ),
-    Box<axum::response::Response>,
-> {
-    let binding = crate::middleware::admin_token::SessionBinding {
-        sid: claims.sid.clone(),
-        sxp: Some(issued_at.saturating_add(i64::saturating_from(refresh_ttl).max(1))),
-    };
-    let token = crate::services::admin::generate_admin_jwt(
-        &claims.sub,
-        &claims.user_id,
-        role,
-        &binding,
-        jwt_secret,
-        i64::saturating_from(access_ttl),
-        issued_at,
-    )
-    .map_err(|error| {
-        error!("Failed to generate JWT token: {}", error);
-        Box::new(ApiResponse::err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            mazbri_i18n::mfa::failed_generate_token(),
-        ))
-    })?;
-    let refresh_token = crate::services::admin::issue_refresh_token(
-        &claims.sub,
-        &claims.user_id,
-        role,
-        &binding,
-        jwt_secret,
-        issued_at,
-    )
-    .map_err(|error| {
-        error!("Failed to generate refresh token: {}", error);
-        Box::new(ApiResponse::err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            mazbri_i18n::mfa::failed_generate_token(),
-        ))
-    })?;
-    Ok((token, refresh_token))
-}
-
 pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let (claims, user_id) = match authenticate_stage_token(
@@ -236,81 +184,121 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
             Ok(service) => service,
             Err(response) => return *response,
         };
-    let issued_at = chrono::Utc::now().timestamp();
-    let changed_at =
-        chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    let epoch = match verify_and_enable_mfa(
-        pool,
-        user_id,
+    let step_at = match verify_totp_for_enable(
         &mfa_service,
         &encrypted_secret,
         params.totp_code,
         &claims.sub,
-        changed_at,
-    )
-    .await
-    {
-        Ok(epoch) => epoch,
+    ) {
+        Ok(step_at) => step_at,
         Err(response) => return *response,
     };
-    let refresh_ttl = i64::try_from(params.refresh_token_expiration_secs)
-        .unwrap_or(i64::MAX)
-        .max(1);
-    let sxp = issued_at.saturating_add(refresh_ttl);
-    if let Err(error) = crate::services::mfa::step_up::open_totp_window(
-        params.redis,
-        &claims.sid,
-        &user_id.to_string(),
-        epoch,
-        issued_at,
-        mfa_service.config().step_up_ttl_secs,
-        sxp,
-    )
-    .await
-    {
-        tracing::error!("failed to open step-up window after required enable: {error}");
+    if let Err(response) = advance_enable_step(pool, user_id, step_at).await {
+        return *response;
     }
     if let Err(response) = consume_stage_token(params.redis, &claims).await {
         return *response;
     }
-    let access_ttl = crate::services::admin::resolve_access_token_expiration_secs(
-        pool,
-        params.jwt_expiration_secs,
-    )
-    .await;
-    let (token, refresh_token) = match issue_bound_session(
-        &claims,
-        &state.role,
-        params.jwt_secret,
-        access_ttl,
-        params.refresh_token_expiration_secs,
-        issued_at,
-    ) {
-        Ok(issued) => issued,
+    let issued_at = chrono::Utc::now().timestamp();
+    let changed_at =
+        chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
+    let epoch = match commit_required_enable(pool, user_id, changed_at).await {
+        Ok(epoch) => epoch,
         Err(response) => return *response,
     };
-    params.audit.log(user_audit(
+    finish_required_enable(FinishRequiredEnable {
+        params: &params,
+        pool,
+        claims: &claims,
         user_id,
+        role: state.role,
+        created_at: state.created_at,
+        epoch,
+        issued_at,
+        step_up_ttl: mfa_service.config().step_up_ttl_secs,
+    })
+    .await
+}
+
+struct FinishRequiredEnable<'a> {
+    params: &'a RequiredEnableParams<'a>,
+    pool: &'a PgPool,
+    claims: &'a crate::middleware::auth::AdminClaims,
+    user_id: uuid::Uuid,
+    role: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    epoch: i64,
+    issued_at: i64,
+    step_up_ttl: u64,
+}
+
+async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::response::Response {
+    let refresh_ttl = i64::try_from(args.params.refresh_token_expiration_secs)
+        .unwrap_or(i64::MAX)
+        .max(1);
+    let sxp = args.issued_at.saturating_add(refresh_ttl);
+    let session_claims = crate::middleware::auth::AdminClaims {
+        role: args.role.clone(),
+        ..args.claims.clone()
+    };
+    let resigned = match resign_bound_session(
+        args.pool,
+        &session_claims,
+        args.params.jwt_secret,
+        args.params.jwt_expiration_secs,
+        sxp,
+        args.issued_at,
+    )
+    .await
+    {
+        Ok(resigned) => resigned,
+        Err(response) => return *response,
+    };
+    let window_opened = crate::services::mfa::step_up::open_totp_window(
+        args.params.redis,
+        &args.claims.sid,
+        &args.user_id.to_string(),
+        args.epoch,
+        args.issued_at,
+        args.step_up_ttl,
+        sxp,
+    )
+    .await
+    .is_ok();
+    args.params.audit.log(user_audit(
+        args.user_id,
         AuditAction::MfaRequiredEnable,
         Some(serde_json::json!({
             "action": "mfa_required_enabled",
-            "username": claims.sub,
+            "username": args.claims.sub,
         })),
-        params.client_ip.clone(),
+        args.params.client_ip.clone(),
     ));
-    info!("MFA required enabled for user: {}", claims.sub);
+    info!("MFA required enabled for user: {}", args.claims.sub);
+    if !window_opened {
+        tracing::error!("failed to open step-up window after required enable");
+        return unavailable_with_session(
+            &resigned.access_token,
+            &resigned.refresh_token,
+            u64::try_from(resigned.expires_in).unwrap_or(1),
+            resigned.refresh_max_age,
+        );
+    }
     let user = AdminUser {
-        id: claims.user_id.clone(),
-        username: claims.sub.clone(),
-        role: state.role,
-        created_at: state.created_at.to_rfc3339(),
+        id: args.claims.user_id.clone(),
+        username: args.claims.sub.clone(),
+        role: args.role,
+        created_at: args.created_at.to_rfc3339(),
     };
-    ok_json(serde_json::json!({
-        "message": mazbri_i18n::mfa::enabled_success(),
-        "messageKey": "api.mfa.enabled_success",
-        "token": token.token,
-        "refresh_token": refresh_token.token,
-        "expires_in": token.exp.saturating_sub(token.iat).max(1),
-        "user": user,
-    }))
+    crate::middleware::auth::json_with_session_cookies(
+        serde_json::json!({
+            "message": mazbri_i18n::mfa::enabled_success(),
+            "messageKey": "api.mfa.enabled_success",
+            "token": resigned.access_token,
+            "refresh_token": resigned.refresh_token,
+            "expires_in": resigned.expires_in,
+            "user": user,
+        }),
+        Some(resigned.refresh_max_age),
+    )
 }

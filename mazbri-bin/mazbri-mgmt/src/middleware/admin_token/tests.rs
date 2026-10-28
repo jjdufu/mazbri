@@ -326,3 +326,85 @@ fn every_rejection_reason_has_frontend_audit_label() {
         );
     }
 }
+
+fn issue_bound(kind: TokenKind, binding: &SessionBinding, issued_at: i64, ttl: i64) -> IssuedToken {
+    issue_at(
+        kind,
+        TokenSubject {
+            username: "alice",
+            user_id: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a11",
+            role: "R_FINANCE",
+            binding,
+        },
+        SECRET,
+        ttl,
+        issued_at,
+    )
+    .expect("issue")
+}
+
+#[test]
+fn required_setup_reissue_keeps_sid() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let first = SessionBinding::stage(sid);
+    let issued = issue_bound(TokenKind::MfaSetup, &first, now, 300);
+    let claims = decode_kind(&issued.token, SECRET, TokenKind::MfaSetup).expect("decode");
+    let next = SessionBinding::stage(claims.sid.clone());
+    let rotated = issue_bound(TokenKind::MfaSetup, &next, now + 1, 300);
+    let again = decode_kind(&rotated.token, SECRET, TokenKind::MfaSetup).expect("decode");
+    assert_eq!(again.sid, sid);
+    assert!(again.sxp.is_none());
+}
+
+#[test]
+fn password_change_then_mfa_keeps_sid() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let reset = SessionBinding::stage(sid);
+    let reset_token = issue_bound(TokenKind::PasswordReset, &reset, now, 300);
+    let reset_claims =
+        decode_kind(&reset_token.token, SECRET, TokenKind::PasswordReset).expect("decode");
+    let mfa = SessionBinding::stage(reset_claims.sid.clone());
+    let pending = issue_bound(TokenKind::MfaPending, &mfa, now + 1, 300);
+    let pending_claims =
+        decode_kind(&pending.token, SECRET, TokenKind::MfaPending).expect("decode");
+    assert_eq!(pending_claims.sid, sid);
+}
+
+#[test]
+fn refresh_keeps_sid_and_sxp() {
+    let sid = "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12";
+    let now = chrono::Utc::now().timestamp();
+    let sxp = now + 3_600;
+    let binding = SessionBinding {
+        sid: sid.to_string(),
+        sxp: Some(sxp),
+    };
+    let access = issue_bound(TokenKind::Access, &binding, now, 900);
+    let claims = decode_kind(&access.token, SECRET, TokenKind::Access).expect("decode");
+    let copied = SessionBinding {
+        sid: claims.sid.clone(),
+        sxp: claims.sxp,
+    };
+    let refreshed = issue_bound(TokenKind::Access, &copied, now + 30, 900);
+    let again = decode_kind(&refreshed.token, SECRET, TokenKind::Access).expect("decode");
+    assert_eq!(again.sid, sid);
+    assert_eq!(again.sxp, Some(sxp));
+    assert!(again.exp <= sxp);
+}
+
+#[test]
+fn first_login_refresh_exp_equals_sxp() {
+    let issued_at = chrono::Utc::now().timestamp();
+    let refresh_ttl = 604_800;
+    let sxp = issued_at + refresh_ttl;
+    let binding = SessionBinding {
+        sid: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a12".to_string(),
+        sxp: Some(sxp),
+    };
+    let refresh = issue_bound(TokenKind::Refresh, &binding, issued_at, refresh_ttl);
+    let claims = decode_kind(&refresh.token, SECRET, TokenKind::Refresh).expect("decode");
+    assert_eq!(claims.exp, claims.sxp.unwrap_or(0));
+    assert_eq!(claims.exp, sxp);
+}

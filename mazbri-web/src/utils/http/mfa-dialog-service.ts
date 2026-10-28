@@ -3,7 +3,7 @@ import { $t } from "@/locales";
 import { router } from "@/router";
 import { ApiStatus } from "./status";
 import { createSafeHttpError } from "./error";
-import { afterFreshResolved } from "./mfa-error";
+import { drainDialogQueue, insertDialogTask } from "./mfa-error";
 import { classifySubmittedCode, type ExclusiveMfaCode } from "./mfa-step-up-state";
 import { ACCOUNT_SECURITY_PATH, resolveMfaSetupPath } from "./mfa-setup-path";
 
@@ -191,12 +191,14 @@ export function cancelMfaDialog(sessionId?: number): void {
 async function execute(task: QueueTask): Promise<void> {
   const { useMfaStepUpStore } = await import("@/store/modules/mfa-step-up");
   const store = useMfaStepUpStore();
+  let refreshed = false;
   try {
     await store.refresh();
+    refreshed = true;
   } catch {
-    // 位数可能仍是上次的值；弹窗仍可提交，由 step-up 接口给出最终错误。
+    // 刷新失败不能沿用旧的 active。位数可能仍是上次的值；弹窗仍可提交。
   }
-  if (task.kind === "step_up" && store.active) return;
+  if (task.kind === "step_up" && refreshed && store.active) return;
   const digits: 6 | 8 = store.totpDigits === 8 ? 8 : 6;
   await waitForHost();
   beginSession(task, digits);
@@ -211,6 +213,18 @@ async function execute(task: QueueTask): Promise<void> {
         );
         return;
       } catch (error) {
+        if (readErrorCode(error) === "MFA_LOCKED") {
+          store.clearElevation();
+          try {
+            await store.lock();
+          } catch {
+            await store.refresh().catch(() => undefined);
+          }
+          throw createSafeHttpError(
+            $t("common.mfaDialog.locked"),
+            ApiStatus.forbidden,
+          );
+        }
         if (!isRecoverable(error)) throw error;
         viewState.submitting = false;
         viewState.errorCode = readErrorCode(error);
@@ -227,23 +241,7 @@ async function pump(): Promise<void> {
   if (pumping) return;
   pumping = true;
   try {
-    while (queue.length > 0) {
-      const task = queue.shift();
-      if (!task) break;
-      try {
-        await execute(task);
-        task.resolve();
-        if (task.kind === "fresh") {
-          const remaining = afterFreshResolved(queue);
-          const keep = new Set<QueueTask>(remaining);
-          const skipped = queue.filter((item) => !keep.has(item));
-          queue.splice(0, queue.length, ...remaining);
-          for (const item of skipped) item.resolve();
-        }
-      } catch (error) {
-        task.reject(error);
-      }
-    }
+    await drainDialogQueue(queue, execute);
   } finally {
     pumping = false;
     if (queue.length > 0) void pump();
@@ -252,7 +250,7 @@ async function pump(): Promise<void> {
 
 function enqueue(task: Omit<QueueTask, "resolve" | "reject">): Promise<void> {
   return new Promise((resolve, reject) => {
-    queue.push({ ...task, resolve, reject });
+    insertDialogTask(queue, { ...task, resolve, reject });
     void pump();
   });
 }

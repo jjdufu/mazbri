@@ -225,25 +225,48 @@ fn unauthorized(stale: bool) -> Response {
     crate::error::ApiError::Unauthorized.into_response()
 }
 
-struct CheckedSubject {
-    user_id: uuid::Uuid,
-    epoch: i64,
+#[derive(Debug)]
+pub(crate) struct CheckedSubject {
+    pub user_id: uuid::Uuid,
+    pub epoch: i64,
 }
 
-async fn load_checked_subject(
-    state: &AppState,
-    claims: &AdminClaims,
-) -> Result<CheckedSubject, Box<Response>> {
-    if uuid::Uuid::parse_str(&claims.sid).is_err() {
-        return Err(Box::new(unauthorized(false)));
+/// 账号复核失败。POST step-up 和守卫共用，避免再写一套判断。
+#[derive(Debug)]
+pub(crate) enum SubjectLoadError {
+    Unauthorized { stale: bool },
+    NotEnabled,
+    Locked { retry_after_secs: i64 },
+    Unavailable,
+}
+
+impl SubjectLoadError {
+    pub(crate) fn into_response(self) -> Response {
+        match self {
+            Self::Unauthorized { stale } => unauthorized(stale),
+            Self::NotEnabled => not_enabled(),
+            Self::Locked { retry_after_secs } => locked(retry_after_secs),
+            Self::Unavailable => unavailable(),
+        }
     }
-    let user_id = extract_user_id(claims).map_err(|error| Box::new(error.into_response()))?;
-    let row = crate::repositories::admin::get_step_up_subject(&state.admin_db, user_id)
+}
+
+pub(crate) async fn load_checked_subject(
+    pool: &sqlx::PgPool,
+    password_policy_cache: &crate::services::PasswordPolicyCache,
+    claims: &AdminClaims,
+) -> Result<CheckedSubject, SubjectLoadError> {
+    if uuid::Uuid::parse_str(&claims.sid).is_err() {
+        return Err(SubjectLoadError::Unauthorized { stale: false });
+    }
+    let user_id =
+        extract_user_id(claims).map_err(|_| SubjectLoadError::Unauthorized { stale: false })?;
+    let row = crate::repositories::admin::get_step_up_subject(pool, user_id)
         .await
-        .map_err(|_| Box::new(unavailable()))?
-        .ok_or_else(|| Box::new(unauthorized(false)))?;
+        .map_err(|_| SubjectLoadError::Unavailable)?
+        .ok_or(SubjectLoadError::Unauthorized { stale: false })?;
     let now = Utc::now();
-    let policy = state.password_policy_cache.get().await;
+    let policy = password_policy_cache.get().await;
     let (password_expired, _, _) = policy.check_password_expiry(Some(row.password_changed_at));
     let retry_after_secs = row
         .mfa_locked_until
@@ -277,10 +300,10 @@ async fn load_checked_subject(
             user_id,
             epoch: view.auth_epoch,
         }),
-        Err(SubjectDenial::Unauthorized) => Err(Box::new(unauthorized(false))),
-        Err(SubjectDenial::SessionStale) => Err(Box::new(unauthorized(true))),
-        Err(SubjectDenial::NotEnabled) => Err(Box::new(not_enabled())),
-        Err(SubjectDenial::Locked) => Err(Box::new(locked(retry_after_secs))),
+        Err(SubjectDenial::Unauthorized) => Err(SubjectLoadError::Unauthorized { stale: false }),
+        Err(SubjectDenial::SessionStale) => Err(SubjectLoadError::Unauthorized { stale: true }),
+        Err(SubjectDenial::NotEnabled) => Err(SubjectLoadError::NotEnabled),
+        Err(SubjectDenial::Locked) => Err(SubjectLoadError::Locked { retry_after_secs }),
     }
 }
 
@@ -293,7 +316,9 @@ pub async fn require_step_up(
     state: &AppState,
     claims: &AdminClaims,
 ) -> Result<StepUpVerified, Box<Response>> {
-    let checked = load_checked_subject(state, claims).await?;
+    let checked = load_checked_subject(&state.admin_db, &state.password_policy_cache, claims)
+        .await
+        .map_err(|error| Box::new(error.into_response()))?;
     let window = step_up::load_window(&state.redis, &claims.sid)
         .await
         .map_err(|_| Box::new(unavailable()))?
@@ -334,7 +359,9 @@ pub async fn require_fresh_mfa(
     claims: &AdminClaims,
     purpose: FreshPurpose,
 ) -> Result<(), Box<Response>> {
-    let checked = load_checked_subject(state, claims).await?;
+    let checked = load_checked_subject(&state.admin_db, &state.password_policy_cache, claims)
+        .await
+        .map_err(|error| Box::new(error.into_response()))?;
     let consumed = step_up::consume_fresh(
         &state.redis,
         &claims.sid,
@@ -345,6 +372,7 @@ pub async fn require_fresh_mfa(
     .await
     .map_err(|_| Box::new(unavailable()))?;
     if !consumed {
+        crate::audit::add_detail("purpose", serde_json::json!(purpose.as_str()));
         return Err(Box::new(fresh_required(purpose)));
     }
     crate::audit::add_detail("mfa", serde_json::json!("fresh"));
@@ -460,6 +488,7 @@ mod tests {
         let crypto = include_str!("tenant_crypto_handlers.rs");
         let api_keys = include_str!("api_key_handlers.rs");
         let certs = include_str!("../proxy/cert/certificates.rs");
+        let authorization = include_str!("../proxy/cert/authorization.rs");
 
         let window: &[(&str, &str)] = &[
             (crud, "create_admin"),
@@ -483,6 +512,18 @@ mod tests {
             (api_keys, "update_api_key"),
             (account, "recharge_tenant_account"),
             (account, "refund_tenant_account"),
+            (crypto, "activate_crypto_key"),
+            (crypto, "deprecate_crypto_key"),
+            (crypto, "disable_crypto_key"),
+            (crypto, "delete_crypto_key"),
+            (crypto, "retire_request_key"),
+            (crypto, "update_crypto_profile"),
+            (authorization, "import_license_proxy"),
+            (billing, "create_adjustment"),
+            (billing, "generate_bill"),
+            (billing, "create_bill_adjustment"),
+            (billing, "void_bill_adjustment"),
+            (billing, "generate_bill_async"),
         ];
         for (source, name) in window {
             let body = handler_source(source, name);
@@ -499,6 +540,8 @@ mod tests {
             (crypto, "rotate_crypto_key", "CryptoKeyReveal"),
             (api_keys, "create_api_key", "ApiKeyCreate"),
             (certs, "issue_certificate_proxy", "CertificateIssue"),
+            (crypto, "create_crypto_key", "CryptoKeyReveal"),
+            (crypto, "create_request_key", "RequestKeyCreate"),
         ];
         for (source, name, purpose) in fresh {
             let body = handler_source(source, name);
@@ -516,5 +559,51 @@ mod tests {
         assert!(certs.contains("CertificateRenew"));
         assert!(certs.contains("CertificateFull"));
         assert!(certs.contains("fresh_renew") || certs.contains("CertificateRenew"));
+    }
+
+    #[test]
+    fn legacy_mfa_header_and_columns_are_gone() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let roots = [
+            root.join("mazbri/mazbri-bin"),
+            root.join("mazbri/mazbri-web/src"),
+            root.join("mazbri/mazbri-libs"),
+        ];
+        let needles = [
+            concat!("x-mazbri-mfa-", "code"),
+            concat!("require_mfa_", "code"),
+            concat!("mfa_", "verified_at"),
+        ];
+        let mut hits = Vec::new();
+        for base in roots {
+            scan_legacy(&base, &needles, &mut hits);
+        }
+        assert!(hits.is_empty(), "legacy MFA markers remain: {hits:?}");
+    }
+
+    fn scan_legacy(dir: &std::path::Path, needles: &[&str], hits: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name == "target" || name == "node_modules" || name.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                scan_legacy(&path, needles, hits);
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            for needle in needles {
+                if text.contains(needle) {
+                    hits.push(format!("{}: {needle}", path.display()));
+                }
+            }
+        }
     }
 }

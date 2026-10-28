@@ -762,7 +762,6 @@ fn strictest_legacy_policy() -> LegacyMfaPolicyColumns {
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
 async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
-    use crate::mfa::MfaServiceCache;
     use crate::services::mfa::disable;
 
     let deps = deps().await;
@@ -812,10 +811,6 @@ async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
         },
     )
     .await;
-    let mfa_cache = Arc::new(MfaServiceCache::new(
-        deps.db.clone(),
-        crate::config::MfaConfig::default(),
-    ));
     let now = chrono::Utc::now().timestamp();
     let disable_claims = AdminClaims {
         iss: ISSUER.to_string(),
@@ -832,10 +827,11 @@ async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
     };
     let disable_status = disable(crate::services::mfa::DisableParams {
         pool: &deps.db,
-        mfa_cache: &mfa_cache,
         audit: &deps.audit,
         user_id: enrolled.id,
         claims: &disable_claims,
+        old_refresh: &disable_claims,
+        sxp: now + 604_800,
         jwt_secret: SECRET,
         redis: &deps.redis,
         access_ttl_fallback: 3600,

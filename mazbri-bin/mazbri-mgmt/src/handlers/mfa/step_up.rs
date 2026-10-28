@@ -76,12 +76,30 @@ fn factor_error(error: &FactorError) -> Response {
             mazbri_i18n::mfa::code_reused(),
             &serde_json::json!({}),
         ),
-        FactorError::Locked { retry_after_secs } => error_response(
-            StatusCode::FORBIDDEN,
-            "MFA_LOCKED",
-            "MFA 已锁定，请稍后再试",
-            &serde_json::json!({ "retry_after_secs": retry_after_secs }),
-        ),
+        FactorError::Locked {
+            retry_after_secs,
+            triggered,
+        } => {
+            if *triggered {
+                crate::audit::set_failure_reason("mfa_lock_triggered");
+            } else {
+                crate::audit::set_failure_reason("mfa_locked");
+            }
+            crate::audit::mark_security_event();
+            let message = "MFA 已锁定，请稍后再试";
+            let mut response = (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "success": false,
+                    "code": "MFA_LOCKED",
+                    "error": message,
+                    "retry_after_secs": retry_after_secs,
+                })),
+            )
+                .into_response();
+            crate::audit::AuditErrorInfo::attach(&mut response, "MFA_LOCKED", message);
+            response
+        }
         FactorError::NotEnabled => error_response(
             StatusCode::FORBIDDEN,
             "MFA_NOT_ENABLED",
@@ -175,6 +193,140 @@ async fn load_verified_factor(
     Ok((mfa_service, verified))
 }
 
+pub(crate) async fn rollback_step_up_grants(
+    redis: &mazbri_core::redis::RedisClient,
+    pool: &sqlx::PgPool,
+    sid: &str,
+    user_id: uuid::Uuid,
+    epoch: i64,
+    window_written: bool,
+    restore: Option<&second_factor::BackupRestore>,
+) {
+    if window_written
+        && let Err(error) = step_up::delete_if_match(
+            redis,
+            &format!("admin:mfa_step_up:{sid}"),
+            &user_id.to_string(),
+            epoch,
+            "",
+        )
+        .await
+    {
+        tracing::error!("failed to drop step-up window after grant failure: {error}");
+    }
+    if let Some(restore) = restore
+        && !second_factor::restore_backup_code(pool, user_id, restore).await
+    {
+        crate::audit::set_failure_reason("mfa_backup_restore_failed");
+        crate::audit::mark_security_event();
+    }
+}
+
+struct FreshGrant<'a> {
+    state: &'a AppState,
+    sid: &'a str,
+    user_id: uuid::Uuid,
+    epoch: i64,
+    purpose: Option<FreshPurpose>,
+    sxp: i64,
+    now: i64,
+    restore: Option<&'a second_factor::BackupRestore>,
+}
+
+async fn grant_requested_fresh(
+    grant: FreshGrant<'_>,
+) -> Result<Option<(FreshPurpose, u64)>, Box<Response>> {
+    let Some(purpose) = grant.purpose else {
+        return Ok(None);
+    };
+    let Some(fresh_ttl) = step_up::fresh_ttl(grant.sxp, grant.now) else {
+        rollback_step_up_grants(
+            grant.state.redis.as_ref(),
+            &grant.state.admin_db,
+            grant.sid,
+            grant.user_id,
+            grant.epoch,
+            true,
+            grant.restore,
+        )
+        .await;
+        return Err(Box::new(factor_error(&FactorError::Unavailable)));
+    };
+    if let Err(error) = step_up::grant_fresh(
+        &grant.state.redis,
+        grant.sid,
+        &grant.user_id.to_string(),
+        grant.epoch,
+        purpose,
+        fresh_ttl,
+        grant.now,
+    )
+    .await
+    {
+        tracing::error!("failed to grant fresh MFA authorization: {error}");
+        rollback_step_up_grants(
+            grant.state.redis.as_ref(),
+            &grant.state.admin_db,
+            grant.sid,
+            grant.user_id,
+            grant.epoch,
+            true,
+            grant.restore,
+        )
+        .await;
+        return Err(Box::new(factor_error(&FactorError::Unavailable)));
+    }
+    Ok(Some((purpose, fresh_ttl)))
+}
+
+struct StepUpGate {
+    user_id: uuid::Uuid,
+    purpose: Option<FreshPurpose>,
+    sxp: i64,
+    now: i64,
+    checked: crate::handlers::mfa_guard::CheckedSubject,
+}
+
+async fn gate_step_up(
+    state: &AppState,
+    claims: &crate::middleware::auth::AdminClaims,
+    req: &MfaStepUpRequest,
+) -> Result<StepUpGate, Box<Response>> {
+    let user_id =
+        extract_user_id_response(claims).map_err(|error| Box::new(error.into_response()))?;
+    let purpose = parse_purpose(req.purpose.as_deref())?;
+    if let Err(error) =
+        second_factor::exclusive_codes(req.totp_code.as_deref(), req.backup_code.as_deref())
+    {
+        return Err(Box::new(factor_error(&error)));
+    }
+    let now = Utc::now().timestamp();
+    let Some(sxp) = claims.sxp else {
+        return Err(Box::new(
+            crate::error::ApiError::Unauthorized.into_response(),
+        ));
+    };
+    if uuid::Uuid::parse_str(&claims.sid).is_err() || sxp <= now {
+        return Err(Box::new(
+            crate::error::ApiError::Unauthorized.into_response(),
+        ));
+    }
+    let checked = crate::handlers::mfa_guard::load_checked_subject(
+        &state.admin_db,
+        &state.password_policy_cache,
+        claims,
+    )
+    .await
+    .map_err(|error| Box::new(error.into_response()))?;
+    Ok(StepUpGate {
+        user_id,
+        purpose,
+        sxp,
+        now,
+        checked,
+    })
+}
+
 pub async fn mfa_step_up(
     State(state): State<AppState>,
     Extension(claims): Extension<crate::middleware::auth::AdminClaims>,
@@ -183,29 +335,36 @@ pub async fn mfa_step_up(
     Json(req): Json<MfaStepUpRequest>,
 ) -> Response {
     let client_ip = extract_client_ip(&headers, Some(addr));
-    let user_id = match extract_user_id_response(&claims) {
-        Ok(uid) => uid,
-        Err(error) => return error.into_response(),
-    };
-    let purpose = match parse_purpose(req.purpose.as_deref()) {
-        Ok(purpose) => purpose,
+    let gate = match gate_step_up(&state, &claims, &req).await {
+        Ok(gate) => gate,
         Err(response) => return *response,
     };
-    let Some(sxp) = claims.sxp else {
-        return crate::error::ApiError::Unauthorized.into_response();
-    };
-    let (mfa_service, verified) = match load_verified_factor(&state, user_id, &req).await {
+    let StepUpGate {
+        user_id,
+        purpose,
+        sxp,
+        now,
+        checked,
+    } = gate;
+    let (mfa_service, verified) = match load_verified_factor(&state, checked.user_id, &req).await {
         Ok(loaded) => loaded,
         Err(response) => return *response,
     };
-    let now = Utc::now().timestamp();
-    let Some(ttl) = step_up::effective_ttl(state.config.mfa.step_up_ttl_secs, sxp, now) else {
-        if let Some(restore) = &verified.backup_restore
-            && !second_factor::restore_backup_code(&state.admin_db, user_id, restore).await
-        {
-            crate::audit::set_failure_reason("mfa_backup_restore_failed");
-            crate::audit::mark_security_event();
-        }
+    let ttl = step_up::effective_ttl(state.config.mfa.step_up_ttl_secs, sxp, now);
+    if verified.auth_epoch != checked.epoch || ttl.is_none() {
+        rollback_step_up_grants(
+            &state.redis,
+            &state.admin_db,
+            &claims.sid,
+            checked.user_id,
+            checked.epoch,
+            false,
+            verified.backup_restore.as_ref(),
+        )
+        .await;
+        return crate::error::ApiError::Unauthorized.into_response();
+    }
+    let Some(ttl) = ttl else {
         return crate::error::ApiError::Unauthorized.into_response();
     };
     let method = match verified.method {
@@ -213,43 +372,40 @@ pub async fn mfa_step_up(
         FactorMethod::BackupCode => StepUpMethod::BackupCode,
     };
     let window = StepUpWindow {
-        uid: user_id.to_string(),
-        epoch: verified.auth_epoch,
+        uid: checked.user_id.to_string(),
+        epoch: checked.epoch,
         opened_at: now,
         until: now.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX)),
         method,
     };
     if let Err(error) = step_up::open_window(&state.redis, &claims.sid, &window, ttl).await {
         tracing::error!("failed to open MFA step-up window: {error}");
-        if let Some(restore) = &verified.backup_restore
-            && !second_factor::restore_backup_code(&state.admin_db, user_id, restore).await
-        {
-            crate::audit::set_failure_reason("mfa_backup_restore_failed");
-            crate::audit::mark_security_event();
-        }
+        rollback_step_up_grants(
+            &state.redis,
+            &state.admin_db,
+            &claims.sid,
+            checked.user_id,
+            checked.epoch,
+            false,
+            verified.backup_restore.as_ref(),
+        )
+        .await;
         return factor_error(&FactorError::Unavailable);
     }
-    let fresh = if let Some(purpose) = purpose {
-        let Some(fresh_ttl) = step_up::fresh_ttl(sxp, now) else {
-            return factor_error(&FactorError::Unavailable);
-        };
-        if let Err(error) = step_up::grant_fresh(
-            &state.redis,
-            &claims.sid,
-            &user_id.to_string(),
-            verified.auth_epoch,
-            purpose,
-            fresh_ttl,
-            now,
-        )
-        .await
-        {
-            tracing::error!("failed to grant fresh MFA authorization: {error}");
-            return factor_error(&FactorError::Unavailable);
-        }
-        Some((purpose, fresh_ttl))
-    } else {
-        None
+    let fresh = match grant_requested_fresh(FreshGrant {
+        state: &state,
+        sid: &claims.sid,
+        user_id: checked.user_id,
+        epoch: checked.epoch,
+        purpose,
+        sxp,
+        now,
+        restore: verified.backup_restore.as_ref(),
+    })
+    .await
+    {
+        Ok(fresh) => fresh,
+        Err(response) => return *response,
     };
     let data = step_up_body(
         &window,
@@ -273,60 +429,30 @@ pub async fn mfa_step_up(
     crate::response::ApiResponse::ok(data).into_response()
 }
 
-pub async fn mfa_step_up_status(
-    State(state): State<AppState>,
-    Extension(claims): Extension<crate::middleware::auth::AdminClaims>,
-) -> Response {
-    let user_id = match extract_user_id_response(&claims) {
-        Ok(uid) => uid,
-        Err(error) => return error.into_response(),
-    };
-    let row = match crate::repositories::mfa::get_mfa_status(&state.admin_db, user_id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => {
-            return crate::response::ApiResponse::ok(serde_json::json!({
-                "mfa_enabled": false,
-                "mfa_required": false,
-                "active": false,
-                "reason": "none",
-            }))
-            .into_response();
-        }
-        Err(error) => {
-            tracing::error!("failed to read MFA status: {error}");
-            return factor_error(&FactorError::Unavailable);
-        }
-    };
-    let digits = state
-        .mfa_cache
-        .get()
-        .await
-        .ok()
-        .map(|service| service.config().digits);
-    let mut data = serde_json::json!({
-        "mfa_enabled": row.mfa_enabled,
-        "mfa_required": row.mfa_required,
-        "totp_digits": digits.unwrap_or(state.config.mfa.digits),
-        "active": false,
-        "ttl_secs": state.config.mfa.step_up_ttl_secs,
-        "server_time": Utc::now().to_rfc3339(),
-    });
-    if !row.mfa_enabled {
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("reason".to_string(), serde_json::json!("none"));
-        }
-        return crate::response::ApiResponse::ok(data).into_response();
+fn mark_invalidated(mut data: serde_json::Value) -> Response {
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("active".to_string(), serde_json::json!(false));
+        obj.insert("reason".to_string(), serde_json::json!("invalidated"));
     }
+    crate::response::ApiResponse::ok(data).into_response()
+}
+
+async fn attach_live_window(
+    state: &AppState,
+    sid: &str,
+    user_id: uuid::Uuid,
+    mut data: serde_json::Value,
+) -> Response {
     let subject =
         match crate::repositories::admin::get_step_up_subject(&state.admin_db, user_id).await {
             Ok(Some(subject)) => subject,
-            Ok(None) => return crate::error::ApiError::Unauthorized.into_response(),
+            Ok(None) => return mark_invalidated(data),
             Err(error) => {
                 tracing::error!("failed to read step-up subject: {error}");
                 return factor_error(&FactorError::Unavailable);
             }
         };
-    let window = match step_up::load_window(&state.redis, &claims.sid).await {
+    let window = match step_up::load_window(&state.redis, sid).await {
         Ok(window) => window,
         Err(error) => {
             tracing::error!("failed to read step-up window: {error}");
@@ -343,7 +469,7 @@ pub async fn mfa_step_up_status(
                 Err(step_up::WindowMiss::Invalidated) => {
                     let _ = step_up::delete_if_match(
                         &state.redis,
-                        &format!("admin:mfa_step_up:{}", claims.sid),
+                        &format!("admin:mfa_step_up:{sid}"),
                         &window.uid,
                         window.epoch,
                         "",
@@ -371,6 +497,72 @@ pub async fn mfa_step_up_status(
         }
     }
     crate::response::ApiResponse::ok(data).into_response()
+}
+
+pub async fn mfa_step_up_status(
+    State(state): State<AppState>,
+    Extension(claims): Extension<crate::middleware::auth::AdminClaims>,
+) -> Response {
+    let user_id = match extract_user_id_response(&claims) {
+        Ok(uid) => uid,
+        Err(error) => return error.into_response(),
+    };
+    let row = match crate::repositories::mfa::get_mfa_status(&state.admin_db, user_id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return crate::response::ApiResponse::ok(serde_json::json!({
+                "mfa_enabled": false,
+                "mfa_required": false,
+                "active": false,
+                "reason": "invalidated",
+            }))
+            .into_response();
+        }
+        Err(error) => {
+            tracing::error!("failed to read MFA status: {error}");
+            return factor_error(&FactorError::Unavailable);
+        }
+    };
+    let digits = state
+        .mfa_cache
+        .get()
+        .await
+        .ok()
+        .map(|service| service.config().digits);
+    let mut data = serde_json::json!({
+        "mfa_enabled": row.mfa_enabled,
+        "mfa_required": row.mfa_required,
+        "totp_digits": digits.unwrap_or(state.config.mfa.digits),
+        "active": false,
+        "ttl_secs": state.config.mfa.step_up_ttl_secs,
+        "server_time": Utc::now().to_rfc3339(),
+    });
+    match crate::handlers::mfa_guard::load_checked_subject(
+        &state.admin_db,
+        &state.password_policy_cache,
+        &claims,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(crate::handlers::mfa_guard::SubjectLoadError::Unavailable) => {
+            return factor_error(&FactorError::Unavailable);
+        }
+        Err(_) => {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("active".to_string(), serde_json::json!(false));
+                obj.insert("reason".to_string(), serde_json::json!("invalidated"));
+            }
+            return crate::response::ApiResponse::ok(data).into_response();
+        }
+    }
+    if !row.mfa_enabled {
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("reason".to_string(), serde_json::json!("none"));
+        }
+        return crate::response::ApiResponse::ok(data).into_response();
+    }
+    attach_live_window(&state, &claims.sid, user_id, data).await
 }
 
 pub async fn mfa_step_up_end(

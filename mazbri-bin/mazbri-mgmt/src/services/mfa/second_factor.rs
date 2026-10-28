@@ -30,9 +30,15 @@ pub struct FactorSuccess {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FactorError {
     InvalidRequest,
-    Invalid { attempts_remaining: i32 },
+    Invalid {
+        attempts_remaining: i32,
+    },
     Reused,
-    Locked { retry_after_secs: i64 },
+    Locked {
+        retry_after_secs: i64,
+        /// 这次失败把账号锁住。进来时已经锁定则为 false。
+        triggered: bool,
+    },
     NotEnabled,
     Unavailable,
 }
@@ -47,6 +53,23 @@ pub struct FactorInput<'a> {
 
 fn present(value: Option<&str>) -> bool {
     value.is_some_and(|code| !code.trim().is_empty())
+}
+
+/// 两个码必须有且只有一个。纯判断，不读库、不计数。
+///
+/// # Errors
+///
+/// 都没有或都有时返回 [`FactorError::InvalidRequest`]。
+pub fn exclusive_codes(
+    totp_code: Option<&str>,
+    backup_code: Option<&str>,
+) -> Result<(), FactorError> {
+    let totp = present(totp_code);
+    let backup = present(backup_code);
+    if totp == backup {
+        return Err(FactorError::InvalidRequest);
+    }
+    Ok(())
 }
 
 fn backup_codes(value: Option<&serde_json::Value>) -> Vec<String> {
@@ -79,7 +102,10 @@ async fn record_invalid(
         let retry_after_secs = updated.mfa_locked_until.map_or(0, |until| {
             crate::services::mfa::step_up::retry_after(until, Utc::now())
         });
-        return Ok(FactorError::Locked { retry_after_secs });
+        return Ok(FactorError::Locked {
+            retry_after_secs,
+            triggered: true,
+        });
     }
     Ok(FactorError::Invalid {
         attempts_remaining: attempts_remaining(service.config().max_attempts, updated.mfa_attempts),
@@ -90,11 +116,8 @@ async fn record_invalid(
 ///
 /// 见 [`FactorError`]。基础设施故障不会增加失败计数。
 pub async fn verify_second_factor(input: FactorInput<'_>) -> Result<FactorSuccess, FactorError> {
+    exclusive_codes(input.totp_code, input.backup_code)?;
     let totp = present(input.totp_code);
-    let backup = present(input.backup_code);
-    if totp == backup {
-        return Err(FactorError::InvalidRequest);
-    }
     let state = repo::get_mfa_verify_state(input.pool, input.user_id)
         .await
         .map_err(|_| FactorError::Unavailable)?
@@ -106,7 +129,10 @@ pub async fn verify_second_factor(input: FactorInput<'_>) -> Result<FactorSucces
         let retry_after_secs = state.mfa_locked_until.map_or(0, |until| {
             crate::services::mfa::step_up::retry_after(until, Utc::now())
         });
-        return Err(FactorError::Locked { retry_after_secs });
+        return Err(FactorError::Locked {
+            retry_after_secs,
+            triggered: false,
+        });
     }
     let success = if totp {
         verify_totp(

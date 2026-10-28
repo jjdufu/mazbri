@@ -6,7 +6,7 @@ mod setup_flow;
 pub(crate) mod step_up;
 mod verification_flow;
 
-pub(crate) use common::authenticate_stage_token;
+pub(crate) use common::{authenticate_stage_token, guard_session_rotation};
 pub use enable_flow::{EnableParams, enable};
 pub use required_flow::{
     RequiredEnableParams, RequiredSetupParams, required_enable, required_setup,

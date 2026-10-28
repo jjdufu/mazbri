@@ -1,4 +1,7 @@
-use super::common::{MfaServiceErrorMode, consume_stage_token, get_mfa_service, ok_json};
+use super::common::{
+    MfaServiceErrorMode, consume_stage_token, get_mfa_service, ok_json, resign_bound_session,
+    revoke_old_refresh,
+};
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::mfa::MfaServiceCache;
 use crate::middleware::auth::AdminClaims;
@@ -51,10 +54,11 @@ pub async fn ensure_mfa_can_be_disabled(
 
 pub struct DisableParams<'a> {
     pub pool: &'a PgPool,
-    pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub user_id: uuid::Uuid,
     pub claims: &'a crate::middleware::auth::AdminClaims,
+    pub old_refresh: &'a crate::middleware::auth::AdminClaims,
+    pub sxp: i64,
     pub jwt_secret: &'a str,
     pub redis: &'a mazbri_core::redis::RedisClient,
     pub access_ttl_fallback: u64,
@@ -64,43 +68,20 @@ pub struct DisableParams<'a> {
 pub async fn disable(params: DisableParams<'_>) -> axum::response::Response {
     let DisableParams {
         pool,
-        mfa_cache,
         audit,
         user_id,
         claims,
+        old_refresh,
+        sxp,
         jwt_secret,
         redis,
         access_ttl_fallback,
         client_ip,
     } = params;
     let username = claims.sub.as_str();
-    let state = match repo::get_mfa_disable_state(pool, user_id).await {
-        Ok(state) => state,
-        Err(error) => {
-            error!("Database error during MFA disable: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::database_error(),
-            );
-        }
-    };
-    let Some(state) = state else {
-        return ApiResponse::err(StatusCode::NOT_FOUND, mazbri_i18n::mfa::user_not_found());
-    };
-    if !state.mfa_enabled {
-        return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
+    if let Err(response) = ensure_mfa_can_be_disabled(pool, user_id).await {
+        return *response;
     }
-    // 超管标记 mfa_required 的账号禁止自行关闭；管理员重置 MFA 后仍保持该标记。
-    if state.mfa_required {
-        crate::audit::set_failure_reason("mfa_required_by_policy");
-        return ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            mazbri_i18n::mfa::required_cannot_disable(),
-        );
-    }
-    let Some(sxp) = claims.sxp else {
-        return crate::error::ApiError::Unauthorized.into_response();
-    };
     let issued_at = chrono::Utc::now().timestamp();
     if sxp <= issued_at {
         return crate::error::ApiError::Unauthorized.into_response();
@@ -113,8 +94,21 @@ pub async fn disable(params: DisableParams<'_>) -> axum::response::Response {
             mazbri_i18n::mfa::failed_disable(),
         );
     }
+    let resigned = match resign_bound_session(
+        pool,
+        claims,
+        jwt_secret,
+        access_ttl_fallback,
+        sxp,
+        issued_at,
+    )
+    .await
+    {
+        Ok(resigned) => resigned,
+        Err(response) => return *response,
+    };
+    revoke_old_refresh(redis, old_refresh, issued_at).await;
     crate::services::mfa::step_up::close_session(redis, &claims.sid).await;
-    let _ = (mfa_cache, jwt_secret, access_ttl_fallback, issued_at, sxp);
     audit.log(user_audit(
         user_id,
         AuditAction::MfaDisable,
@@ -124,10 +118,16 @@ pub async fn disable(params: DisableParams<'_>) -> axum::response::Response {
         client_ip,
     ));
     info!("MFA disabled for user: {}", username);
-    ok_json(serde_json::json!(
-        { "message" : mazbri_i18n::mfa::disabled_success(), "messageKey" :
-        "api.mfa.disabled_success" }
-    ))
+    crate::middleware::auth::json_with_session_cookies(
+        serde_json::json!({
+            "message": mazbri_i18n::mfa::disabled_success(),
+            "messageKey": "api.mfa.disabled_success",
+            "token": resigned.access_token,
+            "refresh_token": resigned.refresh_token,
+            "expires_in": resigned.expires_in,
+        }),
+        Some(resigned.refresh_max_age),
+    )
 }
 pub struct VerifyParams<'a> {
     pub pool: &'a PgPool,
@@ -153,7 +153,7 @@ async fn issue_verified_token(
     role: &str,
     sid: &str,
     refresh_token_expiration_secs: u64,
-) -> Result<(String, String, u64), Box<axum::response::Response>> {
+) -> Result<(String, String, u64, u64), Box<axum::response::Response>> {
     let issued_at = chrono::Utc::now().timestamp();
     let binding = crate::middleware::admin_token::SessionBinding {
         sid: sid.to_string(),
@@ -196,38 +196,81 @@ async fn issue_verified_token(
     })?;
     let expires_in =
         u64::try_from(token.exp.saturating_sub(token.iat).max(1)).unwrap_or(access_ttl);
-    Ok((token.token, refresh_token.token, expires_in))
+    let refresh_max_age = u64::try_from(
+        binding
+            .sxp
+            .unwrap_or(token.exp)
+            .saturating_sub(issued_at)
+            .max(1),
+    )
+    .unwrap_or(refresh_token_expiration_secs);
+    Ok((
+        token.token,
+        refresh_token.token,
+        expires_in,
+        refresh_max_age,
+    ))
 }
 
 fn factor_login_error(
     error: &crate::services::mfa::second_factor::FactorError,
 ) -> axum::response::Response {
+    use crate::services::mfa::second_factor::FactorError;
     match error {
-        crate::services::mfa::second_factor::FactorError::InvalidRequest => {
+        FactorError::InvalidRequest => {
             crate::audit::set_failure_reason("mfa_invalid_request");
-            ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::invalid_request())
+            crate::response::coded_err(
+                StatusCode::BAD_REQUEST,
+                "MFA_INVALID_REQUEST",
+                mazbri_i18n::mfa::invalid_request(),
+                &serde_json::json!({}),
+            )
         }
-        crate::services::mfa::second_factor::FactorError::Invalid { .. } => {
+        FactorError::Invalid { attempts_remaining } => {
             crate::audit::set_failure_reason("mfa_invalid_code");
-            ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::invalid_code())
+            crate::response::coded_err(
+                StatusCode::BAD_REQUEST,
+                "MFA_INVALID_CODE",
+                mazbri_i18n::mfa::invalid_code(),
+                &serde_json::json!({ "attempts_remaining": attempts_remaining }),
+            )
         }
-        crate::services::mfa::second_factor::FactorError::Reused => {
+        FactorError::Reused => {
             crate::audit::set_failure_reason("mfa_code_reused");
-            ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::code_reused())
+            crate::response::coded_err(
+                StatusCode::BAD_REQUEST,
+                "MFA_CODE_REUSED",
+                mazbri_i18n::mfa::code_reused(),
+                &serde_json::json!({}),
+            )
         }
-        crate::services::mfa::second_factor::FactorError::Locked { .. } => {
-            crate::audit::set_failure_reason("mfa_locked");
+        FactorError::Locked {
+            retry_after_secs,
+            triggered,
+        } => {
+            if *triggered {
+                crate::audit::set_failure_reason("mfa_lock_triggered");
+            } else {
+                crate::audit::set_failure_reason("mfa_locked");
+            }
             crate::audit::mark_security_event();
-            ApiResponse::err(StatusCode::FORBIDDEN, mazbri_i18n::mfa::locked())
+            crate::response::coded_err(
+                StatusCode::FORBIDDEN,
+                "MFA_LOCKED",
+                mazbri_i18n::mfa::locked(),
+                &serde_json::json!({ "retry_after_secs": retry_after_secs }),
+            )
         }
-        crate::services::mfa::second_factor::FactorError::NotEnabled => {
+        FactorError::NotEnabled => {
             ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled())
         }
-        crate::services::mfa::second_factor::FactorError::Unavailable => {
+        FactorError::Unavailable => {
             crate::audit::set_failure_reason("mfa_check_unavailable");
-            ApiResponse::err(
+            crate::response::coded_err(
                 StatusCode::SERVICE_UNAVAILABLE,
+                "MFA_CHECK_UNAVAILABLE",
                 mazbri_i18n::mfa::check_unavailable(),
+                &serde_json::json!({}),
             )
         }
     }
@@ -252,6 +295,10 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         totp_code.is_some(),
         backup_code.is_some()
     );
+    if let Err(error) = crate::services::mfa::second_factor::exclusive_codes(totp_code, backup_code)
+    {
+        return factor_login_error(&error);
+    }
     let state = match repo::get_mfa_verify_state(pool, user_id).await {
         Ok(state) => state,
         Err(error) => {
@@ -341,7 +388,7 @@ struct FinishVerifiedLoginParams<'a> {
 }
 
 async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::response::Response {
-    let (token, refresh_token, access_ttl) = match issue_verified_token(
+    let (token, refresh_token, access_ttl, refresh_max_age) = match issue_verified_token(
         params.pool,
         params.jwt_secret,
         params.username,
@@ -382,14 +429,22 @@ async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::r
         "role": params.role,
         "created_at": params.created_at.to_rfc3339(),
     });
-    ok_json(serde_json::json!({
-        "token": token,
-        "refresh_token": refresh_token,
-        "expires_in": access_ttl,
-        "user": user,
-    }))
+    crate::middleware::auth::json_with_session_cookies(
+        serde_json::json!({
+            "token": token,
+            "refresh_token": refresh_token,
+            "expires_in": access_ttl,
+            "user": user,
+        }),
+        Some(refresh_max_age),
+    )
 }
-pub async fn status(pool: &PgPool, user_id: uuid::Uuid) -> axum::response::Response {
+pub async fn status(
+    pool: &PgPool,
+    mfa_cache: &MfaServiceCache,
+    fallback_digits: u32,
+    user_id: uuid::Uuid,
+) -> axum::response::Response {
     let row = match repo::get_mfa_status(pool, user_id).await {
         Ok(row) => row,
         Err(error) => {
@@ -407,8 +462,16 @@ pub async fn status(pool: &PgPool, user_id: uuid::Uuid) -> axum::response::Respo
         .mfa_backup_codes
         .and_then(|value| value.as_array().map(std::vec::Vec::len))
         .unwrap_or(0);
-    ok_json(serde_json::json!(
-        { "enabled" : row.mfa_enabled, "changed_at" : row.mfa_changed_at.map(| time
-        | time.to_rfc3339()), "mfa_required" : row.mfa_required, "backup_codes_remaining" : backup_codes_remaining }
-    ))
+    let totp_digits = mfa_cache
+        .get()
+        .await
+        .ok()
+        .map_or(fallback_digits, |service| service.config().digits);
+    ok_json(serde_json::json!({
+        "enabled": row.mfa_enabled,
+        "changed_at": row.mfa_changed_at.map(|time| time.to_rfc3339()),
+        "mfa_required": row.mfa_required,
+        "backup_codes_remaining": backup_codes_remaining,
+        "totp_digits": totp_digits,
+    }))
 }

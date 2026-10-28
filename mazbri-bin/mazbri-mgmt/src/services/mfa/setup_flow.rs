@@ -33,11 +33,6 @@ pub async fn setup(params: SetupParams<'_>) -> axum::response::Response {
         current_password,
         client_ip,
     } = params;
-    if let Err(response) =
-        verify_current_password(pool, password_policy_cache, user_id, current_password).await
-    {
-        return *response;
-    }
     let state = match repo::get_mfa_setup_state(pool, user_id).await {
         Ok(state) => state,
         Err(error) => {
@@ -56,6 +51,11 @@ pub async fn setup(params: SetupParams<'_>) -> axum::response::Response {
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::already_enabled_disable(),
         );
+    }
+    if let Err(response) =
+        verify_current_password(pool, password_policy_cache, user_id, current_password).await
+    {
+        return *response;
     }
     let mfa_service =
         match get_mfa_service(mfa_cache, MfaServiceErrorMode::ServerNotConfigured).await {
@@ -106,15 +106,22 @@ async fn verify_current_password(
             )));
         }
     };
-    let locked = sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+    let locked = match sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
         "SELECT locked_until FROM admin_users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await
-    .ok()
-    .flatten()
-    .flatten();
+    {
+        Ok(row) => row.flatten(),
+        Err(error) => {
+            error!("Database error reading account lock during MFA setup: {error}");
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
     if locked.is_some_and(|until| until > chrono::Utc::now()) {
         crate::audit::set_failure_reason("account_locked");
         return Err(Box::new(

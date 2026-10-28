@@ -115,6 +115,40 @@ pub(crate) async fn proxy_request(
         }
     }
 }
+pub(crate) enum CertificateLookup {
+    Present,
+    Missing,
+    Unavailable,
+}
+
+/// 只确认证书存在。打 `GET /certificates/{id}`，不打 `/full`，因此不会取出 `key_pem`。
+pub(crate) async fn lookup_certificate(
+    client: &Client,
+    config: &CertProxyConfig,
+    id: &str,
+) -> CertificateLookup {
+    let url = format!(
+        "{}/certificates/{id}",
+        config.cert_service_url.trim_end_matches('/')
+    );
+    let req = client.get(url).bearer_auth(&config.cert_service_token);
+    match crate::audit::actor_header::send_to_cert(req).await {
+        Ok(response) if response.status().is_success() => CertificateLookup::Present,
+        Ok(response) if response.status().as_u16() == 404 => CertificateLookup::Missing,
+        Ok(response) => {
+            error!(
+                "cert-service existence check returned {}",
+                response.status()
+            );
+            CertificateLookup::Unavailable
+        }
+        Err(error) => {
+            error!("cert-service existence check failed: {error}");
+            CertificateLookup::Unavailable
+        }
+    }
+}
+
 pub(crate) fn parse_json_body(body_bytes: &[u8]) -> Option<Value> {
     if body_bytes.is_empty() {
         return None;

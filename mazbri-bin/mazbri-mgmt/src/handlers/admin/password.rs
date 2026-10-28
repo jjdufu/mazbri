@@ -42,7 +42,11 @@ pub async fn first_login_change_password(
         AuditAction::PasswordChangeFirstLogin,
         AuditResourceType::User,
         user_id.to_string(),
-        Some(serde_json::json!({ "username" : claims.sub, "first_login" : true })),
+        Some(serde_json::json!({
+            "username": claims.sub,
+            "first_login": true,
+            "auth_epoch_bumped": true,
+        })),
         client_ip,
     ));
     let refresh_max_age = data
@@ -72,7 +76,10 @@ pub async fn change_password(
         AuditAction::PasswordChange,
         AuditResourceType::User,
         user_id.to_string(),
-        Some(serde_json::json!({ "username" : claims.sub })),
+        Some(serde_json::json!({
+            "username": claims.sub,
+            "auth_epoch_bumped": true,
+        })),
         client_ip,
     ));
     Ok(ApiResponse::ok(data))
