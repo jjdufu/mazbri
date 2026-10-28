@@ -30,11 +30,15 @@ pub struct AdminClaims {
     pub role: String,
     pub iat: i64,
     pub exp: i64,
-    /// Present on tokens issued after H-11; older tokens may omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_type: Option<String>,
+    /// 密码验证成功时生成的会话号。缺失即解码失败。
+    pub sid: String,
+    /// 会话绝对到期（刷新令牌 `exp`）。只有临时令牌可以省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sxp: Option<i64>,
 }
 #[derive(Clone)]
 pub struct AdminAuthState {
@@ -593,6 +597,8 @@ mod role_helper_tests {
             exp: 0,
             jti: None,
             token_type: None,
+            sid: uuid::Uuid::nil().to_string(),
+            sxp: None,
         }
     }
 

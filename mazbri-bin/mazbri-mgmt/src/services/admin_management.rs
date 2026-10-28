@@ -177,6 +177,39 @@ pub async fn get_admin(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 只判断这次保存是否要把 `mfa_required` 从 true 改为 false。校验失败时与更新接口相同。
+///
+/// # Errors
+///
+/// 无权限、目标不存在或目标是超级管理员时返回错误。
+pub async fn admin_update_lifts_mfa_requirement(
+    pool: &PgPool,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+    req: &UpdateAdminRequest,
+) -> Result<bool, ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    let current = repo::find_edit_state(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load admin edit state: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    if req.role.as_ref().is_some_and(|role| role != &current.role)
+        || req.force_password_reset.is_some()
+        || req.mfa_required.is_some()
+    {
+        helpers::ensure_not_super_admin_target(&current.role)?;
+    }
+    Ok(current.mfa_required && req.mfa_required == Some(false))
+}
+
+/// # Errors
+///
+/// 无权限、校验失败或数据库更新失败时返回错误。
 pub async fn update_admin(
     pool: &PgPool,
     audit: &AuditService,
@@ -184,6 +217,7 @@ pub async fn update_admin(
     id: uuid::Uuid,
     req: &UpdateAdminRequest,
     client_ip: Option<String>,
+    fresh_for_lift: bool,
 ) -> Result<serde_json::Value, ApiError> {
     if !can_manage_admins(claims) {
         return Err(ApiError::Forbidden);
@@ -215,14 +249,40 @@ pub async fn update_admin(
     if !has_updates {
         return Err(ApiError::validation("没有要更新的字段".to_string()));
     }
+    let current_flags = repo::find_edit_state(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load admin edit state: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    let role_changed = req
+        .role
+        .as_ref()
+        .is_some_and(|role| role != &current_flags.role);
+    let mfa_required_changed = req
+        .mfa_required
+        .is_some_and(|value| value != current_flags.mfa_required);
+    let force_reset_raised =
+        req.force_password_reset == Some(true) && !current_flags.force_password_reset;
+    let lifts_mfa_requirement = current_flags.mfa_required && req.mfa_required == Some(false);
+    if lifts_mfa_requirement && !fresh_for_lift {
+        return Err(ApiError::validation(
+            "解除强制 MFA 需要重新验证".to_string(),
+        ));
+    }
+    let bump_epoch = role_changed || mfa_required_changed || force_reset_raised;
     let row = repo::update_admin(
         pool,
-        id,
-        req.display_name.as_deref(),
-        req.email.as_deref(),
-        req.role.as_deref(),
-        req.mfa_required,
-        req.force_password_reset,
+        repo::AdminUpdate {
+            id,
+            display_name: req.display_name.as_deref(),
+            email: req.email.as_deref(),
+            role: req.role.as_deref(),
+            mfa_required: req.mfa_required,
+            force_password_reset: req.force_password_reset,
+            bump_epoch,
+        },
     )
     .await
     .map_err(|e| {
@@ -237,7 +297,7 @@ pub async fn update_admin(
         resource_type: AuditResourceType::Admin,
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!(
-            { "username" : current.username, "updated_fields" : { "display_name"
+            { "username" : current.username, "auth_epoch_bumped" : bump_epoch, "updated_fields" : { "display_name"
             : req.display_name.is_some(), "email" : req.email.is_some(), "role" :
             req.role.is_some(), "mfa_required" : req.mfa_required.is_some(), "force_password_reset" : req.force_password_reset.is_some() } }
         )),
@@ -292,6 +352,71 @@ pub async fn delete_admin(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 重置密码的校验。通过后调用方再消费 fresh，失败不会消耗授权。
+///
+/// # Errors
+///
+/// 权限、复杂度、目标保护或历史密码校验失败时返回错误。
+pub async fn precheck_password_reset(
+    pool: &PgPool,
+    password_policy_cache: &PasswordPolicyCache,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+    req: &ResetPasswordRequest,
+) -> Result<(), ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    helpers::validate_password_strength(password_policy_cache, &req.new_password).await?;
+    let admin = repo::find_brief_by_id(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check admin: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)?;
+    let password_hash = helpers::hash_password(&req.new_password).map_err(|e| {
+        tracing::error!("Failed to hash password: {}", e);
+        ApiError::internal("处理密码失败".to_string())
+    })?;
+    let policy = password_policy_cache.get().await;
+    if let Some(reuse_error) = policy.check_password_reuse(pool, id, &password_hash).await {
+        return Err(ApiError::validation(reuse_error));
+    }
+    Ok(())
+}
+
+/// 重置 MFA 前的目标校验。未启用时不算失败，调用方不应再要 fresh。
+///
+/// # Errors
+///
+/// 无权限、目标不存在或目标是超级管理员时返回错误。
+pub async fn precheck_mfa_reset(
+    pool: &PgPool,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+) -> Result<(), ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    let admin = repo::find_mfa_by_id(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check admin: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)?;
+    if !admin.mfa_enabled {
+        return Err(ApiError::validation("该用户未启用 MFA".to_string()));
+    }
+    Ok(())
+}
+
+/// # Errors
+///
+/// 无权限、校验失败或数据库更新失败时返回错误。
 pub async fn reset_password(
     pool: &PgPool,
     audit: &AuditService,

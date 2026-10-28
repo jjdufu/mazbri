@@ -81,12 +81,68 @@ impl TokenKind {
     }
 }
 
+/// 会话绑定。`sid` 只在密码验证成功时生成；中途换发只复制。
+#[derive(Debug, Clone)]
+pub struct SessionBinding {
+    pub sid: String,
+    /// 会话绝对到期。临时令牌可以不带。
+    pub sxp: Option<i64>,
+}
+
+impl SessionBinding {
+    #[must_use]
+    pub fn new_login(now: i64, refresh_ttl_secs: i64) -> Self {
+        Self {
+            sid: uuid::Uuid::new_v4().to_string(),
+            sxp: Some(now.saturating_add(refresh_ttl_secs.max(1))),
+        }
+    }
+
+    #[must_use]
+    pub fn stage(sid: impl Into<String>) -> Self {
+        Self {
+            sid: sid.into(),
+            sxp: None,
+        }
+    }
+
+    /// # Errors
+    ///
+    /// `sid` 不是 UUID 时返回错误。
+    pub fn require_uuid(&self) -> Result<(), String> {
+        uuid::Uuid::parse_str(&self.sid)
+            .map(|_| ())
+            .map_err(|_| "sid must be a UUID".to_string())
+    }
+}
+
+/// 已签发令牌及其写入的时间戳。调用方用 `iat` 对齐 `mfa_changed_at`。
+#[derive(Debug, Clone)]
+pub struct IssuedToken {
+    pub token: String,
+    pub iat: i64,
+    pub exp: i64,
+}
+
 /// 令牌主体（不含任何密钥材料）。
 #[derive(Debug, Clone, Copy)]
 pub struct TokenSubject<'a> {
     pub username: &'a str,
     pub user_id: &'a str,
     pub role: &'a str,
+    pub binding: &'a SessionBinding,
+}
+
+/// 把访问令牌 TTL 截断到会话绝对到期。`sxp <= now` 时拒绝，不签发。
+///
+/// # Errors
+///
+/// 会话已经到达绝对到期时返回错误。
+pub fn clamp_access_ttl(requested: i64, sxp: i64, now: i64) -> Result<i64, String> {
+    if sxp <= now {
+        return Err("session absolute expiry is not in the future".to_string());
+    }
+    Ok(requested.clamp(1, sxp - now))
 }
 
 /// 令牌被拒绝的原因；`reason()` 即审计 `failure_reason`。
@@ -143,11 +199,49 @@ pub fn issue(
     secret: &str,
     ttl_secs: i64,
 ) -> Result<String, String> {
-    let now = chrono::Utc::now().timestamp();
+    Ok(issue_at(
+        kind,
+        subject,
+        secret,
+        ttl_secs,
+        chrono::Utc::now().timestamp(),
+    )?
+    .token)
+}
+
+/// 用调用方给定的 `issued_at` 签发，便于 `mfa_changed_at` 与令牌 `iat` 使用同一秒。
+///
+/// 访问令牌和刷新令牌必须带 `sxp`，且 `exp` 不超过 `sxp`。本函数不把过期时间撑过 `sxp`。
+///
+/// # Errors
+///
+/// `sid` 不是 UUID、正式令牌缺少 `sxp`、或 `exp` 超过 `sxp` 时返回错误。
+pub fn issue_at(
+    kind: TokenKind,
+    subject: TokenSubject<'_>,
+    secret: &str,
+    ttl_secs: i64,
+    issued_at: i64,
+) -> Result<IssuedToken, String> {
+    subject.binding.require_uuid()?;
     let ttl = if kind.is_temporary() {
         TEMP_TOKEN_TTL_SECS
     } else {
         ttl_secs.max(1)
+    };
+    let exp = issued_at.saturating_add(ttl);
+    let sxp = match kind {
+        TokenKind::Access | TokenKind::Refresh => {
+            let sxp = subject
+                .binding
+                .sxp
+                .ok_or_else(|| "access and refresh tokens require sxp".to_string())?;
+            if exp > sxp {
+                return Err("token expiry exceeds session absolute expiry".to_string());
+            }
+            Some(sxp)
+        }
+        _ => subject.binding.sxp,
     };
     let claims = AdminClaims {
         iss: ISSUER.to_string(),
@@ -155,17 +249,24 @@ pub fn issue(
         sub: subject.username.to_string(),
         user_id: subject.user_id.to_string(),
         role: subject.role.to_string(),
-        iat: now,
-        exp: now.saturating_add(ttl),
+        iat: issued_at,
+        exp,
         jti: Some(uuid::Uuid::new_v4().to_string()),
         token_type: Some(kind.as_str().to_string()),
+        sid: subject.binding.sid.clone(),
+        sxp,
     };
-    encode(
+    let token = encode(
         &Header::new(ALGORITHM),
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .map_err(|e| format!("Failed to encode {} JWT: {e}", kind.as_str()))
+    .map_err(|e| format!("Failed to encode {} JWT: {e}", kind.as_str()))?;
+    Ok(IssuedToken {
+        token,
+        iat: issued_at,
+        exp,
+    })
 }
 
 /// 签发一次性临时令牌（有效期 [`TEMP_TOKEN_TTL_SECS`]）。
@@ -217,10 +318,22 @@ pub fn decode_kind(
 ) -> Result<AdminClaims, TokenRejection> {
     let key = DecodingKey::from_secret(secret.as_bytes());
     match decode::<AdminClaims>(token, &key, &validation(Some(kind.audience()), true)) {
-        Ok(data) if data.claims.token_type.as_deref() == Some(kind.as_str()) => Ok(data.claims),
+        Ok(data) if data.claims.token_type.as_deref() == Some(kind.as_str()) => {
+            enforce_session(&data.claims, kind)
+        }
         Ok(_) => Err(TokenRejection::TypeMismatch),
         Err(error) => Err(classify(error.kind(), token, secret)),
     }
+}
+
+fn enforce_session(claims: &AdminClaims, kind: TokenKind) -> Result<AdminClaims, TokenRejection> {
+    if uuid::Uuid::parse_str(&claims.sid).is_err() {
+        return Err(TokenRejection::Invalid);
+    }
+    if matches!(kind, TokenKind::Access | TokenKind::Refresh) && claims.sxp.is_none() {
+        return Err(TokenRejection::Legacy);
+    }
+    Ok(claims.clone())
 }
 
 fn classify(kind: &ErrorKind, token: &str, secret: &str) -> TokenRejection {
@@ -240,36 +353,13 @@ fn classify(kind: &ErrorKind, token: &str, secret: &str) -> TokenRejection {
     }
 }
 
-/// 解码刷新令牌。
-///
-/// 过渡期：升级前签发的刷新令牌没有 `aud`，但带有 `token_type = "refresh"`
-/// （旧临时令牌/访问令牌从未带过该类型），因此仍允许其换发新格式访问令牌，
-/// 避免已登录会话全部被强制下线。旧刷新令牌最长存活 `refresh_token_expiration_secs`。
+/// 解码刷新令牌。缺 `aud`、缺 `sid` 或缺少 `sxp` 一律拒绝，没有过渡解码。
 ///
 /// # Errors
 ///
 /// 校验失败时返回对应 [`TokenRejection`]。
 pub fn decode_refresh(token: &str, secret: &str) -> Result<AdminClaims, TokenRejection> {
-    match decode_kind(token, secret, TokenKind::Refresh) {
-        Err(TokenRejection::Legacy | TokenRejection::TypeMismatch) => {
-            let key = DecodingKey::from_secret(secret.as_bytes());
-            match decode::<AdminClaims>(token, &key, &validation(None, true)) {
-                Ok(data)
-                    if data.claims.aud.is_none()
-                        && data.claims.token_type.as_deref()
-                            == Some(TokenKind::Refresh.as_str()) =>
-                {
-                    Ok(data.claims)
-                }
-                Ok(data) if data.claims.aud.is_none() && data.claims.token_type.is_none() => {
-                    Err(TokenRejection::Legacy)
-                }
-                Ok(_) => Err(TokenRejection::TypeMismatch),
-                Err(error) => Err(classify(error.kind(), token, secret)),
-            }
-        }
-        other => other,
-    }
+    decode_kind(token, secret, TokenKind::Refresh)
 }
 
 /// 黑名单 TTL：覆盖剩余有效期与 leeway。

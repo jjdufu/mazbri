@@ -31,7 +31,7 @@ pub async fn create_control_command(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
     Json(payload): Json<svc::CreateControlCommandRequest>,

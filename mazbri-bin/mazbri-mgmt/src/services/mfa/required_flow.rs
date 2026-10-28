@@ -72,11 +72,13 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
     if let Err(response) = consume_stage_token(params.redis, &claims).await {
         return *response;
     }
+    let stage_binding = crate::middleware::admin_token::SessionBinding::stage(claims.sid.clone());
     let Ok(next_token) = issue_stage_token(
         TokenKind::MfaSetup,
         &claims.sub,
         user_id,
         &claims.role,
+        &stage_binding,
         params.jwt_secret,
     ) else {
         return ApiResponse::err(
@@ -160,6 +162,58 @@ async fn load_required_enable_state(
     Ok((state, encrypted_secret))
 }
 
+fn issue_bound_session(
+    claims: &crate::middleware::auth::AdminClaims,
+    role: &str,
+    jwt_secret: &str,
+    access_ttl: u64,
+    refresh_ttl: u64,
+    issued_at: i64,
+) -> Result<
+    (
+        crate::middleware::admin_token::IssuedToken,
+        crate::middleware::admin_token::IssuedToken,
+    ),
+    Box<axum::response::Response>,
+> {
+    let binding = crate::middleware::admin_token::SessionBinding {
+        sid: claims.sid.clone(),
+        sxp: Some(issued_at.saturating_add(i64::saturating_from(refresh_ttl).max(1))),
+    };
+    let token = crate::services::admin::generate_admin_jwt(
+        &claims.sub,
+        &claims.user_id,
+        role,
+        &binding,
+        jwt_secret,
+        i64::saturating_from(access_ttl),
+        issued_at,
+    )
+    .map_err(|error| {
+        error!("Failed to generate JWT token: {}", error);
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    let refresh_token = crate::services::admin::issue_refresh_token(
+        &claims.sub,
+        &claims.user_id,
+        role,
+        &binding,
+        jwt_secret,
+        issued_at,
+    )
+    .map_err(|error| {
+        error!("Failed to generate refresh token: {}", error);
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_generate_token(),
+        ))
+    })?;
+    Ok((token, refresh_token))
+}
+
 pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let (claims, user_id) = match authenticate_stage_token(
@@ -182,17 +236,39 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
             Ok(service) => service,
             Err(response) => return *response,
         };
-    if let Err(response) = verify_and_enable_mfa(
+    let issued_at = chrono::Utc::now().timestamp();
+    let changed_at =
+        chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
+    let epoch = match verify_and_enable_mfa(
         pool,
         user_id,
         &mfa_service,
         &encrypted_secret,
         params.totp_code,
         &claims.sub,
+        changed_at,
     )
     .await
     {
-        return *response;
+        Ok(epoch) => epoch,
+        Err(response) => return *response,
+    };
+    let refresh_ttl = i64::try_from(params.refresh_token_expiration_secs)
+        .unwrap_or(i64::MAX)
+        .max(1);
+    let sxp = issued_at.saturating_add(refresh_ttl);
+    if let Err(error) = crate::services::mfa::step_up::open_totp_window(
+        params.redis,
+        &claims.sid,
+        &user_id.to_string(),
+        epoch,
+        issued_at,
+        mfa_service.config().step_up_ttl_secs,
+        sxp,
+    )
+    .await
+    {
+        tracing::error!("failed to open step-up window after required enable: {error}");
     }
     if let Err(response) = consume_stage_token(params.redis, &claims).await {
         return *response;
@@ -202,37 +278,16 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
         params.jwt_expiration_secs,
     )
     .await;
-    let token = match crate::services::admin::generate_admin_jwt(
-        &claims.sub,
-        &claims.user_id,
+    let (token, refresh_token) = match issue_bound_session(
+        &claims,
         &state.role,
         params.jwt_secret,
-        i64::saturating_from(access_ttl),
+        access_ttl,
+        params.refresh_token_expiration_secs,
+        issued_at,
     ) {
-        Ok(token) => token,
-        Err(error) => {
-            error!("Failed to generate JWT token: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_generate_token(),
-            );
-        }
-    };
-    let refresh_token = match crate::services::admin::issue_refresh_token(
-        &claims.sub,
-        &claims.user_id,
-        &state.role,
-        params.jwt_secret,
-        i64::saturating_from(params.refresh_token_expiration_secs),
-    ) {
-        Ok(token) => token,
-        Err(error) => {
-            error!("Failed to generate refresh token: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::failed_generate_token(),
-            );
-        }
+        Ok(issued) => issued,
+        Err(response) => return *response,
     };
     params.audit.log(user_audit(
         user_id,
@@ -253,9 +308,9 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     ok_json(serde_json::json!({
         "message": mazbri_i18n::mfa::enabled_success(),
         "messageKey": "api.mfa.enabled_success",
-        "token": token,
-        "refresh_token": refresh_token,
-        "expires_in": access_ttl,
+        "token": token.token,
+        "refresh_token": refresh_token.token,
+        "expires_in": token.exp.saturating_sub(token.iat).max(1),
         "user": user,
     }))
 }

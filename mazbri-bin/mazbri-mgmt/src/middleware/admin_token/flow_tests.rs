@@ -322,10 +322,15 @@ async fn temp_tokens_are_rejected_on_protected_routes() {
 }
 
 fn subject(user: &TestUser) -> TokenSubject<'_> {
+    let binding = Box::leak(Box::new(SessionBinding {
+        sid: uuid::Uuid::new_v4().to_string(),
+        sxp: Some(chrono::Utc::now().timestamp().saturating_add(604_800)),
+    }));
     TokenSubject {
         username: &user.username,
         user_id: Box::leak(user.id.to_string().into_boxed_str()),
         role: "R_FINANCE",
+        binding,
     }
 }
 
@@ -445,6 +450,8 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
         exp: now + 3600,
         jti: Some(uuid::Uuid::new_v4().to_string()),
         token_type: None,
+        sid: uuid::Uuid::new_v4().to_string(),
+        sxp: None,
     };
     let key = EncodingKey::from_secret(SECRET.as_bytes());
     let legacy_access = encode(&Header::default(), &legacy, &key).expect("encode");
@@ -557,6 +564,8 @@ async fn expired_temp_token_is_rejected() {
         exp: now - 300,
         jti: Some(uuid::Uuid::new_v4().to_string()),
         token_type: Some(kind.as_str().to_string()),
+        sid: uuid::Uuid::new_v4().to_string(),
+        sxp: None,
     };
     let token = encode(
         &Header::default(),
@@ -596,6 +605,7 @@ async fn change_password_first_login(
         password_policy_cache: &PasswordPolicyCache::new(deps.db.clone()),
         mfa_settings_cache: &MfaSettingsCache::new(deps.db.clone()),
         jwt_expiration_secs: 3600,
+        refresh_token_expiration_secs: 604_800,
         claims: &claims,
         user_id: user.id,
         req: &req,
@@ -806,15 +816,31 @@ async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
         deps.db.clone(),
         crate::config::MfaConfig::default(),
     ));
-    let disable_status = disable(
-        &deps.db,
-        &mfa_cache,
-        &deps.audit,
-        enrolled.id,
-        &enrolled.username,
-        &enrolled.password,
-        None,
-    )
+    let now = chrono::Utc::now().timestamp();
+    let disable_claims = AdminClaims {
+        iss: ISSUER.to_string(),
+        aud: Some(TokenKind::Access.audience().to_string()),
+        sub: enrolled.username.clone(),
+        user_id: enrolled.id.to_string(),
+        role: "R_FINANCE".to_string(),
+        iat: now,
+        exp: now + 3600,
+        jti: Some(uuid::Uuid::new_v4().to_string()),
+        token_type: Some(TokenKind::Access.as_str().to_string()),
+        sid: uuid::Uuid::new_v4().to_string(),
+        sxp: Some(now + 604_800),
+    };
+    let disable_status = disable(crate::services::mfa::DisableParams {
+        pool: &deps.db,
+        mfa_cache: &mfa_cache,
+        audit: &deps.audit,
+        user_id: enrolled.id,
+        claims: &disable_claims,
+        jwt_secret: SECRET,
+        redis: &deps.redis,
+        access_ttl_fallback: 3600,
+        client_ip: None,
+    })
     .await
     .status();
     let still_enabled: bool =
@@ -926,7 +952,7 @@ async fn refresh_is_denied_after_account_state_changes() {
         ),
         (
             "UPDATE admin_users SET mfa_enabled = true, mfa_secret = 'placeholder', \
-             mfa_verified_at = NOW() + INTERVAL '5 seconds' WHERE id = $1",
+             mfa_changed_at = NOW() + INTERVAL '5 seconds' WHERE id = $1",
             "mfa_state_changed",
         ),
         ("DELETE FROM admin_users WHERE id = $1", "user_not_found"),
@@ -977,21 +1003,27 @@ async fn refresh_allows_mfa_enabled_session_issued_after_verify() {
     )
     .await;
     // 登录只给 mfa_pending；模拟「验证通过后」直接签发一对 access+refresh。
+    let now = chrono::Utc::now().timestamp();
+    let binding = SessionBinding {
+        sid: uuid::Uuid::new_v4().to_string(),
+        sxp: Some(now.saturating_add(604_800)),
+    };
     let refresh = crate::services::admin::issue_refresh_token(
         &user.username,
         &user.id.to_string(),
         "R_FINANCE",
+        &binding,
         SECRET,
-        604_800,
+        now,
     )
     .expect("issue refresh");
     // 账号已绑定且 verified_at 为空或早于 iat：应允许刷新。
-    sqlx::query("UPDATE admin_users SET mfa_verified_at = NOW() - INTERVAL '1 day' WHERE id = $1")
+    sqlx::query("UPDATE admin_users SET mfa_changed_at = NOW() - INTERVAL '1 day' WHERE id = $1")
         .bind(user.id)
         .execute(&*deps.db)
         .await
         .expect("set verified_at");
-    let (result, draft) = refresh_via_service(&deps, &refresh).await;
+    let (result, draft) = refresh_via_service(&deps, &refresh.token).await;
     assert!(
         result.is_ok(),
         "MFA-enabled session must refresh: {result:?}"

@@ -60,10 +60,17 @@ async fn failing_redis() -> Arc<RedisClient> {
 }
 
 fn subject() -> TokenSubject<'static> {
+    use std::sync::OnceLock;
+    static BINDING: OnceLock<SessionBinding> = OnceLock::new();
+    let binding = BINDING.get_or_init(|| SessionBinding {
+        sid: "00000000-0000-4000-8000-0000000000aa".to_string(),
+        sxp: Some(i64::MAX / 4),
+    });
     TokenSubject {
         username: "revocation-user",
         user_id: "00000000-0000-0000-0000-0000000000aa",
         role: "R_ADMIN",
+        binding,
     }
 }
 

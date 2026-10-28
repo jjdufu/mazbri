@@ -1,7 +1,7 @@
 use crate::audit::{self, AuditAction, AuditService, user_audit};
 use crate::error::ApiError;
 use crate::handlers::types::{AdminLoginRequest, AdminLogoutRequest, AdminUser};
-use crate::middleware::admin_token::{self, TokenKind, TokenSubject};
+use crate::middleware::admin_token::{self, SessionBinding, TokenKind, TokenSubject};
 use crate::middleware::auth::{AdminClaims, revoke_jti};
 use crate::repositories::admin as repo;
 use crate::services::{MfaSettings, MfaSettingsCache, PasswordPolicy, PasswordPolicyCache};
@@ -37,36 +37,54 @@ pub(crate) fn generate_admin_jwt(
     username: &str,
     user_id: &str,
     role: &str,
+    binding: &SessionBinding,
     jwt_secret: &str,
     expiration_secs: i64,
-) -> Result<String, String> {
-    admin_token::issue(
+    issued_at: i64,
+) -> Result<admin_token::IssuedToken, String> {
+    let sxp = binding
+        .sxp
+        .ok_or_else(|| "access token requires sxp".to_string())?;
+    let ttl = admin_token::clamp_access_ttl(expiration_secs, sxp, issued_at)?;
+    admin_token::issue_at(
         TokenKind::Access,
         TokenSubject {
             username,
             user_id,
             role,
+            binding,
         },
         jwt_secret,
-        expiration_secs,
+        ttl,
+        issued_at,
     )
 }
 pub(crate) fn issue_refresh_token(
     username: &str,
     user_id: &str,
     role: &str,
+    binding: &SessionBinding,
     jwt_secret: &str,
-    expiration_secs: i64,
-) -> Result<String, String> {
-    admin_token::issue(
+    issued_at: i64,
+) -> Result<admin_token::IssuedToken, String> {
+    let sxp = binding
+        .sxp
+        .ok_or_else(|| "refresh token requires sxp".to_string())?;
+    let ttl = sxp.saturating_sub(issued_at);
+    if ttl < 1 {
+        return Err("session absolute expiry is not in the future".to_string());
+    }
+    admin_token::issue_at(
         TokenKind::Refresh,
         TokenSubject {
             username,
             user_id,
             role,
+            binding,
         },
         jwt_secret,
-        expiration_secs,
+        ttl,
+        issued_at,
     )
 }
 /// 签发登录中间阶段的一次性临时令牌（MFA 验证 / MFA 设置 / 强制改密）。
@@ -75,6 +93,7 @@ pub(crate) fn issue_stage_token(
     username: &str,
     user_id: uuid::Uuid,
     role: &str,
+    binding: &SessionBinding,
     jwt_secret: &str,
 ) -> Result<String, ApiError> {
     let user_id = user_id.to_string();
@@ -84,6 +103,7 @@ pub(crate) fn issue_stage_token(
             username,
             user_id: &user_id,
             role,
+            binding,
         },
         jwt_secret,
     )
@@ -160,6 +180,7 @@ async fn handle_failed_login(
 pub(crate) fn determine_mfa(
     user_row: &repo::AdminUserFullRow,
     mfa_settings: &MfaSettings,
+    binding: &SessionBinding,
     jwt_secret: &str,
 ) -> Result<Option<serde_json::Value>, ApiError> {
     let username = user_row.username.as_str();
@@ -176,8 +197,14 @@ pub(crate) fn determine_mfa(
                 "由于失败次数过多，MFA 已锁定。请稍后再试。".to_string(),
             ));
         }
-        let temp_token =
-            issue_stage_token(TokenKind::MfaPending, username, user_id, role, jwt_secret)?;
+        let temp_token = issue_stage_token(
+            TokenKind::MfaPending,
+            username,
+            user_id,
+            role,
+            binding,
+            jwt_secret,
+        )?;
         info!("Password verified, MFA required for user: {}", username);
         audit::add_detail("login_stage", serde_json::json!("mfa_required"));
         return Ok(Some(serde_json::json!(
@@ -187,8 +214,14 @@ pub(crate) fn determine_mfa(
     }
     // 超管为该账号设置了 mfa_required 且尚未绑定时，进入强制设置阶段。
     if user_row.mfa.mfa_required {
-        let temp_token =
-            issue_stage_token(TokenKind::MfaSetup, username, user_id, role, jwt_secret)?;
+        let temp_token = issue_stage_token(
+            TokenKind::MfaSetup,
+            username,
+            user_id,
+            role,
+            binding,
+            jwt_secret,
+        )?;
         info!(
             "Password verified, MFA setup required for user: {} (per-user mfa_required)",
             username
@@ -209,9 +242,9 @@ struct GenerateLoginResponseParams<'a> {
     user_id: uuid::Uuid,
     role: &'a str,
     created_at: &'a str,
+    binding: &'a SessionBinding,
     jwt_secret: &'a str,
     jwt_expiration_secs: u64,
-    refresh_token_expiration_secs: u64,
     audit: &'a AuditService,
     client_ip: Option<String>,
 }
@@ -219,12 +252,15 @@ struct GenerateLoginResponseParams<'a> {
 async fn generate_login_response(
     params: GenerateLoginResponseParams<'_>,
 ) -> Result<serde_json::Value, ApiError> {
+    let issued_at = Utc::now().timestamp();
     let token = generate_admin_jwt(
         params.username,
         &params.user_id.to_string(),
         params.role,
+        params.binding,
         params.jwt_secret,
         i64::saturating_from(params.jwt_expiration_secs),
+        issued_at,
     )
     .map_err(|e| {
         error!("Failed to generate admin JWT: {}", e);
@@ -234,8 +270,9 @@ async fn generate_login_response(
         params.username,
         &params.user_id.to_string(),
         params.role,
+        params.binding,
         params.jwt_secret,
-        i64::saturating_from(params.refresh_token_expiration_secs),
+        issued_at,
     )
     .map_err(|e| {
         error!("Failed to generate refresh JWT: {}", e);
@@ -270,8 +307,8 @@ async fn generate_login_response(
         );
     }
     Ok(serde_json::json!(
-        { "user" : user, "token" : token, "expires_in" : params.jwt_expiration_secs,
-        "refresh_token" : refresh_token }
+        { "user" : user, "token" : token.token, "expires_in" : params.jwt_expiration_secs,
+        "refresh_token" : refresh_token.token }
     ))
 }
 
@@ -358,7 +395,11 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         return handle_failed_login(db, user_id, &user_row, &policy, username).await;
     }
     // 密码已验证：身份确认，后续阶段（重置密码/MFA/成功）均归属该账号。
+    // sid 只在这里生成一次，后面的临时令牌和正式令牌都复制它。
     audit::set_actor(Some(user_id), Some(username), Some(role));
+    let now = Utc::now().timestamp();
+    let binding =
+        SessionBinding::new_login(now, i64::saturating_from(refresh_token_expiration_secs));
     if user_row.force_password_reset {
         audit::add_detail("login_stage", serde_json::json!("password_reset_required"));
         let temp_token = issue_stage_token(
@@ -366,6 +407,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
             username,
             user_id,
             role,
+            &binding,
             jwt_secret,
         )?;
         info!(
@@ -399,7 +441,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         );
     }
     let mfa_settings = mfa_settings_cache.get().await;
-    if let Some(mfa_response) = determine_mfa(&user_row, &mfa_settings, jwt_secret)? {
+    if let Some(mfa_response) = determine_mfa(&user_row, &mfa_settings, &binding, jwt_secret)? {
         return Ok(mfa_response);
     }
     let created_at = user_row.created_at.to_rfc3339();
@@ -409,9 +451,9 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
         user_id,
         role,
         created_at: &created_at,
+        binding: &binding,
         jwt_secret,
         jwt_expiration_secs,
-        refresh_token_expiration_secs,
         audit,
         client_ip,
     })
@@ -446,12 +488,17 @@ pub async fn admin_logout(
             error!("Failed to revoke refresh token jti: {}", e);
         }
     }
+    crate::services::mfa::step_up::close_session(redis, &claims.sid).await;
     let user_id = Uuid::parse_str(&claims.user_id).unwrap_or(Uuid::nil());
     if let Err(e) = audit
         .log_critical(user_audit(
             user_id,
             AuditAction::UserLogout,
-            Some(serde_json::json!({ "username": claims.sub, "role": claims.role })),
+            Some(serde_json::json!({
+                "username": claims.sub,
+                "role": claims.role,
+                "step_up_closed": true
+            })),
             client_ip,
         ))
         .await

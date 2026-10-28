@@ -22,6 +22,12 @@ pub fn routes() -> Router<AppState> {
         .route("/auth/mfa/verify", post(mfa::mfa_verify))
         .route("/auth/mfa/status", get(mfa::mfa_status))
         .route(
+            "/auth/mfa/step-up",
+            get(mfa::mfa_step_up_status)
+                .post(mfa::mfa_step_up)
+                .delete(mfa::mfa_step_up_end),
+        )
+        .route(
             "/auth/mfa/regenerate-codes",
             post(mfa::regenerate_backup_codes),
         )

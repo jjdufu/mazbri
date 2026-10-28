@@ -258,6 +258,9 @@
                 />
               </ElSelect>
             </CommonSettingRow>
+            <CommonInlineHint block size="xs" tone="warning">
+              {{ $t("securityPolicy.sections.totp.digitsPeriodWarning") }}
+            </CommonInlineHint>
             <CommonSettingRow
               mode="inline"
               mobile-stack
@@ -334,6 +337,7 @@ import { toRaw } from "vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
+import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
 import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";

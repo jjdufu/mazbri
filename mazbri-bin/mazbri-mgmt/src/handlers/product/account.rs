@@ -1,6 +1,6 @@
 use crate::audit::extract_client_ip;
 use crate::handlers::AppState;
-use crate::handlers::mfa_guard::require_mfa_code;
+use crate::handlers::mfa_guard::require_step_up;
 use crate::middleware::auth::{AdminClaims, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::product as service;
@@ -34,7 +34,7 @@ pub async fn recharge_tenant_account(
     if !can_manage_account_finance(&claims) {
         return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以充值账户");
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return *response;
     }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
@@ -72,7 +72,7 @@ pub async fn refund_tenant_account(
     if !can_manage_account_finance(&claims) {
         return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以退款账户");
     }
-    if let Err(response) = require_mfa_code(&state, &claims, &headers).await {
+    if let Err(response) = require_step_up(&state, &claims).await {
         return *response;
     }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {

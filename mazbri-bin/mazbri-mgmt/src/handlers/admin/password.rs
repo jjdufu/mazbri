@@ -30,6 +30,7 @@ pub async fn first_login_change_password(
         password_policy_cache: &state.password_policy_cache,
         mfa_settings_cache: &state.mfa_settings_cache,
         jwt_expiration_secs: state.config.auth.jwt_expiration_secs,
+        refresh_token_expiration_secs: state.config.auth.refresh_token_expiration_secs,
         claims: &claims,
         user_id,
         req: &req,
@@ -44,10 +45,12 @@ pub async fn first_login_change_password(
         Some(serde_json::json!({ "username" : claims.sub, "first_login" : true })),
         client_ip,
     ));
-    Ok(json_with_session_cookies(
-        data,
-        Some(state.config.auth.refresh_token_expiration_secs),
-    ))
+    let refresh_max_age = data
+        .get("refresh_max_age")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|secs| u64::try_from(secs).ok())
+        .unwrap_or(state.config.auth.refresh_token_expiration_secs);
+    Ok(json_with_session_cookies(data, Some(refresh_max_age)))
 }
 /// # Errors
 ///

@@ -76,6 +76,9 @@ pub async fn import_license_proxy(
     let Some(license_file) = license_file else {
         return Err(ApiError::validation("license_file is required"));
     };
+    if let Err(response) = crate::handlers::mfa_guard::require_step_up(&state, &claims).await {
+        return Ok(*response);
+    }
     let config = get_cert_proxy_config(&state);
     let url = format!(
         "{}{}",

@@ -121,7 +121,8 @@ pub(super) async fn verify_and_enable_mfa(
     encrypted_secret: &str,
     totp_code: &str,
     username: &str,
-) -> Result<(), Box<axum::response::Response>> {
+    changed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<i64, Box<axum::response::Response>> {
     let secret = match mfa_service.decrypt_secret(encrypted_secret) {
         Ok(secret) => secret,
         Err(error) => {
@@ -132,22 +133,31 @@ pub(super) async fn verify_and_enable_mfa(
             )));
         }
     };
-    if !mfa_service.verify_totp(&secret, totp_code) {
+    let Some(step_at) = mfa_service.verify_totp_step(&secret, totp_code) else {
         tracing::warn!("Invalid TOTP code for user: {}", username);
         crate::audit::set_failure_reason("mfa_invalid_code");
         return Err(Box::new(ApiResponse::err(
             StatusCode::BAD_REQUEST,
             mazbri_i18n::mfa::invalid_totp(),
         )));
+    };
+    match repo::enable_mfa(pool, user_id, step_at, changed_at).await {
+        Ok(Some(epoch)) => Ok(epoch),
+        Ok(None) => {
+            crate::audit::set_failure_reason("mfa_code_reused");
+            Err(Box::new(ApiResponse::err(
+                StatusCode::BAD_REQUEST,
+                mazbri_i18n::mfa::code_reused(),
+            )))
+        }
+        Err(error) => {
+            error!("Failed to enable MFA: {}", error);
+            Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_enable(),
+            )))
+        }
     }
-    if let Err(error) = repo::enable_mfa(pool, user_id).await {
-        error!("Failed to enable MFA: {}", error);
-        return Err(Box::new(ApiResponse::err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            mazbri_i18n::mfa::failed_enable(),
-        )));
-    }
-    Ok(())
 }
 
 pub(super) fn ok_json(value: serde_json::Value) -> axum::response::Response {

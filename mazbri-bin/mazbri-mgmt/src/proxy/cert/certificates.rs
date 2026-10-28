@@ -67,6 +67,15 @@ pub async fn get_full_certificate_proxy(
     if let Err(error) = require_license_issuance(&state).await {
         return error.into_response();
     }
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::CertificateFull,
+    )
+    .await
+    {
+        return (*response).into_response();
+    }
     let config = get_cert_proxy_config(&state);
     proxy_request(
         &state.cert_http_client,
@@ -133,13 +142,13 @@ proxy_handler_with_audit! {
     name = renew_certificate_proxy, method = Method::POST, path = "/renew/{}", path_param
     = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.clone(),
     audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} renewing certificate {}", require_mfa = false,
+    "Admin {} renewing certificate {}", require_mfa = "fresh_renew",
 }
 proxy_handler_with_audit! {
     name = revoke_certificate_proxy, method = Method::POST, path = "/revoke/{}",
     path_param = id, audit_action = AuditAction::CertificateRevoke, resource_id_fn = id
     .clone(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} revoking certificate {}", require_mfa = true,
+    "Admin {} revoking certificate {}", require_mfa = "step_up",
 }
 pub async fn issue_certificate_proxy(
     State(state): State<AppState>,
@@ -150,8 +159,12 @@ pub async fn issue_certificate_proxy(
     if !can_manage_certificates(&claims) {
         return Err(ApiError::Forbidden);
     }
-    if let Err(response) =
-        crate::handlers::mfa_guard::require_mfa_code(&state, &claims, request.headers()).await
+    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+        &state,
+        &claims,
+        crate::services::mfa::step_up::FreshPurpose::CertificateIssue,
+    )
+    .await
     {
         return Ok(*response);
     }

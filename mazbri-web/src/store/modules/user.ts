@@ -11,6 +11,7 @@ import { useMenuStore } from "./menu";
 import { StorageConfig } from "@/utils/storage/storage-config";
 import type { AdminUser, AdminRole } from "@/types/api";
 import { logout as apiLogout } from "@/api/auth";
+import { useMfaStepUpStore } from "./mfa-step-up";
 export const useUserStore = defineStore(
   "userStore",
   () => {
@@ -23,7 +24,6 @@ export const useUserStore = defineStore(
     const accessToken = ref("");
     const tokenExpiresAt = ref(0);
     const refreshToken = ref("");
-    const mfaVerified = ref(false);
     const getUserInfo = computed(() => info.value);
     const getSettingState = computed(() => useSettingStore().$state);
     const getWorktabState = computed(() => useWorktabStore().$state);
@@ -31,9 +31,6 @@ export const useUserStore = defineStore(
     // 超级管理员（R_ADMIN）与管理员（R_FINANCE）拥有全部业务读写权限，与后端 route_access 的 BIZ 一致。
     const canWriteBusiness = computed(
       () => info.value.role === "R_ADMIN" || info.value.role === "R_FINANCE",
-    );
-    const requiresMfa = computed(
-      () => info.value.mfa_enabled && !mfaVerified.value,
     );
     const needsPasswordReset = computed(() => info.value.force_password_reset);
     const setUserInfo = (newInfo: AdminUser) => {
@@ -101,9 +98,6 @@ export const useUserStore = defineStore(
       if (!tokenExpiresAt.value) return false;
       return Math.floor(Date.now() / 1000) >= tokenExpiresAt.value - 60;
     };
-    const setMfaVerified = (verified: boolean) => {
-      mfaVerified.value = verified;
-    };
     const clearUserState = () => {
       const currentUserId = info.value.id;
       if (currentUserId) {
@@ -119,7 +113,6 @@ export const useUserStore = defineStore(
       accessToken.value = "";
       refreshToken.value = "";
       tokenExpiresAt.value = 0;
-      mfaVerified.value = false;
       sessionStorage.removeItem("iframeRoutes");
       useMenuStore().setHomePath("");
     };
@@ -130,6 +123,7 @@ export const useUserStore = defineStore(
       } catch {
         void 0;
       }
+      useMfaStepUpStore().reset();
       clearUserState();
       resetRouterState(500);
       const currentRoute = router.currentRoute.value;
@@ -163,13 +157,11 @@ export const useUserStore = defineStore(
       accessToken,
       tokenExpiresAt,
       refreshToken,
-      mfaVerified,
       getUserInfo,
       getSettingState,
       getWorktabState,
       isAdmin,
       canWriteBusiness,
-      requiresMfa,
       needsPasswordReset,
       setUserInfo,
       setLoginStatus,
@@ -180,7 +172,6 @@ export const useUserStore = defineStore(
       isLockPasswordMatch,
       setToken,
       isTokenExpired,
-      setMfaVerified,
       clearUserState,
       logOut,
       checkAndClearWorktabs,

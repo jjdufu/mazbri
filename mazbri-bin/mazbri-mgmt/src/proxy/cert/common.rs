@@ -127,10 +127,8 @@ macro_rules! proxy_handler_with_audit {
             if !can_manage_certificates(&claims) {
                 return Err(ApiError::Forbidden);
             }
-            if $require_mfa
-                && let Err(response) =
-                    crate::handlers::mfa_guard::require_mfa_code(&state, &claims, request.headers())
-                        .await
+            if let Err(response) =
+                super::common::enforce_cert_mfa(&state, &claims, $require_mfa).await
             {
                 return Ok(*response);
             }
@@ -165,3 +163,31 @@ macro_rules! proxy_handler_with_audit {
 }
 
 pub(crate) const FORBIDDEN_CERT: &str = "仅超级管理员可以访问证书管理";
+
+pub(crate) async fn enforce_cert_mfa(
+    state: &AppState,
+    claims: &crate::middleware::auth::AdminClaims,
+    mode: &str,
+) -> Result<(), Box<axum::response::Response>> {
+    match mode {
+        "none" => Ok(()),
+        "step_up" => crate::handlers::mfa_guard::require_step_up(state, claims)
+            .await
+            .map(|_| ()),
+        "fresh_renew" => {
+            crate::handlers::mfa_guard::require_fresh_mfa(
+                state,
+                claims,
+                crate::services::mfa::step_up::FreshPurpose::CertificateRenew,
+            )
+            .await
+        }
+        _ => Err(Box::new(axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "success": false,
+                "error": "unknown certificate MFA mode"
+            })),
+        )))),
+    }
+}

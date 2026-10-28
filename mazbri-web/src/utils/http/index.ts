@@ -13,7 +13,19 @@ import {
   showError,
   showSuccess,
 } from "./error";
-import { MfaDialogService } from "./mfa-dialog-service";
+import {
+  ensureFresh,
+  ensureStepUp,
+  isMfaStepUpCancelled,
+  MfaDialogService,
+} from "./mfa-dialog-service";
+import {
+  classifyMfaError,
+  parseJsonBlob,
+  shouldInterceptFresh,
+  shouldInterceptStepUp,
+  type MfaInterceptConfig,
+} from "./mfa-error";
 import { getMfaNotEnabledSetupPath } from "./mfa-setup-path";
 import {
   isBaseResponse,
@@ -147,6 +159,47 @@ interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showErrorMessage?: boolean;
   showSuccessMessage?: boolean;
   signal?: AbortSignal;
+  _mfaRetry?: boolean;
+  _mfaFreshRetry?: boolean;
+}
+interface MfaAwareRequestConfig
+  extends InternalAxiosRequestConfig, MfaInterceptConfig {
+  _retry?: boolean;
+  _mfaRetry?: boolean;
+  _mfaFreshRetry?: boolean;
+}
+function readContentType(headers: unknown): string {
+  if (!headers || typeof headers !== "object") return "";
+  const candidate = headers as { get?: (name: string) => unknown };
+  if (typeof candidate.get === "function") {
+    const value = candidate.get("content-type");
+    if (typeof value === "string") return value;
+  }
+  const record = headers as Record<string, unknown>;
+  const value = record["content-type"] ?? record["Content-Type"];
+  return typeof value === "string" ? value : "";
+}
+async function hydrateJsonBlobBody(error: {
+  response?: { data?: unknown; headers?: unknown };
+}): Promise<void> {
+  try {
+    const data = error.response?.data;
+    if (!(data instanceof Blob) || !error.response) return;
+    const header = readContentType(error.response.headers);
+    const looksJson =
+      data.type.toLowerCase().includes("json") ||
+      header.toLowerCase().includes("json");
+    if (!looksJson) return;
+    const blob = data.type.toLowerCase().includes("json")
+      ? data
+      : new Blob([await data.text()], { type: "application/json" });
+    const parsed = await parseJsonBlob(blob);
+    if (parsed !== null) {
+      error.response.data = parsed;
+    }
+  } catch {
+    // 解析失败时保留原始 Blob，交给后续普通错误处理。
+  }
 }
 const axiosInstance = axios.create({
   timeout: REQUEST_TIMEOUT,
@@ -213,24 +266,10 @@ axiosInstance.interceptors.response.use(
     return response;
   },
   async (error) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & {
-      _retry?: boolean;
-      _mfaRetry?: boolean;
-    };
-    if (
-      error.response?.status === ApiStatus.forbidden &&
-      error.response?.data?.code === "MFA_REQUIRED" &&
-      !originalRequest._mfaRetry
-    ) {
-      originalRequest._mfaRetry = true;
-      const mfaCode = await MfaDialogService.requestVerification();
-      originalRequest.headers.set("X-Mazbri-MFA-Code", mfaCode);
-      return axiosInstance(originalRequest);
-    }
-    if (
-      error.response?.status === ApiStatus.unauthorized &&
-      !originalRequest._retry
-    ) {
+    await hydrateJsonBlobBody(error);
+    const originalRequest = error.config as MfaAwareRequestConfig | undefined;
+    const status = error.response?.status;
+    if (status === ApiStatus.unauthorized && originalRequest && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise<void>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -254,6 +293,44 @@ axiosInstance.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
+    }
+    if (
+      status === ApiStatus.serviceUnavailable ||
+      status === ApiStatus.unauthorized
+    ) {
+      return Promise.reject(handleError(error));
+    }
+    const classified = classifyMfaError(error.response?.data);
+    if (
+      status === ApiStatus.forbidden &&
+      classified?.kind === "step_up" &&
+      originalRequest &&
+      shouldInterceptStepUp(originalRequest)
+    ) {
+      try {
+        await ensureStepUp();
+      } catch (cause) {
+        if (isMfaStepUpCancelled(cause)) return Promise.reject(cause);
+        return Promise.reject(cause);
+      }
+      originalRequest._mfaRetry = true;
+      return axiosInstance(originalRequest);
+    }
+    if (
+      status === ApiStatus.forbidden &&
+      classified?.kind === "fresh" &&
+      classified.purpose &&
+      originalRequest &&
+      shouldInterceptFresh(originalRequest)
+    ) {
+      try {
+        await ensureFresh(classified.purpose);
+      } catch (cause) {
+        if (isMfaStepUpCancelled(cause)) return Promise.reject(cause);
+        return Promise.reject(cause);
+      }
+      originalRequest._mfaFreshRetry = true;
+      return axiosInstance(originalRequest);
     }
     return Promise.reject(handleError(error));
   },
@@ -304,6 +381,9 @@ async function request<T = any>(
     if (mfaSetupPath !== null) {
       // 敏感操作要求 MFA 但账号尚未绑定：统一引导到账号安全页，不再重复弹错误提示。
       void MfaDialogService.promptSetup(mfaSetupPath);
+      return Promise.reject(error);
+    }
+    if (isMfaStepUpCancelled(error)) {
       return Promise.reject(error);
     }
     if (error instanceof HttpError && error.code !== ApiStatus.unauthorized) {

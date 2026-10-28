@@ -8,7 +8,7 @@ use crate::services::admin_management as svc;
 use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, Query, State},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 /// # Errors
 ///
@@ -27,7 +27,7 @@ pub async fn list_admins(
 pub async fn create_admin(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Json(req): Json<CreateAdminRequest>,
@@ -61,16 +61,38 @@ pub async fn get_admin(
 pub async fn update_admin(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<UpdateAdminRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    let lifts = svc::admin_update_lifts_mfa_requirement(&state.admin_db, &claims, id, &req).await?;
+    if lifts {
+        if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+            &state,
+            &claims,
+            crate::services::mfa::step_up::FreshPurpose::MfaRequirementLift,
+        )
+        .await
+        {
+            return Ok(*response);
+        }
+    } else if let Err(response) = crate::handlers::mfa_guard::require_step_up(&state, &claims).await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
-    let data =
-        svc::update_admin(&state.admin_db, &state.audit, &claims, id, &req, client_ip).await?;
-    Ok(ApiResponse::ok(data))
+    let data = svc::update_admin(
+        &state.admin_db,
+        &state.audit,
+        &claims,
+        id,
+        &req,
+        client_ip,
+        lifts,
+    )
+    .await?;
+    Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
 ///
@@ -78,7 +100,7 @@ pub async fn update_admin(
 pub async fn delete_admin(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::MfaVerified,
+    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,

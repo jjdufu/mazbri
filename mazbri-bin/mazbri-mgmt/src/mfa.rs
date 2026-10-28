@@ -17,9 +17,10 @@ use sha2::Sha256;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use std::time::Duration;
+use subtle::ConstantTimeEq;
 use thiserror::Error;
 use totp_lite::totp_custom;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, warn};
 use zeroize::{Zeroize, Zeroizing};
 #[derive(Debug, Error)]
 pub enum MfaError {
@@ -266,11 +267,9 @@ impl MfaService {
             Ok(None) => {
                 info!("No MFA settings found in database, using config file defaults");
             }
-            Err(e) => {
-                warn!(
-                    "Failed to load MFA settings from database, using config file defaults: {}",
-                    e
-                );
+            Err(error) => {
+                warn!("Failed to load MFA settings from database: {error}");
+                return Err(MfaError::from(error));
             }
         }
         Ok(Self::new(config, encryption_key))
@@ -291,77 +290,57 @@ impl MfaService {
             account, secret, issuer, self.config.digits, self.config.period
         )
     }
-    pub fn verify_totp(&self, secret: &str, code: &str) -> bool {
-        if self.verify_totp_with_period(secret, code, self.config.period) {
-            return true;
-        }
-        if self.config.period != 30 {
-            info!(
-                "TOTP verification failed with period={}, trying standard 30s period",
-                self.config.period
-            );
-            if self.verify_totp_with_period(secret, code, 30) {
-                return true;
-            }
-        }
-        false
-    }
-    fn verify_totp_with_period(&self, secret: &str, code: &str, period: u64) -> bool {
-        let Some(secret_bytes) = base32_decode(Alphabet::Rfc4648 { padding: false }, secret) else {
-            warn!(
-                "Failed to decode base32 secret, secret length: {}",
-                secret.len()
-            );
-            return false;
-        };
-        let code_num: u32 = if let Ok(n) = code.parse() {
-            n
-        } else {
-            tracing::trace!("Failed to parse TOTP code as number, code: ***");
-            return false;
-        };
+    /// 校验 TOTP。命中时返回步长起始 Unix 秒（窗口内多个命中取最晚的一个）。
+    ///
+    /// 只使用配置的 `period`，不回退 30 秒。位数必须严格相等且为 ASCII 数字，
+    /// 按字符串常量时间比较，不把验证码解析成整数。
+    #[must_use]
+    pub fn verify_totp_step(&self, secret: &str, code: &str) -> Option<i64> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let current_timestamp = now / period;
-        trace!(
-            "Verifying TOTP: now={}, period={}, digits={}, current_step={}, input_code=***, secret_len={}",
-            now,
-            period,
-            self.config.digits,
-            current_timestamp,
-            secret_bytes.len()
-        );
-        for offset in
-            -i64::saturating_from(self.config.window)..=i64::saturating_from(self.config.window)
+        self.verify_totp_step_at(secret, code, now)
+    }
+
+    #[must_use]
+    pub fn verify_totp_step_at(&self, secret: &str, code: &str, now_secs: u64) -> Option<i64> {
+        let digits = usize::try_from(self.config.digits).ok()?;
+        if self.config.period == 0
+            || code.len() != digits
+            || !code.bytes().all(|b| b.is_ascii_digit())
         {
-            let check_timestamp = i64::saturating_from(current_timestamp) + offset;
-            if check_timestamp < 0 {
+            return None;
+        }
+        let Some(secret_bytes) = base32_decode(Alphabet::Rfc4648 { padding: false }, secret) else {
+            warn!("Failed to decode base32 TOTP secret");
+            return None;
+        };
+        let current_step = i64::saturating_from(now_secs / self.config.period);
+        let window = i64::saturating_from(self.config.window);
+        let mut latest: Option<i64> = None;
+        for offset in -window..=window {
+            let step = current_step + offset;
+            if step < 0 {
                 continue;
             }
-            let expected_code = totp_custom::<Sha1>(
-                period,
+            let step_start = step.saturating_mul(i64::saturating_from(self.config.period));
+            let expected = totp_custom::<Sha1>(
+                self.config.period,
                 self.config.digits,
                 &secret_bytes,
-                u64::saturating_from(check_timestamp) * period,
+                u64::saturating_from(step_start),
             );
-            trace!(
-                "TOTP window check: offset={}, step={}, expected=***, input=***",
-                offset, check_timestamp
-            );
-            if let Ok(expected_num) = expected_code.parse::<u32>()
-                && expected_num == code_num
+            if expected.len() == code.len()
+                && bool::from(expected.as_bytes().ct_eq(code.as_bytes()))
             {
-                info!("TOTP verification successful with period={}", period);
-                return true;
+                latest = Some(latest.map_or(step_start, |prev| prev.max(step_start)));
             }
         }
-        warn!(
-            "TOTP verification failed with period={}, no match found in window",
-            period
-        );
-        false
+        if latest.is_some() {
+            debug!("TOTP verification matched a configured step");
+        }
+        latest
     }
     #[must_use]
     pub fn generate_backup_codes(&self) -> Vec<String> {
@@ -446,23 +425,13 @@ impl MfaService {
         String::from_utf8(plaintext)
             .map_err(|e| MfaError::Encryption(format!("Invalid UTF-8: {e}")))
     }
+    /// 锁定只认 `locked_until > now`。次数已满但截止时间为空不算锁定。
     #[must_use]
     pub fn is_locked(
-        &self,
-        mfa_attempts: i32,
-        mfa_locked_until: Option<chrono::DateTime<chrono::Utc>>,
+        locked_until: Option<chrono::DateTime<chrono::Utc>>,
+        now: chrono::DateTime<chrono::Utc>,
     ) -> bool {
-        if mfa_attempts >= self.config.max_attempts {
-            if let Some(locked_until) = mfa_locked_until {
-                return locked_until > chrono::Utc::now();
-            }
-            return true;
-        }
-        false
-    }
-    #[must_use]
-    pub fn calculate_lockout_until(&self) -> chrono::DateTime<chrono::Utc> {
-        chrono::Utc::now() + chrono::Duration::seconds(self.config.lockout_duration)
+        locked_until.is_some_and(|until| until > now)
     }
     #[must_use]
     pub fn config(&self) -> &MfaConfig {
@@ -502,5 +471,186 @@ impl MfaServiceCache {
     }
     pub async fn invalidate(&self) {
         self.cache.invalidate(&()).await;
+    }
+}
+
+/// 失败计数更新后的剩余次数。锁触发时调用方应改报锁定，而不是把剩余次数当成功提示。
+#[must_use]
+pub fn attempts_remaining(max_attempts: i32, attempts: i32) -> i32 {
+    max_attempts.saturating_sub(attempts).max(0)
+}
+
+/// 与 `record_mfa_failure` 的 SQL 同一规则：锁已过期时下一次失败从 0 起算。
+#[must_use]
+pub fn next_attempt_base(attempts: i32, locked_until_unix: Option<i64>, now_unix: i64) -> i32 {
+    match locked_until_unix {
+        Some(until) if until <= now_unix => 0,
+        _ => attempts,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base32::Alphabet;
+
+    fn service(digits: u32, period: u64, window: u64) -> MfaService {
+        let config = MfaConfig {
+            digits,
+            period,
+            window,
+            ..MfaConfig::default()
+        };
+        MfaService::new(config, Zeroizing::new([7u8; 32]))
+    }
+
+    fn secret() -> String {
+        base32_encode(
+            Alphabet::Rfc4648 { padding: false },
+            b"12345678901234567890",
+        )
+    }
+
+    fn code_at(period: u64, digits: u32, step_start: u64) -> String {
+        let bytes = base32_decode(Alphabet::Rfc4648 { padding: false }, &secret()).expect("secret");
+        totp_custom::<Sha1>(period, digits, &bytes, step_start)
+    }
+
+    #[test]
+    fn accepts_current_step_and_returns_step_start() {
+        let period = 30;
+        let now = 1_700_000_030;
+        let step_start = (now / period) * period;
+        let code = code_at(period, 6, step_start);
+        assert_eq!(
+            service(6, period, 1).verify_totp_step_at(&secret(), &code, now),
+            Some(i64::try_from(step_start).expect("step"))
+        );
+    }
+
+    #[test]
+    fn window_edges_accept_and_outside_rejects() {
+        let period = 30;
+        let now = 1_700_000_000;
+        let current = (now / period) * period;
+        let svc = service(6, period, 1);
+        let earlier = current - period;
+        let later = current + period;
+        let outside = current - (2 * period);
+        assert_eq!(
+            svc.verify_totp_step_at(&secret(), &code_at(period, 6, earlier), now),
+            Some(i64::try_from(earlier).expect("step"))
+        );
+        assert_eq!(
+            svc.verify_totp_step_at(&secret(), &code_at(period, 6, later), now),
+            Some(i64::try_from(later).expect("step"))
+        );
+        assert_eq!(
+            svc.verify_totp_step_at(&secret(), &code_at(period, 6, outside), now),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_non_digit_short_and_numeric_padding() {
+        let period = 30;
+        let now = 1_700_000_000;
+        let step_start = (now / period) * period;
+        let code = code_at(period, 6, step_start);
+        let svc = service(6, period, 0);
+        assert_eq!(
+            svc.verify_totp_step_at(&secret(), &code, now),
+            Some(i64::try_from(step_start).expect("step"))
+        );
+        for bad in [
+            "+123456",
+            "12345",
+            "1234567",
+            "12 456",
+            "12345a",
+            "１２３４５６",
+            "",
+        ] {
+            assert_eq!(svc.verify_totp_step_at(&secret(), bad, now), None, "{bad}");
+        }
+        let padded = format!("0{code}");
+        assert_eq!(svc.verify_totp_step_at(&secret(), &padded, now), None);
+    }
+
+    #[test]
+    fn eight_digit_config_rejects_six_digit_code() {
+        let period = 30;
+        let now = 1_700_000_000;
+        let step_start = (now / period) * period;
+        let six = code_at(period, 6, step_start);
+        assert_eq!(
+            service(8, period, 1).verify_totp_step_at(&secret(), &six, now),
+            None
+        );
+        let eight = code_at(period, 8, step_start);
+        assert_eq!(
+            service(8, period, 1).verify_totp_step_at(&secret(), &eight, now),
+            Some(i64::try_from(step_start).expect("step"))
+        );
+    }
+
+    #[test]
+    fn configured_period_does_not_fall_back_to_thirty_seconds() {
+        let now = 1_700_000_060;
+        let thirty = (now / 30) * 30;
+        let code = code_at(30, 6, thirty);
+        let sixty_start = (now / 60) * 60;
+        let sixty_code = code_at(60, 6, sixty_start);
+        if code != sixty_code {
+            assert_eq!(
+                service(6, 60, 1).verify_totp_step_at(&secret(), &code, now),
+                None
+            );
+        }
+        assert_eq!(
+            service(6, 60, 1).verify_totp_step_at(&secret(), &sixty_code, now),
+            Some(i64::try_from(sixty_start).expect("step"))
+        );
+    }
+
+    #[test]
+    fn multiple_hits_return_the_latest_step() {
+        let period = 30_u64;
+        let svc = service(1, period, 5);
+        let now = (0..20_000_u64).find_map(|offset| {
+            let now = 1_700_000_000 + offset * period;
+            let current = (now / period) * period;
+            let early = code_at(period, 1, current);
+            let late = code_at(period, 1, current + period);
+            (early == late).then_some((now, current + period, early))
+        });
+        let (now, latest, code) = now.expect("1-digit TOTP collides inside the window");
+        assert_eq!(
+            svc.verify_totp_step_at(&secret(), &code, now),
+            Some(i64::try_from(latest).expect("step"))
+        );
+    }
+
+    #[test]
+    fn expired_lock_restarts_attempt_count() {
+        let now = 1_000;
+        assert_eq!(next_attempt_base(5, Some(now), now), 0);
+        assert_eq!(next_attempt_base(5, Some(now - 1), now), 0);
+        assert_eq!(next_attempt_base(2, Some(now + 1), now), 2);
+        assert_eq!(next_attempt_base(2, None, now), 2);
+        let restarted = next_attempt_base(5, Some(now - 1), now) + 1;
+        assert_eq!(attempts_remaining(5, restarted), 4);
+        assert!(restarted < 5);
+    }
+
+    #[test]
+    fn lock_requires_future_deadline() {
+        let now = chrono::Utc::now();
+        assert!(!MfaService::is_locked(None, now));
+        assert!(!MfaService::is_locked(Some(now), now));
+        assert!(MfaService::is_locked(
+            Some(now + chrono::Duration::seconds(1)),
+            now
+        ));
     }
 }

@@ -392,18 +392,23 @@ port = 9000
     #[test]
     fn mfa_step_up_ttl_defaults_and_bounds() {
         use mazbri_core::config::ValidateConfig;
-        let cfg = parse("").expect("parse");
+        let mut cfg = parse("").expect("parse");
         assert_eq!(cfg.mfa.step_up_ttl_secs, 900);
         assert_eq!(cfg.mfa.lockout_duration, 900);
+        cfg.analytics.url = "http://127.0.0.1:9".to_string();
         cfg.validate().expect("default mfa config valid");
 
-        let zero = parse("[mfa]\nlockout_duration = 0\n").expect("parse");
+        let mut zero = parse("[mfa]\nlockout_duration = 0\n").expect("parse");
+        zero.analytics.url = "http://127.0.0.1:9".to_string();
         assert!(zero.validate().is_err());
-        let short = parse("[mfa]\nstep_up_ttl_secs = 59\n").expect("parse");
+        let mut short = parse("[mfa]\nstep_up_ttl_secs = 59\n").expect("parse");
+        short.analytics.url = "http://127.0.0.1:9".to_string();
         assert!(short.validate().is_err());
-        let long = parse("[mfa]\nstep_up_ttl_secs = 3601\n").expect("parse");
+        let mut long = parse("[mfa]\nstep_up_ttl_secs = 3601\n").expect("parse");
+        long.analytics.url = "http://127.0.0.1:9".to_string();
         assert!(long.validate().is_err());
-        let edge = parse("[mfa]\nstep_up_ttl_secs = 60\n").expect("parse");
+        let mut edge = parse("[mfa]\nstep_up_ttl_secs = 60\n").expect("parse");
+        edge.analytics.url = "http://127.0.0.1:9".to_string();
         edge.validate().expect("lower bound");
     }
 }

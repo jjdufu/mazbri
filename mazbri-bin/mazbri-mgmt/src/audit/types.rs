@@ -131,6 +131,8 @@ audit_actions! {
     MfaRegenerateCodes => "user.mfa_regenerate_codes",
     MfaRequiredSetup => "user.mfa_required_setup",
     MfaRequiredEnable => "user.mfa_required_enable",
+    MfaStepUp => "user.mfa_step_up",
+    MfaStepUpEnd => "user.mfa_step_up_end",
     UserTokenRefresh => "user.token_refresh",
     RequestKeyCreate => "tenant.request_key_create",
     RequestKeyRetire => "tenant.request_key_retire",

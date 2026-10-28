@@ -8,6 +8,10 @@ import type {
   MfaVerifyRequest,
   MfaStatus,
   MfaBackupCodesResponse,
+  MfaSessionRefresh,
+  MfaStepUpRequest,
+  MfaStepUpResponse,
+  MfaStepUpStatus,
 } from "@/types/api";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 const AUTH_PATH = `${API_BASE_PATH}${API_PATHS.AUTH}`;
@@ -67,9 +71,10 @@ export function logout(
     showErrorMessage: false,
   });
 }
-export function getMfaSetup(signal?: AbortSignal) {
+export function getMfaSetup(currentPassword: string, signal?: AbortSignal) {
   return request.post<MfaSetupResponse>({
     url: `${AUTH_PATH}/mfa/setup`,
+    data: { current_password: currentPassword },
     signal,
   });
 }
@@ -79,31 +84,64 @@ export function enableMfa(
   },
   signal?: AbortSignal,
 ) {
-  return request.post<void>({
+  return request.post<MfaSessionRefresh>({
     url: `${AUTH_PATH}/mfa/enable`,
-    params: data,
+    data,
     showSuccessMessage: true,
     signal,
   });
 }
-export function disableMfa(
-  data: {
-    verification_code: string;
-  },
-  signal?: AbortSignal,
-) {
-  return request.post<void>({
+export function disableMfa(signal?: AbortSignal) {
+  return request.post<MfaSessionRefresh>({
     url: `${AUTH_PATH}/mfa/disable`,
-    params: data,
     showSuccessMessage: true,
     signal,
   });
+}
+function exclusiveMfaBody(data: {
+  totp_code?: string;
+  backup_code?: string;
+}): { totp_code: string } | { backup_code: string } {
+  const totp = data.totp_code?.trim() ?? "";
+  const backup = data.backup_code?.trim().toUpperCase() ?? "";
+  if ((totp.length > 0) === (backup.length > 0)) {
+    throw new Error("MFA code must be exactly one of totp_code or backup_code");
+  }
+  return totp ? { totp_code: totp } : { backup_code: backup };
 }
 export function verifyMfa(data: MfaVerifyRequest, signal?: AbortSignal) {
   return request.post<LoginResponse>({
     url: `${AUTH_PATH}/mfa/verify`,
-    params: data,
+    data: {
+      temp_token: data.temp_token,
+      ...exclusiveMfaBody(data),
+    },
     signal,
+  });
+}
+export function getMfaStepUp(signal?: AbortSignal) {
+  return request.get<MfaStepUpStatus>({
+    url: `${AUTH_PATH}/mfa/step-up`,
+    signal,
+    showErrorMessage: false,
+  });
+}
+export function stepUpMfa(data: MfaStepUpRequest, signal?: AbortSignal) {
+  return request.post<MfaStepUpResponse>({
+    url: `${AUTH_PATH}/mfa/step-up`,
+    data: {
+      ...exclusiveMfaBody(data),
+      ...(data.purpose ? { purpose: data.purpose } : {}),
+    },
+    signal,
+    showErrorMessage: false,
+  });
+}
+export function endMfaStepUp(signal?: AbortSignal) {
+  return request.del<void>({
+    url: `${AUTH_PATH}/mfa/step-up`,
+    signal,
+    showErrorMessage: false,
   });
 }
 export function getMfaStatus(signal?: AbortSignal) {

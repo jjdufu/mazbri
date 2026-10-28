@@ -9,7 +9,10 @@ export {
   type MfaVerifyRequest,
   type MfaStatus,
   type MfaEnableRequest,
-  type MfaDisableRequest,
+  type MfaSessionRefresh,
+  type MfaStepUpStatus,
+  type MfaStepUpRequest,
+  type MfaStepUpResponse,
   type MfaBackupCodesResponse,
 } from "./auth";
 export * from "./tenant";
