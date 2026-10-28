@@ -1,7 +1,7 @@
 use super::common::{
-    MfaServiceErrorMode, advance_enable_step, authenticate_stage_token, commit_required_enable,
-    consume_stage_token, get_mfa_service, ok_json, prepare_setup_artifacts, resign_bound_session,
-    store_setup_artifacts, unavailable_with_session, verify_totp_for_enable,
+    MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service, ok_json,
+    prepare_setup_artifacts, resign_bound_session, unavailable_with_session,
+    verify_totp_for_enable, write_required_enable, write_required_setup,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminUser;
@@ -69,9 +69,6 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
         Ok(artifacts) => artifacts,
         Err(response) => return *response,
     };
-    if let Err(response) = consume_stage_token(params.redis, &claims).await {
-        return *response;
-    }
     let stage_binding = crate::middleware::admin_token::SessionBinding::stage(claims.sid.clone());
     let Ok(next_token) = issue_stage_token(
         TokenKind::MfaSetup,
@@ -86,7 +83,20 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
             mazbri_i18n::mfa::failed_generate_token(),
         );
     };
-    if let Err(response) = store_setup_artifacts(pool, user_id, &artifacts).await {
+    let consumed = match consume_stage_token(params.redis, &claims).await {
+        Ok(consumed) => consumed,
+        Err(response) => return *response,
+    };
+    if let Err(response) = write_required_setup(
+        params.redis,
+        pool,
+        consumed,
+        user_id,
+        &artifacts.encrypted_secret,
+        &artifacts.hashed_codes,
+    )
+    .await
+    {
         return *response;
     }
     params.audit.log(user_audit(
@@ -193,19 +203,20 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
         Ok(step_at) => step_at,
         Err(response) => return *response,
     };
-    if let Err(response) = advance_enable_step(pool, user_id, step_at).await {
-        return *response;
-    }
-    if let Err(response) = consume_stage_token(params.redis, &claims).await {
-        return *response;
-    }
+    let consumed = match consume_stage_token(params.redis, &claims).await {
+        Ok(consumed) => consumed,
+        Err(response) => return *response,
+    };
     let issued_at = chrono::Utc::now().timestamp();
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    let epoch = match commit_required_enable(pool, user_id, changed_at).await {
-        Ok(epoch) => epoch,
-        Err(response) => return *response,
-    };
+    let epoch =
+        match write_required_enable(params.redis, pool, consumed, user_id, step_at, changed_at)
+            .await
+        {
+            Ok(epoch) => epoch,
+            Err(response) => return *response,
+        };
     finish_required_enable(FinishRequiredEnable {
         params: &params,
         pool,
@@ -252,7 +263,13 @@ async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::respons
     .await
     {
         Ok(resigned) => resigned,
-        Err(response) => return *response,
+        Err(_response) => {
+            error!("failed to issue session after required MFA enable");
+            return ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            );
+        }
     };
     let window_opened = crate::services::mfa::step_up::open_totp_window(
         args.params.redis,

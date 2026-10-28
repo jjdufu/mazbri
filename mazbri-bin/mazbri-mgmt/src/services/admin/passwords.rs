@@ -151,32 +151,137 @@ pub async fn first_login_change_password(
     {
         return Err(ApiError::validation(reuse_error));
     }
-    // 一次性：在修改密码前原子消费临时令牌，重放/并发请求在此被拒绝。
-    if let Err(rejection) = admin_token::consume_temporary(params.redis, params.claims).await {
-        crate::audit::set_failure_reason(rejection.reason());
-        crate::audit::mark_security_event();
-        return Err(ApiError::Unauthorized);
-    }
-    repo::update_password(db, user_id, passed_username, &new_password_hash)
+    commit_first_login_password_reset(
+        db,
+        params.redis,
+        params.claims,
+        user_id,
+        passed_username,
+        &new_password_hash,
+    )
+    .await?;
+    if let Err(error) = policy
+        .record_password_history(db, user_id, &new_password_hash)
         .await
-        .map_err(|e| {
-            error!("Failed to update password: {}", e);
-            ApiError::internal("更新密码失败".to_string())
-        })?;
+    {
+        warn!("Failed to record password history: {error}");
+    }
     let user = AdminUser {
         id: user_id.to_string(),
         username: final_username,
         role: user_row.role.clone(),
         created_at: user_row.created_at.to_rfc3339(),
     };
-    if let Err(e) = policy
-        .record_password_history(db, user_id, &new_password_hash)
-        .await
-    {
-        warn!("Failed to record password history: {}", e);
-    }
     info!("首次登录修改密码成功: {}", user_row.username);
-    finish_first_login(&params, user).await
+    match finish_first_login(&params, user).await {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            error!("first-login post-commit stage failed: {error}");
+            crate::audit::set_failure_reason("password_reset_post_commit_failed");
+            Err(ApiError::Unauthorized)
+        }
+    }
+}
+
+/// 校验已经通过之后：消费 `password_reset` 令牌并做 CAS 更新。
+///
+/// # Errors
+///
+/// Redis 不可用返回 503；令牌已用返回 401；CAS 未命中返回 401 且不回滚；
+/// 确定未提交的写库错误回滚后返回 400（唯一键）或 500；结果未决返回 401 且不回滚。
+pub(crate) async fn commit_first_login_password_reset(
+    db: &PgPool,
+    redis: &RedisClient,
+    claims: &AdminClaims,
+    user_id: uuid::Uuid,
+    new_username: Option<&str>,
+    new_password_hash: &str,
+) -> Result<(), ApiError> {
+    let consumed = match admin_token::consume_temporary(redis, claims).await {
+        Ok(consumed) => consumed,
+        Err(rejection) => return Err(rejection_to_api_error(rejection)),
+    };
+    let mut conn = match db.acquire().await {
+        Ok(conn) => conn,
+        Err(error) => {
+            let failure = admin_token::StageWriteFailure::from_acquire(error);
+            admin_token::settle_stage_token(consumed, true, redis).await;
+            error!(
+                "Failed to acquire connection for first-login password reset: {}",
+                failure.error()
+            );
+            return Err(ApiError::internal("更新密码失败".to_string()));
+        }
+    };
+    let cas = repo::complete_first_login_password_reset(
+        &mut conn,
+        user_id,
+        new_username,
+        new_password_hash,
+    )
+    .await;
+    drop(conn);
+    match cas {
+        Ok(true) => {
+            consumed.retain();
+        }
+        Ok(false) => {
+            consumed.retain();
+            crate::audit::set_failure_reason("password_reset_not_required");
+            return Err(ApiError::Unauthorized);
+        }
+        Err(error) => {
+            return fail_first_login_write(consumed, error, redis).await;
+        }
+    }
+    Ok(())
+}
+
+async fn fail_first_login_write(
+    consumed: admin_token::ConsumedTemporaryToken,
+    error: sqlx::Error,
+    redis: &RedisClient,
+) -> Result<(), ApiError> {
+    let failure = admin_token::classify_acquired_execute_error(error);
+    let rollback = matches!(failure, admin_token::StageWriteFailure::Uncommitted(_));
+    let unique = failure
+        .error()
+        .as_database_error()
+        .is_some_and(sqlx::error::DatabaseError::is_unique_violation);
+    admin_token::settle_stage_token(consumed, rollback, redis).await;
+    if rollback && unique {
+        return Err(ApiError::validation("用户名已被占用".to_string()));
+    }
+    if rollback {
+        error!(
+            "Failed to update password on first login: {}",
+            failure.error()
+        );
+        return Err(ApiError::internal("更新密码失败".to_string()));
+    }
+    error!(
+        "Indeterminate password update on first login: {}",
+        failure.error()
+    );
+    crate::audit::set_failure_reason("password_update_indeterminate");
+    Err(ApiError::Unauthorized)
+}
+
+fn rejection_to_api_error(rejection: admin_token::TokenRejection) -> ApiError {
+    crate::audit::set_failure_reason(rejection.reason());
+    if matches!(
+        rejection,
+        admin_token::TokenRejection::TypeMismatch | admin_token::TokenRejection::Revoked
+    ) {
+        crate::audit::mark_security_event();
+    }
+    if rejection == admin_token::TokenRejection::CheckUnavailable {
+        ApiError::Core(mazbri_core::CoreError::ServiceUnavailable {
+            service: "token revocation store".to_string(),
+        })
+    } else {
+        ApiError::Unauthorized
+    }
 }
 
 /// 改密完成后的下一阶段：需要 MFA 时进入 MFA 阶段，否则签发正式访问令牌。

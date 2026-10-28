@@ -317,6 +317,40 @@ pub async fn update_password(
         .await?;
     Ok(())
 }
+
+/// 首次登录强制改密。仅当 `force_password_reset = true` 时更新并翻转为 `false`。
+///
+/// 返回 `Ok(true)` 表示更新了 1 行；`Ok(false)` 表示行不存在或已经不需要强制改密。
+///
+/// # Errors
+///
+/// 数据库执行失败时返回错误。调用方负责把执行期错误分成未提交和未决。
+pub async fn complete_first_login_password_reset(
+    conn: &mut sqlx::PgConnection,
+    user_id: uuid::Uuid,
+    new_username: Option<&str>,
+    new_password_hash: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r"
+        UPDATE admin_users
+        SET username = COALESCE($1, username),
+            password_hash = $2,
+            password_changed_at = NOW(),
+            force_password_reset = false,
+            auth_epoch = auth_epoch + 1,
+            updated_at = NOW()
+        WHERE id = $3
+          AND force_password_reset = true
+        ",
+    )
+    .bind(new_username)
+    .bind(new_password_hash)
+    .bind(user_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

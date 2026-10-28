@@ -408,3 +408,70 @@ fn first_login_refresh_exp_equals_sxp() {
     assert_eq!(claims.exp, claims.sxp.unwrap_or(0));
     assert_eq!(claims.exp, sxp);
 }
+
+fn io_error() -> sqlx::Error {
+    sqlx::Error::Io(std::io::Error::other("io"))
+}
+
+fn protocol_error() -> sqlx::Error {
+    sqlx::Error::Protocol("protocol".to_string())
+}
+
+fn tls_error() -> sqlx::Error {
+    sqlx::Error::Tls(Box::new(std::io::Error::other("tls")))
+}
+
+#[test]
+fn uncommitted_db_errors_are_only_database_and_pool_states() {
+    assert!(is_definitely_uncommitted_db_error(
+        &sqlx::Error::PoolTimedOut
+    ));
+    assert!(is_definitely_uncommitted_db_error(&sqlx::Error::PoolClosed));
+    assert!(!is_definitely_uncommitted_db_error(&io_error()));
+    assert!(!is_definitely_uncommitted_db_error(&protocol_error()));
+    assert!(!is_definitely_uncommitted_db_error(&tls_error()));
+}
+
+#[test]
+fn acquire_failures_are_uncommitted_even_for_transport_errors() {
+    for error in [io_error(), tls_error(), protocol_error()] {
+        assert!(matches!(
+            StageWriteFailure::from_acquire(error),
+            StageWriteFailure::Uncommitted(_)
+        ));
+    }
+}
+
+#[test]
+fn acquired_transport_errors_are_indeterminate() {
+    for error in [io_error(), tls_error(), protocol_error()] {
+        assert!(matches!(
+            classify_acquired_execute_error(error),
+            StageWriteFailure::Indeterminate(_)
+        ));
+    }
+}
+
+#[test]
+fn require_temporary_kind_accepts_only_stage_tokens() {
+    for kind in ["access", "refresh"] {
+        let claims = claims_with(ISSUER, Some("aud"), Some(kind), 60);
+        assert_eq!(
+            require_temporary_kind(&claims),
+            Err(TokenRejection::TypeMismatch)
+        );
+    }
+    let missing = claims_with(ISSUER, Some("aud"), None, 60);
+    assert_eq!(
+        require_temporary_kind(&missing),
+        Err(TokenRejection::TypeMismatch)
+    );
+    for kind in [
+        TokenKind::MfaPending,
+        TokenKind::MfaSetup,
+        TokenKind::PasswordReset,
+    ] {
+        let claims = claims_with(ISSUER, Some(kind.audience()), Some(kind.as_str()), 60);
+        assert_eq!(require_temporary_kind(&claims), Ok(()));
+    }
+}

@@ -15,6 +15,7 @@ import {
 } from "@/api/auth";
 import type { LoginResponse, MfaSetupResponse } from "@/types/api";
 import { HttpError } from "@/utils/http/error";
+import { ApiStatus } from "@/utils/http/status";
 import { logger } from "@/utils/sys";
 import {
   ErrorCodes,
@@ -265,7 +266,7 @@ export function useLoginFlow() {
       });
       await completeLogin(response);
     }).catch((error) => {
-      handleLoginError(error);
+      handleStageError(error, "login.mfa.sessionExpired");
     });
   }
   async function handleMfaSetup(): Promise<void> {
@@ -282,7 +283,7 @@ export function useLoginFlow() {
         totpDigits.value = setup.totp_digits;
       }
     }).catch((error) => {
-      handleLoginError(error);
+      handleStageError(error, "login.mfa.sessionExpired");
     });
   }
   async function handleMfaSetupEnable(): Promise<void> {
@@ -297,7 +298,7 @@ export function useLoginFlow() {
       });
       await completeLogin(response);
     }).catch((error) => {
-      handleLoginError(error);
+      handleStageError(error, "login.mfa.sessionExpired");
     });
   }
   async function handleChangePassword(): Promise<void> {
@@ -317,13 +318,32 @@ export function useLoginFlow() {
       // 改密后若仍需 MFA 验证/设置，后端返回下一阶段的临时令牌而不是正式会话。
       await handleLoginResponse(response, false);
     }).catch((error) => {
-      handleLoginError(error);
+      handleStageError(error, "login.changePassword.sessionExpired");
     });
   }
   function handleBackToLogin(): void {
     loginStep.value = "login";
     tempToken.value = "";
+    userRole.value = "";
+    totpDigits.value = 6;
     mfaFormData.totpCode = "";
+    mfaSetupData.secret = "";
+    mfaSetupData.qr_code_url = "";
+    mfaSetupData.backup_codes = [];
+    mfaSetupData.totp_code = "";
+    changePasswordFormData.currentPassword = "";
+    changePasswordFormData.newPassword = "";
+    changePasswordFormData.confirmPassword = "";
+    changePasswordFormData.newUsername = "";
+    isPassing.value = false;
+    isClickPass.value = false;
+  }
+  function handleStageError(error: unknown, expiredMsgKey: string): void {
+    handleLoginError(error);
+    if (error instanceof HttpError && error.code === ApiStatus.unauthorized) {
+      handleBackToLogin();
+      ElMessage.warning(t(expiredMsgKey));
+    }
   }
   return {
     loginStep,

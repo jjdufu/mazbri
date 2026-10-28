@@ -396,26 +396,143 @@ pub async fn ensure_not_revoked(
     }
 }
 
-/// 原子地消费临时令牌（`SET NX EX`）：只有第一个调用者成功，并发重放会被拒绝。
+const DELETE_IF_VALUE_MATCH: &str = r"
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+";
+
+/// 已原子消费的一次性临时令牌。
+///
+/// 只在后续写库确定未提交时调用 [`Self::rollback_uncommitted`]。
+/// 正常完成、CAS 未命中（首登 `Ok(false)`、强制 MFA 0 行），或结果未决时调用 [`Self::retain`]，黑名单键保留。
+#[derive(Debug, PartialEq, Eq)]
+#[must_use]
+pub struct ConsumedTemporaryToken {
+    redis_key: String,
+    marker: String,
+}
+
+impl ConsumedTemporaryToken {
+    /// 保留黑名单键直到 TTL。不提供按 `jti` 字符串删除。
+    pub fn retain(self) {
+        // 读字段只为消费这份凭据；Redis 里的黑名单键保持不动。
+        let Self { redis_key, marker } = self;
+        let _ = redis_key.len().saturating_add(marker.len());
+    }
+
+    /// 仅当 Redis 中的值仍等于本次 `SET NX` 写入的 `marker` 时删除。
+    pub async fn rollback_uncommitted(self, redis: &RedisClient) {
+        let keys = [self.redis_key];
+        let args = [self.marker];
+        match redis.eval_i64(DELETE_IF_VALUE_MATCH, &keys, &args).await {
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!("Failed to rollback temporary token jti in Redis: {error}");
+            }
+        }
+    }
+}
+
+/// 声明是否为一次性临时令牌。缺 `token_type`、`access`、`refresh` 都是用途不符。
 ///
 /// # Errors
 ///
-/// 已被消费返回 [`TokenRejection::Revoked`]；缺少 `jti` 返回 [`TokenRejection::Invalid`]；
-/// Redis 不可用返回 [`TokenRejection::CheckUnavailable`]。
+/// 不是 `mfa_pending` / `mfa_setup` / `password_reset` 时返回 [`TokenRejection::TypeMismatch`]。
+pub fn require_temporary_kind(claims: &AdminClaims) -> Result<(), TokenRejection> {
+    let Some(token_type) = claims.token_type.as_deref() else {
+        return Err(TokenRejection::TypeMismatch);
+    };
+    let temporary = TokenKind::ALL
+        .into_iter()
+        .any(|kind| kind.is_temporary() && kind.as_str() == token_type);
+    if temporary {
+        Ok(())
+    } else {
+        Err(TokenRejection::TypeMismatch)
+    }
+}
+
+/// 原子消费临时令牌。
+///
+/// # Errors
+///
+/// 用途不符返回 [`TokenRejection::TypeMismatch`]；缺少 `jti` 返回 [`TokenRejection::Invalid`]；
+/// 已被消费返回 [`TokenRejection::Revoked`]；Redis 不可用返回 [`TokenRejection::CheckUnavailable`]。
 pub async fn consume_temporary(
     redis: &RedisClient,
     claims: &AdminClaims,
-) -> Result<(), TokenRejection> {
+) -> Result<ConsumedTemporaryToken, TokenRejection> {
+    require_temporary_kind(claims)?;
     let Some(jti) = claims.jti.as_deref() else {
         return Err(TokenRejection::Invalid);
     };
+    let marker = format!("temp:{}", uuid::Uuid::new_v4());
+    let redis_key = revoked_jti_key(jti);
     match redis
-        .set_nx_ex(&revoked_jti_key(jti), b"1", denylist_ttl(claims))
+        .set_nx_ex(&redis_key, marker.as_bytes(), denylist_ttl(claims))
         .await
     {
-        Ok(true) => Ok(()),
+        Ok(true) => Ok(ConsumedTemporaryToken { redis_key, marker }),
         Ok(false) => Err(TokenRejection::Revoked),
         Err(_) => Err(TokenRejection::CheckUnavailable),
+    }
+}
+
+/// 已经拿到连接之后的写失败。
+#[derive(Debug)]
+pub enum StageWriteFailure {
+    /// 语句确定没有提交，调用方必须回滚临时令牌。
+    Uncommitted(sqlx::Error),
+    /// 语句可能已提交，调用方不得回滚临时令牌。
+    Indeterminate(sqlx::Error),
+}
+
+impl StageWriteFailure {
+    #[must_use]
+    pub const fn error(&self) -> &sqlx::Error {
+        match self {
+            Self::Uncommitted(error) | Self::Indeterminate(error) => error,
+        }
+    }
+
+    /// 建连失败：查询尚未发出。
+    #[must_use]
+    pub fn from_acquire(error: sqlx::Error) -> Self {
+        Self::Uncommitted(error)
+    }
+}
+
+/// 只用于已经拿到连接之后的 `execute` / `fetch_optional` 错误。
+#[must_use]
+pub fn classify_acquired_execute_error(error: sqlx::Error) -> StageWriteFailure {
+    if is_definitely_uncommitted_db_error(&error) {
+        StageWriteFailure::Uncommitted(error)
+    } else {
+        StageWriteFailure::Indeterminate(error)
+    }
+}
+
+/// `Database(_)`、`PoolTimedOut`、`PoolClosed` 在执行期也确定没有提交。
+#[must_use]
+pub const fn is_definitely_uncommitted_db_error(error: &sqlx::Error) -> bool {
+    matches!(
+        error,
+        sqlx::Error::Database(_) | sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed
+    )
+}
+
+/// 按值消费凭据。`rollback == true` 时条件删除，否则保留黑名单键。
+pub async fn settle_stage_token(
+    consumed: ConsumedTemporaryToken,
+    rollback: bool,
+    redis: &RedisClient,
+) {
+    if rollback {
+        consumed.rollback_uncommitted(redis).await;
+    } else {
+        consumed.retain();
     }
 }
 

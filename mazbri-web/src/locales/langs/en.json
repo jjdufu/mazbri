@@ -664,7 +664,8 @@
       "placeholder": "Code or backup code",
       "invalidCode": "Enter a numeric code of the expected length, or an 8-character backup code",
       "btnText": "Verify",
-      "backToLogin": "Back to login"
+      "backToLogin": "Back to login",
+      "sessionExpired": "Verification session has expired or is no longer valid. Please sign in again."
     },
     "changePassword": {
       "title": "Change Password",
@@ -681,7 +682,9 @@
       "passwordTooShort": "Password must be at least 8 characters",
       "passwordMinLength": "Password must be at least 8 characters",
       "btnText": "Confirm",
-      "success": "Password changed successfully"
+      "success": "Password changed successfully",
+      "sessionExpired": "Password reset session has expired or is no longer valid. Please sign in again (use your new password if it was already updated).",
+      "backToLogin": "Back to login"
     },
     "mfaSetup": {
       "title": "Set Up Two-Factor Authentication",
@@ -1793,7 +1796,11 @@
       "mfaInvalidRequest": "Invalid MFA request",
       "sessionStale": "Session is stale and must be refreshed",
       "insufficientPermissions": "Insufficient role permissions",
-      "routeNotAuthorized": "Route has no access policy (denied by default)"
+      "routeNotAuthorized": "Route has no access policy (denied by default)",
+      "passwordResetNotRequired": "Password reset not required",
+      "passwordUpdateIndeterminate": "Password update outcome indeterminate",
+      "passwordResetPostCommitFailed": "Password reset committed but issuance failed",
+      "mfaVerifyPostCommitFailed": "Verification committed but issuance failed"
     }
   },
   "feedback": {

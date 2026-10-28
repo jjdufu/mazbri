@@ -44,6 +44,7 @@ export function firstLoginChangePassword(
     url: `${AUTH_PATH}/first-login-change-password`,
     params: data,
     showSuccessMessage: true,
+    suppressUnauthorizedToast: true,
     signal,
     headers: tempToken ? { Authorization: `Bearer ${tempToken}` } : undefined,
   });
@@ -116,6 +117,7 @@ export function verifyMfa(data: MfaVerifyRequest, signal?: AbortSignal) {
       temp_token: data.temp_token,
       ...exclusiveMfaBody(data),
     },
+    suppressUnauthorizedToast: true,
     signal,
   });
 }
@@ -167,6 +169,7 @@ export function mfaRequiredSetup(
   return request.post<MfaSetupResponse>({
     url: `${AUTH_PATH}/mfa/required-setup`,
     params: data,
+    suppressUnauthorizedToast: true,
     signal,
   });
 }
@@ -181,6 +184,7 @@ export function mfaRequiredEnable(
     url: `${AUTH_PATH}/mfa/required-enable`,
     params: data,
     showSuccessMessage: true,
+    suppressUnauthorizedToast: true,
     signal,
   });
 }

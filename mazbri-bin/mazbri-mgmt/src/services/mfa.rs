@@ -15,3 +15,6 @@ pub use setup_flow::{SetupParams, regenerate_backup_codes, setup};
 pub use verification_flow::{
     DisableParams, VerifyParams, disable, ensure_mfa_can_be_disabled, status, verify,
 };
+
+#[cfg(test)]
+pub(crate) use common::{write_required_enable, write_required_setup};

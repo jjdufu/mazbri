@@ -24,6 +24,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use mazbri_core::ErrorResponse;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -459,17 +460,19 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
         &call(&app, "GET", "/admin-users", Cred::Bearer(&legacy_access)).await,
         "legacy_token",
     );
-    // 过渡期：旧 refresh（token_type=refresh、无 aud）仍可换发新令牌。
+    // 无 aud 且 token_type 非空是用途不符，不是过渡期可换发的旧 refresh。
     legacy.token_type = Some("refresh".to_string());
     let legacy_refresh = encode(&Header::default(), &legacy, &key).expect("encode");
-    let ok = call(
-        &app,
-        "POST",
-        "/auth/refresh",
-        Cred::Cookie(REFRESH_COOKIE, &legacy_refresh),
-    )
-    .await;
-    assert_eq!(ok.status, StatusCode::OK);
+    assert_denied(
+        &call(
+            &app,
+            "POST",
+            "/auth/refresh",
+            Cred::Cookie(REFRESH_COOKIE, &legacy_refresh),
+        )
+        .await,
+        "token_type_mismatch",
+    );
     assert_denied(
         &call(&app, "GET", "/admin-users", Cred::Bearer(&legacy_refresh)).await,
         "token_type_mismatch",
@@ -507,7 +510,8 @@ async fn temp_tokens_are_single_use() {
             .expect("fresh token unused");
         consume_temporary(&deps.redis, &claims)
             .await
-            .expect("first use");
+            .expect("first use")
+            .retain();
         assert_eq!(
             consume_temporary(&deps.redis, &claims).await,
             Err(TokenRejection::Revoked)
@@ -526,7 +530,10 @@ async fn temp_tokens_are_single_use() {
     }
     let reset = issue_temporary(TokenKind::PasswordReset, subject(&user), SECRET).expect("issue");
     let claims = decode_kind(&reset, SECRET, TokenKind::PasswordReset).expect("decode");
-    consume_temporary(&deps.redis, &claims).await.expect("use");
+    consume_temporary(&deps.redis, &claims)
+        .await
+        .expect("use")
+        .retain();
     assert_denied(
         &call(
             &app,
@@ -1099,4 +1106,378 @@ async fn user_settings_are_scoped_to_the_caller() {
         .expect("read other");
     assert_eq!(other_before, other_after, "不得改动其他账号的个人设置");
     assert_eq!(other_after["settings"]["language"], "zh");
+}
+
+async fn install_force_23505(db: &PgPool) {
+    drop_force_23505(db).await;
+    sqlx::query(
+        r#"
+        CREATE OR REPLACE FUNCTION mazbri_test_force_23505() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          RAISE EXCEPTION 'duplicate key value violates unique constraint "admin_users_username_key"'
+            USING ERRCODE = '23505';
+        END;
+        $$;
+        "#,
+    )
+    .execute(db)
+    .await
+    .expect("create 23505 function");
+    sqlx::query(
+        r"
+        CREATE TRIGGER mazbri_test_force_23505
+        BEFORE UPDATE ON admin_users
+        FOR EACH ROW
+        EXECUTE FUNCTION mazbri_test_force_23505();
+        ",
+    )
+    .execute(db)
+    .await
+    .expect("create 23505 trigger");
+}
+
+async fn drop_force_23505(db: &PgPool) {
+    sqlx::query("DROP TRIGGER IF EXISTS mazbri_test_force_23505 ON admin_users")
+        .execute(db)
+        .await
+        .expect("drop 23505 trigger");
+    sqlx::query("DROP FUNCTION IF EXISTS mazbri_test_force_23505()")
+        .execute(db)
+        .await
+        .expect("drop 23505 function");
+}
+
+async fn password_hash_of(db: &PgPool, user_id: uuid::Uuid) -> Option<String> {
+    sqlx::query_scalar("SELECT password_hash FROM admin_users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(db)
+        .await
+        .expect("password hash")
+}
+
+fn stage_claims(user: &TestUser, kind: TokenKind) -> AdminClaims {
+    let token = issue_temporary(kind, subject(user), SECRET).expect("issue stage token");
+    decode_kind(&token, SECRET, kind).expect("decode stage token")
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn rollback_deletes_only_matching_temporary_marker() {
+    let deps = deps().await;
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    let claims = stage_claims(&user, TokenKind::PasswordReset);
+    let consumed = consume_temporary(&deps.redis, &claims)
+        .await
+        .expect("consume");
+    consumed.rollback_uncommitted(&deps.redis).await;
+    ensure_not_revoked(&deps.redis, &claims)
+        .await
+        .expect("rolled back");
+    consume_temporary(&deps.redis, &claims)
+        .await
+        .expect("second consume")
+        .retain();
+
+    let other = stage_claims(&user, TokenKind::MfaSetup);
+    let consumed = consume_temporary(&deps.redis, &other)
+        .await
+        .expect("consume other");
+    let key = revoked_jti_key(other.jti.as_deref().expect("jti"));
+    deps.redis
+        .set_ex_bytes(&key, b"1", 120)
+        .await
+        .expect("overwrite marker");
+    consumed.rollback_uncommitted(&deps.redis).await;
+    let value = deps
+        .redis
+        .get_bytes(&key)
+        .await
+        .expect("read denylist")
+        .expect("logout marker kept");
+    assert_eq!(value, b"1");
+    assert_eq!(
+        ensure_not_revoked(&deps.redis, &other).await,
+        Err(TokenRejection::Revoked)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn first_login_unique_violation_rolls_back_and_retries() {
+    let deps = deps().await;
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            force_password_reset: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let reset = issue_temporary(TokenKind::PasswordReset, subject(&user), SECRET).expect("issue");
+    let claims = decode_kind(&reset, SECRET, TokenKind::PasswordReset).expect("decode");
+    install_force_23505(&deps.db).await;
+    let result = change_password_first_login(&deps, &user, &user.password, &reset).await;
+    let still_usable = ensure_not_revoked(&deps.redis, &claims).await;
+    drop_force_23505(&deps.db).await;
+    let err = result.expect_err("unique violation");
+    assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+    assert_eq!(err.safe_message(), "用户名已被占用");
+    assert!(still_usable.is_ok(), "确定未提交必须退回令牌");
+    change_password_first_login(&deps, &user, &user.password, &reset)
+        .await
+        .expect("same token retries after trigger is gone");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn first_login_missing_column_rolls_back_as_internal_error() {
+    let deps = deps().await;
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            force_password_reset: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let reset = issue_temporary(TokenKind::PasswordReset, subject(&user), SECRET).expect("issue");
+    let claims = decode_kind(&reset, SECRET, TokenKind::PasswordReset).expect("decode");
+    sqlx::query(
+        "ALTER TABLE admin_users RENAME COLUMN password_changed_at TO password_changed_at_mazbri_test",
+    )
+    .execute(&*deps.db)
+    .await
+    .expect("hide password_changed_at");
+    let result = change_password_first_login(&deps, &user, &user.password, &reset).await;
+    let still_usable = ensure_not_revoked(&deps.redis, &claims).await;
+    sqlx::query(
+        "ALTER TABLE admin_users RENAME COLUMN password_changed_at_mazbri_test TO password_changed_at",
+    )
+    .execute(&*deps.db)
+    .await
+    .expect("restore password_changed_at");
+    let err = result.expect_err("undefined column");
+    assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(err.safe_message(), "内部服务器错误");
+    assert!(still_usable.is_ok(), "确定未提交必须退回令牌");
+    change_password_first_login(&deps, &user, &user.password, &reset)
+        .await
+        .expect("same token retries after column is restored");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn first_login_rejects_cleared_flag_before_consuming_token() {
+    let deps = deps().await;
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    let reset = issue_temporary(TokenKind::PasswordReset, subject(&user), SECRET).expect("issue");
+    let claims = decode_kind(&reset, SECRET, TokenKind::PasswordReset).expect("decode");
+    let err = change_password_first_login(&deps, &user, &user.password, &reset)
+        .await
+        .expect_err("reset not required");
+    assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+    assert_eq!(err.safe_message(), "不需要修改密码。请使用正常登录");
+    ensure_not_revoked(&deps.redis, &claims)
+        .await
+        .expect("token not consumed");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn first_login_cas_miss_keeps_token_revoked() {
+    let deps = deps().await;
+    let user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    let claims = stage_claims(&user, TokenKind::PasswordReset);
+    let before = password_hash_of(&deps.db, user.id).await;
+    let err = crate::services::admin::commit_first_login_password_reset(
+        &deps.db,
+        &deps.redis,
+        &claims,
+        user.id,
+        None,
+        "not-written",
+    )
+    .await
+    .expect_err("cas miss");
+    assert!(matches!(err, crate::error::ApiError::Unauthorized));
+    assert_eq!(
+        ensure_not_revoked(&deps.redis, &claims).await,
+        Err(TokenRejection::Revoked)
+    );
+    assert_eq!(password_hash_of(&deps.db, user.id).await, before);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn required_mfa_uncommitted_write_rolls_back_stage_token() {
+    let deps = deps().await;
+    let setup_user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    let enable_user = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    let setup_claims = stage_claims(&setup_user, TokenKind::MfaSetup);
+    let enable_claims = stage_claims(&enable_user, TokenKind::MfaSetup);
+    let setup_consumed = consume_temporary(&deps.redis, &setup_claims)
+        .await
+        .expect("consume setup");
+    let enable_consumed = consume_temporary(&deps.redis, &enable_claims)
+        .await
+        .expect("consume enable");
+    install_force_23505(&deps.db).await;
+    let setup_result = crate::services::mfa::write_required_setup(
+        &deps.redis,
+        &deps.db,
+        setup_consumed,
+        setup_user.id,
+        "encrypted-secret",
+        &["backup".to_string()],
+    )
+    .await;
+    let enable_result = crate::services::mfa::write_required_enable(
+        &deps.redis,
+        &deps.db,
+        enable_consumed,
+        enable_user.id,
+        1,
+        chrono::Utc::now(),
+    )
+    .await;
+    let setup_usable = ensure_not_revoked(&deps.redis, &setup_claims).await;
+    let enable_usable = ensure_not_revoked(&deps.redis, &enable_claims).await;
+    drop_force_23505(&deps.db).await;
+    let setup_err = setup_result.expect_err("setup 23505");
+    let enable_err = enable_result.expect_err("enable 23505");
+    assert_eq!(setup_err.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(enable_err.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(setup_usable.is_ok() && enable_usable.is_ok());
+
+    let setup_consumed = consume_temporary(&deps.redis, &setup_claims)
+        .await
+        .expect("retry setup consume");
+    crate::services::mfa::write_required_setup(
+        &deps.redis,
+        &deps.db,
+        setup_consumed,
+        setup_user.id,
+        "encrypted-secret",
+        &["backup".to_string()],
+    )
+    .await
+    .expect("setup stored");
+    let enable_consumed = consume_temporary(&deps.redis, &enable_claims)
+        .await
+        .expect("retry enable consume");
+    crate::services::mfa::write_required_enable(
+        &deps.redis,
+        &deps.db,
+        enable_consumed,
+        enable_user.id,
+        1,
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("enable stored");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL + Redis (disposable containers)"]
+async fn required_mfa_zero_rows_keep_stage_token_revoked() {
+    let deps = deps().await;
+    let enabled = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            mfa_enabled: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let stepped = create_user(
+        &deps.db,
+        NewUser {
+            role: "R_FINANCE",
+            ..Default::default()
+        },
+    )
+    .await;
+    sqlx::query("UPDATE admin_users SET mfa_totp_last_step_at = $2 WHERE id = $1")
+        .bind(stepped.id)
+        .bind(5_i64)
+        .execute(&*deps.db)
+        .await
+        .expect("set step watermark");
+    let setup_claims = stage_claims(&enabled, TokenKind::MfaSetup);
+    let enable_claims = stage_claims(&stepped, TokenKind::MfaSetup);
+    let setup_consumed = consume_temporary(&deps.redis, &setup_claims)
+        .await
+        .expect("consume setup");
+    let enable_consumed = consume_temporary(&deps.redis, &enable_claims)
+        .await
+        .expect("consume enable");
+    let setup_err = crate::services::mfa::write_required_setup(
+        &deps.redis,
+        &deps.db,
+        setup_consumed,
+        enabled.id,
+        "encrypted-secret",
+        &["backup".to_string()],
+    )
+    .await
+    .expect_err("setup cas miss");
+    let enable_err = crate::services::mfa::write_required_enable(
+        &deps.redis,
+        &deps.db,
+        enable_consumed,
+        stepped.id,
+        1,
+        chrono::Utc::now(),
+    )
+    .await
+    .expect_err("enable cas miss");
+    assert_eq!(setup_err.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(enable_err.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        ensure_not_revoked(&deps.redis, &setup_claims).await,
+        Err(TokenRejection::Revoked)
+    );
+    assert_eq!(
+        ensure_not_revoked(&deps.redis, &enable_claims).await,
+        Err(TokenRejection::Revoked)
+    );
 }

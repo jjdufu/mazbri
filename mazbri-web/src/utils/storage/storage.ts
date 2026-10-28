@@ -49,7 +49,7 @@ class StorageCompatibilityManager {
     setTimeout(() => {
       try {
         localStorage.clear();
-        useUserStore().logOut();
+        useUserStore().logOut({ skipRemote: true });
         router.push({ name: "Login" });
         logger.info("[Storage] Performed system logout");
       } catch (error) {

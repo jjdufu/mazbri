@@ -28,6 +28,7 @@ interface HttpErrorOptions {
   url?: string;
   method?: string;
   rawMessage?: string;
+  handledBySessionBoundary?: boolean;
 }
 
 interface BackendHttpErrorOptions extends HttpErrorOptions {
@@ -42,6 +43,7 @@ export class HttpError extends Error {
   public readonly url?: string;
   public readonly method?: string;
   public readonly rawMessage?: string;
+  public readonly handledBySessionBoundary: boolean;
 
   constructor(message: string, code: number, options?: HttpErrorOptions) {
     super(message);
@@ -52,6 +54,7 @@ export class HttpError extends Error {
     this.url = options?.url;
     this.method = options?.method;
     this.rawMessage = options?.rawMessage;
+    this.handledBySessionBoundary = options?.handledBySessionBoundary ?? false;
   }
 
   public toLogData(): ErrorLogData {
