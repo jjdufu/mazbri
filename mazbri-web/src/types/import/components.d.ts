@@ -121,6 +121,7 @@ declare module 'vue' {
     LoginLeftView: typeof import('./../../components/core/views/login/LoginLeftView.vue')['default']
     MetricSummaryCard: typeof import('./../../components/common/metric-summary-card/index.vue')['default']
     MfaRequiredHint: typeof import('./../../components/common/mfa-required-hint/index.vue')['default']
+    MfaStepUpDialog: typeof import('./../../components/common/mfa-step-up-dialog/index.vue')['default']
     PolicySection: typeof import('./../../components/common/policy-section/index.vue')['default']
     ResourceCardShell: typeof import('./../../components/common/resource-card-shell/index.vue')['default']
     ResourceTableActionBar: typeof import('./../../components/common/resource-table-action-bar/index.vue')['default']
