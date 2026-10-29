@@ -8,6 +8,7 @@ use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
 };
 use mazbri_core::request_context::request_ids;
 use std::net::SocketAddr;
@@ -51,17 +52,25 @@ pub async fn get_config(
 pub async fn create_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<CreateConfigRequest>,
-) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
     let data = service::create_config(&state, &claims, &payload, client_ip, &request_id, &trace_id)
         .await?;
-    Ok((StatusCode::CREATED, Json(data)))
+    Ok((StatusCode::CREATED, Json(data)).into_response())
 }
 /// # Errors
 ///
@@ -69,12 +78,20 @@ pub async fn create_config(
 pub async fn update_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
     Json(payload): Json<UpdateConfigRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
@@ -89,7 +106,8 @@ pub async fn update_config(
             &trace_id,
         )
         .await?,
-    ))
+    )
+    .into_response())
 }
 /// # Errors
 ///
@@ -97,11 +115,19 @@ pub async fn update_config(
 pub async fn delete_config(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
@@ -115,5 +141,6 @@ pub async fn delete_config(
             &trace_id,
         )
         .await?,
-    ))
+    )
+    .into_response())
 }

@@ -9,7 +9,7 @@ use axum::{
     body::Body,
     extract::{ConnectInfo, Query, State},
     http::HeaderMap,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use mazbri_core::request_context::request_ids;
 use std::net::SocketAddr;
@@ -24,7 +24,13 @@ pub async fn export_configs(
     Query(params): Query<ExportParams>,
 ) -> Result<Response, ApiError> {
     super::require_config_admin(&claims)?;
-    if let Err(response) = crate::handlers::mfa_guard::require_step_up(&state, &claims).await {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
         return Ok(*response);
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -37,12 +43,20 @@ pub async fn export_configs(
 pub async fn import_configs(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ImportParams>,
     body: Body,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
@@ -57,5 +71,6 @@ pub async fn import_configs(
             &trace_id,
         )
         .await?,
-    ))
+    )
+    .into_response())
 }

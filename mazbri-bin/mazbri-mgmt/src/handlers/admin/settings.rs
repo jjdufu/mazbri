@@ -9,7 +9,7 @@ use axum::{
     Extension, Json,
     extract::{ConnectInfo, State},
     http::HeaderMap,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use std::net::SocketAddr;
 use tracing::info;
@@ -29,11 +29,19 @@ pub async fn get_system_settings(
 pub async fn update_system_settings(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(req): Json<SystemSettingsUpdate>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     if !can_access_settings(&claims) {
         return Err(ApiError::Forbidden);
     }
@@ -64,7 +72,7 @@ pub async fn update_system_settings(
         })),
         client_ip,
     ));
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
 ///

@@ -3,9 +3,10 @@
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::handlers::mfa_guard::require_step_up;
+use crate::handlers::mfa_guard::require_category;
 use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin, is_read_only};
 use crate::response::ApiResponse;
+use crate::services::mfa::Category;
 use crate::services::upstream_connector as svc;
 use axum::{
     Extension, Json,
@@ -217,7 +218,7 @@ pub async fn publish_draft(
     require_business_admin(&claims)?;
     // 只有强制发布（跳过发布检查）要求 MFA；普通发布不受影响。
     if payload.options.force.force_publish
-        && let Err(response) = require_step_up(&state, &claims).await
+        && let Err(response) = require_category(&state, &claims, Category::Platform).await
     {
         return Ok(*response);
     }
@@ -336,11 +337,13 @@ pub async fn rollback(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(supplier_id): Path<Uuid>,
     Json(payload): Json<svc::RollbackRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = require_category(&state, &claims, Category::Platform).await {
+        return Ok(*response);
+    }
     require_business_admin(&claims)?;
     let data = svc::rollback(
         &state.db,
@@ -352,7 +355,7 @@ pub async fn rollback(
         extract_client_ip(&headers, Some(addr)),
     )
     .await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 
 /// # Errors

@@ -1,14 +1,31 @@
-//! 会话级 MFA 提权窗口与一次性 fresh 授权。
+//! 会话级 MFA 提权窗口。
 //!
-//! 窗口和 fresh 都只存在 Redis。JWT 只带 `sid` / `sxp`。删除与消费用 Lua
-//! 按读到的 `uid` + `epoch` 条件删除，避免窄竞争里删掉另一标签页刚写入的新记录。
+//! 六类窗口各自存在 Redis，键为 `admin:mfa_step_up:{sid}:{category}`。
+//! JWT 只带 `sid` / `sxp`。失效删除用 Lua 按读到的 `uid` + `epoch` 条件删除，
+//! 避免窄竞争里删掉另一标签页刚写入的新记录。旧的全局窗口和一次性 fresh 键
+//! 只在关闭会话时打扫，不再授予。
 
 use mazbri_core::redis::RedisClient;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use uuid::Uuid;
 
-pub const FRESH_GRANT_TTL_SECS: u64 = 120;
+/// 只用于删除升级前留下的键，不是授权。
+const LEGACY_FRESH_PURPOSES: [&str; 13] = [
+    "crypto_migration_export",
+    "api_key_create",
+    "crypto_key_reveal",
+    "request_key_create",
+    "mfa_disable",
+    "mfa_regenerate_codes",
+    "admin_reset_mfa",
+    "admin_reset_password",
+    "mfa_requirement_lift",
+    "mfa_settings_update",
+    "certificate_issue",
+    "certificate_renew",
+    "certificate_full",
+];
 
 const DELETE_IF_MATCH: &str = r"
 local raw = redis.call('GET', KEYS[1])
@@ -22,68 +39,6 @@ if obj['uid'] == ARGV[1] and tostring(obj['epoch']) == ARGV[2] then
 end
 return 0
 ";
-
-/// 一次高危操作的授权用途。字符串是 API 与 Redis key 的稳定值。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FreshPurpose {
-    CryptoMigrationExport,
-    ApiKeyCreate,
-    CryptoKeyReveal,
-    RequestKeyCreate,
-    MfaDisable,
-    MfaRegenerateCodes,
-    AdminResetMfa,
-    AdminResetPassword,
-    MfaRequirementLift,
-    MfaSettingsUpdate,
-    CertificateIssue,
-    CertificateRenew,
-    CertificateFull,
-}
-
-impl FreshPurpose {
-    pub const ALL: [Self; 13] = [
-        Self::CryptoMigrationExport,
-        Self::ApiKeyCreate,
-        Self::CryptoKeyReveal,
-        Self::RequestKeyCreate,
-        Self::MfaDisable,
-        Self::MfaRegenerateCodes,
-        Self::AdminResetMfa,
-        Self::AdminResetPassword,
-        Self::MfaRequirementLift,
-        Self::MfaSettingsUpdate,
-        Self::CertificateIssue,
-        Self::CertificateRenew,
-        Self::CertificateFull,
-    ];
-
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::CryptoMigrationExport => "crypto_migration_export",
-            Self::ApiKeyCreate => "api_key_create",
-            Self::CryptoKeyReveal => "crypto_key_reveal",
-            Self::RequestKeyCreate => "request_key_create",
-            Self::MfaDisable => "mfa_disable",
-            Self::MfaRegenerateCodes => "mfa_regenerate_codes",
-            Self::AdminResetMfa => "admin_reset_mfa",
-            Self::AdminResetPassword => "admin_reset_password",
-            Self::MfaRequirementLift => "mfa_requirement_lift",
-            Self::MfaSettingsUpdate => "mfa_settings_update",
-            Self::CertificateIssue => "certificate_issue",
-            Self::CertificateRenew => "certificate_renew",
-            Self::CertificateFull => "certificate_full",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|purpose| purpose.as_str() == value)
-    }
-}
 
 /// 一类高危操作的提权窗口。字符串是 API 与 Redis key 的稳定值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,14 +125,6 @@ struct StepUpRecord {
     method: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct FreshRecord {
-    uid: String,
-    epoch: i64,
-    purpose: String,
-    granted_at: i64,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowMiss {
     Expired,
@@ -194,11 +141,6 @@ pub fn effective_ttl(step_up_ttl_secs: u64, sxp: i64, now: i64) -> Option<u64> {
     Some(step_up_ttl_secs.min(remaining).max(1))
 }
 
-#[must_use]
-pub fn fresh_ttl(sxp: i64, now: i64) -> Option<u64> {
-    effective_ttl(FRESH_GRANT_TTL_SECS, sxp, now)
-}
-
 fn require_sid(sid: &str) -> Result<(), String> {
     Uuid::parse_str(sid)
         .map(|_| ())
@@ -209,8 +151,24 @@ fn step_up_key(sid: &str) -> String {
     format!("admin:mfa_step_up:{sid}")
 }
 
-fn fresh_key(sid: &str, purpose: FreshPurpose) -> String {
-    format!("admin:mfa_fresh:{sid}:{}", purpose.as_str())
+fn legacy_fresh_key(sid: &str, purpose: &str) -> String {
+    format!("admin:mfa_fresh:{sid}:{purpose}")
+}
+
+fn session_keys(sid: &str) -> Vec<String> {
+    let mut keys = Vec::with_capacity(1 + Category::ALL.len() + LEGACY_FRESH_PURPOSES.len());
+    keys.push(step_up_key(sid));
+    keys.extend(
+        Category::ALL
+            .into_iter()
+            .map(|category| category_step_up_key(sid, category)),
+    );
+    keys.extend(
+        LEGACY_FRESH_PURPOSES
+            .iter()
+            .map(|purpose| legacy_fresh_key(sid, purpose)),
+    );
+    keys
 }
 
 fn category_step_up_key(sid: &str, category: Category) -> String {
@@ -269,19 +227,6 @@ async fn read_window(redis: &RedisClient, key: &str) -> Result<Option<StepUpWind
     decode_window(&bytes).map(Some)
 }
 
-/// # Errors
-///
-/// `sid` 不是 UUID，或 Redis 写入失败时返回错误。
-pub async fn open_window(
-    redis: &RedisClient,
-    sid: &str,
-    window: &StepUpWindow,
-    ttl_secs: u64,
-) -> Result<(), String> {
-    require_sid(sid)?;
-    write_window(redis, &step_up_key(sid), window, ttl_secs).await
-}
-
 /// 打开某一类的提权窗口。键为 `admin:mfa_step_up:{sid}:{category}`。
 ///
 /// # Errors
@@ -302,14 +247,6 @@ pub async fn open_category_window(
         ttl_secs,
     )
     .await
-}
-
-/// # Errors
-///
-/// Redis 读取失败时返回错误。不存在的窗口返回 `Ok(None)`。
-pub async fn load_window(redis: &RedisClient, sid: &str) -> Result<Option<StepUpWindow>, String> {
-    require_sid(sid)?;
-    read_window(redis, &step_up_key(sid)).await
 }
 
 /// 读取某一类的提权窗口。
@@ -346,7 +283,7 @@ pub fn classify_window(
 /// # Errors
 ///
 /// Redis 失败时返回错误。
-pub async fn delete_if_match(
+async fn delete_if_match(
     redis: &RedisClient,
     key: &str,
     uid: &str,
@@ -397,77 +334,106 @@ pub async fn close_category(
         .map(|_| ())
 }
 
+/// 结束全部六类，并删除升级前留下的全局窗口和 fresh 键。
+///
 /// # Errors
 ///
-/// `sid` 不是 UUID，或 Redis 写入失败时返回错误。
-pub async fn grant_fresh(
-    redis: &RedisClient,
-    sid: &str,
-    uid: &str,
-    epoch: i64,
-    purpose: FreshPurpose,
-    ttl_secs: u64,
-    granted_at: i64,
-) -> Result<(), String> {
+/// `sid` 不是 UUID，或 Redis 删除失败时返回错误。
+pub async fn close_all_categories(redis: &RedisClient, sid: &str) -> Result<(), String> {
     require_sid(sid)?;
-    if ttl_secs == 0 {
-        return Err("fresh ttl must be positive".to_string());
-    }
-    let record = FreshRecord {
-        uid: uid.to_string(),
-        epoch,
-        purpose: purpose.as_str().to_string(),
-        granted_at,
-    };
-    let bytes = serde_json::to_vec(&record).map_err(|error| error.to_string())?;
     redis
-        .set_ex_bytes(
-            &fresh_key(sid, purpose),
-            &bytes,
-            usize::try_from(ttl_secs).unwrap_or(usize::MAX),
-        )
+        .del_multiple(&session_keys(sid))
         .await
+        .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
-/// 消费 fresh。只有删到值仍匹配的那一条才返回 true。
-///
-/// # Errors
-///
-/// Redis 失败时返回错误。
-pub async fn consume_fresh(
-    redis: &RedisClient,
-    sid: &str,
-    uid: &str,
-    epoch: i64,
-    purpose: FreshPurpose,
-) -> Result<bool, String> {
-    require_sid(sid)?;
-    delete_if_match(
-        redis,
-        &fresh_key(sid, purpose),
-        uid,
-        epoch,
-        purpose.as_str(),
-    )
-    .await
-}
-
-/// 退出、提前锁定、刷新被拒时关闭本会话的窗口和全部 fresh。失败只记日志。
+/// 退出、提前锁定、刷新被拒时关闭本会话的六类窗口和旧键。失败只记日志。
 pub async fn close_session(redis: &RedisClient, sid: &str) {
     if require_sid(sid).is_err() {
         warn!("refusing to close step-up session with a non-UUID sid");
         return;
     }
-    let mut keys = vec![step_up_key(sid)];
-    keys.extend(
-        FreshPurpose::ALL
-            .into_iter()
-            .map(|purpose| fresh_key(sid, purpose)),
-    );
-    if let Err(error) = redis.del_multiple(&keys).await {
+    if let Err(error) = close_all_categories(redis, sid).await {
         warn!("failed to close MFA step-up session: {error}");
     }
+}
+
+/// 某一类窗口对外展示的状态。`reason` 为 `None` 时序列化成 JSON null。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CategoryStatus {
+    pub category: Category,
+    pub active: bool,
+    pub remaining_secs: i64,
+    pub expires_at: Option<i64>,
+    pub reason: Option<&'static str>,
+}
+
+#[must_use]
+pub fn inactive_categories(reason: &'static str) -> [CategoryStatus; 6] {
+    Category::ALL.map(|category| CategoryStatus {
+        category,
+        active: false,
+        remaining_secs: 0,
+        expires_at: None,
+        reason: Some(reason),
+    })
+}
+
+#[must_use]
+pub fn assess_category(
+    category: Category,
+    window: Option<&StepUpWindow>,
+    uid: &str,
+    epoch: i64,
+    now: i64,
+) -> CategoryStatus {
+    let Some(window) = window else {
+        return CategoryStatus {
+            category,
+            active: false,
+            remaining_secs: 0,
+            expires_at: None,
+            reason: Some("none"),
+        };
+    };
+    match classify_window(window, uid, epoch, now) {
+        Ok(()) => CategoryStatus {
+            category,
+            active: true,
+            remaining_secs: remaining_secs(window.until, now),
+            expires_at: Some(window.until),
+            reason: None,
+        },
+        Err(WindowMiss::Expired) => CategoryStatus {
+            category,
+            active: false,
+            remaining_secs: 0,
+            expires_at: None,
+            reason: Some("expired"),
+        },
+        Err(WindowMiss::Invalidated) => CategoryStatus {
+            category,
+            active: false,
+            remaining_secs: 0,
+            expires_at: None,
+            reason: Some("invalidated"),
+        },
+    }
+}
+
+#[must_use]
+pub fn category_status_body(
+    status: &CategoryStatus,
+    expires_at: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "category": status.category.as_str(),
+        "active": status.active,
+        "remaining_secs": status.remaining_secs,
+        "expires_at": expires_at,
+        "reason": status.reason,
+    })
 }
 
 #[must_use]
@@ -496,23 +462,6 @@ mod tests {
     }
 
     #[test]
-    fn fresh_ttl_never_exceeds_120_or_session() {
-        assert_eq!(fresh_ttl(1_000, 0), Some(120));
-        assert_eq!(fresh_ttl(50, 0), Some(50));
-        assert_eq!(fresh_ttl(10, 10), None);
-    }
-
-    #[test]
-    fn unknown_purpose_is_rejected() {
-        assert_eq!(
-            FreshPurpose::parse("api_key_create"),
-            Some(FreshPurpose::ApiKeyCreate)
-        );
-        assert!(FreshPurpose::parse("nope").is_none());
-        assert!(FreshPurpose::parse("").is_none());
-    }
-
-    #[test]
     fn window_match_rules() {
         let window = StepUpWindow {
             uid: "user".to_string(),
@@ -537,15 +486,79 @@ mod tests {
     }
 
     #[test]
-    fn close_session_keys_come_from_the_enum() {
+    fn close_session_sweeps_legacy_keys_without_granting_them() {
         let sid = "00000000-0000-4000-8000-000000000001";
-        let keys: Vec<_> = FreshPurpose::ALL
-            .into_iter()
-            .map(|purpose| fresh_key(sid, purpose))
-            .collect();
-        assert_eq!(keys.len(), FreshPurpose::ALL.len());
-        assert!(keys.iter().any(|key| key.ends_with("api_key_create")));
-        assert!(keys.iter().all(|key| key.starts_with("admin:mfa_fresh:")));
+        let keys = session_keys(sid);
+        assert_eq!(
+            keys.len(),
+            1 + Category::ALL.len() + LEGACY_FRESH_PURPOSES.len()
+        );
+        assert!(keys.contains(&format!("admin:mfa_step_up:{sid}")));
+        assert!(keys.contains(&format!("admin:mfa_fresh:{sid}:certificate_issue")));
+        assert!(keys.contains(&format!("admin:mfa_fresh:{sid}:api_key_create")));
+        assert!(keys.contains(&format!("admin:mfa_step_up:{sid}:certificate")));
+        assert_eq!(
+            keys.iter()
+                .filter(|key| key.ends_with(":certificate"))
+                .count(),
+            1
+        );
+        assert!(Category::parse("certificate_issue").is_none());
+    }
+
+    #[test]
+    fn inactive_categories_keep_fixed_order_and_null_expiry() {
+        let items = inactive_categories("invalidated");
+        assert_eq!(
+            items.map(|item| item.category.as_str()),
+            ["certificate", "admin", "mfa", "key", "finance", "platform",]
+        );
+        assert!(items.iter().all(|item| {
+            !item.active
+                && item.remaining_secs == 0
+                && item.expires_at.is_none()
+                && item.reason == Some("invalidated")
+        }));
+        let body = category_status_body(&items[0], None);
+        assert_eq!(body["category"], "certificate");
+        assert!(body["expires_at"].is_null());
+        assert_eq!(body["reason"], "invalidated");
+    }
+
+    #[test]
+    fn active_category_reports_null_reason_and_does_not_affect_another() {
+        let certificate = StepUpWindow {
+            uid: "user".to_string(),
+            epoch: 1,
+            opened_at: 10,
+            until: 100,
+            method: StepUpMethod::Totp,
+        };
+        let admin = StepUpWindow {
+            uid: "user".to_string(),
+            epoch: 2,
+            opened_at: 10,
+            until: 80,
+            method: StepUpMethod::BackupCode,
+        };
+        let open = assess_category(Category::Certificate, Some(&certificate), "user", 1, 10);
+        assert!(open.active);
+        assert_eq!(open.reason, None);
+        assert_eq!(open.remaining_secs, 90);
+        assert_eq!(open.expires_at, Some(100));
+        let body = category_status_body(&open, Some("2020-01-01T00:00:00Z"));
+        assert!(body["reason"].is_null());
+        assert_eq!(body["expires_at"], "2020-01-01T00:00:00Z");
+        let stale = assess_category(Category::Certificate, Some(&certificate), "user", 2, 10);
+        assert_eq!(stale.reason, Some("invalidated"));
+        assert!(!stale.active);
+        let other = assess_category(Category::Admin, Some(&admin), "user", 2, 10);
+        assert!(other.active);
+        assert_eq!(other.category, Category::Admin);
+        assert_eq!(
+            assess_category(Category::Key, None, "user", 2, 10).reason,
+            Some("none")
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::services::admin_management as svc;
 use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, State},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 /// # Errors
 ///
@@ -32,10 +32,10 @@ pub async fn reset_admin_password(
     {
         return Ok(error.into_response());
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::AdminResetPassword,
+        crate::services::mfa::Category::Admin,
     )
     .await
     {
@@ -60,15 +60,23 @@ pub async fn reset_admin_password(
 pub async fn force_password_reset(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<ForcePasswordResetRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Admin,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data =
         svc::force_password_reset(&state.admin_db, &state.audit, &claims, id, &req, client_ip)
             .await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }

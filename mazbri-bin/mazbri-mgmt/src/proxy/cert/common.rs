@@ -171,22 +171,18 @@ pub(crate) async fn enforce_cert_mfa(
 ) -> Result<(), Box<axum::response::Response>> {
     match mode {
         "none" => Ok(()),
-        "step_up" => crate::handlers::mfa_guard::require_step_up(state, claims)
-            .await
-            .map(|_| ()),
-        "fresh_renew" => {
-            crate::handlers::mfa_guard::require_fresh_mfa(
-                state,
-                claims,
-                crate::services::mfa::step_up::FreshPurpose::CertificateRenew,
-            )
-            .await
-        }
+        "certificate" => crate::handlers::mfa_guard::require_category(
+            state,
+            claims,
+            crate::services::mfa::Category::Certificate,
+        )
+        .await
+        .map(|_| ()),
         _ => Err(Box::new(axum::response::IntoResponse::into_response((
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(serde_json::json!({
                 "success": false,
-                "error": "unknown certificate MFA mode"
+                "error": "未知的证书 MFA 模式"
             })),
         )))),
     }

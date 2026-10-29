@@ -91,10 +91,10 @@ pub async fn get_full_certificate_proxy(
                 .into_response();
         }
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::CertificateFull,
+        crate::services::mfa::Category::Certificate,
     )
     .await
     {
@@ -166,13 +166,13 @@ proxy_handler_with_audit! {
     name = renew_certificate_proxy, method = Method::POST, path = "/renew/{}", path_param
     = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.clone(),
     audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} renewing certificate {}", require_mfa = "fresh_renew",
+    "Admin {} renewing certificate {}", require_mfa = "certificate",
 }
 proxy_handler_with_audit! {
     name = revoke_certificate_proxy, method = Method::POST, path = "/revoke/{}",
     path_param = id, audit_action = AuditAction::CertificateRevoke, resource_id_fn = id
     .clone(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
-    "Admin {} revoking certificate {}", require_mfa = "step_up",
+    "Admin {} revoking certificate {}", require_mfa = "certificate",
 }
 pub async fn issue_certificate_proxy(
     State(state): State<AppState>,
@@ -192,10 +192,10 @@ pub async fn issue_certificate_proxy(
     if serde_json::from_slice::<serde_json::Value>(&body_bytes).is_err() {
         return Err(ApiError::validation("请求体不是合法 JSON".to_string()));
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::CertificateIssue,
+        crate::services::mfa::Category::Certificate,
     )
     .await
     {

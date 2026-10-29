@@ -2,7 +2,7 @@ use super::super::AppState;
 use crate::audit::extract_client_ip;
 use crate::middleware::auth::{REFRESH_COOKIE, cookie_value, extract_user_id_response};
 use crate::services::mfa as svc;
-use crate::services::mfa::step_up::FreshPurpose;
+use crate::services::mfa::Category;
 use axum::{
     Extension,
     extract::{ConnectInfo, State},
@@ -33,8 +33,7 @@ pub async fn mfa_disable(
         Err(response) => return *response,
     };
     if let Err(response) =
-        crate::handlers::mfa_guard::require_fresh_mfa(&state, &claims, FreshPurpose::MfaDisable)
-            .await
+        crate::handlers::mfa_guard::require_category(&state, &claims, Category::Mfa).await
     {
         return *response;
     }

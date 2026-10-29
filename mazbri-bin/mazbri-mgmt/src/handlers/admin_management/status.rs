@@ -8,7 +8,7 @@ use crate::services::admin_management as svc;
 use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, State},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 /// # Errors
 ///
@@ -16,13 +16,21 @@ use axum::{
 pub async fn set_admin_status(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<SetAdminStatusRequest>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Admin,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::set_status(&state.admin_db, &state.audit, &claims, id, &req, client_ip).await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }

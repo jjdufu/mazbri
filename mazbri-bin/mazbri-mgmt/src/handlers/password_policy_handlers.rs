@@ -31,12 +31,20 @@ pub async fn update_password_policy(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Json(payload): Json<UpdatePasswordPolicyRequest>,
 ) -> axum::response::Response {
     use crate::response::ApiResponse;
     use axum::http::StatusCode;
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return *response;
+    }
     if claims.role != "R_ADMIN" {
         return ApiResponse::err(StatusCode::FORBIDDEN, "仅管理员可修改密码策略");
     }

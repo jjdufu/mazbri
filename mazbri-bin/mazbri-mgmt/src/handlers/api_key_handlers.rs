@@ -11,7 +11,7 @@ use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, State},
     http::HeaderMap,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 /// # Errors
 ///
@@ -29,14 +29,14 @@ pub async fn create_api_key(
     }
     svc::precheck_create_api_key(&state.db, &state.auth_db, &code, payload.scopes.as_slice())
         .await?;
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::ApiKeyCreate,
+        crate::services::mfa::Category::Key,
     )
     .await
     {
-        return Ok((*response).into_response());
+        return Ok(*response);
     }
     let user_id = extract_user_id(&claims)?;
     let data = svc::create_api_key(
@@ -73,10 +73,18 @@ pub async fn revoke_api_key(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Key,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
@@ -94,7 +102,7 @@ pub async fn revoke_api_key(
         client_ip,
     })
     .await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
 ///
@@ -110,7 +118,13 @@ pub async fn update_api_key(
         return Err(ApiError::Forbidden);
     }
     payload.validate().map_err(ApiError::validation)?;
-    if let Err(response) = crate::handlers::mfa_guard::require_step_up(&state, &claims).await {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Key,
+    )
+    .await
+    {
         return Ok(*response);
     }
     let data = svc::update_api_key(&state.db, &state.auth_db, &code, &key_prefix, &payload).await?;

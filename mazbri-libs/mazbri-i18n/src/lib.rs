@@ -53,10 +53,6 @@ pub mod mfa {
         rust_i18n::t!("api.mfa.step_up_required").to_string()
     }
     #[must_use]
-    pub fn fresh_required() -> String {
-        rust_i18n::t!("api.mfa.fresh_required").to_string()
-    }
-    #[must_use]
     pub fn check_unavailable() -> String {
         rust_i18n::t!("api.mfa.check_unavailable").to_string()
     }

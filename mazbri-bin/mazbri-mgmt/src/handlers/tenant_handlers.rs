@@ -9,7 +9,7 @@ use axum::{
     Extension, Json,
     extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 /// # Errors
 ///
@@ -92,10 +92,18 @@ pub async fn delete_tenant(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<Response, ApiError> {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     // 硬删除：超级管理员与管理员（业务权限）。
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
@@ -112,7 +120,7 @@ pub async fn delete_tenant(
         client_ip,
     )
     .await?;
-    Ok(ApiResponse::ok(data))
+    Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
 ///

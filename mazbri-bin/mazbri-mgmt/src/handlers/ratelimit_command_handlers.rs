@@ -31,11 +31,19 @@ pub async fn create_control_command(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
-    _mfa: crate::handlers::mfa_guard::StepUpVerified,
     headers: HeaderMap,
     Path(code): Path<String>,
     Json(payload): Json<svc::CreateControlCommandRequest>,
 ) -> axum::response::Response {
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return *response;
+    }
     // Temporary controls are higher privilege than routine tenant config edits.
     if !can_manage_tenants(&claims) {
         return ApiResponse::err(

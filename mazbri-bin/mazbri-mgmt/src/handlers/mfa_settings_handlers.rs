@@ -48,10 +48,10 @@ pub async fn update_mfa_settings(
     if let Some(error) = service::validate_update_fields(&input) {
         return error;
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::MfaSettingsUpdate,
+        crate::services::mfa::Category::Mfa,
     )
     .await
     {

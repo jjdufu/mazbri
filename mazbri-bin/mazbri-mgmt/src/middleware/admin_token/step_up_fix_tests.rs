@@ -9,7 +9,7 @@ use crate::handlers::mfa::step_up::rollback_step_up_grants;
 use crate::handlers::mfa_guard::{SubjectLoadError, load_checked_subject};
 use crate::middleware::auth::AdminClaims;
 use crate::services::mfa::second_factor::BackupRestore;
-use crate::services::mfa::step_up::{self, FreshPurpose, StepUpMethod, StepUpWindow};
+use crate::services::mfa::step_up::{self, Category, StepUpMethod, StepUpWindow};
 use crate::services::mfa::{EnableParams, guard_session_rotation};
 use crate::services::{MfaSettingsCache, PasswordPolicyCache};
 use mazbri_core::redis::RedisClient;
@@ -166,17 +166,6 @@ async fn disable_rotates_refresh_and_rejects_the_old_one() {
     )
     .expect("issue refresh");
     let old = decode_kind(&refresh.token, SECRET, TokenKind::Refresh).expect("decode");
-    step_up::grant_fresh(
-        &deps.redis,
-        &sid,
-        &user_id.to_string(),
-        0,
-        FreshPurpose::MfaDisable,
-        60,
-        issued_at,
-    )
-    .await
-    .expect("grant fresh");
     let access_claims = claims_for(user_id, "R_FINANCE", &sid, sxp);
     let response = crate::services::mfa::disable(crate::services::mfa::DisableParams {
         pool: &deps.db,
@@ -241,7 +230,7 @@ async fn blocked_subject_step_up_is_unauthorized_without_advancing_step() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn backup_fresh_redis_failure_restores_code_and_drops_window() {
+async fn backup_restore_keeps_the_category_window() {
     let deps = deps().await;
     let user_id = insert_user(&deps.db, true, true, false).await;
     let original = serde_json::json!(["hash-a", "hash-b"]);
@@ -268,16 +257,12 @@ async fn backup_fresh_redis_failure_restores_code_and_drops_window() {
         until: now + 60,
         method: StepUpMethod::BackupCode,
     };
-    step_up::open_window(&deps.redis, &sid, &window, 60)
+    step_up::open_category_window(&deps.redis, &sid, Category::Key, &window, 60)
         .await
         .expect("open window");
     rollback_step_up_grants(
-        &deps.redis,
         &deps.db,
-        &sid,
         user_id,
-        1,
-        true,
         Some(&BackupRestore {
             version_written: version,
             restored_codes: original.clone(),
@@ -292,27 +277,16 @@ async fn backup_fresh_redis_failure_restores_code_and_drops_window() {
             .expect("codes");
     assert_eq!(codes, original);
     assert!(
-        step_up::load_window(&deps.redis, &sid)
+        step_up::load_category_window(&deps.redis, &sid, Category::Key)
             .await
             .expect("load")
-            .is_none()
-    );
-    assert!(
-        !step_up::consume_fresh(
-            &deps.redis,
-            &sid,
-            &user_id.to_string(),
-            1,
-            FreshPurpose::ApiKeyCreate
-        )
-        .await
-        .expect("fresh")
+            .is_some()
     );
 }
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn close_session_removes_window_and_fresh_for_that_sid_only() {
+async fn close_session_removes_categories_and_legacy_keys_for_that_sid_only() {
     let deps = deps().await;
     let uid = uuid::Uuid::new_v4().to_string();
     let sid_a = uuid::Uuid::new_v4().to_string();
@@ -325,76 +299,127 @@ async fn close_session_removes_window_and_fresh_for_that_sid_only() {
         until: now + 30,
         method: StepUpMethod::Totp,
     };
-    step_up::open_window(&deps.redis, &sid_a, &window, 30)
+    step_up::open_category_window(&deps.redis, &sid_a, Category::Certificate, &window, 30)
         .await
-        .expect("a");
-    step_up::open_window(&deps.redis, &sid_b, &window, 30)
+        .expect("a certificate");
+    step_up::open_category_window(&deps.redis, &sid_a, Category::Admin, &window, 30)
+        .await
+        .expect("a admin");
+    step_up::open_category_window(&deps.redis, &sid_b, Category::Certificate, &window, 30)
         .await
         .expect("b");
-    step_up::grant_fresh(
-        &deps.redis,
-        &sid_a,
-        &uid,
-        1,
-        FreshPurpose::ApiKeyCreate,
-        30,
-        now,
-    )
-    .await
-    .expect("fresh");
+    deps.redis
+        .set_ex_bytes(&format!("admin:mfa_step_up:{sid_a}"), b"legacy-window", 30)
+        .await
+        .expect("legacy window");
+    deps.redis
+        .set_ex_bytes(
+            &format!("admin:mfa_fresh:{sid_a}:api_key_create"),
+            b"legacy-fresh",
+            30,
+        )
+        .await
+        .expect("legacy fresh");
+    deps.redis
+        .set_ex_bytes(&format!("admin:mfa_step_up:{sid_b}"), b"other-legacy", 30)
+        .await
+        .expect("other legacy");
     step_up::close_session(&deps.redis, &sid_a).await;
     assert!(
-        step_up::load_window(&deps.redis, &sid_a)
+        step_up::load_category_window(&deps.redis, &sid_a, Category::Certificate)
             .await
-            .expect("load a")
+            .expect("load a certificate")
             .is_none()
     );
     assert!(
-        step_up::load_window(&deps.redis, &sid_b)
+        step_up::load_category_window(&deps.redis, &sid_a, Category::Admin)
+            .await
+            .expect("load a admin")
+            .is_none()
+    );
+    assert!(
+        deps.redis
+            .get_bytes(&format!("admin:mfa_step_up:{sid_a}"))
+            .await
+            .expect("legacy a")
+            .is_none()
+    );
+    assert!(
+        deps.redis
+            .get_bytes(&format!("admin:mfa_fresh:{sid_a}:api_key_create"))
+            .await
+            .expect("fresh a")
+            .is_none()
+    );
+    assert!(
+        step_up::load_category_window(&deps.redis, &sid_b, Category::Certificate)
             .await
             .expect("load b")
             .is_some()
     );
     assert!(
-        !step_up::consume_fresh(&deps.redis, &sid_a, &uid, 1, FreshPurpose::ApiKeyCreate)
+        deps.redis
+            .get_bytes(&format!("admin:mfa_step_up:{sid_b}"))
             .await
-            .expect("consume")
+            .expect("legacy b")
+            .is_some()
     );
 }
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn fresh_is_single_use_and_purpose_scoped() {
+async fn certificate_window_is_reusable_and_does_not_open_admin() {
     let deps = deps().await;
     let sid = uuid::Uuid::new_v4().to_string();
     let uid = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
-    step_up::grant_fresh(
-        &deps.redis,
-        &sid,
-        &uid,
-        2,
-        FreshPurpose::CertificateIssue,
-        60,
-        now,
-    )
-    .await
-    .expect("grant");
-    assert!(
-        !step_up::consume_fresh(&deps.redis, &sid, &uid, 2, FreshPurpose::CertificateRenew)
+    let certificate = StepUpWindow {
+        uid: uid.clone(),
+        epoch: 2,
+        opened_at: now,
+        until: now + 60,
+        method: StepUpMethod::Totp,
+    };
+    let admin = StepUpWindow {
+        uid: uid.clone(),
+        epoch: 4,
+        opened_at: now,
+        until: now + 60,
+        method: StepUpMethod::Totp,
+    };
+    step_up::open_category_window(&deps.redis, &sid, Category::Certificate, &certificate, 60)
+        .await
+        .expect("open certificate");
+    step_up::open_category_window(&deps.redis, &sid, Category::Admin, &admin, 60)
+        .await
+        .expect("open admin");
+    for _ in 0..2 {
+        let loaded = step_up::load_category_window(&deps.redis, &sid, Category::Certificate)
             .await
-            .expect("wrong purpose")
-    );
+            .expect("load certificate")
+            .expect("certificate present");
+        assert!(step_up::classify_window(&loaded, &uid, 2, now).is_ok());
+    }
     assert!(
-        step_up::consume_fresh(&deps.redis, &sid, &uid, 2, FreshPurpose::CertificateIssue)
+        step_up::load_category_window(&deps.redis, &sid, Category::Key)
             .await
-            .expect("consume")
+            .expect("load key")
+            .is_none()
     );
-    assert!(
-        !step_up::consume_fresh(&deps.redis, &sid, &uid, 2, FreshPurpose::CertificateIssue)
+    let loaded_certificate =
+        step_up::load_category_window(&deps.redis, &sid, Category::Certificate)
             .await
-            .expect("second")
+            .expect("load again")
+            .expect("still present");
+    assert_eq!(
+        step_up::classify_window(&loaded_certificate, &uid, 4, now),
+        Err(step_up::WindowMiss::Invalidated)
     );
+    let loaded_admin = step_up::load_category_window(&deps.redis, &sid, Category::Admin)
+        .await
+        .expect("load admin")
+        .expect("admin present");
+    assert!(step_up::classify_window(&loaded_admin, &uid, 4, now).is_ok());
 }
 
 #[tokio::test]
@@ -410,18 +435,18 @@ async fn window_ttl_is_not_extended_by_a_later_write_of_the_same_key_without_a_n
         until: now + 20,
         method: StepUpMethod::Totp,
     };
-    step_up::open_window(&deps.redis, &sid, &window, 20)
+    step_up::open_category_window(&deps.redis, &sid, Category::Finance, &window, 20)
         .await
         .expect("open");
     let first = deps
         .redis
-        .ttl(&format!("admin:mfa_step_up:{sid}"))
+        .ttl(&format!("admin:mfa_step_up:{sid}:finance"))
         .await
         .expect("ttl");
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let second = deps
         .redis
-        .ttl(&format!("admin:mfa_step_up:{sid}"))
+        .ttl(&format!("admin:mfa_step_up:{sid}:finance"))
         .await
         .expect("ttl");
     assert!(second <= first);

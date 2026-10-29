@@ -2,6 +2,7 @@ use super::super::AppState;
 use crate::audit::extract_client_ip;
 use crate::middleware::auth::extract_user_id_response;
 use crate::services::mfa as svc;
+use crate::services::mfa::Category;
 use axum::{
     Extension,
     extract::{ConnectInfo, State},
@@ -34,12 +35,8 @@ pub async fn regenerate_backup_codes(
             );
         }
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
-        &state,
-        &claims,
-        crate::services::mfa::step_up::FreshPurpose::MfaRegenerateCodes,
-    )
-    .await
+    if let Err(response) =
+        crate::handlers::mfa_guard::require_category(&state, &claims, Category::Mfa).await
     {
         return *response;
     }

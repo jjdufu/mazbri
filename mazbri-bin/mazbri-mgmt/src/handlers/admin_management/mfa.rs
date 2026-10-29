@@ -22,10 +22,10 @@ pub async fn reset_admin_mfa(
     if let Err(error) = svc::precheck_mfa_reset(&state.admin_db, &claims, id).await {
         return Ok(error.into_response());
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_fresh_mfa(
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
-        crate::services::mfa::step_up::FreshPurpose::AdminResetMfa,
+        crate::services::mfa::Category::Admin,
     )
     .await
     {

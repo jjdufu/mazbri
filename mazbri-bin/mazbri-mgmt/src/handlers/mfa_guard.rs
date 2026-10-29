@@ -1,16 +1,14 @@
 //! 敏感操作的 MFA 提权守卫。
 //!
-//! 普通敏感操作要求当前会话已有未过期的提权窗口。交出长期秘密、解除强制、
-//! 拆掉或替换认证因子的操作改为一次性 fresh 授权，并且必须在入参与目标状态
-//! 校验通过之后调用，不能做成提取器。
+//! 每类操作要求当前会话已有未过期的该类窗口。窗口在有效期内可重复使用。
+//! 守卫必须在该操作原有的入参与目标状态校验通过之后调用，不能做成提取器。
 
 use crate::handlers::AppState;
 use crate::middleware::auth::{AdminClaims, extract_user_id};
-use crate::services::mfa::step_up::{self, FreshPurpose, WindowMiss};
+use crate::services::mfa::step_up::{self, Category, WindowMiss};
 use axum::{
     Json,
-    extract::FromRequestParts,
-    http::{StatusCode, request::Parts},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
@@ -18,9 +16,9 @@ use chrono::Utc;
 /// 未启用 MFA 时前端引导用户前往的自助绑定页面。
 pub const MFA_SETUP_PATH: &str = "/account/security";
 
-/// 只证明当前会话窗口有效，不消费任何秘密。
+/// 只证明当前会话的这一类窗口有效，不消费窗口。
 #[derive(Debug, Clone, Copy)]
-pub struct StepUpVerified;
+pub struct CategoryVerified(pub Category);
 
 /// 账号本身是否还能继续敏感操作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +108,6 @@ fn audit_reason(code: &str) -> &'static str {
         "MFA_NOT_ENABLED" => "mfa_not_enabled",
         "MFA_LOCKED" => "mfa_locked",
         "MFA_REQUIRED" => "mfa_required",
-        "MFA_FRESH_REQUIRED" => "mfa_fresh_required",
         _ => "mfa_check_unavailable",
     }
 }
@@ -159,50 +156,23 @@ fn locked(retry_after_secs: i64) -> Response {
     )
 }
 
-fn step_up_required(reason: WindowReason) -> Response {
+fn step_up_required(category: Category, reason: WindowReason) -> Response {
     let message = mazbri_i18n::mfa::step_up_required();
+    let body = serde_json::json!({
+        "success": false,
+        "code": "MFA_REQUIRED",
+        "reason": reason.as_str(),
+        "category": category.as_str(),
+        "error": message,
+    });
     if reason == WindowReason::Invalidated {
         crate::audit::set_failure_reason("mfa_step_up_invalidated");
         crate::audit::mark_security_event();
-        let mut response = (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({
-                "success": false,
-                "code": "MFA_REQUIRED",
-                "reason": reason.as_str(),
-                "error": message,
-            })),
-        )
-            .into_response();
+        let mut response = (StatusCode::FORBIDDEN, Json(body)).into_response();
         crate::audit::AuditErrorInfo::attach(&mut response, "MFA_REQUIRED", &message);
         return response;
     }
-    json_error(
-        StatusCode::FORBIDDEN,
-        "MFA_REQUIRED",
-        &message,
-        serde_json::json!({
-            "success": false,
-            "code": "MFA_REQUIRED",
-            "reason": reason.as_str(),
-            "error": message,
-        }),
-    )
-}
-
-fn fresh_required(purpose: FreshPurpose) -> Response {
-    let message = mazbri_i18n::mfa::fresh_required();
-    json_error(
-        StatusCode::FORBIDDEN,
-        "MFA_FRESH_REQUIRED",
-        &message,
-        serde_json::json!({
-            "success": false,
-            "code": "MFA_FRESH_REQUIRED",
-            "purpose": purpose.as_str(),
-            "error": message,
-        }),
-    )
+    json_error(StatusCode::FORBIDDEN, "MFA_REQUIRED", &message, body)
 }
 
 fn unauthorized(stale: bool) -> Response {
@@ -307,94 +277,52 @@ pub(crate) async fn load_checked_subject(
     }
 }
 
-/// 要求当前会话的提权窗口有效。
+/// 要求当前会话的这一类提权窗口有效。窗口在有效期内可重复使用。
 ///
 /// # Errors
 ///
 /// 会话无效返回 401；未绑定、锁定或没有窗口返回 403；依赖故障返回 503。
-pub async fn require_step_up(
+pub async fn require_category(
     state: &AppState,
     claims: &AdminClaims,
-) -> Result<StepUpVerified, Box<Response>> {
+    category: Category,
+) -> Result<CategoryVerified, Box<Response>> {
     let checked = load_checked_subject(&state.admin_db, &state.password_policy_cache, claims)
         .await
         .map_err(|error| Box::new(error.into_response()))?;
-    let window = step_up::load_window(&state.redis, &claims.sid)
+    let window = step_up::load_category_window(&state.redis, &claims.sid, category)
         .await
         .map_err(|_| Box::new(unavailable()))?
-        .ok_or_else(|| Box::new(step_up_required(WindowReason::None)))?;
+        .ok_or_else(|| Box::new(step_up_required(category, WindowReason::None)))?;
     let now = Utc::now().timestamp();
     match step_up::classify_window(&window, &checked.user_id.to_string(), checked.epoch, now) {
         Ok(()) => {
-            crate::audit::add_detail("mfa", serde_json::json!("step_up"));
+            crate::audit::add_detail("mfa", serde_json::json!(category.as_str()));
+            crate::audit::add_detail("category", serde_json::json!(category.as_str()));
             crate::audit::add_detail("step_up_opened_at", serde_json::json!(window.opened_at));
             crate::audit::add_detail("step_up_method", serde_json::json!(window.method.as_str()));
-            Ok(StepUpVerified)
+            Ok(CategoryVerified(category))
         }
-        Err(WindowMiss::Expired) => Err(Box::new(step_up_required(WindowReason::Expired))),
+        Err(WindowMiss::Expired) => {
+            Err(Box::new(step_up_required(category, WindowReason::Expired)))
+        }
         Err(WindowMiss::Invalidated) => {
-            if let Err(error) = step_up::delete_if_match(
+            if let Err(error) = step_up::delete_category_if_match(
                 &state.redis,
-                &format!("admin:mfa_step_up:{}", claims.sid),
+                &claims.sid,
+                category,
                 &window.uid,
                 window.epoch,
-                "",
             )
             .await
             {
                 tracing::warn!("failed to drop invalidated step-up window: {error}");
             }
-            Err(Box::new(step_up_required(WindowReason::Invalidated)))
+            Err(Box::new(step_up_required(
+                category,
+                WindowReason::Invalidated,
+            )))
         }
-    }
-}
-
-/// 消费一次性 fresh 授权。不要求窗口同时有效。
-///
-/// # Errors
-///
-/// 没有匹配的授权返回 403 `MFA_FRESH_REQUIRED`。
-pub async fn require_fresh_mfa(
-    state: &AppState,
-    claims: &AdminClaims,
-    purpose: FreshPurpose,
-) -> Result<(), Box<Response>> {
-    let checked = load_checked_subject(&state.admin_db, &state.password_policy_cache, claims)
-        .await
-        .map_err(|error| Box::new(error.into_response()))?;
-    let consumed = step_up::consume_fresh(
-        &state.redis,
-        &claims.sid,
-        &checked.user_id.to_string(),
-        checked.epoch,
-        purpose,
-    )
-    .await
-    .map_err(|_| Box::new(unavailable()))?;
-    if !consumed {
-        crate::audit::add_detail("purpose", serde_json::json!(purpose.as_str()));
-        return Err(Box::new(fresh_required(purpose)));
-    }
-    crate::audit::add_detail("mfa", serde_json::json!("fresh"));
-    crate::audit::add_detail("purpose", serde_json::json!(purpose.as_str()));
-    Ok(())
-}
-
-impl FromRequestParts<AppState> for StepUpVerified {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let claims = parts
-            .extensions
-            .get::<AdminClaims>()
-            .cloned()
-            .ok_or_else(|| crate::error::ApiError::Unauthorized.into_response())?;
-        require_step_up(state, &claims)
-            .await
-            .map_err(|response| *response)
     }
 }
 
@@ -468,97 +396,186 @@ mod tests {
         &rest[..end]
     }
 
+    fn assert_category(pairs: &[(&str, &str)], category: &str) {
+        for (source, name) in pairs {
+            let body = handler_source(source, name);
+            assert!(
+                body.contains("require_category(") && body.contains(category),
+                "{name} must require {category}"
+            );
+        }
+    }
+
     #[test]
-    fn gated_handlers_are_wired_to_the_guard() {
+    fn certificate_handlers_require_their_category() {
+        let certs = include_str!("../proxy/cert/certificates.rs");
+        let authorization = include_str!("../proxy/cert/authorization.rs");
+        assert_category(
+            &[
+                (certs, "issue_certificate_proxy"),
+                (authorization, "import_license_proxy"),
+            ],
+            "Category::Certificate",
+        );
+        assert_eq!(certs.matches("require_mfa = \"certificate\"").count(), 2);
+        let full = handler_source(certs, "get_full_certificate_proxy");
+        let exists = full
+            .find("CertificateLookup::Present")
+            .expect("certificate existence check");
+        let full_mfa = full
+            .find("require_category(")
+            .expect("full certificate mfa");
+        assert!(exists < full_mfa, "full certificate must exist before MFA");
+        assert!(full.contains("Category::Certificate"));
+        let issue = handler_source(certs, "issue_certificate_proxy");
+        let json = issue.find("请求体不是合法 JSON").expect("json validation");
+        let issue_mfa = issue.find("require_category(").expect("issue mfa");
+        assert!(json < issue_mfa, "issue must validate JSON before MFA");
+    }
+
+    #[test]
+    fn admin_handlers_require_their_category() {
         let crud = include_str!("admin_management/crud.rs");
         let password = include_str!("admin_management/password.rs");
         let status = include_str!("admin_management/status.rs");
         let admin_mfa = include_str!("admin_management/mfa.rs");
+        assert_category(
+            &[
+                (crud, "create_admin"),
+                (crud, "delete_admin"),
+                (crud, "update_admin"),
+                (password, "force_password_reset"),
+                (password, "reset_admin_password"),
+                (status, "set_admin_status"),
+                (admin_mfa, "reset_admin_mfa"),
+            ],
+            "Category::Admin",
+        );
+        let update = handler_source(crud, "update_admin");
+        let lifts = update
+            .find("admin_update_lifts_mfa_requirement")
+            .expect("lifts query");
+        let update_mfa = update.find("require_category(").expect("update mfa");
+        assert!(lifts < update_mfa, "update must resolve lifts before MFA");
+        let reset_password = handler_source(password, "reset_admin_password");
+        let precheck = reset_password
+            .find("precheck_password_reset")
+            .expect("password precheck");
+        let reset_mfa = reset_password.find("require_category(").expect("reset mfa");
+        assert!(precheck < reset_mfa);
+    }
+
+    #[test]
+    fn mfa_handlers_require_their_category() {
+        let disable = include_str!("mfa/disable.rs");
+        let backup_codes = include_str!("mfa/backup_codes.rs");
+        let mfa_settings = include_str!("mfa_settings_handlers.rs");
+        assert!(disable.contains("require_category(") && disable.contains("Category::Mfa"));
+        assert!(
+            backup_codes.contains("require_category(") && backup_codes.contains("Category::Mfa")
+        );
+        let settings_update = handler_source(mfa_settings, "update_mfa_settings");
+        assert!(
+            settings_update.contains("require_category(")
+                && settings_update.contains("Category::Mfa")
+        );
+        let role = settings_update
+            .find("仅管理员可修改 MFA 设置")
+            .expect("mfa settings role");
+        let settings_mfa = settings_update
+            .find("require_category(")
+            .expect("mfa settings category");
+        assert!(role < settings_mfa);
+    }
+
+    #[test]
+    fn key_handlers_require_their_category() {
+        let crypto = include_str!("tenant_crypto_handlers.rs");
+        let api_keys = include_str!("api_key_handlers.rs");
+        assert_category(
+            &[
+                (api_keys, "create_api_key"),
+                (api_keys, "revoke_api_key"),
+                (api_keys, "update_api_key"),
+                (crypto, "update_crypto_profile"),
+                (crypto, "create_crypto_key"),
+                (crypto, "rotate_crypto_key"),
+                (crypto, "activate_crypto_key"),
+                (crypto, "deprecate_crypto_key"),
+                (crypto, "disable_crypto_key"),
+                (crypto, "delete_crypto_key"),
+                (crypto, "create_request_key"),
+                (crypto, "retire_request_key"),
+            ],
+            "Category::Key",
+        );
+        let export = handler_source(crypto, "export_crypto_data");
+        assert!(export.contains("is_migration_export") && export.contains("Category::Key"));
+    }
+
+    #[test]
+    fn finance_handlers_require_their_category() {
+        let billing = include_str!("billing_handlers.rs");
+        let account = include_str!("product/account.rs");
+        assert_category(
+            &[
+                (account, "recharge_tenant_account"),
+                (account, "refund_tenant_account"),
+                (billing, "delete_bill"),
+                (billing, "delete_reconciliation_discrepancy"),
+                (billing, "create_adjustment"),
+                (billing, "generate_bill"),
+                (billing, "create_bill_adjustment"),
+                (billing, "void_bill_adjustment"),
+                (billing, "generate_bill_async"),
+            ],
+            "Category::Finance",
+        );
+        assert!(!handler_source(billing, "update_bill_status").contains("require_category("));
+        assert!(
+            !handler_source(billing, "update_reconciliation_settings")
+                .contains("require_category(")
+        );
+    }
+
+    #[test]
+    fn platform_handlers_require_their_category() {
         let cc_config = include_str!("config_center/config.rs");
         let cc_history = include_str!("config_center/history.rs");
         let cc_import = include_str!("config_center/import_export.rs");
         let settings = include_str!("admin/settings.rs");
         let password_policy = include_str!("password_policy_handlers.rs");
-        let mfa_settings = include_str!("mfa_settings_handlers.rs");
         let tenants = include_str!("tenant_handlers.rs");
-        let billing = include_str!("billing_handlers.rs");
-        let account = include_str!("product/account.rs");
         let ratelimit = include_str!("ratelimit_command_handlers.rs");
         let upstream = include_str!("upstream_connector_handlers.rs");
-        let crypto = include_str!("tenant_crypto_handlers.rs");
-        let api_keys = include_str!("api_key_handlers.rs");
-        let certs = include_str!("../proxy/cert/certificates.rs");
-        let authorization = include_str!("../proxy/cert/authorization.rs");
-
-        let window: &[(&str, &str)] = &[
-            (crud, "create_admin"),
-            (crud, "delete_admin"),
-            (password, "force_password_reset"),
-            (status, "set_admin_status"),
-            (cc_config, "create_config"),
-            (cc_config, "update_config"),
-            (cc_config, "delete_config"),
-            (cc_history, "rollback"),
-            (cc_import, "import_configs"),
-            (cc_import, "export_configs"),
-            (settings, "update_system_settings"),
-            (password_policy, "update_password_policy"),
-            (tenants, "delete_tenant"),
-            (billing, "delete_reconciliation_discrepancy"),
-            (billing, "delete_bill"),
-            (ratelimit, "create_control_command"),
-            (upstream, "rollback"),
-            (api_keys, "revoke_api_key"),
-            (api_keys, "update_api_key"),
-            (account, "recharge_tenant_account"),
-            (account, "refund_tenant_account"),
-            (crypto, "activate_crypto_key"),
-            (crypto, "deprecate_crypto_key"),
-            (crypto, "disable_crypto_key"),
-            (crypto, "delete_crypto_key"),
-            (crypto, "retire_request_key"),
-            (crypto, "update_crypto_profile"),
-            (authorization, "import_license_proxy"),
-            (billing, "create_adjustment"),
-            (billing, "generate_bill"),
-            (billing, "create_bill_adjustment"),
-            (billing, "void_bill_adjustment"),
-            (billing, "generate_bill_async"),
-        ];
-        for (source, name) in window {
-            let body = handler_source(source, name);
-            assert!(
-                body.contains("StepUpVerified") || body.contains("require_step_up("),
-                "{name} must require a step-up window"
-            );
-        }
-
-        let fresh: &[(&str, &str, &str)] = &[
-            (password, "reset_admin_password", "AdminResetPassword"),
-            (admin_mfa, "reset_admin_mfa", "AdminResetMfa"),
-            (mfa_settings, "update_mfa_settings", "MfaSettingsUpdate"),
-            (crypto, "rotate_crypto_key", "CryptoKeyReveal"),
-            (api_keys, "create_api_key", "ApiKeyCreate"),
-            (certs, "issue_certificate_proxy", "CertificateIssue"),
-            (crypto, "create_crypto_key", "CryptoKeyReveal"),
-            (crypto, "create_request_key", "RequestKeyCreate"),
-        ];
-        for (source, name, purpose) in fresh {
-            let body = handler_source(source, name);
-            assert!(
-                body.contains("require_fresh_mfa(") && body.contains(purpose),
-                "{name} must consume fresh {purpose}"
-            );
-        }
-        let update = handler_source(crud, "update_admin");
-        assert!(update.contains("MfaRequirementLift") && update.contains("require_step_up("));
+        assert_category(
+            &[
+                (cc_config, "create_config"),
+                (cc_config, "update_config"),
+                (cc_config, "delete_config"),
+                (cc_history, "rollback"),
+                (cc_import, "import_configs"),
+                (cc_import, "export_configs"),
+                (settings, "update_system_settings"),
+                (password_policy, "update_password_policy"),
+                (upstream, "rollback"),
+                (ratelimit, "create_control_command"),
+                (tenants, "delete_tenant"),
+            ],
+            "Category::Platform",
+        );
         let publish = handler_source(upstream, "publish_draft");
-        assert!(publish.contains("force_publish") && publish.contains("require_step_up("));
-        let export = handler_source(crypto, "export_crypto_data");
-        assert!(export.contains("is_migration_export") && export.contains("require_fresh_mfa("));
-        assert!(certs.contains("CertificateRenew"));
-        assert!(certs.contains("CertificateFull"));
-        assert!(certs.contains("fresh_renew") || certs.contains("CertificateRenew"));
+        assert!(publish.contains("force_publish") && publish.contains("Category::Platform"));
+        let export_configs = handler_source(cc_import, "export_configs");
+        let config_admin = export_configs
+            .find("require_config_admin")
+            .expect("config admin");
+        let export_mfa = export_configs
+            .find("require_category(")
+            .expect("export mfa");
+        assert!(config_admin < export_mfa);
+        assert!(!handler_source(tenants, "create_tenant").contains("require_category("));
+        assert!(!handler_source(tenants, "update_tenant").contains("require_category("));
     }
 
     #[test]
