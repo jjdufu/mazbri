@@ -85,6 +85,49 @@ impl FreshPurpose {
     }
 }
 
+/// 一类高危操作的提权窗口。字符串是 API 与 Redis key 的稳定值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Category {
+    Certificate,
+    Admin,
+    Mfa,
+    Key,
+    Finance,
+    Platform,
+}
+
+impl Category {
+    /// 固定顺序：证书、管理员、两步验证、密钥、资金、平台配置。
+    pub const ALL: [Self; 6] = [
+        Self::Certificate,
+        Self::Admin,
+        Self::Mfa,
+        Self::Key,
+        Self::Finance,
+        Self::Platform,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Certificate => "certificate",
+            Self::Admin => "admin",
+            Self::Mfa => "mfa",
+            Self::Key => "key",
+            Self::Finance => "finance",
+            Self::Platform => "platform",
+        }
+    }
+
+    /// 大小写敏感。未知字符串、空字符串、旧 fresh 用途名都返回 `None`。
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|category| category.as_str() == value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepUpMethod {
     Totp,
@@ -170,6 +213,62 @@ fn fresh_key(sid: &str, purpose: FreshPurpose) -> String {
     format!("admin:mfa_fresh:{sid}:{}", purpose.as_str())
 }
 
+fn category_step_up_key(sid: &str, category: Category) -> String {
+    format!("admin:mfa_step_up:{sid}:{}", category.as_str())
+}
+
+fn encode_window(window: &StepUpWindow) -> Result<Vec<u8>, String> {
+    let record = StepUpRecord {
+        uid: window.uid.clone(),
+        epoch: window.epoch,
+        opened_at: window.opened_at,
+        until: window.until,
+        method: window.method.as_str().to_string(),
+    };
+    serde_json::to_vec(&record).map_err(|error| error.to_string())
+}
+
+fn decode_window(bytes: &[u8]) -> Result<StepUpWindow, String> {
+    let record: StepUpRecord = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    let Some(method) = StepUpMethod::parse(&record.method) else {
+        return Err("step-up record has an unknown method".to_string());
+    };
+    Ok(StepUpWindow {
+        uid: record.uid,
+        epoch: record.epoch,
+        opened_at: record.opened_at,
+        until: record.until,
+        method,
+    })
+}
+
+async fn write_window(
+    redis: &RedisClient,
+    key: &str,
+    window: &StepUpWindow,
+    ttl_secs: u64,
+) -> Result<(), String> {
+    if ttl_secs == 0 {
+        return Err("step-up ttl must be positive".to_string());
+    }
+    let bytes = encode_window(window)?;
+    redis
+        .set_ex_bytes(key, &bytes, usize::try_from(ttl_secs).unwrap_or(usize::MAX))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn read_window(redis: &RedisClient, key: &str) -> Result<Option<StepUpWindow>, String> {
+    let Some(bytes) = redis
+        .get_bytes(key)
+        .await
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    decode_window(&bytes).map(Some)
+}
+
 /// # Errors
 ///
 /// `sid` 不是 UUID，或 Redis 写入失败时返回错误。
@@ -205,25 +304,29 @@ pub async fn open_window(
     ttl_secs: u64,
 ) -> Result<(), String> {
     require_sid(sid)?;
-    if ttl_secs == 0 {
-        return Err("step-up ttl must be positive".to_string());
-    }
-    let record = StepUpRecord {
-        uid: window.uid.clone(),
-        epoch: window.epoch,
-        opened_at: window.opened_at,
-        until: window.until,
-        method: window.method.as_str().to_string(),
-    };
-    let bytes = serde_json::to_vec(&record).map_err(|error| error.to_string())?;
-    redis
-        .set_ex_bytes(
-            &step_up_key(sid),
-            &bytes,
-            usize::try_from(ttl_secs).unwrap_or(usize::MAX),
-        )
-        .await
-        .map_err(|error| error.to_string())
+    write_window(redis, &step_up_key(sid), window, ttl_secs).await
+}
+
+/// 打开某一类的提权窗口。键为 `admin:mfa_step_up:{sid}:{category}`。
+///
+/// # Errors
+///
+/// `sid` 不是 UUID，`ttl_secs` 为 0，或 Redis 写入失败时返回错误。
+pub async fn open_category_window(
+    redis: &RedisClient,
+    sid: &str,
+    category: Category,
+    window: &StepUpWindow,
+    ttl_secs: u64,
+) -> Result<(), String> {
+    require_sid(sid)?;
+    write_window(
+        redis,
+        &category_step_up_key(sid, category),
+        window,
+        ttl_secs,
+    )
+    .await
 }
 
 /// # Errors
@@ -231,24 +334,21 @@ pub async fn open_window(
 /// Redis 读取失败时返回错误。不存在的窗口返回 `Ok(None)`。
 pub async fn load_window(redis: &RedisClient, sid: &str) -> Result<Option<StepUpWindow>, String> {
     require_sid(sid)?;
-    let Some(bytes) = redis
-        .get_bytes(&step_up_key(sid))
-        .await
-        .map_err(|error| error.to_string())?
-    else {
-        return Ok(None);
-    };
-    let record: StepUpRecord = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    let Some(method) = StepUpMethod::parse(&record.method) else {
-        return Err("step-up record has an unknown method".to_string());
-    };
-    Ok(Some(StepUpWindow {
-        uid: record.uid,
-        epoch: record.epoch,
-        opened_at: record.opened_at,
-        until: record.until,
-        method,
-    }))
+    read_window(redis, &step_up_key(sid)).await
+}
+
+/// 读取某一类的提权窗口。
+///
+/// # Errors
+///
+/// Redis 读取失败或记录无法解析时返回错误。不存在的窗口返回 `Ok(None)`。
+pub async fn load_category_window(
+    redis: &RedisClient,
+    sid: &str,
+    category: Category,
+) -> Result<Option<StepUpWindow>, String> {
+    require_sid(sid)?;
+    read_window(redis, &category_step_up_key(sid, category)).await
 }
 
 pub fn classify_window(
@@ -286,6 +386,40 @@ pub async fn delete_if_match(
         )
         .await
         .map_err(|error| error.to_string())
+}
+
+/// 只删除这一类里值仍等于本次读到的 uid + epoch 的记录。
+///
+/// # Errors
+///
+/// `sid` 不是 UUID，或 Redis 失败时返回错误。
+pub async fn delete_category_if_match(
+    redis: &RedisClient,
+    sid: &str,
+    category: Category,
+    uid: &str,
+    epoch: i64,
+) -> Result<bool, String> {
+    require_sid(sid)?;
+    delete_if_match(redis, &category_step_up_key(sid, category), uid, epoch, "").await
+}
+
+/// 按会话和分类无条件删除这一类窗口，不看 uid 和 epoch。
+///
+/// # Errors
+///
+/// `sid` 不是 UUID，或 Redis 删除失败时返回错误。
+pub async fn close_category(
+    redis: &RedisClient,
+    sid: &str,
+    category: Category,
+) -> Result<(), String> {
+    require_sid(sid)?;
+    redis
+        .del(&category_step_up_key(sid, category))
+        .await
+        .map_err(|error| error.to_string())
+        .map(|_| ())
 }
 
 /// # Errors
@@ -437,5 +571,45 @@ mod tests {
         assert_eq!(keys.len(), FreshPurpose::ALL.len());
         assert!(keys.iter().any(|key| key.ends_with("api_key_create")));
         assert!(keys.iter().all(|key| key.starts_with("admin:mfa_fresh:")));
+    }
+
+    #[test]
+    fn category_strings_round_trip_and_reject_fresh_names() {
+        let parsed: Vec<_> = Category::ALL
+            .into_iter()
+            .map(|category| Category::parse(category.as_str()))
+            .collect();
+        assert_eq!(parsed, Category::ALL.map(Some).to_vec());
+        assert_eq!(
+            Category::ALL.map(Category::as_str),
+            ["certificate", "admin", "mfa", "key", "finance", "platform",]
+        );
+        assert!(Category::parse("").is_none());
+        assert!(Category::parse("nope").is_none());
+        assert!(Category::parse("certificate_issue").is_none());
+        assert!(Category::parse("Certificate").is_none());
+    }
+
+    #[test]
+    fn category_keys_do_not_collide_with_the_legacy_window() {
+        let sid = "00000000-0000-4000-8000-000000000001";
+        let legacy = step_up_key(sid);
+        let keys: Vec<_> = Category::ALL
+            .into_iter()
+            .map(|category| category_step_up_key(sid, category))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                format!("admin:mfa_step_up:{sid}:certificate"),
+                format!("admin:mfa_step_up:{sid}:admin"),
+                format!("admin:mfa_step_up:{sid}:mfa"),
+                format!("admin:mfa_step_up:{sid}:key"),
+                format!("admin:mfa_step_up:{sid}:finance"),
+                format!("admin:mfa_step_up:{sid}:platform"),
+            ]
+        );
+        assert!(keys.iter().all(|key| key != &legacy));
+        assert_eq!(legacy, format!("admin:mfa_step_up:{sid}"));
     }
 }
