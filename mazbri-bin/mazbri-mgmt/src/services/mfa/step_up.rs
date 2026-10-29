@@ -272,31 +272,6 @@ async fn read_window(redis: &RedisClient, key: &str) -> Result<Option<StepUpWind
 /// # Errors
 ///
 /// `sid` 不是 UUID，或 Redis 写入失败时返回错误。
-pub async fn open_totp_window(
-    redis: &RedisClient,
-    sid: &str,
-    uid: &str,
-    epoch: i64,
-    opened_at: i64,
-    step_up_ttl: u64,
-    sxp: i64,
-) -> Result<(), String> {
-    let Some(ttl) = effective_ttl(step_up_ttl, sxp, opened_at) else {
-        return Ok(());
-    };
-    let window = StepUpWindow {
-        uid: uid.to_string(),
-        epoch,
-        opened_at,
-        until: opened_at.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX)),
-        method: StepUpMethod::Totp,
-    };
-    open_window(redis, sid, &window, ttl).await
-}
-
-/// # Errors
-///
-/// `sid` 不是 UUID，或 Redis 写入失败时返回错误。
 pub async fn open_window(
     redis: &RedisClient,
     sid: &str,

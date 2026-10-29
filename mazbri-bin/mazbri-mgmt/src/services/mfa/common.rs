@@ -294,30 +294,6 @@ pub(super) async fn revoke_old_refresh(redis: &RedisClient, old: &AdminClaims, i
     }
 }
 
-pub(super) fn unavailable_with_session(
-    access_token: &str,
-    refresh_token: &str,
-    access_max_age: u64,
-    refresh_max_age: u64,
-) -> axum::response::Response {
-    crate::audit::set_failure_reason("mfa_check_unavailable");
-    crate::audit::mark_security_event();
-    let mut response = crate::response::coded_err(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "MFA_CHECK_UNAVAILABLE",
-        mazbri_i18n::mfa::check_unavailable(),
-        &serde_json::json!({}),
-    );
-    crate::middleware::auth::set_session_cookies(
-        &mut response,
-        access_token,
-        refresh_token,
-        access_max_age,
-        refresh_max_age,
-    );
-    response
-}
-
 /// 只验 TOTP 并返回步长。不写启用、不推进步长。
 pub(super) fn verify_totp_for_enable(
     mfa_service: &MfaService,

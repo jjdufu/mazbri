@@ -1,6 +1,6 @@
 use super::common::{
     MfaServiceErrorMode, commit_voluntary_enable, get_mfa_service, guard_session_rotation,
-    resign_bound_session, revoke_old_refresh, unavailable_with_session, verify_totp_for_enable,
+    resign_bound_session, revoke_old_refresh, verify_totp_for_enable,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::mfa::MfaServiceCache;
@@ -79,10 +79,9 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
     };
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    let epoch = match commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
-        Ok(epoch) => epoch,
-        Err(response) => return *response,
-    };
+    if let Err(response) = commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
+        return *response;
+    }
     finish_enabled_session(FinishEnable {
         pool,
         redis,
@@ -96,9 +95,7 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
         username,
         issued_at,
         sxp: rotation.sxp,
-        epoch,
         digits: mfa_service.config().digits,
-        step_up_ttl: mfa_service.config().step_up_ttl_secs,
     })
     .await
 }
@@ -116,9 +113,7 @@ struct FinishEnable<'a> {
     username: &'a str,
     issued_at: i64,
     sxp: i64,
-    epoch: i64,
     digits: u32,
-    step_up_ttl: u64,
 }
 
 async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Response {
@@ -136,28 +131,6 @@ async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Res
         Err(response) => return *response,
     };
     revoke_old_refresh(params.redis, params.old_refresh, params.issued_at).await;
-    let window_ttl = crate::services::mfa::step_up::effective_ttl(
-        params.step_up_ttl,
-        params.sxp,
-        params.issued_at,
-    );
-    let window_opened = match window_ttl {
-        Some(ttl) => {
-            crate::services::mfa::step_up::open_totp_window(
-                params.redis,
-                &params.claims.sid,
-                &params.user_id.to_string(),
-                params.epoch,
-                params.issued_at,
-                params.step_up_ttl,
-                params.sxp,
-            )
-            .await
-            .is_ok()
-                && ttl > 0
-        }
-        None => false,
-    };
     params.audit.log(user_audit(
         params.user_id,
         AuditAction::MfaEnable,
@@ -169,18 +142,6 @@ async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Res
         params.client_ip,
     ));
     info!("MFA enabled for user: {}", params.username);
-    if !window_opened {
-        tracing::error!("failed to open step-up window after enable");
-        return unavailable_with_session(
-            &resigned.access_token,
-            &resigned.refresh_token,
-            u64::try_from(resigned.expires_in).unwrap_or(1),
-            resigned.refresh_max_age,
-        );
-    }
-    let until = params
-        .issued_at
-        .saturating_add(i64::try_from(window_ttl.unwrap_or(1)).unwrap_or(i64::MAX));
     crate::middleware::auth::json_with_session_cookies(
         serde_json::json!({
             "message": mazbri_i18n::mfa::enabled_success(),
@@ -188,10 +149,6 @@ async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Res
             "token": resigned.access_token,
             "refresh_token": resigned.refresh_token,
             "expires_in": resigned.expires_in,
-            "expires_at": chrono::DateTime::<chrono::Utc>::from_timestamp(until, 0)
-                .unwrap_or_else(chrono::Utc::now)
-                .to_rfc3339(),
-            "remaining_secs": window_ttl.unwrap_or(1),
             "totp_digits": params.digits,
         }),
         Some(resigned.refresh_max_age),

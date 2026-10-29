@@ -1,7 +1,7 @@
 use super::common::{
     MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service, ok_json,
-    prepare_setup_artifacts, resign_bound_session, unavailable_with_session,
-    verify_totp_for_enable, write_required_enable, write_required_setup,
+    prepare_setup_artifacts, resign_bound_session, verify_totp_for_enable, write_required_enable,
+    write_required_setup,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminUser;
@@ -210,13 +210,11 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     let issued_at = chrono::Utc::now().timestamp();
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    let epoch =
-        match write_required_enable(params.redis, pool, consumed, user_id, step_at, changed_at)
-            .await
-        {
-            Ok(epoch) => epoch,
-            Err(response) => return *response,
-        };
+    if let Err(response) =
+        write_required_enable(params.redis, pool, consumed, user_id, step_at, changed_at).await
+    {
+        return *response;
+    }
     finish_required_enable(FinishRequiredEnable {
         params: &params,
         pool,
@@ -224,9 +222,7 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
         user_id,
         role: state.role,
         created_at: state.created_at,
-        epoch,
         issued_at,
-        step_up_ttl: mfa_service.config().step_up_ttl_secs,
     })
     .await
 }
@@ -238,9 +234,7 @@ struct FinishRequiredEnable<'a> {
     user_id: uuid::Uuid,
     role: String,
     created_at: chrono::DateTime<chrono::Utc>,
-    epoch: i64,
     issued_at: i64,
-    step_up_ttl: u64,
 }
 
 async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::response::Response {
@@ -271,17 +265,6 @@ async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::respons
             );
         }
     };
-    let window_opened = crate::services::mfa::step_up::open_totp_window(
-        args.params.redis,
-        &args.claims.sid,
-        &args.user_id.to_string(),
-        args.epoch,
-        args.issued_at,
-        args.step_up_ttl,
-        sxp,
-    )
-    .await
-    .is_ok();
     args.params.audit.log(user_audit(
         args.user_id,
         AuditAction::MfaRequiredEnable,
@@ -292,15 +275,6 @@ async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::respons
         args.params.client_ip.clone(),
     ));
     info!("MFA required enabled for user: {}", args.claims.sub);
-    if !window_opened {
-        tracing::error!("failed to open step-up window after required enable");
-        return unavailable_with_session(
-            &resigned.access_token,
-            &resigned.refresh_token,
-            u64::try_from(resigned.expires_in).unwrap_or(1),
-            resigned.refresh_max_age,
-        );
-    }
     let user = AdminUser {
         id: args.claims.user_id.clone(),
         username: args.claims.sub.clone(),
