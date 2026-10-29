@@ -34,9 +34,6 @@
             {{ $t("accountSecurity.mfa.description") }}
           </CommonInlineHint>
           <CommonInlineHint v-if="mfaEnabled" block size="xs">
-            {{ $t("accountSecurity.mfa.freshHint") }}
-          </CommonInlineHint>
-          <CommonInlineHint v-if="mfaEnabled" block size="xs">
             {{ $t("accountSecurity.mfa.attemptsHint") }}
           </CommonInlineHint>
           <CommonInlineHint v-if="mfaEnabled" block size="xs">
@@ -65,11 +62,16 @@
               :label="$t(`accountSecurity.mfa.categories.${category}`)"
             >
               <span class="category-status">
-                <span
-                  class="setting-value"
-                  :class="{ 'is-warning': categoryWarning(category) }"
-                >
-                  {{ categoryText(category) }}
+                <span class="category-copy">
+                  <span
+                    class="setting-value"
+                    :class="{ 'is-warning': categoryWarning(category) }"
+                  >
+                    {{ categoryText(category) }}
+                  </span>
+                  <span class="category-scope">
+                    {{ $t(`accountSecurity.mfa.categoryScopes.${category}`) }}
+                  </span>
                 </span>
                 <ElButton
                   v-if="isCategoryOpen(category)"
@@ -674,6 +676,22 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.category-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.category-scope {
+  max-width: 520px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+  text-align: right;
 }
 
 .setting-value {

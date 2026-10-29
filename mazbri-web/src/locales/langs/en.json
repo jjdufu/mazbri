@@ -164,21 +164,17 @@
     },
     "mfaDialog": {
       "title": "MFA step-up",
-      "freshTitle": "MFA verification required again",
       "placeholder": "Code or 8-character backup code",
       "confirm": "Confirm",
       "cancel": "Cancel",
-      "stepUpMessage": "Enter the authenticator code or an 8-character backup code. After it succeeds, only this category skips further prompts until it expires. Other categories are separate.",
+      "stepUpMessage": "Enter the authenticator code or an 8-character backup code. After it succeeds, only this category skips further prompts until it expires.",
       "categoryLine": "Category: {category}",
-      "freshMessage": "This action needs its own verification.",
-      "freshOnce": "The verification is valid only for this one action and cannot be reused for the next one.",
-      "freshPurpose": "Action: {purpose}",
       "backupHint": "Backup codes are 8 characters, exclude 0, 1, I and O, and are uppercased automatically.",
       "invalidFormat": "Enter a {digits}-digit code, or an 8-character backup code",
       "invalidCode": "Incorrect code",
       "invalidWithAttempts": "Incorrect code. {n} attempts remaining",
       "reused": "This code was already used. Wait for the authenticator to refresh, or use an unused backup code.",
-      "locked": "MFA is locked. Try again later. Verification is unavailable while locked, and any open step-up window is closed.",
+      "locked": "MFA is locked. Try again later. Verification is unavailable while locked, and every open category elevation ends.",
       "unavailable": "The step-up dialog is unavailable. Refresh the page and try again.",
       "inputErrorMessage": "Enter a numeric code of the expected length, or an 8-character backup code",
       "notEnabledTitle": "MFA Required",
@@ -191,38 +187,7 @@
         "key": "Keys",
         "finance": "Finance",
         "platform": "Platform configuration"
-      },
-      "purposes": {
-        "crypto_migration_export": "Export recoverable key material",
-        "api_key_create": "Create API key",
-        "crypto_key_reveal": "Create or rotate a tenant key",
-        "request_key_create": "Create request signing key",
-        "mfa_disable": "Disable MFA",
-        "mfa_regenerate_codes": "Regenerate backup codes",
-        "admin_reset_mfa": "Reset another admin's MFA",
-        "admin_reset_password": "Reset another admin's password",
-        "mfa_requirement_lift": "Lift required MFA",
-        "mfa_settings_update": "Update MFA settings",
-        "certificate_issue": "Issue certificate",
-        "certificate_renew": "Renew certificate",
-        "certificate_full": "Download full certificate"
       }
-    },
-    "mfaStepUp": {
-      "inactive": "Not elevated",
-      "lockTitle": "End step-up",
-      "lockMessage": "Sensitive actions will require verification again. End the step-up window now?",
-      "tooltipInactive": "No step-up window. Click to verify",
-      "tooltipActive": "Step-up window expires: {time}",
-      "tooltipWarning": "Step-up window expires soon: {time}",
-      "tooltipNoExpiry": "Step-up window is active",
-      "ariaInactive": "Not elevated. Click to verify",
-      "ariaActive": "Elevated. Click to end step-up",
-      "ariaWarning": "Step-up expires soon. Click to end it",
-      "liveInactive": "MFA step-up window is closed",
-      "liveActive": "MFA step-up window is active",
-      "liveWarning": "MFA step-up window is about to expire",
-      "liveHidden": "MFA is not enabled"
     },
     "fields": {
       "status": "Status",
@@ -4017,16 +3982,11 @@
       "title": "Two-Factor Authentication (MFA)",
       "statusEnabled": "Enabled",
       "statusDisabled": "Not enabled",
-      "description": "Sensitive operations (funds, deletion, forced publishing, keys and certificates, super admin settings, etc.) require an active MFA step-up window; accounts without MFA cannot perform them. Regular sign-in and viewing are not affected.",
+      "description": "Sensitive actions are verified by category. A verified category does not ask again until it expires; other categories are counted separately. Accounts without MFA cannot perform these actions. Everyday sign-in and viewing are not affected. Status is shown on this page.",
       "changedAt": "Changed at",
-      "stepUpStatus": "Step-up",
-      "stepUpInactive": "Not elevated",
-      "stepUpActive": "Elevated, {time} left",
-      "stepUpWarning": "Expiring soon, {time} left",
       "stepUpExpiry": "expires {time}",
       "backupCodesRemaining": "Backup codes left",
       "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled.",
-      "freshHint": "Disabling MFA and regenerating backup codes belong to two-factor authentication. Creating or rotating keys belongs to keys. A verified category does not ask again until it expires.",
       "categories": {
         "certificate": "Certificates",
         "admin": "Administrators",
@@ -4034,6 +3994,14 @@
         "key": "Keys",
         "finance": "Finance",
         "platform": "Platform configuration"
+      },
+      "categoryScopes": {
+        "certificate": "Issue, renew, revoke, download a full certificate, and import a license.",
+        "admin": "Create, update, delete, enable or disable, reset another administrator's password, force a password change, reset another administrator's MFA, and lift required MFA.",
+        "mfa": "Disable your own MFA, regenerate backup codes, and change the issuer, digits, period, and backup-code count.",
+        "key": "Create, update, and revoke tenant API keys; configure, create, rotate, enable, deprecate, disable, and delete tenant encryption keys; create and retire request-signing keys; export recoverable keys in migration mode.",
+        "finance": "Recharge, refund, account adjustment, generate a bill, generate a bill asynchronously, delete a bill, adjust a bill, void an adjustment, and delete a reconciliation discrepancy.",
+        "platform": "Create, update, delete, roll back, import, and export configuration-center entries; system settings; password policy; forced upstream publish and upstream rollback; rate-limit control commands; delete a tenant."
       },
       "categoryInactive": "Not verified",
       "categoryActive": "Verified, {time} left",
@@ -4043,7 +4011,7 @@
       "endCategoryConfirm": "After this ends, {category} actions must be verified again. Other categories are not affected.",
       "endCategoryFailed": "Could not end this category. Try again.",
       "attemptsHint": "A wrong code uses up a remaining attempt. MFA locks when none remain.",
-      "lockHint": "While MFA is locked you cannot verify, and any open step-up window is closed immediately. Try again after the lock expires.",
+      "lockHint": "While MFA is locked you cannot verify, and every open category elevation ends. Try again after the lock expires.",
       "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code."
     },
     "setup": {
@@ -4061,12 +4029,12 @@
     },
     "backupCodes": {
       "title": "Backup codes",
-      "hint": "Backup codes are shown only once and each can be used once. They are 8 uppercase letters or digits (excluding 0, 1, I and O) and are uppercased as you type. Use them to sign in, open a step-up window, or complete an action that must be verified just once. Save them now.",
-      "regenerateConfirm": "All existing backup codes will stop working. This action needs its own MFA verification, valid only for this regeneration. Continue?"
+      "hint": "Backup codes are shown only once and each can be used once. They are 8 uppercase letters or digits (excluding 0, 1, I and O) and are uppercased as you type. Use them to sign in, or to open one category elevation. Save them now.",
+      "regenerateConfirm": "Regenerating invalidates the old backup codes. This action belongs to two-factor authentication; after verification, that category does not ask again until it expires. Continue?"
     },
     "disable": {
       "title": "Disable MFA",
-      "message": "After disabling, you cannot perform operations that require MFA, and the current step-up window will close. Continue?"
+      "message": "After disabling, you cannot perform operations that require MFA, and every open category elevation will close. Continue?"
     },
     "password": {
       "title": "Change Password",

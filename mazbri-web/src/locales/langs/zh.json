@@ -164,21 +164,17 @@
     },
     "mfaDialog": {
       "title": "MFA 提权",
-      "freshTitle": "需要重新验证 MFA",
       "placeholder": "验证码或 8 位备用码",
       "confirm": "确认",
       "cancel": "取消",
-      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类在剩余时间内不用再输，其他类另计。",
+      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类在剩余时间内不用再输。",
       "categoryLine": "当前类别：{category}",
-      "freshMessage": "此操作需要单独验证。",
-      "freshOnce": "验证只对这一次操作有效，完成后不能用于下一次同类操作。",
-      "freshPurpose": "操作：{purpose}",
       "backupHint": "备用码为 8 位，不含 0、1、I、O，将自动转为大写。",
       "invalidFormat": "请输入 {digits} 位数字验证码，或 8 位备用码",
       "invalidCode": "验证码错误",
       "invalidWithAttempts": "验证码错误，还可尝试 {n} 次",
       "reused": "该验证码已使用过。请等待验证器刷新后再试，或改用尚未使用的备用码。",
-      "locked": "MFA 已锁定，请稍后再试。锁定期间无法验证，已有提权窗口也会失效。",
+      "locked": "MFA 已锁定，请稍后再试。锁定期间无法验证，已经打开的各类提权都会结束。",
       "unavailable": "提权窗口暂时无法打开，请刷新页面后重试。",
       "inputErrorMessage": "请输入正确位数的数字验证码，或 8 位备用码",
       "notEnabledTitle": "需要启用 MFA",
@@ -191,38 +187,7 @@
         "key": "密钥",
         "finance": "资金",
         "platform": "平台配置"
-      },
-      "purposes": {
-        "crypto_migration_export": "导出可恢复的密钥材料",
-        "api_key_create": "创建 API 密钥",
-        "crypto_key_reveal": "创建或轮换租户密钥",
-        "request_key_create": "创建请求签名密钥",
-        "mfa_disable": "关闭 MFA",
-        "mfa_regenerate_codes": "重新生成备用码",
-        "admin_reset_mfa": "重置他人 MFA",
-        "admin_reset_password": "重置他人密码",
-        "mfa_requirement_lift": "解除强制绑定 MFA",
-        "mfa_settings_update": "修改 MFA 设置",
-        "certificate_issue": "签发证书",
-        "certificate_renew": "续期证书",
-        "certificate_full": "下载完整证书"
       }
-    },
-    "mfaStepUp": {
-      "inactive": "未提权",
-      "lockTitle": "结束提权",
-      "lockMessage": "结束后，敏感操作需要重新验证。确定现在结束提权窗口吗？",
-      "tooltipInactive": "当前没有提权窗口，点击进行验证",
-      "tooltipActive": "提权窗口到期：{time}",
-      "tooltipWarning": "提权窗口即将到期：{time}",
-      "tooltipNoExpiry": "提权窗口有效",
-      "ariaInactive": "未提权，点击打开提权验证",
-      "ariaActive": "已提权，点击可结束提权",
-      "ariaWarning": "提权即将到期，点击可结束提权",
-      "liveInactive": "MFA 提权窗口未开启",
-      "liveActive": "MFA 提权窗口已生效",
-      "liveWarning": "MFA 提权窗口即将到期",
-      "liveHidden": "未绑定 MFA"
     },
     "fields": {
       "status": "状态",
@@ -4022,16 +3987,11 @@
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "description": "资金、删除、强制下发、密钥与证书、超级管理员配置等敏感操作需要有效的 MFA 提权窗口；未启用 MFA 的账号无法执行这些操作。日常登录与查看不受影响。",
+      "description": "敏感操作按类验证。验过的那一类在剩余时间内不用再输，其他类另算。未启用 MFA 的账号不能做这些操作。日常登录和查看不受影响。状态在本页显示。",
       "changedAt": "变更时间",
-      "stepUpStatus": "当前提权",
-      "stepUpInactive": "未提权",
-      "stepUpActive": "已提权，剩余 {time}",
-      "stepUpWarning": "即将到期，剩余 {time}",
       "stepUpExpiry": "到期 {time}",
       "backupCodesRemaining": "剩余备用码",
       "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。",
-      "freshHint": "关闭 MFA、重新生成备用码属于两步验证，创建或轮换密钥属于密钥。验过的那一类在剩余时间内不用再输。",
       "categories": {
         "certificate": "证书",
         "admin": "管理员",
@@ -4039,6 +3999,14 @@
         "key": "密钥",
         "finance": "资金",
         "platform": "平台配置"
+      },
+      "categoryScopes": {
+        "certificate": "签发、续期、吊销、下载完整证书、导入许可证。",
+        "admin": "新建、修改、删除、启停、重置他人密码、强制改密、重置他人 MFA、解除强制绑定 MFA。",
+        "mfa": "关闭自己的 MFA、重新生成备用码、修改发行方、位数、周期和备用码数量。",
+        "key": "租户 API 密钥的创建、修改、吊销；租户加密密钥的配置、创建、轮换、启用、废弃、停用、删除；请求签名密钥的创建、停用；迁移模式导出可恢复密钥。",
+        "finance": "充值、退款、账户调账、出账、异步出账、删除账单、账单调整、作废调整、删除对账差异。",
+        "platform": "配置中心的新建、修改、删除、历史回滚、导入、导出；系统设置；密码策略；上游强制发布、上游回滚；限流控制命令；删除租户。"
       },
       "categoryInactive": "未验证",
       "categoryActive": "已验证，剩余 {time}",
@@ -4048,7 +4016,7 @@
       "endCategoryConfirm": "结束后，{category}类操作需要重新验证。其他类不受影响。",
       "endCategoryFailed": "结束这一类验证失败，请稍后重试。",
       "attemptsHint": "验证码错误会扣减剩余次数。次数用尽后 MFA 将被锁定。",
-      "lockHint": "MFA 锁定期间无法验证，已打开的提权窗口也会立即失效。请在锁定结束后再试。",
+      "lockHint": "锁定期间无法验证，已经打开的各类提权都会结束。请在锁定结束后再试。",
       "replayHint": "同一个验证码不能重复使用。请等待验证器刷新出新码，或改用尚未使用的备用码。"
     },
     "setup": {
@@ -4066,12 +4034,12 @@
     },
     "backupCodes": {
       "title": "备用码",
-      "hint": "备用码仅显示这一次，每个只能使用一次。格式为 8 位大写字母和数字（不含 0、1、I、O），输入时会自动转为大写。可用于登录、打开提权窗口，或完成只需这一次有效的敏感操作。请立即妥善保存。",
-      "regenerateConfirm": "重新生成后，原有备用码将全部失效。此操作需要单独验证一次 MFA，且只对这一次生成有效。确定继续吗？"
+      "hint": "备用码仅显示这一次，每个只能使用一次。格式为 8 位大写字母和数字（不含 0、1、I、O），输入时会自动转为大写。可用于登录，或打开某一类提权窗口。请立即妥善保存。",
+      "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后这一类在剩余时间内不用再输。确定继续吗？"
     },
     "disable": {
       "title": "停用 MFA",
-      "message": "停用后将无法执行需要 MFA 的敏感操作，当前提权窗口也会关闭。确定停用吗？"
+      "message": "停用后将无法执行需要 MFA 的敏感操作，已经打开的各类提权都会关闭。确定停用吗？"
     },
     "password": {
       "title": "修改密码",

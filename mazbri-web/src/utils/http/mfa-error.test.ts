@@ -9,18 +9,31 @@ import {
 } from "./mfa-error";
 
 test("classifyMfaError 只认带合法 category 的 MFA_REQUIRED", () => {
-  assert.deepEqual(
-    classifyMfaError({
-      success: false,
-      code: "MFA_REQUIRED",
-      category: "certificate",
-      reason: "expired",
-    }),
-    { kind: "category", category: "certificate", reason: "expired" },
-  );
+  for (const category of [
+    "certificate",
+    "admin",
+    "mfa",
+    "key",
+    "finance",
+    "platform",
+  ]) {
+    assert.deepEqual(
+      classifyMfaError({
+        success: false,
+        code: "MFA_REQUIRED",
+        category,
+        reason: "expired",
+      }),
+      { kind: "category", category, reason: "expired" },
+    );
+  }
   assert.equal(classifyMfaError({ code: "MFA_REQUIRED" }), null);
   assert.equal(
     classifyMfaError({ code: "MFA_REQUIRED", category: "certificate_issue" }),
+    null,
+  );
+  assert.equal(
+    classifyMfaError({ code: "MFA_REQUIRED", category: ["certificate"] }),
     null,
   );
   assert.equal(classifyMfaError({ code: "MFA_FRESH_REQUIRED", purpose: "api_key_create" }), null);
