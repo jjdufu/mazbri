@@ -53,7 +53,6 @@ export function classifyMfaError(body: unknown): MfaErrorClassification | null {
 
   const code = record.code;
   if (code === "MFA_LOCKED" || code === "MFA_CHECK_UNAVAILABLE") return null;
-  if (code === "MFA_FRESH_REQUIRED") return null;
   if (code === "MFA_REQUIRED") {
     if (!isMfaCategory(record.category)) return null;
     return {
