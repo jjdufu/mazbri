@@ -8,11 +8,8 @@
     :before-close="onBeforeClose"
   >
     <p class="mfa-step-up-dialog__lead">{{ lead }}</p>
-    <p v-if="view.mode === 'fresh'" class="mfa-step-up-dialog__fresh">
-      {{ freshNote }}
-    </p>
-    <p v-if="purposeLabel" class="mfa-step-up-dialog__purpose">
-      {{ t("common.mfaDialog.freshPurpose", { purpose: purposeLabel }) }}
+    <p v-if="categoryLabel" class="mfa-step-up-dialog__purpose">
+      {{ t("common.mfaDialog.categoryLine", { category: categoryLabel }) }}
     </p>
     <ElForm @submit.prevent="onConfirm">
       <ElFormItem :error="errorText">
@@ -73,22 +70,13 @@ watch(
   },
 );
 
-const title = computed(() =>
-  view.value.mode === "fresh"
-    ? t("common.mfaDialog.freshTitle")
-    : t("common.mfaDialog.title"),
-);
-const lead = computed(() =>
-  view.value.mode === "fresh"
-    ? t("common.mfaDialog.freshMessage")
-    : t("common.mfaDialog.stepUpMessage"),
-);
-const freshNote = computed(() => t("common.mfaDialog.freshOnce"));
-const purposeLabel = computed(() => {
-  const purpose = view.value.purpose;
-  if (!purpose) return "";
-  const key = `common.mfaDialog.purposes.${purpose}`;
-  return te(key) ? t(key) : purpose;
+const title = computed(() => t("common.mfaDialog.title"));
+const lead = computed(() => t("common.mfaDialog.stepUpMessage"));
+const categoryLabel = computed(() => {
+  const category = view.value.category;
+  if (!category) return "";
+  const key = `common.mfaDialog.categories.${category}`;
+  return te(key) ? t(key) : category;
 });
 const errorText = computed(() => {
   const errorCode = view.value.errorCode;
@@ -128,7 +116,6 @@ function onBeforeClose(done: () => void): void {
 
 <style scoped lang="scss">
 .mfa-step-up-dialog__lead,
-.mfa-step-up-dialog__fresh,
 .mfa-step-up-dialog__purpose,
 .mfa-step-up-dialog__hint {
   margin: 0 0 12px;
@@ -140,7 +127,6 @@ function onBeforeClose(done: () => void): void {
   color: var(--el-text-color-primary);
 }
 
-.mfa-step-up-dialog__fresh,
 .mfa-step-up-dialog__purpose {
   color: var(--el-color-warning);
 }

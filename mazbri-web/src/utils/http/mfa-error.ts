@@ -2,14 +2,12 @@
  * MFA 守卫错误分类与弹窗队列决策。入参与 axios 错误上的响应体一致，不依赖 Vue。
  */
 
-export interface MfaStepUpClassification {
-  kind: "step_up";
-  reason: string | null;
-}
+import { isMfaCategory, type MfaCategory } from "./mfa-step-up-state";
 
-export interface MfaFreshClassification {
-  kind: "fresh";
-  purpose: string;
+export interface MfaCategoryClassification {
+  kind: "category";
+  category: MfaCategory;
+  reason: string | null;
 }
 
 export interface MfaNotEnabledClassification {
@@ -18,14 +16,12 @@ export interface MfaNotEnabledClassification {
 }
 
 export type MfaErrorClassification =
-  | MfaStepUpClassification
-  | MfaFreshClassification
+  | MfaCategoryClassification
   | MfaNotEnabledClassification;
 
 export interface MfaInterceptConfig {
   url?: string;
   _mfaRetry?: boolean;
-  _mfaFreshRetry?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,8 +37,8 @@ function httpStatus(record: Record<string, unknown>): number | null {
 }
 
 /**
- * 区分 step_up / fresh / not_enabled。
- * MFA_LOCKED、MFA_CHECK_UNAVAILABLE、HTTP 503 返回 null，走普通错误，不弹验证码框。
+ * 只认带合法 category 的 MFA_REQUIRED。
+ * 缺 category、旧 fresh 码、锁定和 503 都返回 null，走普通错误。
  */
 export function classifyMfaError(body: unknown): MfaErrorClassification | null {
   if (!isRecord(body)) return null;
@@ -57,16 +53,13 @@ export function classifyMfaError(body: unknown): MfaErrorClassification | null {
 
   const code = record.code;
   if (code === "MFA_LOCKED" || code === "MFA_CHECK_UNAVAILABLE") return null;
+  if (code === "MFA_FRESH_REQUIRED") return null;
   if (code === "MFA_REQUIRED") {
+    if (!isMfaCategory(record.category)) return null;
     return {
-      kind: "step_up",
+      kind: "category",
+      category: record.category,
       reason: typeof record.reason === "string" ? record.reason : null,
-    };
-  }
-  if (code === "MFA_FRESH_REQUIRED") {
-    return {
-      kind: "fresh",
-      purpose: typeof record.purpose === "string" ? record.purpose : "",
     };
   }
   if (code === "MFA_NOT_ENABLED") {
@@ -84,21 +77,11 @@ function isStepUpRequest(url: unknown): boolean {
 }
 
 /** 已用 _mfaRetry 重试过，或请求本身就是 step-up，则不再拦截。 */
-export function shouldInterceptStepUp(
+export function shouldInterceptCategory(
   config: MfaInterceptConfig | null | undefined,
 ): boolean {
   if (!config) return false;
   if (config._mfaRetry) return false;
-  if (isStepUpRequest(config.url)) return false;
-  return true;
-}
-
-/** 已用 _mfaFreshRetry 重试过，或请求本身就是 step-up，则不再拦截。 */
-export function shouldInterceptFresh(
-  config: MfaInterceptConfig | null | undefined,
-): boolean {
-  if (!config) return false;
-  if (config._mfaFreshRetry) return false;
   if (isStepUpRequest(config.url)) return false;
   return true;
 }
@@ -113,34 +96,13 @@ export async function parseJsonBlob(data: Blob): Promise<unknown | null> {
   }
 }
 
-/**
- * 前面的 ensureFresh 成功后，排队中的 ensureStepUp 已由后端顺带开窗，不再弹窗。
- * 返回仍需继续弹窗的任务（例如另一个 purpose 的 fresh）。
- */
-export function afterFreshResolved<T extends { kind: string }>(
-  pending: readonly T[],
-): T[] {
-  return pending.filter((item) => item.kind !== "step_up");
-}
-
-/** 未执行的 step_up 不能挡在后来的 fresh 前面。正在显示的弹窗不在这个数组里。 */
-export function insertDialogTask<T extends { kind: string }>(
-  pending: T[],
-  task: T,
-): void {
-  if (task.kind === "fresh") {
-    const index = pending.findIndex((item) => item.kind === "step_up");
-    if (index >= 0) {
-      pending.splice(index, 0, task);
-      return;
-    }
-  }
+/** 后来的类别排在后面，不插队，也不取消前面的任务。 */
+export function insertDialogTask<T>(pending: T[], task: T): void {
   pending.push(task);
 }
 
 export async function drainDialogQueue<
   T extends {
-    kind: string;
     resolve: () => void;
     reject: (error: unknown) => void;
   },
@@ -151,13 +113,6 @@ export async function drainDialogQueue<
     try {
       await run(task);
       task.resolve();
-      if (task.kind === "fresh") {
-        const remaining = afterFreshResolved(pending);
-        const keep = new Set<T>(remaining);
-        const skipped = pending.filter((item) => !keep.has(item));
-        pending.splice(0, pending.length, ...remaining);
-        for (const item of skipped) item.resolve();
-      }
     } catch (error) {
       task.reject(error);
     }

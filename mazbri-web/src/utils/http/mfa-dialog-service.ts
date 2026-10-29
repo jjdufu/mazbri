@@ -4,7 +4,11 @@ import { router } from "@/router";
 import { ApiStatus } from "./status";
 import { createSafeHttpError } from "./error";
 import { drainDialogQueue, insertDialogTask } from "./mfa-error";
-import { classifySubmittedCode, type ExclusiveMfaCode } from "./mfa-step-up-state";
+import {
+  classifySubmittedCode,
+  type ExclusiveMfaCode,
+  type MfaCategory,
+} from "./mfa-step-up-state";
 import { ACCOUNT_SECURITY_PATH, resolveMfaSetupPath } from "./mfa-setup-path";
 
 export { ACCOUNT_SECURITY_PATH };
@@ -25,8 +29,7 @@ export function isMfaStepUpCancelled(error: unknown): boolean {
 export interface MfaDialogViewModel {
   visible: boolean;
   sessionId: number;
-  mode: "step_up" | "fresh";
-  purpose: string;
+  category: MfaCategory | "";
   totpDigits: 6 | 8;
   errorCode: string | null;
   attemptsRemaining: number | null;
@@ -34,8 +37,7 @@ export interface MfaDialogViewModel {
 }
 
 type QueueTask = {
-  kind: "step_up" | "fresh";
-  purpose?: string;
+  category: MfaCategory;
   resolve: () => void;
   reject: (error: unknown) => void;
 };
@@ -48,8 +50,7 @@ type Decision = {
 const viewState: MfaDialogViewModel = {
   visible: false,
   sessionId: 0,
-  mode: "step_up",
-  purpose: "",
+  category: "",
   totpDigits: 6,
   errorCode: null,
   attemptsRemaining: null,
@@ -64,8 +65,7 @@ let sessionSerial = 0;
 
 const queue: QueueTask[] = [];
 let pumping = false;
-let stepUpWaiter: Promise<void> | null = null;
-const freshWaiters = new Map<string, Promise<void>>();
+const categoryWaiters = new Map<MfaCategory, Promise<void>>();
 let setupPromptOpen = false;
 
 function publish(): void {
@@ -139,8 +139,7 @@ function beginSession(task: QueueTask, digits: 6 | 8): void {
   sessionSerial += 1;
   viewState.visible = true;
   viewState.sessionId = sessionSerial;
-  viewState.mode = task.kind;
-  viewState.purpose = task.purpose ?? "";
+  viewState.category = task.category;
   viewState.totpDigits = digits;
   viewState.errorCode = null;
   viewState.attemptsRemaining = null;
@@ -198,7 +197,7 @@ async function execute(task: QueueTask): Promise<void> {
   } catch {
     // 刷新失败不能沿用旧的 active。位数可能仍是上次的值；弹窗仍可提交。
   }
-  if (task.kind === "step_up" && refreshed && store.active) return;
+  if (refreshed && store.isCategoryActive(task.category)) return;
   const digits: 6 | 8 = store.totpDigits === 8 ? 8 : 6;
   await waitForHost();
   beginSession(task, digits);
@@ -206,11 +205,7 @@ async function execute(task: QueueTask): Promise<void> {
     while (true) {
       const code = await waitForDecision();
       try {
-        await store.stepUp(
-          task.kind === "fresh" && task.purpose
-            ? { ...code, purpose: task.purpose }
-            : code,
-        );
+        await store.stepUp({ category: task.category, ...code });
         return;
       } catch (error) {
         if (readErrorCode(error) === "MFA_LOCKED") {
@@ -255,22 +250,13 @@ function enqueue(task: Omit<QueueTask, "resolve" | "reject">): Promise<void> {
   });
 }
 
-export function ensureStepUp(): Promise<void> {
-  if (stepUpWaiter) return stepUpWaiter;
-  const promise = enqueue({ kind: "step_up" }).finally(() => {
-    if (stepUpWaiter === promise) stepUpWaiter = null;
-  });
-  stepUpWaiter = promise;
-  return promise;
-}
-
-export function ensureFresh(purpose: string): Promise<void> {
-  const existing = freshWaiters.get(purpose);
+export function ensureCategory(category: MfaCategory): Promise<void> {
+  const existing = categoryWaiters.get(category);
   if (existing) return existing;
-  const promise = enqueue({ kind: "fresh", purpose }).finally(() => {
-    if (freshWaiters.get(purpose) === promise) freshWaiters.delete(purpose);
+  const promise = enqueue({ category }).finally(() => {
+    if (categoryWaiters.get(category) === promise) categoryWaiters.delete(category);
   });
-  freshWaiters.set(purpose, promise);
+  categoryWaiters.set(category, promise);
   return promise;
 }
 
@@ -297,7 +283,6 @@ export async function promptSetup(setupPath: unknown): Promise<void> {
 }
 
 export const MfaDialogService = {
-  ensureStepUp,
-  ensureFresh,
+  ensureCategory,
   promptSetup,
 };

@@ -168,7 +168,8 @@
       "placeholder": "Code or 8-character backup code",
       "confirm": "Confirm",
       "cancel": "Cancel",
-      "stepUpMessage": "Enter the authenticator code or an 8-character backup code to open a step-up window. Ordinary sensitive actions do not ask again while the window is valid.",
+      "stepUpMessage": "Enter the authenticator code or an 8-character backup code. After it succeeds, only this category skips further prompts until it expires. Other categories are separate.",
+      "categoryLine": "Category: {category}",
       "freshMessage": "This action needs its own verification.",
       "freshOnce": "The verification is valid only for this one action and cannot be reused for the next one.",
       "freshPurpose": "Action: {purpose}",
@@ -183,6 +184,14 @@
       "notEnabledTitle": "MFA Required",
       "notEnabledMessage": "This operation requires MFA verification, but MFA is not enabled for your account. Bind and enable MFA on the Account Security page first.",
       "goToSetup": "Set up MFA",
+      "categories": {
+        "certificate": "Certificates",
+        "admin": "Administrators",
+        "mfa": "Two-factor authentication",
+        "key": "Keys",
+        "finance": "Finance",
+        "platform": "Platform configuration"
+      },
       "purposes": {
         "crypto_migration_export": "Export recoverable key material",
         "api_key_create": "Create API key",
@@ -3995,7 +4004,7 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "MFA is enabled. Sensitive actions need an active step-up window; see the header pill.",
+    "enabled": "MFA is enabled. Sensitive actions need a valid verification for their category. See two-factor authentication on the Account Security page.",
     "notEnabled": "This operation requires MFA, which is not enabled for your account.",
     "goToSetup": "Set up MFA"
   },
@@ -4017,7 +4026,22 @@
       "stepUpExpiry": "expires {time}",
       "backupCodesRemaining": "Backup codes left",
       "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled.",
-      "freshHint": "Disabling MFA, regenerating backup codes, and creating or downloading keys need a separate verification. That verification is valid only for this one action.",
+      "freshHint": "Disabling MFA and regenerating backup codes belong to two-factor authentication. Creating or rotating keys belongs to keys. A verified category does not ask again until it expires.",
+      "categories": {
+        "certificate": "Certificates",
+        "admin": "Administrators",
+        "mfa": "Two-factor authentication",
+        "key": "Keys",
+        "finance": "Finance",
+        "platform": "Platform configuration"
+      },
+      "categoryInactive": "Not verified",
+      "categoryActive": "Verified, {time} left",
+      "categoryWarning": "Expiring soon, {time} left",
+      "endCategory": "End",
+      "endCategoryTitle": "End {category} verification",
+      "endCategoryConfirm": "After this ends, {category} actions must be verified again. Other categories are not affected.",
+      "endCategoryFailed": "Could not end this category. Try again.",
       "attemptsHint": "A wrong code uses up a remaining attempt. MFA locks when none remain.",
       "lockHint": "While MFA is locked you cannot verify, and any open step-up window is closed immediately. Try again after the lock expires.",
       "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code."

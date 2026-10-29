@@ -121,6 +121,7 @@ import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
 defineOptions({ name: "IssueCertificateDialog" });
 const props = withDefaults(
@@ -213,6 +214,7 @@ const handleBatchIssue = async () => {
       await issueCertificate({ subject, validity_days: form.validity_days });
       successCount++;
     } catch (error) {
+      if (isMfaStepUpCancelled(error)) break;
       failCount++;
       errors.push(
         $t("certificate.issueDialog.batchIssueFailed", { name: subject }),

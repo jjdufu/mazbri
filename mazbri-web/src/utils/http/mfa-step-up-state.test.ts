@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  MFA_CATEGORIES,
   classifySubmittedCode,
+  emptyCategorySnapshot,
   formatExpiryUtc8,
   formatMmSs,
+  isMfaCategory,
   isWarning,
   parseBroadcast,
   toClientDeadline,
@@ -28,6 +31,30 @@ test("isWarning 边界：大于 0 且不超过 120 秒", () => {
   assert.equal(isWarning(120), true);
   assert.equal(isWarning(121), false);
   assert.equal(isWarning(Number.NaN), false);
+});
+
+test("六类顺序固定，非法 category 被拒绝", () => {
+  assert.deepEqual(MFA_CATEGORIES, [
+    "certificate",
+    "admin",
+    "mfa",
+    "key",
+    "finance",
+    "platform",
+  ]);
+  assert.equal(isMfaCategory("certificate"), true);
+  assert.equal(isMfaCategory("certificate_issue"), false);
+  assert.equal(isMfaCategory("Certificate"), false);
+  assert.equal(isMfaCategory(""), false);
+  assert.equal(isMfaCategory(null), false);
+  assert.deepEqual(
+    emptyCategorySnapshot().map((item) => item.category),
+    [...MFA_CATEGORIES],
+  );
+  assert.equal(
+    emptyCategorySnapshot().every((item) => !item.active && item.reason === "none"),
+    true,
+  );
 });
 
 test("toClientDeadline 只使用 remaining_secs，下限按 0", () => {

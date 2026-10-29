@@ -58,15 +58,27 @@
               <span class="setting-value">{{ changedAtText }}</span>
             </CommonSettingRow>
             <CommonSettingRow
+              v-for="category in categoryList"
+              :key="category"
               mode="inline"
               mobile-stack
-              :label="$t('accountSecurity.mfa.stepUpStatus')"
+              :label="$t(`accountSecurity.mfa.categories.${category}`)"
             >
-              <span
-                class="setting-value"
-                :class="{ 'is-warning': stepUpWarning }"
-              >
-                {{ stepUpText }}
+              <span class="category-status">
+                <span
+                  class="setting-value"
+                  :class="{ 'is-warning': categoryWarning(category) }"
+                >
+                  {{ categoryText(category) }}
+                </span>
+                <ElButton
+                  v-if="isCategoryOpen(category)"
+                  size="small"
+                  :loading="endingCategory === category"
+                  @click="confirmEndCategory(category)"
+                >
+                  {{ $t("accountSecurity.mfa.endCategory") }}
+                </ElButton>
               </span>
             </CommonSettingRow>
             <CommonSettingRow
@@ -296,10 +308,12 @@ import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import {
+  MFA_CATEGORIES,
   formatExpiryUtc8,
   formatMmSs,
   isWarning,
   readSessionExpiresIn,
+  type MfaCategory,
 } from "@/utils/http/mfa-step-up-state";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { HttpError } from "@/utils/http/error";
@@ -310,8 +324,9 @@ defineOptions({ name: "AccountSecurity" });
 
 const userStore = useUserStore();
 const stepUpStore = useMfaStepUpStore();
-const { active: stepUpActive, remainingSecs: stepUpRemaining, expiresAt: stepUpExpiresAt } =
-  storeToRefs(stepUpStore);
+const { nowMs, windows } = storeToRefs(stepUpStore);
+const categoryList = MFA_CATEGORIES;
+const endingCategory = ref<MfaCategory | null>(null);
 const statusLoading = ref(false);
 const actionLoading = ref(false);
 const passwordLoading = ref(false);
@@ -331,27 +346,55 @@ const changedAtText = computed(() => {
   if (!changedAt) return "-";
   return formatExpiryUtc8(changedAt) || "-";
 });
-const stepUpWarning = computed(
-  () => stepUpActive.value && isWarning(stepUpRemaining.value),
-);
-const stepUpText = computed(() => {
-  if (!stepUpActive.value || stepUpRemaining.value <= 0) {
-    return $t("accountSecurity.mfa.stepUpInactive");
+function categoryRemaining(category: MfaCategory): number {
+  void nowMs.value;
+  return stepUpStore.remainingNow(category);
+}
+function isCategoryOpen(category: MfaCategory): boolean {
+  return Boolean(windows.value[category]?.active) && categoryRemaining(category) > 0;
+}
+function categoryWarning(category: MfaCategory): boolean {
+  return isCategoryOpen(category) && isWarning(categoryRemaining(category));
+}
+function categoryText(category: MfaCategory): string {
+  if (!isCategoryOpen(category)) {
+    return $t("accountSecurity.mfa.categoryInactive");
   }
-  const time = formatMmSs(stepUpRemaining.value);
+  const time = formatMmSs(categoryRemaining(category));
   const statusText = $t(
-    stepUpWarning.value
-      ? "accountSecurity.mfa.stepUpWarning"
-      : "accountSecurity.mfa.stepUpActive",
+    categoryWarning(category)
+      ? "accountSecurity.mfa.categoryWarning"
+      : "accountSecurity.mfa.categoryActive",
     { time },
   );
-  const expiry = stepUpExpiresAt.value
-    ? formatExpiryUtc8(stepUpExpiresAt.value)
+  const expiry = windows.value[category]?.expiresAt
+    ? formatExpiryUtc8(windows.value[category].expiresAt ?? "")
     : "";
   return expiry
     ? `${statusText} · ${$t("accountSecurity.mfa.stepUpExpiry", { time: expiry })}`
     : statusText;
-});
+}
+async function confirmEndCategory(category: MfaCategory): Promise<void> {
+  const name = $t(`accountSecurity.mfa.categories.${category}`);
+  try {
+    await ElMessageBox.confirm(
+      $t("accountSecurity.mfa.endCategoryConfirm", { category: name }),
+      $t("accountSecurity.mfa.endCategoryTitle", { category: name }),
+      { type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  endingCategory.value = category;
+  try {
+    await stepUpStore.endCategory(category);
+  } catch (error) {
+    ElMessage.error($t("accountSecurity.mfa.endCategoryFailed"));
+    logActionError("Failed to end MFA category", error);
+  } finally {
+    endingCategory.value = null;
+  }
+}
 function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
   if (!payload) return;
   const expiresIn = readSessionExpiresIn(payload);
@@ -623,6 +666,14 @@ onMounted(() => {
 :deep(.common-setting-row__control) {
   display: flex;
   justify-content: flex-end;
+}
+
+.category-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .setting-value {

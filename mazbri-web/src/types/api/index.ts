@@ -10,9 +10,12 @@ export {
   type MfaStatus,
   type MfaEnableRequest,
   type MfaSessionRefresh,
+  type MfaCategory,
+  type MfaCategoryStatus,
   type MfaStepUpStatus,
   type MfaStepUpRequest,
   type MfaStepUpResponse,
+  type MfaStepUpEndResponse,
   type MfaBackupCodesResponse,
 } from "./auth";
 export * from "./tenant";

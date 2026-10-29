@@ -9,6 +9,8 @@ import type {
   MfaStatus,
   MfaBackupCodesResponse,
   MfaSessionRefresh,
+  MfaCategory,
+  MfaStepUpEndResponse,
   MfaStepUpRequest,
   MfaStepUpResponse,
   MfaStepUpStatus,
@@ -132,16 +134,17 @@ export function stepUpMfa(data: MfaStepUpRequest, signal?: AbortSignal) {
   return request.post<MfaStepUpResponse>({
     url: `${AUTH_PATH}/mfa/step-up`,
     data: {
+      category: data.category,
       ...exclusiveMfaBody(data),
-      ...(data.purpose ? { purpose: data.purpose } : {}),
     },
     signal,
     showErrorMessage: false,
   });
 }
-export function endMfaStepUp(signal?: AbortSignal) {
-  return request.del<void>({
+export function endMfaStepUp(category?: MfaCategory, signal?: AbortSignal) {
+  return request.del<MfaStepUpEndResponse>({
     url: `${AUTH_PATH}/mfa/step-up`,
+    params: category ? { category } : undefined,
     signal,
     showErrorMessage: false,
   });

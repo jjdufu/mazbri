@@ -168,7 +168,8 @@
       "placeholder": "验证码或 8 位备用码",
       "confirm": "确认",
       "cancel": "取消",
-      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码，以打开提权窗口。窗口有效期内，普通敏感操作无需重复输入。",
+      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类在剩余时间内不用再输，其他类另计。",
+      "categoryLine": "当前类别：{category}",
       "freshMessage": "此操作需要单独验证。",
       "freshOnce": "验证只对这一次操作有效，完成后不能用于下一次同类操作。",
       "freshPurpose": "操作：{purpose}",
@@ -183,6 +184,14 @@
       "notEnabledTitle": "需要启用 MFA",
       "notEnabledMessage": "此操作需要 MFA 二次验证，当前账号尚未启用 MFA。请先在「账号安全」页面绑定并启用 MFA 后再操作。",
       "goToSetup": "前往绑定",
+      "categories": {
+        "certificate": "证书",
+        "admin": "管理员",
+        "mfa": "两步验证",
+        "key": "密钥",
+        "finance": "资金",
+        "platform": "平台配置"
+      },
       "purposes": {
         "crypto_migration_export": "导出可恢复的密钥材料",
         "api_key_create": "创建 API 密钥",
@@ -4000,7 +4009,7 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "已启用 MFA。敏感操作需要有效的提权窗口，状态见顶部胶囊。",
+    "enabled": "已启用 MFA。敏感操作需要对应类别的有效验证，状态见账号安全页的两步验证。",
     "notEnabled": "此操作需要 MFA 验证，当前账号尚未启用 MFA。",
     "goToSetup": "前往绑定"
   },
@@ -4022,7 +4031,22 @@
       "stepUpExpiry": "到期 {time}",
       "backupCodesRemaining": "剩余备用码",
       "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。",
-      "freshHint": "关闭 MFA、重新生成备用码、创建或下载密钥等操作需要单独再验证一次。这次验证只对当前这一次操作有效，不能留给下一次。",
+      "freshHint": "关闭 MFA、重新生成备用码属于两步验证，创建或轮换密钥属于密钥。验过的那一类在剩余时间内不用再输。",
+      "categories": {
+        "certificate": "证书",
+        "admin": "管理员",
+        "mfa": "两步验证",
+        "key": "密钥",
+        "finance": "资金",
+        "platform": "平台配置"
+      },
+      "categoryInactive": "未验证",
+      "categoryActive": "已验证，剩余 {time}",
+      "categoryWarning": "即将到期，剩余 {time}",
+      "endCategory": "结束",
+      "endCategoryTitle": "结束{category}验证",
+      "endCategoryConfirm": "结束后，{category}类操作需要重新验证。其他类不受影响。",
+      "endCategoryFailed": "结束这一类验证失败，请稍后重试。",
       "attemptsHint": "验证码错误会扣减剩余次数。次数用尽后 MFA 将被锁定。",
       "lockHint": "MFA 锁定期间无法验证，已打开的提权窗口也会立即失效。请在锁定结束后再试。",
       "replayHint": "同一个验证码不能重复使用。请等待验证器刷新出新码，或改用尚未使用的备用码。"

@@ -1,7 +1,19 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import type { MfaStepUpRequest, MfaStepUpResponse, MfaStepUpStatus } from "@/types/api";
-import { toClientDeadline, parseBroadcast } from "@/utils/http/mfa-step-up-state";
+import type {
+  MfaStepUpEndResponse,
+  MfaStepUpRequest,
+  MfaStepUpResponse,
+  MfaStepUpStatus,
+} from "@/types/api";
+import {
+  MFA_CATEGORIES,
+  emptyCategorySnapshot,
+  isMfaCategory,
+  parseBroadcast,
+  toClientDeadline,
+  type MfaCategory,
+} from "@/utils/http/mfa-step-up-state";
 import { ErrorCodes } from "@/constants/error-codes";
 import { logger } from "@/utils/sys";
 
@@ -9,23 +21,39 @@ const CHANNEL_NAME = "mazbri-mfa-step-up";
 const STORAGE_KEY = "mazbri-mfa-step-up";
 const POLL_MS = 60_000;
 
+interface CategoryWindow {
+  active: boolean;
+  clientDeadline: number | null;
+  expiresAt: string | null;
+  reason: string | null;
+}
+
 function normalizeDigits(value: number | undefined): 6 | 8 {
   return value === 8 ? 8 : 6;
+}
+
+function blankWindows(): Record<MfaCategory, CategoryWindow> {
+  const windows = {} as Record<MfaCategory, CategoryWindow>;
+  for (const item of emptyCategorySnapshot()) {
+    windows[item.category] = {
+      active: false,
+      clientDeadline: null,
+      expiresAt: null,
+      reason: item.reason,
+    };
+  }
+  return windows;
 }
 
 export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
   const mfaEnabled = ref(false);
   const mfaRequired = ref(false);
   const totpDigits = ref<6 | 8>(6);
-  const active = ref(false);
-  const remainingSecs = ref(0);
-  const expiresAt = ref<string | null>(null);
   const serverTime = ref<string | null>(null);
   const ttlSecs = ref(0);
-  const reason = ref<string | null>(null);
   const loaded = ref(false);
-  /** 由 remaining_secs 推出的客户端截止时间，倒计时用它减 Date.now()，不累减。 */
-  const clientDeadline = ref<number | null>(null);
+  const nowMs = ref(Date.now());
+  const windows = ref<Record<MfaCategory, CategoryWindow>>(blankWindows());
 
   let epoch = 0;
   let refreshInflight: Promise<void> | null = null;
@@ -45,28 +73,42 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     tickTimer = null;
   }
 
-  function remainingNow(now = Date.now()): number {
-    if (!active.value || clientDeadline.value == null) return 0;
-    return Math.max(0, Math.ceil((clientDeadline.value - now) / 1000));
+  function remainingNow(category: MfaCategory, now = nowMs.value): number {
+    const window = windows.value[category];
+    if (!window.active || window.clientDeadline == null) return 0;
+    return Math.max(0, Math.ceil((window.clientDeadline - now) / 1000));
   }
 
-  function syncRemaining(): void {
-    const secs = remainingNow();
-    remainingSecs.value = secs;
-    if (active.value && clientDeadline.value != null && secs <= 0) {
-      void onCountdownZero();
+  function isCategoryActive(category: MfaCategory, now = Date.now()): boolean {
+    return remainingNow(category, now) > 0;
+  }
+
+  function soonestDeadline(): number | null {
+    let soonest: number | null = null;
+    for (const category of MFA_CATEGORIES) {
+      const window = windows.value[category];
+      if (!window.active || window.clientDeadline == null) continue;
+      if (soonest == null || window.clientDeadline < soonest) {
+        soonest = window.clientDeadline;
+      }
     }
+    return soonest;
   }
 
   function scheduleTimers(): void {
     clearTimers();
     if (typeof window === "undefined") return;
-    if (!active.value || clientDeadline.value == null) return;
-    tickTimer = setInterval(syncRemaining, 1000);
-    const delay = Math.max(0, clientDeadline.value - Date.now());
+    const soonest = soonestDeadline();
+    if (soonest == null) return;
+    tickTimer = setInterval(() => {
+      nowMs.value = Date.now();
+      if (MFA_CATEGORIES.some((category) => windows.value[category].active && remainingNow(category) <= 0)) {
+        void onCountdownZero();
+      }
+    }, 1000);
     expiryTimer = setTimeout(() => {
       void onCountdownZero();
-    }, delay + 20);
+    }, Math.max(0, soonest - Date.now()) + 20);
     pollTimer = setInterval(() => {
       void refresh().catch(() => undefined);
     }, POLL_MS);
@@ -76,24 +118,63 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaEnabled.value = Boolean(data.mfa_enabled);
     mfaRequired.value = Boolean(data.mfa_required);
     totpDigits.value = normalizeDigits(data.totp_digits);
-    expiresAt.value = data.expires_at ?? null;
     serverTime.value = data.server_time ?? null;
     ttlSecs.value = typeof data.ttl_secs === "number" ? data.ttl_secs : 0;
-    reason.value = data.reason ?? null;
     loaded.value = true;
-    const secs =
-      typeof data.remaining_secs === "number"
-        ? Math.max(0, data.remaining_secs)
-        : 0;
-    if (data.active && secs > 0) {
-      active.value = true;
-      remainingSecs.value = secs;
-      clientDeadline.value = toClientDeadline(secs, now);
-    } else {
-      active.value = false;
-      remainingSecs.value = 0;
-      clientDeadline.value = null;
+    const next = blankWindows();
+    const seen = new Set<MfaCategory>();
+    for (const item of data.categories ?? []) {
+      if (!isMfaCategory(item.category) || seen.has(item.category)) continue;
+      seen.add(item.category);
+      const secs =
+        typeof item.remaining_secs === "number"
+          ? Math.max(0, item.remaining_secs)
+          : 0;
+      if (item.active && secs > 0) {
+        next[item.category] = {
+          active: true,
+          clientDeadline: toClientDeadline(secs, now),
+          expiresAt: item.expires_at,
+          reason: item.reason,
+        };
+      } else {
+        next[item.category] = {
+          active: false,
+          clientDeadline: null,
+          expiresAt: null,
+          reason: item.reason ?? "none",
+        };
+      }
     }
+    windows.value = next;
+    nowMs.value = now;
+    scheduleTimers();
+  }
+
+  function applyOpened(
+    category: MfaCategory,
+    data: MfaStepUpResponse,
+    now = Date.now(),
+  ): void {
+    const secs = Number.isFinite(data.remaining_secs)
+      ? Math.max(0, data.remaining_secs)
+      : 0;
+    windows.value = {
+      ...windows.value,
+      [category]: {
+        active: Boolean(data.active) && secs > 0,
+        clientDeadline:
+          data.active && secs > 0 ? toClientDeadline(secs, now) : null,
+        expiresAt: data.expires_at ?? null,
+        reason: null,
+      },
+    };
+    if (typeof data.totp_digits === "number") {
+      totpDigits.value = normalizeDigits(data.totp_digits);
+    }
+    if (typeof data.ttl_secs === "number") ttlSecs.value = data.ttl_secs;
+    serverTime.value = data.server_time ?? serverTime.value;
+    nowMs.value = now;
     scheduleTimers();
   }
 
@@ -131,17 +212,28 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
   async function onCountdownZero(): Promise<void> {
     if (expiryRefreshPending) return;
     expiryRefreshPending = true;
-    clientDeadline.value = null;
-    remainingSecs.value = 0;
     clearTimers();
     try {
       await refresh();
     } catch {
-      active.value = false;
-      remainingSecs.value = 0;
-      clientDeadline.value = null;
+      const now = Date.now();
+      const next = { ...windows.value };
+      for (const category of MFA_CATEGORIES) {
+        const item = next[category];
+        if (item.active && item.clientDeadline != null && item.clientDeadline <= now) {
+          next[category] = {
+            active: false,
+            clientDeadline: null,
+            expiresAt: null,
+            reason: "expired",
+          };
+        }
+      }
+      windows.value = next;
+      nowMs.value = now;
     } finally {
       expiryRefreshPending = false;
+      scheduleTimers();
     }
   }
 
@@ -165,47 +257,57 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     const { stepUpMfa } = await import("@/api/auth");
     const data = await stepUpMfa(payload);
     if (ticket !== epoch) return data;
-    applySnapshot({
-      mfa_enabled: true,
-      mfa_required: mfaRequired.value,
-      totp_digits: data.totp_digits ?? totpDigits.value,
-      active: data.active,
-      remaining_secs: data.remaining_secs,
-      expires_at: data.expires_at ?? null,
-      server_time: data.server_time ?? null,
-      ttl_secs: data.ttl_secs,
-      reason: null,
-    });
+    const opened = isMfaCategory(data.category) ? data.category : payload.category;
+    applyOpened(opened, data);
     broadcastChanged();
     return data;
   }
 
-  /** 立刻停掉本地倒计时。锁定或刷新失败时胶囊也不能继续显示绿色。 */
   function clearElevation(): void {
-    active.value = false;
-    remainingSecs.value = 0;
-    clientDeadline.value = null;
-    expiresAt.value = null;
-    reason.value = "invalidated";
+    windows.value = blankWindows();
+    nowMs.value = Date.now();
     clearTimers();
+  }
+
+  function assertEndScope(data: MfaStepUpEndResponse, category?: MfaCategory): void {
+    if (category) {
+      if (data.scope !== "category" || data.category !== category) {
+        throw new Error("unexpected category end response");
+      }
+      return;
+    }
+    if (data.scope !== "all") {
+      throw new Error("unexpected step-up end response");
+    }
   }
 
   async function lock(): Promise<void> {
     const ticket = epoch;
     const { endMfaStepUp } = await import("@/api/auth");
-    await endMfaStepUp();
+    const data = await endMfaStepUp();
+    assertEndScope(data);
     if (ticket !== epoch) return;
-    applySnapshot({
-      mfa_enabled: mfaEnabled.value,
-      mfa_required: mfaRequired.value,
-      totp_digits: totpDigits.value,
-      active: false,
-      remaining_secs: 0,
-      expires_at: null,
-      server_time: serverTime.value,
-      ttl_secs: ttlSecs.value,
-      reason: "none",
-    });
+    clearElevation();
+    broadcastChanged();
+  }
+
+  async function endCategory(category: MfaCategory): Promise<void> {
+    const ticket = epoch;
+    const { endMfaStepUp } = await import("@/api/auth");
+    const data = await endMfaStepUp(category);
+    assertEndScope(data, category);
+    if (ticket !== epoch) return;
+    windows.value = {
+      ...windows.value,
+      [category]: {
+        active: false,
+        clientDeadline: null,
+        expiresAt: null,
+        reason: "none",
+      },
+    };
+    nowMs.value = Date.now();
+    scheduleTimers();
     broadcastChanged();
   }
 
@@ -215,14 +317,10 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaEnabled.value = false;
     mfaRequired.value = false;
     totpDigits.value = 6;
-    active.value = false;
-    remainingSecs.value = 0;
-    expiresAt.value = null;
     serverTime.value = null;
     ttlSecs.value = 0;
-    reason.value = null;
     loaded.value = false;
-    clientDeadline.value = null;
+    clearElevation();
     broadcastChanged();
   }
 
@@ -277,19 +375,18 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaEnabled,
     mfaRequired,
     totpDigits,
-    active,
-    remainingSecs,
-    expiresAt,
     serverTime,
     ttlSecs,
-    reason,
     loaded,
-    clientDeadline,
+    nowMs,
+    windows,
     refresh,
     stepUp,
     lock,
+    endCategory,
     clearElevation,
     reset,
     remainingNow,
+    isCategoryActive,
   };
 });

@@ -67,25 +67,37 @@ export interface MfaSessionRefresh {
   token?: string;
   cookie_auth?: boolean;
 }
+export type MfaCategory =
+  | "certificate"
+  | "admin"
+  | "mfa"
+  | "key"
+  | "finance"
+  | "platform";
+export interface MfaCategoryStatus {
+  category: MfaCategory;
+  active: boolean;
+  remaining_secs: number;
+  expires_at: string | null;
+  reason: string | null;
+}
 export interface MfaStepUpStatus {
   mfa_enabled: boolean;
   mfa_required: boolean;
   totp_digits: number;
-  active: boolean;
-  expires_at?: string | null;
-  remaining_secs?: number;
-  ttl_secs?: number;
+  ttl_secs: number;
   server_time?: string | null;
-  reason?: string | null;
+  categories: MfaCategoryStatus[];
 }
-/** totp_code 与 backup_code 有且只有一个，purpose 可选。 */
+/** totp_code 与 backup_code 有且只有一个，category 必填。 */
 export interface MfaStepUpRequest {
+  category: MfaCategory;
   totp_code?: string;
   backup_code?: string;
-  purpose?: string;
 }
 export interface MfaStepUpResponse {
   active: boolean;
+  category: MfaCategory;
   opened_at?: string;
   expires_at?: string;
   remaining_secs: number;
@@ -93,10 +105,10 @@ export interface MfaStepUpResponse {
   server_time?: string;
   method?: string;
   totp_digits?: number;
-  fresh?: {
-    purpose: string;
-    expires_in_secs: number;
-  };
+}
+export interface MfaStepUpEndResponse {
+  scope: "all" | "category";
+  category?: MfaCategory;
 }
 export interface MfaRequiredSetupRequest {
   temp_token: string;

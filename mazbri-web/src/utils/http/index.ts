@@ -14,16 +14,14 @@ import {
   showSuccess,
 } from "./error";
 import {
-  ensureFresh,
-  ensureStepUp,
+  ensureCategory,
   isMfaStepUpCancelled,
   MfaDialogService,
 } from "./mfa-dialog-service";
 import {
   classifyMfaError,
   parseJsonBlob,
-  shouldInterceptFresh,
-  shouldInterceptStepUp,
+  shouldInterceptCategory,
   type MfaInterceptConfig,
 } from "./mfa-error";
 import { getMfaNotEnabledSetupPath } from "./mfa-setup-path";
@@ -165,13 +163,11 @@ interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   suppressUnauthorizedToast?: boolean;
   signal?: AbortSignal;
   _mfaRetry?: boolean;
-  _mfaFreshRetry?: boolean;
 }
 interface MfaAwareRequestConfig
   extends InternalAxiosRequestConfig, MfaInterceptConfig {
   _retry?: boolean;
   _mfaRetry?: boolean;
-  _mfaFreshRetry?: boolean;
 }
 function readContentType(headers: unknown): string {
   if (!headers || typeof headers !== "object") return "";
@@ -317,33 +313,17 @@ axiosInstance.interceptors.response.use(
     const classified = classifyMfaError(error.response?.data);
     if (
       status === ApiStatus.forbidden &&
-      classified?.kind === "step_up" &&
+      classified?.kind === "category" &&
       originalRequest &&
-      shouldInterceptStepUp(originalRequest)
+      shouldInterceptCategory(originalRequest)
     ) {
       try {
-        await ensureStepUp();
+        await ensureCategory(classified.category);
       } catch (cause) {
         if (isMfaStepUpCancelled(cause)) return Promise.reject(cause);
         return Promise.reject(cause);
       }
       originalRequest._mfaRetry = true;
-      return axiosInstance(originalRequest);
-    }
-    if (
-      status === ApiStatus.forbidden &&
-      classified?.kind === "fresh" &&
-      classified.purpose &&
-      originalRequest &&
-      shouldInterceptFresh(originalRequest)
-    ) {
-      try {
-        await ensureFresh(classified.purpose);
-      } catch (cause) {
-        if (isMfaStepUpCancelled(cause)) return Promise.reject(cause);
-        return Promise.reject(cause);
-      }
-      originalRequest._mfaFreshRetry = true;
       return axiosInstance(originalRequest);
     }
     return Promise.reject(handleError(error));

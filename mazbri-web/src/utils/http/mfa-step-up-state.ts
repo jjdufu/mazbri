@@ -3,6 +3,42 @@
  * 截止时间只根据服务器 remaining_secs 推算，不比较客户端与服务器的绝对时钟。
  */
 
+export const MFA_CATEGORIES = [
+  "certificate",
+  "admin",
+  "mfa",
+  "key",
+  "finance",
+  "platform",
+] as const;
+
+export type MfaCategory = (typeof MFA_CATEGORIES)[number];
+
+export function isMfaCategory(value: unknown): value is MfaCategory {
+  return (
+    typeof value === "string" &&
+    (MFA_CATEGORIES as readonly string[]).includes(value)
+  );
+}
+
+export interface CategorySnapshot {
+  category: MfaCategory;
+  active: boolean;
+  remaining_secs: number;
+  expires_at: string | null;
+  reason: string | null;
+}
+
+export function emptyCategorySnapshot(): CategorySnapshot[] {
+  return MFA_CATEGORIES.map((category) => ({
+    category,
+    active: false,
+    remaining_secs: 0,
+    expires_at: null,
+    reason: "none",
+  }));
+}
+
 export const BACKUP_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
 
 export function toClientDeadline(remainingSecs: number, now = Date.now()): number {
