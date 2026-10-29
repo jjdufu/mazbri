@@ -7,8 +7,7 @@
 //! 刷新令牌在无 MFA 登录、MFA 验证通过（`verify`）以及强制 MFA 启用
 //! （`required-enable`）后签发。已绑定 MFA 的会话可以正常刷新；仅当令牌签发后
 //! MFA 因子状态发生变化（`mfa_changed_at` 晚于令牌 `iat`，即启用、关闭或超管重置）
-//! 时拒绝刷新，迫使重新走完整登录。账号级 `mfa_required` 与遗留全局策略列
-//! 不单独阻断刷新。
+//! 时拒绝刷新，迫使重新走完整登录。账号级 `mfa_required` 不单独阻断刷新。
 
 use crate::audit;
 use crate::error::ApiError;

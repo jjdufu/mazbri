@@ -132,7 +132,6 @@ en-US:
       totp_digits: "TOTP digits must be 6 or 8"
       totp_period: "TOTP period must be between 15-60 seconds"
       backup_codes_count: "Backup codes count must be between 5-20"
-      invalid_role: "Invalid role in mfa_required_for_roles"
       failed_update: "Failed to update MFA settings"
     appearance:
       failed_get: "Failed to get appearance settings"

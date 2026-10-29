@@ -2,8 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 /// MFA 全局参数（TOTP 发行方/位数/周期、备用码数量）。
 ///
-/// 表中历史遗留的 `mfa_enabled_globally` / `mfa_required_for_all` /
-/// `mfa_required_for_roles` 列保留但不再读写：MFA 始终可用，敏感操作按功能要求 MFA。
+/// 是否要码由操作类别决定，不再读取角色级全局策略列。
 #[derive(Debug, sqlx::FromRow)]
 pub struct MfaSettingsRow {
     pub totp_issuer: String,

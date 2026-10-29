@@ -712,70 +712,13 @@ async fn forced_password_change_with_mfa_required_enters_setup() {
     );
 }
 
-/// `mfa_settings` 中遗留的全局策略列快照（列保留但已不再被读取），用于测试结束后还原
-/// （测试需 `--test-threads=1` 运行）。
-struct LegacyMfaPolicyColumns {
-    enabled_globally: bool,
-    required_for_all: bool,
-    required_for_roles: Option<Vec<String>>,
-}
-
-async fn snapshot_legacy_policy(db: &PgPool) -> LegacyMfaPolicyColumns {
-    let (enabled_globally, required_for_all, required_for_roles): (
-        bool,
-        bool,
-        Option<Vec<String>>,
-    ) = sqlx::query_as(
-        "SELECT mfa_enabled_globally, mfa_required_for_all, mfa_required_for_roles \
-         FROM mfa_settings WHERE id = '00000000-0000-0000-0000-000000000102'",
-    )
-    .fetch_one(db)
-    .await
-    .expect("mfa_settings row");
-    LegacyMfaPolicyColumns {
-        enabled_globally,
-        required_for_all,
-        required_for_roles,
-    }
-}
-
-async fn set_legacy_policy(db: &PgPool, policy: &LegacyMfaPolicyColumns) {
-    sqlx::query(
-        "UPDATE mfa_settings SET mfa_enabled_globally = $1, mfa_required_for_all = $2, \
-         mfa_required_for_roles = $3 WHERE id = '00000000-0000-0000-0000-000000000102'",
-    )
-    .bind(policy.enabled_globally)
-    .bind(policy.required_for_all)
-    .bind(policy.required_for_roles.as_deref())
-    .execute(db)
-    .await
-    .expect("update mfa_settings");
-}
-
-fn strictest_legacy_policy() -> LegacyMfaPolicyColumns {
-    LegacyMfaPolicyColumns {
-        enabled_globally: true,
-        required_for_all: true,
-        required_for_roles: Some(vec![
-            "R_ADMIN".to_string(),
-            "R_FINANCE".to_string(),
-            "R_VIEWER".to_string(),
-        ]),
-    }
-}
-
-/// 遗留全局策略列不再强制 MFA；账号级 `mfa_required` 才会进入设置阶段，
-/// 且本人不可关闭已绑定的 MFA。
+/// 账号级 `mfa_required` 才会进入设置阶段，且本人不可关闭已绑定的 MFA。
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
 async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
     use crate::services::mfa::disable;
 
     let deps = deps().await;
-    let original = snapshot_legacy_policy(&deps.db).await;
-    // 即使全局列设到最严，也不应单独迫使未标记账号进入设置。
-    set_legacy_policy(&deps.db, &strictest_legacy_policy()).await;
-
     let unmarked = create_user(
         &deps.db,
         NewUser {
@@ -852,8 +795,6 @@ async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
             .fetch_one(&*deps.db)
             .await
             .expect("mfa_enabled");
-
-    set_legacy_policy(&deps.db, &original).await;
 
     assert_eq!(disable_status, StatusCode::FORBIDDEN);
     assert!(still_enabled);
@@ -1034,26 +975,19 @@ async fn refresh_allows_mfa_enabled_session_issued_after_verify() {
     assert_eq!(draft.failure_reason, None);
 }
 
-/// 会话建立后遗留策略列被设为最严格、账号被标记 `mfa_required`：刷新仍然成功
-/// （`mfa_required` 不单独拒绝刷新；只有签发后 MFA 状态变化才拒绝）。
+/// 账号被标记 `mfa_required` 不单独拒绝刷新；只有签发后 MFA 状态变化才拒绝。
 #[tokio::test]
 #[ignore = "requires PostgreSQL + Redis (disposable containers)"]
-async fn refresh_ignores_legacy_mfa_policy_columns() {
+async fn refresh_allows_mfa_required_without_factor_change() {
     let deps = deps().await;
     let (user, refresh) = user_with_refresh_token(&deps).await;
-    let original = snapshot_legacy_policy(&deps.db).await;
-    set_legacy_policy(&deps.db, &strictest_legacy_policy()).await;
     sqlx::query("UPDATE admin_users SET mfa_required = true WHERE id = $1")
         .bind(user.id)
         .execute(&*deps.db)
         .await
         .expect("flag user");
     let (result, draft) = refresh_via_service(&deps, &refresh).await;
-    set_legacy_policy(&deps.db, &original).await;
-    assert!(
-        result.is_ok(),
-        "legacy policy columns must not block refresh"
-    );
+    assert!(result.is_ok(), "mfa_required must not block refresh");
     assert_eq!(draft.failure_reason, None);
 }
 

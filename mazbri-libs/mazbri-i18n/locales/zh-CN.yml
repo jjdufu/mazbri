@@ -132,7 +132,6 @@ zh-CN:
       totp_digits: "TOTP 位数必须是 6 或 8"
       totp_period: "TOTP 周期必须在 15-60 秒之间"
       backup_codes_count: "备用码数量必须在 5-20 之间"
-      invalid_role: "mfa_required_for_roles 中包含无效角色"
       failed_update: "更新 MFA 设置失败"
     appearance:
       failed_get: "获取外观设置失败"
