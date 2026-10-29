@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.10](https://github.com/jjdufu/mazbri/compare/v0.2.9...v0.2.10) (2026-10-29)
+
+
+### Features
+
+* **mfa:** 前端按六类提权拦截，并去掉顶栏倒计时 ([87a0b39](https://github.com/jjdufu/mazbri/commit/87a0b39dbd2eb96d42028c4d3e605355e5bd6290))
+* **mfa:** 增加六类独立提权窗口的类型和 Redis 键 ([de90202](https://github.com/jjdufu/mazbri/commit/de902022d09e25e32452d7aa76359e7a2f3d230b))
+* **mfa:** 把提权文案和审计展示改成六类各自计时 ([395d2ae](https://github.com/jjdufu/mazbri/commit/395d2ae16712493ce0b093d4717dabd80ea2ac2b))
+* **mfa:** 敏感操作改为六类独立的 15 分钟窗口 ([99ac3ad](https://github.com/jjdufu/mazbri/commit/99ac3ad440f7744f66fd0cf1759140a475c5fb91))
+
+
+### Bug Fixes
+
+* **mfa:** 修六类提权验证里发现的缺口 ([9e835dd](https://github.com/jjdufu/mazbri/commit/9e835dda28a4205be431bb9546b7ac3dfeba82e2))
+* **mfa:** 去掉已删除的全局 MFA 策略列依赖 ([c86a1e6](https://github.com/jjdufu/mazbri/commit/c86a1e6b14d883b958e57c394bed1f7e0765acc3))
+* **mfa:** 绑定成功只启用开关，不再打开提权窗口 ([cfeabe2](https://github.com/jjdufu/mazbri/commit/cfeabe2fa92ff6323ef5f16e40dfa3a4b5af4edc))
+* **mfa:** 补上 MfaStepUpDialog 的全局组件类型登记 ([7603731](https://github.com/jjdufu/mazbri/commit/7603731166a0bb7bd1d55d79378271b69690fa6e))
+
 ## [0.2.9](https://github.com/jjdufu/mazbri/compare/v0.2.8...v0.2.9) (2026-10-28)
 
 
