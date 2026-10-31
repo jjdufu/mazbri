@@ -66,9 +66,11 @@ pub use logging::{
     response_flags_for_error,
 };
 pub use metrics::{
-    ACTIVE_CONNECTIONS, CounterRecorder, DB_QUERY_TOTAL, HTTP_REQUEST_DURATION_SECONDS,
-    HTTP_REQUESTS_TOTAL, HistogramRecorder, MetricsBuilder, MetricsRecorder, REGISTRY,
-    register_metrics,
+    ACTIVE_CONNECTIONS, CounterRecorder, DB_QUERY_TOTAL, DEP_CLIENT_DURATION_SECONDS,
+    DEP_CLIENT_ERRORS_TOTAL, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL, HistogramRecorder,
+    MetricsBuilder, MetricsRecorder, REGISTRY, RPC_CLIENT_DURATION_SECONDS,
+    RPC_CLIENT_REQUESTS_TOTAL, RpcMetricsChannel, RpcMetricsStub, init_service_metrics,
+    observe_dep, observe_dep_duration, register_metrics, spawn_rpc_client,
 };
 pub use pool_types::{DEFAULT_REQUEST_TIMEOUT_MS, PooledClient};
 pub use retry::{DEFAULT_RETRY_CONFIG, IsTransient, RetryConfig, retry_rpc};

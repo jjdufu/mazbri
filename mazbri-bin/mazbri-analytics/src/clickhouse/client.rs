@@ -54,11 +54,15 @@ impl ClickHouseClient {
             sql
         };
 
-        self.inner
+        let started = std::time::Instant::now();
+        let result = self
+            .inner
             .query(clean_sql)
             .fetch_all::<T>()
             .await
-            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")))
+            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")));
+        mazbri_core::metrics::observe_dep("ch", "query", started, result.is_ok());
+        result
     }
 
     pub(super) async fn execute_count_query_inner(&self, sql: &str) -> Result<u64> {

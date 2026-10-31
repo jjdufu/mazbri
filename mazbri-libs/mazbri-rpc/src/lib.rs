@@ -10,46 +10,48 @@ pub mod http_upstream;
 pub mod ratelimit;
 pub mod serde_json_value_as_text;
 pub use auth::{
-    AuthService, AuthServiceClient, GetTenantInfoRequest, GetTenantInfoResponse, ResourceQuota,
-    TenantContext, ValidateApiKeyRequest, ValidateApiKeyResponse, ValidateTokenRequest,
-    ValidateTokenResponse,
+    AuthService, AuthServiceClient, AuthServiceRequest, AuthServiceResponse, GetTenantInfoRequest,
+    GetTenantInfoResponse, ResourceQuota, TenantContext, ValidateApiKeyRequest,
+    ValidateApiKeyResponse, ValidateTokenRequest, ValidateTokenResponse,
 };
 pub use billing::{
     AddFundsRequest, AddFundsResponse, Amount, Bill, BillLineItem, BillStatus, BillingCycle,
-    BillingPeriod, BillingService, BillingServiceClient, CheckBalanceRequest, CheckBalanceResponse,
-    GetBalanceRequest, GetBalanceResponse, GetBillRequest, GetBillResponse, GetUsageSummaryRequest,
-    GetUsageSummaryResponse, ListBillsRequest, ListBillsResponse, RecordUsageRequest,
-    RecordUsageResponse, UsageBreakdown, UsageSummary,
+    BillingPeriod, BillingService, BillingServiceClient, BillingServiceRequest, BillingServiceResponse,
+    CheckBalanceRequest, CheckBalanceResponse, GetBalanceRequest, GetBalanceResponse, GetBillRequest,
+    GetBillResponse, GetUsageSummaryRequest, GetUsageSummaryResponse, ListBillsRequest,
+    ListBillsResponse, RecordUsageRequest, RecordUsageResponse, UsageBreakdown, UsageSummary,
 };
 pub use cache::{
-    CacheEntry, CacheService, CacheServiceClient, CacheStats, ClearRequest, ClearResponse,
-    DeleteRequest, DeleteResponse, ExistsRequest, ExistsResponse, GetMultiRequest,
-    GetMultiResponse, GetRequest as CacheGetRequest, GetResponse as CacheGetResponse,
-    GetStatsRequest, GetStatsResponse, SetMultiRequest, SetMultiResponse,
-    SetRequest as CacheSetRequest, SetResponse as CacheSetResponse,
+    CacheEntry, CacheService, CacheServiceClient, CacheServiceRequest, CacheServiceResponse,
+    CacheStats, ClearRequest, ClearResponse, DeleteRequest, DeleteResponse, ExistsRequest,
+    ExistsResponse, GetMultiRequest, GetMultiResponse, GetRequest as CacheGetRequest,
+    GetResponse as CacheGetResponse, GetStatsRequest, GetStatsResponse, SetMultiRequest,
+    SetMultiResponse, SetRequest as CacheSetRequest, SetResponse as CacheSetResponse,
 };
 pub use cbpro::{
-    CBProService, CBProServiceClient, FallbackRequest, FallbackResponse, FallbackSource,
-    StoreRequest, StoreResponse,
+    CBProService, CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest,
+    FallbackResponse, FallbackSource, StoreRequest, StoreResponse,
 };
 pub use cbpro_ext::{
-    CBProExtService, CBProExtServiceClient, HealthResponse as CBProExtHealthResponse,
-    ObservationRequest, ObservationResponse, RuntimeDecision, RuntimeDecisionRequest,
-    RuntimeDecisionResponse, ValidationEnqueueRequest, ValidationEnqueueResponse,
-    ValidationResultRequest, ValidationResultResponse,
+    CBProExtService, CBProExtServiceClient, CBProExtServiceRequest, CBProExtServiceResponse,
+    HealthResponse as CBProExtHealthResponse, ObservationRequest, ObservationResponse,
+    RuntimeDecision, RuntimeDecisionRequest, RuntimeDecisionResponse, ValidationEnqueueRequest,
+    ValidationEnqueueResponse, ValidationResultRequest, ValidationResultResponse,
 };
 pub use code::{BillingCode, BillingInfo, CodeMeta, ServiceResponse};
 pub use common::HealthResponse;
 pub use error::RpcError;
 pub use http_upstream::{
     HttpUpstreamData, HttpUpstreamRequest, HttpUpstreamResponse, HttpUpstreamService,
-    HttpUpstreamServiceClient, UpstreamBody, UpstreamResponseBody,
+    HttpUpstreamServiceClient, HttpUpstreamServiceRequest, HttpUpstreamServiceResponse,
+    UpstreamBody, UpstreamResponseBody,
 };
 pub use ratelimit::{
     AckControlCommandsRequest, AckControlCommandsResponse, ControlCommand,
     GetControlCommandsRequest, GetControlCommandsResponse, GetPolicySnapshotsRequest,
     GetPolicySnapshotsResponse, IngestUsageDeltasRequest, IngestUsageDeltasResponse,
-    PolicySnapshot, RateLimitService, RateLimitServiceClient, UsageDelta,
+    PolicySnapshot, RateLimitService, RateLimitServiceClient, RateLimitServiceRequest,
+    RateLimitServiceResponse, UsageDelta,
 };
 pub use tarpc;
 #[macro_export]

@@ -73,6 +73,18 @@ impl GreptimeDBClient {
         sql: &str,
         error_context: &str,
     ) -> Result<(Vec<String>, Vec<Vec<serde_json::Value>>)> {
+        let started = std::time::Instant::now();
+        let result = self
+            .execute_query_columns_rows_inner(sql, error_context)
+            .await;
+        mazbri_core::metrics::observe_dep("greptime", "query", started, result.is_ok());
+        result
+    }
+    async fn execute_query_columns_rows_inner(
+        &self,
+        sql: &str,
+        error_context: &str,
+    ) -> Result<(Vec<String>, Vec<Vec<serde_json::Value>>)> {
         let url = format!("{}/v1/sql?db={}", self.http_url, self.database);
         let response = self
             .client

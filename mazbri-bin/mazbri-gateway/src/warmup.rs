@@ -106,6 +106,107 @@ where
     }
 }
 
+
+async fn probe_tarpc_health(
+    pool: TarpcClientPool,
+    url: &str,
+    kind: TarpcWarmupKind,
+) -> Result<(), CoreError> {
+    match kind {
+        TarpcWarmupKind::Ratelimit => {
+            let client = pool.get_ratelimit_client(url).await?;
+            client
+                .health(tarpc::context::current())
+                .await
+                .map_err(|error| CoreError::Network(error.to_string()))?;
+        }
+        TarpcWarmupKind::Auth => {
+            let client = pool.get_auth_client(url).await?;
+            client
+                .health(tarpc::context::current())
+                .await
+                .map_err(|error| CoreError::Network(error.to_string()))?;
+        }
+        TarpcWarmupKind::Billing => {
+            let client = pool.get_billing_client(url).await?;
+            client
+                .health(tarpc::context::current())
+                .await
+                .map_err(|error| CoreError::Network(error.to_string()))?;
+        }
+        TarpcWarmupKind::Cache => {
+            let client = pool.get_cache_client(url).await?;
+            client
+                .health(tarpc::context::current())
+                .await
+                .map_err(|error| CoreError::Network(error.to_string()))?;
+        }
+        TarpcWarmupKind::Cbpro => {
+            let client = pool.get_http_upstream_client(url).await?;
+            client
+                .health(tarpc::context::current())
+                .await
+                .map_err(|error| CoreError::Network(error.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum TarpcWarmupKind {
+    Ratelimit,
+    Auth,
+    Billing,
+    Cache,
+    Cbpro,
+}
+
+fn spawn_tarpc_warmups(tarpc_pool: &TarpcClientPool, services: &ServicesConfig, backoff: Backoff) {
+    let targets: Vec<(&'static str, String, TarpcWarmupKind)> = {
+        let mut out = vec![
+            (
+                ServiceName::Ratelimit.as_str(),
+                services.ratelimit.url().to_owned(),
+                TarpcWarmupKind::Ratelimit,
+            ),
+            (
+                ServiceName::Auth.as_str(),
+                services.auth.url().to_owned(),
+                TarpcWarmupKind::Auth,
+            ),
+            (
+                ServiceName::Billing.as_str(),
+                services.billing.url().to_owned(),
+                TarpcWarmupKind::Billing,
+            ),
+            (
+                ServiceName::Cache.as_str(),
+                services.cache.url().to_owned(),
+                TarpcWarmupKind::Cache,
+            ),
+        ];
+        if let Some(cbpro) = services.cbpro.as_ref() {
+            out.push((
+                ServiceName::Cbpro.as_str(),
+                cbpro.url().to_owned(),
+                TarpcWarmupKind::Cbpro,
+            ));
+        }
+        out
+    };
+    for (label, url, kind) in targets {
+        let pool = tarpc_pool.clone();
+        tokio::spawn(async move {
+            warmup_until_ready(label, &url, backoff, || {
+                let pool = pool.clone();
+                let url = url.clone();
+                async move { probe_tarpc_health(pool, &url, kind).await }
+            })
+            .await;
+        });
+    }
+}
+
 /// 为每个下游各起一个后台预热任务，立即返回，不阻塞启动。
 pub fn spawn_warmups(
     tarpc_pool: &TarpcClientPool,
@@ -114,33 +215,10 @@ pub fn spawn_warmups(
     direct_upstream_urls: Vec<String>,
 ) {
     let backoff = Backoff::default();
-    macro_rules! tarpc_warmup {
-        ($svc:expr, $url:expr, $method:ident) => {{
-            let pool = tarpc_pool.clone();
-            let url = $url.to_owned();
-            tokio::spawn(async move {
-                warmup_until_ready($svc.as_str(), &url, backoff, || async {
-                    pool.$method(&url).await.map(|_| ())
-                })
-                .await;
-            });
-        }};
-    }
-    tarpc_warmup!(
-        ServiceName::Ratelimit,
-        services.ratelimit.url(),
-        get_ratelimit_client
-    );
-    tarpc_warmup!(ServiceName::Auth, services.auth.url(), get_auth_client);
-    tarpc_warmup!(
-        ServiceName::Billing,
-        services.billing.url(),
-        get_billing_client
-    );
-    tarpc_warmup!(ServiceName::Cache, services.cache.url(), get_cache_client);
-    if let Some(cbpro) = services.cbpro.as_ref() {
-        tarpc_warmup!(ServiceName::Cbpro, cbpro.url(), get_http_upstream_client);
-    }
+    // Connect + cheap `health` RPC so instrumented client edges appear without
+    // waiting for business traffic. Request-path balance/usage still uses the
+    // in-process billing library; this exercises the tarpc client pool.
+    spawn_tarpc_warmups(tarpc_pool, services, backoff);
 
     let mut http2_targets: Vec<(String, String)> = direct_upstream_urls
         .into_iter()

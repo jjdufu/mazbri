@@ -1,4 +1,6 @@
 pub mod builders;
+pub mod dep_client;
+pub mod rpc_client;
 pub mod cbpro;
 pub mod defaults;
 pub mod health;
@@ -27,3 +29,12 @@ pub use recorders::{CounterRecorder, HistogramRecorder, MetricsRecorder};
 pub use registry::register_collector_once;
 pub use runtime::{register_runtime_metrics, spawn_runtime_metrics};
 pub use service::{BUILD_GIT_SHA, BUILD_INFO, BUILD_VERSION, init_service_metrics};
+
+pub use dep_client::{
+    DEP_CLIENT_DURATION_SECONDS, DEP_CLIENT_ERRORS_TOTAL, current_service, observe_dep,
+    observe_dep_duration, register_dep_client_metrics, set_current_service,
+};
+pub use rpc_client::{
+    RPC_CLIENT_DURATION_SECONDS, RPC_CLIENT_REQUESTS_TOTAL, RpcMetricsChannel, RpcMetricsStub,
+    register_rpc_client_metrics, spawn_rpc_client,
+};

@@ -1,9 +1,13 @@
 use crate::config::ServiceEndpoint;
+use mazbri_core::metrics::RpcMetricsChannel;
 use mazbri_core::{CoreError, DEFAULT_RETRY_CONFIG, IsTransient, RetryConfig};
 use mazbri_rpc::{
-    CBProServiceClient, FallbackRequest, FallbackResponse, FallbackSource, RpcError, StoreRequest,
-    StoreResponse,
+    CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest, FallbackResponse,
+    FallbackSource, RpcError, StoreRequest, StoreResponse,
 };
+
+type InstrumentedCBProClient =
+    CBProServiceClient<RpcMetricsChannel<CBProServiceRequest, CBProServiceResponse>>;
 use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,7 +16,7 @@ use tracing::{debug, info, warn};
 
 /// Cached tarpc client with creation time for TTL eviction.
 struct CachedClient {
-    client: CBProServiceClient,
+    client: InstrumentedCBProClient,
     created_at: Instant,
 }
 
@@ -62,7 +66,7 @@ impl CBProClient {
         }
     }
 
-    async fn get_client(&self) -> Result<CBProServiceClient, CoreError> {
+    async fn get_client(&self) -> Result<InstrumentedCBProClient, CoreError> {
         {
             let guard = self.client.read().await;
             if let Some(cached) = guard.as_ref()
@@ -96,8 +100,12 @@ impl CBProClient {
         )
         .await
         .map_err(|e| CoreError::Tls(e.to_string()))?;
-        let new_client =
-            CBProServiceClient::new(tarpc::client::Config::default(), transport).spawn();
+        let new_client: InstrumentedCBProClient = mazbri_core::metrics::spawn_rpc_client(
+            tarpc::client::Config::default(),
+            transport,
+            mazbri_core::ServiceName::Gateway.as_str(),
+            mazbri_core::ServiceName::Cbpro.as_str(),
+        );
         {
             let mut guard = self.client.write().await;
             *guard = Some(CachedClient {
@@ -123,7 +131,7 @@ impl CBProClient {
         op: F,
     ) -> Result<T, tarpc::client::RpcError>
     where
-        F: Fn(CBProServiceClient) -> Fut,
+        F: Fn(InstrumentedCBProClient) -> Fut,
         Fut: std::future::Future<Output = Result<T, tarpc::client::RpcError>>,
     {
         let mut attempt: u32 = 0;

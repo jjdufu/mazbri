@@ -12,7 +12,7 @@ use redis::cluster_async::ClusterConnection;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -71,6 +71,17 @@ pub struct RedisClient {
     key_prefix: Arc<str>,
     connect_timeout: Duration,
     command_timeout: Duration,
+}
+
+
+fn redis_metric_op(op: &'static str) -> &'static str {
+    match op {
+        "GET" | "MGET" | "EXISTS" | "TTL" | "PTTL" | "MEMORY USAGE" | "DBSIZE" | "SCAN" => "get",
+        "SET EX" | "SET NX EX" | "DEL" => "set",
+        "PING" => "ping",
+        "MEMORY USAGES" => "pipeline",
+        _ => "execute",
+    }
 }
 
 impl RedisClient {
@@ -280,15 +291,21 @@ impl RedisClient {
                 .map_err(RedisError::from)
         }
 
+        let metric_op = redis_metric_op(op);
+        let started = Instant::now();
         let first = execute(op, self.command_timeout, f(self.connection())).await;
-        match first {
+        let result = match first {
             Ok(value) => Ok(value),
             Err(RedisError::Connection(error)) if Self::should_retry_connection(&error) => {
-                let fresh = self.fresh_connection().await?;
-                execute(op, self.command_timeout, f(fresh)).await
+                match self.fresh_connection().await {
+                    Ok(fresh) => execute(op, self.command_timeout, f(fresh)).await,
+                    Err(error) => Err(error),
+                }
             }
             Err(error) => Err(error),
-        }
+        };
+        crate::metrics::observe_dep("redis", metric_op, started, result.is_ok());
+        result
     }
 
     /// # Errors

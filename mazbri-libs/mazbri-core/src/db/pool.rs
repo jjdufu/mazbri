@@ -2,10 +2,13 @@ use crate::config::DatabaseConfig;
 use crate::config::load_credentials_flexible;
 use anyhow::{Context, Result, bail};
 use sqlx::PgPool;
+use sqlx::pool::PoolConnectionMetadata;
 use sqlx::postgres::{PgConnectOptions, PgListener, PgPoolOptions, PgSslMode};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tracing::debug;
 
 pub fn build_connect_options(
@@ -120,7 +123,7 @@ pub async fn connect_listener(
     let options = options.application_name(&listen_name);
     let failure = connect_failure_context(&options, config);
 
-    let pool = PgPoolOptions::new()
+    let pool = attach_pg_dep_metrics(PgPoolOptions::new())
         .max_connections(1)
         .min_connections(0)
         .max_lifetime(None)
@@ -137,6 +140,78 @@ pub async fn connect_listener(
     Ok(listener)
 }
 
+
+fn pg_hold_starts() -> &'static Mutex<HashMap<u128, Instant>> {
+    static HOLDS: OnceLock<Mutex<HashMap<u128, Instant>>> = OnceLock::new();
+    HOLDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn pg_epoch() -> Instant {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Approximate connection `created_at` as nanos since process epoch.
+///
+/// sqlx moves `PgConnection` between idle/live slots, so pointer identity is not
+/// stable. Reconstructing `created_at` from `PoolConnectionMetadata::age` is.
+fn pg_conn_created_key(meta: &PoolConnectionMetadata) -> u128 {
+    let epoch = pg_epoch();
+    Instant::now()
+        .checked_sub(meta.age)
+        .unwrap_or(epoch)
+        .saturating_duration_since(epoch)
+        .as_nanos()
+}
+
+fn pg_hold_insert(meta: &PoolConnectionMetadata) {
+    let key = pg_conn_created_key(meta);
+    if let Ok(mut map) = pg_hold_starts().lock() {
+        map.insert(key, Instant::now());
+    }
+}
+
+/// `Instant::now()` used inside sqlx for `age` and here can differ by a few µs.
+const PG_HOLD_KEY_TOLERANCE_NS: u128 = 5_000_000; // 5ms
+
+fn pg_hold_take(meta: &PoolConnectionMetadata) -> Option<Instant> {
+    let key = pg_conn_created_key(meta);
+    let Ok(mut map) = pg_hold_starts().lock() else {
+        return None;
+    };
+    if let Some(started) = map.remove(&key) {
+        return Some(started);
+    }
+    let nearest = map
+        .keys()
+        .copied()
+        .min_by_key(|candidate| candidate.abs_diff(key))?;
+    if nearest.abs_diff(key) <= PG_HOLD_KEY_TOLERANCE_NS {
+        map.remove(&nearest)
+    } else {
+        None
+    }
+}
+
+/// Record connection-hold time as dep=pg op=query (wrapper-layer proxy for query work).
+fn attach_pg_dep_metrics(options: PgPoolOptions) -> PgPoolOptions {
+    options
+        .after_connect(|_conn, meta| {
+            pg_hold_insert(&meta);
+            Box::pin(async { Ok(()) })
+        })
+        .before_acquire(|_conn, meta| {
+            pg_hold_insert(&meta);
+            Box::pin(async { Ok(true) })
+        })
+        .after_release(|_conn, meta| {
+            if let Some(started) = pg_hold_take(&meta) {
+                crate::metrics::observe_dep("pg", "query", started, true);
+            }
+            Box::pin(async { Ok(true) })
+        })
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -147,7 +222,7 @@ pub async fn create_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Re
     // PgConnectOptions Debug 实现会自动脱敏密码
     debug!("Connecting to database with options: {:?}", options);
 
-    let pool = PgPoolOptions::new()
+    let pool = attach_pg_dep_metrics(PgPoolOptions::new())
         .min_connections(config.min_connections)
         .max_connections(config.max_connections)
         .acquire_timeout(config.acquire_timeout())
@@ -169,7 +244,7 @@ pub async fn create_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Re
 /// 连接参数（凭据文件等）无效时返回错误。
 pub fn create_lazy_pool(config: &DatabaseConfig, base_dir: Option<&Path>) -> Result<Arc<PgPool>> {
     let options = build_connect_options(config, base_dir)?;
-    let pool = PgPoolOptions::new()
+    let pool = attach_pg_dep_metrics(PgPoolOptions::new())
         .min_connections(config.min_connections)
         .max_connections(config.max_connections)
         .acquire_timeout(config.acquire_timeout())

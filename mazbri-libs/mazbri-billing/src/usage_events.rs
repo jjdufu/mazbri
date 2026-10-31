@@ -153,17 +153,23 @@ impl UsageEventProducer {
             timestamp: Utc::now(),
         };
         let pc = &self.partitions[idx];
-        let offsets = tokio::time::timeout(
-            self.timeout,
-            pc.produce(vec![record], Compression::NoCompression),
-        )
-        .await
-        .map_err(|_| format!("produce timeout after {:?}", self.timeout))?
-        .map_err(|e| e.to_string())?;
-        offsets
-            .first()
-            .copied()
-            .ok_or_else(|| "no offset returned".to_string())
+        let started = std::time::Instant::now();
+        let result = async {
+            let offsets = tokio::time::timeout(
+                self.timeout,
+                pc.produce(vec![record], Compression::NoCompression),
+            )
+            .await
+            .map_err(|_| format!("produce timeout after {:?}", self.timeout))?
+            .map_err(|e| e.to_string())?;
+            offsets
+                .first()
+                .copied()
+                .ok_or_else(|| "no offset returned".to_string())
+        }
+        .await;
+        mazbri_core::metrics::observe_dep("kafka", "produce", started, result.is_ok());
+        result
     }
 }
 
@@ -363,16 +369,21 @@ async fn partition_loop(
             offset = Some(o);
             o
         };
+        let fetch_started = std::time::Instant::now();
         let fetched = tokio::select! {
             r = pc.fetch_records(cur, 1..cfg.fetch_max_bytes.max(1024), cfg.fetch_max_wait_ms.max(10)) => r,
             _ = shutdown.changed() => break,
         };
         let (records, _hwm) = match fetched {
-            Ok(r) => r,
+            Ok(r) => {
+                mazbri_core::metrics::observe_dep("kafka", "consume", fetch_started, true);
+                r
+            }
             Err(rskafka::client::error::Error::ServerError {
                 protocol_error: rskafka::client::error::ProtocolError::OffsetOutOfRange,
                 ..
             }) => {
+                mazbri_core::metrics::observe_dep("kafka", "consume", fetch_started, false);
                 let earliest = pc.get_offset(OffsetAt::Earliest).await.unwrap_or(0);
                 warn!(
                     partition,
@@ -384,6 +395,7 @@ async fn partition_loop(
                 continue;
             }
             Err(e) => {
+                mazbri_core::metrics::observe_dep("kafka", "consume", fetch_started, false);
                 warn!(partition, error = %e, "usage event fetch failed; retry");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;

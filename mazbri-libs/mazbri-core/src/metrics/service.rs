@@ -27,12 +27,15 @@ pub static BUILD_INFO: LazyLock<IntGaugeVec> = LazyLock::new(|| {
 /// `service` is the canonical name (`ServiceName::as_str`, e.g. `mazbri-auth`).
 /// Must be called from within a tokio runtime. Registration errors are logged, not fatal.
 pub fn init_service_metrics(service: &'static str) {
+    super::dep_client::set_current_service(service);
     match register_collector_once(&REGISTRY, Box::new(BUILD_INFO.clone())) {
         Ok(()) => BUILD_INFO
             .with_label_values(&[service, BUILD_VERSION, BUILD_GIT_SHA])
             .set(1),
         Err(error) => tracing::warn!(%error, "mazbri_build_info registration failed"),
     }
+    super::rpc_client::register_rpc_client_metrics();
+    super::dep_client::register_dep_client_metrics();
     spawn_process_metrics();
     spawn_runtime_metrics(service);
 }

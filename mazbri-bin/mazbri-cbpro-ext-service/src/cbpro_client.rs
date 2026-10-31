@@ -1,9 +1,13 @@
 use crate::config::ServiceEndpoint;
+use mazbri_core::metrics::RpcMetricsChannel;
 use mazbri_core::{CoreError, DEFAULT_RETRY_CONFIG, retry_rpc};
 use mazbri_rpc::{
-    CBProServiceClient, FallbackRequest, FallbackResponse, FallbackSource, RpcError, StoreRequest,
-    StoreResponse,
+    CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest, FallbackResponse,
+    FallbackSource, RpcError, StoreRequest, StoreResponse,
 };
+
+type InstrumentedCBProClient =
+    CBProServiceClient<RpcMetricsChannel<CBProServiceRequest, CBProServiceResponse>>;
 use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -12,7 +16,7 @@ use tracing::{debug, warn};
 #[derive(Clone)]
 pub struct CBProClient {
     endpoint: ServiceEndpoint,
-    client: Arc<RwLock<Option<CBProServiceClient>>>,
+    client: Arc<RwLock<Option<InstrumentedCBProClient>>>,
     tls_connector: mazbri_tls::TlsConnector,
 }
 
@@ -36,7 +40,7 @@ impl CBProClient {
         })
     }
 
-    async fn get_client(&self) -> Result<CBProServiceClient, CoreError> {
+    async fn get_client(&self) -> Result<InstrumentedCBProClient, CoreError> {
         {
             let guard = self.client.read().await;
             if let Some(client) = guard.as_ref() {
@@ -55,8 +59,12 @@ impl CBProClient {
         )
         .await
         .map_err(|error| CoreError::Tls(error.to_string()))?;
-        let new_client =
-            CBProServiceClient::new(tarpc::client::Config::default(), transport).spawn();
+        let new_client: InstrumentedCBProClient = mazbri_core::metrics::spawn_rpc_client(
+            tarpc::client::Config::default(),
+            transport,
+            mazbri_core::ServiceName::CbproExt.as_str(),
+            mazbri_core::ServiceName::Cbpro.as_str(),
+        );
         {
             let mut guard = self.client.write().await;
             *guard = Some(new_client.clone());

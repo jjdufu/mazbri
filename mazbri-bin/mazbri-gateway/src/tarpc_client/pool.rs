@@ -1,19 +1,36 @@
 use super::PooledClient;
 use crate::config::TarpcConfig;
 use dashmap::DashMap;
-use mazbri_core::CoreError;
+use mazbri_core::metrics::{RpcMetricsChannel, spawn_rpc_client};
+use mazbri_core::{CoreError, ServiceName};
 use mazbri_rpc::{
-    AuthServiceClient, BillingServiceClient, CacheServiceClient, HttpUpstreamServiceClient,
-    RateLimitServiceClient,
+    AuthServiceClient, AuthServiceRequest, AuthServiceResponse, BillingServiceClient,
+    BillingServiceRequest, BillingServiceResponse, CacheServiceClient, CacheServiceRequest,
+    CacheServiceResponse, HttpUpstreamServiceClient, HttpUpstreamServiceRequest,
+    HttpUpstreamServiceResponse, RateLimitServiceClient, RateLimitServiceRequest,
+    RateLimitServiceResponse,
 };
 use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use tarpc::client;
 use tracing::info;
+
 const HTTP_UPSTREAM_CLIENT_POOL_SIZE: usize = 8;
+const CALLER: &str = ServiceName::Gateway.as_str();
+
+type AuthClient = AuthServiceClient<RpcMetricsChannel<AuthServiceRequest, AuthServiceResponse>>;
+type RateLimitClient =
+    RateLimitServiceClient<RpcMetricsChannel<RateLimitServiceRequest, RateLimitServiceResponse>>;
+type CacheClient = CacheServiceClient<RpcMetricsChannel<CacheServiceRequest, CacheServiceResponse>>;
+type BillingClient =
+    BillingServiceClient<RpcMetricsChannel<BillingServiceRequest, BillingServiceResponse>>;
+type HttpUpstreamClient = HttpUpstreamServiceClient<
+    RpcMetricsChannel<HttpUpstreamServiceRequest, HttpUpstreamServiceResponse>,
+>;
+
 macro_rules! impl_get_client {
     (
-        $method_name:ident, $client_type:ty, $clients_field:ident, $service_name:literal
+        $method_name:ident, $client_type:ty, $clients_field:ident, $service_name:literal, $callee:expr
     ) => {
         /// # Errors
         ///
@@ -38,7 +55,12 @@ macro_rules! impl_get_client {
             )
             .await
             .map_err(|err| CoreError::Tls(err.to_string()))?;
-            let client = <$client_type>::new(client::Config::default(), transport).spawn();
+            let client: $client_type = spawn_rpc_client(
+                client::Config::default(),
+                transport,
+                CALLER,
+                $callee,
+            );
             self.$clients_field
                 .insert(addr.to_string(), PooledClient::new(client.clone()));
             info!(
@@ -66,11 +88,11 @@ macro_rules! impl_cleanup {
 }
 #[derive(Clone)]
 pub struct TarpcClientPool {
-    auth_clients: Arc<DashMap<String, PooledClient<AuthServiceClient>>>,
-    ratelimit_clients: Arc<DashMap<String, PooledClient<RateLimitServiceClient>>>,
-    cache_clients: Arc<DashMap<String, PooledClient<CacheServiceClient>>>,
-    billing_clients: Arc<DashMap<String, PooledClient<BillingServiceClient>>>,
-    http_upstream_clients: Arc<DashMap<String, PooledClient<HttpUpstreamServiceClient>>>,
+    auth_clients: Arc<DashMap<String, PooledClient<AuthClient>>>,
+    ratelimit_clients: Arc<DashMap<String, PooledClient<RateLimitClient>>>,
+    cache_clients: Arc<DashMap<String, PooledClient<CacheClient>>>,
+    billing_clients: Arc<DashMap<String, PooledClient<BillingClient>>>,
+    http_upstream_clients: Arc<DashMap<String, PooledClient<HttpUpstreamClient>>>,
     http_upstream_round_robin: Arc<DashMap<String, usize>>,
     tls_connector: mazbri_tls::TlsConnector,
     client_ttl_secs: u64,
@@ -109,19 +131,33 @@ impl TarpcClientPool {
     fn is_client_expired(&self, created_at: std::time::Instant) -> bool {
         created_at.elapsed().as_secs() >= self.client_ttl_secs
     }
-    impl_get_client!(get_auth_client, AuthServiceClient, auth_clients, "Auth");
+    impl_get_client!(
+        get_auth_client,
+        AuthClient,
+        auth_clients,
+        "Auth",
+        ServiceName::Auth.as_str()
+    );
     impl_get_client!(
         get_ratelimit_client,
-        RateLimitServiceClient,
+        RateLimitClient,
         ratelimit_clients,
-        "RateLimit"
+        "RateLimit",
+        ServiceName::Ratelimit.as_str()
     );
-    impl_get_client!(get_cache_client, CacheServiceClient, cache_clients, "Cache");
+    impl_get_client!(
+        get_cache_client,
+        CacheClient,
+        cache_clients,
+        "Cache",
+        ServiceName::Cache.as_str()
+    );
     impl_get_client!(
         get_billing_client,
-        BillingServiceClient,
+        BillingClient,
         billing_clients,
-        "Billing"
+        "Billing",
+        ServiceName::Billing.as_str()
     );
     /// # Errors
     ///
@@ -129,7 +165,7 @@ impl TarpcClientPool {
     pub async fn get_http_upstream_client(
         &self,
         addr: &str,
-    ) -> Result<HttpUpstreamServiceClient, CoreError> {
+    ) -> Result<HttpUpstreamClient, CoreError> {
         let slot = self.next_http_upstream_slot(addr);
         let cache_key = format!("{addr}|{slot}");
         if let Some(entry) = self.http_upstream_clients.get(&cache_key) {
@@ -146,18 +182,20 @@ impl TarpcClientPool {
         let target = mazbri_tls::resolve_connect_target(addr)
             .await
             .map_err(mazbri_tls::TlsError::into_core)?;
-        let client = HttpUpstreamServiceClient::new(
-            client::Config::default(),
-            mazbri_tls::tls_connect_with_server_name(
-                target.socket_addr,
-                self.tls_connector.clone(),
-                target.server_name.as_deref(),
-                tarpc::tokio_serde::formats::Bincode::default(),
-            )
-            .await
-            .map_err(|err| CoreError::Tls(err.to_string()))?,
+        let transport = mazbri_tls::tls_connect_with_server_name(
+            target.socket_addr,
+            self.tls_connector.clone(),
+            target.server_name.as_deref(),
+            tarpc::tokio_serde::formats::Bincode::default(),
         )
-        .spawn();
+        .await
+        .map_err(|err| CoreError::Tls(err.to_string()))?;
+        let client: HttpUpstreamClient = spawn_rpc_client(
+            client::Config::default(),
+            transport,
+            CALLER,
+            "http-upstream",
+        );
         self.http_upstream_clients
             .insert(cache_key, PooledClient::new(client.clone()));
         info!(

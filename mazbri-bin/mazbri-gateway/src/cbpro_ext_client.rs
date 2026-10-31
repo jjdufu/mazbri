@@ -1,9 +1,13 @@
 use crate::config::ServiceEndpoint;
+use mazbri_core::metrics::RpcMetricsChannel;
 use mazbri_core::{CoreError, IsTransient};
 use mazbri_rpc::{
-    CBProExtServiceClient, ObservationRequest, ObservationResponse, RpcError,
-    RuntimeDecisionRequest, RuntimeDecisionResponse,
+    CBProExtServiceClient, CBProExtServiceRequest, CBProExtServiceResponse, ObservationRequest,
+    ObservationResponse, RpcError, RuntimeDecisionRequest, RuntimeDecisionResponse,
 };
+
+type InstrumentedCBProExtClient =
+    CBProExtServiceClient<RpcMetricsChannel<CBProExtServiceRequest, CBProExtServiceResponse>>;
 use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,7 +15,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 struct CachedClient {
-    client: CBProExtServiceClient,
+    client: InstrumentedCBProExtClient,
     created_at: Instant,
 }
 
@@ -56,7 +60,7 @@ impl CBProExtClient {
         }
     }
 
-    async fn get_client(&self) -> Result<CBProExtServiceClient, CoreError> {
+    async fn get_client(&self) -> Result<InstrumentedCBProExtClient, CoreError> {
         {
             let guard = self.client.read().await;
             if let Some(cached) = guard.as_ref()
@@ -88,8 +92,12 @@ impl CBProExtClient {
         )
         .await
         .map_err(|error| CoreError::Tls(error.to_string()))?;
-        let new_client =
-            CBProExtServiceClient::new(tarpc::client::Config::default(), transport).spawn();
+        let new_client: InstrumentedCBProExtClient = mazbri_core::metrics::spawn_rpc_client(
+            tarpc::client::Config::default(),
+            transport,
+            mazbri_core::ServiceName::Gateway.as_str(),
+            mazbri_core::ServiceName::CbproExt.as_str(),
+        );
         {
             let mut guard = self.client.write().await;
             *guard = Some(CachedClient {
@@ -127,7 +135,7 @@ impl CBProExtClient {
         op: F,
     ) -> Result<Result<T, tarpc::client::RpcError>, CoreError>
     where
-        F: Fn(CBProExtServiceClient) -> Fut + Clone,
+        F: Fn(InstrumentedCBProExtClient) -> Fut + Clone,
         Fut: std::future::Future<Output = Result<T, tarpc::client::RpcError>>,
     {
         let client = self.get_client().await?;
