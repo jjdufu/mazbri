@@ -145,6 +145,7 @@ async fn serve_until_shutdown(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-cert");
     if let Some(code) = mazbri_cert_service::tool::maybe_run() {
         std::process::exit(code);
     }

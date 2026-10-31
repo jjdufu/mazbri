@@ -41,6 +41,9 @@ export interface ServiceHealthRow {
   tokio_busy: number | null;
   last_restart_ts: number | null;
   version: string | null;
+  cpu_cores: number | null;
+  memory_bytes: number | null;
+  open_fds: number | null;
 }
 export interface MetricDataPoint {
   timestamp: number;

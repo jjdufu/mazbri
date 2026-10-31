@@ -98,6 +98,7 @@ async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClien
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-analytics");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
     let config: AnalyticsConfig = load_toml(&bootstrap_path)?;
     if config.service_name.name() != ServiceName::Analytics {

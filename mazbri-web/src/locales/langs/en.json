@@ -4167,13 +4167,16 @@
         "panic": "Panic",
         "tokio": "Tokio busy",
         "restart": "Last restart",
-        "version": "Version"
+        "version": "Version",
+        "cpu": "CPU (cores)",
+        "memory": "Memory",
+        "fds": "FDs"
       },
       "detail": {
         "health": "Health",
         "dbPool": "DB pool usage",
         "version": "Version",
-        "usePending": "USE (CPU / memory / runtime) appears after step 10",
+        "lastRestart": "Last restart",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
       }

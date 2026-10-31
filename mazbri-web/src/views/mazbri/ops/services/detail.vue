@@ -14,7 +14,7 @@
     </div>
 
     <ElRow :gutter="16">
-      <ElCol :xs="24" :sm="8">
+      <ElCol :xs="24" :sm="6">
         <StatCard
           :label="t('ops.services.detail.health')"
           :value="healthLabel"
@@ -22,7 +22,7 @@
           icon="ri:heart-pulse-line"
         />
       </ElCol>
-      <ElCol :xs="24" :sm="8">
+      <ElCol :xs="24" :sm="6">
         <StatCard
           :label="t('ops.services.detail.dbPool')"
           :value="poolLabel"
@@ -30,12 +30,20 @@
           icon="ri:database-2-line"
         />
       </ElCol>
-      <ElCol :xs="24" :sm="8">
+      <ElCol :xs="24" :sm="6">
         <StatCard
           :label="t('ops.services.detail.version')"
           :value="row?.version || '—'"
           :loading="loading"
           icon="ri:git-commit-line"
+        />
+      </ElCol>
+      <ElCol :xs="24" :sm="6">
+        <StatCard
+          :label="t('ops.services.detail.lastRestart')"
+          :value="restartLabel"
+          :loading="loading"
+          icon="ri:restart-line"
         />
       </ElCol>
     </ElRow>
@@ -44,7 +52,11 @@
       <template #header>RED</template>
       <ElRow :gutter="16">
         <ElCol :xs="24" :lg="8">
-          <MultiSeriesChart :series="qpsSeries" :loading="loading" height="220px" />
+          <MultiSeriesChart
+            :series="qpsSeries"
+            :loading="loading"
+            height="220px"
+          />
         </ElCol>
         <ElCol :xs="24" :lg="8">
           <MultiSeriesChart
@@ -65,11 +77,16 @@
 
     <ElCard shadow="never" class="ops-service-detail__section">
       <template #header>USE</template>
-      <ElAlert
-        type="info"
-        :closable="false"
-        :title="t('ops.services.detail.usePending')"
-      />
+      <ElRow :gutter="16">
+        <ElCol v-for="item in useMetrics" :key="item.key" :xs="24" :lg="8">
+          <div class="ops-service-detail__metric-title">{{ item.label }}</div>
+          <MultiSeriesChart
+            :series="useSeries[item.key]"
+            :loading="loading"
+            height="200px"
+          />
+        </ElCol>
+      </ElRow>
     </ElCard>
 
     <ElCard shadow="never" class="ops-service-detail__section">
@@ -132,6 +149,7 @@ const qpsSeries = ref<MetricSeries | null>(null);
 const errorSeries = ref<MetricSeries | null>(null);
 const latencySeries = ref<MetricSeries | null>(null);
 const specificSeries = ref<Record<string, MetricSeries | null>>({});
+const useSeries = ref<Record<string, MetricSeries | null>>({});
 const catalogMetrics = ref<MetricCatalogItem[]>([]);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
@@ -148,11 +166,36 @@ const healthLabel = computed(() => {
   return row.value.health_ok ? t("ops.services.ok") : t("ops.services.down");
 });
 const poolLabel = computed(() => {
-  if (row.value?.db_pool_usage === null || row.value?.db_pool_usage === undefined) {
+  if (
+    row.value?.db_pool_usage === null ||
+    row.value?.db_pool_usage === undefined
+  ) {
     return "—";
   }
   return `${(row.value.db_pool_usage * 100).toFixed(1)}%`;
 });
+
+const restartLabel = computed(() =>
+  row.value?.last_restart_ts
+    ? new Date(row.value.last_restart_ts * 1000).toLocaleString()
+    : "—",
+);
+
+/** USE 视图：所有服务共有的进程与 tokio 运行时指标（analytics 指标目录同名 key）。 */
+const USE_METRIC_KEYS = [
+  "process_cpu_cores",
+  "process_resident_memory_mb",
+  "process_open_fds",
+  "tokio_busy_ratio",
+  "tokio_alive_tasks",
+  "tokio_scheduler_lag_p99_ms",
+];
+
+const useMetrics = computed(() =>
+  USE_METRIC_KEYS.map((key) =>
+    catalogMetrics.value.find((m) => m.key === key),
+  ).filter((m): m is MetricCatalogItem => m !== undefined),
+);
 
 const specificPrefix = computed(() => {
   const key = serviceKey.value.replace(/^mazbri-/, "").replace(/-/g, "_");
@@ -217,6 +260,19 @@ async function reload() {
       }),
     );
     specificSeries.value = next;
+
+    const nextUse: Record<string, MetricSeries | null> = {};
+    await Promise.all(
+      useMetrics.value.map(async (item) => {
+        nextUse[item.key] = await fetchMetricTimeseries({
+          metric: item.key,
+          start: timeRange.value.start,
+          end: timeRange.value.end,
+          service: serviceKey.value,
+        }).catch(() => null);
+      }),
+    );
+    useSeries.value = nextUse;
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.services.loadFailed"),

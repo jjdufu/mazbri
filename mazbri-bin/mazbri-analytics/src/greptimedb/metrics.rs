@@ -75,11 +75,20 @@ pub struct ServiceHealthRow {
     pub config_center: Option<bool>,
     /// active / (active + idle); absent when both are 0 or metric missing
     pub db_pool_usage: Option<f64>,
-    /// Populated after step 10 process/runtime metrics exist.
+    /// 已恢复 panic 累计数（`mazbri_recovered_panics_total`）
     pub panic_count: Option<f64>,
+    /// tokio worker 繁忙占比（0–1，busy 秒速率 / worker 数）
     pub tokio_busy: Option<f64>,
+    /// 进程启动时间（unix 秒，`process_start_time_seconds`）
     pub last_restart_ts: Option<i64>,
+    /// `版本 (git_sha)`，来自 `mazbri_build_info`
     pub version: Option<String>,
+    /// CPU 使用（核）
+    pub cpu_cores: Option<f64>,
+    /// 常驻内存（字节）
+    pub memory_bytes: Option<f64>,
+    /// 打开的文件描述符数
+    pub open_fds: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -286,8 +295,38 @@ impl GreptimeDBClient {
         let active =
             self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");
         let idle = self.prometheus_instant_by_label("mazbri_db_pool_idle_connections", "service");
-        let (health, ready, config, active, idle) =
-            tokio::try_join!(health, ready, config, active, idle)?;
+        let window = OVERVIEW_WINDOW_SECS;
+        let panics = self.prometheus_instant_by_label(
+            "sum by (service) (mazbri_recovered_panics_total)",
+            "service",
+        );
+        let busy_query = format!(
+            "sum by (service) (rate(tokio_worker_busy_seconds_total[{window}s])) / (sum by (service) (tokio_workers) > 0)"
+        );
+        let busy = self.prometheus_instant_by_label(&busy_query, "service");
+        let started = self.prometheus_instant_by_label(
+            "max by (service) (process_start_time_seconds)",
+            "service",
+        );
+        let cpu_query = format!("sum by (service) (rate(process_cpu_seconds_total[{window}s]))");
+        let cpu = self.prometheus_instant_by_label(&cpu_query, "service");
+        let memory = self.prometheus_instant_by_label(
+            "sum by (service) (process_resident_memory_bytes)",
+            "service",
+        );
+        let fds =
+            self.prometheus_instant_by_label("sum by (service) (process_open_fds)", "service");
+        let build =
+            self.query_instant_vector("max by (service, version, git_sha) (mazbri_build_info)");
+        let (health, ready, config, active, idle, panics, busy, started, cpu, memory, fds, build) =
+            Box::pin(async {
+                tokio::try_join!(
+                    health, ready, config, active, idle, panics, busy, started, cpu, memory, fds,
+                    build
+                )
+            })
+            .await?;
+        let versions = build_versions(build);
         Ok(self
             .service_targets
             .iter()
@@ -306,10 +345,13 @@ impl GreptimeDBClient {
                     ready,
                     config_center,
                     db_pool_usage,
-                    panic_count: None,
-                    tokio_busy: None,
-                    last_restart_ts: None,
-                    version: None,
+                    panic_count: panics.get(&target.key).copied(),
+                    tokio_busy: busy.get(&target.key).copied(),
+                    last_restart_ts: started.get(&target.key).and_then(|v| epoch_secs(*v)),
+                    version: versions.get(&target.key).cloned(),
+                    cpu_cores: cpu.get(&target.key).copied(),
+                    memory_bytes: memory.get(&target.key).copied(),
+                    open_fds: fds.get(&target.key).copied(),
                 }
             })
             .collect())
@@ -651,8 +693,77 @@ fn metric_catalog_core() -> Vec<MetricCatalogItem> {
     ]
 }
 
+/// 服务 → `版本 (git_sha)`；同一服务多条序列（滚动发布期间）取版本号最大的一条。
+fn build_versions(build: Vec<(BTreeMap<String, String>, f64)>) -> BTreeMap<String, String> {
+    let mut best: BTreeMap<String, (Vec<u64>, String)> = BTreeMap::new();
+    for (labels, _) in build {
+        let (Some(service), Some(version)) = (labels.get("service"), labels.get("version")) else {
+            continue;
+        };
+        let text = match labels.get("git_sha") {
+            Some(sha) if !sha.is_empty() => format!("{version} ({sha})"),
+            _ => version.clone(),
+        };
+        let key = version_key(version);
+        match best.get(service) {
+            Some((current, _)) if *current >= key => {}
+            _ => {
+                best.insert(service.clone(), (key, text));
+            }
+        }
+    }
+    best.into_iter()
+        .map(|(svc, (_, text))| (svc, text))
+        .collect()
+}
+
+/// `0.2.10` → `[0, 2, 10]`；非数字段记为 0。
+fn version_key(version: &str) -> Vec<u64> {
+    version
+        .split(['.', '-', '+'])
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
+}
+
+/// 有限且在 i64 范围内的 unix 秒（截断小数）。
+fn epoch_secs(value: f64) -> Option<i64> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+    format!("{:.0}", value.floor()).parse().ok()
+}
+
+/// 服务进程与 tokio 运行时（所有服务共有，USE 视图）：(key, label, unit, `default_chart`)。
+pub const SERVICE_RUNTIME_CATALOG: &[(&str, &str, &str, &str)] = &[
+    ("process_cpu_cores", "CPU 使用（核）", "cores", "line"),
+    ("process_resident_memory_mb", "常驻内存", "MB", "line"),
+    ("process_open_fds", "打开文件描述符", "fds", "line"),
+    ("tokio_busy_ratio", "Tokio worker 繁忙占比", "%", "line"),
+    ("tokio_alive_tasks", "Tokio 存活任务数", "tasks", "line"),
+    (
+        "tokio_scheduler_lag_p99_ms",
+        "Tokio 调度延迟 P99",
+        "ms",
+        "line",
+    ),
+];
+
+fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
+    SERVICE_RUNTIME_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
+}
+
 fn metric_catalog() -> Vec<MetricCatalogItem> {
     let mut items = metric_catalog_core();
+    items.extend(metric_catalog_service_runtime());
     items.extend(metric_catalog_traffic());
     items.extend(metric_catalog_upstream_billing());
     items
@@ -936,6 +1047,20 @@ fn build_metric_query(
         "ratelimit_snapshot_age_seconds" => {
             "max(gateway_ratelimit_snapshot_age_seconds)".to_string()
         }
+        "process_cpu_cores" => {
+            format!("sum by (service) (rate(process_cpu_seconds_total{filter}[{window}s]))")
+        }
+        "process_resident_memory_mb" => {
+            format!("sum by (service) (process_resident_memory_bytes{filter}) / 1048576")
+        }
+        "process_open_fds" => format!("sum by (service) (process_open_fds{filter})"),
+        "tokio_busy_ratio" => format!(
+            "100 * sum by (service) (rate(tokio_worker_busy_seconds_total{filter}[{window}s])) / (sum by (service) (tokio_workers{filter}) > 0)"
+        ),
+        "tokio_alive_tasks" => format!("sum by (service) (tokio_alive_tasks{filter})"),
+        "tokio_scheduler_lag_p99_ms" => format!(
+            "histogram_quantile(0.99, sum by (le, service) (rate(tokio_scheduler_lag_seconds_bucket{filter}[{window}s]))) * 1000"
+        ),
         "qps_by_mode" => {
             format!("sum by (mode) (rate(api_proxy_requests_total[{window}s]))")
         }
@@ -1137,6 +1262,48 @@ mod tests {
             build_metric_query(item.key, None, &t, 60)?;
         }
         Ok(())
+    }
+
+    #[test]
+    fn runtime_metrics_filter_by_service() -> Result<()> {
+        let t = default_service_targets();
+        for &(key, ..) in SERVICE_RUNTIME_CATALOG {
+            let q = build_metric_query(key, Some("mazbri-auth"), &t, 60)?;
+            assert!(q.contains(r#"{service="mazbri-auth"}"#), "{key}: {q}");
+            assert!(q.contains("by (") && q.contains("service"), "{key}: {q}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn build_versions_join_sha_and_pick_highest() {
+        let row = |svc: &str, ver: &str, sha: &str| {
+            (
+                BTreeMap::from([
+                    ("service".to_owned(), svc.to_owned()),
+                    ("version".to_owned(), ver.to_owned()),
+                    ("git_sha".to_owned(), sha.to_owned()),
+                ]),
+                1.0,
+            )
+        };
+        let v = build_versions(vec![
+            row("mazbri-auth", "0.2.9", "aaa"),
+            row("mazbri-auth", "0.2.10", "bbb"),
+            row("mazbri-cache", "0.2.10", ""),
+        ]);
+        assert_eq!(
+            v.get("mazbri-auth").map(String::as_str),
+            Some("0.2.10 (bbb)")
+        );
+        assert_eq!(v.get("mazbri-cache").map(String::as_str), Some("0.2.10"));
+    }
+
+    #[test]
+    fn epoch_secs_rejects_non_finite() {
+        assert_eq!(epoch_secs(1_761_900_000.7), Some(1_761_900_000));
+        assert_eq!(epoch_secs(f64::NAN), None);
+        assert_eq!(epoch_secs(0.0), None);
     }
 
     #[test]

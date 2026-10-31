@@ -7,6 +7,7 @@ use mazbri_core::create_pool;
 use mazbri_service::{init_service_runtime, run_toml_config_service};
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-cache");
     run_toml_config_service::<CacheServiceConfig, _, _>(|ctx| async move {
         let runtime = init_service_runtime(ctx)?;
         tracing::info!("Mazbri Cache Service starting...");

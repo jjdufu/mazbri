@@ -71,6 +71,7 @@ fn spawn_validation_worker(manager: &Arc<CbProExtManager>, config: &CBProExtServ
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-cbpro-ext");
     run_toml_config_service::<CBProExtServiceConfig, _, _>(|ctx| async move {
             let runtime = init_service_runtime(ctx)?;
             tracing::info!("Mazbri CBPro-Ext Service starting...");

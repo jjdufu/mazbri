@@ -2,9 +2,11 @@ pub mod builders;
 pub mod cbpro;
 pub mod defaults;
 pub mod health;
+pub mod process;
 pub mod recorders;
 pub mod registry;
 pub mod runtime;
+pub mod service;
 pub use builders::MetricsBuilder;
 pub use cbpro::{
     CBPRO_CONFIG_CHANGES_TOTAL, CBPRO_CURRENT_STATE, CBPRO_ERROR_RATE_PERCENTAGE,
@@ -20,6 +22,8 @@ pub use health::{
     DB_POOL_ACTIVE_CONNECTIONS, DB_POOL_IDLE_CONNECTIONS, DbPoolInfo, HealthMetricsUpdater,
     RPC_HEALTH_CHECK, TLS_CERT_EXPIRY_TIMESTAMP, register_health_metrics,
 };
+pub use process::{register_process_metrics, spawn_process_metrics};
 pub use recorders::{CounterRecorder, HistogramRecorder, MetricsRecorder};
 pub use registry::register_collector_once;
 pub use runtime::{register_runtime_metrics, spawn_runtime_metrics};
+pub use service::{BUILD_GIT_SHA, BUILD_INFO, BUILD_VERSION, init_service_metrics};

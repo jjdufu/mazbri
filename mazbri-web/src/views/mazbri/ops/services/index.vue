@@ -41,6 +41,21 @@ function boolText(value: boolean | null | undefined) {
   return value ? t("ops.services.ok") : t("ops.services.down");
 }
 
+function percent(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function mebibytes(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  return `${(value / 1048576).toFixed(0)} MB`;
+}
+
+function fixed(value: number | null | undefined, digits: number) {
+  if (value === null || value === undefined) return "—";
+  return value.toFixed(digits);
+}
+
 function dash(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
@@ -89,7 +104,25 @@ const columns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
     prop: "tokio_busy",
     label: t("ops.services.columns.tokio"),
     width: 110,
-    formatter: (row) => dash(row.tokio_busy),
+    formatter: (row) => percent(row.tokio_busy),
+  },
+  {
+    prop: "cpu_cores",
+    label: t("ops.services.columns.cpu"),
+    width: 110,
+    formatter: (row) => fixed(row.cpu_cores, 3),
+  },
+  {
+    prop: "memory_bytes",
+    label: t("ops.services.columns.memory"),
+    width: 110,
+    formatter: (row) => mebibytes(row.memory_bytes),
+  },
+  {
+    prop: "open_fds",
+    label: t("ops.services.columns.fds"),
+    width: 90,
+    formatter: (row) => fixed(row.open_fds, 0),
   },
   {
     prop: "last_restart_ts",

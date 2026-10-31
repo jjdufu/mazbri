@@ -12,6 +12,7 @@ const AUDIT_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-ratelimit");
     run_toml_config_service::<RateLimitServiceConfig, _, _>(|ctx| async move {
         let runtime = init_service_runtime(ctx)?;
         tracing::info!("Mazbri Rate Limiting Service starting...");

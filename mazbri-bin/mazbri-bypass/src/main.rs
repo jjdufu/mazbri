@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-bypass");
     run_toml_config_service::<BypassServiceConfig, _, _>(|ctx| async move {
         let runtime = init_service_runtime(ctx)?;
         tracing::info!("Mazbri mazbri-bypass transparent egress gateway starting...");

@@ -464,6 +464,7 @@ fn init_metrics_and_audit(config: &MgmtApiConfig) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-mgmt");
     let config_dir = Path::new(".");
     let config = load_mgmt_config()?;
     let service_name = config.service_name.as_str().to_owned();

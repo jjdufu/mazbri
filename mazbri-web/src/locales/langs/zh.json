@@ -4172,13 +4172,16 @@
         "panic": "Panic",
         "tokio": "Tokio 繁忙",
         "restart": "最近重启",
-        "version": "版本"
+        "version": "版本",
+        "cpu": "CPU（核）",
+        "memory": "内存",
+        "fds": "文件描述符"
       },
       "detail": {
         "health": "健康状态",
         "dbPool": "DB 连接池使用率",
         "version": "版本",
-        "usePending": "USE（CPU / 内存 / 运行时）在步骤 10 后自动出现",
+        "lastRestart": "最近重启",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
       }

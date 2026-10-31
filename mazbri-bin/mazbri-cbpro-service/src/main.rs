@@ -13,6 +13,7 @@ use mazbri_service::{init_service_runtime, run_toml_config_service};
 use std::sync::Arc;
 #[tokio::main]
 async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-cbpro");
     run_toml_config_service::<CBProServiceConfig, _, _>(|ctx| async move {
         let runtime = init_service_runtime(ctx)?;
         tracing::info!("Mazbri CBPro Service starting...");
