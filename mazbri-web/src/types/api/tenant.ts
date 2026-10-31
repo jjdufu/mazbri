@@ -106,13 +106,18 @@ export interface TransactionListResponse {
   limit: number;
 }
 
+export interface ApiLimitOverride {
+  qps: number;
+  burst: number;
+}
+
 export interface TenantRateLimitConfig {
   tenant_id: string;
 
   max_concurrent: number;
   max_bandwidth_mbps: number;
 
-  api_limits: Record<string, number>;
+  api_limits: Record<string, ApiLimitOverride>;
   burst_size: number;
   client_ip_qps: number;
   client_ip_burst: number;
@@ -125,7 +130,6 @@ export interface TenantRateLimitConfig {
   updated_at?: ISODateString;
   message?: string;
 }
-
 
 export type RateLimitCommandType =
   | "deny_until"
@@ -162,11 +166,10 @@ export interface RateLimitCommandListResponse {
 }
 
 export interface UpdateTenantRateLimitConfigRequest {
-
   max_concurrent: number;
   max_bandwidth_mbps: number;
 
-  api_limits: Record<string, number>;
+  api_limits: Record<string, ApiLimitOverride>;
   burst_size: number;
   client_ip_qps: number;
   client_ip_burst: number;

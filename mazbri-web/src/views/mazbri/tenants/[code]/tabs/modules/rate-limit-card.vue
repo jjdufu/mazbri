@@ -41,12 +41,10 @@
         </CommonSwitchRow>
       </div>
 
-
-      <div
-        v-roles="['R_ADMIN', 'R_FINANCE']"
-        class="template-bar"
-      >
-        <span class="template-label">{{ $t("rateLimit.templates.label") }}</span>
+      <div v-roles="['R_ADMIN', 'R_FINANCE']" class="template-bar">
+        <span class="template-label">{{
+          $t("rateLimit.templates.label")
+        }}</span>
         <div class="template-buttons">
           <ElButton
             v-for="tpl in planTemplates"
@@ -64,7 +62,6 @@
         class="strategy-body-content"
         :class="{ 'is-disabled': !form.enabled }"
       >
-
         <div class="settings-panel mb-4">
           <div class="section-heading">
             <span class="section-title-label">{{
@@ -105,7 +102,6 @@
             </div>
           </div>
         </div>
-
 
         <div class="settings-panel mb-4">
           <div class="section-heading">
@@ -165,7 +161,6 @@
           </div>
         </div>
 
-
         <div class="form-section-block collapsible-section">
           <button
             type="button"
@@ -224,11 +219,20 @@
                   :placeholder="$t('rateLimit.pathPlaceholder')"
                 />
               </template>
-              <template #limit="{ row }">
+              <template #qps="{ row }">
                 <ElInputNumber
-                  v-model="row.limit"
+                  v-model="row.qps"
                   :min="1"
                   :max="form.max_concurrent"
+                  :disabled="!form.enabled"
+                  class="w-full"
+                />
+              </template>
+              <template #burst="{ row }">
+                <ElInputNumber
+                  v-model="row.burst"
+                  :min="1"
+                  :max="form.burst_size"
                   :disabled="!form.enabled"
                   class="w-full"
                 />
@@ -255,7 +259,6 @@
           </div>
         </div>
       </div>
-
 
       <div class="form-section-block ops-section collapsible-section">
         <button
@@ -296,7 +299,10 @@
             </ElButton>
           </div>
 
-          <div v-roles="['R_ADMIN', 'R_FINANCE']" class="ops-actions-panel mb-4">
+          <div
+            v-roles="['R_ADMIN', 'R_FINANCE']"
+            class="ops-actions-panel mb-4"
+          >
             <div class="ops-action-row">
               <ElInputNumber
                 v-model="denyMinutes"
@@ -305,7 +311,9 @@
                 :step="5"
                 class="ops-input"
               />
-              <span class="ops-label">{{ $t("rateLimit.denyForMinutes") }}</span>
+              <span class="ops-label">{{
+                $t("rateLimit.denyForMinutes")
+              }}</span>
               <ElButton
                 type="danger"
                 plain
@@ -417,7 +425,6 @@
         </div>
       </div>
 
-
       <div class="form-section-block collapsible-section">
         <button
           type="button"
@@ -457,7 +464,6 @@
           </div>
         </div>
       </div>
-
 
       <div class="upstream-footer">
         <span>{{ $t("rateLimit.upstreamFooter") }}</span>
@@ -513,7 +519,6 @@ const quotaMultiplier = ref(0.5);
 const quotaExpiresMinutes = ref(60);
 const commandReason = ref("");
 
-
 const apiOverridesExpanded = ref(false);
 const opsExpanded = ref(false);
 const reasonGuideExpanded = ref(false);
@@ -524,7 +529,8 @@ const reasonGuide = RATE_LIMIT_REASON_GUIDE;
 const apiLimitsList = ref<
   {
     path: string;
-    limit: number;
+    qps: number;
+    burst: number;
   }[]
 >([]);
 
@@ -535,7 +541,8 @@ const activeCommandCount = computed(
 const apiLimitColumns = ref<
   ColumnOption<{
     path: string;
-    limit: number;
+    qps: number;
+    burst: number;
   }>[]
 >([
   {
@@ -545,9 +552,15 @@ const apiLimitColumns = ref<
     useSlot: true,
   },
   {
-    prop: "limit",
-    label: $t("rateLimit.columns.limit"),
-    width: 200,
+    prop: "qps",
+    label: $t("rateLimit.columns.qps"),
+    width: 140,
+    useSlot: true,
+  },
+  {
+    prop: "burst",
+    label: $t("rateLimit.columns.burst"),
+    width: 140,
     useSlot: true,
   },
   {
@@ -603,7 +616,6 @@ const form = reactive<UpdateTenantRateLimitConfigRequest>({
   enabled: true,
 });
 
-
 const clientIpManuallyEdited = ref(false);
 
 const applyConfig = (config: TenantRateLimitConfig) => {
@@ -626,9 +638,10 @@ const applyConfig = (config: TenantRateLimitConfig) => {
   clientIpManuallyEdited.value =
     form.client_ip_qps !== tenantQps || form.client_ip_burst !== burst;
   apiLimitsList.value = Object.entries(config.api_limits || {}).map(
-    ([path, limit]) => ({
+    ([path, rule]) => ({
       path,
-      limit: limit as number,
+      qps: rule.qps,
+      burst: rule.burst,
     }),
   );
 };
@@ -650,8 +663,8 @@ const onTenantQpsChange = (value: number | undefined) => {
   }
 
   for (const item of apiLimitsList.value) {
-    if (item.limit > value) {
-      item.limit = value;
+    if (item.qps > value) {
+      item.qps = value;
     }
   }
 };
@@ -661,18 +674,23 @@ const onTenantBurstChange = (value: number | undefined) => {
   if (!clientIpManuallyEdited.value || form.client_ip_burst > value) {
     form.client_ip_burst = value;
   }
+  for (const item of apiLimitsList.value) {
+    if (item.burst > value) {
+      item.burst = value;
+    }
+  }
 };
 
 const addApiLimit = () => {
   apiLimitsList.value.push({
     path: "",
-    limit: Math.min(1000, form.max_concurrent),
+    qps: Math.min(1000, form.max_concurrent),
+    burst: Math.min(1000, form.burst_size),
   });
   if (!apiOverridesExpanded.value) {
     apiOverridesExpanded.value = true;
   }
 };
-
 
 const applyTemplate = (tpl: PlanRateTemplate) => {
   form.enabled = tpl.enabled;
@@ -686,7 +704,9 @@ const applyTemplate = (tpl: PlanRateTemplate) => {
     apiLimitsList.value = [];
     form.api_limits = {};
   }
-  ElMessage.success($t("rateLimit.templates.applied", { name: $t(tpl.nameKey) }));
+  ElMessage.success(
+    $t("rateLimit.templates.applied", { name: $t(tpl.nameKey) }),
+  );
 };
 
 const removeApiLimit = (index: number) => {
@@ -718,10 +738,10 @@ const loadCommands = async () => {
 };
 
 const getPayload = () => {
-  const api_limits: Record<string, number> = {};
+  const api_limits: Record<string, { qps: number; burst: number }> = {};
   for (const item of apiLimitsList.value) {
     if (item.path.trim()) {
-      api_limits[item.path.trim()] = item.limit;
+      api_limits[item.path.trim()] = { qps: item.qps, burst: item.burst };
     }
   }
   return {
@@ -730,22 +750,36 @@ const getPayload = () => {
   };
 };
 
-
 const validateApiOverrides = (): boolean => {
   const planQps = form.max_concurrent;
+  const planBurst = form.burst_size;
   for (const item of apiLimitsList.value) {
     const path = item.path.trim();
     if (!path) continue;
-    if (typeof item.limit !== "number" || item.limit < 1) {
+    if (typeof item.qps !== "number" || item.qps < 1) {
       ElMessage.warning($t("rateLimit.overrideInvalidLimit", { path }));
       return false;
     }
-    if (item.limit > planQps) {
+    if (typeof item.burst !== "number" || item.burst < 1) {
+      ElMessage.warning($t("rateLimit.overrideInvalidBurst", { path }));
+      return false;
+    }
+    if (item.qps > planQps) {
       ElMessage.warning(
         $t("rateLimit.overrideExceedsPlan", {
           path,
-          limit: item.limit,
+          limit: item.qps,
           planQps,
+        }),
+      );
+      return false;
+    }
+    if (item.burst > planBurst) {
+      ElMessage.warning(
+        $t("rateLimit.overrideExceedsBurst", {
+          path,
+          burst: item.burst,
+          planBurst,
         }),
       );
       return false;

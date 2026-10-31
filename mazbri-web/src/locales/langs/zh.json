@@ -480,20 +480,11 @@
   "setting": {
     "menuType": {
       "title": "菜单布局",
-      "list": [
-        "垂直",
-        "水平",
-        "混合",
-        "双列"
-      ]
+      "list": ["垂直", "水平", "混合", "双列"]
     },
     "theme": {
       "title": "主题风格",
-      "list": [
-        "浅色",
-        "深色",
-        "系统"
-      ]
+      "list": ["浅色", "深色", "系统"]
     },
     "menu": {
       "title": "菜单风格"
@@ -503,17 +494,11 @@
     },
     "box": {
       "title": "盒子样式",
-      "list": [
-        "边框",
-        "阴影"
-      ]
+      "list": ["边框", "阴影"]
     },
     "container": {
       "title": "容器宽度",
-      "list": [
-        "铺满",
-        "定宽"
-      ]
+      "list": ["铺满", "定宽"]
     },
     "basics": {
       "title": "基础配置",
@@ -559,14 +544,8 @@
   "notice": {
     "title": "通知",
     "btnRead": "标为已读",
-    "bar": [
-      "通知",
-      "消息",
-      "代办"
-    ],
-    "text": [
-      "暂无"
-    ],
+    "bar": ["通知", "消息", "代办"],
+    "text": ["暂无"],
     "viewAll": "查看全部"
   },
   "chat": {
@@ -3298,13 +3277,17 @@
       "type": "类型",
       "status": "状态",
       "expires": "过期时间",
-      "created": "创建时间"
+      "created": "创建时间",
+      "qps": "QPS",
+      "burst": "突发"
     },
     "statusActive": "生效中",
     "statusExpired": "已过期",
     "typeDeny": "临时封禁",
     "typeQuota": "配额系数",
-    "typeRefresh": "刷新策略"
+    "typeRefresh": "刷新策略",
+    "overrideInvalidBurst": "接口覆盖「{path}」的突发无效",
+    "overrideExceedsBurst": "接口覆盖「{path}」突发 {burst} 超过套餐突发 {planBurst}"
   },
   "authorization": {
     "list": {

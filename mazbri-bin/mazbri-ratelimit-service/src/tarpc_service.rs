@@ -50,34 +50,21 @@ fn rpc_database_error(error: impl std::fmt::Display) -> RpcError {
     }
 }
 
-/// Normalize `api_limits` JSON from mgmt/Web (`path -> number`) and object form
-/// (`path -> {qps,burst}`) into RPC rules.
+/// Parse `api_limits` JSON: `path -> {qps,burst}` into RPC rules.
 ///
-/// Bare numbers map to `{ qps: N, burst: N }` so shorthand overrides actually
-/// tighten both rate and burst. Leaving `burst` unset made the gateway fall
-/// back to **`tenant_burst`** (often ≫ api qps), which silently skipped `api_qps`
-/// denials until the plan burst was exhausted (T-21 / productization §4.2).
+/// Only the object form is accepted. Entries that fail to deserialize or carry
+/// neither a positive `qps` nor a positive `burst` are skipped.
 fn parse_api_limits_json(value: &Value) -> HashMap<String, RpcApiLimitRule> {
     let Some(obj) = value.as_object() else {
         return HashMap::new();
     };
     let mut out = HashMap::with_capacity(obj.len());
     for (key, entry) in obj {
-        let rule = match entry {
-            Value::Number(n) => {
-                let qps = n
-                    .as_u64()
-                    .or_else(|| n.as_i64().filter(|v| *v > 0).map(u64::saturating_from));
-                RpcApiLimitRule {
-                    qps,
-                    // Shorthand: same capacity as qps (not tenant_burst fallback).
-                    burst: qps,
-                }
-            }
-            Value::Object(_) => {
-                serde_json::from_value::<RpcApiLimitRule>(entry.clone()).unwrap_or_default()
-            }
-            _ => continue,
+        let Value::Object(_) = entry else {
+            continue;
+        };
+        let Ok(rule) = serde_json::from_value::<RpcApiLimitRule>(entry.clone()) else {
+            continue;
         };
         if rule.qps.unwrap_or(0) > 0 || rule.burst.unwrap_or(0) > 0 {
             out.insert(key.clone(), rule);
@@ -690,5 +677,25 @@ impl RateLimitService for RateLimitTarpcService {
             service: "ratelimit-service".to_string(),
             timestamp: Utc::now().timestamp(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn api_limits_object_form_only() {
+        let parsed = parse_api_limits_json(&json!({
+            "/a": { "qps": 10, "burst": 20 },
+            "/b": 5,
+            "/c": { "qps": 0, "burst": 0 },
+            "/d": "nope"
+        }));
+        assert_eq!(parsed.len(), 1);
+        let rule = parsed.get("/a").expect("/a");
+        assert_eq!(rule.qps, Some(10));
+        assert_eq!(rule.burst, Some(20));
     }
 }

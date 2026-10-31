@@ -37,6 +37,14 @@ pub fn default_tenant_isolated() -> bool {
 
 /// Customer usage-plan rate-limit update (tenant policy).
 /// Enforced by gateway local token bucket only — not a third product/channel engine.
+/// Per-API override stored in `api_limits` JSON: `{ "path": { "qps": N, "burst": M } }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApiLimitOverride {
+    pub qps: i32,
+    pub burst: i32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimitConfigUpdateRequest {
@@ -46,9 +54,9 @@ pub struct RateLimitConfigUpdateRequest {
     /// Bandwidth cap in Mbps; 0 = unlimited.
     #[serde(default = "default_max_bandwidth_mbps")]
     pub max_bandwidth_mbps: i32,
-    /// Optional per-API overrides (advanced). Each value must be ≤ plan QPS. Empty = no per-API tighten.
+    /// Optional per-API overrides (advanced). Each entry's qps must be ≤ plan QPS. Empty = no per-API tighten.
     #[serde(default)]
-    pub api_limits: HashMap<String, i32>,
+    pub api_limits: HashMap<String, ApiLimitOverride>,
     /// Plan burst capacity.
     #[serde(default = "default_burst_size")]
     pub burst_size: i32,
@@ -147,15 +155,28 @@ pub fn validate_ratelimit_config(config: &RateLimitConfigUpdateRequest) -> Resul
     if client_ip_burst > config.burst_size {
         return Err("client_ip_burst must not exceed burst_size".to_string());
     }
-    // Per-API overrides must not exceed plan QPS (customer usage plan fairness).
-    for (path, limit) in &config.api_limits {
-        if *limit <= 0 {
-            return Err(format!("api_limits entry '{path}' must be greater than 0"));
-        }
-        if *limit > config.max_concurrent {
+    // Per-API overrides must not exceed plan QPS / burst (customer usage plan fairness).
+    for (path, rule) in &config.api_limits {
+        if rule.qps <= 0 {
             return Err(format!(
-                "api_limits entry '{path}' ({limit}) must not exceed plan QPS (max_concurrent = {})",
-                config.max_concurrent
+                "api_limits entry '{path}'.qps must be greater than 0"
+            ));
+        }
+        if rule.burst <= 0 {
+            return Err(format!(
+                "api_limits entry '{path}'.burst must be greater than 0"
+            ));
+        }
+        if rule.qps > config.max_concurrent {
+            return Err(format!(
+                "api_limits entry '{path}'.qps ({}) must not exceed plan QPS (max_concurrent = {})",
+                rule.qps, config.max_concurrent
+            ));
+        }
+        if rule.burst > config.burst_size {
+            return Err(format!(
+                "api_limits entry '{path}'.burst ({}) must not exceed burst_size ({})",
+                rule.burst, config.burst_size
             ));
         }
     }
@@ -522,7 +543,13 @@ mod tests {
     #[test]
     fn api_override_cannot_exceed_plan_qps() {
         let mut cfg = base_plan();
-        cfg.api_limits.insert("/posts".into(), 200);
+        cfg.api_limits.insert(
+            "/posts".into(),
+            ApiLimitOverride {
+                qps: 200,
+                burst: 200,
+            },
+        );
         let err = validate_ratelimit_config(&cfg).unwrap_err();
         assert!(err.contains("plan QPS"), "err={err}");
     }
@@ -530,7 +557,22 @@ mod tests {
     #[test]
     fn api_override_within_plan_ok() {
         let mut cfg = base_plan();
-        cfg.api_limits.insert("/posts".into(), 40);
+        cfg.api_limits
+            .insert("/posts".into(), ApiLimitOverride { qps: 40, burst: 40 });
         assert!(validate_ratelimit_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn api_override_burst_cannot_exceed_plan_burst() {
+        let mut cfg = base_plan();
+        cfg.api_limits.insert(
+            "/posts".into(),
+            ApiLimitOverride {
+                qps: 40,
+                burst: cfg.burst_size + 1,
+            },
+        );
+        let err = validate_ratelimit_config(&cfg).unwrap_err();
+        assert!(err.contains("burst_size"), "err={err}");
     }
 }
