@@ -102,7 +102,7 @@ pub async fn dispatch_http(
     ctx: &AdapterCtx<'_>,
     mut call: HttpCall<'_>,
 ) -> Result<OutboundResponse, ExecuteError> {
-    crate::http_call::inject_x_request_id(&mut call.headers, &ctx.input.request_id);
+    crate::http_call::inject_correlation(&mut call.headers, &ctx.input.request_id);
     let kind = ctx
         .input
         .spec

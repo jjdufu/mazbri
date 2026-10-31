@@ -1,33 +1,55 @@
 use crate::trace_layer::is_probe_unavailable;
 use axum::http::HeaderValue;
 use axum::{extract::Request, middleware::Next, response::Response};
+use mazbri_core::trace_propagation::{remote_parent_from_headers, set_remote_parent};
 use mazbri_core::{
     ACTIVE_CONNECTIONS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL, TraceContext,
-    parse_trace_context,
+    request_id_from_headers,
 };
+use std::sync::Arc;
 use std::time::Instant;
 use tracing::{Instrument, debug, error, info_span, warn};
+
+/// HTTP 入口：以入站 `traceparent` 为父节点创建 `request` span，并把本段链路 ID
+/// 写回请求头（供下游处理函数读取）与响应头（`traceparent`）。
 pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
-    let trace_context = parse_trace_context(req.headers());
-    insert_trace_headers(req.headers_mut(), &trace_context);
-    req.extensions_mut().insert(trace_context.clone());
+    let request_id = request_id_from_headers(req.headers());
+    let remote_parent = remote_parent_from_headers(req.headers());
+    let parent_span_id: Arc<str> = remote_parent
+        .as_ref()
+        .map_or_else(|| Arc::from(""), |parent| parent.span_id().to_string().into());
     let span = info_span!(
         "request",
-        request_id = %trace_context.request_id,
-        trace_id = %trace_context.trace_id,
-        span_id = %trace_context.span_id,
-        parent_span_id = %trace_context.parent_span_id,
+        otel.kind = "server",
+        request_id = %request_id,
+        trace_id = tracing::field::Empty,
+        span_id = tracing::field::Empty,
+        parent_span_id = %parent_span_id,
         method = %req.method(),
         path = %req.uri().path()
     );
+    if let Some(parent) = remote_parent {
+        set_remote_parent(&span, parent);
+    }
+    let trace_context = TraceContext::for_span(request_id, &span, parent_span_id);
+    span.record("trace_id", trace_context.trace_id.as_ref());
+    span.record("span_id", trace_context.span_id.as_ref());
+    insert_trace_headers(req.headers_mut(), &trace_context);
+    req.extensions_mut().insert(trace_context.clone());
     // Must use Instrument (not span.enter()) across .await — enter() across yield
     // races tracing-subscriber's sharded registry and panics under concurrency.
-    async move {
+    let mut response = async move {
         debug!("Handling request");
         next.run(req).await
     }
     .instrument(span)
-    .await
+    .await;
+    set_header(
+        response.headers_mut(),
+        "traceparent",
+        &trace_context.traceparent_value(),
+    );
+    response
 }
 
 fn insert_trace_headers(headers: &mut axum::http::HeaderMap, trace_context: &TraceContext) {

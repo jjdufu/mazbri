@@ -20,7 +20,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .into_client_request()
         .map_err(|e| ExecuteError::AdapterFailed(format!("ws request: {e}")))?;
     let mut headers = super::merge_request_headers(ctx.auth, spec);
-    crate::http_call::inject_x_request_id(&mut headers, &ctx.input.request_id);
+    crate::http_call::inject_correlation(&mut headers, &ctx.input.request_id);
     for (k, v) in headers {
         if let (Ok(name), Ok(val)) = (
             tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(k.as_bytes()),

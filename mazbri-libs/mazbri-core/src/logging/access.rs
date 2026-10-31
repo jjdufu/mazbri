@@ -202,7 +202,7 @@ impl AccessLogEventBuilder {
     #[must_use]
     pub fn new(service: impl Into<String>) -> Self {
         let service = service.into();
-        let context = TraceContext::generated();
+        let context = TraceContext::current();
         Self {
             message: "request_completed".to_string(),
             service,
@@ -405,19 +405,40 @@ pub struct TraceContext {
 }
 
 impl TraceContext {
+    /// 以 `span` 的 OpenTelemetry 上下文作为本段链路 ID；`parent_span_id` 是远端父 span（无则为空）。
+    ///
+    /// 仅当 OpenTelemetry 层未记录该 span（未启用 OTLP 导出）时，才退回随机 ID 以保证日志仍可关联。
     #[must_use]
-    pub fn generated() -> Self {
-        // request_id: standard hyphenated UUID (platform serial / 流水号).
-        // trace_id: 32-hex simple form for W3C `traceparent` compatibility.
-        let request_id: Arc<str> = Uuid::new_v4().to_string().into();
-        let trace_id: Arc<str> = Uuid::new_v4().simple().to_string().into();
-        let span_id: Arc<str> = current_span_id().into();
+    pub fn for_span(request_id: Arc<str>, span: &tracing::Span, parent_span_id: Arc<str>) -> Self {
+        let (trace_id, span_id) = match crate::trace_propagation::span_context_of(span) {
+            Some(span_context) => (
+                span_context.trace_id().to_string(),
+                span_context.span_id().to_string(),
+            ),
+            None => (Uuid::new_v4().simple().to_string(), current_span_id()),
+        };
         Self {
             request_id,
-            trace_id,
-            span_id,
-            parent_span_id: Arc::from(""),
+            trace_id: trace_id.into(),
+            span_id: span_id.into(),
+            parent_span_id,
         }
+    }
+
+    /// 当前 tracing span 的链路上下文，配一个新的 `request_id`。
+    #[must_use]
+    pub fn current() -> Self {
+        Self::for_span(
+            Uuid::new_v4().to_string().into(),
+            &tracing::Span::current(),
+            Arc::from(""),
+        )
+    }
+
+    /// 以本上下文为父节点的远端 OpenTelemetry span 上下文；ID 非法时返回 `None`。
+    #[must_use]
+    pub fn span_context(&self) -> Option<opentelemetry::trace::SpanContext> {
+        crate::trace_propagation::remote_span_context(&self.trace_id, &self.span_id, true)
     }
 
     #[must_use]
@@ -487,57 +508,40 @@ pub fn normalize_request_id_uuid(raw: &str) -> String {
     }
 }
 
+/// 请求 ID：`x-request-id`（兼容 `request-id`/`request_id`），统一成带连字符的 UUID；缺失时新生成。
 #[must_use]
-pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
+pub fn request_id_from_headers<H: TraceHeaderSource>(headers: &H) -> Arc<str> {
     let raw_request_id = headers
         .header_value("x-request-id")
         .or_else(|| headers.header_value("request-id"))
         .or_else(|| headers.header_value("request_id"));
-    let request_id: Arc<str> = match raw_request_id {
+    match raw_request_id {
         Some(value) => normalize_request_id_uuid(&value).into(),
         None => Uuid::new_v4().to_string().into(),
-    };
+    }
+}
 
-    let traceparent = headers.header_value("traceparent");
-    let traceparent_parts = traceparent
+/// 读取入口中间件写回请求头的链路上下文（`traceparent` 即入口 span）。
+///
+/// 头里没有合法 `traceparent` 时，退回当前 tracing span 的 OpenTelemetry 上下文。
+#[must_use]
+pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
+    let request_id = request_id_from_headers(headers);
+    let parent_span_id: Arc<str> = headers
+        .header_value("x-parent-span-id")
+        .map_or_else(|| Arc::from(""), Arc::<str>::from);
+    match headers
+        .header_value("traceparent")
         .as_deref()
         .and_then(parse_traceparent_value)
-        .unwrap_or_else(|| (String::new(), String::new()));
-    let tp_trace_id = traceparent_parts.0;
-    let parent_from_traceparent = traceparent_parts.1;
-
-    let trace_id: Arc<str> = if !tp_trace_id.is_empty() {
-        // W3C trace-id is 32-hex; keep as provided from traceparent.
-        tp_trace_id.into()
-    } else if let Some(value) = headers.header_value("x-trace-id") {
-        // Prefer simple form when the value is a UUID so traceparent stays valid.
-        match Uuid::parse_str(value.trim()) {
-            Ok(id) => id.simple().to_string().into(),
-            Err(_) => value.into(),
-        }
-    } else {
-        // No client trace: derive W3C-compatible 32-hex from request_id when possible.
-        match Uuid::parse_str(request_id.as_ref()) {
-            Ok(id) => id.simple().to_string().into(),
-            Err(_) => Arc::clone(&request_id),
-        }
-    };
-
-    let parent_span_id: Arc<str> = headers
-        .header_value("x-span-id")
-        .or(if parent_from_traceparent.is_empty() {
-            None
-        } else {
-            Some(parent_from_traceparent)
-        })
-        .or_else(|| headers.header_value("x-parent-span-id"))
-        .map_or_else(|| Arc::from(""), Arc::<str>::from);
-
-    TraceContext {
-        request_id,
-        trace_id,
-        span_id: Arc::from(current_span_id()),
-        parent_span_id,
+    {
+        Some((trace_id, span_id)) => TraceContext {
+            request_id,
+            trace_id: trace_id.into(),
+            span_id: span_id.into(),
+            parent_span_id,
+        },
+        None => TraceContext::for_span(request_id, &tracing::Span::current(), parent_span_id),
     }
 }
 
@@ -749,22 +753,23 @@ fn resolve_instance_id() -> String {
 }
 
 fn parse_traceparent_value(value: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = value.split('-').collect();
-    if parts.len() < 4 {
-        return None;
-    }
-    let trace_id = parts.get(1)?.trim();
-    let parent_span_id = parts.get(2)?.trim();
-    if trace_id.is_empty() {
-        return None;
-    }
-    Some((trace_id.to_string(), parent_span_id.to_string()))
+    let mut parts = value.trim().split('-');
+    let (_version, trace_id, span_id, _flags) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    crate::trace_propagation::remote_span_context(trace_id, span_id, true)
+        .map(|span_context| {
+            (
+                span_context.trace_id().to_string(),
+                span_context.span_id().to_string(),
+            )
+        })
 }
 
 #[cfg(test)]
 mod request_id_uuid_tests {
     use super::{TraceContext, normalize_request_id_uuid, parse_trace_context};
     use std::collections::HashMap;
+    use std::sync::Arc;
     use uuid::Uuid;
 
     #[test]
@@ -780,28 +785,60 @@ mod request_id_uuid_tests {
     }
 
     #[test]
-    fn generated_request_id_is_hyphenated_uuid() {
-        let ctx = TraceContext::generated();
+    fn current_without_otel_span_still_has_w3c_ids() {
+        let ctx = TraceContext::current();
         assert!(Uuid::parse_str(&ctx.request_id).is_ok());
-        assert!(ctx.request_id.contains('-'));
         assert_eq!(ctx.request_id.len(), 36);
-        // W3C-friendly 32-hex trace id
         assert_eq!(ctx.trace_id.len(), 32);
-        assert!(!ctx.trace_id.contains('-'));
+        assert_eq!(ctx.span_id.len(), 16);
+        assert!(ctx.span_context().is_some());
     }
 
     #[test]
-    fn parse_normalizes_client_simple_request_id() {
+    fn parse_reads_traceparent_and_normalizes_request_id() {
         let mut headers = HashMap::new();
         headers.insert(
             "x-request-id".to_string(),
             "6e7f448edae94db78e5e9f87f1402eaa".to_string(),
         );
+        headers.insert(
+            "traceparent".to_string(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_string(),
+        );
+        headers.insert("x-parent-span-id".to_string(), "b7ad6b7169203331".to_string());
         let ctx = parse_trace_context(&headers);
         assert_eq!(
             ctx.request_id.as_ref(),
             "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa"
         );
-        assert_eq!(ctx.trace_id.as_ref(), "6e7f448edae94db78e5e9f87f1402eaa");
+        assert_eq!(ctx.trace_id.as_ref(), "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert_eq!(ctx.span_id.as_ref(), "00f067aa0ba902b7");
+        assert_eq!(ctx.parent_span_id.as_ref(), "b7ad6b7169203331");
+    }
+
+    #[test]
+    fn parse_ignores_malformed_traceparent() {
+        let mut headers = HashMap::new();
+        headers.insert("traceparent".to_string(), "00-abc-def-01".to_string());
+        let ctx = parse_trace_context(&headers);
+        assert_eq!(ctx.trace_id.len(), 32);
+        assert_ne!(ctx.trace_id.as_ref(), "abc");
+    }
+
+    #[test]
+    fn trace_context_span_context_round_trip() {
+        let ctx = TraceContext {
+            request_id: Arc::from("r"),
+            trace_id: Arc::from("4bf92f3577b34da6a3ce929d0e0e4736"),
+            span_id: Arc::from("00f067aa0ba902b7"),
+            parent_span_id: Arc::from(""),
+        };
+        let span_context = ctx.span_context().expect("valid ids");
+        assert_eq!(span_context.trace_id().to_string(), ctx.trace_id.as_ref());
+        assert_eq!(span_context.span_id().to_string(), ctx.span_id.as_ref());
+        assert_eq!(
+            ctx.traceparent_value(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        );
     }
 }

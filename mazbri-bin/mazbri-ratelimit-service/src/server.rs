@@ -25,7 +25,9 @@ pub async fn serve_with_config(
         service,
         tls_acceptor,
         max_connections,
-        |svc: RateLimitTarpcService, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
+        |svc: RateLimitTarpcService, ch| {
+            mazbri_core::tarpc_middleware::trace::execute_traced(ch, svc.serve())
+        }
     )
     .await
     .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;

@@ -36,7 +36,7 @@ pub fn request_ids(headers: &HeaderMap) -> (String, String) {
 }
 
 pub fn request_context_values(request_id: Option<&str>, trace_id: Option<&str>) -> RequestContext {
-    let generated = crate::TraceContext::generated();
+    let generated = crate::TraceContext::current();
     let generated_span_id = generated.span_id.to_string();
     let generated_parent_span_id = generated.parent_span_id.to_string();
     let request_id = match request_id.map(str::trim).filter(|value| !value.is_empty()) {

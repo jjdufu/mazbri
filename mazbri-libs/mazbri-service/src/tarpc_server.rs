@@ -10,7 +10,6 @@ macro_rules! run_tarpc_server {
         let max_connections: u32 = $max_connections;
         async move {
             use futures::prelude::*;
-            use tarpc::server::{BaseChannel, Channel};
             let semaphore =
                 std::sync::Arc::new(tokio::sync::Semaphore::new(max_connections as usize));
             if let Some(acceptor) = tls_acceptor {

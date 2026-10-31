@@ -2750,6 +2750,7 @@ dependencies = [
  "chrono",
  "config",
  "flate2",
+ "futures",
  "hex",
  "hmac",
  "hostname",

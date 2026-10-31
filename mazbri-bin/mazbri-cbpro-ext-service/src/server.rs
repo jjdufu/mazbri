@@ -24,7 +24,9 @@ pub async fn serve(
         service,
         Some(acceptor),
         max_connections,
-        |svc: CBProExtServiceImpl, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
+        |svc: CBProExtServiceImpl, ch| {
+            mazbri_core::tarpc_middleware::trace::execute_traced(ch, svc.serve())
+        }
     )
     .await
     .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;

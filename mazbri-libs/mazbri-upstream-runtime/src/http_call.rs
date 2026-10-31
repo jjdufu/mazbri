@@ -20,9 +20,10 @@ pub struct HttpCall<'a> {
     pub timeout: Duration,
 }
 
-/// Best-effort: insert `x-request-id` when missing. Never overwrites. Empty id is a no-op.
-/// Does not mint a UUID — callers that have no serial skip this.
-pub(crate) fn inject_x_request_id(headers: &mut HashMap<String, String>, request_id: &str) {
+/// 出站关联头：`traceparent`/`tracestate` 总是按当前 span 覆盖写入（上游看到的父节点
+/// 就是本次调用所在 span）；`x-request-id` 仅在缺失时补上，空 id 不补，也不新生成 UUID。
+pub(crate) fn inject_correlation(headers: &mut HashMap<String, String>, request_id: &str) {
+    mazbri_core::trace_propagation::inject_current_into_map(headers);
     if request_id.is_empty() {
         return;
     }
@@ -35,8 +36,9 @@ pub(crate) fn inject_x_request_id(headers: &mut HashMap<String, String>, request
     headers.insert("x-request-id".into(), request_id.to_string());
 }
 
-/// Same rules as [`inject_x_request_id`] for HTTP/`HeaderMap` (gRPC metadata).
-pub(crate) fn inject_x_request_id_header_map(headers: &mut HeaderMap, request_id: &str) {
+/// Same rules as [`inject_correlation`] for HTTP/`HeaderMap` (gRPC metadata).
+pub(crate) fn inject_correlation_header_map(headers: &mut HeaderMap, request_id: &str) {
+    mazbri_core::trace_propagation::inject_current_into_header_map(headers);
     if request_id.is_empty() || headers.contains_key("x-request-id") {
         return;
     }
@@ -365,9 +367,9 @@ mod tests {
     }
 
     #[test]
-    fn inject_x_request_id_inserts_when_missing() {
+    fn inject_correlation_inserts_when_missing() {
         let mut headers = HashMap::new();
-        inject_x_request_id(&mut headers, "11111111-1111-1111-1111-111111111111");
+        inject_correlation(&mut headers, "11111111-1111-1111-1111-111111111111");
         assert_eq!(
             headers.get("x-request-id").map(String::as_str),
             Some("11111111-1111-1111-1111-111111111111")
@@ -375,10 +377,10 @@ mod tests {
     }
 
     #[test]
-    fn inject_x_request_id_does_not_overwrite() {
+    fn inject_correlation_does_not_overwrite() {
         let mut headers = HashMap::new();
         headers.insert("X-Request-Id".into(), "kept".into());
-        inject_x_request_id(&mut headers, "new");
+        inject_correlation(&mut headers, "new");
         assert_eq!(
             headers.get("X-Request-Id").map(String::as_str),
             Some("kept")
@@ -387,19 +389,19 @@ mod tests {
     }
 
     #[test]
-    fn inject_x_request_id_skips_empty() {
+    fn inject_correlation_skips_empty() {
         let mut headers = HashMap::new();
-        inject_x_request_id(&mut headers, "");
+        inject_correlation(&mut headers, "");
         assert!(headers.is_empty());
     }
 
     #[test]
-    fn inject_x_request_id_header_map_grpc_rules() {
+    fn inject_correlation_header_map_grpc_rules() {
         let mut headers = HeaderMap::new();
-        inject_x_request_id_header_map(&mut headers, "");
+        inject_correlation_header_map(&mut headers, "");
         assert!(!headers.contains_key("x-request-id"));
 
-        inject_x_request_id_header_map(&mut headers, "rid-a");
+        inject_correlation_header_map(&mut headers, "rid-a");
         assert_eq!(
             headers.get("x-request-id").and_then(|v| v.to_str().ok()),
             Some("rid-a")
@@ -407,7 +409,7 @@ mod tests {
 
         headers.clear();
         headers.insert("X-Request-Id", HeaderValue::from_static("kept"));
-        inject_x_request_id_header_map(&mut headers, "new");
+        inject_correlation_header_map(&mut headers, "new");
         assert_eq!(
             headers.get("x-request-id").and_then(|v| v.to_str().ok()),
             Some("kept")

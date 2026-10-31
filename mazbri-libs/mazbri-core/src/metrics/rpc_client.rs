@@ -97,7 +97,8 @@ where
     }
 }
 
-/// Create a Channel, spawn its dispatch, wrap with [`RpcMetricsStub`], then convert to client `C`.
+/// Create a Channel (outbound requests carry the caller's RPC span, see
+/// [`crate::tarpc_middleware::trace`]), spawn its dispatch, wrap with [`RpcMetricsStub`], then convert to client `C`.
 ///
 /// Replaces `SomeServiceClient::new(config, transport).spawn()` at call sites.
 pub fn spawn_rpc_client<C, Req, Resp, T>(
@@ -112,6 +113,7 @@ where
     T: Transport<ClientMessage<Req>, Response<Resp>> + Send + 'static,
     C: From<RpcMetricsStub<Channel<Req, Resp>>>,
 {
+    let transport = crate::tarpc_middleware::trace::ClientTraceTransport::new(transport);
     let NewClient { client, dispatch } = tarpc::client::new(config, transport);
     tokio::spawn(async move {
         if let Err(error) = dispatch.await {

@@ -23,6 +23,7 @@ pub mod retry;
 pub mod service_identity;
 pub mod supplier_config;
 pub mod tarpc_middleware;
+pub mod trace_propagation;
 mod telemetry;
 pub mod validation;
 pub use cert_token::{
@@ -63,6 +64,7 @@ pub use logging::{
     AccessNetworkFields, AccessOutcomeFields, AccessRouteFields, AccessTimingFields,
     AccessUpstreamMetaFields, StandardLogEvent, TraceContext, current_span_id, emit_access_log,
     log_level, normalize_request_id_uuid, normalize_upstream_host, parse_trace_context,
+    request_id_from_headers,
     response_flags_for_error,
 };
 pub use metrics::{

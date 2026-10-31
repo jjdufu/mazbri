@@ -150,6 +150,7 @@ pub fn init_tracing_with_routes(
     routes: &[LogRoute],
 ) -> Result<LogGuard> {
     set_service_name(service_name);
+    crate::trace_propagation::install_global_propagator();
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(format!("{},tarpc=warn", config.level)));
 

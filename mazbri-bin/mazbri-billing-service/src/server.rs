@@ -100,7 +100,9 @@ pub async fn serve(
         service,
         tls_acceptor,
         max_connections,
-        |svc: BillingTarpcService, ch| BaseChannel::with_defaults(ch).execute(svc.serve())
+        |svc: BillingTarpcService, ch| {
+            mazbri_core::tarpc_middleware::trace::execute_traced(ch, svc.serve())
+        }
     )
     .await
     .map_err(|e| anyhow::anyhow!("tarpc server error: {e}"))?;

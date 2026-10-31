@@ -170,7 +170,7 @@ fn build_grpc_headers(ctx: &AdapterCtx<'_>) -> HeaderMap {
             header_map.insert(hn, hv);
         }
     }
-    crate::http_call::inject_x_request_id_header_map(&mut header_map, &ctx.input.request_id);
+    crate::http_call::inject_correlation_header_map(&mut header_map, &ctx.input.request_id);
     header_map.insert(
         HeaderName::from_static("content-type"),
         HeaderValue::from_static("application/grpc"),
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn grpc_injects_x_request_id_when_metadata_missing() {
         let mut header_map = metadata_to_headers(&HashMap::new());
-        crate::http_call::inject_x_request_id_header_map(&mut header_map, "rid-grpc");
+        crate::http_call::inject_correlation_header_map(&mut header_map, "rid-grpc");
         assert_eq!(
             header_map.get("x-request-id").and_then(|v| v.to_str().ok()),
             Some("rid-grpc")
@@ -254,7 +254,7 @@ mod tests {
         let mut meta = HashMap::new();
         meta.insert("X-Request-Id".into(), "kept".into());
         let mut header_map = metadata_to_headers(&meta);
-        crate::http_call::inject_x_request_id_header_map(&mut header_map, "new");
+        crate::http_call::inject_correlation_header_map(&mut header_map, "new");
         assert_eq!(
             header_map.get("x-request-id").and_then(|v| v.to_str().ok()),
             Some("kept")
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn grpc_skips_empty_request_id() {
         let mut header_map = metadata_to_headers(&HashMap::new());
-        crate::http_call::inject_x_request_id_header_map(&mut header_map, "");
+        crate::http_call::inject_correlation_header_map(&mut header_map, "");
         assert!(!header_map.contains_key("x-request-id"));
     }
 }

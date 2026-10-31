@@ -2,11 +2,12 @@
 
 use crate::metrics::UpstreamMetricsRecorder;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::trace_propagation::{remote_span_context, set_remote_parent};
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, AccessUpstreamMetaFields, ChannelEgressSpec, SupplierConfig,
-    emit_access_log, hash_egress_spec_json, normalize_upstream_host, parse_and_validate_egress,
-    parse_trace_context, response_flags_for_error,
+    TraceContext, emit_access_log, hash_egress_spec_json, normalize_request_id_uuid,
+    normalize_upstream_host, parse_and_validate_egress, response_flags_for_error,
 };
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
@@ -19,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::{Request, Response};
+use tracing::Instrument;
 use uuid::Uuid;
 
 fn hash_config_json(config_json: &str) -> String {
@@ -210,14 +212,25 @@ impl MazbriBypassServiceImpl {
     ) -> Response<upstream_proto::InvokeResponse> {
         let req = request.into_inner();
         let start_time = Instant::now();
-        let (response, spec) =
+        let span = tracing::info_span!(
+            "BypassHttpProxyService.Execute",
+            otel.kind = "server",
+            request_id = %req.request_id,
+            channel_id = %req.channel_id
+        );
+        let trace_context = bypass_trace_context(&req, &span);
+        let (response, spec) = async {
             match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
                 Ok(spec) => (self.execute_once(&req, &spec).await, Some(spec)),
                 Err(error) => (invoke_error(error), None),
-            };
+            }
+        }
+        .instrument(span)
+        .await;
         emit_bypass_access(
             self.service_name.as_ref(),
             &req,
+            &trace_context,
             spec.as_ref(),
             start_time,
             &response,
@@ -412,20 +425,26 @@ fn invoke_error(error: String) -> upstream_proto::InvokeResponse {
     }
 }
 
-fn trace_headers(req: &upstream_proto::InvokeRequest) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
-    if let Some(ref t) = req.trace {
-        if !t.request_id.is_empty() {
-            headers.insert("x-request-id".into(), t.request_id.clone());
-        }
-        if !t.trace_id.is_empty() {
-            headers.insert("x-trace-id".into(), t.trace_id.clone());
-        }
-        if !t.span_id.is_empty() {
-            headers.insert("x-span-id".into(), t.span_id.clone());
-        }
+/// 以网关传来的 trace 为父节点挂接 bypass 的服务端 span，并据此生成访问日志的链路 ID。
+fn bypass_trace_context(req: &upstream_proto::InvokeRequest, span: &tracing::Span) -> TraceContext {
+    let trace = req.trace.as_ref();
+    let parent = trace.and_then(|t| remote_span_context(&t.trace_id, &t.span_id, true));
+    let parent_span_id: Arc<str> = parent
+        .as_ref()
+        .map_or_else(|| Arc::from(""), |p| p.span_id().to_string().into());
+    if let Some(parent) = parent {
+        set_remote_parent(span, parent);
     }
-    headers
+    let request_id = trace
+        .map(|t| t.request_id.as_str())
+        .filter(|id| !id.is_empty())
+        .unwrap_or(req.request_id.as_str());
+    let request_id: Arc<str> = if request_id.is_empty() {
+        Uuid::new_v4().to_string().into()
+    } else {
+        normalize_request_id_uuid(request_id).into()
+    };
+    TraceContext::for_span(request_id, span, parent_span_id)
 }
 
 /// `(error_code, error_class)` for the access log.
@@ -453,14 +472,13 @@ fn classify_bypass_outcome(
 fn emit_bypass_access(
     service_name: &str,
     req: &upstream_proto::InvokeRequest,
+    trace_context: &TraceContext,
     spec: Option<&ChannelEgressSpec>,
     start_time: Instant,
     response: &upstream_proto::InvokeResponse,
 ) {
     let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
     let route_path = spec.map(|s| s.request.path.clone()).unwrap_or_default();
-    let headers = trace_headers(req);
-    let trace_context = parse_trace_context(&headers);
     let adapter = response
         .upstream_meta
         .as_ref()
@@ -488,7 +506,7 @@ fn emit_bypass_access(
 
     let event = AccessLogEvent::builder(service_name.to_string())
         .message(format!("request_completed mode={adapter}"))
-        .trace_context(&trace_context)
+        .trace_context(trace_context)
         .route(AccessRouteFields {
             tenant_id: Some(req.tenant_id.clone()).filter(|s| !s.is_empty()),
             tenant_code: None,
