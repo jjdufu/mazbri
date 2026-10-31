@@ -246,6 +246,11 @@ pub fn init_tracing_with_routes(
                 endpoint,
                 service_name,
                 sample_ratio: config.otel_sample_ratio,
+                batch: crate::otlp::OtlpBatchOptions {
+                    max_queue_size: config.otel_max_queue_size,
+                    max_export_batch_size: config.otel_max_export_batch_size,
+                    scheduled_delay: Duration::from_millis(config.otel_scheduled_delay_ms),
+                },
             };
             match crate::otlp::build_otlp_tracer(options) {
                 // Subscriber is not up yet. A success notice on stderr is captured by

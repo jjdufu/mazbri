@@ -13,13 +13,29 @@
 //! transport noise. Only **business-relevant** spans are exported — see
 //! [`should_export_otlp_span`].
 
+use crate::metrics::{SpanDropReason, record_spans_dropped};
 use anyhow::{Context, Result};
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::{Array, KeyValue, StringValue, Value};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider, Tracer};
+use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::trace::{
+    BatchConfigBuilder, BatchSpanProcessor, RandomIdGenerator, Sampler, SdkTracerProvider,
+    SpanData, SpanLimits, SpanProcessor, Tracer,
+};
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use tracing::Level;
+
+/// Per-span caps applied by the SDK.
+const MAX_ATTRIBUTES_PER_SPAN: u32 = 64;
+const MAX_EVENTS_PER_SPAN: u32 = 32;
+const MAX_LINKS_PER_SPAN: u32 = 128;
+/// Longest exported string attribute value, in bytes (cut on a char boundary).
+pub const MAX_ATTRIBUTE_VALUE_BYTES: usize = 1024;
 
 /// Holds the SDK provider so spans flush on drop/shutdown.
 pub struct OtlpGuard {
@@ -41,118 +57,72 @@ pub struct OtlpExportOptions<'a> {
     pub endpoint: &'a str,
     pub service_name: &'a str,
     pub sample_ratio: f64,
+    pub batch: OtlpBatchOptions,
 }
 
-/// Whether a `tracing` span should be exported via OTLP.
+/// Batch span processor sizing (`[tracing]` `otel_max_queue_size` …).
+#[derive(Debug, Clone, Copy)]
+pub struct OtlpBatchOptions {
+    pub max_queue_size: usize,
+    pub max_export_batch_size: usize,
+    pub scheduled_delay: Duration,
+}
+
+/// Gateway stage span names (step 16 `stage_span`).
+const GATEWAY_STAGE_NAMES: &[&str] = &[
+    "auth",
+    "ratelimit",
+    "balance_check",
+    "idempotency",
+    "transport",
+    "request_prepare",
+    "product_detail_lookup",
+    "upstream",
+    "response_serialize",
+    "response_encrypt",
+    "post_response",
+    "platform_summary",
+];
+
+/// Span name prefixes worth exporting for dependency hops and business logic.
+const EXPORTED_NAME_PREFIXES: &[&str] = &[
+    "rpc.",
+    "db.",
+    "redis.",
+    "clickhouse.",
+    "greptime.",
+    "upstream.",
+    "billing.",
+    "cache.",
+    "license.",
+];
+
+/// Whether a `tracing` span should be exported via OTLP (allow-list).
 ///
-/// **Keep (useful for call path / latency / dependency hops):**
-/// - HTTP root: name `request` (mazbri middleware / tower-http `TraceLayer`)
-/// - tarpc client/server RPC: names like `CacheService.get`, `AuthService.validate_api_key`
-/// - application targets: `mazbri*`, `ut*` modules
+/// Exported when the level is INFO or above **and** either:
+/// - the target is a mazbri crate (`mazbri*`), or
+/// - the name is allow-listed: `request` (HTTP root), a gateway stage name,
+///   one of [`EXPORTED_NAME_PREFIXES`], or a tarpc RPC name such as
+///   `CacheService.get`.
 ///
-/// **Drop (no help for perf / SLI / path analysis):**
-/// - `h2` / hyper / mio / rustls transport internals (`FramedRead::*`, `poll_ready`, …)
-/// - DEBUG / TRACE level spans
-/// - other dependency noise not matching the allow rules
+/// Everything else (h2 / hyper / rustls internals, DEBUG / TRACE spans,
+/// unknown dependency spans) is dropped at the source.
 #[must_use]
 pub fn should_export_otlp_span(meta: &tracing::Metadata<'_>) -> bool {
     // Level ordering: ERROR < WARN < INFO < DEBUG < TRACE
     if *meta.level() > Level::INFO {
         return false;
     }
+    meta.target().starts_with("mazbri") || is_exported_span_name(meta.name())
+}
 
-    let target = meta.target();
-    let name = meta.name();
-
-    if is_transport_target(target) || is_transport_span_name(name) {
-        return false;
-    }
-
-    if is_application_target(target)
-        || is_http_entry_target(target)
-        || is_tarpc_target(target)
-        || name == "request"
+fn is_exported_span_name(name: &str) -> bool {
+    name == "request"
+        || GATEWAY_STAGE_NAMES.contains(&name)
+        || EXPORTED_NAME_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
         || is_rpc_style_span_name(name)
-    {
-        return true;
-    }
-
-    false
-}
-
-#[inline]
-fn is_application_target(target: &str) -> bool {
-    target.starts_with("mazbri")
-}
-
-#[inline]
-fn is_http_entry_target(target: &str) -> bool {
-    // tower-http TraceLayer (HTTP entry when service uses TraceLayer)
-    target.starts_with("tower_http::trace")
-}
-
-#[inline]
-fn is_tarpc_target(target: &str) -> bool {
-    // tarpc instruments RPC methods as `ServiceName.method` under tarpc::client / server
-    target.starts_with("tarpc::client") || target.starts_with("tarpc::server") || target == "tarpc"
-}
-
-/// h2 / hyper / low-level IO — zero value for product path analysis.
-fn is_transport_target(target: &str) -> bool {
-    const PREFIXES: &[&str] = &[
-        "h2::",
-        "h2.",
-        "hyper::",
-        "hyper.",
-        "mio::",
-        "want::",
-        "rustls::",
-        "tokio::io",
-        "tokio::net",
-        "tokio::task",
-        "tower::buffer",
-        "tower::limit",
-        "tower::make",
-        "tower::util",
-        "http_body",
-        "httparse",
-    ];
-    target == "h2" || target == "hyper" || PREFIXES.iter().any(|p| target.starts_with(p))
-}
-
-/// Span names observed flooding Greptime from h2 (even if target is missing/odd).
-fn is_transport_span_name(name: &str) -> bool {
-    // `FramedRead::poll_next`, `hpack::decode`
-    if name.contains("::") {
-        return true;
-    }
-    matches!(
-        name,
-        "poll"
-            | "poll_ready"
-            | "popped"
-            | "flush"
-            | "Connection"
-            | "server_handshake"
-            | "read_preface"
-            | "send_data"
-            | "reserve_capacity"
-            | "assign_connection_capacity"
-            | "clear_pending_capacity"
-            | "try_reclaim_frame"
-            | "try_assign_capacity"
-            | "pop_frame"
-            | "recv_stream_window_update"
-    ) || name.starts_with("Framed")
-        || name.starts_with("hpack")
-        || name.starts_with("Prioritize")
-        || name.starts_with("updating ")
-        || name.starts_with("try_reclaim")
-        || name.starts_with("try_assign")
-        || name.starts_with("poll_")
-        || name.starts_with("pop_")
-        || name.starts_with("send_")
-        || name.starts_with("recv_")
 }
 
 /// `CacheService.get`, `AuthService.validate_api_key` — tarpc-style RPC span names.
@@ -199,13 +169,14 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
     anyhow::ensure!(!endpoint.is_empty(), "otel_endpoint is empty");
 
     let ratio = options.sample_ratio.clamp(0.0, 1.0);
-    let sampler = if (ratio - 1.0).abs() < f64::EPSILON {
+    let root_sampler = if (ratio - 1.0).abs() < f64::EPSILON {
         Sampler::AlwaysOn
     } else if ratio <= 0.0 {
         Sampler::AlwaysOff
     } else {
         Sampler::TraceIdRatioBased(ratio)
     };
+    let sampler = Sampler::ParentBased(Box::new(root_sampler));
 
     let exporter = SpanExporter::builder()
         .with_http()
@@ -214,21 +185,165 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
         .context("build OTLP HTTP span exporter")?;
 
     let resource = Resource::builder_empty()
-        .with_attributes([opentelemetry::KeyValue::new(
+        .with_attributes([KeyValue::new(
             SERVICE_NAME,
             options.service_name.to_string(),
         )])
         .build();
 
     let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
+        .with_span_processor(BoundedSpanProcessor::new(exporter, options.batch))
         .with_sampler(sampler)
         .with_id_generator(RandomIdGenerator::default())
+        .with_span_limits(SpanLimits {
+            max_attributes_per_span: MAX_ATTRIBUTES_PER_SPAN,
+            max_events_per_span: MAX_EVENTS_PER_SPAN,
+            max_links_per_span: MAX_LINKS_PER_SPAN,
+            ..SpanLimits::default()
+        })
         .with_resource(resource)
         .build();
 
     let tracer = provider.tracer(options.service_name.to_string());
     Ok((tracer, OtlpGuard { provider }))
+}
+
+/// Batch processor with an observable bound.
+///
+/// `pending` counts spans handed to the inner [`BatchSpanProcessor`] and not yet
+/// taken by the exporter. At `max_queue_size` new spans are dropped here (and
+/// counted) instead of inside the SDK queue, where drops are not observable.
+/// String attribute values are capped at [`MAX_ATTRIBUTE_VALUE_BYTES`].
+#[derive(Debug)]
+struct BoundedSpanProcessor {
+    inner: BatchSpanProcessor,
+    pending: Arc<AtomicUsize>,
+    capacity: usize,
+}
+
+impl BoundedSpanProcessor {
+    fn new<E>(exporter: E, batch: OtlpBatchOptions) -> Self
+    where
+        E: opentelemetry_sdk::trace::SpanExporter + 'static,
+    {
+        let capacity = batch.max_queue_size.max(1);
+        let pending = Arc::new(AtomicUsize::new(0));
+        let config = BatchConfigBuilder::default()
+            .with_max_queue_size(capacity)
+            .with_max_export_batch_size(batch.max_export_batch_size.clamp(1, capacity))
+            .with_scheduled_delay(batch.scheduled_delay)
+            .build();
+        let inner = BatchSpanProcessor::builder(CountingExporter {
+            inner: exporter,
+            pending: Arc::clone(&pending),
+        })
+        .with_batch_config(config)
+        .build();
+        Self {
+            inner,
+            pending,
+            capacity,
+        }
+    }
+}
+
+impl SpanProcessor for BoundedSpanProcessor {
+    fn on_start(&self, span: &mut opentelemetry_sdk::trace::Span, cx: &opentelemetry::Context) {
+        self.inner.on_start(span, cx);
+    }
+
+    fn on_end(&self, mut span: SpanData) {
+        if self.pending.fetch_add(1, Ordering::AcqRel) >= self.capacity {
+            self.pending.fetch_sub(1, Ordering::AcqRel);
+            record_spans_dropped(SpanDropReason::QueueFull, 1);
+            return;
+        }
+        truncate_span_values(&mut span);
+        self.inner.on_end(span);
+    }
+
+    fn force_flush(&self) -> OTelSdkResult {
+        self.inner.force_flush()
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        self.inner.set_resource(resource);
+    }
+}
+
+/// Releases queue slots as batches leave the SDK queue; counts failed exports.
+#[derive(Debug)]
+struct CountingExporter<E> {
+    inner: E,
+    pending: Arc<AtomicUsize>,
+}
+
+impl<E> opentelemetry_sdk::trace::SpanExporter for CountingExporter<E>
+where
+    E: opentelemetry_sdk::trace::SpanExporter,
+{
+    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+        let spans = batch.len();
+        self.pending.fetch_sub(spans, Ordering::AcqRel);
+        let result = self.inner.export(batch).await;
+        if result.is_err() {
+            record_spans_dropped(SpanDropReason::ExportFailed, spans);
+        }
+        result
+    }
+
+    fn shutdown_with_timeout(&mut self, timeout: Duration) -> OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+
+    fn force_flush(&mut self) -> OTelSdkResult {
+        self.inner.force_flush()
+    }
+
+    fn set_resource(&mut self, resource: &Resource) {
+        self.inner.set_resource(resource);
+    }
+}
+
+fn truncate_span_values(span: &mut SpanData) {
+    span.attributes.iter_mut().for_each(truncate_attribute);
+    for event in &mut span.events.events {
+        event.attributes.iter_mut().for_each(truncate_attribute);
+    }
+}
+
+fn truncate_attribute(attribute: &mut KeyValue) {
+    match &mut attribute.value {
+        Value::String(value) => {
+            if let Some(cut) = truncated(value.as_str()) {
+                *value = StringValue::from(cut);
+            }
+        }
+        Value::Array(Array::String(values)) => {
+            for value in values {
+                if let Some(cut) = truncated(value.as_str()) {
+                    *value = StringValue::from(cut);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `Some(prefix)` when `value` exceeds [`MAX_ATTRIBUTE_VALUE_BYTES`].
+fn truncated(value: &str) -> Option<String> {
+    if value.len() <= MAX_ATTRIBUTE_VALUE_BYTES {
+        return None;
+    }
+    let mut end = MAX_ATTRIBUTE_VALUE_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(value[..end].to_string())
 }
 
 /// Ensure the exporter URL targets OTLP/HTTP traces.
@@ -251,17 +366,19 @@ pub fn normalize_otlp_traces_endpoint(endpoint: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics::OTLP_SPANS_DROPPED_TOTAL;
 
     #[test]
-    fn transport_targets_and_names_detected() {
-        assert!(is_transport_target("h2::proto::streams::prioritize"));
-        assert!(is_transport_target("hyper::client::conn"));
-        assert!(is_transport_span_name("FramedRead::poll_next"));
-        assert!(is_transport_span_name("poll_ready"));
-        assert!(is_transport_span_name("try_reclaim_frame"));
-        assert!(is_transport_span_name("updating stream flow"));
-        assert!(!is_transport_span_name("request"));
-        assert!(!is_transport_span_name("CacheService.get"));
+    fn allow_listed_names() {
+        assert!(is_exported_span_name("request"));
+        assert!(is_exported_span_name("balance_check"));
+        assert!(is_exported_span_name("db.query"));
+        assert!(is_exported_span_name("upstream.attempt"));
+        assert!(is_exported_span_name("CacheService.get"));
+        assert!(!is_exported_span_name("FramedRead::poll_next"));
+        assert!(!is_exported_span_name("poll_ready"));
+        assert!(!is_exported_span_name("try_reclaim_frame"));
+        assert!(!is_exported_span_name("Connection"));
     }
 
     #[test]
@@ -298,6 +415,14 @@ mod tests {
         let tower_req = info_span!(target: "tower_http::trace::make_span", "request");
         assert!(should_export_otlp_span(tower_req.metadata().expect("meta")));
 
+        let unknown = info_span!(target: "sqlx::query", "fetch");
+        assert!(!should_export_otlp_span(unknown.metadata().expect("meta")));
+
+        let debug_app = tracing::debug_span!(target: "mazbri_gateway::handler", "inner");
+        assert!(!should_export_otlp_span(
+            debug_app.metadata().expect("meta")
+        ));
+
         let h2 = tracing::trace_span!(
             target: "h2::proto::streams::prioritize",
             "try_reclaim_frame"
@@ -309,6 +434,70 @@ mod tests {
             "FramedRead::poll_next"
         );
         assert!(!should_export_otlp_span(framed.metadata().expect("meta")));
+    }
+
+    #[test]
+    fn long_string_values_cut_on_char_boundary() {
+        let short = "a".repeat(MAX_ATTRIBUTE_VALUE_BYTES);
+        assert!(truncated(&short).is_none());
+        let long = format!("{}{}", "a".repeat(MAX_ATTRIBUTE_VALUE_BYTES - 1), "中文");
+        let cut = truncated(&long).expect("cut");
+        assert_eq!(cut.len(), MAX_ATTRIBUTE_VALUE_BYTES - 1);
+
+        let mut attribute = KeyValue::new("k", "x".repeat(4096));
+        truncate_attribute(&mut attribute);
+        assert_eq!(attribute.value.as_str().len(), MAX_ATTRIBUTE_VALUE_BYTES);
+    }
+
+    #[derive(Debug)]
+    struct NullExporter;
+
+    impl opentelemetry_sdk::trace::SpanExporter for NullExporter {
+        fn export(
+            &self,
+            _batch: Vec<SpanData>,
+        ) -> impl std::future::Future<Output = OTelSdkResult> + Send {
+            std::future::ready(Ok(()))
+        }
+    }
+
+    fn sample_span() -> SpanData {
+        SpanData {
+            span_context: opentelemetry::trace::SpanContext::empty_context(),
+            parent_span_id: opentelemetry::trace::SpanId::INVALID,
+            span_kind: opentelemetry::trace::SpanKind::Internal,
+            name: "test".into(),
+            start_time: std::time::SystemTime::now(),
+            end_time: std::time::SystemTime::now(),
+            attributes: vec![KeyValue::new("big", "y".repeat(2048))],
+            dropped_attributes_count: 0,
+            events: opentelemetry_sdk::trace::SpanEvents::default(),
+            links: opentelemetry_sdk::trace::SpanLinks::default(),
+            status: opentelemetry::trace::Status::Unset,
+            instrumentation_scope: opentelemetry::InstrumentationScope::default(),
+        }
+    }
+
+    #[test]
+    fn full_queue_drops_and_counts() {
+        let counter = OTLP_SPANS_DROPPED_TOTAL
+            .with_label_values(&["unknown", SpanDropReason::QueueFull.as_str()]);
+        let before = counter.get();
+        let processor = BoundedSpanProcessor::new(
+            NullExporter,
+            OtlpBatchOptions {
+                max_queue_size: 2,
+                max_export_batch_size: 2,
+                scheduled_delay: Duration::from_secs(3600),
+            },
+        );
+        for _ in 0..5 {
+            processor.on_end(sample_span());
+        }
+        assert!(counter.get() - before >= 3.0);
+        processor.force_flush().expect("flush");
+        assert_eq!(processor.pending.load(Ordering::Acquire), 0);
+        processor.shutdown().expect("shutdown");
     }
 
     #[test]
@@ -345,6 +534,11 @@ mod tests {
             endpoint: &endpoint,
             service_name: "otlp-smoke",
             sample_ratio: 1.0,
+            batch: OtlpBatchOptions {
+                max_queue_size: 64,
+                max_export_batch_size: 64,
+                scheduled_delay: Duration::from_millis(200),
+            },
         })
         .expect("build tracer");
         let mut span = tracer.start("otlp.smoke");

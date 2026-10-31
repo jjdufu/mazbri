@@ -3,6 +3,7 @@ pub mod cbpro;
 pub mod defaults;
 pub mod dep_client;
 pub mod health;
+pub mod otlp;
 pub mod process;
 pub mod recorders;
 pub mod registry;
@@ -23,6 +24,9 @@ pub use health::{
     BoxedConfigCenterCheck, CONFIG_CENTER_CONNECTED, CertExpiryInfoProvider,
     DB_POOL_ACTIVE_CONNECTIONS, DB_POOL_IDLE_CONNECTIONS, DbPoolInfo, HealthMetricsUpdater,
     RPC_HEALTH_CHECK, TLS_CERT_EXPIRY_TIMESTAMP, register_health_metrics,
+};
+pub use otlp::{
+    OTLP_SPANS_DROPPED_TOTAL, SpanDropReason, record_spans_dropped, register_otlp_metrics,
 };
 pub use process::{register_process_metrics, spawn_process_metrics};
 pub use recorders::{CounterRecorder, HistogramRecorder, MetricsRecorder};

@@ -143,7 +143,7 @@ fn default_idle_timeout() -> u64 {
 fn default_max_lifetime() -> u64 {
     1800
 }
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TracingConfig {
     #[serde(default = "default_tracing_level")]
@@ -153,16 +153,51 @@ pub struct TracingConfig {
     /// OTLP/HTTP receiver base URL (exporter appends `/v1/traces`), e.g. the
     /// Vector receiver `http://vector:4318`. Empty / omitted = OTLP export disabled.
     pub otel_endpoint: Option<String>,
-    /// Trace sampling ratio in `0.0..=1.0` when OTLP is enabled. Default `0.1`.
+    /// Trace sampling ratio in `0.0..=1.0` when OTLP is enabled (root spans only;
+    /// child spans follow the parent's sampled flag). Default `1.0` (full capture).
     #[serde(default = "default_otel_sample_ratio")]
     pub otel_sample_ratio: f64,
+    /// Span export queue capacity; spans beyond it are dropped and counted in
+    /// `mazbri_otlp_spans_dropped_total`. Default `8192`.
+    #[serde(default = "default_otel_max_queue_size")]
+    pub otel_max_queue_size: usize,
+    /// Spans per OTLP export request. Default `512`.
+    #[serde(default = "default_otel_max_export_batch_size")]
+    pub otel_max_export_batch_size: usize,
+    /// Export interval in milliseconds. Default `1000`.
+    #[serde(default = "default_otel_scheduled_delay_ms")]
+    pub otel_scheduled_delay_ms: u64,
     #[serde(default = "default_log_dir")]
     pub log_dir: String,
     #[serde(default = "default_log_rotation_enabled")]
     pub rotation_enabled: bool,
 }
+impl Default for TracingConfig {
+    fn default() -> Self {
+        Self {
+            level: default_tracing_level(),
+            format: default_tracing_format(),
+            otel_endpoint: None,
+            otel_sample_ratio: default_otel_sample_ratio(),
+            otel_max_queue_size: default_otel_max_queue_size(),
+            otel_max_export_batch_size: default_otel_max_export_batch_size(),
+            otel_scheduled_delay_ms: default_otel_scheduled_delay_ms(),
+            log_dir: default_log_dir(),
+            rotation_enabled: default_log_rotation_enabled(),
+        }
+    }
+}
 fn default_otel_sample_ratio() -> f64 {
-    0.1
+    1.0
+}
+fn default_otel_max_queue_size() -> usize {
+    8192
+}
+fn default_otel_max_export_batch_size() -> usize {
+    512
+}
+fn default_otel_scheduled_delay_ms() -> u64 {
+    1000
 }
 fn default_log_dir() -> String {
     "logs".to_string()

@@ -36,6 +36,7 @@ pub fn init_service_metrics(service: &'static str) {
     }
     super::rpc_client::register_rpc_client_metrics();
     super::dep_client::register_dep_client_metrics();
+    super::otlp::register_otlp_metrics(service);
     spawn_process_metrics();
     spawn_runtime_metrics(service);
 }
