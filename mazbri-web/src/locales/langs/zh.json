@@ -823,7 +823,6 @@
       "userRouteGovernance": "路由策略",
       "callbackList": "回调订阅",
       "opsMonitoring": "运维监控",
-      "serviceMonitoring": "服务监控",
       "upstreamCallMonitor": "上游监控",
       "customerCallMonitor": "客户监控",
       "callbackFields": {
@@ -846,7 +845,9 @@
       "accountSecurity": "账号安全",
       "opsOverview": "全局总览",
       "opsScreen": "运营大屏",
-      "financeOverview": "经营看板"
+      "financeOverview": "经营看板",
+      "serviceHealth": "服务健康",
+      "serviceDetail": "服务详情"
     }
   },
   "systemSettings": {
@@ -4101,10 +4102,37 @@
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：敏感金额与管理入口已隐藏",
       "stats": {
+        "qps": "业务 QPS",
+        "successRate": "成功率",
+        "latency": "P50 / P95 / P99",
+        "errorRates": "4xx / 5xx 率",
+        "circuitOpen": "熔断打开数",
+        "ratelimit": "限流拒绝率",
+        "certExpiry": "证书最短到期",
+        "activeTenants": "活跃租户",
+        "billingQueue": "计费积压 · {status}",
         "totalRequests": "总请求数",
         "totalBytes": "总流量",
-        "activeTenants": "活跃租户",
         "avgResponseMs": "平均响应"
+      },
+      "healthLights": "服务健康灯",
+      "openMatrix": "服务健康矩阵",
+      "placeholders": "后续接入",
+      "alertsPending": "活跃告警：未接入（步骤 09）",
+      "errorBudgetPending": "错误预算：未接入（步骤 24）",
+      "drillDisabled": "目标页面尚未上线",
+      "charts": {
+        "qps": "业务 QPS",
+        "p99": "业务 P99"
+      },
+      "drill": {
+        "gatewayRed": "2.1 网关 RED",
+        "latency": "2.2 时延分解",
+        "errors": "2.4 错误分析",
+        "circuit": "3.2 熔断重试",
+        "ratelimit": "4.1 限流配额",
+        "billing": "6.1 计费链路",
+        "certs": "12.1 证书资产"
       }
     },
     "screen": {
@@ -4112,6 +4140,32 @@
     },
     "finance": {
       "placeholder": "经营看板将在后续步骤完善"
+    },
+    "services": {
+      "refresh": "刷新",
+      "ok": "正常",
+      "down": "异常",
+      "loadFailed": "加载服务健康失败",
+      "backToMatrix": "返回矩阵",
+      "columns": {
+        "service": "服务",
+        "health": "健康检查",
+        "ready": "就绪",
+        "configCenter": "配置中心",
+        "dbPool": "DB 连接池",
+        "panic": "Panic",
+        "tokio": "Tokio 繁忙",
+        "restart": "最近重启",
+        "version": "版本"
+      },
+      "detail": {
+        "health": "健康状态",
+        "dbPool": "DB 连接池使用率",
+        "version": "版本",
+        "usePending": "USE（CPU / 内存 / 运行时）在步骤 10 后自动出现",
+        "specific": "服务专有指标",
+        "noSpecific": "当前目录暂无该服务专有时序指标"
+      }
     }
   }
 }

@@ -59,13 +59,40 @@ pub struct MetricCatalogItem {
     pub note: Option<&'static str>,
 }
 #[derive(Debug, Clone, Serialize)]
+pub struct ServiceHealthLight {
+    pub service: String,
+    pub name: String,
+    /// `green` / `yellow` / `red`
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceHealthRow {
+    pub service: String,
+    pub name: String,
+    pub health_ok: bool,
+    pub ready: Option<bool>,
+    pub config_center: Option<bool>,
+    /// active / (active + idle); absent when both are 0 or metric missing
+    pub db_pool_usage: Option<f64>,
+    /// Populated after step 10 process/runtime metrics exist.
+    pub panic_count: Option<f64>,
+    pub tokio_busy: Option<f64>,
+    pub last_restart_ts: Option<i64>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct MetricOverview {
     /// 业务 QPS（网关代理请求，不含探活/管理端）
     pub qps: f64,
+    /// 成功率（%，result = ok）；无流量时为 0
+    pub success_rate: f64,
     /// 业务错误率（%，result != ok）；无流量时为 0
     pub error_rate: f64,
     pub error_rate_4xx: f64,
     pub error_rate_5xx: f64,
+    pub p50_latency_ms: f64,
     pub p95_latency_ms: f64,
     pub p99_latency_ms: f64,
     pub active_connections: f64,
@@ -73,7 +100,13 @@ pub struct MetricOverview {
     pub rate_limit_rejections_per_sec: f64,
     /// 计费队列按状态（pending / processing / failed / `dead_letter`）
     pub billing_queue: BTreeMap<String, f64>,
+    pub circuit_breaker_open_count: f64,
     pub cert_min_expiry_days: f64,
+    pub service_health: Vec<ServiceHealthLight>,
+    /// Alert feed lands in step 09.
+    pub alerts_connected: bool,
+    /// Error-budget feed lands in step 24.
+    pub error_budget_connected: bool,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricQueryParams {
@@ -131,73 +164,157 @@ impl GreptimeDBClient {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_metrics_overview(&self) -> Result<MetricOverview> {
         self.with_query_timeout(
-                "metrics_overview",
-                async {
-                    let qps_q = business_qps_query(OVERVIEW_WINDOW_SECS);
-                    let qps = self.prometheus_instant_value(&qps_q);
-                    let error_rate_q = business_error_rate_query(ErrorClass::All, OVERVIEW_WINDOW_SECS);
-                    let error_rate = self.prometheus_instant_value(&error_rate_q);
-                    let error_rate_4xx_q = business_error_rate_query(ErrorClass::Client, OVERVIEW_WINDOW_SECS);
-                    let error_rate_4xx = self.prometheus_instant_value(&error_rate_4xx_q);
-                    let error_rate_5xx_q = business_error_rate_query(ErrorClass::Server, OVERVIEW_WINDOW_SECS);
-                    let error_rate_5xx = self.prometheus_instant_value(&error_rate_5xx_q);
-                    let p95_latency_raw = self
-                        .prometheus_instant_value(
-                            "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-                        );
-                    let p99_latency_raw = self
-                        .prometheus_instant_value(
-                            "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-                        );
-                    let active_connections = self
-                        .prometheus_instant_value("sum(active_connections)");
-                    let proxy_active_connections = self
-                        .prometheus_instant_value("sum(active_proxy_connections)");
-                    // Truth source: gateway local engine decisions (not deleted service counters).
-                    let rate_limit_rejections_per_sec = self
-                        .prometheus_instant_value(
-                            r#"sum(rate(gateway_ratelimit_decisions_total{decision="deny"}[5m]))"#,
-                        );
-                    let billing_queue = self.prometheus_instant_by_label(
-                        "sum by (status) (billing_queue_depth)",
-                        "status",
-                    );
-                    let cert_min_expiry_days = self
-                        .prometheus_instant_value("min(cert_min_expiry_days)");
-                    let (
-                        qps,
-                        error_rate,
-                        error_rate_4xx,
-                        error_rate_5xx,
-                        p95_val,
-                        p99_val,
-                        active_connections,
-                        proxy_active_connections,
-                        rate_limit_rejections_per_sec,
-                        billing_queue,
-                        cert_min_expiry_days,
-                    ) = tokio::try_join!(
-                        qps, error_rate, error_rate_4xx, error_rate_5xx, p95_latency_raw, p99_latency_raw,
-                        active_connections, proxy_active_connections,
-                        rate_limit_rejections_per_sec, billing_queue,
-                        cert_min_expiry_days,
-                    )?;
-                    Ok(MetricOverview {
-                        qps,
-                        error_rate,
-                        error_rate_4xx,
-                        error_rate_5xx,
-                        p95_latency_ms: p95_val * 1000.0,
-                        p99_latency_ms: p99_val * 1000.0,
-                        active_connections,
-                        proxy_active_connections,
-                        rate_limit_rejections_per_sec,
-                        billing_queue,
-                        cert_min_expiry_days,
-                    })
-                },
-            )
-            .await
+            "metrics_overview",
+            Box::pin(async {
+            let w = OVERVIEW_WINDOW_SECS;
+            let qps_q = business_qps_query(w);
+            let success_q = business_success_rate_query(w);
+            let error_q = business_error_rate_query(ErrorClass::All, w);
+            let error_4xx_q = business_error_rate_query(ErrorClass::Client, w);
+            let error_5xx_q = business_error_rate_query(ErrorClass::Server, w);
+            let p50_q = business_latency_quantile_query(0.50, w);
+            let p95_q = business_latency_quantile_query(0.95, w);
+            let p99_q = business_latency_quantile_query(0.99, w);
+            let ratelimit_q = format!(
+                r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{w}s]))"#
+            );
+            let qps = self.prometheus_instant_value(&qps_q);
+            let success_rate = self.prometheus_instant_value(&success_q);
+            let error_rate = self.prometheus_instant_value(&error_q);
+            let error_rate_4xx = self.prometheus_instant_value(&error_4xx_q);
+            let error_rate_5xx = self.prometheus_instant_value(&error_5xx_q);
+            let p50_latency_raw = self.prometheus_instant_value(&p50_q);
+            let p95_latency_raw = self.prometheus_instant_value(&p95_q);
+            let p99_latency_raw = self.prometheus_instant_value(&p99_q);
+            let active_connections = self.prometheus_instant_value("sum(active_connections)");
+            let proxy_active_connections =
+                self.prometheus_instant_value("sum(active_proxy_connections)");
+            let rate_limit_rejections_per_sec = self.prometheus_instant_value(&ratelimit_q);
+            let billing_queue = self.prometheus_instant_by_label(
+                "sum by (status) (billing_queue_depth)",
+                "status",
+            );
+            let circuit_breaker_open_count =
+                self.prometheus_instant_value("count(circuit_breaker_state > 0)");
+            let cert_min_expiry_days = self.prometheus_instant_value("min(cert_min_expiry_days)");
+            let service_health = self.load_service_health_lights();
+            let (
+                qps,
+                success_rate,
+                error_rate,
+                error_rate_4xx,
+                error_rate_5xx,
+                p50_val,
+                p95_val,
+                p99_val,
+                active_connections,
+                proxy_active_connections,
+                rate_limit_rejections_per_sec,
+                billing_queue,
+                circuit_breaker_open_count,
+                cert_min_expiry_days,
+                service_health,
+            ) = tokio::try_join!(
+                qps,
+                success_rate,
+                error_rate,
+                error_rate_4xx,
+                error_rate_5xx,
+                p50_latency_raw,
+                p95_latency_raw,
+                p99_latency_raw,
+                active_connections,
+                proxy_active_connections,
+                rate_limit_rejections_per_sec,
+                billing_queue,
+                circuit_breaker_open_count,
+                cert_min_expiry_days,
+                service_health,
+            )?;
+            Ok(MetricOverview {
+                qps,
+                success_rate,
+                error_rate,
+                error_rate_4xx,
+                error_rate_5xx,
+                p50_latency_ms: finite_or_zero(p50_val) * 1000.0,
+                p95_latency_ms: finite_or_zero(p95_val) * 1000.0,
+                p99_latency_ms: finite_or_zero(p99_val) * 1000.0,
+                active_connections,
+                proxy_active_connections,
+                rate_limit_rejections_per_sec,
+                billing_queue,
+                circuit_breaker_open_count,
+                cert_min_expiry_days,
+                service_health,
+                alerts_connected: false,
+                error_budget_connected: false,
+            })
+        }),
+        )
+        .await
+    }
+
+    /// Service health matrix rows for page 1.1.
+    ///
+    /// # Errors
+    ///
+    /// Propagates Prometheus query or `GreptimeDB` failures.
+    pub async fn query_services_health(&self) -> Result<Vec<ServiceHealthRow>> {
+        self.with_query_timeout("metrics_services_health", async {
+            self.load_service_health_rows().await
+        })
+        .await
+    }
+
+    async fn load_service_health_lights(&self) -> Result<Vec<ServiceHealthLight>> {
+        let rows = self.load_service_health_rows().await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| ServiceHealthLight {
+                service: row.service,
+                name: row.name,
+                status: health_status_color(row.health_ok, row.ready, row.config_center),
+            })
+            .collect())
+    }
+
+    async fn load_service_health_rows(&self) -> Result<Vec<ServiceHealthRow>> {
+        let health = self.prometheus_instant_by_label(
+            r#"mazbri_rpc_health_check{status="healthy"}"#,
+            "service",
+        );
+        let ready = self.prometheus_instant_by_label("gateway_startup_ready", "service");
+        let config = self.prometheus_instant_by_label("mazbri_config_center_connected", "service");
+        let active = self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");
+        let idle = self.prometheus_instant_by_label("mazbri_db_pool_idle_connections", "service");
+        let (health, ready, config, active, idle) =
+            tokio::try_join!(health, ready, config, active, idle)?;
+        Ok(self
+            .service_targets
+            .iter()
+            .map(|target| {
+                let health_ok = health.get(&target.key).copied().unwrap_or(0.0) >= 1.0;
+                let ready = ready.get(&target.key).map(|v| *v >= 1.0);
+                let config_center = config.get(&target.key).map(|v| *v >= 1.0);
+                let a = active.get(&target.key).copied().unwrap_or(0.0);
+                let i = idle.get(&target.key).copied().unwrap_or(0.0);
+                let denom = a + i;
+                let db_pool_usage = if denom > 0.0 { Some(a / denom) } else { None };
+                ServiceHealthRow {
+                    service: target.key.clone(),
+                    name: target.name.clone(),
+                    health_ok,
+                    ready,
+                    config_center,
+                    db_pool_usage,
+                    panic_count: None,
+                    tokio_busy: None,
+                    last_restart_ts: None,
+                    version: None,
+                }
+            })
+            .collect())
     }
     /// # Errors
     ///
@@ -224,7 +341,7 @@ impl GreptimeDBClient {
             let mut series = self
                 .prometheus_range_values(&query, params.start, params.end, step)
                 .await?;
-            if params.metric == "p95_latency_ms" || params.metric == "p99_latency_ms" {
+            if matches!(params.metric.as_str(), "p50_latency_ms" | "p95_latency_ms" | "p99_latency_ms") {
                 for point in series.iter_mut().flat_map(|s| s.points.iter_mut()) {
                     point.value *= 1000.0;
                 }
@@ -424,6 +541,13 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
             note: None,
         },
         MetricCatalogItem {
+            key: "p50_latency_ms",
+            label: "P50 延迟",
+            unit: "ms",
+            default_chart: "line",
+            note: None,
+        },
+        MetricCatalogItem {
             key: "p95_latency_ms",
             label: "P95 延迟",
             unit: "ms",
@@ -567,6 +691,36 @@ fn business_error_rate_query(class: ErrorClass, window: u64) -> String {
     )
 }
 
+fn business_success_rate_query(window: u64) -> String {
+    format!(
+        r#"100 * sum(rate(api_proxy_requests_total{{result="ok"}}[{window}s])) / (sum(rate(api_proxy_requests_total[{window}s])) > 0)"#
+    )
+}
+
+fn business_latency_quantile_query(quantile: f64, window: u64) -> String {
+    format!(
+        "histogram_quantile({quantile}, sum(rate(api_proxy_duration_seconds_bucket[{window}s])) by (le))"
+    )
+}
+
+fn finite_or_zero(value: f64) -> f64 {
+    if value.is_finite() { value } else { 0.0 }
+}
+
+fn health_status_color(
+    health_ok: bool,
+    ready: Option<bool>,
+    config_center: Option<bool>,
+) -> String {
+    if !health_ok || ready == Some(false) {
+        return "red".to_string();
+    }
+    if config_center == Some(false) {
+        return "yellow".to_string();
+    }
+    "green".to_string()
+}
+
 fn build_metric_query(
     metric: &str,
     service: Option<&str>,
@@ -584,12 +738,20 @@ fn build_metric_query(
             "sum by (service) (rate(http_requests_total{{{PROBE_EXCLUSION}{}}}[{window}s]))",
             label_filter_suffix(&filter)
         ),
-        "p95_latency_ms" => format!(
-            "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{filter}[{window}s])) by (le))"
-        ),
-        "p99_latency_ms" => format!(
-            "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{filter}[{window}s])) by (le))"
-        ),
+        "p50_latency_ms" | "p95_latency_ms" | "p99_latency_ms" => {
+            let q = match metric {
+                "p50_latency_ms" => 0.50,
+                "p95_latency_ms" => 0.95,
+                _ => 0.99,
+            };
+            if filter.is_empty() {
+                business_latency_quantile_query(q, window)
+            } else {
+                format!(
+                    "histogram_quantile({q}, sum(rate(http_request_duration_seconds_bucket{filter}[{window}s])) by (le))"
+                )
+            }
+        }
         "active_connections" => format!("sum(active_connections{filter})"),
         // Gateway is the sole enforcement point; not multi-service.
         "ratelimit_rejections" => {
@@ -708,6 +870,25 @@ mod tests {
         assert!(q.contains(r#"status!="404""#));
         assert!(q.contains(r#"service="mazbri-mgmt""#));
         Ok(())
+    }
+
+    #[test]
+    fn business_latency_uses_api_proxy_without_service_filter() -> Result<()> {
+        let t = default_service_targets();
+        let q = build_metric_query("p95_latency_ms", None, &t, 60)?;
+        assert!(q.contains("api_proxy_duration_seconds_bucket"));
+        assert!(!q.contains("http_request_duration_seconds_bucket"));
+        let scoped = build_metric_query("p95_latency_ms", Some("mazbri-gateway"), &t, 60)?;
+        assert!(scoped.contains("http_request_duration_seconds_bucket"));
+        Ok(())
+    }
+
+    #[test]
+    fn health_color_prefers_red_then_yellow() {
+        assert_eq!(health_status_color(false, Some(true), Some(true)), "red");
+        assert_eq!(health_status_color(true, Some(false), Some(true)), "red");
+        assert_eq!(health_status_color(true, None, Some(false)), "yellow");
+        assert_eq!(health_status_color(true, None, Some(true)), "green");
     }
 
     #[test]

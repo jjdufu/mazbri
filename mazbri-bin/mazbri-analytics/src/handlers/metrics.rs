@@ -80,3 +80,15 @@ fn query_failed() -> Response {
     )
         .into_response()
 }
+pub async fn get_services_health(State(state): State<AppState>) -> Response {
+    let Some(client) = metrics_client(&state) else {
+        return greptimedb_unavailable();
+    };
+    match client.query_services_health().await {
+        Ok(rows) => (StatusCode::OK, Json(rows)).into_response(),
+        Err(e) => {
+            error!("服务健康矩阵查询失败: {}", e);
+            query_failed()
+        }
+    }
+}

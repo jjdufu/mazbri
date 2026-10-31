@@ -1,10 +1,12 @@
 <template>
   <MetricSummaryCard
+    class="ops-stat-card"
     :label="label"
     :icon="icon"
     :icon-color="iconColor"
     :icon-background="iconBackground"
     :loading="loading"
+    @click="$emit('click', $event)"
   >
     <span class="ops-stat-card__value">{{ displayValue }}</span>
     <span v-if="unit" class="ops-stat-card__unit">{{ unit }}</span>
@@ -15,6 +17,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import MetricSummaryCard from "@/components/common/metric-summary-card/index.vue";
+
+defineEmits<{ click: [MouseEvent] }>();
 
 const props = withDefaults(
   defineProps<{

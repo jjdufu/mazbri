@@ -53,6 +53,30 @@ export const mazbriRoutes: AppRouteRecord[] = [
     },
     children: [
       {
+        path: "services",
+        name: "OpsServiceHealth",
+        component: "/mazbri/ops/services/index",
+        meta: {
+          title: "menus.mazbri.serviceHealth",
+          icon: "ri:heart-pulse-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "services/:service",
+        name: "OpsServiceDetail",
+        component: "/mazbri/ops/services/detail",
+        meta: {
+          title: "menus.mazbri.serviceDetail",
+          icon: "ri:heart-pulse-line",
+          isHide: true,
+          activePath: "/ops/services",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "tenants",
         name: "TenantList",
         component: "/mazbri/tenants/index",
@@ -222,17 +246,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
       roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
     children: [
-      {
-        path: "",
-        name: "ServiceMonitoring",
-        component: "/mazbri/operations/monitoring/index",
-        meta: {
-          title: "menus.mazbri.serviceMonitoring",
-          icon: "ri:pulse-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
       {
         path: "upstream-calls",
         name: "UpstreamCallMonitor",

@@ -9,6 +9,9 @@ pub async fn get_metrics_overview(State(state): State<AppState>) -> axum::respon
 pub async fn get_metrics_catalog(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_metrics_catalog(&state.analytics_client).await
 }
+pub async fn get_services_health(State(state): State<AppState>) -> axum::response::Response {
+    analytics::get_services_health(&state.analytics_client).await
+}
 pub async fn get_metric_timeseries(
     State(state): State<AppState>,
     Query(params): Query<MetricsTimeseriesParams>,

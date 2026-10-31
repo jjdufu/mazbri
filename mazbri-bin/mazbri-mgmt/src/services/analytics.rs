@@ -1140,6 +1140,18 @@ pub async fn get_metrics_catalog(
         }
     }
 }
+pub async fn get_services_health(
+    analytics_client: &AnalyticsHttpClient,
+) -> axum::response::Response {
+    match analytics_client.metrics_services_health().await {
+        Ok(body) => ApiResponse::ok(body).into_response(),
+        Err(e) => {
+            tracing::warn!("analytics services health 调用失败，返回空列表: {}", e);
+            ApiResponse::ok(serde_json::json!([])).into_response()
+        }
+    }
+}
+
 /// 金额类 OLAP 模板（成本）：与 analytics `OlapQuery::is_money` 口径一致。
 fn olap_is_money(body: &serde_json::Value) -> bool {
     let template = body.get("template").and_then(serde_json::Value::as_str);
@@ -1211,19 +1223,39 @@ pub async fn get_metric_timeseries(
     }
 }
 fn empty_metrics_overview() -> serde_json::Value {
-    serde_json::json!(
-        { "qps" : 0.0, "error_rate" : 0.0, "error_rate_4xx" : 0.0, "error_rate_5xx" : 0.0,
-        "p95_latency_ms" : 0.0, "p99_latency_ms" : 0.0, "active_connections" : 0.0,
-        "proxy_active_connections" : 0.0, "rate_limit_rejections_per_sec" : 0.0,
-        "billing_queue" : { "pending" : 0.0, "processing" : 0.0, "failed" : 0.0,
-        "dead_letter" : 0.0 }, "cert_min_expiry_days" : 0.0, }
-    )
+    serde_json::json!({
+        "qps": 0.0,
+        "success_rate": 0.0,
+        "error_rate": 0.0,
+        "error_rate_4xx": 0.0,
+        "error_rate_5xx": 0.0,
+        "p50_latency_ms": 0.0,
+        "p95_latency_ms": 0.0,
+        "p99_latency_ms": 0.0,
+        "active_connections": 0.0,
+        "proxy_active_connections": 0.0,
+        "rate_limit_rejections_per_sec": 0.0,
+        "billing_queue": {
+            "pending": 0.0,
+            "processing": 0.0,
+            "failed": 0.0,
+            "dead_letter": 0.0
+        },
+        "circuit_breaker_open_count": 0.0,
+        "cert_min_expiry_days": 0.0,
+        "service_health": [],
+        "alerts_connected": false,
+        "error_budget_connected": false
+    })
 }
 fn empty_metric_series(metric: &str) -> serde_json::Value {
     let (label, unit) = metric_label_unit(metric);
-    serde_json::json!(
-        { "metric" : metric, "label" : label, "unit" : unit, "points" : [], }
-    )
+    serde_json::json!({
+        "metric": metric,
+        "label": label,
+        "unit": unit,
+        "series": []
+    })
 }
 /// 监控页可选服务：规范服务名 + 中文名（与 analytics `default_service_targets` 一致）。
 fn default_metric_services() -> serde_json::Value {
@@ -1269,6 +1301,7 @@ fn metric_label_unit(metric: &str) -> (&'static str, &'static str) {
         "error_rate" => ("业务错误率", "%"),
         "error_rate_4xx" => ("4xx 错误率", "%"),
         "error_rate_5xx" => ("5xx 错误率", "%"),
+        "p50_latency_ms" => ("P50 延迟", "ms"),
         "p95_latency_ms" => ("P95 延迟", "ms"),
         "p99_latency_ms" => ("P99 延迟", "ms"),
         "active_connections" => ("活跃连接", "conn"),

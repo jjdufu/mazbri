@@ -656,6 +656,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/metrics/overview", R::System),
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
+    read("/stats/metrics/services/health", R::System),
     read_post("/stats/olap/query", R::System),
     read("/stats/calls/customer", R::System),
     read("/stats/calls/upstream", R::System),

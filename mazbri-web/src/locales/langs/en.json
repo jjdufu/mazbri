@@ -823,7 +823,6 @@
       "userRouteGovernance": "Route Strategy",
       "callbackList": "Callbacks",
       "opsMonitoring": "Ops Monitoring",
-      "serviceMonitoring": "Service Monitoring",
       "upstreamCallMonitor": "Upstream Monitor",
       "customerCallMonitor": "Customer Monitor",
       "callbackFields": {
@@ -846,7 +845,9 @@
       "accountSecurity": "Account Security",
       "opsOverview": "Ops Overview",
       "opsScreen": "Ops Screen",
-      "financeOverview": "Finance Overview"
+      "financeOverview": "Finance Overview",
+      "serviceHealth": "Service Health",
+      "serviceDetail": "Service Detail"
     }
   },
   "systemSettings": {
@@ -4096,10 +4097,37 @@
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: sensitive amounts and admin actions are hidden",
       "stats": {
+        "qps": "Business QPS",
+        "successRate": "Success rate",
+        "latency": "P50 / P95 / P99",
+        "errorRates": "4xx / 5xx rate",
+        "circuitOpen": "Open breakers",
+        "ratelimit": "Rate-limit denies",
+        "certExpiry": "Min cert expiry",
+        "activeTenants": "Active tenants",
+        "billingQueue": "Billing backlog · {status}",
         "totalRequests": "Total requests",
         "totalBytes": "Total bytes",
-        "activeTenants": "Active tenants",
         "avgResponseMs": "Avg response"
+      },
+      "healthLights": "Service health lights",
+      "openMatrix": "Service health matrix",
+      "placeholders": "Coming later",
+      "alertsPending": "Active alerts: not connected (step 09)",
+      "errorBudgetPending": "Error budget: not connected (step 24)",
+      "drillDisabled": "Target page is not online yet",
+      "charts": {
+        "qps": "Business QPS",
+        "p99": "Business P99"
+      },
+      "drill": {
+        "gatewayRed": "2.1 Gateway RED",
+        "latency": "2.2 Latency breakdown",
+        "errors": "2.4 Error analysis",
+        "circuit": "3.2 Circuit / retry",
+        "ratelimit": "4.1 Rate limits",
+        "billing": "6.1 Billing pipeline",
+        "certs": "12.1 Certificates"
       }
     },
     "screen": {
@@ -4107,6 +4135,32 @@
     },
     "finance": {
       "placeholder": "Finance overview will be completed in a later step"
+    },
+    "services": {
+      "refresh": "Refresh",
+      "ok": "OK",
+      "down": "Down",
+      "loadFailed": "Failed to load service health",
+      "backToMatrix": "Back to matrix",
+      "columns": {
+        "service": "Service",
+        "health": "Health",
+        "ready": "Ready",
+        "configCenter": "Config center",
+        "dbPool": "DB pool",
+        "panic": "Panic",
+        "tokio": "Tokio busy",
+        "restart": "Last restart",
+        "version": "Version"
+      },
+      "detail": {
+        "health": "Health",
+        "dbPool": "DB pool usage",
+        "version": "Version",
+        "usePending": "USE (CPU / memory / runtime) appears after step 10",
+        "specific": "Service-specific metrics",
+        "noSpecific": "No service-specific catalog metrics yet"
+      }
     }
   }
 }

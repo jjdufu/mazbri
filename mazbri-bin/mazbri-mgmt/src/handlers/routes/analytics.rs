@@ -36,6 +36,10 @@ pub fn routes() -> Router<AppState> {
             get(analytics_handlers::get_metrics_catalog),
         )
         .route(
+            "/stats/metrics/services/health",
+            get(analytics_handlers::get_services_health),
+        )
+        .route(
             "/stats/olap/query",
             post(analytics_handlers::post_olap_query),
         )
