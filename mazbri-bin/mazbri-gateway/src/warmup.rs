@@ -2,6 +2,7 @@
 //!
 //! 下游（ratelimit/auth/billing/cache/cbpro/bypass 及直连上游）可能晚于 gateway
 //! 就绪，甚至在另一台主机上；预热不能依赖启动顺序，也不能阻塞 gateway 启动。
+use crate::cbpro_client::CBProClient;
 use crate::config::ServicesConfig;
 use crate::http2_upstream_client::UpstreamHttp2ClientPool;
 use crate::tarpc_client::TarpcClientPool;
@@ -106,7 +107,6 @@ where
     }
 }
 
-
 async fn probe_tarpc_health(
     pool: TarpcClientPool,
     url: &str,
@@ -141,13 +141,6 @@ async fn probe_tarpc_health(
                 .await
                 .map_err(|error| CoreError::Network(error.to_string()))?;
         }
-        TarpcWarmupKind::Cbpro => {
-            let client = pool.get_http_upstream_client(url).await?;
-            client
-                .health(tarpc::context::current())
-                .await
-                .map_err(|error| CoreError::Network(error.to_string()))?;
-        }
     }
     Ok(())
 }
@@ -158,42 +151,31 @@ enum TarpcWarmupKind {
     Auth,
     Billing,
     Cache,
-    Cbpro,
 }
 
 fn spawn_tarpc_warmups(tarpc_pool: &TarpcClientPool, services: &ServicesConfig, backoff: Backoff) {
-    let targets: Vec<(&'static str, String, TarpcWarmupKind)> = {
-        let mut out = vec![
-            (
-                ServiceName::Ratelimit.as_str(),
-                services.ratelimit.url().to_owned(),
-                TarpcWarmupKind::Ratelimit,
-            ),
-            (
-                ServiceName::Auth.as_str(),
-                services.auth.url().to_owned(),
-                TarpcWarmupKind::Auth,
-            ),
-            (
-                ServiceName::Billing.as_str(),
-                services.billing.url().to_owned(),
-                TarpcWarmupKind::Billing,
-            ),
-            (
-                ServiceName::Cache.as_str(),
-                services.cache.url().to_owned(),
-                TarpcWarmupKind::Cache,
-            ),
-        ];
-        if let Some(cbpro) = services.cbpro.as_ref() {
-            out.push((
-                ServiceName::Cbpro.as_str(),
-                cbpro.url().to_owned(),
-                TarpcWarmupKind::Cbpro,
-            ));
-        }
-        out
-    };
+    let targets: [(&'static str, String, TarpcWarmupKind); 4] = [
+        (
+            ServiceName::Ratelimit.as_str(),
+            services.ratelimit.url().to_owned(),
+            TarpcWarmupKind::Ratelimit,
+        ),
+        (
+            ServiceName::Auth.as_str(),
+            services.auth.url().to_owned(),
+            TarpcWarmupKind::Auth,
+        ),
+        (
+            ServiceName::Billing.as_str(),
+            services.billing.url().to_owned(),
+            TarpcWarmupKind::Billing,
+        ),
+        (
+            ServiceName::Cache.as_str(),
+            services.cache.url().to_owned(),
+            TarpcWarmupKind::Cache,
+        ),
+    ];
     for (label, url, kind) in targets {
         let pool = tarpc_pool.clone();
         tokio::spawn(async move {
@@ -205,6 +187,19 @@ fn spawn_tarpc_warmups(tarpc_pool: &TarpcClientPool, services: &ServicesConfig, 
             .await;
         });
     }
+}
+
+/// cbpro 只提供 `CBProService`：与业务调用共用 [`CBProClient`] 及其缓存通道探测 `health`。
+pub fn spawn_cbpro_warmup(client: CBProClient) {
+    let backoff = Backoff::default();
+    tokio::spawn(async move {
+        let url = client.url().to_owned();
+        warmup_until_ready(ServiceName::Cbpro.as_str(), &url, backoff, || {
+            let client = client.clone();
+            async move { client.health_check().await.map_err(CoreError::Network) }
+        })
+        .await;
+    });
 }
 
 /// 为每个下游各起一个后台预热任务，立即返回，不阻塞启动。
@@ -249,6 +244,22 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// cbpro 的 tarpc 服务是 `CBProService`：用 `HttpUpstreamService` 的 `health`
+    /// 请求按 bincode 编码后，在 cbpro 侧不会被解码成 `health`，只能用 cbpro 自己的客户端探测。
+    #[test]
+    fn cbpro_health_probe_must_use_cbpro_protocol() {
+        use mazbri_rpc::{CBProServiceRequest, HttpUpstreamServiceRequest};
+        let foreign = bincode::serialize(&HttpUpstreamServiceRequest::Health {})
+            .expect("serialize http upstream health");
+        let decoded = bincode::deserialize::<CBProServiceRequest>(&foreign);
+        assert!(!matches!(decoded, Ok(CBProServiceRequest::Health {})));
+
+        let native =
+            bincode::serialize(&CBProServiceRequest::Health {}).expect("serialize cbpro health");
+        let decoded = bincode::deserialize::<CBProServiceRequest>(&native);
+        assert!(matches!(decoded, Ok(CBProServiceRequest::Health {})));
+    }
 
     #[test]
     fn backoff_doubles_and_caps() {

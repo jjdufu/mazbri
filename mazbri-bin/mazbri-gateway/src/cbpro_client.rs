@@ -56,6 +56,11 @@ impl CBProClient {
         })
     }
 
+    #[must_use]
+    pub fn url(&self) -> &str {
+        self.endpoint.url()
+    }
+
     async fn invalidate_client(&self) {
         let mut guard = self.client.write().await;
         if guard.take().is_some() {

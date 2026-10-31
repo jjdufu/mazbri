@@ -426,6 +426,9 @@ fn spawn_background_workers(
     admin_state: Option<&Arc<AdminState>>,
     proxy_state: &ProxyState,
 ) -> Arc<crate::route_reload::RouteReloadStatus> {
+    if let Some(client) = proxy_state.cbpro_client.clone() {
+        crate::warmup::spawn_cbpro_warmup(client);
+    }
     spawn_supervised("callback-worker", {
         let cb_cfg = config.callback.to_runtime();
         let worker = CallbackWorker::with_config(db.clone(), &cb_cfg);

@@ -6,8 +6,7 @@ use mazbri_core::{CoreError, ServiceName};
 use mazbri_rpc::{
     AuthServiceClient, AuthServiceRequest, AuthServiceResponse, BillingServiceClient,
     BillingServiceRequest, BillingServiceResponse, CacheServiceClient, CacheServiceRequest,
-    CacheServiceResponse, HttpUpstreamServiceClient, HttpUpstreamServiceRequest,
-    HttpUpstreamServiceResponse, RateLimitServiceClient, RateLimitServiceRequest,
+    CacheServiceResponse, RateLimitServiceClient, RateLimitServiceRequest,
     RateLimitServiceResponse,
 };
 use mazbri_tls::ManagedCertificate;
@@ -15,7 +14,6 @@ use std::sync::Arc;
 use tarpc::client;
 use tracing::info;
 
-const HTTP_UPSTREAM_CLIENT_POOL_SIZE: usize = 8;
 const CALLER: &str = ServiceName::Gateway.as_str();
 
 type AuthClient = AuthServiceClient<RpcMetricsChannel<AuthServiceRequest, AuthServiceResponse>>;
@@ -24,9 +22,6 @@ type RateLimitClient =
 type CacheClient = CacheServiceClient<RpcMetricsChannel<CacheServiceRequest, CacheServiceResponse>>;
 type BillingClient =
     BillingServiceClient<RpcMetricsChannel<BillingServiceRequest, BillingServiceResponse>>;
-type HttpUpstreamClient = HttpUpstreamServiceClient<
-    RpcMetricsChannel<HttpUpstreamServiceRequest, HttpUpstreamServiceResponse>,
->;
 
 macro_rules! impl_get_client {
     (
@@ -92,8 +87,6 @@ pub struct TarpcClientPool {
     ratelimit_clients: Arc<DashMap<String, PooledClient<RateLimitClient>>>,
     cache_clients: Arc<DashMap<String, PooledClient<CacheClient>>>,
     billing_clients: Arc<DashMap<String, PooledClient<BillingClient>>>,
-    http_upstream_clients: Arc<DashMap<String, PooledClient<HttpUpstreamClient>>>,
-    http_upstream_round_robin: Arc<DashMap<String, usize>>,
     tls_connector: mazbri_tls::TlsConnector,
     client_ttl_secs: u64,
 }
@@ -122,8 +115,6 @@ impl TarpcClientPool {
             ratelimit_clients: Arc::new(DashMap::new()),
             cache_clients: Arc::new(DashMap::new()),
             billing_clients: Arc::new(DashMap::new()),
-            http_upstream_clients: Arc::new(DashMap::new()),
-            http_upstream_round_robin: Arc::new(DashMap::new()),
             tls_connector,
             client_ttl_secs: tarpc_config.client_ttl_secs,
         })
@@ -159,60 +150,6 @@ impl TarpcClientPool {
         "Billing",
         ServiceName::Billing.as_str()
     );
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn get_http_upstream_client(
-        &self,
-        addr: &str,
-    ) -> Result<HttpUpstreamClient, CoreError> {
-        let slot = self.next_http_upstream_slot(addr);
-        let cache_key = format!("{addr}|{slot}");
-        if let Some(entry) = self.http_upstream_clients.get(&cache_key) {
-            if !self.is_client_expired(entry.created_at) {
-                return Ok(entry.client.clone());
-            }
-            drop(entry);
-            self.http_upstream_clients.remove(&cache_key);
-        }
-        info!(
-            addr = % addr, slot,
-            "Creating new tarpc HttpUpstream client (Bincode over mTLS)"
-        );
-        let target = mazbri_tls::resolve_connect_target(addr)
-            .await
-            .map_err(mazbri_tls::TlsError::into_core)?;
-        let transport = mazbri_tls::tls_connect_with_server_name(
-            target.socket_addr,
-            self.tls_connector.clone(),
-            target.server_name.as_deref(),
-            tarpc::tokio_serde::formats::Bincode::default(),
-        )
-        .await
-        .map_err(|err| CoreError::Tls(err.to_string()))?;
-        let client: HttpUpstreamClient = spawn_rpc_client(
-            client::Config::default(),
-            transport,
-            CALLER,
-            "http-upstream",
-        );
-        self.http_upstream_clients
-            .insert(cache_key, PooledClient::new(client.clone()));
-        info!(
-            addr = % addr, server_name = ? target.server_name, slot,
-            "tarpc HttpUpstream client connected (Bincode over mTLS)"
-        );
-        Ok(client)
-    }
-    fn next_http_upstream_slot(&self, base_cache_key: &str) -> usize {
-        let mut entry = self
-            .http_upstream_round_robin
-            .entry(base_cache_key.to_string())
-            .or_insert(0);
-        let slot = *entry % HTTP_UPSTREAM_CLIENT_POOL_SIZE;
-        *entry = entry.wrapping_add(1);
-        slot
-    }
     pub fn remove_client(&self, addr: &str) {
         fn remove_matching_keys<C>(cache: &DashMap<String, PooledClient<C>>, addr: &str) {
             let pooled_prefix = format!("{addr}|");
@@ -234,16 +171,13 @@ impl TarpcClientPool {
         remove_matching_keys(&self.ratelimit_clients, addr);
         remove_matching_keys(&self.cache_clients, addr);
         remove_matching_keys(&self.billing_clients, addr);
-        remove_matching_keys(&self.http_upstream_clients, addr);
-        self.http_upstream_round_robin.remove(addr);
         info!(addr = % addr, "Removed tarpc client");
     }
     pub fn cleanup_stale(&self) {
         let removed_count = impl_cleanup!(self, auth_clients)
             + impl_cleanup!(self, ratelimit_clients)
             + impl_cleanup!(self, cache_clients)
-            + impl_cleanup!(self, billing_clients)
-            + impl_cleanup!(self, http_upstream_clients);
+            + impl_cleanup!(self, billing_clients);
         if removed_count > 0 {
             info!("Cleaned up {} stale tarpc clients", removed_count);
         }
