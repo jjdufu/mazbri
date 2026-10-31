@@ -96,9 +96,10 @@ impl HealthMetricsUpdater {
                 .set(i64::from(idle));
             pool.is_healthy()
         } else {
+            // 未接入数据库的服务不以连接池判定健康，与未配置证书一致。
             DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&[name]).set(0);
             DB_POOL_IDLE_CONNECTIONS.with_label_values(&[name]).set(0);
-            false
+            true
         };
         let cert_healthy = if let Some(ref cert) = self.cert_handle {
             if let Some(expires_at) = cert.cert_expiry() {
@@ -140,5 +141,76 @@ impl HealthMetricsUpdater {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedPool(bool);
+    impl DbPoolInfo for FixedPool {
+        fn pool_size(&self) -> u32 {
+            4
+        }
+        fn num_idle(&self) -> u32 {
+            2
+        }
+        fn is_healthy(&self) -> bool {
+            self.0
+        }
+    }
+
+    struct FixedCert(bool);
+    impl CertExpiryInfoProvider for FixedCert {
+        fn cert_expiry(&self) -> Option<DateTime<Utc>> {
+            None
+        }
+        fn is_cert_valid(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn health(name: &str) -> (i64, i64) {
+        (
+            RPC_HEALTH_CHECK.with_label_values(&[name, "healthy"]).get(),
+            RPC_HEALTH_CHECK
+                .with_label_values(&[name, "unhealthy"])
+                .get(),
+        )
+    }
+
+    async fn run(
+        name: &str,
+        pool: Option<Arc<dyn DbPoolInfo>>,
+        cert: Option<Arc<dyn CertExpiryInfoProvider>>,
+    ) -> (i64, i64) {
+        HealthMetricsUpdater::new(name, pool, cert, None)
+            .update()
+            .await;
+        health(name)
+    }
+
+    #[tokio::test]
+    async fn service_without_db_pool_is_healthy() {
+        assert_eq!(run("health-test-no-pool", None, None).await, (1, 0));
+        let pool = DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&["health-test-no-pool"]);
+        assert_eq!(pool.get(), 0);
+    }
+
+    #[tokio::test]
+    async fn db_pool_health_drives_status() {
+        let ok: Arc<dyn DbPoolInfo> = Arc::new(FixedPool(true));
+        let bad: Arc<dyn DbPoolInfo> = Arc::new(FixedPool(false));
+        assert_eq!(run("health-test-pool-ok", Some(ok), None).await, (1, 0));
+        assert_eq!(run("health-test-pool-bad", Some(bad), None).await, (0, 1));
+        let active = DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&["health-test-pool-ok"]);
+        assert_eq!(active.get(), 4);
+    }
+
+    #[tokio::test]
+    async fn invalid_cert_is_unhealthy_without_db_pool() {
+        let cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert(false));
+        assert_eq!(run("health-test-bad-cert", None, Some(cert)).await, (0, 1));
     }
 }
