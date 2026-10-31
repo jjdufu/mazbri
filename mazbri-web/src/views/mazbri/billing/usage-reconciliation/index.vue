@@ -571,6 +571,7 @@ import { logger } from "@/utils/sys";
 import { formatAmount, formatDate } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
+import { buildCallsRoute } from "@/utils/ops/calls-link";
 
 defineOptions({ name: "UsageReconciliation" });
 
@@ -1119,17 +1120,13 @@ const openCallMonitor = (
   if (!day) return;
   const start = new Date(`${day}T00:00:00`).getTime();
   const end = new Date(`${day}T23:59:59.999`).getTime();
-  const path =
-    mode === "upstream"
-      ? "/monitoring/upstream-calls"
-      : "/monitoring/customer-calls";
-  void router.push({
-    path,
-    query: {
-      start_time: String(Math.floor(start / 1000)),
-      end_time: String(Math.floor(end / 1000)),
-    },
-  });
+  void router.push(
+    buildCallsRoute({
+      tab: mode,
+      start: Math.floor(start / 1000),
+      end: Math.floor(end / 1000),
+    }),
+  );
 };
 
 const loadSettings = async () => {

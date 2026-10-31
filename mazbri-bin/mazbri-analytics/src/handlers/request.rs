@@ -24,7 +24,7 @@ fn default_page() -> u32 {
 fn default_page_size() -> u32 {
     20
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestLogQueryRequest {
     #[serde(default)]
@@ -297,7 +297,7 @@ pub struct RequestLogQueryResponse {
     pub browse_capped: bool,
     pub data: Vec<RequestLogItem>,
 }
-fn bad_request(error: HandlerError) -> Response {
+pub(super) fn bad_request(error: HandlerError) -> Response {
     (StatusCode::BAD_REQUEST, Json(error)).into_response()
 }
 
@@ -309,7 +309,7 @@ fn list_query_error(e: mazbri_analytics::list_query::ListQueryError) -> HandlerE
 }
 
 /// 解析 `filters` JSON 与扁平数值过滤参数，并校验。
-fn parse_request_filters(
+pub(super) fn parse_request_filters(
     req: &RequestLogQueryRequest,
 ) -> Result<Vec<mazbri_analytics::list_query::ListFilter>, HandlerError> {
     let mut filters = mazbri_analytics::list_query::parse_filters_json(req.filters.as_deref())
@@ -334,7 +334,7 @@ fn parse_request_filters(
     Ok(filters)
 }
 
-fn parse_optional_time(
+pub(super) fn parse_optional_time(
     value: Option<&String>,
     field: &str,
 ) -> Result<Option<DateTime<Utc>>, HandlerError> {
@@ -348,7 +348,7 @@ fn parse_optional_time(
 }
 
 /// 查询时间窗：`(start, end, latest_universe_limit, universe_size)`。
-type TimeWindow = (
+pub(super) type TimeWindow = (
     Option<DateTime<Utc>>,
     Option<DateTime<Utc>>,
     Option<usize>,
@@ -394,7 +394,7 @@ fn resolve_time_window(
     }
 }
 
-fn build_query_params(
+pub(super) fn build_query_params(
     req: &RequestLogQueryRequest,
     filters: Vec<mazbri_analytics::list_query::ListFilter>,
     window: TimeWindow,

@@ -29,12 +29,14 @@ export interface CallMonitorQuery {
   status_code?: number;
   page?: number;
   page_size?: number;
+  trace_id?: string;
 
   structuredFilters?: ListFilter[];
 }
 export interface CallMonitorItem {
   timestamp: string | number | null;
   serial_no: string;
+  trace_id: string;
   tenant_id: string;
   tenant_name: string;
   supplier: string;
@@ -70,4 +72,66 @@ export interface CallMonitorResponse {
 
   browse_capped?: boolean;
   data: CallMonitorItem[];
+}
+
+export type CallMonitorMode = "customer" | "upstream";
+
+export type CallHistogramQuery = Omit<CallMonitorQuery, "page" | "page_size">;
+
+export interface CallHistogramBucket {
+  ts: number;
+  calls: number;
+  errors: number;
+}
+
+export interface CallHistogramResponse {
+  start: number;
+  end: number;
+  bucket_seconds: number;
+  total: number;
+  errors: number;
+  buckets: CallHistogramBucket[];
+}
+
+export interface CallStageQuery {
+  request_id?: string;
+  trace_id?: string;
+}
+
+export interface CallStageAccessRow {
+  timestamp: string;
+  service: string;
+  target: string;
+  request_id: string;
+  trace_id: string;
+  tenant_code: string;
+  supplier_code: string;
+  channel_code: string;
+  attempt_order: number;
+  path: string;
+  status_code: number;
+  duration_ms: number;
+  upstream_service_time_ms: number;
+  internal_ms: number;
+  error_code: string;
+}
+
+export interface CallStageEntry {
+  timestamp: string;
+  service: string;
+  target: string;
+  request_id: string;
+  attempt_order: number;
+  stage_name: string;
+  stage_ms: number;
+  status_code: number;
+  error_code: string;
+  error_stage: string;
+  upstream_mode: string;
+  result: string;
+}
+
+export interface CallStageResponse {
+  calls: CallStageAccessRow[];
+  stages: CallStageEntry[];
 }

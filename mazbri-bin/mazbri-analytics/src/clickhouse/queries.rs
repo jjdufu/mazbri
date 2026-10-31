@@ -56,6 +56,10 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
         let validated = validate_like_param(request_id)?;
         conditions.push(format!("request_id = '{validated}'"));
     }
+    if let Some(ref trace_id) = params.trace_id {
+        let validated = validate_like_param(trace_id)?;
+        conditions.push(format!("trace_id = '{validated}'"));
+    }
     if let Some(ref path_filter) = params.path {
         let validated = validate_like_param(path_filter)?;
         conditions.push(format!("path LIKE '{validated}'"));
@@ -184,6 +188,36 @@ pub fn build_request_logs_latest_universe_data_sql(
          ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
     ))
 }
+
+/// 调用量与错误随时间分布：与明细列表共用同一组过滤条件，保证框选区间计数一致。
+/// 错误口径：`status_code >= 400` 或带 `error_code`。
+#[must_use]
+pub fn build_request_logs_histogram_sql(where_clause: &str, bucket_seconds: u32) -> String {
+    format!(
+        "SELECT toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND)) AS ts, \
+         toUInt64(count()) AS calls, \
+         toUInt64(countIf(status_code >= 400 OR error_code != '')) AS errors \
+         FROM request_logs FINAL{where_clause} GROUP BY ts ORDER BY ts"
+    )
+}
+
+/// 指定请求的阶段耗时行（`request_stage_logs` 只有 `request_id`，无 `trace_id`）。
+pub fn build_request_stages_sql(request_ids: &[String]) -> Result<String> {
+    let ids = request_ids
+        .iter()
+        .map(|id| validate_like_param(id).map(|v| format!("'{v}'")))
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .join(", ");
+    Ok(format!(
+        "SELECT timestamp, `service`, event_target, request_id, attempt_order, stage_name, stage_ms, \
+         status_code, error_code, error_stage, toString(upstream_mode) AS upstream_mode, toString(result) AS result \
+         FROM request_stage_logs WHERE request_id IN ({ids}) \
+         ORDER BY request_id, timestamp, attempt_order LIMIT {MAX_STAGE_ROWS}"
+    ))
+}
+
+/// 单次阶段查询返回的最大行数。
+pub const MAX_STAGE_ROWS: usize = 2_000;
 
 pub fn build_aggregation_conditions(params: &RequestLogAggregationParams) -> Result<Vec<String>> {
     let mut conditions: Vec<String> = Vec::new();
@@ -321,5 +355,27 @@ mod upstream_usage_sql_tests {
             "WHERE event_target = 'bypass' AND timestamp >= parseDateTimeBestEffortOrNull(?) \
              AND timestamp <= parseDateTimeBestEffortOrNull(?) AND supplier_id = 's1' GROUP BY"
         ));
+    }
+}
+
+#[cfg(test)]
+mod call_search_sql_tests {
+    use super::{MAX_STAGE_ROWS, build_request_logs_histogram_sql, build_request_stages_sql};
+
+    #[test]
+    fn histogram_counts_calls_and_errors_per_bucket() {
+        let sql = build_request_logs_histogram_sql(" WHERE event_target = 'gateway'", 60);
+        assert!(sql.contains("INTERVAL 60 SECOND"));
+        assert!(sql.contains("countIf(status_code >= 400 OR error_code != '')"));
+        assert!(sql.contains("FROM request_logs FINAL WHERE event_target = 'gateway' GROUP BY ts"));
+    }
+
+    #[test]
+    fn stages_sql_lists_ids_and_rejects_quotes() {
+        let ids = vec!["a-1".to_string(), "b-2".to_string()];
+        let sql = build_request_stages_sql(&ids).unwrap_or_default();
+        assert!(sql.contains("request_id IN ('a-1', 'b-2')"));
+        assert!(sql.contains(&format!("LIMIT {MAX_STAGE_ROWS}")));
+        assert!(build_request_stages_sql(&["x' OR 1=1".to_string()]).is_err());
     }
 }

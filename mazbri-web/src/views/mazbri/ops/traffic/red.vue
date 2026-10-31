@@ -92,6 +92,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, {
@@ -105,6 +106,7 @@ import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
+import { buildCallsRoute } from "@/utils/ops/calls-link";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BytesRow,
@@ -184,7 +186,9 @@ function formatTs(ts: number) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function onTopRowClick(_row: TopRow) {
+const router = useRouter();
+
+function onTopRowClick(row: TopRow) {
   if (dim.value === "product_id") {
     ElMessage.info(t("ops.traffic.drillDisabledProduct"));
     return;
@@ -193,7 +197,15 @@ function onTopRowClick(_row: TopRow) {
     ElMessage.info(t("ops.traffic.drillDisabledTenant"));
     return;
   }
-  ElMessage.info(t("ops.traffic.drillDisabledCalls"));
+  if (!row.key) return;
+  void router.push(
+    buildCallsRoute({
+      tab: "customer",
+      start: timeRange.value.start,
+      end: timeRange.value.end,
+      filters: { [dim.value]: row.key },
+    }),
+  );
 }
 
 async function loadTop() {

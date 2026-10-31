@@ -139,6 +139,18 @@ impl AnalyticsHttpClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn request_histogram(&self, params: &[(&str, String)]) -> Result<serde_json::Value> {
+        self.get_json("/api/v1/request/histogram", params).await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn request_stages(&self, params: &[(&str, String)]) -> Result<serde_json::Value> {
+        self.get_json("/api/v1/request/stages", params).await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_upstream_usage_summary(
         &self,
         start_time: &str,

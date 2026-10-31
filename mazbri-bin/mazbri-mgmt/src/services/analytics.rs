@@ -535,6 +535,12 @@ pub struct CallMonitorParams {
     #[serde(default)]
     pub upstream_service_time_ms_gte: Option<u64>,
     pub serial_no: Option<String>,
+    /// Exact trace id (gateway and bypass rows of one call share it).
+    #[serde(default)]
+    pub trace_id: Option<String>,
+    /// Exact error code.
+    #[serde(default)]
+    pub error_code: Option<String>,
     pub tenant_name: Option<String>,
     pub supplier_code: Option<String>,
     pub channel_code: Option<String>,
@@ -547,6 +553,7 @@ pub struct CallMonitorParams {
 pub struct CallMonitorItem {
     pub timestamp: serde_json::Value,
     pub serial_no: String,
+    pub trace_id: String,
     pub tenant_id: String,
     pub tenant_name: String,
     pub supplier: String,
@@ -696,60 +703,47 @@ fn call_monitor_paging(
     }
 }
 
-/// 本地按供应商编码过滤当前页；返回重算的 `(total, total_pages, browse_capped)`。
-fn filter_by_supplier(
-    items: &mut Vec<CallMonitorItem>,
-    supplier_code: Option<&str>,
-    page_size: u32,
-    max_page: u32,
-) -> Option<(u64, u32, bool)> {
-    let supplier_code = supplier_code.map(str::trim).filter(|v| !v.is_empty())?;
-    let needle = supplier_code.to_lowercase();
-    items.retain(|item| item.supplier.to_lowercase().contains(&needle));
-    let filtered_total = items.len() as u64;
-    Some((
-        filtered_total,
-        u32::saturating_from(filtered_total.div_ceil(u64::from(page_size))).min(max_page),
-        filtered_total > MAX_BROWSE_TOTAL,
-    ))
+/// 列表与直方图共用的 analytics 查询参数（同一组过滤条件，框选区间时两者计数一致）。
+struct CallMonitorQuery {
+    params: Vec<(&'static str, String)>,
+    selective: bool,
 }
 
-pub async fn get_call_monitor_logs(
+/// 解析租户/渠道名称并组装透传给 analytics 的过滤参数。
+///
+/// `keep_time_on_selective` 为 false 时，精确 id 查询忽略时间范围（列表全历史定位）。
+async fn build_call_monitor_query(
     db: &PgPool,
-    analytics_client: &AnalyticsHttpClient,
     kind: &str,
     params: &CallMonitorParams,
-) -> axum::response::Response {
-    let page = params.page.unwrap_or(1).max(1);
-    let page_size = params.page_size.unwrap_or(20).clamp(1, 1000);
+    keep_time_on_selective: bool,
+) -> Result<CallMonitorQuery, String> {
     // Exact 流水号 / request_id lookup: prefer serial_no, else promote UUID-shaped `q`.
     let serial_no =
         resolve_call_monitor_serial_no(params.serial_no.as_deref(), params.q.as_deref());
-    let selective = serial_no.is_some();
+    let trace_id = params
+        .trace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    let selective = serial_no.is_some() || trace_id.is_some();
     // Pass time bounds through as-is. Analytics dual-channel:
     // selective → full history; ranged (start/end or timestamp filters) → in-range;
     // else → latest 20k universe. Do not inject a default 24h window.
-    let start_time = if selective { None } else { params.start_time };
-    let end_time = if selective { None } else { params.end_time };
-    let tenant_id = match resolve_tenant_filter(db, params.tenant_name.as_deref()).await {
-        Ok(value) => value,
-        Err(e) => {
-            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
-        }
-    };
-    let product_id = match resolve_product_filter(db, params.channel_code.as_deref()).await {
-        Ok(value) => value,
-        Err(e) => {
-            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
-        }
-    };
-    let mut request_params = vec![
-        ("page", page.to_string()),
-        ("page_size", page_size.to_string()),
-    ];
-    request_params.extend(call_monitor_scope_filters(kind));
-    push_opt_param(&mut request_params, "request_id", serial_no.clone());
-    // When exact serial is set, skip free-text `q` (same id would only AND a redundant LIKE).
+    let drop_time = selective && !keep_time_on_selective;
+    let start_time = if drop_time { None } else { params.start_time };
+    let end_time = if drop_time { None } else { params.end_time };
+    let tenant_id = resolve_tenant_filter(db, params.tenant_name.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let product_id = resolve_product_filter(db, params.channel_code.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut request_params = call_monitor_scope_filters(kind);
+    push_opt_param(&mut request_params, "request_id", serial_no);
+    push_opt_param(&mut request_params, "trace_id", trace_id);
+    // When an exact id is set, skip free-text `q` (same id would only AND a redundant LIKE).
     if !selective {
         push_opt_param(&mut request_params, "q", params.q.clone());
     }
@@ -758,6 +752,12 @@ pub async fn get_call_monitor_logs(
     push_opt_param(&mut request_params, "tenant_id", tenant_id);
     push_opt_param(&mut request_params, "product_id", product_id);
     push_opt_param(&mut request_params, "client_ip", params.client_ip.clone());
+    push_opt_param(&mut request_params, "error_code", params.error_code.clone());
+    push_opt_param(
+        &mut request_params,
+        "supplier_code",
+        params.supplier_code.clone(),
+    );
     push_opt_param(
         &mut request_params,
         "status_code",
@@ -773,6 +773,29 @@ pub async fn get_call_monitor_logs(
         "end_time",
         end_time.map(|v| v.to_string()),
     );
+    Ok(CallMonitorQuery {
+        params: request_params,
+        selective,
+    })
+}
+
+pub async fn get_call_monitor_logs(
+    db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    kind: &str,
+    params: &CallMonitorParams,
+) -> axum::response::Response {
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 1000);
+    let CallMonitorQuery {
+        params: mut request_params,
+        selective,
+    } = match build_call_monitor_query(db, kind, params, false).await {
+        Ok(query) => query,
+        Err(message) => return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, message),
+    };
+    request_params.push(("page", page.to_string()));
+    request_params.push(("page_size", page_size.to_string()));
     let body = match analytics_client.query_request_logs(&request_params).await {
         Ok(body) => body,
         Err(e) => {
@@ -802,17 +825,10 @@ pub async fn get_call_monitor_logs(
         tokio::join!(load_tenant_names(db, &data), load_channel_names(db, &data));
     let tenant_names = tenant_names.unwrap_or_default();
     let channel_names = channel_names.unwrap_or_default();
-    let mut items = data
+    let items = data
         .into_iter()
         .map(|row| map_call_monitor_item(row, &tenant_names, &channel_names, kind))
         .collect::<Vec<_>>();
-    let (total, total_pages, browse_capped) = filter_by_supplier(
-        &mut items,
-        params.supplier_code.as_deref(),
-        page_size,
-        max_page,
-    )
-    .unwrap_or((total, total_pages, browse_capped));
     ApiResponse::ok(CallMonitorResponse {
         total,
         page,
@@ -825,6 +841,70 @@ pub async fn get_call_monitor_logs(
     })
     .into_response()
 }
+/// 调用直方图：与列表同一组过滤条件；必须给出 `start_time` 与 `end_time`（框选区间）。
+pub async fn get_call_histogram(
+    db: &PgPool,
+    analytics_client: &AnalyticsHttpClient,
+    kind: &str,
+    params: &CallMonitorParams,
+) -> axum::response::Response {
+    if params.start_time.is_none() || params.end_time.is_none() {
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "直方图需要 start_time 与 end_time");
+    }
+    let query = match build_call_monitor_query(db, kind, params, true).await {
+        Ok(query) => query,
+        Err(message) => return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, message),
+    };
+    match analytics_client.request_histogram(&query.params).await {
+        Ok(body) => ApiResponse::ok(body).into_response(),
+        Err(e) => {
+            tracing::warn!("analytics request histogram 调用失败: {}", e);
+            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("查询调用直方图失败: {e}"))
+        }
+    }
+}
+
+/// 阶段 Tab 查询参数：`request_id` 与 `trace_id` 二选一。
+#[derive(Debug, serde::Deserialize)]
+pub struct CallStageParams {
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub trace_id: Option<String>,
+}
+
+/// 单请求阶段耗时与关联 access 行（gateway + bypass）。
+pub async fn get_call_stages(
+    analytics_client: &AnalyticsHttpClient,
+    params: &CallStageParams,
+) -> axum::response::Response {
+    let mut request_params = Vec::new();
+    push_opt_param(
+        &mut request_params,
+        "request_id",
+        params.request_id.as_deref().map(normalize_serial_no),
+    );
+    push_opt_param(
+        &mut request_params,
+        "trace_id",
+        params
+            .trace_id
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_string),
+    );
+    if request_params.len() != 1 {
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "request_id 与 trace_id 需二选一");
+    }
+    match analytics_client.request_stages(&request_params).await {
+        Ok(body) => ApiResponse::ok(body).into_response(),
+        Err(e) => {
+            tracing::warn!("analytics request stages 调用失败: {}", e);
+            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("查询阶段耗时失败: {e}"))
+        }
+    }
+}
+
 /// 客户调用：网关写入的 access 行；上游调用：bypass 出站写入的 access 行。
 fn call_monitor_scope_filters(kind: &str) -> Vec<(&'static str, String)> {
     match kind {
@@ -1038,6 +1118,7 @@ fn map_call_monitor_item(
             .unwrap_or(serde_json::Value::Null),
         // Display-normalize historical simple (32-hex) ids to hyphenated UUID.
         serial_no: normalize_serial_no(&string_field(&row, "request_id")),
+        trace_id: string_field(&row, "trace_id"),
         tenant_name: tenant_names.get(&tenant_id).cloned().unwrap_or_default(),
         tenant_id,
         supplier: first_non_empty(&[

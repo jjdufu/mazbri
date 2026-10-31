@@ -51,4 +51,16 @@ pub fn routes() -> Router<AppState> {
             "/stats/calls/upstream",
             get(analytics_handlers::get_upstream_call_logs),
         )
+        .route(
+            "/stats/calls/customer/histogram",
+            get(analytics_handlers::get_customer_call_histogram),
+        )
+        .route(
+            "/stats/calls/upstream/histogram",
+            get(analytics_handlers::get_upstream_call_histogram),
+        )
+        .route(
+            "/stats/calls/stages",
+            get(analytics_handlers::get_call_stages),
+        )
 }

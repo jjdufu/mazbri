@@ -63,6 +63,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, {
@@ -74,6 +75,7 @@ import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import PieChart from "@/components/ops/PieChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
+import { buildCallsRoute } from "@/utils/ops/calls-link";
 import type {
   AttributionRow,
   ErrorCellRow,
@@ -137,8 +139,18 @@ const newColumns = computed<ColumnOption<NewErrorRow>[]>(() => [
   { prop: "count", label: t("ops.traffic.columns.count") },
 ]);
 
-function onErrorClick(_row: ErrorCellRow | NewErrorRow) {
-  ElMessage.info(t("ops.traffic.drillDisabledCalls"));
+const router = useRouter();
+
+function onErrorClick(row: ErrorCellRow | NewErrorRow) {
+  if (!row.error_code) return;
+  void router.push(
+    buildCallsRoute({
+      tab: "customer",
+      start: timeRange.value.start,
+      end: timeRange.value.end,
+      filters: { error_code: row.error_code },
+    }),
+  );
 }
 
 async function reload() {

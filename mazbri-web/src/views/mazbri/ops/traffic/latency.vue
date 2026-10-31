@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, {
@@ -82,6 +83,7 @@ import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
+import { buildCallsRoute } from "@/utils/ops/calls-link";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BreakdownRow,
@@ -181,8 +183,13 @@ function formatTs(ts: number) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function onSlowClick(_row: SlowRow) {
-  ElMessage.info(t("ops.traffic.drillDisabledCalls"));
+const router = useRouter();
+
+function onSlowClick(row: SlowRow) {
+  if (!row.request_id) return;
+  void router.push(
+    buildCallsRoute({ tab: "stages", filters: { request_id: row.request_id } }),
+  );
 }
 
 async function reload() {

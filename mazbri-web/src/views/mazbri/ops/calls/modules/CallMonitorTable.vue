@@ -234,6 +234,8 @@ import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
+import { h } from "vue";
+import StageBreakdown from "./StageBreakdown.vue";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
@@ -252,7 +254,9 @@ import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
 import { formatUrlDisplay, sanitizeSensitiveValue } from "@/utils/sensitive";
 import type {
+  CallHistogramQuery,
   CallMonitorItem,
+  CallMonitorMode,
   CallMonitorQuery,
   CallMonitorQueryMode,
   CallMonitorResponse,
@@ -274,26 +278,28 @@ import {
 const TIME_ZONE = "Asia/Shanghai";
 
 
-const timestampFiltersFromRouteQuery = (
-  query: Record<string, unknown>,
+export interface CallTimeRange {
+  /** Unix seconds. */
+  start: number;
+  /** Unix seconds. */
+  end: number;
+}
+
+const timestampFiltersFromRange = (
+  range: CallTimeRange | null | undefined,
 ): ListFilter[] => {
-  const parseTs = (raw: unknown): number | null => {
-    if (raw === null || raw === undefined || raw === "") return null;
-    const n = Number(Array.isArray(raw) ? raw[0] : raw);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return n < 1_000_000_000_000 ? Math.floor(n * 1000) : Math.floor(n);
-  };
-  const start = parseTs(query.start_time);
-  const end = parseTs(query.end_time);
-  if (start === null && end === null) return [];
-  const out: ListFilter[] = [];
-  if (start !== null) {
-    out.push({ field: "timestamp", op: "gte", value: formatWallClock(start) });
-  }
-  if (end !== null) {
-    out.push({ field: "timestamp", op: "lte", value: formatWallClock(end) });
-  }
-  return out;
+  if (!range) return [];
+  return [
+    { field: "timestamp", op: "gte", value: formatWallClock(range.start * 1000) },
+    { field: "timestamp", op: "lte", value: formatWallClock(range.end * 1000) },
+  ];
+};
+
+const traceIdFromFilters = (list: ListFilter[]): string | null => {
+  const hit = list.find((f) => f.field === "trace_id" && f.op === "eq");
+  if (!hit || typeof hit.value !== "string") return null;
+  const value = hit.value.trim();
+  return value ? value : null;
 };
 
 const formatWallClock = (ms: number): string => {
@@ -314,11 +320,17 @@ const formatWallClock = (ms: number): string => {
 const hasTimestampFilter = (list: ListFilter[]): boolean =>
   list.some((f) => f.field === "timestamp");
 
-const props = defineProps<{
-  mode: "customer" | "upstream";
-  title: string;
-}>();
-const route = useRoute();
+const props = withDefaults(
+  defineProps<{
+    mode: CallMonitorMode;
+    title: string;
+    /** Page-level time range; replaces timestamp filters when it changes. */
+    timeRange?: CallTimeRange | null;
+    /** Filters seeded from the page route (drill-down links). */
+    seedFilters?: ListFilter[];
+  }>(),
+  { timeRange: null, seedFilters: () => [] },
+);
 const tablePageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
@@ -345,14 +357,23 @@ const { q, filters, toRequestParams } = useListQuery({
 });
 
 
-{
-  const seeded = timestampFiltersFromRouteQuery(
-    route.query as Record<string, unknown>,
-  );
-  if (seeded.length) {
-    filters.value = [...filters.value, ...seeded];
-  }
-}
+filters.value = [
+  ...filters.value.filter((f) => f.field !== "timestamp"),
+  ...props.seedFilters,
+  ...timestampFiltersFromRange(props.timeRange),
+];
+
+watch(
+  () => props.timeRange,
+  (range) => {
+    filters.value = [
+      ...filters.value.filter((f) => f.field !== "timestamp"),
+      ...timestampFiltersFromRange(range),
+    ];
+    pagination.page = 1;
+    loadData();
+  },
+);
 
 const DETAIL_EXPORT_EXCLUDED_KEYS = new Set([
   "service",
@@ -405,8 +426,10 @@ const modeHint = computed((): CallMonitorModeHintPayload => {
 });
 
 const emit = defineEmits<{
-
   modeHintChange: [hint: CallMonitorModeHintPayload];
+  /** Current filter params without paging; drives the histogram. */
+  queryChange: [query: CallHistogramQuery];
+  openTrace: [traceId: string];
 }>();
 watch(
   modeHint,
@@ -706,6 +729,16 @@ const buildColumns = (
   currentMode: "customer" | "upstream",
 ): ColumnOption<CallMonitorItem>[] => {
   const columns: ColumnOption<CallMonitorItem>[] = [
+    {
+      type: "expand",
+      width: 36,
+      formatter: (row) =>
+        h(StageBreakdown, {
+          requestId: row.serial_no,
+          traceId: row.trace_id,
+          onOpenTrace: (traceId: string) => emit("openTrace", traceId),
+        }),
+    },
     { type: "selection", width: 48 },
     {
       prop: "serial_no",
@@ -841,6 +874,7 @@ const applyResponseMeta = (response: CallMonitorResponse) => {
 
 const loadData = async (opts?: { silent?: boolean }) => {
   const requestedPage = pagination.page;
+  emit("queryChange", buildHistogramQuery());
   const run = async () => {
     const response = await fetchLogs(buildQuery());
     const rows = response.data || [];
@@ -908,12 +942,30 @@ const buildQuery = (
     return params;
   }
 
+  const selectiveTrace = traceIdFromFilters(filters.value);
+  if (selectiveTrace) {
+    const params = toRequestParams({
+      page,
+      page_size: pageSize,
+      trace_id: selectiveTrace,
+    }) as CallMonitorQuery;
+    delete params.start_time;
+    delete params.end_time;
+    return params;
+  }
+
 
 
   return toRequestParams({
     page,
     page_size: pageSize,
   }) as CallMonitorQuery;
+};
+const buildHistogramQuery = (): CallHistogramQuery => {
+  const params = toRequestParams({}) as CallMonitorQuery;
+  delete params.page;
+  delete params.page_size;
+  return params;
 };
 const fetchLogs = (query: CallMonitorQuery): Promise<CallMonitorResponse> =>
   props.mode === "upstream"

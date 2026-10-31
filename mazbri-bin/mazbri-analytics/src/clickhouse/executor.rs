@@ -5,7 +5,10 @@ use super::queries::{
     build_request_logs_count_sql, build_request_logs_data_sql, build_where_clause,
     get_time_bucket_expression,
 };
-use super::types::{GroupedCountRow, RequestLogRow, SummaryRow, TimeBucketRow};
+use super::types::{
+    CallHistogramRow, GroupedCountRow, RequestLogRow, StageLogEntry, StageLogRow, SummaryRow,
+    TimeBucketRow,
+};
 use crate::error::Result;
 use crate::greptimedb::{
     RequestLogAggregation, RequestLogAggregationParams, RequestLogEntry, RequestLogQueryParams,
@@ -92,6 +95,44 @@ impl ClickHouseClient {
         let logs: Vec<RequestLogEntry> = rows.into_iter().map(Into::into).collect();
         tracing::debug!("Queried {} request logs (total: {})", logs.len(), total);
         Ok(RequestLogQueryResult { logs, total })
+    }
+
+    /// 调用量与错误随时间分布（过滤条件与 [`Self::query_request_logs`] 区间模式一致）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn histogram_request_logs(
+        &self,
+        params: &RequestLogQueryParams,
+        bucket_seconds: u32,
+    ) -> Result<Vec<CallHistogramRow>> {
+        let conditions = build_request_log_conditions(params)?;
+        let sql = crate::clickhouse::queries::build_request_logs_histogram_sql(
+            &build_where_clause(&conditions),
+            bucket_seconds,
+        );
+        self.with_query_timeout("request_logs_histogram", self.execute_query(&sql))
+            .await
+    }
+
+    /// 指定请求的阶段耗时；`request_ids` 为空时直接返回空。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn request_stages(&self, request_ids: &[String]) -> Result<Vec<StageLogEntry>> {
+        if request_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = crate::clickhouse::queries::build_request_stages_sql(request_ids)?;
+        let rows = self
+            .with_query_timeout(
+                "request_stage_logs",
+                self.execute_query::<StageLogRow>(&sql),
+            )
+            .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 
     /// # Errors

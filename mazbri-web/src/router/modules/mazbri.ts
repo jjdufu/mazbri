@@ -110,6 +110,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "calls",
+        name: "OpsCalls",
+        component: "/mazbri/ops/calls/index",
+        meta: {
+          title: "menus.mazbri.opsCalls",
+          icon: "ri:search-eye-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "upstream/sla",
         name: "OpsUpstreamSla",
         component: "/mazbri/ops/upstream/sla",
@@ -295,41 +306,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.usageReconciliation",
           icon: "ri:file-search-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-    ],
-  },
-  {
-    path: "/monitoring",
-    name: "OpsMonitoring",
-    component: "",
-    meta: {
-      title: "menus.mazbri.opsMonitoring",
-      icon: "ri:bar-chart-box-line",
-      order: 5,
-      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-    },
-    children: [
-      {
-        path: "upstream-calls",
-        name: "UpstreamCallMonitor",
-        component: "/mazbri/monitoring/upstream-calls/index",
-        meta: {
-          title: "menus.mazbri.upstreamCallMonitor",
-          icon: "ri:send-plane-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "customer-calls",
-        name: "CustomerCallMonitor",
-        component: "/mazbri/monitoring/customer-calls/index",
-        meta: {
-          title: "menus.mazbri.customerCallMonitor",
-          icon: "ri:user-received-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },

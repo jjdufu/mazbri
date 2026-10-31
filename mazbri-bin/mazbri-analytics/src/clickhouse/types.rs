@@ -176,3 +176,65 @@ pub struct UpstreamHourlyUsageRow {
     pub total_payload_bytes: u64,
     pub total_latency_ms: u64,
 }
+
+/// 调用直方图桶。
+#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
+pub struct CallHistogramRow {
+    pub ts: u32,
+    pub calls: u64,
+    pub errors: u64,
+}
+
+/// `request_stage_logs` 阶段行。
+#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
+pub struct StageLogRow {
+    /// DateTime64(9) nanoseconds
+    pub timestamp: i64,
+    pub service: String,
+    pub event_target: String,
+    pub request_id: String,
+    pub attempt_order: u32,
+    pub stage_name: String,
+    pub stage_ms: u64,
+    pub status_code: u16,
+    pub error_code: String,
+    pub error_stage: String,
+    pub upstream_mode: String,
+    pub result: String,
+}
+
+/// 对外的阶段耗时记录。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StageLogEntry {
+    pub timestamp: DateTime<Utc>,
+    pub service: String,
+    pub target: String,
+    pub request_id: String,
+    pub attempt_order: u32,
+    pub stage_name: String,
+    pub stage_ms: u64,
+    pub status_code: u16,
+    pub error_code: String,
+    pub error_stage: String,
+    pub upstream_mode: String,
+    pub result: String,
+}
+
+impl From<StageLogRow> for StageLogEntry {
+    fn from(row: StageLogRow) -> Self {
+        Self {
+            timestamp: datetime64_ns_to_utc(row.timestamp),
+            service: row.service,
+            target: row.event_target,
+            request_id: row.request_id,
+            attempt_order: row.attempt_order,
+            stage_name: row.stage_name,
+            stage_ms: row.stage_ms,
+            status_code: row.status_code,
+            error_code: row.error_code,
+            error_stage: row.error_stage,
+            upstream_mode: row.upstream_mode,
+            result: row.result,
+        }
+    }
+}

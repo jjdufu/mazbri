@@ -822,9 +822,6 @@
       "advancedRouteConfig": "Route Strategy",
       "userRouteGovernance": "Route Strategy",
       "callbackList": "Callbacks",
-      "opsMonitoring": "Ops Monitoring",
-      "upstreamCallMonitor": "Upstream Monitor",
-      "customerCallMonitor": "Customer Monitor",
       "callbackFields": {
         "url": "Callback URL",
         "secret": "Signature Secret",
@@ -853,7 +850,8 @@
       "trafficErrors": "Error analysis",
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
-      "billingHealth": "Billing Pipeline"
+      "billingHealth": "Billing Pipeline",
+      "opsCalls": "Call search"
     }
   },
   "systemSettings": {
@@ -4187,7 +4185,6 @@
       "loadFailed": "Failed to load traffic metrics",
       "drillDisabledProduct": "Product detail page is not online yet",
       "drillDisabledTenant": "Tenant ops page is not online yet",
-      "drillDisabledCalls": "Call search page is not online yet",
       "dim": {
         "tenant": "Tenant",
         "product": "Product",
@@ -4264,6 +4261,38 @@
         "source": "Source"
       },
       "loadFailed": "Failed to load billing pipeline data"
+    },
+    "calls": {
+      "tabs": {
+        "customer": "Customer calls",
+        "upstream": "Upstream calls",
+        "stages": "Stages"
+      },
+      "histogram": {
+        "title": "Call distribution",
+        "calls": "OK",
+        "errors": "Errors",
+        "summary": "{total} calls · {errors} errors · bucket {bucket}s",
+        "brushHint": "Brush horizontally on the chart to narrow the time range",
+        "loadFailed": "Failed to load call distribution"
+      },
+      "stages": {
+        "placeholder": "Enter a request_id or trace_id",
+        "inputRequired": "Enter an ID to search",
+        "loadFailed": "Failed to load stages",
+        "empty": "No stage records",
+        "openTrace": "Show all calls in this trace",
+        "breakdown": "Stage timings",
+        "columns": {
+          "time": "Time",
+          "source": "Source",
+          "supplier": "Supplier",
+          "channel": "Channel",
+          "status": "Status",
+          "duration": "Duration (ms)",
+          "errorCode": "Error code"
+        }
+      }
     }
   }
 }

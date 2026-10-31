@@ -1,3 +1,4 @@
+mod call_search;
 mod health;
 mod metrics;
 mod olap;
@@ -9,6 +10,7 @@ pub(crate) struct HandlerError {
     pub error: String,
     pub message: String,
 }
+pub use call_search::{request_histogram, request_stages};
 pub use health::AppState;
 pub use health::health_check;
 pub use metrics::{

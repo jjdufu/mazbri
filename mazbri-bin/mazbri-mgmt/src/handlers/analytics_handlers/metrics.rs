@@ -1,6 +1,8 @@
 use super::super::AppState;
 use crate::middleware::auth::AdminClaims;
-use crate::services::analytics::{self, CallMonitorParams, MetricsTimeseriesParams};
+use crate::services::analytics::{
+    self, CallMonitorParams, CallStageParams, MetricsTimeseriesParams,
+};
 use axum::Json;
 use axum::extract::{Extension, Query, State};
 pub async fn get_metrics_overview(State(state): State<AppState>) -> axum::response::Response {
@@ -37,4 +39,23 @@ pub async fn get_upstream_call_logs(
     Query(params): Query<CallMonitorParams>,
 ) -> axum::response::Response {
     analytics::get_call_monitor_logs(&state.db, &state.analytics_client, "upstream", &params).await
+}
+pub async fn get_customer_call_histogram(
+    State(state): State<AppState>,
+    Query(params): Query<CallMonitorParams>,
+) -> axum::response::Response {
+    analytics::get_call_histogram(&state.db, &state.analytics_client, "customer", &params).await
+}
+pub async fn get_upstream_call_histogram(
+    State(state): State<AppState>,
+    Query(params): Query<CallMonitorParams>,
+) -> axum::response::Response {
+    analytics::get_call_histogram(&state.db, &state.analytics_client, "upstream", &params).await
+}
+/// `GET /stats/calls/stages`：按 `request_id` 或 `trace_id` 查阶段耗时。
+pub async fn get_call_stages(
+    State(state): State<AppState>,
+    Query(params): Query<CallStageParams>,
+) -> axum::response::Response {
+    analytics::get_call_stages(&state.analytics_client, &params).await
 }

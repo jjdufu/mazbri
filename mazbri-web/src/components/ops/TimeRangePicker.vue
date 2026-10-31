@@ -197,6 +197,9 @@ watch(
   (v) => {
     if (!v) return;
     if (v.preset !== preset.value) preset.value = v.preset;
+    if (v.preset === "custom") {
+      customRange.value = [String(v.start * 1000), String(v.end * 1000)];
+    }
   },
 );
 </script>

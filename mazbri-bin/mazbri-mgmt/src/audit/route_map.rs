@@ -660,6 +660,9 @@ pub static ROUTES: &[RouteAudit] = &[
     read_post("/stats/olap/query", R::System),
     read("/stats/calls/customer", R::System),
     read("/stats/calls/upstream", R::System),
+    read("/stats/calls/customer/histogram", R::System),
+    read("/stats/calls/upstream/histogram", R::System),
+    read("/stats/calls/stages", R::System),
     // ---- settings / audit ----
     read("/settings/system", R::System),
     secure(

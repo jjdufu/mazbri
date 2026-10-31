@@ -822,9 +822,6 @@
       "advancedRouteConfig": "路由策略",
       "userRouteGovernance": "路由策略",
       "callbackList": "回调订阅",
-      "opsMonitoring": "运维监控",
-      "upstreamCallMonitor": "上游监控",
-      "customerCallMonitor": "客户监控",
       "callbackFields": {
         "url": "回调 URL",
         "secret": "签名密钥",
@@ -853,7 +850,8 @@
       "trafficErrors": "错误分析",
       "upstreamSla": "供应商 SLA",
       "upstreamBreaker": "熔断与重试",
-      "billingHealth": "计费链路健康"
+      "billingHealth": "计费链路健康",
+      "opsCalls": "调用检索"
     }
   },
   "systemSettings": {
@@ -4192,7 +4190,6 @@
       "loadFailed": "加载流量指标失败",
       "drillDisabledProduct": "产品详情页尚未上线",
       "drillDisabledTenant": "租户运营页尚未上线",
-      "drillDisabledCalls": "调用检索页尚未上线",
       "dim": {
         "tenant": "租户",
         "product": "产品",
@@ -4269,6 +4266,38 @@
         "source": "来源"
       },
       "loadFailed": "加载计费链路数据失败"
+    },
+    "calls": {
+      "tabs": {
+        "customer": "客户调用",
+        "upstream": "上游调用",
+        "stages": "阶段耗时"
+      },
+      "histogram": {
+        "title": "调用时间分布",
+        "calls": "成功",
+        "errors": "错误",
+        "summary": "共 {total} 次 · 错误 {errors} 次 · 桶宽 {bucket}s",
+        "brushHint": "在图上横向框选可把时间范围收窄到所选区间",
+        "loadFailed": "加载调用分布失败"
+      },
+      "stages": {
+        "placeholder": "输入 request_id 或 trace_id",
+        "inputRequired": "请输入要检索的 ID",
+        "loadFailed": "加载阶段耗时失败",
+        "empty": "暂无阶段记录",
+        "openTrace": "查看同 trace 全部调用",
+        "breakdown": "阶段耗时",
+        "columns": {
+          "time": "时间",
+          "source": "来源",
+          "supplier": "供应商",
+          "channel": "渠道",
+          "status": "状态码",
+          "duration": "耗时(ms)",
+          "errorCode": "错误码"
+        }
+      }
     }
   }
 }
