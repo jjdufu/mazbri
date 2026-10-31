@@ -3,8 +3,10 @@ export type AlertOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 export type AlertSeverity = "critical" | "warning" | "info";
 export type AlertStatus = "firing" | "acked" | "resolved";
 
+/** 规则通知配置：邮件收件人为默认渠道，webhook 可选。 */
 export interface AlertNotify {
-  webhooks?: string[];
+  emails: string[];
+  webhooks: string[];
 }
 
 export interface AlertRule {
@@ -33,7 +35,7 @@ export interface AlertRuleInput {
   for_seconds: number;
   severity: AlertSeverity;
   labels: Record<string, string>;
-  notify: { webhooks: string[] };
+  notify: AlertNotify;
   enabled: boolean;
 }
 

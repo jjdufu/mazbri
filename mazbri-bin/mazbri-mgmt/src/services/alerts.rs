@@ -15,13 +15,15 @@ const MAX_EXPR_LEN: usize = 4000;
 const MAX_FOR_SECONDS: i32 = 86_400;
 const MAX_LABELS: usize = 20;
 const MAX_WEBHOOKS: usize = 5;
+const MAX_EMAILS: usize = 20;
+const MAX_EMAIL_LEN: usize = 254;
 const MAX_PAGE_SIZE: u32 = 200;
 
-/// 规则通知配置。
+/// 规则通知配置：邮件收件人为默认渠道，webhook 可选；两个字段都必须给出。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyInput {
-    #[serde(default)]
+    pub emails: Vec<String>,
     pub webhooks: Vec<String>,
 }
 
@@ -195,6 +197,24 @@ pub fn validate_rule(mut input: AlertRuleInput) -> Result<AlertRuleInput, AlertE
             return bad("标签名须为字母或下划线开头的 1..=64 位字母数字下划线，值不超过 256 字符");
         }
     }
+    for email in &mut input.notify.emails {
+        *email = email.trim().to_string();
+    }
+    if input.notify.emails.len() > MAX_EMAILS {
+        return bad("邮件收件人最多 20 个");
+    }
+    if !input.notify.emails.iter().all(|e| valid_email(e)) {
+        return bad("邮件收件人必须是 name@domain 形式的地址且不超过 254 字节");
+    }
+    let mut seen = std::collections::HashSet::new();
+    if !input
+        .notify
+        .emails
+        .iter()
+        .all(|e| seen.insert(e.to_ascii_lowercase()))
+    {
+        return bad("邮件收件人不能重复");
+    }
     if input.notify.webhooks.len() > MAX_WEBHOOKS {
         return bad("webhook 最多 5 个");
     }
@@ -204,6 +224,30 @@ pub fn validate_rule(mut input: AlertRuleInput) -> Result<AlertRuleInput, AlertE
         }
     }
     Ok(input)
+}
+
+/// 纯地址形式（`local@domain.tld`），不接受显示名、空白与分隔符。
+fn valid_email(email: &str) -> bool {
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    email.len() <= MAX_EMAIL_LEN
+        && !local.is_empty()
+        && local.len() <= 64
+        && !domain.contains('@')
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && local.chars().all(|c| {
+            c.is_ascii_graphic()
+                && !matches!(
+                    c,
+                    '<' | '>' | ',' | ';' | '"' | '(' | ')' | '[' | ']' | '\\'
+                )
+        })
 }
 
 fn valid_label_key(key: &str) -> bool {
@@ -620,6 +664,15 @@ mod tests {
                 r.labels.insert("1bad".to_string(), "x".to_string());
             },
             |r| r.notify.webhooks = vec!["ftp://example.com".to_string()],
+            |r| r.notify.emails = vec!["no-at-sign".to_string()],
+            |r| r.notify.emails = vec!["Ops <ops@example.com>".to_string()],
+            |r| r.notify.emails = vec!["a@b@example.com".to_string()],
+            |r| r.notify.emails = vec!["ops@localhost".to_string()],
+            |r| {
+                r.notify.emails =
+                    vec!["ops@example.com".to_string(), "OPS@example.com".to_string()];
+            },
+            |r| r.notify.emails = (0..21).map(|i| format!("u{i}@example.com")).collect(),
             |r| r.notify.webhooks = vec!["https://example.com".to_string(); 6],
         ];
         for mutate in cases {
@@ -627,6 +680,26 @@ mod tests {
             mutate(&mut rule);
             assert!(validate_rule(rule).is_err());
         }
+    }
+
+    #[test]
+    fn email_recipients_are_trimmed_and_accepted() {
+        let mut rule = input();
+        rule.notify.emails = vec![
+            " ops@example.com ".to_string(),
+            "oncall+db@corp.example.cn".to_string(),
+        ];
+        let rule = validate_rule(rule).expect("valid");
+        assert_eq!(rule.notify.emails[0], "ops@example.com");
+    }
+
+    #[test]
+    fn notify_requires_both_channel_fields() {
+        let raw = serde_json::json!({
+            "name": "x", "kind": "promql", "expr": "up", "threshold": 1, "op": ">",
+            "severity": "info", "notify": {"webhooks": []}
+        });
+        assert!(serde_json::from_value::<AlertRuleInput>(raw).is_err());
     }
 
     #[test]

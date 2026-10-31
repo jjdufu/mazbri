@@ -1,5 +1,6 @@
 //! 最小告警中心：周期评估 `alert_rules`，按持续时间与指纹去重写入 `alert_events`，
-//! 触发 / 恢复时向规则配置的 webhook 发送通知。
+//! 触发 / 恢复时按规则配置发送邮件（默认渠道）与 webhook（可选）通知；
+//! 多实例部署时每轮评估由 PG advisory lock 互斥，只有持锁实例执行。
 pub mod engine;
 pub mod notifier;
 pub mod rule;
@@ -9,13 +10,15 @@ use crate::clickhouse::ClickHouseClient;
 use crate::greptimedb::GreptimeDBClient;
 use chrono::Utc;
 use engine::{Action, Engine};
-use notifier::Notifier;
-use rule::{ActiveEvent, AlertRule, OlapExpr, RuleKind, Sample, WebhookPayload, samples_from_rows};
+use notifier::{Notifier, SmtpConfig};
+use rule::{
+    ActiveEvent, AlertNotification, AlertRule, OlapExpr, RuleKind, Sample, samples_from_rows,
+};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use store::AlertStore;
+use store::{AlertStore, EvaluationSession};
 use uuid::Uuid;
 
 /// `[alerting]` 配置段。
@@ -35,6 +38,9 @@ pub struct AlertingConfig {
     pub console_base_url: Option<String>,
     /// 告警表所在的 `mazbri_admin` 库连接。
     pub database: mazbri_core::DatabaseConfig,
+    /// 邮件通知的 SMTP 服务器；未配置时规则中的邮件收件人不会收到通知。
+    #[serde(default)]
+    pub smtp: Option<SmtpConfig>,
 }
 
 const fn default_enabled() -> bool {
@@ -63,6 +69,9 @@ impl AlertingConfig {
             && !url.starts_with("https://")
         {
             return Err("alerting.console_base_url 必须以 http:// 或 https:// 开头".to_string());
+        }
+        if let Some(smtp) = &self.smtp {
+            smtp.validate()?;
         }
         Ok(())
     }
@@ -112,9 +121,24 @@ impl Evaluator {
     ///
     /// 规则或活跃事件加载失败时返回错误；单条规则查询或写入失败只记日志。
     pub async fn tick(&mut self) -> Result<(), mazbri_core::sqlx::Error> {
-        let rules = self.store.load_rules().await?;
+        let Some(mut session) = self.store.try_begin_evaluation().await? else {
+            // 其他实例持锁评估本轮；清空本地持续计时，接手时从头计算。
+            self.engine.retain_rules(&HashSet::new());
+            tracing::debug!(target: "alerting", "其他实例正在评估，本轮跳过");
+            return Ok(());
+        };
+        let result = self.evaluate(&mut session).await;
+        session.release().await;
+        result
+    }
+
+    async fn evaluate(
+        &mut self,
+        session: &mut EvaluationSession,
+    ) -> Result<(), mazbri_core::sqlx::Error> {
+        let rules = session.load_rules().await?;
         let mut active_by_rule: HashMap<Uuid, HashMap<String, ActiveEvent>> = HashMap::new();
-        for event in self.store.active_events().await? {
+        for event in session.active_events().await? {
             active_by_rule
                 .entry(event.rule_id)
                 .or_default()
@@ -135,7 +159,7 @@ impl Evaluator {
             let active = active_by_rule.get(&rule.id).unwrap_or(&empty);
             let actions = self.engine.plan_rule(rule, &samples, active, Utc::now());
             for action in actions {
-                self.apply(rule, action).await;
+                self.apply(session, rule, action).await;
             }
         }
         // 停用或已删除规则遗留的活跃事件直接结束。
@@ -144,7 +168,7 @@ impl Evaluator {
                 continue;
             }
             for event in events.values() {
-                match self.store.resolve(event.id).await {
+                match session.resolve(event.id).await {
                     Ok(Some(resolved)) => {
                         if let Some(rule) = rules_by_id.get(rule_id) {
                             self.notify_resolved(rule, &resolved);
@@ -196,7 +220,7 @@ impl Evaluator {
         }
     }
 
-    async fn apply(&self, rule: &AlertRule, action: Action) {
+    async fn apply(&self, session: &mut EvaluationSession, rule: &AlertRule, action: Action) {
         match action {
             Action::Fire {
                 fingerprint,
@@ -204,16 +228,15 @@ impl Evaluator {
                 value,
                 started_at,
                 ..
-            } => match self
-                .store
+            } => match session
                 .insert_firing(rule, &fingerprint, &labels, value, started_at)
                 .await
             {
                 Ok(Some(event_id)) => {
                     tracing::warn!(target: "alerting", rule = %rule.name, %event_id, value, "告警触发");
                     self.notifier.dispatch(
-                        &rule.notify.webhooks,
-                        &WebhookPayload {
+                        &rule.notify,
+                        &AlertNotification {
                             status: "firing",
                             event_id,
                             rule_id: rule.id,
@@ -235,11 +258,11 @@ impl Evaluator {
                 }
             },
             Action::Refresh { event_id, value } => {
-                if let Err(error) = self.store.refresh_value(event_id, value).await {
+                if let Err(error) = session.refresh_value(event_id, value).await {
                     tracing::warn!(target: "alerting", %event_id, %error, "刷新告警事件值失败");
                 }
             }
-            Action::Resolve { event_id } => match self.store.resolve(event_id).await {
+            Action::Resolve { event_id } => match session.resolve(event_id).await {
                 Ok(Some(resolved)) => {
                     tracing::info!(target: "alerting", rule = %rule.name, %event_id, "告警恢复");
                     self.notify_resolved(rule, &resolved);
@@ -254,8 +277,8 @@ impl Evaluator {
 
     fn notify_resolved(&self, rule: &AlertRule, resolved: &rule::ResolvedEvent) {
         self.notifier.dispatch(
-            &rule.notify.webhooks,
-            &WebhookPayload {
+            &rule.notify,
+            &AlertNotification {
                 status: "resolved",
                 event_id: resolved.id,
                 rule_id: resolved.rule_id,
@@ -291,11 +314,13 @@ pub fn spawn(
     let pool = mazbri_core::create_lazy_pool(&config.database, None)?;
     let notifier = Notifier::new(
         Duration::from_secs(config.webhook_timeout_secs),
+        config.smtp.as_ref(),
         config.console_base_url.clone(),
-    )?;
+    )
+    .map_err(anyhow::Error::msg)?;
     let evaluator = Evaluator::new(AlertStore::new(pool), greptimedb, clickhouse, notifier);
     let interval = Duration::from_secs(config.interval_secs);
     tokio::spawn(evaluator.run(interval));
-    tracing::info!(target: "alerting", interval_secs = config.interval_secs, "告警评估已启动");
+    tracing::info!(target: "alerting", interval_secs = config.interval_secs, smtp = config.smtp.is_some(), "告警评估已启动");
     Ok(())
 }

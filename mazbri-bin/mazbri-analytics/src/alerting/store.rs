@@ -1,10 +1,13 @@
 //! 告警规则与事件的 PostgreSQL（`mazbri_admin` 库）读写。
 use super::rule::{ActiveEvent, AlertRule, CompareOp, NotifyConfig, ResolvedEvent, RuleKind};
 use chrono::{DateTime, Utc};
-use mazbri_core::sqlx::{self, PgPool, Row, postgres::PgRow};
+use mazbri_core::sqlx::{self, PgPool, Postgres, Row, pool::PoolConnection, postgres::PgRow};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// 告警评估轮次的 advisory lock 键（"mzbralrt" 的 ASCII 字节），所有实例共用。
+pub const EVALUATION_LOCK_KEY: i64 = 0x6D7A_6272_616C_7274;
 
 /// 告警存储。
 #[derive(Clone)]
@@ -18,17 +21,79 @@ impl AlertStore {
         Self { pool }
     }
 
+    /// 取一条连接并尝试获取评估锁（`pg_try_advisory_lock`，不阻塞）。
+    ///
+    /// 返回 `None` 表示其他实例正在评估本轮。本轮全部读写都在持锁的这一条
+    /// 连接上执行，不额外占用连接。
+    ///
+    /// # Errors
+    ///
+    /// 连接或查询失败时返回错误。
+    pub async fn try_begin_evaluation(&self) -> Result<Option<EvaluationSession>, sqlx::Error> {
+        EvaluationSession::try_acquire(self.pool.acquire().await?).await
+    }
+}
+
+/// 持有评估锁的单条连接。
+///
+/// - 正常结束调用 [`EvaluationSession::release`] 解锁并归还连接；
+/// - 未解锁就被丢弃（`?` 提前返回、panic）时关闭该连接，PostgreSQL 随会话结束释放锁，
+///   不会把带锁连接还回连接池；
+/// - 实例崩溃或网络断开同样由会话结束释放锁，其他实例下一轮接手。
+pub struct EvaluationSession {
+    conn: PoolConnection<Postgres>,
+    released: bool,
+}
+
+impl Drop for EvaluationSession {
+    fn drop(&mut self) {
+        if !self.released {
+            self.conn.close_on_drop();
+        }
+    }
+}
+
+impl EvaluationSession {
+    async fn try_acquire(mut conn: PoolConnection<Postgres>) -> Result<Option<Self>, sqlx::Error> {
+        let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+            .bind(EVALUATION_LOCK_KEY)
+            .fetch_one(&mut *conn)
+            .await?;
+        Ok(acquired.then_some(Self {
+            conn,
+            released: false,
+        }))
+    }
+
+    /// 解锁并归还连接；解锁失败时关闭连接以确保锁释放。
+    pub async fn release(mut self) {
+        let unlocked: Result<bool, sqlx::Error> =
+            sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
+                .bind(EVALUATION_LOCK_KEY)
+                .fetch_one(&mut *self.conn)
+                .await;
+        match unlocked {
+            Ok(true) => self.released = true,
+            Ok(false) => {
+                tracing::warn!(target: "alerting", "评估锁已不在本会话持有，关闭连接");
+            }
+            Err(error) => {
+                tracing::warn!(target: "alerting", %error, "释放评估锁失败，关闭连接");
+            }
+        }
+    }
+
     /// 加载全部规则；无法解析的行记录告警日志后跳过。
     ///
     /// # Errors
     ///
     /// 数据库查询失败时返回错误。
-    pub async fn load_rules(&self) -> Result<Vec<AlertRule>, sqlx::Error> {
+    pub async fn load_rules(&mut self) -> Result<Vec<AlertRule>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, name, kind, expr, threshold, op, for_seconds, severity, labels, notify, enabled \
              FROM alert_rules ORDER BY name",
         )
-        .fetch_all(self.pool.as_ref())
+        .fetch_all(&mut *self.conn)
         .await?;
         let mut rules = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -47,12 +112,12 @@ impl AlertStore {
     /// # Errors
     ///
     /// 数据库查询失败时返回错误。
-    pub async fn active_events(&self) -> Result<Vec<ActiveEvent>, sqlx::Error> {
+    pub async fn active_events(&mut self) -> Result<Vec<ActiveEvent>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, rule_id, fingerprint, value FROM alert_events \
              WHERE status IN ('firing', 'acked')",
         )
-        .fetch_all(self.pool.as_ref())
+        .fetch_all(&mut *self.conn)
         .await?;
         rows.iter()
             .map(|row| {
@@ -72,7 +137,7 @@ impl AlertStore {
     ///
     /// 数据库写入失败时返回错误。
     pub async fn insert_firing(
-        &self,
+        &mut self,
         rule: &AlertRule,
         fingerprint: &str,
         labels: &BTreeMap<String, String>,
@@ -92,7 +157,7 @@ impl AlertStore {
         .bind(labels)
         .bind(value)
         .bind(started_at)
-        .fetch_optional(self.pool.as_ref())
+        .fetch_optional(&mut *self.conn)
         .await?;
         row.map(|r| r.try_get("id")).transpose()
     }
@@ -102,14 +167,14 @@ impl AlertStore {
     /// # Errors
     ///
     /// 数据库写入失败时返回错误。
-    pub async fn refresh_value(&self, event_id: Uuid, value: f64) -> Result<(), sqlx::Error> {
+    pub async fn refresh_value(&mut self, event_id: Uuid, value: f64) -> Result<(), sqlx::Error> {
         sqlx::query(
             "UPDATE alert_events SET value = $2, updated_at = now() \
              WHERE id = $1 AND status IN ('firing', 'acked')",
         )
         .bind(event_id)
         .bind(value)
-        .execute(self.pool.as_ref())
+        .execute(&mut *self.conn)
         .await?;
         Ok(())
     }
@@ -119,14 +184,14 @@ impl AlertStore {
     /// # Errors
     ///
     /// 数据库写入失败时返回错误。
-    pub async fn resolve(&self, event_id: Uuid) -> Result<Option<ResolvedEvent>, sqlx::Error> {
+    pub async fn resolve(&mut self, event_id: Uuid) -> Result<Option<ResolvedEvent>, sqlx::Error> {
         let row = sqlx::query(
             "UPDATE alert_events SET status = 'resolved', resolved_at = now(), updated_at = now() \
              WHERE id = $1 AND status IN ('firing', 'acked') \
              RETURNING id, rule_id, labels, value, started_at, resolved_at",
         )
         .bind(event_id)
-        .fetch_optional(self.pool.as_ref())
+        .fetch_optional(&mut *self.conn)
         .await?;
         row.map(|row| {
             let labels: serde_json::Value = row.try_get("labels")?;
@@ -181,4 +246,90 @@ fn string_map(value: &serde_json::Value) -> BTreeMap<String, String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EVALUATION_LOCK_KEY, EvaluationSession};
+    use mazbri_core::sqlx::{self, Connection, PgConnection, PgPool, postgres::PgPoolOptions};
+
+    #[test]
+    fn lock_key_is_stable() {
+        assert_eq!(
+            EVALUATION_LOCK_KEY.to_be_bytes(),
+            *b"mzbralrt",
+            "多实例必须使用同一个锁键"
+        );
+    }
+
+    fn url() -> String {
+        std::env::var("MAZBRI_ALERTING_TEST_DATABASE_URL")
+            .expect("MAZBRI_ALERTING_TEST_DATABASE_URL must point to a PostgreSQL database")
+    }
+
+    async fn pool() -> PgPool {
+        PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url())
+            .await
+            .expect("connect")
+    }
+
+    async fn try_lock(pool: &PgPool) -> Option<EvaluationSession> {
+        let conn = pool.acquire().await.expect("acquire");
+        EvaluationSession::try_acquire(conn).await.expect("query")
+    }
+
+    async fn eventually_free(pool: &PgPool) -> bool {
+        for _ in 0..50 {
+            if let Some(session) = try_lock(pool).await {
+                session.release().await;
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    /// 运行：`MAZBRI_ALERTING_TEST_DATABASE_URL=postgres://... cargo test -p mazbri-analytics -- --ignored alerting_pg`
+    /// 每个池只用 1 条连接，可在连接数受限的角色上运行。
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL via MAZBRI_ALERTING_TEST_DATABASE_URL"]
+    async fn alerting_pg_evaluation_lock_is_exclusive_and_released() {
+        let first = pool().await;
+        let second = pool().await;
+
+        // 互斥：持锁期间另一实例拿不到。
+        let held = try_lock(&first).await.expect("first acquires");
+        assert!(
+            try_lock(&second).await.is_none(),
+            "持锁期间其他实例拿不到锁"
+        );
+
+        // 正常解锁后连接归还池，且不再带锁。
+        held.release().await;
+        assert!(eventually_free(&second).await, "release 后锁释放");
+        let reused = try_lock(&first).await.expect("归还的连接可再次加锁");
+        reused.release().await;
+
+        // 未解锁即丢弃：连接被关闭，锁随会话结束释放。
+        let dropped = try_lock(&first).await.expect("acquire");
+        drop(dropped);
+        assert!(eventually_free(&second).await, "丢弃会话后锁释放");
+
+        // 持锁连接直接断开（模拟实例崩溃）同样释放锁。
+        drop(first);
+        drop(second);
+        let observer = pool().await;
+        let mut raw = PgConnection::connect(&url()).await.expect("connect");
+        let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+            .bind(EVALUATION_LOCK_KEY)
+            .fetch_one(&mut raw)
+            .await
+            .expect("lock");
+        assert!(acquired);
+        assert!(try_lock(&observer).await.is_none());
+        drop(raw);
+        assert!(eventually_free(&observer).await, "持锁连接断开后锁释放");
+    }
 }

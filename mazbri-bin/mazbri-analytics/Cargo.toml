@@ -42,6 +42,7 @@ reqwest = {version = "0.13.2", default-features = false, features = ["json", "gz
 urlencoding = {version = "2.1"}
 clickhouse = { version = "0.12", features = ["lz4"] }
 uuid = {version = "1.21", features = ["v4", "serde"]}
+lettre = {version = "0.11.23", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"]}
 
 [lints]
 workspace = true

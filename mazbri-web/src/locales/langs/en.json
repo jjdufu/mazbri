@@ -4354,14 +4354,14 @@
         "saved": "Rule saved",
         "deleted": "Rule deleted",
         "deleteConfirm": "Delete rule \"{name}\"? Its event history is deleted too.",
-        "hint": "Analytics evaluates enabled rules every 30 seconds; an event is raised once the threshold is breached for the configured duration, with one active event per fingerprint. Rules without webhooks only record events and send nothing.",
+        "hint": "Analytics evaluates enabled rules every 30 seconds; an event is raised once the threshold is breached for the configured duration, with one active event per fingerprint. Email is the default channel and webhooks are optional; rules without recipients or webhooks only record events. With several instances, each round is evaluated by one instance only.",
         "columns": {
           "enabled": "Enabled",
           "name": "Name",
           "severity": "Severity",
           "expr": "Expression",
           "condition": "Condition",
-          "notify": "Webhooks",
+          "notify": "Notify",
           "active": "Active"
         },
         "form": {
@@ -4369,10 +4369,14 @@
           "for": "for",
           "labels": "Extra labels",
           "labelsInvalid": "One key=value per line",
-          "webhooks": "Webhooks",
+          "emails": "Email recipients",
+          "emailsHint": "Default channel. One address per line, up to 20; sent by analytics over SMTP on firing and on resolve, requires [alerting.smtp].",
+          "emailsInvalid": "Enter addresses in name@domain form",
+          "webhooks": "Webhooks (optional)",
           "webhooksHint": "One http(s) URL per line; SSRF-checked on save; JSON is POSTed on firing and on resolve.",
           "required": "Required"
-        }
+        },
+        "notifySummary": "Email {emails} · Webhook {webhooks}"
       }
     }
   }

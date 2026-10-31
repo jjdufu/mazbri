@@ -65,10 +65,18 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.notify')"
-          width="110"
+          width="140"
         >
           <template #default="{ row }">
-            {{ (row.notify.webhooks || []).length || "—" }}
+            <span v-if="row.notify.emails.length || row.notify.webhooks.length">
+              {{
+                t("ops.alerts.rules.notifySummary", {
+                  emails: row.notify.emails.length,
+                  webhooks: row.notify.webhooks.length,
+                })
+              }}
+            </span>
+            <span v-else>—</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="90">
@@ -185,6 +193,20 @@
           />
         </ElFormItem>
         <ElFormItem
+          :label="t('ops.alerts.rules.form.emails')"
+          prop="emailsText"
+        >
+          <ElInput
+            v-model="form.emailsText"
+            type="textarea"
+            :rows="2"
+            placeholder="oncall@example.com"
+          />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.emailsHint") }}
+          </div>
+        </ElFormItem>
+        <ElFormItem
           :label="t('ops.alerts.rules.form.webhooks')"
           prop="webhooksText"
         >
@@ -267,6 +289,7 @@ interface RuleForm {
   for_seconds: number;
   severity: AlertSeverity;
   labelsText: string;
+  emailsText: string;
   webhooksText: string;
   enabled: boolean;
 }
@@ -280,6 +303,7 @@ const emptyForm = (): RuleForm => ({
   for_seconds: 0,
   severity: "warning",
   labelsText: "",
+  emailsText: "",
   webhooksText: "",
   enabled: true,
 });
@@ -303,9 +327,11 @@ function parseLabels(text: string): Record<string, string> | null {
   return labels;
 }
 
-function parseWebhooks(text: string) {
+const EMAIL_PATTERN = /^[^\s@<>,;"()[\]\\]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
+function parseList(text: string) {
   return text
-    .split(/\s+/)
+    .split(/[\s,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -322,6 +348,15 @@ const formRules: FormRules<RuleForm> = {
     {
       required: true,
       message: t("ops.alerts.rules.form.required"),
+      trigger: "blur",
+    },
+  ],
+  emailsText: [
+    {
+      validator: (_rule, value: string, callback) =>
+        parseList(value).every((email) => EMAIL_PATTERN.test(email))
+          ? callback()
+          : callback(new Error(t("ops.alerts.rules.form.emailsInvalid"))),
       trigger: "blur",
     },
   ],
@@ -370,7 +405,8 @@ function openEdit(rule: AlertRule) {
     labelsText: Object.entries(rule.labels)
       .map(([k, v]) => `${k}=${v}`)
       .join("\n"),
-    webhooksText: (rule.notify.webhooks || []).join("\n"),
+    emailsText: rule.notify.emails.join("\n"),
+    webhooksText: rule.notify.webhooks.join("\n"),
     enabled: rule.enabled,
   });
   dialogVisible.value = true;
@@ -389,7 +425,10 @@ async function save() {
     for_seconds: form.for_seconds,
     severity: form.severity,
     labels: parseLabels(form.labelsText) || {},
-    notify: { webhooks: parseWebhooks(form.webhooksText) },
+    notify: {
+      emails: parseList(form.emailsText),
+      webhooks: parseList(form.webhooksText),
+    },
     enabled: form.enabled,
   };
   saving.value = true;

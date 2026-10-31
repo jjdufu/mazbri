@@ -4359,14 +4359,14 @@
         "saved": "规则已保存",
         "deleted": "规则已删除",
         "deleteConfirm": "确定删除规则「{name}」？其历史事件将一并删除。",
-        "hint": "analytics 每 30 秒评估一次已启用规则；超阈值持续「持续时间」后产生事件，同一指纹只保留一条活跃事件。未配置 webhook 的规则只记录事件、不对外发送。",
+        "hint": "analytics 每 30 秒评估一次已启用规则；超阈值持续「持续时间」后产生事件，同一指纹只保留一条活跃事件。通知默认发邮件，webhook 可选；未配置收件人与 webhook 的规则只记录事件。多实例部署时同一轮评估只由一个实例执行。",
         "columns": {
           "enabled": "启用",
           "name": "名称",
           "severity": "级别",
           "expr": "表达式",
           "condition": "条件",
-          "notify": "Webhook",
+          "notify": "通知",
           "active": "活跃"
         },
         "form": {
@@ -4374,10 +4374,14 @@
           "for": "持续",
           "labels": "附加标签",
           "labelsInvalid": "每行一个 key=value",
-          "webhooks": "Webhook",
+          "emails": "邮件收件人",
+          "emailsHint": "默认通知渠道。每行一个地址，最多 20 个；触发与恢复时由 analytics 经 SMTP 发送，需配置 [alerting.smtp]。",
+          "emailsInvalid": "请输入 name@domain 形式的邮件地址",
+          "webhooks": "Webhook（可选）",
           "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
           "required": "必填"
-        }
+        },
+        "notifySummary": "邮件 {emails} · Webhook {webhooks}"
       }
     }
   }

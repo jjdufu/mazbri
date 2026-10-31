@@ -81,11 +81,13 @@ impl CompareOp {
     }
 }
 
-/// 规则的通知配置（`alert_rules.notify`）。
-#[derive(Debug, Clone, Default, Deserialize)]
+/// 规则的通知配置（`alert_rules.notify`）：邮件为默认渠道，webhook 可选。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
+    /// 触发与恢复时发送邮件的收件人地址列表。
+    pub emails: Vec<String>,
     /// 触发与恢复时 POST JSON 的 webhook 地址列表。
-    #[serde(default)]
     pub webhooks: Vec<String>,
 }
 
@@ -191,9 +193,9 @@ fn json_number(value: &serde_json::Value) -> Option<f64> {
         .filter(|v| v.is_finite())
 }
 
-/// 发往 webhook 的告警通知载荷。
+/// 告警通知内容：webhook 以 JSON 发送，邮件据此渲染主题与正文。
 #[derive(Debug, Clone, Serialize)]
-pub struct WebhookPayload {
+pub struct AlertNotification {
     pub status: &'static str,
     pub event_id: Uuid,
     pub rule_id: Uuid,
@@ -217,6 +219,25 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect()
+    }
+
+    #[test]
+    fn notify_config_requires_both_channels_and_rejects_unknown_keys() {
+        let parsed: NotifyConfig = serde_json::from_value(serde_json::json!({
+            "emails": ["ops@example.com"],
+            "webhooks": []
+        }))
+        .expect("valid notify");
+        assert_eq!(parsed.emails, vec!["ops@example.com".to_string()]);
+        assert!(
+            serde_json::from_value::<NotifyConfig>(serde_json::json!({"webhooks": []})).is_err()
+        );
+        assert!(
+            serde_json::from_value::<NotifyConfig>(
+                serde_json::json!({"emails": [], "webhooks": [], "slack": "x"})
+            )
+            .is_err()
+        );
     }
 
     #[test]
