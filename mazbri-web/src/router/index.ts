@@ -14,4 +14,21 @@ export function initRouter(app: App<Element>): void {
   setupAfterEachGuard(router);
   app.use(router);
 }
-export const HOME_PAGE_PATH = "/dashboard";
+/** Role priority for the landing page: R_ADMIN > R_FINANCE > R_VIEWER. */
+const HOME_ROLE_PATHS: Array<{ role: string; path: string }> = [
+  { role: "R_ADMIN", path: "/dashboard" },
+  { role: "R_FINANCE", path: "/finance/overview" },
+  { role: "R_VIEWER", path: "/dashboard" },
+];
+
+/** Resolve the role-based home path. Falls back to `/dashboard`. */
+export function resolveHomePath(roles: string[] | undefined | null): string {
+  const set = new Set(roles ?? []);
+  for (const entry of HOME_ROLE_PATHS) {
+    if (set.has(entry.role)) {
+      return entry.path;
+    }
+  }
+  return "/dashboard";
+}
+

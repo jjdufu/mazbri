@@ -789,7 +789,7 @@
     },
     "mazbri": {
       "title": "Mazbri Management",
-      "dashboard": "Dashboard",
+      "dashboard": "Ops Overview",
       "users": "User Management",
       "userManagement": "User Management",
       "userDetail": "User Detail",
@@ -843,7 +843,10 @@
       "configCenter": "Config Center",
       "connectorWorkbench": "Code-free Access",
       "account": "My Account",
-      "accountSecurity": "Account Security"
+      "accountSecurity": "Account Security",
+      "opsOverview": "Ops Overview",
+      "opsScreen": "Ops Screen",
+      "financeOverview": "Finance Overview"
     }
   },
   "systemSettings": {
@@ -4061,6 +4064,49 @@
     "messages": {
       "copied": "Copied to clipboard",
       "copyFailed": "Copy failed, please copy manually"
+    }
+  },
+  "ops": {
+    "timeRange": {
+      "start": "Start",
+      "end": "End",
+      "bookmark": "Bookmark range",
+      "presets": {
+        "15m": "15m",
+        "1h": "1h",
+        "6h": "6h",
+        "24h": "24h",
+        "7d": "7d",
+        "30d": "30d",
+        "custom": "Custom"
+      },
+      "bookmarks": {
+        "loadtest": "Load test",
+        "eventReplay": "Event replay"
+      }
+    },
+    "autoRefresh": {
+      "label": "Auto refresh",
+      "off": "Off",
+      "thirtySeconds": "30s",
+      "oneMinute": "1m"
+    },
+    "overview": {
+      "openScreen": "Fullscreen screen",
+      "loadFailed": "Failed to load ops metrics",
+      "viewerSlim": "Slim overview: sensitive amounts and admin actions are hidden",
+      "stats": {
+        "totalRequests": "Total requests",
+        "totalBytes": "Total bytes",
+        "activeTenants": "Active tenants",
+        "avgResponseMs": "Avg response"
+      }
+    },
+    "screen": {
+      "title": "Ops Screen"
+    },
+    "finance": {
+      "placeholder": "Finance overview will be completed in a later step"
     }
   }
 }

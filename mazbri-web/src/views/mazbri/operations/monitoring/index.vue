@@ -9,11 +9,8 @@
       stack-header-on-mobile
     >
       <template #actions>
-        <ElSegmented
-          v-model="rangePreset"
-          :options="rangeOptions"
-          @change="reloadData"
-        />
+        <TimeRangePicker v-model="timeRange" @change="reloadData" />
+        <AutoRefresh v-model="refreshInterval" @tick="reloadData" />
         <ElSelect v-model="service" class="service-select" @change="reloadData">
           <ElOption
             :label="$t('operations.monitoring.allServices')"
@@ -121,28 +118,27 @@ import type {
 } from "@/types/api/monitoring";
 import { $t } from "@/locales";
 import type { ColumnOption } from "@/types/component";
+import TimeRangePicker, {
+  type TimeRangeValue,
+} from "@/components/ops/TimeRangePicker.vue";
+import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 defineOptions({ name: "ServiceMonitoring" });
 const loading = ref(false);
 const overview = ref<MetricOverview | null>(null);
 const catalog = ref<MetricsCatalog | null>(null);
 const service = ref("all");
-const rangePreset = ref("1h");
+const refreshInterval = ref(0);
+const timeRange = ref<TimeRangeValue>({
+  preset: "1h",
+  start: Math.floor(Date.now() / 1000) - 3600,
+  end: Math.floor(Date.now() / 1000),
+});
 const qpsChartRef = ref<HTMLElement>();
 const latencyChartRef = ref<HTMLElement>();
 const errorChartRef = ref<HTMLElement>();
 let qpsChart: echarts.ECharts | null = null;
 let latencyChart: echarts.ECharts | null = null;
 let errorChart: echarts.ECharts | null = null;
-const rangeOptions = computed(() => [
-  { label: $t("operations.monitoring.ranges.oneHour"), value: "1h" },
-  { label: $t("operations.monitoring.ranges.oneDay"), value: "24h" },
-  { label: $t("operations.monitoring.ranges.sevenDays"), value: "7d" },
-]);
-const rangeSeconds: Record<string, number> = {
-  "1h": 3600,
-  "24h": 86400,
-  "7d": 604800,
-};
 const emptyCatalog: MetricsCatalog = {
   services: [],
   metrics: [],
@@ -262,8 +258,8 @@ const summaryItems = computed(() => [
 ]);
 const reloadData = async () => {
   loading.value = true;
-  const now = Math.floor(Date.now() / 1000);
-  const start = now - rangeSeconds[rangePreset.value];
+  const start = timeRange.value.start;
+  const end = timeRange.value.end;
   const serviceParam = service.value === "all" ? undefined : service.value;
   const [overviewRes, catalogRes, qps, latency, errors] =
     await Promise.allSettled([
@@ -272,19 +268,19 @@ const reloadData = async () => {
       fetchMetricTimeseries({
         metric: "qps",
         start,
-        end: now,
+        end,
         service: serviceParam,
       }),
       fetchMetricTimeseries({
         metric: "p95_latency_ms",
         start,
-        end: now,
+        end,
         service: serviceParam,
       }),
       fetchMetricTimeseries({
         metric: "error_rate",
         start,
-        end: now,
+        end,
         service: serviceParam,
       }),
     ]);

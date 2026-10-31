@@ -2,15 +2,17 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { AppRouteRecord } from "@/types/router";
 import { getFirstMenuPath } from "@/utils";
-import { HOME_PAGE_PATH } from "@/router";
+import { resolveHomePath } from "@/router";
+import { useUserStore } from "@/store/modules/user";
 export const useMenuStore = defineStore("menuStore", () => {
-  const homePath = ref(HOME_PAGE_PATH);
+  const homePath = ref(resolveHomePath([]));
   const menuList = ref<AppRouteRecord[]>([]);
   const menuWidth = ref("");
   const removeRouteFns = ref<(() => void)[]>([]);
   const setMenuList = (list: AppRouteRecord[]) => {
     menuList.value = list;
-    setHomePath(HOME_PAGE_PATH || getFirstMenuPath(list));
+    const roles = useUserStore().info?.roles as string[] | undefined;
+    setHomePath(resolveHomePath(roles) || getFirstMenuPath(list));
   };
   const getHomePath = () => homePath.value;
   const setHomePath = (path: string) => {

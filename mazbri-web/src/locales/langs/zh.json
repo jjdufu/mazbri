@@ -789,7 +789,7 @@
     },
     "mazbri": {
       "title": "Mazbri 管理",
-      "dashboard": "仪表板",
+      "dashboard": "全局总览",
       "users": "用户管理",
       "userManagement": "用户管理",
       "userDetail": "用户详情",
@@ -843,7 +843,10 @@
       "configCenter": "配置中心",
       "connectorWorkbench": "免代码接入",
       "account": "个人账号",
-      "accountSecurity": "账号安全"
+      "accountSecurity": "账号安全",
+      "opsOverview": "全局总览",
+      "opsScreen": "运营大屏",
+      "financeOverview": "经营看板"
     }
   },
   "systemSettings": {
@@ -4066,6 +4069,49 @@
     "messages": {
       "copied": "已复制到剪贴板",
       "copyFailed": "复制失败，请手动复制"
+    }
+  },
+  "ops": {
+    "timeRange": {
+      "start": "开始时间",
+      "end": "结束时间",
+      "bookmark": "书签区间",
+      "presets": {
+        "15m": "15 分钟",
+        "1h": "1 小时",
+        "6h": "6 小时",
+        "24h": "24 小时",
+        "7d": "7 天",
+        "30d": "30 天",
+        "custom": "自定义"
+      },
+      "bookmarks": {
+        "loadtest": "压测",
+        "eventReplay": "事件回看"
+      }
+    },
+    "autoRefresh": {
+      "label": "自动刷新",
+      "off": "关闭",
+      "thirtySeconds": "30 秒",
+      "oneMinute": "1 分钟"
+    },
+    "overview": {
+      "openScreen": "大屏模式",
+      "loadFailed": "加载运营指标失败",
+      "viewerSlim": "精简总览：敏感金额与管理入口已隐藏",
+      "stats": {
+        "totalRequests": "总请求数",
+        "totalBytes": "总流量",
+        "activeTenants": "活跃租户",
+        "avgResponseMs": "平均响应"
+      }
+    },
+    "screen": {
+      "title": "运营大屏"
+    },
+    "finance": {
+      "placeholder": "经营看板将在后续步骤完善"
     }
   }
 }
