@@ -99,6 +99,9 @@ pub const RULES: &[RouteRule] = &[
     rule("GET", "/billing/bills/{id}/adjustments", AnyRole),
     rule("POST", "/billing/bills/{id}/adjustments", Roles(BIZ)),
     rule("POST", "/billing/bills/{id}/status", Roles(BIZ)),
+    rule("GET", "/billing/ops/failures", AnyRole),
+    rule("GET", "/billing/ops/funnel", AnyRole),
+    rule("GET", "/billing/ops/supplier-costs", Roles(BIZ)),
     rule("POST", "/billing/reconciliation/audit", Roles(BIZ)),
     rule("GET", "/billing/reconciliation/discrepancies", AnyRole),
     rule(

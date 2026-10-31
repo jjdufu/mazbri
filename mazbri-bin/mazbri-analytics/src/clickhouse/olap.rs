@@ -28,6 +28,8 @@ pub enum OlapQuery {
     NewErrorCodes(WindowParams),
     CallHistogram(WindowParams),
     CostTrend(TrendParams),
+    SupplierSla(WindowParams),
+    BillingFunnelCh(WindowParams),
 }
 
 impl OlapQuery {
@@ -58,6 +60,8 @@ impl OlapQuery {
             Self::NewErrorCodes(_) => "new_error_codes",
             Self::CallHistogram(_) => "call_histogram",
             Self::CostTrend(_) => "cost_trend",
+            Self::SupplierSla(_) => "supplier_sla",
+            Self::BillingFunnelCh(_) => "billing_funnel_ch",
         }
     }
 }
@@ -427,6 +431,23 @@ pub struct HistogramRow {
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct SlaRow {
+    pub supplier_code: String,
+    pub channel_code: String,
+    pub calls: u64,
+    pub failures: u64,
+    pub timeouts: u64,
+    pub retried: u64,
+    pub fallbacks: u64,
+    pub upstream_p95_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct FunnelChRow {
+    pub billable: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
 pub struct CostRow {
     pub ts: u32,
     pub count: u64,
@@ -451,6 +472,8 @@ pub enum OlapRows {
     NewErrors(Vec<NewErrorRow>),
     Histogram(Vec<HistogramRow>),
     Cost(Vec<CostRow>),
+    Sla(Vec<SlaRow>),
+    FunnelCh(Vec<FunnelChRow>),
 }
 
 const LATENCY_MEASURES: &str = "countMerge(c) AS count, \
@@ -528,6 +551,7 @@ impl OlapQuery {
                 p.filters.validate()?;
                 reject_over_day(p.range, "call_histogram")
             }
+            Self::SupplierSla(p) | Self::BillingFunnelCh(p) => p.filters.validate(),
         }
     }
 
@@ -565,6 +589,8 @@ impl OlapQuery {
             Self::ResponseFlags(p) => response_flags_sql(p, &mut binds),
             Self::NewErrorCodes(p) => new_error_codes_sql(p, &mut binds),
             Self::CallHistogram(p) => call_histogram_sql(p, &mut binds),
+            Self::SupplierSla(p) => supplier_sla_sql(p, &mut binds),
+            Self::BillingFunnelCh(p) => billing_funnel_ch_sql(p, &mut binds),
         };
         Sql { text, binds }
     }
@@ -760,6 +786,36 @@ fn call_histogram_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     )
 }
 
+/// 计入供应商责任的失败类别（超时、上游错误、过载、熔断、内部错误）。
+const SUPPLIER_FAILURE_CLASSES: &str =
+    "'timeout', 'upstream_error', 'overload', 'circuit_open', 'internal'";
+
+/// 供应商 × 渠道 SLA：读明细表（保留 30 天），报表需要日/周/月窗口，故不受 24h 限制；
+/// 按月分区裁剪且只做一次分组聚合。
+fn supplier_sla_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let filters = filter_clause(&p.filters, binds);
+    format!(
+        "SELECT supplier_code, channel_code, count() AS calls, \
+         countIf(error_class IN ({SUPPLIER_FAILURE_CLASSES})) AS failures, \
+         countIf(error_class = 'timeout') AS timeouts, \
+         countIf(retry_count > 0) AS retried, countIf(fallback_used = 1) AS fallbacks, \
+         toFloat64(quantileTDigest(0.95)(upstream_service_time_ms)) AS upstream_p95_ms \
+         FROM request_logs WHERE event_target = 'gateway' AND {window} \
+         AND supplier_code != ''{filters} \
+         GROUP BY supplier_code, channel_code ORDER BY supplier_code, channel_code LIMIT 1000",
+        window = window(p.range, "timestamp"),
+    )
+}
+
+/// 计费漏斗首段：网关可计费请求数（`FINAL` 去重，与 L3 对账口径一致）。
+fn billing_funnel_ch_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let filters = filter_clause(&p.filters, binds);
+    format!(
+        "SELECT countIf(request_logs.billable = 1) AS billable FROM request_logs FINAL \
+         WHERE event_target = 'gateway' AND {window}{filters}",
+        window = window(p.range, "timestamp"),
+    )
+}
 
 /// 趋势查询：`measures` 中若以 `status_class,` 开头则同时按状态分组。
 fn trend_sql(p: &TrendParams, binds: &mut Vec<String>, measures: &str) -> String {
@@ -818,6 +874,8 @@ impl ClickHouseClient {
             OlapQuery::NewErrorCodes(_) => OlapRows::NewErrors(self.fetch_bound(&sql).await?),
             OlapQuery::CallHistogram(_) => OlapRows::Histogram(self.fetch_bound(&sql).await?),
             OlapQuery::CostTrend(_) => OlapRows::Cost(self.fetch_bound(&sql).await?),
+            OlapQuery::SupplierSla(_) => OlapRows::Sla(self.fetch_bound(&sql).await?),
+            OlapQuery::BillingFunnelCh(_) => OlapRows::FunnelCh(self.fetch_bound(&sql).await?),
         })
     }
 }
@@ -886,11 +944,36 @@ mod tests {
         let sql = q.sql().text;
         assert!(sql.contains("trace_id"));
         assert!(sql.contains("quantileTDigest(0.99)"));
-        let fixed = parse(
-            r#"{"template":"slow_requests","params":{"range":"1h","min_duration_ms":500}}"#,
-        )
-        .expect("valid");
+        let fixed =
+            parse(r#"{"template":"slow_requests","params":{"range":"1h","min_duration_ms":500}}"#)
+                .expect("valid");
         assert!(fixed.sql().text.contains("duration_ms >= 500"));
+    }
+
+    #[test]
+    fn supplier_sla_allows_month_and_groups_by_channel()
+    -> std::result::Result<(), serde_json::Error> {
+        let q =
+            parse(r#"{"template":"supplier_sla","params":{"range":"30d","supplier_code":"s"}}"#)?;
+        assert!(q.validate().is_ok());
+        assert!(!q.is_money());
+        let sql = q.sql();
+        assert!(sql.text.contains("GROUP BY supplier_code, channel_code"));
+        assert!(sql.text.contains("INTERVAL 2592000 SECOND"));
+        assert!(sql.text.contains("supplier_code = ?"));
+        assert_eq!(sql.binds, vec!["s".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn billing_funnel_ch_counts_billable_with_final() -> std::result::Result<(), serde_json::Error>
+    {
+        let q = parse(r#"{"template":"billing_funnel_ch","params":{"range":"24h"}}"#)?;
+        let sql = q.sql();
+        assert!(sql.text.contains("FROM request_logs FINAL"));
+        assert!(sql.text.contains("billable = 1"));
+        assert_eq!(sql.binds.len(), 0);
+        Ok(())
     }
 
     #[test]

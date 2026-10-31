@@ -288,9 +288,19 @@ const drillTargets = computed(() => [
     enabled: true,
     path: "/ops/traffic/errors",
   },
-  { id: "3.2", label: t("ops.overview.drill.circuit"), enabled: false },
+  {
+    id: "3.2",
+    label: t("ops.overview.drill.circuit"),
+    enabled: true,
+    path: "/ops/upstream/breaker",
+  },
   { id: "4.1", label: t("ops.overview.drill.ratelimit"), enabled: false },
-  { id: "6.1", label: t("ops.overview.drill.billing"), enabled: false },
+  {
+    id: "6.1",
+    label: t("ops.overview.drill.billing"),
+    enabled: true,
+    path: "/ops/billing/health",
+  },
   { id: "12.1", label: t("ops.overview.drill.certs"), enabled: false },
   {
     id: "1.1",

@@ -11,7 +11,9 @@ pub(crate) struct HandlerError {
 }
 pub use health::AppState;
 pub use health::health_check;
-pub use metrics::{get_metric_timeseries, get_metrics_catalog, get_metrics_overview, get_services_health};
+pub use metrics::{
+    get_metric_timeseries, get_metrics_catalog, get_metrics_overview, get_services_health,
+};
 pub use olap::olap_query;
 pub use request::query_request_logs;
 pub use request_analytics::{aggregate_request_logs, get_upstream_billing_summary};

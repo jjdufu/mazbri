@@ -850,7 +850,10 @@
       "serviceDetail": "服务详情",
       "trafficRed": "网关 RED",
       "trafficLatency": "时延分解",
-      "trafficErrors": "错误分析"
+      "trafficErrors": "错误分析",
+      "upstreamSla": "供应商 SLA",
+      "upstreamBreaker": "熔断与重试",
+      "billingHealth": "计费链路健康"
     }
   },
   "systemSettings": {
@@ -4209,6 +4212,63 @@
         "count": "次数",
         "time": "时间"
       }
+    },
+    "upstream": {
+      "exportCsv": "导出 CSV",
+      "report": {
+        "day": "日报（24h）",
+        "week": "周报（7d）",
+        "month": "月报（30d）"
+      },
+      "slaTable": "供应商 × 渠道",
+      "thresholdHint": "可用率阈值：≥99.5% 绿，≥99% 黄，其余红；失败计入超时、上游错误、过载、熔断与内部错误。",
+      "columns": {
+        "supplier": "供应商",
+        "channel": "渠道",
+        "availability": "可用率",
+        "timeoutRate": "超时率",
+        "retryRate": "重试率",
+        "fallbackRate": "fallback 率",
+        "calls": "调用量",
+        "cost": "结算成本"
+      },
+      "loadFailed": "加载上游数据失败",
+      "breakerLanes": "产品熔断状态泳道",
+      "breakerLegend": "0 = 关闭，1 = 半开，2 = 打开",
+      "cbproState": "cbpro 熔断状态",
+      "attempts": "上游尝试结果",
+      "bypassRequests": "bypass 上游请求",
+      "waitP95": "上游等待 P95（ms）",
+      "h2Connects": "H2 建连",
+      "h2Streams": "H2 在用流",
+      "h2Errors": "H2 错误",
+      "h2ReadyWait": "H2 就绪等待 P95（ms）"
+    },
+    "billing": {
+      "funnel": "计费漏斗",
+      "stage": "阶段",
+      "count": "计数",
+      "diff": "与上一段差值",
+      "queueTrend": "扣费队列分状态",
+      "batchThroughput": "批次条目吞吐",
+      "batches": "扣费批次",
+      "deductions": "扣费结果",
+      "precheck": "余额预检",
+      "failures": "扣费失败",
+      "deadLetters": "死信",
+      "lagP50": "入账延迟 P50",
+      "lagP95": "入账延迟 P95",
+      "lagMax": "入账延迟最大值",
+      "failureCount": "扣费失败次数",
+      "columns": {
+        "time": "时间",
+        "tenant": "租户",
+        "attempt": "尝试次数",
+        "status": "状态",
+        "error": "错误",
+        "source": "来源"
+      },
+      "loadFailed": "加载计费链路数据失败"
     }
   }
 }

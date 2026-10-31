@@ -104,3 +104,18 @@ export interface NewErrorRow {
   error_code: string;
   count: number;
 }
+
+export interface SlaRow {
+  supplier_code: string;
+  channel_code: string;
+  calls: number;
+  failures: number;
+  timeouts: number;
+  retried: number;
+  fallbacks: number;
+  upstream_p95_ms: number;
+}
+
+export interface FunnelChRow {
+  billable: number;
+}

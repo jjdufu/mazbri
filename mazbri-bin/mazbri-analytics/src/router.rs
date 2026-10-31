@@ -1,7 +1,7 @@
 use crate::handlers::{
     AppState, aggregate_request_logs, get_metric_timeseries, get_metrics_catalog,
-    get_metrics_overview, get_services_health, get_upstream_billing_summary, health_check, olap_query,
-    query_request_logs,
+    get_metrics_overview, get_services_health, get_upstream_billing_summary, health_check,
+    olap_query, query_request_logs,
 };
 use axum::Router;
 pub fn create_router(app_state: AppState) -> Router {

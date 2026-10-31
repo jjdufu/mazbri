@@ -166,91 +166,90 @@ impl GreptimeDBClient {
         self.with_query_timeout(
             "metrics_overview",
             Box::pin(async {
-            let w = OVERVIEW_WINDOW_SECS;
-            let qps_q = business_qps_query(w);
-            let success_q = business_success_rate_query(w);
-            let error_q = business_error_rate_query(ErrorClass::All, w);
-            let error_4xx_q = business_error_rate_query(ErrorClass::Client, w);
-            let error_5xx_q = business_error_rate_query(ErrorClass::Server, w);
-            let p50_q = business_latency_quantile_query(0.50, w);
-            let p95_q = business_latency_quantile_query(0.95, w);
-            let p99_q = business_latency_quantile_query(0.99, w);
-            let ratelimit_q = format!(
-                r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{w}s]))"#
-            );
-            let qps = self.prometheus_instant_value(&qps_q);
-            let success_rate = self.prometheus_instant_value(&success_q);
-            let error_rate = self.prometheus_instant_value(&error_q);
-            let error_rate_4xx = self.prometheus_instant_value(&error_4xx_q);
-            let error_rate_5xx = self.prometheus_instant_value(&error_5xx_q);
-            let p50_latency_raw = self.prometheus_instant_value(&p50_q);
-            let p95_latency_raw = self.prometheus_instant_value(&p95_q);
-            let p99_latency_raw = self.prometheus_instant_value(&p99_q);
-            let active_connections = self.prometheus_instant_value("sum(active_connections)");
-            let proxy_active_connections =
-                self.prometheus_instant_value("sum(active_proxy_connections)");
-            let rate_limit_rejections_per_sec = self.prometheus_instant_value(&ratelimit_q);
-            let billing_queue = self.prometheus_instant_by_label(
-                "sum by (status) (billing_queue_depth)",
-                "status",
-            );
-            let circuit_breaker_open_count =
-                self.prometheus_instant_value("count(circuit_breaker_state > 0)");
-            let cert_min_expiry_days = self.prometheus_instant_value("min(cert_min_expiry_days)");
-            let service_health = self.load_service_health_lights();
-            let (
-                qps,
-                success_rate,
-                error_rate,
-                error_rate_4xx,
-                error_rate_5xx,
-                p50_val,
-                p95_val,
-                p99_val,
-                active_connections,
-                proxy_active_connections,
-                rate_limit_rejections_per_sec,
-                billing_queue,
-                circuit_breaker_open_count,
-                cert_min_expiry_days,
-                service_health,
-            ) = tokio::try_join!(
-                qps,
-                success_rate,
-                error_rate,
-                error_rate_4xx,
-                error_rate_5xx,
-                p50_latency_raw,
-                p95_latency_raw,
-                p99_latency_raw,
-                active_connections,
-                proxy_active_connections,
-                rate_limit_rejections_per_sec,
-                billing_queue,
-                circuit_breaker_open_count,
-                cert_min_expiry_days,
-                service_health,
-            )?;
-            Ok(MetricOverview {
-                qps,
-                success_rate,
-                error_rate,
-                error_rate_4xx,
-                error_rate_5xx,
-                p50_latency_ms: finite_or_zero(p50_val) * 1000.0,
-                p95_latency_ms: finite_or_zero(p95_val) * 1000.0,
-                p99_latency_ms: finite_or_zero(p99_val) * 1000.0,
-                active_connections,
-                proxy_active_connections,
-                rate_limit_rejections_per_sec,
-                billing_queue,
-                circuit_breaker_open_count,
-                cert_min_expiry_days,
-                service_health,
-                alerts_connected: false,
-                error_budget_connected: false,
-            })
-        }),
+                let w = OVERVIEW_WINDOW_SECS;
+                let qps_q = business_qps_query(w);
+                let success_q = business_success_rate_query(w);
+                let error_q = business_error_rate_query(ErrorClass::All, w);
+                let error_4xx_q = business_error_rate_query(ErrorClass::Client, w);
+                let error_5xx_q = business_error_rate_query(ErrorClass::Server, w);
+                let p50_q = business_latency_quantile_query(0.50, w);
+                let p95_q = business_latency_quantile_query(0.95, w);
+                let p99_q = business_latency_quantile_query(0.99, w);
+                let ratelimit_q = format!(
+                    r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{w}s]))"#
+                );
+                let qps = self.prometheus_instant_value(&qps_q);
+                let success_rate = self.prometheus_instant_value(&success_q);
+                let error_rate = self.prometheus_instant_value(&error_q);
+                let error_rate_4xx = self.prometheus_instant_value(&error_4xx_q);
+                let error_rate_5xx = self.prometheus_instant_value(&error_5xx_q);
+                let p50_latency_raw = self.prometheus_instant_value(&p50_q);
+                let p95_latency_raw = self.prometheus_instant_value(&p95_q);
+                let p99_latency_raw = self.prometheus_instant_value(&p99_q);
+                let active_connections = self.prometheus_instant_value("sum(active_connections)");
+                let proxy_active_connections =
+                    self.prometheus_instant_value("sum(active_proxy_connections)");
+                let rate_limit_rejections_per_sec = self.prometheus_instant_value(&ratelimit_q);
+                let billing_queue = self
+                    .prometheus_instant_by_label("sum by (status) (billing_queue_depth)", "status");
+                let circuit_breaker_open_count =
+                    self.prometheus_instant_value("count(circuit_breaker_state > 0)");
+                let cert_min_expiry_days =
+                    self.prometheus_instant_value("min(cert_min_expiry_days)");
+                let service_health = self.load_service_health_lights();
+                let (
+                    qps,
+                    success_rate,
+                    error_rate,
+                    error_rate_4xx,
+                    error_rate_5xx,
+                    p50_val,
+                    p95_val,
+                    p99_val,
+                    active_connections,
+                    proxy_active_connections,
+                    rate_limit_rejections_per_sec,
+                    billing_queue,
+                    circuit_breaker_open_count,
+                    cert_min_expiry_days,
+                    service_health,
+                ) = tokio::try_join!(
+                    qps,
+                    success_rate,
+                    error_rate,
+                    error_rate_4xx,
+                    error_rate_5xx,
+                    p50_latency_raw,
+                    p95_latency_raw,
+                    p99_latency_raw,
+                    active_connections,
+                    proxy_active_connections,
+                    rate_limit_rejections_per_sec,
+                    billing_queue,
+                    circuit_breaker_open_count,
+                    cert_min_expiry_days,
+                    service_health,
+                )?;
+                Ok(MetricOverview {
+                    qps,
+                    success_rate,
+                    error_rate,
+                    error_rate_4xx,
+                    error_rate_5xx,
+                    p50_latency_ms: finite_or_zero(p50_val) * 1000.0,
+                    p95_latency_ms: finite_or_zero(p95_val) * 1000.0,
+                    p99_latency_ms: finite_or_zero(p99_val) * 1000.0,
+                    active_connections,
+                    proxy_active_connections,
+                    rate_limit_rejections_per_sec,
+                    billing_queue,
+                    circuit_breaker_open_count,
+                    cert_min_expiry_days,
+                    service_health,
+                    alerts_connected: false,
+                    error_budget_connected: false,
+                })
+            }),
         )
         .await
     }
@@ -280,13 +279,12 @@ impl GreptimeDBClient {
     }
 
     async fn load_service_health_rows(&self) -> Result<Vec<ServiceHealthRow>> {
-        let health = self.prometheus_instant_by_label(
-            r#"mazbri_rpc_health_check{status="healthy"}"#,
-            "service",
-        );
+        let health = self
+            .prometheus_instant_by_label(r#"mazbri_rpc_health_check{status="healthy"}"#, "service");
         let ready = self.prometheus_instant_by_label("gateway_startup_ready", "service");
         let config = self.prometheus_instant_by_label("mazbri_config_center_connected", "service");
-        let active = self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");
+        let active =
+            self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");
         let idle = self.prometheus_instant_by_label("mazbri_db_pool_idle_connections", "service");
         let (health, ready, config, active, idle) =
             tokio::try_join!(health, ready, config, active, idle)?;
@@ -341,7 +339,10 @@ impl GreptimeDBClient {
             let mut series = self
                 .prometheus_range_values(&query, params.start, params.end, step)
                 .await?;
-            if matches!(params.metric.as_str(), "p50_latency_ms" | "p95_latency_ms" | "p99_latency_ms") {
+            if matches!(
+                params.metric.as_str(),
+                "p50_latency_ms" | "p95_latency_ms" | "p99_latency_ms"
+            ) {
                 for point in series.iter_mut().flat_map(|s| s.points.iter_mut()) {
                     point.value *= 1000.0;
                 }
@@ -609,6 +610,7 @@ fn metric_catalog_core() -> Vec<MetricCatalogItem> {
 fn metric_catalog() -> Vec<MetricCatalogItem> {
     let mut items = metric_catalog_core();
     items.extend(metric_catalog_traffic());
+    items.extend(metric_catalog_upstream_billing());
     items
 }
 
@@ -643,6 +645,93 @@ fn metric_catalog_traffic() -> Vec<MetricCatalogItem> {
             note: None,
         },
     ]
+}
+
+/// 上游与计费链路指标目录：(key, label, unit, `default_chart`)。
+const UPSTREAM_BILLING_CATALOG: &[(&str, &str, &str, &str)] = &[
+    (
+        "breaker_state",
+        "产品熔断状态（0 关 / 1 半开 / 2 开）",
+        "state",
+        "step",
+    ),
+    ("cbpro_state", "cbpro 熔断状态", "state", "step"),
+    ("cbpro_transitions", "cbpro 状态切换次数", "count", "bar"),
+    (
+        "cbpro_protection_triggers",
+        "cbpro 保护触发速率",
+        "ops/s",
+        "line",
+    ),
+    (
+        "upstream_attempts",
+        "上游尝试速率（按 mode × result）",
+        "ops/s",
+        "area",
+    ),
+    (
+        "upstream_wait_p95_ms",
+        "上游等待 P95（按产品）",
+        "ms",
+        "line",
+    ),
+    (
+        "h2_streams_in_use",
+        "H2 在用流（按 endpoint）",
+        "streams",
+        "line",
+    ),
+    (
+        "h2_connects",
+        "H2 建连次数（按 reason × result）",
+        "count",
+        "bar",
+    ),
+    ("h2_errors", "H2 错误速率（按 kind）", "ops/s", "line"),
+    ("h2_ready_wait_p95_ms", "H2 就绪等待 P95", "ms", "line"),
+    (
+        "bypass_upstream_qps",
+        "bypass 上游请求速率（按 method × result）",
+        "req/s",
+        "area",
+    ),
+    (
+        "billing_charge_batches",
+        "扣费批次速率（按 result）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "billing_charge_items",
+        "扣费批次条目速率（按 result）",
+        "ops/s",
+        "area",
+    ),
+    (
+        "billing_deductions",
+        "扣费结果速率（按 result）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "balance_precheck",
+        "余额预检速率（按 source × result）",
+        "ops/s",
+        "area",
+    ),
+];
+
+fn metric_catalog_upstream_billing() -> Vec<MetricCatalogItem> {
+    UPSTREAM_BILLING_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
 }
 
 #[must_use]
@@ -816,10 +905,53 @@ fn build_metric_query(
             "histogram_quantile(0.95, sum by (le, product_id) (rate(gateway_platform_local_seconds_bucket[{window}s]))) * 1000"
         ),
         other => {
-            return Err(AnalyticsError::Config(format!(
-                "Unsupported metric: {other}"
-            )));
+            return upstream_billing_query(other, window)
+                .ok_or_else(|| AnalyticsError::Config(format!("Unsupported metric: {other}")));
         }
+    })
+}
+
+/// 上游、熔断与计费链路指标（步骤 07 页面 3.2 / 6.1）。
+fn upstream_billing_query(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "breaker_state" => "max by (name) (circuit_breaker_state)".to_string(),
+        "cbpro_state" => "max(cbpro_current_state)".to_string(),
+        "cbpro_transitions" => {
+            format!("sum by (to_state) (increase(cbpro_state_transitions_total[{window}s]))")
+        }
+        "cbpro_protection_triggers" => {
+            format!("sum by (trigger_type) (rate(cbpro_protection_triggers_total[{window}s]))")
+        }
+        "upstream_attempts" => {
+            format!("sum by (mode, result) (rate(gateway_upstream_attempts_total[{window}s]))")
+        }
+        "upstream_wait_p95_ms" => format!(
+            "histogram_quantile(0.95, sum by (le, product_id) (rate(gateway_upstream_wait_seconds_bucket[{window}s]))) * 1000"
+        ),
+        "h2_streams_in_use" => "sum by (endpoint) (gateway_upstream_h2_streams_in_use)".to_string(),
+        "h2_connects" => format!(
+            "sum by (reason, result) (increase(gateway_upstream_h2_connects_total[{window}s]))"
+        ),
+        "h2_errors" => format!("sum by (kind) (rate(gateway_upstream_h2_errors_total[{window}s]))"),
+        "h2_ready_wait_p95_ms" => format!(
+            "histogram_quantile(0.95, sum by (le, endpoint) (rate(gateway_upstream_h2_ready_wait_seconds_bucket[{window}s]))) * 1000"
+        ),
+        "bypass_upstream_qps" => {
+            format!("sum by (method, result) (rate(bypass_upstream_requests_total[{window}s]))")
+        }
+        "billing_charge_batches" => {
+            format!("sum by (result) (rate(billing_charge_batch_total[{window}s]))")
+        }
+        "billing_charge_items" => {
+            format!("sum by (result) (rate(billing_charge_batch_items_total[{window}s]))")
+        }
+        "billing_deductions" => {
+            format!("sum by (result) (rate(billing_deductions_total[{window}s]))")
+        }
+        "balance_precheck" => {
+            format!("sum by (source, result) (rate(gateway_balance_precheck_total[{window}s]))")
+        }
+        _ => return None,
     })
 }
 fn label_filter_suffix(filter: &str) -> String {
@@ -941,6 +1073,17 @@ mod tests {
         assert_eq!(health_status_color(true, Some(false), Some(true)), "red");
         assert_eq!(health_status_color(true, None, Some(false)), "yellow");
         assert_eq!(health_status_color(true, None, Some(true)), "green");
+    }
+
+    #[test]
+    fn upstream_billing_metrics_split_by_labels() -> Result<()> {
+        let t = default_service_targets();
+        let q = build_metric_query("breaker_state", None, &t, 60)?;
+        assert_eq!(q, "max by (name) (circuit_breaker_state)");
+        let q = build_metric_query("upstream_attempts", None, &t, 60)?;
+        assert!(q.contains("by (mode, result)") && q.contains("[60s]"));
+        assert!(build_metric_query("no_such_metric", None, &t, 60).is_err());
+        Ok(())
     }
 
     #[test]

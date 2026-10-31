@@ -110,6 +110,39 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "upstream/sla",
+        name: "OpsUpstreamSla",
+        component: "/mazbri/ops/upstream/sla",
+        meta: {
+          title: "menus.mazbri.upstreamSla",
+          icon: "ri:shield-check-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "upstream/breaker",
+        name: "OpsUpstreamBreaker",
+        component: "/mazbri/ops/upstream/breaker",
+        meta: {
+          title: "menus.mazbri.upstreamBreaker",
+          icon: "ri:flashlight-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "billing/health",
+        name: "OpsBillingHealth",
+        component: "/mazbri/ops/billing/health",
+        meta: {
+          title: "menus.mazbri.billingHealth",
+          icon: "ri:bill-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "tenants",
         name: "TenantList",
         component: "/mazbri/tenants/index",

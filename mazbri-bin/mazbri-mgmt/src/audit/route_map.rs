@@ -720,6 +720,9 @@ pub static ROUTES: &[RouteAudit] = &[
     // ---- billing ----
     read("/billing/accounts", R::Billing),
     read("/billing/bills", R::Billing),
+    read("/billing/ops/funnel", R::Billing),
+    read("/billing/ops/failures", R::Billing),
+    read("/billing/ops/supplier-costs", R::Billing),
     write(
         "POST",
         "/billing/bills/generate",

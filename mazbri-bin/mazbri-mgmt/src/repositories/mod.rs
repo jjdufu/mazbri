@@ -4,6 +4,7 @@ pub mod analytics;
 pub mod api_key;
 pub mod appearance;
 pub mod billing;
+pub mod billing_ops;
 pub mod config;
 pub mod mfa;
 pub mod mfa_settings;

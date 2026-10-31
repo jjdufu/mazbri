@@ -850,7 +850,10 @@
       "serviceDetail": "Service Detail",
       "trafficRed": "Gateway RED",
       "trafficLatency": "Latency breakdown",
-      "trafficErrors": "Error analysis"
+      "trafficErrors": "Error analysis",
+      "upstreamSla": "Supplier SLA",
+      "upstreamBreaker": "Breaker & Retry",
+      "billingHealth": "Billing Pipeline"
     }
   },
   "systemSettings": {
@@ -4204,6 +4207,63 @@
         "count": "Count",
         "time": "Time"
       }
+    },
+    "upstream": {
+      "exportCsv": "Export CSV",
+      "report": {
+        "day": "Daily (24h)",
+        "week": "Weekly (7d)",
+        "month": "Monthly (30d)"
+      },
+      "slaTable": "Supplier × Channel",
+      "thresholdHint": "Availability: ≥99.5% green, ≥99% yellow, otherwise red; failures count timeout, upstream error, overload, circuit open and internal errors.",
+      "columns": {
+        "supplier": "Supplier",
+        "channel": "Channel",
+        "availability": "Availability",
+        "timeoutRate": "Timeout rate",
+        "retryRate": "Retry rate",
+        "fallbackRate": "Fallback rate",
+        "calls": "Calls",
+        "cost": "Settlement cost"
+      },
+      "loadFailed": "Failed to load upstream data",
+      "breakerLanes": "Product breaker lanes",
+      "breakerLegend": "0 = closed, 1 = half-open, 2 = open",
+      "cbproState": "cbpro breaker state",
+      "attempts": "Upstream attempt results",
+      "bypassRequests": "Bypass upstream requests",
+      "waitP95": "Upstream wait P95 (ms)",
+      "h2Connects": "H2 connects",
+      "h2Streams": "H2 streams in use",
+      "h2Errors": "H2 errors",
+      "h2ReadyWait": "H2 ready wait P95 (ms)"
+    },
+    "billing": {
+      "funnel": "Billing funnel",
+      "stage": "Stage",
+      "count": "Count",
+      "diff": "Diff vs previous",
+      "queueTrend": "Charge queue by status",
+      "batchThroughput": "Batch item throughput",
+      "batches": "Charge batches",
+      "deductions": "Deduction results",
+      "precheck": "Balance precheck",
+      "failures": "Charge failures",
+      "deadLetters": "Dead letters",
+      "lagP50": "Charge lag P50",
+      "lagP95": "Charge lag P95",
+      "lagMax": "Charge lag max",
+      "failureCount": "Charge failures",
+      "columns": {
+        "time": "Time",
+        "tenant": "Tenant",
+        "attempt": "Attempts",
+        "status": "Status",
+        "error": "Error",
+        "source": "Source"
+      },
+      "loadFailed": "Failed to load billing pipeline data"
     }
   }
 }
