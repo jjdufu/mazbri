@@ -85,13 +85,11 @@ pub struct RequestLogQueryParams {
     pub error_stage: Option<String>,
     pub response_flags: Option<String>,
     pub status_code: Option<u16>,
-    pub service: Option<String>,
-    pub service_like: Option<String>,
-    /// Comma-separated exact service names; combined with `service` / `service_like` using OR.
-    pub service_in: Option<String>,
+    /// Access-log writer scope (`request_logs.event_target`).
+    pub event_target: Option<EventTarget>,
     /// Structured filters (already validated against `call_monitor` catalog).
     pub filters: Vec<crate::list_query::ListFilter>,
-    /// When set, list/search only inside the latest N rows (service-scoped), then apply filters.
+    /// When set, list/search only inside the latest N rows (event-target scoped), then apply filters.
     pub latest_universe_limit: Option<usize>,
     pub limit: usize,
     pub offset: usize,
@@ -110,9 +108,28 @@ pub struct RequestLogAggregationParams {
     pub group_by_route: bool,
     pub group_by_time: Option<String>,
     pub tenant_id: Option<String>,
-    /// When set, only count this access-log `service` (e.g. `mazbri-gateway`).
-    /// Stats tables lack a service dimension, so this forces the raw path.
-    pub service: Option<String>,
+    /// When set, only count rows of this access-log writer (e.g. gateway: customer volume).
+    pub event_target: Option<EventTarget>,
+}
+
+/// `request_logs.event_target`: which writer produced the access-log row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventTarget {
+    Gateway,
+    Bypass,
+    Billing,
+}
+
+impl EventTarget {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Gateway => "gateway",
+            Self::Bypass => "bypass",
+            Self::Billing => "billing",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

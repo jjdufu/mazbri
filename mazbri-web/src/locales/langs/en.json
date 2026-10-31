@@ -413,14 +413,15 @@
       },
       "allServices": "All services",
       "metrics": {
-        "currentQps": "Current QPS",
-        "errorRate5xx": "5xx Error Rate",
+        "currentQps": "Business QPS",
+        "errorRate": "Business Error Rate",
         "p95Latency": "P95 Latency",
         "p99Latency": "P99 Latency",
         "activeConnections": "Active Connections",
         "proxyConnections": "Proxy Connections",
         "rateLimitRejections": "Rate Limit Rejections",
-        "billingQueue": "Billing Queue"
+        "billingQueue": "Billing Queue · {status}",
+        "certMinExpiry": "Min Cert Expiry"
       },
       "units": {
         "reqPerSec": "req/s",
@@ -428,7 +429,8 @@
         "milliseconds": "ms",
         "connections": "conn",
         "opsPerSec": "ops/s",
-        "jobs": "jobs"
+        "jobs": "jobs",
+        "days": "days"
       },
       "noData": "No data available",
       "customerTitle": "Customer Monitoring",

@@ -7,7 +7,7 @@ use axum::{
 };
 use chrono::{DateTime, Duration, Utc};
 use mazbri_analytics::RequestLogEntry;
-use mazbri_analytics::greptimedb::RequestLogQueryParams;
+use mazbri_analytics::greptimedb::{EventTarget, RequestLogQueryParams};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::validation::limits;
 use serde::{Deserialize, Serialize};
@@ -97,13 +97,9 @@ pub struct RequestLogQueryRequest {
     pub response_flags: Option<String>,
     #[serde(default)]
     pub status_code: Option<u16>,
+    /// Access-log writer scope: `gateway` (customer calls) / `bypass` (upstream calls) / `billing`.
     #[serde(default)]
-    pub service: Option<String>,
-    #[serde(default)]
-    pub service_like: Option<String>,
-    /// Comma-separated exact service names (OR with service / `service_like`).
-    #[serde(default)]
-    pub service_in: Option<String>,
+    pub event_target: Option<EventTarget>,
     #[serde(default = "default_page")]
     pub page: u32,
     #[serde(default = "default_page_size")]
@@ -431,9 +427,7 @@ fn build_query_params(
         error_stage: req.error_stage.clone(),
         response_flags: req.response_flags.clone(),
         status_code: req.status_code,
-        service: req.service.clone(),
-        service_like: req.service_like.clone(),
-        service_in: req.service_in.clone(),
+        event_target: req.event_target,
         filters,
         latest_universe_limit,
         limit: req.capped_page_size() as usize,

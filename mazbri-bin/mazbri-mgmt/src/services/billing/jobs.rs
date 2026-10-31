@@ -62,11 +62,7 @@ async fn fetch_gateway_request_count(
     day_end: chrono::DateTime<chrono::Utc>,
 ) -> Result<i64, String> {
     let body = analytics_client
-        .aggregate_requests(
-            &day_start.to_rfc3339(),
-            &day_end.to_rfc3339(),
-            Some("mazbri-gateway"),
-        )
+        .aggregate_requests(&day_start.to_rfc3339(), &day_end.to_rfc3339(), "gateway")
         .await
         .map_err(|e| format!("gateway request_logs aggregate failed: {e}"))?;
     body.get("total_requests")

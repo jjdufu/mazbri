@@ -121,11 +121,7 @@ async fn fetch_usage_from_analytics(
     let end_str = end.format("%Y-%m-%dT%H:%M:%S").to_string();
     // Customer-facing volume only — gateway access logs (not gateway+bypass double count).
     match client
-        .aggregate_requests(
-            &start_str,
-            &end_str,
-            Some(mazbri_core::ServiceName::Gateway.as_str()),
-        )
+        .aggregate_requests(&start_str, &end_str, "gateway")
         .await
     {
         Ok(body) => {
@@ -496,8 +492,10 @@ pub async fn get_ratelimit_platform_stats(
 #[serde(deny_unknown_fields)]
 pub struct MetricsTimeseriesParams {
     pub metric: String,
-    pub start_time: i64,
-    pub end_time: i64,
+    /// 起始时间（Unix 秒）
+    pub start: i64,
+    /// 结束时间（Unix 秒）
+    pub end: i64,
     pub step: Option<u64>,
     pub service: Option<String>,
 }
@@ -749,7 +747,7 @@ pub async fn get_call_monitor_logs(
         ("page", page.to_string()),
         ("page_size", page_size.to_string()),
     ];
-    request_params.extend(call_monitor_service_filters(kind));
+    request_params.extend(call_monitor_scope_filters(kind));
     push_opt_param(&mut request_params, "request_id", serial_no.clone());
     // When exact serial is set, skip free-text `q` (same id would only AND a redundant LIKE).
     if !selective {
@@ -827,20 +825,11 @@ pub async fn get_call_monitor_logs(
     })
     .into_response()
 }
-/// 客户调用：仅网关；上游调用：微服务 `*-up` + transparent 出站 `mazbri-bypass`。
-fn call_monitor_service_filters(kind: &str) -> Vec<(&'static str, String)> {
+/// 客户调用：网关写入的 access 行；上游调用：bypass 出站写入的 access 行。
+fn call_monitor_scope_filters(kind: &str) -> Vec<(&'static str, String)> {
     match kind {
-        "upstream" => vec![
-            ("service_like", "%-up".to_string()),
-            (
-                "service_in",
-                mazbri_core::ServiceName::Bypass.as_str().to_string(),
-            ),
-        ],
-        _ => vec![(
-            "service",
-            mazbri_core::ServiceName::Gateway.as_str().to_string(),
-        )],
+        "upstream" => vec![("event_target", "bypass".to_string())],
+        _ => vec![("event_target", "gateway".to_string())],
     }
 }
 
@@ -1201,14 +1190,14 @@ pub async fn get_metric_timeseries(
     analytics_client: &AnalyticsHttpClient,
     params: &MetricsTimeseriesParams,
 ) -> axum::response::Response {
-    if params.start_time >= params.end_time {
-        return ApiResponse::err(StatusCode::BAD_REQUEST, "start_time 必须小于 end_time");
+    if params.start >= params.end {
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "start 必须小于 end");
     }
     match analytics_client
         .metric_timeseries(
             &params.metric,
-            params.start_time,
-            params.end_time,
+            params.start,
+            params.end,
             params.step,
             params.service.as_deref(),
         )
@@ -1223,10 +1212,11 @@ pub async fn get_metric_timeseries(
 }
 fn empty_metrics_overview() -> serde_json::Value {
     serde_json::json!(
-        { "qps" : 0.0, "error_rate" : 0.0, "p95_latency_ms" : 0.0, "p99_latency_ms" :
-        0.0, "active_connections" : 0.0, "proxy_active_connections" : 0.0,
-        "rate_limit_rejections_per_sec" : 0.0, "billing_queue_depth" : 0.0,
-        "cert_min_expiry_days" : 0.0, }
+        { "qps" : 0.0, "error_rate" : 0.0, "error_rate_4xx" : 0.0, "error_rate_5xx" : 0.0,
+        "p95_latency_ms" : 0.0, "p99_latency_ms" : 0.0, "active_connections" : 0.0,
+        "proxy_active_connections" : 0.0, "rate_limit_rejections_per_sec" : 0.0,
+        "billing_queue" : { "pending" : 0.0, "processing" : 0.0, "failed" : 0.0,
+        "dead_letter" : 0.0 }, "cert_min_expiry_days" : 0.0, }
     )
 }
 fn empty_metric_series(metric: &str) -> serde_json::Value {
@@ -1274,14 +1264,19 @@ fn default_metrics_catalog() -> serde_json::Value {
 }
 fn metric_label_unit(metric: &str) -> (&'static str, &'static str) {
     match metric {
-        "qps" => ("QPS", "req/s"),
-        "error_rate" => ("5xx 错误率", "%"),
+        "qps" => ("业务 QPS", "req/s"),
+        "service_qps" => ("服务 QPS（不含探活）", "req/s"),
+        "error_rate" => ("业务错误率", "%"),
+        "error_rate_4xx" => ("4xx 错误率", "%"),
+        "error_rate_5xx" => ("5xx 错误率", "%"),
         "p95_latency_ms" => ("P95 延迟", "ms"),
         "p99_latency_ms" => ("P99 延迟", "ms"),
         "active_connections" => ("活跃连接", "conn"),
         "ratelimit_rejections" => ("限流拒绝", "ops/s"),
-        "billing_queue_depth" => ("计费队列深度", "jobs"),
+        "billing_queue_depth" => ("计费队列（按状态）", "jobs"),
         "cert_min_expiry_days" => ("证书最短到期", "days"),
+        "route_reload_lag_seconds" => ("路由重载滞后", "s"),
+        "ratelimit_snapshot_age_seconds" => ("限流快照年龄", "s"),
         _ => ("指标", ""),
     }
 }

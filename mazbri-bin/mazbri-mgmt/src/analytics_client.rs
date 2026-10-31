@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
-use std::fmt::Write as _;
 use tracing::info;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,17 +65,15 @@ impl AnalyticsHttpClient {
         &self,
         start_time: &str,
         end_time: &str,
-        service: Option<&str>,
+        event_target: &str,
     ) -> Result<serde_json::Value> {
-        let mut url = format!(
-            "{}/api/v1/analytics/requests?start_time={}&end_time={}",
+        let url = format!(
+            "{}/api/v1/analytics/requests?start_time={}&end_time={}&event_target={}",
             self.base_url,
             urlencoding::encode(start_time),
             urlencoding::encode(end_time),
+            urlencoding::encode(event_target),
         );
-        if let Some(svc) = service.map(str::trim).filter(|s| !s.is_empty()) {
-            let _ = write!(url, "&service={}", urlencoding::encode(svc));
-        }
         let resp = self
             .client
             .get(&url)
@@ -109,15 +106,15 @@ impl AnalyticsHttpClient {
     pub async fn metric_timeseries(
         &self,
         metric: &str,
-        start_time: i64,
-        end_time: i64,
+        start: i64,
+        end: i64,
         step: Option<u64>,
         service: Option<&str>,
     ) -> Result<serde_json::Value> {
         let mut params = vec![
             ("metric", metric.to_string()),
-            ("start_time", start_time.to_string()),
-            ("end_time", end_time.to_string()),
+            ("start", start.to_string()),
+            ("end", end.to_string()),
         ];
         if let Some(step) = step {
             params.push(("step", step.to_string()));

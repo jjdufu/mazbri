@@ -26,12 +26,12 @@ pub async fn get_metric_timeseries(
     let Some(client) = metrics_client(&state) else {
         return greptimedb_unavailable();
     };
-    if params.start_time >= params.end_time {
+    if params.start >= params.end {
         return (
             StatusCode::BAD_REQUEST,
             Json(HandlerError {
                 error: "invalid_time_range".to_string(),
-                message: "start_time 必须小于 end_time".to_string(),
+                message: "start 必须小于 end".to_string(),
             }),
         )
             .into_response();

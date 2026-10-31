@@ -55,15 +55,15 @@ impl ClickHouseClient {
         params: &RequestLogQueryParams,
     ) -> Result<RequestLogQueryResult> {
         let (count_sql, data_sql) = if let Some(universe_limit) = params.latest_universe_limit {
-            // Latest-N: service scope → top N by time → then apply search/filters.
-            let service_conds =
-                crate::clickhouse::queries::build_request_log_service_conditions(params)?;
+            // Latest-N: event-target scope → top N by time → then apply search/filters.
+            let scope_conds =
+                crate::clickhouse::queries::build_request_log_scope_conditions(params);
             let mut filter_conds =
                 crate::clickhouse::queries::build_request_log_filter_conditions(params)?;
             // Time bounds must not appear inside latest-universe mode.
             filter_conds
                 .retain(|c| !c.starts_with("timestamp >= ") && !c.starts_with("timestamp <= "));
-            let universe_where = build_where_clause(&service_conds);
+            let universe_where = build_where_clause(&scope_conds);
             let outer_where = build_where_clause(&filter_conds);
             (
                 crate::clickhouse::queries::build_request_logs_latest_universe_count_sql(

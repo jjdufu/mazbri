@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
-use mazbri_analytics::greptimedb::{RequestLogAggregationParams, TimeBucket};
+use mazbri_analytics::greptimedb::{EventTarget, RequestLogAggregationParams, TimeBucket};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, info};
@@ -19,10 +19,10 @@ pub struct RequestAnalyticsQuery {
     pub group_by: Option<String>,
     #[serde(default)]
     pub tenant_id: Option<String>,
-    /// Access-log producer service filter (e.g. `mazbri-gateway`). Avoids double-counting
+    /// Access-log writer filter (`gateway` = customer volume). Avoids double-counting
     /// gateway + bypass rows that share the same customer `request_id`.
     #[serde(default)]
-    pub service: Option<String>,
+    pub event_target: Option<EventTarget>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestAnalyticsResponse {
@@ -64,7 +64,7 @@ pub async fn aggregate_request_logs(
         end_time = %req.end_time,
         group_by = ?req.group_by,
         tenant_id = ?req.tenant_id,
-        service = ?req.service,
+        event_target = ?req.event_target,
         "查询请求日志分析"
     );
     let client = &state.clickhouse_client;
@@ -104,10 +104,7 @@ pub async fn aggregate_request_logs(
         group_by_route: true,
         group_by_time: req.group_by,
         tenant_id: req.tenant_id,
-        service: req
-            .service
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        event_target: req.event_target,
     };
     match client.aggregate_request_logs(&params).await {
         Ok(aggregation) => {

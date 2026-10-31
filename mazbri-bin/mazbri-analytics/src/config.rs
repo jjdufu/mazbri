@@ -162,4 +162,6 @@ pub struct ServiceMetricTargetConfig {
     /// 规范服务名，反序列化时即校验
     pub key: Identity,
     pub name: String,
+    /// 指标抓取地址（与 vector `prometheus_scrape` 目标一致），端口由此解析
+    pub endpoint: String,
 }

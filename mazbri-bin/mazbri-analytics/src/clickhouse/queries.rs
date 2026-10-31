@@ -14,39 +14,17 @@ pub fn build_where_clause(conditions: &[String]) -> String {
     }
 }
 
-/// Service predicates only — used as the inner scope for "latest N" universe queries.
-pub fn build_request_log_service_conditions(params: &RequestLogQueryParams) -> Result<Vec<String>> {
-    let mut service_preds: Vec<String> = Vec::new();
-    if let Some(ref service) = params.service {
-        let validated = validate_like_param(service)?;
-        service_preds.push(format!("`service` = '{validated}'"));
-    }
-    if let Some(ref service_like) = params.service_like {
-        let validated = validate_like_param(service_like)?;
-        service_preds.push(format!("`service` LIKE '{validated}'"));
-    }
-    if let Some(ref service_in) = params.service_in {
-        let mut exact: Vec<String> = Vec::new();
-        for part in service_in.split(',') {
-            let trimmed = part.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let validated = validate_like_param(trimmed)?;
-            exact.push(format!("'{validated}'"));
-        }
-        if !exact.is_empty() {
-            service_preds.push(format!("`service` IN ({})", exact.join(", ")));
-        }
-    }
-    if service_preds.len() <= 1 {
-        Ok(service_preds)
-    } else {
-        Ok(vec![format!("({})", service_preds.join(" OR "))])
-    }
+/// Event-target scope only — used as the inner scope for "latest N" universe queries.
+#[must_use]
+pub fn build_request_log_scope_conditions(params: &RequestLogQueryParams) -> Vec<String> {
+    params
+        .event_target
+        .map(|target| format!("event_target = '{}'", target.as_str()))
+        .into_iter()
+        .collect()
 }
 
-/// Non-service predicates (time, q, filters, ids, …).
+/// Non-scope predicates (time, q, filters, ids, …).
 pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Result<Vec<String>> {
     let mut conditions: Vec<String> = Vec::new();
     if let Some(start_time) = &params.start_time {
@@ -145,7 +123,7 @@ pub fn build_request_log_filter_conditions(params: &RequestLogQueryParams) -> Re
 
 pub fn build_request_log_conditions(params: &RequestLogQueryParams) -> Result<Vec<String>> {
     let mut conditions = build_request_log_filter_conditions(params)?;
-    conditions.extend(build_request_log_service_conditions(params)?);
+    conditions.extend(build_request_log_scope_conditions(params));
     Ok(conditions)
 }
 
@@ -171,7 +149,7 @@ pub fn build_request_logs_data_sql(
     ))
 }
 
-/// Latest-N universe: inner takes newest `universe_limit` rows (service-scoped), outer applies filters.
+/// Latest-N universe: inner takes newest `universe_limit` rows (event-target scoped), outer applies filters.
 pub fn build_request_logs_latest_universe_count_sql(
     universe_where: &str,
     outer_where: &str,
@@ -221,9 +199,8 @@ pub fn build_aggregation_conditions(params: &RequestLogAggregationParams) -> Res
         let validated = validate_uuid_param(tenant_id)?;
         conditions.push(format!("tenant_id = '{validated}'"));
     }
-    if let Some(ref service) = params.service {
-        let validated = validate_like_param(service)?;
-        conditions.push(format!("`service` = '{validated}'"));
+    if let Some(target) = params.event_target {
+        conditions.push(format!("event_target = '{}'", target.as_str()));
     }
     Ok(conditions)
 }
@@ -278,13 +255,13 @@ pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> Str
 
 /// Upstream (supplier-side) usage summary, computed on read from the deduplicated access log.
 ///
-/// Only `mazbri-bypass` rows are counted: every customer -> upstream hop is logged exactly once
+/// Only `event_target = 'bypass'` rows are counted: every customer -> upstream hop is logged exactly once
 /// on bypass, while the gateway row of the same request would double count it. `FINAL` collapses
 /// at-least-once redeliveries (`request_logs` is a `ReplacingMergeTree`), so supplier bills and the
-/// reconciliation reference count are exact. `extra_conditions` are joined with `AND` after the service filter.
+/// reconciliation reference count are exact. `extra_conditions` are joined with `AND` after the event-target filter.
 #[must_use]
 pub fn build_upstream_usage_summary_sql(extra_conditions: &[String]) -> String {
-    let mut conditions = vec!["service = 'mazbri-bypass'".to_string()];
+    let mut conditions = vec!["event_target = 'bypass'".to_string()];
     conditions.extend(extra_conditions.iter().cloned());
     format!(
         "SELECT \
@@ -312,7 +289,7 @@ mod upstream_usage_sql_tests {
     #[test]
     fn reads_deduplicated_bypass_rows_only() {
         let sql = squash(&build_upstream_usage_summary_sql(&[]));
-        assert!(sql.contains("FROM request_logs FINAL WHERE service = 'mazbri-bypass' GROUP BY"));
+        assert!(sql.contains("FROM request_logs FINAL WHERE event_target = 'bypass' GROUP BY"));
         assert!(!sql.contains("upstream_hourly_usage"));
         assert!(!sql.contains("mazbri-gateway"));
     }
@@ -333,7 +310,7 @@ mod upstream_usage_sql_tests {
     }
 
     #[test]
-    fn appends_time_and_scope_filters_after_service() {
+    fn appends_time_and_scope_filters_after_event_target() {
         let conds = vec![
             "timestamp >= parseDateTimeBestEffortOrNull(?)".to_string(),
             "timestamp <= parseDateTimeBestEffortOrNull(?)".to_string(),
@@ -341,7 +318,7 @@ mod upstream_usage_sql_tests {
         ];
         let sql = squash(&build_upstream_usage_summary_sql(&conds));
         assert!(sql.contains(
-            "WHERE service = 'mazbri-bypass' AND timestamp >= parseDateTimeBestEffortOrNull(?) \
+            "WHERE event_target = 'bypass' AND timestamp >= parseDateTimeBestEffortOrNull(?) \
              AND timestamp <= parseDateTimeBestEffortOrNull(?) AND supplier_id = 's1' GROUP BY"
         ));
     }

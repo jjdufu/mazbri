@@ -63,11 +63,15 @@ async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClien
                 config
                     .metrics_targets
                     .iter()
-                    .map(|t| mazbri_analytics::greptimedb::ServiceMetricTarget {
-                        key: t.key.as_str().to_owned(),
-                        name: t.name.clone(),
+                    .map(|t| {
+                        mazbri_analytics::greptimedb::ServiceMetricTarget::new(
+                            t.key.as_str().to_owned(),
+                            t.name.clone(),
+                            t.endpoint.clone(),
+                        )
                     })
-                    .collect()
+                    .collect::<Result<Vec<_>, _>>()
+                    .ok()?
             };
             match GreptimeDBClient::new(greptimedb_config, targets) {
                 Ok(client) => match client.test_connection().await {

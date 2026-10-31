@@ -73,7 +73,7 @@
         <ElCol :xs="24" :lg="8">
           <section class="monitor-section">
             <CommonSectionTitle
-              :title="$t('operations.monitoring.sections.errorRate5xx')"
+              :title="$t('operations.monitoring.sections.errorRate')"
             />
             <div
               ref="errorChartRef"
@@ -114,6 +114,7 @@ import {
   fetchMetricsOverview,
 } from "@/api/monitoring";
 import type {
+  BillingQueueStatus,
   MetricOverview,
   MetricSeries,
   MetricsCatalog,
@@ -149,14 +150,22 @@ const emptyCatalog: MetricsCatalog = {
 const emptyOverview: MetricOverview = {
   qps: 0,
   error_rate: 0,
+  error_rate_4xx: 0,
+  error_rate_5xx: 0,
   p95_latency_ms: 0,
   p99_latency_ms: 0,
   active_connections: 0,
   proxy_active_connections: 0,
   rate_limit_rejections_per_sec: 0,
-  billing_queue_depth: 0,
+  billing_queue: { pending: 0, processing: 0, failed: 0, dead_letter: 0 },
   cert_min_expiry_days: 0,
 };
+const billingQueueStatuses: BillingQueueStatus[] = [
+  "pending",
+  "processing",
+  "failed",
+  "dead_letter",
+];
 const serviceColumns = computed<
   ColumnOption<MetricsCatalog["services"][number]>[]
 >(() => [
@@ -174,11 +183,6 @@ const serviceColumns = computed<
     showOverflowTooltip: true,
   },
 ]);
-const stepSeconds = computed(() => {
-  if (rangePreset.value === "7d") return 3600;
-  if (rangePreset.value === "24h") return 300;
-  return 60;
-});
 const summaryItems = computed(() => [
   {
     label: $t("operations.monitoring.metrics.currentQps"),
@@ -189,7 +193,7 @@ const summaryItems = computed(() => [
     background: "rgba(64, 158, 255, 0.1)",
   },
   {
-    label: $t("operations.monitoring.metrics.errorRate5xx"),
+    label: $t("operations.monitoring.metrics.errorRate"),
     value: formatNumber(overview.value?.error_rate),
     unit: $t("operations.monitoring.units.percent"),
     icon: "ri:error-warning-line",
@@ -236,13 +240,24 @@ const summaryItems = computed(() => [
     color: "#fa8a6c",
     background: "rgba(250, 138, 108, 0.1)",
   },
-  {
-    label: $t("operations.monitoring.metrics.billingQueue"),
-    value: formatNumber(overview.value?.billing_queue_depth, 0),
+  ...billingQueueStatuses.map((status) => ({
+    label: $t("operations.monitoring.metrics.billingQueue", { status }),
+    value: formatNumber(overview.value?.billing_queue?.[status], 0),
     unit: $t("operations.monitoring.units.jobs"),
-    icon: "ri:stack-line",
-    color: "#8b5cf6",
-    background: "rgba(139, 92, 246, 0.1)",
+    icon: status === "dead_letter" ? "ri:skull-line" : "ri:stack-line",
+    color: status === "dead_letter" ? "#f56c6c" : "#8b5cf6",
+    background:
+      status === "dead_letter"
+        ? "rgba(245, 108, 108, 0.1)"
+        : "rgba(139, 92, 246, 0.1)",
+  })),
+  {
+    label: $t("operations.monitoring.metrics.certMinExpiry"),
+    value: formatNumber(overview.value?.cert_min_expiry_days, 0),
+    unit: $t("operations.monitoring.units.days"),
+    icon: "ri:shield-check-line",
+    color: "#0ea5e9",
+    background: "rgba(14, 165, 233, 0.1)",
   },
 ]);
 const reloadData = async () => {
@@ -256,23 +271,20 @@ const reloadData = async () => {
       fetchMetricsCatalog(),
       fetchMetricTimeseries({
         metric: "qps",
-        start_time: start,
-        end_time: now,
-        step: stepSeconds.value,
+        start,
+        end: now,
         service: serviceParam,
       }),
       fetchMetricTimeseries({
         metric: "p95_latency_ms",
-        start_time: start,
-        end_time: now,
-        step: stepSeconds.value,
+        start,
+        end: now,
         service: serviceParam,
       }),
       fetchMetricTimeseries({
         metric: "error_rate",
-        start_time: start,
-        end_time: now,
-        step: stepSeconds.value,
+        start,
+        end: now,
         service: serviceParam,
       }),
     ]);
@@ -312,7 +324,7 @@ const reloadData = async () => {
       errors,
       emptySeries(
         "error_rate",
-        $t("operations.monitoring.metrics.errorRate5xx"),
+        $t("operations.monitoring.metrics.errorRate"),
         $t("operations.monitoring.units.percent"),
       ),
     ),

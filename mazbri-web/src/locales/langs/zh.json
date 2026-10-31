@@ -413,14 +413,15 @@
       },
       "allServices": "全部服务",
       "metrics": {
-        "currentQps": "当前 QPS",
-        "errorRate5xx": "5xx 错误率",
+        "currentQps": "业务 QPS",
+        "errorRate": "业务错误率",
         "p95Latency": "P95 延迟",
         "p99Latency": "P99 延迟",
         "activeConnections": "活跃连接",
         "proxyConnections": "代理连接",
         "rateLimitRejections": "限流拒绝",
-        "billingQueue": "计费队列"
+        "billingQueue": "计费队列 · {status}",
+        "certMinExpiry": "证书最短到期"
       },
       "units": {
         "reqPerSec": "req/s",
@@ -428,7 +429,8 @@
         "milliseconds": "ms",
         "connections": "conn",
         "opsPerSec": "ops/s",
-        "jobs": "jobs"
+        "jobs": "jobs",
+        "days": "天"
       },
       "noData": "暂无数据",
       "customerTitle": "客户监控",
