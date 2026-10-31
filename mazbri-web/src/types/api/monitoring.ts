@@ -13,11 +13,15 @@ export interface MetricDataPoint {
   timestamp: number;
   value: number;
 }
+export interface MetricSeriesData {
+  labels: Record<string, string>;
+  points: MetricDataPoint[];
+}
 export interface MetricSeries {
   metric: string;
   label: string;
   unit: string;
-  points: MetricDataPoint[];
+  series: MetricSeriesData[];
 }
 export interface MetricCatalogItem {
   key: string;

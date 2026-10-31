@@ -1,6 +1,7 @@
 use super::client::GreptimeDBClient;
 use crate::error::{AnalyticsError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 const METRICS_DATABASE: &str = "mazbri_metrics";
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceMetricTarget {
@@ -43,12 +44,18 @@ pub struct MetricDataPoint {
     pub timestamp: i64,
     pub value: f64,
 }
+/// One labelled time series returned by a range query.
+#[derive(Debug, Clone, Serialize)]
+pub struct MetricSeriesData {
+    pub labels: BTreeMap<String, String>,
+    pub points: Vec<MetricDataPoint>,
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricSeries {
     pub metric: String,
     pub label: String,
     pub unit: String,
-    pub points: Vec<MetricDataPoint>,
+    pub series: Vec<MetricSeriesData>,
 }
 #[derive(Debug, Deserialize)]
 struct PrometheusEnvelope {
@@ -62,6 +69,8 @@ struct PrometheusData {
 }
 #[derive(Debug, Deserialize)]
 struct PrometheusResult {
+    #[serde(default)]
+    metric: BTreeMap<String, String>,
     #[serde(default)]
     value: Option<(serde_json::Value, serde_json::Value)>,
     #[serde(default)]
@@ -146,7 +155,7 @@ impl GreptimeDBClient {
                 })?;
             let query =
                 build_metric_query(metric.key, params.service.as_deref(), &self.service_targets)?;
-            let mut points = self
+            let mut series = self
                 .prometheus_range_values(
                     &query,
                     params.start_time,
@@ -155,7 +164,7 @@ impl GreptimeDBClient {
                 )
                 .await?;
             if params.metric == "p95_latency_ms" || params.metric == "p99_latency_ms" {
-                for point in &mut points {
+                for point in series.iter_mut().flat_map(|s| s.points.iter_mut()) {
                     point.value *= 1000.0;
                 }
             }
@@ -163,7 +172,7 @@ impl GreptimeDBClient {
                 metric: metric.key.to_string(),
                 label: metric.label.to_string(),
                 unit: metric.unit.to_string(),
-                points,
+                series,
             })
         })
         .await
@@ -207,7 +216,7 @@ impl GreptimeDBClient {
         start_time: i64,
         end_time: i64,
         step: u64,
-    ) -> Result<Vec<MetricDataPoint>> {
+    ) -> Result<Vec<MetricSeriesData>> {
         let url = format!(
             "{}/v1/prometheus/api/v1/query_range?db={}&query={}&start={}&end={}&step={}",
             self.http_url,
@@ -229,21 +238,25 @@ impl GreptimeDBClient {
         ensure_prometheus_success(&envelope)?;
         Ok(envelope
             .data
-            .as_ref()
-            .and_then(|data| data.result.first())
-            .and_then(|result| result.values.as_ref())
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(|(timestamp, value)| {
-                        Some(MetricDataPoint {
-                            timestamp: parse_prometheus_timestamp(timestamp)?,
-                            value: parse_prometheus_number(value).unwrap_or(0.0),
-                        })
-                    })
-                    .collect()
-            })
+            .map(|data| data.result.into_iter().map(range_series).collect())
             .unwrap_or_default())
+    }
+}
+fn range_series(result: PrometheusResult) -> MetricSeriesData {
+    let points = result
+        .values
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|(timestamp, value)| {
+            Some(MetricDataPoint {
+                timestamp: parse_prometheus_timestamp(timestamp)?,
+                value: parse_prometheus_number(value)?,
+            })
+        })
+        .collect();
+    MetricSeriesData {
+        labels: result.metric,
+        points,
     }
 }
 fn ensure_prometheus_success(envelope: &PrometheusEnvelope) -> Result<()> {
@@ -452,6 +465,25 @@ mod tests {
         )?;
         assert!(q.contains(r#"service="mazbri-gateway""#));
         assert!(!q.contains("endpoint=~"));
+        Ok(())
+    }
+
+    #[test]
+    fn range_result_keeps_every_series_with_labels() -> std::result::Result<(), serde_json::Error> {
+        let data: PrometheusData = serde_json::from_value(serde_json::json!({
+            "result": [
+                {"metric": {"service": "mazbri-gateway"}, "values": [[1, "0.5"], [2, "NaN"]]},
+                {"metric": {"service": "mazbri-auth"}, "values": [[1, "0.25"]]}
+            ]
+        }))?;
+        let series: Vec<_> = data.result.into_iter().map(range_series).collect();
+        assert_eq!(series.len(), 2);
+        assert_eq!(
+            series[0].labels.get("service").map(String::as_str),
+            Some("mazbri-gateway")
+        );
+        assert_eq!(series[0].points.len(), 1);
+        assert_eq!(series[1].points[0].timestamp, 1);
         Ok(())
     }
 }

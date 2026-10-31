@@ -330,7 +330,7 @@ const emptySeries = (
   metric,
   label,
   unit,
-  points: [],
+  series: [],
 });
 const renderChart = (
   chartName: "qps" | "latency" | "error",
@@ -361,8 +361,9 @@ const buildLineOption = (
   series: MetricSeries,
   color: string,
 ): EChartsOption => {
-  const isEmpty = series.points.length === 0;
-  const xAxisData = series.points.map((point) =>
+  const points = series.series[0]?.points ?? [];
+  const isEmpty = points.length === 0;
+  const xAxisData = points.map((point) =>
     new Intl.DateTimeFormat(undefined, {
       hour: "2-digit",
       minute: "2-digit",
@@ -412,7 +413,7 @@ const buildLineOption = (
         type: "line",
         smooth: true,
         symbol: "none",
-        data: series.points.map((point) => Number(point.value.toFixed(3))),
+        data: points.map((point) => Number(point.value.toFixed(3))),
         lineStyle: { width: 2, color },
         areaStyle: {
           color: new graphic.LinearGradient(0, 0, 0, 1, [

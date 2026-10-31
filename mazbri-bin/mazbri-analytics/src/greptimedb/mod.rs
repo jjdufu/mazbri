@@ -5,7 +5,7 @@ mod types;
 pub use client::GreptimeDBClient;
 pub use metrics::{
     MetricCatalogItem, MetricDataPoint, MetricOverview, MetricQueryParams, MetricSeries,
-    ServiceMetricTarget, default_service_targets,
+    MetricSeriesData, ServiceMetricTarget, default_service_targets,
 };
 pub use sanitization::{
     SanitizationError, sanitize_identifier_value, sanitize_like_value, sanitize_uuid_value,
