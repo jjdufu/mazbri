@@ -1,0 +1,106 @@
+export type OlapRange = "15m" | "1h" | "6h" | "24h" | "7d" | "30d";
+
+export type OlapDim =
+  | "tenant_code"
+  | "product_id"
+  | "supplier_code"
+  | "channel_code"
+  | "mode"
+  | "status_class"
+  | "error_code";
+
+export type OlapMetric =
+  | "count"
+  | "p50"
+  | "p95"
+  | "p99"
+  | "request_bytes"
+  | "response_bytes"
+  | "cost";
+
+export interface OlapFilters {
+  tenant_code?: string;
+  product_id?: string;
+  supplier_code?: string;
+  channel_code?: string;
+}
+
+export interface OlapResponse<T = Record<string, unknown>> {
+  template: string;
+  rows: T[];
+}
+
+export interface TopRow {
+  key: string;
+  value: number;
+  count: number;
+}
+
+export interface HeatmapRow {
+  ts: number;
+  status_class: string;
+  count: number;
+}
+
+export interface BytesRow {
+  ts: number;
+  request_bytes: number;
+  response_bytes: number;
+}
+
+export interface BreakdownRow {
+  product_id: string;
+  count: number;
+  internal_p99: number;
+  dependency_wait_p99: number;
+  upstream_p99: number;
+  post_response_p99: number;
+}
+
+export interface StageRow {
+  stage_name: string;
+  count: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+export interface LatencyHeatRow {
+  ts: number;
+  le_ms: number;
+  count: number;
+}
+
+export interface SlowRow {
+  ts: number;
+  request_id: string;
+  trace_id: string;
+  tenant_code: string;
+  product_id: string;
+  channel_code: string;
+  status_code: number;
+  duration_ms: number;
+  upstream_service_time_ms: number;
+  error_code: string;
+}
+
+export interface ErrorCellRow {
+  error_code: string;
+  error_stage: string;
+  count: number;
+}
+
+export interface AttributionRow {
+  error_class: string;
+  count: number;
+}
+
+export interface FlagRow {
+  response_flags: string;
+  count: number;
+}
+
+export interface NewErrorRow {
+  error_code: string;
+  count: number;
+}

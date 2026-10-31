@@ -270,9 +270,24 @@ const errorLabel = computed(() => {
 });
 
 const drillTargets = computed(() => [
-  { id: "2.1", label: t("ops.overview.drill.gatewayRed"), enabled: false },
-  { id: "2.2", label: t("ops.overview.drill.latency"), enabled: false },
-  { id: "2.4", label: t("ops.overview.drill.errors"), enabled: false },
+  {
+    id: "2.1",
+    label: t("ops.overview.drill.gatewayRed"),
+    enabled: true,
+    path: "/ops/traffic/red",
+  },
+  {
+    id: "2.2",
+    label: t("ops.overview.drill.latency"),
+    enabled: true,
+    path: "/ops/traffic/latency",
+  },
+  {
+    id: "2.4",
+    label: t("ops.overview.drill.errors"),
+    enabled: true,
+    path: "/ops/traffic/errors",
+  },
   { id: "3.2", label: t("ops.overview.drill.circuit"), enabled: false },
   { id: "4.1", label: t("ops.overview.drill.ratelimit"), enabled: false },
   { id: "6.1", label: t("ops.overview.drill.billing"), enabled: false },

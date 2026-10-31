@@ -847,7 +847,10 @@
       "opsScreen": "运营大屏",
       "financeOverview": "经营看板",
       "serviceHealth": "服务健康",
-      "serviceDetail": "服务详情"
+      "serviceDetail": "服务详情",
+      "trafficRed": "网关 RED",
+      "trafficLatency": "时延分解",
+      "trafficErrors": "错误分析"
     }
   },
   "systemSettings": {
@@ -4165,6 +4168,46 @@
         "usePending": "USE（CPU / 内存 / 运行时）在步骤 10 后自动出现",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
+      }
+    },
+    "traffic": {
+      "qpsByMode": "QPS（按 mode）",
+      "errorByMode": "错误率（按 mode）",
+      "p95ByMode": "P95 时延（按 mode）",
+      "topByDim": "维度 TopN",
+      "statusHeatmap": "状态码热力",
+      "bytesTrend": "请求 / 响应字节",
+      "latencyBreakdown": "时延分解（按产品）",
+      "stageQuantiles": "阶段分位",
+      "platformLocal": "平台本地耗时",
+      "latencyHeatmap": "时延热力",
+      "slowRequests": "慢请求",
+      "errorMatrix": "错误码 × 阶段",
+      "errorAttribution": "错误归因",
+      "responseFlags": "response_flags 分布",
+      "newErrorCodes": "新出现错误码",
+      "loadFailed": "加载流量指标失败",
+      "drillDisabledProduct": "产品详情页尚未上线",
+      "drillDisabledTenant": "租户运营页尚未上线",
+      "drillDisabledCalls": "调用检索页尚未上线",
+      "dim": {
+        "tenant": "租户",
+        "product": "产品",
+        "supplier": "供应商",
+        "channel": "渠道",
+        "status": "状态码类",
+        "mode": "mode"
+      },
+      "metric": {
+        "count": "请求数",
+        "reqBytes": "请求字节",
+        "respBytes": "响应字节"
+      },
+      "columns": {
+        "key": "维度值",
+        "value": "指标",
+        "count": "次数",
+        "time": "时间"
       }
     }
   }

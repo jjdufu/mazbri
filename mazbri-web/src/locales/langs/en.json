@@ -847,7 +847,10 @@
       "opsScreen": "Ops Screen",
       "financeOverview": "Finance Overview",
       "serviceHealth": "Service Health",
-      "serviceDetail": "Service Detail"
+      "serviceDetail": "Service Detail",
+      "trafficRed": "Gateway RED",
+      "trafficLatency": "Latency breakdown",
+      "trafficErrors": "Error analysis"
     }
   },
   "systemSettings": {
@@ -4160,6 +4163,46 @@
         "usePending": "USE (CPU / memory / runtime) appears after step 10",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
+      }
+    },
+    "traffic": {
+      "qpsByMode": "QPS by mode",
+      "errorByMode": "Error rate by mode",
+      "p95ByMode": "P95 latency by mode",
+      "topByDim": "TopN by dimension",
+      "statusHeatmap": "Status heatmap",
+      "bytesTrend": "Request / response bytes",
+      "latencyBreakdown": "Latency breakdown by product",
+      "stageQuantiles": "Stage quantiles",
+      "platformLocal": "Platform local latency",
+      "latencyHeatmap": "Latency heatmap",
+      "slowRequests": "Slow requests",
+      "errorMatrix": "Error code × stage",
+      "errorAttribution": "Error attribution",
+      "responseFlags": "response_flags distribution",
+      "newErrorCodes": "New error codes",
+      "loadFailed": "Failed to load traffic metrics",
+      "drillDisabledProduct": "Product detail page is not online yet",
+      "drillDisabledTenant": "Tenant ops page is not online yet",
+      "drillDisabledCalls": "Call search page is not online yet",
+      "dim": {
+        "tenant": "Tenant",
+        "product": "Product",
+        "supplier": "Supplier",
+        "channel": "Channel",
+        "status": "Status class",
+        "mode": "mode"
+      },
+      "metric": {
+        "count": "Count",
+        "reqBytes": "Request bytes",
+        "respBytes": "Response bytes"
+      },
+      "columns": {
+        "key": "Key",
+        "value": "Value",
+        "count": "Count",
+        "time": "Time"
       }
     }
   }

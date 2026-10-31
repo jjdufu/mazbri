@@ -7,6 +7,7 @@ import {
   RadarChart,
   MapChart,
   CandlestickChart,
+  HeatmapChart,
 } from "echarts/charts";
 import {
   TitleComponent,
@@ -30,6 +31,7 @@ echarts.use([
   RadarChart,
   MapChart,
   CandlestickChart,
+  HeatmapChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,

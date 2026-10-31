@@ -503,7 +503,7 @@ fn parse_prometheus_number(value: &serde_json::Value) -> Option<f64> {
         .or_else(|| value.as_str()?.parse::<f64>().ok())
         .filter(|v| v.is_finite())
 }
-fn metric_catalog() -> Vec<MetricCatalogItem> {
+fn metric_catalog_core() -> Vec<MetricCatalogItem> {
     vec![
         MetricCatalogItem {
             key: "qps",
@@ -605,6 +605,46 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
         },
     ]
 }
+
+fn metric_catalog() -> Vec<MetricCatalogItem> {
+    let mut items = metric_catalog_core();
+    items.extend(metric_catalog_traffic());
+    items
+}
+
+fn metric_catalog_traffic() -> Vec<MetricCatalogItem> {
+    vec![
+        MetricCatalogItem {
+            key: "qps_by_mode",
+            label: "业务 QPS（按 mode）",
+            unit: "req/s",
+            default_chart: "area",
+            note: None,
+        },
+        MetricCatalogItem {
+            key: "error_rate_by_mode",
+            label: "业务错误率（按 mode）",
+            unit: "%",
+            default_chart: "line",
+            note: None,
+        },
+        MetricCatalogItem {
+            key: "p95_latency_ms_by_mode",
+            label: "P95 延迟（按 mode）",
+            unit: "ms",
+            default_chart: "line",
+            note: None,
+        },
+        MetricCatalogItem {
+            key: "gateway_platform_local_ms",
+            label: "平台本地耗时 P95",
+            unit: "ms",
+            default_chart: "line",
+            note: None,
+        },
+    ]
+}
+
 #[must_use]
 pub fn default_service_targets() -> Vec<ServiceMetricTarget> {
     use mazbri_core::ServiceName as S;
@@ -763,6 +803,18 @@ fn build_metric_query(
         "ratelimit_snapshot_age_seconds" => {
             "max(gateway_ratelimit_snapshot_age_seconds)".to_string()
         }
+        "qps_by_mode" => {
+            format!("sum by (mode) (rate(api_proxy_requests_total[{window}s]))")
+        }
+        "error_rate_by_mode" => format!(
+            r#"100 * sum by (mode) (rate(api_proxy_requests_total{{result!="ok"}}[{window}s])) / (sum by (mode) (rate(api_proxy_requests_total[{window}s])) > 0)"#
+        ),
+        "p95_latency_ms_by_mode" => format!(
+            "histogram_quantile(0.95, sum by (le, mode) (rate(api_proxy_duration_seconds_bucket[{window}s]))) * 1000"
+        ),
+        "gateway_platform_local_ms" => format!(
+            "histogram_quantile(0.95, sum by (le, product_id) (rate(gateway_platform_local_seconds_bucket[{window}s]))) * 1000"
+        ),
         other => {
             return Err(AnalyticsError::Config(format!(
                 "Unsupported metric: {other}"

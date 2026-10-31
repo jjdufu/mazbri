@@ -77,6 +77,39 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "traffic/red",
+        name: "OpsTrafficRed",
+        component: "/mazbri/ops/traffic/red",
+        meta: {
+          title: "menus.mazbri.trafficRed",
+          icon: "ri:dashboard-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "traffic/latency",
+        name: "OpsTrafficLatency",
+        component: "/mazbri/ops/traffic/latency",
+        meta: {
+          title: "menus.mazbri.trafficLatency",
+          icon: "ri:timer-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "traffic/errors",
+        name: "OpsTrafficErrors",
+        component: "/mazbri/ops/traffic/errors",
+        meta: {
+          title: "menus.mazbri.trafficErrors",
+          icon: "ri:error-warning-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "tenants",
         name: "TenantList",
         component: "/mazbri/tenants/index",
