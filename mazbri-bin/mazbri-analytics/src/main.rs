@@ -145,6 +145,13 @@ async fn main() -> Result<()> {
             config.admin.clone(),
         ));
     }
+    if let Some(ref alerting) = config.alerting {
+        mazbri_analytics::alerting::spawn(
+            alerting,
+            greptimedb_client.clone(),
+            Arc::clone(&clickhouse_client),
+        )?;
+    }
     let app_state = AppState {
         greptimedb_client,
         clickhouse_client,

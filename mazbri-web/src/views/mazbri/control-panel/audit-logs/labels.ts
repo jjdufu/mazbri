@@ -55,6 +55,11 @@ export const ACTION_LABELS: Record<string, string> = {
     "auditLogs.explicitActions.billAdjustmentVoid",
   "billing.reconciliation_settings_update":
     "auditLogs.explicitActions.reconciliationSettingsUpdate",
+  "alert_rule.create": "auditLogs.explicitActions.alertRuleCreate",
+  "alert_rule.update": "auditLogs.explicitActions.alertRuleUpdate",
+  "alert_rule.delete": "auditLogs.explicitActions.alertRuleDelete",
+  "alert_event.ack": "auditLogs.explicitActions.alertEventAck",
+  "alert_event.assign": "auditLogs.explicitActions.alertEventAssign",
   "certificate.issue": "auditLogs.explicitActions.certificateIssue",
   "certificate.renew": "auditLogs.explicitActions.certificateRenew",
   "certificate.revoke": "auditLogs.explicitActions.certificateRevoke",
@@ -226,6 +231,7 @@ export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   authorization: "auditLogs.resources.authorization",
   billing: "auditLogs.resources.billing",
   ratelimit: "auditLogs.resources.ratelimit",
+  alert: "auditLogs.resources.alert",
 };
 
 /** 写入服务 → i18n key（与后端 `mazbri_audit::record::SERVICE_*` 一致）。 */

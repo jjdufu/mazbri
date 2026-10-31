@@ -54,6 +54,11 @@ audit_actions! {
     BillAdjustmentCreate => "billing.bill_adjustment_create",
     BillAdjustmentVoid => "billing.bill_adjustment_void",
     ReconciliationSettingsUpdate => "billing.reconciliation_settings_update",
+    AlertRuleCreate => "alert_rule.create",
+    AlertRuleUpdate => "alert_rule.update",
+    AlertRuleDelete => "alert_rule.delete",
+    AlertEventAck => "alert_event.ack",
+    AlertEventAssign => "alert_event.assign",
     AdminCreate => "admin.create",
     AdminUpdate => "admin.update",
     AdminDelete => "admin.delete",
@@ -188,6 +193,7 @@ pub enum AuditResourceType {
     Connector,
     Authorization,
     Billing,
+    Alert,
 }
 impl AuditResourceType {
     #[must_use]
@@ -213,6 +219,7 @@ impl AuditResourceType {
             AuditResourceType::Connector => "connector",
             AuditResourceType::Authorization => "authorization",
             AuditResourceType::Billing => "billing",
+            AuditResourceType::Alert => "alert",
         }
     }
 }

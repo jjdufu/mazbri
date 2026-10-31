@@ -851,7 +851,9 @@
       "upstreamSla": "供应商 SLA",
       "upstreamBreaker": "熔断与重试",
       "billingHealth": "计费链路健康",
-      "opsCalls": "调用检索"
+      "opsCalls": "调用检索",
+      "alertEvents": "告警事件",
+      "alertRules": "告警规则"
     }
   },
   "systemSettings": {
@@ -1530,7 +1532,12 @@
       "apiPost": "API 提交",
       "apiPut": "API 更新",
       "apiPatch": "API 修改",
-      "apiDelete": "API 删除"
+      "apiDelete": "API 删除",
+      "alertRuleCreate": "创建告警规则",
+      "alertRuleUpdate": "更新告警规则",
+      "alertRuleDelete": "删除告警规则",
+      "alertEventAck": "确认告警事件",
+      "alertEventAssign": "指派告警事件"
     },
     "resources": {
       "admin": "管理员",
@@ -1553,7 +1560,8 @@
       "connector": "连接器",
       "authorization": "授权",
       "billing": "账单",
-      "ratelimit": "限流"
+      "ratelimit": "限流",
+      "alert": "告警"
     },
     "services": {
       "mgmt": "管理后台",
@@ -4122,7 +4130,11 @@
       "healthLights": "服务健康灯",
       "openMatrix": "服务健康矩阵",
       "placeholders": "后续接入",
-      "alertsPending": "活跃告警：未接入（步骤 09）",
+      "alerts": "活跃告警",
+      "alertsFiring": "触发中 {n}",
+      "alertsAcked": "已确认 {n}",
+      "alertsNone": "当前无活跃告警",
+      "alertsOpen": "告警事件",
       "errorBudgetPending": "错误预算：未接入（步骤 24）",
       "drillDisabled": "目标页面尚未上线",
       "charts": {
@@ -4296,6 +4308,75 @@
           "status": "状态码",
           "duration": "耗时(ms)",
           "errorCode": "错误码"
+        }
+      }
+    },
+    "alerts": {
+      "timeline": "事件时间线",
+      "empty": "暂无告警事件",
+      "resolvedAt": "恢复于",
+      "ack": "确认",
+      "ackDone": "已确认",
+      "assign": "指派",
+      "assignPrompt": "输入处理人用户名（留空取消指派）",
+      "assignInvalid": "用户名不超过 64 个字符",
+      "assignDone": "已指派",
+      "filters": {
+        "status": "状态",
+        "severity": "级别",
+        "event": "事件"
+      },
+      "status": {
+        "active": "活跃",
+        "firing": "触发中",
+        "acked": "已确认",
+        "resolved": "已恢复"
+      },
+      "severity": {
+        "critical": "严重",
+        "warning": "警告",
+        "info": "提示"
+      },
+      "columns": {
+        "severity": "级别",
+        "status": "状态",
+        "rule": "规则",
+        "labels": "标签",
+        "value": "当前值 / 阈值",
+        "startedAt": "开始时间",
+        "resolvedAt": "恢复时间",
+        "ackedBy": "确认人",
+        "assignee": "处理人",
+        "actions": "操作"
+      },
+      "rules": {
+        "create": "新建规则",
+        "refresh": "刷新",
+        "edit": "编辑",
+        "delete": "删除",
+        "cancel": "取消",
+        "save": "保存",
+        "saved": "规则已保存",
+        "deleted": "规则已删除",
+        "deleteConfirm": "确定删除规则「{name}」？其历史事件将一并删除。",
+        "hint": "analytics 每 30 秒评估一次已启用规则；超阈值持续「持续时间」后产生事件，同一指纹只保留一条活跃事件。未配置 webhook 的规则只记录事件、不对外发送。",
+        "columns": {
+          "enabled": "启用",
+          "name": "名称",
+          "severity": "级别",
+          "expr": "表达式",
+          "condition": "条件",
+          "notify": "Webhook",
+          "active": "活跃"
+        },
+        "form": {
+          "kind": "数据源",
+          "for": "持续",
+          "labels": "附加标签",
+          "labelsInvalid": "每行一个 key=value",
+          "webhooks": "Webhook",
+          "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
+          "required": "必填"
         }
       }
     }

@@ -390,6 +390,50 @@ impl GreptimeDBClient {
             .unwrap_or(0.0))
     }
     /// 按某标签拆分的即时向量（标签值 → 数值）。
+    /// 执行 `PromQL` 即时查询，返回每条序列的标签与数值（非有限值的序列被丢弃）。
+    ///
+    /// # Errors
+    ///
+    /// 网络失败、HTTP 非 2xx、响应无法解析或 Prometheus 返回错误状态时返回错误。
+    pub async fn query_instant_vector(
+        &self,
+        query: &str,
+    ) -> Result<Vec<(BTreeMap<String, String>, f64)>> {
+        self.with_query_timeout("prometheus_instant_vector", async {
+            let url = format!(
+                "{}/v1/prometheus/api/v1/query?db={}&query={}",
+                self.http_url,
+                METRICS_DATABASE,
+                urlencoding::encode(query)
+            );
+            let envelope = self
+                .client
+                .get(url)
+                .basic_auth(&self.user, Some(&self.password))
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<PrometheusEnvelope>()
+                .await?;
+            ensure_prometheus_success(&envelope)?;
+            Ok(envelope
+                .data
+                .map(|data| {
+                    data.result
+                        .into_iter()
+                        .filter_map(|r| {
+                            let value = r
+                                .value
+                                .as_ref()
+                                .and_then(|(_, v)| parse_prometheus_number(v))?;
+                            Some((r.metric, value))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default())
+        })
+        .await
+    }
     async fn prometheus_instant_by_label(
         &self,
         query: &str,

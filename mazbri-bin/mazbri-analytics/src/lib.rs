@@ -1,3 +1,4 @@
+pub mod alerting;
 pub mod clickhouse;
 pub mod config;
 mod error;

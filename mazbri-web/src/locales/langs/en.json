@@ -851,7 +851,9 @@
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
       "billingHealth": "Billing Pipeline",
-      "opsCalls": "Call search"
+      "opsCalls": "Call search",
+      "alertEvents": "Alert events",
+      "alertRules": "Alert rules"
     }
   },
   "systemSettings": {
@@ -1530,7 +1532,12 @@
       "apiPost": "API Submit",
       "apiPut": "API Update",
       "apiPatch": "API Modify",
-      "apiDelete": "API Delete"
+      "apiDelete": "API Delete",
+      "alertRuleCreate": "Create alert rule",
+      "alertRuleUpdate": "Update alert rule",
+      "alertRuleDelete": "Delete alert rule",
+      "alertEventAck": "Acknowledge alert",
+      "alertEventAssign": "Assign alert"
     },
     "resources": {
       "admin": "Administrator",
@@ -1553,7 +1560,8 @@
       "connector": "Connector",
       "authorization": "Authorization",
       "billing": "Billing",
-      "ratelimit": "Rate limit"
+      "ratelimit": "Rate limit",
+      "alert": "Alert"
     },
     "services": {
       "mgmt": "Management",
@@ -4117,7 +4125,11 @@
       "healthLights": "Service health lights",
       "openMatrix": "Service health matrix",
       "placeholders": "Coming later",
-      "alertsPending": "Active alerts: not connected (step 09)",
+      "alerts": "Active alerts",
+      "alertsFiring": "Firing {n}",
+      "alertsAcked": "Acked {n}",
+      "alertsNone": "No active alerts",
+      "alertsOpen": "Alert events",
       "errorBudgetPending": "Error budget: not connected (step 24)",
       "drillDisabled": "Target page is not online yet",
       "charts": {
@@ -4291,6 +4303,75 @@
           "status": "Status",
           "duration": "Duration (ms)",
           "errorCode": "Error code"
+        }
+      }
+    },
+    "alerts": {
+      "timeline": "Event timeline",
+      "empty": "No alert events",
+      "resolvedAt": "resolved at",
+      "ack": "Ack",
+      "ackDone": "Acknowledged",
+      "assign": "Assign",
+      "assignPrompt": "Assignee username (empty to unassign)",
+      "assignInvalid": "At most 64 characters",
+      "assignDone": "Assigned",
+      "filters": {
+        "status": "Status",
+        "severity": "Severity",
+        "event": "Event"
+      },
+      "status": {
+        "active": "Active",
+        "firing": "Firing",
+        "acked": "Acked",
+        "resolved": "Resolved"
+      },
+      "severity": {
+        "critical": "Critical",
+        "warning": "Warning",
+        "info": "Info"
+      },
+      "columns": {
+        "severity": "Severity",
+        "status": "Status",
+        "rule": "Rule",
+        "labels": "Labels",
+        "value": "Value / threshold",
+        "startedAt": "Started",
+        "resolvedAt": "Resolved",
+        "ackedBy": "Acked by",
+        "assignee": "Assignee",
+        "actions": "Actions"
+      },
+      "rules": {
+        "create": "New rule",
+        "refresh": "Refresh",
+        "edit": "Edit",
+        "delete": "Delete",
+        "cancel": "Cancel",
+        "save": "Save",
+        "saved": "Rule saved",
+        "deleted": "Rule deleted",
+        "deleteConfirm": "Delete rule \"{name}\"? Its event history is deleted too.",
+        "hint": "Analytics evaluates enabled rules every 30 seconds; an event is raised once the threshold is breached for the configured duration, with one active event per fingerprint. Rules without webhooks only record events and send nothing.",
+        "columns": {
+          "enabled": "Enabled",
+          "name": "Name",
+          "severity": "Severity",
+          "expr": "Expression",
+          "condition": "Condition",
+          "notify": "Webhooks",
+          "active": "Active"
+        },
+        "form": {
+          "kind": "Source",
+          "for": "for",
+          "labels": "Extra labels",
+          "labelsInvalid": "One key=value per line",
+          "webhooks": "Webhooks",
+          "webhooksHint": "One http(s) URL per line; SSRF-checked on save; JSON is POSTed on firing and on resolve.",
+          "required": "Required"
         }
       }
     }

@@ -150,21 +150,76 @@
               :title="item.name"
               @click="router.push(`/ops/services/${item.service}`)"
             >
-              <span
-                class="ops-overview__dot"
-                :data-status="item.status"
-              ></span>
+              <span class="ops-overview__dot" :data-status="item.status"></span>
               <span class="ops-overview__light-name">{{ item.name }}</span>
             </button>
           </div>
         </ElCard>
       </ElCol>
       <ElCol :xs="24" :lg="10">
+        <ElCard shadow="never" class="ops-overview__alerts">
+          <template #header>
+            <div class="ops-overview__panel-head">
+              <span>{{ t("ops.overview.alerts") }}</span>
+              <ElButton
+                link
+                type="primary"
+                @click="router.push('/ops/alerts/events')"
+              >
+                {{ t("ops.overview.alertsOpen") }}
+              </ElButton>
+            </div>
+          </template>
+          <div class="ops-overview__placeholder-grid">
+            <ElTag
+              :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'"
+            >
+              {{
+                t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 })
+              }}
+            </ElTag>
+            <ElTag type="warning">
+              {{
+                t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 })
+              }}
+            </ElTag>
+          </div>
+          <div
+            v-if="alertSummary?.latest.length"
+            class="ops-overview__alert-list"
+          >
+            <button
+              v-for="item in alertSummary.latest"
+              :key="item.id"
+              type="button"
+              class="ops-overview__alert-item"
+              @click="
+                router.push({
+                  path: '/ops/alerts/events',
+                  query: { event_id: item.id },
+                })
+              "
+            >
+              <span
+                class="ops-overview__dot"
+                :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
+              ></span>
+              <span>{{ item.rule_name }}</span>
+              <span class="ops-overview__alert-labels">{{
+                alertLabels(item.labels)
+              }}</span>
+            </button>
+          </div>
+          <p v-else class="ops-overview__slim">
+            {{ t("ops.overview.alertsNone") }}
+          </p>
+        </ElCard>
         <ElCard shadow="never" class="ops-overview__panel">
           <template #header>{{ t("ops.overview.placeholders") }}</template>
           <div class="ops-overview__placeholder-grid">
-            <ElTag type="info">{{ t("ops.overview.alertsPending") }}</ElTag>
-            <ElTag type="info">{{ t("ops.overview.errorBudgetPending") }}</ElTag>
+            <ElTag type="info">{{
+              t("ops.overview.errorBudgetPending")
+            }}</ElTag>
           </div>
           <div class="ops-overview__drilldowns">
             <ElButton
@@ -185,7 +240,11 @@
       <ElCol :xs="24" :lg="12">
         <ElCard shadow="never">
           <template #header>{{ t("ops.overview.charts.qps") }}</template>
-          <MultiSeriesChart :series="qpsSeries" :loading="loading" height="240px" />
+          <MultiSeriesChart
+            :series="qpsSeries"
+            :loading="loading"
+            height="240px"
+          />
         </ElCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
@@ -214,11 +273,10 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import StatCard from "@/components/ops/StatCard.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import { useDrilldown } from "@/composables/ops/useDrilldown";
-import {
-  fetchMetricTimeseries,
-  fetchMetricsOverview,
-} from "@/api/monitoring";
+import { fetchMetricTimeseries, fetchMetricsOverview } from "@/api/monitoring";
 import { fetchPlatformStats } from "@/api/analytics";
+import { fetchAlertSummary } from "@/api/alerts";
+import type { AlertSummary } from "@/types/api/alerts";
 import type { PlatformStats } from "@/types/api/analytics";
 import type {
   BillingQueueStatus,
@@ -239,6 +297,7 @@ const overview = ref<MetricOverview | null>(null);
 const platform = ref<PlatformStats | null>(null);
 const qpsSeries = ref<MetricSeries | null>(null);
 const p99Series = ref<MetricSeries | null>(null);
+const alertSummary = ref<AlertSummary | null>(null);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
   preset: "1h",
@@ -310,6 +369,13 @@ const drillTargets = computed(() => [
   },
 ]);
 
+function alertLabels(labels: Record<string, string>) {
+  return Object.entries(labels)
+    .filter(([key]) => key !== "category" && key !== "unit")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
 function fmt(n: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
     n,
@@ -333,7 +399,7 @@ function openScreen() {
 async function reload() {
   loading.value = true;
   try {
-    const [ov, plat, qps, p99] = await Promise.all([
+    const [ov, plat, qps, p99, alerts] = await Promise.all([
       fetchMetricsOverview(),
       fetchPlatformStats({
         start_time: timeRange.value.start,
@@ -349,11 +415,13 @@ async function reload() {
         start: timeRange.value.start,
         end: timeRange.value.end,
       }).catch(() => null),
+      fetchAlertSummary().catch(() => null),
     ]);
     overview.value = ov;
     platform.value = plat;
     qpsSeries.value = qps;
     p99Series.value = p99;
+    alertSummary.value = alerts;
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.overview.loadFailed"),
@@ -399,6 +467,31 @@ onMounted(reload);
 }
 .ops-overview__panel {
   min-height: 180px;
+}
+.ops-overview__alerts {
+  margin-bottom: 16px;
+}
+.ops-overview__alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ops-overview__alert-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.ops-overview__alert-labels {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ops-overview__panel-head {
   display: flex;

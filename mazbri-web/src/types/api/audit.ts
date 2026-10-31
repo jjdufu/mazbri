@@ -97,6 +97,11 @@ export type AuditAction =
   | "billing.bill_adjustment_create"
   | "billing.bill_adjustment_void"
   | "billing.reconciliation_settings_update"
+  | "alert_rule.create"
+  | "alert_rule.update"
+  | "alert_rule.delete"
+  | "alert_event.ack"
+  | "alert_event.assign"
   | "certificate.issue"
   | "certificate.renew"
   | "certificate.revoke"
@@ -231,4 +236,5 @@ export type ResourceType =
   | "connector"
   | "authorization"
   | "billing"
-  | "ratelimit";
+  | "ratelimit"
+  | "alert";

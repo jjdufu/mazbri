@@ -18,6 +18,8 @@ pub struct AnalyticsConfig {
     pub admin: mazbri_admin::AdminConfig,
     #[serde(default)]
     pub metrics_targets: Vec<ServiceMetricTargetConfig>,
+    #[serde(default)]
+    pub alerting: Option<crate::alerting::AlertingConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -152,6 +154,11 @@ impl ValidateConfig for AnalyticsConfig {
         self.clickhouse
             .validate()
             .map_err(|e| anyhow::anyhow!("ClickHouse 配置无效: {e}"))?;
+        if let Some(ref alerting) = self.alerting {
+            alerting
+                .validate()
+                .map_err(|e| anyhow::anyhow!("告警配置无效: {e}"))?;
+        }
         Ok(())
     }
 }

@@ -3,6 +3,7 @@ use super::state::AppState;
 use axum::Router;
 
 mod admins;
+mod alerts;
 mod analytics;
 mod auth;
 mod billing;
@@ -28,4 +29,5 @@ pub fn create_routes() -> Router<AppState> {
         .merge(admins::routes())
         .merge(config_center::routes())
         .merge(callbacks::routes())
+        .merge(alerts::routes())
 }

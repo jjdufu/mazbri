@@ -111,6 +111,11 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("billing.bill_adjustment_create", "创建账单更正"),
     ("billing.bill_adjustment_void", "作废账单更正"),
     ("billing.reconciliation_settings_update", "更新用量对账设置"),
+    ("alert_rule.create", "创建告警规则"),
+    ("alert_rule.update", "更新告警规则"),
+    ("alert_rule.delete", "删除告警规则"),
+    ("alert_event.ack", "确认告警事件"),
+    ("alert_event.assign", "指派告警事件"),
     ("certificate.issue", "签发证书"),
     ("certificate.renew", "续期证书"),
     ("certificate.revoke", "吊销证书"),
@@ -250,6 +255,7 @@ pub const RESOURCE_TYPE_LABELS: &[(&str, &str)] = &[
     ("connector", "连接器"),
     ("authorization", "授权"),
     ("billing", "账单"),
+    ("alert", "告警"),
     ("ratelimit", "限流"),
 ];
 
@@ -897,6 +903,7 @@ mod label_tests {
             "authorization",
             "billing",
             "ratelimit",
+            "alert",
         ] {
             assert!(
                 FRONTEND_LABELS.contains(&format!("{resource}:")),

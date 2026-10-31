@@ -434,6 +434,24 @@ mod tests {
     }
 
     #[test]
+    fn alert_rule_handlers_require_platform_category() {
+        let alerts = include_str!("alert_handlers.rs");
+        assert_category(
+            &[
+                (alerts, "create_alert_rule"),
+                (alerts, "update_alert_rule"),
+                (alerts, "set_alert_rule_enabled"),
+                (alerts, "delete_alert_rule"),
+            ],
+            "Category::Platform",
+        );
+        let create = handler_source(alerts, "create_alert_rule");
+        let validate = create.find("checked_input(").expect("rule validation");
+        let mfa = create.find("require_category(").expect("rule mfa");
+        assert!(validate < mfa, "rule must validate before MFA");
+    }
+
+    #[test]
     fn admin_handlers_require_their_category() {
         let crud = include_str!("admin_management/crud.rs");
         let password = include_str!("admin_management/password.rs");

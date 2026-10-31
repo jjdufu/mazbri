@@ -842,6 +842,46 @@ pub static ROUTES: &[RouteAudit] = &[
         R::Admin,
         ID,
     ),
+    // ---- alerts ----
+    read("/alerts/rules", R::Alert),
+    secure("POST", "/alerts/rules", A::AlertRuleCreate, R::Alert, None),
+    secure(
+        "PUT",
+        "/alerts/rules/{id}",
+        A::AlertRuleUpdate,
+        R::Alert,
+        ID,
+    ),
+    secure(
+        "DELETE",
+        "/alerts/rules/{id}",
+        A::AlertRuleDelete,
+        R::Alert,
+        ID,
+    ),
+    secure(
+        "PUT",
+        "/alerts/rules/{id}/enabled",
+        A::AlertRuleUpdate,
+        R::Alert,
+        ID,
+    ),
+    read("/alerts/events", R::Alert),
+    write(
+        "POST",
+        "/alerts/events/{id}/ack",
+        A::AlertEventAck,
+        R::Alert,
+        ID,
+    ),
+    write(
+        "POST",
+        "/alerts/events/{id}/assign",
+        A::AlertEventAssign,
+        R::Alert,
+        ID,
+    ),
+    read("/alerts/summary", R::Alert),
     // ---- config center ----
     read("/config-center/configs", R::ConfigCenter),
     write(
@@ -1030,6 +1070,7 @@ pub(crate) mod route_sources {
 
     const ROUTE_SOURCES: &[(&str, &str)] = &[
         ("", include_str!("../handlers/routes/admins.rs")),
+        ("", include_str!("../handlers/routes/alerts.rs")),
         ("", include_str!("../handlers/routes/analytics.rs")),
         ("", include_str!("../handlers/routes/auth.rs")),
         ("", include_str!("../handlers/routes/billing.rs")),
