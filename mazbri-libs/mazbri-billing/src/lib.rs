@@ -17,7 +17,7 @@ use mazbri_core::CoreError;
 pub use metrics::{DeductionRecorder, register_billing_metrics};
 pub use middleware::{BillingMiddlewareState, balance_check_middleware, usage_middleware};
 pub use pipeline_health::{PipelineHealthConfig, PipelineHealthJob};
-pub use queue::ChargeQueue;
+pub use queue::{ChargeEnqueue, ChargeQueue};
 pub use reconcile::{ReconcileConfig, ReconcileJob};
 pub use repository::{
     AccountBalanceRow, BillingRepository, DeductAndRecordResult, PgBillingRepository,

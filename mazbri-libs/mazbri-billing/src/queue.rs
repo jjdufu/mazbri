@@ -12,9 +12,21 @@ const ENQUEUE_MARK_QUEUED_SQL: &str = "UPDATE usage_records SET charge_status = 
      WHERE id = $2 AND charge_status IS DISTINCT FROM 'charged'";
 /// One queue row per usage record, ever (requires `uq_usage_charge_queue_usage_record_id`).
 const ENQUEUE_INSERT_SQL: &str = "INSERT INTO usage_charge_queue \
-     (tenant_id, account_id, usage_record_id, amount, payload, max_retries) \
-     VALUES ($1, $2, $3, $4, $5, $6) \
+     (tenant_id, account_id, usage_record_id, amount, payload, max_retries, trace_parent) \
+     VALUES ($1, $2, $3, $4, $5, $6, $7) \
      ON CONFLICT (usage_record_id) DO NOTHING RETURNING id";
+/// 一条待入队的扣费。
+#[derive(Debug, Clone)]
+pub struct ChargeEnqueue<'a> {
+    pub tenant_id: Uuid,
+    pub account_id: Uuid,
+    pub usage_record_id: i64,
+    pub amount: Decimal,
+    pub payload: Option<serde_json::Value>,
+    /// 来源请求 span 的 W3C traceparent。
+    pub trace_parent: Option<&'a str>,
+}
+
 #[derive(Clone)]
 pub struct ChargeQueue {
     db: PgPool,
@@ -47,15 +59,21 @@ impl ChargeQueue {
         amount: Decimal,
         payload: Option<serde_json::Value>,
     ) -> Result<Uuid, BillingError> {
+        // 直接入队的调用方（tarpc charge、中间件）以当前 span 作为扣费 worker 的 link 目标。
+        let trace_parent = mazbri_core::trace_propagation::current_span_context()
+            .map(|span_context| mazbri_core::trace_spans::traceparent_of(&span_context));
         let mut tx = self.db.begin().await?;
         let queue_id = self
             .enqueue_in_tx(
                 &mut tx,
-                tenant_id,
-                account_id,
-                usage_record_id,
-                amount,
-                payload,
+                ChargeEnqueue {
+                    tenant_id,
+                    account_id,
+                    usage_record_id,
+                    amount,
+                    payload,
+                    trace_parent: trace_parent.as_deref(),
+                },
             )
             .await?;
         tx.commit().await?;
@@ -73,12 +91,16 @@ impl ChargeQueue {
     pub async fn enqueue_in_tx(
         &self,
         tx: &mut sqlx::PgConnection,
-        tenant_id: Uuid,
-        account_id: Uuid,
-        usage_record_id: i64,
-        amount: Decimal,
-        payload: Option<serde_json::Value>,
+        item: ChargeEnqueue<'_>,
     ) -> Result<Uuid, BillingError> {
+        let ChargeEnqueue {
+            tenant_id,
+            account_id,
+            usage_record_id,
+            amount,
+            payload,
+            trace_parent,
+        } = item;
         let inserted: Option<Uuid> = sqlx::query_scalar(ENQUEUE_INSERT_SQL)
             .bind(tenant_id)
             .bind(account_id)
@@ -86,6 +108,7 @@ impl ChargeQueue {
             .bind(amount)
             .bind(payload)
             .bind(self.config.max_retries)
+            .bind(trace_parent)
             .fetch_optional(&mut *tx)
             .await?;
         let Some(queue_id) = inserted else {
@@ -152,7 +175,7 @@ impl ChargeQueue {
         >(
                 r"SELECT id, tenant_id, account_id, usage_record_id, amount, payload,
                       status::VARCHAR as status, retry_count, max_retries, error_message, scheduled_at,
-                      transaction_id, created_at
+                      transaction_id, created_at, trace_parent
                FROM usage_charge_queue
                WHERE status IN ('pending', 'failed')
                  AND scheduled_at <= NOW()
@@ -268,7 +291,7 @@ impl ChargeQueue {
             let item: ChargeQueueItem = sqlx::query_as(
                 "SELECT id, tenant_id, account_id, usage_record_id, amount, payload, \
                  status::VARCHAR as status, retry_count, max_retries, error_message, scheduled_at, \
-                 transaction_id, created_at FROM usage_charge_queue WHERE id = $1",
+                 transaction_id, created_at, trace_parent FROM usage_charge_queue WHERE id = $1",
             )
             .bind(queue_id)
             .fetch_one(&self.db)

@@ -73,7 +73,6 @@ pub struct RedisClient {
     command_timeout: Duration,
 }
 
-
 fn redis_metric_op(op: &'static str) -> &'static str {
     match op {
         "GET" | "MGET" | "EXISTS" | "TTL" | "PTTL" | "MEMORY USAGE" | "DBSIZE" | "SCAN" => "get",
@@ -305,6 +304,17 @@ impl RedisClient {
             Err(error) => Err(error),
         };
         crate::metrics::observe_dep("redis", metric_op, started, result.is_ok());
+        let span = crate::trace_spans::CompletedSpan::new(
+            format!("redis.{}", op.to_ascii_lowercase().replace(' ', "_")),
+            started.elapsed(),
+        )
+        .client()
+        .attr("db.system", "redis")
+        .attr("db.operation", op);
+        match &result {
+            Ok(_) => span.record_under_current(),
+            Err(error) => span.error(error.to_string()).record_under_current(),
+        };
         result
     }
 

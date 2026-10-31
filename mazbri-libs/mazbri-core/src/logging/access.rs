@@ -756,13 +756,12 @@ fn parse_traceparent_value(value: &str) -> Option<(String, String)> {
     let mut parts = value.trim().split('-');
     let (_version, trace_id, span_id, _flags) =
         (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
-    crate::trace_propagation::remote_span_context(trace_id, span_id, true)
-        .map(|span_context| {
-            (
-                span_context.trace_id().to_string(),
-                span_context.span_id().to_string(),
-            )
-        })
+    crate::trace_propagation::remote_span_context(trace_id, span_id, true).map(|span_context| {
+        (
+            span_context.trace_id().to_string(),
+            span_context.span_id().to_string(),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -805,7 +804,10 @@ mod request_id_uuid_tests {
             "traceparent".to_string(),
             "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_string(),
         );
-        headers.insert("x-parent-span-id".to_string(), "b7ad6b7169203331".to_string());
+        headers.insert(
+            "x-parent-span-id".to_string(),
+            "b7ad6b7169203331".to_string(),
+        );
         let ctx = parse_trace_context(&headers);
         assert_eq!(
             ctx.request_id.as_ref(),

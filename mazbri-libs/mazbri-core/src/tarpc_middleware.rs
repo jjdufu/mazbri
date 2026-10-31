@@ -212,11 +212,12 @@ pub mod trace {
         T: tarpc::Transport<Response<S::Resp>, ClientMessage<S::Req>>,
     {
         let parents = RemoteParents::default();
-        BaseChannel::with_defaults(ServerTraceTransport::new(transport, parents.clone()))
-            .execute(TracedServe {
+        BaseChannel::with_defaults(ServerTraceTransport::new(transport, parents.clone())).execute(
+            TracedServe {
                 inner: serve,
                 parents,
-            })
+            },
+        )
     }
 
     #[cfg(test)]

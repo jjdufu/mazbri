@@ -4,9 +4,9 @@ use anyhow::{Context, Result, bail};
 use sqlx::PgPool;
 use sqlx::pool::PoolConnectionMetadata;
 use sqlx::postgres::{PgConnectOptions, PgListener, PgPoolOptions, PgSslMode};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::debug;
@@ -139,7 +139,6 @@ pub async fn connect_listener(
     listener.ignore_pool_close_event(true);
     Ok(listener)
 }
-
 
 fn pg_hold_starts() -> &'static Mutex<HashMap<u128, Instant>> {
     static HOLDS: OnceLock<Mutex<HashMap<u128, Instant>>> = OnceLock::new();

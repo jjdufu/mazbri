@@ -51,9 +51,14 @@ async fn reject_insufficient(
         estimated_cost = % estimated_cost,
         "Balance check rejected request due to insufficient balance"
     );
+    let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+        .product(product_id)
+        .failed()
+        .record();
     warn!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "balance_check", stage_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed()),
+        "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
         tenant_id = % tenant_context.tenant_id, product_id = % product_id,
         product_detail_lookup_ms = times.product_detail_lookup_ms,
         check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),
@@ -76,9 +81,14 @@ fn log_infra_failure(
         tenant_id = % tenant_context.tenant_id, product_id = % product_id, error = % error,
         fail_open, "Balance check infra failure (timeout/pool/billing)"
     );
+    let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+        .product(product_id)
+        .failed()
+        .record();
     warn!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "balance_check", stage_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed()),
+        "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
         tenant_id = % tenant_context.tenant_id, product_id = % product_id,
         product_detail_lookup_ms = times.product_detail_lookup_ms,
         check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),
@@ -101,10 +111,13 @@ fn log_allowed(
     times: &StageTimes,
 ) {
     let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+        .product(product_id)
+        .record();
     if super::stage_log::should_log_stage_info(bal_ms) {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name =
-            "balance_check", stage_ms = bal_ms,
+            "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
             tenant_id = % tenant_context.tenant_id, product_id = % product_id,
             product_detail_lookup_ms = times.product_detail_lookup_ms,
             check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),

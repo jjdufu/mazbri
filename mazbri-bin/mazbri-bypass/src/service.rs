@@ -5,9 +5,9 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_core::trace_propagation::{remote_span_context, set_remote_parent};
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
-    AccessTimingFields, AccessUpstreamMetaFields, ChannelEgressSpec, SupplierConfig,
-    TraceContext, emit_access_log, hash_egress_spec_json, normalize_request_id_uuid,
-    normalize_upstream_host, parse_and_validate_egress, response_flags_for_error,
+    AccessTimingFields, AccessUpstreamMetaFields, ChannelEgressSpec, SupplierConfig, TraceContext,
+    emit_access_log, hash_egress_spec_json, normalize_request_id_uuid, normalize_upstream_host,
+    parse_and_validate_egress, response_flags_for_error,
 };
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{

@@ -75,6 +75,12 @@ pub(super) async fn try_cbpro_fallback(
         .tenant_id, source = % fallback.source, failure_kind = failure_kind,
         "Served response from CBPro fallback snapshot"
     );
+    info!(
+        target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+        failure_kind = failure_kind,
+        status = snapshot.status,
+        "cbpro.fallback"
+    );
     let body_bytes_len = serde_json::to_vec(&snapshot.data).map_or(0, |bytes| bytes.len() as u64);
     Some(UpstreamResponse {
         status: snapshot.status,

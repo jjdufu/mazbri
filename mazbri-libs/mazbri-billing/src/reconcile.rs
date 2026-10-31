@@ -388,6 +388,7 @@ fn rebuild_event(r: &AccessRow) -> Option<UsageOutboxEvent> {
             ),
         },
         billing_code: Some(r.billing_code),
+        trace_parent: None,
     })
 }
 

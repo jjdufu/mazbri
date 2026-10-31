@@ -62,6 +62,13 @@ impl ClickHouseClient {
             .await
             .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")));
         mazbri_core::metrics::observe_dep("ch", "query", started, result.is_ok());
+        record_query_span(
+            "clickhouse.query",
+            "clickhouse",
+            clean_sql,
+            started,
+            result.as_ref().err(),
+        );
         result
     }
 
@@ -157,4 +164,26 @@ impl ClickHouseClient {
                 AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {e}"))
             })
     }
+}
+
+/// 补记一次分析库查询的客户端 span（`db.operation`、`db.sql.table`，不记录 SQL 文本）。
+pub(crate) fn record_query_span(
+    name: &'static str,
+    system: &'static str,
+    sql: &str,
+    started: std::time::Instant,
+    error: Option<&AnalyticsError>,
+) {
+    let (operation, table) = mazbri_core::trace_spans::sql_operation_and_table(sql);
+    let mut span = mazbri_core::trace_spans::CompletedSpan::new(name, started.elapsed())
+        .client()
+        .attr("db.system", system)
+        .attr("db.operation", operation);
+    if let Some(table) = table {
+        span = span.attr("db.sql.table", table);
+    }
+    if let Some(error) = error {
+        span = span.error(error.to_string());
+    }
+    span.record_under_current();
 }

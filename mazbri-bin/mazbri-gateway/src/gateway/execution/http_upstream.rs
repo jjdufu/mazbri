@@ -34,6 +34,14 @@ pub(super) async fn execute_http_upstream_request(
 
     // Write correlation headers in-place (no intermediate HashMap).
     trace_context.write_propagate_headers(&mut headers);
+    // 下游的父节点是当前 upstream.attempt span，而不是网关请求 span。
+    if let Some(span_context) = mazbri_core::trace_propagation::current_span_context() {
+        headers.insert(
+            "traceparent".to_string(),
+            mazbri_core::trace_spans::traceparent_of(&span_context),
+        );
+        headers.insert("x-span-id".to_string(), span_context.span_id().to_string());
+    }
     headers.insert(
         "x-mazbri-upstream-mode".to_string(),
         if is_transparent {
@@ -264,7 +272,10 @@ fn build_invoke_request(
         trace: Some(upstream_proto::TraceContext {
             request_id: trace_context.request_id.to_string(),
             trace_id: trace_context.trace_id.to_string(),
-            span_id: trace_context.span_id.to_string(),
+            span_id: headers
+                .get("x-span-id")
+                .cloned()
+                .unwrap_or_else(|| trace_context.span_id.to_string()),
             parent_span_id: trace_context.parent_span_id.to_string(),
         }),
         timeout_ms,
@@ -335,6 +346,12 @@ async fn invoke_bypass(
             Err(error) => {
                 record_timeout_if_any(ctx.mode, &error.to_string());
                 if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                    tracing::info!(
+                        target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                        retry = attempt,
+                        error = %error,
+                        "upstream.transport_retry"
+                    );
                     record_retry(ctx.mode, RetryReason::Transport);
                     continue;
                 }
@@ -447,6 +464,12 @@ async fn execute_plain_request(
             Err(error) => {
                 record_timeout_if_any(ctx.mode, &error.to_string());
                 if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                    tracing::info!(
+                        target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                        retry = attempt,
+                        error = %error,
+                        "upstream.transport_retry"
+                    );
                     record_retry(ctx.mode, RetryReason::Transport);
                     continue;
                 }

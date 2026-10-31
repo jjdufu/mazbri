@@ -161,6 +161,33 @@ fn verify_bearer_jwt(
     TokenRecorder::new("jwt").record_validated();
     Ok((claims, kid))
 }
+/// auth 阶段：补记 span（全量）并按采样输出 stage 日志。
+fn log_auth_stage(
+    started_at: Instant,
+    request_id: &impl std::fmt::Display,
+    claims: &MazbriClaims,
+    binding_outcome: &crate::gateway::request_binding::RequestBindingOutcome,
+    encrypted_request: bool,
+) {
+    let auth_stage_ms = mazbri_core::num::millis_u64(started_at.elapsed());
+    let stage_ids = crate::gateway::stage_log::stage_span("auth", auth_stage_ms)
+        .tenant(&claims.tenant_code)
+        .record();
+    if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
+        info!(
+            target : "gateway.stage", service = "mazbri-gateway", stage_name = "auth",
+            stage_ms = auth_stage_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
+            tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code,
+            auth_mode = binding_outcome.auth_mode,
+            kid = binding_outcome.kid.as_deref().unwrap_or(""),
+            nonce = binding_outcome.nonce_trunc.as_deref().unwrap_or(""),
+            sig_ok = binding_outcome.sig_ok,
+            encrypted_request,
+            message = "Gateway auth stage completed"
+        );
+    }
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -249,20 +276,17 @@ pub async fn jwt_auth_middleware(
     if let Some(timing) = parts.extensions.get_mut::<GatewayRequestTiming>() {
         timing.auth_ms = mazbri_core::num::millis_u64(started_at.elapsed());
     }
-    let auth_stage_ms = mazbri_core::num::millis_u64(started_at.elapsed());
-    if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
-        info!(
-            target : "gateway.stage", service = "mazbri-gateway", stage_name = "auth",
-            stage_ms = auth_stage_ms, request_id = % request_id,
-            tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code,
-            auth_mode = binding_outcome.auth_mode,
-            kid = binding_outcome.kid.as_deref().unwrap_or(""),
-            nonce = binding_outcome.nonce_trunc.as_deref().unwrap_or(""),
-            sig_ok = binding_outcome.sig_ok,
-            encrypted_request = matches!(parts.extensions.get::<GatewayRequestPayload>(), Some(GatewayRequestPayload::Encrypted(_))),
-            message = "Gateway auth stage completed"
-        );
-    }
+    let encrypted_request = matches!(
+        parts.extensions.get::<GatewayRequestPayload>(),
+        Some(GatewayRequestPayload::Encrypted(_))
+    );
+    log_auth_stage(
+        started_at,
+        &request_id,
+        &claims,
+        &binding_outcome,
+        encrypted_request,
+    );
     Ok(next
         .run(Request::from_parts(parts, Body::from(body_bytes)))
         .await)
@@ -331,10 +355,11 @@ pub async fn ratelimit_middleware(
             });
             req.extensions_mut().insert(timing);
             let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
+            let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms).record();
             if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
                 info!(
                     target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                    "ratelimit", stage_ms = rl_ms, tenant_id
+                    "ratelimit", stage_ms = rl_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, tenant_id
                     = % tenant_context.tenant_id, api_endpoint = % api_endpoint, request_id =
                     % request_id, policy_version, snapshot_age_ms, degraded, source = "local",
                     decision = "allow", prepaid_request_bytes, bandwidth_enabled,
@@ -350,9 +375,13 @@ pub async fn ratelimit_middleware(
             snapshot_age_ms,
             degraded,
         } => {
+            let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
+            let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms)
+                .failed()
+                .record();
             warn!(
                 target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                "ratelimit", stage_ms = mazbri_core::num::millis_u64(stage_start.elapsed()), tenant_id
+                "ratelimit", stage_ms = rl_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, tenant_id
                 = % tenant_context.tenant_id, api_endpoint = % api_endpoint, request_id =
                 % request_id, policy_version, retry_after_ms, reason = % reason,
                 snapshot_age_ms, degraded, source = "local", decision = "deny",
@@ -364,6 +393,17 @@ pub async fn ratelimit_middleware(
             )
             .into())
         }
+    }
+}
+
+fn ratelimit_stage_span(
+    tenant_context: &TenantContext,
+    stage_ms: u64,
+) -> crate::gateway::stage_log::StageSpan {
+    let span = crate::gateway::stage_log::stage_span("ratelimit", stage_ms);
+    match tenant_context.product_id.as_deref() {
+        Some(product_id) => span.product(product_id),
+        None => span,
     }
 }
 

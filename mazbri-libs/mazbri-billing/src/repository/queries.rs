@@ -370,12 +370,12 @@ pub(crate) fn outbox_insert_query(
             event_id, request_id, tenant_id, account_id, product_id,
             api_endpoint, http_method, response_status, request_size,
             response_size, billing_service_duration_ms, unit_price,
-            billable_units, billable_amount, billing_code
+            billable_units, billable_amount, billing_code, trace_parent
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
             $10, $11, $12,
-            $13, $14, $15
+            $13, $14, $15, $16
         )
         ON CONFLICT (event_id) DO NOTHING",
     )
@@ -393,5 +393,6 @@ pub(crate) fn outbox_insert_query(
     .bind(event.billing_result.unit_price)
     .bind(units)
     .bind(event.billing_result.amount)
-    .bind(event.billing_code))
+    .bind(event.billing_code)
+    .bind(&event.trace_parent))
 }

@@ -14,7 +14,7 @@ use std::time::Instant;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument, debug, error, info, warn};
 use uuid::Uuid;
 
 struct TaskState {
@@ -224,6 +224,25 @@ async fn process_batch(
     let tenant_groups: Vec<(Uuid, Vec<ChargeQueueItem>)> = by_tenant.into_iter().collect();
     let tenant_count = tenant_groups.len();
     let concurrency = config.max_concurrency.max(1);
+    let batch_span = tracing::info_span!(
+        parent: None,
+        "billing.charge_batch",
+        batch = batch_len,
+        tenants = tenant_count
+    );
+    mazbri_core::trace_spans::add_links(
+        &batch_span,
+        tenant_groups
+            .iter()
+            .flat_map(|(_, group)| group.iter())
+            .filter_map(|item| item.trace_parent.as_deref()),
+    );
+    let linked_trace_ids = mazbri_core::trace_spans::linked_trace_ids(
+        tenant_groups
+            .iter()
+            .flat_map(|(_, group)| group.iter())
+            .filter_map(|item| item.trace_parent.as_deref()),
+    );
 
     let results: Vec<_> = stream::iter(tenant_groups)
         .map(|(tenant_id, group)| {
@@ -233,6 +252,7 @@ async fn process_batch(
         })
         .buffer_unordered(concurrency)
         .collect()
+        .instrument(batch_span)
         .await;
 
     let mut success = 0usize;
@@ -247,6 +267,7 @@ async fn process_batch(
         success,
         failed,
         elapsed_ms = u64::saturating_from(started.elapsed().as_millis()),
+        linked_trace_ids,
         "charge queue batch done (tenant-grouped)"
     );
     Ok(batch_len)

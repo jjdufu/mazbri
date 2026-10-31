@@ -23,8 +23,9 @@ pub mod retry;
 pub mod service_identity;
 pub mod supplier_config;
 pub mod tarpc_middleware;
-pub mod trace_propagation;
 mod telemetry;
+pub mod trace_propagation;
+pub mod trace_spans;
 pub mod validation;
 pub use cert_token::{
     CERT_TOKEN_DOMAIN, DERIVED_CALLERS, MASTER_ENV, MasterTokenError, PREVIOUS_ENV,
@@ -64,8 +65,7 @@ pub use logging::{
     AccessNetworkFields, AccessOutcomeFields, AccessRouteFields, AccessTimingFields,
     AccessUpstreamMetaFields, StandardLogEvent, TraceContext, current_span_id, emit_access_log,
     log_level, normalize_request_id_uuid, normalize_upstream_host, parse_trace_context,
-    request_id_from_headers,
-    response_flags_for_error,
+    request_id_from_headers, response_flags_for_error,
 };
 pub use metrics::{
     ACTIVE_CONNECTIONS, CounterRecorder, DB_QUERY_TOTAL, DEP_CLIENT_DURATION_SECONDS,

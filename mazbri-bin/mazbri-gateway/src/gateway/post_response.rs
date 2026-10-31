@@ -153,6 +153,8 @@ pub(crate) fn build_usage_event(ctx: &UsageChargeContext<'_>) -> (UsageOutboxEve
         billing_service_duration_ms: ctx.service_total_ms,
         billing_result: calc_result,
         billing_code: Some(i16::saturating_from(billing_code.0)),
+        trace_parent: mazbri_core::trace_propagation::current_span_context()
+            .map(|span_context| mazbri_core::trace_spans::traceparent_of(&span_context)),
     };
     (event, billable)
 }
@@ -412,6 +414,8 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
     let state = state.clone();
     let request_id = args.request_id.clone();
     let guard = InflightGuard::new();
+    // 请求 span 先于后处理结束，补记 post_response 阶段时以它为父节点。
+    let parent = mazbri_core::trace_spans::current_context();
     tokio::spawn(async move {
         let _guard = guard;
         let started_at = Instant::now();
@@ -447,12 +451,17 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
             args.usage_event_produced,
         );
         let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
+        let post_response_ms = mazbri_core::num::millis_u64(started_at.elapsed());
+        let stage_ids = super::stage_log::stage_span("post_response", post_response_ms)
+            .product(&args.req.product_id)
+            .record_with_parent(&parent);
         info!(
             target : "gateway.postpath", service = "mazbri-gateway", stage_name =
-            "post_response", request_id = % request_id, tenant_id = % args.tenant_id,
+            "post_response", request_id = % request_id, trace_id = % stage_ids.trace_id,
+            span_id = % stage_ids.span_id, tenant_id = % args.tenant_id,
             tenant_code = "", product_id = % args.req.product_id, method = % args.req.method,
-            path = % args.req.path, stage_ms = mazbri_core::num::millis_u64(started_at.elapsed()),
-            post_response_ms = mazbri_core::num::millis_u64(started_at.elapsed()), billing_record_ms,
+            path = % args.req.path, stage_ms = post_response_ms,
+            post_response_ms, billing_record_ms,
             upstream_route = ? args.upstream_route.as_ref().map(|route| (& route.supplier_code,
             & route.channel_code, & route.upstream_url)), message =
             "Gateway post-response work completed"

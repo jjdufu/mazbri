@@ -14,7 +14,7 @@ use std::time::Instant;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument, debug, error, info, warn};
 use uuid::Uuid;
 
 /// Marks one outbox row processed; runs in the same transaction as the enqueue.
@@ -53,6 +53,7 @@ struct UsageOutboxItem {
     billable_units: i64,
     billable_amount: Decimal,
     billing_code: Option<i16>,
+    trace_parent: Option<String>,
 }
 
 pub struct UsageOutboxWorker {
@@ -262,6 +263,15 @@ async fn process_batch(
     let batch_len = items.len();
     let started = Instant::now();
     let concurrency = config.max_concurrency.max(1);
+    // 一批 outbox 行各来自不同请求：批量 span 不挂父节点，用 link 指回每个请求的 enqueue span。
+    let batch_span = tracing::info_span!(parent: None, "billing.outbox_batch", batch = batch_len);
+    mazbri_core::trace_spans::add_links(
+        &batch_span,
+        items.iter().filter_map(|item| item.trace_parent.as_deref()),
+    );
+    let linked_trace_ids = mazbri_core::trace_spans::linked_trace_ids(
+        items.iter().filter_map(|item| item.trace_parent.as_deref()),
+    );
     let results: Vec<_> = stream::iter(items)
         .map(|item| {
             let db = db.clone();
@@ -275,6 +285,7 @@ async fn process_batch(
         })
         .buffer_unordered(concurrency)
         .collect()
+        .instrument(batch_span)
         .await;
 
     let mut ok_ids = Vec::new();
@@ -294,6 +305,7 @@ async fn process_batch(
         success = ok_ids.len(),
         failed = fail_count,
         elapsed_ms = u64::saturating_from(started.elapsed().as_millis()),
+        linked_trace_ids,
         "usage_outbox batch done"
     );
     Ok(batch_len)
@@ -307,7 +319,7 @@ async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, 
             id, event_id, request_id, tenant_id, account_id, product_id,
             api_endpoint, http_method, response_status, request_size,
             response_size, billing_service_duration_ms, unit_price,
-            billable_units, billable_amount, billing_code
+            billable_units, billable_amount, billing_code, trace_parent
         FROM usage_outbox
         WHERE status IN ('pending', 'failed')
           AND next_attempt_at <= NOW()
@@ -390,11 +402,14 @@ async fn process_one(
         charge_queue
             .enqueue_in_tx(
                 &mut tx,
-                item.tenant_id,
-                account_id,
-                usage_record_id,
-                item.billable_amount,
-                None,
+                crate::queue::ChargeEnqueue {
+                    tenant_id: item.tenant_id,
+                    account_id,
+                    usage_record_id,
+                    amount: item.billable_amount,
+                    payload: None,
+                    trace_parent: item.trace_parent.as_deref(),
+                },
             )
             .await?;
     }

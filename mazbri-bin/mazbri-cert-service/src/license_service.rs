@@ -171,6 +171,7 @@ pub async fn load_installation_key_db(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+#[tracing::instrument(name = "license.check", skip_all)]
 pub async fn current_decision(pool: &PgPool, now: DateTime<Utc>) -> CertResult<LicenseDecision> {
     if !has_v3_state(pool).await? {
         return Ok(license::unconfigured_decision());

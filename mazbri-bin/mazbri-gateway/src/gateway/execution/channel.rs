@@ -7,6 +7,7 @@ use super::{
     execute_http_upstream_request, get_or_create_breaker, info, persist_interaction_event,
     proxy_body_to_json_value, record_upstream_timeout, warn,
 };
+use tracing::Instrument;
 
 pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
     if let Err(error) = persist_interaction_event(&state.db, event).await {
@@ -34,16 +35,86 @@ pub(super) fn should_switch(error: &ProxyError, condition: &SwitchCondition) -> 
 pub(super) fn should_switch_status(status: u16, condition: &SwitchCondition) -> bool {
     condition.switch_on_status_codes.contains(&status)
 }
+/// 一次候选通道尝试：通道与其在本请求内的尝试序号（从 1 起）。
+#[derive(Clone, Copy)]
+pub(super) struct ChannelAttempt<'a> {
+    pub(super) channel: &'a CandidateChannel,
+    pub(super) order: usize,
+}
+
+impl<'a> ChannelAttempt<'a> {
+    pub(super) fn new(channel: &'a CandidateChannel, order: usize) -> Self {
+        Self { channel, order }
+    }
+}
+
+/// 每个候选通道一次尝试一个 `upstream.attempt` span；超时/失败标 error，
+/// 随后切换到的通道是下一个 attempt（`attempt_order` 从 1 起）。
 pub(super) async fn execute_channel_attempt(
+    state: &ProxyState,
+    req: &GatewayRequest,
+    attempt: ChannelAttempt<'_>,
+    claims: &MazbriClaims,
+    request_id: &str,
+    trace_context: &TraceContext,
+) -> Result<UpstreamResponse, ProxyError> {
+    let channel = attempt.channel;
+    let (mode, _contract) = resolve_mode_and_contract_hint(channel);
+    let span = upstream_attempt_span(attempt.order, channel, &mode);
+    let result = run_channel_attempt(state, req, channel, claims, request_id, trace_context, mode)
+        .instrument(span.clone())
+        .await;
+    record_attempt_span(&span, &result);
+    result
+}
+
+/// 一次候选通道尝试的 `upstream.attempt` span（结果由 [`record_attempt_span`] 补写）。
+fn upstream_attempt_span(
+    attempt_order: usize,
+    channel: &CandidateChannel,
+    mode: &str,
+) -> tracing::Span {
+    tracing::info_span!(
+        "upstream.attempt",
+        otel.kind = "client",
+        attempt_order,
+        supplier_code = %channel.supplier_code,
+        channel_code = %channel.channel_code,
+        mode = %mode,
+        http.status_code = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+        error_code = tracing::field::Empty,
+        error_message = tracing::field::Empty,
+    )
+}
+
+/// 把一次通道尝试的结果写到 `upstream.attempt` span：HTTP 状态码，失败时 error 状态。
+fn record_attempt_span(span: &tracing::Span, result: &Result<UpstreamResponse, ProxyError>) {
+    match result {
+        Ok(response) => {
+            span.record("http.status_code", response.status);
+            if response.status >= 500 {
+                span.record("otel.status_code", "ERROR");
+            }
+        }
+        Err(error) => {
+            span.record("error_code", error.error_code());
+            span.record("otel.status_code", "ERROR");
+            span.record("error_message", error.to_string());
+        }
+    }
+}
+
+async fn run_channel_attempt(
     state: &ProxyState,
     req: &GatewayRequest,
     channel: &CandidateChannel,
     claims: &MazbriClaims,
     request_id: &str,
     trace_context: &TraceContext,
+    mode: String,
 ) -> Result<UpstreamResponse, ProxyError> {
     let addr = channel.supplier_upstream_url.as_str();
-    let (mode, _contract) = resolve_mode_and_contract_hint(channel);
     info!(
         "[{}] Attempting channel {} at {} for tenant [{}] mode={}",
         request_id, channel.channel_id, addr, claims.tenant_code, mode
@@ -86,6 +157,11 @@ pub(super) async fn execute_channel_attempt(
                     "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
                     request_id, product_id, reason, retry_after
                 );
+                tracing::info!(
+                    target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                    reason = %reason,
+                    "circuit_breaker.rejected"
+                );
                 record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
                 Err(ProxyError::BadGateway(format!("服务暂时不可用: {reason}")))
             }
@@ -107,6 +183,11 @@ pub(super) async fn execute_channel_attempt(
         warn!(
             "[{}] upstream HTTP/2 request timed out for product [{}]",
             request_id, product_id
+        );
+        tracing::info!(
+            target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+            timeout_ms = channel.switch_condition.timeout_ms,
+            "upstream.timeout"
         );
         record_proxy_metric(&product_id, &method, "504", &mode, "timeout");
         record_upstream_timeout(&mode, TimeoutPhase::Read);

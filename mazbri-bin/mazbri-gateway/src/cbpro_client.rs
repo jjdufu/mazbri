@@ -2,8 +2,8 @@ use crate::config::ServiceEndpoint;
 use mazbri_core::metrics::RpcMetricsChannel;
 use mazbri_core::{CoreError, DEFAULT_RETRY_CONFIG, IsTransient, RetryConfig};
 use mazbri_rpc::{
-    CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest, FallbackResponse,
-    FallbackSource, RpcError, StoreRequest, StoreResponse,
+    CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest,
+    FallbackResponse, FallbackSource, RpcError, StoreRequest, StoreResponse,
 };
 
 type InstrumentedCBProClient =

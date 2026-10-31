@@ -16,10 +16,11 @@ pub use auth::{
 };
 pub use billing::{
     AddFundsRequest, AddFundsResponse, Amount, Bill, BillLineItem, BillStatus, BillingCycle,
-    BillingPeriod, BillingService, BillingServiceClient, BillingServiceRequest, BillingServiceResponse,
-    CheckBalanceRequest, CheckBalanceResponse, GetBalanceRequest, GetBalanceResponse, GetBillRequest,
-    GetBillResponse, GetUsageSummaryRequest, GetUsageSummaryResponse, ListBillsRequest,
-    ListBillsResponse, RecordUsageRequest, RecordUsageResponse, UsageBreakdown, UsageSummary,
+    BillingPeriod, BillingService, BillingServiceClient, BillingServiceRequest,
+    BillingServiceResponse, CheckBalanceRequest, CheckBalanceResponse, GetBalanceRequest,
+    GetBalanceResponse, GetBillRequest, GetBillResponse, GetUsageSummaryRequest,
+    GetUsageSummaryResponse, ListBillsRequest, ListBillsResponse, RecordUsageRequest,
+    RecordUsageResponse, UsageBreakdown, UsageSummary,
 };
 pub use cache::{
     CacheEntry, CacheService, CacheServiceClient, CacheServiceRequest, CacheServiceResponse,

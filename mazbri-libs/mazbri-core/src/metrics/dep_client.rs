@@ -68,4 +68,3 @@ pub fn observe_dep_duration(dep: &'static str, op: &'static str, duration: Durat
             .inc();
     }
 }
-

@@ -6,9 +6,7 @@
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use opentelemetry::Context as OtelContext;
 use opentelemetry::propagation::{Extractor, Injector};
-use opentelemetry::trace::{
-    SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState,
-};
+use opentelemetry::trace::{SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use std::collections::HashMap;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -236,12 +234,9 @@ mod tests {
 
     #[test]
     fn tarpc_context_round_trips() {
-        let original = remote_span_context(
-            "4bf92f3577b34da6a3ce929d0e0e4736",
-            "00f067aa0ba902b7",
-            true,
-        )
-        .expect("valid ids");
+        let original =
+            remote_span_context("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", true)
+                .expect("valid ids");
         let tarpc_context = tarpc_trace_context(&original);
         assert_eq!(
             u128::from(tarpc_context.trace_id),
@@ -273,16 +268,16 @@ mod tests {
     fn remote_parent_set_after_creation_takes_over_trace_id() {
         install_global_propagator();
         with_otel_subscriber(|| {
-            let parent = remote_span_context(
-                "4bf92f3577b34da6a3ce929d0e0e4736",
-                "00f067aa0ba902b7",
-                true,
-            )
-            .expect("valid ids");
+            let parent =
+                remote_span_context("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", true)
+                    .expect("valid ids");
             let span = tracing::info_span!("server");
             set_remote_parent(&span, parent);
             let own = span_context_of(&span).expect("otel span");
-            assert_eq!(own.trace_id().to_string(), "4bf92f3577b34da6a3ce929d0e0e4736");
+            assert_eq!(
+                own.trace_id().to_string(),
+                "4bf92f3577b34da6a3ce929d0e0e4736"
+            );
             assert_ne!(own.span_id().to_string(), "00f067aa0ba902b7");
             let _entered = span.enter();
             let child = tracing::info_span!("child");

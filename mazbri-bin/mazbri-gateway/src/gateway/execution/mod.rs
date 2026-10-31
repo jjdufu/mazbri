@@ -43,7 +43,7 @@ use cbpro::{
     enqueue_cbpro_observation, try_cbpro_fallback,
 };
 use channel::{
-    execute_channel_attempt, resolve_mode_and_contract_hint, should_switch, should_switch_status,
-    spawn_persist_event_best_effort, store_fallback_snapshot,
+    ChannelAttempt, execute_channel_attempt, resolve_mode_and_contract_hint, should_switch,
+    should_switch_status, spawn_persist_event_best_effort, store_fallback_snapshot,
 };
 use http_upstream::{AttemptCtx, execute_http_upstream_request, proxy_body_to_json_value};

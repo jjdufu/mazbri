@@ -42,6 +42,8 @@ pub struct UsageOutboxEvent {
     pub billing_service_duration_ms: i32,
     pub billing_result: CalculationResult,
     pub billing_code: Option<i16>,
+    /// 网关 billing.enqueue span 的 W3C traceparent，计费 worker 据此挂 span link。
+    pub trace_parent: Option<String>,
 }
 #[derive(Debug, Clone)]
 pub struct BillingServiceConfig {

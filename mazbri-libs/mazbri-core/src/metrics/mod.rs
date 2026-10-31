@@ -1,12 +1,12 @@
 pub mod builders;
-pub mod dep_client;
-pub mod rpc_client;
 pub mod cbpro;
 pub mod defaults;
+pub mod dep_client;
 pub mod health;
 pub mod process;
 pub mod recorders;
 pub mod registry;
+pub mod rpc_client;
 pub mod runtime;
 pub mod service;
 pub use builders::MetricsBuilder;

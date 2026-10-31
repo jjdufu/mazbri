@@ -55,6 +55,8 @@ pub struct ChargeQueueItem {
     pub scheduled_at: DateTime<Utc>,
     pub transaction_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    /// 产生该扣费的请求侧 span（W3C traceparent），批量扣费 span 以 link 关联。
+    pub trace_parent: Option<String>,
 }
 
 /// Shared worker queue settings for outbox + charge consumers.

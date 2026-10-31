@@ -17,6 +17,10 @@ use tracing_subscriber::{EnvFilter, Layer, Registry};
 
 /// OTLP layer with business-only span filter (drops h2/hyper transport noise).
 ///
+/// Events are dropped except those emitted on [`crate::trace_spans::SPAN_EVENT_TARGET`],
+/// which become events of the current span (circuit breaker rejection, fallback …).
+/// The dependency span layer sits on top so it can enrich spans this layer created.
+///
 /// Generic over `S` so it can sit on top of other layers (not only bare `Registry`).
 fn build_filtered_otel_layer<S>(
     tracer: opentelemetry_sdk::trace::Tracer,
@@ -27,16 +31,90 @@ where
         + Send
         + Sync,
 {
+    crate::trace_spans::install_tracer(tracer.clone());
     tracing_opentelemetry::layer()
         .with_tracer(tracer)
         .with_filter(filter_fn(|metadata| {
-            // Spans: export filter. Events: never needed for OTLP traces layer.
             if metadata.is_span() {
                 crate::otlp::should_export_otlp_span(metadata)
             } else {
-                false
+                metadata.target() == crate::trace_spans::SPAN_EVENT_TARGET
             }
         }))
+        .and_then(
+            crate::trace_spans::DependencySpanLayer.with_filter(filter_fn(
+                crate::trace_spans::DependencySpanLayer::interested,
+            )),
+        )
+}
+
+/// JSON event format that appends the current OpenTelemetry `trace_id` / `span_id`
+/// as top-level keys, so every service's log line can be joined to its trace.
+struct OtelIdsJson(fmt::format::Format<fmt::format::Json>);
+
+impl<S, N> fmt::FormatEvent<S, N> for OtelIdsJson
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    N: for<'w> fmt::FormatFields<'w> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &fmt::FmtContext<'_, S, N>,
+        mut writer: fmt::format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        let ids = ctx
+            .event_scope()
+            .and_then(|scope| crate::trace_spans::otel_ids_of(scope))
+            // Spans this layer's filter disables (e.g. `tarpc=warn` hides the
+            // tarpc server span) are absent from `event_scope`; fall back to the
+            // registry's current span so RPC handler logs still carry the ids.
+            .or_else(|| {
+                crate::trace_propagation::current_span_context()
+                    .map(|span_context| (span_context.trace_id(), span_context.span_id()))
+            });
+        let Some((trace_id, span_id)) = ids else {
+            return self.0.format_event(ctx, writer, event);
+        };
+        let mut line = String::with_capacity(512);
+        self.0
+            .format_event(ctx, fmt::format::Writer::new(&mut line), event)?;
+        match line.rfind('}') {
+            Some(end) => {
+                writer.write_str(&line[..end])?;
+                write!(
+                    writer,
+                    ",\"trace_id\":\"{trace_id}\",\"span_id\":\"{span_id}\""
+                )?;
+                writer.write_str(&line[end..])
+            }
+            None => writer.write_str(&line),
+        }
+    }
+}
+
+/// One JSON log layer; `with_location` adds file/line (debug layers).
+fn json_layer<S, W>(
+    writer: W,
+    with_location: bool,
+) -> fmt::Layer<S, fmt::format::JsonFields, OtelIdsJson, W>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    W: for<'w> fmt::MakeWriter<'w> + 'static,
+{
+    fmt::layer()
+        .fmt_fields(fmt::format::JsonFields::new())
+        .event_format(OtelIdsJson(
+            fmt::format()
+                .json()
+                .with_target(true)
+                .with_file(with_location)
+                .with_line_number(with_location)
+                .with_current_span(true)
+                .with_span_list(true),
+        ))
+        .with_writer(writer)
+        .with_ansi(false)
 }
 static SERVICE_NAME: OnceLock<String> = OnceLock::new();
 const LOG_INSTANCE_ENV: &str = "MAZBRI_LOG_INSTANCE_ID";
@@ -328,25 +406,11 @@ fn json_console_layers(
         .clone()
         .and(filter_fn(|metadata| *metadata.level() >= Level::DEBUG));
 
-    let console_layer_info = fmt::layer()
-        .json()
-        .with_writer(stdout_writer.clone())
-        .with_target(true)
-        .with_file(false)
-        .with_line_number(false)
-        .with_current_span(true)
-        .with_span_list(true)
-        .with_filter(console_info_filter);
+    let console_layer_info =
+        json_layer(stdout_writer.clone(), false).with_filter(console_info_filter);
 
-    let console_layer_debug = fmt::layer()
-        .json()
-        .with_writer(stdout_writer.clone())
-        .with_target(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_current_span(true)
-        .with_span_list(true)
-        .with_filter(console_debug_filter);
+    let console_layer_debug =
+        json_layer(stdout_writer.clone(), true).with_filter(console_debug_filter);
     vec![console_layer_info.boxed(), console_layer_debug.boxed()]
 }
 fn setup_json_layers(
@@ -377,27 +441,10 @@ fn setup_json_layers(
                 .any(|route| route.matches(metadata))
     }));
 
-    let default_layer_info = fmt::layer()
-        .json()
-        .with_writer(default_writer.clone())
-        .with_ansi(false)
-        .with_target(true)
-        .with_file(false)
-        .with_line_number(false)
-        .with_current_span(true)
-        .with_span_list(true)
-        .with_filter(default_info_filter);
+    let default_layer_info =
+        json_layer(default_writer.clone(), false).with_filter(default_info_filter);
 
-    let default_layer_debug = fmt::layer()
-        .json()
-        .with_writer(default_writer)
-        .with_ansi(false)
-        .with_target(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_current_span(true)
-        .with_span_list(true)
-        .with_filter(default_debug_filter);
+    let default_layer_debug = json_layer(default_writer, true).with_filter(default_debug_filter);
 
     let mut guards = vec![default_guard];
     let mut file_layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> =
@@ -414,15 +461,7 @@ fn setup_json_layers(
         let route_filter_info = route.clone();
         let route_filter_debug = route.clone();
 
-        let layer_info = fmt::layer()
-            .json()
-            .with_writer(writer.clone())
-            .with_ansi(false)
-            .with_target(true)
-            .with_file(false)
-            .with_line_number(false)
-            .with_current_span(true)
-            .with_span_list(true)
+        let layer_info = json_layer(writer.clone(), false)
             .with_filter(env_filter.clone())
             .with_filter(filter_fn(move |metadata| {
                 *metadata.level() <= Level::INFO
@@ -432,15 +471,7 @@ fn setup_json_layers(
                         .any(|prior| prior.matches(metadata))
             }));
 
-        let layer_debug = fmt::layer()
-            .json()
-            .with_writer(writer)
-            .with_ansi(false)
-            .with_target(true)
-            .with_file(true)
-            .with_line_number(true)
-            .with_current_span(true)
-            .with_span_list(true)
+        let layer_debug = json_layer(writer, true)
             .with_filter(env_filter.clone())
             .with_filter(filter_fn(move |metadata| {
                 *metadata.level() >= Level::DEBUG
@@ -616,25 +647,9 @@ fn setup_console_only(
             .clone()
             .and(filter_fn(|metadata| *metadata.level() >= Level::DEBUG));
 
-        let console_layer_info = fmt::layer()
-            .json()
-            .with_writer(io::stdout)
-            .with_target(true)
-            .with_file(false)
-            .with_line_number(false)
-            .with_current_span(true)
-            .with_span_list(true)
-            .with_filter(console_info_filter);
+        let console_layer_info = json_layer(io::stdout, false).with_filter(console_info_filter);
 
-        let console_layer_debug = fmt::layer()
-            .json()
-            .with_writer(io::stdout)
-            .with_target(true)
-            .with_file(true)
-            .with_line_number(true)
-            .with_current_span(true)
-            .with_span_list(true)
-            .with_filter(console_debug_filter);
+        let console_layer_debug = json_layer(io::stdout, true).with_filter(console_debug_filter);
 
         let otel_layer = otlp_tracer.map(build_filtered_otel_layer);
         let subscriber = Registry::default()

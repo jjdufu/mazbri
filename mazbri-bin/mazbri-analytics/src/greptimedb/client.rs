@@ -78,6 +78,13 @@ impl GreptimeDBClient {
             .execute_query_columns_rows_inner(sql, error_context)
             .await;
         mazbri_core::metrics::observe_dep("greptime", "query", started, result.is_ok());
+        crate::clickhouse::record_query_span(
+            "greptime.query",
+            "greptimedb",
+            sql,
+            started,
+            result.as_ref().err(),
+        );
         result
     }
     async fn execute_query_columns_rows_inner(

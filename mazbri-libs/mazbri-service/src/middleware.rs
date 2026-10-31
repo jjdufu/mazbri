@@ -15,9 +15,10 @@ use tracing::{Instrument, debug, error, info_span, warn};
 pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
     let request_id = request_id_from_headers(req.headers());
     let remote_parent = remote_parent_from_headers(req.headers());
-    let parent_span_id: Arc<str> = remote_parent
-        .as_ref()
-        .map_or_else(|| Arc::from(""), |parent| parent.span_id().to_string().into());
+    let parent_span_id: Arc<str> = remote_parent.as_ref().map_or_else(
+        || Arc::from(""),
+        |parent| parent.span_id().to_string().into(),
+    );
     let span = info_span!(
         "request",
         otel.kind = "server",

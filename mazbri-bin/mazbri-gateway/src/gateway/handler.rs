@@ -32,7 +32,7 @@ use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{Instrument, error, info, warn};
 use uuid::Uuid;
 const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
@@ -212,9 +212,13 @@ fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_
         idempotency_ms,
         tenant_validation_ms,
     ] = stage_ms;
+    let stage_ids = super::stage_log::stage_span("request_prepare", tenant_validation_ms)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .record();
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "request_prepare",
-        stage_ms = tenant_validation_ms, request_id = % request_id, tenant_id = %
+        stage_ms = tenant_validation_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id = %
         claims.tenant_id, tenant_code = % claims.tenant_code, product_id = % req.product_id,
         method = % req.method, path = % req.path, encrypted_request = request_was_encrypted,
         tenant_id_validation_ms, request_validate_ms, idempotency_ms,
@@ -235,9 +239,17 @@ fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, fetched: &FetchedR
     } else {
         "live"
     };
+    let mut stage = super::stage_log::stage_span("upstream", upstream_ms)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .mode(route.map_or("", |r| r.upstream_mode.as_str()));
+    if !(200..300).contains(&status) {
+        stage = stage.failed();
+    }
+    let stage_ids = stage.record();
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "upstream",
-        stage_ms = upstream_ms, request_id = % request_id, tenant_id = %
+        stage_ms = upstream_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id = %
         claims.tenant_id, tenant_code = % claims.tenant_code, product_id = % req.product_id,
         method = % req.method, path = % req.path, upstream_service_time_ms =
         upstream_ms, from_cache = fetched.from_cache, upstream_mode = %
@@ -281,10 +293,14 @@ fn log_transport_stage(
     crypto_timing: &TenantCryptoTiming,
 ) {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
+    let stage_ids = super::stage_log::stage_span("transport", crypto_timing.transport_total)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .record();
     if request_was_encrypted {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total, request_id = % request_id, tenant_id =
+            stage_ms = crypto_timing.transport_total, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id =
             % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
             req.product_id, method = % req.method, path = % req.path, encrypted_request = true,
             transport_profile_ms = crypto_timing.transport_profile, transport_total_ms =
@@ -302,7 +318,7 @@ fn log_transport_stage(
     } else {
         info!(
             target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total, request_id = % request_id, tenant_id =
+            stage_ms = crypto_timing.transport_total, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id =
             % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
             req.product_id, method = % req.method, path = % req.path, encrypted_request =
             false, transport_profile_ms = crypto_timing.transport_profile,
@@ -353,11 +369,17 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
         }
         Ok(crate::crypto::IdempotencyOutcome::Completed(record)) => {
             let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
+            let stage_ids = super::stage_log::stage_span("idempotency", idempotency_ms)
+                .product(&req.product_id)
+                .tenant(&claims.tenant_code)
+                .record();
             info!(
                 target: "gateway.stage",
                 service = "mazbri-gateway",
                 stage_name = "idempotency",
                 stage_ms = idempotency_ms,
+                trace_id = %stage_ids.trace_id,
+                span_id = %stage_ids.span_id,
                 request_id = %request_id,
                 tenant_id = %claims.tenant_id,
                 tenant_code = %claims.tenant_code,
@@ -378,11 +400,17 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
         }
     };
     let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
+    let stage_ids = super::stage_log::stage_span("idempotency", idempotency_ms)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .record();
     info!(
         target: "gateway.stage",
         service = "mazbri-gateway",
         stage_name = "idempotency",
         stage_ms = idempotency_ms,
+        trace_id = %stage_ids.trace_id,
+        span_id = %stage_ids.span_id,
         request_id = %request_id,
         tenant_id = %claims.tenant_id,
         tenant_code = %claims.tenant_code,
@@ -421,9 +449,17 @@ async fn resolve_product_detail(
     };
     timing.product_detail_lookup_ms =
         mazbri_core::num::millis_u64(product_detail_lookup_started_at.elapsed());
+    let mut stage =
+        super::stage_log::stage_span("product_detail_lookup", timing.product_detail_lookup_ms)
+            .product(&req.product_id)
+            .tenant(&claims.tenant_code);
+    if tenant_product_detail.is_none() {
+        stage = stage.failed();
+    }
+    let stage_ids = stage.record();
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "product_detail_lookup", stage_ms = timing.product_detail_lookup_ms, request_id =
+        "product_detail_lookup", stage_ms = timing.product_detail_lookup_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, request_id =
         % request_id, tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code,
         product_id = % req.product_id, method = % req.method, path = % req.path,
         product_detail_lookup_ms = timing.product_detail_lookup_ms, message =
@@ -544,9 +580,13 @@ fn serialize_stage(
     )?;
     let response_serialize_ms =
         mazbri_core::num::millis_u64(response_serialize_started_at.elapsed());
+    let stage_ids = super::stage_log::stage_span("response_serialize", response_serialize_ms)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .record();
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id,
+        "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
         tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
         req.product_id, method = % req.method, path = % req.path,  response_body_kind = serialized_response.body_kind,
         response_body_encoding = serialized_response.body_encoding, payload_bytes_len =
@@ -609,9 +649,13 @@ async fn encrypt_stage(
         .encrypt_response_bytes(tenant_uuid, crypto_profile, &serialized.bytes, http_path)
         .await?;
     let response_encrypt_ms = mazbri_core::num::millis_u64(response_encrypt_started_at.elapsed());
+    let stage_ids = super::stage_log::stage_span("response_encrypt", response_encrypt_ms)
+        .product(&req.product_id)
+        .tenant(&claims.tenant_code)
+        .record();
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "response_encrypt", stage_ms = response_encrypt_ms, request_id = % request_id,
+        "response_encrypt", stage_ms = response_encrypt_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
         tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
         req.product_id, method = % req.method, path = % req.path, response_encrypt_ms,
         message = "Gateway response encryption stage completed"
@@ -694,12 +738,20 @@ async fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
     GATEWAY_UPSTREAM_WAIT_SECONDS
         .with_label_values(&[&req.product_id, upstream_mode])
         .observe(mazbri_core::num::u64_to_f64(timing.upstream_ms) / 1000.0);
+    let stage_ids = super::stage_log::stage_span("platform_summary", customer_total_ms)
+        .product(&req.product_id)
+        .tenant(&ctx.claims.tenant_code)
+        .mode(upstream_mode)
+        .record();
     // 平台摘要全量保留，便于算 platform_ms
     if super::stage_log::always_log_stage() {
         info!(
             target: "gateway.stage",
             service = "mazbri-gateway",
             stage_name = "platform_summary",
+            stage_ms = customer_total_ms,
+            trace_id = %stage_ids.trace_id,
+            span_id = %stage_ids.span_id,
             request_id = %ctx.request_id,
             product_id = %req.product_id,
             duration_ms = customer_total_ms,
@@ -744,21 +796,27 @@ async fn prepare_usage_event(
 ) {
     let req = ctx.req;
     let fetched = done.fetched;
-    let (usage_event, billable) = super::post_response::build_usage_event(&UsageChargeContext {
-        request_id: ctx.request_id,
-        tenant_id: done.tenant_uuid,
-        product_detail: Some(done.tenant_product_detail),
-        req,
-        request_size: done.request_size,
-        status: fetched.response.status,
-        response_bytes: done.serialized.response_bytes,
-        service_total_ms,
-        interaction_event_id: fetched.interaction_event_id,
-        fingerprint: req.fingerprint.as_deref(),
+    // 计费入队 span：事件的 trace_parent 指向它，计费 worker 的批量 span 以 link 关联回来。
+    let enqueue_span = tracing::info_span!("billing.enqueue", product_id = %req.product_id);
+    let (usage_event, billable) = enqueue_span.in_scope(|| {
+        super::post_response::build_usage_event(&UsageChargeContext {
+            request_id: ctx.request_id,
+            tenant_id: done.tenant_uuid,
+            product_detail: Some(done.tenant_product_detail),
+            req,
+            request_size: done.request_size,
+            status: fetched.response.status,
+            response_bytes: done.serialized.response_bytes,
+            service_total_ms,
+            interaction_event_id: fetched.interaction_event_id,
+            fingerprint: req.fingerprint.as_deref(),
+        })
     });
     let billable = billable && ctx.state.billing_state.is_some();
     let usage_event_produced = if billable {
-        produce_usage_event(ctx, &usage_event).await
+        produce_usage_event(ctx, &usage_event)
+            .instrument(enqueue_span)
+            .await
     } else {
         false
     };

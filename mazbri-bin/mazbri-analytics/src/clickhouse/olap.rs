@@ -30,6 +30,7 @@ pub enum OlapQuery {
     CostTrend(TrendParams),
     SupplierSla(WindowParams),
     BillingFunnelCh(WindowParams),
+    ExemplarTraces(ExemplarParams),
 }
 
 impl OlapQuery {
@@ -62,6 +63,7 @@ impl OlapQuery {
             Self::CostTrend(_) => "cost_trend",
             Self::SupplierSla(_) => "supplier_sla",
             Self::BillingFunnelCh(_) => "billing_funnel_ch",
+            Self::ExemplarTraces(_) => "exemplar_traces",
         }
     }
 }
@@ -303,6 +305,43 @@ pub struct SlowRequestsParams {
     pub filters: Filters,
 }
 
+/// 示例 trace 依据的耗时指标。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExemplarMetric {
+    #[default]
+    DurationMs,
+    UpstreamServiceTimeMs,
+}
+
+impl ExemplarMetric {
+    fn column(self) -> &'static str {
+        match self {
+            Self::DurationMs => "duration_ms",
+            Self::UpstreamServiceTimeMs => "upstream_service_time_ms",
+        }
+    }
+}
+
+/// `exemplar_traces(metric, ts, dims)`：`ts`（Unix 秒）前后 `window_secs` 内、
+/// 指标 ≥ 同窗同维度 P99 的请求 trace。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExemplarParams {
+    #[serde(default)]
+    pub metric: ExemplarMetric,
+    pub ts: u32,
+    #[serde(default)]
+    pub window_secs: Option<u32>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default, flatten)]
+    pub filters: Filters,
+}
+
+/// 示例 trace 窗口半宽上限（秒）。
+const EXEMPLAR_MAX_WINDOW_SECS: u32 = 3_600;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BreakdownParams {
@@ -380,6 +419,15 @@ pub struct SlowRow {
     pub duration_ms: u64,
     pub upstream_service_time_ms: u64,
     pub error_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct ExemplarRow {
+    pub ts: u32,
+    pub trace_id: String,
+    pub request_id: String,
+    pub value_ms: u64,
+    pub p99_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
@@ -466,6 +514,7 @@ pub enum OlapRows {
     Heatmap(Vec<HeatmapRow>),
     Bytes(Vec<BytesRow>),
     Slow(Vec<SlowRow>),
+    Exemplars(Vec<ExemplarRow>),
     ErrorMatrix(Vec<ErrorCellRow>),
     Attribution(Vec<AttributionRow>),
     Flags(Vec<FlagRow>),
@@ -552,6 +601,16 @@ impl OlapQuery {
                 reject_over_day(p.range, "call_histogram")
             }
             Self::SupplierSla(p) | Self::BillingFunnelCh(p) => p.filters.validate(),
+            Self::ExemplarTraces(p) => {
+                p.filters.validate()?;
+                match p.window_secs {
+                    Some(0) => Err(invalid("window_secs 必须大于 0".to_string())),
+                    Some(w) if w > EXEMPLAR_MAX_WINDOW_SECS => Err(invalid(format!(
+                        "window_secs 最大 {EXEMPLAR_MAX_WINDOW_SECS}"
+                    ))),
+                    _ => Ok(()),
+                }
+            }
         }
     }
 
@@ -591,6 +650,7 @@ impl OlapQuery {
             Self::CallHistogram(p) => call_histogram_sql(p, &mut binds),
             Self::SupplierSla(p) => supplier_sla_sql(p, &mut binds),
             Self::BillingFunnelCh(p) => billing_funnel_ch_sql(p, &mut binds),
+            Self::ExemplarTraces(p) => exemplar_traces_sql(p, &mut binds),
         };
         Sql { text, binds }
     }
@@ -680,6 +740,29 @@ fn latency_heatmap_sql(p: &TrendParams, binds: &mut Vec<String>) -> String {
          ) GROUP BY ts, le_ms ORDER BY ts, le_ms",
         bucket = bucket_expr("timestamp", bucket),
         window = window(p.range, "timestamp"),
+    )
+}
+
+/// 同一窗口、同一组维度先算 P99，再取指标 ≥ P99 且带 `trace_id` 的请求。
+fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
+    let column = p.metric.column();
+    let half = p.window_secs.unwrap_or(60);
+    let limit = clamp_limit(p.limit, 20);
+    let win = format!(
+        "timestamp >= toDateTime({from}) AND timestamp < toDateTime({to})",
+        from = p.ts.saturating_sub(half),
+        to = p.ts.saturating_add(half),
+    );
+    let filters_inner = filter_clause(&p.filters, binds);
+    let filters_outer = filter_clause(&p.filters, binds);
+    format!(
+        "WITH (SELECT quantileTDigest(0.99)({column}) FROM request_logs \
+           WHERE event_target = 'gateway' AND {win}{filters_inner}) AS p99 \
+         SELECT toUInt32(toUnixTimestamp(timestamp)) AS ts, trace_id, request_id, \
+         toUInt64({column}) AS value_ms, toFloat64(p99) AS p99_ms FROM request_logs \
+         WHERE event_target = 'gateway' AND {win}{filters_outer} \
+           AND trace_id != '' AND {column} >= p99 \
+         ORDER BY {column} DESC LIMIT {limit}"
     )
 }
 
@@ -868,6 +951,7 @@ impl ClickHouseClient {
             OlapQuery::StatusHeatmap(_) => OlapRows::Heatmap(self.fetch_bound(&sql).await?),
             OlapQuery::BytesTrend(_) => OlapRows::Bytes(self.fetch_bound(&sql).await?),
             OlapQuery::SlowRequests(_) => OlapRows::Slow(self.fetch_bound(&sql).await?),
+            OlapQuery::ExemplarTraces(_) => OlapRows::Exemplars(self.fetch_bound(&sql).await?),
             OlapQuery::ErrorMatrix(_) => OlapRows::ErrorMatrix(self.fetch_bound(&sql).await?),
             OlapQuery::ErrorAttribution(_) => OlapRows::Attribution(self.fetch_bound(&sql).await?),
             OlapQuery::ResponseFlags(_) => OlapRows::Flags(self.fetch_bound(&sql).await?),
@@ -886,6 +970,24 @@ mod tests {
 
     fn parse(json: &str) -> std::result::Result<OlapQuery, serde_json::Error> {
         serde_json::from_str(json)
+    }
+
+    #[test]
+    fn exemplar_traces_uses_p99_of_same_window() {
+        let q =
+            parse(r#"{"template":"exemplar_traces","params":{"ts":1700000000,"product_id":"p1"}}"#)
+                .expect("valid");
+        q.validate().expect("valid params");
+        let sql = q.sql();
+        assert!(sql.text.contains("quantileTDigest(0.99)(duration_ms)"));
+        assert!(sql.text.contains("toDateTime(1699999940)"));
+        assert!(sql.text.contains("duration_ms >= p99"));
+        assert_eq!(sql.binds, vec!["p1".to_string(), "p1".to_string()]);
+        let wide = parse(
+            r#"{"template":"exemplar_traces","params":{"ts":1700000000,"window_secs":7200}}"#,
+        )
+        .expect("parses");
+        assert!(wide.validate().is_err());
     }
 
     #[test]

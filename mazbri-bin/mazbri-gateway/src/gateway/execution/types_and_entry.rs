@@ -1,11 +1,11 @@
 use super::{
-    Arc, AttemptStatus, CandidateChannel, ChannelRateLimitDecision, ChannelRateLimitRequest,
-    CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL,
-    GatewayRequest, InteractionEvent, MazbriClaims, ProxyError, ProxyState, RetryReason,
-    RouteMatchContext, Serialize, TraceContext, UpstreamAttempt, Uuid, classify_proxy_result,
-    debug, execute_channel_attempt, info, record_retry, resolve_mode_and_contract_hint,
-    should_switch, should_switch_status, spawn_persist_event_best_effort, store_fallback_snapshot,
-    try_cbpro_fallback, warn,
+    Arc, AttemptStatus, CandidateChannel, ChannelAttempt, ChannelRateLimitDecision,
+    ChannelRateLimitRequest, CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration,
+    GATEWAY_UPSTREAM_ATTEMPTS_TOTAL, GatewayRequest, InteractionEvent, MazbriClaims, ProxyError,
+    ProxyState, RetryReason, RouteMatchContext, Serialize, TraceContext, UpstreamAttempt, Uuid,
+    classify_proxy_result, debug, execute_channel_attempt, info, record_retry,
+    resolve_mode_and_contract_hint, should_switch, should_switch_status,
+    spawn_persist_event_best_effort, store_fallback_snapshot, try_cbpro_fallback, warn,
 };
 use mazbri_core::num::SaturatingFrom;
 
@@ -364,7 +364,8 @@ pub(crate) async fn execute_gateway_request_with_event(
             continue;
         }
 
-        match execute_channel_attempt(state, req, &channel, claims, request_id, trace_context).await
+        let attempt = ChannelAttempt::new(&channel, index + 1);
+        match execute_channel_attempt(state, req, attempt, claims, request_id, trace_context).await
         {
             Ok(response) => {
                 if switch_on_status(

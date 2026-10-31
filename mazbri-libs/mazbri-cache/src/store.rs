@@ -11,6 +11,7 @@ use mazbri_core::redis::{RedisClient, sha256_hex};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
+use tracing::Instrument;
 use uuid::Uuid;
 
 const SHARED_MEMORY_NAMESPACE: &str = "__shared__";
@@ -298,9 +299,9 @@ impl RedisCache {
     }
 }
 
-#[async_trait::async_trait]
-impl Cache for RedisCache {
-    async fn get(
+impl RedisCache {
+    /// 两级查找（进程内 → Redis）；`cache.get` span 包在外层。
+    async fn get_entry(
         &self,
         tenant_id: &str,
         key: &str,
@@ -343,6 +344,35 @@ impl Cache for RedisCache {
             Ok(None)
         }
     }
+}
+
+#[async_trait::async_trait]
+impl Cache for RedisCache {
+    async fn get(
+        &self,
+        tenant_id: &str,
+        key: &str,
+    ) -> Result<Option<CacheEntry>, mazbri_core::CoreError> {
+        let span = tracing::info_span!(
+            "cache.get",
+            otel.kind = "client",
+            hit = tracing::field::Empty,
+            otel.status_code = tracing::field::Empty,
+        );
+        let result = self
+            .get_entry(tenant_id, key)
+            .instrument(span.clone())
+            .await;
+        match &result {
+            Ok(entry) => {
+                span.record("hit", entry.is_some());
+            }
+            Err(_) => {
+                span.record("otel.status_code", "ERROR");
+            }
+        }
+        result
+    }
 
     async fn set(
         &self,
@@ -351,8 +381,20 @@ impl Cache for RedisCache {
         value: Vec<u8>,
         ttl: std::time::Duration,
     ) -> Result<(), mazbri_core::CoreError> {
-        self.set_with_endpoint(tenant_id, key, value, ttl, None)
-            .await
+        let span = tracing::info_span!(
+            "cache.set",
+            otel.kind = "client",
+            ttl_secs = ttl.as_secs(),
+            otel.status_code = tracing::field::Empty,
+        );
+        let result = self
+            .set_with_endpoint(tenant_id, key, value, ttl, None)
+            .instrument(span.clone())
+            .await;
+        if result.is_err() {
+            span.record("otel.status_code", "ERROR");
+        }
+        result
     }
 
     async fn delete(&self, tenant_id: &str, key: &str) -> Result<(), mazbri_core::CoreError> {
