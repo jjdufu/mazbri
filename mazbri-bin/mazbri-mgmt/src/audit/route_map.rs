@@ -107,6 +107,17 @@ const fn read(path: &'static str, resource_type: R) -> RouteAudit {
     }
 }
 
+/// 以 POST 承载查询体的只读接口白名单（不产生写审计）。
+pub const POST_READS: &[&str] = &["/stats/olap/query"];
+
+/// 以 POST 承载查询条件的只读接口（不产生写审计），路径须登记在 [`POST_READS`]。
+const fn read_post(path: &'static str, resource_type: R) -> RouteAudit {
+    RouteAudit {
+        method: "POST",
+        ..read(path, resource_type)
+    }
+}
+
 const ID: Option<&str> = Some("id");
 const CODE: Option<&str> = Some("code");
 const PRODUCT: Option<&str> = Some("product_id");
@@ -645,6 +656,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/metrics/overview", R::System),
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
+    read_post("/stats/olap/query", R::System),
     read("/stats/calls/customer", R::System),
     read("/stats/calls/upstream", R::System),
     // ---- settings / audit ----
@@ -1086,7 +1098,7 @@ pub(crate) mod route_sources {
 #[cfg(test)]
 mod tests {
     use super::route_sources::source_routes;
-    use super::{ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
+    use super::{POST_READS, ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
     use std::collections::BTreeSet;
 
     #[test]
@@ -1116,7 +1128,13 @@ mod tests {
         for route in ROUTES {
             match route.kind {
                 RouteKind::Read => {
-                    assert_eq!(route.method, "GET", "{}", route.path);
+                    assert!(
+                        route.method == "GET"
+                            || (route.method == "POST" && POST_READS.contains(&route.path)),
+                        "{} {}",
+                        route.method,
+                        route.path
+                    );
                     assert!(route.action.is_none(), "{}", route.path);
                 }
                 RouteKind::SensitiveRead => {

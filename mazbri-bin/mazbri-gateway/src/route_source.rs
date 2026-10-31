@@ -18,6 +18,7 @@ struct RouteSourceRow {
     channel_config: Value,
     path_prefix: String,
     qps_limit: i32,
+    cost_price: String,
     channel_order: i32,
     switch_condition: Value,
     version_tag: Option<String>,
@@ -55,6 +56,7 @@ pub async fn load_route_engine(pool: &PgPool) -> anyhow::Result<RouteEngine> {
             c.config AS channel_config,
             c.path_prefix,
             c.qps_limit,
+            c.cost_price::text AS cost_price,
             rcb.channel_order,
             rcb.switch_condition,
             rcb.version_tag,
@@ -94,6 +96,7 @@ pub async fn load_route_engine(pool: &PgPool) -> anyhow::Result<RouteEngine> {
                     .unwrap_or(serde_json::Value::Null),
                 path_prefix: row.try_get("path_prefix")?,
                 qps_limit: row.try_get("qps_limit")?,
+                cost_price: row.try_get("cost_price")?,
                 channel_order: row.try_get("channel_order")?,
                 switch_condition: row.try_get("switch_condition")?,
                 version_tag: row.try_get("version_tag")?,
@@ -126,6 +129,7 @@ fn build_route_map(rows: Vec<RouteSourceRow>) -> HashMap<RouteKey, Vec<Candidate
             version_tag: row.version_tag,
             weight: row.weight.map(|w| u32::saturating_from(w.max(0))),
             qps_limit: row.qps_limit.max(0),
+            cost_price: row.cost_price,
         });
     }
     routes

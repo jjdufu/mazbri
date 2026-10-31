@@ -1,6 +1,8 @@
 use super::super::AppState;
+use crate::middleware::auth::AdminClaims;
 use crate::services::analytics::{self, CallMonitorParams, MetricsTimeseriesParams};
-use axum::extract::{Query, State};
+use axum::Json;
+use axum::extract::{Extension, Query, State};
 pub async fn get_metrics_overview(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_metrics_overview(&state.analytics_client).await
 }
@@ -12,6 +14,14 @@ pub async fn get_metric_timeseries(
     Query(params): Query<MetricsTimeseriesParams>,
 ) -> axum::response::Response {
     analytics::get_metric_timeseries(&state.analytics_client, &params).await
+}
+/// `POST /stats/olap/query`：OLAP 模板查询转发；金额类模板仅 `R_ADMIN`、`R_FINANCE`。
+pub async fn post_olap_query(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(body): Json<serde_json::Value>,
+) -> axum::response::Response {
+    analytics::olap_query(&state.analytics_client, &claims, &body).await
 }
 pub async fn get_customer_call_logs(
     State(state): State<AppState>,

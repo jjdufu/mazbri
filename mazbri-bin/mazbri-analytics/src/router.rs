@@ -1,6 +1,7 @@
 use crate::handlers::{
     AppState, aggregate_request_logs, get_metric_timeseries, get_metrics_catalog,
-    get_metrics_overview, get_upstream_billing_summary, health_check, query_request_logs,
+    get_metrics_overview, get_upstream_billing_summary, health_check, olap_query,
+    query_request_logs,
 };
 use axum::Router;
 pub fn create_router(app_state: AppState) -> Router {
@@ -29,6 +30,7 @@ pub fn create_router(app_state: AppState) -> Router {
             "/api/v1/metrics/catalog",
             axum::routing::get(get_metrics_catalog),
         )
+        .route("/api/v1/olap/query", axum::routing::post(olap_query))
         .route("/health", axum::routing::get(health_check))
         .with_state(app_state)
 }

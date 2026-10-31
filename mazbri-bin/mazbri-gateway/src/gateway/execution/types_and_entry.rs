@@ -51,6 +51,8 @@ pub(crate) struct UpstreamRouteMetadata {
     pub(crate) upstream_mode: String,
     /// gRPC 契约 ID（见 `upstream_contract::known_contract_ids`）
     pub(crate) contract_id: String,
+    /// Channel cost price per upstream call (decimal string).
+    pub(crate) cost_price: String,
 }
 
 /// Build access-route metadata from a matched candidate channel (no live call required).
@@ -69,6 +71,7 @@ pub(crate) fn upstream_route_from_channel(
         attempt_order,
         upstream_mode: mode_hint,
         contract_id: contract_hint,
+        cost_price: channel.cost_price.clone(),
     }
 }
 

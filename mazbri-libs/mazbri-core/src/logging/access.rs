@@ -82,6 +82,8 @@ pub struct AccessBillingFields {
     pub price: String,
     /// `BillingCode` numeric value.
     pub billing_code: i16,
+    /// Upstream cost price (decimal string) of the live upstream call; `0` when no live call.
+    pub cost: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +139,8 @@ pub struct AccessLogEvent {
     pub price: String,
     #[serde(default)]
     pub billing_code: i16,
+    #[serde(default)]
+    pub cost: String,
 }
 
 impl AccessLogEvent {
@@ -385,6 +389,7 @@ impl AccessLogEventBuilder {
             billable: self.billing.billable,
             price: self.billing.price,
             billing_code: self.billing.billing_code,
+            cost: self.billing.cost,
         }
     }
 }
@@ -650,6 +655,7 @@ macro_rules! emit_access_log_for_target {
             billable = $event.billable,
             price = %$event.price,
             billing_code = $event.billing_code,
+            cost = %$event.cost,
         );
     };
 }
@@ -717,6 +723,7 @@ fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
         billable = event.billable,
         price = %event.price,
         billing_code = event.billing_code,
+        cost = %event.cost,
     );
 }
 

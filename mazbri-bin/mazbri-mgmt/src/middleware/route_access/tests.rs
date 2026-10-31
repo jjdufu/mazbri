@@ -133,7 +133,10 @@ fn writes_and_sensitive_reads_are_never_open_to_all_roles() {
 
 #[test]
 fn every_non_get_route_requires_explicit_roles_or_self_service() {
-    for rule in RULES.iter().filter(|rule| rule.method != "GET") {
+    // POST 承载查询体的只读接口按读接口对待（登记于审计映射的 POST_READS）。
+    for rule in RULES.iter().filter(|rule| {
+        rule.method != "GET" && !crate::audit::route_map::POST_READS.contains(&rule.path)
+    }) {
         assert!(
             matches!(
                 rule.access,

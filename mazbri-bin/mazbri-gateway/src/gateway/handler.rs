@@ -157,7 +157,7 @@ pub async fn unified_gateway_handler(
     let upstream_started_at = Instant::now();
     let fetched = fetch_response(&ctx, fallback_enabled, &trace_context, timing.started_at).await?;
     timing.upstream_ms = mazbri_core::num::millis_u64(upstream_started_at.elapsed());
-    log_upstream_stage(&ctx, timing.upstream_ms, fetched.from_cache);
+    log_upstream_stage(&ctx, timing.upstream_ms, &fetched);
     spawn_cache_populate(&ctx, &fetched);
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -223,15 +223,27 @@ fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_
     );
 }
 
-fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, from_cache: bool) {
+fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, fetched: &FetchedResponse) {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
+    let route = fetched.upstream_route.as_ref();
+    let status = fetched.response.status;
+    let error_class = classify_error_class(status, (200..300).contains(&status), "");
+    let result = if fetched.from_cache {
+        "cache"
+    } else if fetched.from_cbpro_fallback {
+        "cbpro_fallback"
+    } else {
+        "live"
+    };
     info!(
         target : "gateway.stage", service = "mazbri-gateway", stage_name = "upstream",
         stage_ms = upstream_ms, request_id = % request_id, tenant_id = %
         claims.tenant_id, tenant_code = % claims.tenant_code, product_id = % req.product_id,
         method = % req.method, path = % req.path, upstream_service_time_ms =
-        upstream_ms, from_cache, message =
-        "Gateway upstream stage completed"
+        upstream_ms, from_cache = fetched.from_cache, upstream_mode = %
+        route.map_or("", |r| r.upstream_mode.as_str()), contract_id = %
+        route.map_or("", |r| r.contract_id.as_str()), error_class = % error_class,
+        result, message = "Gateway upstream stage completed"
     );
 }
 
@@ -759,12 +771,22 @@ async fn prepare_usage_event(
             String::new()
         },
         billing_code: usage_event.billing_code.unwrap_or_default(),
+        cost: upstream_cost(fetched),
     };
     (
         billable.then_some(usage_event),
         usage_event_produced,
         billing_fields,
     )
+}
+
+/// Upstream cost of this request: the channel cost price when a live upstream call happened.
+fn upstream_cost(fetched: &FetchedResponse) -> String {
+    let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
+    match fetched.upstream_route.as_ref() {
+        Some(route) if live_upstream => route.cost_price.clone(),
+        _ => "0".to_string(),
+    }
 }
 
 /// L1: synchronously produce the usage event to Redpanda (acks=all) before the response.

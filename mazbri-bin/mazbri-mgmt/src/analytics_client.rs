@@ -165,6 +165,28 @@ impl AnalyticsHttpClient {
             .await
     }
 
+    /// 转发 OLAP 模板查询，返回 analytics 的 HTTP 状态与 JSON 体（4xx 原样透传给调用方）。
+    ///
+    /// # Errors
+    ///
+    /// 网络失败或响应不是 JSON 时返回错误。
+    pub async fn olap_query(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<(reqwest::StatusCode, serde_json::Value)> {
+        let path = "/api/v1/olap/query";
+        let resp = self
+            .client
+            .post(format!("{}{}", self.base_url, path))
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("调用 analytics {path} 失败"))?;
+        let status = resp.status();
+        let body: serde_json::Value = resp.json().await.context("解析 analytics 响应 JSON 失败")?;
+        Ok((status, body))
+    }
+
     async fn get_json(&self, path: &str, params: &[(&str, String)]) -> Result<serde_json::Value> {
         let query = params
             .iter()

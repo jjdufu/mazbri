@@ -1151,6 +1151,52 @@ pub async fn get_metrics_catalog(
         }
     }
 }
+/// 金额类 OLAP 模板（成本）：与 analytics `OlapQuery::is_money` 口径一致。
+fn olap_is_money(body: &serde_json::Value) -> bool {
+    let template = body.get("template").and_then(serde_json::Value::as_str);
+    let metric = body
+        .get("params")
+        .and_then(|p| p.get("metric"))
+        .and_then(serde_json::Value::as_str);
+    matches!(
+        (template, metric),
+        (Some("cost_trend"), _) | (Some("top_by_dim"), Some("cost"))
+    )
+}
+
+pub async fn olap_query(
+    analytics_client: &AnalyticsHttpClient,
+    claims: &crate::middleware::auth::AdminClaims,
+    body: &serde_json::Value,
+) -> axum::response::Response {
+    if olap_is_money(body) && !crate::middleware::route_access::BIZ.contains(&claims.role.as_str())
+    {
+        return ApiResponse::err(
+            StatusCode::FORBIDDEN,
+            "金额类模板仅 R_ADMIN、R_FINANCE 可查询",
+        );
+    }
+    match analytics_client.olap_query(body).await {
+        Ok((status, data)) if status.is_success() => ApiResponse::ok(data).into_response(),
+        Ok((status, data)) if status.is_client_error() => {
+            let message = data
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("OLAP 查询参数无效")
+                .to_string();
+            ApiResponse::err(StatusCode::BAD_REQUEST, message)
+        }
+        Ok((status, _)) => {
+            tracing::warn!(%status, "analytics OLAP 查询失败");
+            ApiResponse::err(StatusCode::BAD_GATEWAY, "OLAP 查询失败")
+        }
+        Err(e) => {
+            tracing::warn!("analytics OLAP 调用失败: {}", e);
+            ApiResponse::err(StatusCode::BAD_GATEWAY, "OLAP 查询失败")
+        }
+    }
+}
+
 pub async fn get_metric_timeseries(
     analytics_client: &AnalyticsHttpClient,
     params: &MetricsTimeseriesParams,
@@ -1237,5 +1283,23 @@ fn metric_label_unit(metric: &str) -> (&'static str, &'static str) {
         "billing_queue_depth" => ("计费队列深度", "jobs"),
         "cert_min_expiry_days" => ("证书最短到期", "days"),
         _ => ("指标", ""),
+    }
+}
+
+#[cfg(test)]
+mod olap_tests {
+    use super::olap_is_money;
+
+    #[test]
+    fn money_templates_are_detected() {
+        assert!(olap_is_money(
+            &serde_json::json!({"template": "cost_trend", "params": {}})
+        ));
+        assert!(olap_is_money(
+            &serde_json::json!({"template": "top_by_dim", "params": {"dim": "tenant_code", "metric": "cost"}})
+        ));
+        assert!(!olap_is_money(
+            &serde_json::json!({"template": "top_by_dim", "params": {"dim": "tenant_code", "metric": "p95"}})
+        ));
     }
 }

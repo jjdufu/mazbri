@@ -48,6 +48,8 @@ pub struct CandidateChannel {
     /// `0` means unlimited. Enforced by gateway independently of tenant ratelimit.
     #[serde(default)]
     pub qps_limit: i32,
+    /// Upstream cost price per call (`channels.cost_price`, decimal string).
+    pub cost_price: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

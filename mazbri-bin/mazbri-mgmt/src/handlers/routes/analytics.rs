@@ -1,6 +1,9 @@
 use super::super::analytics_handlers;
 use super::super::state::AppState;
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -31,6 +34,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/stats/metrics/catalog",
             get(analytics_handlers::get_metrics_catalog),
+        )
+        .route(
+            "/stats/olap/query",
+            post(analytics_handlers::post_olap_query),
         )
         .route(
             "/stats/calls/customer",
