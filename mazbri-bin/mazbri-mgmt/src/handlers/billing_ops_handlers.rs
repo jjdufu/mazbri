@@ -1,4 +1,4 @@
-//! 运维控制台：计费链路健康（6.1）与供应商结算成本（3.1）只读接口。
+//! 运维控制台：计费链路对账计数、失败/死信明细（6.1）与供应商结算成本（3.1）只读接口。
 
 use super::AppState;
 use crate::response::ApiResponse;
@@ -24,6 +24,8 @@ pub struct OpsFailuresQuery {
     pub range: OpsRange,
     #[serde(default = "default_failures_limit")]
     pub limit: u32,
+    #[serde(default)]
+    pub offset: u32,
 }
 
 const fn default_failures_limit() -> u32 {
@@ -48,7 +50,8 @@ pub async fn get_billing_failures(
     State(state): State<AppState>,
     Query(query): Query<OpsFailuresQuery>,
 ) -> Result<axum::response::Response, BillingError> {
-    let result = svc::billing_failures(&state.billing_db, query.range, query.limit).await?;
+    let result =
+        svc::billing_failures(&state.billing_db, query.range, query.limit, query.offset).await?;
     Ok(ApiResponse::ok(result).into_response())
 }
 

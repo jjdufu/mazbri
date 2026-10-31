@@ -1,10 +1,11 @@
 use super::{
-    API_PROXY_REQUESTS_TOTAL, BYPASS_CONTRACT_ID, CBPRO_FALLBACK_TTL_SECS, CandidateChannel,
-    CircuitResult, Deserialize, Duration, FallbackSnapshot, GatewayRequest, InteractionEvent,
-    MazbriClaims, ObservationRequestParts, ProxyError, ProxyState, StoreRequest, SwitchCondition,
-    TraceContext, UpstreamResponse, build_fallback_cache_key, build_observation_request,
-    classify_proxy_result, enqueue_cbpro_observation, execute_http_upstream_request,
-    get_or_create_breaker, info, persist_interaction_event, proxy_body_to_json_value, warn,
+    API_PROXY_REQUESTS_TOTAL, AttemptCtx, BYPASS_CONTRACT_ID, CBPRO_FALLBACK_TTL_SECS,
+    CandidateChannel, CircuitResult, Deserialize, Duration, FallbackSnapshot, GatewayRequest,
+    InteractionEvent, MazbriClaims, ObservationRequestParts, ProxyError, ProxyState, StoreRequest,
+    SwitchCondition, TimeoutPhase, TraceContext, UpstreamResponse, build_fallback_cache_key,
+    build_observation_request, classify_proxy_result, enqueue_cbpro_observation,
+    execute_http_upstream_request, get_or_create_breaker, info, persist_interaction_event,
+    proxy_body_to_json_value, record_upstream_timeout, warn,
 };
 
 pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
@@ -59,7 +60,10 @@ pub(super) async fn execute_channel_attempt(
                 req,
                 channel,
                 claims,
-                channel.switch_condition.max_retries,
+                AttemptCtx {
+                    max_retries: channel.switch_condition.max_retries,
+                    mode: &mode,
+                },
                 trace_context,
             )
             .await
@@ -105,6 +109,7 @@ pub(super) async fn execute_channel_attempt(
             request_id, product_id
         );
         record_proxy_metric(&product_id, &method, "504", &mode, "timeout");
+        record_upstream_timeout(&mode, TimeoutPhase::Read);
         Err(ProxyError::GatewayTimeout(format!(
             "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
         )))

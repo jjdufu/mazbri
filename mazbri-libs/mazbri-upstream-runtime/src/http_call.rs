@@ -87,8 +87,10 @@ pub async fn send_http(
 
     let started = Instant::now();
     let resp = builder.send().await.map_err(|e| {
-        if e.is_timeout() {
-            ExecuteError::UpstreamTransport(format!("timeout: {e}"))
+        if e.is_timeout() && e.is_connect() {
+            ExecuteError::UpstreamTransport(format!("connect timeout: {e}"))
+        } else if e.is_timeout() {
+            ExecuteError::UpstreamTransport(format!("read timeout: {e}"))
         } else {
             ExecuteError::UpstreamTransport(e.to_string())
         }

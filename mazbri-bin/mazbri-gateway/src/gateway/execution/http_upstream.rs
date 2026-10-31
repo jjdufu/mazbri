@@ -7,7 +7,7 @@ pub(super) async fn execute_http_upstream_request(
     req: &GatewayRequest,
     channel: &CandidateChannel,
     claims: &MazbriClaims,
-    max_retries: u32,
+    attempt: AttemptCtx<'_>,
     trace_context: &TraceContext,
 ) -> Result<UpstreamResponse, String> {
     // 唯一真相源：mazbri_core::SupplierConfig；分发只认 upstream_type（禁止 URL 启发式 / Default 吞错）
@@ -61,7 +61,7 @@ pub(super) async fn execute_http_upstream_request(
             &contract_id,
             &bypass_addr,
             invoke_req,
-            max_retries,
+            attempt,
         )
         .await;
     }
@@ -81,9 +81,16 @@ pub(super) async fn execute_http_upstream_request(
         &contract_id,
         channel.supplier_upstream_url.as_str(),
         request,
-        max_retries,
+        attempt,
     )
     .await
+}
+
+/// 单通道尝试上下文：重试上限 + 指标 `mode` 标签。
+#[derive(Debug, Clone, Copy)]
+pub(super) struct AttemptCtx<'a> {
+    pub max_retries: u32,
+    pub mode: &'a str,
 }
 
 /// 契约身份与业务 channel 分离：transparent 固定 BYPASS；microservice 读 `config.contract_id`。
@@ -299,7 +306,7 @@ async fn invoke_bypass(
     contract_id: &str,
     bypass_addr: &str,
     mut request: upstream_proto::InvokeRequest,
-    max_retries: u32,
+    ctx: AttemptCtx<'_>,
 ) -> Result<UpstreamResponse, String> {
     let mut attempt = 0u32;
     let mut forced_full_config = false;
@@ -318,13 +325,17 @@ async fn invoke_bypass(
                 if !forced_full_config && error.contains("CONFIG_CACHE_MISS") {
                     force_full_config(state, channel, &mut request)?;
                     forced_full_config = true;
+                    record_retry(ctx.mode, RetryReason::ConfigCacheMiss);
                     continue;
                 }
+                record_timeout_if_any(ctx.mode, &error);
                 return Err(error);
             }
             Ok(response) => return Ok(invoke_response_to_upstream(&response)),
             Err(error) => {
-                if backoff_before_retry(&mut attempt, max_retries).await {
+                record_timeout_if_any(ctx.mode, &error.to_string());
+                if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                    record_retry(ctx.mode, RetryReason::Transport);
                     continue;
                 }
                 return Err(format!("upstream HTTP/2 request failed: {error}"));
@@ -401,7 +412,7 @@ async fn execute_plain_request(
     contract_id: &str,
     addr: &str,
     request: upstream_proto::HttpUpstreamRequest,
-    max_retries: u32,
+    ctx: AttemptCtx<'_>,
 ) -> Result<UpstreamResponse, String> {
     let mut attempt = 0u32;
     loop {
@@ -417,6 +428,7 @@ async fn execute_plain_request(
                     } else {
                         response.error
                     };
+                    record_timeout_if_any(ctx.mode, &error);
                     return Err(error);
                 }
                 let data = response
@@ -433,7 +445,9 @@ async fn execute_plain_request(
                 });
             }
             Err(error) => {
-                if backoff_before_retry(&mut attempt, max_retries).await {
+                record_timeout_if_any(ctx.mode, &error.to_string());
+                if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                    record_retry(ctx.mode, RetryReason::Transport);
                     continue;
                 }
                 return Err(format!("upstream HTTP/2 request failed: {error}"));

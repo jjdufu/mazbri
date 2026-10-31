@@ -12,12 +12,11 @@ pub struct StatusCount {
     pub count: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, sqlx::FromRow)]
-pub struct ChargeLag {
-    pub samples: i64,
-    pub p50_seconds: Option<f64>,
-    pub p95_seconds: Option<f64>,
-    pub max_seconds: Option<f64>,
+/// 明细分页（limit 已收敛到 1–200）。
+#[derive(Debug, Clone, Copy)]
+pub struct Page {
+    pub limit: i64,
+    pub offset: i64,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -97,27 +96,12 @@ pub async fn ledger_charge_count(pool: &PgPool, since: DateTime<Utc>) -> Result<
 /// # Errors
 ///
 /// 数据库查询失败时返回错误。
-pub async fn charge_failure_count(pool: &PgPool, since: DateTime<Utc>) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT count(*) FROM charge_failures WHERE created_at >= $1")
-        .bind(since)
-        .fetch_one(pool)
-        .await
-}
-
-/// 端到端入账延迟：`usage_charge_queue.processed_at - created_at`（已完成条目）。
-///
-/// # Errors
-///
-/// 数据库查询失败时返回错误。
-pub async fn charge_lag(pool: &PgPool, since: DateTime<Utc>) -> Result<ChargeLag, sqlx::Error> {
-    sqlx::query_as::<_, ChargeLag>(
-        "SELECT count(*) AS samples, \
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY lag) AS p50_seconds, \
-         percentile_cont(0.95) WITHIN GROUP (ORDER BY lag) AS p95_seconds, \
-         max(lag) AS max_seconds \
-         FROM (SELECT EXTRACT(EPOCH FROM (processed_at - created_at))::float8 AS lag \
-               FROM usage_charge_queue \
-               WHERE created_at >= $1 AND status = 'completed' AND processed_at IS NOT NULL) q",
+pub async fn dead_letter_count(pool: &PgPool, since: DateTime<Utc>) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT (SELECT count(*) FROM usage_outbox \
+                 WHERE created_at >= $1 AND status = 'dead_letter') \
+              + (SELECT count(*) FROM usage_charge_queue \
+                 WHERE created_at >= $1 AND status = 'dead_letter')",
     )
     .bind(since)
     .fetch_one(pool)
@@ -127,19 +111,30 @@ pub async fn charge_lag(pool: &PgPool, since: DateTime<Utc>) -> Result<ChargeLag
 /// # Errors
 ///
 /// 数据库查询失败时返回错误。
+pub async fn charge_failure_count(pool: &PgPool, since: DateTime<Utc>) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT count(*) FROM charge_failures WHERE created_at >= $1")
+        .bind(since)
+        .fetch_one(pool)
+        .await
+}
+
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
 pub async fn recent_charge_failures(
     pool: &PgPool,
     since: DateTime<Utc>,
-    limit: i64,
+    page: Page,
 ) -> Result<Vec<ChargeFailureRow>, sqlx::Error> {
     sqlx::query_as::<_, ChargeFailureRow>(
         "SELECT f.id, f.queue_id, f.tenant_id, f.amount, f.error_message, f.attempt_number, \
          q.status::text AS queue_status, f.created_at \
          FROM charge_failures f LEFT JOIN usage_charge_queue q ON q.id = f.queue_id \
-         WHERE f.created_at >= $1 ORDER BY f.created_at DESC LIMIT $2",
+         WHERE f.created_at >= $1 ORDER BY f.created_at DESC, f.id DESC LIMIT $2 OFFSET $3",
     )
     .bind(since)
-    .bind(limit)
+    .bind(page.limit)
+    .bind(page.offset)
     .fetch_all(pool)
     .await
 }
@@ -152,7 +147,7 @@ pub async fn recent_charge_failures(
 pub async fn recent_dead_letters(
     pool: &PgPool,
     since: DateTime<Utc>,
-    limit: i64,
+    page: Page,
 ) -> Result<Vec<DeadLetterRow>, sqlx::Error> {
     sqlx::query_as::<_, DeadLetterRow>(
         "SELECT * FROM ( \
@@ -163,10 +158,11 @@ pub async fn recent_dead_letters(
            SELECT 'usage_charge_queue' AS source, id::text AS id, tenant_id, retry_count, \
                   error_message, created_at \
            FROM usage_charge_queue WHERE created_at >= $1 AND status = 'dead_letter' \
-         ) d ORDER BY created_at DESC LIMIT $2",
+         ) d ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
     )
     .bind(since)
-    .bind(limit)
+    .bind(page.limit)
+    .bind(page.offset)
     .fetch_all(pool)
     .await
 }

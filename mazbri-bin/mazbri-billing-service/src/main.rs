@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
                 worker: worker_config,
                 usage_events: runtime.ctx.config.usage_events.clone(),
                 reconcile: runtime.ctx.config.reconcile.clone(),
+                pipeline_health: runtime.ctx.config.pipeline_health.clone(),
             },
             runtime.ctx.config.server.max_connections,
         );

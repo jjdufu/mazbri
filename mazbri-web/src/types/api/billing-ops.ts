@@ -13,20 +13,12 @@ export interface FunnelStage {
   diff: number;
 }
 
-export interface ChargeLag {
-  samples: number;
-  p50_seconds: number | null;
-  p95_seconds: number | null;
-  max_seconds: number | null;
-}
-
 export interface BillingFunnelPg {
   since: string;
   stages: FunnelStage[];
   outbox_by_status: StatusCount[];
   queue_by_status: StatusCount[];
   charge_failures: number;
-  charge_lag: ChargeLag;
 }
 
 export interface ChargeFailureRow {
@@ -50,6 +42,10 @@ export interface DeadLetterRow {
 }
 
 export interface BillingFailures {
+  limit: number;
+  offset: number;
+  failures_total: number;
+  dead_letters_total: number;
   failures: ChargeFailureRow[];
   dead_letters: DeadLetterRow[];
 }

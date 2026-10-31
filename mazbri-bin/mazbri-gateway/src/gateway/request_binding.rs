@@ -57,6 +57,14 @@ impl RequestBindingError {
             message: "Request signature mismatch",
         }
     }
+    const fn failure_reason(&self) -> mazbri_auth::AuthFailureReason {
+        use mazbri_auth::AuthFailureReason as R;
+        match self.code.as_bytes() {
+            b"40110" => R::Missing,
+            b"40111" | b"40112" => R::Replay,
+            _ => R::Signature,
+        }
+    }
     fn kid() -> Self {
         Self {
             code: "40114",
@@ -70,6 +78,7 @@ impl IntoResponse for RequestBindingError {
         GATEWAY_REQUEST_BINDING_TOTAL
             .with_label_values(&[self.code])
             .inc();
+        mazbri_auth::record_auth_failure(self.failure_reason());
         let mut response =
             gateway_error_response(StatusCode::UNAUTHORIZED, self.code, self.message, None);
         response.headers_mut().insert(

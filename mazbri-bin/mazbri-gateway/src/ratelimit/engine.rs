@@ -675,7 +675,13 @@ impl LocalRateLimitEngine {
 
     pub fn update_snapshot_age_metric(&self) {
         super::metrics::LOCAL_RATELIMIT_SNAPSHOT_AGE_SECONDS
-            .set(self.snapshots.max_snapshot_age_seconds());
+            .set(self.snapshots.seconds_since_last_sync());
+    }
+
+    /// 同步成功但服务端无快照：保留现有快照，只刷新同步时刻。
+    pub fn mark_snapshots_synced(&self) {
+        self.snapshots.mark_synced();
+        self.update_snapshot_age_metric();
     }
 
     pub fn replace_snapshots(&self, snapshots: Vec<TenantPolicySnapshot>) {

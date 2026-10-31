@@ -119,6 +119,8 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to register analytics metrics: {e}"))?;
     register_log_writer_metrics()
         .map_err(|e| anyhow::anyhow!("Failed to register log writer metrics: {e}"))?;
+    mazbri_analytics::pipeline_freshness::register_pipeline_freshness_metrics()
+        .map_err(|e| anyhow::anyhow!("Failed to register pipeline freshness metrics: {e}"))?;
     info!("分析指标已注册");
     let greptimedb_client = init_greptimedb(&config).await;
 
@@ -153,6 +155,10 @@ async fn main() -> Result<()> {
             Arc::clone(&clickhouse_client),
         )?;
     }
+    mazbri_analytics::pipeline_freshness::spawn(
+        greptimedb_client.clone(),
+        Arc::clone(&clickhouse_client),
+    );
     let app_state = AppState {
         greptimedb_client,
         clickhouse_client,

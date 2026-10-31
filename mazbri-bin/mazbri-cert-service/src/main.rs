@@ -171,6 +171,7 @@ async fn main() -> Result<()> {
     warn_on_mode_combination(&config);
     mazbri_tls::register_cert_metrics()?;
     mazbri_cert_service::token::register_token_scope_metrics()?;
+    mazbri_cert_service::license_metrics::register_license_metrics()?;
     info!("Mazbri 证书服务启动中...");
     info!(host = % config.server.host, port = % config.server.port, "服务器配置");
     let db = mazbri_core::create_pool(&config.database, Some(config_dir)).await?;

@@ -1,10 +1,11 @@
-use super::metrics::EvictionRecorder;
+use super::metrics::{CACHE_ENTRIES, CACHE_MEMORY_BYTES, EvictionRecorder};
 use chrono::{DateTime, Utc};
 use lru::LruCache;
 use mazbri_core::num::SaturatingFrom;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::sync::RwLock;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -60,7 +61,12 @@ pub trait Cache: Send + Sync {
 #[derive(Clone)]
 pub struct MemoryCache {
     data: Arc<RwLock<LruCache<String, CacheEntry>>>,
+    /// 当前驻留条目的 value 字节总和；只在持有写锁时修改。
+    bytes: Arc<AtomicI64>,
     max_entry_size: u64,
+}
+fn entry_bytes(entry: &CacheEntry) -> i64 {
+    i64::saturating_from(entry.value.len())
 }
 impl MemoryCache {
     /// # Panics
@@ -77,8 +83,15 @@ impl MemoryCache {
         });
         Self {
             data: Arc::new(RwLock::new(LruCache::new(capacity))),
+            bytes: Arc::new(AtomicI64::new(0)),
             max_entry_size,
         }
+    }
+    /// 按真实驻留状态发布 `cache_entries` / `cache_memory_bytes`（调用方持有写锁）。
+    fn publish(&self, cache: &LruCache<String, CacheEntry>, delta_bytes: i64) {
+        let total = self.bytes.fetch_add(delta_bytes, Ordering::Relaxed) + delta_bytes;
+        CACHE_ENTRIES.set(i64::saturating_from(cache.len()));
+        CACHE_MEMORY_BYTES.set(total);
     }
     fn make_key(tenant_id: &str, key: &str) -> String {
         format!("{tenant_id}:{key}")
@@ -100,11 +113,16 @@ impl MemoryCache {
             )));
         }
         let cache_key = Self::make_key(tenant_id, key);
+        let mut delta = entry_bytes(&entry);
         let mut cache = self.data.write().await;
-        let evicted = cache.put(cache_key, entry);
-        if evicted.is_some() {
-            EvictionRecorder::new("lru").record();
+        // push 返回被替换的同 key 旧值或被挤出的最久未用条目；只有后者是 LRU 驱逐。
+        if let Some((old_key, old_entry)) = cache.push(cache_key.clone(), entry) {
+            delta -= entry_bytes(&old_entry);
+            if old_key != cache_key {
+                EvictionRecorder::new("lru").record();
+            }
         }
+        self.publish(&cache, delta);
         Ok(())
     }
     /// # Errors
@@ -125,7 +143,8 @@ impl MemoryCache {
     pub async fn remove(&self, tenant_id: &str, key: &str) -> Result<(), mazbri_core::CoreError> {
         let cache_key = Self::make_key(tenant_id, key);
         let mut cache = self.data.write().await;
-        cache.pop(&cache_key);
+        let delta = cache.pop(&cache_key).map_or(0, |old| -entry_bytes(&old));
+        self.publish(&cache, delta);
         Ok(())
     }
     /// # Errors
@@ -139,9 +158,13 @@ impl MemoryCache {
             .filter(|(k, _)| k.starts_with(&prefix))
             .map(|(k, _)| k.clone())
             .collect();
+        let mut delta = 0;
         for key in keys_to_remove {
-            cache.pop(&key);
+            if let Some(old) = cache.pop(&key) {
+                delta -= entry_bytes(&old);
+            }
         }
+        self.publish(&cache, delta);
         Ok(())
     }
     pub async fn len(&self) -> usize {

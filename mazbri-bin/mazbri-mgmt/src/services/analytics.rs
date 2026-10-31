@@ -1316,11 +1316,11 @@ fn empty_metrics_overview() -> serde_json::Value {
         "active_connections": 0.0,
         "proxy_active_connections": 0.0,
         "rate_limit_rejections_per_sec": 0.0,
-        "billing_queue": {
-            "pending": 0.0,
-            "processing": 0.0,
-            "failed": 0.0,
-            "dead_letter": 0.0
+        "billing_pipeline": {
+            "backlog": 0.0,
+            "oldest_pending_age_seconds": 0.0,
+            "dead_letters": 0.0,
+            "charge_lag_p99_ms": 0.0
         },
         "circuit_breaker_open_count": 0.0,
         "cert_min_expiry_days": 0.0,
@@ -1369,8 +1369,8 @@ fn default_metrics_catalog() -> serde_json::Value {
         "unit" : "ms", "default_chart" : "line" }, { "key" : "active_connections",
         "label" : "活跃连接", "unit" : "conn", "default_chart" : "line" }, { "key" :
         "ratelimit_rejections", "label" : "限流拒绝", "unit" : "ops/s",
-        "default_chart" : "line" }, { "key" : "billing_queue_depth", "label" :
-        "计费队列深度", "unit" : "jobs", "default_chart" : "line" }, { "key" :
+        "default_chart" : "line" }, { "key" : "billing_outbox_pending", "label" :
+        "计费积压（按 stage）", "unit" : "jobs", "default_chart" : "line" }, { "key" :
         "cert_min_expiry_days", "label" : "证书最短到期", "unit" : "days",
         "default_chart" : "line" }] }
     )
@@ -1387,10 +1387,10 @@ fn metric_label_unit(metric: &str) -> (&'static str, &'static str) {
         "p99_latency_ms" => ("P99 延迟", "ms"),
         "active_connections" => ("活跃连接", "conn"),
         "ratelimit_rejections" => ("限流拒绝", "ops/s"),
-        "billing_queue_depth" => ("计费队列（按状态）", "jobs"),
+        "billing_outbox_pending" => ("计费积压（按 stage）", "jobs"),
         "cert_min_expiry_days" => ("证书最短到期", "days"),
-        "route_reload_lag_seconds" => ("路由重载滞后", "s"),
-        "ratelimit_snapshot_age_seconds" => ("限流快照年龄", "s"),
+        "route_reload_lag_seconds" => ("路由生效延迟（变更写入到网关应用）", "s"),
+        "ratelimit_snapshot_age_seconds" => ("限流快照距上次成功同步", "s"),
         _ => ("指标", ""),
     }
 }

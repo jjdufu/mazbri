@@ -151,6 +151,9 @@ impl AuthService for AuthTarpcService {
                     // InvalidApiKeyFormat 及其它错误均计为格式错误
                     _ => recorder.record_invalid_format(),
                 }
+                if let Some(reason) = mazbri_auth::AuthFailureReason::from_auth_error(&e) {
+                    mazbri_auth::record_auth_failure(reason);
+                }
                 let rpc_err = auth_error_to_rpc(&e);
                 ValidateTokenResponse {
                     valid: false,
@@ -239,6 +242,9 @@ impl AuthService for AuthTarpcService {
                     AuthError::ApiKeyDisabled(_) => recorder.record_disabled(),
                     // InvalidApiKeyFormat 及其它错误均计为格式错误
                     _ => recorder.record_invalid_format(),
+                }
+                if let Some(reason) = mazbri_auth::AuthFailureReason::from_auth_error(&e) {
+                    mazbri_auth::record_auth_failure(reason);
                 }
                 let rpc_err = auth_error_to_rpc(&e);
                 ValidateApiKeyResponse {

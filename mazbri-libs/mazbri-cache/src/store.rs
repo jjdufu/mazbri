@@ -1,8 +1,7 @@
 use super::cache::{Cache, CacheEntry, MemoryCache};
 use super::config::CacheConfig;
 use super::metrics::{
-    CACHE_ENTRIES, CACHE_MEMORY_BYTES, CacheOperationRecorder, add_tenant_size_estimate,
-    reset_tenant_size_estimate,
+    CacheOperationRecorder, add_tenant_size_estimate, reset_tenant_size_estimate,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
@@ -262,8 +261,6 @@ impl RedisCache {
             serde_json::json!({}),
         );
         let _ = self.memory_cache.insert(memory_tenant_id, key, entry).await;
-        CACHE_ENTRIES.inc();
-        CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
         add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         recorder.record_success();
         Ok(())
@@ -369,14 +366,9 @@ impl Cache for RedisCache {
             .await
             .map_err(Self::redis_unavailable)?;
         let memory_tenant_id = Self::memory_namespace(&config, tenant_id);
-        let removed = self.memory_cache.get(memory_tenant_id, key).await?;
         let _ = self.memory_cache.remove(memory_tenant_id, key).await;
         if deleted > 0 {
-            CACHE_ENTRIES.dec();
-            if let Some(entry) = removed {
-                CACHE_MEMORY_BYTES.add(-i64::saturating_from(entry.value.len()));
-                reset_tenant_size_estimate(tenant_id);
-            }
+            reset_tenant_size_estimate(tenant_id);
         }
         recorder.record_success();
         Ok(())
@@ -500,8 +492,6 @@ impl Cache for RedisCache {
                 .memory_cache
                 .insert(memory_tenant_id, &key, entry)
                 .await;
-            CACHE_ENTRIES.inc();
-            CACHE_MEMORY_BYTES.add(i64::saturating_from(value.len()));
             add_tenant_size_estimate(tenant_id, i64::saturating_from(value.len()));
         }
         recorder.record_success();

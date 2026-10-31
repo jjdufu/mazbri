@@ -401,7 +401,10 @@ pub async fn token_handler(
                 .authenticate_and_generate_token(&req.api_key)
                 .await
         }
-        Err(e) => Err(e),
+        Err(e) => {
+            mazbri_auth::record_auth_failure(mazbri_auth::AuthFailureReason::Invalid);
+            Err(e)
+        }
     };
     match result {
         Ok(resp) => {

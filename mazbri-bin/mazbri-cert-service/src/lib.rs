@@ -10,6 +10,7 @@ pub mod config_center;
 pub mod db;
 pub use mazbri_cert::error;
 pub mod handlers;
+pub mod license_metrics;
 pub mod license_service;
 pub mod node_registry;
 pub mod root_package {

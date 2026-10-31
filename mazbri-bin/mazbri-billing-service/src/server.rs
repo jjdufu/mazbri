@@ -11,11 +11,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
-/// L1 consumer + L3 reconcile settings.
+/// L1 consumer + L3 reconcile + pipeline health settings.
 pub struct Durability {
     pub worker: WorkerConfig,
     pub usage_events: mazbri_billing::UsageEventsConfig,
     pub reconcile: mazbri_billing::ReconcileConfig,
+    pub pipeline_health: mazbri_billing::PipelineHealthConfig,
 }
 
 pub async fn serve(
@@ -141,10 +142,21 @@ fn spawn_durability_tasks(
     if durability.reconcile.enabled {
         bg_tasks.push(
             mazbri_billing::ReconcileJob::new(durability.reconcile.clone(), (**db).clone())
-                .spawn(bg_shutdown_rx),
+                .spawn(bg_shutdown_rx.clone()),
         );
     } else {
         info!("Billing reconcile job disabled");
+    }
+    if durability.pipeline_health.enabled {
+        bg_tasks.push(
+            mazbri_billing::PipelineHealthJob::new(
+                durability.pipeline_health.clone(),
+                (**db).clone(),
+            )
+            .spawn(bg_shutdown_rx),
+        );
+    } else {
+        info!("Billing pipeline health job disabled");
     }
     (bg_shutdown_tx, bg_tasks)
 }

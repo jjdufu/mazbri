@@ -2,6 +2,7 @@ mod calculator;
 mod error;
 mod metrics;
 mod middleware;
+mod pipeline_health;
 mod queue;
 mod reconcile;
 mod repository;
@@ -15,7 +16,8 @@ pub use error::{BillingError, BillingResult as Result};
 use mazbri_core::CoreError;
 pub use metrics::{DeductionRecorder, register_billing_metrics};
 pub use middleware::{BillingMiddlewareState, balance_check_middleware, usage_middleware};
-pub use queue::{ChargeQueue, QueueStats};
+pub use pipeline_health::{PipelineHealthConfig, PipelineHealthJob};
+pub use queue::ChargeQueue;
 pub use reconcile::{ReconcileConfig, ReconcileJob};
 pub use repository::{
     AccountBalanceRow, BillingRepository, DeductAndRecordResult, PgBillingRepository,

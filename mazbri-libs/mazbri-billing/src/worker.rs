@@ -1,4 +1,5 @@
 use crate::error::BillingError;
+use crate::metrics::{ChargeFailureReason, record_charge_failure, record_charge_lag};
 use crate::queue::ChargeQueue;
 use crate::service::BillingService;
 use crate::types::{ChargeQueueItem, QueueConfig};
@@ -272,6 +273,9 @@ async fn process_tenant_group(
         .await
     {
         Ok(result) => {
+            for item in &group {
+                record_charge_lag(item.created_at);
+            }
             debug!(
                 %tenant_id,
                 items = item_count,
@@ -303,9 +307,13 @@ async fn process_tenant_group(
                     )
                     .await
                 {
-                    Ok(_) => success += 1,
+                    Ok(_) => {
+                        success += 1;
+                        record_charge_lag(item.created_at);
+                    }
                     Err(e) => {
                         failed += 1;
+                        record_charge_failure(ChargeFailureReason::classify(&e));
                         let error_msg = e.to_string();
                         warn!(item_id = %item_id, error = %error_msg, "charge failed");
                         if let Err(mark_err) = queue.mark_failed(item_id, &error_msg).await {

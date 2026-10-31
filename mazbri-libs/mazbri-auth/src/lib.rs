@@ -59,9 +59,10 @@ pub fn constant_time_argon2_verify(
 }
 pub use mazbri_core::{CoreError, Result};
 pub use metrics::{
-    AUTH_ACTIVE_SESSIONS, AUTH_KEY_VALIDATION_TOTAL, AUTH_LOGIN_ATTEMPTS_TOTAL,
-    AUTH_TOKEN_ISSUANCE_TOTAL, AUTH_VALIDATION_DURATION_SECONDS, KeyValidationRecorder,
-    LoginAttemptsRecorder, TokenRecorder, register_auth_metrics,
+    AUTH_ACTIVE_SESSIONS, AUTH_FAILURES_TOTAL, AUTH_KEY_VALIDATION_TOTAL,
+    AUTH_LOGIN_ATTEMPTS_TOTAL, AUTH_TOKEN_ISSUANCE_TOTAL, AUTH_VALIDATION_DURATION_SECONDS,
+    AuthFailureReason, KeyValidationRecorder, LoginAttemptsRecorder, TokenRecorder,
+    record_auth_failure, register_auth_metrics,
 };
 use sqlx::PgPool;
 use std::sync::Arc;

@@ -17,10 +17,14 @@ export async function fetchBillingFunnel(range: OpsRange) {
   });
 }
 
-export async function fetchBillingFailures(range: OpsRange, limit = 50) {
+export async function fetchBillingFailures(
+  range: OpsRange,
+  limit = 50,
+  offset = 0,
+) {
   return request.get<BillingFailures>({
     url: `${BASE_PATH}/failures`,
-    params: { range, limit },
+    params: { range, limit, offset },
     showErrorMessage: false,
   });
 }

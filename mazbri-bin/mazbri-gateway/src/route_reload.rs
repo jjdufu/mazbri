@@ -9,7 +9,7 @@ use arc_swap::ArcSwap;
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_routing::RouteEngine;
-use prometheus::{CounterVec, HistogramVec, IntGauge};
+use prometheus::{CounterVec, Gauge, HistogramVec, IntGauge};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -49,11 +49,13 @@ pub static GATEWAY_ROUTE_COUNT: LazyLock<IntGauge> = LazyLock::new(|| {
     )
 });
 
-pub static GATEWAY_ROUTE_RELOAD_LAG_SECONDS: LazyLock<IntGauge> = LazyLock::new(|| {
-    MetricsBuilder::new().gauge(
+/// 真实生效延迟：新版本被网关应用的时刻 − `route_sync_metadata.updated_at`，仅在应用新版本时更新。
+pub static GATEWAY_ROUTE_RELOAD_LAG_SECONDS: LazyLock<Gauge> = LazyLock::new(|| {
+    Gauge::new(
         "gateway_route_reload_lag_seconds",
-        "Seconds since route_sync_metadata.updated_at of applied version",
+        "Delay from route_sync_metadata.updated_at to the gateway applying that route version",
     )
+    .expect("valid metric definition for gateway route reload lag")
 });
 
 /// # Errors
@@ -101,7 +103,8 @@ pub struct RouteReloadStatusSnapshot {
     pub reload_interval_secs: u64,
     pub listen_notify: bool,
     pub version_updated_at: Option<String>,
-    pub reload_lag_secs: Option<i64>,
+    /// 最近一次应用新版本的生效延迟（秒），启动后未应用过新版本时为空。
+    pub reload_lag_secs: Option<f64>,
 }
 
 /// 跨任务共享的热加载状态。
@@ -112,6 +115,8 @@ pub struct RouteReloadStatus {
     last_reload_unix_ms: AtomicI64,
     last_result: RwLock<String>,
     version_updated_at_unix: AtomicI64,
+    /// 最近一次应用新版本的生效延迟（ms），未应用过为 -1。
+    last_apply_lag_ms: AtomicI64,
     interval_secs: AtomicU64,
     listen_notify: AtomicU64, // 0/1
 }
@@ -125,6 +130,7 @@ impl RouteReloadStatus {
             last_reload_unix_ms: AtomicI64::new(0),
             last_result: RwLock::new("never".to_string()),
             version_updated_at_unix: AtomicI64::new(0),
+            last_apply_lag_ms: AtomicI64::new(-1),
             interval_secs: AtomicU64::new(cfg.interval_secs),
             listen_notify: AtomicU64::new(u64::from(cfg.listen_notify)),
         })
@@ -136,17 +142,32 @@ impl RouteReloadStatus {
         }
     }
 
-    fn record_success(&self, version: i64, count: usize, version_updated_at_unix: i64) {
+    /// 启动对齐：引擎已在启动时加载，不计生效延迟。
+    fn record_aligned(&self, version: i64, count: usize, version_updated_at_unix_ms: i64) {
+        self.store_applied(version, count, version_updated_at_unix_ms);
+    }
+
+    /// 热加载应用了新版本：记录 `applied_at - updated_at` 作为生效延迟。
+    fn record_applied(&self, version: i64, count: usize, version_updated_at_unix_ms: i64) {
+        let applied_ms = self.store_applied(version, count, version_updated_at_unix_ms);
+        if version_updated_at_unix_ms > 0 {
+            let lag_ms = (applied_ms - version_updated_at_unix_ms).max(0);
+            self.last_apply_lag_ms.store(lag_ms, Ordering::SeqCst);
+            GATEWAY_ROUTE_RELOAD_LAG_SECONDS.set(mazbri_core::num::i64_to_f64(lag_ms) / 1000.0);
+        }
+    }
+
+    fn store_applied(&self, version: i64, count: usize, version_updated_at_unix_ms: i64) -> i64 {
+        let now_ms = now_unix_ms();
         self.version.store(version, Ordering::SeqCst);
         self.route_count.store(count as u64, Ordering::SeqCst);
         self.version_updated_at_unix
-            .store(version_updated_at_unix, Ordering::SeqCst);
-        self.last_reload_unix_ms
-            .store(now_unix_ms(), Ordering::SeqCst);
+            .store(version_updated_at_unix_ms / 1000, Ordering::SeqCst);
+        self.last_reload_unix_ms.store(now_ms, Ordering::SeqCst);
         self.set_result(ReloadResult::Success);
         GATEWAY_ROUTE_VERSION.set(version);
         GATEWAY_ROUTE_COUNT.set(i64::saturating_from(count));
-        self.update_lag_metric();
+        now_ms
     }
 
     fn record_skipped(&self) {
@@ -154,7 +175,6 @@ impl RouteReloadStatus {
         GATEWAY_ROUTE_RELOAD_TOTAL
             .with_label_values(&[ReloadResult::Skipped.as_str()])
             .inc();
-        self.update_lag_metric();
     }
 
     fn record_failure(&self) {
@@ -164,16 +184,6 @@ impl RouteReloadStatus {
         GATEWAY_ROUTE_RELOAD_TOTAL
             .with_label_values(&[ReloadResult::Failure.as_str()])
             .inc();
-    }
-
-    fn update_lag_metric(&self) {
-        let updated = self.version_updated_at_unix.load(Ordering::SeqCst);
-        if updated <= 0 {
-            GATEWAY_ROUTE_RELOAD_LAG_SECONDS.set(0);
-            return;
-        }
-        let now = now_unix_secs();
-        GATEWAY_ROUTE_RELOAD_LAG_SECONDS.set((now - updated).max(0));
     }
 
     pub fn snapshot(&self) -> RouteReloadStatusSnapshot {
@@ -195,11 +205,8 @@ impl RouteReloadStatus {
         } else {
             None
         };
-        let reload_lag_secs = if updated > 0 {
-            Some((now_unix_secs() - updated).max(0))
-        } else {
-            None
-        };
+        let lag_ms = self.last_apply_lag_ms.load(Ordering::SeqCst);
+        let reload_lag_secs = (lag_ms >= 0).then(|| mazbri_core::num::i64_to_f64(lag_ms) / 1000.0);
         RouteReloadStatusSnapshot {
             route_version: version,
             route_count,
@@ -219,12 +226,6 @@ fn now_unix_ms() -> i64 {
         .map_or(0, mazbri_core::num::millis_i64)
 }
 
-fn now_unix_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| i64::saturating_from(d.as_secs()))
-}
-
 fn format_unix_ms(ms: i64) -> String {
     let secs = ms / 1000;
     let nanos = u32::saturating_from((ms % 1000) * 1_000_000);
@@ -234,10 +235,6 @@ fn format_unix_ms(ms: i64) -> String {
 
 fn format_unix_secs(secs: i64) -> String {
     chrono::DateTime::from_timestamp(secs, 0).map_or_else(|| secs.to_string(), |dt| dt.to_rfc3339())
-}
-
-fn chrono_to_unix(ts: chrono::DateTime<chrono::Utc>) -> i64 {
-    ts.timestamp()
 }
 
 /// 启动路由热加载后台任务。
@@ -268,10 +265,10 @@ async fn run_route_hot_reload_loop(
     // 启动时对齐版本（引擎已在 create_router 中加载）
     if let Ok(info) = route_source::check_route_version_info(&db).await {
         last_seen_version = info.version;
-        status.record_success(
+        status.record_aligned(
             info.version,
             route_engine.load().route_count(),
-            chrono_to_unix(info.updated_at),
+            info.updated_at.timestamp_millis(),
         );
         tracing::info!(
             version = info.version,
@@ -398,7 +395,7 @@ async fn reload_if_needed(
     // 仅在加载成功后替换 → 失败时旧引擎保留
     route_engine.store(Arc::new(new_engine));
     *last_seen_version = info.version;
-    status.record_success(info.version, count, chrono_to_unix(info.updated_at));
+    status.record_applied(info.version, count, info.updated_at.timestamp_millis());
     GATEWAY_ROUTE_RELOAD_TOTAL
         .with_label_values(&[ReloadResult::Success.as_str()])
         .inc();

@@ -15,7 +15,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use jsonwebtoken::{Validation, decode, decode_header};
-use mazbri_auth::{CredentialType, TenantContext, TokenRecorder};
+use mazbri_auth::{
+    AuthFailureReason, CredentialType, TenantContext, TokenRecorder, record_auth_failure,
+};
 use mazbri_core::crypto::transport::TransportEnvelope;
 use mazbri_core::metrics::{REGISTRY, register_collector_once};
 use mazbri_core::num::SaturatingFrom;
@@ -43,7 +45,6 @@ pub fn register_auth_middleware_metrics() -> Result<(), prometheus::Error> {
 }
 #[derive(Debug)]
 pub enum JwtAuthError {
-    MissingHeader,
     InvalidToken,
     InvalidRequestBody,
     InsufficientScope,
@@ -52,7 +53,9 @@ impl std::fmt::Display for JwtAuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JwtAuthError::InsufficientScope => write!(f, "权限不足：缺少 api:write 作用域"),
-            _ => write!(f, "Token 验证失败"),
+            JwtAuthError::InvalidToken | JwtAuthError::InvalidRequestBody => {
+                write!(f, "Token 验证失败")
+            }
         }
     }
 }
@@ -61,7 +64,7 @@ impl IntoResponse for JwtAuthError {
         let status = match self {
             JwtAuthError::InvalidRequestBody => StatusCode::BAD_REQUEST,
             JwtAuthError::InsufficientScope => StatusCode::FORBIDDEN,
-            _ => StatusCode::UNAUTHORIZED,
+            JwtAuthError::InvalidToken => StatusCode::UNAUTHORIZED,
         };
         let body = serde_json::json!({
             "success": false,
@@ -107,6 +110,20 @@ impl IntoResponse for MiddlewareRejection {
         *self.0
     }
 }
+fn reject_jwt(reason: AuthFailureReason) -> Response {
+    record_auth_failure(reason);
+    JwtAuthError::InvalidToken.into_response()
+}
+
+const fn jwt_failure_reason(kind: &jsonwebtoken::errors::ErrorKind) -> AuthFailureReason {
+    use jsonwebtoken::errors::ErrorKind as K;
+    match kind {
+        K::ExpiredSignature | K::ImmatureSignature => AuthFailureReason::Expired,
+        K::InvalidSignature => AuthFailureReason::Signature,
+        _ => AuthFailureReason::Invalid,
+    }
+}
+
 /// 校验 `Authorization: Bearer <jwt>`（按 kid 取密钥），返回 claims 与 kid。
 fn verify_bearer_jwt(
     state: &AppState,
@@ -115,21 +132,21 @@ fn verify_bearer_jwt(
     let auth_header = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| JwtAuthError::MissingHeader.into_response())?;
+        .ok_or_else(|| reject_jwt(AuthFailureReason::Missing))?;
     let token = auth_header
         .strip_prefix("Bearer ")
-        .ok_or_else(|| JwtAuthError::InvalidToken.into_response())?;
+        .ok_or_else(|| reject_jwt(AuthFailureReason::Invalid))?;
     let header = decode_header(token).map_err(|_| {
         record_jwt_kid("missing", "reject");
-        JwtAuthError::InvalidToken.into_response()
+        reject_jwt(AuthFailureReason::Invalid)
     })?;
     let kid = header.kid.ok_or_else(|| {
         record_jwt_kid("missing", "reject");
-        JwtAuthError::InvalidToken.into_response()
+        reject_jwt(AuthFailureReason::Invalid)
     })?;
     let decoding_key = state.auth_state.keyring.decoding_key(&kid).ok_or_else(|| {
         record_jwt_kid(&kid, "unknown");
-        JwtAuthError::InvalidToken.into_response()
+        reject_jwt(AuthFailureReason::Signature)
     })?;
     let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
     validation.set_issuer(&["mazbri.com"]);
@@ -137,7 +154,7 @@ fn verify_bearer_jwt(
         .map_err(|e| {
             warn!(error = % e, error_kind = ? e.kind(), kid = %kid, "JWT verification failed");
             record_jwt_kid(&kid, "reject");
-            JwtAuthError::InvalidToken.into_response()
+            reject_jwt(jwt_failure_reason(e.kind()))
         })?
         .claims;
     record_jwt_kid(&kid, "ok");

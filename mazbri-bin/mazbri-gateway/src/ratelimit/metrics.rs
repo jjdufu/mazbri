@@ -49,7 +49,7 @@ pub static LOCAL_RATELIMIT_USAGE_FLUSH_TOTAL: LazyLock<IntCounterVec> = LazyLock
 pub static LOCAL_RATELIMIT_SNAPSHOT_AGE_SECONDS: LazyLock<Gauge> = LazyLock::new(|| {
     Gauge::new(
         "gateway_ratelimit_snapshot_age_seconds",
-        "Age in seconds of the oldest cached tenant rate-limit policy snapshot",
+        "Seconds since the last successful rate-limit policy snapshot sync from ratelimit-service",
     )
     .expect("valid metric definition for gateway ratelimit snapshot age")
 });

@@ -1,5 +1,4 @@
 use crate::error::BillingError;
-use crate::metrics::BILLING_QUEUE_DEPTH;
 use crate::types::{ChargeQueueItem, QueueConfig};
 use chrono::{Duration as ChronoDuration, Utc};
 use mazbri_core::num::SaturatingFrom;
@@ -60,7 +59,6 @@ impl ChargeQueue {
             )
             .await?;
         tx.commit().await?;
-        self.refresh_queue_depth_metrics().await;
         Ok(queue_id)
     }
 
@@ -139,7 +137,6 @@ impl ChargeQueue {
                 reclaimed = n,
                 stale_secs, "reclaimed stale usage_charge_queue processing rows"
             );
-            self.refresh_queue_depth_metrics().await;
         }
         Ok(n)
     }
@@ -184,7 +181,6 @@ impl ChargeQueue {
         .await?;
         tx.commit().await?;
         debug!("Fetched {} pending charge items for processing", rows.len());
-        self.refresh_queue_depth_metrics().await;
         Ok(rows)
     }
     /// # Errors
@@ -215,7 +211,6 @@ impl ChargeQueue {
         .execute(&self.db)
         .await?;
         debug!("Marked charge queue item as completed: {}", queue_id);
-        self.refresh_queue_depth_metrics().await;
         Ok(())
     }
     /// # Errors
@@ -261,7 +256,6 @@ impl ChargeQueue {
                 max_retries,
                 scheduled_at
             );
-            self.refresh_queue_depth_metrics().await;
             Ok(true)
         } else {
             sqlx::query(
@@ -296,68 +290,8 @@ impl ChargeQueue {
                 "Charge queue item {} moved to dead letter after {} attempts",
                 queue_id, max_retries
             );
-            self.refresh_queue_depth_metrics().await;
             Ok(false)
         }
-    }
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn get_stats(&self) -> Result<QueueStats, BillingError> {
-        let pending: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM usage_charge_queue WHERE status = 'pending'")
-                .fetch_one(&self.db)
-                .await?;
-        let processing: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM usage_charge_queue WHERE status = 'processing'",
-        )
-        .fetch_one(&self.db)
-        .await?;
-        let failed: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM usage_charge_queue WHERE status = 'failed'")
-                .fetch_one(&self.db)
-                .await?;
-        let dead_letter: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM usage_charge_queue WHERE status = 'dead_letter'",
-        )
-        .fetch_one(&self.db)
-        .await?;
-        let stats = QueueStats {
-            pending,
-            processing,
-            failed,
-            dead_letter,
-        };
-        stats.record_metrics();
-        Ok(stats)
-    }
-    async fn refresh_queue_depth_metrics(&self) {
-        if let Ok(stats) = self.get_stats().await {
-            stats.record_metrics();
-        }
-    }
-}
-#[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct QueueStats {
-    pub pending: i64,
-    pub processing: i64,
-    pub failed: i64,
-    pub dead_letter: i64,
-}
-impl QueueStats {
-    pub fn record_metrics(&self) {
-        BILLING_QUEUE_DEPTH
-            .with_label_values(&["pending"])
-            .set(self.pending);
-        BILLING_QUEUE_DEPTH
-            .with_label_values(&["processing"])
-            .set(self.processing);
-        BILLING_QUEUE_DEPTH
-            .with_label_values(&["failed"])
-            .set(self.failed);
-        BILLING_QUEUE_DEPTH
-            .with_label_values(&["dead_letter"])
-            .set(self.dead_letter);
     }
 }
 

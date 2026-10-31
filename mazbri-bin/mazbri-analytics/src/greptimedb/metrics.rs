@@ -58,6 +58,15 @@ pub struct MetricCatalogItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<&'static str>,
 }
+/// 计费链路即时值：积压（outbox + queue）、最老未处理记录年龄、死信、入账延迟 P99。
+#[derive(Debug, Clone, Serialize)]
+pub struct BillingPipelineOverview {
+    pub backlog: f64,
+    pub oldest_pending_age_seconds: f64,
+    pub dead_letters: f64,
+    pub charge_lag_p99_ms: f64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceHealthLight {
     pub service: String,
@@ -107,8 +116,8 @@ pub struct MetricOverview {
     pub active_connections: f64,
     pub proxy_active_connections: f64,
     pub rate_limit_rejections_per_sec: f64,
-    /// 计费队列按状态（pending / processing / failed / `dead_letter`）
-    pub billing_queue: BTreeMap<String, f64>,
+    /// 计费链路健康（billing 自出指标）
+    pub billing_pipeline: BillingPipelineOverview,
     pub circuit_breaker_open_count: f64,
     pub cert_min_expiry_days: f64,
     pub service_health: Vec<ServiceHealthLight>,
@@ -199,8 +208,7 @@ impl GreptimeDBClient {
                 let proxy_active_connections =
                     self.prometheus_instant_value("sum(active_proxy_connections)");
                 let rate_limit_rejections_per_sec = self.prometheus_instant_value(&ratelimit_q);
-                let billing_queue = self
-                    .prometheus_instant_by_label("sum by (status) (billing_queue_depth)", "status");
+                let billing_pipeline = self.query_billing_pipeline_overview(w);
                 let circuit_breaker_open_count =
                     self.prometheus_instant_value("count(circuit_breaker_state > 0)");
                 let cert_min_expiry_days =
@@ -218,7 +226,7 @@ impl GreptimeDBClient {
                     active_connections,
                     proxy_active_connections,
                     rate_limit_rejections_per_sec,
-                    billing_queue,
+                    billing_pipeline,
                     circuit_breaker_open_count,
                     cert_min_expiry_days,
                     service_health,
@@ -234,7 +242,7 @@ impl GreptimeDBClient {
                     active_connections,
                     proxy_active_connections,
                     rate_limit_rejections_per_sec,
-                    billing_queue,
+                    billing_pipeline,
                     circuit_breaker_open_count,
                     cert_min_expiry_days,
                     service_health,
@@ -251,7 +259,7 @@ impl GreptimeDBClient {
                     active_connections,
                     proxy_active_connections,
                     rate_limit_rejections_per_sec,
-                    billing_queue,
+                    billing_pipeline,
                     circuit_breaker_open_count,
                     cert_min_expiry_days,
                     service_health,
@@ -261,6 +269,24 @@ impl GreptimeDBClient {
             }),
         )
         .await
+    }
+
+    async fn query_billing_pipeline_overview(&self, w: u64) -> Result<BillingPipelineOverview> {
+        let lag_q = format!(
+            "histogram_quantile(0.99, sum by (le) (rate(billing_charge_lag_seconds_bucket[{w}s])))"
+        );
+        let (backlog, oldest_pending_age_seconds, dead_letters, lag_p99) = tokio::try_join!(
+            self.prometheus_instant_value("sum(billing_outbox_pending)"),
+            self.prometheus_instant_value("max(billing_oldest_pending_age_seconds)"),
+            self.prometheus_instant_value("sum(billing_dead_letters)"),
+            self.prometheus_instant_value(&lag_q),
+        )?;
+        Ok(BillingPipelineOverview {
+            backlog,
+            oldest_pending_age_seconds,
+            dead_letters,
+            charge_lag_p99_ms: finite_or_zero(lag_p99) * 1000.0,
+        })
     }
 
     /// Service health matrix rows for page 1.1.
@@ -663,13 +689,6 @@ fn metric_catalog_core() -> Vec<MetricCatalogItem> {
             note: None,
         },
         MetricCatalogItem {
-            key: "billing_queue_depth",
-            label: "计费队列（按状态）",
-            unit: "jobs",
-            default_chart: "line",
-            note: None,
-        },
-        MetricCatalogItem {
             key: "cert_min_expiry_days",
             label: "证书最短到期",
             unit: "days",
@@ -678,17 +697,17 @@ fn metric_catalog_core() -> Vec<MetricCatalogItem> {
         },
         MetricCatalogItem {
             key: "route_reload_lag_seconds",
-            label: "路由重载滞后",
+            label: "路由生效延迟（变更写入到网关应用）",
             unit: "s",
             default_chart: "line",
-            note: Some("口径待确认：疑似距上次路由变更的时间，步骤 12 确定"),
+            note: None,
         },
         MetricCatalogItem {
             key: "ratelimit_snapshot_age_seconds",
-            label: "限流快照年龄",
+            label: "限流快照距上次成功同步",
             unit: "s",
             default_chart: "line",
-            note: Some("口径待确认：疑似距上次快照变更的时间，步骤 12 确定"),
+            note: None,
         },
     ]
 }
@@ -766,7 +785,80 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
     items.extend(metric_catalog_service_runtime());
     items.extend(metric_catalog_traffic());
     items.extend(metric_catalog_upstream_billing());
+    items.extend(metric_catalog_business());
     items
+}
+
+/// 步骤 12 业务埋点：网关超时 / 重试、鉴权失败、缓存、License、管道新鲜度。
+const BUSINESS_CATALOG: &[(&str, &str, &str, &str)] = &[
+    (
+        "gateway_upstream_timeouts",
+        "上游超时速率（按 mode / phase）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "gateway_retries",
+        "网关重试速率（按 mode / reason）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "auth_failures",
+        "鉴权失败速率（按 reason）",
+        "ops/s",
+        "line",
+    ),
+    ("cache_entries", "缓存条目数", "entries", "line"),
+    ("cache_memory_mb", "缓存占用内存", "MB", "line"),
+    ("license_expiry_days", "License 剩余天数", "days", "line"),
+    (
+        "license_usage_ratio",
+        "License 资源消耗占比（按 resource）",
+        "%",
+        "line",
+    ),
+    (
+        "pipeline_freshness_seconds",
+        "数据管道新鲜度（按 store / table）",
+        "s",
+        "line",
+    ),
+];
+
+fn metric_catalog_business() -> Vec<MetricCatalogItem> {
+    BUSINESS_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
+}
+
+fn business_query(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "gateway_upstream_timeouts" => format!(
+            "sum by (mode, phase) (rate(gateway_upstream_timeouts_total[{window}s]))"
+        ),
+        "gateway_retries" => {
+            format!("sum by (mode, reason) (rate(gateway_retry_total[{window}s]))")
+        }
+        "auth_failures" => format!("sum by (reason) (rate(auth_failures_total[{window}s]))"),
+        "cache_entries" => "sum(cache_entries)".to_string(),
+        "cache_memory_mb" => "sum(cache_memory_bytes) / 1048576".to_string(),
+        "license_expiry_days" => {
+            "(max(mazbri_license_expiry_timestamp) - time()) / 86400".to_string()
+        }
+        "license_usage_ratio" => "100 * max by (resource) (mazbri_license_usage) / (max by (resource) (mazbri_license_limit) > 0)".to_string(),
+        "pipeline_freshness_seconds" => {
+            "max by (store, table) (mazbri_pipeline_freshness_seconds)".to_string()
+        }
+        _ => return None,
+    })
 }
 
 fn metric_catalog_traffic() -> Vec<MetricCatalogItem> {
@@ -862,6 +954,32 @@ const UPSTREAM_BILLING_CATALOG: &[(&str, &str, &str, &str)] = &[
         "ops/s",
         "area",
     ),
+    (
+        "billing_outbox_pending",
+        "计费积压（按 stage）",
+        "rows",
+        "line",
+    ),
+    (
+        "billing_oldest_pending_age",
+        "最老未处理记录年龄（按 stage）",
+        "s",
+        "line",
+    ),
+    (
+        "billing_charge_failures",
+        "扣费失败速率（按 reason）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "billing_dead_letters",
+        "死信条数（按 stage）",
+        "rows",
+        "line",
+    ),
+    ("billing_charge_lag_p50_ms", "入账延迟 P50", "ms", "line"),
+    ("billing_charge_lag_p99_ms", "入账延迟 P99", "ms", "line"),
     (
         "billing_deductions",
         "扣费结果速率（按 result）",
@@ -1041,7 +1159,6 @@ fn build_metric_query(
         "ratelimit_rejections" => {
             format!(r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{window}s]))"#)
         }
-        "billing_queue_depth" => format!("sum by (status) (billing_queue_depth{filter})"),
         "cert_min_expiry_days" => format!("min(cert_min_expiry_days{filter})"),
         "route_reload_lag_seconds" => "max(gateway_route_reload_lag_seconds)".to_string(),
         "ratelimit_snapshot_age_seconds" => {
@@ -1075,6 +1192,7 @@ fn build_metric_query(
         ),
         other => {
             return upstream_billing_query(other, window)
+                .or_else(|| business_query(other, window))
                 .ok_or_else(|| AnalyticsError::Config(format!("Unsupported metric: {other}")));
         }
     })
@@ -1113,6 +1231,24 @@ fn upstream_billing_query(metric: &str, window: u64) -> Option<String> {
         }
         "billing_charge_items" => {
             format!("sum by (result) (rate(billing_charge_batch_items_total[{window}s]))")
+        }
+        "billing_outbox_pending" => "sum by (stage) (billing_outbox_pending)".to_string(),
+        "billing_oldest_pending_age" => {
+            "max by (stage) (billing_oldest_pending_age_seconds)".to_string()
+        }
+        "billing_charge_failures" => {
+            format!("sum by (reason) (rate(billing_charge_failures_total[{window}s]))")
+        }
+        "billing_dead_letters" => "sum by (stage) (billing_dead_letters)".to_string(),
+        "billing_charge_lag_p50_ms" | "billing_charge_lag_p99_ms" => {
+            let q = if metric == "billing_charge_lag_p50_ms" {
+                0.50
+            } else {
+                0.99
+            };
+            format!(
+                "histogram_quantile({q}, sum by (le) (rate(billing_charge_lag_seconds_bucket[{window}s]))) * 1000"
+            )
         }
         "billing_deductions" => {
             format!("sum by (result) (rate(billing_deductions_total[{window}s]))")
@@ -1252,6 +1388,20 @@ mod tests {
         let q = build_metric_query("upstream_attempts", None, &t, 60)?;
         assert!(q.contains("by (mode, result)") && q.contains("[60s]"));
         assert!(build_metric_query("no_such_metric", None, &t, 60).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn business_metrics_use_bounded_labels() -> Result<()> {
+        let t = default_service_targets();
+        let q = build_metric_query("auth_failures", None, &t, 60)?;
+        assert_eq!(q, "sum by (reason) (rate(auth_failures_total[60s]))");
+        let q = build_metric_query("gateway_upstream_timeouts", None, &t, 60)?;
+        assert!(q.contains("by (mode, phase)"));
+        let q = build_metric_query("billing_charge_lag_p99_ms", None, &t, 60)?;
+        assert!(q.contains("billing_charge_lag_seconds_bucket"));
+        let q = build_metric_query("pipeline_freshness_seconds", None, &t, 60)?;
+        assert!(q.contains("by (store, table)"));
         Ok(())
     }
 

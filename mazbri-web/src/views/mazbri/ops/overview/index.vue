@@ -110,15 +110,16 @@
 
     <ElRow :gutter="16" class="ops-overview__cards">
       <ElCol
-        v-for="status in billingStatuses"
-        :key="status"
+        v-for="card in billingCards"
+        :key="card.key"
         :xs="12"
         :sm="6"
         :lg="6"
       >
         <StatCard
-          :label="t('ops.overview.stats.billingQueue', { status })"
-          :value="overview?.billing_queue?.[status]"
+          :label="t(`ops.overview.stats.${card.key}`)"
+          :value="overview?.billing_pipeline?.[card.field]"
+          :unit="card.unit"
           :loading="loading"
           icon="ri:stack-line"
           @click="drill('6.1')"
@@ -279,7 +280,7 @@ import { fetchAlertSummary } from "@/api/alerts";
 import type { AlertSummary } from "@/types/api/alerts";
 import type { PlatformStats } from "@/types/api/analytics";
 import type {
-  BillingQueueStatus,
+  BillingPipelineOverview,
   MetricOverview,
   MetricSeries,
 } from "@/types/api/monitoring";
@@ -305,11 +306,15 @@ const timeRange = ref<TimeRangeValue>({
   end: Math.floor(Date.now() / 1000),
 });
 
-const billingStatuses: BillingQueueStatus[] = [
-  "pending",
-  "processing",
-  "failed",
-  "dead_letter",
+const billingCards: {
+  key: string;
+  field: keyof BillingPipelineOverview;
+  unit: string;
+}[] = [
+  { key: "billingBacklog", field: "backlog", unit: "" },
+  { key: "billingOldestAge", field: "oldest_pending_age_seconds", unit: "s" },
+  { key: "billingDeadLetters", field: "dead_letters", unit: "" },
+  { key: "billingLagP99", field: "charge_lag_p99_ms", unit: "ms" },
 ];
 
 const roles = computed(() => (userStore.info?.roles as string[]) || []);

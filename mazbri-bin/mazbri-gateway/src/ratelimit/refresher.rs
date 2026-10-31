@@ -46,7 +46,7 @@ pub async fn refresh_snapshots_once(
         .filter_map(super::snapshot::TenantPolicySnapshot::from_rpc)
         .collect::<Vec<_>>();
     if snapshots.is_empty() {
-        engine.update_snapshot_age_metric();
+        engine.mark_snapshots_synced();
     } else {
         engine.replace_snapshots(snapshots);
     }

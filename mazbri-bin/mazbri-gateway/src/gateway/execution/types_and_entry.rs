@@ -1,10 +1,10 @@
 use super::{
     Arc, AttemptStatus, CandidateChannel, ChannelRateLimitDecision, ChannelRateLimitRequest,
     CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL,
-    GatewayRequest, InteractionEvent, MazbriClaims, ProxyError, ProxyState, RouteMatchContext,
-    Serialize, TraceContext, UpstreamAttempt, Uuid, classify_proxy_result, debug,
-    execute_channel_attempt, info, resolve_mode_and_contract_hint, should_switch,
-    should_switch_status, spawn_persist_event_best_effort, store_fallback_snapshot,
+    GatewayRequest, InteractionEvent, MazbriClaims, ProxyError, ProxyState, RetryReason,
+    RouteMatchContext, Serialize, TraceContext, UpstreamAttempt, Uuid, classify_proxy_result,
+    debug, execute_channel_attempt, info, record_retry, resolve_mode_and_contract_hint,
+    should_switch, should_switch_status, spawn_persist_event_best_effort, store_fallback_snapshot,
     try_cbpro_fallback, warn,
 };
 use mazbri_core::num::SaturatingFrom;
@@ -214,6 +214,7 @@ fn switch_on_status(
     GATEWAY_UPSTREAM_ATTEMPTS_TOTAL
         .with_label_values(&[mode_hint, classify_proxy_result(status, None)])
         .inc();
+    record_retry(mode_hint, RetryReason::Switch);
     true
 }
 
@@ -232,7 +233,11 @@ fn record_attempt_error(
         .with_label_values(&[mode_hint, classify_attempt_error(e)])
         .inc();
     event.mark_last_attempt(status);
-    should_switch(e, &channel.switch_condition)
+    let switch = should_switch(e, &channel.switch_condition);
+    if switch {
+        record_retry(mode_hint, RetryReason::Switch);
+    }
+    switch
 }
 
 fn classify_attempt_error(e: &ProxyError) -> &'static str {

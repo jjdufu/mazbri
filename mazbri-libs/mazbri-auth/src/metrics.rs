@@ -41,11 +41,70 @@ pub static API_KEY_LAST_USED_DROPPED_TOTAL: LazyLock<IntCounter> = LazyLock::new
     )
     .expect("api_key_last_used_dropped_total metric definition is valid")
 });
+/// 鉴权失败（API Key 校验在 auth-service 记，JWT / 请求签名在网关记，同一次失败只记一处）。
+pub static AUTH_FAILURES_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "auth_failures_total",
+        "Authentication failures by bounded reason",
+        &["reason"],
+    )
+});
+
+/// `auth_failures_total` 的 reason（有限枚举）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFailureReason {
+    Missing,
+    Invalid,
+    Expired,
+    Revoked,
+    Signature,
+    Replay,
+    IpDenied,
+}
+
+impl AuthFailureReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Invalid => "invalid",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+            Self::Signature => "signature",
+            Self::Replay => "replay",
+            Self::IpDenied => "ip_denied",
+        }
+    }
+
+    /// 凭证类错误映射到 reason；基础设施错误（数据库等）不是鉴权失败，返回 `None`。
+    #[must_use]
+    pub const fn from_auth_error(error: &crate::AuthError) -> Option<Self> {
+        use crate::AuthError as E;
+        Some(match error {
+            E::Core(_) => return None,
+            E::InvalidApiKeyFormat(_)
+            | E::ApiKeyNotFound(_)
+            | E::InvalidJwtToken(_)
+            | E::TenantNotFound(_) => Self::Invalid,
+            E::ApiKeyExpired(_) | E::JwtTokenExpired(_) => Self::Expired,
+            E::ApiKeyDisabled(_) | E::TenantSuspended(_) => Self::Revoked,
+            E::IpNotWhitelisted(_) => Self::IpDenied,
+        })
+    }
+}
+
+pub fn record_auth_failure(reason: AuthFailureReason) {
+    AUTH_FAILURES_TOTAL
+        .with_label_values(&[reason.as_str()])
+        .inc();
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn register_auth_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(AUTH_KEY_VALIDATION_TOTAL.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(AUTH_FAILURES_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(AUTH_TOKEN_ISSUANCE_TOTAL.clone()))?;
     register_collector_once(
         &REGISTRY,

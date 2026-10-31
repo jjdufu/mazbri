@@ -22,6 +22,9 @@ pub struct BillingServiceConfig {
     /// L3: hourly access-log (`ClickHouse`) vs `usage_records` reconciliation.
     #[serde(default)]
     pub reconcile: mazbri_billing::ReconcileConfig,
+    /// 计费链路健康自查（积压 / 最老记录年龄 / 死信 gauge）。
+    #[serde(default)]
+    pub pipeline_health: mazbri_billing::PipelineHealthConfig,
 }
 
 impl ServiceConfig for BillingServiceConfig {

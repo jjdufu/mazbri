@@ -12,19 +12,21 @@ export interface MetricOverview {
   active_connections: number;
   proxy_active_connections: number;
   rate_limit_rejections_per_sec: number;
-  /** 按状态：pending / processing / failed / dead_letter */
-  billing_queue: Record<BillingQueueStatus, number>;
+  billing_pipeline: BillingPipelineOverview;
   circuit_breaker_open_count: number;
   cert_min_expiry_days: number;
   service_health: ServiceHealthLight[];
   alerts_connected: boolean;
   error_budget_connected: boolean;
 }
-export type BillingQueueStatus =
-  | "pending"
-  | "processing"
-  | "failed"
-  | "dead_letter";
+/** 计费链路概览：来自 billing 自身暴露的 Prometheus 指标。 */
+export interface BillingPipelineOverview {
+  /** 两段积压合计（outbox + queue） */
+  backlog: number;
+  oldest_pending_age_seconds: number;
+  dead_letters: number;
+  charge_lag_p99_ms: number;
+}
 export interface ServiceHealthLight {
   service: string;
   name: string;
@@ -64,7 +66,7 @@ export interface MetricCatalogItem {
   label: string;
   unit: string;
   default_chart: string;
-  /** 口径说明（如“口径待确认”） */
+  /** 口径说明 */
   note?: string;
 }
 export interface ServiceMetricTarget {

@@ -183,7 +183,9 @@ pub async fn current_decision(pool: &PgPool, now: DateTime<Utc>) -> CertResult<L
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn sync_runtime(pool: &PgPool, now: DateTime<Utc>) -> CertResult<LicenseDecision> {
     let Some(row) = load_state(pool).await? else {
-        return Ok(license::unconfigured_decision());
+        let decision = license::unconfigured_decision();
+        crate::license_metrics::publish(&decision, now);
+        return Ok(decision);
     };
     let installation = load_installation_key_db(pool).await.ok().flatten();
     let verified = license::verify_compact_license(&row.raw_license).ok();
@@ -208,6 +210,7 @@ pub async fn sync_runtime(pool: &PgPool, now: DateTime<Utc>) -> CertResult<Licen
         materials_present,
     );
     persist_runtime_marks(pool, &row, &decision, now).await?;
+    crate::license_metrics::publish(&decision, now);
     Ok(decision)
 }
 

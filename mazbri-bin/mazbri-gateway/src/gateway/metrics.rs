@@ -18,7 +18,7 @@ pub static API_PROXY_DURATION_SECONDS: LazyLock<HistogramVec> = LazyLock::new(||
         "api_proxy_duration_seconds",
         "API proxy request duration in seconds",
         vec![
-            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+            0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
         ],
         &["product_id", "method", "mode"],
     )
@@ -34,7 +34,7 @@ pub static GATEWAY_PLATFORM_LOCAL_SECONDS: LazyLock<HistogramVec> = LazyLock::ne
     MetricsBuilder::new().histogram(
         "gateway_platform_local_seconds",
         "Gateway local processing time excluding upstream wait (auth/balance/serialize etc.)",
-        vec![0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5],
+        vec![0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5],
         &["product_id"],
     )
 });
@@ -55,6 +55,95 @@ pub static GATEWAY_UPSTREAM_ATTEMPTS_TOTAL: LazyLock<CounterVec> = LazyLock::new
         &["mode", "result"],
     )
 });
+/// 上游超时：phase=connect（建连超时）| read（已发出请求、等待响应超时）。
+pub static GATEWAY_UPSTREAM_TIMEOUTS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "gateway_upstream_timeouts_total",
+        "Upstream timeouts by mode and phase (connect | read)",
+        &["mode", "phase"],
+    )
+});
+/// 网关重试：reason=transport（同通道传输错误退避重试）| `config_cache_miss`（补发全量配置）| switch（切换下一通道）。
+pub static GATEWAY_RETRY_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "gateway_retry_total",
+        "Gateway upstream retries by mode and reason",
+        &["mode", "reason"],
+    )
+});
+
+/// 上游超时阶段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeoutPhase {
+    Connect,
+    Read,
+}
+
+impl TimeoutPhase {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Read => "read",
+        }
+    }
+
+    /// 由上游 / bypass 错误文本识别超时阶段；非超时返回 `None`。
+    #[must_use]
+    pub fn classify(message: &str) -> Option<Self> {
+        let m = message.to_ascii_lowercase();
+        let is_timeout = m.contains("timeout") || m.contains("timed out") || m.contains("deadline");
+        if !is_timeout {
+            return None;
+        }
+        if m.contains("connect timeout")
+            || m.contains("connection timed out")
+            || m.contains("connect error")
+        {
+            Some(Self::Connect)
+        } else {
+            Some(Self::Read)
+        }
+    }
+}
+
+pub fn record_upstream_timeout(mode: &str, phase: TimeoutPhase) {
+    GATEWAY_UPSTREAM_TIMEOUTS_TOTAL
+        .with_label_values(&[mode, phase.as_str()])
+        .inc();
+}
+
+/// 错误文本是超时则计入 `gateway_upstream_timeouts_total`。
+pub fn record_timeout_if_any(mode: &str, message: &str) {
+    if let Some(phase) = TimeoutPhase::classify(message) {
+        record_upstream_timeout(mode, phase);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryReason {
+    Transport,
+    ConfigCacheMiss,
+    Switch,
+}
+
+impl RetryReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Transport => "transport",
+            Self::ConfigCacheMiss => "config_cache_miss",
+            Self::Switch => "switch",
+        }
+    }
+}
+
+pub fn record_retry(mode: &str, reason: RetryReason) {
+    GATEWAY_RETRY_TOTAL
+        .with_label_values(&[mode, reason.as_str()])
+        .inc();
+}
+
 /// 未知/非法契约 ID。
 pub static GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
@@ -233,6 +322,8 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(GATEWAY_PLATFORM_LOCAL_SECONDS.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_WAIT_SECONDS.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_ATTEMPTS_TOTAL.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_UPSTREAM_TIMEOUTS_TOTAL.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_RETRY_TOTAL.clone()))?;
     register_collector_once(
         &REGISTRY,
         Box::new(GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL.clone()),

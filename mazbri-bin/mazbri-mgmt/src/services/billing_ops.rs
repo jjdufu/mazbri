@@ -1,4 +1,5 @@
-//! 计费链路健康（6.1）与供应商成本（3.1）的只读聚合。
+//! 计费链路对账与明细（6.1）、供应商成本（3.1）的有界只读查询。
+//! 积压、年龄、失败与入账延迟趋势由 billing 自身指标提供，不在此计算。
 
 use crate::repositories::billing_ops as repo;
 use crate::services::billing::BillingError;
@@ -59,11 +60,16 @@ pub struct BillingFunnelPg {
     pub outbox_by_status: Vec<repo::StatusCount>,
     pub queue_by_status: Vec<repo::StatusCount>,
     pub charge_failures: i64,
-    pub charge_lag: repo::ChargeLag,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BillingFailures {
+    pub limit: i64,
+    pub offset: i64,
+    /// 时间窗内失败记录总数（分页用）。
+    pub failures_total: i64,
+    /// 时间窗内死信总数（分页用）。
+    pub dead_letters_total: i64,
     pub failures: Vec<repo::ChargeFailureRow>,
     pub dead_letters: Vec<repo::DeadLetterRow>,
 }
@@ -109,7 +115,7 @@ pub async fn billing_funnel_pg(
     range: OpsRange,
 ) -> Result<BillingFunnelPg, BillingError> {
     let since = range.since(Utc::now());
-    let (outbox, queue, ledger, failures, lag) = tokio::try_join!(
+    let (outbox, queue, ledger, failures) = tokio::try_join!(
         async {
             repo::outbox_by_status(pool, since)
                 .await
@@ -130,11 +136,6 @@ pub async fn billing_funnel_pg(
                 .await
                 .map_err(db_err("charge_failures"))
         },
-        async {
-            repo::charge_lag(pool, since)
-                .await
-                .map_err(db_err("charge_lag"))
-        },
     )?;
     Ok(BillingFunnelPg {
         since,
@@ -142,7 +143,6 @@ pub async fn billing_funnel_pg(
         outbox_by_status: outbox,
         queue_by_status: queue,
         charge_failures: failures,
-        charge_lag: lag,
     })
 }
 
@@ -153,22 +153,40 @@ pub async fn billing_failures(
     pool: &PgPool,
     range: OpsRange,
     limit: u32,
+    offset: u32,
 ) -> Result<BillingFailures, BillingError> {
     let since = range.since(Utc::now());
-    let limit = i64::from(limit.clamp(1, 200));
-    let (failures, dead_letters) = tokio::try_join!(
+    let page = repo::Page {
+        limit: i64::from(limit.clamp(1, 200)),
+        offset: i64::from(offset),
+    };
+    let (failures_total, dead_letters_total, failures, dead_letters) = tokio::try_join!(
         async {
-            repo::recent_charge_failures(pool, since, limit)
+            repo::charge_failure_count(pool, since)
                 .await
                 .map_err(db_err("charge_failures"))
         },
         async {
-            repo::recent_dead_letters(pool, since, limit)
+            repo::dead_letter_count(pool, since)
+                .await
+                .map_err(db_err("dead_letters"))
+        },
+        async {
+            repo::recent_charge_failures(pool, since, page)
+                .await
+                .map_err(db_err("charge_failures"))
+        },
+        async {
+            repo::recent_dead_letters(pool, since, page)
                 .await
                 .map_err(db_err("dead_letters"))
         },
     )?;
     Ok(BillingFailures {
+        limit: page.limit,
+        offset: page.offset,
+        failures_total,
+        dead_letters_total,
         failures,
         dead_letters,
     })

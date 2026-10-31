@@ -1,7 +1,8 @@
 use super::ProxyState;
 use super::metrics::{
     API_PROXY_REQUESTS_TOTAL, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL,
-    GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL, classify_proxy_result,
+    GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL, RetryReason, TimeoutPhase, classify_proxy_result,
+    record_retry, record_timeout_if_any, record_upstream_timeout,
 };
 use super::response::ProxyError;
 use super::validation::{GatewayRequest, GatewayRequestBody};
@@ -45,4 +46,4 @@ use channel::{
     execute_channel_attempt, resolve_mode_and_contract_hint, should_switch, should_switch_status,
     spawn_persist_event_best_effort, store_fallback_snapshot,
 };
-use http_upstream::{execute_http_upstream_request, proxy_body_to_json_value};
+use http_upstream::{AttemptCtx, execute_http_upstream_request, proxy_body_to_json_value};

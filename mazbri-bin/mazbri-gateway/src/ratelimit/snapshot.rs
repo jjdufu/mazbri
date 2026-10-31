@@ -155,6 +155,8 @@ impl TenantPolicySnapshot {
 pub struct TenantPolicySnapshotStore {
     default_snapshot: Arc<TenantPolicySnapshot>,
     snapshots: Arc<RwLock<HashMap<Uuid, Arc<TenantPolicySnapshot>>>>,
+    /// 最近一次从 ratelimit-service 成功同步（含返回空集）的时刻；启动时为构造时刻。
+    last_synced: Arc<RwLock<Instant>>,
 }
 
 impl TenantPolicySnapshotStore {
@@ -162,6 +164,7 @@ impl TenantPolicySnapshotStore {
         Self {
             default_snapshot: Arc::new(default_snapshot),
             snapshots: Arc::new(RwLock::new(HashMap::new())),
+            last_synced: Arc::new(RwLock::new(Instant::now())),
         }
     }
 
@@ -183,17 +186,17 @@ impl TenantPolicySnapshotStore {
         for snapshot in snapshots {
             guard.insert(snapshot.tenant_id, Arc::new(snapshot));
         }
+        drop(guard);
+        self.mark_synced();
     }
 
-    /// Max age (seconds) among cached tenant snapshots. `0` when empty.
-    pub fn max_snapshot_age_seconds(&self) -> f64 {
-        let guard = self.snapshots.read();
-        if guard.is_empty() {
-            return self.default_snapshot.fetched_at.elapsed().as_secs_f64();
-        }
-        guard
-            .values()
-            .map(|snapshot| snapshot.fetched_at.elapsed().as_secs_f64())
-            .fold(0.0_f64, f64::max)
+    /// 同步成功但无租户策略变更（服务端返回空集）时调用。
+    pub fn mark_synced(&self) {
+        *self.last_synced.write() = Instant::now();
+    }
+
+    /// 策略快照的真实陈旧度：距最近一次成功同步的秒数。
+    pub fn seconds_since_last_sync(&self) -> f64 {
+        self.last_synced.read().elapsed().as_secs_f64()
     }
 }
