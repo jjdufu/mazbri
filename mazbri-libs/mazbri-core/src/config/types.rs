@@ -150,26 +150,12 @@ pub struct TracingConfig {
     pub level: String,
     #[serde(default = "default_tracing_format")]
     pub format: String,
-    /// OTLP HTTP base URL (SDK appends `/v1/traces`).
-    /// Greptime example: `http://logs.greptimedb.local:4000/v1/otlp`.
-    /// Empty / omitted = OTLP export disabled.
+    /// OTLP/HTTP receiver base URL (exporter appends `/v1/traces`), e.g. the
+    /// Vector receiver `http://vector:4318`. Empty / omitted = OTLP export disabled.
     pub otel_endpoint: Option<String>,
     /// Trace sampling ratio in `0.0..=1.0` when OTLP is enabled. Default `0.1`.
     #[serde(default = "default_otel_sample_ratio")]
     pub otel_sample_ratio: f64,
-    /// Greptime database name sent as `x-greptime-db-name` (e.g. `mazbri_traces`).
-    #[serde(default)]
-    pub otel_db_name: Option<String>,
-    /// Greptime pipeline name sent as `x-greptime-pipeline-name`.
-    /// Greptime OTLP traces require a pipeline; default `greptime_trace_v1` when endpoint is set.
-    #[serde(default)]
-    pub otel_pipeline_name: Option<String>,
-    /// Optional HTTP basic-auth username for the OTLP endpoint.
-    #[serde(default)]
-    pub otel_username: Option<String>,
-    /// Optional HTTP basic-auth password for the OTLP endpoint.
-    #[serde(default)]
-    pub otel_password: Option<String>,
     #[serde(default = "default_log_dir")]
     pub log_dir: String,
     #[serde(default = "default_log_rotation_enabled")]

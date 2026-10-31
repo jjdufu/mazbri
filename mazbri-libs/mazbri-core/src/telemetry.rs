@@ -155,7 +155,7 @@ pub fn init_tracing_with_routes(
 
     // OTLP is optional: missing/empty endpoint keeps log + Prometheus only.
     // Init failure must not block process start — fall back to log-only tracing.
-    // Production path: direct OTLP/HTTP to GreptimeDB (not via Vector).
+    // Export path: OTLP/HTTP to the Vector receiver, which forwards to GreptimeDB.
     let (otlp_tracer, otlp_guard) = match config
         .otel_endpoint
         .as_deref()
@@ -167,10 +167,6 @@ pub fn init_tracing_with_routes(
                 endpoint,
                 service_name,
                 sample_ratio: config.otel_sample_ratio,
-                db_name: config.otel_db_name.as_deref(),
-                pipeline_name: config.otel_pipeline_name.as_deref(),
-                username: config.otel_username.as_deref(),
-                password: config.otel_password.as_deref(),
             };
             match crate::otlp::build_otlp_tracer(options) {
                 // Subscriber is not up yet. A success notice on stderr is captured by

@@ -1,7 +1,10 @@
 //! Optional OTLP trace export (HTTP/protobuf).
 //!
-//! Production path: services push spans **directly** to `GreptimeDB`
-//! (`http://…:4000/v1/otlp` + Greptime headers). Not routed via Vector.
+//! Spans are forwarded to `GreptimeDB` through the Vector OTLP receiver:
+//! service exporter → Vector `opentelemetry` source (`http://vector:4318`) →
+//! Vector `opentelemetry` sink → `GreptimeDB` `/v1/otlp/v1/traces`.
+//! Greptime-specific request headers (database, trace pipeline, basic auth)
+//! are set by the Vector sink; the service exporter only needs the endpoint.
 //!
 //! ## Span export filter
 //!
@@ -11,17 +14,12 @@
 //! [`should_export_otlp_span`].
 
 use anyhow::{Context, Result};
-use base64::Engine;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider, Tracer};
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
-use std::collections::HashMap;
 use tracing::Level;
-
-/// Default Greptime OTLP trace pipeline (required by Greptime OTLP traces API).
-pub const DEFAULT_GREPTIME_TRACE_PIPELINE: &str = "greptime_trace_v1";
 
 /// Holds the SDK provider so spans flush on drop/shutdown.
 pub struct OtlpGuard {
@@ -43,12 +41,6 @@ pub struct OtlpExportOptions<'a> {
     pub endpoint: &'a str,
     pub service_name: &'a str,
     pub sample_ratio: f64,
-    /// `x-greptime-db-name` when targeting Greptime (e.g. `mazbri_traces`).
-    pub db_name: Option<&'a str>,
-    /// `x-greptime-pipeline-name`. Empty → default `greptime_trace_v1`.
-    pub pipeline_name: Option<&'a str>,
-    pub username: Option<&'a str>,
-    pub password: Option<&'a str>,
 }
 
 /// Whether a `tracing` span should be exported via OTLP.
@@ -193,13 +185,11 @@ fn is_rpc_style_span_name(name: &str) -> bool {
 
 /// Build an OTLP HTTP/protobuf tracer when `endpoint` is non-empty.
 ///
-/// `endpoint` may be either:
-/// - OTLP HTTP **base** (e.g. Greptime `http://host:4000/v1/otlp` or collector `http://host:4318`)
-/// - Full traces URL ending in `/v1/traces`
+/// `endpoint` is the Vector OTLP/HTTP receiver base (`http://vector:4318`) or a
+/// full traces URL ending in `/v1/traces`.
 ///
 /// Note: `opentelemetry-otlp` 0.30 uses programmatic `with_endpoint` **as-is**
-/// (it does **not** append `/v1/traces`). We normalize here so conf can keep the
-/// documented Greptime base URL.
+/// (it does **not** append `/v1/traces`), so the base URL is normalized here.
 ///
 /// # Errors
 ///
@@ -217,17 +207,9 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
         Sampler::TraceIdRatioBased(ratio)
     };
 
-    let headers = build_otlp_headers(
-        options.db_name,
-        options.pipeline_name,
-        options.username,
-        options.password,
-    );
-
     let exporter = SpanExporter::builder()
         .with_http()
         .with_endpoint(endpoint)
-        .with_headers(headers)
         .build()
         .context("build OTLP HTTP span exporter")?;
 
@@ -251,9 +233,8 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
 
 /// Ensure the exporter URL targets OTLP/HTTP traces.
 ///
-/// - `…/v1/traces` → unchanged  
-/// - `…/v1/otlp` (Greptime base) → `…/v1/otlp/v1/traces`  
-/// - other base → `{base}/v1/traces`
+/// - `…/v1/traces` → unchanged
+/// - base (e.g. `http://vector:4318`) → `{base}/v1/traces`
 ///
 /// # Errors
 ///
@@ -265,34 +246,6 @@ pub fn normalize_otlp_traces_endpoint(endpoint: &str) -> Result<String> {
         return Ok(endpoint.to_string());
     }
     Ok(format!("{endpoint}/v1/traces"))
-}
-
-fn build_otlp_headers(
-    db_name: Option<&str>,
-    pipeline_name: Option<&str>,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
-
-    // Greptime OTLP traces require a pipeline; always send a value (default built-in).
-    let pipeline = pipeline_name
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_GREPTIME_TRACE_PIPELINE);
-    headers.insert("x-greptime-pipeline-name".to_string(), pipeline.to_string());
-
-    if let Some(db) = db_name.map(str::trim).filter(|s| !s.is_empty()) {
-        headers.insert("x-greptime-db-name".to_string(), db.to_string());
-    }
-
-    if let Some(user) = username.map(str::trim).filter(|s| !s.is_empty()) {
-        let pass = password.unwrap_or("");
-        let token = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
-        headers.insert("authorization".to_string(), format!("Basic {token}"));
-    }
-
-    headers
 }
 
 #[cfg(test)]
@@ -359,72 +312,39 @@ mod tests {
     }
 
     #[test]
-    fn normalize_greptime_base_appends_traces_path() {
+    fn normalize_base_appends_traces_path() {
         assert_eq!(
-            normalize_otlp_traces_endpoint("http://logs.greptimedb.local:4000/v1/otlp").unwrap(),
-            "http://logs.greptimedb.local:4000/v1/otlp/v1/traces"
+            normalize_otlp_traces_endpoint("http://vector:4318").unwrap(),
+            "http://vector:4318/v1/traces"
         );
         assert_eq!(
-            normalize_otlp_traces_endpoint("http://logs.greptimedb.local:4000/v1/otlp/v1/traces")
-                .unwrap(),
-            "http://logs.greptimedb.local:4000/v1/otlp/v1/traces"
+            normalize_otlp_traces_endpoint("http://vector:4318/").unwrap(),
+            "http://vector:4318/v1/traces"
         );
         assert_eq!(
-            normalize_otlp_traces_endpoint("http://otel-collector:4318").unwrap(),
-            "http://otel-collector:4318/v1/traces"
+            normalize_otlp_traces_endpoint("http://vector:4318/v1/traces").unwrap(),
+            "http://vector:4318/v1/traces"
         );
+        assert!(normalize_otlp_traces_endpoint("  ").is_err());
     }
 
-    #[test]
-    fn headers_include_default_pipeline() {
-        let h = build_otlp_headers(Some("mazbri_traces"), None, None, None);
-        assert_eq!(
-            h.get("x-greptime-pipeline-name").map(String::as_str),
-            Some(DEFAULT_GREPTIME_TRACE_PIPELINE)
-        );
-        assert_eq!(
-            h.get("x-greptime-db-name").map(String::as_str),
-            Some("mazbri_traces")
-        );
-        assert!(!h.contains_key("authorization"));
-    }
-
-    #[test]
-    fn headers_include_basic_auth() {
-        let h = build_otlp_headers(None, Some("custom_pipe"), Some("user"), Some("pass"));
-        assert_eq!(
-            h.get("x-greptime-pipeline-name").map(String::as_str),
-            Some("custom_pipe")
-        );
-        let auth = h.get("authorization").expect("auth header");
-        assert!(auth.starts_with("Basic "));
-        let decoded = base64::engine::general_purpose::STANDARD
-            .decode(auth.trim_start_matches("Basic "))
-            .expect("base64");
-        assert_eq!(String::from_utf8(decoded).unwrap(), "user:pass");
-    }
-
-    /// Live smoke against env Greptime (requires Tokio, same as production services).
-    /// `MAZBRI_OTLP_SMOKE=1 cargo test -p mazbri-core --lib otlp_export_to_greptime -- --ignored --nocapture`
+    /// Live smoke against the Vector OTLP receiver (requires Tokio, same as production services).
+    /// `MAZBRI_OTLP_SMOKE=1 MAZBRI_OTLP_ENDPOINT=http://<vector>:4318 cargo test -p mazbri-core --lib otlp_export_smoke -- --ignored --nocapture`
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "live Greptime OTLP; set MAZBRI_OTLP_SMOKE=1"]
-    async fn otlp_export_to_greptime() {
+    #[ignore = "live OTLP receiver; set MAZBRI_OTLP_SMOKE=1"]
+    async fn otlp_export_smoke() {
         use opentelemetry::KeyValue;
         use opentelemetry::trace::{Span, Tracer as _};
         if std::env::var("MAZBRI_OTLP_SMOKE").ok().as_deref() != Some("1") {
             eprintln!("skip: set MAZBRI_OTLP_SMOKE=1");
             return;
         }
-        let endpoint = std::env::var("MAZBRI_OTLP_ENDPOINT")
-            .unwrap_or_else(|_| "http://logs.greptimedb.local:4000/v1/otlp".into());
+        let endpoint =
+            std::env::var("MAZBRI_OTLP_ENDPOINT").unwrap_or_else(|_| "http://vector:4318".into());
         let (tracer, guard) = build_otlp_tracer(OtlpExportOptions {
             endpoint: &endpoint,
             service_name: "otlp-smoke",
             sample_ratio: 1.0,
-            db_name: Some("mazbri_traces"),
-            pipeline_name: Some(DEFAULT_GREPTIME_TRACE_PIPELINE),
-            username: None,
-            password: None,
         })
         .expect("build tracer");
         let mut span = tracer.start("otlp.smoke");
