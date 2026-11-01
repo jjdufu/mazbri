@@ -1176,6 +1176,7 @@ const FLOW_CACHE_CATALOG: &[(&str, &str, &str, &str)] = &[
     ("ratelimit_snapshot_age_seconds", "限流快照年龄", "s", "line"),
     ("ratelimit_snapshot_refresh", "限流快照刷新速率", "ops/s", "line"),
     ("ratelimit_usage_flush", "限流用量 flush 速率", "ops/s", "line"),
+    ("gateway_quota_usage_ratio", "配额使用率（网关本地桶，无 tenant 标签）", "ratio", "line"),
     ("cache_hit_ratio", "缓存命中率 hit/(hit+miss)", "%", "line"),
     ("cache_operations", "缓存操作速率（按 operation/result）", "ops/s", "line"),
     ("cache_operation_p95_ms", "缓存操作 P95 时延", "ms", "line"),
@@ -1211,6 +1212,7 @@ fn flow_cache_query(metric: &str, window: u64) -> Option<String> {
         "ratelimit_usage_flush" => format!(
             "sum by (result) (rate(gateway_ratelimit_usage_flush_total[{window}s]))"
         ),
+        "gateway_quota_usage_ratio" => "max by (dimension) (gateway_quota_usage_ratio)".to_string(),
         "cache_hit_ratio" => format!(
             r#"100 * sum(rate(cache_operations_total{{result="hit"}}[{window}s])) / (sum(rate(cache_operations_total{{result=~"hit|miss"}}[{window}s])) > 0)"#
         ),
@@ -1934,6 +1936,8 @@ mod tests {
         assert!(q.contains("gateway_ratelimit_decisions_total"));
         assert!(q.contains("decision"));
         let q = flow_cache_query("cache_hit_ratio", 60).expect("q");
+        let q2 = flow_cache_query("gateway_quota_usage_ratio", 60).expect("quota");
+        assert!(q2.contains("gateway_quota_usage_ratio"));
         assert!(q.contains("cache_operations_total"));
         for &(key, _, _, _) in FLOW_CACHE_CATALOG {
             assert!(

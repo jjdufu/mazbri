@@ -22,13 +22,11 @@
     </ElRow>
 
     <div class="ops-traffic__card">
-      <h3>{{ t("ops.flow.quotaTop") }}</h3>
-      <ArtTable
-        :data="quotaTop"
+      <h3>{{ t("ops.flow.quotaUsageRatio") }}</h3>
+      <MultiSeriesChart
+        :series="series.gateway_quota_usage_ratio"
         :loading="loading"
-        :columns="quotaColumns"
-        class="surface-panel-table"
-        stripe
+        height="220px"
       />
     </div>
   </div>
@@ -43,13 +41,9 @@ import TimeRangePicker, {
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
-import { postOlapQuery } from "@/api/olap";
 import type { MetricSeries } from "@/types/api/monitoring";
-import type { QuotaTopRow } from "@/types/api/olap";
-import type { ColumnOption } from "@/types/component";
 
 defineOptions({ name: "OpsFlowRatelimit" });
 
@@ -60,6 +54,7 @@ const CHART_METRICS = [
   "ratelimit_snapshot_refresh",
   "ratelimit_usage_flush",
   "ratelimit_rejections",
+  "gateway_quota_usage_ratio",
 ] as const;
 type ChartMetric = (typeof CHART_METRICS)[number];
 
@@ -72,7 +67,6 @@ const timeRange = ref<TimeRangeValue>({
 });
 const refreshInterval = ref(60);
 const loading = ref(false);
-const quotaTop = ref<QuotaTopRow[]>([]);
 const series = ref<Record<ChartMetric, MetricSeries | null>>(
   Object.fromEntries(CHART_METRICS.map((m) => [m, null])) as Record<
     ChartMetric,
@@ -113,28 +107,17 @@ const trendCharts = computed(() => [
   },
 ]);
 
-const quotaColumns = computed<ColumnOption<QuotaTopRow>[]>(() => [
-  { prop: "tenant_code", label: t("ops.flow.tenant") },
-  { prop: "rejects", label: t("ops.flow.rejects429") },
-]);
-
 async function reload() {
   loading.value = true;
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
-  const range = toOlapRange(timeRange.value);
   try {
-    const [quota, ...charts] = await Promise.all([
-      postOlapQuery<QuotaTopRow>({
-        template: "quota_top",
-        params: { range, limit: 20 },
-      }),
-      ...CHART_METRICS.map((metric) =>
+    const charts = await Promise.all(
+      CHART_METRICS.map((metric) =>
         fetchMetricTimeseries({ metric, start, end, step }),
       ),
-    ]);
-    quotaTop.value = quota.rows ?? [];
+    );
     const next = { ...series.value };
     CHART_METRICS.forEach((metric, i) => {
       next[metric] = charts[i] ?? null;

@@ -4680,6 +4680,7 @@
     },
     "flow": {
       "quotaTop": "Quota rejects Top (429)",
+      "quotaUsageRatio": "Quota usage ratio",
       "decisions": "Rate-limit decisions",
       "channelDecisions": "Channel rate-limit decisions",
       "snapshotAge": "Snapshot age",

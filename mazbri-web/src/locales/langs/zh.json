@@ -4685,6 +4685,7 @@
     },
     "flow": {
       "quotaTop": "配额拒绝 Top（429）",
+      "quotaUsageRatio": "配额使用率",
       "decisions": "限流决策",
       "channelDecisions": "渠道限流决策",
       "snapshotAge": "快照年龄",
