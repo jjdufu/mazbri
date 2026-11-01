@@ -173,7 +173,7 @@ fn null_json() -> serde_json::Value {
 pub fn spawn(
     config: &CapacityConfig,
     clickhouse: Arc<ClickHouseClient>,
-    database: &mazbri_core::DatabaseConfig,
+    pool: Arc<mazbri_core::sqlx::PgPool>,
 ) -> anyhow::Result<()> {
     config
         .validate()
@@ -182,7 +182,6 @@ pub fn spawn(
         tracing::info!(target: "capacity", "已禁用");
         return Ok(());
     }
-    let pool = mazbri_core::create_lazy_pool(database, None)?;
     let runner = Runner {
         clickhouse,
         pool,

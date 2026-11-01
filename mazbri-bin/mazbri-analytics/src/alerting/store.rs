@@ -71,7 +71,12 @@ impl EvaluationSession {
             .bind(EVALUATION_LOCK_KEY)
             .fetch_one(&mut *conn)
             .await?;
-        Ok(acquired.then_some(Self {
+        if !acquired {
+            // 未抢到锁：立刻归还连接，避免空占池槽（与 mgmt 共用 mazbri_admin 时尤其重要）。
+            drop(conn);
+            return Ok(None);
+        }
+        Ok(Some(Self {
             conn,
             released: false,
         }))

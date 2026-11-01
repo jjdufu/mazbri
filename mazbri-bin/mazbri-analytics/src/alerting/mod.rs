@@ -568,13 +568,13 @@ pub fn spawn(
     config: &AlertingConfig,
     greptimedb: Option<Arc<GreptimeDBClient>>,
     clickhouse: Arc<ClickHouseClient>,
+    pool: Arc<mazbri_core::sqlx::PgPool>,
 ) -> anyhow::Result<()> {
     if !config.enabled {
         tracing::info!(target: "alerting", "告警评估已停用");
         return Ok(());
     }
     config.validate().map_err(anyhow::Error::msg)?;
-    let pool = mazbri_core::create_lazy_pool(&config.database, None)?;
     let notifier = Notifier::new(
         Duration::from_secs(config.webhook_timeout_secs),
         config.smtp.as_ref(),

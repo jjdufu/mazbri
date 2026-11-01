@@ -363,7 +363,7 @@ pub fn rewrite_window(query: &str, new_window: &str) -> String {
 pub fn spawn(
     config: &SloConfig,
     greptime: Option<Arc<GreptimeDBClient>>,
-    database: &mazbri_core::DatabaseConfig,
+    pool: Arc<mazbri_core::sqlx::PgPool>,
 ) -> anyhow::Result<()> {
     config
         .validate()
@@ -376,7 +376,6 @@ pub fn spawn(
         tracing::warn!(target: "slo", "GreptimeDB 未配置，跳过 SLO 任务");
         return Ok(());
     };
-    let pool = mazbri_core::create_lazy_pool(database, None)?;
     let runner = Runner { greptime, pool };
     let interval = Duration::from_secs(config.interval_secs);
     tokio::spawn(runner.run(interval));

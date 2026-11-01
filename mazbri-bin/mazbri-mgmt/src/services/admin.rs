@@ -1,4 +1,5 @@
 mod auth_flow;
+pub mod pool_budget;
 mod passwords;
 mod refresh_flow;
 mod settings;
