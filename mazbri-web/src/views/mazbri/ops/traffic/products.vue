@@ -79,7 +79,7 @@ async function reload() {
       template: "product_rank",
       params: { range, metric: metric.value, limit: 30 },
     });
-    rows.value = ((rank as { rows?: RankRow[] }).rows) || [];
+    rows.value = ((rank as unknown as { rows?: RankRow[] }).rows) || [];
     const active = rows.value.map((r) => r.product_id);
     const zero = await zeroCallProducts(active);
     zeroRows.value = (zero as { product_id: string; name?: string }[]) || [];

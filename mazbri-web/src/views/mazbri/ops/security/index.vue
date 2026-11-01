@@ -107,10 +107,10 @@ async function reload() {
       postOlapQuery({ template: "security_top", params: { range, dim: "country", limit: 10 } }),
       postOlapQuery({ template: "security_events", params: { range, limit: 50 } }),
     ]);
-    topIp.value = ((ip as { rows?: TopRow[] }).rows) || [];
-    topKey.value = ((key as { rows?: TopRow[] }).rows) || [];
-    topCountry.value = ((country as { rows?: TopRow[] }).rows) || [];
-    events.value = ((ev as { rows?: EventRow[] }).rows) || [];
+    topIp.value = ((ip as unknown as { rows?: TopRow[] }).rows) || [];
+    topKey.value = ((key as unknown as { rows?: TopRow[] }).rows) || [];
+    topCountry.value = ((country as unknown as { rows?: TopRow[] }).rows) || [];
+    events.value = ((ev as unknown as { rows?: EventRow[] }).rows) || [];
   } catch (e) {
     ElMessage.error(String(e));
   } finally {
