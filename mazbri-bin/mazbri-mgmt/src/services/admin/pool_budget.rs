@@ -80,7 +80,7 @@ mod tests {
         }
     }
 
-    /// 反例：角色限流被空闲池占满时，新登录会在 acquire_timeout 内失败（本回归的根因模型）。
+    /// 反例：角色限流被空闲池占满时，新登录会在 `acquire_timeout` 内失败（本回归的根因模型）。
     #[tokio::test]
     async fn exhausted_role_budget_times_out_new_login_acquire() {
         // 已有空闲连接占满「角色」配额后，mgmt 池无法再扩容，只剩 0 条可借。
