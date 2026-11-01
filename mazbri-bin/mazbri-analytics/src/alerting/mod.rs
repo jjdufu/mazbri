@@ -2,6 +2,7 @@
 //! 触发 / 恢复时按规则配置发送邮件（默认渠道）与 webhook（可选）通知；
 //! 多实例部署时每轮评估由 PG advisory lock 互斥，只有持锁实例执行。
 pub mod engine;
+pub mod filter;
 pub mod notifier;
 pub mod rule;
 pub mod store;
@@ -11,15 +12,17 @@ use crate::clickhouse::olap::{ExemplarMetric, ExemplarParams, Filters, OlapQuery
 use crate::greptimedb::GreptimeDBClient;
 use chrono::Utc;
 use engine::{Action, Engine};
+use filter::{is_inhibited, is_silenced, next_escalation_index, EscalationStep, InhibitRule};
 use notifier::{Notifier, SmtpConfig};
 use rule::{
-    ActiveEvent, AlertNotification, AlertRule, OlapExpr, RuleKind, Sample, samples_from_rows,
+    ActiveEvent, AlertNotification, AlertRule, NotifyConfig, OlapExpr, RuleKind, Sample,
+    samples_from_rows,
 };
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use store::{AlertStore, EvaluationSession};
+use store::{AlertStore, EscalationCandidate, EvaluationSession, FireInsert, NotifyChannelRow};
 use uuid::Uuid;
 
 /// `[alerting]` 配置段。
@@ -138,6 +141,8 @@ impl Evaluator {
         session: &mut EvaluationSession,
     ) -> Result<(), mazbri_core::sqlx::Error> {
         let rules = session.load_rules().await?;
+        let silences = session.load_silences().await?;
+        let inhibit_rules = session.load_inhibit_rules().await?;
         let mut active_by_rule: HashMap<Uuid, HashMap<String, ActiveEvent>> = HashMap::new();
         for event in session.active_events().await? {
             active_by_rule
@@ -149,6 +154,8 @@ impl Evaluator {
         self.engine.retain_rules(&enabled);
         let rules_by_id: HashMap<Uuid, &AlertRule> = rules.iter().map(|r| (r.id, r)).collect();
         let empty = HashMap::new();
+        let now = Utc::now();
+        let mut pending_fires: Vec<PendingFire> = Vec::new();
         for rule in rules.iter().filter(|r| r.enabled) {
             let samples = match self.samples(rule).await {
                 Ok(samples) => samples,
@@ -158,13 +165,116 @@ impl Evaluator {
                 }
             };
             let active = active_by_rule.get(&rule.id).unwrap_or(&empty);
-            let actions = self.engine.plan_rule(rule, &samples, active, Utc::now());
+            let actions = self.engine.plan_rule(rule, &samples, active, now);
             for action in actions {
-                self.apply(session, rule, action).await;
+                match action {
+                    Action::Fire {
+                        fingerprint,
+                        labels,
+                        value,
+                        started_at,
+                        ..
+                    } => {
+                        let muted = is_silenced(&silences, &labels, now);
+                        let traces = self.exemplar_trace_ids(rule, &labels).await;
+                        match session
+                            .insert_firing(FireInsert {
+                                rule,
+                                fingerprint: &fingerprint,
+                                labels: &labels,
+                                value,
+                                started_at,
+                                trace_ids: &traces,
+                                silenced: muted,
+                                inhibited: false,
+                            })
+                            .await
+                        {
+                            Ok(Some(event_id)) => {
+                                tracing::warn!(
+                                    target: "alerting",
+                                    rule = %rule.name,
+                                    %event_id,
+                                    value,
+                                    muted,
+                                    "告警触发"
+                                );
+                                pending_fires.push(PendingFire {
+                                    event_id,
+                                    rule_id: rule.id,
+                                    labels,
+                                    value,
+                                    started_at,
+                                    silenced: muted,
+                                });
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                tracing::warn!(target: "alerting", rule = %rule.name, %error, "写入告警事件失败");
+                            }
+                        }
+                    }
+                    other => self.apply_non_fire(session, rule, other).await,
+                }
             }
         }
-        // 停用或已删除规则遗留的活跃事件直接结束。
-        for (rule_id, events) in &active_by_rule {
+        self.notify_pending_fires(session, &rules_by_id, &inhibit_rules, pending_fires)
+            .await;
+        self.resolve_disabled(session, &active_by_rule, &enabled, &rules_by_id)
+            .await;
+        self.escalate(session, &rules_by_id).await;
+        Ok(())
+    }
+
+    async fn notify_pending_fires(
+        &self,
+        session: &mut EvaluationSession,
+        rules_by_id: &HashMap<Uuid, &AlertRule>,
+        inhibit_rules: &[InhibitRule],
+        pending_fires: Vec<PendingFire>,
+    ) {
+        let sources = session.active_event_labels().await.unwrap_or_default();
+        for fire in pending_fires {
+            let Some(rule) = rules_by_id.get(&fire.rule_id) else {
+                continue;
+            };
+            if is_inhibited(inhibit_rules, &sources, &fire.labels) {
+                if let Err(error) = session.set_inhibited(fire.event_id).await {
+                    tracing::warn!(target: "alerting", event_id = %fire.event_id, %error, "标记抑制失败");
+                }
+                continue;
+            }
+            if fire.silenced {
+                continue;
+            }
+            self.notifier.dispatch(
+                &rule.notify,
+                &AlertNotification {
+                    status: "firing",
+                    event_id: fire.event_id,
+                    rule_id: rule.id,
+                    rule: rule.name.clone(),
+                    severity: rule.severity.clone(),
+                    value: fire.value,
+                    threshold: rule.threshold,
+                    op: rule.op.as_str(),
+                    labels: fire.labels,
+                    started_at: fire.started_at,
+                    resolved_at: None,
+                    console_url: self.notifier.console_url(fire.event_id),
+                },
+            );
+        }
+    }
+
+    async fn resolve_disabled(
+        &self,
+        session: &mut EvaluationSession,
+        active_by_rule: &HashMap<Uuid, HashMap<String, ActiveEvent>>,
+        enabled: &HashSet<Uuid>,
+        rules_by_id: &HashMap<Uuid, &AlertRule>,
+    ) {
+        for (rule_id, events) in active_by_rule {
             if enabled.contains(rule_id) {
                 continue;
             }
@@ -182,7 +292,6 @@ impl Evaluator {
                 }
             }
         }
-        Ok(())
     }
 
     async fn samples(&self, rule: &AlertRule) -> Result<Vec<Sample>, String> {
@@ -221,50 +330,9 @@ impl Evaluator {
         }
     }
 
-    async fn apply(&self, session: &mut EvaluationSession, rule: &AlertRule, action: Action) {
+    async fn apply_non_fire(&self, session: &mut EvaluationSession, rule: &AlertRule, action: Action) {
         match action {
-            Action::Fire {
-                fingerprint,
-                labels,
-                value,
-                started_at,
-                ..
-            } => match session
-                .insert_firing(
-                    rule,
-                    &fingerprint,
-                    &labels,
-                    value,
-                    started_at,
-                    &self.exemplar_trace_ids(rule, &labels).await,
-                )
-                .await
-            {
-                Ok(Some(event_id)) => {
-                    tracing::warn!(target: "alerting", rule = %rule.name, %event_id, value, "告警触发");
-                    self.notifier.dispatch(
-                        &rule.notify,
-                        &AlertNotification {
-                            status: "firing",
-                            event_id,
-                            rule_id: rule.id,
-                            rule: rule.name.clone(),
-                            severity: rule.severity.clone(),
-                            value,
-                            threshold: rule.threshold,
-                            op: rule.op.as_str(),
-                            labels,
-                            started_at,
-                            resolved_at: None,
-                            console_url: self.notifier.console_url(event_id),
-                        },
-                    );
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    tracing::warn!(target: "alerting", rule = %rule.name, %error, "写入告警事件失败");
-                }
-            },
+            Action::Fire { .. } => {}
             Action::Refresh { event_id, value } => {
                 if let Err(error) = session.refresh_value(event_id, value).await {
                     tracing::warn!(target: "alerting", %event_id, %error, "刷新告警事件值失败");
@@ -280,6 +348,63 @@ impl Evaluator {
                     tracing::warn!(target: "alerting", %event_id, %error, "恢复告警事件失败");
                 }
             },
+        }
+    }
+
+    /// 未确认告警按值班升级阶梯外发；钉钉/飞书/企微渠道仅 stub 打日志。
+    async fn escalate(
+        &self,
+        session: &mut EvaluationSession,
+        rules_by_id: &HashMap<Uuid, &AlertRule>,
+    ) {
+        let steps = match session.load_primary_escalation().await {
+            Ok(steps) => steps,
+            Err(error) => {
+                tracing::warn!(target: "alerting", %error, "加载值班升级策略失败");
+                return;
+            }
+        };
+        if steps.is_empty() {
+            return;
+        }
+        let channels = match session.load_notify_channels().await {
+            Ok(c) => c,
+            Err(error) => {
+                tracing::warn!(target: "alerting", %error, "加载通知渠道失败");
+                Vec::new()
+            }
+        };
+        let candidates = match session.unacked_firing_for_escalation().await {
+            Ok(c) => c,
+            Err(error) => {
+                tracing::warn!(target: "alerting", %error, "加载升级候选失败");
+                return;
+            }
+        };
+        let now = Utc::now();
+        let channel_by_id: HashMap<Uuid, &NotifyChannelRow> =
+            channels.iter().map(|c| (c.id, c)).collect();
+        for cand in candidates {
+            let Some(idx) = next_escalation_index(&steps, cand.escalation_level, cand.started_at, now)
+            else {
+                continue;
+            };
+            let step = &steps[idx];
+            let Some(rule) = rules_by_id.get(&cand.rule_id) else {
+                continue;
+            };
+            dispatch_escalation(
+                &self.notifier,
+                rule,
+                &cand,
+                step,
+                &channel_by_id,
+                self.notifier.console_url(cand.id),
+            );
+            let level = i32::try_from(idx).unwrap_or(cand.escalation_level);
+            if let Err(error) = session.mark_notified(cand.id, level).await {
+                tracing::warn!(target: "alerting", event_id = %cand.id, %error, "记录升级通知失败");
+            }
         }
     }
 
@@ -359,6 +484,79 @@ fn exemplar_query(
             channel_code: label("channel_code"),
         },
     })
+}
+
+struct PendingFire {
+    event_id: Uuid,
+    rule_id: Uuid,
+    labels: BTreeMap<String, String>,
+    value: f64,
+    started_at: chrono::DateTime<Utc>,
+    silenced: bool,
+}
+
+fn dispatch_escalation(
+    notifier: &Notifier,
+    rule: &AlertRule,
+    cand: &EscalationCandidate,
+    step: &EscalationStep,
+    channel_by_id: &HashMap<Uuid, &NotifyChannelRow>,
+    console_url: Option<String>,
+) {
+    let mut emails = step.users.clone();
+    let mut webhooks = Vec::new();
+    for id in &step.channel_ids {
+        let Some(ch) = channel_by_id.get(id) else {
+            continue;
+        };
+        match ch.channel_type.as_str() {
+            "email" => {
+                if let Some(arr) = ch.config.get("emails").and_then(|v| v.as_array()) {
+                    for e in arr {
+                        if let Some(s) = e.as_str() {
+                            emails.push(s.to_string());
+                        }
+                    }
+                }
+            }
+            "webhook" => {
+                if let Some(url) = ch.config.get("url").and_then(|v| v.as_str()) {
+                    webhooks.push(url.to_string());
+                }
+            }
+            "dingtalk" | "feishu" | "wecom" => {
+                tracing::info!(
+                    target: "alerting",
+                    channel = %ch.name,
+                    channel_type = %ch.channel_type,
+                    "IM 通知渠道尚未实现，已跳过（待用户自测接入）"
+                );
+            }
+            other => {
+                tracing::warn!(target: "alerting", channel_type = other, "未知通知渠道类型");
+            }
+        }
+    }
+    if emails.is_empty() && webhooks.is_empty() {
+        return;
+    }
+    notifier.dispatch(
+        &NotifyConfig { emails, webhooks },
+        &AlertNotification {
+            status: "escalated",
+            event_id: cand.id,
+            rule_id: rule.id,
+            rule: rule.name.clone(),
+            severity: rule.severity.clone(),
+            value: cand.value,
+            threshold: rule.threshold,
+            op: rule.op.as_str(),
+            labels: cand.labels.clone(),
+            started_at: cand.started_at,
+            resolved_at: None,
+            console_url,
+        },
+    );
 }
 
 /// 按配置启动告警评估后台任务；未配置或停用时不启动。

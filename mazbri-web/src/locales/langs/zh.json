@@ -348,7 +348,13 @@
     },
     "save": "保存",
     "saveSuccess": "已保存",
-    "accountSecurity": "账号安全"
+    "accountSecurity": "账号安全",
+    "refresh": "刷新",
+    "delete": "删除",
+    "edit": "编辑",
+    "success": "成功",
+    "failed": "失败",
+    "confirmDelete": "确认删除？"
   },
   "config": {
     "globalComponents": {
@@ -867,7 +873,10 @@
       "productRank": "产品排行",
       "capacity": "容量规划",
       "anomaly": "异常检测",
-      "customDashboard": "自定义看板"
+      "customDashboard": "自定义看板",
+      "alertSilences": "告警静默",
+      "alertOncall": "值班排班",
+      "alertChannels": "通知渠道"
     }
   },
   "systemSettings": {
@@ -4530,7 +4539,46 @@
           "required": "必填"
         },
         "notifySummary": "邮件 {emails} · Webhook {webhooks}"
-      }
+      },
+      "silenced": "已静默",
+      "inhibited": "已抑制",
+      "silences": {
+        "create": "新建静默",
+        "hint": "时间窗内匹配标签的告警只记事件、不外发通知。写操作需 MFA step-up。",
+        "matchers": "匹配标签",
+        "window": "时间窗",
+        "createdBy": "创建人",
+        "comment": "备注",
+        "startsAt": "开始",
+        "endsAt": "结束"
+      },
+      "inhibits": {
+        "title": "抑制规则",
+        "create": "新建抑制",
+        "name": "名称",
+        "source": "源匹配",
+        "target": "目标匹配",
+        "equal": "相等标签"
+      },
+      "oncall": {
+        "create": "新建值班表",
+        "edit": "编辑值班表",
+        "hint": "排班层与升级阶梯（未确认 N 分钟升下级）。钉钉/飞书/企微渠道发送仍为 stub。",
+        "name": "名称",
+        "timezone": "时区",
+        "layers": "排班层",
+        "escalation": "升级阶梯"
+      },
+      "channels": {
+        "create": "新建渠道",
+        "hint": "渠道密钥加密存储且接口不回显。IM（钉钉/飞书/企微）发送延后，本步仅登记。",
+        "name": "名称",
+        "type": "类型",
+        "config": "配置",
+        "hasSecret": "含密钥"
+      },
+      "relatedChanges": "同时段变更",
+      "noRelatedChanges": "无同时段变更"
     },
     "infra": {
       "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB 吞吐、错误、buffer 与端到端新鲜度。空闲环境可能几乎无写入。",

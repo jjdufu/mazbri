@@ -9,6 +9,18 @@ use uuid::Uuid;
 /// 告警评估轮次的 advisory lock 键（"mzbralrt" 的 ASCII 字节），所有实例共用。
 pub const EVALUATION_LOCK_KEY: i64 = 0x6D7A_6272_616C_7274;
 
+/// `insert_firing` 参数包，避免参数过多。
+pub struct FireInsert<'a> {
+    pub rule: &'a AlertRule,
+    pub fingerprint: &'a str,
+    pub labels: &'a BTreeMap<String, String>,
+    pub value: f64,
+    pub started_at: DateTime<Utc>,
+    pub trace_ids: &'a [String],
+    pub silenced: bool,
+    pub inhibited: bool,
+}
+
 /// 告警存储。
 #[derive(Clone)]
 pub struct AlertStore {
@@ -138,32 +150,31 @@ impl EvaluationSession {
     /// 数据库写入失败时返回错误。
     pub async fn insert_firing(
         &mut self,
-        rule: &AlertRule,
-        fingerprint: &str,
-        labels: &BTreeMap<String, String>,
-        value: f64,
-        started_at: DateTime<Utc>,
-        trace_ids: &[String],
+        params: FireInsert<'_>,
     ) -> Result<Option<Uuid>, sqlx::Error> {
-        let labels = serde_json::to_value(labels).unwrap_or_else(|_| serde_json::json!({}));
+        let labels = serde_json::to_value(params.labels).unwrap_or_else(|_| serde_json::json!({}));
+        let last_notified = if params.silenced || params.inhibited {
+            None
+        } else {
+            Some(Utc::now())
+        };
         let row = sqlx::query(
-            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids) \
-             VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7) \
-             ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING \
-             RETURNING id",
+            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited, escalation_level, last_notified_at)              VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9, 0, $10)              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING              RETURNING id",
         )
-        .bind(rule.id)
-        .bind(fingerprint)
-        .bind(&rule.severity)
+        .bind(params.rule.id)
+        .bind(params.fingerprint)
+        .bind(&params.rule.severity)
         .bind(labels)
-        .bind(value)
-        .bind(started_at)
-        .bind(trace_ids)
+        .bind(params.value)
+        .bind(params.started_at)
+        .bind(params.trace_ids)
+        .bind(params.silenced)
+        .bind(params.inhibited)
+        .bind(last_notified)
         .fetch_optional(&mut *self.conn)
         .await?;
         row.map(|r| r.try_get("id")).transpose()
     }
-
     /// 刷新活跃事件的当前值。
     ///
     /// # Errors
@@ -210,6 +221,237 @@ impl EvaluationSession {
         })
         .transpose()
     }
+
+    /// 加载当前有效的静默窗（`ends_at` 晚于现在）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn load_silences(&mut self) -> Result<Vec<crate::alerting::filter::Silence>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT matchers, starts_at, ends_at FROM alert_silences WHERE ends_at > now()",
+        )
+        .fetch_all(&mut *self.conn)
+        .await?;
+        rows.iter()
+            .map(|row| {
+                Ok(crate::alerting::filter::Silence {
+                    matchers: row.try_get("matchers")?,
+                    starts_at: row.try_get("starts_at")?,
+                    ends_at: row.try_get("ends_at")?,
+                })
+            })
+            .collect()
+    }
+
+    /// 加载启用的抑制规则。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn load_inhibit_rules(
+        &mut self,
+    ) -> Result<Vec<crate::alerting::filter::InhibitRule>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT source_matchers, target_matchers, equal_labels FROM alert_inhibit_rules WHERE enabled",
+        )
+        .fetch_all(&mut *self.conn)
+        .await?;
+        rows.iter()
+            .map(|row| {
+                Ok(crate::alerting::filter::InhibitRule {
+                    source_matchers: row.try_get("source_matchers")?,
+                    target_matchers: row.try_get("target_matchers")?,
+                    equal_labels: row.try_get("equal_labels")?,
+                })
+            })
+            .collect()
+    }
+
+    /// 加载全部活跃事件的标签（用于抑制源匹配）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn active_event_labels(
+        &mut self,
+    ) -> Result<Vec<crate::alerting::filter::ActiveLabels>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT labels FROM alert_events WHERE status IN ('firing', 'acked')",
+        )
+        .fetch_all(&mut *self.conn)
+        .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let labels: serde_json::Value = row.try_get("labels")?;
+            out.push(crate::alerting::filter::ActiveLabels {
+                labels: string_map(&labels),
+            });
+        }
+        Ok(out)
+    }
+
+    /// 加载启用的值班升级阶梯（按名称取首张启用表）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn load_primary_escalation(
+        &mut self,
+    ) -> Result<Vec<crate::alerting::filter::EscalationStep>, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT escalation FROM oncall_schedules WHERE enabled ORDER BY name LIMIT 1",
+        )
+        .fetch_optional(&mut *self.conn)
+        .await?;
+        let Some(row) = row else {
+            return Ok(Vec::new());
+        };
+        let escalation: serde_json::Value = row.try_get("escalation")?;
+        Ok(parse_escalation(&escalation))
+    }
+
+    /// 加载启用的通知渠道摘要。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn load_notify_channels(&mut self) -> Result<Vec<NotifyChannelRow>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, name, type, config, (secret_enc IS NOT NULL) AS has_secret              FROM notify_channels WHERE enabled",
+        )
+        .fetch_all(&mut *self.conn)
+        .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            out.push(NotifyChannelRow {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                channel_type: row.try_get("type")?,
+                config: row.try_get("config")?,
+                has_secret: row.try_get("has_secret")?,
+            });
+        }
+        Ok(out)
+    }
+
+    /// 标记事件为已抑制（不外发通知）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库写入失败时返回错误。
+    pub async fn set_inhibited(&mut self, event_id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE alert_events SET inhibited = TRUE, updated_at = now() WHERE id = $1",
+        )
+        .bind(event_id)
+        .execute(&mut *self.conn)
+        .await?;
+        Ok(())
+    }
+
+    /// 标记已通知并推进升级层级。
+    ///
+    /// # Errors
+    ///
+    /// 数据库写入失败时返回错误。
+    pub async fn mark_notified(
+        &mut self,
+        event_id: Uuid,
+        escalation_level: i32,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE alert_events SET escalation_level = $2, last_notified_at = now(), updated_at = now()              WHERE id = $1",
+        )
+        .bind(event_id)
+        .bind(escalation_level)
+        .execute(&mut *self.conn)
+        .await?;
+        Ok(())
+    }
+
+    /// 待升级的未确认 firing 事件。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn unacked_firing_for_escalation(
+        &mut self,
+    ) -> Result<Vec<EscalationCandidate>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, rule_id, labels, value, started_at, escalation_level              FROM alert_events WHERE status = 'firing' AND NOT silenced AND NOT inhibited",
+        )
+        .fetch_all(&mut *self.conn)
+        .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let labels: serde_json::Value = row.try_get("labels")?;
+            out.push(EscalationCandidate {
+                id: row.try_get("id")?,
+                rule_id: row.try_get("rule_id")?,
+                labels: string_map(&labels),
+                value: row.try_get("value")?,
+                started_at: row.try_get("started_at")?,
+                escalation_level: row.try_get("escalation_level")?,
+            });
+        }
+        Ok(out)
+    }
+}
+
+/// 通知渠道行（analytics 侧只读公开配置）。
+#[derive(Debug, Clone)]
+pub struct NotifyChannelRow {
+    pub id: Uuid,
+    pub name: String,
+    pub channel_type: String,
+    pub config: serde_json::Value,
+    pub has_secret: bool,
+}
+
+/// 升级候选事件。
+#[derive(Debug, Clone)]
+pub struct EscalationCandidate {
+    pub id: Uuid,
+    pub rule_id: Uuid,
+    pub labels: BTreeMap<String, String>,
+    pub value: f64,
+    pub started_at: DateTime<Utc>,
+    pub escalation_level: i32,
+}
+
+fn parse_escalation(value: &serde_json::Value) -> Vec<crate::alerting::filter::EscalationStep> {
+    let Some(arr) = value.as_array() else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|item| {
+            let after = item.get("after_minutes")?.as_i64()?;
+            let users = item
+                .get("users")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let channel_ids = item
+                .get("channel_ids")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().and_then(|s| Uuid::parse_str(s).ok()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Some(crate::alerting::filter::EscalationStep {
+                after_minutes: after,
+                users,
+                channel_ids,
+            })
+        })
+        .collect()
 }
 
 fn parse_rule(row: &PgRow) -> Result<AlertRule, String> {

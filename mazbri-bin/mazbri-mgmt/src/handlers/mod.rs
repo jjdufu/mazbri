@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_management;
 pub mod alert_handlers;
+pub mod alert_ops_handlers;
 pub mod analytics_handlers;
 pub mod api_key_handlers;
 pub mod appearance_handlers;

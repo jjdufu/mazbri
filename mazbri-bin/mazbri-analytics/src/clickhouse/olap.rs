@@ -1150,9 +1150,7 @@ fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> Str
     }
     let limit = clamp_limit(p.limit, 50);
     format!(
-        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM (            SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn            FROM security_events {where_sql}            ORDER BY ts DESC LIMIT {limit}          )",
-        where_sql = where_sql,
-        limit = limit,
+        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM (            SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn            FROM security_events {where_sql}            ORDER BY ts DESC LIMIT {limit}          )"
     )
 }
 
@@ -1396,7 +1394,7 @@ mod tests {
         q.validate().expect("ok");
         let sql = q.sql();
         assert!(sql.text.contains("security_agg_1h"), "{}", sql.text);
-        assert!(sql.binds.is_empty());
+        assert_eq!(sql.binds, [] as [String; 0]);
         let q = parse(
             r#"{"template":"security_events","params":{"range":"24h","limit":10,"event_type":"new_ip"}}"#,
         )

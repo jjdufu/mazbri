@@ -56,6 +56,9 @@ export interface AlertEvent {
   acked_at: string | null;
   assignee: string | null;
   trace_ids: string[];
+  silenced: boolean;
+  inhibited: boolean;
+  escalation_level: number;
   updated_at: string;
 }
 

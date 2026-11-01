@@ -348,7 +348,13 @@
     },
     "save": "Save",
     "saveSuccess": "Saved",
-    "accountSecurity": "Account Security"
+    "accountSecurity": "Account Security",
+    "refresh": "Refresh",
+    "delete": "Delete",
+    "edit": "Edit",
+    "success": "Success",
+    "failed": "Failed",
+    "confirmDelete": "Delete?"
   },
   "config": {
     "globalComponents": {
@@ -867,7 +873,10 @@
       "productRank": "Product Rank",
       "capacity": "Capacity",
       "anomaly": "Anomaly",
-      "customDashboard": "Custom Dashboard"
+      "customDashboard": "Custom Dashboard",
+      "alertSilences": "Alert silences",
+      "alertOncall": "On-call",
+      "alertChannels": "Notify channels"
     }
   },
   "systemSettings": {
@@ -4525,7 +4534,46 @@
           "required": "Required"
         },
         "notifySummary": "Email {emails} · Webhook {webhooks}"
-      }
+      },
+      "silenced": "Silenced",
+      "inhibited": "Inhibited",
+      "silences": {
+        "create": "New silence",
+        "hint": "Matching alerts in the window are recorded but not notified. Writes need MFA step-up.",
+        "matchers": "Matchers",
+        "window": "Window",
+        "createdBy": "Created by",
+        "comment": "Comment",
+        "startsAt": "Starts",
+        "endsAt": "Ends"
+      },
+      "inhibits": {
+        "title": "Inhibit rules",
+        "create": "New inhibit",
+        "name": "Name",
+        "source": "Source",
+        "target": "Target",
+        "equal": "Equal labels"
+      },
+      "oncall": {
+        "create": "New schedule",
+        "edit": "Edit schedule",
+        "hint": "Rotation layers and escalation. IM channel delivery is stubbed.",
+        "name": "Name",
+        "timezone": "Timezone",
+        "layers": "Layers",
+        "escalation": "Escalation"
+      },
+      "channels": {
+        "create": "New channel",
+        "hint": "Secrets encrypted and never returned. IM bots are registered only (send stubbed).",
+        "name": "Name",
+        "type": "Type",
+        "config": "Config",
+        "hasSecret": "Has secret"
+      },
+      "relatedChanges": "Related changes",
+      "noRelatedChanges": "No related changes"
     },
     "infra": {
       "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB throughput, errors, buffers, and end-to-end freshness. Idle envs may show near-empty write series.",

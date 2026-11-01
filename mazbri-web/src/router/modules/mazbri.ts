@@ -346,6 +346,39 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "alerts/silences",
+        name: "OpsAlertSilences",
+        component: "/mazbri/ops/alerts/silences",
+        meta: {
+          title: "menus.mazbri.alertSilences",
+          icon: "ri:volume-mute-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "alerts/oncall",
+        name: "OpsAlertOncall",
+        component: "/mazbri/ops/alerts/oncall",
+        meta: {
+          title: "menus.mazbri.alertOncall",
+          icon: "ri:user-voice-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "alerts/channels",
+        name: "OpsAlertChannels",
+        component: "/mazbri/ops/alerts/channels",
+        meta: {
+          title: "menus.mazbri.alertChannels",
+          icon: "ri:notification-3-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "tenants",
         name: "TenantList",
         component: "/mazbri/tenants/index",
