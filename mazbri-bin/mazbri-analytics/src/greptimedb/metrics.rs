@@ -1142,6 +1142,7 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
     items.extend(metric_catalog_upstream_billing());
     items.extend(metric_catalog_flow_cache());
     items.extend(metric_catalog_business());
+    items.extend(metric_catalog_assets());
     items.extend(metric_catalog_infra());
     items
 }
@@ -1204,6 +1205,52 @@ fn flow_cache_query(metric: &str, window: u64) -> Option<String> {
         "bypass_config_cache" => format!(
             "sum by (result) (rate(bypass_config_cache_total[{window}s]))"
         ),
+        _ => return None,
+    })
+}
+
+
+/// 步骤 22：证书 / License / 变更相关指标（12.1 / 12.2）。
+const ASSETS_CATALOG: &[(&str, &str, &str, &str)] = &[
+    ("cert_active_count", "活跃证书数", "count", "line"),
+    ("cert_issuance", "证书签发速率（按 result / type）", "ops/s", "line"),
+    ("tls_cert_expiry_days", "TLS 证书剩余天数（按 service）", "days", "line"),
+    ("route_reload_total", "路由热更新次数", "ops/s", "line"),
+    ("route_version", "网关路由版本", "version", "line"),
+    ("connector_publish_total", "连接器发布次数", "ops/s", "line"),
+    ("build_info", "服务构建信息（版本 / git_sha）", "info", "line"),
+];
+
+fn metric_catalog_assets() -> Vec<MetricCatalogItem> {
+    ASSETS_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
+}
+
+fn assets_query(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "cert_active_count" => "max(cert_active_count)".to_string(),
+        "cert_issuance" => format!(
+            "sum by (result, type) (rate(cert_issuance_total[{window}s]))"
+        ),
+        "tls_cert_expiry_days" => {
+            "(max by (service) (mazbri_tls_cert_expiry_timestamp) - time()) / 86400".to_string()
+        }
+        "route_reload_total" => format!(
+            "sum by (result) (rate(gateway_route_reload_total[{window}s]))"
+        ),
+        "route_version" => "max(gateway_route_version)".to_string(),
+        "connector_publish_total" => format!(
+            "sum by (result) (rate(connector_publish_total[{window}s]))"
+        ),
+        "build_info" => "max by (service, version, git_sha) (mazbri_build_info)".to_string(),
         _ => return None,
     })
 }
@@ -1613,6 +1660,7 @@ fn build_metric_query(
             return upstream_billing_query(other, window)
                 .or_else(|| flow_cache_query(other, window))
                 .or_else(|| business_query(other, window))
+                .or_else(|| assets_query(other, window))
                 .or_else(|| infra_query(other, window))
                 .ok_or_else(|| AnalyticsError::Config(format!("Unsupported metric: {other}")));
         }
@@ -1846,6 +1894,17 @@ mod tests {
             build_metric_query(key, None, &t, 60)?;
         }
         Ok(())
+    }
+
+    #[test]
+    fn assets_query_builds_cert_and_route_metrics() {
+        let q = assets_query("cert_issuance", 60).expect("q");
+        assert!(q.contains("cert_issuance_total"), "{q}");
+        let q = assets_query("route_reload_total", 60).expect("q");
+        assert!(q.contains("gateway_route_reload_total"), "{q}");
+        let q = assets_query("build_info", 60).expect("q");
+        assert!(q.contains("mazbri_build_info"), "{q}");
+        assert!(assets_query("nope", 60).is_none());
     }
 
     #[test]

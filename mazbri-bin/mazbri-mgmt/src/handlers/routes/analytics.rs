@@ -1,4 +1,5 @@
 use super::super::analytics_handlers;
+use super::super::ops_changes_handlers;
 use super::super::state::AppState;
 use axum::{
     Router,
@@ -39,6 +40,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/stats/olap/query",
             post(analytics_handlers::post_olap_query),
+        )
+        .route(
+            "/stats/ops/changes",
+            get(ops_changes_handlers::get_ops_changes),
         )
         .route(
             "/stats/calls/customer",

@@ -213,6 +213,29 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
 
       {
+        path: "assets/certs",
+        name: "OpsAssetsCerts",
+        component: "/mazbri/ops/assets/certs",
+        meta: {
+          title: "menus.mazbri.assetsCerts",
+          icon: "ri:shield-keyhole-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "assets/changes",
+        name: "OpsAssetsChanges",
+        component: "/mazbri/ops/assets/changes",
+        meta: {
+          title: "menus.mazbri.assetsChanges",
+          icon: "ri:git-commit-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+
+      {
         path: "infra/pipeline",
         name: "OpsInfraPipeline",
         component: "/mazbri/ops/infra/pipeline",

@@ -860,7 +860,9 @@
       "infraHosts": "Hosts & containers",
       "flowRatelimit": "Rate Limit",
       "flowCache": "Cache",
-      "billingReconcile": "Reconciliation"
+      "billingReconcile": "Reconciliation",
+      "assetsCerts": "Certificates & License",
+      "assetsChanges": "Change Timeline"
     }
   },
   "systemSettings": {
@@ -4599,6 +4601,25 @@
     "reconcile": {
       "calendar": "Reconcile calendar",
       "loadFailed": "Failed to load reconcile calendar"
+    },
+    "assets": {
+      "certActive": "Active certificates",
+      "certIssuance": "Certificate issuance",
+      "tlsExpiry": "TLS cert days left",
+      "certMinExpiry": "Min days to expiry",
+      "licenseExpiry": "License days left",
+      "licenseUsage": "License usage ratio",
+      "routeReload": "Route reloads",
+      "connectorPublish": "Connector publishes",
+      "timeline": "Change timeline",
+      "showChanges": "Show changes",
+      "colTime": "Time",
+      "colKind": "Kind",
+      "colTitle": "Title",
+      "colActor": "Actor",
+      "colResource": "Resource",
+      "colService": "Service",
+      "colStatus": "Status"
     }
   }
 }

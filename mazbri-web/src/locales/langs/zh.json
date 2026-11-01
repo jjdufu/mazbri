@@ -860,7 +860,9 @@
       "infraHosts": "主机与容器",
       "flowRatelimit": "限流配额",
       "flowCache": "缓存",
-      "billingReconcile": "对账中心"
+      "billingReconcile": "对账中心",
+      "assetsCerts": "证书与 License",
+      "assetsChanges": "变更时间线"
     }
   },
   "systemSettings": {
@@ -4604,6 +4606,25 @@
     "reconcile": {
       "calendar": "对账日历",
       "loadFailed": "对账日历加载失败"
+    },
+    "assets": {
+      "certActive": "活跃证书数",
+      "certIssuance": "证书签发",
+      "tlsExpiry": "TLS 证书剩余天数",
+      "certMinExpiry": "最短剩余天数",
+      "licenseExpiry": "License 剩余天数",
+      "licenseUsage": "License 用量占比",
+      "routeReload": "路由热更新",
+      "connectorPublish": "连接器发布",
+      "timeline": "变更时间线",
+      "showChanges": "显示变更",
+      "colTime": "时间",
+      "colKind": "类型",
+      "colTitle": "标题",
+      "colActor": "操作人",
+      "colResource": "资源",
+      "colService": "服务",
+      "colStatus": "状态"
     }
   }
 }

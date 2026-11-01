@@ -8,6 +8,7 @@ pub mod audit_handlers;
 pub mod billing_handlers;
 pub mod billing_ops_handlers;
 pub mod finance_ops_handlers;
+pub mod ops_changes_handlers;
 pub mod callback_handlers;
 pub mod config_center;
 pub mod config_handlers;
