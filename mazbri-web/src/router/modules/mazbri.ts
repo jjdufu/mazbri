@@ -177,6 +177,40 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
+
+      {
+        path: "infra/pipeline",
+        name: "OpsInfraPipeline",
+        component: "/mazbri/ops/infra/pipeline",
+        meta: {
+          title: "menus.mazbri.infraPipeline",
+          icon: "ri:flow-chart",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "infra/middleware",
+        name: "OpsInfraMiddleware",
+        component: "/mazbri/ops/infra/middleware",
+        meta: {
+          title: "menus.mazbri.infraMiddleware",
+          icon: "ri:database-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "infra/hosts",
+        name: "OpsInfraHosts",
+        component: "/mazbri/ops/infra/hosts",
+        meta: {
+          title: "menus.mazbri.infraHosts",
+          icon: "ri:computer-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
       {
         path: "alerts/events",
         name: "OpsAlertEvents",

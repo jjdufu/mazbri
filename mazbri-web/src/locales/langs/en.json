@@ -479,11 +479,20 @@
   "setting": {
     "menuType": {
       "title": "Menu Layout",
-      "list": ["Vertical", "Horizontal", "Mixed", "Dual"]
+      "list": [
+        "Vertical",
+        "Horizontal",
+        "Mixed",
+        "Dual"
+      ]
     },
     "theme": {
       "title": "Theme Style",
-      "list": ["Light", "Dark", "System (Follow System)"]
+      "list": [
+        "Light",
+        "Dark",
+        "System (Follow System)"
+      ]
     },
     "menu": {
       "title": "Menu Style"
@@ -493,11 +502,17 @@
     },
     "box": {
       "title": "Box Style",
-      "list": ["Border", "Shadow"]
+      "list": [
+        "Border",
+        "Shadow"
+      ]
     },
     "container": {
       "title": "Container Width",
-      "list": ["Full", "Boxed"]
+      "list": [
+        "Full",
+        "Boxed"
+      ]
     },
     "basics": {
       "title": "Basic Config",
@@ -543,8 +558,14 @@
   "notice": {
     "title": "Notice",
     "btnRead": "Mark as read",
-    "bar": ["Notice", "Message", "Todo"],
-    "text": ["No"],
+    "bar": [
+      "Notice",
+      "Message",
+      "Todo"
+    ],
+    "text": [
+      "No"
+    ],
     "viewAll": "View all"
   },
   "chat": {
@@ -833,7 +854,10 @@
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
-      "opsTraceDetail": "Trace detail"
+      "opsTraceDetail": "Trace detail",
+      "infraPipeline": "Data pipeline",
+      "infraMiddleware": "Middleware",
+      "infraHosts": "Hosts & containers"
     }
   },
   "systemSettings": {
@@ -4307,7 +4331,10 @@
       "empty": "No matching traces in this window",
       "notSearched": "Pick a time range and search",
       "resolved": "{count} traces resolved from call logs",
-      "tabs": { "results": "Results", "topology": "Service topology" },
+      "tabs": {
+        "results": "Results",
+        "topology": "Service topology"
+      },
       "form": {
         "tenant": "Tenant",
         "product": "Product",
@@ -4340,7 +4367,11 @@
         "kind": "Kind",
         "calls": "Calls",
         "errors": "Errors",
-        "kinds": { "rpc": "RPC", "storage": "Storage", "upstream": "Upstream" }
+        "kinds": {
+          "rpc": "RPC",
+          "storage": "Storage",
+          "upstream": "Upstream"
+        }
       },
       "detail": {
         "back": "Back",
@@ -4454,6 +4485,62 @@
           "required": "Required"
         },
         "notifySummary": "Email {emails} · Webhook {webhooks}"
+      }
+    },
+    "infra": {
+      "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB throughput, errors, buffers, and end-to-end freshness. Idle envs may show near-empty write series.",
+      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB runtime. When Redis/PG is down, the up series drops to 0.",
+      "hostsNote": "Host USE (CPU/memory/disk/network) and per-container resources. Names prefer compose service / k8s labels, else short id. Restarts are start_time changes (cAdvisor has no RestartCount).",
+      "charts": {
+        "pipelineFreshness": "Pipeline freshness",
+        "vectorReceived": "Vector received",
+        "vectorSent": "Vector sent",
+        "vectorErrors": "Vector errors",
+        "vectorBuffer": "Vector buffer usage",
+        "redpandaBytes": "Redpanda topic bytes",
+        "redpandaLag": "Consumer lag",
+        "chInsert": "CH inserted rows",
+        "chKafkaErrors": "CH Kafka errors",
+        "chParts": "CH parts",
+        "chMerges": "CH merges",
+        "chQuery": "CH query time",
+        "gtWrite": "Greptime writes",
+        "gtQuery": "Greptime PromQL P99",
+        "pgUp": "PG up",
+        "pgConn": "PG connections",
+        "pgMaxConn": "PG max_connections",
+        "pgTps": "PG TPS",
+        "pgCache": "PG cache hit ratio",
+        "pgDeadlocks": "PG deadlocks",
+        "pgSlow": "PG statement time rate",
+        "pgSize": "PG database size",
+        "redisUp": "Redis up",
+        "redisMem": "Redis memory",
+        "redisHit": "Redis hit ratio",
+        "redisCmds": "Redis commands",
+        "redisConn": "Redis clients",
+        "redisEvict": "Redis evictions",
+        "redisKeys": "Redis keys",
+        "chDisk": "CH disk usage",
+        "rpParts": "Redpanda partitions",
+        "rpUnder": "Under-replicated",
+        "rpDisk": "Redpanda disk free",
+        "gtMem": "Greptime memory",
+        "hostCpu": "Host CPU",
+        "hostLoad": "Host load1",
+        "hostMem": "Host memory",
+        "hostFs": "Host filesystem (ext4/xfs/overlay)",
+        "hostDiskRead": "Host disk read",
+        "hostDiskWrite": "Host disk write",
+        "hostNetRx": "Host net RX",
+        "hostNetTx": "Host net TX",
+        "ctrCpu": "Container CPU",
+        "ctrMem": "Container memory",
+        "ctrRestarts": "Container restarts (start_time changes)",
+        "ctrOom": "Container OOM",
+        "ctrFs": "Container filesystem",
+        "ctrNetRx": "Container net RX",
+        "ctrNetTx": "Container net TX"
       }
     }
   }
