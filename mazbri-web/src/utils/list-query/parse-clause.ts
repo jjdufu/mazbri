@@ -160,7 +160,25 @@ export function looksLikeStrongClause(
   }
   const rest = text.slice(fieldMatch.endIndex);
   if (!rest.trim()) return false;
-  return matchOperatorAtStart(rest) !== null;
+  if (matchOperatorAtStart(rest) !== null) return true;
+  return implicitEqDatetime(fieldMatch.def, rest) !== null;
+}
+
+/**
+ * Picking a datetime field from the suggestions drafts `<label> `; typing a value
+ * right after it (`时间戳 1793504280`) means equality. Returns the parsed value,
+ * or null when the field is not datetime or the rest is not a datetime literal.
+ */
+function implicitEqDatetime(def: FilterFieldDef, rest: string): string | null {
+  if (def.value_type !== "datetime" || !def.ops.includes("eq")) return null;
+  if (!/^\s/.test(rest)) return null;
+  const dt = parseDatetimeInput(rest.trim());
+  return dt ? trimZeroMillis(dt) : null;
+}
+
+/** `2026-11-01 11:38:00.000` → `2026-11-01 11:38:00`, matching the range chips. */
+function trimZeroMillis(value: string): string {
+  return value.replace(/\.000$/, "");
 }
 
 
@@ -263,6 +281,13 @@ export function parseClause(
 
   const opMatch = matchOperatorAtStart(afterField);
   if (!opMatch) {
+    const implicit = implicitEqDatetime(fieldMatch.def, afterField);
+    if (implicit !== null) {
+      return {
+        ok: true,
+        filter: { field: fieldMatch.def.field, op: "eq", value: implicit },
+      };
+    }
     return err("unsupported_syntax");
   }
 
@@ -335,7 +360,7 @@ function parseValueExpr(def: FilterFieldDef, raw: string): ValueResult {
     case "datetime": {
       const dt = parseDatetimeInput(body);
       if (!dt) return err("invalid_datetime");
-      return { ok: true, value: dt };
+      return { ok: true, value: trimZeroMillis(dt) };
     }
     case "string":
     default:

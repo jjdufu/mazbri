@@ -38,29 +38,16 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 
-export type TimeRangePreset =
-  | "15m"
-  | "1h"
-  | "6h"
-  | "24h"
-  | "7d"
-  | "30d"
-  | "custom";
+import {
+  PRESET_SECONDS,
+  pickerRangeOf,
+  rangeFromQuery,
+  sameRange,
+  type TimeRangePreset,
+  type TimeRangeValue,
+} from "@/utils/ops/time-range";
 
-export interface TimeRangeValue {
-  preset: TimeRangePreset;
-  start: number;
-  end: number;
-}
-
-const PRESET_SECONDS: Record<Exclude<TimeRangePreset, "custom">, number> = {
-  "15m": 15 * 60,
-  "1h": 3600,
-  "6h": 6 * 3600,
-  "24h": 86400,
-  "7d": 7 * 86400,
-  "30d": 30 * 86400,
-};
+export type { TimeRangePreset, TimeRangeValue };
 
 const BOOKMARKS: Record<string, number> = {
   loadtest: 2 * 3600,
@@ -123,7 +110,11 @@ function buildValue(nextPreset: TimeRangePreset): TimeRangeValue {
   return { preset: nextPreset, start: end - seconds, end };
 }
 
+/** Last range this picker published; route changes equal to it are our own echo. */
+let lastPublished: TimeRangeValue | null = null;
+
 function publish(value: TimeRangeValue) {
+  lastPublished = { ...value };
   emit("update:modelValue", value);
   emit("change", value);
   if (props.syncQuery) {
@@ -156,35 +147,27 @@ function onBookmarkChange(key: string | null) {
   const end = nowSec();
   const start = end - BOOKMARKS[key];
   preset.value = "custom";
-  customRange.value = [start * 1000, end * 1000];
+  customRange.value = pickerRangeOf({ start, end });
   publish({ preset: "custom", start, end });
 }
 
+/** Apply a range from the route query; true when the query carried a valid range. */
+function applyQueryRange(): boolean {
+  const fromQuery = rangeFromQuery(route.query);
+  if (!fromQuery) return false;
+  preset.value = fromQuery.preset;
+  customRange.value =
+    fromQuery.preset === "custom" ? pickerRangeOf(fromQuery) : null;
+  publish(fromQuery);
+  return true;
+}
+
 function hydrateFromQuery() {
-  const qPreset = route.query.tr_preset as string | undefined;
-  const qStart = Number(route.query.tr_start);
-  const qEnd = Number(route.query.tr_end);
-  if (
-    qPreset &&
-    (qPreset in PRESET_SECONDS || qPreset === "custom") &&
-    Number.isFinite(qStart) &&
-    Number.isFinite(qEnd) &&
-    qEnd > qStart
-  ) {
-    preset.value = qPreset as TimeRangePreset;
-    if (qPreset === "custom") {
-      customRange.value = [qStart * 1000, qEnd * 1000];
-    }
-    publish({ preset: preset.value, start: qStart, end: qEnd });
-    return;
-  }
+  if (applyQueryRange()) return;
   if (props.modelValue) {
     preset.value = props.modelValue.preset;
     if (props.modelValue.preset === "custom") {
-      customRange.value = [
-        props.modelValue.start * 1000,
-        props.modelValue.end * 1000,
-      ];
+      customRange.value = pickerRangeOf(props.modelValue);
     }
     publish(props.modelValue);
     return;
@@ -194,13 +177,25 @@ function hydrateFromQuery() {
 
 onMounted(hydrateFromQuery);
 
+// In-app hash navigation to the same page (e.g. #/dashboard?tr_preset=custom&...)
+// reuses this component, so onMounted does not run again: follow the query here.
+watch(
+  () => [route.query.tr_preset, route.query.tr_start, route.query.tr_end],
+  () => {
+    if (!props.syncQuery) return;
+    const fromQuery = rangeFromQuery(route.query);
+    if (!fromQuery || sameRange(fromQuery, lastPublished)) return;
+    applyQueryRange();
+  },
+);
+
 watch(
   () => props.modelValue,
   (v) => {
     if (!v) return;
     if (v.preset !== preset.value) preset.value = v.preset;
     if (v.preset === "custom") {
-      customRange.value = [v.start * 1000, v.end * 1000];
+      customRange.value = pickerRangeOf(v);
     }
   },
 );
