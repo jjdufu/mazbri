@@ -1140,9 +1140,72 @@ fn metric_catalog() -> Vec<MetricCatalogItem> {
     items.extend(metric_catalog_service_runtime());
     items.extend(metric_catalog_traffic());
     items.extend(metric_catalog_upstream_billing());
+    items.extend(metric_catalog_flow_cache());
     items.extend(metric_catalog_business());
     items.extend(metric_catalog_infra());
     items
+}
+
+
+/// 步骤 20：限流 / 缓存页面指标目录。
+const FLOW_CACHE_CATALOG: &[(&str, &str, &str, &str)] = &[
+    ("ratelimit_decisions", "限流决策速率（按 decision/reason/source/degraded）", "ops/s", "line"),
+    ("ratelimit_channel_decisions", "渠道限流决策速率", "ops/s", "line"),
+    ("ratelimit_snapshot_age_seconds", "限流快照年龄", "s", "line"),
+    ("ratelimit_snapshot_refresh", "限流快照刷新速率", "ops/s", "line"),
+    ("ratelimit_usage_flush", "限流用量 flush 速率", "ops/s", "line"),
+    ("cache_hit_ratio", "缓存命中率 hit/(hit+miss)", "%", "line"),
+    ("cache_operations", "缓存操作速率（按 operation/result）", "ops/s", "line"),
+    ("cache_operation_p95_ms", "缓存操作 P95 时延", "ms", "line"),
+    ("gateway_crypto_cache", "网关 crypto 缓存", "ops/s", "line"),
+    ("bypass_config_cache", "bypass 配置缓存", "ops/s", "line"),
+];
+
+fn metric_catalog_flow_cache() -> Vec<MetricCatalogItem> {
+    FLOW_CACHE_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
+}
+
+fn flow_cache_query(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "ratelimit_decisions" => format!(
+            "sum by (decision, reason, source, degraded) (rate(gateway_ratelimit_decisions_total[{window}s]))"
+        ),
+        "ratelimit_channel_decisions" => format!(
+            "sum by (decision, reason) (rate(gateway_channel_ratelimit_decisions_total[{window}s]))"
+        ),
+        "ratelimit_snapshot_age_seconds" => "max(gateway_ratelimit_snapshot_age_seconds)".to_string(),
+        "ratelimit_snapshot_refresh" => format!(
+            "sum by (result) (rate(gateway_ratelimit_snapshot_refresh_total[{window}s]))"
+        ),
+        "ratelimit_usage_flush" => format!(
+            "sum by (result) (rate(gateway_ratelimit_usage_flush_total[{window}s]))"
+        ),
+        "cache_hit_ratio" => format!(
+            r#"100 * sum(rate(cache_operations_total{{result="hit"}}[{window}s])) / (sum(rate(cache_operations_total{{result=~"hit|miss"}}[{window}s])) > 0)"#
+        ),
+        "cache_operations" => format!(
+            "sum by (operation, result) (rate(cache_operations_total[{window}s]))"
+        ),
+        "cache_operation_p95_ms" => format!(
+            "histogram_quantile(0.95, sum by (le, operation) (rate(cache_operation_duration_seconds_bucket[{window}s]))) * 1000"
+        ),
+        "gateway_crypto_cache" => format!(
+            "sum by (result) (rate(gateway_crypto_cache_total[{window}s]))"
+        ),
+        "bypass_config_cache" => format!(
+            "sum by (result) (rate(bypass_config_cache_total[{window}s]))"
+        ),
+        _ => return None,
+    })
 }
 
 /// 步骤 12 业务埋点：网关超时 / 重试、鉴权失败、缓存、License、管道新鲜度。
@@ -1548,6 +1611,7 @@ fn build_metric_query(
         ),
         other => {
             return upstream_billing_query(other, window)
+                .or_else(|| flow_cache_query(other, window))
                 .or_else(|| business_query(other, window))
                 .or_else(|| infra_query(other, window))
                 .ok_or_else(|| AnalyticsError::Config(format!("Unsupported metric: {other}")));
@@ -1782,6 +1846,21 @@ mod tests {
             build_metric_query(key, None, &t, 60)?;
         }
         Ok(())
+    }
+
+    #[test]
+    fn flow_cache_query_builds_ratelimit_and_cache() {
+        let q = flow_cache_query("ratelimit_decisions", 60).expect("q");
+        assert!(q.contains("gateway_ratelimit_decisions_total"));
+        assert!(q.contains("decision"));
+        let q = flow_cache_query("cache_hit_ratio", 60).expect("q");
+        assert!(q.contains("cache_operations_total"));
+        for &(key, _, _, _) in FLOW_CACHE_CATALOG {
+            assert!(
+                flow_cache_query(key, 60).is_some(),
+                "missing query for {key}"
+            );
+        }
     }
 
     #[test]
