@@ -11,9 +11,41 @@ use mazbri_auth::TenantContext;
 use std::time::Instant;
 use tracing::{info, warn};
 
+use super::handler::PRODUCT_ACCESS_DENIED;
+use super::response::{ProxyError, gateway_error_response};
 use super::state::GatewayRequestTiming;
+use axum::response::IntoResponse;
 
 /// 不做预检直接放行（记录本阶段耗时）。
+/// Why the balance precheck refused a request; every variant renders a business error code.
+#[derive(Debug)]
+pub enum BalanceRejection {
+    /// Unknown/denied product (403 E4030), unavailable billing (503) or internal failure.
+    Proxy(ProxyError),
+    /// Available balance below the estimated cost (402 E4020).
+    Insufficient,
+}
+
+impl From<ProxyError> for BalanceRejection {
+    fn from(error: ProxyError) -> Self {
+        Self::Proxy(error)
+    }
+}
+
+impl IntoResponse for BalanceRejection {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Proxy(error) => error.into_response(),
+            Self::Insufficient => gateway_error_response(
+                StatusCode::PAYMENT_REQUIRED,
+                "E4020",
+                "Insufficient balance",
+                None,
+            ),
+        }
+    }
+}
+
 async fn skip_check(
     next: Next,
     mut request: Request,
@@ -130,7 +162,7 @@ async fn lookup_product_detail(
     state: &AppState,
     tenant_id: uuid::Uuid,
     product_id: &str,
-) -> Result<mazbri_product::model::TenantProductDetail, StatusCode> {
+) -> Result<mazbri_product::model::TenantProductDetail, BalanceRejection> {
     match state
         .proxy_state
         .product_service
@@ -141,16 +173,16 @@ async fn lookup_product_detail(
         Ok(None) => {
             warn!(
                 tenant_id = % tenant_id, product_id = % product_id,
-                "Balance check failed because tenant product pricing config was not found"
+                "Balance check rejected request because the tenant has no such product"
             );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ProxyError::Forbidden(PRODUCT_ACCESS_DENIED.to_string()).into())
         }
         Err(error) => {
             warn!(
                 tenant_id = % tenant_id, product_id = % product_id, error = % error,
                 "Balance check failed because tenant product pricing lookup errored"
             );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ProxyError::InternalError(error.to_string()).into())
         }
     }
 }
@@ -202,7 +234,7 @@ pub async fn balance_check_middleware(
     State(state): State<AppState>,
     mut request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, BalanceRejection> {
     let stage_start = Instant::now();
     let mut timing = request
         .extensions()
@@ -214,7 +246,7 @@ pub async fn balance_check_middleware(
     };
     let Some(tenant_context) = request.extensions().get::<TenantContext>().cloned() else {
         warn!("Skipping balance check because tenant context was not present on the request");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        return Err(ProxyError::InternalError("tenant context missing".to_string()).into());
     };
     let Some(product_id) = tenant_context.product_id.as_deref() else {
         warn!(
@@ -275,7 +307,7 @@ pub async fn balance_check_middleware(
                 &times,
             )
             .await;
-            Err(StatusCode::PAYMENT_REQUIRED)
+            Err(BalanceRejection::Insufficient)
         }
         Err(error) => {
             log_infra_failure(&tenant_context, product_id, &error, fail_open, &times);
@@ -289,8 +321,37 @@ pub async fn balance_check_middleware(
                 Ok(next.run(request).await)
             } else {
                 // Fail fast: 503, never wait on pool for product timeout (30s).
-                Err(StatusCode::SERVICE_UNAVAILABLE)
+                Err(ProxyError::ServiceUnavailable("balance check unavailable".to_string()).into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod rejection_tests {
+    use super::*;
+    use crate::gateway::response::GatewayErrorCode;
+
+    fn code(response: &Response) -> Option<&str> {
+        response
+            .extensions()
+            .get::<GatewayErrorCode>()
+            .map(|c| c.0.as_str())
+    }
+
+    #[test]
+    fn unknown_product_is_403_e4030() {
+        let response =
+            BalanceRejection::from(ProxyError::Forbidden(PRODUCT_ACCESS_DENIED.to_string()))
+                .into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(code(&response), Some("E4030"));
+    }
+
+    #[test]
+    fn insufficient_balance_is_402_e4020() {
+        let response = BalanceRejection::Insufficient.into_response();
+        assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(code(&response), Some("E4020"));
     }
 }

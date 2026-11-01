@@ -548,6 +548,9 @@ fn build_protected_routes(app_state: &AppState, config: &GatewayConfig) -> Route
         }
         proxy_route = proxy_route.route_layer(ratelimit_middleware);
         proxy_route = proxy_route.route_layer(auth_middleware);
+        proxy_route = proxy_route.route_layer(axum::middleware::from_fn(
+            crate::gateway::rejection_log::rejection_access_log_middleware,
+        ));
         let router = Router::new().route("/api/v1/gateway", proxy_route);
         tracing::info!(
             "Billing hooks enabled: balance_check={}, proxy_usage_record={}",
@@ -565,6 +568,9 @@ fn build_protected_routes(app_state: &AppState, config: &GatewayConfig) -> Route
             .route_layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),
                 crate::auth::jwt_auth_middleware,
+            ))
+            .route_layer(axum::middleware::from_fn(
+                crate::gateway::rejection_log::rejection_access_log_middleware,
             ))
     }
 }
@@ -766,19 +772,7 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
         }
     }
     // 空 body 或非 JSON 错误 → 统一 envelope
-    let (code, message) = match status.as_u16() {
-        504 => ("E5040", "Gateway Timeout"),
-        502 => ("E5020", "Upstream service unavailable"),
-        503 => ("E5030", "Service temporarily unavailable"),
-        408 => ("E5040", "Request Timeout"),
-        413 => ("E4130", "Request body exceeds size limit"),
-        401 => ("E4010", "Unauthorized"),
-        403 => ("E4030", "Forbidden"),
-        404 => ("E4040", "Not Found"),
-        429 => ("E4290", "Too Many Requests"),
-        400..=499 => ("E4000", "Bad Request"),
-        _ => ("E5000", "Internal Server Error"),
-    };
+    let (code, message) = crate::gateway::response::status_error_code(status);
     tracing::warn!(
         target: "gateway.stage",
         event = "empty_error_body_normalized",

@@ -201,7 +201,11 @@ pub async fn unified_gateway_handler(
         },
     )
     .await;
-    build_response(http_status, encrypted_response, serialized.bytes)
+    let mut response = build_response(http_status, encrypted_response, serialized.bytes)?;
+    response
+        .extensions_mut()
+        .insert(super::rejection_log::AccessLogged);
+    Ok(response)
 }
 
 fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_ms: [u64; 4]) {

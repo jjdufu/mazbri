@@ -22,6 +22,8 @@ export interface UseListQueryOptions {
   debounce?: number;
   maxWait?: number;
   encodeMode?: ListQueryEncodeMode;
+  /** Rewrites filters for the request only (e.g. wall-clock → Unix seconds); UI state is untouched. */
+  mapRequestFilters?: (filters: ListFilter[]) => ListFilter[];
   initialQ?: string;
   initialFilters?: ListFilter[];
 
@@ -145,7 +147,9 @@ export function useListQuery(options: UseListQueryOptions) {
   ): Record<string, unknown> =>
     buildListQueryParams({
       q: q.value,
-      filters: filters.value,
+      filters: options.mapRequestFilters
+        ? options.mapRequestFilters(filters.value)
+        : filters.value,
       encodeMode: options.encodeMode ?? "json",
       extra,
     });

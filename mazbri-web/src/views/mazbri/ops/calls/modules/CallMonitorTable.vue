@@ -232,6 +232,7 @@
 import {
   formatWallClock,
   timestampFiltersFromRange,
+  timestampFiltersToUnix,
 } from "@/utils/ops/call-filters";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
@@ -333,6 +334,7 @@ const { q, filters, toRequestParams } = useListQuery({
   searchOnQChange: false,
   onChange: () => {},
   encodeMode: "json",
+  mapRequestFilters: timestampFiltersToUnix,
 });
 
 

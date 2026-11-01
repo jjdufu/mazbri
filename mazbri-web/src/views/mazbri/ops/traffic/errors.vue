@@ -130,7 +130,10 @@ import PieChart from "@/components/ops/PieChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
-import { timestampFiltersFromRange } from "@/utils/ops/call-filters";
+import {
+  timestampFiltersFromRange,
+  timestampFiltersToUnix,
+} from "@/utils/ops/call-filters";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { buildListQueryParams } from "@/utils/list-query/serialize";
 import { fetchCustomerCallLogs } from "@/api/call-monitor";
@@ -216,10 +219,10 @@ async function onErrorClick(row: ErrorCellRow | NewErrorRow) {
   try {
     const params = buildListQueryParams({
       q: "",
-      filters: [
+      filters: timestampFiltersToUnix([
         { field: "error_code", op: "eq", value: row.error_code },
         ...timestampFiltersFromRange(timeRange.value),
-      ],
+      ]),
       encodeMode: "json",
       extra: { page: 1, page_size: 10 },
     }) as CallMonitorQuery;

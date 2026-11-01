@@ -72,6 +72,13 @@ impl IntoResponse for JwtAuthError {
             "status": status.as_u16(),
         });
         let mut response = (status, axum::Json(body)).into_response();
+        response
+            .extensions_mut()
+            .insert(crate::gateway::response::GatewayErrorCode(
+                crate::gateway::response::status_error_code(status)
+                    .0
+                    .to_string(),
+            ));
         if status == StatusCode::UNAUTHORIZED {
             response.headers_mut().insert(
                 axum::http::header::WWW_AUTHENTICATE,
@@ -235,6 +242,7 @@ pub async fn jwt_auth_middleware(
         if let Some(ctx) = tenant_context.clone() {
             let payload =
                 parse_gateway_request_payload(&body_bytes).map_err(IntoResponse::into_response)?;
+            record_rejection_scope(&parts.extensions, &claims, &payload);
             match &payload {
                 GatewayRequestPayload::Plain(gateway_req) => {
                     parts
@@ -415,13 +423,39 @@ fn content_length_header(headers: &axum::http::HeaderMap) -> u64 {
         .unwrap_or(0)
 }
 
+/// Hands caller and payload to the rejection access log (no-op outside its layer).
+fn record_rejection_scope(
+    extensions: &axum::http::Extensions,
+    claims: &MazbriClaims,
+    payload: &GatewayRequestPayload,
+) {
+    let Some(slot) = extensions.get::<crate::gateway::rejection_log::RejectionSlot>() else {
+        return;
+    };
+    let (product_id, method, path) = match payload {
+        GatewayRequestPayload::Plain(req) => (
+            Some(req.product_id.clone()),
+            Some(req.method.clone()),
+            Some(req.path.clone()),
+        ),
+        GatewayRequestPayload::Encrypted(_) => (None, None, None),
+    };
+    slot.set(crate::gateway::rejection_log::RejectionScope {
+        tenant_id: Some(claims.tenant_id.clone()),
+        tenant_code: Some(claims.tenant_code.clone()),
+        product_id,
+        method,
+        path,
+    });
+}
+
 fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
     let error_message = if reason == "bandwidth" {
         "带宽超过限制"
     } else {
         "请求频率超过限制"
     };
-    (
+    let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         [(
             "retry-after",
@@ -436,7 +470,13 @@ fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
             "status": StatusCode::TOO_MANY_REQUESTS.as_u16(),
         })),
     )
-        .into_response()
+        .into_response();
+    response
+        .extensions_mut()
+        .insert(crate::gateway::response::GatewayErrorCode(
+            "E4290".to_string(),
+        ));
+    response
 }
 fn current_request_id(headers: &axum::http::HeaderMap) -> String {
     parse_trace_context(headers).request_id.to_string()

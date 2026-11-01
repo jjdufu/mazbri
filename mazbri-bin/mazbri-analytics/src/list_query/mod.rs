@@ -112,7 +112,7 @@ pub struct FieldDef {
     pub ops: &'static [FilterOp],
     pub in_q: bool,
     pub numeric: bool,
-    /// `ClickHouse` `DateTime64` column; values are datetime strings.
+    /// `ClickHouse` `DateTime64` column; filter values are Unix seconds.
     pub temporal: bool,
 }
 
@@ -522,122 +522,60 @@ pub fn compile_filter_condition(filter: &ListFilter) -> Result<String, ListQuery
     }
 }
 
+/// Temporal filters take Unix seconds only (JSON numbers). Seconds are absolute, so
+/// no wall-clock / time-zone interpretation happens on either side.
 fn compile_temporal_condition(
     col: &str,
     op: FilterOp,
     value: &FilterValue,
 ) -> Result<String, ListQueryError> {
     match op {
-        // DateTime64(9) stores nanoseconds; UI/filter values are ms-truncated.
-        // Exact `=` almost never matches, so eq means the 1ms half-open bucket
-        // [t, t+1ms) that contains the wall-clock instant the user typed.
+        // `eq` means the whole second [t, t+1) that contains the instant.
         FilterOp::Eq => {
-            let s = normalize_datetime_literal(&value_as_string(value)?)?;
-            let end = datetime_literal_plus_1ms(&s)?;
-            Ok(format!("{col} >= '{s}' AND {col} < '{end}'"))
+            let t = unix_seconds(value)?;
+            Ok(format!(
+                "{col} >= toDateTime({t}) AND {col} < toDateTime({})",
+                t.saturating_add(1)
+            ))
         }
-        FilterOp::Gt => {
-            let s = normalize_datetime_literal(&value_as_string(value)?)?;
-            Ok(format!("{col} > '{s}'"))
-        }
-        FilterOp::Gte => {
-            let s = normalize_datetime_literal(&value_as_string(value)?)?;
-            Ok(format!("{col} >= '{s}'"))
-        }
-        FilterOp::Lt => {
-            let s = normalize_datetime_literal(&value_as_string(value)?)?;
-            Ok(format!("{col} < '{s}'"))
-        }
-        FilterOp::Lte => {
-            let s = normalize_datetime_literal(&value_as_string(value)?)?;
-            Ok(format!("{col} <= '{s}'"))
-        }
+        FilterOp::Gt => Ok(format!("{col} > toDateTime({})", unix_seconds(value)?)),
+        FilterOp::Gte => Ok(format!("{col} >= toDateTime({})", unix_seconds(value)?)),
+        FilterOp::Lt => Ok(format!("{col} < toDateTime({})", unix_seconds(value)?)),
+        FilterOp::Lte => Ok(format!("{col} <= toDateTime({})", unix_seconds(value)?)),
         FilterOp::Between => {
-            let (a, b) = between_datetime(value)?;
-            Ok(format!("{col} >= '{a}' AND {col} <= '{b}'"))
+            let FilterValue::NumberArray(v) = value else {
+                return Err(ListQueryError::invalid_value(
+                    "between requires 2 unix-second values",
+                ));
+            };
+            let [a, b] = v.as_slice() else {
+                return Err(ListQueryError::invalid_value(
+                    "between requires 2 unix-second values",
+                ));
+            };
+            let (a, b) = (seconds_from_f64(*a)?, seconds_from_f64(*b)?);
+            Ok(format!("{col} >= toDateTime({a}) AND {col} <= toDateTime({b})"))
         }
         _ => Err(ListQueryError::invalid_op(col, op.as_str())),
     }
 }
 
-/// Advance a normalized `YYYY-MM-DD HH:MM:SS.mmm` literal by 1 millisecond.
-fn datetime_literal_plus_1ms(literal: &str) -> Result<String, ListQueryError> {
-    let naive = chrono::NaiveDateTime::parse_from_str(literal, "%Y-%m-%d %H:%M:%S%.3f")
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(literal, "%Y-%m-%d %H:%M:%S%.f"))
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(literal, "%Y-%m-%d %H:%M:%S"))
-        .map_err(|_| {
-            ListQueryError::invalid_value(format!("cannot advance datetime: {literal}"))
-        })?;
-    let advanced = naive + chrono::Duration::milliseconds(1);
-    Ok(advanced.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
-}
-
-/// Accept unix seconds/ms or common datetime strings; emit CH-friendly UTC literal.
-fn normalize_datetime_literal(raw: &str) -> Result<String, ListQueryError> {
-    let s = raw.trim();
-    if s.is_empty() {
-        return Err(ListQueryError::invalid_value("empty datetime"));
-    }
-    // Reject quotes / control chars that would break SQL literals.
-    if s.contains('\'') || s.contains(';') {
-        return Err(ListQueryError::invalid_value("invalid datetime characters"));
-    }
-    if let Ok(n) = s.parse::<i64>() {
-        // Heuristic: ms vs seconds.
-        let secs = if n > 1_000_000_000_000 { n / 1000 } else { n };
-        let dt = chrono::DateTime::from_timestamp(secs, 0)
-            .ok_or_else(|| ListQueryError::invalid_value("invalid unix timestamp"))?;
-        return Ok(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
-    }
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Ok(dt
-            .with_timezone(&chrono::Utc)
-            .format("%Y-%m-%d %H:%M:%S%.3f")
-            .to_string());
-    }
-    for fmt in [
-        "%Y-%m-%d %H:%M:%S%.f",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%.f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-    ] {
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
-            return Ok(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
-        }
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(s, fmt)
-            && let Some(naive) = date.and_hms_opt(0, 0, 0)
-        {
-            return Ok(naive.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
-        }
-    }
-    // Already a CH-looking literal — pass through after length guard.
-    if s.len() <= 40
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || " -:.T+Z".contains(c))
-    {
-        return Ok(s.to_string());
-    }
-    Err(ListQueryError::invalid_value(format!(
-        "unrecognized datetime: {s}"
-    )))
-}
-
-fn between_datetime(value: &FilterValue) -> Result<(String, String), ListQueryError> {
+fn unix_seconds(value: &FilterValue) -> Result<u64, ListQueryError> {
     match value {
-        FilterValue::StringArray(v) if v.len() == 2 => Ok((
-            normalize_datetime_literal(&v[0])?,
-            normalize_datetime_literal(&v[1])?,
-        )),
-        FilterValue::NumberArray(v) if v.len() == 2 => Ok((
-            normalize_datetime_literal(&v[0].to_string())?,
-            normalize_datetime_literal(&v[1].to_string())?,
-        )),
+        FilterValue::Number(n) => seconds_from_f64(*n),
         _ => Err(ListQueryError::invalid_value(
-            "between requires 2 datetime values",
+            "timestamp filter value must be unix seconds",
         )),
     }
+}
+
+fn seconds_from_f64(n: f64) -> Result<u64, ListQueryError> {
+    if !n.is_finite() || n <= 0.0 || n.fract() != 0.0 {
+        return Err(ListQueryError::invalid_value(
+            "timestamp filter value must be positive integer unix seconds",
+        ));
+    }
+    Ok(mazbri_core::num::f64_to_u64(n))
 }
 
 fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
@@ -695,23 +633,47 @@ const _: &[FilterOp] = STRING_OPS;
 mod tests {
     use super::*;
 
-    #[test]
-    fn temporal_eq_compiles_to_1ms_bucket() {
-        let filter = ListFilter {
+    fn ts(op: FilterOp, value: FilterValue) -> Result<String, ListQueryError> {
+        compile_filter_condition(&ListFilter {
             field: "timestamp".to_string(),
-            op: FilterOp::Eq,
-            value: Some(FilterValue::String("2026-08-09 11:31:39.422".to_string())),
-        };
-        let sql = compile_filter_condition(&filter).expect("compile");
+            op,
+            value: Some(value),
+        })
+    }
+
+    #[test]
+    fn temporal_eq_compiles_to_one_second_bucket() {
         assert_eq!(
-            sql,
-            "timestamp >= '2026-08-09 11:31:39.422' AND timestamp < '2026-08-09 11:31:39.423'"
+            ts(FilterOp::Eq, FilterValue::Number(1_793_502_392.0)).expect("compile"),
+            "timestamp >= toDateTime(1793502392) AND timestamp < toDateTime(1793502393)"
         );
     }
 
     #[test]
-    fn datetime_literal_plus_1ms_rolls_second() {
-        let next = datetime_literal_plus_1ms("2026-08-09 11:31:39.999").unwrap();
-        assert_eq!(next, "2026-08-09 11:31:40.000");
+    fn temporal_range_ops_use_unix_seconds() {
+        assert_eq!(
+            ts(FilterOp::Gte, FilterValue::Number(1_793_502_000.0)).expect("gte"),
+            "timestamp >= toDateTime(1793502000)"
+        );
+        assert_eq!(
+            ts(FilterOp::Lte, FilterValue::Number(1_793_502_600.0)).expect("lte"),
+            "timestamp <= toDateTime(1793502600)"
+        );
+        assert_eq!(
+            ts(
+                FilterOp::Between,
+                FilterValue::NumberArray(vec![1_793_502_000.0, 1_793_502_600.0])
+            )
+            .expect("between"),
+            "timestamp >= toDateTime(1793502000) AND timestamp <= toDateTime(1793502600)"
+        );
+    }
+
+    #[test]
+    fn temporal_rejects_datetime_strings_and_fractions() {
+        assert!(ts(FilterOp::Gte, FilterValue::String("2026-11-01 11:00:00".into())).is_err());
+        assert!(ts(FilterOp::Gte, FilterValue::String("1793502000".into())).is_err());
+        assert!(ts(FilterOp::Gte, FilterValue::Number(1.5)).is_err());
+        assert!(ts(FilterOp::Gte, FilterValue::Number(-1.0)).is_err());
     }
 }

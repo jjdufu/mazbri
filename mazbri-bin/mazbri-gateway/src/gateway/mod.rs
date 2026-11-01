@@ -11,6 +11,7 @@ pub mod validation;
 pub mod balance;
 pub mod handler;
 pub mod post_response;
+pub mod rejection_log;
 pub mod state;
 
 pub use balance::balance_check_middleware;

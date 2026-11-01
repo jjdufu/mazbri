@@ -99,6 +99,30 @@ impl ProxyError {
     }
 }
 /// Build a unified gateway JSON error envelope (`success/status/error/request_id`).
+/// Business error code of a gateway error response, carried as a response extension so the
+/// rejection access log records it without parsing the body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatewayErrorCode(pub String);
+
+/// Default business error code and message for a bare error status.
+#[must_use]
+pub fn status_error_code(status: StatusCode) -> (&'static str, &'static str) {
+    match status.as_u16() {
+        504 => ("E5040", "Gateway Timeout"),
+        502 => ("E5020", "Upstream service unavailable"),
+        503 => ("E5030", "Service temporarily unavailable"),
+        408 => ("E5040", "Request Timeout"),
+        413 => ("E4130", "Request body exceeds size limit"),
+        401 => ("E4010", "Unauthorized"),
+        402 => ("E4020", "Insufficient balance"),
+        403 => ("E4030", "Forbidden"),
+        404 => ("E4040", "Not Found"),
+        429 => ("E4290", "Too Many Requests"),
+        400..=499 => ("E4000", "Bad Request"),
+        _ => ("E5000", "Internal Server Error"),
+    }
+}
+
 pub fn gateway_error_response(
     status: StatusCode,
     error_code: &str,
@@ -124,6 +148,9 @@ pub fn gateway_error_response_with_retry(
         request_id: Some(request_id),
     };
     let mut response = (status, Json(resp)).into_response();
+    response
+        .extensions_mut()
+        .insert(GatewayErrorCode(error_code.to_string()));
     let retry_value = match (status, retry_after_secs) {
         (StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE, Some(secs)) => {
             Some(secs.max(1).to_string())
