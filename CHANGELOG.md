@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.2.12](https://github.com/jjdufu/mazbri/compare/v0.2.11...v0.2.12) (2026-11-01)
+
+
+### Features
+
+* **analytics:** 登记流控/缓存指标目录与配额、租户、响应缓存 OLAP 模板 ([7fd7d3e](https://github.com/jjdufu/mazbri/commit/7fd7d3e886299cc811e342c274b03e2c29d9f744))
+* **mgmt:** 经营看板与对账日历 API，小时刷新收入成本物化视图 ([c86c5c7](https://github.com/jjdufu/mazbri/commit/c86c5c7962c26ceff6740b42f18145dd48b23c96))
+* **ops:** 上线证书/License 页与变更时间线（步骤 22） ([0d4a3fb](https://github.com/jjdufu/mazbri/commit/0d4a3fb4211e68855a13f468123a6d14c6c98178))
+* **ops:** 上线鉴权与安全事件页及 analytics 规则任务（步骤 25） ([5c2885f](https://github.com/jjdufu/mazbri/commit/5c2885f9f100eeaf38f2f5864df422cac79cce41))
+* **ops:** 产品排行、容量预测与异常检测（步骤 26） ([1522cbc](https://github.com/jjdufu/mazbri/commit/1522cbc186f3bc16c2f50c649478cac3b2eff73d))
+* **ops:** 埋点 gateway_quota_usage_ratio 并切换限流页与告警口径 ([de400c5](https://github.com/jjdufu/mazbri/commit/de400c5eeeebdfd5defd1727772926e5e26b36e3))
+* **ops:** 步骤21 NOC 大屏与服务拓扑 ([f912536](https://github.com/jjdufu/mazbri/commit/f91253635b05c22e82ee2bcbc34463f709f5e5d6))
+* **ops:** 步骤23 告警完善——静默/抑制/值班/通知渠道 ([5fc9e5b](https://github.com/jjdufu/mazbri/commit/5fc9e5b823d82f2085ac349847bc40d005327a4b))
+* **ops:** 步骤24 SLO / 错误预算——定义、燃烧率与可靠性页 ([c72914e](https://github.com/jjdufu/mazbri/commit/c72914e7ab17e5614f70ab77a9251efe76da2b4d))
+* **ops:** 运维控制台步骤 19–27 与后续修复正式合入 ([39c17d9](https://github.com/jjdufu/mazbri/commit/39c17d9ebfbd334e970300183e02847c8975bf5e))
+* **ops:** 首页偏好与自定义看板（步骤 27） ([17ea75f](https://github.com/jjdufu/mazbri/commit/17ea75f08d1a04f3649a872ce205ac10c78ebfaa))
+* **web:** 上线限流配额、缓存、对账中心、经营看板与租户 360 ([7416a58](https://github.com/jjdufu/mazbri/commit/7416a58f6de3ce59ed5496c8e8f6e0b1763ca412))
+* 上线运维基础设施三页（管道/中间件/主机容器） ([689ca49](https://github.com/jjdufu/mazbri/commit/689ca49dc703594bedd75afc132fa694d8a80f4f))
+* 登记运维基础设施指标目录与查询构造 ([967ca8a](https://github.com/jjdufu/mazbri/commit/967ca8a1df76c366f5663be0b5973039c5716f09))
+
+
+### Bug Fixes
+
+* **analytics:** CH 拓扑与时间过滤统一显式 UTC ([c23f270](https://github.com/jjdufu/mazbri/commit/c23f2700d83066df21c07dc0e3b0a647779759df))
+* **analytics:** security_events OLAP 避免 formatDateTime 别名遮蔽 ts 列 ([a52a203](https://github.com/jjdufu/mazbri/commit/a52a203a0a3804c93d3f184edb1e4f2d4673f34c))
+* **mgmt:** 为 pool_budget 文档中的 acquire_timeout 补反引号 ([0b3dcb2](https://github.com/jjdufu/mazbri/commit/0b3dcb28f904ff56971901c807b404ffa303ec36))
+* **mgmt:** 修复 admin 登录 pool acquire 超时的根因 ([52ee7b9](https://github.com/jjdufu/mazbri/commit/52ee7b912279e379c69f17163341c115d9d28e93))
+* **mgmt:** 登记运维可靠性与偏好 API 的路由访问控制 ([b28df83](https://github.com/jjdufu/mazbri/commit/b28df8387cb908cd31793b17da580874065459af))
+* **ops:** 为 dev19-mock 注入限流 429 与响应缓存命中种子 ([7be3ece](https://github.com/jjdufu/mazbri/commit/7be3eced950fb5929fa9aee54389cea874463a04))
+* **ops:** 修复基础设施页与调用拓扑的点测遗留问题 ([0caf729](https://github.com/jjdufu/mazbri/commit/0caf729325a31e28ac6ba88085c8f9395e4a6456))
+* **web:** OLAP 响应经 unknown 再断言，消除 vue-tsc 类型重叠错误 ([0f0d7bf](https://github.com/jjdufu/mazbri/commit/0f0d7bf821b3b19c0436aa8410f494d047c29dba))
+* **web:** 修复运维路由对象缺少闭合括号导致前端无法构建 ([4482d74](https://github.com/jjdufu/mazbri/commit/4482d7480474dfc9fc1c9be6f11a99089c9d02ee))
+
 ## [0.2.11](https://github.com/jjdufu/mazbri/compare/v0.2.10...v0.2.11) (2026-11-01)
 
 
