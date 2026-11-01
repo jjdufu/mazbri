@@ -954,7 +954,7 @@ fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
     let half = p.window_secs.unwrap_or(60);
     let limit = clamp_limit(p.limit, 20);
     let win = format!(
-        "timestamp >= toDateTime({from}) AND timestamp < toDateTime({to})",
+        "timestamp >= toDateTime({from}, 'UTC') AND timestamp < toDateTime({to}, 'UTC')",
         from = p.ts.saturating_sub(half),
         to = p.ts.saturating_add(half),
     );
@@ -1278,7 +1278,7 @@ mod tests {
         q.validate().expect("valid params");
         let sql = q.sql();
         assert!(sql.text.contains("quantileTDigest(0.99)(duration_ms)"));
-        assert!(sql.text.contains("toDateTime(1699999940)"));
+        assert!(sql.text.contains("toDateTime(1699999940, 'UTC')"));
         assert!(sql.text.contains("duration_ms >= p99"));
         assert_eq!(sql.binds, vec!["p1".to_string(), "p1".to_string()]);
         let wide = parse(

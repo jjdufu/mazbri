@@ -101,7 +101,7 @@ impl Runner {
     }
 
     async fn forecast(&self) -> anyhow::Result<()> {
-        let sql = "SELECT toUInt32(toStartOfDay(ts_1h)) AS day, \
+        let sql = "SELECT toUInt32(toStartOfDay(ts_1h, 'UTC')) AS day, \
              toFloat64(countMerge(c)) / 86400.0 AS qps \
              FROM req_agg_1h \
              WHERE ts_1h >= now() - INTERVAL 90 DAY \

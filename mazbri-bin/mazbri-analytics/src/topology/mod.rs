@@ -390,13 +390,15 @@ struct UpstreamAggRow {
 }
 
 fn upstream_sql(start: i64, end: i64) -> String {
+    let start_dt = crate::clickhouse::queries::ch_datetime_utc(start);
+    let end_dt = crate::clickhouse::queries::ch_datetime_utc(end);
     format!(
         "SELECT supplier_code, toUInt64(count()) AS calls, \
          toUInt64(countIf(status_code >= 500 OR error_class IN ('timeout','upstream_error','connect_error'))) AS errors, \
          toFloat64(quantileTDigest(0.99)(duration_ms)) AS p99_ms \
          FROM request_logs \
          WHERE event_target = 'gateway' \
-           AND timestamp >= toDateTime({start}) AND timestamp < toDateTime({end}) \
+           AND timestamp >= {start_dt} AND timestamp < {end_dt} \
            AND supplier_code != '' \
          GROUP BY supplier_code \
          ORDER BY calls DESC \
@@ -585,6 +587,25 @@ mod tests {
         assert_eq!(edges.len(), 1);
         assert!((edges[0].error_rate - 0.1).abs() < 1e-9);
         assert_eq!(edges[0].origin, "metric");
+    }
+
+    #[test]
+    fn upstream_sql_uses_utc_datetime() {
+        let sql = upstream_sql(1_700_000_000, 1_700_003_600);
+        assert!(
+            sql.contains("toDateTime(1700000000, 'UTC')"),
+            "start bound must be UTC: {sql}"
+        );
+        assert!(
+            sql.contains("toDateTime(1700003600, 'UTC')"),
+            "end bound must be UTC: {sql}"
+        );
+        assert!(
+            !sql.contains("toDateTime(1700000000) AND")
+                && !sql.contains(">= toDateTime(1700000000) "),
+            "bare toDateTime(unix) without UTC must not appear: {sql}"
+        );
+        assert!(sql.contains("event_target = 'gateway'"));
     }
 
     #[test]

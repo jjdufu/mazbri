@@ -5,6 +5,14 @@ use crate::greptimedb::{
 };
 use mazbri_core::num::SaturatingFrom;
 
+/// Unix 秒 → `ClickHouse` 字面量，时区显式 UTC。
+/// `request_logs.timestamp` 为 `DateTime64(9, 'UTC')`；裸 `toDateTime(unix)` 走服务器时区
+///（本环境 `Asia/Shanghai`），与 UTC 列比较会偏 8 小时。
+#[must_use]
+pub fn ch_datetime_utc(unix_secs: i64) -> String {
+    format!("toDateTime({unix_secs}, 'UTC')")
+}
+
 #[must_use]
 pub fn build_where_clause(conditions: &[String]) -> String {
     if conditions.is_empty() {
@@ -272,16 +280,17 @@ pub fn build_aggregation_by_status_sql(where_clause: &str) -> String {
 
 #[must_use]
 pub fn get_time_bucket_expression(group_by: &str) -> String {
+    // 日/小时桶显式 UTC，与 DateTime64(..., 'UTC') 列及收入等趋势图口径一致。
     match group_by {
-        "hour" => "toStartOfHour(timestamp)".to_string(),
-        _ => "toStartOfDay(timestamp)".to_string(),
+        "hour" => "toStartOfHour(timestamp, 'UTC')".to_string(),
+        _ => "toStartOfDay(timestamp, 'UTC')".to_string(),
     }
 }
 
 #[must_use]
 pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> String {
     format!(
-        "SELECT toDateTime({time_expr}) AS time, toUInt64(count()) AS count \
+        "SELECT toDateTime({time_expr}, 'UTC') AS time, toUInt64(count()) AS count \
         FROM request_logs FINAL{where_clause} \
         GROUP BY time ORDER BY time"
     )
@@ -377,5 +386,18 @@ mod call_search_sql_tests {
         assert!(sql.contains("request_id IN ('a-1', 'b-2')"));
         assert!(sql.contains(&format!("LIMIT {MAX_STAGE_ROWS}")));
         assert!(build_request_stages_sql(&["x' OR 1=1".to_string()]).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod time_bucket_tests {
+    use super::{ch_datetime_utc, get_time_bucket_expression};
+
+    #[test]
+    fn time_bucket_expression_is_explicit_utc() {
+        assert_eq!(get_time_bucket_expression("hour"), "toStartOfHour(timestamp, 'UTC')");
+        assert_eq!(get_time_bucket_expression("day"), "toStartOfDay(timestamp, 'UTC')");
+        assert_eq!(ch_datetime_utc(1_700_000_000), "toDateTime(1700000000, 'UTC')");
     }
 }
