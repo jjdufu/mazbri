@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.11](https://github.com/jjdufu/mazbri/compare/v0.2.10...v0.2.11) (2026-11-01)
+
+
+### Features
+
+* **alerting:** 邮件为默认告警通知渠道，评估轮次加 PG advisory lock（第 09 步跟进） ([b074355](https://github.com/jjdufu/mazbri/commit/b0743558c0695c76014114ec158ea82da9f86e15))
+* **analytics,gateway,mgmt:** step 03 cost/stage columns and OLAP template API ([a907c01](https://github.com/jjdufu/mazbri/commit/a907c0104af00777f7cff579e1aabf7b74528701))
+* **analytics:** 指标时序接口改为多序列返回，配合 Prometheus remote write 修复 P95/P99 ([1a8489b](https://github.com/jjdufu/mazbri/commit/1a8489b28fc34c8d62d3a1b7f5b10696db2a48d8))
+* **metrics:** 11 个服务统一暴露 build_info、进程资源与 tokio 运行时指标（步骤 10） ([cc4ae48](https://github.com/jjdufu/mazbri/commit/cc4ae48f55650f464131e2ed172a506dab32e981))
+* **metrics:** 采集 tarpc RPC 与依赖客户端 RED 指标（步骤 11） ([4e60d0a](https://github.com/jjdufu/mazbri/commit/4e60d0abce789967a67edd1db744c5bb081dfa58))
+* **ops:** gateway RED, latency breakdown and error analysis pages (step 06) ([c274be2](https://github.com/jjdufu/mazbri/commit/c274be2ef7d4644ef9db5a7ba9f3cb8b15b2a72a))
+* **ops:** global overview, service health matrix and detail (step 05) ([59699a5](https://github.com/jjdufu/mazbri/commit/59699a592cc8c432c5a1d6ab8e6fa79cff0d1898))
+* **ops:** supplier SLA, breaker/retry and billing pipeline health pages (step 07) ([7f19884](https://github.com/jjdufu/mazbri/commit/7f198841d9e485c55da7d9a3a5671cbbfd48d27c))
+* **ops:** 最小告警中心（第 09 步）——规则评估、事件生命周期、webhook 通知与管理台页面 ([42e639e](https://github.com/jjdufu/mazbri/commit/42e639e407ebbc64ed34785022d10b05d7d2d4b5))
+* **ops:** 步骤 08 调用检索页（合并客户/上游调用监控，直方图 + 阶段 Tab） ([32a486d](https://github.com/jjdufu/mazbri/commit/32a486d95e28f19d3551396482115b5880226195))
+* **ops:** 步骤 12 采集与业务埋点 ([c862a80](https://github.com/jjdufu/mazbri/commit/c862a8063c6fb007e4e3d6926943f68cf44d0dea))
+* **otlp:** 全量采集、span 白名单、SpanLimits 与可观测的导出队列（步骤 17） ([939eb2c](https://github.com/jjdufu/mazbri/commit/939eb2c3f6f9bba6b382000d5cb3bf6238799c90))
+* **ratelimit:** api_limits 只保留 {qps,burst} 对象格式 ([9652b88](https://github.com/jjdufu/mazbri/commit/9652b883c8764531e781564001ab10f82d4ab411))
+* **trace:** W3C Trace Context 跨 HTTP / gRPC / tarpc 透传 ([677bbb4](https://github.com/jjdufu/mazbri/commit/677bbb40173de6f278d11dd7f415296fbc40bc09))
+* **trace:** 关键路径 span 埋点与日志 trace_id/span_id 关联 ([2efb066](https://github.com/jjdufu/mazbri/commit/2efb066021e448023d1cc78f71b17fc0cd482381))
+* **trace:** 控制台 Trace 检索、瀑布详情、服务依赖与各页跳转（步骤 18） ([6501414](https://github.com/jjdufu/mazbri/commit/650141471ff75b7e3e163f83f600b549c0ee70c3))
+* **web:** role-based home, ops overview/screen shell, shared ops widgets (step 04) ([a180bc4](https://github.com/jjdufu/mazbri/commit/a180bc49a2a6c0bbd45ac4a759bda4d94d678abd))
+
+
+### Bug Fixes
+
+* **analytics:** reject non-unix-second timestamp filters with 400 ([15b0d26](https://github.com/jjdufu/mazbri/commit/15b0d2643860a0ba094c6105a2925f0b3cbd46bb))
+* **gateway:** cbpro 预热改用 CBProServiceClient，移除误用的 HttpUpstream tarpc 池 ([cd86c3e](https://github.com/jjdufu/mazbri/commit/cd86c3e57d49a129065b57bd5f4218e69a9259da))
+* **metrics:** 修正监控指标口径并按 event_target 过滤访问日志（步骤 02） ([7d2206b](https://github.com/jjdufu/mazbri/commit/7d2206b3a1f60ffa3c21b7dc9466b9800268f3ac))
+* **metrics:** 未接入数据库的服务健康状态不再判为不健康 ([5c503ea](https://github.com/jjdufu/mazbri/commit/5c503eac3ddfd2fa58e31bedf989ae59912aa2db))
+* **ops:** call-search trace links, time picker, histogram brush, deep-link aliases, unix input zone ([92b849b](https://github.com/jjdufu/mazbri/commit/92b849b094eb253bd8b95f452fc711a89af7ed17))
+* **ops:** 调用检索参数、trace 计费流水数据源与总览 P99 曲线点击（步骤 18 补修） ([acf143a](https://github.com/jjdufu/mazbri/commit/acf143aae89d559b5c54eab80216b84271a48f1b))
+* **otel:** export spans via Vector OTLP receiver (step 14) ([6408e20](https://github.com/jjdufu/mazbri/commit/6408e20ab70fca0ee2de53a77347991f218d4c1b))
+* **step18c:** unix-second time filters; log gateway rejections to request_logs ([ddb5eee](https://github.com/jjdufu/mazbri/commit/ddb5eeef773727f0f809f821ed350c0a497cdde6))
+
 ## [0.2.10](https://github.com/jjdufu/mazbri/compare/v0.2.9...v0.2.10) (2026-10-29)
 
 
