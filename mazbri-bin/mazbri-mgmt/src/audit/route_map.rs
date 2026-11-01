@@ -652,7 +652,6 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/tenants/{code}/analytics", R::Tenant),
     read("/tenants/{code}/analytics/ratelimit", R::Tenant),
     read("/stats/platform", R::System),
-    read("/stats/ratelimit", R::System),
     read("/stats/metrics/overview", R::System),
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
@@ -730,6 +729,10 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/billing/ops/funnel", R::Billing),
     read("/billing/ops/failures", R::Billing),
     read("/billing/ops/supplier-costs", R::Billing),
+    read("/billing/ops/finance/overview", R::Billing),
+    read("/billing/ops/finance/ranks", R::Billing),
+    read("/billing/ops/finance/balances", R::Billing),
+    read("/billing/ops/reconcile/calendar", R::Billing),
     write(
         "POST",
         "/billing/bills/generate",

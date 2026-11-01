@@ -6,6 +6,7 @@ pub mod api_key;
 pub mod appearance;
 pub mod billing;
 pub mod billing_ops;
+pub mod finance_ops;
 pub mod billing_reconciliation_settings;
 pub mod callback;
 pub mod config;

@@ -19,10 +19,7 @@ pub fn routes() -> Router<AppState> {
             "/stats/platform",
             get(analytics_handlers::get_platform_stats),
         )
-        .route(
-            "/stats/ratelimit",
-            get(analytics_handlers::get_ratelimit_platform_stats),
-        )
+
         .route(
             "/stats/metrics/overview",
             get(analytics_handlers::get_metrics_overview),

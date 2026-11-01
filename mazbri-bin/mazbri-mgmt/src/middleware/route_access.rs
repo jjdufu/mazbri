@@ -111,6 +111,10 @@ pub const RULES: &[RouteRule] = &[
     rule("GET", "/billing/ops/failures", AnyRole),
     rule("GET", "/billing/ops/funnel", AnyRole),
     rule("GET", "/billing/ops/supplier-costs", Roles(BIZ)),
+    rule("GET", "/billing/ops/finance/overview", Roles(BIZ)),
+    rule("GET", "/billing/ops/finance/ranks", Roles(BIZ)),
+    rule("GET", "/billing/ops/finance/balances", Roles(BIZ)),
+    rule("GET", "/billing/ops/reconcile/calendar", Roles(BIZ)),
     rule("POST", "/billing/reconciliation/audit", Roles(BIZ)),
     rule("GET", "/billing/reconciliation/discrepancies", AnyRole),
     rule(
@@ -233,7 +237,6 @@ pub const RULES: &[RouteRule] = &[
     rule("GET", "/stats/metrics/services/health", AnyRole),
     rule("POST", "/stats/olap/query", AnyRole),
     rule("GET", "/stats/platform", AnyRole),
-    rule("GET", "/stats/ratelimit", AnyRole),
     rule("GET", "/stats/traces/billing", Roles(BIZ)),
     rule("GET", "/stats/traces/dependencies", AnyRole),
     rule("GET", "/stats/traces/search", AnyRole),
