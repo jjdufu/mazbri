@@ -783,11 +783,20 @@ fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
 
 /// 步骤 19：数据管道 / 中间件 / 主机与容器（步骤 13 已采集的指标）。
 /// 容器名标签：compose 来自 cAdvisor docker 白名单（`name` / compose service 标签）；
-/// 裸 k8s 来自 kubelet cAdvisor（kubernetes pod/container 标签）；都没有时前端用短 id。
-const CONTAINER_ID_FILTER: &str =
-    r#"id=~"/docker/.+|/kubepods.*|/cri-containerd.*""#;
+/// 裸 k8s 来自 kubelet cAdvisor（kubernetes pod/container 标签）。
+/// 查询侧要求至少有 name（docker）或 k8s container 名，丢掉仅有 id 的序列，避免图例短 hex。
+const CONTAINER_DOCKER_FILTER: &str = r#"id=~"/docker/.+",name!="""#;
+const CONTAINER_K8S_FILTER: &str =
+    r#"id=~"/kubepods.*|/cri-containerd.*",container_label_io_kubernetes_container_name!="""#;
 const CONTAINER_BY: &str = "name, image, container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name, id";
 const FS_FILTER: &str = r#"filesystem=~"ext4|xfs|overlay""#;
+
+/// `metric{docker} or metric{k8s}`，两边都带 identity 过滤。
+fn container_or(metric: &str, selectors_suffix: &str) -> String {
+    format!(
+        "{metric}{{{CONTAINER_DOCKER_FILTER}{selectors_suffix}}} or          {metric}{{{CONTAINER_K8S_FILTER}{selectors_suffix}}}"
+    )
+}
 
 const INFRA_CATALOG: &[(&str, &str, &str, &str)] = &[
     // 9.1 数据管道
@@ -938,7 +947,7 @@ const INFRA_CATALOG: &[(&str, &str, &str, &str)] = &[
         "line",
     ),
     ("container_oom_events", "容器 OOM 事件", "events", "line"),
-    ("container_fs_usage_mb", "容器文件系统用量", "MB", "line"),
+    ("container_fs_usage_mb", "容器文件系统用量（containerd snapshotter 下常无 per-container 序列，页面已隐藏）", "MB", "line"),
     (
         "container_network_rx_bytes",
         "容器网络收吞吐",
@@ -1095,25 +1104,32 @@ fn infra_query_host(metric: &str, window: u64) -> Option<String> {
 fn infra_query_container(metric: &str, window: u64) -> Option<String> {
     Some(match metric {
         "container_cpu_cores" => format!(
-            "sum by ({CONTAINER_BY}) (rate(container_cpu_usage_seconds_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
+            container_or("container_cpu_usage_seconds_total", "")
         ),
         "container_memory_mb" => format!(
-            "sum by ({CONTAINER_BY}) (container_memory_working_set_bytes{{{CONTAINER_ID_FILTER}}}) / 1048576"
+            "sum by ({CONTAINER_BY}) ({}) / 1048576",
+            container_or("container_memory_working_set_bytes", "")
         ),
         "container_restarts" => format!(
-            "sum by ({CONTAINER_BY}) (changes(container_start_time_seconds{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+            "sum by ({CONTAINER_BY}) (changes({}[{window}s]))",
+            container_or("container_start_time_seconds", "")
         ),
         "container_oom_events" => format!(
-            "sum by ({CONTAINER_BY}) (increase(container_oom_events_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+            "sum by ({CONTAINER_BY}) (increase({}[{window}s]))",
+            container_or("container_oom_events_total", "")
         ),
         "container_fs_usage_mb" => format!(
-            "sum by ({CONTAINER_BY}) (container_fs_usage_bytes{{{CONTAINER_ID_FILTER}}}) / 1048576"
+            "sum by ({CONTAINER_BY}) ({}) / 1048576",
+            container_or("container_fs_usage_bytes", "")
         ),
         "container_network_rx_bytes" => format!(
-            "sum by ({CONTAINER_BY}) (rate(container_network_receive_bytes_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
+            container_or("container_network_receive_bytes_total", "")
         ),
         "container_network_tx_bytes" => format!(
-            "sum by ({CONTAINER_BY}) (rate(container_network_transmit_bytes_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
+            container_or("container_network_transmit_bytes_total", "")
         ),
         _ => return None,
     })
@@ -1754,6 +1770,8 @@ mod tests {
         assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#));
         let q = build_metric_query("container_cpu_cores", None, &t, 60)?;
         assert!(q.contains("container_cpu_usage_seconds_total"));
+        assert!(q.contains(r#"name!="""#), "{q}");
+        assert!(q.contains("container_label_io_kubernetes_container_name!="), "{q}");
         assert!(q.contains("container_label_com_docker_compose_service"));
         assert!(q.contains("container_label_io_kubernetes_pod_name"));
         let q = build_metric_query("vector_buffer_usage_ratio", None, &t, 60)?;

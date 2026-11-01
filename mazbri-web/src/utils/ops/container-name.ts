@@ -21,6 +21,20 @@ export function containerDisplayName(
   return leaf.slice(0, 12);
 }
 
+/** True when the series carries a human identity label (not id-only). */
+export function hasContainerIdentity(
+  labels: Record<string, string> | null | undefined,
+): boolean {
+  const l = labels || {};
+  if (l.container_label_com_docker_compose_service?.trim()) return true;
+  if (l.container_label_io_kubernetes_container_name?.trim()) return true;
+  if (l.container_label_io_kubernetes_pod_name?.trim()) return true;
+  const name = l.name?.trim();
+  if (name && name !== "/" && !looksLikeContainerId(name)) return true;
+  if (imageBaseName(l.image)) return true;
+  return false;
+}
+
 function looksLikeContainerId(value: string): boolean {
   const v = value.replace(/^\//, "");
   return /^[0-9a-f]{12,64}$/i.test(v);
@@ -36,12 +50,14 @@ function imageBaseName(image: string | undefined): string | null {
   return leaf;
 }
 
-/** Remap timeseries labels so charts show a single readable container name. */
+/** Remap timeseries labels so charts show a single readable container name; drop id-only. */
 export function withContainerDisplayName<
   T extends { labels: Record<string, string> },
 >(series: T[]): T[] {
-  return series.map((s) => ({
-    ...s,
-    labels: { container: containerDisplayName(s.labels) },
-  }));
+  return series
+    .filter((s) => hasContainerIdentity(s.labels))
+    .map((s) => ({
+      ...s,
+      labels: { container: containerDisplayName(s.labels) },
+    }));
 }

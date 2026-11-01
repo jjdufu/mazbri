@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   containerDisplayName,
+  hasContainerIdentity,
   withContainerDisplayName,
 } from "../container-name";
 
@@ -58,6 +59,24 @@ describe("containerDisplayName", () => {
     assert.equal(containerDisplayName({}), "unknown");
   });
 
+  it("drops id-only series", () => {
+    assert.equal(
+      hasContainerIdentity({ id: "/docker/deadbeefcafebabe0123" }),
+      false,
+    );
+    const out = withContainerDisplayName([
+      { labels: { id: "/docker/deadbeefcafebabe0123" } },
+      {
+        labels: {
+          container_label_com_docker_compose_service: "vector",
+          id: "/docker/1",
+        },
+      },
+    ]);
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].labels, { container: "vector" });
+  });
+
   it("remaps series labels for charts", () => {
     const out = withContainerDisplayName([
       {
@@ -66,7 +85,6 @@ describe("containerDisplayName", () => {
           container_label_com_docker_compose_service: "vector",
           id: "/docker/1",
         },
-        points: [],
       },
     ]);
     assert.deepEqual(out[0].labels, { container: "vector" });

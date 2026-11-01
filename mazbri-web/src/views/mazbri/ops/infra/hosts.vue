@@ -40,7 +40,7 @@ import { withContainerDisplayName } from "@/utils/ops/container-name";
 defineOptions({ name: "OpsInfraHosts" });
 
 const CHART_METRICS = [
-  "host_cpu_usage_ratio", "host_load1", "host_memory_usage_ratio", "host_filesystem_usage_ratio", "host_disk_read_bytes", "host_disk_write_bytes", "host_network_rx_bytes", "host_network_tx_bytes", "container_cpu_cores", "container_memory_mb", "container_restarts", "container_oom_events", "container_fs_usage_mb", "container_network_rx_bytes", "container_network_tx_bytes",
+  "host_cpu_usage_ratio", "host_load1", "host_memory_usage_ratio", "host_filesystem_usage_ratio", "host_disk_read_bytes", "host_disk_write_bytes", "host_network_rx_bytes", "host_network_tx_bytes", "container_cpu_cores", "container_memory_mb", "container_restarts", "container_oom_events", "container_network_rx_bytes", "container_network_tx_bytes",
 ] as const;
 type ChartMetric = (typeof CHART_METRICS)[number];
 
@@ -57,7 +57,6 @@ const chartDefs = [
   { metric: "container_memory_mb" as const, title: "ops.infra.charts.ctrMem" },
   { metric: "container_restarts" as const, title: "ops.infra.charts.ctrRestarts" },
   { metric: "container_oom_events" as const, title: "ops.infra.charts.ctrOom" },
-  { metric: "container_fs_usage_mb" as const, title: "ops.infra.charts.ctrFs" },
   { metric: "container_network_rx_bytes" as const, title: "ops.infra.charts.ctrNetRx" },
   { metric: "container_network_tx_bytes" as const, title: "ops.infra.charts.ctrNetTx" },
 ];
