@@ -7,22 +7,28 @@ import { onMounted, onUnmounted, ref, watch } from "vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import type { MetricSeries } from "@/types/api/monitoring";
 
+export interface PointClick {
+  /** Unix seconds of the data point nearest to the click. */
+  timestamp: number;
+  value: number;
+  seriesIndex: number;
+}
+
 const props = withDefaults(
   defineProps<{
     series?: MetricSeries | null;
     loading?: boolean;
     height?: string;
+    /** Bound via `@point-click`; when absent the chart is not clickable. */
+    onPointClick?: (point: PointClick) => void;
   }>(),
   {
     series: null,
     loading: false,
     height: "280px",
+    onPointClick: undefined,
   },
 );
-
-const emit = defineEmits<{
-  pointClick: [{ timestamp: number; value: number; seriesIndex: number }];
-}>();
 
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
@@ -30,7 +36,9 @@ let chart: echarts.ECharts | null = null;
 function buildOption(data: MetricSeries | null): EChartsOption {
   const seriesList = data?.series ?? [];
   const legend = seriesList.map((s, i) => {
-    const label = Object.values(s.labels || {}).filter(Boolean).join(" / ");
+    const label = Object.values(s.labels || {})
+      .filter(Boolean)
+      .join(" / ");
     return label || `${data?.label || data?.metric || "series"}#${i + 1}`;
   });
   return {
@@ -61,20 +69,38 @@ function buildOption(data: MetricSeries | null): EChartsOption {
   };
 }
 
+/** Maps a click anywhere in the grid to the nearest data point in time (then value). */
+function handleZrClick(x: number, y: number) {
+  if (!chart || !props.onPointClick) return;
+  if (!chart.containPixel({ gridIndex: 0 }, [x, y])) return;
+  const [clickTs, clickVal] = chart.convertFromPixel({ gridIndex: 0 }, [
+    x,
+    y,
+  ]) as number[];
+  let best: PointClick | null = null;
+  let bestDt = Infinity;
+  let bestDv = Infinity;
+  const seriesList = props.series?.series ?? [];
+  for (const [seriesIndex, s] of seriesList.entries()) {
+    for (const p of s.points || []) {
+      const dt = Math.abs(p.timestamp * 1000 - clickTs);
+      const dv = Math.abs(p.value - clickVal);
+      if (dt < bestDt || (dt === bestDt && dv < bestDv)) {
+        bestDt = dt;
+        bestDv = dv;
+        best = { timestamp: p.timestamp, value: p.value, seriesIndex };
+      }
+    }
+  }
+  if (best) props.onPointClick(best);
+}
+
 function render() {
   if (!chartRef.value) return;
   if (!chart) {
     chart = echarts.init(chartRef.value);
-    chart.on("click", (params) => {
-      const ts = Array.isArray(params.value) ? Number(params.value[0]) : NaN;
-      const val = Array.isArray(params.value) ? Number(params.value[1]) : NaN;
-      if (Number.isFinite(ts) && Number.isFinite(val)) {
-        emit("pointClick", {
-          timestamp: Math.floor(ts / 1000),
-          value: val,
-          seriesIndex: params.seriesIndex ?? 0,
-        });
-      }
+    chart.getZr().on("click", (event) => {
+      if (props.onPointClick) handleZrClick(event.offsetX, event.offsetY);
     });
   }
   chart.setOption(buildOption(props.series), true);

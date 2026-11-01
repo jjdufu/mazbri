@@ -220,7 +220,7 @@ async function onErrorClick(row: ErrorCellRow | NewErrorRow) {
         { field: "error_code", op: "eq", value: row.error_code },
         ...timestampFiltersFromRange(timeRange.value),
       ],
-      encodeMode: "both",
+      encodeMode: "json",
       extra: { page: 1, page_size: 10 },
     }) as CallMonitorQuery;
     const res = await fetchCustomerCallLogs(params);

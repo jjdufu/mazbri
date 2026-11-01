@@ -24,7 +24,7 @@ pub async fn get_trace_billing(
     State(state): State<AppState>,
     Query(params): Query<TraceBillingParams>,
 ) -> axum::response::Response {
-    traces::billing(&state.db, &params).await
+    traces::billing(&state.billing_db, &params).await
 }
 
 /// `GET /stats/traces/{trace_id}`

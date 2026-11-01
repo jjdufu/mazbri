@@ -146,7 +146,7 @@ export function useListQuery(options: UseListQueryOptions) {
     buildListQueryParams({
       q: q.value,
       filters: filters.value,
-      encodeMode: options.encodeMode ?? "both",
+      encodeMode: options.encodeMode ?? "json",
       extra,
     });
 

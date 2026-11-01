@@ -1,26 +1,19 @@
 import type { ListFilter } from "@/types/list-query";
 
-export type ListQueryEncodeMode = "json" | "flat" | "both";
-
-
-
-
-
-
+export type ListQueryEncodeMode = "json" | "flat";
 
 export function encodeFilters(
   filters: ListFilter[] | undefined,
-  mode: ListQueryEncodeMode = "both",
+  mode: ListQueryEncodeMode = "json",
 ): Record<string, string> {
   if (!filters?.length) return {};
   const out: Record<string, string> = {};
-  if (mode === "json" || mode === "both") {
+  if (mode === "json") {
     out.filters = JSON.stringify(filters);
+    return out;
   }
-  if (mode === "flat" || mode === "both") {
-    for (const f of filters) {
-      Object.assign(out, encodeFlatFilter(f));
-    }
+  for (const f of filters) {
+    Object.assign(out, encodeFlatFilter(f));
   }
   return out;
 }
@@ -43,7 +36,6 @@ function encodeFlatFilter(f: ListFilter): Record<string, string> {
   return { [`${field}_${op}`]: String(value) };
 }
 
-
 export function buildListQueryParams(options: {
   q?: string;
   filters?: ListFilter[];
@@ -58,11 +50,10 @@ export function buildListQueryParams(options: {
   }
   Object.assign(
     params,
-    encodeFilters(options.filters, options.encodeMode ?? "both"),
+    encodeFilters(options.filters, options.encodeMode ?? "json"),
   );
   return params;
 }
-
 
 export function formatFilterChipText(options: {
   fieldLabel: string;

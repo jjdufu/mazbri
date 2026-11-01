@@ -332,7 +332,7 @@ const { q, filters, toRequestParams } = useListQuery({
   catalog: listCatalog,
   searchOnQChange: false,
   onChange: () => {},
-  encodeMode: "both",
+  encodeMode: "json",
 });
 
 
