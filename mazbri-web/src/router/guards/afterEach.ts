@@ -5,10 +5,16 @@ import NProgress from "nprogress";
 import { useCommon } from "@/hooks/core/useCommon";
 import { loadingService } from "@/utils/ui";
 import { routeInitState } from "./routeInitState";
+import { useMenuStore } from "@/store/modules/menu";
 export function setupAfterEachGuard(router: Router) {
   const { scrollToTop } = useCommon();
-  router.afterEach(() => {
+  router.afterEach((to) => {
     scrollToTop();
+    try {
+      useMenuStore().rememberLastPath(to.path);
+    } catch {
+      /* pinia may be unavailable during early boot */
+    }
     const settingStore = useSettingStore();
     if (settingStore.showNprogress) {
       NProgress.done();
