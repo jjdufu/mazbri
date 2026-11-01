@@ -179,6 +179,40 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
 
       {
+        path: "billing/reconcile",
+        name: "OpsBillingReconcile",
+        component: "/mazbri/ops/billing/reconcile",
+        meta: {
+          title: "menus.mazbri.billingReconcile",
+          icon: "ri:calendar-check-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "flow/ratelimit",
+        name: "OpsFlowRatelimit",
+        component: "/mazbri/ops/flow/ratelimit",
+        meta: {
+          title: "menus.mazbri.flowRatelimit",
+          icon: "ri:speed-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "flow/cache",
+        name: "OpsFlowCache",
+        component: "/mazbri/ops/flow/cache",
+        meta: {
+          title: "menus.mazbri.flowCache",
+          icon: "ri:database-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+
+      {
         path: "infra/pipeline",
         name: "OpsInfraPipeline",
         component: "/mazbri/ops/infra/pipeline",
@@ -381,12 +415,10 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
       {
         path: "usage-reconciliation",
-        name: "UsageReconciliation",
-        component: "/mazbri/billing/usage-reconciliation/index",
+        redirect: "/ops/billing/reconcile",
         meta: {
           title: "menus.mazbri.usageReconciliation",
-          icon: "ri:file-search-line",
-          keepAlive: false,
+          isHide: true,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },

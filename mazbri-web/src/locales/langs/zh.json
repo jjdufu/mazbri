@@ -857,7 +857,10 @@
       "opsTraceDetail": "链路详情",
       "infraPipeline": "数据管道",
       "infraMiddleware": "中间件",
-      "infraHosts": "主机与容器"
+      "infraHosts": "主机与容器",
+      "flowRatelimit": "限流配额",
+      "flowCache": "缓存",
+      "billingReconcile": "对账中心"
     }
   },
   "systemSettings": {
@@ -2816,7 +2819,8 @@
         "accessStrategy": "接入策略",
         "transportEncryption": "传输加密",
         "account": "账户余额",
-        "products": "已开通产品"
+        "products": "已开通产品",
+        "overview360": "概览 360"
       },
       "basicInfo": {
         "title": "基本信息",
@@ -3180,6 +3184,17 @@
       "cbproName": "CBPRO",
       "cbproSummary": "",
       "openProductsTab": "已开通产品"
+    },
+    "overview360": {
+      "calls": "调用量",
+      "successRate": "成功率",
+      "p95": "P95",
+      "cost": "消费",
+      "health": "健康分",
+      "errors": "错误分布",
+      "errorCode": "错误码",
+      "count": "次数",
+      "loadFailed": "租户 360 加载失败"
     }
   },
   "rateLimit": {
@@ -4166,7 +4181,25 @@
       "title": "运营大屏"
     },
     "finance": {
-      "placeholder": "经营看板将在后续步骤完善"
+      "placeholder": "经营看板",
+      "revenue": "收入",
+      "cost": "成本",
+      "margin": "毛利",
+      "marginRate": "毛利率",
+      "invertedWarn": "单价/成本倒挂日期",
+      "trend": "收入/成本/毛利趋势",
+      "rankTenant": "租户排行",
+      "rankProduct": "产品排行",
+      "rankSupplier": "供应商排行",
+      "balances": "余额与可用天数",
+      "key": "维度",
+      "tenantId": "租户 ID",
+      "available": "可用余额",
+      "recharge": "近 30 日充值",
+      "avgSpend": "近 7 日日均消费",
+      "daysLeft": "可用天数",
+      "status": "状态",
+      "loadFailed": "经营看板加载失败"
     },
     "services": {
       "refresh": "刷新",
@@ -4547,6 +4580,30 @@
         "ctrNetRx": "容器网络收",
         "ctrNetTx": "容器网络发"
       }
+    },
+    "flow": {
+      "quotaTop": "配额拒绝 Top（429）",
+      "decisions": "限流决策",
+      "channelDecisions": "渠道限流决策",
+      "snapshotAge": "快照年龄",
+      "snapshotRefresh": "快照刷新",
+      "usageFlush": "用量 flush",
+      "rejections": "拒绝速率",
+      "tenant": "租户",
+      "rejects429": "429 次数",
+      "cacheHitRatio": "缓存命中率",
+      "responseCacheHit": "响应缓存命中率",
+      "cacheEntries": "缓存条目",
+      "cacheMemory": "缓存内存",
+      "cacheOperations": "缓存操作",
+      "cacheP95": "缓存操作 P95",
+      "cryptoCache": "crypto 缓存",
+      "bypassCache": "bypass 配置缓存",
+      "loadFailed": "流控/缓存数据加载失败"
+    },
+    "reconcile": {
+      "calendar": "对账日历",
+      "loadFailed": "对账日历加载失败"
     }
   }
 }

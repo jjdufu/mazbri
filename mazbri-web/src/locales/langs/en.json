@@ -857,7 +857,10 @@
       "opsTraceDetail": "Trace detail",
       "infraPipeline": "Data pipeline",
       "infraMiddleware": "Middleware",
-      "infraHosts": "Hosts & containers"
+      "infraHosts": "Hosts & containers",
+      "flowRatelimit": "Rate Limit",
+      "flowCache": "Cache",
+      "billingReconcile": "Reconciliation"
     }
   },
   "systemSettings": {
@@ -2816,7 +2819,8 @@
         "accessStrategy": "Access Strategy",
         "transportEncryption": "Transport Encryption",
         "account": "Account Balance",
-        "products": "Granted Products"
+        "products": "Granted Products",
+        "overview360": "Overview 360"
       },
       "basicInfo": {
         "title": "Basic Information",
@@ -3175,6 +3179,17 @@
       "cbproName": "CBPRO",
       "cbproSummary": "",
       "openProductsTab": "Granted products"
+    },
+    "overview360": {
+      "calls": "Calls",
+      "successRate": "Success rate",
+      "p95": "P95",
+      "cost": "Spend",
+      "health": "Health score",
+      "errors": "Errors",
+      "errorCode": "Error code",
+      "count": "Count",
+      "loadFailed": "Failed to load tenant 360"
     }
   },
   "rateLimit": {
@@ -4161,7 +4176,25 @@
       "title": "Ops Screen"
     },
     "finance": {
-      "placeholder": "Finance overview will be completed in a later step"
+      "placeholder": "Finance overview will be completed in a later step",
+      "revenue": "Revenue",
+      "cost": "Cost",
+      "margin": "Margin",
+      "marginRate": "Margin rate",
+      "invertedWarn": "Days with cost > revenue",
+      "trend": "Revenue / cost / margin trend",
+      "rankTenant": "By tenant",
+      "rankProduct": "By product",
+      "rankSupplier": "By supplier",
+      "balances": "Balances & runway",
+      "key": "Key",
+      "tenantId": "Tenant ID",
+      "available": "Available",
+      "recharge": "Recharge (30d)",
+      "avgSpend": "Avg daily spend (7d)",
+      "daysLeft": "Days left",
+      "status": "Status",
+      "loadFailed": "Failed to load finance overview"
     },
     "services": {
       "refresh": "Refresh",
@@ -4542,6 +4575,30 @@
         "ctrNetRx": "Container net RX",
         "ctrNetTx": "Container net TX"
       }
+    },
+    "flow": {
+      "quotaTop": "Quota rejects Top (429)",
+      "decisions": "Rate-limit decisions",
+      "channelDecisions": "Channel rate-limit decisions",
+      "snapshotAge": "Snapshot age",
+      "snapshotRefresh": "Snapshot refresh",
+      "usageFlush": "Usage flush",
+      "rejections": "Rejection rate",
+      "tenant": "Tenant",
+      "rejects429": "429 count",
+      "cacheHitRatio": "Cache hit ratio",
+      "responseCacheHit": "Response cache hit",
+      "cacheEntries": "Cache entries",
+      "cacheMemory": "Cache memory",
+      "cacheOperations": "Cache operations",
+      "cacheP95": "Cache op P95",
+      "cryptoCache": "Crypto cache",
+      "bypassCache": "Bypass config cache",
+      "loadFailed": "Failed to load flow/cache data"
+    },
+    "reconcile": {
+      "calendar": "Reconcile calendar",
+      "loadFailed": "Failed to load reconcile calendar"
     }
   }
 }

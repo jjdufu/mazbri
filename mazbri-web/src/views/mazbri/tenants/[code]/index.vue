@@ -21,6 +21,15 @@
       />
     </div>
 
+
+    <div
+      v-if="tenantCode && isTabLoaded('overview360')"
+      v-show="activeTab === 'overview360'"
+      class="mt-5"
+    >
+      <Overview360Tab :tenant-code="tenantCode" />
+    </div>
+
     <div v-show="activeTab === 'basic'" class="mt-5">
       <BasicInfoTab :tenant="tenant" :loading="loading" @refresh="loadData" />
     </div>
@@ -87,6 +96,7 @@ import AccessStrategyTab from "./tabs/access-strategy.vue";
 import ProductsTab from "./tabs/products.vue";
 import TransportEncryptionTab from "./tabs/transport-encryption.vue";
 import AccountTab from "./tabs/account.vue";
+import Overview360Tab from "./tabs/overview360.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
@@ -106,8 +116,9 @@ const API_KEY_ROLES: readonly string[] = ["R_ADMIN", "R_FINANCE"];
 const userRoles: readonly string[] = useUserStore().getUserInfo.roles ?? [];
 const canViewApiKeys = userRoles.some((role) => API_KEY_ROLES.includes(role));
 const { activeTab, handleTabChange } = useTabRouteSync({
-  defaultValue: "basic",
+  defaultValue: "overview360",
   allowedValues: [
+    "overview360",
     "basic",
     ...(canViewApiKeys ? ["api-keys"] : []),
     "whitelist",
@@ -117,8 +128,9 @@ const { activeTab, handleTabChange } = useTabRouteSync({
     "account",
   ],
 });
-const loadedTabs = ref(new Set(["basic"]));
+const loadedTabs = ref(new Set(["overview360"]));
 const tabOptions = [
+  { label: $t("tenant.detail.tabs.overview360"), value: "overview360" },
   { label: $t("tenant.detail.tabs.basic"), value: "basic" },
   ...(canViewApiKeys
     ? [{ label: $t("tenant.detail.tabs.apiKeys"), value: "api-keys" }]
