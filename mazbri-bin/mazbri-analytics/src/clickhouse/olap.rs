@@ -1139,19 +1139,21 @@ fn product_rank_sql(p: &ProductRankParams, _binds: &mut Vec<String>) -> String {
 }
 
 fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> String {
-    let mut sql = format!(
-        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM security_events WHERE {window}",
-        window = window(p.range, "ts"),
-    );
+    // 内层保留原始 ts 供 WHERE/ORDER；外层再 format，避免别名遮蔽 DateTime 列。
+    let mut where_sql = format!("WHERE {window}", window = window(p.range, "ts"));
     if let Some(ref et) = p.event_type {
         let et = et.trim();
         if !et.is_empty() {
             binds.push(et.to_string());
-            sql.push_str(" AND type = ?");
+            where_sql.push_str(" AND type = ?");
         }
     }
     let limit = clamp_limit(p.limit, 50);
-    format!("{sql} ORDER BY ts DESC LIMIT {limit}")
+    format!(
+        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM (            SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn            FROM security_events {where_sql}            ORDER BY ts DESC LIMIT {limit}          )",
+        where_sql = where_sql,
+        limit = limit,
+    )
 }
 
 fn quota_top_sql(p: &QuotaTopParams, _binds: &mut Vec<String>) -> String {
