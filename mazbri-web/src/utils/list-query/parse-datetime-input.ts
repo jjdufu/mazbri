@@ -47,6 +47,27 @@ function formatNaive(
   return `${y}-${pad2(mo)}-${pad2(d)} ${pad2(h)}:${pad2(mi)}:${pad2(s)}.${String(ms).padStart(3, "0")}`;
 }
 
+/** Wall-clock offset of the ops UI (Asia/Shanghai, no DST). */
+const BEIJING_OFFSET_MS = 8 * 3600 * 1000;
+
+/**
+ * Absolute instant → Beijing wall-clock string. Naive input is read as Beijing time
+ * downstream, so Unix and offset-qualified input must land in the same zone.
+ */
+function formatBeijingWallClock(date: Date): string | null {
+  if (Number.isNaN(date.getTime())) return null;
+  const b = new Date(date.getTime() + BEIJING_OFFSET_MS);
+  return formatNaive(
+    b.getUTCFullYear(),
+    b.getUTCMonth() + 1,
+    b.getUTCDate(),
+    b.getUTCHours(),
+    b.getUTCMinutes(),
+    b.getUTCSeconds(),
+    b.getUTCMilliseconds(),
+  );
+}
+
 function parseUnixLiteral(s: string): string | null {
   if (!/^-?\d+$/.test(s)) return null;
   const n = Number(s);
@@ -54,17 +75,7 @@ function parseUnixLiteral(s: string): string | null {
 
   const secs = Math.abs(n) > 1_000_000_000_000 ? Math.trunc(n / 1000) : Math.trunc(n);
   if (secs <= 0) return null;
-  const date = new Date(secs * 1000);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const y = date.getUTCFullYear();
-  const mo = date.getUTCMonth() + 1;
-  const d = date.getUTCDate();
-  const h = date.getUTCHours();
-  const mi = date.getUTCMinutes();
-  const sec = date.getUTCSeconds();
-  const ms = date.getUTCMilliseconds();
-  return formatNaive(y, mo, d, h, mi, sec, ms);
+  return formatBeijingWallClock(new Date(secs * 1000));
 }
 
 function parseNaiveWallClock(s: string): string | null {
@@ -110,15 +121,7 @@ function parseIsoWithOffset(s: string): string | null {
   if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) return null;
   const date = new Date(s);
   if (Number.isNaN(date.getTime())) return null;
-  return formatNaive(
-    date.getUTCFullYear(),
-    date.getUTCMonth() + 1,
-    date.getUTCDate(),
-    date.getUTCHours(),
-    date.getUTCMinutes(),
-    date.getUTCSeconds(),
-    date.getUTCMilliseconds(),
-  );
+  return formatBeijingWallClock(date);
 }
 
 

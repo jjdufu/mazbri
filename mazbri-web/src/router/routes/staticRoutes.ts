@@ -6,6 +6,15 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     component: () => import("@views/auth/login/index.vue"),
     meta: { title: "menus.login.title", isHideTab: true },
   },
+  // Short aliases that are not real pages; keep their query (e.g. tr_start/tr_end).
+  {
+    path: "/login",
+    redirect: (to) => ({ path: "/auth/login", query: to.query }),
+  },
+  {
+    path: "/ops/overview",
+    redirect: (to) => ({ path: "/dashboard", query: to.query }),
+  },
   {
     path: "/403",
     name: "Exception403",

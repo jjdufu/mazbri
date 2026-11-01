@@ -24,6 +24,23 @@ export function buildTraceRoute(
   return { path: `${TRACES_PATH}/${traceId}`, query };
 }
 
+/**
+ * Unix seconds of a row timestamp (ISO string, epoch ms or epoch ns), for the
+ * `start` hint of {@link buildTraceRoute}. Returns undefined when unparseable.
+ */
+export function unixSecondsOf(
+  value: string | number | null | undefined,
+): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const ms =
+    typeof value === "number"
+      ? value > 1e17
+        ? value / 1e6
+        : value
+      : new Date(value).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : undefined;
+}
+
 /** Query keys the search page reads from the route. */
 export const TRACE_SEARCH_KEYS = [
   "trace_id",

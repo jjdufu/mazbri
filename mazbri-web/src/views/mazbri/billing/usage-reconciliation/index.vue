@@ -1118,8 +1118,8 @@ const openCallMonitor = (
 ) => {
   const day = row.reconciliation_date;
   if (!day) return;
-  const start = new Date(`${day}T00:00:00`).getTime();
-  const end = new Date(`${day}T23:59:59.999`).getTime();
+  const start = new Date(`${day}T00:00:00+08:00`).getTime();
+  const end = new Date(`${day}T23:59:59.999+08:00`).getTime();
   void router.push(
     buildCallsRoute({
       tab: mode,

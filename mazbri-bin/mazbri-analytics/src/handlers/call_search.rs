@@ -39,8 +39,9 @@ pub struct HistogramBucket {
 
 #[derive(Debug, Serialize)]
 pub struct HistogramResponse {
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
+    /// Window bounds as Unix seconds, the same unit as `buckets[].ts` and the request.
+    pub start: i64,
+    pub end: i64,
     pub bucket_seconds: u32,
     pub total: u64,
     pub errors: u64,
@@ -125,8 +126,8 @@ pub async fn request_histogram(
                 })
                 .collect();
             Json(HistogramResponse {
-                start,
-                end,
+                start: start.timestamp(),
+                end: end.timestamp(),
                 bucket_seconds,
                 total,
                 errors,
@@ -251,5 +252,20 @@ mod tests {
             trace_id: Some("f248c8be2060480ca3b2bd64a7232b19".into()),
         };
         assert!(matches!(stage_lookup_key(&ok), Ok((None, Some(_)))));
+    }
+
+    #[test]
+    fn histogram_bounds_serialize_as_unix_seconds() {
+        let body = serde_json::to_value(HistogramResponse {
+            start: 1_793_503_500,
+            end: 1_793_505_000,
+            bucket_seconds: 60,
+            total: 0,
+            errors: 0,
+            buckets: Vec::new(),
+        })
+        .expect("serialize");
+        assert_eq!(body["start"], 1_793_503_500);
+        assert_eq!(body["end"], 1_793_505_000);
     }
 }

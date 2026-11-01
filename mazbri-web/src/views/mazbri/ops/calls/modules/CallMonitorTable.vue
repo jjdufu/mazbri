@@ -38,6 +38,17 @@
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
       </template>
 
+      <template #trace_id="{ row }">
+        <ElLink
+          v-if="row.trace_id"
+          type="primary"
+          class="trace-id-cell"
+          @click="openTraceFor(row)"
+        >
+          {{ row.trace_id }}
+        </ElLink>
+        <span v-else>-</span>
+      </template>
       <template #tenant_name="{ row }">
         {{ row.tenant_name || row.tenant_id || "-" }}
       </template>
@@ -121,6 +132,16 @@
                   :label="$t('operations.monitoring.detail.labels.serialNo')"
                 >
                   {{ currentDetail.serial_no }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem label="trace_id">
+                  <ElLink
+                    v-if="currentDetail.trace_id"
+                    type="primary"
+                    @click="openTraceFor(currentDetail)"
+                  >
+                    {{ currentDetail.trace_id }}
+                  </ElLink>
+                  <span v-else>-</span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.party')"
@@ -234,6 +255,7 @@ import {
   timestampFiltersFromRange,
   timestampFiltersToUnix,
 } from "@/utils/ops/call-filters";
+import { unixSecondsOf } from "@/utils/ops/trace-link";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
@@ -410,8 +432,14 @@ const emit = defineEmits<{
   modeHintChange: [hint: CallMonitorModeHintPayload];
   /** Current filter params without paging; drives the histogram. */
   queryChange: [query: CallHistogramQuery];
-  openTrace: [traceId: string];
+  /** `start` is the row's Unix-second timestamp hint for the trace query window. */
+  openTrace: [traceId: string, start?: number];
 }>();
+
+function openTraceFor(row: CallMonitorItem) {
+  if (!row.trace_id) return;
+  emit("openTrace", row.trace_id, unixSecondsOf(row.timestamp ?? row.response_time));
+}
 watch(
   modeHint,
   (hint) => {
@@ -727,6 +755,14 @@ const buildColumns = (
 
       minWidth: 310,
       maxWidth: 340,
+      useSlot: true,
+      showOverflowTooltip: false,
+    },
+    {
+      prop: "trace_id",
+      label: "trace_id",
+      minWidth: 270,
+      maxWidth: 300,
       useSlot: true,
       showOverflowTooltip: false,
     },

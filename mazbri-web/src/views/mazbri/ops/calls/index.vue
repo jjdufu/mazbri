@@ -85,7 +85,7 @@
         <ElTableColumn prop="request_id" label="request_id" min-width="290" />
         <ElTableColumn prop="trace_id" label="trace_id" min-width="270">
           <template #default="{ row }">
-            <ElLink v-if="row.trace_id" type="primary" @click="openTrace(row.trace_id)">
+            <ElLink v-if="row.trace_id" type="primary" @click="openTrace(row.trace_id, unixSecondsOf(row.timestamp))">
               {{ row.trace_id }}
             </ElLink>
           </template>
@@ -121,7 +121,7 @@ import type {
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
 import { CALLS_FILTER_KEYS, type CallsTab } from "@/utils/ops/calls-link";
-import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { buildTraceRoute, unixSecondsOf } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
 import CallMonitorTable, {
   type CallTimeRange,
@@ -259,7 +259,7 @@ function onBrushEnd(params: unknown) {
   if (!first || !last) return;
   const start = first.ts;
   const end = Math.min(last.ts + data.bucket_seconds, data.end);
-  if (end <= start) return;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
   const value: TimeRangeValue = { preset: "custom", start, end };
   timeRange.value = value;
   void router.replace({
@@ -371,8 +371,8 @@ async function searchStages() {
   }
 }
 
-function openTrace(traceId: string) {
-  void router.push(buildTraceRoute(traceId));
+function openTrace(traceId: string, start?: number) {
+  void router.push(buildTraceRoute(traceId, { start }));
 }
 
 onMounted(() => {

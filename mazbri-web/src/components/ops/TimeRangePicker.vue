@@ -89,7 +89,9 @@ const route = useRoute();
 const router = useRouter();
 
 const preset = ref<TimeRangePreset>("1h");
-const customRange = ref<[string, string] | null>(null);
+/** Epoch milliseconds (ElDatePicker `value-format="x"` works on numbers; numeric strings
+ * are parsed as date text and land in the wrong year). The URL keeps Unix seconds. */
+const customRange = ref<[number, number] | null>(null);
 const bookmark = ref<string>("");
 
 const presetOptions = computed(() =>
@@ -113,9 +115,9 @@ function nowSec() {
 function buildValue(nextPreset: TimeRangePreset): TimeRangeValue {
   const end = nowSec();
   if (nextPreset === "custom" && customRange.value) {
-    const start = Math.floor(Number(customRange.value[0]) / 1000);
-    const endMs = Math.floor(Number(customRange.value[1]) / 1000);
-    return { preset: "custom", start, end: endMs };
+    const start = Math.floor(customRange.value[0] / 1000);
+    const endSec = Math.floor(customRange.value[1] / 1000);
+    return { preset: "custom", start, end: endSec };
   }
   const seconds = PRESET_SECONDS[nextPreset as Exclude<TimeRangePreset, "custom">] ?? 3600;
   return { preset: nextPreset, start: end - seconds, end };
@@ -154,7 +156,7 @@ function onBookmarkChange(key: string | null) {
   const end = nowSec();
   const start = end - BOOKMARKS[key];
   preset.value = "custom";
-  customRange.value = [String(start * 1000), String(end * 1000)];
+  customRange.value = [start * 1000, end * 1000];
   publish({ preset: "custom", start, end });
 }
 
@@ -171,7 +173,7 @@ function hydrateFromQuery() {
   ) {
     preset.value = qPreset as TimeRangePreset;
     if (qPreset === "custom") {
-      customRange.value = [String(qStart * 1000), String(qEnd * 1000)];
+      customRange.value = [qStart * 1000, qEnd * 1000];
     }
     publish({ preset: preset.value, start: qStart, end: qEnd });
     return;
@@ -180,8 +182,8 @@ function hydrateFromQuery() {
     preset.value = props.modelValue.preset;
     if (props.modelValue.preset === "custom") {
       customRange.value = [
-        String(props.modelValue.start * 1000),
-        String(props.modelValue.end * 1000),
+        props.modelValue.start * 1000,
+        props.modelValue.end * 1000,
       ];
     }
     publish(props.modelValue);
@@ -198,7 +200,7 @@ watch(
     if (!v) return;
     if (v.preset !== preset.value) preset.value = v.preset;
     if (v.preset === "custom") {
-      customRange.value = [String(v.start * 1000), String(v.end * 1000)];
+      customRange.value = [v.start * 1000, v.end * 1000];
     }
   },
 );
