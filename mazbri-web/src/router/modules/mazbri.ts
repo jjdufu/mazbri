@@ -233,7 +233,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-
+      },
       {
         path: "security",
         name: "OpsSecurityEvents",
@@ -244,7 +244,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-
+      },
       {
         path: "traffic/products",
         name: "OpsTrafficProducts",
@@ -288,10 +288,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-      },
-
-      },
-
       },
 
       {
