@@ -22,6 +22,10 @@ pub struct AnalyticsConfig {
     pub alerting: Option<crate::alerting::AlertingConfig>,
     #[serde(default)]
     pub security: Option<crate::security::SecurityConfig>,
+    #[serde(default)]
+    pub capacity: Option<crate::capacity::CapacityConfig>,
+    #[serde(default)]
+    pub anomaly: Option<crate::anomaly::AnomalyConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -166,6 +170,16 @@ impl ValidateConfig for AnalyticsConfig {
         self.clickhouse
             .validate()
             .map_err(|e| anyhow::anyhow!("ClickHouse 配置无效: {e}"))?;
+        if let Some(ref capacity) = self.capacity {
+            capacity
+                .validate()
+                .map_err(|e| anyhow::anyhow!("capacity: {e}"))?;
+        }
+        if let Some(ref anomaly) = self.anomaly {
+            anomaly
+                .validate()
+                .map_err(|e| anyhow::anyhow!("anomaly: {e}"))?;
+        }
         if let Some(ref security) = self.security {
             security
                 .validate()

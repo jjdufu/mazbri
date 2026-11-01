@@ -244,6 +244,52 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
+
+      {
+        path: "traffic/products",
+        name: "OpsTrafficProducts",
+        component: "/mazbri/ops/traffic/products",
+        meta: {
+          title: "menus.mazbri.productRank",
+          icon: "ri:bar-chart-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "reliability/capacity",
+        name: "OpsReliabilityCapacity",
+        component: "/mazbri/ops/reliability/capacity",
+        meta: {
+          title: "menus.mazbri.capacity",
+          icon: "ri:dashboard-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "reliability/anomaly",
+        name: "OpsReliabilityAnomaly",
+        component: "/mazbri/ops/reliability/anomaly",
+        meta: {
+          title: "menus.mazbri.anomaly",
+          icon: "ri:alarm-warning-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "dashboards/custom",
+        name: "OpsCustomDashboard",
+        component: "/mazbri/ops/dashboards/custom",
+        meta: {
+          title: "menus.mazbri.customDashboard",
+          icon: "ri:layout-grid-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+
       },
 
       },

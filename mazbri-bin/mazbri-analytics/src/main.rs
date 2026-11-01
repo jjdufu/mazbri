@@ -97,6 +97,7 @@ async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClien
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-analytics");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
@@ -166,6 +167,22 @@ async fn main() -> Result<()> {
             ip_fail_threshold: 50,
         };
         mazbri_analytics::security::spawn(&default_sec, Arc::clone(&clickhouse_client))?;
+    }
+
+    if let Some(ref alerting) = config.alerting {
+        let cap = config.capacity.clone().unwrap_or(mazbri_analytics::capacity::CapacityConfig {
+            enabled: true,
+            interval_secs: 3600,
+            qps_cap: 10_000.0,
+        });
+        mazbri_analytics::capacity::spawn(&cap, Arc::clone(&clickhouse_client), &alerting.database)?;
+        let anom = config.anomaly.clone().unwrap_or(mazbri_analytics::anomaly::AnomalyConfig {
+            enabled: true,
+            interval_secs: 300,
+            yoy_ratio: 5.0,
+            sigma: 3.0,
+        });
+        mazbri_analytics::anomaly::spawn(&anom, Arc::clone(&clickhouse_client), &alerting.database)?;
     }
     mazbri_analytics::pipeline_freshness::spawn(
         greptimedb_client.clone(),

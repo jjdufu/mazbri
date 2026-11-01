@@ -1,4 +1,6 @@
 pub mod alerting;
+pub mod anomaly;
+pub mod capacity;
 pub mod clickhouse;
 pub mod config;
 mod error;

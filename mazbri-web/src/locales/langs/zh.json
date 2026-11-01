@@ -863,7 +863,11 @@
       "billingReconcile": "对账中心",
       "assetsCerts": "证书与 License",
       "assetsChanges": "变更时间线",
-      "securityEvents": "鉴权与安全事件"
+      "securityEvents": "鉴权与安全事件",
+      "productRank": "产品排行",
+      "capacity": "容量规划",
+      "anomaly": "异常检测",
+      "customDashboard": "自定义看板"
     }
   },
   "systemSettings": {
@@ -4643,6 +4647,50 @@
       "colCountry": "国家",
       "colCity": "城市",
       "colDetail": "详情"
+    },
+    "products": {
+      "metricReq": "调用量",
+      "metricErr": "错误率",
+      "metricCost": "成本",
+      "rankTitle": "产品排行",
+      "zeroTitle": "30 天零调用产品",
+      "colProduct": "产品",
+      "colReq": "请求",
+      "colPrev": "环比窗",
+      "colErr": "错误率",
+      "colCost": "成本",
+      "colName": "名称"
+    },
+    "capacity": {
+      "forecast": "QPS 预测",
+      "holt": "Holt 下一值",
+      "cap": "QPS 上限",
+      "days": "预计触顶（天）",
+      "never": "未触顶",
+      "loadtests": "压测基线对比",
+      "colScenario": "场景",
+      "colProducts": "产品数",
+      "colReqs": "请求数",
+      "colInternal": "内部 P99",
+      "colNotes": "备注"
+    },
+    "anomaly": {
+      "colTime": "时间",
+      "colKind": "类型",
+      "colSev": "级别",
+      "colEntity": "实体",
+      "colMetric": "指标",
+      "colValue": "值",
+      "colBase": "基线",
+      "colScore": "得分",
+      "colStatus": "状态"
+    },
+    "dashboards": {
+      "save": "保存",
+      "home": "首页路径",
+      "json": "看板 JSON",
+      "hint": "widgets.template 仅允许白名单 OLAP 模板",
+      "saved": "已保存"
     }
   }
 }

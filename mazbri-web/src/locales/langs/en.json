@@ -863,7 +863,11 @@
       "billingReconcile": "Reconciliation",
       "assetsCerts": "Certificates & License",
       "assetsChanges": "Change Timeline",
-      "securityEvents": "Auth & Security"
+      "securityEvents": "Auth & Security",
+      "productRank": "Product Rank",
+      "capacity": "Capacity",
+      "anomaly": "Anomaly",
+      "customDashboard": "Custom Dashboard"
     }
   },
   "systemSettings": {
@@ -4638,6 +4642,50 @@
       "colCountry": "Country",
       "colCity": "City",
       "colDetail": "Detail"
+    },
+    "products": {
+      "metricReq": "Requests",
+      "metricErr": "Error rate",
+      "metricCost": "Cost",
+      "rankTitle": "Product rank",
+      "zeroTitle": "Zero-call products (30d)",
+      "colProduct": "Product",
+      "colReq": "Reqs",
+      "colPrev": "Prev window",
+      "colErr": "Err%",
+      "colCost": "Cost",
+      "colName": "Name"
+    },
+    "capacity": {
+      "forecast": "QPS forecast",
+      "holt": "Holt next",
+      "cap": "QPS cap",
+      "days": "Days to cap",
+      "never": "N/A",
+      "loadtests": "Loadtest baselines",
+      "colScenario": "Scenario",
+      "colProducts": "Products",
+      "colReqs": "Requests",
+      "colInternal": "Internal P99",
+      "colNotes": "Notes"
+    },
+    "anomaly": {
+      "colTime": "Time",
+      "colKind": "Kind",
+      "colSev": "Severity",
+      "colEntity": "Entity",
+      "colMetric": "Metric",
+      "colValue": "Value",
+      "colBase": "Baseline",
+      "colScore": "Score",
+      "colStatus": "Status"
+    },
+    "dashboards": {
+      "save": "Save",
+      "home": "Home path",
+      "json": "Dashboard JSON",
+      "hint": "widgets.template must be an allowlisted OLAP template",
+      "saved": "Saved"
     }
   }
 }

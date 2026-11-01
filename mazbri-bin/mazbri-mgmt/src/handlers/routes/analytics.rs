@@ -1,5 +1,6 @@
 use super::super::analytics_handlers;
 use super::super::ops_changes_handlers;
+use super::super::ops_reliability_handlers;
 use super::super::state::AppState;
 use axum::{
     Router,
@@ -44,6 +45,22 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/stats/ops/changes",
             get(ops_changes_handlers::get_ops_changes),
+        )
+        .route(
+            "/stats/ops/loadtests",
+            get(ops_reliability_handlers::list_loadtests).post(ops_reliability_handlers::create_loadtest),
+        )
+        .route(
+            "/stats/ops/anomalies",
+            get(ops_reliability_handlers::list_anomalies),
+        )
+        .route(
+            "/stats/ops/capacity",
+            get(ops_reliability_handlers::get_capacity),
+        )
+        .route(
+            "/stats/ops/products/zero-calls",
+            post(ops_reliability_handlers::zero_call_products),
         )
         .route(
             "/stats/calls/customer",

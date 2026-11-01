@@ -43,6 +43,7 @@ pub enum OlapQuery {
     SecurityTop(SecurityTopParams),
     /// 安全事件列表。
     SecurityEvents(SecurityEventsParams),
+    ProductRank(ProductRankParams),
 }
 
 impl OlapQuery {
@@ -52,6 +53,7 @@ impl OlapQuery {
         match self {
             Self::TopByDim(p) => p.metric == Metric::Cost,
             Self::CostTrend(_) | Self::TenantOverview(_) => true,
+            Self::ProductRank(p) => matches!(p.metric, ProductRankMetric::Cost),
             _ => false,
         }
     }
@@ -82,6 +84,7 @@ impl OlapQuery {
             Self::ResponseCacheHit(_) => "response_cache_hit",
             Self::SecurityTop(_) => "security_top",
             Self::SecurityEvents(_) => "security_events",
+            Self::ProductRank(_) => "product_rank",
         }
     }
 }
@@ -427,6 +430,32 @@ pub struct SecurityEventsParams {
     pub event_type: Option<String>,
 }
 
+
+/// `product_rank`：产品调用量/错误率/P95/成本排行。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProductRankParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default = "default_product_rank_metric")]
+    pub metric: ProductRankMetric,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+fn default_product_rank_metric() -> ProductRankMetric {
+    ProductRankMetric::ReqCount
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductRankMetric {
+    ReqCount,
+    ErrorRate,
+    P95,
+    Cost,
+}
+
 /// 租户作用域窗口参数（`tenant_code` 必填）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -573,6 +602,16 @@ pub struct FunnelChRow {
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct ProductRankRow {
+    pub product_id: String,
+    pub req_count: u64,
+    pub error_rate: f64,
+    pub p95: f64,
+    pub cost: f64,
+    pub prev_req_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
 pub struct SecurityTopRow {
     pub dim_value: String,
     pub fail_count: u64,
@@ -651,6 +690,7 @@ pub enum OlapRows {
     QuotaTop(Vec<QuotaTopRow>),
     SecurityTop(Vec<SecurityTopRow>),
     SecurityEvents(Vec<SecurityEventRow>),
+    ProductRank(Vec<ProductRankRow>),
     TenantOverview(Vec<TenantOverviewRow>),
     TenantErrors(Vec<TenantErrorRow>),
     ResponseCacheHit(Vec<ResponseCacheHitRow>),
@@ -748,6 +788,7 @@ impl OlapQuery {
                 }
                 Ok(())
             }
+            Self::ProductRank(_) => Ok(()),
             Self::TenantOverview(p) | Self::TenantErrors(p) => {
                 let code = p.tenant_code.trim();
                 if code.is_empty() {
@@ -811,6 +852,7 @@ impl OlapQuery {
             Self::QuotaTop(p) => quota_top_sql(p, &mut binds),
             Self::SecurityTop(p) => security_top_sql(p, &mut binds),
             Self::SecurityEvents(p) => security_events_sql(p, &mut binds),
+            Self::ProductRank(p) => product_rank_sql(p, &mut binds),
             Self::TenantOverview(p) => tenant_overview_sql(p, &mut binds),
             Self::TenantErrors(p) => tenant_errors_sql(p, &mut binds),
             Self::ResponseCacheHit(p) => response_cache_hit_sql(p, &mut binds),
@@ -1079,6 +1121,23 @@ fn security_top_sql(p: &SecurityTopParams, _binds: &mut Vec<String>) -> String {
     )
 }
 
+
+fn product_rank_sql(p: &ProductRankParams, _binds: &mut Vec<String>) -> String {
+    let order = match p.metric {
+        ProductRankMetric::ReqCount => "req_count DESC",
+        ProductRankMetric::ErrorRate => "error_rate DESC",
+        ProductRankMetric::P95 => "p95 DESC",
+        ProductRankMetric::Cost => "cost DESC",
+    };
+    let limit = clamp_limit(p.limit, 20);
+    let secs = p.range.seconds();
+    let prev = secs * 2;
+    // 当前窗 + 等长前窗环比；子查询避免同层引用别名。
+    format!(
+        "SELECT product_id, req_count,             if(req_count = 0, 0., err_count / toFloat64(req_count)) AS error_rate,             p95, cost, prev_req_count          FROM (            SELECT product_id,              countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND) AS req_count,              toFloat64(countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND AND status_class = '5xx')) AS err_count,              toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, ts_1h >= now() - INTERVAL {secs} SECOND)[2]) AS p95,              toFloat64(sumMergeIf(cost, ts_1h >= now() - INTERVAL {secs} SECOND)) AS cost,              countMergeIf(c, ts_1h >= now() - INTERVAL {prev} SECOND AND ts_1h < now() - INTERVAL {secs} SECOND) AS prev_req_count            FROM req_agg_1h            WHERE ts_1h >= now() - INTERVAL {prev} SECOND AND product_id != ''            GROUP BY product_id          ) ORDER BY {order} LIMIT {limit}"
+    )
+}
+
 fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> String {
     let mut sql = format!(
         "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM security_events WHERE {window}",
@@ -1193,6 +1252,7 @@ impl ClickHouseClient {
             OlapQuery::SecurityEvents(_) => {
                 OlapRows::SecurityEvents(self.fetch_bound(&sql).await?)
             }
+            OlapQuery::ProductRank(_) => OlapRows::ProductRank(self.fetch_bound(&sql).await?),
             OlapQuery::TenantOverview(_) => OlapRows::TenantOverview(self.fetch_bound(&sql).await?),
             OlapQuery::TenantErrors(_) => OlapRows::TenantErrors(self.fetch_bound(&sql).await?),
             OlapQuery::ResponseCacheHit(_) => {
@@ -1362,6 +1422,18 @@ mod tests {
         assert!(bad.validate().is_err());
         let q = parse(r#"{"template":"response_cache_hit","params":{"range":"1h"}}"#).expect("ok");
         assert!(q.sql().text.contains("cache_hit"));
+    }
+
+
+    #[test]
+    fn product_rank_template_parses() {
+        let q = parse(r#"{"template":"product_rank","params":{"range":"7d","metric":"req_count","limit":10}}"#)
+            .expect("valid");
+        assert_eq!(q.template_name(), "product_rank");
+        assert!(q.validate().is_ok());
+        let sql = q.sql();
+        assert!(sql.text.contains("FROM req_agg_1h"), "{}", sql.text);
+        assert!(sql.text.contains("prev_req_count"), "{}", sql.text);
     }
 
 }
