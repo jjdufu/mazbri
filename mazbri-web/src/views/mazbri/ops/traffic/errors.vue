@@ -48,6 +48,60 @@
     </ElRow>
 
     <div class="ops-traffic__card">
+      <div class="ops-traffic__sample-head">
+        <h3>
+          {{ t("ops.traces.sampleTitle") }}
+          <ElTag v-if="sampleCode" size="small" type="danger">{{
+            sampleCode
+          }}</ElTag>
+        </h3>
+        <ElButton
+          v-if="sampleCode"
+          size="small"
+          link
+          type="primary"
+          @click="openCalls"
+        >
+          {{ t("ops.traces.viewCalls") }}
+        </ElButton>
+      </div>
+      <ElTable
+        v-loading="sampleLoading"
+        :data="samples"
+        size="small"
+        stripe
+        :empty-text="t('ops.traces.sampleHint')"
+      >
+        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="170">
+          <template #default="{ row }">{{
+            formatSampleTime(row.timestamp)
+          }}</template>
+        </ElTableColumn>
+        <ElTableColumn prop="serial_no" label="request_id" min-width="260" />
+        <ElTableColumn
+          prop="tenant_name"
+          :label="t('ops.traces.form.tenant')"
+          min-width="120"
+        />
+        <ElTableColumn prop="status_code" label="status" width="80" />
+        <ElTableColumn prop="error_stage" label="error_stage" min-width="120" />
+        <ElTableColumn prop="duration_ms" label="ms" width="90" />
+        <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
+          <template #default="{ row }">
+            <ElLink
+              v-if="row.trace_id"
+              type="primary"
+              @click="openSampleTrace(row)"
+            >
+              {{ row.trace_id }}
+            </ElLink>
+            <span v-else>—</span>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </div>
+
+    <div class="ops-traffic__card">
       <h3>{{ t("ops.traffic.newErrorCodes") }}</h3>
       <ArtTable
         :data="newErrors"
@@ -76,6 +130,14 @@ import PieChart from "@/components/ops/PieChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
+import { timestampFiltersFromRange } from "@/utils/ops/call-filters";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { buildListQueryParams } from "@/utils/list-query/serialize";
+import { fetchCustomerCallLogs } from "@/api/call-monitor";
+import type {
+  CallMonitorItem,
+  CallMonitorQuery,
+} from "@/types/api/call-monitor";
 import type {
   AttributionRow,
   ErrorCellRow,
@@ -141,14 +203,71 @@ const newColumns = computed<ColumnOption<NewErrorRow>[]>(() => [
 
 const router = useRouter();
 
-function onErrorClick(row: ErrorCellRow | NewErrorRow) {
+const sampleCode = ref("");
+const samples = ref<CallMonitorItem[]>([]);
+const sampleLoading = ref(false);
+let sampleSeq = 0;
+
+async function onErrorClick(row: ErrorCellRow | NewErrorRow) {
   if (!row.error_code) return;
+  sampleCode.value = row.error_code;
+  const seq = ++sampleSeq;
+  sampleLoading.value = true;
+  try {
+    const params = buildListQueryParams({
+      q: "",
+      filters: [
+        { field: "error_code", op: "eq", value: row.error_code },
+        ...timestampFiltersFromRange(timeRange.value),
+      ],
+      encodeMode: "both",
+      extra: { page: 1, page_size: 10 },
+    }) as CallMonitorQuery;
+    const res = await fetchCustomerCallLogs(params);
+    if (seq === sampleSeq) samples.value = res.data;
+  } catch {
+    if (seq === sampleSeq) {
+      samples.value = [];
+      ElMessage.error(t("ops.traffic.loadFailed"));
+    }
+  } finally {
+    if (seq === sampleSeq) sampleLoading.value = false;
+  }
+}
+
+function openCalls() {
+  if (!sampleCode.value) return;
   void router.push(
     buildCallsRoute({
       tab: "customer",
       start: timeRange.value.start,
       end: timeRange.value.end,
-      filters: { error_code: row.error_code },
+      filters: { error_code: sampleCode.value },
+    }),
+  );
+}
+
+function sampleSeconds(
+  value: CallMonitorItem["timestamp"],
+): number | undefined {
+  if (value === null || value === "") return undefined;
+  const ms = typeof value === "number" ? value : Date.parse(value);
+  if (!Number.isFinite(ms)) return undefined;
+  return Math.floor((ms > 1e12 ? ms : ms * 1000) / 1000);
+}
+
+function formatSampleTime(value: CallMonitorItem["timestamp"]): string {
+  const sec = sampleSeconds(value);
+  return sec === undefined
+    ? String(value ?? "")
+    : new Date(sec * 1000).toLocaleString();
+}
+
+function openSampleTrace(row: CallMonitorItem) {
+  void router.push(
+    buildTraceRoute(row.trace_id, {
+      start: sampleSeconds(row.timestamp),
+      requestId: row.serial_no,
     }),
   );
 }
@@ -215,5 +334,10 @@ onMounted(reload);
   margin: 0 0 8px;
   font-size: 14px;
   font-weight: 600;
+}
+.ops-traffic__sample-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
 }
 </style>

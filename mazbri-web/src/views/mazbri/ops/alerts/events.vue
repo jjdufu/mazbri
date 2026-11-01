@@ -94,6 +94,21 @@
         <ElTableColumn :label="t('ops.alerts.columns.labels')" min-width="200">
           <template #default="{ row }">{{ labelText(row.labels) }}</template>
         </ElTableColumn>
+        <ElTableColumn :label="t('ops.traces.traceIds')" min-width="150">
+          <template #default="{ row }">
+            <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
+              <ElLink
+                v-for="tid in row.trace_ids"
+                :key="tid"
+                type="primary"
+                @click="openTrace(row, tid)"
+              >
+                {{ tid.slice(0, 12) }}…
+              </ElLink>
+            </div>
+            <span v-else>—</span>
+          </template>
+        </ElTableColumn>
         <ElTableColumn :label="t('ops.alerts.columns.value')" width="150">
           <template #default="{ row }">
             {{ formatValue(row.value) }} {{ row.op }}
@@ -170,12 +185,24 @@ import type {
   AlertStatus,
 } from "@/types/api/alerts";
 import { useUserStore } from "@/store/modules/user";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
 
 defineOptions({ name: "OpsAlertEvents" });
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+
+function openTrace(row: AlertEvent, traceId: string) {
+  const started = Date.parse(row.started_at);
+  void router.push(
+    buildTraceRoute(traceId, {
+      start: Number.isFinite(started)
+        ? Math.floor(started / 1000) - 300
+        : undefined,
+    }),
+  );
+}
 const userStore = useUserStore();
 
 const statuses: AlertStatus[] = ["firing", "acked", "resolved"];
@@ -336,5 +363,10 @@ onMounted(reload);
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+.ops-alerts__traces {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 </style>

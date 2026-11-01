@@ -143,11 +143,12 @@ impl EvaluationSession {
         labels: &BTreeMap<String, String>,
         value: f64,
         started_at: DateTime<Utc>,
+        trace_ids: &[String],
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let labels = serde_json::to_value(labels).unwrap_or_else(|_| serde_json::json!({}));
         let row = sqlx::query(
-            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at) \
-             VALUES ($1, $2, 'firing', $3, $4, $5, $6) \
+            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids) \
+             VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7) \
              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING \
              RETURNING id",
         )
@@ -157,6 +158,7 @@ impl EvaluationSession {
         .bind(labels)
         .bind(value)
         .bind(started_at)
+        .bind(trace_ids)
         .fetch_optional(&mut *self.conn)
         .await?;
         row.map(|r| r.try_get("id")).transpose()

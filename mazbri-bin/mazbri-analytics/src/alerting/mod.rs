@@ -7,6 +7,7 @@ pub mod rule;
 pub mod store;
 
 use crate::clickhouse::ClickHouseClient;
+use crate::clickhouse::olap::{ExemplarMetric, ExemplarParams, Filters, OlapQuery, OlapRows};
 use crate::greptimedb::GreptimeDBClient;
 use chrono::Utc;
 use engine::{Action, Engine};
@@ -229,7 +230,14 @@ impl Evaluator {
                 started_at,
                 ..
             } => match session
-                .insert_firing(rule, &fingerprint, &labels, value, started_at)
+                .insert_firing(
+                    rule,
+                    &fingerprint,
+                    &labels,
+                    value,
+                    started_at,
+                    &self.exemplar_trace_ids(rule, &labels).await,
+                )
                 .await
             {
                 Ok(Some(event_id)) => {
@@ -275,6 +283,32 @@ impl Evaluator {
         }
     }
 
+    /// 触发时刻前后窗口内、指标 ≥ 同窗 P99 的样例 trace（按样本标签中的租户 / 产品 / 供应商 / 渠道过滤）；
+    /// 查询失败只记日志，不阻塞事件写入。
+    async fn exemplar_trace_ids(
+        &self,
+        rule: &AlertRule,
+        labels: &std::collections::BTreeMap<String, String>,
+    ) -> Vec<String> {
+        let query = exemplar_query(&rule.expr, labels, Utc::now().timestamp());
+        match self.clickhouse.olap_query(&query).await {
+            Ok(OlapRows::Exemplars(rows)) => {
+                let mut ids: Vec<String> = Vec::new();
+                for row in rows {
+                    if !row.trace_id.is_empty() && !ids.contains(&row.trace_id) {
+                        ids.push(row.trace_id);
+                    }
+                }
+                ids
+            }
+            Ok(_) => Vec::new(),
+            Err(error) => {
+                tracing::warn!(target: "alerting", rule = %rule.name, %error, "查询告警样例 trace 失败");
+                Vec::new()
+            }
+        }
+    }
+
     fn notify_resolved(&self, rule: &AlertRule, resolved: &rule::ResolvedEvent) {
         self.notifier.dispatch(
             &rule.notify,
@@ -294,6 +328,37 @@ impl Evaluator {
             },
         );
     }
+}
+
+/// 样例 trace 窗口半宽（秒）。
+const EXEMPLAR_WINDOW_SECS: u32 = 300;
+/// 每个事件附带的样例 trace 数。
+const EXEMPLAR_LIMIT: u32 = 5;
+
+/// 告警样例 trace 查询：表达式涉及上游耗时时按 `upstream_service_time_ms` 取样，否则按总耗时。
+fn exemplar_query(
+    expr: &str,
+    labels: &std::collections::BTreeMap<String, String>,
+    now: i64,
+) -> OlapQuery {
+    let metric = if expr.contains("upstream") {
+        ExemplarMetric::UpstreamServiceTimeMs
+    } else {
+        ExemplarMetric::DurationMs
+    };
+    let label = |key: &str| labels.get(key).filter(|v| !v.is_empty()).cloned();
+    OlapQuery::ExemplarTraces(ExemplarParams {
+        metric,
+        ts: u32::try_from(now).unwrap_or(u32::MAX),
+        window_secs: Some(EXEMPLAR_WINDOW_SECS),
+        limit: Some(EXEMPLAR_LIMIT),
+        filters: Filters {
+            tenant_code: label("tenant_code"),
+            product_id: label("product_id"),
+            supplier_code: label("supplier_code"),
+            channel_code: label("channel_code"),
+        },
+    })
 }
 
 /// 按配置启动告警评估后台任务；未配置或停用时不启动。
@@ -323,4 +388,32 @@ pub fn spawn(
     tokio::spawn(evaluator.run(interval));
     tracing::info!(target: "alerting", interval_secs = config.interval_secs, smtp = config.smtp.is_some(), "告警评估已启动");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn exemplar_query_uses_labels_and_metric() {
+        let labels = BTreeMap::from([
+            ("supplier_code".to_string(), "upupt-rest".to_string()),
+            ("instance".to_string(), "x".to_string()),
+            ("product_id".to_string(), String::new()),
+        ]);
+        let OlapQuery::ExemplarTraces(p) =
+            exemplar_query("upstream_timeout_ratio > 0.1", &labels, 1_700_000_000)
+        else {
+            panic!("expected exemplar query");
+        };
+        assert_eq!(p.metric, ExemplarMetric::UpstreamServiceTimeMs);
+        assert_eq!(p.ts, 1_700_000_000);
+        assert_eq!(p.filters.supplier_code.as_deref(), Some("upupt-rest"));
+        assert!(p.filters.product_id.is_none());
+        let OlapQuery::ExemplarTraces(p) = exemplar_query("p99_latency_ms", &labels, 1) else {
+            panic!("expected exemplar query");
+        };
+        assert_eq!(p.metric, ExemplarMetric::DurationMs);
+    }
 }

@@ -84,6 +84,15 @@ export interface SlowRow {
   error_code: string;
 }
 
+export interface ExemplarRow {
+  /** Unix seconds. */
+  ts: number;
+  trace_id: string;
+  request_id: string;
+  value_ms: number;
+  p99_ms: number;
+}
+
 export interface ErrorCellRow {
   error_code: string;
   error_stage: string;

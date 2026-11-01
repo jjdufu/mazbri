@@ -25,6 +25,7 @@ pub mod ssrf;
 pub mod supplier;
 pub mod tenant;
 pub mod tenant_crypto;
+pub mod traces;
 pub mod upstream_connector;
 pub mod upstream_onboarding;
 pub mod whitelist;

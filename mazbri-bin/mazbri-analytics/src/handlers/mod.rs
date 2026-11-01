@@ -5,6 +5,7 @@ mod olap;
 mod request;
 mod request_analytics;
 mod time;
+mod traces;
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct HandlerError {
     pub error: String,
@@ -20,3 +21,4 @@ pub use olap::olap_query;
 pub use request::query_request_logs;
 pub use request_analytics::{aggregate_request_logs, get_upstream_billing_summary};
 pub use time::parse_time_string;
+pub use traces::{get_trace, search_traces, trace_dependencies};

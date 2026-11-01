@@ -229,6 +229,10 @@
 </template>
 
 <script setup lang="ts">
+import {
+  formatWallClock,
+  timestampFiltersFromRange,
+} from "@/utils/ops/call-filters";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
@@ -285,36 +289,11 @@ export interface CallTimeRange {
   end: number;
 }
 
-const timestampFiltersFromRange = (
-  range: CallTimeRange | null | undefined,
-): ListFilter[] => {
-  if (!range) return [];
-  return [
-    { field: "timestamp", op: "gte", value: formatWallClock(range.start * 1000) },
-    { field: "timestamp", op: "lte", value: formatWallClock(range.end * 1000) },
-  ];
-};
-
 const traceIdFromFilters = (list: ListFilter[]): string | null => {
   const hit = list.find((f) => f.field === "trace_id" && f.op === "eq");
   if (!hit || typeof hit.value !== "string") return null;
   const value = hit.value.trim();
   return value ? value : null;
-};
-
-const formatWallClock = (ms: number): string => {
-  const parts = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(ms));
-  const g = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  return `${g.year}-${g.month}-${g.day} ${g.hour}:${g.minute}:${g.second}`;
 };
 
 const hasTimestampFilter = (list: ListFilter[]): boolean =>

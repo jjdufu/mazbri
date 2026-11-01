@@ -759,7 +759,7 @@ fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
         "WITH (SELECT quantileTDigest(0.99)({column}) FROM request_logs \
            WHERE event_target = 'gateway' AND {win}{filters_inner}) AS p99 \
          SELECT toUInt32(toUnixTimestamp(timestamp)) AS ts, trace_id, request_id, \
-         toUInt64({column}) AS value_ms, toFloat64(p99) AS p99_ms FROM request_logs \
+         toUInt64({column}) AS value_ms, toFloat64(ifNull(p99, 0)) AS p99_ms FROM request_logs \
          WHERE event_target = 'gateway' AND {win}{filters_outer} \
            AND trace_id != '' AND {column} >= p99 \
          ORDER BY {column} DESC LIMIT {limit}"

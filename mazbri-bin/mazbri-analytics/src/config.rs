@@ -68,6 +68,9 @@ impl ClickHouseConfig {
 pub struct GreptimeDBConfig {
     #[serde(default = "default_greptimedb_database")]
     pub database: String,
+    /// OTLP trace 所在库（`opentelemetry_traces` 表），与指标库共用连接与凭据。
+    #[serde(default = "default_greptimedb_traces_database")]
+    pub traces_database: String,
     pub http_url: String,
     #[serde(default)]
     pub user: Option<String>,
@@ -86,6 +89,7 @@ impl Default for GreptimeDBConfig {
     fn default() -> Self {
         Self {
             database: default_greptimedb_database(),
+            traces_database: default_greptimedb_traces_database(),
             http_url: String::new(),
             user: None,
             password: None,
@@ -98,6 +102,9 @@ impl Default for GreptimeDBConfig {
 }
 fn default_greptimedb_database() -> String {
     "mazbri_logs".to_string()
+}
+fn default_greptimedb_traces_database() -> String {
+    "mazbri_traces".to_string()
 }
 fn default_greptimedb_timeout() -> u64 {
     30
@@ -125,6 +132,9 @@ impl GreptimeDBConfig {
         }
         if self.database.is_empty() {
             return Err("greptimedb.database is required".to_string());
+        }
+        if self.traces_database.is_empty() {
+            return Err("greptimedb.traces_database 不能为空".to_string());
         }
         if self.timeout_secs == 0 {
             return Err("greptimedb.timeout_secs must be greater than 0".to_string());

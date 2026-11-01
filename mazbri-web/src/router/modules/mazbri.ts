@@ -121,6 +121,30 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "traces",
+        name: "OpsTraces",
+        component: "/mazbri/ops/traces/search",
+        meta: {
+          title: "menus.mazbri.opsTraces",
+          icon: "ri:node-tree",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "traces/:traceId",
+        name: "OpsTraceDetail",
+        component: "/mazbri/ops/traces/detail",
+        meta: {
+          title: "menus.mazbri.opsTraceDetail",
+          icon: "ri:node-tree",
+          isHide: true,
+          activePath: "/ops/traces",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "upstream/sla",
         name: "OpsUpstreamSla",
         component: "/mazbri/ops/upstream/sla",

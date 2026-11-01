@@ -121,6 +121,7 @@ import type {
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
 import { CALLS_FILTER_KEYS, type CallsTab } from "@/utils/ops/calls-link";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
 import CallMonitorTable, {
   type CallTimeRange,
@@ -371,10 +372,7 @@ async function searchStages() {
 }
 
 function openTrace(traceId: string) {
-  activeTab.value = "stages";
-  stageKind.value = "trace_id";
-  stageInput.value = traceId;
-  void searchStages();
+  void router.push(buildTraceRoute(traceId));
 }
 
 onMounted(() => {

@@ -8,6 +8,7 @@ import {
   MapChart,
   CandlestickChart,
   HeatmapChart,
+  GraphChart,
 } from "echarts/charts";
 import {
   TitleComponent,
@@ -32,6 +33,7 @@ echarts.use([
   MapChart,
   CandlestickChart,
   HeatmapChart,
+  GraphChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,

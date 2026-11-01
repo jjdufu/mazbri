@@ -1,6 +1,7 @@
 mod client;
 mod metrics;
 mod sanitization;
+pub mod traces;
 mod types;
 pub use client::GreptimeDBClient;
 pub use metrics::{

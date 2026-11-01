@@ -831,7 +831,9 @@
       "billingHealth": "Billing Pipeline",
       "opsCalls": "Call search",
       "alertEvents": "Alert events",
-      "alertRules": "Alert rules"
+      "alertRules": "Alert rules",
+      "opsTraces": "Traces",
+      "opsTraceDetail": "Trace detail"
     }
   },
   "systemSettings": {
@@ -4298,6 +4300,88 @@
           "errorCode": "Error code"
         }
       }
+    },
+    "traces": {
+      "loadFailed": "Failed to load traces",
+      "invalidId": "trace_id must be 32 hex characters",
+      "empty": "No matching traces in this window",
+      "notSearched": "Pick a time range and search",
+      "resolved": "{count} traces resolved from call logs",
+      "tabs": { "results": "Results", "topology": "Service topology" },
+      "form": {
+        "tenant": "Tenant",
+        "product": "Product",
+        "service": "Service",
+        "duration": "Duration",
+        "min": "Min",
+        "max": "Max",
+        "errorsOnly": "Errors only"
+      },
+      "scatter": {
+        "title": "Duration distribution",
+        "summary": "{count} traces, click a point to open it",
+        "ok": "OK",
+        "error": "With errors"
+      },
+      "columns": {
+        "start": "Start",
+        "root": "Root span",
+        "duration": "Duration",
+        "spans": "Spans",
+        "services": "Services",
+        "errors": "Errors"
+      },
+      "topology": {
+        "title": "Service dependencies",
+        "hint": "Aggregated from span parent links, up to 24 hours; the auth edge only appears on cache misses",
+        "loadFailed": "Failed to load topology",
+        "source": "Caller",
+        "target": "Callee",
+        "kind": "Kind",
+        "calls": "Calls",
+        "errors": "Errors",
+        "kinds": { "rpc": "RPC", "storage": "Storage", "upstream": "Upstream" }
+      },
+      "detail": {
+        "back": "Back",
+        "title": "Trace detail",
+        "startedAt": "Start",
+        "criticalPath": "Critical path",
+        "error": "Error",
+        "expandAll": "Expand all",
+        "collapseAll": "Collapse all",
+        "offset": "Offset",
+        "attributes": "Attributes",
+        "resource": "Resource",
+        "events": "Events",
+        "links": "Links",
+        "linksTo": "Links to",
+        "linkedFrom": "Linked from",
+        "selectSpan": "Click a span to see its details",
+        "asyncTitle": "Async billing spans (via span links)",
+        "logs": "Call logs",
+        "stages": "Stage timings",
+        "billing": "Billing"
+      },
+      "billing": {
+        "retries": "Retries",
+        "units": "Units",
+        "amount": "Amount",
+        "charge": "Charge status",
+        "processedAt": "Processed at",
+        "error": "Error",
+        "forbidden": "You cannot view billing data",
+        "loadFailed": "Failed to load billing rows"
+      },
+      "fallback": {
+        "title": "Trace not found",
+        "description": "The trace may have expired or was not sampled; the stage waterfall below is built from call logs."
+      },
+      "sampleTitle": "Error samples",
+      "sampleHint": "Click an error code above to load samples, click a trace_id to open it",
+      "viewCalls": "Open in call search",
+      "exemplarEmpty": "No slow request exemplar near this point",
+      "traceIds": "Traces"
     },
     "alerts": {
       "timeline": "Event timeline",

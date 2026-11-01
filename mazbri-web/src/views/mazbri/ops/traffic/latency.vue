@@ -84,6 +84,7 @@ import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BreakdownRow,
@@ -186,6 +187,13 @@ function formatTs(ts: number) {
 const router = useRouter();
 
 function onSlowClick(row: SlowRow) {
+  if (row.trace_id) {
+    const sec = row.ts > 1e12 ? Math.floor(row.ts / 1000) : row.ts;
+    void router.push(
+      buildTraceRoute(row.trace_id, { start: sec, requestId: row.request_id }),
+    );
+    return;
+  }
   if (!row.request_id) return;
   void router.push(
     buildCallsRoute({ tab: "stages", filters: { request_id: row.request_id } }),

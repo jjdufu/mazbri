@@ -1,0 +1,674 @@
+<template>
+  <div class="ops-traces art-full-height">
+    <div class="ops-traces__toolbar">
+      <h2>{{ t("menus.mazbri.opsTraces") }}</h2>
+      <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
+    </div>
+
+    <div class="ops-traces__card">
+      <ElForm
+        :model="form"
+        inline
+        class="ops-traces__form"
+        @submit.prevent="runSearch"
+      >
+        <ElFormItem label="trace_id">
+          <ElInput v-model="form.trace_id" clearable class="ops-traces__wide" />
+        </ElFormItem>
+        <ElFormItem label="request_id">
+          <ElInput
+            v-model="form.request_id"
+            clearable
+            class="ops-traces__wide"
+          />
+        </ElFormItem>
+        <ElFormItem :label="t('ops.traces.form.tenant')">
+          <ElInput
+            v-model="form.tenant_code"
+            clearable
+            class="ops-traces__mid"
+          />
+        </ElFormItem>
+        <ElFormItem :label="t('ops.traces.form.product')">
+          <ElInput
+            v-model="form.product_id"
+            clearable
+            class="ops-traces__mid"
+          />
+        </ElFormItem>
+        <ElFormItem :label="t('ops.traces.form.service')">
+          <ElSelect
+            v-model="form.service"
+            clearable
+            filterable
+            class="ops-traces__mid"
+          >
+            <ElOption
+              v-for="s in serviceOptions"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem :label="t('ops.traces.form.duration')">
+          <ElInputNumber
+            v-model="form.min_duration_ms"
+            :min="0"
+            controls-position="right"
+            :placeholder="t('ops.traces.form.min')"
+            class="ops-traces__num"
+          />
+          <span class="ops-traces__dash">–</span>
+          <ElInputNumber
+            v-model="form.max_duration_ms"
+            :min="0"
+            controls-position="right"
+            :placeholder="t('ops.traces.form.max')"
+            class="ops-traces__num"
+          />
+          <span class="ops-traces__unit">ms</span>
+        </ElFormItem>
+        <ElFormItem>
+          <ElCheckbox v-model="form.errors_only">{{
+            t("ops.traces.form.errorsOnly")
+          }}</ElCheckbox>
+        </ElFormItem>
+        <ElFormItem>
+          <ElButton type="primary" native-type="submit" :loading="loading">
+            {{ t("common.search") }}
+          </ElButton>
+          <ElButton @click="resetForm">{{ t("common.reset") }}</ElButton>
+        </ElFormItem>
+      </ElForm>
+    </div>
+
+    <ElTabs
+      v-model="activeTab"
+      class="ops-traces__tabs"
+      @tab-change="onTabChange"
+    >
+      <ElTabPane :label="t('ops.traces.tabs.results')" name="results" />
+      <ElTabPane :label="t('ops.traces.tabs.topology')" name="topology" />
+    </ElTabs>
+
+    <template v-if="activeTab === 'results'">
+      <div class="ops-traces__card">
+        <div class="ops-traces__card-head">
+          <h3>{{ t("ops.traces.scatter.title") }}</h3>
+          <span class="ops-traces__muted">
+            {{ t("ops.traces.scatter.summary", { count: traces.length }) }}
+            <template v-if="resolvedFromLogs !== null">
+              · {{ t("ops.traces.resolved", { count: resolvedFromLogs }) }}
+            </template>
+          </span>
+        </div>
+        <div
+          ref="scatterRef"
+          v-loading="loading"
+          class="ops-traces__scatter"
+        ></div>
+      </div>
+      <div class="ops-traces__card">
+        <ElTable
+          v-loading="loading"
+          :data="traces"
+          stripe
+          size="small"
+          :empty-text="emptyText"
+          class="ops-traces__table"
+          @row-click="openTrace"
+        >
+          <ElTableColumn :label="t('ops.traces.columns.start')" min-width="180">
+            <template #default="{ row }">{{ formatMs(row.start_ms) }}</template>
+          </ElTableColumn>
+          <ElTableColumn :label="t('ops.traces.columns.root')" min-width="260">
+            <template #default="{ row }">
+              <span class="ops-traces__service">{{ row.root_service }}</span>
+              {{ row.root_span }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn
+            prop="duration_ms"
+            :label="t('ops.traces.columns.duration')"
+            width="120"
+            sortable
+          >
+            <template #default="{ row }"
+              >{{ row.duration_ms.toFixed(1) }} ms</template
+            >
+          </ElTableColumn>
+          <ElTableColumn
+            prop="span_count"
+            :label="t('ops.traces.columns.spans')"
+            width="90"
+          />
+          <ElTableColumn
+            prop="service_count"
+            :label="t('ops.traces.columns.services')"
+            width="90"
+          />
+          <ElTableColumn
+            prop="error_count"
+            :label="t('ops.traces.columns.errors')"
+            width="90"
+          >
+            <template #default="{ row }">
+              <ElTag v-if="row.error_count > 0" type="danger" size="small">{{
+                row.error_count
+              }}</ElTag>
+              <span v-else>0</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
+            <template #default="{ row }">
+              <ElLink type="primary" @click.stop="openTrace(row)">{{
+                row.trace_id
+              }}</ElLink>
+            </template>
+          </ElTableColumn>
+        </ElTable>
+      </div>
+    </template>
+
+    <div v-else class="ops-traces__card">
+      <div class="ops-traces__card-head">
+        <h3>{{ t("ops.traces.topology.title") }}</h3>
+        <span class="ops-traces__muted">{{
+          t("ops.traces.topology.hint")
+        }}</span>
+      </div>
+      <div
+        ref="graphRef"
+        v-loading="graphLoading"
+        class="ops-traces__graph"
+      ></div>
+      <ElTable
+        :data="graph?.edges ?? []"
+        stripe
+        size="small"
+        class="ops-traces__table"
+      >
+        <ElTableColumn
+          prop="source"
+          :label="t('ops.traces.topology.source')"
+          min-width="140"
+        />
+        <ElTableColumn
+          prop="target"
+          :label="t('ops.traces.topology.target')"
+          min-width="180"
+        />
+        <ElTableColumn
+          prop="kind"
+          :label="t('ops.traces.topology.kind')"
+          width="100"
+        >
+          <template #default="{ row }">{{
+            t(`ops.traces.topology.kinds.${row.kind}`)
+          }}</template>
+        </ElTableColumn>
+        <ElTableColumn
+          prop="calls"
+          :label="t('ops.traces.topology.calls')"
+          width="100"
+          sortable
+        />
+        <ElTableColumn
+          prop="errors"
+          :label="t('ops.traces.topology.errors')"
+          width="100"
+          sortable
+        />
+        <ElTableColumn prop="p99_ms" label="P99 (ms)" width="110" sortable>
+          <template #default="{ row }">{{ row.p99_ms.toFixed(1) }}</template>
+        </ElTableColumn>
+      </ElTable>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
+import TimeRangePicker, {
+  type TimeRangeValue,
+} from "@/components/ops/TimeRangePicker.vue";
+import { echarts, type EChartsOption } from "@/plugins/echarts";
+import { fetchTraceDependencies, searchTraces } from "@/api/traces";
+import type {
+  DependencyEdgeKind,
+  DependencyGraph,
+  TraceSearchQuery,
+  TraceSummary,
+} from "@/types/api/traces";
+import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
+import { logger } from "@/utils/sys";
+
+defineOptions({ name: "OpsTraces" });
+
+const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
+
+/** Search window cap enforced by analytics. */
+const MAX_SEARCH_SECONDS = 7 * 86400;
+const MAX_GRAPH_SECONDS = 86400;
+
+interface SearchForm {
+  trace_id: string;
+  request_id: string;
+  tenant_code: string;
+  product_id: string;
+  service: string;
+  min_duration_ms: number | undefined;
+  max_duration_ms: number | undefined;
+  errors_only: boolean;
+}
+
+function queryString(key: string): string {
+  const v = route.query[key];
+  return typeof v === "string" ? v : "";
+}
+
+function queryNumber(key: string): number | undefined {
+  const raw = queryString(key);
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+const form = reactive<SearchForm>({
+  trace_id: queryString("trace_id"),
+  request_id: queryString("request_id"),
+  tenant_code: queryString("tenant_code"),
+  product_id: queryString("product_id"),
+  service: queryString("service"),
+  min_duration_ms: queryNumber("min_duration_ms"),
+  max_duration_ms: queryNumber("max_duration_ms"),
+  errors_only: queryString("errors_only") === "true",
+});
+
+const timeRange = ref<TimeRangeValue>({
+  preset: "1h",
+  start: Math.floor(Date.now() / 1000) - 3600,
+  end: Math.floor(Date.now() / 1000),
+});
+const activeTab = ref<"results" | "topology">(
+  queryString("tab") === "topology" ? "topology" : "results",
+);
+const loading = ref(false);
+const searched = ref(false);
+const traces = ref<TraceSummary[]>([]);
+const resolvedFromLogs = ref<number | null>(null);
+const graph = ref<DependencyGraph | null>(null);
+const graphLoading = ref(false);
+
+const scatterRef = ref<HTMLDivElement>();
+const graphRef = ref<HTMLDivElement>();
+let scatter: echarts.ECharts | null = null;
+let graphChart: echarts.ECharts | null = null;
+
+const serviceOptions = computed(() => {
+  const set = new Set<string>(graph.value?.nodes ?? []);
+  for (const tr of traces.value) set.add(tr.root_service);
+  if (form.service) set.add(form.service);
+  return [...set].filter((s) => s && !s.includes(":")).sort();
+});
+
+const emptyText = computed(() =>
+  searched.value ? t("ops.traces.empty") : t("ops.traces.notSearched"),
+);
+
+function formatMs(ms: number): string {
+  return new Date(ms).toLocaleString();
+}
+
+function clampedRange(maxSeconds: number): { start: number; end: number } {
+  const { start, end } = timeRange.value;
+  return { start: Math.max(start, end - maxSeconds), end };
+}
+
+function buildQuery(): TraceSearchQuery {
+  const q: TraceSearchQuery = {
+    ...clampedRange(MAX_SEARCH_SECONDS),
+    limit: 100,
+  };
+  if (form.trace_id.trim()) q.trace_id = form.trace_id.trim().toLowerCase();
+  if (form.request_id.trim()) q.request_id = form.request_id.trim();
+  if (form.tenant_code.trim()) q.tenant_code = form.tenant_code.trim();
+  if (form.product_id.trim()) q.product_id = form.product_id.trim();
+  if (form.service) q.service = form.service;
+  if (form.min_duration_ms !== undefined && form.min_duration_ms !== null) {
+    q.min_duration_ms = form.min_duration_ms;
+  }
+  if (form.max_duration_ms !== undefined && form.max_duration_ms !== null) {
+    q.max_duration_ms = form.max_duration_ms;
+  }
+  if (form.errors_only) q.errors_only = true;
+  return q;
+}
+
+function syncRoute() {
+  const query: Record<string, string | undefined> = {
+    ...(route.query as Record<string, string>),
+  };
+  for (const key of TRACE_SEARCH_KEYS) query[key] = undefined;
+  const values: Record<string, string | number | boolean | undefined> = {
+    ...form,
+  };
+  for (const key of TRACE_SEARCH_KEYS) {
+    const v = values[key];
+    if (v === undefined || v === null || v === "" || v === false) continue;
+    query[key] = String(v);
+  }
+  query.tab = activeTab.value === "topology" ? "topology" : undefined;
+  void router.replace({ query });
+}
+
+let searchSeq = 0;
+async function runSearch() {
+  const seq = ++searchSeq;
+  loading.value = true;
+  try {
+    const res = await searchTraces(buildQuery());
+    if (seq !== searchSeq) return;
+    traces.value = res.traces;
+    resolvedFromLogs.value = res.resolved_from_logs;
+    searched.value = true;
+    syncRoute();
+    await nextTick();
+    renderScatter();
+  } catch (error) {
+    logger.error("Failed to search traces:", error);
+    if (seq === searchSeq) ElMessage.error(t("ops.traces.loadFailed"));
+  } finally {
+    if (seq === searchSeq) loading.value = false;
+  }
+}
+
+function resetForm() {
+  form.trace_id = "";
+  form.request_id = "";
+  form.tenant_code = "";
+  form.product_id = "";
+  form.service = "";
+  form.min_duration_ms = undefined;
+  form.max_duration_ms = undefined;
+  form.errors_only = false;
+  void runSearch();
+}
+
+function openTrace(row: TraceSummary) {
+  void router.push(
+    buildTraceRoute(row.trace_id, { start: Math.floor(row.start_ms / 1000) }),
+  );
+}
+
+function renderScatter() {
+  if (!scatterRef.value) return;
+  if (!scatter) {
+    scatter = echarts.init(scatterRef.value);
+    scatter.on("click", (params) => {
+      const idx = typeof params.dataIndex === "number" ? params.dataIndex : -1;
+      const series =
+        params.seriesIndex === 1 ? errorTraces.value : okTraces.value;
+      const row = series[idx];
+      if (row) openTrace(row);
+    });
+  }
+  scatter.setOption(buildScatterOption(), true);
+}
+
+const okTraces = computed(() =>
+  traces.value.filter((r) => r.error_count === 0),
+);
+const errorTraces = computed(() =>
+  traces.value.filter((r) => r.error_count > 0),
+);
+
+function buildScatterOption(): EChartsOption {
+  const toPoint = (r: TraceSummary) => [
+    r.start_ms,
+    Number(r.duration_ms.toFixed(2)),
+  ];
+  return {
+    grid: { left: 60, right: 24, top: 24, bottom: 36 },
+    tooltip: {
+      trigger: "item",
+      formatter: (p) => {
+        const item = Array.isArray(p) ? p[0] : p;
+        const series =
+          item.seriesIndex === 1 ? errorTraces.value : okTraces.value;
+        const row = series[item.dataIndex];
+        if (!row) return "";
+        return `${row.root_service} · ${row.root_span}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} spans<br/>${row.trace_id}`;
+      },
+    },
+    legend: { top: 0, right: 0 },
+    xAxis: { type: "time" },
+    yAxis: { type: "value", name: "ms", scale: true },
+    series: [
+      {
+        name: t("ops.traces.scatter.ok"),
+        type: "scatter",
+        symbolSize: 8,
+        itemStyle: { color: "#409eff" },
+        data: okTraces.value.map(toPoint),
+      },
+      {
+        name: t("ops.traces.scatter.error"),
+        type: "scatter",
+        symbolSize: 10,
+        itemStyle: { color: "#f56c6c" },
+        data: errorTraces.value.map(toPoint),
+      },
+    ],
+  };
+}
+
+const KIND_COLORS: Record<DependencyEdgeKind, string> = {
+  rpc: "#409eff",
+  storage: "#e6a23c",
+  upstream: "#67c23a",
+};
+
+function nodeCategory(name: string): number {
+  if (name.startsWith("upstream:")) return 2;
+  if (name === "redis" || name === "postgres") return 1;
+  return 0;
+}
+
+let graphSeq = 0;
+async function loadGraph() {
+  const seq = ++graphSeq;
+  graphLoading.value = true;
+  try {
+    const res = await fetchTraceDependencies(clampedRange(MAX_GRAPH_SECONDS));
+    if (seq !== graphSeq) return;
+    graph.value = res;
+    await nextTick();
+    renderGraph();
+  } catch (error) {
+    logger.error("Failed to load trace dependencies:", error);
+    if (seq === graphSeq) ElMessage.error(t("ops.traces.topology.loadFailed"));
+  } finally {
+    if (seq === graphSeq) graphLoading.value = false;
+  }
+}
+
+function renderGraph() {
+  if (!graphRef.value || !graph.value) return;
+  if (!graphChart) graphChart = echarts.init(graphRef.value);
+  const data = graph.value;
+  const maxCalls = Math.max(1, ...data.edges.map((e) => e.calls));
+  const categories = [
+    { name: t("ops.traces.topology.kinds.rpc") },
+    { name: t("ops.traces.topology.kinds.storage") },
+    { name: t("ops.traces.topology.kinds.upstream") },
+  ];
+  const option: EChartsOption = {
+    tooltip: {
+      formatter: (p) => {
+        const item = Array.isArray(p) ? p[0] : p;
+        if (item.dataType === "edge") {
+          const edge = data.edges[item.dataIndex];
+          if (!edge) return "";
+          return `${edge.source} → ${edge.target}<br/>${t("ops.traces.topology.calls")}: ${edge.calls}<br/>${t("ops.traces.topology.errors")}: ${edge.errors}<br/>P99: ${edge.p99_ms.toFixed(1)} ms`;
+        }
+        return String(item.name);
+      },
+    },
+    legend: [{ data: categories.map((c) => c.name), top: 0 }],
+    series: [
+      {
+        type: "graph",
+        layout: "force",
+        roam: true,
+        draggable: true,
+        categories,
+        force: { repulsion: 420, edgeLength: [90, 200] },
+        label: { show: true, position: "right" },
+        edgeSymbol: ["none", "arrow"],
+        edgeSymbolSize: 8,
+        data: data.nodes.map((name) => ({
+          name,
+          category: nodeCategory(name),
+          symbolSize: name === "gateway" ? 44 : 30,
+        })),
+        links: data.edges.map((e) => ({
+          source: e.source,
+          target: e.target,
+          label: {
+            show: true,
+            formatter: `${e.calls} · ${e.p99_ms.toFixed(0)}ms`,
+            fontSize: 10,
+          },
+          lineStyle: {
+            color: e.errors > 0 ? "#f56c6c" : KIND_COLORS[e.kind],
+            width: 1 + 4 * (e.calls / maxCalls),
+            curveness: 0.1,
+          },
+        })),
+      },
+    ],
+  };
+  graphChart.setOption(option, true);
+}
+
+function onRangeChange(value: TimeRangeValue) {
+  timeRange.value = value;
+  if (activeTab.value === "topology") void loadGraph();
+  else void runSearch();
+}
+
+async function onTabChange() {
+  syncRoute();
+  await nextTick();
+  if (activeTab.value === "topology") {
+    scatter?.dispose();
+    scatter = null;
+    void loadGraph();
+  } else {
+    graphChart?.dispose();
+    graphChart = null;
+    renderScatter();
+  }
+}
+
+function resize() {
+  scatter?.resize();
+  graphChart?.resize();
+}
+
+onMounted(() => {
+  window.addEventListener("resize", resize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", resize);
+  scatter?.dispose();
+  graphChart?.dispose();
+  scatter = null;
+  graphChart = null;
+});
+</script>
+
+<style scoped>
+.ops-traces {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.ops-traces__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.ops-traces__toolbar h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.ops-traces__card {
+  padding: 12px 16px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+.ops-traces__card-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.ops-traces__card-head h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.ops-traces__form :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+.ops-traces__wide {
+  width: 280px;
+}
+.ops-traces__mid {
+  width: 160px;
+}
+.ops-traces__num {
+  width: 110px;
+}
+.ops-traces__dash,
+.ops-traces__unit {
+  margin: 0 6px;
+  color: var(--el-text-color-secondary);
+}
+.ops-traces__muted {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ops-traces__scatter {
+  height: 240px;
+}
+.ops-traces__graph {
+  height: 460px;
+}
+.ops-traces__table :deep(.el-table__row) {
+  cursor: pointer;
+}
+.ops-traces__service {
+  display: inline-block;
+  padding: 0 6px;
+  margin-right: 6px;
+  font-size: 12px;
+  background: var(--el-fill-color);
+  border-radius: 4px;
+}
+.ops-traces__tabs :deep(.el-tabs__header) {
+  margin: 0;
+}
+</style>

@@ -252,9 +252,11 @@
         <ElCard shadow="never">
           <template #header>{{ t("ops.overview.charts.p99") }}</template>
           <MultiSeriesChart
+            v-loading="exemplarLoading"
             :series="p99Series"
             :loading="loading"
             height="240px"
+            @point-click="onP99Click"
           />
         </ElCard>
       </ElCol>
@@ -285,6 +287,9 @@ import type {
   MetricSeries,
 } from "@/types/api/monitoring";
 import { useUserStore } from "@/store/modules/user";
+import { postOlapQuery } from "@/api/olap";
+import type { ExemplarRow } from "@/types/api/olap";
+import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -298,6 +303,39 @@ const overview = ref<MetricOverview | null>(null);
 const platform = ref<PlatformStats | null>(null);
 const qpsSeries = ref<MetricSeries | null>(null);
 const p99Series = ref<MetricSeries | null>(null);
+const exemplarLoading = ref(false);
+
+/** P99 point click → exemplar requests at/above P99 around that point → slow trace list. */
+async function onP99Click(point: { timestamp: number }) {
+  const span = timeRange.value.end - timeRange.value.start;
+  const windowSecs = Math.min(3600, Math.max(60, Math.ceil(span / 120)));
+  exemplarLoading.value = true;
+  try {
+    const res = await postOlapQuery<ExemplarRow>({
+      template: "exemplar_traces",
+      params: { ts: point.timestamp, window_secs: windowSecs, limit: 5 },
+    });
+    const rows = res.rows.filter((r) => r.trace_id);
+    if (!rows.length) {
+      ElMessage.info(t("ops.traces.exemplarEmpty"));
+      return;
+    }
+    const threshold = Math.floor(
+      Math.min(...rows.map((r) => r.p99_ms || r.value_ms)),
+    );
+    void router.push(
+      buildTraceSearchRoute({
+        start: point.timestamp - windowSecs,
+        end: point.timestamp + windowSecs,
+        filters: { min_duration_ms: threshold },
+      }),
+    );
+  } catch {
+    ElMessage.error(t("ops.traces.loadFailed"));
+  } finally {
+    exemplarLoading.value = false;
+  }
+}
 const alertSummary = ref<AlertSummary | null>(null);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({

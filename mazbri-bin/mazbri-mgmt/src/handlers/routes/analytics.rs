@@ -63,4 +63,20 @@ pub fn routes() -> Router<AppState> {
             "/stats/calls/stages",
             get(analytics_handlers::get_call_stages),
         )
+        .route(
+            "/stats/traces/search",
+            get(analytics_handlers::search_traces),
+        )
+        .route(
+            "/stats/traces/dependencies",
+            get(analytics_handlers::get_trace_dependencies),
+        )
+        .route(
+            "/stats/traces/billing",
+            get(analytics_handlers::get_trace_billing),
+        )
+        .route(
+            "/stats/traces/{trace_id}",
+            get(analytics_handlers::get_trace),
+        )
 }

@@ -202,7 +202,28 @@ impl AnalyticsHttpClient {
         Ok((status, body))
     }
 
-    async fn get_json(&self, path: &str, params: &[(&str, String)]) -> Result<serde_json::Value> {
+    /// trace 检索、详情与服务依赖转发：返回 analytics 的 HTTP 状态与 JSON 体（4xx 由调用方透传）。
+    ///
+    /// # Errors
+    ///
+    /// 网络失败或响应不是 JSON 时返回错误。
+    pub async fn traces(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<(reqwest::StatusCode, serde_json::Value)> {
+        let resp = self
+            .client
+            .get(self.url_with_query(&format!("/api/v1/traces{path}"), params))
+            .send()
+            .await
+            .with_context(|| format!("调用 analytics /api/v1/traces{path} 失败"))?;
+        let status = resp.status();
+        let body: serde_json::Value = resp.json().await.context("解析 analytics 响应 JSON 失败")?;
+        Ok((status, body))
+    }
+
+    fn url_with_query(&self, path: &str, params: &[(&str, String)]) -> String {
         let query = params
             .iter()
             .map(|(key, value)| {
@@ -214,11 +235,15 @@ impl AnalyticsHttpClient {
             })
             .collect::<Vec<_>>()
             .join("&");
-        let url = if query.is_empty() {
+        if query.is_empty() {
             format!("{}{}", self.base_url, path)
         } else {
             format!("{}{}?{}", self.base_url, path, query)
-        };
+        }
+    }
+
+    async fn get_json(&self, path: &str, params: &[(&str, String)]) -> Result<serde_json::Value> {
+        let url = self.url_with_query(path, params);
         let resp = self
             .client
             .get(&url)

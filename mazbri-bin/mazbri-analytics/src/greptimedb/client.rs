@@ -29,6 +29,7 @@ struct GreptimeDBColumn {
 pub struct GreptimeDBClient {
     pub(super) http_url: String,
     pub(super) database: String,
+    pub(super) traces_database: String,
     pub(super) user: String,
     pub(super) password: String,
     pub(super) client: Client,
@@ -61,6 +62,7 @@ impl GreptimeDBClient {
         Ok(Self {
             http_url: config.http_url.trim_end_matches('/').to_string(),
             database: config.database.clone(),
+            traces_database: config.traces_database.clone(),
             user,
             password,
             client,
@@ -70,12 +72,13 @@ impl GreptimeDBClient {
     }
     async fn execute_query_columns_rows(
         &self,
+        database: &str,
         sql: &str,
         error_context: &str,
     ) -> Result<(Vec<String>, Vec<Vec<serde_json::Value>>)> {
         let started = std::time::Instant::now();
         let result = self
-            .execute_query_columns_rows_inner(sql, error_context)
+            .execute_query_columns_rows_inner(database, sql, error_context)
             .await;
         mazbri_core::metrics::observe_dep("greptime", "query", started, result.is_ok());
         crate::clickhouse::record_query_span(
@@ -89,10 +92,11 @@ impl GreptimeDBClient {
     }
     async fn execute_query_columns_rows_inner(
         &self,
+        database: &str,
         sql: &str,
         error_context: &str,
     ) -> Result<(Vec<String>, Vec<Vec<serde_json::Value>>)> {
-        let url = format!("{}/v1/sql?db={}", self.http_url, self.database);
+        let url = format!("{}/v1/sql?db={}", self.http_url, database);
         let response = self
             .client
             .post(&url)
@@ -142,18 +146,25 @@ impl GreptimeDBClient {
         sql: &str,
         error_context: &str,
     ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
-        let (columns, rows) = self.execute_query_columns_rows(sql, error_context).await?;
-        let results: Vec<HashMap<String, serde_json::Value>> = rows
-            .into_iter()
-            .map(|row| {
-                columns
-                    .iter()
-                    .zip(row.iter())
-                    .map(|(col, val)| (col.clone(), val.clone()))
-                    .collect()
-            })
-            .collect();
-        Ok(results)
+        let (columns, rows) = self
+            .execute_query_columns_rows(&self.database, sql, error_context)
+            .await?;
+        Ok(zip_rows(&columns, rows))
+    }
+    /// 在 trace 库（`traces_database`）上执行 SQL。
+    ///
+    /// # Errors
+    ///
+    /// 网络、HTTP 状态或响应解析失败时返回错误。
+    pub async fn execute_trace_query_rows(
+        &self,
+        sql: &str,
+        error_context: &str,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+        let (columns, rows) = self
+            .execute_query_columns_rows(&self.traces_database, sql, error_context)
+            .await?;
+        Ok(zip_rows(&columns, rows))
     }
     /// # Errors
     ///
@@ -193,4 +204,14 @@ impl GreptimeDBClient {
             ))),
         }
     }
+}
+
+/// 按列名把行数组转成 map。
+fn zip_rows(
+    columns: &[String],
+    rows: Vec<Vec<serde_json::Value>>,
+) -> Vec<HashMap<String, serde_json::Value>> {
+    rows.into_iter()
+        .map(|row| columns.iter().cloned().zip(row).collect())
+        .collect()
 }

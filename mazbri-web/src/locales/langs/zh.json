@@ -831,7 +831,9 @@
       "billingHealth": "计费链路健康",
       "opsCalls": "调用检索",
       "alertEvents": "告警事件",
-      "alertRules": "告警规则"
+      "alertRules": "告警规则",
+      "opsTraces": "链路追踪",
+      "opsTraceDetail": "链路详情"
     }
   },
   "systemSettings": {
@@ -4303,6 +4305,88 @@
           "errorCode": "错误码"
         }
       }
+    },
+    "traces": {
+      "loadFailed": "链路加载失败",
+      "invalidId": "trace_id 必须是 32 位十六进制",
+      "empty": "该时间窗内没有匹配的链路",
+      "notSearched": "请选择时间范围并检索",
+      "resolved": "由调用日志解析出 {count} 个 trace",
+      "tabs": { "results": "检索结果", "topology": "服务拓扑" },
+      "form": {
+        "tenant": "租户",
+        "product": "产品",
+        "service": "服务",
+        "duration": "耗时",
+        "min": "最小",
+        "max": "最大",
+        "errorsOnly": "仅错误"
+      },
+      "scatter": {
+        "title": "耗时分布",
+        "summary": "共 {count} 条，点击散点查看详情",
+        "ok": "正常",
+        "error": "含错误"
+      },
+      "columns": {
+        "start": "开始时间",
+        "root": "入口 span",
+        "duration": "耗时",
+        "spans": "span 数",
+        "services": "服务数",
+        "errors": "错误数"
+      },
+      "topology": {
+        "title": "服务依赖拓扑",
+        "hint": "基于 span 父子关系聚合，最长 24 小时；鉴权边只在缓存未命中时出现",
+        "loadFailed": "拓扑加载失败",
+        "source": "调用方",
+        "target": "被调方",
+        "kind": "类型",
+        "calls": "调用数",
+        "errors": "错误数",
+        "kinds": { "rpc": "服务调用", "storage": "存储", "upstream": "上游" }
+      },
+      "detail": {
+        "back": "返回",
+        "title": "链路详情",
+        "startedAt": "开始",
+        "criticalPath": "关键路径",
+        "error": "错误",
+        "expandAll": "全部展开",
+        "collapseAll": "全部折叠",
+        "offset": "相对开始",
+        "attributes": "属性",
+        "resource": "资源",
+        "events": "事件",
+        "links": "关联",
+        "linksTo": "关联到",
+        "linkedFrom": "被关联自",
+        "selectSpan": "点击左侧 span 查看详情",
+        "asyncTitle": "异步计费 span（通过 span link 关联）",
+        "logs": "调用日志",
+        "stages": "阶段耗时",
+        "billing": "计费流水"
+      },
+      "billing": {
+        "retries": "重试",
+        "units": "计费量",
+        "amount": "金额",
+        "charge": "扣费状态",
+        "processedAt": "处理时间",
+        "error": "错误",
+        "forbidden": "无权查看计费数据",
+        "loadFailed": "计费流水加载失败"
+      },
+      "fallback": {
+        "title": "未找到该 trace",
+        "description": "trace 可能已过保留期或未被采样，下方按调用日志与阶段耗时展示兜底瀑布。"
+      },
+      "sampleTitle": "错误样例",
+      "sampleHint": "点击上方错误码加载样例，点击 trace_id 打开链路",
+      "viewCalls": "在调用检索中查看",
+      "exemplarEmpty": "该时刻附近没有可用的慢请求样例",
+      "traceIds": "关联链路"
     },
     "alerts": {
       "timeline": "事件时间线",
