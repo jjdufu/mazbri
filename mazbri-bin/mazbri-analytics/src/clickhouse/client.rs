@@ -95,6 +95,24 @@ impl ClickHouseClient {
         }
     }
 
+    /// 执行不返回行的语句（INSERT / DDL）。
+    ///
+    /// # Errors
+    ///
+    /// `ClickHouse` 执行失败时返回错误。
+    pub async fn execute_sql(&self, sql: &str) -> Result<()> {
+        let started = std::time::Instant::now();
+        let result = self
+            .inner
+            .query(sql)
+            .execute()
+            .await
+            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")));
+        mazbri_core::metrics::observe_dep("ch", "execute", started, result.is_ok());
+        record_query_span("clickhouse.execute", "clickhouse", sql, started, result.as_ref().err());
+        result
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

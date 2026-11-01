@@ -862,7 +862,8 @@
       "flowCache": "缓存",
       "billingReconcile": "对账中心",
       "assetsCerts": "证书与 License",
-      "assetsChanges": "变更时间线"
+      "assetsChanges": "变更时间线",
+      "securityEvents": "鉴权与安全事件"
     }
   },
   "systemSettings": {
@@ -4625,6 +4626,23 @@
       "colResource": "资源",
       "colService": "服务",
       "colStatus": "状态"
+    },
+    "security": {
+      "topIp": "失败 IP Top",
+      "topKey": "失败 Key Top",
+      "topCountry": "失败国家 Top",
+      "events": "安全事件",
+      "colDim": "维度值",
+      "colFails": "失败",
+      "colReqs": "请求",
+      "colTime": "时间",
+      "colType": "类型",
+      "colTenant": "租户",
+      "colKey": "Key",
+      "colIp": "IP",
+      "colCountry": "国家",
+      "colCity": "城市",
+      "colDetail": "详情"
     }
   }
 }

@@ -155,6 +155,18 @@ async fn main() -> Result<()> {
             Arc::clone(&clickhouse_client),
         )?;
     }
+    if let Some(ref security) = config.security {
+        mazbri_analytics::security::spawn(security, Arc::clone(&clickhouse_client))?;
+    } else {
+        // 未配置时默认启用，便于本地链路验证
+        let default_sec = mazbri_analytics::security::SecurityConfig {
+            enabled: true,
+            interval_secs: 60,
+            key_spike_ratio: 10.0,
+            ip_fail_threshold: 50,
+        };
+        mazbri_analytics::security::spawn(&default_sec, Arc::clone(&clickhouse_client))?;
+    }
     mazbri_analytics::pipeline_freshness::spawn(
         greptimedb_client.clone(),
         Arc::clone(&clickhouse_client),

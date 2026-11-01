@@ -8,6 +8,7 @@ pub mod log_writer_metrics;
 pub mod metrics;
 pub mod models;
 pub mod pipeline_freshness;
+pub mod security;
 pub use config::{AnalyticsConfig, ClickHouseConfig, GreptimeDBConfig};
 pub use metrics::register_analytics_metrics;
 pub use models::RequestLogEntry;

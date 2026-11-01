@@ -39,6 +39,10 @@ pub enum OlapQuery {
     TenantErrors(TenantScopedParams),
     /// 响应缓存命中率（`request_logs.cache_hit`）。
     ResponseCacheHit(WindowParams),
+    /// 安全 Top（IP / Key / 国家失败计数）。
+    SecurityTop(SecurityTopParams),
+    /// 安全事件列表。
+    SecurityEvents(SecurityEventsParams),
 }
 
 impl OlapQuery {
@@ -76,6 +80,8 @@ impl OlapQuery {
             Self::TenantOverview(_) => "tenant_overview",
             Self::TenantErrors(_) => "tenant_errors",
             Self::ResponseCacheHit(_) => "response_cache_hit",
+            Self::SecurityTop(_) => "security_top",
+            Self::SecurityEvents(_) => "security_events",
         }
     }
 }
@@ -384,6 +390,43 @@ pub struct QuotaTopParams {
     pub limit: Option<u32>,
 }
 
+
+/// `security_top`：按 dim 聚合失败/请求。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityTopParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default = "default_security_dim")]
+    pub dim: SecurityDim,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+fn default_security_dim() -> SecurityDim {
+    SecurityDim::Ip
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityDim {
+    Ip,
+    Key,
+    Country,
+}
+
+/// `security_events`：最近安全事件。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityEventsParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub event_type: Option<String>,
+}
+
 /// 租户作用域窗口参数（`tenant_code` 必填）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -530,6 +573,26 @@ pub struct FunnelChRow {
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct SecurityTopRow {
+    pub dim_value: String,
+    pub fail_count: u64,
+    pub req_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct SecurityEventRow {
+    pub ts: String,
+    pub event_type: String,
+    pub tenant: String,
+    pub key_id: String,
+    pub ip: String,
+    pub detail: String,
+    pub geo_country: String,
+    pub geo_city: String,
+    pub asn: String,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
 pub struct QuotaTopRow {
     pub tenant_code: String,
     pub rejects: u64,
@@ -586,6 +649,8 @@ pub enum OlapRows {
     Sla(Vec<SlaRow>),
     FunnelCh(Vec<FunnelChRow>),
     QuotaTop(Vec<QuotaTopRow>),
+    SecurityTop(Vec<SecurityTopRow>),
+    SecurityEvents(Vec<SecurityEventRow>),
     TenantOverview(Vec<TenantOverviewRow>),
     TenantErrors(Vec<TenantErrorRow>),
     ResponseCacheHit(Vec<ResponseCacheHitRow>),
@@ -670,6 +735,19 @@ impl OlapQuery {
                 p.filters.validate()
             }
             Self::QuotaTop(p) => reject_over_day(p.range, "quota_top"),
+            Self::SecurityTop(p) => reject_over_day(p.range, "security_top"),
+            Self::SecurityEvents(p) => {
+                reject_over_day(p.range, "security_events")?;
+                if let Some(ref et) = p.event_type {
+                    let et = et.trim();
+                    if !(et.is_empty()
+                        || matches!(et, "key_spike" | "new_ip" | "ip_fail_spike"))
+                    {
+                        return Err(invalid("event_type 无效".into()));
+                    }
+                }
+                Ok(())
+            }
             Self::TenantOverview(p) | Self::TenantErrors(p) => {
                 let code = p.tenant_code.trim();
                 if code.is_empty() {
@@ -731,6 +809,8 @@ impl OlapQuery {
             Self::BillingFunnelCh(p) => billing_funnel_ch_sql(p, &mut binds),
             Self::ExemplarTraces(p) => exemplar_traces_sql(p, &mut binds),
             Self::QuotaTop(p) => quota_top_sql(p, &mut binds),
+            Self::SecurityTop(p) => security_top_sql(p, &mut binds),
+            Self::SecurityEvents(p) => security_events_sql(p, &mut binds),
             Self::TenantOverview(p) => tenant_overview_sql(p, &mut binds),
             Self::TenantErrors(p) => tenant_errors_sql(p, &mut binds),
             Self::ResponseCacheHit(p) => response_cache_hit_sql(p, &mut binds),
@@ -984,6 +1064,37 @@ fn billing_funnel_ch_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
 }
 
 
+
+fn security_top_sql(p: &SecurityTopParams, _binds: &mut Vec<String>) -> String {
+    let dim = match p.dim {
+        SecurityDim::Ip => "ip",
+        SecurityDim::Key => "key_id",
+        SecurityDim::Country => "geo_country",
+    };
+    format!(
+        "SELECT {dim} AS dim_value, sum(fail_count) AS fail_count, sum(req_count) AS req_count          FROM security_agg_1h WHERE {window} AND {dim} != ''          GROUP BY dim_value ORDER BY fail_count DESC LIMIT {limit}",
+        dim = dim,
+        window = window(p.range, "window_start"),
+        limit = clamp_limit(p.limit, 20),
+    )
+}
+
+fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> String {
+    let mut sql = format!(
+        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM security_events WHERE {window}",
+        window = window(p.range, "ts"),
+    );
+    if let Some(ref et) = p.event_type {
+        let et = et.trim();
+        if !et.is_empty() {
+            binds.push(et.to_string());
+            sql.push_str(" AND type = ?");
+        }
+    }
+    let limit = clamp_limit(p.limit, 50);
+    format!("{sql} ORDER BY ts DESC LIMIT {limit}")
+}
+
 fn quota_top_sql(p: &QuotaTopParams, _binds: &mut Vec<String>) -> String {
     let limit = clamp_limit(p.limit, 20);
     format!(
@@ -1078,6 +1189,10 @@ impl ClickHouseClient {
             OlapQuery::SupplierSla(_) => OlapRows::Sla(self.fetch_bound(&sql).await?),
             OlapQuery::BillingFunnelCh(_) => OlapRows::FunnelCh(self.fetch_bound(&sql).await?),
             OlapQuery::QuotaTop(_) => OlapRows::QuotaTop(self.fetch_bound(&sql).await?),
+            OlapQuery::SecurityTop(_) => OlapRows::SecurityTop(self.fetch_bound(&sql).await?),
+            OlapQuery::SecurityEvents(_) => {
+                OlapRows::SecurityEvents(self.fetch_bound(&sql).await?)
+            }
             OlapQuery::TenantOverview(_) => OlapRows::TenantOverview(self.fetch_bound(&sql).await?),
             OlapQuery::TenantErrors(_) => OlapRows::TenantErrors(self.fetch_bound(&sql).await?),
             OlapQuery::ResponseCacheHit(_) => {
@@ -1211,6 +1326,25 @@ mod tests {
         let long = parse(r#"{"template":"new_error_codes","params":{"range":"7d"}}"#).expect("ok");
         assert!(long.validate().is_err());
     }
+    #[test]
+    fn security_top_template_parses() {
+        let q = parse(r#"{"template":"security_top","params":{"range":"1h","dim":"ip","limit":5}}"#)
+            .expect("parse");
+        assert_eq!(q.template_name(), "security_top");
+        q.validate().expect("ok");
+        let sql = q.sql();
+        assert!(sql.text.contains("security_agg_1h"), "{}", sql.text);
+        assert!(sql.binds.is_empty());
+        let q = parse(
+            r#"{"template":"security_events","params":{"range":"24h","limit":10,"event_type":"new_ip"}}"#,
+        )
+        .expect("parse");
+        q.validate().expect("ok");
+        let sql = q.sql();
+        assert!(sql.text.contains("security_events"), "{}", sql.text);
+        assert_eq!(sql.binds, vec!["new_ip".to_string()]);
+    }
+
     #[test]
     fn quota_top_and_tenant_templates_bind_safely() {
         let q = parse(r#"{"template":"quota_top","params":{"range":"1h","limit":5}}"#)

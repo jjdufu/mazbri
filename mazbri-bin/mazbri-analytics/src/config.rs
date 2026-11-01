@@ -20,6 +20,8 @@ pub struct AnalyticsConfig {
     pub metrics_targets: Vec<ServiceMetricTargetConfig>,
     #[serde(default)]
     pub alerting: Option<crate::alerting::AlertingConfig>,
+    #[serde(default)]
+    pub security: Option<crate::security::SecurityConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,6 +166,11 @@ impl ValidateConfig for AnalyticsConfig {
         self.clickhouse
             .validate()
             .map_err(|e| anyhow::anyhow!("ClickHouse 配置无效: {e}"))?;
+        if let Some(ref security) = self.security {
+            security
+                .validate()
+                .map_err(|e| anyhow::anyhow!("security: {e}"))?;
+        }
         if let Some(ref alerting) = self.alerting {
             alerting
                 .validate()

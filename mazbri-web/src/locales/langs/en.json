@@ -862,7 +862,8 @@
       "flowCache": "Cache",
       "billingReconcile": "Reconciliation",
       "assetsCerts": "Certificates & License",
-      "assetsChanges": "Change Timeline"
+      "assetsChanges": "Change Timeline",
+      "securityEvents": "Auth & Security"
     }
   },
   "systemSettings": {
@@ -4620,6 +4621,23 @@
       "colResource": "Resource",
       "colService": "Service",
       "colStatus": "Status"
+    },
+    "security": {
+      "topIp": "Fail IP Top",
+      "topKey": "Fail Key Top",
+      "topCountry": "Fail Country Top",
+      "events": "Security events",
+      "colDim": "Value",
+      "colFails": "Fails",
+      "colReqs": "Reqs",
+      "colTime": "Time",
+      "colType": "Type",
+      "colTenant": "Tenant",
+      "colKey": "Key",
+      "colIp": "IP",
+      "colCountry": "Country",
+      "colCity": "City",
+      "colDetail": "Detail"
     }
   }
 }
