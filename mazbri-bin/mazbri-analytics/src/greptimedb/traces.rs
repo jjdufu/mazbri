@@ -293,11 +293,22 @@ pub fn build_storage_edges_sql(start: i64, end: i64) -> String {
     )
 }
 
+/// Greptime 懒加载列：`upstream.attempt` 写入前可能尚不存在。
+const SUPPLIER_CODE_ATTR: &str = "span_attributes.supplier_code";
+
+/// 检查 trace 表是否已有 `span_attributes.supplier_code`（OTLP 懒加列）。
+#[must_use]
+pub fn build_supplier_code_column_check_sql() -> String {
+    format!(
+        "SELECT column_name FROM information_schema.columns          WHERE table_name = '{TRACE_TABLE}'            AND column_name = '{SUPPLIER_CODE_ATTR}' LIMIT 1"
+    )
+}
+
 /// bypass → 上游供应商边：网关 `upstream.attempt` 记录供应商，其子 span 为 bypass 出站。
 #[must_use]
 pub fn build_upstream_edges_sql(start: i64, end: i64) -> String {
     format!(
-        "SELECT c.service_name AS source, p.\"span_attributes.supplier_code\" AS supplier, \
+        "SELECT c.service_name AS source, p.\"{SUPPLIER_CODE_ATTR}\" AS supplier, \
          count(*) AS calls, \
          sum(CASE WHEN p.span_status_code = '{STATUS_ERROR}' \
                     OR c.span_status_code = '{STATUS_ERROR}' THEN 1 ELSE 0 END) AS errors, \
@@ -787,7 +798,6 @@ impl GreptimeDBClient {
     pub async fn trace_dependencies(&self, start: i64, end: i64) -> Result<DependencyGraph> {
         let rpc_sql = build_rpc_edges_sql(start, end);
         let storage_sql = build_storage_edges_sql(start, end);
-        let upstream_sql = build_upstream_edges_sql(start, end);
         let (rpc, storage, upstream) = tokio::try_join!(
             self.with_query_timeout(
                 "trace rpc edges",
@@ -797,12 +807,38 @@ impl GreptimeDBClient {
                 "trace storage edges",
                 self.execute_trace_query_rows(&storage_sql, "trace storage edges"),
             ),
-            self.with_query_timeout(
-                "trace upstream edges",
-                self.execute_trace_query_rows(&upstream_sql, "trace upstream edges"),
-            ),
+            self.upstream_edges_or_empty(start, end),
         )?;
         Ok(assemble_graph(start, end, &rpc, &storage, &upstream))
+    }
+
+    /// 上游边依赖懒加列 `span_attributes.supplier_code`；列不存在时退化为空边，避免 502。
+    async fn upstream_edges_or_empty(
+        &self,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<HashMap<String, Value>>> {
+        let cols = self
+            .with_query_timeout(
+                "trace supplier_code column",
+                self.execute_trace_query_rows(
+                    &build_supplier_code_column_check_sql(),
+                    "trace supplier_code column",
+                ),
+            )
+            .await?;
+        if cols.is_empty() {
+            tracing::debug!(
+                "trace dependencies: skip upstream edges; column {SUPPLIER_CODE_ATTR} absent"
+            );
+            return Ok(Vec::new());
+        }
+        let upstream_sql = build_upstream_edges_sql(start, end);
+        self.with_query_timeout(
+            "trace upstream edges",
+            self.execute_trace_query_rows(&upstream_sql, "trace upstream edges"),
+        )
+        .await
     }
 }
 
@@ -966,6 +1002,37 @@ mod tests {
             roots.get("t1"),
             Some(&("mazbri-gateway".to_string(), "request".to_string()))
         );
+    }
+
+    #[test]
+    fn supplier_code_column_check_sql_targets_lazy_attr() {
+        let sql = build_supplier_code_column_check_sql();
+        assert!(sql.contains("information_schema.columns"));
+        assert!(sql.contains(SUPPLIER_CODE_ATTR));
+        assert!(sql.contains(TRACE_TABLE));
+        assert!(!sql.contains("JOIN"));
+    }
+
+    #[test]
+    fn upstream_edges_sql_quotes_supplier_attr() {
+        let sql = build_upstream_edges_sql(1, 2);
+        assert!(sql.contains(&format!("p.\"{SUPPLIER_CODE_ATTR}\"")));
+        assert!(sql.contains("upstream.attempt"));
+    }
+
+    #[test]
+    fn assemble_graph_allows_empty_upstream_when_column_missing() {
+        let rpc = vec![row(&[
+            ("source", json!("mazbri-gateway")),
+            ("target", json!("mazbri-auth")),
+            ("calls", json!(3)),
+            ("errors", json!(0)),
+            ("p99_ns", json!(1_000_000)),
+        ])];
+        let g = assemble_graph(0, 1, &rpc, &[], &[]);
+        assert_eq!(g.edges.len(), 1);
+        assert!(g.nodes.contains(&"mazbri-gateway".to_string()));
+        assert!(g.nodes.contains(&"mazbri-auth".to_string()));
     }
 
     #[test]

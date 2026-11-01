@@ -1246,6 +1246,25 @@ fn olap_is_money(body: &serde_json::Value) -> bool {
     )
 }
 
+pub async fn get_metrics_topology(
+    analytics_client: &AnalyticsHttpClient,
+    start: Option<i64>,
+    end: Option<i64>,
+) -> axum::response::Response {
+    match analytics_client.metrics_topology(start, end).await {
+        Ok(body) => ApiResponse::ok(body).into_response(),
+        Err(e) => {
+            tracing::warn!("analytics topology 调用失败，返回空图: {}", e);
+            ApiResponse::ok(serde_json::json!({
+                "start": start.unwrap_or(0),
+                "end": end.unwrap_or(0),
+                "nodes": [],
+                "edges": [],
+            })).into_response()
+        }
+    }
+}
+
 pub async fn olap_query(
     analytics_client: &AnalyticsHttpClient,
     claims: &crate::middleware::auth::AdminClaims,
@@ -1326,7 +1345,9 @@ fn empty_metrics_overview() -> serde_json::Value {
         "cert_min_expiry_days": 0.0,
         "service_health": [],
         "alerts_connected": false,
-        "error_budget_connected": false
+        "error_budget_connected": false,
+        "error_budget_remaining": null,
+        "error_budget_slo": null
     })
 }
 fn empty_metric_series(metric: &str) -> serde_json::Value {

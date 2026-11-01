@@ -1,5 +1,5 @@
 use super::commands::ControlCommandStore;
-use super::metrics::{
+use super::metrics::{GATEWAY_QUOTA_USAGE_RATIO, 
     LOCAL_RATELIMIT_CHECK_DURATION_SECONDS, LOCAL_RATELIMIT_DECISIONS_TOTAL,
     LOCAL_RATELIMIT_USAGE_FLUSH_TOTAL,
 };
@@ -141,6 +141,10 @@ impl BucketCell {
         let _ = self.bucket.consume_up_to(amount, now);
         self.last_seen = now;
     }
+
+    fn usage_ratio(&self) -> f64 {
+        self.bucket.usage_ratio()
+    }
 }
 
 #[derive(Clone)]
@@ -217,10 +221,17 @@ impl LocalRateLimitEngine {
         amount: u64,
         now: Instant,
     ) -> Result<(), u64> {
+        let dimension = key
+            .split_once(':')
+            .map_or_else(|| "unknown".to_string(), |(d, _)| d.to_string());
         let bucket = self.load_or_create_bucket(key, &spec.clone(), now);
         let mut guard = bucket.lock();
         guard.refresh_if_needed(&spec, now);
-        guard.allow_or_retry_after(amount, now)
+        let result = guard.allow_or_retry_after(amount, now);
+        GATEWAY_QUOTA_USAGE_RATIO
+            .with_label_values(&[dimension.as_str()])
+            .set(guard.usage_ratio());
+        result
     }
 
     fn check_bucket(&self, key: String, spec: BucketSpec, now: Instant) -> Result<(), u64> {
@@ -866,4 +877,33 @@ mod tests {
             LocalRateLimitDecision::Allow { .. } => panic!("expected api_qps deny"),
         }
     }
+
+    #[test]
+    fn quota_usage_ratio_rises_when_bucket_exhausts() {
+        use super::super::metrics::GATEWAY_QUOTA_USAGE_RATIO;
+        let eng = engine();
+        let tenant = Uuid::new_v4();
+        eng.replace_snapshots_for_test(vec![snapshot_plan(tenant, 2, 2)]);
+        let req = input(tenant, 0);
+        assert!(matches!(
+            eng.check(&req),
+            LocalRateLimitDecision::Allow { .. }
+        ));
+        assert!(matches!(
+            eng.check(&req),
+            LocalRateLimitDecision::Allow { .. }
+        ));
+        match eng.check(&req) {
+            LocalRateLimitDecision::Deny { reason, .. } => assert_eq!(reason, "tenant_qps"),
+            LocalRateLimitDecision::Allow { .. } => panic!("expected tenant_qps deny"),
+        }
+        let ratio = GATEWAY_QUOTA_USAGE_RATIO
+            .with_label_values(&["tenant"])
+            .get();
+        assert!(
+            ratio >= 0.99,
+            "expected near-full tenant bucket usage, got {ratio}"
+        );
+    }
+
 }

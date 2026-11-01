@@ -14,11 +14,20 @@ export interface PointClick {
   seriesIndex: number;
 }
 
+export interface ChartAnnotation {
+  /** Unix seconds */
+  timestamp: number;
+  label?: string;
+  color?: string;
+}
+
 const props = withDefaults(
   defineProps<{
     series?: MetricSeries | null;
     loading?: boolean;
     height?: string;
+    /** Vertical change markers (unix seconds). */
+    annotations?: ChartAnnotation[];
     /** Bound via `@point-click`; when absent the chart is not clickable. */
     onPointClick?: (point: PointClick) => void;
   }>(),
@@ -26,6 +35,7 @@ const props = withDefaults(
     series: null,
     loading: false,
     height: "280px",
+    annotations: () => [],
     onPointClick: undefined,
   },
 );
@@ -59,13 +69,27 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       name: data?.unit || "",
       scale: true,
     },
-    series: seriesList.map((s, i) => ({
-      name: legend[i],
-      type: "line",
-      showSymbol: false,
-      smooth: true,
-      data: (s.points || []).map((p) => [p.timestamp * 1000, p.value]),
-    })),
+    series: seriesList.map((s, i) => {
+      const base: Record<string, unknown> = {
+        name: legend[i],
+        type: "line",
+        showSymbol: false,
+        smooth: true,
+        data: (s.points || []).map((p) => [p.timestamp * 1000, p.value]),
+      };
+      if (i === 0 && (props.annotations?.length ?? 0) > 0) {
+        base.markLine = {
+          symbol: "none",
+          label: { formatter: (p: { name?: string }) => p.name || "", position: "insideEndTop" },
+          data: (props.annotations || []).map((a) => ({
+            xAxis: a.timestamp * 1000,
+            name: a.label || "",
+            lineStyle: { color: a.color || "#e6a23c", type: "dashed" },
+          })),
+        };
+      }
+      return base;
+    }),
   };
 }
 

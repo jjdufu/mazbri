@@ -1,11 +1,14 @@
 pub mod admin;
 pub mod admin_management;
+pub mod alert_ops;
 pub mod alerts;
 pub mod analytics;
 pub mod api_key;
 pub mod appearance;
 pub mod billing;
 pub mod billing_ops;
+pub mod finance_ops;
+pub mod ops_changes;
 pub mod billing_reconciliation_settings;
 pub mod callback;
 pub mod config;
@@ -34,3 +37,6 @@ pub use billing_reconciliation_settings::{
 };
 pub use mfa_settings_cache::{MfaSettings, MfaSettingsCache};
 pub use password_policy::{PasswordPolicy, PasswordPolicyCache};
+pub mod ops_reliability;
+pub mod ops_slo;
+pub mod user_preferences;

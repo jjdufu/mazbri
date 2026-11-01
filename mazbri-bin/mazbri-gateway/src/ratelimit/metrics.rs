@@ -1,5 +1,5 @@
 use mazbri_core::metrics::{REGISTRY, register_collector_once};
-use prometheus::{Gauge, HistogramOpts, HistogramVec, IntCounterVec, Opts};
+use prometheus::{Gauge, GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, Opts};
 use std::sync::LazyLock;
 
 pub static LOCAL_RATELIMIT_DECISIONS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -78,6 +78,18 @@ pub static LOCAL_RATELIMIT_USAGE_BUFFER_DROPPED_TOTAL: LazyLock<IntCounterVec> =
         .expect("valid metric definition for gateway ratelimit usage buffer drops")
     });
 
+
+pub static GATEWAY_QUOTA_USAGE_RATIO: LazyLock<GaugeVec> = LazyLock::new(|| {
+    GaugeVec::new(
+        Opts::new(
+            "gateway_quota_usage_ratio",
+            "Local rate-limit bucket usage ratio in [0,1] at the last check (no tenant label)",
+        ),
+        &["dimension"],
+    )
+    .expect("valid metric definition for gateway quota usage ratio")
+});
+
 pub static CHANNEL_RATELIMIT_DECISIONS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     IntCounterVec::new(
         Opts::new(
@@ -140,6 +152,7 @@ pub fn register_local_ratelimit_metrics() -> Result<(), prometheus::Error> {
         &REGISTRY,
         Box::new(LOCAL_RATELIMIT_USAGE_BUFFER_DROPPED_TOTAL.clone()),
     )?;
+    register_collector_once(&REGISTRY, Box::new(GATEWAY_QUOTA_USAGE_RATIO.clone()))?;
     register_collector_once(
         &REGISTRY,
         Box::new(CHANNEL_RATELIMIT_DECISIONS_TOTAL.clone()),

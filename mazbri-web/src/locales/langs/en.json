@@ -348,7 +348,13 @@
     },
     "save": "Save",
     "saveSuccess": "Saved",
-    "accountSecurity": "Account Security"
+    "accountSecurity": "Account Security",
+    "refresh": "Refresh",
+    "delete": "Delete",
+    "edit": "Edit",
+    "success": "Success",
+    "failed": "Failed",
+    "confirmDelete": "Delete?"
   },
   "config": {
     "globalComponents": {
@@ -479,11 +485,20 @@
   "setting": {
     "menuType": {
       "title": "Menu Layout",
-      "list": ["Vertical", "Horizontal", "Mixed", "Dual"]
+      "list": [
+        "Vertical",
+        "Horizontal",
+        "Mixed",
+        "Dual"
+      ]
     },
     "theme": {
       "title": "Theme Style",
-      "list": ["Light", "Dark", "System (Follow System)"]
+      "list": [
+        "Light",
+        "Dark",
+        "System (Follow System)"
+      ]
     },
     "menu": {
       "title": "Menu Style"
@@ -493,11 +508,17 @@
     },
     "box": {
       "title": "Box Style",
-      "list": ["Border", "Shadow"]
+      "list": [
+        "Border",
+        "Shadow"
+      ]
     },
     "container": {
       "title": "Container Width",
-      "list": ["Full", "Boxed"]
+      "list": [
+        "Full",
+        "Boxed"
+      ]
     },
     "basics": {
       "title": "Basic Config",
@@ -543,8 +564,14 @@
   "notice": {
     "title": "Notice",
     "btnRead": "Mark as read",
-    "bar": ["Notice", "Message", "Todo"],
-    "text": ["No"],
+    "bar": [
+      "Notice",
+      "Message",
+      "Todo"
+    ],
+    "text": [
+      "No"
+    ],
     "viewAll": "View all"
   },
   "chat": {
@@ -833,7 +860,25 @@
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
-      "opsTraceDetail": "Trace detail"
+      "opsTraceDetail": "Trace detail",
+      "infraPipeline": "Data pipeline",
+      "infraMiddleware": "Middleware",
+      "infraHosts": "Hosts & containers",
+      "flowRatelimit": "Rate Limit",
+      "flowCache": "Cache",
+      "billingReconcile": "Reconciliation",
+      "assetsCerts": "Certificates & License",
+      "assetsChanges": "Change Timeline",
+      "securityEvents": "Auth & Security",
+      "productRank": "Product Rank",
+      "capacity": "Capacity",
+      "slo": "SLO / Error Budget",
+      "anomaly": "Anomaly",
+      "customDashboard": "Custom Dashboard",
+      "alertSilences": "Alert silences",
+      "alertOncall": "On-call",
+      "alertChannels": "Notify channels",
+      "serviceTopology": "Service topology"
     }
   },
   "systemSettings": {
@@ -1517,7 +1562,18 @@
       "alertRuleUpdate": "Update alert rule",
       "alertRuleDelete": "Delete alert rule",
       "alertEventAck": "Acknowledge alert",
-      "alertEventAssign": "Assign alert"
+      "alertEventAssign": "Assign alert",
+      "alertSilenceCreate": "Create alert silence",
+      "alertSilenceDelete": "Delete alert silence",
+      "alertInhibitCreate": "Create alert inhibit",
+      "alertInhibitUpdate": "Update alert inhibit",
+      "alertInhibitDelete": "Delete alert inhibit",
+      "oncallCreate": "Create on-call schedule",
+      "oncallUpdate": "Update on-call schedule",
+      "oncallDelete": "Delete on-call schedule",
+      "notifyChannelCreate": "Create notify channel",
+      "notifyChannelUpdate": "Update notify channel",
+      "notifyChannelDelete": "Delete notify channel"
     },
     "resources": {
       "admin": "Administrator",
@@ -2792,7 +2848,8 @@
         "accessStrategy": "Access Strategy",
         "transportEncryption": "Transport Encryption",
         "account": "Account Balance",
-        "products": "Granted Products"
+        "products": "Granted Products",
+        "overview360": "Overview 360"
       },
       "basicInfo": {
         "title": "Basic Information",
@@ -3151,6 +3208,17 @@
       "cbproName": "CBPRO",
       "cbproSummary": "",
       "openProductsTab": "Granted products"
+    },
+    "overview360": {
+      "calls": "Calls",
+      "successRate": "Success rate",
+      "p95": "P95",
+      "cost": "Spend",
+      "health": "Health score",
+      "errors": "Errors",
+      "errorCode": "Error code",
+      "count": "Count",
+      "loadFailed": "Failed to load tenant 360"
     }
   },
   "rateLimit": {
@@ -4134,10 +4202,47 @@
       }
     },
     "screen": {
-      "title": "Ops Screen"
+      "title": "Ops Screen",
+      "panels": {
+        "overview": "Overview",
+        "business": "Business",
+        "resource": "Resources"
+      },
+      "qps": "Live QPS",
+      "successRate": "Success rate",
+      "p99": "P99 latency",
+      "alerts": "Active alerts",
+      "burn": "Error budget burn",
+      "revenue": "Revenue today",
+      "cost": "Cost today",
+      "margin": "Margin today",
+      "topProducts": "Top products",
+      "supplierSla": "Supplier SLA",
+      "geo": "Geo heatmap",
+      "topology": "Topology",
+      "resources": "Cluster capacity",
+      "noData": "No data"
     },
     "finance": {
-      "placeholder": "Finance overview will be completed in a later step"
+      "placeholder": "Finance overview will be completed in a later step",
+      "revenue": "Revenue",
+      "cost": "Cost",
+      "margin": "Margin",
+      "marginRate": "Margin rate",
+      "invertedWarn": "Days with cost > revenue",
+      "trend": "Revenue / cost / margin trend",
+      "rankTenant": "By tenant",
+      "rankProduct": "By product",
+      "rankSupplier": "By supplier",
+      "balances": "Balances & runway",
+      "key": "Key",
+      "tenantId": "Tenant ID",
+      "available": "Available",
+      "recharge": "Recharge (30d)",
+      "avgSpend": "Avg daily spend (7d)",
+      "daysLeft": "Days left",
+      "status": "Status",
+      "loadFailed": "Failed to load finance overview"
     },
     "services": {
       "refresh": "Refresh",
@@ -4166,6 +4271,21 @@
         "lastRestart": "Last restart",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
+      },
+      "topologyPage": {
+        "title": "Service topology",
+        "hint": "Static skeleton plus metric / trace / upstream edges; click an edge for slow traces",
+        "loadFailed": "Failed to load topology",
+        "qps": "QPS",
+        "errorRate": "Error rate",
+        "p99": "P99",
+        "origin": "Origin",
+        "origins": {
+          "metric": "Metrics",
+          "span": "Trace",
+          "request_log": "Request logs",
+          "static": "Static"
+        }
       }
     },
     "traffic": {
@@ -4307,7 +4427,10 @@
       "empty": "No matching traces in this window",
       "notSearched": "Pick a time range and search",
       "resolved": "{count} traces resolved from call logs",
-      "tabs": { "results": "Results", "topology": "Service topology" },
+      "tabs": {
+        "results": "Results",
+        "topology": "Service topology"
+      },
       "form": {
         "tenant": "Tenant",
         "product": "Product",
@@ -4340,7 +4463,11 @@
         "kind": "Kind",
         "calls": "Calls",
         "errors": "Errors",
-        "kinds": { "rpc": "RPC", "storage": "Storage", "upstream": "Upstream" }
+        "kinds": {
+          "rpc": "RPC",
+          "storage": "Storage",
+          "upstream": "Upstream"
+        }
       },
       "detail": {
         "back": "Back",
@@ -4454,7 +4581,219 @@
           "required": "Required"
         },
         "notifySummary": "Email {emails} · Webhook {webhooks}"
+      },
+      "silenced": "Silenced",
+      "inhibited": "Inhibited",
+      "silences": {
+        "create": "New silence",
+        "hint": "Matching alerts in the window are recorded but not notified. Writes need MFA step-up.",
+        "matchers": "Matchers",
+        "window": "Window",
+        "createdBy": "Created by",
+        "comment": "Comment",
+        "startsAt": "Starts",
+        "endsAt": "Ends"
+      },
+      "inhibits": {
+        "title": "Inhibit rules",
+        "create": "New inhibit",
+        "name": "Name",
+        "source": "Source",
+        "target": "Target",
+        "equal": "Equal labels"
+      },
+      "oncall": {
+        "create": "New schedule",
+        "edit": "Edit schedule",
+        "hint": "Rotation layers and escalation. IM channel delivery is stubbed.",
+        "name": "Name",
+        "timezone": "Timezone",
+        "layers": "Layers",
+        "escalation": "Escalation"
+      },
+      "channels": {
+        "create": "New channel",
+        "hint": "Secrets encrypted and never returned. IM bots are registered only (send stubbed).",
+        "name": "Name",
+        "type": "Type",
+        "config": "Config",
+        "hasSecret": "Has secret"
+      },
+      "relatedChanges": "Related changes",
+      "noRelatedChanges": "No related changes"
+    },
+    "infra": {
+      "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB throughput, errors, buffers, and end-to-end freshness. Idle envs may show near-empty write series.",
+      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB runtime. When Redis/PG is down, the up series drops to 0.",
+      "hostsNote": "Host USE (CPU/memory/disk/network) and per-container resources. Names prefer compose service / k8s labels, else short id. Restarts are start_time changes (cAdvisor has no RestartCount).",
+      "charts": {
+        "pipelineFreshness": "Pipeline freshness",
+        "vectorReceived": "Vector received",
+        "vectorSent": "Vector sent",
+        "vectorErrors": "Vector errors",
+        "vectorBuffer": "Vector buffer usage",
+        "redpandaBytes": "Redpanda topic bytes",
+        "redpandaLag": "Consumer lag",
+        "chInsert": "CH inserted rows",
+        "chKafkaErrors": "CH Kafka errors",
+        "chParts": "CH parts",
+        "chMerges": "CH merges",
+        "chQuery": "CH query time",
+        "gtWrite": "Greptime writes",
+        "gtQuery": "Greptime PromQL P99",
+        "pgUp": "PG up",
+        "pgConn": "PG connections",
+        "pgMaxConn": "PG max_connections",
+        "pgTps": "PG TPS",
+        "pgCache": "PG cache hit ratio",
+        "pgDeadlocks": "PG deadlocks",
+        "pgSlow": "PG statement time rate",
+        "pgSize": "PG database size",
+        "redisUp": "Redis up",
+        "redisMem": "Redis memory",
+        "redisHit": "Redis hit ratio",
+        "redisCmds": "Redis commands",
+        "redisConn": "Redis clients",
+        "redisEvict": "Redis evictions",
+        "redisKeys": "Redis keys",
+        "chDisk": "CH disk usage",
+        "rpParts": "Redpanda partitions",
+        "rpUnder": "Under-replicated",
+        "rpDisk": "Redpanda disk free",
+        "gtMem": "Greptime memory",
+        "hostCpu": "Host CPU",
+        "hostLoad": "Host load1",
+        "hostMem": "Host memory",
+        "hostFs": "Host filesystem (ext4/xfs/overlay)",
+        "hostDiskRead": "Host disk read",
+        "hostDiskWrite": "Host disk write",
+        "hostNetRx": "Host net RX",
+        "hostNetTx": "Host net TX",
+        "ctrCpu": "Container CPU",
+        "ctrMem": "Container memory",
+        "ctrRestarts": "Container restarts (start_time changes)",
+        "ctrOom": "Container OOM",
+        "ctrFs": "Container filesystem",
+        "ctrNetRx": "Container net RX",
+        "ctrNetTx": "Container net TX"
       }
+    },
+    "flow": {
+      "quotaTop": "Quota rejects Top (429)",
+      "quotaUsageRatio": "Quota usage ratio",
+      "decisions": "Rate-limit decisions",
+      "channelDecisions": "Channel rate-limit decisions",
+      "snapshotAge": "Snapshot age",
+      "snapshotRefresh": "Snapshot refresh",
+      "usageFlush": "Usage flush",
+      "rejections": "Rejection rate",
+      "tenant": "Tenant",
+      "rejects429": "429 count",
+      "cacheHitRatio": "Cache hit ratio",
+      "responseCacheHit": "Response cache hit",
+      "cacheEntries": "Cache entries",
+      "cacheMemory": "Cache memory",
+      "cacheOperations": "Cache operations",
+      "cacheP95": "Cache op P95",
+      "cryptoCache": "Crypto cache",
+      "bypassCache": "Bypass config cache",
+      "loadFailed": "Failed to load flow/cache data"
+    },
+    "reconcile": {
+      "calendar": "Reconcile calendar",
+      "loadFailed": "Failed to load reconcile calendar"
+    },
+    "assets": {
+      "certActive": "Active certificates",
+      "certIssuance": "Certificate issuance",
+      "tlsExpiry": "TLS cert days left",
+      "certMinExpiry": "Min days to expiry",
+      "licenseExpiry": "License days left",
+      "licenseUsage": "License usage ratio",
+      "routeReload": "Route reloads",
+      "connectorPublish": "Connector publishes",
+      "timeline": "Change timeline",
+      "showChanges": "Show changes",
+      "colTime": "Time",
+      "colKind": "Kind",
+      "colTitle": "Title",
+      "colActor": "Actor",
+      "colResource": "Resource",
+      "colService": "Service",
+      "colStatus": "Status"
+    },
+    "security": {
+      "topIp": "Fail IP Top",
+      "topKey": "Fail Key Top",
+      "topCountry": "Fail Country Top",
+      "events": "Security events",
+      "colDim": "Value",
+      "colFails": "Fails",
+      "colReqs": "Reqs",
+      "colTime": "Time",
+      "colType": "Type",
+      "colTenant": "Tenant",
+      "colKey": "Key",
+      "colIp": "IP",
+      "colCountry": "Country",
+      "colCity": "City",
+      "colDetail": "Detail"
+    },
+    "products": {
+      "metricReq": "Requests",
+      "metricErr": "Error rate",
+      "metricCost": "Cost",
+      "rankTitle": "Product rank",
+      "zeroTitle": "Zero-call products (30d)",
+      "colProduct": "Product",
+      "colReq": "Reqs",
+      "colPrev": "Prev window",
+      "colErr": "Err%",
+      "colCost": "Cost",
+      "colName": "Name"
+    },
+    "capacity": {
+      "forecast": "QPS forecast",
+      "holt": "Holt next",
+      "cap": "QPS cap",
+      "days": "Days to cap",
+      "never": "N/A",
+      "loadtests": "Loadtest baselines",
+      "colScenario": "Scenario",
+      "colProducts": "Products",
+      "colReqs": "Requests",
+      "colInternal": "Internal P99",
+      "colNotes": "Notes"
+    },
+    "slo": {
+      "colName": "Name",
+      "colType": "SLI type",
+      "colObjective": "Objective",
+      "colWindow": "Window (d)",
+      "colSli": "SLI",
+      "colBudget": "Budget left",
+      "colBurn5m": "Burn 5m",
+      "colBurnPage": "Page",
+      "colBurnTicket": "Ticket",
+      "colTs": "Updated"
+    },
+    "anomaly": {
+      "colTime": "Time",
+      "colKind": "Kind",
+      "colSev": "Severity",
+      "colEntity": "Entity",
+      "colMetric": "Metric",
+      "colValue": "Value",
+      "colBase": "Baseline",
+      "colScore": "Score",
+      "colStatus": "Status"
+    },
+    "dashboards": {
+      "save": "Save",
+      "home": "Home path",
+      "json": "Dashboard JSON",
+      "hint": "widgets.template must be an allowlisted OLAP template",
+      "saved": "Saved"
     }
   }
 }

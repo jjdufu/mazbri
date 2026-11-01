@@ -540,14 +540,26 @@ fn compile_temporal_condition(
         FilterOp::Eq => {
             let t = unix_seconds(value)?;
             Ok(format!(
-                "{col} >= toDateTime({t}) AND {col} < toDateTime({})",
+                "{col} >= toDateTime({t}, 'UTC') AND {col} < toDateTime({}, 'UTC')",
                 t.saturating_add(1)
             ))
         }
-        FilterOp::Gt => Ok(format!("{col} > toDateTime({})", unix_seconds(value)?)),
-        FilterOp::Gte => Ok(format!("{col} >= toDateTime({})", unix_seconds(value)?)),
-        FilterOp::Lt => Ok(format!("{col} < toDateTime({})", unix_seconds(value)?)),
-        FilterOp::Lte => Ok(format!("{col} <= toDateTime({})", unix_seconds(value)?)),
+        FilterOp::Gt => Ok(format!(
+            "{col} > toDateTime({}, 'UTC')",
+            unix_seconds(value)?
+        )),
+        FilterOp::Gte => Ok(format!(
+            "{col} >= toDateTime({}, 'UTC')",
+            unix_seconds(value)?
+        )),
+        FilterOp::Lt => Ok(format!(
+            "{col} < toDateTime({}, 'UTC')",
+            unix_seconds(value)?
+        )),
+        FilterOp::Lte => Ok(format!(
+            "{col} <= toDateTime({}, 'UTC')",
+            unix_seconds(value)?
+        )),
         FilterOp::Between => {
             let FilterValue::NumberArray(v) = value else {
                 return Err(ListQueryError::invalid_value(
@@ -561,7 +573,7 @@ fn compile_temporal_condition(
             };
             let (a, b) = (seconds_from_f64(*a)?, seconds_from_f64(*b)?);
             Ok(format!(
-                "{col} >= toDateTime({a}) AND {col} <= toDateTime({b})"
+                "{col} >= toDateTime({a}, 'UTC') AND {col} <= toDateTime({b}, 'UTC')"
             ))
         }
         _ => Err(ListQueryError::invalid_op(col, op.as_str())),
@@ -653,7 +665,7 @@ mod tests {
     fn temporal_eq_compiles_to_one_second_bucket() {
         assert_eq!(
             ts(FilterOp::Eq, FilterValue::Number(1_793_502_392.0)).expect("compile"),
-            "timestamp >= toDateTime(1793502392) AND timestamp < toDateTime(1793502393)"
+            "timestamp >= toDateTime(1793502392, 'UTC') AND timestamp < toDateTime(1793502393, 'UTC')"
         );
     }
 
@@ -661,11 +673,11 @@ mod tests {
     fn temporal_range_ops_use_unix_seconds() {
         assert_eq!(
             ts(FilterOp::Gte, FilterValue::Number(1_793_502_000.0)).expect("gte"),
-            "timestamp >= toDateTime(1793502000)"
+            "timestamp >= toDateTime(1793502000, 'UTC')"
         );
         assert_eq!(
             ts(FilterOp::Lte, FilterValue::Number(1_793_502_600.0)).expect("lte"),
-            "timestamp <= toDateTime(1793502600)"
+            "timestamp <= toDateTime(1793502600, 'UTC')"
         );
         assert_eq!(
             ts(
@@ -673,7 +685,7 @@ mod tests {
                 FilterValue::NumberArray(vec![1_793_502_000.0, 1_793_502_600.0])
             )
             .expect("between"),
-            "timestamp >= toDateTime(1793502000) AND timestamp <= toDateTime(1793502600)"
+            "timestamp >= toDateTime(1793502000, 'UTC') AND timestamp <= toDateTime(1793502600, 'UTC')"
         );
     }
 

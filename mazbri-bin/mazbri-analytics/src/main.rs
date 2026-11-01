@@ -97,6 +97,7 @@ async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClien
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-analytics");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
@@ -148,12 +149,53 @@ async fn main() -> Result<()> {
             config.admin.clone(),
         ));
     }
-    if let Some(ref alerting) = config.alerting {
+    // alerting / capacity / anomaly / slo 共用一条 mazbri_admin 连接池，避免各建一池
+    // 把角色 CONNECTION LIMIT 打满后拖死 mgmt 登录。
+    let admin_pool = if let Some(ref alerting) = config.alerting {
+        Some(mazbri_core::create_lazy_pool(&alerting.database, None)?)
+    } else {
+        None
+    };
+    if let (Some(alerting), Some(admin_pool)) = (config.alerting.as_ref(), admin_pool.as_ref()) {
         mazbri_analytics::alerting::spawn(
             alerting,
             greptimedb_client.clone(),
             Arc::clone(&clickhouse_client),
+            Arc::clone(admin_pool),
         )?;
+    }
+    if let Some(ref security) = config.security {
+        mazbri_analytics::security::spawn(security, Arc::clone(&clickhouse_client))?;
+    } else {
+        // 未配置时默认启用，便于本地链路验证
+        let default_sec = mazbri_analytics::security::SecurityConfig {
+            enabled: true,
+            interval_secs: 60,
+            key_spike_ratio: 10.0,
+            ip_fail_threshold: 50,
+        };
+        mazbri_analytics::security::spawn(&default_sec, Arc::clone(&clickhouse_client))?;
+    }
+
+    if let Some(ref admin_pool) = admin_pool {
+        let cap = config.capacity.clone().unwrap_or(mazbri_analytics::capacity::CapacityConfig {
+            enabled: true,
+            interval_secs: 3600,
+            qps_cap: 10_000.0,
+        });
+        mazbri_analytics::capacity::spawn(&cap, Arc::clone(&clickhouse_client), Arc::clone(admin_pool))?;
+        let anom = config.anomaly.clone().unwrap_or(mazbri_analytics::anomaly::AnomalyConfig {
+            enabled: true,
+            interval_secs: 300,
+            yoy_ratio: 5.0,
+            sigma: 3.0,
+        });
+        mazbri_analytics::anomaly::spawn(&anom, Arc::clone(&clickhouse_client), Arc::clone(admin_pool))?;
+        let slo = config.slo.clone().unwrap_or(mazbri_analytics::slo::SloConfig {
+            enabled: true,
+            interval_secs: 300,
+        });
+        mazbri_analytics::slo::spawn(&slo, greptimedb_client.clone(), Arc::clone(admin_pool))?;
     }
     mazbri_analytics::pipeline_freshness::spawn(
         greptimedb_client.clone(),

@@ -218,7 +218,26 @@
         <ElCard shadow="never" class="ops-overview__panel">
           <template #header>{{ t("ops.overview.placeholders") }}</template>
           <div class="ops-overview__placeholder-grid">
-            <ElTag type="info">{{
+            <template v-if="overview?.error_budget_connected">
+              <ElTag type="success">
+                {{ overview.error_budget_slo || t("menus.mazbri.slo") }}
+                ·
+                {{
+                  overview.error_budget_remaining == null
+                    ? "-"
+                    : (overview.error_budget_remaining * 100).toFixed(1) + "%"
+                }}
+              </ElTag>
+              <ElButton
+                size="small"
+                text
+                type="primary"
+                @click="router.push('/ops/reliability/slo')"
+              >
+                {{ t("menus.mazbri.slo") }}
+              </ElButton>
+            </template>
+            <ElTag v-else type="info">{{
               t("ops.overview.errorBudgetPending")
             }}</ElTag>
           </div>

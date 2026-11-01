@@ -120,6 +120,9 @@ pub struct AlertEvent {
     pub acked_at: Option<DateTime<Utc>>,
     pub assignee: Option<String>,
     pub trace_ids: Vec<String>,
+    pub silenced: bool,
+    pub inhibited: bool,
+    pub escalation_level: i32,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -295,7 +298,7 @@ const RULE_COLUMNS: &str = "r.id, r.name, r.kind, r.expr, r.threshold, r.op, r.f
 
 const EVENT_COLUMNS: &str = "e.id, e.rule_id, r.name AS rule_name, e.fingerprint, e.status, e.severity, e.labels, \
      e.value, r.threshold, r.op, e.started_at, e.resolved_at, e.acked_by, e.acked_at, e.assignee, \
-     e.trace_ids, e.updated_at";
+     e.trace_ids, e.silenced, e.inhibited, e.escalation_level, e.updated_at";
 
 fn rule_from_row(row: &PgRow) -> Result<AlertRule, sqlx::Error> {
     Ok(AlertRule {
@@ -334,6 +337,9 @@ fn event_from_row(row: &PgRow) -> Result<AlertEvent, sqlx::Error> {
         acked_at: row.try_get("acked_at")?,
         assignee: row.try_get("assignee")?,
         trace_ids: row.try_get("trace_ids")?,
+        silenced: row.try_get("silenced")?,
+        inhibited: row.try_get("inhibited")?,
+        escalation_level: row.try_get("escalation_level")?,
         updated_at: row.try_get("updated_at")?,
     })
 }

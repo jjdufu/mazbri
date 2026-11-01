@@ -108,7 +108,7 @@ const fn read(path: &'static str, resource_type: R) -> RouteAudit {
 }
 
 /// 以 POST 承载查询体的只读接口白名单（不产生写审计）。
-pub const POST_READS: &[&str] = &["/stats/olap/query"];
+pub const POST_READS: &[&str] = &["/stats/olap/query", "/stats/ops/products/zero-calls"];
 
 /// 以 POST 承载查询条件的只读接口（不产生写审计），路径须登记在 [`POST_READS`]。
 const fn read_post(path: &'static str, resource_type: R) -> RouteAudit {
@@ -652,12 +652,22 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/tenants/{code}/analytics", R::Tenant),
     read("/tenants/{code}/analytics/ratelimit", R::Tenant),
     read("/stats/platform", R::System),
-    read("/stats/ratelimit", R::System),
     read("/stats/metrics/overview", R::System),
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
     read("/stats/metrics/services/health", R::System),
+    read("/stats/metrics/topology", R::System),
     read_post("/stats/olap/query", R::System),
+    read("/stats/ops/changes", R::System),
+    read("/stats/ops/loadtests", R::System),
+    write("POST", "/stats/ops/loadtests", A::SettingsUpdate, R::System, None),
+    read("/stats/ops/anomalies", R::System),
+    read("/stats/ops/capacity", R::System),
+    read("/stats/ops/slos", R::System),
+    read("/stats/ops/slos/status", R::System),
+    read_post("/stats/ops/products/zero-calls", R::System),
+    read("/admin/preferences", R::System),
+    write("PUT", "/admin/preferences", A::UserSettingsUpdate, R::User, None),
     read("/stats/calls/customer", R::System),
     read("/stats/calls/upstream", R::System),
     read("/stats/calls/customer/histogram", R::System),
@@ -730,6 +740,10 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/billing/ops/funnel", R::Billing),
     read("/billing/ops/failures", R::Billing),
     read("/billing/ops/supplier-costs", R::Billing),
+    read("/billing/ops/finance/overview", R::Billing),
+    read("/billing/ops/finance/ranks", R::Billing),
+    read("/billing/ops/finance/balances", R::Billing),
+    read("/billing/ops/reconcile/calendar", R::Billing),
     write(
         "POST",
         "/billing/bills/generate",
@@ -886,6 +900,21 @@ pub static ROUTES: &[RouteAudit] = &[
         ID,
     ),
     read("/alerts/summary", R::Alert),
+    read("/alerts/silences", R::Alert),
+    secure("POST", "/alerts/silences", A::AlertSilenceCreate, R::Alert, None),
+    secure("DELETE", "/alerts/silences/{id}", A::AlertSilenceDelete, R::Alert, None),
+    read("/alerts/inhibits", R::Alert),
+    secure("POST", "/alerts/inhibits", A::AlertInhibitCreate, R::Alert, None),
+    secure("PUT", "/alerts/inhibits/{id}", A::AlertInhibitUpdate, R::Alert, None),
+    secure("DELETE", "/alerts/inhibits/{id}", A::AlertInhibitDelete, R::Alert, None),
+    read("/alerts/oncall", R::Alert),
+    secure("POST", "/alerts/oncall", A::OncallCreate, R::Alert, None),
+    secure("PUT", "/alerts/oncall/{id}", A::OncallUpdate, R::Alert, None),
+    secure("DELETE", "/alerts/oncall/{id}", A::OncallDelete, R::Alert, None),
+    read("/alerts/channels", R::Alert),
+    secure("POST", "/alerts/channels", A::NotifyChannelCreate, R::Alert, None),
+    secure("PUT", "/alerts/channels/{id}", A::NotifyChannelUpdate, R::Alert, None),
+    secure("DELETE", "/alerts/channels/{id}", A::NotifyChannelDelete, R::Alert, None),
     // ---- config center ----
     read("/config-center/configs", R::ConfigCenter),
     write(

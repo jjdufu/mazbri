@@ -1,0 +1,98 @@
+<template>
+  <div class="tenant-360">
+    <ElRow :gutter="12">
+      <ElCol :xs="12" :lg="4">
+        <StatCard :label="t('tenant.overview360.calls')" :value="overview?.calls ?? null" :loading="loading" :digits="0" />
+      </ElCol>
+      <ElCol :xs="12" :lg="4">
+        <StatCard :label="t('tenant.overview360.successRate')" :value="overview?.success_rate ?? null" unit="%" :loading="loading" :digits="1" />
+      </ElCol>
+      <ElCol :xs="12" :lg="4">
+        <StatCard :label="t('tenant.overview360.p95')" :value="overview?.p95_ms ?? null" unit="ms" :loading="loading" :digits="0" />
+      </ElCol>
+      <ElCol :xs="12" :lg="4">
+        <StatCard :label="t('tenant.overview360.cost')" :value="costNum" :loading="loading" :digits="4" />
+      </ElCol>
+      <ElCol :xs="12" :lg="4">
+        <StatCard :label="t('tenant.overview360.health')" :value="healthScore" :loading="loading" :digits="0" />
+      </ElCol>
+    </ElRow>
+
+    <div class="ops-traffic__card">
+      <h3>{{ t("tenant.overview360.errors") }}</h3>
+      <ArtTable :data="errors" :loading="loading" :columns="errorColumns" stripe />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
+import StatCard from "@/components/ops/StatCard.vue";
+import { postOlapQuery } from "@/api/olap";
+import type { TenantErrorRow, TenantOverviewRow } from "@/types/api/olap";
+import type { ColumnOption } from "@/types/component";
+
+const props = defineProps<{ tenantCode: string }>();
+defineOptions({ name: "TenantOverview360" });
+
+const { t } = useI18n();
+const loading = ref(false);
+const overview = ref<TenantOverviewRow | null>(null);
+const errors = ref<TenantErrorRow[]>([]);
+
+const costNum = computed(() => {
+  const n = Number(overview.value?.cost ?? NaN);
+  return Number.isFinite(n) ? n : null;
+});
+
+/** 成功率 50% + 时延 30% + 活跃度 20%；时延以 1000ms 为满分门槛。 */
+const healthScore = computed(() => {
+  if (!overview.value) return null;
+  const success = Math.min(Math.max(overview.value.success_rate, 0), 100) / 100;
+  const latency = Math.max(0, 1 - overview.value.p95_ms / 1000);
+  const activity = overview.value.calls > 0 ? 1 : 0;
+  return Math.round((success * 0.5 + latency * 0.3 + activity * 0.2) * 100);
+});
+
+const errorColumns = computed<ColumnOption<TenantErrorRow>[]>(() => [
+  { prop: "error_code", label: t("tenant.overview360.errorCode") },
+  { prop: "count", label: t("tenant.overview360.count") },
+]);
+
+async function reload() {
+  if (!props.tenantCode) return;
+  loading.value = true;
+  try {
+    const [ov, er] = await Promise.all([
+      postOlapQuery<TenantOverviewRow>({
+        template: "tenant_overview",
+        params: { tenant_code: props.tenantCode, range: "24h" },
+      }),
+      postOlapQuery<TenantErrorRow>({
+        template: "tenant_errors",
+        params: { tenant_code: props.tenantCode, range: "24h", limit: 20 },
+      }),
+    ]);
+    overview.value = ov.rows?.[0] ?? null;
+    errors.value = er.rows ?? [];
+  } catch {
+    ElMessage.error(t("tenant.overview360.loadFailed"));
+  } finally {
+    loading.value = false;
+  }
+}
+
+watch(() => props.tenantCode, reload);
+onMounted(reload);
+</script>
+
+<style scoped>
+.ops-traffic__card {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+</style>

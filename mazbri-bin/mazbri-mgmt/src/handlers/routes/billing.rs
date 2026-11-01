@@ -1,5 +1,6 @@
 use super::super::billing_handlers;
 use super::super::billing_ops_handlers;
+use super::super::finance_ops_handlers;
 use super::super::state::AppState;
 use axum::{
     Router,
@@ -20,6 +21,22 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/billing/ops/supplier-costs",
             get(billing_ops_handlers::get_supplier_costs),
+        )
+        .route(
+            "/billing/ops/finance/overview",
+            get(finance_ops_handlers::get_finance_overview),
+        )
+        .route(
+            "/billing/ops/finance/ranks",
+            get(finance_ops_handlers::get_finance_ranks),
+        )
+        .route(
+            "/billing/ops/finance/balances",
+            get(finance_ops_handlers::get_finance_balances),
+        )
+        .route(
+            "/billing/ops/reconcile/calendar",
+            get(finance_ops_handlers::get_reconcile_calendar),
         )
         .route("/billing/bills", get(billing_handlers::list_bills))
         .route(

@@ -348,7 +348,13 @@
     },
     "save": "保存",
     "saveSuccess": "已保存",
-    "accountSecurity": "账号安全"
+    "accountSecurity": "账号安全",
+    "refresh": "刷新",
+    "delete": "删除",
+    "edit": "编辑",
+    "success": "成功",
+    "failed": "失败",
+    "confirmDelete": "确认删除？"
   },
   "config": {
     "globalComponents": {
@@ -479,11 +485,20 @@
   "setting": {
     "menuType": {
       "title": "菜单布局",
-      "list": ["垂直", "水平", "混合", "双列"]
+      "list": [
+        "垂直",
+        "水平",
+        "混合",
+        "双列"
+      ]
     },
     "theme": {
       "title": "主题风格",
-      "list": ["浅色", "深色", "系统"]
+      "list": [
+        "浅色",
+        "深色",
+        "系统"
+      ]
     },
     "menu": {
       "title": "菜单风格"
@@ -493,11 +508,17 @@
     },
     "box": {
       "title": "盒子样式",
-      "list": ["边框", "阴影"]
+      "list": [
+        "边框",
+        "阴影"
+      ]
     },
     "container": {
       "title": "容器宽度",
-      "list": ["铺满", "定宽"]
+      "list": [
+        "铺满",
+        "定宽"
+      ]
     },
     "basics": {
       "title": "基础配置",
@@ -543,8 +564,14 @@
   "notice": {
     "title": "通知",
     "btnRead": "标为已读",
-    "bar": ["通知", "消息", "代办"],
-    "text": ["暂无"],
+    "bar": [
+      "通知",
+      "消息",
+      "代办"
+    ],
+    "text": [
+      "暂无"
+    ],
     "viewAll": "查看全部"
   },
   "chat": {
@@ -833,7 +860,25 @@
       "alertEvents": "告警事件",
       "alertRules": "告警规则",
       "opsTraces": "链路追踪",
-      "opsTraceDetail": "链路详情"
+      "opsTraceDetail": "链路详情",
+      "infraPipeline": "数据管道",
+      "infraMiddleware": "中间件",
+      "infraHosts": "主机与容器",
+      "flowRatelimit": "限流配额",
+      "flowCache": "缓存",
+      "billingReconcile": "对账中心",
+      "assetsCerts": "证书与 License",
+      "assetsChanges": "变更时间线",
+      "securityEvents": "鉴权与安全事件",
+      "productRank": "产品排行",
+      "capacity": "容量规划",
+      "slo": "SLO / 错误预算",
+      "anomaly": "异常检测",
+      "customDashboard": "自定义看板",
+      "alertSilences": "告警静默",
+      "alertOncall": "值班排班",
+      "alertChannels": "通知渠道",
+      "serviceTopology": "服务拓扑"
     }
   },
   "systemSettings": {
@@ -1517,7 +1562,18 @@
       "alertRuleUpdate": "更新告警规则",
       "alertRuleDelete": "删除告警规则",
       "alertEventAck": "确认告警事件",
-      "alertEventAssign": "指派告警事件"
+      "alertEventAssign": "指派告警事件",
+      "alertSilenceCreate": "创建告警静默",
+      "alertSilenceDelete": "删除告警静默",
+      "alertInhibitCreate": "创建告警抑制",
+      "alertInhibitUpdate": "更新告警抑制",
+      "alertInhibitDelete": "删除告警抑制",
+      "oncallCreate": "创建值班排班",
+      "oncallUpdate": "更新值班排班",
+      "oncallDelete": "删除值班排班",
+      "notifyChannelCreate": "创建通知渠道",
+      "notifyChannelUpdate": "更新通知渠道",
+      "notifyChannelDelete": "删除通知渠道"
     },
     "resources": {
       "admin": "管理员",
@@ -2792,7 +2848,8 @@
         "accessStrategy": "接入策略",
         "transportEncryption": "传输加密",
         "account": "账户余额",
-        "products": "已开通产品"
+        "products": "已开通产品",
+        "overview360": "概览 360"
       },
       "basicInfo": {
         "title": "基本信息",
@@ -3156,6 +3213,17 @@
       "cbproName": "CBPRO",
       "cbproSummary": "",
       "openProductsTab": "已开通产品"
+    },
+    "overview360": {
+      "calls": "调用量",
+      "successRate": "成功率",
+      "p95": "P95",
+      "cost": "消费",
+      "health": "健康分",
+      "errors": "错误分布",
+      "errorCode": "错误码",
+      "count": "次数",
+      "loadFailed": "租户 360 加载失败"
     }
   },
   "rateLimit": {
@@ -4139,10 +4207,47 @@
       }
     },
     "screen": {
-      "title": "运营大屏"
+      "title": "运营大屏",
+      "panels": {
+        "overview": "总览",
+        "business": "业务",
+        "resource": "资源"
+      },
+      "qps": "实时 QPS",
+      "successRate": "成功率",
+      "p99": "P99 时延",
+      "alerts": "活跃告警",
+      "burn": "错误预算燃烧",
+      "revenue": "今日收入",
+      "cost": "今日成本",
+      "margin": "今日毛利",
+      "topProducts": "Top 产品",
+      "supplierSla": "供应商 SLA",
+      "geo": "地域热力",
+      "topology": "服务拓扑",
+      "resources": "集群水位",
+      "noData": "暂无数据"
     },
     "finance": {
-      "placeholder": "经营看板将在后续步骤完善"
+      "placeholder": "经营看板",
+      "revenue": "收入",
+      "cost": "成本",
+      "margin": "毛利",
+      "marginRate": "毛利率",
+      "invertedWarn": "单价/成本倒挂日期",
+      "trend": "收入/成本/毛利趋势",
+      "rankTenant": "租户排行",
+      "rankProduct": "产品排行",
+      "rankSupplier": "供应商排行",
+      "balances": "余额与可用天数",
+      "key": "维度",
+      "tenantId": "租户 ID",
+      "available": "可用余额",
+      "recharge": "近 30 日充值",
+      "avgSpend": "近 7 日日均消费",
+      "daysLeft": "可用天数",
+      "status": "状态",
+      "loadFailed": "经营看板加载失败"
     },
     "services": {
       "refresh": "刷新",
@@ -4171,6 +4276,21 @@
         "lastRestart": "最近重启",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
+      },
+      "topologyPage": {
+        "title": "服务拓扑",
+        "hint": "静态骨架 + 指标边 / Trace 边 / 上游调用边；点击边可跳到慢 Trace",
+        "loadFailed": "拓扑加载失败",
+        "qps": "QPS",
+        "errorRate": "错误率",
+        "p99": "P99",
+        "origin": "来源",
+        "origins": {
+          "metric": "指标",
+          "span": "Trace",
+          "request_log": "请求日志",
+          "static": "静态"
+        }
       }
     },
     "traffic": {
@@ -4312,7 +4432,10 @@
       "empty": "该时间窗内没有匹配的链路",
       "notSearched": "请选择时间范围并检索",
       "resolved": "由调用日志解析出 {count} 个 trace",
-      "tabs": { "results": "检索结果", "topology": "服务拓扑" },
+      "tabs": {
+        "results": "检索结果",
+        "topology": "服务拓扑"
+      },
       "form": {
         "tenant": "租户",
         "product": "产品",
@@ -4345,7 +4468,11 @@
         "kind": "类型",
         "calls": "调用数",
         "errors": "错误数",
-        "kinds": { "rpc": "服务调用", "storage": "存储", "upstream": "上游" }
+        "kinds": {
+          "rpc": "服务调用",
+          "storage": "存储",
+          "upstream": "上游"
+        }
       },
       "detail": {
         "back": "返回",
@@ -4459,7 +4586,219 @@
           "required": "必填"
         },
         "notifySummary": "邮件 {emails} · Webhook {webhooks}"
+      },
+      "silenced": "已静默",
+      "inhibited": "已抑制",
+      "silences": {
+        "create": "新建静默",
+        "hint": "时间窗内匹配标签的告警只记事件、不外发通知。写操作需 MFA step-up。",
+        "matchers": "匹配标签",
+        "window": "时间窗",
+        "createdBy": "创建人",
+        "comment": "备注",
+        "startsAt": "开始",
+        "endsAt": "结束"
+      },
+      "inhibits": {
+        "title": "抑制规则",
+        "create": "新建抑制",
+        "name": "名称",
+        "source": "源匹配",
+        "target": "目标匹配",
+        "equal": "相等标签"
+      },
+      "oncall": {
+        "create": "新建值班表",
+        "edit": "编辑值班表",
+        "hint": "排班层与升级阶梯（未确认 N 分钟升下级）。钉钉/飞书/企微渠道发送仍为 stub。",
+        "name": "名称",
+        "timezone": "时区",
+        "layers": "排班层",
+        "escalation": "升级阶梯"
+      },
+      "channels": {
+        "create": "新建渠道",
+        "hint": "渠道密钥加密存储且接口不回显。IM（钉钉/飞书/企微）发送延后，本步仅登记。",
+        "name": "名称",
+        "type": "类型",
+        "config": "配置",
+        "hasSecret": "含密钥"
+      },
+      "relatedChanges": "同时段变更",
+      "noRelatedChanges": "无同时段变更"
+    },
+    "infra": {
+      "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB 吞吐、错误、buffer 与端到端新鲜度。空闲环境可能几乎无写入。",
+      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB 运行态。Redis/PG 不可达时对应 up 曲线掉到 0。",
+      "hostsNote": "主机 USE（CPU/内存/磁盘/网络）与每容器资源。容器名优先 compose service / k8s 标签，否则短 id。重启次数来自 start_time 变化（cAdvisor 无 RestartCount）。",
+      "charts": {
+        "pipelineFreshness": "管道新鲜度",
+        "vectorReceived": "Vector 接收",
+        "vectorSent": "Vector 发送",
+        "vectorErrors": "Vector 错误",
+        "vectorBuffer": "Vector buffer 使用率",
+        "redpandaBytes": "Redpanda topic 字节",
+        "redpandaLag": "Consumer lag",
+        "chInsert": "CH 写入行",
+        "chKafkaErrors": "CH Kafka 错误",
+        "chParts": "CH parts",
+        "chMerges": "CH merges",
+        "chQuery": "CH 查询耗时",
+        "gtWrite": "Greptime 写入",
+        "gtQuery": "Greptime PromQL P99",
+        "pgUp": "PG up",
+        "pgConn": "PG 连接",
+        "pgMaxConn": "PG max_connections",
+        "pgTps": "PG TPS",
+        "pgCache": "PG 缓存命中率",
+        "pgDeadlocks": "PG 死锁",
+        "pgSlow": "PG 语句耗时速率",
+        "pgSize": "PG 库大小",
+        "redisUp": "Redis up",
+        "redisMem": "Redis 内存",
+        "redisHit": "Redis 命中率",
+        "redisCmds": "Redis 命令",
+        "redisConn": "Redis 连接",
+        "redisEvict": "Redis 逐出",
+        "redisKeys": "Redis keys",
+        "chDisk": "CH 磁盘使用率",
+        "rpParts": "Redpanda 分区",
+        "rpUnder": "Under-replicated",
+        "rpDisk": "Redpanda 磁盘剩余",
+        "gtMem": "Greptime 内存",
+        "hostCpu": "主机 CPU",
+        "hostLoad": "主机 load1",
+        "hostMem": "主机内存",
+        "hostFs": "主机磁盘（ext4/xfs/overlay）",
+        "hostDiskRead": "主机磁盘读",
+        "hostDiskWrite": "主机磁盘写",
+        "hostNetRx": "主机网络收",
+        "hostNetTx": "主机网络发",
+        "ctrCpu": "容器 CPU",
+        "ctrMem": "容器内存",
+        "ctrRestarts": "容器重启（start_time 变化）",
+        "ctrOom": "容器 OOM",
+        "ctrFs": "容器文件系统",
+        "ctrNetRx": "容器网络收",
+        "ctrNetTx": "容器网络发"
       }
+    },
+    "flow": {
+      "quotaTop": "配额拒绝 Top（429）",
+      "quotaUsageRatio": "配额使用率",
+      "decisions": "限流决策",
+      "channelDecisions": "渠道限流决策",
+      "snapshotAge": "快照年龄",
+      "snapshotRefresh": "快照刷新",
+      "usageFlush": "用量 flush",
+      "rejections": "拒绝速率",
+      "tenant": "租户",
+      "rejects429": "429 次数",
+      "cacheHitRatio": "缓存命中率",
+      "responseCacheHit": "响应缓存命中率",
+      "cacheEntries": "缓存条目",
+      "cacheMemory": "缓存内存",
+      "cacheOperations": "缓存操作",
+      "cacheP95": "缓存操作 P95",
+      "cryptoCache": "crypto 缓存",
+      "bypassCache": "bypass 配置缓存",
+      "loadFailed": "流控/缓存数据加载失败"
+    },
+    "reconcile": {
+      "calendar": "对账日历",
+      "loadFailed": "对账日历加载失败"
+    },
+    "assets": {
+      "certActive": "活跃证书数",
+      "certIssuance": "证书签发",
+      "tlsExpiry": "TLS 证书剩余天数",
+      "certMinExpiry": "最短剩余天数",
+      "licenseExpiry": "License 剩余天数",
+      "licenseUsage": "License 用量占比",
+      "routeReload": "路由热更新",
+      "connectorPublish": "连接器发布",
+      "timeline": "变更时间线",
+      "showChanges": "显示变更",
+      "colTime": "时间",
+      "colKind": "类型",
+      "colTitle": "标题",
+      "colActor": "操作人",
+      "colResource": "资源",
+      "colService": "服务",
+      "colStatus": "状态"
+    },
+    "security": {
+      "topIp": "失败 IP Top",
+      "topKey": "失败 Key Top",
+      "topCountry": "失败国家 Top",
+      "events": "安全事件",
+      "colDim": "维度值",
+      "colFails": "失败",
+      "colReqs": "请求",
+      "colTime": "时间",
+      "colType": "类型",
+      "colTenant": "租户",
+      "colKey": "Key",
+      "colIp": "IP",
+      "colCountry": "国家",
+      "colCity": "城市",
+      "colDetail": "详情"
+    },
+    "products": {
+      "metricReq": "调用量",
+      "metricErr": "错误率",
+      "metricCost": "成本",
+      "rankTitle": "产品排行",
+      "zeroTitle": "30 天零调用产品",
+      "colProduct": "产品",
+      "colReq": "请求",
+      "colPrev": "环比窗",
+      "colErr": "错误率",
+      "colCost": "成本",
+      "colName": "名称"
+    },
+    "capacity": {
+      "forecast": "QPS 预测",
+      "holt": "Holt 下一值",
+      "cap": "QPS 上限",
+      "days": "预计触顶（天）",
+      "never": "未触顶",
+      "loadtests": "压测基线对比",
+      "colScenario": "场景",
+      "colProducts": "产品数",
+      "colReqs": "请求数",
+      "colInternal": "内部 P99",
+      "colNotes": "备注"
+    },
+    "slo": {
+      "colName": "名称",
+      "colType": "SLI 类型",
+      "colObjective": "目标",
+      "colWindow": "窗口(天)",
+      "colSli": "当前 SLI",
+      "colBudget": "剩余预算",
+      "colBurn5m": "燃烧率 5m",
+      "colBurnPage": "快烧",
+      "colBurnTicket": "慢烧",
+      "colTs": "更新时间"
+    },
+    "anomaly": {
+      "colTime": "时间",
+      "colKind": "类型",
+      "colSev": "级别",
+      "colEntity": "实体",
+      "colMetric": "指标",
+      "colValue": "值",
+      "colBase": "基线",
+      "colScore": "得分",
+      "colStatus": "状态"
+    },
+    "dashboards": {
+      "save": "保存",
+      "home": "首页路径",
+      "json": "看板 JSON",
+      "hint": "widgets.template 仅允许白名单 OLAP 模板",
+      "saved": "已保存"
     }
   }
 }

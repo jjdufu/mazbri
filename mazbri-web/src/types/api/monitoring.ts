@@ -18,6 +18,8 @@ export interface MetricOverview {
   service_health: ServiceHealthLight[];
   alerts_connected: boolean;
   error_budget_connected: boolean;
+  error_budget_remaining?: number | null;
+  error_budget_slo?: string | null;
 }
 /** 计费链路概览：来自 billing 自身暴露的 Prometheus 指标。 */
 export interface BillingPipelineOverview {
@@ -88,4 +90,35 @@ export interface MetricTimeseriesQuery {
   /** 秒；缺省由后端按范围自适应 */
   step?: number;
   service?: string;
+}
+
+
+export type TopologyNodeKind = "client" | "service" | "middleware" | "upstream" | string;
+export type TopologyHealth = "green" | "yellow" | "red" | "unknown" | string;
+export type TopologyEdgeKind = "rpc" | "storage" | "upstream" | string;
+export type TopologyOrigin = "metric" | "span" | "request_log" | "static" | string;
+
+export interface TopologyNode {
+  id: string;
+  kind: TopologyNodeKind;
+  health: TopologyHealth;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  kind: TopologyEdgeKind;
+  origin: TopologyOrigin;
+  qps: number;
+  error_rate: number;
+  p99_ms: number;
+  calls: number;
+  errors: number;
+}
+
+export interface TopologyGraph {
+  start: number;
+  end: number;
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
 }

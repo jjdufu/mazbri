@@ -31,6 +31,19 @@ pub enum OlapQuery {
     SupplierSla(WindowParams),
     BillingFunnelCh(WindowParams),
     ExemplarTraces(ExemplarParams),
+    /// 限流拒绝 Top（status=429），按租户计数。
+    QuotaTop(QuotaTopParams),
+    /// 租户 360 概览 KPI。
+    TenantOverview(TenantScopedParams),
+    /// 租户错误码分布。
+    TenantErrors(TenantScopedParams),
+    /// 响应缓存命中率（`request_logs.cache_hit`）。
+    ResponseCacheHit(WindowParams),
+    /// 安全 Top（IP / Key / 国家失败计数）。
+    SecurityTop(SecurityTopParams),
+    /// 安全事件列表。
+    SecurityEvents(SecurityEventsParams),
+    ProductRank(ProductRankParams),
 }
 
 impl OlapQuery {
@@ -38,8 +51,9 @@ impl OlapQuery {
     #[must_use]
     pub fn is_money(&self) -> bool {
         match self {
-            Self::CostTrend(_) => true,
             Self::TopByDim(p) => p.metric == Metric::Cost,
+            Self::CostTrend(_) | Self::TenantOverview(_) => true,
+            Self::ProductRank(p) => matches!(p.metric, ProductRankMetric::Cost),
             _ => false,
         }
     }
@@ -64,6 +78,13 @@ impl OlapQuery {
             Self::SupplierSla(_) => "supplier_sla",
             Self::BillingFunnelCh(_) => "billing_funnel_ch",
             Self::ExemplarTraces(_) => "exemplar_traces",
+            Self::QuotaTop(_) => "quota_top",
+            Self::TenantOverview(_) => "tenant_overview",
+            Self::TenantErrors(_) => "tenant_errors",
+            Self::ResponseCacheHit(_) => "response_cache_hit",
+            Self::SecurityTop(_) => "security_top",
+            Self::SecurityEvents(_) => "security_events",
+            Self::ProductRank(_) => "product_rank",
         }
     }
 }
@@ -362,6 +383,91 @@ pub struct WindowParams {
     pub filters: Filters,
 }
 
+/// `quota_top`：429 Top 租户。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuotaTopParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+
+/// `security_top`：按 dim 聚合失败/请求。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityTopParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default = "default_security_dim")]
+    pub dim: SecurityDim,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+fn default_security_dim() -> SecurityDim {
+    SecurityDim::Ip
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityDim {
+    Ip,
+    Key,
+    Country,
+}
+
+/// `security_events`：最近安全事件。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityEventsParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub event_type: Option<String>,
+}
+
+
+/// `product_rank`：产品调用量/错误率/P95/成本排行。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProductRankParams {
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default = "default_product_rank_metric")]
+    pub metric: ProductRankMetric,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+fn default_product_rank_metric() -> ProductRankMetric {
+    ProductRankMetric::ReqCount
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductRankMetric {
+    ReqCount,
+    ErrorRate,
+    P95,
+    Cost,
+}
+
+/// 租户作用域窗口参数（`tenant_code` 必填）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TenantScopedParams {
+    pub tenant_code: String,
+    #[serde(default)]
+    pub range: Range,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
 pub struct TopRow {
     pub key: String,
@@ -496,6 +602,64 @@ pub struct FunnelChRow {
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct ProductRankRow {
+    pub product_id: String,
+    pub req_count: u64,
+    pub error_rate: f64,
+    pub p95: f64,
+    pub cost: f64,
+    pub prev_req_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct SecurityTopRow {
+    pub dim_value: String,
+    pub fail_count: u64,
+    pub req_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct SecurityEventRow {
+    pub ts: String,
+    pub event_type: String,
+    pub tenant: String,
+    pub key_id: String,
+    pub ip: String,
+    pub detail: String,
+    pub geo_country: String,
+    pub geo_city: String,
+    pub asn: String,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct QuotaTopRow {
+    pub tenant_code: String,
+    pub rejects: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct TenantOverviewRow {
+    pub tenant_code: String,
+    pub calls: u64,
+    pub success_rate: f64,
+    pub p95_ms: f64,
+    pub cost: String,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct TenantErrorRow {
+    pub error_code: String,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
+pub struct ResponseCacheHitRow {
+    pub hits: u64,
+    pub total: u64,
+    pub hit_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
 pub struct CostRow {
     pub ts: u32,
     pub count: u64,
@@ -523,6 +687,13 @@ pub enum OlapRows {
     Cost(Vec<CostRow>),
     Sla(Vec<SlaRow>),
     FunnelCh(Vec<FunnelChRow>),
+    QuotaTop(Vec<QuotaTopRow>),
+    SecurityTop(Vec<SecurityTopRow>),
+    SecurityEvents(Vec<SecurityEventRow>),
+    ProductRank(Vec<ProductRankRow>),
+    TenantOverview(Vec<TenantOverviewRow>),
+    TenantErrors(Vec<TenantErrorRow>),
+    ResponseCacheHit(Vec<ResponseCacheHitRow>),
 }
 
 const LATENCY_MEASURES: &str = "countMerge(c) AS count, \
@@ -600,7 +771,34 @@ impl OlapQuery {
                 p.filters.validate()?;
                 reject_over_day(p.range, "call_histogram")
             }
-            Self::SupplierSla(p) | Self::BillingFunnelCh(p) => p.filters.validate(),
+            Self::SupplierSla(p) | Self::BillingFunnelCh(p) | Self::ResponseCacheHit(p) => {
+                p.filters.validate()
+            }
+            Self::QuotaTop(p) => reject_over_day(p.range, "quota_top"),
+            Self::SecurityTop(p) => reject_over_day(p.range, "security_top"),
+            Self::SecurityEvents(p) => {
+                reject_over_day(p.range, "security_events")?;
+                if let Some(ref et) = p.event_type {
+                    let et = et.trim();
+                    if !(et.is_empty()
+                        || matches!(et, "key_spike" | "new_ip" | "ip_fail_spike"))
+                    {
+                        return Err(invalid("event_type 无效".into()));
+                    }
+                }
+                Ok(())
+            }
+            Self::ProductRank(_) => Ok(()),
+            Self::TenantOverview(p) | Self::TenantErrors(p) => {
+                let code = p.tenant_code.trim();
+                if code.is_empty() {
+                    return Err(invalid("tenant_code 必填".to_string()));
+                }
+                if code.len() > 128 {
+                    return Err(invalid("tenant_code 过长".to_string()));
+                }
+                Ok(())
+            }
             Self::ExemplarTraces(p) => {
                 p.filters.validate()?;
                 match p.window_secs {
@@ -651,6 +849,13 @@ impl OlapQuery {
             Self::SupplierSla(p) => supplier_sla_sql(p, &mut binds),
             Self::BillingFunnelCh(p) => billing_funnel_ch_sql(p, &mut binds),
             Self::ExemplarTraces(p) => exemplar_traces_sql(p, &mut binds),
+            Self::QuotaTop(p) => quota_top_sql(p, &mut binds),
+            Self::SecurityTop(p) => security_top_sql(p, &mut binds),
+            Self::SecurityEvents(p) => security_events_sql(p, &mut binds),
+            Self::ProductRank(p) => product_rank_sql(p, &mut binds),
+            Self::TenantOverview(p) => tenant_overview_sql(p, &mut binds),
+            Self::TenantErrors(p) => tenant_errors_sql(p, &mut binds),
+            Self::ResponseCacheHit(p) => response_cache_hit_sql(p, &mut binds),
         };
         Sql { text, binds }
     }
@@ -749,7 +954,7 @@ fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
     let half = p.window_secs.unwrap_or(60);
     let limit = clamp_limit(p.limit, 20);
     let win = format!(
-        "timestamp >= toDateTime({from}) AND timestamp < toDateTime({to})",
+        "timestamp >= toDateTime({from}, 'UTC') AND timestamp < toDateTime({to}, 'UTC')",
         from = p.ts.saturating_sub(half),
         to = p.ts.saturating_add(half),
     );
@@ -900,6 +1105,88 @@ fn billing_funnel_ch_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     )
 }
 
+
+
+fn security_top_sql(p: &SecurityTopParams, _binds: &mut Vec<String>) -> String {
+    let dim = match p.dim {
+        SecurityDim::Ip => "ip",
+        SecurityDim::Key => "key_id",
+        SecurityDim::Country => "geo_country",
+    };
+    format!(
+        "SELECT {dim} AS dim_value, sum(fail_count) AS fail_count, sum(req_count) AS req_count          FROM security_agg_1h WHERE {window} AND {dim} != ''          GROUP BY dim_value ORDER BY fail_count DESC LIMIT {limit}",
+        dim = dim,
+        window = window(p.range, "window_start"),
+        limit = clamp_limit(p.limit, 20),
+    )
+}
+
+
+fn product_rank_sql(p: &ProductRankParams, _binds: &mut Vec<String>) -> String {
+    let order = match p.metric {
+        ProductRankMetric::ReqCount => "req_count DESC",
+        ProductRankMetric::ErrorRate => "error_rate DESC",
+        ProductRankMetric::P95 => "p95 DESC",
+        ProductRankMetric::Cost => "cost DESC",
+    };
+    let limit = clamp_limit(p.limit, 20);
+    let secs = p.range.seconds();
+    let prev = secs * 2;
+    // 当前窗 + 等长前窗环比；子查询避免同层引用别名。
+    format!(
+        "SELECT product_id, req_count,             if(req_count = 0, 0., err_count / toFloat64(req_count)) AS error_rate,             p95, cost, prev_req_count          FROM (            SELECT product_id,              countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND) AS req_count,              toFloat64(countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND AND status_class = '5xx')) AS err_count,              toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, ts_1h >= now() - INTERVAL {secs} SECOND)[2]) AS p95,              toFloat64(sumMergeIf(cost, ts_1h >= now() - INTERVAL {secs} SECOND)) AS cost,              countMergeIf(c, ts_1h >= now() - INTERVAL {prev} SECOND AND ts_1h < now() - INTERVAL {secs} SECOND) AS prev_req_count            FROM req_agg_1h            WHERE ts_1h >= now() - INTERVAL {prev} SECOND AND product_id != ''            GROUP BY product_id          ) ORDER BY {order} LIMIT {limit}"
+    )
+}
+
+fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> String {
+    // 内层保留原始 ts 供 WHERE/ORDER；外层再 format，避免别名遮蔽 DateTime 列。
+    let mut where_sql = format!("WHERE {window}", window = window(p.range, "ts"));
+    if let Some(ref et) = p.event_type {
+        let et = et.trim();
+        if !et.is_empty() {
+            binds.push(et.to_string());
+            where_sql.push_str(" AND type = ?");
+        }
+    }
+    let limit = clamp_limit(p.limit, 50);
+    format!(
+        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM (            SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn            FROM security_events {where_sql}            ORDER BY ts DESC LIMIT {limit}          )"
+    )
+}
+
+fn quota_top_sql(p: &QuotaTopParams, _binds: &mut Vec<String>) -> String {
+    let limit = clamp_limit(p.limit, 20);
+    format!(
+        "SELECT tenant_code, count() AS rejects FROM request_logs          WHERE event_target = 'gateway' AND status_code = 429 AND {window}          AND tenant_code != '' GROUP BY tenant_code ORDER BY rejects DESC LIMIT {limit}",
+        window = window(p.range, "timestamp"),
+    )
+}
+
+fn tenant_overview_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String {
+    binds.push(p.tenant_code.trim().to_string());
+    format!(
+        "SELECT tenant_code, count() AS calls,          100 * toFloat64(countIf(status_code >= 200 AND status_code < 400)) / greatest(toFloat64(count()), 1) AS success_rate,          toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms,          toString(sum(cost)) AS cost          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          GROUP BY tenant_code",
+        window = window(p.range, "timestamp"),
+    )
+}
+
+fn tenant_errors_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String {
+    binds.push(p.tenant_code.trim().to_string());
+    let limit = clamp_limit(p.limit, 50);
+    format!(
+        "SELECT if(error_code = '', '(empty)', error_code) AS error_code, count() AS count          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          AND (error_code != '' OR status_code >= 400)          GROUP BY error_code ORDER BY count DESC LIMIT {limit}",
+        window = window(p.range, "timestamp"),
+    )
+}
+
+fn response_cache_hit_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let filters = filter_clause(&p.filters, binds);
+    format!(
+        "SELECT countIf(cache_hit = 1) AS hits, count() AS total,          100 * toFloat64(countIf(cache_hit = 1)) / greatest(toFloat64(count()), 1) AS hit_ratio          FROM request_logs WHERE event_target = 'gateway' AND {window}{filters}",
+        window = window(p.range, "timestamp"),
+    )
+}
+
 /// 趋势查询：`measures` 中若以 `status_class,` 开头则同时按状态分组。
 fn trend_sql(p: &TrendParams, binds: &mut Vec<String>, measures: &str) -> String {
     let keys = if measures.starts_with("status_class,") {
@@ -960,6 +1247,17 @@ impl ClickHouseClient {
             OlapQuery::CostTrend(_) => OlapRows::Cost(self.fetch_bound(&sql).await?),
             OlapQuery::SupplierSla(_) => OlapRows::Sla(self.fetch_bound(&sql).await?),
             OlapQuery::BillingFunnelCh(_) => OlapRows::FunnelCh(self.fetch_bound(&sql).await?),
+            OlapQuery::QuotaTop(_) => OlapRows::QuotaTop(self.fetch_bound(&sql).await?),
+            OlapQuery::SecurityTop(_) => OlapRows::SecurityTop(self.fetch_bound(&sql).await?),
+            OlapQuery::SecurityEvents(_) => {
+                OlapRows::SecurityEvents(self.fetch_bound(&sql).await?)
+            }
+            OlapQuery::ProductRank(_) => OlapRows::ProductRank(self.fetch_bound(&sql).await?),
+            OlapQuery::TenantOverview(_) => OlapRows::TenantOverview(self.fetch_bound(&sql).await?),
+            OlapQuery::TenantErrors(_) => OlapRows::TenantErrors(self.fetch_bound(&sql).await?),
+            OlapQuery::ResponseCacheHit(_) => {
+                OlapRows::ResponseCacheHit(self.fetch_bound(&sql).await?)
+            }
         })
     }
 }
@@ -980,7 +1278,7 @@ mod tests {
         q.validate().expect("valid params");
         let sql = q.sql();
         assert!(sql.text.contains("quantileTDigest(0.99)(duration_ms)"));
-        assert!(sql.text.contains("toDateTime(1699999940)"));
+        assert!(sql.text.contains("toDateTime(1699999940, 'UTC')"));
         assert!(sql.text.contains("duration_ms >= p99"));
         assert_eq!(sql.binds, vec!["p1".to_string(), "p1".to_string()]);
         let wide = parse(
@@ -1088,4 +1386,54 @@ mod tests {
         let long = parse(r#"{"template":"new_error_codes","params":{"range":"7d"}}"#).expect("ok");
         assert!(long.validate().is_err());
     }
+    #[test]
+    fn security_top_template_parses() {
+        let q = parse(r#"{"template":"security_top","params":{"range":"1h","dim":"ip","limit":5}}"#)
+            .expect("parse");
+        assert_eq!(q.template_name(), "security_top");
+        q.validate().expect("ok");
+        let sql = q.sql();
+        assert!(sql.text.contains("security_agg_1h"), "{}", sql.text);
+        assert_eq!(sql.binds, [] as [String; 0]);
+        let q = parse(
+            r#"{"template":"security_events","params":{"range":"24h","limit":10,"event_type":"new_ip"}}"#,
+        )
+        .expect("parse");
+        q.validate().expect("ok");
+        let sql = q.sql();
+        assert!(sql.text.contains("security_events"), "{}", sql.text);
+        assert_eq!(sql.binds, vec!["new_ip".to_string()]);
+    }
+
+    #[test]
+    fn quota_top_and_tenant_templates_bind_safely() {
+        let q = parse(r#"{"template":"quota_top","params":{"range":"1h","limit":5}}"#)
+            .expect("valid");
+        q.validate().expect("ok");
+        assert!(q.sql().text.contains("status_code = 429"));
+        let q = parse(
+            r#"{"template":"tenant_overview","params":{"tenant_code":"acme","range":"1h"}}"#,
+        )
+        .expect("valid");
+        q.validate().expect("ok");
+        assert_eq!(q.sql().binds, vec!["acme".to_string()]);
+        let bad = parse(r#"{"template":"tenant_errors","params":{"tenant_code":"","range":"1h"}}"#)
+            .expect("parses");
+        assert!(bad.validate().is_err());
+        let q = parse(r#"{"template":"response_cache_hit","params":{"range":"1h"}}"#).expect("ok");
+        assert!(q.sql().text.contains("cache_hit"));
+    }
+
+
+    #[test]
+    fn product_rank_template_parses() {
+        let q = parse(r#"{"template":"product_rank","params":{"range":"7d","metric":"req_count","limit":10}}"#)
+            .expect("valid");
+        assert_eq!(q.template_name(), "product_rank");
+        assert!(q.validate().is_ok());
+        let sql = q.sql();
+        assert!(sql.text.contains("FROM req_agg_1h"), "{}", sql.text);
+        assert!(sql.text.contains("prev_req_count"), "{}", sql.text);
+    }
+
 }

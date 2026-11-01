@@ -71,7 +71,7 @@
     </div>
 
     <div class="ops-alerts__card">
-      <ElTable v-loading="loading" :data="rows" row-key="id" size="small">
+      <ElTable v-loading="loading" :data="rows" row-key="id" size="small" @row-click="selectRow">
         <ElTableColumn :label="t('ops.alerts.columns.severity')" width="100">
           <template #default="{ row }">
             <ElTag :type="severityTag(row.severity)" size="small">
@@ -79,10 +79,16 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.columns.status')" width="100">
+        <ElTableColumn :label="t('ops.alerts.columns.status')" width="180">
           <template #default="{ row }">
             <ElTag :type="statusTag(row.status)" size="small">
               {{ t(`ops.alerts.status.${row.status}`) }}
+            </ElTag>
+            <ElTag v-if="row.silenced" type="info" size="small" class="ops-alerts__flag">
+              {{ t("ops.alerts.silenced") }}
+            </ElTag>
+            <ElTag v-if="row.inhibited" type="warning" size="small" class="ops-alerts__flag">
+              {{ t("ops.alerts.inhibited") }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -152,6 +158,25 @@
           </template>
         </ElTableColumn>
       </ElTable>
+      <div v-if="selected" class="ops-alerts__related">
+        <h3>{{ t("ops.alerts.relatedChanges") }} · {{ selected.rule_name }}</h3>
+        <ElEmpty
+          v-if="!relatedChanges.length"
+          :description="t('ops.alerts.noRelatedChanges')"
+          :image-size="48"
+        />
+        <ElTimeline v-else>
+          <ElTimelineItem
+            v-for="(c, idx) in relatedChanges"
+            :key="idx"
+            :timestamp="c.ts"
+            placement="top"
+          >
+            {{ c.kind }} · {{ c.title }}
+            <span class="ops-alerts__muted">{{ c.actor || "" }}</span>
+          </ElTimelineItem>
+        </ElTimeline>
+      </div>
       <div class="ops-alerts__pager">
         <ElPagination
           v-model:current-page="page"
@@ -178,6 +203,7 @@ import {
   assignAlertEvent,
   fetchAlertEvents,
 } from "@/api/alerts";
+import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
 import type {
   AlertEvent,
   AlertEventQuery,
@@ -320,6 +346,24 @@ async function assign(row: AlertEvent) {
   await reload();
 }
 
+const selected = ref<AlertEvent | null>(null);
+const relatedChanges = ref<ChangeEvent[]>([]);
+
+async function selectRow(row: AlertEvent) {
+  selected.value = row;
+  relatedChanges.value = [];
+  const started = Date.parse(row.started_at);
+  if (!Number.isFinite(started)) return;
+  const start = Math.floor(started / 1000) - 300;
+  const end = Math.floor(started / 1000) + 300;
+  try {
+    const res = await fetchOpsChanges({ start, end, limit: 20 });
+    relatedChanges.value = res.events || [];
+  } catch {
+    relatedChanges.value = [];
+  }
+}
+
 onMounted(reload);
 </script>
 
@@ -368,5 +412,11 @@ onMounted(reload);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+}
+.ops-alerts__flag {
+  margin-left: 4px;
+}
+.ops-alerts__related {
+  margin-top: 12px;
 }
 </style>

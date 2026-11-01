@@ -128,3 +128,27 @@ export interface SlaRow {
 export interface FunnelChRow {
   billable: number;
 }
+
+export interface QuotaTopRow {
+  tenant_code: string;
+  rejects: number;
+}
+
+export interface TenantOverviewRow {
+  tenant_code: string;
+  calls: number;
+  success_rate: number;
+  p95_ms: number;
+  cost: string;
+}
+
+export interface TenantErrorRow {
+  error_code: string;
+  count: number;
+}
+
+export interface ResponseCacheHitRow {
+  hits: number;
+  total: number;
+  hit_ratio: number;
+}

@@ -533,6 +533,7 @@ async fn main() -> Result<()> {
         billing_reconciliation_settings.clone(),
         audit.clone(),
     );
+    mazbri_mgmt::services::finance_ops::spawn_mv_refresh(dbs.billing.clone());
     let app_state = handlers::AppState {
         config: config.clone(),
         cert_service,

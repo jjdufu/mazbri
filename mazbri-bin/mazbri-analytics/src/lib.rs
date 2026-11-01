@@ -1,4 +1,6 @@
 pub mod alerting;
+pub mod anomaly;
+pub mod capacity;
 pub mod clickhouse;
 pub mod config;
 mod error;
@@ -8,6 +10,9 @@ pub mod log_writer_metrics;
 pub mod metrics;
 pub mod models;
 pub mod pipeline_freshness;
+pub mod security;
+pub mod slo;
+pub mod topology;
 pub use config::{AnalyticsConfig, ClickHouseConfig, GreptimeDBConfig};
 pub use metrics::register_analytics_metrics;
 pub use models::RequestLogEntry;

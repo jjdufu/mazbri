@@ -452,6 +452,27 @@ mod tests {
     }
 
     #[test]
+    fn alert_ops_handlers_require_platform_category() {
+        let ops = include_str!("alert_ops_handlers.rs");
+        assert_category(
+            &[
+                (ops, "create_silence"),
+                (ops, "delete_silence"),
+                (ops, "create_inhibit"),
+                (ops, "update_inhibit"),
+                (ops, "delete_inhibit"),
+                (ops, "create_oncall"),
+                (ops, "update_oncall"),
+                (ops, "delete_oncall"),
+                (ops, "create_channel"),
+                (ops, "update_channel"),
+                (ops, "delete_channel"),
+            ],
+            "Category::Platform",
+        );
+    }
+
+    #[test]
     fn admin_handlers_require_their_category() {
         let crud = include_str!("admin_management/crud.rs");
         let password = include_str!("admin_management/password.rs");

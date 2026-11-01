@@ -97,6 +97,12 @@ impl AnalyticsHttpClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn slo_status(&self) -> Result<serde_json::Value> {
+        self.get_json("/api/v1/slo/status", &[]).await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn metrics_catalog(&self) -> Result<serde_json::Value> {
         self.get_json("/api/v1/metrics/catalog", &[]).await
     }
@@ -105,6 +111,23 @@ impl AnalyticsHttpClient {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn metrics_services_health(&self) -> Result<serde_json::Value> {
         self.get_json("/api/v1/metrics/services/health", &[]).await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn metrics_topology(
+        &self,
+        start: Option<i64>,
+        end: Option<i64>,
+    ) -> Result<serde_json::Value> {
+        let mut params = Vec::new();
+        if let Some(start) = start {
+            params.push(("start", start.to_string()));
+        }
+        if let Some(end) = end {
+            params.push(("end", end.to_string()));
+        }
+        self.get_json("/api/v1/metrics/topology", &params).await
     }
     /// # Errors
     ///

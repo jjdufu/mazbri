@@ -69,6 +69,17 @@ impl TokenBucket {
         mazbri_core::num::f64_to_u64(take.floor())
     }
 
+    /// Fraction of capacity currently consumed in `[0, 1]` (after last refill/consume).
+    #[must_use]
+    pub fn usage_ratio(&self) -> f64 {
+        if self.capacity == 0 {
+            return 0.0;
+        }
+        let capacity = mazbri_core::num::u64_to_f64(self.capacity);
+        let used = (capacity - self.tokens.max(0.0)).max(0.0);
+        (used / capacity).clamp(0.0, 1.0)
+    }
+
     pub fn retry_after_ms(&mut self, amount: u64, now: Instant) -> u64 {
         self.refill(now);
         if amount == 0 {
@@ -113,5 +124,17 @@ mod tests {
         assert!(bucket.try_consume(100, now));
         let later = now + Duration::from_secs(1);
         assert!(bucket.try_consume(100, later));
+    }
+
+    #[test]
+    fn usage_ratio_tracks_consume() {
+        let now = Instant::now();
+        let mut bucket = TokenBucket::new(100, 100.0, now);
+        assert!((bucket.usage_ratio() - 0.0).abs() < f64::EPSILON);
+        assert!(bucket.try_consume(40, now));
+        assert!((bucket.usage_ratio() - 0.4).abs() < 1e-9);
+        assert!(!bucket.try_consume(100, now));
+        // denied consume leaves tokens unchanged after failed attempt's refill
+        assert!((bucket.usage_ratio() - 0.4).abs() < 1e-9);
     }
 }
