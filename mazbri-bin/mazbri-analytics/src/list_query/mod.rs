@@ -318,6 +318,12 @@ pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
                 f.op.as_str()
             )));
         }
+        // Reject non-Unix-second time values up front (400), not at compile time (500).
+        if def.temporal
+            && let Some(value) = &f.value
+        {
+            compile_temporal_condition(def.field, f.op, value)?;
+        }
     }
     Ok(())
 }
@@ -554,7 +560,9 @@ fn compile_temporal_condition(
                 ));
             };
             let (a, b) = (seconds_from_f64(*a)?, seconds_from_f64(*b)?);
-            Ok(format!("{col} >= toDateTime({a}) AND {col} <= toDateTime({b})"))
+            Ok(format!(
+                "{col} >= toDateTime({a}) AND {col} <= toDateTime({b})"
+            ))
         }
         _ => Err(ListQueryError::invalid_op(col, op.as_str())),
     }
@@ -671,9 +679,28 @@ mod tests {
 
     #[test]
     fn temporal_rejects_datetime_strings_and_fractions() {
-        assert!(ts(FilterOp::Gte, FilterValue::String("2026-11-01 11:00:00".into())).is_err());
+        assert!(
+            ts(
+                FilterOp::Gte,
+                FilterValue::String("2026-11-01 11:00:00".into())
+            )
+            .is_err()
+        );
         assert!(ts(FilterOp::Gte, FilterValue::String("1793502000".into())).is_err());
         assert!(ts(FilterOp::Gte, FilterValue::Number(1.5)).is_err());
         assert!(ts(FilterOp::Gte, FilterValue::Number(-1.0)).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_string_timestamp() {
+        let filter = |value| ListFilter {
+            field: "timestamp".into(),
+            op: FilterOp::Gte,
+            value: Some(value),
+        };
+        assert!(
+            validate_filters(&[filter(FilterValue::String("2026-11-01 11:00:00".into()))]).is_err()
+        );
+        assert!(validate_filters(&[filter(FilterValue::Number(1_793_502_000.0))]).is_ok());
     }
 }
