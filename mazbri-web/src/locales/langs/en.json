@@ -872,6 +872,7 @@
       "securityEvents": "Auth & Security",
       "productRank": "Product Rank",
       "capacity": "Capacity",
+      "slo": "SLO / Error Budget",
       "anomaly": "Anomaly",
       "customDashboard": "Custom Dashboard",
       "alertSilences": "Alert silences",
@@ -4716,6 +4717,18 @@
       "colReqs": "Requests",
       "colInternal": "Internal P99",
       "colNotes": "Notes"
+    },
+    "slo": {
+      "colName": "Name",
+      "colType": "SLI type",
+      "colObjective": "Objective",
+      "colWindow": "Window (d)",
+      "colSli": "SLI",
+      "colBudget": "Budget left",
+      "colBurn5m": "Burn 5m",
+      "colBurnPage": "Page",
+      "colBurnTicket": "Ticket",
+      "colTs": "Updated"
     },
     "anomaly": {
       "colTime": "Time",

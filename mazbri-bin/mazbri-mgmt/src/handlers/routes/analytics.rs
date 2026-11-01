@@ -1,6 +1,7 @@
 use super::super::analytics_handlers;
 use super::super::ops_changes_handlers;
 use super::super::ops_reliability_handlers;
+use super::super::ops_slo_handlers;
 use super::super::state::AppState;
 use axum::{
     Router,
@@ -57,6 +58,14 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/stats/ops/capacity",
             get(ops_reliability_handlers::get_capacity),
+        )
+        .route(
+            "/stats/ops/slos",
+            get(ops_slo_handlers::list_slos),
+        )
+        .route(
+            "/stats/ops/slos/status",
+            get(ops_slo_handlers::list_slo_status),
         )
         .route(
             "/stats/ops/products/zero-calls",

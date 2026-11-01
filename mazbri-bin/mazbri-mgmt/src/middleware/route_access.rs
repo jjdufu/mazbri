@@ -258,6 +258,8 @@ pub const RULES: &[RouteRule] = &[
     rule("POST", "/stats/ops/loadtests", Roles(BIZ)),
     rule("GET", "/stats/ops/anomalies", AnyRole),
     rule("GET", "/stats/ops/capacity", AnyRole),
+    rule("GET", "/stats/ops/slos", AnyRole),
+    rule("GET", "/stats/ops/slos/status", AnyRole),
     rule("POST", "/stats/ops/products/zero-calls", AnyRole),
     rule("GET", "/stats/platform", AnyRole),
     rule("GET", "/stats/traces/billing", Roles(BIZ)),

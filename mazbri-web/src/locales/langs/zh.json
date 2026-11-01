@@ -872,6 +872,7 @@
       "securityEvents": "鉴权与安全事件",
       "productRank": "产品排行",
       "capacity": "容量规划",
+      "slo": "SLO / 错误预算",
       "anomaly": "异常检测",
       "customDashboard": "自定义看板",
       "alertSilences": "告警静默",
@@ -4721,6 +4722,18 @@
       "colReqs": "请求数",
       "colInternal": "内部 P99",
       "colNotes": "备注"
+    },
+    "slo": {
+      "colName": "名称",
+      "colType": "SLI 类型",
+      "colObjective": "目标",
+      "colWindow": "窗口(天)",
+      "colSli": "当前 SLI",
+      "colBudget": "剩余预算",
+      "colBurn5m": "燃烧率 5m",
+      "colBurnPage": "快烧",
+      "colBurnTicket": "慢烧",
+      "colTs": "更新时间"
     },
     "anomaly": {
       "colTime": "时间",

@@ -662,6 +662,8 @@ pub static ROUTES: &[RouteAudit] = &[
     write("POST", "/stats/ops/loadtests", A::SettingsUpdate, R::System, None),
     read("/stats/ops/anomalies", R::System),
     read("/stats/ops/capacity", R::System),
+    read("/stats/ops/slos", R::System),
+    read("/stats/ops/slos/status", R::System),
     read_post("/stats/ops/products/zero-calls", R::System),
     read("/admin/preferences", R::System),
     write("PUT", "/admin/preferences", A::UserSettingsUpdate, R::User, None),

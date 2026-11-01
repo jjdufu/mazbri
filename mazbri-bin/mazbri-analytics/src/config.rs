@@ -26,6 +26,8 @@ pub struct AnalyticsConfig {
     pub capacity: Option<crate::capacity::CapacityConfig>,
     #[serde(default)]
     pub anomaly: Option<crate::anomaly::AnomalyConfig>,
+    #[serde(default)]
+    pub slo: Option<crate::slo::SloConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -184,6 +186,10 @@ impl ValidateConfig for AnalyticsConfig {
             security
                 .validate()
                 .map_err(|e| anyhow::anyhow!("security: {e}"))?;
+        }
+        if let Some(ref slo) = self.slo {
+            slo.validate()
+                .map_err(|e| anyhow::anyhow!("slo: {e}"))?;
         }
         if let Some(ref alerting) = self.alerting {
             alerting

@@ -1326,7 +1326,9 @@ fn empty_metrics_overview() -> serde_json::Value {
         "cert_min_expiry_days": 0.0,
         "service_health": [],
         "alerts_connected": false,
-        "error_budget_connected": false
+        "error_budget_connected": false,
+        "error_budget_remaining": null,
+        "error_budget_slo": null
     })
 }
 fn empty_metric_series(metric: &str) -> serde_json::Value {

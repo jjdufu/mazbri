@@ -32,4 +32,5 @@ pub mod whitelist_handlers;
 pub use routes::create_routes;
 pub use state::{AppState, CertServiceClientCfg};
 pub mod ops_reliability_handlers;
+pub mod ops_slo_handlers;
 pub mod user_preferences_handlers;

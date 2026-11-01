@@ -125,6 +125,12 @@ pub struct MetricOverview {
     pub alerts_connected: bool,
     /// Error-budget feed lands in step 24.
     pub error_budget_connected: bool,
+    /// 主 SLO 剩余错误预算比例（有数据时）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_budget_remaining: Option<f64>,
+    /// 主 SLO 名称。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_budget_slo: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricQueryParams {
@@ -247,6 +253,8 @@ impl GreptimeDBClient {
                     cert_min_expiry_days,
                     service_health,
                 )?;
+                let (error_budget_slo, error_budget_remaining) =
+                    self.load_error_budget_snapshot().await;
                 Ok(MetricOverview {
                     qps,
                     success_rate,
@@ -263,12 +271,25 @@ impl GreptimeDBClient {
                     circuit_breaker_open_count,
                     cert_min_expiry_days,
                     service_health,
-                    alerts_connected: false,
-                    error_budget_connected: false,
+                    alerts_connected: true,
+                    error_budget_connected: error_budget_remaining.is_some(),
+                    error_budget_remaining,
+                    error_budget_slo,
                 })
             }),
         )
         .await
+    }
+
+    async fn load_error_budget_snapshot(&self) -> (Option<String>, Option<f64>) {
+        let budget_series = self
+            .query_instant_vector("mazbri_slo_error_budget_remaining")
+            .await
+            .unwrap_or_default();
+        budget_series
+            .into_iter()
+            .next()
+            .map_or((None, None), |(labels, v)| (labels.get("slo").cloned(), Some(v)))
     }
 
     async fn query_billing_pipeline_overview(&self, w: u64) -> Result<BillingPipelineOverview> {

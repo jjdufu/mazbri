@@ -183,6 +183,11 @@ async fn main() -> Result<()> {
             sigma: 3.0,
         });
         mazbri_analytics::anomaly::spawn(&anom, Arc::clone(&clickhouse_client), &alerting.database)?;
+        let slo = config.slo.clone().unwrap_or(mazbri_analytics::slo::SloConfig {
+            enabled: true,
+            interval_secs: 300,
+        });
+        mazbri_analytics::slo::spawn(&slo, greptimedb_client.clone(), &alerting.database)?;
     }
     mazbri_analytics::pipeline_freshness::spawn(
         greptimedb_client.clone(),

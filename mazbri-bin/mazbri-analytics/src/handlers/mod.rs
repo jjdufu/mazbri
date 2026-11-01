@@ -1,6 +1,7 @@
 mod call_search;
 mod health;
 mod metrics;
+mod slo;
 mod olap;
 mod request;
 mod request_analytics;
@@ -14,6 +15,7 @@ pub(crate) struct HandlerError {
 pub use call_search::{request_histogram, request_stages};
 pub use health::AppState;
 pub use health::health_check;
+pub use slo::get_slo_status;
 pub use metrics::{
     get_metric_timeseries, get_metrics_catalog, get_metrics_overview, get_services_health,
 };

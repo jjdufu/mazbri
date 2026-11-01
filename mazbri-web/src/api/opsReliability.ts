@@ -61,3 +61,36 @@ export function zeroCallProducts(active_product_ids: string[]) {
     data: { active_product_ids },
   });
 }
+
+export interface SloDefinition {
+  id: string;
+  name: string;
+  sli_type: string;
+  query_kind: string;
+  query: string;
+  objective: number;
+  window_days: number;
+  scope: string;
+  enabled: boolean;
+}
+
+export interface SloStatusRow {
+  name: string;
+  sli?: number;
+  error_budget_remaining?: number;
+  burn_1h?: number;
+  burn_5m?: number;
+  burn_page?: number;
+  burn_ticket?: number;
+  ts?: string;
+}
+
+export function listSlos() {
+  return request.get<{ items: SloDefinition[] }>({ url: `${BASE}/slos` });
+}
+
+export function listSloStatus() {
+  return request.get<{ definitions: SloDefinition[]; status: SloStatusRow[] }>({
+    url: `${BASE}/slos/status`,
+  });
+}

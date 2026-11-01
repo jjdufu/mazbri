@@ -97,6 +97,12 @@ impl AnalyticsHttpClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn slo_status(&self) -> Result<serde_json::Value> {
+        self.get_json("/api/v1/slo/status", &[]).await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn metrics_catalog(&self) -> Result<serde_json::Value> {
         self.get_json("/api/v1/metrics/catalog", &[]).await
     }

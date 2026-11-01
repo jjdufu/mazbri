@@ -18,6 +18,8 @@ export interface MetricOverview {
   service_health: ServiceHealthLight[];
   alerts_connected: boolean;
   error_budget_connected: boolean;
+  error_budget_remaining?: number | null;
+  error_budget_slo?: string | null;
 }
 /** 计费链路概览：来自 billing 自身暴露的 Prometheus 指标。 */
 export interface BillingPipelineOverview {
