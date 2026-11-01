@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
 };
 
-pub fn routes() -> Router<AppState> {
+fn metrics_and_ops_routes() -> Router<AppState> {
     Router::new()
         .route(
             "/tenants/{code}/analytics",
@@ -22,7 +22,6 @@ pub fn routes() -> Router<AppState> {
             "/stats/platform",
             get(analytics_handlers::get_platform_stats),
         )
-
         .route(
             "/stats/metrics/overview",
             get(analytics_handlers::get_metrics_overview),
@@ -40,6 +39,10 @@ pub fn routes() -> Router<AppState> {
             get(analytics_handlers::get_services_health),
         )
         .route(
+            "/stats/metrics/topology",
+            get(analytics_handlers::get_metrics_topology),
+        )
+        .route(
             "/stats/olap/query",
             post(analytics_handlers::post_olap_query),
         )
@@ -49,7 +52,8 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/stats/ops/loadtests",
-            get(ops_reliability_handlers::list_loadtests).post(ops_reliability_handlers::create_loadtest),
+            get(ops_reliability_handlers::list_loadtests)
+                .post(ops_reliability_handlers::create_loadtest),
         )
         .route(
             "/stats/ops/anomalies",
@@ -59,10 +63,7 @@ pub fn routes() -> Router<AppState> {
             "/stats/ops/capacity",
             get(ops_reliability_handlers::get_capacity),
         )
-        .route(
-            "/stats/ops/slos",
-            get(ops_slo_handlers::list_slos),
-        )
+        .route("/stats/ops/slos", get(ops_slo_handlers::list_slos))
         .route(
             "/stats/ops/slos/status",
             get(ops_slo_handlers::list_slo_status),
@@ -71,6 +72,10 @@ pub fn routes() -> Router<AppState> {
             "/stats/ops/products/zero-calls",
             post(ops_reliability_handlers::zero_call_products),
         )
+}
+
+fn calls_and_traces_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/stats/calls/customer",
             get(analytics_handlers::get_customer_call_logs),
@@ -107,4 +112,10 @@ pub fn routes() -> Router<AppState> {
             "/stats/traces/{trace_id}",
             get(analytics_handlers::get_trace),
         )
+}
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .merge(metrics_and_ops_routes())
+        .merge(calls_and_traces_routes())
 }

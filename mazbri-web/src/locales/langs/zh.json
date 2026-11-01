@@ -877,7 +877,8 @@
       "customDashboard": "自定义看板",
       "alertSilences": "告警静默",
       "alertOncall": "值班排班",
-      "alertChannels": "通知渠道"
+      "alertChannels": "通知渠道",
+      "serviceTopology": "服务拓扑"
     }
   },
   "systemSettings": {
@@ -1561,7 +1562,18 @@
       "alertRuleUpdate": "更新告警规则",
       "alertRuleDelete": "删除告警规则",
       "alertEventAck": "确认告警事件",
-      "alertEventAssign": "指派告警事件"
+      "alertEventAssign": "指派告警事件",
+      "alertSilenceCreate": "创建告警静默",
+      "alertSilenceDelete": "删除告警静默",
+      "alertInhibitCreate": "创建告警抑制",
+      "alertInhibitUpdate": "更新告警抑制",
+      "alertInhibitDelete": "删除告警抑制",
+      "oncallCreate": "创建值班排班",
+      "oncallUpdate": "更新值班排班",
+      "oncallDelete": "删除值班排班",
+      "notifyChannelCreate": "创建通知渠道",
+      "notifyChannelUpdate": "更新通知渠道",
+      "notifyChannelDelete": "删除通知渠道"
     },
     "resources": {
       "admin": "管理员",
@@ -4195,7 +4207,26 @@
       }
     },
     "screen": {
-      "title": "运营大屏"
+      "title": "运营大屏",
+      "panels": {
+        "overview": "总览",
+        "business": "业务",
+        "resource": "资源"
+      },
+      "qps": "实时 QPS",
+      "successRate": "成功率",
+      "p99": "P99 时延",
+      "alerts": "活跃告警",
+      "burn": "错误预算燃烧",
+      "revenue": "今日收入",
+      "cost": "今日成本",
+      "margin": "今日毛利",
+      "topProducts": "Top 产品",
+      "supplierSla": "供应商 SLA",
+      "geo": "地域热力",
+      "topology": "服务拓扑",
+      "resources": "集群水位",
+      "noData": "暂无数据"
     },
     "finance": {
       "placeholder": "经营看板",
@@ -4245,6 +4276,21 @@
         "lastRestart": "最近重启",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
+      },
+      "topologyPage": {
+        "title": "服务拓扑",
+        "hint": "静态骨架 + 指标边 / Trace 边 / 上游调用边；点击边可跳到慢 Trace",
+        "loadFailed": "拓扑加载失败",
+        "qps": "QPS",
+        "errorRate": "错误率",
+        "p99": "P99",
+        "origin": "来源",
+        "origins": {
+          "metric": "指标",
+          "span": "Trace",
+          "request_log": "请求日志",
+          "static": "静态"
+        }
       }
     },
     "traffic": {

@@ -877,7 +877,8 @@
       "customDashboard": "Custom Dashboard",
       "alertSilences": "Alert silences",
       "alertOncall": "On-call",
-      "alertChannels": "Notify channels"
+      "alertChannels": "Notify channels",
+      "serviceTopology": "Service topology"
     }
   },
   "systemSettings": {
@@ -1561,7 +1562,18 @@
       "alertRuleUpdate": "Update alert rule",
       "alertRuleDelete": "Delete alert rule",
       "alertEventAck": "Acknowledge alert",
-      "alertEventAssign": "Assign alert"
+      "alertEventAssign": "Assign alert",
+      "alertSilenceCreate": "Create alert silence",
+      "alertSilenceDelete": "Delete alert silence",
+      "alertInhibitCreate": "Create alert inhibit",
+      "alertInhibitUpdate": "Update alert inhibit",
+      "alertInhibitDelete": "Delete alert inhibit",
+      "oncallCreate": "Create on-call schedule",
+      "oncallUpdate": "Update on-call schedule",
+      "oncallDelete": "Delete on-call schedule",
+      "notifyChannelCreate": "Create notify channel",
+      "notifyChannelUpdate": "Update notify channel",
+      "notifyChannelDelete": "Delete notify channel"
     },
     "resources": {
       "admin": "Administrator",
@@ -4190,7 +4202,26 @@
       }
     },
     "screen": {
-      "title": "Ops Screen"
+      "title": "Ops Screen",
+      "panels": {
+        "overview": "Overview",
+        "business": "Business",
+        "resource": "Resources"
+      },
+      "qps": "Live QPS",
+      "successRate": "Success rate",
+      "p99": "P99 latency",
+      "alerts": "Active alerts",
+      "burn": "Error budget burn",
+      "revenue": "Revenue today",
+      "cost": "Cost today",
+      "margin": "Margin today",
+      "topProducts": "Top products",
+      "supplierSla": "Supplier SLA",
+      "geo": "Geo heatmap",
+      "topology": "Topology",
+      "resources": "Cluster capacity",
+      "noData": "No data"
     },
     "finance": {
       "placeholder": "Finance overview will be completed in a later step",
@@ -4240,6 +4271,21 @@
         "lastRestart": "Last restart",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
+      },
+      "topologyPage": {
+        "title": "Service topology",
+        "hint": "Static skeleton plus metric / trace / upstream edges; click an edge for slow traces",
+        "loadFailed": "Failed to load topology",
+        "qps": "QPS",
+        "errorRate": "Error rate",
+        "p99": "P99",
+        "origin": "Origin",
+        "origins": {
+          "metric": "Metrics",
+          "span": "Trace",
+          "request_log": "Request logs",
+          "static": "Static"
+        }
       }
     },
     "traffic": {

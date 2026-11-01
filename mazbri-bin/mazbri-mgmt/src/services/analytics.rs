@@ -1246,6 +1246,25 @@ fn olap_is_money(body: &serde_json::Value) -> bool {
     )
 }
 
+pub async fn get_metrics_topology(
+    analytics_client: &AnalyticsHttpClient,
+    start: Option<i64>,
+    end: Option<i64>,
+) -> axum::response::Response {
+    match analytics_client.metrics_topology(start, end).await {
+        Ok(body) => ApiResponse::ok(body).into_response(),
+        Err(e) => {
+            tracing::warn!("analytics topology 调用失败，返回空图: {}", e);
+            ApiResponse::ok(serde_json::json!({
+                "start": start.unwrap_or(0),
+                "end": end.unwrap_or(0),
+                "nodes": [],
+                "edges": [],
+            })).into_response()
+        }
+    }
+}
+
 pub async fn olap_query(
     analytics_client: &AnalyticsHttpClient,
     claims: &crate::middleware::auth::AdminClaims,

@@ -14,6 +14,17 @@ pub async fn get_metrics_catalog(State(state): State<AppState>) -> axum::respons
 pub async fn get_services_health(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_services_health(&state.analytics_client).await
 }
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct TopologyQuery {
+    pub start: Option<i64>,
+    pub end: Option<i64>,
+}
+pub async fn get_metrics_topology(
+    State(state): State<AppState>,
+    Query(params): Query<TopologyQuery>,
+) -> axum::response::Response {
+    analytics::get_metrics_topology(&state.analytics_client, params.start, params.end).await
+}
 pub async fn get_metric_timeseries(
     State(state): State<AppState>,
     Query(params): Query<MetricsTimeseriesParams>,

@@ -108,7 +108,7 @@ const fn read(path: &'static str, resource_type: R) -> RouteAudit {
 }
 
 /// 以 POST 承载查询体的只读接口白名单（不产生写审计）。
-pub const POST_READS: &[&str] = &["/stats/olap/query"];
+pub const POST_READS: &[&str] = &["/stats/olap/query", "/stats/ops/products/zero-calls"];
 
 /// 以 POST 承载查询条件的只读接口（不产生写审计），路径须登记在 [`POST_READS`]。
 const fn read_post(path: &'static str, resource_type: R) -> RouteAudit {
@@ -656,6 +656,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
     read("/stats/metrics/services/health", R::System),
+    read("/stats/metrics/topology", R::System),
     read_post("/stats/olap/query", R::System),
     read("/stats/ops/changes", R::System),
     read("/stats/ops/loadtests", R::System),

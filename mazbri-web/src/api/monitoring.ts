@@ -6,6 +6,7 @@ import type {
   MetricTimeseriesQuery,
   MetricsCatalog,
   ServiceHealthRow,
+  TopologyGraph,
 } from "@/types/api/monitoring";
 const BASE_PATH = `${API_BASE_PATH}/stats/metrics`;
 export async function fetchMetricsOverview() {
@@ -30,6 +31,14 @@ export async function fetchMetricTimeseries(params: MetricTimeseriesQuery) {
 export async function fetchServicesHealth() {
   return request.get<ServiceHealthRow[]>({
     url: `${BASE_PATH}/services/health`,
+    showErrorMessage: false,
+  });
+}
+
+export async function fetchServiceTopology(params?: { start?: number; end?: number }) {
+  return request.get<TopologyGraph>({
+    url: `${BASE_PATH}/topology`,
+    params,
     showErrorMessage: false,
   });
 }
