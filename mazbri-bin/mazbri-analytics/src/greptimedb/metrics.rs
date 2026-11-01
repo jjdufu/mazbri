@@ -780,12 +780,352 @@ fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
         .collect()
 }
 
+
+/// 步骤 19：数据管道 / 中间件 / 主机与容器（步骤 13 已采集的指标）。
+/// 容器名标签：compose 来自 cAdvisor docker 白名单（`name` / compose service 标签）；
+/// 裸 k8s 来自 kubelet cAdvisor（kubernetes pod/container 标签）；都没有时前端用短 id。
+const CONTAINER_ID_FILTER: &str =
+    r#"id=~"/docker/.+|/kubepods.*|/cri-containerd.*""#;
+const CONTAINER_BY: &str = "name, image, container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name, id";
+const FS_FILTER: &str = r#"filesystem=~"ext4|xfs|overlay""#;
+
+const INFRA_CATALOG: &[(&str, &str, &str, &str)] = &[
+    // 9.1 数据管道
+    (
+        "vector_events_received",
+        "Vector 接收事件速率（按 component）",
+        "events/s",
+        "line",
+    ),
+    (
+        "vector_events_sent",
+        "Vector 发送事件速率（按 component）",
+        "events/s",
+        "line",
+    ),
+    (
+        "vector_component_errors",
+        "Vector 组件错误速率（按 component）",
+        "ops/s",
+        "line",
+    ),
+    (
+        "vector_buffer_usage_ratio",
+        "Vector buffer 使用率（按 buffer）",
+        "%",
+        "line",
+    ),
+    (
+        "redpanda_topic_bytes",
+        "Redpanda topic 字节吞吐（按 topic / request）",
+        "B/s",
+        "line",
+    ),
+    (
+        "redpanda_consumer_lag",
+        "Redpanda consumer group lag",
+        "msgs",
+        "line",
+    ),
+    (
+        "clickhouse_inserted_rows",
+        "ClickHouse 写入行速率",
+        "rows/s",
+        "line",
+    ),
+    (
+        "clickhouse_kafka_errors",
+        "ClickHouse Kafka 消费错误速率",
+        "ops/s",
+        "line",
+    ),
+    (
+        "clickhouse_parts_active",
+        "ClickHouse 活跃 parts",
+        "parts",
+        "line",
+    ),
+    (
+        "clickhouse_merges",
+        "ClickHouse 正在 merge 数",
+        "merges",
+        "line",
+    ),
+    (
+        "clickhouse_query_time_ms",
+        "ClickHouse 查询耗时速率（折算 ms/s）",
+        "ms/s",
+        "line",
+    ),
+    (
+        "greptime_write_rows",
+        "GreptimeDB 写入行速率",
+        "rows/s",
+        "line",
+    ),
+    (
+        "greptime_promql_query_p99_ms",
+        "GreptimeDB PromQL 查询 P99",
+        "ms",
+        "line",
+    ),
+    // 9.2 中间件
+    ("pg_up", "PostgreSQL 可达", "bool", "line"),
+    ("pg_connections", "PostgreSQL 连接数（按 datname）", "conn", "line"),
+    ("pg_max_connections", "PostgreSQL max_connections", "conn", "line"),
+    ("pg_tps", "PostgreSQL TPS（commit+rollback）", "tps", "line"),
+    ("pg_cache_hit_ratio", "PostgreSQL 缓存命中率", "%", "line"),
+    ("pg_deadlocks", "PostgreSQL 死锁速率", "ops/s", "line"),
+    (
+        "pg_slow_query_seconds",
+        "PostgreSQL 语句累计耗时速率（按 datname）",
+        "s/s",
+        "line",
+    ),
+    ("pg_database_size_mb", "PostgreSQL 库大小", "MB", "line"),
+    ("redis_up", "Redis 可达", "bool", "line"),
+    ("redis_memory_mb", "Redis 已用内存", "MB", "line"),
+    ("redis_hit_ratio", "Redis 命中率", "%", "line"),
+    ("redis_commands", "Redis 命令速率", "ops/s", "line"),
+    ("redis_connected_clients", "Redis 连接数", "conn", "line"),
+    ("redis_evicted_keys", "Redis 逐出 key 速率", "keys/s", "line"),
+    ("redis_keyspace_keys", "Redis keyspace keys", "keys", "line"),
+    (
+        "clickhouse_disk_usage_ratio",
+        "ClickHouse 日志盘使用率",
+        "%",
+        "line",
+    ),
+    (
+        "redpanda_partitions",
+        "Redpanda 分区数",
+        "partitions",
+        "line",
+    ),
+    (
+        "redpanda_under_replicated",
+        "Redpanda under-replicated 分区",
+        "partitions",
+        "line",
+    ),
+    ("redpanda_disk_free_bytes", "Redpanda 磁盘剩余", "B", "line"),
+    (
+        "greptime_memory_usage_mb",
+        "GreptimeDB cgroup 内存",
+        "MB",
+        "line",
+    ),
+    // 9.3 主机与容器
+    ("host_cpu_usage_ratio", "主机 CPU 使用率", "%", "line"),
+    ("host_load1", "主机 load1", "load", "line"),
+    ("host_memory_usage_ratio", "主机内存使用率", "%", "line"),
+    (
+        "host_filesystem_usage_ratio",
+        "主机磁盘使用率（ext4/xfs/overlay）",
+        "%",
+        "line",
+    ),
+    ("host_disk_read_bytes", "主机磁盘读吞吐", "B/s", "line"),
+    ("host_disk_write_bytes", "主机磁盘写吞吐", "B/s", "line"),
+    ("host_network_rx_bytes", "主机网络收吞吐", "B/s", "line"),
+    ("host_network_tx_bytes", "主机网络发吞吐", "B/s", "line"),
+    ("container_cpu_cores", "容器 CPU（核）", "cores", "line"),
+    ("container_memory_mb", "容器内存 working set", "MB", "line"),
+    (
+        "container_restarts",
+        "容器重启次数（start_time 变化；cAdvisor 无 RestartCount）",
+        "restarts",
+        "line",
+    ),
+    ("container_oom_events", "容器 OOM 事件", "events", "line"),
+    ("container_fs_usage_mb", "容器文件系统用量", "MB", "line"),
+    (
+        "container_network_rx_bytes",
+        "容器网络收吞吐",
+        "B/s",
+        "line",
+    ),
+    (
+        "container_network_tx_bytes",
+        "容器网络发吞吐",
+        "B/s",
+        "line",
+    ),
+];
+
+fn metric_catalog_infra() -> Vec<MetricCatalogItem> {
+    INFRA_CATALOG
+        .iter()
+        .map(|&(key, label, unit, default_chart)| MetricCatalogItem {
+            key,
+            label,
+            unit,
+            default_chart,
+            note: None,
+        })
+        .collect()
+}
+
+fn infra_query(metric: &str, window: u64) -> Option<String> {
+    infra_query_pipeline(metric, window)
+        .or_else(|| infra_query_middleware(metric, window))
+        .or_else(|| infra_query_host(metric, window))
+        .or_else(|| infra_query_container(metric, window))
+}
+
+fn infra_query_pipeline(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "vector_events_received" => format!(
+            "sum by (component_id, component_kind) (rate(vector_component_received_events_total[{window}s]))"
+        ),
+        "vector_events_sent" => format!(
+            "sum by (component_id, component_kind) (rate(vector_component_sent_events_total[{window}s]))"
+        ),
+        "vector_component_errors" => format!(
+            "sum by (component_id, component_kind) (rate(vector_component_errors_total[{window}s]))"
+        ),
+        "vector_buffer_usage_ratio" => {
+            "100 * max by (buffer_id, component_id) (vector_buffer_size_bytes / (vector_buffer_max_size_bytes > 0))".to_string()
+        }
+        "redpanda_topic_bytes" => format!(
+            "sum by (redpanda_topic, redpanda_request) (rate(redpanda_kafka_request_bytes_total[{window}s]))"
+        ),
+        "redpanda_consumer_lag" => {
+            "max by (redpanda_group) (redpanda_kafka_consumer_group_lag_sum)".to_string()
+        }
+        "clickhouse_inserted_rows" => {
+            format!("sum(rate(ClickHouseProfileEvents_InsertedRows[{window}s]))")
+        }
+        "clickhouse_kafka_errors" => format!(
+            "sum(rate(ClickHouseProfileEvents_KafkaConsumerErrors[{window}s]))"
+        ),
+        "clickhouse_parts_active" => "max(ClickHouseMetrics_PartsActive)".to_string(),
+        "clickhouse_merges" => "max(ClickHouseMetrics_Merge)".to_string(),
+        "clickhouse_query_time_ms" => format!(
+            "sum(rate(ClickHouseProfileEvents_QueryTimeMicroseconds[{window}s])) / 1000"
+        ),
+        "greptime_write_rows" => {
+            format!("sum(rate(greptime_mito_write_rows_total[{window}s]))")
+        }
+        "greptime_promql_query_p99_ms" => format!(
+            "histogram_quantile(0.99, sum by (le) (rate(greptime_frontend_promql_query_metrics_elapsed_bucket[{window}s]))) * 1000"
+        ),
+        _ => return None,
+    })
+}
+
+fn infra_query_middleware(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "pg_up" => "max(pg_up)".to_string(),
+        "pg_connections" => {
+            "sum by (datname) (pg_stat_database_numbackends)".to_string()
+        }
+        "pg_max_connections" => "max(pg_settings_max_connections)".to_string(),
+        "pg_tps" => format!(
+            "sum(rate(pg_stat_database_xact_commit[{window}s])) + sum(rate(pg_stat_database_xact_rollback[{window}s]))"
+        ),
+        "pg_cache_hit_ratio" => format!(
+            "100 * sum(rate(pg_stat_database_blks_hit[{window}s])) / ((sum(rate(pg_stat_database_blks_hit[{window}s])) + sum(rate(pg_stat_database_blks_read[{window}s]))) > 0)"
+        ),
+        "pg_deadlocks" => {
+            format!("sum(rate(pg_stat_database_deadlocks[{window}s]))")
+        }
+        "pg_slow_query_seconds" => format!(
+            "sum by (datname) (rate(pg_stat_statements_seconds_total[{window}s]))"
+        ),
+        "pg_database_size_mb" => {
+            "sum by (datname) (pg_database_size_bytes) / 1048576".to_string()
+        }
+        "redis_up" => "max(redis_up)".to_string(),
+        "redis_memory_mb" => "max(redis_memory_used_bytes) / 1048576".to_string(),
+        "redis_hit_ratio" => format!(
+            "100 * sum(rate(redis_keyspace_hits_total[{window}s])) / ((sum(rate(redis_keyspace_hits_total[{window}s])) + sum(rate(redis_keyspace_misses_total[{window}s]))) > 0)"
+        ),
+        "redis_commands" => {
+            format!("sum(rate(redis_commands_processed_total[{window}s]))")
+        }
+        "redis_connected_clients" => "max(redis_connected_clients)".to_string(),
+        "redis_evicted_keys" => {
+            format!("sum(rate(redis_evicted_keys_total[{window}s]))")
+        }
+        "redis_keyspace_keys" => "sum(redis_db_keys)".to_string(),
+        "clickhouse_disk_usage_ratio" => {
+            "100 * (1 - (ClickHouseAsyncMetrics_FilesystemLogsPathAvailableBytes / (ClickHouseAsyncMetrics_FilesystemLogsPathTotalBytes > 0)))".to_string()
+        }
+        "redpanda_partitions" => "max(redpanda_cluster_partitions)".to_string(),
+        "redpanda_under_replicated" => {
+            "max(redpanda_kafka_under_replicated_replicas)".to_string()
+        }
+        "redpanda_disk_free_bytes" => "min(redpanda_storage_disk_free_bytes)".to_string(),
+        "greptime_memory_usage_mb" => {
+            "max(greptime_cgroups_memory_usage_bytes) / 1048576".to_string()
+        }
+        _ => return None,
+    })
+}
+
+fn infra_query_host(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "host_cpu_usage_ratio" => format!(
+            r#"100 * (1 - sum by (host) (rate(host_cpu_seconds_total{{mode="idle"}}[{window}s])) / (sum by (host) (rate(host_cpu_seconds_total[{window}s])) > 0))"#
+        ),
+        "host_load1" => "max by (host) (host_load1)".to_string(),
+        "host_memory_usage_ratio" => {
+            "100 * (1 - max by (host) (host_memory_available_bytes) / (max by (host) (host_memory_total_bytes) > 0))".to_string()
+        }
+        "host_filesystem_usage_ratio" => format!(
+            "100 * max by (host, mountpoint) (host_filesystem_used_ratio{{{FS_FILTER}}})"
+        ),
+        "host_disk_read_bytes" => format!(
+            "sum by (host, device) (rate(host_disk_read_bytes_total[{window}s]))"
+        ),
+        "host_disk_write_bytes" => format!(
+            "sum by (host, device) (rate(host_disk_written_bytes_total[{window}s]))"
+        ),
+        "host_network_rx_bytes" => format!(
+            "sum by (host, device) (rate(host_network_receive_bytes_total[{window}s]))"
+        ),
+        "host_network_tx_bytes" => format!(
+            "sum by (host, device) (rate(host_network_transmit_bytes_total[{window}s]))"
+        ),
+        _ => return None,
+    })
+}
+
+fn infra_query_container(metric: &str, window: u64) -> Option<String> {
+    Some(match metric {
+        "container_cpu_cores" => format!(
+            "sum by ({CONTAINER_BY}) (rate(container_cpu_usage_seconds_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+        ),
+        "container_memory_mb" => format!(
+            "sum by ({CONTAINER_BY}) (container_memory_working_set_bytes{{{CONTAINER_ID_FILTER}}}) / 1048576"
+        ),
+        "container_restarts" => format!(
+            "sum by ({CONTAINER_BY}) (changes(container_start_time_seconds{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+        ),
+        "container_oom_events" => format!(
+            "sum by ({CONTAINER_BY}) (increase(container_oom_events_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+        ),
+        "container_fs_usage_mb" => format!(
+            "sum by ({CONTAINER_BY}) (container_fs_usage_bytes{{{CONTAINER_ID_FILTER}}}) / 1048576"
+        ),
+        "container_network_rx_bytes" => format!(
+            "sum by ({CONTAINER_BY}) (rate(container_network_receive_bytes_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+        ),
+        "container_network_tx_bytes" => format!(
+            "sum by ({CONTAINER_BY}) (rate(container_network_transmit_bytes_total{{{CONTAINER_ID_FILTER}}}[{window}s]))"
+        ),
+        _ => return None,
+    })
+}
+
 fn metric_catalog() -> Vec<MetricCatalogItem> {
     let mut items = metric_catalog_core();
     items.extend(metric_catalog_service_runtime());
     items.extend(metric_catalog_traffic());
     items.extend(metric_catalog_upstream_billing());
     items.extend(metric_catalog_business());
+    items.extend(metric_catalog_infra());
     items
 }
 
@@ -1193,6 +1533,7 @@ fn build_metric_query(
         other => {
             return upstream_billing_query(other, window)
                 .or_else(|| business_query(other, window))
+                .or_else(|| infra_query(other, window))
                 .ok_or_else(|| AnalyticsError::Config(format!("Unsupported metric: {other}")));
         }
     })
@@ -1406,10 +1747,21 @@ mod tests {
     }
 
     #[test]
-    fn every_catalog_metric_builds() -> Result<()> {
+    fn infra_metrics_build_and_cover_catalog() -> Result<()> {
         let t = default_service_targets();
-        for item in metric_catalog() {
-            build_metric_query(item.key, None, &t, 60)?;
+        let q = build_metric_query("host_filesystem_usage_ratio", None, &t, 60)?;
+        assert!(q.contains("host_filesystem_used_ratio"));
+        assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#));
+        let q = build_metric_query("container_cpu_cores", None, &t, 60)?;
+        assert!(q.contains("container_cpu_usage_seconds_total"));
+        assert!(q.contains("container_label_com_docker_compose_service"));
+        assert!(q.contains("container_label_io_kubernetes_pod_name"));
+        let q = build_metric_query("vector_buffer_usage_ratio", None, &t, 60)?;
+        assert!(q.contains("vector_buffer_size_bytes"));
+        let q = build_metric_query("pg_cache_hit_ratio", None, &t, 60)?;
+        assert!(q.contains("pg_stat_database_blks_hit"));
+        for &(key, _, _, _) in INFRA_CATALOG {
+            build_metric_query(key, None, &t, 60)?;
         }
         Ok(())
     }
