@@ -2,6 +2,9 @@ name: CI
 
 # Strict gate: runs on every PR / push to main, and is called again by
 # release.yml right before images are built (decision: gate in both places).
+#
+# PR 侧按路径缩范围（web-only 跳过 libs、bin 仅 -p mazbri-mgmt）；
+# main push 若对应功能 PR 已全量绿则跳过重活（Release gate 仍全量，不跳）。
 on:
   push:
     branches: [main]
@@ -11,6 +14,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   # workflow_call shares the caller's context; keep its group distinct so the
@@ -26,22 +31,215 @@ env:
   PNPM_VERSION: '10.34.6'
 
 jobs:
+  changes:
+    name: Detect changes / dedupe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run_frontend: ${{ steps.flags.outputs.run_frontend }}
+      run_libs: ${{ steps.flags.outputs.run_libs }}
+      run_bin: ${{ steps.flags.outputs.run_bin }}
+      bin_scope: ${{ steps.flags.outputs.bin_scope }}
+      skip_heavy: ${{ steps.flags.outputs.skip_heavy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # release-please PRs / RP merge onto main: keep prior skip behaviour.
+      - name: Release-please short-circuit
+        id: rp
+        run: |
+          set -euo pipefail
+          skip=false
+          if [ "${{ github.event_name }}" = "pull_request" ] && \
+             [[ "${{ github.head_ref }}" == release-please--* ]]; then
+            skip=true
+          fi
+          if [ "${{ github.event_name }}" = "push" ] && \
+             [ "${{ github.workflow }}" = "CI" ]; then
+            msg=$(git log -1 --pretty=%B)
+            if [[ "$msg" == chore\(main\):\ release* ]]; then
+              skip=true
+            elif [[ "$msg" == Merge\ pull\ request\ \#* ]] && \
+                 [[ "$msg" == */release-please--branches--main* ]]; then
+              skip=true
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - name: Paths filter (pull_request only)
+        id: filter
+        if: github.event_name == 'pull_request' && steps.rp.outputs.skip != 'true'
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        with:
+          filters: |
+            web:
+              - 'mazbri-web/**'
+            libs:
+              - 'mazbri-libs/**'
+            bin:
+              - 'mazbri-bin/**'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+            lock:
+              - '**/Cargo.lock'
+            toolchain:
+              - 'rust-toolchain'
+              - 'rust-toolchain.toml'
+              - '**/rust-toolchain'
+              - '**/rust-toolchain.toml'
+
+      - name: Dedupe heavy jobs on main push after green PR
+        id: dedupe
+        if: >-
+          github.event_name == 'push' && github.workflow == 'CI' &&
+          github.ref == 'refs/heads/main' && steps.rp.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          skip_heavy=false
+          msg=$(git log -1 --pretty=%B)
+          pr=""
+          if [[ "$msg" =~ Merge\ pull\ request\ #([0-9]+) ]]; then
+            pr="${BASH_REMATCH[1]}"
+          elif [[ "$msg" =~ \(#([0-9]+)\)[[:space:]]*$ ]]; then
+            pr="${BASH_REMATCH[1]}"
+          fi
+
+          force=false
+          # 合入若改了 CI / lock / toolchain，强制全量，避免「workflow 已变仍跳过」。
+          if git rev-parse -q --verify HEAD^ >/dev/null; then
+            if [ "$(git rev-list --count --parents -n1 HEAD | awk '{print NF-1}')" -ge 2 ]; then
+              diff_range='HEAD^1...HEAD'
+            else
+              diff_range='HEAD^...HEAD'
+            fi
+            if git diff --name-only $diff_range | grep -E \
+              -e '^\.github/workflows/' \
+              -e '^\.github/scripts/' \
+              -e 'Cargo\.lock$' \
+              -e '(^|/)rust-toolchain(\.toml)?$' >/dev/null; then
+              force=true
+              echo "Force full CI: workflows/lock/toolchain changed in merge"
+            fi
+          fi
+
+          if [ -n "$pr" ] && [ "$force" = false ]; then
+            head_sha=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
+            echo "Merged PR #$pr head=$head_sha"
+            # 只要该 head 上已有成功的本仓库 CI workflow run，即视为已全量闸过。
+            # （路径缩略的 PR 也会成功；若其未跑 libs，合 main 跳过等于少测 —
+            #  完整性仍由 Release gate 兜住。这是约定的保守去重。）
+            ok=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+              --commit "$head_sha" --status success --limit 5 \
+              --json databaseId,conclusion,event \
+              --jq '[.[] | select(.conclusion=="success" and (.event=="pull_request" or .event=="push"))] | length')
+            if [ "${ok:-0}" -ge 1 ]; then
+              skip_heavy=true
+              echo "Skip heavy CI on main: PR #$pr already had successful CI for $head_sha"
+            else
+              echo "No successful CI run found for $head_sha; running full CI"
+            fi
+          else
+            echo "Not a recognizable merged PR (or forced); running full CI"
+          fi
+          echo "skip_heavy=$skip_heavy" >> "$GITHUB_OUTPUT"
+
+      - name: Compute job flags
+        id: flags
+        env:
+          RP_SKIP: ${{ steps.rp.outputs.skip }}
+          DEDUPE_SKIP: ${{ steps.dedupe.outputs.skip_heavy }}
+          EVENT: ${{ github.event_name }}
+          WORKFLOW: ${{ github.workflow }}
+          F_WEB: ${{ steps.filter.outputs.web }}
+          F_LIBS: ${{ steps.filter.outputs.libs }}
+          F_BIN: ${{ steps.filter.outputs.bin }}
+          F_WF: ${{ steps.filter.outputs.workflows }}
+          F_LOCK: ${{ steps.filter.outputs.lock }}
+          F_TC: ${{ steps.filter.outputs.toolchain }}
+        run: |
+          set -euo pipefail
+          run_frontend=true
+          run_libs=true
+          run_bin=true
+          bin_scope=workspace
+          skip_heavy=false
+
+          if [ "${RP_SKIP:-false}" = "true" ]; then
+            run_frontend=false
+            run_libs=false
+            run_bin=false
+            skip_heavy=true
+          elif [ "${DEDUPE_SKIP:-false}" = "true" ]; then
+            run_frontend=false
+            run_libs=false
+            run_bin=false
+            skip_heavy=true
+          elif [ "$EVENT" = "pull_request" ]; then
+            web=${F_WEB:-false}
+            libs=${F_LIBS:-false}
+            bin=${F_BIN:-false}
+            wf=${F_WF:-false}
+            lock=${F_LOCK:-false}
+            tc=${F_TC:-false}
+            # 无代码/门禁相关变更（纯文档等）→ 只留 smoke/noop
+            if [ "$web" != true ] && [ "$libs" != true ] && [ "$bin" != true ] && \
+               [ "$wf" != true ] && [ "$lock" != true ] && [ "$tc" != true ]; then
+              run_frontend=false
+              run_libs=false
+              run_bin=false
+            else
+              # workflows / lock / toolchain / bin → 全量
+              full=false
+              if [ "$wf" = true ] || [ "$lock" = true ] || [ "$tc" = true ] || [ "$bin" = true ]; then
+                full=true
+              fi
+              if [ "$full" = true ]; then
+                run_frontend=true
+                run_libs=true
+                run_bin=true
+                bin_scope=workspace
+              elif [ "$libs" = true ]; then
+                # libs 变更：仍真实 embed，故 frontend+全 bin；libs 必跑
+                run_frontend=true
+                run_libs=true
+                run_bin=true
+                bin_scope=workspace
+              elif [ "$web" = true ]; then
+                # web-only：跳过 libs；bin 只测 mazbri-mgmt（真实 dist embed）
+                run_frontend=true
+                run_libs=false
+                run_bin=true
+                bin_scope=mgmt
+              fi
+            fi
+          else
+            # push(main 未去重) / workflow_dispatch / workflow_call(Release gate)：全量
+            run_frontend=true
+            run_libs=true
+            run_bin=true
+            bin_scope=workspace
+            # workflow_call 时 github.workflow 是调用方名，不会走 dedupe；此处保持全量
+          fi
+
+          {
+            echo "run_frontend=$run_frontend"
+            echo "run_libs=$run_libs"
+            echo "run_bin=$run_bin"
+            echo "bin_scope=$bin_scope"
+            echo "skip_heavy=$skip_heavy"
+          } >> "$GITHUB_OUTPUT"
+          echo "flags: frontend=$run_frontend libs=$run_libs bin=$run_bin scope=$bin_scope skip_heavy=$skip_heavy"
+
   frontend:
     name: Frontend typecheck, build, test
-    # release-please PRs only touch CHANGELOG/manifest/VERSION; the code was
-    # gated on the PR (and push to main) that preceded them. The release commit
-    # lands on main either squashed ("chore(main): release X") or as a merge
-    # commit ("Merge pull request #N from <owner>/release-please--branches--main").
-    # github.workflow == 'CI' limits the push skip to this workflow's own run:
-    # when release.yml reuses this file as its gate (workflow_call), github.*
-    # is the caller's context (workflow "Release Please", event push) and the
-    # gate must still run everything.
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      !(github.event_name == 'push' && github.workflow == 'CI' &&
-        (startsWith(github.event.head_commit.message, 'chore(main): release') ||
-         (startsWith(github.event.head_commit.message, 'Merge pull request #') &&
-          contains(github.event.head_commit.message, '/release-please--branches--main'))))
+    needs: changes
+    if: needs.changes.outputs.run_frontend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -89,13 +287,8 @@ jobs:
 
   libs:
     name: mazbri-libs clippy -D warnings + test
-    # same skip rule as frontend (see comment there)
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      !(github.event_name == 'push' && github.workflow == 'CI' &&
-        (startsWith(github.event.head_commit.message, 'chore(main): release') ||
-         (startsWith(github.event.head_commit.message, 'Merge pull request #') &&
-          contains(github.event.head_commit.message, '/release-please--branches--main'))))
+    needs: changes
+    if: needs.changes.outputs.run_libs == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -125,7 +318,14 @@ jobs:
 
   bin:
     name: mazbri-bin clippy -D warnings + test
-    needs: frontend
+    needs: [changes, frontend]
+    # always() so we can skip cleanly when frontend was path-skipped; still require
+    # frontend success when we intend to run bin (real mgmt embed).
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.run_bin == 'true' &&
+      needs.frontend.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -148,17 +348,33 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: mazbri-bin
-          shared-key: bin
+          shared-key: bin-${{ needs.changes.outputs.bin_scope }}
           # PR caches are scoped to refs/pull/N/merge and never reused; only main saves
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy (strict)
         working-directory: mazbri-bin
-        run: cargo clippy --release --locked --workspace --all-targets -- -D warnings
+        env:
+          BIN_SCOPE: ${{ needs.changes.outputs.bin_scope }}
+        run: |
+          set -euo pipefail
+          if [ "$BIN_SCOPE" = "mgmt" ]; then
+            cargo clippy --release --locked -p mazbri-mgmt --all-targets -- -D warnings
+          else
+            cargo clippy --release --locked --workspace --all-targets -- -D warnings
+          fi
 
       - name: Test
         working-directory: mazbri-bin
-        run: cargo test --release --locked --workspace --no-fail-fast
+        env:
+          BIN_SCOPE: ${{ needs.changes.outputs.bin_scope }}
+        run: |
+          set -euo pipefail
+          if [ "$BIN_SCOPE" = "mgmt" ]; then
+            cargo test --release --locked -p mazbri-mgmt --no-fail-fast
+          else
+            cargo test --release --locked --workspace --no-fail-fast
+          fi
 
       # build.rs regenerates TS bindings; fail if they drift from the repo.
       - name: Generated TS bindings up to date
@@ -195,3 +411,44 @@ jobs:
     steps:
       - name: No-op
         run: 'true'
+
+  # 汇总：供日后 branch protection 挂单一 required check；skipped 的路径缩略算通过。
+  ci-result:
+    name: CI result
+    if: always()
+    needs: [changes, frontend, libs, bin, smoke, noop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Evaluate job results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          LIBS: ${{ needs.libs.result }}
+          BIN: ${{ needs.bin.result }}
+          SMOKE: ${{ needs.smoke.result }}
+          NOOP: ${{ needs.noop.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for name_and_result in \
+            "changes:$CHANGES" \
+            "frontend:$FRONTEND" \
+            "libs:$LIBS" \
+            "bin:$BIN" \
+            "smoke:$SMOKE" \
+            "noop:$NOOP"
+          do
+            name="${name_and_result%%:*}"
+            result="${name_and_result##*:}"
+            echo "$name=$result"
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::$name ended with $result"; fail=1 ;;
+            esac
+          done
+          # changes / smoke / noop 必须成功（不得 skip）
+          [ "$CHANGES" = "success" ] || { echo "::error::changes must succeed"; fail=1; }
+          [ "$SMOKE" = "success" ] || { echo "::error::smoke must succeed"; fail=1; }
+          [ "$NOOP" = "success" ] || { echo "::error::noop must succeed"; fail=1; }
+          exit "$fail"
