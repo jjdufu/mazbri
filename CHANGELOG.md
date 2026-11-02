@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.13](https://github.com/jjdufu/mazbri/compare/v0.2.12...v0.2.13) (2026-11-02)
+
+
+### Features
+
+* **mgmt:** 按角色收紧 stats/alerts 的 route_access ([4018f74](https://github.com/jjdufu/mazbri/commit/4018f746c453ee3e667d3a29a7033fe3b95b32a2))
+* **ready:** 全服务上报 mazbri_rpc_ready 并与 /ready 同源 ([432c0a6](https://github.com/jjdufu/mazbri/commit/432c0a6ad2f40cad282a37a9c28354906dbcf68c))
+* **web:** 侧栏运营优先并按角色裁剪运维菜单 ([c9b433e](https://github.com/jjdufu/mazbri/commit/c9b433e248656f752be337a078b9aa065e2c2e39))
+
+
+### Bug Fixes
+
+* **ci:** 补齐 traces 图表导入并拆分 admin 就绪检查 ([501c1d8](https://github.com/jjdufu/mazbri/commit/501c1d82169288ad319f9a1d8006ff0f076758b4))
+* **mgmt-web:** 修复 OpsPage 首卡被纵向 flex 压扁截断 ([0c54f74](https://github.com/jjdufu/mazbri/commit/0c54f74016d321ffb03142bf5d22f1439924bc32))
+* **mgmt-web:** 修复未登录 401 误报，并拆分运维监控与运营中心菜单 ([584eab9](https://github.com/jjdufu/mazbri/commit/584eab966deb35ff5e6740c7617a876cbd498cb3))
+* **mgmt-web:** 修复运维页图表溢出与布局对齐 ([d0ad39a](https://github.com/jjdufu/mazbri/commit/d0ad39acc2cb47f76335e3c58017eb506cf43933))
+* **mgmt-web:** 收尾运维页 Ops 壳与内联图表溢出 ([180ece5](https://github.com/jjdufu/mazbri/commit/180ece52fc9d9c41c436ba0361e59f32ef3c5dc5))
+* **mgmt:** NotifyInput 反序列化强制要求 emails/webhooks 字段 ([b7e6825](https://github.com/jjdufu/mazbri/commit/b7e682520b8634a2c53b0427a15c4b2fe2aa2752))
+
 ## [0.2.12](https://github.com/jjdufu/mazbri/compare/v0.2.11...v0.2.12) (2026-11-01)
 
 
