@@ -157,6 +157,9 @@ impl Notifier {
     /// 异步发送到规则配置的全部渠道；失败只记日志，不影响评估循环。
     /// 日志不输出收件人与 webhook 地址。
     pub fn dispatch(&self, notify: &NotifyConfig, notification: &AlertNotification) {
+        if !notify.enabled {
+            return;
+        }
         if !notify.emails.is_empty() {
             self.dispatch_email(&notify.emails, notification);
         }

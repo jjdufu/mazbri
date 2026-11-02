@@ -12,17 +12,17 @@ use crate::clickhouse::olap::{ExemplarMetric, ExemplarParams, Filters, OlapQuery
 use crate::greptimedb::GreptimeDBClient;
 use chrono::Utc;
 use engine::{Action, Engine};
-use filter::{is_inhibited, is_silenced, next_escalation_index, EscalationStep, InhibitRule};
+use filter::{is_inhibited, is_silenced, InhibitRule};
 use notifier::{Notifier, SmtpConfig};
 use rule::{
-    ActiveEvent, AlertNotification, AlertRule, NotifyConfig, OlapExpr, RuleKind, Sample,
+    ActiveEvent, AlertNotification, AlertRule, OlapExpr, RuleKind, Sample,
     samples_from_rows,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use store::{AlertStore, EscalationCandidate, EvaluationSession, FireInsert, NotifyChannelRow};
+use store::{AlertStore, EvaluationSession, FireInsert};
 use uuid::Uuid;
 
 /// `[alerting]` 配置段。
@@ -222,7 +222,6 @@ impl Evaluator {
             .await;
         self.resolve_disabled(session, &active_by_rule, &enabled, &rules_by_id)
             .await;
-        self.escalate(session, &rules_by_id).await;
         Ok(())
     }
 
@@ -351,65 +350,6 @@ impl Evaluator {
         }
     }
 
-    /// 未确认告警按值班升级阶梯外发；钉钉/飞书/企微渠道仅 stub 打日志。
-    async fn escalate(
-        &self,
-        session: &mut EvaluationSession,
-        rules_by_id: &HashMap<Uuid, &AlertRule>,
-    ) {
-        let steps = match session.load_primary_escalation().await {
-            Ok(steps) => steps,
-            Err(error) => {
-                tracing::warn!(target: "alerting", %error, "加载值班升级策略失败");
-                return;
-            }
-        };
-        if steps.is_empty() {
-            return;
-        }
-        let channels = match session.load_notify_channels().await {
-            Ok(c) => c,
-            Err(error) => {
-                tracing::warn!(target: "alerting", %error, "加载通知渠道失败");
-                Vec::new()
-            }
-        };
-        let candidates = match session.unacked_firing_for_escalation().await {
-            Ok(c) => c,
-            Err(error) => {
-                tracing::warn!(target: "alerting", %error, "加载升级候选失败");
-                return;
-            }
-        };
-        let now = Utc::now();
-        let channel_by_id: HashMap<Uuid, &NotifyChannelRow> =
-            channels.iter().map(|c| (c.id, c)).collect();
-        for cand in candidates {
-            let Some(idx) = next_escalation_index(&steps, cand.escalation_level, cand.started_at, now)
-            else {
-                continue;
-            };
-            let step = &steps[idx];
-            let Some(rule) = rules_by_id.get(&cand.rule_id) else {
-                continue;
-            };
-            dispatch_escalation(
-                &self.notifier,
-                rule,
-                &cand,
-                step,
-                &channel_by_id,
-                self.notifier.console_url(cand.id),
-            );
-            let level = i32::try_from(idx).unwrap_or(cand.escalation_level);
-            if let Err(error) = session.mark_notified(cand.id, level).await {
-                tracing::warn!(target: "alerting", event_id = %cand.id, %error, "记录升级通知失败");
-            }
-        }
-    }
-
-    /// 触发时刻前后窗口内、指标 ≥ 同窗 P99 的样例 trace（按样本标签中的租户 / 产品 / 供应商 / 渠道过滤）；
-    /// 查询失败只记日志，不阻塞事件写入。
     async fn exemplar_trace_ids(
         &self,
         rule: &AlertRule,
@@ -495,75 +435,11 @@ struct PendingFire {
     silenced: bool,
 }
 
-fn dispatch_escalation(
-    notifier: &Notifier,
-    rule: &AlertRule,
-    cand: &EscalationCandidate,
-    step: &EscalationStep,
-    channel_by_id: &HashMap<Uuid, &NotifyChannelRow>,
-    console_url: Option<String>,
-) {
-    let mut emails = step.users.clone();
-    let mut webhooks = Vec::new();
-    for id in &step.channel_ids {
-        let Some(ch) = channel_by_id.get(id) else {
-            continue;
-        };
-        match ch.channel_type.as_str() {
-            "email" => {
-                if let Some(arr) = ch.config.get("emails").and_then(|v| v.as_array()) {
-                    for e in arr {
-                        if let Some(s) = e.as_str() {
-                            emails.push(s.to_string());
-                        }
-                    }
-                }
-            }
-            "webhook" => {
-                if let Some(url) = ch.config.get("url").and_then(|v| v.as_str()) {
-                    webhooks.push(url.to_string());
-                }
-            }
-            "dingtalk" | "feishu" | "wecom" => {
-                tracing::info!(
-                    target: "alerting",
-                    channel = %ch.name,
-                    channel_type = %ch.channel_type,
-                    "IM 通知渠道尚未实现，已跳过（待用户自测接入）"
-                );
-            }
-            other => {
-                tracing::warn!(target: "alerting", channel_type = other, "未知通知渠道类型");
-            }
-        }
-    }
-    if emails.is_empty() && webhooks.is_empty() {
-        return;
-    }
-    notifier.dispatch(
-        &NotifyConfig { emails, webhooks },
-        &AlertNotification {
-            status: "escalated",
-            event_id: cand.id,
-            rule_id: rule.id,
-            rule: rule.name.clone(),
-            severity: rule.severity.clone(),
-            value: cand.value,
-            threshold: rule.threshold,
-            op: rule.op.as_str(),
-            labels: cand.labels.clone(),
-            started_at: cand.started_at,
-            resolved_at: None,
-            console_url,
-        },
-    );
-}
-
-/// 按配置启动告警评估后台任务；未配置或停用时不启动。
+/// 启动告警评估循环（持有 PG advisory lock 的实例执行）。
 ///
 /// # Errors
 ///
-/// 配置无效、连接池或 HTTP 客户端构建失败时返回错误。
+/// SMTP / 配置校验失败时返回错误。
 pub fn spawn(
     config: &AlertingConfig,
     greptimedb: Option<Arc<GreptimeDBClient>>,

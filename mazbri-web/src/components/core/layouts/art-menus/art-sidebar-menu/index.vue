@@ -161,7 +161,7 @@ const { siteName } = storeToRefs(settingStore);
 
 const defaultOpenedMenus = ref<string[]>([
   "/ops",
-  "/monitoring",
+  "/operations",
   "/control-panel",
 ]);
 const isMobileMode = ref(false);

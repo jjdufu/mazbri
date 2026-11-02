@@ -1,14 +1,11 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.billingHealth") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.billingHealth')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol
         v-for="card in statCards"
         :key="card.label"
@@ -26,10 +23,9 @@
       </ElCol>
     </ElRow>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.billing.funnel") }}</h3>
+        <OpsCard :title="t('ops.billing.funnel')">
           <CategoryBarChart
             :categories="funnelCategories"
             :series="funnelSeries"
@@ -43,40 +39,36 @@
             class="surface-panel-table"
             stripe
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.billing.queueTrend") }}</h3>
+        <OpsCard :title="t('ops.billing.queueTrend')">
           <MultiSeriesChart
             :series="series.billing_outbox_pending"
             :loading="loading"
             height="200px"
           />
-        </div>
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.billing.oldestAge") }}</h3>
+        </OpsCard>
+        <OpsCard :title="t('ops.billing.oldestAge')">
           <MultiSeriesChart
             :series="series.billing_oldest_pending_age"
             :loading="loading"
             height="200px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol v-for="chart in trendCharts" :key="chart.metric" :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t(chart.title) }}</h3>
+        <OpsCard :title="t(chart.title)">
           <MultiSeriesChart
             :series="chart.data"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.billing.failures") }}</h3>
+    <OpsCard :title="t('ops.billing.failures')">
       <ArtTable
         :data="failures"
         :loading="loading"
@@ -93,9 +85,8 @@
           @current-change="loadFailures"
         />
       </div>
-    </div>
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.billing.deadLetters") }}</h3>
+    </OpsCard>
+    <OpsCard :title="t('ops.billing.deadLetters')">
       <ArtTable
         :data="deadLetters"
         :loading="loading"
@@ -112,8 +103,8 @@
           @current-change="loadDeadLetters"
         />
       </div>
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -127,6 +118,8 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
@@ -395,35 +388,9 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
 .ops-traffic__pager {
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
 }
 </style>

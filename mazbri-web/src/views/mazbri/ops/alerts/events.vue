@@ -1,8 +1,6 @@
 <template>
-  <div class="ops-alerts art-full-height">
-    <div class="ops-alerts__toolbar">
-      <h2>{{ t("menus.mazbri.alertEvents") }}</h2>
-      <div class="ops-alerts__actions">
+  <OpsPage :title="t('menus.mazbri.alertEvents')">
+    <template #actions>
         <ElSelect
           v-model="filters.status"
           clearable
@@ -36,11 +34,9 @@
           {{ t("ops.alerts.filters.event") }} {{ filters.event_id.slice(0, 8) }}
         </ElTag>
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <div class="ops-alerts__card">
-      <h3>{{ t("ops.alerts.timeline") }}</h3>
+    <OpsCard :title="t('ops.alerts.timeline')">
       <ElEmpty
         v-if="!rows.length"
         :description="t('ops.alerts.empty')"
@@ -68,9 +64,10 @@
           </span>
         </ElTimelineItem>
       </ElTimeline>
-    </div>
+    </OpsCard>
 
-    <div class="ops-alerts__card">
+    <OpsCard>
+      <OpsTableWrap>
       <ElTable v-loading="loading" :data="rows" row-key="id" size="small" @row-click="selectRow">
         <ElTableColumn :label="t('ops.alerts.columns.severity')" width="100">
           <template #default="{ row }">
@@ -158,6 +155,7 @@
           </template>
         </ElTableColumn>
       </ElTable>
+      </OpsTableWrap>
       <div v-if="selected" class="ops-alerts__related">
         <h3>{{ t("ops.alerts.relatedChanges") }} · {{ selected.rule_name }}</h3>
         <ElEmpty
@@ -188,8 +186,8 @@
           @size-change="search"
         />
       </div>
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -198,6 +196,9 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import {
   ackAlertEvent,
   assignAlertEvent,
@@ -253,7 +254,7 @@ const filters = reactive<{
 
 const roles = computed(() => (userStore.info?.roles as string[]) || []);
 const canOperate = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN" || role === "R_FINANCE"),
+  roles.value.some((role) => role === "R_ADMIN"),
 );
 
 function formatTime(value: string) {
@@ -368,32 +369,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-alerts__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-alerts__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-alerts__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-alerts__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 .ops-alerts__timeline-title {
   margin-right: 8px;
   font-weight: 600;

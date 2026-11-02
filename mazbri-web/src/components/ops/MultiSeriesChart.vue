@@ -6,6 +6,10 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import type { MetricSeries } from "@/types/api/monitoring";
+import {
+  OPS_CHART_GRID,
+  bindOpsChartResize,
+} from "@/composables/ops/useOpsChartHost";
 
 export interface PointClick {
   /** Unix seconds of the data point nearest to the click. */
@@ -42,6 +46,7 @@ const props = withDefaults(
 
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+let unbindResize: (() => void) | null = null;
 
 function buildOption(data: MetricSeries | null): EChartsOption {
   const seriesList = data?.series ?? [];
@@ -53,11 +58,12 @@ function buildOption(data: MetricSeries | null): EChartsOption {
   });
   return {
     tooltip: { trigger: "axis" },
-    legend: { data: legend, type: "scroll" },
-    grid: { left: 48, right: 24, top: 40, bottom: 32 },
+    legend: { data: legend, type: "scroll", top: 0 },
+    grid: { ...OPS_CHART_GRID },
     xAxis: {
       type: "time",
       axisLabel: {
+        hideOverlap: true,
         formatter: (v: number) => {
           const d = new Date(v);
           return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -68,6 +74,7 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       type: "value",
       name: data?.unit || "",
       scale: true,
+      axisLabel: { hideOverlap: true },
     },
     series: seriesList.map((s, i) => {
       const base: Record<string, unknown> = {
@@ -80,7 +87,10 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       if (i === 0 && (props.annotations?.length ?? 0) > 0) {
         base.markLine = {
           symbol: "none",
-          label: { formatter: (p: { name?: string }) => p.name || "", position: "insideEndTop" },
+          label: {
+            formatter: (p: { name?: string }) => p.name || "",
+            position: "insideEndTop",
+          },
           data: (props.annotations || []).map((a) => ({
             xAxis: a.timestamp * 1000,
             name: a.label || "",
@@ -119,28 +129,31 @@ function handleZrClick(x: number, y: number) {
   if (best) props.onPointClick(best);
 }
 
-function render() {
-  if (!chartRef.value) return;
+function ensureChart() {
+  if (!chartRef.value) return null;
   if (!chart) {
     chart = echarts.init(chartRef.value);
     chart.getZr().on("click", (event) => {
       if (props.onPointClick) handleZrClick(event.offsetX, event.offsetY);
     });
+    unbindResize = bindOpsChartResize(chartRef.value, () => chart);
   }
-  chart.setOption(buildOption(props.series), true);
+  return chart;
 }
 
-function onResize() {
-  chart?.resize();
+function render() {
+  const instance = ensureChart();
+  if (!instance) return;
+  instance.setOption(buildOption(props.series), true);
 }
 
 onMounted(() => {
   render();
-  window.addEventListener("resize", onResize);
 });
 
 onUnmounted(() => {
-  window.removeEventListener("resize", onResize);
+  unbindResize?.();
+  unbindResize = null;
   chart?.dispose();
   chart = null;
 });
@@ -157,5 +170,6 @@ watch(
   width: 100%;
   height: v-bind(height);
   min-height: 200px;
+  overflow: hidden;
 }
 </style>

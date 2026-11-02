@@ -313,10 +313,32 @@ function handleResolvedRoute(
   to: RouteLocationNormalized,
   next: NavigationGuardNext,
 ): void {
+  const menuStore = useMenuStore();
+  const { homePath } = useCommon();
   if (to.matched.length > 0) {
+    const { hasPermission, path: safePath } =
+      RoutePermissionValidator.validatePath(
+        to.path,
+        menuStore.menuList,
+        homePath.value || "/",
+      );
+    if (!hasPermission) {
+      next({ path: safePath, replace: true });
+      return;
+    }
     setWorktab(to);
     setPageTitle(to);
     next();
+    return;
+  }
+  // 未注册动态路由：若菜单权限也不允许，回 home，避免无权限页落到 404。
+  const { hasPermission, path: safePath } = RoutePermissionValidator.validatePath(
+    to.path,
+    menuStore.menuList,
+    homePath.value || "/",
+  );
+  if (!hasPermission && safePath && safePath !== to.path) {
+    next({ path: safePath, replace: true });
     return;
   }
   next({ name: "Exception404" });

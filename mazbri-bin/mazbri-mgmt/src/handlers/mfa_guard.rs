@@ -461,12 +461,6 @@ mod tests {
                 (ops, "create_inhibit"),
                 (ops, "update_inhibit"),
                 (ops, "delete_inhibit"),
-                (ops, "create_oncall"),
-                (ops, "update_oncall"),
-                (ops, "delete_oncall"),
-                (ops, "create_channel"),
-                (ops, "update_channel"),
-                (ops, "delete_channel"),
             ],
             "Category::Platform",
         );

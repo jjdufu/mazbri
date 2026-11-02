@@ -43,10 +43,13 @@ const initializeSettings = async () => {
         },
       );
     }
-    try {
-      await mfaStepUpStore.refresh();
-    } catch {
-      // refresh 已记录日志。已登录初始化只同步提权状态，不开窗。
+    // 会话可能已失效（localStorage 仍标登录）；登出过程中也不再打 step-up
+    if (userStore.isLogin && !userStore.isLoggingOut) {
+      try {
+        await mfaStepUpStore.refresh();
+      } catch {
+        // refresh 已记录日志。已登录初始化只同步提权状态，不开窗。
+      }
     }
   }
   settingStore.applyToDom();

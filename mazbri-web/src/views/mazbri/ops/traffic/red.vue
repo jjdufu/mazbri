@@ -1,35 +1,29 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.trafficRed") }}</h2>
-      <div class="ops-traffic__actions">
+  <OpsPage :title="t('menus.mazbri.trafficRed')">
+    <template #actions>
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.qpsByMode") }}</h3>
+        <OpsCard :title="t('ops.traffic.qpsByMode')">
           <MultiSeriesChart :series="qpsSeries" :loading="loading" height="240px" />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.errorByMode") }}</h3>
+        <OpsCard :title="t('ops.traffic.errorByMode')">
           <MultiSeriesChart :series="errorSeries" :loading="loading" height="240px" />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.p95ByMode") }}</h3>
+        <OpsCard :title="t('ops.traffic.p95ByMode')">
           <MultiSeriesChart :series="p95Series" :loading="loading" height="240px" />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
+    <OpsCard>
       <div class="ops-traffic__row-head">
         <h3>{{ t("ops.traffic.topByDim") }}</h3>
         <ElRadioGroup v-model="dim" size="small" @change="loadTop">
@@ -57,7 +51,8 @@
         :loading="loadingTop"
         height="260px"
       />
-      <ArtTable
+      <OpsTableWrap>
+        <ArtTable
         :data="topRows"
         :loading="loadingTop"
         :columns="topColumns"
@@ -65,12 +60,12 @@
         stripe
         @row-click="onTopRowClick"
       />
-    </div>
+      </OpsTableWrap>
+    </OpsCard>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="14">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.statusHeatmap") }}</h3>
+        <OpsCard :title="t('ops.traffic.statusHeatmap')">
           <HeatmapChart
             :cells="statusCells"
             :x-labels="statusX"
@@ -78,16 +73,15 @@
             :loading="loading"
             height="260px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="10">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.bytesTrend") }}</h3>
+        <OpsCard :title="t('ops.traffic.bytesTrend')">
           <MultiSeriesChart :series="bytesSeries" :loading="loading" height="260px" />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -99,6 +93,9 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
@@ -288,32 +285,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 .ops-traffic__row-head {
   display: flex;
   flex-wrap: wrap;

@@ -467,7 +467,7 @@
 
       <div class="upstream-footer">
         <span>{{ $t("rateLimit.upstreamFooter") }}</span>
-        <router-link class="footer-link" :to="{ path: '/ops/upstream-supply' }">
+        <router-link class="footer-link" :to="{ path: '/operations/upstream-supply' }">
           {{ $t("rateLimit.upstreamFooterLink") }}
         </router-link>
       </div>

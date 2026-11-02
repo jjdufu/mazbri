@@ -18,6 +18,7 @@ use mazbri_core::{
 use mazbri_mgmt::{audit, config, handlers, middleware, proxy};
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{create_shutdown_manager, start_simple_admin_server};
+use mazbri_core::metrics::set_rpc_ready;
 #[cfg(not(mazbri_skip_frontend_embed))]
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
@@ -489,6 +490,7 @@ async fn main() -> Result<()> {
     let auth_state = create_auth_state(&dbs.admin, &redis).await?;
     if let Some(ref state) = admin_state {
         state.set_ready(true);
+        set_rpc_ready(&service_name, true);
         info!("Service marked as ready");
     }
     let (audit, audit_writer) = audit::AuditService::new(

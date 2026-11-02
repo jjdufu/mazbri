@@ -1,15 +1,11 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.upstreamBreaker") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.upstreamBreaker')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.upstream.breakerLanes") }}</h3>
+    <OpsCard :title="t('ops.upstream.breakerLanes')">
       <p class="ops-breaker__hint">{{ t("ops.upstream.breakerLegend") }}</p>
       <HeatmapChart
         :cells="laneCells"
@@ -19,79 +15,71 @@
         :height="laneHeight"
         value-name="state"
       />
-    </div>
+    </OpsCard>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.cbproState") }}</h3>
+        <OpsCard :title="t('ops.upstream.cbproState')">
           <MultiSeriesChart :series="series.cbpro_state" :loading="loading" height="220px" />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.attempts") }}</h3>
+        <OpsCard :title="t('ops.upstream.attempts')">
           <MultiSeriesChart
             :series="series.upstream_attempts"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.bypassRequests") }}</h3>
+        <OpsCard :title="t('ops.upstream.bypassRequests')">
           <MultiSeriesChart
             :series="series.bypass_upstream_qps"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.waitP95") }}</h3>
+        <OpsCard :title="t('ops.upstream.waitP95')">
           <MultiSeriesChart
             :series="series.upstream_wait_p95_ms"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.h2Connects") }}</h3>
+        <OpsCard :title="t('ops.upstream.h2Connects')">
           <MultiSeriesChart :series="series.h2_connects" :loading="loading" height="220px" />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.h2Streams") }}</h3>
+        <OpsCard :title="t('ops.upstream.h2Streams')">
           <MultiSeriesChart
             :series="series.h2_streams_in_use"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.h2Errors") }}</h3>
+        <OpsCard :title="t('ops.upstream.h2Errors')">
           <MultiSeriesChart :series="series.h2_errors" :loading="loading" height="220px" />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.upstream.h2ReadyWait") }}</h3>
+        <OpsCard :title="t('ops.upstream.h2ReadyWait')">
           <MultiSeriesChart
             :series="series.h2_ready_wait_p95_ms"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -104,6 +92,8 @@ import TimeRangePicker, {
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import type { MetricSeries } from "@/types/api/monitoring";
@@ -194,32 +184,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 
 .ops-breaker__hint {
   margin: 0 0 8px;

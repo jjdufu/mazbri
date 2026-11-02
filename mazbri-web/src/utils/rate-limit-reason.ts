@@ -110,15 +110,15 @@ export function reasonNavLocation(
     case "tenant_emergency":
       if (tenantCode) {
         return {
-          path: `/ops/tenants/${tenantCode}`,
+          path: `/operations/tenants/${tenantCode}`,
           query: { tab: "access-strategy" },
         };
       }
-      return { path: "/ops/tenants" };
+      return { path: "/operations/tenants" };
     case "upstream_channel":
-      return { path: "/ops/upstream-supply" };
+      return { path: "/operations/upstream-supply" };
     default:
-      return { path: "/ops/tenants" };
+      return { path: "/operations/tenants" };
   }
 }
 

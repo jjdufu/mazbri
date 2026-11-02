@@ -248,7 +248,12 @@ axiosInstance.interceptors.response.use(
       const { code, msg } = payload;
       if (code === ApiStatus.success) return response;
       if (code === ApiStatus.unauthorized) {
-        if (shouldAttemptSessionRefreshOn401(response.config.url)) {
+        const userStore = useUserStore();
+        if (
+          userStore.isLogin &&
+          !userStore.isLoggingOut &&
+          shouldAttemptSessionRefreshOn401(response.config.url)
+        ) {
           handleUnauthorizedError(msg);
         }
         throw createBackendHttpError(msg, code, {
@@ -277,11 +282,19 @@ axiosInstance.interceptors.response.use(
     await hydrateJsonBlobBody(error);
     const originalRequest = error.config as MfaAwareRequestConfig | undefined;
     const status = error.response?.status;
+    const userStore = useUserStore();
     const canRefreshSession =
       status === ApiStatus.unauthorized &&
       originalRequest !== undefined &&
       !originalRequest._retry &&
+      userStore.isLogin &&
+      !userStore.isLoggingOut &&
       shouldAttemptSessionRefreshOn401(originalRequest.url);
+
+    if (!canRefreshSession && status === ApiStatus.unauthorized) {
+      // 未登录或正在登出：静默交给路由守卫跳登录页，不 refresh、不弹「未授权访问」
+      return Promise.reject(handleError(error));
+    }
 
     if (canRefreshSession && originalRequest) {
       if (isRefreshing) {

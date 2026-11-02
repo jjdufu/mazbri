@@ -5,6 +5,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
+import {
+  OPS_CHART_GRID,
+  bindOpsChartResize,
+} from "@/composables/ops/useOpsChartHost";
 
 export interface BarSeries {
   name: string;
@@ -31,14 +35,26 @@ const props = withDefaults(
 
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+let unbindResize: (() => void) | null = null;
 
 function buildOption(): EChartsOption {
-  const catAxis = { type: "category" as const, data: props.categories };
-  const valueAxis = { type: "value" as const };
+  const catAxis = {
+    type: "category" as const,
+    data: props.categories,
+    axisLabel: {
+      hideOverlap: true,
+      overflow: "truncate" as const,
+      width: props.horizontal ? 96 : undefined,
+    },
+  };
+  const valueAxis = {
+    type: "value" as const,
+    axisLabel: { hideOverlap: true },
+  };
   return {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    legend: { type: "scroll" },
-    grid: { left: 48, right: 24, top: 40, bottom: 32 },
+    legend: { type: "scroll", top: 0 },
+    grid: { ...OPS_CHART_GRID },
     xAxis: props.horizontal ? valueAxis : catAxis,
     yAxis: props.horizontal ? catAxis : valueAxis,
     series: props.series.map((s) => ({
@@ -51,19 +67,32 @@ function buildOption(): EChartsOption {
   };
 }
 
-function render() {
-  if (!chartRef.value) return;
-  if (!chart) chart = echarts.init(chartRef.value);
-  chart.setOption(buildOption(), true);
+function ensureChart() {
+  if (!chartRef.value) return null;
+  if (!chart) {
+    chart = echarts.init(chartRef.value);
+    unbindResize = bindOpsChartResize(chartRef.value, () => chart);
+  }
+  return chart;
 }
+
+function render() {
+  const instance = ensureChart();
+  if (!instance) return;
+  instance.setOption(buildOption(), true);
+}
+
 onMounted(() => {
   render();
-  window.addEventListener("resize", () => chart?.resize());
 });
+
 onUnmounted(() => {
+  unbindResize?.();
+  unbindResize = null;
   chart?.dispose();
   chart = null;
 });
+
 watch(
   () => [props.categories, props.series, props.loading],
   () => render(),
@@ -75,5 +104,6 @@ watch(
 .ops-category-bar {
   width: 100%;
   height: v-bind(height);
+  overflow: hidden;
 }
 </style>

@@ -1,6 +1,7 @@
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use prometheus::IntGauge;
 use std::sync::LazyLock;
+/// 历史指标：仅表示启动预热完成。看板请用公共 `mazbri_rpc_ready{service}`。
 pub static GATEWAY_STARTUP_READY: LazyLock<IntGauge> = LazyLock::new(|| {
     MetricsBuilder::new().gauge(
         "gateway_startup_ready",

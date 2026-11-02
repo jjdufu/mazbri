@@ -48,16 +48,8 @@ export function resolveHomePath(
   if (canAccessPreferred) {
     return canAccessPreferred(pref, roleList) ? pref : roleHome;
   }
-  // Without a checker, only allow known role homes or ops paths that all ops roles share.
-  const set = new Set(roleList);
-  const allowedPrefix =
-    set.has("R_ADMIN") || set.has("R_FINANCE") || set.has("R_VIEWER");
-  if (allowedPrefix && (pref.startsWith("/ops/") || pref === "/dashboard" || pref.startsWith("/finance/"))) {
-    if (set.has("R_FINANCE") && !set.has("R_ADMIN") && pref.startsWith("/ops/")) {
-      // finance may open ops viewer pages in this console
-    }
-    return pref;
-  }
+  // 无菜单校验器时不做宽前缀放行，避免偏好落到无权限运维页。
+  if (pref === roleHome) return pref;
   return roleHome;
 }
 

@@ -515,3 +515,94 @@ fn main_router_applies_access_layer_inside_auth_layer() {
         .expect("create_router 必须挂载认证层");
     assert!(access < auth, "访问控制层必须位于认证层之内");
 }
+
+#[test]
+fn ops_stats_and_alerts_follow_role_matrix() {
+    // 观察者可读大盘
+    for (method, path) in [
+        ("GET", "/stats/platform"),
+        ("GET", "/stats/metrics/overview"),
+        ("GET", "/stats/metrics/catalog"),
+        ("GET", "/stats/metrics/timeseries"),
+        ("GET", "/stats/metrics/services/health"),
+        ("POST", "/stats/olap/query"),
+        ("POST", "/stats/ops/products/zero-calls"),
+        ("GET", "/stats/ops/slos/status"),
+        ("GET", "/alerts/events"),
+        ("GET", "/alerts/summary"),
+    ] {
+        assert_eq!(access_of(method, path), Access::AnyRole, "{method} {path}");
+    }
+
+    // 管理员可读（观察者 403）
+    for (method, path) in [
+        ("GET", "/stats/calls/customer"),
+        ("GET", "/stats/calls/upstream"),
+        ("GET", "/stats/calls/customer/histogram"),
+        ("GET", "/stats/calls/upstream/histogram"),
+        ("GET", "/stats/calls/stages"),
+        ("GET", "/stats/ops/changes"),
+        ("GET", "/stats/ops/anomalies"),
+        ("GET", "/billing/ops/funnel"),
+        ("GET", "/billing/ops/failures"),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::Roles(BIZ),
+            "{method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(BIZ)), Some("R_VIEWER")),
+            Err(Denial::Role(BIZ))
+        );
+        assert_eq!(decide(Some(Access::Roles(BIZ)), Some("R_FINANCE")), Ok(()));
+    }
+
+    // 仅超管
+    for (method, path) in [
+        ("GET", "/stats/metrics/topology"),
+        ("GET", "/stats/traces/search"),
+        ("GET", "/stats/traces/dependencies"),
+        ("GET", "/stats/traces/{trace_id}"),
+        ("GET", "/stats/traces/billing"),
+        ("GET", "/stats/ops/capacity"),
+        ("GET", "/stats/ops/loadtests"),
+        ("POST", "/stats/ops/loadtests"),
+        ("GET", "/stats/ops/slos"),
+        ("GET", "/alerts/rules"),
+        ("POST", "/alerts/rules"),
+        ("PUT", "/alerts/rules/{id}"),
+        ("DELETE", "/alerts/rules/{id}"),
+        ("PUT", "/alerts/rules/{id}/enabled"),
+        ("GET", "/alerts/silences"),
+        ("POST", "/alerts/silences"),
+        ("DELETE", "/alerts/silences/{id}"),
+        ("GET", "/alerts/inhibits"),
+        ("POST", "/alerts/inhibits"),
+        ("PUT", "/alerts/inhibits/{id}"),
+        ("DELETE", "/alerts/inhibits/{id}"),
+        ("POST", "/alerts/events/{id}/ack"),
+        ("POST", "/alerts/events/{id}/assign"),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::Roles(ADMIN),
+            "{method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_FINANCE")),
+            Err(Denial::Role(ADMIN)),
+            "FINANCE must be denied for {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_VIEWER")),
+            Err(Denial::Role(ADMIN)),
+            "VIEWER must be denied for {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_ADMIN")),
+            Ok(()),
+            "ADMIN must be allowed for {method} {path}"
+        );
+    }
+}

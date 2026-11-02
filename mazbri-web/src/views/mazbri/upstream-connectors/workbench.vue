@@ -553,7 +553,7 @@ defineOptions({ name: "UpstreamConnectorWorkbench" });
 const route = useRoute();
 const router = useRouter();
 
-const WORKBENCH_PATH = "/ops/upstream-supply/workbench";
+const WORKBENCH_PATH = "/operations/upstream-supply/workbench";
 
 const draft = ref<ConnectorDraft | null>(null);
 const endpoints = ref<ConnectorEndpoint[]>([]);
@@ -864,7 +864,7 @@ function goBack() {
     void router.push({ name: "SupplierDetail", params: { id: sid } });
     return;
   }
-  void router.push({ path: "/ops/upstream-supply", query: { tab: "suppliers" } });
+  void router.push({ path: "/operations/upstream-supply", query: { tab: "suppliers" } });
 }
 
 function syncSessionRoute(d: ConnectorDraft) {
@@ -898,7 +898,7 @@ function leaveForMicroservice(supplierId?: string | null) {
     void router.replace({ name: "SupplierDetail", params: { id: supplierId } });
     return;
   }
-  void router.replace({ path: "/ops/upstream-supply", query: { tab: "suppliers" } });
+  void router.replace({ path: "/operations/upstream-supply", query: { tab: "suppliers" } });
 }
 
 async function openSession(d: ConnectorDraft): Promise<boolean> {

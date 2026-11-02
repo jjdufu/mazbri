@@ -337,7 +337,7 @@ impl GreptimeDBClient {
     async fn load_service_health_rows(&self) -> Result<Vec<ServiceHealthRow>> {
         let health = self
             .prometheus_instant_by_label(r#"mazbri_rpc_health_check{status="healthy"}"#, "service");
-        let ready = self.prometheus_instant_by_label("gateway_startup_ready", "service");
+        let ready = self.prometheus_instant_by_label("mazbri_rpc_ready", "service");
         let config = self.prometheus_instant_by_label("mazbri_config_center_connected", "service");
         let active =
             self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");

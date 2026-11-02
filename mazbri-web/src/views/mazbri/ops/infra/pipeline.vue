@@ -1,26 +1,22 @@
 <template>
-  <div class="ops-infra art-full-height">
-    <div class="ops-infra__toolbar">
-      <h2>{{ t("menus.mazbri.infraPipeline") }}</h2>
-      <div class="ops-infra__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.infraPipeline')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
     <p class="ops-infra__note">{{ t("ops.infra.pipelineNote") }}</p>
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol v-for="chart in chartDefs" :key="chart.metric" :xs="24" :lg="12">
-        <div class="ops-infra__card">
-          <h3>{{ t(chart.title) }}</h3>
+        <OpsCard :title="t(chart.title)">
           <MultiSeriesChart
             :series="series[chart.metric]"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -32,6 +28,8 @@ import TimeRangePicker, {
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import type { MetricSeries } from "@/types/api/monitoring";
@@ -96,32 +94,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-infra__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-infra__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-infra__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-infra__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 .ops-infra__note {
   margin: 0 0 12px;
   color: var(--el-text-color-secondary);

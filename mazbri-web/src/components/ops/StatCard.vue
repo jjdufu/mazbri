@@ -62,10 +62,13 @@ const displayValue = computed(() => {
 </script>
 
 <style scoped>
+.ops-stat-card {
+  height: 100%;
+}
 .ops-stat-card__value {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .ops-stat-card__unit {
   margin-left: 4px;
@@ -77,5 +80,8 @@ const displayValue = computed(() => {
   margin-top: 4px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

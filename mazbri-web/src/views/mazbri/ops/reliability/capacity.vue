@@ -1,27 +1,24 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.capacity") }}</h2>
+  <OpsPage :title="t('menus.mazbri.capacity')">
+    <template #actions>
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </div>
-    <ElRow :gutter="12">
+    </template>
+    <ElRow :gutter="16">
       <ElCol :xs="24" :md="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.capacity.forecast") }}</h3>
+        <OpsCard :title="t('ops.capacity.forecast')">
           <p>{{ t("ops.capacity.holt") }}: {{ snap?.holt_next?.toFixed?.(2) ?? "-" }}</p>
           <p>{{ t("ops.capacity.cap") }}: {{ snap?.qps_cap ?? "-" }}</p>
           <p>{{ t("ops.capacity.days") }}: {{ snap?.days_to_cap != null ? snap.days_to_cap.toFixed(1) : t("ops.capacity.never") }}</p>
           <p class="muted">{{ snap?.detected_at || "" }}</p>
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :md="16">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.capacity.loadtests") }}</h3>
+        <OpsCard :title="t('ops.capacity.loadtests')">
           <ArtTable :data="runs" :loading="loading" :columns="columns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -29,6 +26,8 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { getCapacity, listLoadtests, type CapacitySnapshot, type LoadtestRun } from "@/api/opsReliability";
 import type { ColumnOption } from "@/types/component";
 
@@ -66,7 +65,5 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-.ops-traffic__card { background:var(--el-bg-color); border-radius:8px; padding:12px; margin-bottom:12px; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 </style>

@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
             "burn": kind_label,
             "seed": "dev19-mock"
         });
-        let notify = serde_json::json!({"emails": [], "webhooks": []});
+        let notify = serde_json::json!({"enabled": false, "emails": [], "webhooks": []});
         sqlx::query(
             "INSERT INTO alert_rules (name, kind, expr, threshold, op, for_seconds, severity, labels, notify, enabled) \
              VALUES ($1, 'promql', $2, $3, '>', 0, $4, $5, $6, true) \

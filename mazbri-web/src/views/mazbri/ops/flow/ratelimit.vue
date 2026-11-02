@@ -1,35 +1,30 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.flowRatelimit") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.flowRatelimit')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol v-for="chart in trendCharts" :key="chart.metric" :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t(chart.title) }}</h3>
+        <OpsCard :title="t(chart.title)">
           <MultiSeriesChart
             :series="chart.data"
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.flow.quotaUsageRatio") }}</h3>
+    <OpsCard :title="t('ops.flow.quotaUsageRatio')">
       <MultiSeriesChart
         :series="series.gateway_quota_usage_ratio"
         :loading="loading"
         height="220px"
       />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -41,6 +36,8 @@ import TimeRangePicker, {
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import type { MetricSeries } from "@/types/api/monitoring";
@@ -134,22 +131,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
 </style>

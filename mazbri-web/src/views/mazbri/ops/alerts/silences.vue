@@ -1,17 +1,14 @@
 <template>
-  <div class="ops-alerts art-full-height">
-    <div class="ops-alerts__toolbar">
-      <h2>{{ t("menus.mazbri.alertSilences") }}</h2>
-      <div class="ops-alerts__actions">
-        <ElButton v-if="canEdit" type="primary" @click="openCreate">{{
+  <OpsPage :title="t('menus.mazbri.alertSilences')">
+    <template #actions>
+      <ElButton v-if="canEdit" type="primary" @click="openCreate">{{
           t("ops.alerts.silences.create")
         }}</ElButton>
         <ElButton :loading="loading" @click="reload">{{
           t("common.refresh")
         }}</ElButton>
-      </div>
-    </div>
-    <div class="ops-alerts__card">
+    </template>
+    <OpsCard>
       <p class="ops-alerts__hint">{{ t("ops.alerts.silences.hint") }}</p>
       <ElTable v-loading="loading" :data="rows" row-key="id" size="small">
         <ElTableColumn :label="t('ops.alerts.silences.matchers')" min-width="200">
@@ -61,7 +58,7 @@
           </template>
         </ElTableColumn>
       </ElTable>
-    </div>
+    </OpsCard>
 
     <ElDialog v-model="dialog" :title="t('ops.alerts.silences.create')" width="480px">
       <ElForm label-width="100px">
@@ -104,11 +101,13 @@
         <ElButton type="primary" :loading="saving" @click="saveInhibit">{{ t("common.confirm") }}</ElButton>
       </template>
     </ElDialog>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -128,7 +127,7 @@ const { t } = useI18n();
 const userStore = useUserStore();
 const roles = computed(() => (userStore.info?.roles as string[]) || []);
 const canEdit = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN" || role === "R_FINANCE"),
+  roles.value.some((role) => role === "R_ADMIN"),
 );
 
 const loading = ref(false);
@@ -241,17 +240,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-alerts__toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.ops-alerts__card {
-  background: var(--el-bg-color);
-  border-radius: 8px;
-  padding: 16px;
-}
 .ops-alerts__hint {
   color: var(--el-text-color-secondary);
   margin-bottom: 12px;

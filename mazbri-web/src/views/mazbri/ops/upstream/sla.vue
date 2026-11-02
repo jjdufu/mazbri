@@ -1,9 +1,7 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.upstreamSla") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.upstreamSla')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
         <ElDropdown @command="exportCsv">
           <ElButton :loading="exporting">{{ t("ops.upstream.exportCsv") }}</ElButton>
@@ -15,11 +13,9 @@
             </ElDropdownMenu>
           </template>
         </ElDropdown>
-      </div>
-    </div>
+    </template>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.upstream.slaTable") }}</h3>
+    <OpsCard :title="t('ops.upstream.slaTable')">
       <p class="ops-sla__hint">{{ t("ops.upstream.thresholdHint") }}</p>
       <ArtTable
         :data="tableRows"
@@ -33,8 +29,8 @@
           {{ formatPct(row.availability) }}
         </template>
       </ArtTable>
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -45,6 +41,8 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import { fetchSupplierCosts } from "@/api/billing-ops";
@@ -240,32 +238,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 
 .ops-sla__hint {
   margin: 0 0 8px;

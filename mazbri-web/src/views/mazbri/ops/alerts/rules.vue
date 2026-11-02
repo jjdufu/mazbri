@@ -1,18 +1,15 @@
 <template>
-  <div class="ops-alerts art-full-height">
-    <div class="ops-alerts__toolbar">
-      <h2>{{ t("menus.mazbri.alertRules") }}</h2>
-      <div class="ops-alerts__actions">
-        <ElButton v-if="canEdit" type="primary" @click="openCreate">
-          {{ t("ops.alerts.rules.create") }}
-        </ElButton>
-        <ElButton :loading="loading" @click="reload">{{
-          t("ops.alerts.rules.refresh")
-        }}</ElButton>
-      </div>
-    </div>
+  <OpsPage :title="t('menus.mazbri.alertRules')">
+    <template #actions>
+      <ElButton v-if="canEdit" type="primary" @click="openCreate">
+        {{ t("ops.alerts.rules.create") }}
+      </ElButton>
+      <ElButton :loading="loading" @click="reload">{{
+        t("ops.alerts.rules.refresh")
+      }}</ElButton>
+    </template>
 
-    <div class="ops-alerts__card">
+    <OpsCard>
       <p class="ops-alerts__hint">{{ t("ops.alerts.rules.hint") }}</p>
       <ElTable v-loading="loading" :data="rules" row-key="id" size="small">
         <ElTableColumn
@@ -68,15 +65,15 @@
           width="140"
         >
           <template #default="{ row }">
-            <span v-if="row.notify.emails.length || row.notify.webhooks.length">
+            <span v-if="row.notify?.enabled">
               {{
                 t("ops.alerts.rules.notifySummary", {
-                  emails: row.notify.emails.length,
-                  webhooks: row.notify.webhooks.length,
+                  emails: row.notify.emails?.length || 0,
+                  webhooks: row.notify.webhooks?.length || 0,
                 })
               }}
             </span>
-            <span v-else>—</span>
+            <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="90">
@@ -108,7 +105,7 @@
           </template>
         </ElTableColumn>
       </ElTable>
-    </div>
+    </OpsCard>
 
     <ElDialog
       v-model="dialogVisible"
@@ -192,6 +189,12 @@
             placeholder="category=upstream"
           />
         </ElFormItem>
+        <ElFormItem :label="t('ops.alerts.rules.form.notifyEnabled')">
+          <ElSwitch v-model="form.notifyEnabled" />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.notifyEnabledHint") }}
+          </div>
+        </ElFormItem>
         <ElFormItem
           :label="t('ops.alerts.rules.form.emails')"
           prop="emailsText"
@@ -220,8 +223,11 @@
             {{ t("ops.alerts.rules.form.webhooksHint") }}
           </div>
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.columns.enabled')">
+        <ElFormItem :label="t('ops.alerts.rules.form.evaluateEnabled')">
           <ElSwitch v-model="form.enabled" />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.evaluateEnabledHint") }}
+          </div>
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -233,11 +239,13 @@
         </ElButton>
       </template>
     </ElDialog>
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import {
@@ -289,6 +297,7 @@ interface RuleForm {
   for_seconds: number;
   severity: AlertSeverity;
   labelsText: string;
+  notifyEnabled: boolean;
   emailsText: string;
   webhooksText: string;
   enabled: boolean;
@@ -303,6 +312,7 @@ const emptyForm = (): RuleForm => ({
   for_seconds: 0,
   severity: "warning",
   labelsText: "",
+  notifyEnabled: false,
   emailsText: "",
   webhooksText: "",
   enabled: true,
@@ -312,7 +322,7 @@ const form = reactive<RuleForm>(emptyForm());
 
 const roles = computed(() => (userStore.info?.roles as string[]) || []);
 const canEdit = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN" || role === "R_FINANCE"),
+  roles.value.some((role) => role === "R_ADMIN"),
 );
 
 function parseLabels(text: string): Record<string, string> | null {
@@ -353,10 +363,22 @@ const formRules: FormRules<RuleForm> = {
   ],
   emailsText: [
     {
-      validator: (_rule, value: string, callback) =>
-        parseList(value).every((email) => EMAIL_PATTERN.test(email))
-          ? callback()
-          : callback(new Error(t("ops.alerts.rules.form.emailsInvalid"))),
+      validator: (_rule, value: string, callback) => {
+        const emails = parseList(value);
+        if (!emails.every((email) => EMAIL_PATTERN.test(email))) {
+          callback(new Error(t("ops.alerts.rules.form.emailsInvalid")));
+          return;
+        }
+        if (
+          form.notifyEnabled &&
+          emails.length === 0 &&
+          parseList(form.webhooksText).length === 0
+        ) {
+          callback(new Error(t("ops.alerts.rules.form.notifyRequired")));
+          return;
+        }
+        callback();
+      },
       trigger: "blur",
     },
   ],
@@ -426,6 +448,7 @@ async function save() {
     severity: form.severity,
     labels: parseLabels(form.labelsText) || {},
     notify: {
+      enabled: form.notifyEnabled,
       emails: parseList(form.emailsText),
       webhooks: parseList(form.webhooksText),
     },
@@ -471,25 +494,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-alerts__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-alerts__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ops-alerts__card {
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
 .ops-alerts__hint {
   margin: 0 0 8px;
   color: var(--el-text-color-secondary);

@@ -34,20 +34,4 @@ pub fn routes() -> Router<AppState> {
             "/alerts/inhibits/{id}",
             put(ops::update_inhibit).delete(ops::delete_inhibit),
         )
-        .route(
-            "/alerts/oncall",
-            get(ops::list_oncalls).post(ops::create_oncall),
-        )
-        .route(
-            "/alerts/oncall/{id}",
-            put(ops::update_oncall).delete(ops::delete_oncall),
-        )
-        .route(
-            "/alerts/channels",
-            get(ops::list_channels).post(ops::create_channel),
-        )
-        .route(
-            "/alerts/channels/{id}",
-            put(ops::update_channel).delete(ops::delete_channel),
-        )
 }

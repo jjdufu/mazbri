@@ -12,7 +12,12 @@ export class RoutePermissionValidator {
       return true;
     }
     const pathSet = this.buildMenuPathSet(menuList);
-    return pathSet.has(targetPath) || this.checkPathPrefix(targetPath, pathSet);
+    for (const menuPath of pathSet) {
+      if (this.pathMatches(targetPath, menuPath)) {
+        return true;
+      }
+    }
+    return false;
   }
   static buildMenuPathSet(
     menuList: AppRouteRecord[],
@@ -22,7 +27,8 @@ export class RoutePermissionValidator {
       return pathSet;
     }
     for (const menuItem of menuList) {
-      if (menuItem.meta?.isHide || !menuItem.path) {
+      // 隐藏页（总览/大屏/详情）仍需纳入直链权限集合；仅跳过无 path。
+      if (!menuItem.path) {
         continue;
       }
       const menuPath = menuItem.path.startsWith("/")
@@ -35,9 +41,23 @@ export class RoutePermissionValidator {
     }
     return pathSet;
   }
+  /** Exact match or vue-router-style :param / * pattern. No blanket prefix. */
+  static pathMatches(targetPath: string, menuPath: string): boolean {
+    if (targetPath === menuPath) {
+      return true;
+    }
+    if (!menuPath.includes(":") && !menuPath.includes("*")) {
+      return false;
+    }
+    const pattern = menuPath
+      .replace(/:[^/]+/g, "[^/]+")
+      .replace(/\*/g, ".*");
+    return new RegExp(`^${pattern}$`).test(targetPath);
+  }
   static checkPathPrefix(targetPath: string, pathSet: Set<string>): boolean {
+    // Kept for callers; prefer pathMatches. Prefix only when menuPath itself is a pattern parent.
     for (const menuPath of pathSet) {
-      if (targetPath.startsWith(`${menuPath}/`)) {
+      if (this.pathMatches(targetPath, menuPath)) {
         return true;
       }
     }

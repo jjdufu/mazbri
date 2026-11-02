@@ -1,9 +1,7 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.productRank") }}</h2>
-      <div class="ops-traffic__actions">
-        <ElSelect v-model="metric" style="width: 140px" @change="reload">
+  <OpsPage :title="t('menus.mazbri.productRank')">
+    <template #actions>
+      <ElSelect v-model="metric" style="width: 140px" @change="reload">
           <ElOption value="req_count" :label="t('ops.products.metricReq')" />
           <ElOption value="error_rate" :label="t('ops.products.metricErr')" />
           <ElOption value="p95" label="P95" />
@@ -11,17 +9,14 @@
         </ElSelect>
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.products.rankTitle") }}</h3>
+    </template>
+    <OpsCard :title="t('ops.products.rankTitle')">
       <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
-    </div>
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.products.zeroTitle") }}</h3>
+    </OpsCard>
+    <OpsCard :title="t('ops.products.zeroTitle')">
       <ArtTable :data="zeroRows" :loading="loading" :columns="zeroColumns" stripe />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -30,6 +25,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import { zeroCallProducts } from "@/api/opsReliability";
@@ -94,7 +91,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-.ops-traffic__actions { display:flex; gap:8px; align-items:center; }
-.ops-traffic__card { background:var(--el-bg-color); border-radius:8px; padding:12px; margin-bottom:12px; }
 </style>
