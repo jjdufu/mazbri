@@ -25,9 +25,7 @@ const MAX_PAGE_SIZE: u32 = 200;
 pub struct NotifyInput {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
     pub emails: Vec<String>,
-    #[serde(default)]
     pub webhooks: Vec<String>,
 }
 
