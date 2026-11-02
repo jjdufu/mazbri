@@ -222,17 +222,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "assets/certs",
-        name: "OpsAssetsCerts",
-        component: "/mazbri/ops/assets/certs",
-        meta: {
-          title: "menus.mazbri.assetsCerts",
-          icon: "ri:shield-keyhole-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
         path: "assets/changes",
         name: "OpsAssetsChanges",
         component: "/mazbri/ops/assets/changes",
@@ -299,17 +288,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "dashboards/custom",
-        name: "OpsCustomDashboard",
-        component: "/mazbri/ops/dashboards/custom",
-        meta: {
-          title: "menus.mazbri.customDashboard",
-          icon: "ri:layout-grid-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
         path: "infra/pipeline",
         name: "OpsInfraPipeline",
         component: "/mazbri/ops/infra/pipeline",
@@ -371,28 +349,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.alertSilences",
           icon: "ri:volume-mute-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "alerts/oncall",
-        name: "OpsAlertOncall",
-        component: "/mazbri/ops/alerts/oncall",
-        meta: {
-          title: "menus.mazbri.alertOncall",
-          icon: "ri:user-voice-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "alerts/channels",
-        name: "OpsAlertChannels",
-        component: "/mazbri/ops/alerts/channels",
-        meta: {
-          title: "menus.mazbri.alertChannels",
-          icon: "ri:notification-3-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },

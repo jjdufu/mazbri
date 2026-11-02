@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
+use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
 use mazbri_cert_service::config::CertAppConfig;
@@ -62,6 +63,15 @@ fn start_admin_server(
             .build()?;
         let _handle = server.spawn();
         info!("Admin server started on port {}", config.admin.port);
+        if let Err(e) = register_health_metrics() {
+            tracing::debug!(
+                "Health metrics already registered or registration failed: {}",
+                e
+            );
+        }
+        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None);
+        drop(updater.spawn());
+        info!("Health metrics updater started for {}", service_name);
         Some(state)
     } else {
         info!("Admin server disabled");

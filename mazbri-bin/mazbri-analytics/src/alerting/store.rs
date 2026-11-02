@@ -158,13 +158,8 @@ impl EvaluationSession {
         params: FireInsert<'_>,
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let labels = serde_json::to_value(params.labels).unwrap_or_else(|_| serde_json::json!({}));
-        let last_notified = if params.silenced || params.inhibited {
-            None
-        } else {
-            Some(Utc::now())
-        };
         let row = sqlx::query(
-            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited, escalation_level, last_notified_at)              VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9, 0, $10)              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING              RETURNING id",
+            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited)              VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9)              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING              RETURNING id",
         )
         .bind(params.rule.id)
         .bind(params.fingerprint)
@@ -175,7 +170,6 @@ impl EvaluationSession {
         .bind(params.trace_ids)
         .bind(params.silenced)
         .bind(params.inhibited)
-        .bind(last_notified)
         .fetch_optional(&mut *self.conn)
         .await?;
         row.map(|r| r.try_get("id")).transpose()
@@ -296,50 +290,6 @@ impl EvaluationSession {
         Ok(out)
     }
 
-    /// 加载启用的值班升级阶梯（按名称取首张启用表）。
-    ///
-    /// # Errors
-    ///
-    /// 数据库查询失败时返回错误。
-    pub async fn load_primary_escalation(
-        &mut self,
-    ) -> Result<Vec<crate::alerting::filter::EscalationStep>, sqlx::Error> {
-        let row = sqlx::query(
-            "SELECT escalation FROM oncall_schedules WHERE enabled ORDER BY name LIMIT 1",
-        )
-        .fetch_optional(&mut *self.conn)
-        .await?;
-        let Some(row) = row else {
-            return Ok(Vec::new());
-        };
-        let escalation: serde_json::Value = row.try_get("escalation")?;
-        Ok(parse_escalation(&escalation))
-    }
-
-    /// 加载启用的通知渠道摘要。
-    ///
-    /// # Errors
-    ///
-    /// 数据库查询失败时返回错误。
-    pub async fn load_notify_channels(&mut self) -> Result<Vec<NotifyChannelRow>, sqlx::Error> {
-        let rows = sqlx::query(
-            "SELECT id, name, type, config, (secret_enc IS NOT NULL) AS has_secret              FROM notify_channels WHERE enabled",
-        )
-        .fetch_all(&mut *self.conn)
-        .await?;
-        let mut out = Vec::with_capacity(rows.len());
-        for row in &rows {
-            out.push(NotifyChannelRow {
-                id: row.try_get("id")?,
-                name: row.try_get("name")?,
-                channel_type: row.try_get("type")?,
-                config: row.try_get("config")?,
-                has_secret: row.try_get("has_secret")?,
-            });
-        }
-        Ok(out)
-    }
-
     /// 标记事件为已抑制（不外发通知）。
     ///
     /// # Errors
@@ -355,108 +305,7 @@ impl EvaluationSession {
         Ok(())
     }
 
-    /// 标记已通知并推进升级层级。
-    ///
-    /// # Errors
-    ///
-    /// 数据库写入失败时返回错误。
-    pub async fn mark_notified(
-        &mut self,
-        event_id: Uuid,
-        escalation_level: i32,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "UPDATE alert_events SET escalation_level = $2, last_notified_at = now(), updated_at = now()              WHERE id = $1",
-        )
-        .bind(event_id)
-        .bind(escalation_level)
-        .execute(&mut *self.conn)
-        .await?;
-        Ok(())
-    }
 
-    /// 待升级的未确认 firing 事件。
-    ///
-    /// # Errors
-    ///
-    /// 数据库查询失败时返回错误。
-    pub async fn unacked_firing_for_escalation(
-        &mut self,
-    ) -> Result<Vec<EscalationCandidate>, sqlx::Error> {
-        let rows = sqlx::query(
-            "SELECT id, rule_id, labels, value, started_at, escalation_level              FROM alert_events WHERE status = 'firing' AND NOT silenced AND NOT inhibited",
-        )
-        .fetch_all(&mut *self.conn)
-        .await?;
-        let mut out = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let labels: serde_json::Value = row.try_get("labels")?;
-            out.push(EscalationCandidate {
-                id: row.try_get("id")?,
-                rule_id: row.try_get("rule_id")?,
-                labels: string_map(&labels),
-                value: row.try_get("value")?,
-                started_at: row.try_get("started_at")?,
-                escalation_level: row.try_get("escalation_level")?,
-            });
-        }
-        Ok(out)
-    }
-}
-
-/// 通知渠道行（analytics 侧只读公开配置）。
-#[derive(Debug, Clone)]
-pub struct NotifyChannelRow {
-    pub id: Uuid,
-    pub name: String,
-    pub channel_type: String,
-    pub config: serde_json::Value,
-    pub has_secret: bool,
-}
-
-/// 升级候选事件。
-#[derive(Debug, Clone)]
-pub struct EscalationCandidate {
-    pub id: Uuid,
-    pub rule_id: Uuid,
-    pub labels: BTreeMap<String, String>,
-    pub value: f64,
-    pub started_at: DateTime<Utc>,
-    pub escalation_level: i32,
-}
-
-fn parse_escalation(value: &serde_json::Value) -> Vec<crate::alerting::filter::EscalationStep> {
-    let Some(arr) = value.as_array() else {
-        return Vec::new();
-    };
-    arr.iter()
-        .filter_map(|item| {
-            let after = item.get("after_minutes")?.as_i64()?;
-            let users = item
-                .get("users")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().map(str::to_string))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let channel_ids = item
-                .get("channel_ids")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            Some(crate::alerting::filter::EscalationStep {
-                after_minutes: after,
-                users,
-                channel_ids,
-            })
-        })
-        .collect()
 }
 
 fn parse_rule(row: &PgRow) -> Result<AlertRule, String> {

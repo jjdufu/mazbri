@@ -81,38 +81,6 @@ pub fn is_inhibited(
     false
 }
 
-/// 值班升级阶梯项。
-#[derive(Debug, Clone, Default)]
-pub struct EscalationStep {
-    pub after_minutes: i64,
-    pub users: Vec<String>,
-    pub channel_ids: Vec<uuid::Uuid>,
-}
-
-/// 根据已通知层级与告警持续时长，返回下一个应通知的阶梯下标；无需升级时返回 `None`。
-#[must_use]
-pub fn next_escalation_index(
-    steps: &[EscalationStep],
-    current_level: i32,
-    started_at: DateTime<Utc>,
-    now: DateTime<Utc>,
-) -> Option<usize> {
-    if steps.is_empty() {
-        return None;
-    }
-    let elapsed_mins = (now - started_at).num_minutes().max(0);
-    let next = usize::try_from(current_level.saturating_add(1)).unwrap_or(usize::MAX);
-    if next >= steps.len() {
-        return None;
-    }
-    let step = &steps[next];
-    if elapsed_mins >= step.after_minutes {
-        Some(next)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,35 +146,4 @@ mod tests {
         assert!(!is_inhibited(std::slice::from_ref(&rule), &sources, &other));
     }
 
-    #[test]
-    fn escalation_advances_by_minutes() {
-        let steps = vec![
-            EscalationStep {
-                after_minutes: 0,
-                users: vec!["a".into()],
-                channel_ids: vec![],
-            },
-            EscalationStep {
-                after_minutes: 15,
-                users: vec!["b".into()],
-                channel_ids: vec![],
-            },
-            EscalationStep {
-                after_minutes: 60,
-                users: vec!["c".into()],
-                channel_ids: vec![],
-            },
-        ];
-        // level 0 already notified at fire; next is index 1 after 15m
-        assert_eq!(next_escalation_index(&steps, 0, at(0), at(14 * 60)), None);
-        assert_eq!(
-            next_escalation_index(&steps, 0, at(0), at(15 * 60)),
-            Some(1)
-        );
-        assert_eq!(
-            next_escalation_index(&steps, 1, at(0), at(60 * 60)),
-            Some(2)
-        );
-        assert_eq!(next_escalation_index(&steps, 2, at(0), at(120 * 60)), None);
-    }
 }

@@ -907,14 +907,6 @@ pub static ROUTES: &[RouteAudit] = &[
     secure("POST", "/alerts/inhibits", A::AlertInhibitCreate, R::Alert, None),
     secure("PUT", "/alerts/inhibits/{id}", A::AlertInhibitUpdate, R::Alert, None),
     secure("DELETE", "/alerts/inhibits/{id}", A::AlertInhibitDelete, R::Alert, None),
-    read("/alerts/oncall", R::Alert),
-    secure("POST", "/alerts/oncall", A::OncallCreate, R::Alert, None),
-    secure("PUT", "/alerts/oncall/{id}", A::OncallUpdate, R::Alert, None),
-    secure("DELETE", "/alerts/oncall/{id}", A::OncallDelete, R::Alert, None),
-    read("/alerts/channels", R::Alert),
-    secure("POST", "/alerts/channels", A::NotifyChannelCreate, R::Alert, None),
-    secure("PUT", "/alerts/channels/{id}", A::NotifyChannelUpdate, R::Alert, None),
-    secure("DELETE", "/alerts/channels/{id}", A::NotifyChannelDelete, R::Alert, None),
     // ---- config center ----
     read("/config-center/configs", R::ConfigCenter),
     write(

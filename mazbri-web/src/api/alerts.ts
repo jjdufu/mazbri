@@ -77,27 +77,7 @@ export interface AlertInhibit {
   updated_at: string;
 }
 
-export interface OncallSchedule {
-  id: string;
-  name: string;
-  timezone: string;
-  layers: unknown[];
-  escalation: unknown[];
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
-export interface NotifyChannel {
-  id: string;
-  name: string;
-  type: "email" | "webhook" | "dingtalk" | "feishu" | "wecom";
-  config: Record<string, unknown>;
-  has_secret: boolean;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
 export function fetchAlertSilences() {
   return request.get<AlertSilence[]>({ url: `${BASE_PATH}/silences` });
@@ -130,56 +110,3 @@ export function deleteAlertInhibit(id: string) {
   return request.del<{ id: string }>({ url: `${BASE_PATH}/inhibits/${id}` });
 }
 
-export function fetchOncallSchedules() {
-  return request.get<OncallSchedule[]>({ url: `${BASE_PATH}/oncall` });
-}
-export function createOncallSchedule(data: {
-  name: string;
-  timezone?: string;
-  layers?: unknown[];
-  escalation?: unknown[];
-  enabled?: boolean;
-}) {
-  return request.post<OncallSchedule>({ url: `${BASE_PATH}/oncall`, data });
-}
-export function updateOncallSchedule(
-  id: string,
-  data: {
-    name: string;
-    timezone?: string;
-    layers?: unknown[];
-    escalation?: unknown[];
-    enabled?: boolean;
-  },
-) {
-  return request.put<OncallSchedule>({ url: `${BASE_PATH}/oncall/${id}`, data });
-}
-export function deleteOncallSchedule(id: string) {
-  return request.del<{ id: string }>({ url: `${BASE_PATH}/oncall/${id}` });
-}
-
-export function fetchNotifyChannels() {
-  return request.get<NotifyChannel[]>({ url: `${BASE_PATH}/channels` });
-}
-export function createNotifyChannel(data: {
-  name: string;
-  type: NotifyChannel["type"];
-  config?: Record<string, unknown>;
-  enabled?: boolean;
-}) {
-  return request.post<NotifyChannel>({ url: `${BASE_PATH}/channels`, data });
-}
-export function updateNotifyChannel(
-  id: string,
-  data: {
-    name: string;
-    type: NotifyChannel["type"];
-    config?: Record<string, unknown>;
-    enabled?: boolean;
-  },
-) {
-  return request.put<NotifyChannel>({ url: `${BASE_PATH}/channels/${id}`, data });
-}
-export function deleteNotifyChannel(id: string) {
-  return request.del<{ id: string }>({ url: `${BASE_PATH}/channels/${id}` });
-}

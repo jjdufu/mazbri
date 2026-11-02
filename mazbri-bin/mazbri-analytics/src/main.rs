@@ -4,6 +4,7 @@ use crate::handlers::AppState;
 use anyhow::Result;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
+use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics};
 use mazbri_analytics::clickhouse::ClickHouseClient;
 use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::log_writer_metrics::register_log_writer_metrics;
@@ -43,6 +44,15 @@ fn start_admin_server(
             .build()?;
         let _handle = server.spawn();
         info!("Admin server started on port {}", config.admin.port);
+        if let Err(e) = register_health_metrics() {
+            tracing::debug!(
+                "Health metrics already registered or registration failed: {}",
+                e
+            );
+        }
+        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None);
+        drop(updater.spawn());
+        info!("Health metrics updater started for {}", service_name);
         Some(state)
     } else {
         info!("Admin server disabled");
@@ -96,8 +106,24 @@ async fn init_greptimedb(config: &AnalyticsConfig) -> Option<Arc<GreptimeDBClien
     }
 }
 
+
+async fn init_clickhouse(config: &AnalyticsConfig) -> Result<Arc<ClickHouseClient>> {
+    match ClickHouseClient::new(&config.clickhouse) {
+        Ok(client) => match client.test_connection().await {
+            Ok(()) => {
+                info!("ClickHouse 连接已建立");
+                Ok(Arc::new(client))
+            }
+            Err(e) => {
+                info!("ClickHouse 连接失败，健康检查将报告不可用: {}", e);
+                Ok(Arc::new(client))
+            }
+        },
+        Err(e) => Err(anyhow::anyhow!("无法创建 ClickHouse 客户端: {e}")),
+    }
+}
+
 #[tokio::main]
-#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-analytics");
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
@@ -125,21 +151,7 @@ async fn main() -> Result<()> {
     info!("分析指标已注册");
     let greptimedb_client = init_greptimedb(&config).await;
 
-    let clickhouse_client = match ClickHouseClient::new(&config.clickhouse) {
-        Ok(client) => match client.test_connection().await {
-            Ok(()) => {
-                info!("ClickHouse 连接已建立");
-                Arc::new(client)
-            }
-            Err(e) => {
-                info!("ClickHouse 连接失败，健康检查将报告不可用: {}", e);
-                Arc::new(client)
-            }
-        },
-        Err(e) => {
-            return Err(anyhow::anyhow!("无法创建 ClickHouse 客户端: {e}"));
-        }
-    };
+    let clickhouse_client = init_clickhouse(&config).await?;
 
     if let Some(ref state) = admin_state {
         state.set_ready(true);

@@ -3,8 +3,9 @@ export type AlertOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 export type AlertSeverity = "critical" | "warning" | "info";
 export type AlertStatus = "firing" | "acked" | "resolved";
 
-/** 规则通知配置：邮件收件人为默认渠道，webhook 可选。 */
+/** 规则通知：enabled=false 只落库；true 时 emails/webhooks 至少一项。 */
 export interface AlertNotify {
+  enabled: boolean;
   emails: string[];
   webhooks: string[];
 }
@@ -58,7 +59,6 @@ export interface AlertEvent {
   trace_ids: string[];
   silenced: boolean;
   inhibited: boolean;
-  escalation_level: number;
   updated_at: string;
 }
 

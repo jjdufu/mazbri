@@ -68,15 +68,15 @@
           width="140"
         >
           <template #default="{ row }">
-            <span v-if="row.notify.emails.length || row.notify.webhooks.length">
+            <span v-if="row.notify?.enabled">
               {{
                 t("ops.alerts.rules.notifySummary", {
-                  emails: row.notify.emails.length,
-                  webhooks: row.notify.webhooks.length,
+                  emails: row.notify.emails?.length || 0,
+                  webhooks: row.notify.webhooks?.length || 0,
                 })
               }}
             </span>
-            <span v-else>—</span>
+            <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="90">
@@ -192,6 +192,12 @@
             placeholder="category=upstream"
           />
         </ElFormItem>
+        <ElFormItem :label="t('ops.alerts.rules.form.notifyEnabled')">
+          <ElSwitch v-model="form.notifyEnabled" />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.notifyEnabledHint") }}
+          </div>
+        </ElFormItem>
         <ElFormItem
           :label="t('ops.alerts.rules.form.emails')"
           prop="emailsText"
@@ -220,8 +226,11 @@
             {{ t("ops.alerts.rules.form.webhooksHint") }}
           </div>
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.columns.enabled')">
+        <ElFormItem :label="t('ops.alerts.rules.form.evaluateEnabled')">
           <ElSwitch v-model="form.enabled" />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.evaluateEnabledHint") }}
+          </div>
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -289,6 +298,7 @@ interface RuleForm {
   for_seconds: number;
   severity: AlertSeverity;
   labelsText: string;
+  notifyEnabled: boolean;
   emailsText: string;
   webhooksText: string;
   enabled: boolean;
@@ -303,6 +313,7 @@ const emptyForm = (): RuleForm => ({
   for_seconds: 0,
   severity: "warning",
   labelsText: "",
+  notifyEnabled: false,
   emailsText: "",
   webhooksText: "",
   enabled: true,
@@ -353,10 +364,22 @@ const formRules: FormRules<RuleForm> = {
   ],
   emailsText: [
     {
-      validator: (_rule, value: string, callback) =>
-        parseList(value).every((email) => EMAIL_PATTERN.test(email))
-          ? callback()
-          : callback(new Error(t("ops.alerts.rules.form.emailsInvalid"))),
+      validator: (_rule, value: string, callback) => {
+        const emails = parseList(value);
+        if (!emails.every((email) => EMAIL_PATTERN.test(email))) {
+          callback(new Error(t("ops.alerts.rules.form.emailsInvalid")));
+          return;
+        }
+        if (
+          form.notifyEnabled &&
+          emails.length === 0 &&
+          parseList(form.webhooksText).length === 0
+        ) {
+          callback(new Error(t("ops.alerts.rules.form.notifyRequired")));
+          return;
+        }
+        callback();
+      },
       trigger: "blur",
     },
   ],
@@ -426,6 +449,7 @@ async function save() {
     severity: form.severity,
     labels: parseLabels(form.labelsText) || {},
     notify: {
+      enabled: form.notifyEnabled,
       emails: parseList(form.emailsText),
       webhooks: parseList(form.webhooksText),
     },

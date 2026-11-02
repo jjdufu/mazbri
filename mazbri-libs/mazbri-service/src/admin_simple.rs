@@ -2,6 +2,7 @@ use anyhow::Result;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminConfig, AdminServerBuilder, AdminState};
 use mazbri_core::REGISTRY;
+use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics};
 use std::sync::Arc;
 /// # Errors
 ///
@@ -38,5 +39,15 @@ pub fn start_simple_admin_server(
         .build()?;
     let _handle = server.spawn();
     tracing::info!("Admin server started on port {}", admin_config.port);
+    if let Err(e) = register_health_metrics() {
+        tracing::debug!(
+            "Health metrics already registered or registration failed: {}",
+            e
+        );
+    }
+    // 无 DB / 证书 / 配置中心句柄时传 None，RPC 健康仍按组件就绪上报。
+    let updater = HealthMetricsUpdater::new(service_name.to_string(), None, None, None);
+    drop(updater.spawn());
+    tracing::info!("Health metrics updater started for {}", service_name);
     Ok(Some(state))
 }

@@ -868,17 +868,13 @@
       "flowRatelimit": "Rate Limit",
       "flowCache": "Cache",
       "billingReconcile": "Reconciliation",
-      "assetsCerts": "Certificates & License",
       "assetsChanges": "Change Timeline",
       "securityEvents": "Auth & Security",
       "productRank": "Product Rank",
       "capacity": "Capacity",
       "slo": "SLO / Error Budget",
       "anomaly": "Anomaly",
-      "customDashboard": "Custom Dashboard",
       "alertSilences": "Alert silences",
-      "alertOncall": "On-call",
-      "alertChannels": "Notify channels",
       "serviceTopology": "Service topology"
     }
   },
@@ -1568,13 +1564,7 @@
       "alertSilenceDelete": "Delete alert silence",
       "alertInhibitCreate": "Create alert inhibit",
       "alertInhibitUpdate": "Update alert inhibit",
-      "alertInhibitDelete": "Delete alert inhibit",
-      "oncallCreate": "Create on-call schedule",
-      "oncallUpdate": "Update on-call schedule",
-      "oncallDelete": "Delete on-call schedule",
-      "notifyChannelCreate": "Create notify channel",
-      "notifyChannelUpdate": "Update notify channel",
-      "notifyChannelDelete": "Delete notify channel"
+      "alertInhibitDelete": "Delete alert inhibit"
     },
     "resources": {
       "admin": "Administrator",
@@ -4579,9 +4569,15 @@
           "emailsInvalid": "Enter addresses in name@domain form",
           "webhooks": "Webhooks (optional)",
           "webhooksHint": "One http(s) URL per line; SSRF-checked on save; JSON is POSTed on firing and on resolve.",
-          "required": "Required"
+          "required": "Required",
+          "notifyEnabled": "Notify outbound",
+          "notifyEnabledHint": "When off: evaluate and show on Events only. When on: require at least one email or webhook.",
+          "notifyRequired": "Email or webhook required when notify is on",
+          "evaluateEnabled": "Evaluation enabled",
+          "evaluateEnabledHint": "Disables evaluation for this rule; independent of notify outbound."
         },
-        "notifySummary": "Email {emails} · Webhook {webhooks}"
+        "notifySummary": "Email {emails} · Webhook {webhooks}",
+        "notifyOff": "Off (UI only)"
       },
       "silenced": "Silenced",
       "inhibited": "Inhibited",
@@ -4602,23 +4598,6 @@
         "source": "Source",
         "target": "Target",
         "equal": "Equal labels"
-      },
-      "oncall": {
-        "create": "New schedule",
-        "edit": "Edit schedule",
-        "hint": "Rotation layers and escalation. IM channel delivery is stubbed.",
-        "name": "Name",
-        "timezone": "Timezone",
-        "layers": "Layers",
-        "escalation": "Escalation"
-      },
-      "channels": {
-        "create": "New channel",
-        "hint": "Secrets encrypted and never returned. IM bots are registered only (send stubbed).",
-        "name": "Name",
-        "type": "Type",
-        "config": "Config",
-        "hasSecret": "Has secret"
       },
       "relatedChanges": "Related changes",
       "noRelatedChanges": "No related changes"
@@ -4788,13 +4767,6 @@
       "colBase": "Baseline",
       "colScore": "Score",
       "colStatus": "Status"
-    },
-    "dashboards": {
-      "save": "Save",
-      "home": "Home path",
-      "json": "Dashboard JSON",
-      "hint": "widgets.template must be an allowlisted OLAP template",
-      "saved": "Saved"
     }
   }
 }

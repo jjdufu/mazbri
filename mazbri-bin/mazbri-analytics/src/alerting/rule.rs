@@ -81,13 +81,19 @@ impl CompareOp {
     }
 }
 
-/// 规则的通知配置（`alert_rules.notify`）：邮件为默认渠道，webhook 可选。
+/// 规则的通知配置（`alert_rules.notify`）。
+/// `enabled=false`（默认）时只落库不外发；为 true 时 emails/webhooks 至少一项才应被管理面接受。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NotifyConfig {
+    /// 是否外发通知；关闭时评估与事件落库照常进行。
+    #[serde(default)]
+    pub enabled: bool,
     /// 触发与恢复时发送邮件的收件人地址列表。
+    #[serde(default)]
     pub emails: Vec<String>,
     /// 触发与恢复时 POST JSON 的 webhook 地址列表。
+    #[serde(default)]
     pub webhooks: Vec<String>,
 }
 
@@ -222,16 +228,19 @@ mod tests {
     }
 
     #[test]
-    fn notify_config_requires_both_channels_and_rejects_unknown_keys() {
+    fn notify_config_defaults_and_rejects_unknown_keys() {
         let parsed: NotifyConfig = serde_json::from_value(serde_json::json!({
+            "enabled": true,
             "emails": ["ops@example.com"],
             "webhooks": []
         }))
         .expect("valid notify");
+        assert!(parsed.enabled);
         assert_eq!(parsed.emails, vec!["ops@example.com".to_string()]);
-        assert!(
-            serde_json::from_value::<NotifyConfig>(serde_json::json!({"webhooks": []})).is_err()
-        );
+        let off: NotifyConfig =
+            serde_json::from_value(serde_json::json!({"emails": [], "webhooks": []}))
+                .expect("notify off default");
+        assert!(!off.enabled);
         assert!(
             serde_json::from_value::<NotifyConfig>(
                 serde_json::json!({"emails": [], "webhooks": [], "slack": "x"})

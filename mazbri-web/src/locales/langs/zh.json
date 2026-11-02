@@ -868,17 +868,13 @@
       "flowRatelimit": "限流配额",
       "flowCache": "缓存",
       "billingReconcile": "对账中心",
-      "assetsCerts": "证书与 License",
       "assetsChanges": "变更时间线",
       "securityEvents": "鉴权与安全事件",
       "productRank": "产品排行",
       "capacity": "容量规划",
       "slo": "SLO / 错误预算",
       "anomaly": "异常检测",
-      "customDashboard": "自定义看板",
       "alertSilences": "告警静默",
-      "alertOncall": "值班排班",
-      "alertChannels": "通知渠道",
       "serviceTopology": "服务拓扑"
     }
   },
@@ -1568,13 +1564,7 @@
       "alertSilenceDelete": "删除告警静默",
       "alertInhibitCreate": "创建告警抑制",
       "alertInhibitUpdate": "更新告警抑制",
-      "alertInhibitDelete": "删除告警抑制",
-      "oncallCreate": "创建值班排班",
-      "oncallUpdate": "更新值班排班",
-      "oncallDelete": "删除值班排班",
-      "notifyChannelCreate": "创建通知渠道",
-      "notifyChannelUpdate": "更新通知渠道",
-      "notifyChannelDelete": "删除通知渠道"
+      "alertInhibitDelete": "删除告警抑制"
     },
     "resources": {
       "admin": "管理员",
@@ -4584,9 +4574,15 @@
           "emailsInvalid": "请输入 name@domain 形式的邮件地址",
           "webhooks": "Webhook（可选）",
           "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
-          "required": "必填"
+          "required": "必填",
+          "notifyEnabled": "通知外发",
+          "notifyEnabledHint": "关闭时仍评估并在事件页可见，但不发邮件/IM；打开时必须配置邮箱或 webhook。",
+          "notifyRequired": "打开通知时必须填写邮箱或 webhook",
+          "evaluateEnabled": "评估启用",
+          "evaluateEnabledHint": "关闭后停止评估该规则；与通知外发开关相互独立。"
         },
-        "notifySummary": "邮件 {emails} · Webhook {webhooks}"
+        "notifySummary": "邮件 {emails} · Webhook {webhooks}",
+        "notifyOff": "关闭（仅页面）"
       },
       "silenced": "已静默",
       "inhibited": "已抑制",
@@ -4607,23 +4603,6 @@
         "source": "源匹配",
         "target": "目标匹配",
         "equal": "相等标签"
-      },
-      "oncall": {
-        "create": "新建值班表",
-        "edit": "编辑值班表",
-        "hint": "排班层与升级阶梯（未确认 N 分钟升下级）。钉钉/飞书/企微渠道发送仍为 stub。",
-        "name": "名称",
-        "timezone": "时区",
-        "layers": "排班层",
-        "escalation": "升级阶梯"
-      },
-      "channels": {
-        "create": "新建渠道",
-        "hint": "渠道密钥加密存储且接口不回显。IM（钉钉/飞书/企微）发送延后，本步仅登记。",
-        "name": "名称",
-        "type": "类型",
-        "config": "配置",
-        "hasSecret": "含密钥"
       },
       "relatedChanges": "同时段变更",
       "noRelatedChanges": "无同时段变更"
@@ -4793,13 +4772,6 @@
       "colBase": "基线",
       "colScore": "得分",
       "colStatus": "状态"
-    },
-    "dashboards": {
-      "save": "保存",
-      "home": "首页路径",
-      "json": "看板 JSON",
-      "hint": "widgets.template 仅允许白名单 OLAP 模板",
-      "saved": "已保存"
     }
   }
 }
