@@ -192,12 +192,14 @@ async function handleDynamicRoutes(
     IframeRouteManager.getInstance().save();
     useWorktabStore().validateWorktabs(router);
     const { homePath } = useCommon();
-    const { path: validatedPath, hasPermission } =
-      RoutePermissionValidator.validatePath(
-        to.path,
-        menuList,
-        homePath.value || "/",
-      );
+    // 静态公共路由（登录/403/500/outside 等）不参与菜单 RBAC
+    const { path: validatedPath, hasPermission } = isStaticRoute(to.path)
+      ? { path: to.path, hasPermission: true as const }
+      : RoutePermissionValidator.validatePath(
+          to.path,
+          menuList,
+          homePath.value || "/",
+        );
     routeInitState.finishRouteInit();
     if (startupCoordinator.resumeDeferredNavigation(to, next)) {
       closeLoading();
@@ -315,6 +317,17 @@ function handleResolvedRoute(
 ): void {
   const menuStore = useMenuStore();
   const { homePath } = useCommon();
+  // 登录页与静态异常页不参与菜单 RBAC：空 menuList 时 hasPermission 只放行 `/`，
+  // 会对 /auth/login、/403、/500、/outside/** 一律踢回 home，造成白屏死循环。
+  // 与 handleLoginStatus 共用 isStaticRoute，对齐静态公共路由白名单。
+  if (isStaticRoute(to.path)) {
+    if (to.matched.length > 0) {
+      setWorktab(to);
+      setPageTitle(to);
+    }
+    next();
+    return;
+  }
   if (to.matched.length > 0) {
     const { hasPermission, path: safePath } =
       RoutePermissionValidator.validatePath(
