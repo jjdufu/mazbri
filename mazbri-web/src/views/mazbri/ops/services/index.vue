@@ -1,21 +1,22 @@
 <template>
-  <div class="ops-services art-full-height">
-    <div class="ops-services__toolbar">
-      <h2>{{ t("menus.mazbri.serviceHealth") }}</h2>
-      <div class="ops-services__actions">
-        <AutoRefresh v-model="refreshInterval" @tick="load" />
-        <ElButton @click="load">{{ t("ops.services.refresh") }}</ElButton>
-      </div>
-    </div>
-    <ArtTable
-      :data="rows"
-      :loading="loading"
-      :columns="columns"
-      class="surface-panel-table"
-      stripe
-      @row-click="onRowClick"
-    />
-  </div>
+  <OpsPage :title="t('menus.mazbri.serviceHealth')">
+    <template #actions>
+      <AutoRefresh v-model="refreshInterval" @tick="load" />
+      <ElButton @click="load">{{ t("ops.services.refresh") }}</ElButton>
+    </template>
+    <OpsCard>
+      <OpsTableWrap>
+        <ArtTable
+          :data="rows"
+          :loading="loading"
+          :columns="columns"
+          class="surface-panel-table"
+          stripe
+          @row-click="onRowClick"
+        />
+      </OpsTableWrap>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -24,6 +25,9 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import { fetchServicesHealth } from "@/api/monitoring";
 import type { ServiceHealthRow } from "@/types/api/monitoring";
 import type { ColumnOption } from "@/types/component";
@@ -66,6 +70,7 @@ const columns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
     prop: "name",
     label: t("ops.services.columns.service"),
     minWidth: 140,
+    showOverflowTooltip: true,
   },
   {
     prop: "health_ok",
@@ -121,7 +126,7 @@ const columns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
   {
     prop: "open_fds",
     label: t("ops.services.columns.fds"),
-    width: 90,
+    minWidth: 120,
     formatter: (row) => fixed(row.open_fds, 0),
   },
   {
@@ -161,28 +166,3 @@ async function load() {
 onMounted(load);
 </script>
 
-<style scoped>
-.ops-services {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-}
-.ops-services__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-.ops-services__toolbar h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-.ops-services__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-</style>

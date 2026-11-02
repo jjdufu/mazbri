@@ -12,7 +12,9 @@
         />
       </div>
       <div class="metric-summary-card__info">
-        <span class="metric-summary-card__label">{{ label }}</span>
+        <span class="metric-summary-card__label" :title="label">{{
+          label
+        }}</span>
         <slot>
           <span class="metric-summary-card__value">{{ value }}</span>
         </slot>
@@ -41,8 +43,12 @@ withDefaults(
 
 <style scoped lang="scss">
 .metric-summary-card {
+  height: 100%;
+
   :deep(.el-card__body) {
     padding: 16px 20px;
+    height: 100%;
+    box-sizing: border-box;
   }
 }
 
@@ -50,6 +56,8 @@ withDefaults(
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+  height: 100%;
 }
 
 .metric-summary-card__icon {
@@ -66,17 +74,24 @@ withDefaults(
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .metric-summary-card__label {
   font-size: 14px;
   color: var(--text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .metric-summary-card__value,
 :deep(.metric-summary-card__value) {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-color-primary);
+  line-height: 1.25;
 }
 </style>

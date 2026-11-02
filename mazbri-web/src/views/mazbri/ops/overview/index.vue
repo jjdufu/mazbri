@@ -1,16 +1,13 @@
 <template>
-  <div class="ops-overview art-full-height">
-    <div class="ops-overview__toolbar">
-      <h2 class="ops-overview__title">{{ t("menus.mazbri.opsOverview") }}</h2>
-      <div class="ops-overview__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-        <ElButton type="primary" @click="openScreen">
-          <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
-          {{ t("ops.overview.openScreen") }}
-        </ElButton>
-      </div>
-    </div>
+  <OpsPage :title="t('menus.mazbri.opsOverview')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
+      <AutoRefresh v-model="refreshInterval" @tick="reload" />
+      <ElButton type="primary" @click="openScreen">
+        <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
+        {{ t("ops.overview.openScreen") }}
+      </ElButton>
+    </template>
 
     <ElAlert
       v-if="isViewerSlim"
@@ -280,7 +277,7 @@
         </ElCard>
       </ElCol>
     </ElRow>
-  </div>
+    </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -292,6 +289,7 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import StatCard from "@/components/ops/StatCard.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import { useDrilldown } from "@/composables/ops/useDrilldown";
@@ -497,32 +495,14 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-}
-.ops-overview__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-.ops-overview__title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-.ops-overview__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
 .ops-overview__cards {
   margin-top: 0;
+}
+.ops-overview__cards :deep(.el-col) {
+  display: flex;
+}
+.ops-overview__cards :deep(.el-col > *) {
+  width: 100%;
 }
 .ops-overview__slim {
   margin: 0;

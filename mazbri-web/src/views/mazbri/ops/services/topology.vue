@@ -110,9 +110,13 @@ function render() {
           source: e.source,
           target: e.target,
           label: {
-            show: e.qps > 0 || e.calls > 0,
+            // Keep edge labels off by default to avoid overlap; show on hover emphasis.
+            show: false,
             formatter: `${e.qps.toFixed(1)} · ${(e.error_rate * 100).toFixed(0)}%`,
             fontSize: 10,
+          },
+          emphasis: {
+            label: { show: true, fontSize: 10 },
           },
           lineStyle: {
             color: edgeColor(e),

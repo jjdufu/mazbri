@@ -1,49 +1,42 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.trafficLatency") }}</h2>
-      <div class="ops-traffic__actions">
+  <OpsPage :title="t('menus.mazbri.trafficLatency')">
+    <template #actions>
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.traffic.latencyBreakdown") }}</h3>
+    <OpsCard :title="t('ops.traffic.latencyBreakdown')">
       <CategoryBarChart
         :categories="breakdownCategories"
         :series="breakdownSeries"
         :loading="loading"
         height="280px"
       />
-    </div>
+    </OpsCard>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.stageQuantiles") }}</h3>
+        <OpsCard :title="t('ops.traffic.stageQuantiles')">
           <CategoryBarChart
             :categories="stageCategories"
             :series="stageSeries"
             :loading="loading"
             height="280px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.platformLocal") }}</h3>
+        <OpsCard :title="t('ops.traffic.platformLocal')">
           <MultiSeriesChart
             :series="platformSeries"
             :loading="loading"
             height="280px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.traffic.latencyHeatmap") }}</h3>
+    <OpsCard :title="t('ops.traffic.latencyHeatmap')">
       <HeatmapChart
         :cells="heatCells"
         :x-labels="heatX"
@@ -51,11 +44,11 @@
         :loading="loading"
         height="280px"
       />
-    </div>
+    </OpsCard>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.traffic.slowRequests") }}</h3>
-      <ArtTable
+    <OpsCard :title="t('ops.traffic.slowRequests')">
+      <OpsTableWrap>
+        <ArtTable
         :data="slowRows"
         :loading="loading"
         :columns="slowColumns"
@@ -63,8 +56,9 @@
         stripe
         @row-click="onSlowClick"
       />
-    </div>
-  </div>
+      </OpsTableWrap>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -76,6 +70,9 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
@@ -247,30 +244,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 </style>

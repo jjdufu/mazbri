@@ -1,17 +1,13 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.trafficErrors") }}</h2>
-      <div class="ops-traffic__actions">
+  <OpsPage :title="t('menus.mazbri.trafficErrors')">
+    <template #actions>
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="14">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.errorMatrix") }}</h3>
+        <OpsCard :title="t('ops.traffic.errorMatrix')">
           <HeatmapChart
             :cells="matrixCells"
             :x-labels="matrixX"
@@ -19,7 +15,8 @@
             :loading="loading"
             height="320px"
           />
-          <ArtTable
+          <OpsTableWrap>
+        <ArtTable
             :data="matrixRows"
             :loading="loading"
             :columns="matrixColumns"
@@ -27,15 +24,14 @@
             stripe
             @row-click="onErrorClick"
           />
-        </div>
+      </OpsTableWrap>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="10">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.errorAttribution") }}</h3>
+        <OpsCard :title="t('ops.traffic.errorAttribution')">
           <PieChart :slices="attrSlices" :loading="loading" height="260px" />
-        </div>
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.traffic.responseFlags") }}</h3>
+        </OpsCard>
+        <OpsCard :title="t('ops.traffic.responseFlags')">
           <CategoryBarChart
             horizontal
             :categories="flagCategories"
@@ -43,11 +39,11 @@
             :loading="loading"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
+    <OpsCard>
       <div class="ops-traffic__sample-head">
         <h3>
           {{ t("ops.traces.sampleTitle") }}
@@ -65,6 +61,7 @@
           {{ t("ops.traces.viewCalls") }}
         </ElButton>
       </div>
+      <OpsTableWrap>
       <ElTable
         v-loading="sampleLoading"
         :data="samples"
@@ -99,11 +96,12 @@
           </template>
         </ElTableColumn>
       </ElTable>
-    </div>
+      </OpsTableWrap>
+    </OpsCard>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.traffic.newErrorCodes") }}</h3>
-      <ArtTable
+    <OpsCard :title="t('ops.traffic.newErrorCodes')">
+      <OpsTableWrap>
+        <ArtTable
         :data="newErrors"
         :loading="loading"
         :columns="newColumns"
@@ -111,8 +109,9 @@
         stripe
         @row-click="onErrorClick"
       />
-    </div>
-  </div>
+      </OpsTableWrap>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -124,6 +123,9 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import PieChart from "@/components/ops/PieChart.vue";
@@ -312,32 +314,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-}
-.ops-traffic__card h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
 .ops-traffic__sample-head {
   display: flex;
   align-items: baseline;

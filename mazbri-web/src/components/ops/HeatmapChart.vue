@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
+import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
 
 export interface HeatCell {
   x: string | number;
@@ -33,6 +34,7 @@ const props = withDefaults(
 
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+let unbindResize: (() => void) | null = null;
 
 function buildOption(): EChartsOption {
   const xs = props.xLabels.length
@@ -62,51 +64,76 @@ function buildOption(): EChartsOption {
         return `${xs[v[0]]} × ${ys[v[1]]}<br/>${props.valueName}: ${v[2]}`;
       },
     },
-    grid: { left: 72, right: 24, top: 16, bottom: 48 },
+    // Leave room on the right for the vertical visualMap; containLabel keeps axes in-box.
+    grid: {
+      left: 12,
+      right: 72,
+      top: 16,
+      bottom: 24,
+      containLabel: true,
+    },
     xAxis: {
       type: "category",
       data: xs,
       splitArea: { show: true },
       axisLabel: { hideOverlap: true },
     },
-    yAxis: { type: "category", data: ys, splitArea: { show: true } },
+    yAxis: {
+      type: "category",
+      data: ys,
+      splitArea: { show: true },
+      axisLabel: { hideOverlap: true },
+    },
     visualMap: {
       min: 0,
       max: Math.max(max, 1),
       calculable: true,
-      orient: "horizontal",
-      left: "center",
-      bottom: 0,
+      orient: "vertical",
+      right: 8,
+      top: "middle",
+      itemWidth: 12,
+      itemHeight: 100,
+      textGap: 6,
       inRange: { color: ["#f0f5ff", "#409eff", "#1d39c4"] },
     },
     series: [
       {
         type: "heatmap",
         data,
-        emphasis: { itemStyle: { shadowBlur: 6, shadowColor: "rgba(0,0,0,0.3)" } },
+        emphasis: {
+          itemStyle: { shadowBlur: 6, shadowColor: "rgba(0,0,0,0.3)" },
+        },
       },
     ],
   };
 }
 
+function ensureChart() {
+  if (!chartRef.value) return null;
+  if (!chart) {
+    chart = echarts.init(chartRef.value);
+    unbindResize = bindOpsChartResize(chartRef.value, () => chart);
+  }
+  return chart;
+}
+
 function render() {
-  if (!chartRef.value) return;
-  if (!chart) chart = echarts.init(chartRef.value);
-  chart.setOption(buildOption(), true);
+  const instance = ensureChart();
+  if (!instance) return;
+  instance.setOption(buildOption(), true);
 }
 
 onMounted(() => {
   render();
-  window.addEventListener("resize", onResize);
 });
+
 onUnmounted(() => {
-  window.removeEventListener("resize", onResize);
+  unbindResize?.();
+  unbindResize = null;
   chart?.dispose();
   chart = null;
 });
-function onResize() {
-  chart?.resize();
-}
+
 watch(
   () => [props.cells, props.xLabels, props.yLabels, props.loading],
   () => render(),
@@ -118,5 +145,6 @@ watch(
 .ops-heatmap-chart {
   width: 100%;
   height: v-bind(height);
+  overflow: hidden;
 }
 </style>
