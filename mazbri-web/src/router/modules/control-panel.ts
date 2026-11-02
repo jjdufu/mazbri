@@ -7,7 +7,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
     meta: {
       title: "menus.mazbri.controlPanel",
       icon: "ri:admin-line",
-      order: 2,
+      order: 30,
       roles: ["R_ADMIN"],
     },
     children: [

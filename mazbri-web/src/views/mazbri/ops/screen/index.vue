@@ -133,6 +133,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useUserStore } from "@/store/modules/user";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import { echarts } from "@/plugins/echarts";
 import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
@@ -168,6 +169,9 @@ const ScreenStat = defineComponent({
 });
 
 const { t } = useI18n();
+const userStore = useUserStore();
+const canSeeFinance = computed(() => userStore.canWriteBusiness);
+const canSeeTopology = computed(() => userStore.isAdmin);
 const panels = ["overview", "business", "resource"] as const;
 const panel = ref<(typeof panels)[number]>("overview");
 const refreshInterval = ref(30);
@@ -258,9 +262,13 @@ async function loadAll() {
   } catch {
     healthRows.value = [];
   }
-  try {
-    finance.value = await fetchFinanceOverview(1);
-  } catch {
+  if (canSeeFinance.value) {
+    try {
+      finance.value = await fetchFinanceOverview(1);
+    } catch {
+      finance.value = null;
+    }
+  } else {
     finance.value = null;
   }
   try {
@@ -372,6 +380,9 @@ async function renderQps(start: number, end: number) {
 }
 
 async function renderTopo(start: number, end: number) {
+  if (!canSeeTopology.value) {
+    return;
+  }
   await nextTick();
   if (!topoRef.value) return;
   if (!topoChart) {

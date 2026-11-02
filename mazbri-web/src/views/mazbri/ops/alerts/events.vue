@@ -254,7 +254,7 @@ const filters = reactive<{
 
 const roles = computed(() => (userStore.info?.roles as string[]) || []);
 const canOperate = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN" || role === "R_FINANCE"),
+  roles.value.some((role) => role === "R_ADMIN"),
 );
 
 function formatTime(value: string) {

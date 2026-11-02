@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { AppRouteRecord } from "@/types/router";
 import { getFirstMenuPath } from "@/utils";
 import { resolveHomePath } from "@/router";
+import { RoutePermissionValidator } from "@/router/core";
 import { RoutesAlias } from "@/router/routesAlias";
 import { useUserStore } from "@/store/modules/user";
 import { putPreferences } from "@/api/preferences";
@@ -16,7 +17,11 @@ export const useMenuStore = defineStore("menuStore", () => {
   const setMenuList = (list: AppRouteRecord[]) => {
     menuList.value = list;
     const roles = (useUserStore().info?.roles as string[] | undefined) ?? [];
-    setHomePath(resolveHomePath(roles) || getFirstMenuPath(list));
+    setHomePath(
+      resolveHomePath(roles, undefined, (path) =>
+        RoutePermissionValidator.hasPermission(path, list),
+      ) || getFirstMenuPath(list),
+    );
   };
 
   const rememberLastPath = (path: string) => {

@@ -127,7 +127,7 @@ const { t } = useI18n();
 const userStore = useUserStore();
 const roles = computed(() => (userStore.info?.roles as string[]) || []);
 const canEdit = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN" || role === "R_FINANCE"),
+  roles.value.some((role) => role === "R_ADMIN"),
 );
 
 const loading = ref(false);

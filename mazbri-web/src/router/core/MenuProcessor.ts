@@ -26,7 +26,21 @@ export class MenuProcessor {
     if (roles && roles.length > 0) {
       menuList = this.filterMenuByRoles(menuList, roles);
     }
-    return this.filterEmptyMenus(menuList);
+    menuList = this.filterEmptyMenus(menuList);
+    return this.sortMenusByOrder(menuList);
+  }
+
+  /** 侧栏按 meta.order 升序；缺失视为 999。子菜单同样排序。 */
+  private sortMenusByOrder(menuList: AppRouteRecord[]): AppRouteRecord[] {
+    const rank = (item: AppRouteRecord) =>
+      typeof item.meta?.order === "number" ? item.meta.order : 999;
+    return [...menuList]
+      .sort((a, b) => rank(a) - rank(b))
+      .map((item) =>
+        item.children?.length
+          ? { ...item, children: this.sortMenusByOrder(item.children) }
+          : item,
+      );
   }
   private async processBackendMenu(): Promise<AppRouteRecord[]> {
     const list = await fetchGetMenuList();
