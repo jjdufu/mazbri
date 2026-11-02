@@ -65,14 +65,14 @@
         <router-link
           class="summary-link"
           :to="{
-            path: `/ops/tenants/${tenantCode}`,
+            path: `/operations/tenants/${tenantCode}`,
             query: { tab: 'access-strategy' },
           }"
         >
           {{ $t("rateLimit.gateSummary.toPlan") }}
         </router-link>
         <span class="link-sep">·</span>
-        <router-link class="summary-link" :to="{ path: '/ops/upstream-supply' }">
+        <router-link class="summary-link" :to="{ path: '/operations/upstream-supply' }">
           {{ $t("rateLimit.gateSummary.toUpstream") }}
         </router-link>
       </div>

@@ -43,11 +43,11 @@ export const mazbriRoutes: AppRouteRecord[] = [
   },
   {
     path: "/ops",
-    name: "OpsManagement",
+    name: "OpsMonitoring",
     component: "",
     meta: {
-      title: "menus.mazbri.opsManagement",
-      icon: "ri:building-2-line",
+      title: "menus.mazbri.opsMonitoring",
+      icon: "ri:bar-chart-box-line",
       order: 3,
       roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
     },
@@ -188,7 +188,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-
       {
         path: "billing/reconcile",
         name: "OpsBillingReconcile",
@@ -222,7 +221,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-
       {
         path: "assets/certs",
         name: "OpsAssetsCerts",
@@ -311,7 +309,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-
       {
         path: "infra/pipeline",
         name: "OpsInfraPipeline",
@@ -402,6 +399,138 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
       {
         path: "tenants",
+        redirect: "/operations/tenants",
+        meta: {
+          title: "menus.mazbri.tenantList",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "tenants/:code",
+        redirect: (to) => `/operations/tenants/${String(to.params.code)}`,
+        meta: {
+          title: "menus.mazbri.tenantDetail",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "product-authorization",
+        redirect: "/operations/product-authorization",
+        meta: {
+          title: "menus.mazbri.productAuthorization",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "products/:id",
+        redirect: (to) => `/operations/products/${String(to.params.id)}`,
+        meta: {
+          title: "menus.mazbri.productDetail",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "upstream-supply",
+        redirect: "/operations/upstream-supply",
+        meta: {
+          title: "menus.mazbri.upstreamSupply",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "upstream-supply/workbench",
+        redirect: "/operations/upstream-supply/workbench",
+        meta: {
+          title: "upstreamConnector.workbenchTitle",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
+        path: "upstream-supply/suppliers/:id",
+        redirect: (to) => `/operations/upstream-supply/suppliers/${String(to.params.id)}`,
+        meta: {
+          title: "supplier.detail.pageTitle",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "upstream-supply/suppliers/:id/edit",
+        redirect: (to) =>
+          `/operations/upstream-supply/suppliers/${String(to.params.id)}/edit`,
+        meta: {
+          title: "supplier.form.editTitle",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
+        path: "upstream-supply/channels/:id",
+        redirect: (to) => `/operations/upstream-supply/channels/${String(to.params.id)}`,
+        meta: {
+          title: "channels.detail.pageTitle",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "upstream-supply/channels/:id/edit",
+        redirect: (to) =>
+          `/operations/upstream-supply/channels/${String(to.params.id)}/edit`,
+        meta: {
+          title: "channels.dialog.editTitle",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
+        path: "callbacks",
+        redirect: "/operations/callbacks",
+        meta: {
+          title: "menus.mazbri.callbackList",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "bills",
+        redirect: "/operations/bills",
+        meta: {
+          title: "menus.mazbri.billList",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
+        path: "usage-reconciliation",
+        redirect: "/ops/billing/reconcile",
+        meta: {
+          title: "menus.mazbri.usageReconciliation",
+          isHide: true,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      }
+    ],
+  },
+  {
+    path: "/operations",
+    name: "OpsManagement",
+    component: "",
+    meta: {
+      title: "menus.mazbri.opsManagement",
+      icon: "ri:building-2-line",
+      order: 4,
+      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+    },
+    children: [
+      {
+        path: "tenants",
         name: "TenantList",
         component: "/mazbri/tenants/index",
         meta: {
@@ -434,7 +563,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-
       {
         path: "products/:id",
         name: "ProductDetail",
@@ -443,7 +571,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.productDetail",
           icon: "ri:apps-line",
           isHide: true,
-          activePath: "/ops/product-authorization",
+          activePath: "/operations/product-authorization",
           keepAlive: true,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
@@ -467,7 +595,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "upstreamConnector.workbenchTitle",
           icon: "ri:plug-line",
           isHide: true,
-          activePath: "/ops/upstream-supply",
+          activePath: "/operations/upstream-supply",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -480,7 +608,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "supplier.detail.pageTitle",
           icon: "ri:building-4-line",
           isHide: true,
-          activePath: "/ops/upstream-supply",
+          activePath: "/operations/upstream-supply",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
@@ -493,7 +621,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "supplier.form.editTitle",
           icon: "ri:building-4-line",
           isHide: true,
-          activePath: "/ops/upstream-supply",
+          activePath: "/operations/upstream-supply",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -506,7 +634,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "channels.detail.pageTitle",
           icon: "ri:building-4-line",
           isHide: true,
-          activePath: "/ops/upstream-supply",
+          activePath: "/operations/upstream-supply",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
@@ -519,7 +647,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "channels.dialog.editTitle",
           icon: "ri:building-4-line",
           isHide: true,
-          activePath: "/ops/upstream-supply",
+          activePath: "/operations/upstream-supply",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -554,7 +682,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-      },
+      }
     ],
   },
 ];

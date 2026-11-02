@@ -18,6 +18,7 @@ export const useUserStore = defineStore(
   () => {
     const language = ref(LanguageEnum.ZH);
     const isLogin = ref(false);
+    const isLoggingOut = ref(false);
     const isLock = ref(false);
     const lockPassword = ref("");
     const info = ref<Partial<AdminUser>>({});
@@ -118,26 +119,32 @@ export const useUserStore = defineStore(
       useMenuStore().setHomePath("");
     };
     const logOut = async (options?: { skipRemote?: boolean }) => {
-      if (!options?.skipRemote) {
-        try {
-          await apiLogout({});
-        } catch {
-          void 0;
-        }
-      }
+      isLoggingOut.value = true;
+      // 先抬高 MFA epoch，丢弃进行中的 step-up 结果；HTTP 拦截器据此对 401 静默处理
       useMfaStepUpStore().reset();
-      clearUserState();
-      resetRouterState(500);
-      const currentRoute = router.currentRoute.value;
-      if (
-        currentRoute.name !== "Login" &&
-        currentRoute.path !== RoutesAlias.Login
-      ) {
-        const redirect = currentRoute.fullPath;
-        router.push({
-          name: "Login",
-          query: redirect ? { redirect } : undefined,
-        });
+      try {
+        if (!options?.skipRemote) {
+          try {
+            await apiLogout({});
+          } catch {
+            void 0;
+          }
+        }
+        clearUserState();
+        resetRouterState(500);
+        const currentRoute = router.currentRoute.value;
+        if (
+          currentRoute.name !== "Login" &&
+          currentRoute.path !== RoutesAlias.Login
+        ) {
+          const redirect = currentRoute.fullPath;
+          router.push({
+            name: "Login",
+            query: redirect ? { redirect } : undefined,
+          });
+        }
+      } finally {
+        isLoggingOut.value = false;
       }
     };
     const checkAndClearWorktabs = () => {
@@ -156,6 +163,7 @@ export const useUserStore = defineStore(
     return {
       language,
       isLogin,
+      isLoggingOut,
       isLock,
       lockPassword,
       info,

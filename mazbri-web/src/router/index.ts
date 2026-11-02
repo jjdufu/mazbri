@@ -52,7 +52,7 @@ export function resolveHomePath(
   const set = new Set(roleList);
   const allowedPrefix =
     set.has("R_ADMIN") || set.has("R_FINANCE") || set.has("R_VIEWER");
-  if (allowedPrefix && (pref.startsWith("/ops/") || pref === "/dashboard" || pref.startsWith("/finance/"))) {
+  if (allowedPrefix && (pref.startsWith("/ops/") || pref.startsWith("/operations/") || pref === "/dashboard" || pref.startsWith("/finance/"))) {
     if (set.has("R_FINANCE") && !set.has("R_ADMIN") && pref.startsWith("/ops/")) {
       // finance may open ops viewer pages in this console
     }

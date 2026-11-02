@@ -800,6 +800,7 @@
       "userDetail": "用户详情",
       "tenants": "租户管理",
       "opsManagement": "运营中心",
+      "opsMonitoring": "运维监控",
       "tenantList": "租户列表",
       "tenantDetail": "租户详情",
       "authorizationList": "授权/订阅",

@@ -800,6 +800,7 @@
       "userDetail": "User Detail",
       "tenants": "Tenant Management",
       "opsManagement": "Operations Center",
+      "opsMonitoring": "Ops Monitoring",
       "tenantList": "Tenant List",
       "tenantDetail": "Tenant Detail",
       "authorizationList": "Authorizations / Subscription",

@@ -6,12 +6,15 @@ import { useCommon } from "@/hooks/core/useCommon";
 import { loadingService } from "@/utils/ui";
 import { routeInitState } from "./routeInitState";
 import { useMenuStore } from "@/store/modules/menu";
+import { useUserStore } from "@/store/modules/user";
 export function setupAfterEachGuard(router: Router) {
   const { scrollToTop } = useCommon();
   router.afterEach((to) => {
     scrollToTop();
     try {
-      useMenuStore().rememberLastPath(to.path);
+      if (useUserStore().isLogin) {
+        useMenuStore().rememberLastPath(to.path);
+      }
     } catch {
       /* pinia may be unavailable during early boot */
     }

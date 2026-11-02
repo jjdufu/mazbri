@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { AppRouteRecord } from "@/types/router";
 import { getFirstMenuPath } from "@/utils";
 import { resolveHomePath } from "@/router";
+import { RoutesAlias } from "@/router/routesAlias";
 import { useUserStore } from "@/store/modules/user";
 import { getPreferences, putPreferences } from "@/api/preferences";
 
@@ -31,8 +32,24 @@ export const useMenuStore = defineStore("menuStore", () => {
     return (
       path === "/dashboard" ||
       path.startsWith("/ops/") ||
+      path.startsWith("/operations/") ||
       path.startsWith("/finance/")
     );
+  };
+
+  const loadPreferences = async () => {
+    const roles = (useUserStore().info?.roles as string[] | undefined) ?? [];
+    try {
+      const pref = (await getPreferences()) as {
+        home_path?: string;
+        last_path?: string;
+      };
+      const preferred = (pref.home_path || "").trim();
+      const next = resolveHomePath(roles, preferred, pathAllowedForRoles);
+      setHomePath(next || getFirstMenuPath(menuList.value));
+    } catch {
+      // ignore preference fetch errors — keep role home
+    }
   };
 
   const setMenuList = (list: AppRouteRecord[]) => {
@@ -40,23 +57,15 @@ export const useMenuStore = defineStore("menuStore", () => {
     const roles = (useUserStore().info?.roles as string[] | undefined) ?? [];
     // Sync path first from roles, then overlay preferences asynchronously.
     setHomePath(resolveHomePath(roles) || getFirstMenuPath(list));
-    void (async () => {
-      try {
-        const pref = (await getPreferences()) as {
-          home_path?: string;
-          last_path?: string;
-        };
-        const preferred = (pref.home_path || "").trim();
-        const next = resolveHomePath(roles, preferred, pathAllowedForRoles);
-        setHomePath(next || getFirstMenuPath(list));
-      } catch {
-        // ignore preference fetch errors — keep role home
-      }
-    })();
+    if (!list.length || !useUserStore().isLogin) return;
+    void loadPreferences();
   };
 
   const rememberLastPath = (path: string) => {
-    if (!path || path.startsWith("/login")) return;
+    const userStore = useUserStore();
+    if (!path || !userStore.isLogin) return;
+    if (path.startsWith("/auth/") || path === RoutesAlias.Login) return;
+    if (path.startsWith("/exception/")) return;
     void putPreferences({ last_path: path }).catch(() => undefined);
   };
 
