@@ -1,4 +1,5 @@
 use crate::router::AppState;
+use mazbri_core::metrics::set_rpc_ready;
 use crate::service_health_cache::{CachedServiceHealth, ServiceHealthState};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
@@ -164,6 +165,8 @@ pub async fn ready_check(State(state): State<AppState>) -> (StatusCode, Json<ser
     let ready = startup_ready
         && db_health.status == HealthStatus::Healthy
         && redis_health.status == HealthStatus::Healthy;
+    // 看板就绪列与 HTTP /ready 同源（启动完成 ∧ DB ∧ Redis）。
+    set_rpc_ready("mazbri-gateway", ready);
     (
         if ready {
             StatusCode::OK

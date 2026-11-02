@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
-use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics};
+use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics, set_rpc_ready};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
 use mazbri_cert_service::config::CertAppConfig;
@@ -69,8 +69,11 @@ fn start_admin_server(
                 e
             );
         }
-        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None);
+        let state_for_ready = state.clone();
+        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None)
+            .with_ready_check(move || state_for_ready.is_ready());
         drop(updater.spawn());
+        set_rpc_ready(service_name, state.is_ready());
         info!("Health metrics updater started for {}", service_name);
         Some(state)
     } else {
@@ -191,6 +194,7 @@ async fn main() -> Result<()> {
     spawn_inventory_metrics(repo.clone());
     if let Some(ref state) = admin_state {
         state.set_ready(true);
+        set_rpc_ready(&service_name, true);
         info!("Service marked as ready for authorization import");
     }
     let auth_state = Arc::new(AuthState::new(tokens.clone(), config.auth.scope_mode));

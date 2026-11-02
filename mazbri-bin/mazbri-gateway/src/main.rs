@@ -41,6 +41,7 @@ use mazbri_registry::{
     ConfigCenterRegistry, ConfigHandler, HttpConfigClientBuilder, ServiceRegistry,
 };
 use mazbri_service::{create_shutdown_manager, start_simple_admin_server};
+use mazbri_core::metrics::set_rpc_ready;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
@@ -126,6 +127,7 @@ async fn main() -> Result<()> {
         info!("Service marked as ready");
     }
     set_gateway_startup_ready(true);
+    set_rpc_ready(&service_name, true);
     info!("Server listening on {}", addr);
     let registry_for_shutdown = registry.clone();
     let shutdown_timeout = config.server.graceful_shutdown_timeout();
@@ -186,6 +188,7 @@ fn register_all_metrics() -> Result<()> {
     mazbri_auth::register_auth_metrics()?;
     register_log_writer_metrics()?;
     set_gateway_startup_ready(false);
+    set_rpc_ready("mazbri-gateway", false);
     Ok(())
 }
 

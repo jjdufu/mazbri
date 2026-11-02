@@ -4,7 +4,7 @@ use crate::handlers::AppState;
 use anyhow::Result;
 use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
 use mazbri_admin::{AdminServerBuilder, AdminState};
-use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics};
+use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics, set_rpc_ready};
 use mazbri_analytics::clickhouse::ClickHouseClient;
 use mazbri_analytics::greptimedb::GreptimeDBClient;
 use mazbri_analytics::log_writer_metrics::register_log_writer_metrics;
@@ -50,8 +50,11 @@ fn start_admin_server(
                 e
             );
         }
-        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None);
+        let state_for_ready = state.clone();
+        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None)
+            .with_ready_check(move || state_for_ready.is_ready());
         drop(updater.spawn());
+        set_rpc_ready(service_name, state.is_ready());
         info!("Health metrics updater started for {}", service_name);
         Some(state)
     } else {
@@ -155,6 +158,7 @@ async fn main() -> Result<()> {
 
     if let Some(ref state) = admin_state {
         state.set_ready(true);
+        set_rpc_ready(&service_name, true);
         info!("服务已就绪");
         tokio::spawn(run_admin_self_check(
             service_name.clone(),

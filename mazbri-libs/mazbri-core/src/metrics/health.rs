@@ -52,6 +52,22 @@ pub static CONFIG_CENTER_CONNECTED: LazyLock<IntGaugeVec> = LazyLock::new(|| {
         &["service"],
     )
 });
+/// 服务就绪（与 HTTP `/ready` 同源语义：1=可接流量，0=未就绪）。
+pub static RPC_READY: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    MetricsBuilder::new().gauge_vec(
+        "mazbri_rpc_ready",
+        "Service readiness status aligned with /ready (1=ready, 0=not ready)",
+        &["service"],
+    )
+});
+pub type BoxedReadyCheck = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// 立即写入 `mazbri_rpc_ready{service}`，供启动完成或 `/ready` 探针旁路同步。
+pub fn set_rpc_ready(service: &str, ready: bool) {
+    RPC_READY
+        .with_label_values(&[service])
+        .set(i64::from(ready));
+}
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -61,6 +77,7 @@ pub fn register_health_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(DB_POOL_IDLE_CONNECTIONS.clone()))?;
     register_collector_once(&REGISTRY, Box::new(TLS_CERT_EXPIRY_TIMESTAMP.clone()))?;
     register_collector_once(&REGISTRY, Box::new(CONFIG_CENTER_CONNECTED.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(RPC_READY.clone()))?;
     Ok(())
 }
 pub struct HealthMetricsUpdater {
@@ -68,6 +85,8 @@ pub struct HealthMetricsUpdater {
     db_pool: Option<Arc<dyn DbPoolInfo>>,
     cert_handle: Option<Arc<dyn CertExpiryInfoProvider>>,
     config_center_connected: Option<BoxedConfigCenterCheck>,
+    /// 若提供则作为就绪判定（应与 `/ready` 相同）；否则用依赖健康（db∧cert）作为就绪。
+    ready_check: Option<BoxedReadyCheck>,
 }
 impl HealthMetricsUpdater {
     pub fn new(
@@ -81,7 +100,13 @@ impl HealthMetricsUpdater {
             db_pool,
             cert_handle,
             config_center_connected,
+            ready_check: None,
         }
+    }
+    #[must_use]
+    pub fn with_ready_check(mut self, check: impl Fn() -> bool + Send + Sync + 'static) -> Self {
+        self.ready_check = Some(Arc::new(check));
+        self
     }
     pub async fn update(&self) {
         let name: &str = &self.service_name;
@@ -118,6 +143,12 @@ impl HealthMetricsUpdater {
         RPC_HEALTH_CHECK
             .with_label_values(&[name, "unhealthy"])
             .set(i64::from(!rpc_healthy));
+        // 就绪与 /ready 同源：显式 ready_check（AdminState 标志）优先；否则依赖健康。
+        let ready = self
+            .ready_check
+            .as_ref()
+            .map_or(rpc_healthy, |check| check());
+        set_rpc_ready(name, ready);
         if let Some(ref checker) = self.config_center_connected {
             let connected = checker().await;
             CONFIG_CENTER_CONNECTED
@@ -125,8 +156,8 @@ impl HealthMetricsUpdater {
                 .set(i64::from(connected));
         }
         tracing::trace!(
-            service = % name, db_healthy = db_healthy, cert_healthy = cert_healthy,
-            rpc_healthy = rpc_healthy, "Health metrics updated"
+            service = %name, db_healthy = db_healthy, cert_healthy = cert_healthy,
+            rpc_healthy = rpc_healthy, ready = ready, "Health metrics updated"
         );
     }
     #[must_use]
@@ -212,5 +243,40 @@ mod tests {
     async fn invalid_cert_is_unhealthy_without_db_pool() {
         let cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert(false));
         assert_eq!(run("health-test-bad-cert", None, Some(cert)).await, (0, 1));
+    }
+
+    #[tokio::test]
+    async fn ready_defaults_to_dependency_health() {
+        let ok: Arc<dyn DbPoolInfo> = Arc::new(FixedPool(true));
+        let bad: Arc<dyn DbPoolInfo> = Arc::new(FixedPool(false));
+        HealthMetricsUpdater::new("health-test-ready-ok", Some(ok), None, None)
+            .update()
+            .await;
+        assert_eq!(
+            RPC_READY.with_label_values(&["health-test-ready-ok"]).get(),
+            1
+        );
+        HealthMetricsUpdater::new("health-test-ready-bad", Some(bad), None, None)
+            .update()
+            .await;
+        assert_eq!(
+            RPC_READY.with_label_values(&["health-test-ready-bad"]).get(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn ready_check_overrides_dependency_health() {
+        let bad: Arc<dyn DbPoolInfo> = Arc::new(FixedPool(false));
+        HealthMetricsUpdater::new("health-test-ready-override", Some(bad), None, None)
+            .with_ready_check(|| true)
+            .update()
+            .await;
+        assert_eq!(
+            RPC_READY
+                .with_label_values(&["health-test-ready-override"])
+                .get(),
+            1
+        );
     }
 }

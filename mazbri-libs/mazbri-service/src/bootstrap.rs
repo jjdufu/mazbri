@@ -10,7 +10,7 @@ use mazbri_core::config::{
 };
 use mazbri_core::metrics::health::{
     BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater,
-    register_health_metrics,
+    register_health_metrics, set_rpc_ready,
 };
 use mazbri_core::num::SaturatingFrom;
 use mazbri_registry::{
@@ -311,7 +311,10 @@ pub(crate) fn start_admin_server(
                     }
                 }
                 let result = ReadinessResult::healthy(checks);
-                state.set_ready(result.status == CheckStatus::Ok);
+                let ready = result.status == CheckStatus::Ok;
+                state.set_ready(ready);
+                // 与 /ready 响应同源写入就绪 gauge，供看板即时读取。
+                set_rpc_ready(&state.service_name, ready);
                 result
             }
         })
@@ -324,6 +327,8 @@ pub(crate) fn start_admin_server(
             e
         );
     }
+    // updater 默认用 db+cert 健康写入 mazbri_rpc_ready（与 /ready 依赖同源）；
+    // /ready 探针内会再次 set_rpc_ready，与 HTTP 响应一致。
     let updater = HealthMetricsUpdater::new(
         service_name.to_string(),
         db_pool.map(|p| Arc::new(PgPoolInfoBridge(p)) as Arc<dyn DbPoolInfo>),
@@ -335,6 +340,7 @@ pub(crate) fn start_admin_server(
         }),
         config_center_connected,
     );
+    set_rpc_ready(service_name, false);
     drop(updater.spawn());
     tracing::info!("Health metrics updater started for {}", service_name);
     Ok(Some(state))
