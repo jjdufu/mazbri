@@ -232,6 +232,70 @@ impl CertExpiryInfoProvider for CertInfoBridge {
         })
     }
 }
+async fn run_admin_readiness_checks(
+    db: Option<Arc<PgPool>>,
+    cert: Option<ManagedCertHandle>,
+    threshold: i64,
+    state: Arc<AdminState>,
+) -> ReadinessResult {
+    let mut checks = Vec::new();
+    if let Some(ref pool) = db {
+        match pool.acquire().await {
+            Ok(conn) => {
+                drop(conn);
+                checks.push(ReadinessCheckResult {
+                    name: "database".to_string(),
+                    status: CheckStatus::Ok,
+                    message: None,
+                });
+            }
+            Err(e) => {
+                checks.push(ReadinessCheckResult {
+                    name: "database".to_string(),
+                    status: CheckStatus::Failed,
+                    message: Some(format!("database connection failed: {e}")),
+                });
+            }
+        }
+    }
+    if let Some(ref handle) = cert {
+        let info = handle.check_expiry(threshold).await;
+        if info.is_expired {
+            checks.push(ReadinessCheckResult {
+                name: "certificate".to_string(),
+                status: CheckStatus::Failed,
+                message: Some(format!(
+                    "certificate expired: {} (expired at {})",
+                    info.subject,
+                    info.expires_at.to_rfc3339()
+                )),
+            });
+        } else if info.is_near_expiry {
+            checks.push(ReadinessCheckResult {
+                name: "certificate".to_string(),
+                status: CheckStatus::Failed,
+                message: Some(format!(
+                    "certificate near expiry: {} (expires at {})",
+                    info.subject,
+                    info.expires_at.to_rfc3339()
+                )),
+            });
+        } else {
+            checks.push(ReadinessCheckResult {
+                name: "certificate".to_string(),
+                status: CheckStatus::Ok,
+                message: None,
+            });
+        }
+    }
+    let result = ReadinessResult::healthy(checks);
+    let ready = result.status == CheckStatus::Ok;
+    state.set_ready(ready);
+    // 与 /ready 响应同源写入就绪 gauge，供看板即时读取。
+    set_rpc_ready(&state.service_name, ready);
+    result
+}
+
 pub(crate) fn start_admin_server(
     service_name: &str,
     admin_config: &AdminConfig,
@@ -259,64 +323,7 @@ pub(crate) fn start_admin_server(
             let cert = cert_handle_for_ready.clone();
             let threshold = renewal_threshold_days;
             let state = state_for_ready.clone();
-            async move {
-                let mut checks = Vec::new();
-                if let Some(ref pool) = db {
-                    match pool.acquire().await {
-                        Ok(conn) => {
-                            drop(conn);
-                            checks.push(ReadinessCheckResult {
-                                name: "database".to_string(),
-                                status: CheckStatus::Ok,
-                                message: None,
-                            });
-                        }
-                        Err(e) => {
-                            checks.push(ReadinessCheckResult {
-                                name: "database".to_string(),
-                                status: CheckStatus::Failed,
-                                message: Some(format!("database connection failed: {e}")),
-                            });
-                        }
-                    }
-                }
-                if let Some(ref handle) = cert {
-                    let info = handle.check_expiry(threshold).await;
-                    if info.is_expired {
-                        checks.push(ReadinessCheckResult {
-                            name: "certificate".to_string(),
-                            status: CheckStatus::Failed,
-                            message: Some(format!(
-                                "certificate expired: {} (expired at {})",
-                                info.subject,
-                                info.expires_at.to_rfc3339()
-                            )),
-                        });
-                    } else if info.is_near_expiry {
-                        checks.push(ReadinessCheckResult {
-                            name: "certificate".to_string(),
-                            status: CheckStatus::Failed,
-                            message: Some(format!(
-                                "certificate near expiry: {} (expires at {})",
-                                info.subject,
-                                info.expires_at.to_rfc3339()
-                            )),
-                        });
-                    } else {
-                        checks.push(ReadinessCheckResult {
-                            name: "certificate".to_string(),
-                            status: CheckStatus::Ok,
-                            message: None,
-                        });
-                    }
-                }
-                let result = ReadinessResult::healthy(checks);
-                let ready = result.status == CheckStatus::Ok;
-                state.set_ready(ready);
-                // 与 /ready 响应同源写入就绪 gauge，供看板即时读取。
-                set_rpc_ready(&state.service_name, ready);
-                result
-            }
+            async move { run_admin_readiness_checks(db, cert, threshold, state).await }
         })
         .build()?;
     let _handle = server.spawn();

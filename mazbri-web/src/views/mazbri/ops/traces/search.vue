@@ -242,6 +242,10 @@ import type {
   TraceSummary,
 } from "@/types/api/traces";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
+import {
+  OPS_CHART_GRID,
+  bindOpsChartResize,
+} from "@/composables/ops/useOpsChartHost";
 import { logger } from "@/utils/sys";
 
 defineOptions({ name: "OpsTraces" });
