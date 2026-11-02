@@ -1,39 +1,32 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.securityEvents") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.securityEvents')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.security.topIp") }}</h3>
+        <OpsCard :title="t('ops.security.topIp')">
           <ArtTable :data="topIp" :loading="loading" :columns="topColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.security.topKey") }}</h3>
+        <OpsCard :title="t('ops.security.topKey')">
           <ArtTable :data="topKey" :loading="loading" :columns="topColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.security.topCountry") }}</h3>
+        <OpsCard :title="t('ops.security.topCountry')">
           <ArtTable :data="topCountry" :loading="loading" :columns="topColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.security.events") }}</h3>
+    <OpsCard :title="t('ops.security.events')">
       <ArtTable :data="events" :loading="loading" :columns="eventColumns" stripe />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -44,6 +37,8 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import type { ColumnOption } from "@/types/component";
@@ -122,21 +117,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  background: var(--el-bg-color);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
 </style>

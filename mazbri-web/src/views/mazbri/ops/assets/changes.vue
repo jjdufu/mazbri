@@ -1,41 +1,35 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.assetsChanges") }}</h2>
-      <div class="ops-traffic__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
+  <OpsPage :title="t('menus.mazbri.assetsChanges')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
         <ElSwitch v-model="showChanges" :active-text="t('ops.assets.showChanges')" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.assets.routeReload") }}</h3>
+        <OpsCard :title="t('ops.assets.routeReload')">
           <MultiSeriesChart
             :series="routeSeries"
             :loading="loading"
             :annotations="showChanges ? annotations : []"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.assets.connectorPublish") }}</h3>
+        <OpsCard :title="t('ops.assets.connectorPublish')">
           <MultiSeriesChart
             :series="publishSeries"
             :loading="loading"
             :annotations="showChanges ? annotations : []"
             height="220px"
           />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.assets.timeline") }}</h3>
+    <OpsCard :title="t('ops.assets.timeline')">
       <ArtTable
         :data="events"
         :loading="loading"
@@ -43,8 +37,8 @@
         class="surface-panel-table"
         stripe
       />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -55,6 +49,8 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import MultiSeriesChart, {
   type ChartAnnotation,
 } from "@/components/ops/MultiSeriesChart.vue";
@@ -138,24 +134,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.ops-traffic__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.ops-traffic__card {
-  background: var(--el-bg-color);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
 </style>

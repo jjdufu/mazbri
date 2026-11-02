@@ -135,6 +135,7 @@ import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } f
 import { useI18n } from "vue-i18n";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import { echarts } from "@/plugins/echarts";
+import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
 import {
   fetchMetricTimeseries,
   fetchMetricsOverview,
@@ -324,7 +325,11 @@ async function loadAll() {
 async function renderQps(start: number, end: number) {
   await nextTick();
   if (!qpsRef.value) return;
-  if (!qpsChart) qpsChart = echarts.init(qpsRef.value);
+  if (!qpsChart) {
+    qpsChart = echarts.init(qpsRef.value);
+    unbindQpsResize?.();
+    unbindQpsResize = bindOpsChartResize(qpsRef.value, () => qpsChart);
+  }
   const qps = qpsChart;
   if (!qps) return;
   try {
@@ -338,7 +343,7 @@ async function renderQps(start: number, end: number) {
     qps.setOption(
       {
         backgroundColor: "transparent",
-        grid: { left: 40, right: 16, top: 24, bottom: 28 },
+        grid: { left: 12, right: 16, top: 28, bottom: 24, containLabel: true },
         xAxis: {
           type: "time",
           axisLabel: { color: "#9fb3cd" },
@@ -369,7 +374,11 @@ async function renderQps(start: number, end: number) {
 async function renderTopo(start: number, end: number) {
   await nextTick();
   if (!topoRef.value) return;
-  if (!topoChart) topoChart = echarts.init(topoRef.value);
+  if (!topoChart) {
+    topoChart = echarts.init(topoRef.value);
+    unbindTopoResize?.();
+    unbindTopoResize = bindOpsChartResize(topoRef.value, () => topoChart);
+  }
   const topo = topoChart;
   if (!topo) return;
   try {
@@ -422,23 +431,23 @@ function rotatePanel() {
   panel.value = panels[(idx + 1) % panels.length];
 }
 
-function onResize() {
-  qpsChart?.resize();
-  topoChart?.resize();
-}
+let unbindQpsResize: (() => void) | null = null;
+let unbindTopoResize: (() => void) | null = null;
 
 onMounted(() => {
   tickClock();
   clockTimer = setInterval(tickClock, 1000);
   rotateTimer = setInterval(rotatePanel, 45_000);
-  window.addEventListener("resize", onResize);
   void loadAll();
 });
 
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer);
   if (rotateTimer) clearInterval(rotateTimer);
-  window.removeEventListener("resize", onResize);
+  unbindQpsResize?.();
+  unbindTopoResize?.();
+  unbindQpsResize = null;
+  unbindTopoResize = null;
   qpsChart?.dispose();
   topoChart?.dispose();
 });
@@ -507,9 +516,11 @@ onUnmounted(() => {
 }
 .ops-screen__chart {
   height: 260px;
+  overflow: hidden;
 }
 .ops-screen__chart--sm {
   height: 260px;
+  overflow: hidden;
 }
 .ops-screen__marquee {
   overflow: hidden;

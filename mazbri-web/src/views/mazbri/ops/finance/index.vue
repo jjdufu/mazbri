@@ -1,18 +1,15 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.financeOverview") }}</h2>
-      <div class="ops-traffic__actions">
-        <ElSelect v-model="days" style="width: 120px" @change="reload">
+  <OpsPage :title="t('menus.mazbri.financeOverview')">
+    <template #actions>
+      <ElSelect v-model="days" style="width: 120px" @change="reload">
           <ElOption :value="7" label="7d" />
           <ElOption :value="30" label="30d" />
           <ElOption :value="90" label="90d" />
         </ElSelect>
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="12" :lg="6">
         <StatCard
           :label="t('ops.finance.revenue')"
@@ -48,7 +45,7 @@
       </ElCol>
     </ElRow>
 
-    <div v-if="(overview?.inverted_days?.length ?? 0) > 0" class="ops-traffic__card">
+    <OpsCard v-if="(overview?.inverted_days?.length ?? 0) > 0">
       <ElAlert
         type="warning"
         :title="t('ops.finance.invertedWarn')"
@@ -56,44 +53,39 @@
         show-icon
         :closable="false"
       />
-    </div>
+    </OpsCard>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.finance.trend") }}</h3>
+    <OpsCard :title="t('ops.finance.trend')">
       <CategoryBarChart
         :categories="dayLabels"
         :series="trendSeries"
         :loading="loading"
         height="280px"
       />
-    </div>
+    </OpsCard>
 
-    <ElRow :gutter="12">
+    <ElRow :gutter="16">
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.finance.rankTenant") }}</h3>
+        <OpsCard :title="t('ops.finance.rankTenant')">
           <ArtTable :data="ranks?.by_tenant ?? []" :loading="loading" :columns="rankColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.finance.rankProduct") }}</h3>
+        <OpsCard :title="t('ops.finance.rankProduct')">
           <ArtTable :data="ranks?.by_product ?? []" :loading="loading" :columns="rankColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
-        <div class="ops-traffic__card">
-          <h3>{{ t("ops.finance.rankSupplier") }}</h3>
+        <OpsCard :title="t('ops.finance.rankSupplier')">
           <ArtTable :data="ranks?.by_supplier ?? []" :loading="loading" :columns="rankColumns" stripe />
-        </div>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.finance.balances") }}</h3>
+    <OpsCard :title="t('ops.finance.balances')">
       <ArtTable :data="balances" :loading="loading" :columns="balanceColumns" stripe />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -103,6 +95,8 @@ import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   fetchFinanceBalances,
   fetchFinanceOverview,
@@ -183,22 +177,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
 </style>

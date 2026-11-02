@@ -1,17 +1,14 @@
 <template>
-  <div class="ops-topology art-full-height">
-    <div class="ops-topology__toolbar">
-      <div>
-        <h2 class="ops-topology__title">{{ t("ops.services.topologyPage.title") }}</h2>
-        <p class="ops-topology__hint">{{ t("ops.services.topologyPage.hint") }}</p>
-      </div>
-      <div class="ops-topology__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
-    <div ref="graphRef" v-loading="loading" class="ops-topology__graph" />
-  </div>
+  <OpsPage :title="t('ops.services.topologyPage.title')">
+    <template #actions>
+      <TimeRangePicker v-model="timeRange" @change="reload" />
+      <AutoRefresh v-model="refreshInterval" @tick="reload" />
+    </template>
+    <p class="ops-topology__hint">{{ t("ops.services.topologyPage.hint") }}</p>
+    <OpsCard>
+      <div ref="graphRef" v-loading="loading" class="ops-topology__graph" />
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -23,6 +20,9 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import TimeRangePicker from "@/components/ops/TimeRangePicker.vue";
 import type { TimeRangeValue } from "@/utils/ops/time-range";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
 import { fetchServiceTopology } from "@/api/monitoring";
 import type { TopologyEdge, TopologyGraph } from "@/types/api/monitoring";
 
@@ -65,7 +65,11 @@ function edgeColor(e: TopologyEdge): string {
 
 function render() {
   if (!graphRef.value || !graph) return;
-  if (!chart) chart = echarts.init(graphRef.value);
+  if (!chart) {
+    chart = echarts.init(graphRef.value);
+    unbindResize?.();
+    unbindResize = bindOpsChartResize(graphRef.value, () => chart);
+  }
   const active = chart;
   if (!active) return;
   const data = graph;
@@ -169,35 +173,21 @@ async function reload() {
   }
 }
 
-function onResize() {
-  chart?.resize();
-}
+let unbindResize: (() => void) | null = null;
 
 onMounted(() => {
-  window.addEventListener("resize", onResize);
   void reload();
 });
 
 onUnmounted(() => {
-  window.removeEventListener("resize", onResize);
+  unbindResize?.();
+  unbindResize = null;
   chart?.dispose();
   chart = null;
 });
 </script>
 
 <style scoped>
-.ops-topology {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-}
-.ops-topology__toolbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
 .ops-topology__title {
   margin: 0;
   font-size: 20px;
@@ -206,11 +196,6 @@ onUnmounted(() => {
   margin: 4px 0 0;
   color: var(--el-text-color-secondary);
   font-size: 13px;
-}
-.ops-topology__actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
 }
 .ops-topology__graph {
   flex: 1;

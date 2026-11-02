@@ -1,19 +1,15 @@
 <template>
-  <div class="ops-reconcile art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.billingReconcile") }}</h2>
-      <div class="ops-traffic__actions">
-        <ElSelect v-model="days" style="width: 120px" @change="loadCalendar">
+  <OpsPage :title="t('menus.mazbri.billingReconcile')">
+    <template #actions>
+      <ElSelect v-model="days" style="width: 120px" @change="loadCalendar">
           <ElOption :value="7" label="7d" />
           <ElOption :value="30" label="30d" />
           <ElOption :value="90" label="90d" />
         </ElSelect>
         <AutoRefresh v-model="refreshInterval" @tick="loadCalendar" />
-      </div>
-    </div>
+    </template>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("ops.reconcile.calendar") }}</h3>
+    <OpsCard :title="t('ops.reconcile.calendar')">
       <div class="calendar-grid">
         <div
           v-for="d in calendar"
@@ -26,10 +22,10 @@
           <div class="status">{{ d.status }}</div>
         </div>
       </div>
-    </div>
+    </OpsCard>
 
     <UsageReconciliationPanel />
-  </div>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -37,6 +33,8 @@ import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   fetchReconcileCalendar,
   type ReconcileCalendarDay,
@@ -62,24 +60,6 @@ onMounted(loadCalendar);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.ops-traffic__actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.ops-traffic__card {
-  margin-bottom: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));

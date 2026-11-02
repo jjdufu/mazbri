@@ -1,16 +1,18 @@
 <template>
-  <div class="ops-calls art-full-height">
-    <div class="ops-calls__toolbar">
+  <OpsPage :title="t('menus.mazbri.opsCalls')">
+    <template #title>
       <div class="ops-calls__title">
         <h2>{{ t("menus.mazbri.opsCalls") }}</h2>
         <CallMonitorModeHint v-if="activeTab !== 'stages'" :hint="modeHint" />
       </div>
+    </template>
+    <template #actions>
       <TimeRangePicker
         v-if="activeTab !== 'stages'"
         :model-value="timeRange ?? undefined"
         @change="onRangeChange"
       />
-    </div>
+    </template>
 
     <ElTabs v-model="activeTab" class="ops-calls__tabs" @tab-change="onTabChange">
       <ElTabPane :label="t('ops.calls.tabs.customer')" name="customer" />
@@ -19,7 +21,7 @@
     </ElTabs>
 
     <template v-if="activeTab !== 'stages'">
-      <div class="ops-calls__card">
+      <OpsCard>
         <div class="ops-calls__card-head">
           <h3>{{ t("ops.calls.histogram.title") }}</h3>
           <span class="ops-calls__summary">
@@ -34,7 +36,7 @@
         </div>
         <div ref="chartRef" v-loading="histogramLoading" class="ops-calls__chart"></div>
         <div class="ops-calls__hint">{{ t("ops.calls.histogram.brushHint") }}</div>
-      </div>
+      </OpsCard>
       <div class="ops-calls__table">
         <CallMonitorTable
           v-if="timeRange"
@@ -54,7 +56,7 @@
       </div>
     </template>
 
-    <div v-else class="ops-calls__card">
+    <OpsCard v-else>
       <div class="ops-calls__stage-bar">
         <ElSelect v-model="stageKind" class="ops-calls__stage-kind">
           <ElOption label="request_id" value="request_id" />
@@ -98,8 +100,8 @@
       </ElTable>
       <h3 class="ops-calls__stage-title">{{ t("ops.calls.stages.breakdown") }}</h3>
       <StageBreakdown :stages="stageRows" />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -111,6 +113,12 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import {
+  OPS_CHART_GRID,
+  bindOpsChartResize,
+} from "@/composables/ops/useOpsChartHost";
 import { fetchCallHistogram, fetchCallStages } from "@/api/call-monitor";
 import type {
   CallHistogramQuery,
@@ -213,7 +221,7 @@ function buildOption(data: CallHistogramResponse): EChartsOption {
   return {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { data: [t("ops.calls.histogram.calls"), t("ops.calls.histogram.errors")] },
-    grid: { left: 48, right: 24, top: 36, bottom: 28 },
+    grid: { ...OPS_CHART_GRID },
     toolbox: { show: false },
     brush: {
       toolbox: ["lineX"],
@@ -277,6 +285,8 @@ function renderChart() {
   if (!chart) {
     chart = echarts.init(chartRef.value);
     chart.on("brushEnd", onBrushEnd);
+    unbindChartResize?.();
+    unbindChartResize = bindOpsChartResize(chartRef.value, () => chart);
   }
   chart.setOption(buildOption(histogram.value), true);
   chart.dispatchAction({
@@ -375,33 +385,23 @@ function openTrace(traceId: string, start?: number) {
   void router.push(buildTraceRoute(traceId, { start }));
 }
 
+let unbindChartResize: (() => void) | null = null;
+
 onMounted(() => {
-  window.addEventListener("resize", resizeChart);
   if (activeTab.value === "stages" && stageInput.value) {
     void searchStages();
   }
 });
 
 onUnmounted(() => {
-  window.removeEventListener("resize", resizeChart);
+  unbindChartResize?.();
+  unbindChartResize = null;
   chart?.dispose();
   chart = null;
 });
 </script>
 
 <style scoped>
-.ops-calls {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.ops-calls__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
 .ops-calls__title {
   display: flex;
   flex-direction: column;
@@ -409,13 +409,8 @@ onUnmounted(() => {
 }
 .ops-calls__title h2 {
   margin: 0;
-}
-.ops-calls__card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  font-size: 18px;
+  font-weight: 600;
 }
 .ops-calls__card-head {
   display: flex;
@@ -435,6 +430,7 @@ onUnmounted(() => {
 .ops-calls__chart {
   width: 100%;
   height: 200px;
+  overflow: hidden;
 }
 .ops-calls__table {
   display: flex;

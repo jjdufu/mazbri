@@ -1,13 +1,12 @@
 <template>
-  <div class="ops-traffic art-full-height">
-    <div class="ops-traffic__toolbar">
-      <h2>{{ t("menus.mazbri.slo") }}</h2>
+  <OpsPage :title="t('menus.mazbri.slo')">
+    <template #actions>
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </div>
-    <div class="ops-traffic__card">
+    </template>
+    <OpsCard>
       <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -15,6 +14,8 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   listSloStatus,
   type SloDefinition,
@@ -92,16 +93,4 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-traffic__toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.ops-traffic__card {
-  background: var(--el-bg-color);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
 </style>

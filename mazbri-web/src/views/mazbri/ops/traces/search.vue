@@ -1,11 +1,10 @@
 <template>
-  <div class="ops-traces art-full-height">
-    <div class="ops-traces__toolbar">
-      <h2>{{ t("menus.mazbri.opsTraces") }}</h2>
+  <OpsPage :title="t('menus.mazbri.opsTraces')">
+    <template #actions>
       <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
-    </div>
+    </template>
 
-    <div class="ops-traces__card">
+    <OpsCard>
       <ElForm
         :model="form"
         inline
@@ -81,7 +80,7 @@
           <ElButton @click="resetForm">{{ t("common.reset") }}</ElButton>
         </ElFormItem>
       </ElForm>
-    </div>
+    </OpsCard>
 
     <ElTabs
       v-model="activeTab"
@@ -93,9 +92,8 @@
     </ElTabs>
 
     <template v-if="activeTab === 'results'">
-      <div class="ops-traces__card">
-        <div class="ops-traces__card-head">
-          <h3>{{ t("ops.traces.scatter.title") }}</h3>
+      <OpsCard :title="t('ops.traces.scatter.title')">
+      <div class="ops-traces__card-head">
           <span class="ops-traces__muted">
             {{ t("ops.traces.scatter.summary", { count: traces.length }) }}
             <template v-if="resolvedFromLogs !== null">
@@ -108,8 +106,8 @@
           v-loading="loading"
           class="ops-traces__scatter"
         ></div>
-      </div>
-      <div class="ops-traces__card">
+      </OpsCard>
+      <OpsCard>
         <ElTable
           v-loading="loading"
           :data="traces"
@@ -168,12 +166,11 @@
             </template>
           </ElTableColumn>
         </ElTable>
-      </div>
+      </OpsCard>
     </template>
 
-    <div v-else class="ops-traces__card">
+    <OpsCard v-else :title="t('ops.traces.topology.title')">
       <div class="ops-traces__card-head">
-        <h3>{{ t("ops.traces.topology.title") }}</h3>
         <span class="ops-traces__muted">{{
           t("ops.traces.topology.hint")
         }}</span>
@@ -224,8 +221,8 @@
           <template #default="{ row }">{{ row.p99_ms.toFixed(1) }}</template>
         </ElTableColumn>
       </ElTable>
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -411,6 +408,8 @@ function renderScatter() {
   if (!scatterRef.value) return;
   if (!scatter) {
     scatter = echarts.init(scatterRef.value);
+    unbindScatterResize?.();
+    unbindScatterResize = bindOpsChartResize(scatterRef.value, () => scatter);
     scatter.on("click", (params) => {
       const idx = typeof params.dataIndex === "number" ? params.dataIndex : -1;
       const series =
@@ -435,7 +434,7 @@ function buildScatterOption(): EChartsOption {
     Number(r.duration_ms.toFixed(2)),
   ];
   return {
-    grid: { left: 60, right: 24, top: 24, bottom: 36 },
+    grid: { ...OPS_CHART_GRID, top: 48 },
     tooltip: {
       trigger: "item",
       formatter: (p) => {
@@ -501,7 +500,11 @@ async function loadGraph() {
 
 function renderGraph() {
   if (!graphRef.value || !graph.value) return;
-  if (!graphChart) graphChart = echarts.init(graphRef.value);
+  if (!graphChart) {
+    graphChart = echarts.init(graphRef.value);
+    unbindGraphResize?.();
+    unbindGraphResize = bindOpsChartResize(graphRef.value, () => graphChart);
+  }
   const data = graph.value;
   const maxCalls = Math.max(1, ...data.edges.map((e) => e.calls));
   const categories = [
@@ -542,9 +545,12 @@ function renderGraph() {
           source: e.source,
           target: e.target,
           label: {
-            show: true,
+            show: false,
             formatter: `${e.calls} · ${e.p99_ms.toFixed(0)}ms`,
             fontSize: 10,
+          },
+          emphasis: {
+            label: { show: true, fontSize: 10 },
           },
           lineStyle: {
             color: e.errors > 0 ? "#f56c6c" : KIND_COLORS[e.kind],
@@ -578,17 +584,14 @@ async function onTabChange() {
   }
 }
 
-function resize() {
-  scatter?.resize();
-  graphChart?.resize();
-}
-
-onMounted(() => {
-  window.addEventListener("resize", resize);
-});
+let unbindScatterResize: (() => void) | null = null;
+let unbindGraphResize: (() => void) | null = null;
 
 onUnmounted(() => {
-  window.removeEventListener("resize", resize);
+  unbindScatterResize?.();
+  unbindGraphResize?.();
+  unbindScatterResize = null;
+  unbindGraphResize = null;
   scatter?.dispose();
   graphChart?.dispose();
   scatter = null;
@@ -597,29 +600,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ops-traces {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-.ops-traces__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-.ops-traces__toolbar h2 {
-  margin: 0;
-  font-size: 18px;
-}
-.ops-traces__card {
-  padding: 12px 16px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-}
 .ops-traces__card-head {
   display: flex;
   gap: 12px;
@@ -653,9 +633,11 @@ onUnmounted(() => {
 }
 .ops-traces__scatter {
   height: 240px;
+  overflow: hidden;
 }
 .ops-traces__graph {
   height: 460px;
+  overflow: hidden;
 }
 .ops-traces__table :deep(.el-table__row) {
   cursor: pointer;
