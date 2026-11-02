@@ -1,5 +1,5 @@
 <template>
-  <div class="ops-page art-full-height">
+  <div class="ops-page">
     <div
       v-if="title || $slots.title || $slots.actions"
       class="ops-page__toolbar"
@@ -21,12 +21,17 @@ defineProps<{ title?: string }>();
 </script>
 
 <style scoped>
+/* 不要挂 art-full-height：固定 height + 纵向 flex 会在内容超高时把
+   带 overflow:hidden 的 OpsCard（首卡尤甚）压扁，表现为「第一个容器被截断」。
+   页面滚动交给 #app-main；此处只做最小可视高度，不限制增长。 */
 .ops-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 16px;
   min-width: 0;
+  min-height: var(--art-full-height, calc(100vh - 48px));
+  box-sizing: border-box;
 }
 .ops-page__toolbar {
   display: flex;
@@ -34,6 +39,7 @@ defineProps<{ title?: string }>();
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 .ops-page__title {
   margin: 0;

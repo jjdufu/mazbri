@@ -30,7 +30,9 @@ defineProps<{ title?: string }>();
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   min-width: 0;
+  /* 图表防溢出；禁止在父级固定高度 flex 列里被压扁（否则首卡只剩 padding） */
   overflow: hidden;
+  flex-shrink: 0;
 }
 .ops-card__head {
   display: flex;
