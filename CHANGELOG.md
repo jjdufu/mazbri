@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.14](https://github.com/jjdufu/mazbri/compare/v0.2.13...v0.2.14) (2026-11-02)
+
+
+### Bug Fixes
+
+* **web:** 静态公共路由跳过 validatePath，修复登录白屏 ([07874b5](https://github.com/jjdufu/mazbri/commit/07874b50c9b12ba47b205fd25f41190010ec68de))
+* **web:** 静态公共路由跳过 validatePath，修复登录白屏 ([9f95aaa](https://github.com/jjdufu/mazbri/commit/9f95aaa4ca32aad237d7d14f5263096fd676c88c))
+
 ## [0.2.13](https://github.com/jjdufu/mazbri/compare/v0.2.12...v0.2.13) (2026-11-02)
 
 
