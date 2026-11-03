@@ -67,7 +67,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-/// 租户加密配置、密钥与请求密钥。
+/// 租户传输 `Profile`（`suite` / `data_alg` / `mac_alg` / `allow_insecure`）、密钥与请求密钥。
 fn crypto_routes() -> Router<AppState> {
     Router::new()
         .route(

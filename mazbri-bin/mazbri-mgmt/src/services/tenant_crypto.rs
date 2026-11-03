@@ -8,8 +8,14 @@ use mazbri_core::crypto::tenant_key::{
     generate_key_version, wrap_new_tenant_key,
 };
 use mazbri_core::crypto::tenant_key::{unwrap_tenant_key, verify_secret_key_digest};
+use mazbri_core::crypto::{
+    AlgorithmId, AlgorithmRegistry, BindingSpec, KeySelection, TenantTransportProfile,
+    TransportMode, SUITE_TENANT_DEFAULT_2026_11, resolve_suite,
+};
 use serde::Deserialize;
 use sqlx::PgPool;
+
+const DEFAULT_COMPANION_MAC: &str = "hmac-sha256";
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +29,14 @@ pub struct TenantCryptoPurgeResult {
 #[serde(deny_unknown_fields)]
 pub struct UpdateCryptoProfileRequest {
     pub encryption_mode: String,
+    #[serde(default)]
+    pub suite: Option<String>,
+    #[serde(default)]
+    pub data_alg: Option<String>,
+    #[serde(default)]
+    pub mac_alg: Option<String>,
+    #[serde(default)]
+    pub allow_insecure: bool,
     #[serde(default = "default_require_signature")]
     pub require_signature: bool,
     #[serde(default)]
@@ -92,11 +106,41 @@ async fn load_root_materials(
     Ok((master_key, integrity_key))
 }
 
+fn parse_optional_alg(raw: Option<&str>, field: &str) -> Result<Option<AlgorithmId>, ApiError> {
+    match raw {
+        None | Some("") => Ok(None),
+        Some(value) => value.parse::<AlgorithmId>().map(Some).map_err(|_| {
+            ApiError::validation(format!(
+                "unsupported {field}: {value} (kebab-case closed set only)"
+            ))
+        }),
+    }
+}
+
+fn parse_transport_mode(raw: &str) -> Result<TransportMode, ApiError> {
+    match raw {
+        "none" => Ok(TransportMode::None),
+        "request" => Ok(TransportMode::Request),
+        "full" => Ok(TransportMode::Full),
+        other => Err(ApiError::validation(format!(
+            "invalid encryption_mode: {other}"
+        ))),
+    }
+}
+
+fn map_crypto_validation(error: &mazbri_core::crypto::CryptoError) -> ApiError {
+    ApiError::validation(error.to_string())
+}
+
+fn normalized_optional_string(value: Option<&String>) -> Option<&str> {
+    value
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
 impl UpdateCryptoProfileRequest {
-    fn validate(&self) -> Result<(), ApiError> {
-        if !matches!(self.encryption_mode.as_str(), "none" | "request" | "full") {
-            return Err(ApiError::validation("invalid encryption_mode"));
-        }
+    fn validate_against_profile(&self) -> Result<TenantTransportProfile, ApiError> {
         if !matches!(self.signature_version.as_str(), "hmac-v1" | "rsa-v1") {
             return Err(ApiError::validation("invalid signature_version"));
         }
@@ -110,13 +154,149 @@ impl UpdateCryptoProfileRequest {
                 "clock_skew_seconds must be between 60 and 3600",
             ));
         }
-        if self.encryption_mode == "none" && self.require_signature {
-            return Err(ApiError::validation(
-                "当传输加密模式(encryption_mode)为 'none' 时，无法启用签名校验(require_signature)。",
-            ));
-        }
-        Ok(())
+
+        let mode = parse_transport_mode(&self.encryption_mode)?;
+        let suite = normalized_optional_string(self.suite.as_ref()).map(str::to_owned);
+        let data_alg = parse_optional_alg(normalized_optional_string(self.data_alg.as_ref()), "data_alg")?;
+        let mac_alg = parse_optional_alg(normalized_optional_string(self.mac_alg.as_ref()), "mac_alg")?;
+
+        let (suite, data_alg, mac_alg, allow_insecure, require_signature) =
+            if matches!(mode, TransportMode::None) {
+                (None, None, None, false, false)
+            } else {
+                (
+                    suite,
+                    data_alg,
+                    mac_alg,
+                    self.allow_insecure,
+                    self.require_signature,
+                )
+            };
+
+        let key = match mode {
+            TransportMode::None => None,
+            TransportMode::Request | TransportMode::Full => {
+                let version = self
+                    .current_key_version
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        ApiError::validation(
+                            "current_key_version is required when encryption is enabled",
+                        )
+                    })?;
+                Some(KeySelection::Latest {
+                    key_id: version.to_owned(),
+                })
+            }
+        };
+
+        let profile = TenantTransportProfile {
+            version: 1,
+            mode,
+            suite,
+            data_alg,
+            mac_alg,
+            key,
+            require_signature,
+            allow_insecure,
+            binding: self
+                .require_request_binding
+                .then_some(BindingSpec { required: true }),
+            nonce_ttl_secs: u32::try_from(self.nonce_ttl_seconds).map_err(|_| {
+                ApiError::validation("nonce_ttl_seconds must be between 60 and 3600")
+            })?,
+            clock_skew_secs: u32::try_from(self.clock_skew_seconds).map_err(|_| {
+                ApiError::validation("clock_skew_seconds must be between 60 and 3600")
+            })?,
+        };
+        profile
+            .validate(&AlgorithmRegistry::default_registry())
+            .map_err(|error| map_crypto_validation(&error))?;
+        Ok(profile)
     }
+
+}
+
+fn persistence_fields(
+    validated: &TenantTransportProfile,
+) -> (&str, Option<&str>, Option<&str>, Option<&str>, bool, bool) {
+    let mode = match validated.mode {
+        TransportMode::None => "none",
+        TransportMode::Request => "request",
+        TransportMode::Full => "full",
+    };
+    (
+        mode,
+        validated.suite.as_deref(),
+        validated.data_alg.map(AlgorithmId::as_str),
+        validated.mac_alg.map(AlgorithmId::as_str),
+        validated.require_signature,
+        validated.allow_insecure,
+    )
+}
+
+fn resolve_key_algorithms(
+    profile: &repo::TenantCryptoProfileRow,
+) -> Result<(String, String), ApiError> {
+    if profile.encryption_mode == "none" {
+        let spec = resolve_suite(SUITE_TENANT_DEFAULT_2026_11).map_err(|error| map_crypto_validation(&error))?;
+        let mac = spec
+            .mac_alg
+            .map_or(DEFAULT_COMPANION_MAC, AlgorithmId::as_str);
+        return Ok((spec.data_alg.as_str().to_owned(), mac.to_owned()));
+    }
+
+    let mode = parse_transport_mode(&profile.encryption_mode)?;
+    let data_alg = parse_optional_alg(profile.data_alg.as_deref(), "data_alg")?;
+    let mac_alg = parse_optional_alg(profile.mac_alg.as_deref(), "mac_alg")?;
+    let transport = TenantTransportProfile {
+        version: u32::try_from(profile.profile_version).unwrap_or(1).max(1),
+        mode,
+        suite: profile.suite.clone(),
+        data_alg,
+        mac_alg,
+        key: Some(KeySelection::Latest {
+            key_id: profile
+                .current_key_version
+                .clone()
+                .unwrap_or_else(|| "pending".to_owned()),
+        }),
+        require_signature: profile.require_signature,
+        allow_insecure: profile.allow_insecure,
+        binding: None,
+        nonce_ttl_secs: u32::try_from(profile.nonce_ttl_seconds).unwrap_or(300),
+        clock_skew_secs: u32::try_from(profile.clock_skew_seconds).unwrap_or(300),
+    };
+    let (data, mac) = transport.effective_algs().map_err(|error| map_crypto_validation(&error))?;
+    let data = data
+        .ok_or_else(|| ApiError::validation("profile requires data_alg or suite before creating keys"))?
+        .as_str()
+        .to_owned();
+    let mac = mac.map_or(DEFAULT_COMPANION_MAC.to_owned(), |id| id.as_str().to_owned());
+    Ok((data, mac))
+}
+
+fn key_metadata_for(data_alg: &str, mac_alg: &str, suite: Option<&str>) -> serde_json::Value {
+    let mut meta = default_key_metadata();
+    if let Some(object) = meta.as_object_mut() {
+        object.insert(
+            "dataAlg".to_owned(),
+            serde_json::Value::String(data_alg.to_owned()),
+        );
+        object.insert(
+            "macAlg".to_owned(),
+            serde_json::Value::String(mac_alg.to_owned()),
+        );
+        if let Some(suite_name) = suite {
+            object.insert(
+                "suite".to_owned(),
+                serde_json::Value::String(suite_name.to_owned()),
+            );
+        }
+    }
+    meta
 }
 
 /// # Errors
@@ -142,16 +322,18 @@ pub async fn update_profile(
     payload: &UpdateCryptoProfileRequest,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
-    payload.validate()?;
+    let validated = payload.validate_against_profile()?;
     let tenant_id = resolve_tenant_id(pool, code).await?;
-    if payload.encryption_mode != "none" {
+    if !matches!(validated.mode, TransportMode::None) {
         ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
-        let current = payload.current_key_version.as_deref();
-        let Some(version) = current else {
-            return Err(ApiError::validation(
-                "current_key_version is required when encryption is enabled",
-            ));
-        };
+        let version = payload
+            .current_key_version
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                ApiError::validation("current_key_version is required when encryption is enabled")
+            })?;
         let key = repo::find_key(pool, tenant_id, version)
             .await
             .map_err(|error| ApiError::internal(format!("Failed to check crypto key: {error}")))?;
@@ -161,17 +343,28 @@ pub async fn update_profile(
             ));
         }
     }
+
+    let (mode, suite, data_alg, mac_alg, require_signature, allow_insecure) =
+        persistence_fields(&validated);
     let profile = repo::update_profile(
         pool,
         repo::UpdateCryptoProfileParams {
             tenant_id,
-            encryption_mode: &payload.encryption_mode,
-            require_signature: payload.require_signature,
+            encryption_mode: mode,
+            suite,
+            data_alg,
+            mac_alg,
+            require_signature,
+            allow_insecure,
             require_request_binding: payload.require_request_binding,
             signature_version: &payload.signature_version,
             nonce_ttl_seconds: payload.nonce_ttl_seconds,
             clock_skew_seconds: payload.clock_skew_seconds,
-            current_key_version: payload.current_key_version.as_deref(),
+            current_key_version: if matches!(validated.mode, TransportMode::None) {
+                None
+            } else {
+                payload.current_key_version.as_deref()
+            },
             actor_id,
         },
     )
@@ -205,6 +398,10 @@ pub async fn create_key(
 ) -> Result<serde_json::Value, ApiError> {
     ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
     let tenant_id = resolve_tenant_id(pool, code).await?;
+    let profile = repo::upsert_profile_defaults(pool, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to load crypto profile: {error}")))?;
+    let (data_algorithm, signature_algorithm) = resolve_key_algorithms(&profile)?;
     let existing = repo::list_keys(pool, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
@@ -231,7 +428,11 @@ pub async fn create_key(
     } else {
         "active"
     };
-    let key_metadata = default_key_metadata();
+    let key_metadata = key_metadata_for(
+        &data_algorithm,
+        &signature_algorithm,
+        profile.suite.as_deref(),
+    );
     let key = repo::insert_key(
         pool,
         repo::InsertCryptoKeyParams {
@@ -240,6 +441,8 @@ pub async fn create_key(
             encrypted_secret_key: &wrapped.encrypted_secret_key,
             secret_key_digest: &wrapped.secret_key_digest,
             wrapping_key_id: &wrapped.wrapping_key_id,
+            data_algorithm: &data_algorithm,
+            signature_algorithm: &signature_algorithm,
             status,
             actor_id,
             metadata: &key_metadata,
@@ -261,7 +464,11 @@ pub async fn create_key(
         Some(&key_version),
         if rotate { "rotate" } else { "create" },
         actor_id,
-        &serde_json::json!({ "status": status, "algorithm": "AES-256-GCM" }),
+        &serde_json::json!({
+            "status": status,
+            "dataAlg": data_algorithm,
+            "macAlg": signature_algorithm
+        }),
     )
     .await
     .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
@@ -279,8 +486,8 @@ pub async fn create_key(
     Ok(serde_json::json!({
         "keyVersion": key_version,
         "tenantSecretKey": wrapped.tenant_secret_key_b64,
-        "algorithm": "AES-256-GCM",
-        "signatureAlgorithm": "HMAC-SHA256",
+        "algorithm": data_algorithm,
+        "signatureAlgorithm": signature_algorithm,
         "shownOnce": true,
         "status": status
     }))
@@ -523,11 +730,21 @@ pub async fn purge_all_crypto_materials(
         r"
         UPDATE tenant_crypto_profiles
         SET encryption_mode = 'none',
+            suite = NULL,
+            data_alg = NULL,
+            mac_alg = NULL,
+            allow_insecure = false,
+            require_signature = false,
             current_key_version = NULL,
             updated_by = $1,
             updated_at = NOW()
         WHERE encryption_mode <> 'none'
            OR current_key_version IS NOT NULL
+           OR suite IS NOT NULL
+           OR data_alg IS NOT NULL
+           OR mac_alg IS NOT NULL
+           OR allow_insecure
+           OR require_signature
         ",
     )
     .bind(actor_id)
@@ -684,4 +901,76 @@ pub async fn retire_request_key(
         .map_err(|error| ApiError::internal(format!("Failed to retire request key: {error}")))?
         .ok_or_else(|| ApiError::not_found("tenant_request_key".to_string(), kid.to_string()))?;
     Ok(serde_json::to_value(key).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_request() -> UpdateCryptoProfileRequest {
+        UpdateCryptoProfileRequest {
+            encryption_mode: "full".into(),
+            suite: Some(SUITE_TENANT_DEFAULT_2026_11.into()),
+            data_alg: None,
+            mac_alg: None,
+            allow_insecure: false,
+            require_signature: false,
+            require_request_binding: false,
+            signature_version: "hmac-v1".into(),
+            nonce_ttl_seconds: 300,
+            clock_skew_seconds: 300,
+            current_key_version: Some("v1".into()),
+        }
+    }
+
+    #[test]
+    fn recommended_suite_profile_validates() {
+        let req = base_request();
+        let profile = req.validate_against_profile().expect("valid");
+        assert_eq!(profile.mode, TransportMode::Full);
+        assert_eq!(
+            profile.suite.as_deref(),
+            Some(SUITE_TENANT_DEFAULT_2026_11)
+        );
+    }
+
+    #[test]
+    fn legacy_without_allow_insecure_is_rejected() {
+        let mut req = base_request();
+        req.suite = None;
+        req.data_alg = Some("aes-256-ecb".into());
+        req.mac_alg = Some("hmac-sha256".into());
+        req.allow_insecure = false;
+        assert!(req.validate_against_profile().is_err());
+    }
+
+    #[test]
+    fn legacy_with_allow_insecure_is_accepted() {
+        let mut req = base_request();
+        req.suite = None;
+        req.data_alg = Some("aes-256-ecb".into());
+        req.mac_alg = Some("hmac-sha256".into());
+        req.allow_insecure = true;
+        req.validate_against_profile().expect("legacy allowed");
+    }
+
+    #[test]
+    fn mode_none_clears_algorithms() {
+        let mut req = base_request();
+        req.encryption_mode = "none".into();
+        req.require_signature = true;
+        req.suite = Some(SUITE_TENANT_DEFAULT_2026_11.into());
+        let profile = req.validate_against_profile().expect("none ok");
+        assert!(profile.suite.is_none());
+        assert!(!profile.require_signature);
+        assert!(!profile.allow_insecure);
+    }
+
+    #[test]
+    fn uppercase_algorithm_is_rejected() {
+        let mut req = base_request();
+        req.suite = None;
+        req.data_alg = Some("AES-256-GCM".into());
+        assert!(req.validate_against_profile().is_err());
+    }
 }

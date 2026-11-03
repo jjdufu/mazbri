@@ -2836,13 +2836,39 @@
       },
       "fields": {
         "encryptionMode": "Encryption Mode",
+        "suite": "Algorithm Suite",
+        "dataAlg": "Data Algorithm",
+        "macAlg": "MAC Algorithm",
+        "allowInsecure": "Allow insecure (legacy) algorithms",
+        "advancedAlgorithms": "Advanced: pick algorithms manually",
         "currentKeyVersion": "Current Key Version",
         "signatureCheck": "Signature Verification",
         "nonceTtlSeconds": "Nonce TTL (seconds)",
         "clockSkewSeconds": "Timestamp Tolerance Window (seconds)"
       },
       "placeholders": {
-        "selectActiveKey": "Select an active key"
+        "selectActiveKey": "Select an active key",
+        "selectSuite": "Select a recommended suite",
+        "selectDataAlg": "Select data algorithm (kebab-case)",
+        "selectMacAlg": "Select MAC algorithm (kebab-case)"
+      },
+      "suites": {
+        "tenantDefault": "Recommended default (AES-256-GCM)",
+        "gmSm4HmacSm3": "GM (SM4-CBC + HMAC-SM3)",
+        "tenantChacha20": "ChaCha20-Poly1305"
+      },
+      "securityClass": {
+        "recommended": "Recommended",
+        "mainstream": "Mainstream",
+        "gm": "GM",
+        "legacy": "Insecure"
+      },
+      "hints": {
+        "suiteFollows": "Follows suite: data {data}, MAC {mac}",
+        "noMac": "none (AEAD provides integrity)",
+        "macRequired": "Selected data algorithm is non-AEAD; MAC is required",
+        "allowInsecure": "Enable only for legacy interoperability; unlocks Legacy algorithms",
+        "allowInsecureAdminOnly": "Only super admins can enable insecure algorithms"
       },
       "modes": {
         "none": "Off",

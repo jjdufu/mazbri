@@ -2836,13 +2836,39 @@
       },
       "fields": {
         "encryptionMode": "加密模式",
+        "suite": "算法套件",
+        "dataAlg": "数据算法",
+        "macAlg": "MAC 算法",
+        "allowInsecure": "允许不安全（Legacy）算法",
+        "advancedAlgorithms": "高级：单独指定算法",
         "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
         "nonceTtlSeconds": "Nonce 有效期（秒）",
         "clockSkewSeconds": "时间戳容忍窗口（秒）"
       },
       "placeholders": {
-        "selectActiveKey": "选择 active 密钥"
+        "selectActiveKey": "选择 active 密钥",
+        "selectSuite": "选择推荐套件",
+        "selectDataAlg": "选择数据算法（kebab-case）",
+        "selectMacAlg": "选择 MAC 算法（kebab-case）"
+      },
+      "suites": {
+        "tenantDefault": "推荐默认（AES-256-GCM）",
+        "gmSm4HmacSm3": "国密（SM4-CBC + HMAC-SM3）",
+        "tenantChacha20": "ChaCha20-Poly1305"
+      },
+      "securityClass": {
+        "recommended": "推荐",
+        "mainstream": "主流",
+        "gm": "国密",
+        "legacy": "不安全"
+      },
+      "hints": {
+        "suiteFollows": "跟随套件：数据 {data}，MAC {mac}",
+        "noMac": "无（AEAD 内置完整性）",
+        "macRequired": "当前数据算法为非 AEAD，必须配置 MAC",
+        "allowInsecure": "仅在兼容旧系统时勾选；启用后才可选 Legacy 算法",
+        "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」"
       },
       "modes": {
         "none": "关闭",

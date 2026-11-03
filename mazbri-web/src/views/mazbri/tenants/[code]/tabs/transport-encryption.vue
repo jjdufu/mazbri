@@ -86,6 +86,22 @@
                   </div>
                 </div>
               </div>
+              <div class="form-row-item span-2 encryption-suite-section">
+                <div class="form-row-label">
+                  <span>{{
+                    $t("tenant.transportEncryption.fields.suite")
+                  }}</span>
+                </div>
+                <div class="form-row-content encryption-suite-content">
+                  <CryptoSuiteSelect
+                    v-model="suiteForm"
+                    :disabled="
+                      !tenantCryptoEnabled || form.encryptionMode === 'none'
+                    "
+                    :can-toggle-insecure="isSuperAdmin"
+                  />
+                </div>
+              </div>
               <div class="form-row-item span-2">
                 <div class="form-row-label">
                   <span>{{
@@ -338,6 +354,10 @@ import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonFormGrid from "@/components/common/form-grid/index.vue";
+import CryptoSuiteSelect, {
+  type CryptoSuiteSelectValue,
+} from "@/components/crypto/CryptoSuiteSelect.vue";
+import { useUserStore } from "@/store/modules/user";
 
 const props = defineProps<{
   tenantCode: string;
@@ -367,12 +387,22 @@ const rootStatus = reactive<LicenseStatus>({
   secondsToExpiry: null,
   secondsToGraceEnd: null,
 });
+const userStore = useUserStore();
+const isSuperAdmin = computed(() => userStore.isAdmin);
+
 const form = reactive({
   encryptionMode: "none" as TenantEncryptionMode,
   requireSignature: false,
   currentKeyVersion: undefined as string | undefined,
   nonceTtlSeconds: 300,
   clockSkewSeconds: 300,
+});
+
+const suiteForm = reactive<CryptoSuiteSelectValue>({
+  suite: "suite/tenant-default-2026-11",
+  dataAlg: null,
+  macAlg: null,
+  allowInsecure: false,
 });
 
 const cardOptions = computed(() => [
@@ -442,6 +472,12 @@ watch(
   (mode) => {
     if (mode === "none") {
       form.requireSignature = false;
+      suiteForm.suite = null;
+      suiteForm.dataAlg = null;
+      suiteForm.macAlg = null;
+      suiteForm.allowInsecure = false;
+    } else if (!suiteForm.suite && !suiteForm.dataAlg) {
+      suiteForm.suite = "suite/tenant-default-2026-11";
     }
   },
 );
@@ -467,10 +503,22 @@ const loadData = async () => {
     if (profileResult.status === "fulfilled") {
       const profile = profileResult.value;
       form.encryptionMode = profile.encryption_mode;
-      form.requireSignature = profile.encryption_mode === 'none' ? false : profile.require_signature;
-      form.currentKeyVersion = profile.current_key_version;
+      form.requireSignature =
+        profile.encryption_mode === "none" ? false : profile.require_signature;
+      form.currentKeyVersion = profile.current_key_version ?? undefined;
       form.nonceTtlSeconds = profile.nonce_ttl_seconds;
       form.clockSkewSeconds = profile.clock_skew_seconds;
+      suiteForm.suite = profile.suite ?? null;
+      suiteForm.dataAlg = profile.data_alg ?? null;
+      suiteForm.macAlg = profile.mac_alg ?? null;
+      suiteForm.allowInsecure = profile.allow_insecure === true;
+      if (
+        form.encryptionMode !== "none" &&
+        !suiteForm.suite &&
+        !suiteForm.dataAlg
+      ) {
+        suiteForm.suite = "suite/tenant-default-2026-11";
+      }
     }
     if (keyListResult.status === "fulfilled") {
       keys.value = keyListResult.value.keys;
@@ -549,9 +597,26 @@ const handleDelete = async (version: string) => {
 
 const saveProfile = async () => {
   if (!tenantCryptoEnabled.value) return;
+  if (suiteForm.allowInsecure && !isSuperAdmin.value) {
+    ElMessage.error(
+      $t("tenant.transportEncryption.hints.allowInsecureAdminOnly"),
+    );
+    return;
+  }
   saving.value = true;
   try {
-    await updateTenantCryptoProfile(props.tenantCode, { ...form });
+    await updateTenantCryptoProfile(props.tenantCode, {
+      encryptionMode: form.encryptionMode,
+      suite: form.encryptionMode === "none" ? null : suiteForm.suite,
+      dataAlg: form.encryptionMode === "none" ? null : suiteForm.dataAlg,
+      macAlg: form.encryptionMode === "none" ? null : suiteForm.macAlg,
+      allowInsecure:
+        form.encryptionMode === "none" ? false : suiteForm.allowInsecure,
+      requireSignature: form.requireSignature,
+      nonceTtlSeconds: form.nonceTtlSeconds,
+      clockSkewSeconds: form.clockSkewSeconds,
+      currentKeyVersion: form.currentKeyVersion,
+    });
     await loadData();
     ElMessage.success($t("common.feedback.saveSuccess"));
   } finally {
@@ -673,7 +738,8 @@ onMounted(loadData);
   width: 100%;
 }
 
-.form-row-item.encryption-mode-section {
+.form-row-item.encryption-mode-section,
+.form-row-item.encryption-suite-section {
   height: auto;
   align-items: flex-start;
   flex-direction: column;
@@ -684,7 +750,8 @@ onMounted(loadData);
   }
 }
 
-.encryption-mode-content {
+.encryption-mode-content,
+.encryption-suite-content {
   max-width: 100% !important;
   width: 100%;
 }
