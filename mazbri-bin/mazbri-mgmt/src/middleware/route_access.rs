@@ -523,4 +523,7 @@ pub async fn route_access_middleware(request: Request, next: Next) -> Response {
 }
 
 #[cfg(test)]
+pub mod access_assert;
+
+#[cfg(test)]
 mod tests;
