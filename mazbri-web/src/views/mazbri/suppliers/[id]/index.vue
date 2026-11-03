@@ -36,21 +36,21 @@
             </ElTag>
             <ElButton
               v-if="upstreamType === 'transparent'"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               :loading="openingWorkbench"
               @click="openWorkbenchEdit"
             >
               {{ $t("upstreamConnector.editInWorkbench") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="enterEdit"
             >
               {{ $t("common.actions.modify") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="danger"
               @click="handleDelete"
             >
@@ -482,6 +482,7 @@ import {
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { formatDateTime } from "@/utils/format";
 import { formatUrlDisplay, stripUrlScheme } from "@/utils/sensitive";
 import { logger } from "@/utils/sys";

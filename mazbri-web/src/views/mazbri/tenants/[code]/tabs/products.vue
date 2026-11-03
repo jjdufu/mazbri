@@ -12,6 +12,7 @@
     >
       <template #actions>
         <ElButton
+          v-roles="ROLES_BIZ"
           link
           type="primary"
           class="mr-3"
@@ -26,7 +27,7 @@
         </ElButton>
         <ElButton
           v-if="productActions.grant"
-          v-roles="['R_ADMIN', 'R_FINANCE']"
+          v-roles="ROLES_BIZ"
           type="primary"
           @click="handleGrant"
         >
@@ -59,7 +60,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="primary"
             @click="handleConfigure(row)"
@@ -68,7 +69,7 @@
           </ElButton>
           <ElButton
             v-if="productActions.revoke"
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleRevoke(row)"
@@ -133,6 +134,7 @@
 <script setup lang="ts">
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type { TenantProduct } from "@/types/api/tenant";
 import type { Product } from "@/types/api/product";
 import {
@@ -161,8 +163,8 @@ const productActions = ref<{
   grant: boolean;
   revoke: boolean;
 }>({
-  grant: true,
-  revoke: true,
+  grant: false,
+  revoke: false,
 });
 const availableProducts = ref<Product[]>([]);
 const grantVisible = ref(false);

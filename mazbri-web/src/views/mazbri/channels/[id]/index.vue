@@ -25,14 +25,14 @@
         >
           <template #actions>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="handleEdit"
             >
               {{ $t("common.actions.modify") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="danger"
               @click="handleDelete"
             >
@@ -102,6 +102,7 @@ import {
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { formatDateTime } from "@/utils/format";
 import { logger } from "@/utils/sys";
 

@@ -1,13 +1,16 @@
 use crate::handlers::AppState;
 use crate::handlers::types::ListParams;
+use crate::middleware::auth::{AdminClaims, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::product as service;
 use axum::{
+    Extension,
     extract::{Path, Query, State},
     http::StatusCode,
 };
 pub async fn list_tenant_products(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
     Query(params): Query<ListParams>,
 ) -> axum::response::Response {
@@ -15,7 +18,13 @@ pub async fn list_tenant_products(
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
     };
-    service::list_tenant_products(&state.product_service, tenant_id, &params).await
+    service::list_tenant_products(
+        &state.product_service,
+        tenant_id,
+        &params,
+        is_business_admin(&claims),
+    )
+    .await
 }
 pub async fn list_tenant_transactions(
     State(state): State<AppState>,

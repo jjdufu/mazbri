@@ -56,7 +56,7 @@
             {{ $t("upstreamConnector.continueEdit") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -101,6 +101,7 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { formatDateTime } from "@/utils/format";
 import WorkbenchImportDialog from "./WorkbenchImportDialog.vue";
 

@@ -57,7 +57,7 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -94,6 +94,7 @@
 import { ref } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   Product,
   ProductIdReservation,

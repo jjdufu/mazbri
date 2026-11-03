@@ -9,7 +9,7 @@
       style="display: flex; flex-direction: column; flex: 1; min-height: 0"
     >
       <div
-        v-roles="['R_ADMIN', 'R_FINANCE']"
+        v-roles="ROLES_BIZ"
         v-loading="settingsLoading"
         class="usage-recon-settings"
       >
@@ -233,7 +233,7 @@
             </ElButton>
             <ElButton
               v-if="canAcknowledge(row.status)"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="warning"
               @click="openResolve(row, 'acknowledged')"
@@ -242,7 +242,7 @@
             </ElButton>
             <ElButton
               v-if="canResolve(row.status)"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="success"
               @click="openResolve(row, 'resolved')"
@@ -250,7 +250,7 @@
               {{ $t("billing.reconciliation.resolve") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="danger"
               @click="handleDeleteRow(row)"
@@ -565,6 +565,7 @@ import {
   type ReconciliationSettings,
 } from "@/api/billing";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";

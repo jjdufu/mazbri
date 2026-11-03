@@ -25,13 +25,13 @@
         >
           <template #actions>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="handleEdit"
               >{{ $t("common.actions.modify") }}</ElButton
             >
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="danger"
               @click="handleDelete"
             >
@@ -269,6 +269,7 @@ import type { FormInstance, FormRules } from "element-plus";
 import { ElMessageBox, ElMessage } from "element-plus";
 import UserRouteGovernance from "@/views/mazbri/operations/user-routes/index.vue";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type { Product, UpdateProductRequest } from "@/types/api/product";
 import {
   fetchProductById,

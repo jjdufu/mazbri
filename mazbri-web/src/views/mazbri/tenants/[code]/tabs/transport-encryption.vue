@@ -16,7 +16,12 @@
               })
             }}
           </span>
-          <ElButton link type="primary" @click="goToRootPackagePage">
+          <ElButton
+            v-roles="ROLES_ADMIN"
+            link
+            type="primary"
+            @click="goToRootPackagePage"
+          >
             {{ $t("tenant.transportEncryption.actions.goRootPackage") }}
           </ElButton>
         </div>
@@ -38,7 +43,7 @@
             </template>
             <template #actions>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 type="primary"
                 :loading="saving"
                 :disabled="!tenantCryptoEnabled"
@@ -68,10 +73,11 @@
                       class="mode-card"
                       :class="{
                         active: form.encryptionMode === option.value,
-                        disabled: !tenantCryptoEnabled,
+                        disabled: !tenantCryptoEnabled || !canWriteBusiness,
                       }"
                       @click="
                         tenantCryptoEnabled &&
+                        canWriteBusiness &&
                         (form.encryptionMode = option.value)
                       "
                     >
@@ -96,7 +102,9 @@
                   <CryptoSuiteSelect
                     v-model="suiteForm"
                     :disabled="
-                      !tenantCryptoEnabled || form.encryptionMode === 'none'
+                      !tenantCryptoEnabled ||
+                      !canWriteBusiness ||
+                      form.encryptionMode === 'none'
                     "
                     :can-toggle-insecure="isSuperAdmin"
                   />
@@ -113,7 +121,9 @@
                     v-model="form.currentKeyVersion"
                     clearable
                     :disabled="
-                      form.encryptionMode === 'none' || !tenantCryptoEnabled
+                      form.encryptionMode === 'none' ||
+                      !tenantCryptoEnabled ||
+                      !canWriteBusiness
                     "
                     :placeholder="
                       $t(
@@ -145,7 +155,7 @@
                   <CommonSwitchRow>
                     <ElSwitch
                       v-model="form.requireSignature"
-                      :disabled="!tenantCryptoEnabled || form.encryptionMode === 'none'"
+                      :disabled="!tenantCryptoEnabled || !canWriteBusiness || form.encryptionMode === 'none'"
                     />
                     <span class="switch-text ml-2">
                       {{
@@ -174,7 +184,7 @@
                     :min="60"
                     :max="3600"
                     :step="60"
-                    :disabled="!tenantCryptoEnabled"
+                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
                   />
                 </div>
               </div>
@@ -190,7 +200,7 @@
                     :min="60"
                     :max="3600"
                     :step="60"
-                    :disabled="!tenantCryptoEnabled"
+                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
                   />
                 </div>
               </div>
@@ -358,6 +368,7 @@ import CryptoSuiteSelect, {
   type CryptoSuiteSelectValue,
 } from "@/components/crypto/CryptoSuiteSelect.vue";
 import { useUserStore } from "@/store/modules/user";
+import { ROLES_ADMIN, ROLES_BIZ } from "@/utils/ops/roles";
 
 const props = defineProps<{
   tenantCode: string;
@@ -389,6 +400,7 @@ const rootStatus = reactive<LicenseStatus>({
 });
 const userStore = useUserStore();
 const isSuperAdmin = computed(() => userStore.isAdmin);
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 
 const form = reactive({
   encryptionMode: "none" as TenantEncryptionMode,

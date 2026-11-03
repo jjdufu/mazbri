@@ -13,7 +13,7 @@
         </template>
         <template #actions>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             type="primary"
             :loading="saving"
             @click="handleSave"
@@ -30,7 +30,7 @@
           <span>{{ $t("rateLimit.enablePlan") }}</span>
         </div>
         <CommonSwitchRow>
-          <ElSwitch v-model="form.enabled" />
+          <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
           <span class="switch-text ml-2">
             {{
               form.enabled
@@ -41,7 +41,7 @@
         </CommonSwitchRow>
       </div>
 
-      <div v-roles="['R_ADMIN', 'R_FINANCE']" class="template-bar">
+      <div v-roles="ROLES_BIZ" class="template-bar">
         <span class="template-label">{{
           $t("rateLimit.templates.label")
         }}</span>
@@ -60,7 +60,7 @@
 
       <div
         class="strategy-body-content"
-        :class="{ 'is-disabled': !form.enabled }"
+        :class="{ 'is-disabled': !form.enabled || !canWriteBusiness }"
       >
         <div class="settings-panel mb-4">
           <div class="section-heading">
@@ -78,7 +78,7 @@
                   v-model="form.max_concurrent"
                   :min="1"
                   :step="10"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                   @change="onTenantQpsChange"
                 />
@@ -94,7 +94,7 @@
                   v-model="form.burst_size"
                   :min="1"
                   :step="10"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                   @change="onTenantBurstChange"
                 />
@@ -120,7 +120,7 @@
                   :min="1"
                   :max="form.max_concurrent"
                   :step="10"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                   @change="markClientIpEdited"
                 />
@@ -137,7 +137,7 @@
                   :min="1"
                   :max="form.burst_size"
                   :step="10"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                   @change="markClientIpEdited"
                 />
@@ -153,7 +153,7 @@
                   v-model="form.max_bandwidth_mbps"
                   :min="0"
                   :step="10"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                 />
               </div>
@@ -165,7 +165,7 @@
           <button
             type="button"
             class="collapse-trigger"
-            :disabled="!form.enabled"
+            :disabled="!form.enabled || !canWriteBusiness"
             @click="apiOverridesExpanded = !apiOverridesExpanded"
           >
             <ArtSvgIcon
@@ -193,10 +193,10 @@
             <div class="section-actions-row">
               <span />
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="primary"
-                :disabled="!form.enabled"
+                :disabled="!form.enabled || !canWriteBusiness"
                 @click="addApiLimit"
               >
                 <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
@@ -215,7 +215,7 @@
               <template #path="{ row }">
                 <ElInput
                   v-model="row.path"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   :placeholder="$t('rateLimit.pathPlaceholder')"
                 />
               </template>
@@ -224,7 +224,7 @@
                   v-model="row.qps"
                   :min="1"
                   :max="form.max_concurrent"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                 />
               </template>
@@ -233,17 +233,17 @@
                   v-model="row.burst"
                   :min="1"
                   :max="form.burst_size"
-                  :disabled="!form.enabled"
+                  :disabled="!form.enabled || !canWriteBusiness"
                   class="w-full"
                 />
               </template>
               <template #operations="{ $index }">
                 <TableActionRow>
                   <ElButton
-                    v-roles="['R_ADMIN', 'R_FINANCE']"
+                    v-roles="ROLES_BIZ"
                     link
                     type="danger"
-                    :disabled="!form.enabled"
+                    :disabled="!form.enabled || !canWriteBusiness"
                     @click="removeApiLimit($index)"
                   >
                     <ArtSvgIcon icon="ri:delete-bin-line" />
@@ -300,7 +300,7 @@
           </div>
 
           <div
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             class="ops-actions-panel mb-4"
           >
             <div class="ops-action-row">
@@ -406,7 +406,7 @@
               <TableActionRow>
                 <ElButton
                   v-if="row.status === 'active'"
-                  v-roles="['R_ADMIN', 'R_FINANCE']"
+                  v-roles="ROLES_BIZ"
                   link
                   type="danger"
                   :loading="opsBusy"
@@ -494,6 +494,8 @@ import { $t } from "@/locales";
 import CommonSwitchRow from "@/components/common/switch-row/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { logger } from "@/utils/sys";
+import { useUserStore } from "@/store/modules/user";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { summarizeRateLimitConflict } from "./conflict-summary";
 import type { ColumnOption } from "@/types/component";
 import {
@@ -508,6 +510,9 @@ defineOptions({ name: "TenantRateLimitCard" });
 const props = defineProps<{
   tenantCode: string;
 }>();
+
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 
 const loading = ref(false);
 const saving = ref(false);

@@ -40,7 +40,7 @@
             @command="handleSubscriptionExport"
           />
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             type="primary"
             @click="createVisible = true"
           >
@@ -48,7 +48,7 @@
             {{ $t("callbacks.actions.addSubscription") }}
           </ElButton>
           <TableDeleteDropdown
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             :total-count="tableData.length"
             :selected-count="selectedRows.length"
             @command="(type) => handleDeleteCommand(type, tableData)"
@@ -67,7 +67,7 @@
         <template #operations="{ row }">
           <TableActionRow>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="danger"
               @click="handleDelete(row)"
@@ -106,7 +106,7 @@
         <template #operations="{ row }">
           <TableActionRow>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="primary"
               :disabled="row.status === 'success'"
@@ -153,6 +153,7 @@ import {
 } from "@/api/callback";
 import type { CallbackDeliveryLog, CallbackSubscription } from "@/api/callback";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import CreateDialog from "./modules/create-dialog.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";

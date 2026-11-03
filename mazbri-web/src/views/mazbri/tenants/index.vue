@@ -60,7 +60,7 @@
           }}</ElButton>
           <ElButton
             v-if="row.enabled"
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="warning"
             @click="handleToggleStatus(row, false)"
@@ -69,7 +69,7 @@
           </ElButton>
           <ElButton
             v-else
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="success"
             @click="handleToggleStatus(row, true)"
@@ -77,7 +77,7 @@
             {{ $t("tenant.actions.enable") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -110,6 +110,7 @@
 <script setup lang="ts">
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   Tenant,
   TenantListResponse,
@@ -120,7 +121,6 @@ import {
   deleteTenant,
   setTenantEnabled,
 } from "@/api/tenant";
-import { useUserStore } from "@/store/modules/user";
 import CreateDialog from "./modules/create-dialog.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
@@ -335,8 +335,6 @@ const getTenantColumnWeight = (columnKey: string) => {
       return 1;
   }
 };
-const userStore = useUserStore();
-
 function tenantStatusKey(row: Tenant): "enabled" | "disabled" {
   return row.enabled ? "enabled" : "disabled";
 }
@@ -382,9 +380,6 @@ const exportItems = computed(() => [
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<Tenant>({
     deleteApi: async (row) => {
-      if (!userStore.canWriteBusiness) {
-        throw new Error("forbidden");
-      }
       await deleteTenant(row.tenant_code);
     },
     getItemName: (row) => row.name,
@@ -551,10 +546,6 @@ const handleToggleStatus = async (row: Tenant, enable: boolean) => {
 };
 
 const handleDelete = async (row: Tenant) => {
-  if (!userStore.canWriteBusiness) {
-    ElMessage.error($t("common.feedback.unknownError"));
-    return;
-  }
   try {
     await ElMessageBox.confirm(
       $t("tenant.messages.deleteTenantConfirm", { name: row.name }),

@@ -50,7 +50,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="primary"
             @click="handleConfigure(row)"
@@ -58,7 +58,7 @@
             {{ $t("authorization.list.actions.modify") }}
           </ElButton>
           <ElPopconfirm
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             :title="$t('authorization.list.revokeConfirm')"
             @confirm="handleRevoke(row)"
           >
@@ -99,6 +99,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { fetchAuthorizations, fetchProductList } from "@/api/product";
 import { authorizationsCatalog } from "@/list-catalog/common-resources";
 import type { ListFilter } from "@/types/list-query";

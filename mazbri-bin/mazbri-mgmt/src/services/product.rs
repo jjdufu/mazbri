@@ -532,6 +532,7 @@ pub async fn list_tenant_products(
     product_service: &mazbri_product::ProductService,
     tenant_id: uuid::Uuid,
     params: &ListParams,
+    can_write: bool,
 ) -> axum::response::Response {
     match product_service.list_tenant_products(tenant_id).await {
         Ok(products) => {
@@ -557,7 +558,7 @@ pub async fn list_tenant_products(
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "products" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
-                total_pages, }, "actions" : { "grant" : true, "revoke" : true } }
+                total_pages, }, "actions" : { "grant" : can_write, "revoke" : can_write } }
             ))
             .into_response()
         }
@@ -572,6 +573,7 @@ pub async fn get_tenant_account(
     billing_db: &PgPool,
     tenant_id: uuid::Uuid,
     id_or_code: &str,
+    can_write: bool,
 ) -> axum::response::Response {
     if !repo::tenant_exists(db, tenant_id).await {
         return crate::response::ApiResponse::err(
@@ -595,13 +597,13 @@ pub async fn get_tenant_account(
         .unwrap_or_else(|| ("UNKNOWN".to_string(), "UNKNOWN".to_string()));
     match repo::get_tenant_account(billing_db, tenant_id).await {
         Ok(Some(account)) => {
-            let can_refund = account.balance > Decimal::ZERO;
-            account_response(&account, &tenant_code, &tenant_id_str, can_refund)
+            let can_refund = can_write && account.balance > Decimal::ZERO;
+            account_response(&account, &tenant_code, &tenant_id_str, can_write, can_refund)
         }
         Ok(None) => match repo::create_tenant_account(billing_db, tenant_id).await {
             Ok(account) => {
-                let can_refund = account.balance > Decimal::ZERO;
-                account_response(&account, &tenant_code, &tenant_id_str, can_refund)
+                let can_refund = can_write && account.balance > Decimal::ZERO;
+                account_response(&account, &tenant_code, &tenant_id_str, can_write, can_refund)
             }
             Err(e) => crate::response::ApiResponse::err(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -881,6 +883,7 @@ fn account_response(
     account: &repo::TenantAccountRow,
     tenant_code: &str,
     tenant_id_str: &str,
+    can_recharge: bool,
     can_refund: bool,
 ) -> axum::response::Response {
     crate::response::ApiResponse::ok(serde_json::json!(
@@ -890,7 +893,7 @@ fn account_response(
         .to_string(), "status" : account.status, "credit_tier" : account
         .credit_tier, "billing_cycle" : account.billing_cycle, "created_at" :
         account.created_at, "updated_at" : account.updated_at, "actions" : {
-        "recharge" : true, "refund" : can_refund } }
+        "recharge" : can_recharge, "refund" : can_refund } }
     ))
     .into_response()
 }

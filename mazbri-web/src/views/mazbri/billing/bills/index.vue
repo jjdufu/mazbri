@@ -83,7 +83,7 @@
               }}</ElButton>
               <ElButton
                 v-if="canMarkPaid(row.status)"
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="success"
                 @click="handleUpdateStatus(row, 'paid')"
@@ -92,7 +92,7 @@
               </ElButton>
               <ElButton
                 v-if="canMarkOverdue(row.status)"
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="warning"
                 @click="handleUpdateStatus(row, 'overdue')"
@@ -100,7 +100,7 @@
                 {{ $t("billing.actions.markOverdue") }}
               </ElButton>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="danger"
                 @click="handleDeleteRow(row)"
@@ -218,7 +218,7 @@
                 >
                   <template #actions>
                     <ElButton
-                      v-roles="['R_ADMIN', 'R_FINANCE']"
+                      v-roles="ROLES_BIZ"
                       type="primary"
                       size="small"
                       @click="openCreateAdjustment"
@@ -258,7 +258,7 @@
                 <template #operations="{ row }">
                   <ElButton
                     v-if="row.status === 'posted'"
-                    v-roles="['R_ADMIN', 'R_FINANCE']"
+                    v-roles="ROLES_BIZ"
                     link
                     type="danger"
                     @click="handleVoidAdjustment(row)"
@@ -482,6 +482,7 @@ import type { Tenant } from "@/types/api/tenant";
 import { fetchChannels, type Channel } from "@/api/route-management";
 import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import CommonDetailHero from "@/components/common/detail-hero/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";

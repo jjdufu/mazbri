@@ -193,6 +193,7 @@ pub async fn list_api_keys(
     db: &PgPool,
     auth_db: &PgPool,
     id_or_code: &str,
+    can_write: bool,
 ) -> Result<serde_json::Value, ApiError> {
     let tenant_id = crate::services::tenant::resolve_tenant_id(db, id_or_code).await?;
     ensure_tenant_exists(db, tenant_id, id_or_code).await?;
@@ -217,10 +218,10 @@ pub async fn list_api_keys(
             )
         })
         .collect();
-    let can_create = mapped_keys.is_empty();
+    let can_create = can_write && mapped_keys.is_empty();
     Ok(serde_json::json!(
         { "keys" : mapped_keys, "total" : mapped_keys.len(), "actions" : { "create" :
-        can_create, "delete" : true } }
+        can_create, "delete" : can_write } }
     ))
 }
 pub struct RevokeApiKeyParams<'a> {

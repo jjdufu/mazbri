@@ -42,7 +42,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
       order: 2,
       isHide: true,
       keepAlive: false,
-      roles: ["R_FINANCE"],
+      roles: ["R_ADMIN", "R_FINANCE"],
     },
   },
   {
@@ -257,7 +257,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.opsCalls",
           icon: "ri:search-eye-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {

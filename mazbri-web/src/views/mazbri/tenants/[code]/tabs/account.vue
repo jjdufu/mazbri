@@ -48,7 +48,7 @@
           <template #actions>
             <ElButton
               v-if="accountActions.recharge"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="handleRecharge"
             >
@@ -59,7 +59,7 @@
             </ElButton>
             <ElButton
               v-if="accountActions.refund"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="warning"
               @click="handleRefund"
             >
@@ -344,6 +344,7 @@ import {
   type FormRules,
 } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   TenantAccount,
   RechargeRequest,
@@ -379,8 +380,8 @@ const accountActions = ref<{
   recharge: boolean;
   refund: boolean;
 }>({
-  recharge: true,
-  refund: true,
+  recharge: false,
+  refund: false,
 });
 const transactions = ref<Transaction[]>([]);
 const transactionsTotal = ref(0);

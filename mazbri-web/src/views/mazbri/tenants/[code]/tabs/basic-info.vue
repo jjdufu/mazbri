@@ -5,7 +5,7 @@
         <SurfaceCardHeader :title="$t('tenant.detail.basicInfo.title')">
           <template #actions>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="handleEdit"
               >{{ $t("common.actions.modify") }}</ElButton
@@ -94,6 +94,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   Tenant,
   UpdateTenantRequest,

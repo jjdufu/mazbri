@@ -25,6 +25,7 @@
           :filter-catalog="suppliersCatalog"
           :show-import="true"
           :import-label="$t('common.actions.import')"
+          :import-roles="[...ROLES_BIZ]"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
@@ -32,10 +33,11 @@
           :primary-label="$t('upstreamConnector.codeFreeAccess')"
           :primary-icon="'ri:plug-line'"
           :primary-button-type="'primary'"
-          :primary-roles="['R_ADMIN', 'R_FINANCE']"
+          :primary-roles="[...ROLES_BIZ]"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
+          :delete-roles="[...ROLES_BIZ]"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -45,7 +47,7 @@
 
           <template #before-delete>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="success"
               @click="emit('access')"
             >
@@ -84,7 +86,12 @@
           <ElButton link type="primary" @click="handleView(row)">{{
             $t("common.actions.details")
           }}</ElButton>
-          <ElButton link type="danger" @click="handleDelete(row)">{{
+          <ElButton
+            v-roles="ROLES_BIZ"
+            link
+            type="danger"
+            @click="handleDelete(row)"
+          >{{
             $t("common.actions.delete")
           }}</ElButton>
         </TableActionRow>
@@ -118,6 +125,7 @@ import {
   type Supplier,
 } from "@/api/supplier";
 import ImportDialog from "@/components/common/ImportDialog.vue";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";

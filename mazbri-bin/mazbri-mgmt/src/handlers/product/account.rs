@@ -15,13 +15,21 @@ fn can_manage_account_finance(claims: &AdminClaims) -> bool {
 }
 pub async fn get_tenant_account(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
 ) -> axum::response::Response {
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
     };
-    service::get_tenant_account(&state.db, &state.billing_db, tenant_id, &code).await
+    service::get_tenant_account(
+        &state.db,
+        &state.billing_db,
+        tenant_id,
+        &code,
+        is_business_admin(&claims),
+    )
+    .await
 }
 pub async fn recharge_tenant_account(
     State(state): State<AppState>,
