@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "order": "sign_then_encrypt",
+  "sign": {
+    "alg": "hmac-sha256",
+    "encoding": {
+      "hex": {
+        "case": "upper"
+      }
+    }
+  },
+  "crypt": {
+    "alg": "aes-128-ecb",
+    "encoding": "base64"
+  },
+  "canon": "concat",
+  "encodings": {
+    "payload": "base64",
+    "signature": "base64",
+    "iv": "base64"
+  },
+  "slots": [
+    {
+      "role": "sign",
+      "location": "form",
+      "name": "sign"
+    },
+    {
+      "role": "cipher",
+      "location": "form",
+      "name": "data"
+    }
+  ],
+  "iv": "random",
+  "scope": "whole_body",
+  "allow_insecure": true
+}
