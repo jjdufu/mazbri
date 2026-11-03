@@ -4230,7 +4230,7 @@
       "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
-      "timeRangeHint": "KPI 卡为近瞬时值；时间范围作用于曲线、平台统计与产品 TopN",
+      "timeRangeHint": "默认时间窗 6 小时（可改，不会被静默覆盖）。KPI 卡为近瞬时值（固定约 60 秒）；时间范围只作用于曲线、平台统计与产品 TopN。",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "最老待处理 {age} s",
       "stats": {
@@ -4284,7 +4284,8 @@
         "pipeline": "管道新鲜度",
         "hostCpu": "主机 CPU"
       },
-      "noSampleHint": "近瞬时无样本"
+      "noSampleHint": "近瞬时无样本",
+      "instantWindowHint": "近瞬时 {secs}s（{label}）"
     },
     "screen": {
       "title": "运营大屏",
@@ -4874,6 +4875,9 @@
     "mergedShell": {
       "placeholder": "内容将在后续步骤迁入此 Tab。",
       "empty": "当前角色没有可查看的 Tab。"
+    },
+    "charts": {
+      "empty": "暂无数据"
     }
   }
 }

@@ -87,16 +87,23 @@ pub fn instant_slice(window: OverviewWindow, lookback_secs: i64) -> OverviewWind
     }
 }
 
-/// 校验并钳制时序查询时间窗。
+/// 校验时序查询时间窗；非法时返回明确错误（禁止静默钳制改写用户窗）。
 ///
 /// # Errors
 ///
-/// 起止非法（`end <= start`）时返回错误文案。
+/// 起止非法、过短或过长时返回错误文案。
 pub fn resolve_timeseries_window(start: i64, end: i64) -> Result<OverviewWindow, &'static str> {
     let Some(window) = OverviewWindow::try_new(start, end) else {
         return Err("start 必须小于 end");
     };
-    Ok(window.clamp_duration(TIMESERIES_MIN_SECS, TIMESERIES_MAX_SECS))
+    let duration = window.duration_secs();
+    if duration < TIMESERIES_MIN_SECS {
+        return Err("时间窗过短：最少 60 秒");
+    }
+    if duration > TIMESERIES_MAX_SECS {
+        return Err("时间窗过长：最多 31 天");
+    }
+    Ok(window)
 }
 
 /// Overview 响应中可按角色裁剪的字段块。
@@ -246,12 +253,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_timeseries_window_rejects_and_clamps() {
+    fn resolve_timeseries_window_rejects_bounds() {
         assert!(resolve_timeseries_window(10, 10).is_err());
-        let ok = resolve_timeseries_window(0, 10).expect("合法短窗");
+        assert!(resolve_timeseries_window(0, 10).is_err(), "过短须拒绝");
+        assert!(
+            resolve_timeseries_window(0, TIMESERIES_MAX_SECS + 1000).is_err(),
+            "过长须拒绝"
+        );
+        let ok = resolve_timeseries_window(0, TIMESERIES_MIN_SECS).expect("边界最短窗");
         assert_eq!(ok.duration_secs(), TIMESERIES_MIN_SECS);
-        let long = resolve_timeseries_window(0, TIMESERIES_MAX_SECS + 1000).expect("长窗");
-        assert_eq!(long.duration_secs(), TIMESERIES_MAX_SECS);
     }
 
     #[test]

@@ -66,7 +66,7 @@ import OpsCard from "@/components/ops/OpsCard.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
@@ -181,7 +181,7 @@ function onSlowClick(row: SlowRow) {
 
 async function reload() {
   loading.value = true;
-  const range = toOlapRange(timeRange.value, true);
+  const window = toOlapWindow(timeRange.value);
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
@@ -189,19 +189,19 @@ async function reload() {
     const [bd, st, heat, slow, platform] = await Promise.all([
       postOlapQuery<BreakdownRow>({
         template: "latency_breakdown",
-        params: { range, limit: 15 },
+        params: { ...window, limit: 15 },
       }),
       postOlapQuery<StageRow>({
         template: "stage_quantiles",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<LatencyHeatRow>({
         template: "latency_heatmap",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<SlowRow>({
         template: "slow_requests",
-        params: { range, limit: 50 },
+        params: { ...window, limit: 50 },
       }),
       fetchMetricTimeseries({
         metric: "gateway_platform_local_ms",

@@ -4225,7 +4225,7 @@
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
-      "timeRangeHint": "KPI cards are near-instant; the time range applies to charts, platform stats, and product TopN",
+      "timeRangeHint": "Default window is 6 hours (your choice is never silently overwritten). KPI cards are near-instant (~60s); the picker only drives charts, platform stats, and product TopN.",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "Oldest pending {age} s",
       "stats": {
@@ -4279,7 +4279,8 @@
         "pipeline": "Pipeline freshness",
         "hostCpu": "Host CPU"
       },
-      "noSampleHint": "No samples in the instant window"
+      "noSampleHint": "No samples in the instant window",
+      "instantWindowHint": "Near-instant {secs}s ({label})"
     },
     "screen": {
       "title": "Ops Screen",
@@ -4869,6 +4870,9 @@
     "mergedShell": {
       "placeholder": "Content will move into this tab in a later step.",
       "empty": "No tabs available for the current role."
+    },
+    "charts": {
+      "empty": "No data"
     }
   }
 }

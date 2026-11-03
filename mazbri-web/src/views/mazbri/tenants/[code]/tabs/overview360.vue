@@ -37,6 +37,7 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import StatCard from "@/components/ops/StatCard.vue";
 import { postOlapQuery } from "@/api/olap";
+import { presetWindow } from "@/composables/ops/useOlapRange";
 import { fetchTenantSpend, type TenantSpend } from "@/api/tenant";
 import type { TenantErrorRow, TenantOverviewRow } from "@/types/api/olap";
 import type { ColumnOption } from "@/types/component";
@@ -85,11 +86,11 @@ async function reload() {
     const [ov, er, sp] = await Promise.all([
       postOlapQuery<TenantOverviewRow>({
         template: "tenant_overview",
-        params: { tenant_code: props.tenantCode, range: "24h" },
+        params: { tenant_code: props.tenantCode, ...presetWindow("24h") },
       }),
       postOlapQuery<TenantErrorRow>({
         template: "tenant_errors",
-        params: { tenant_code: props.tenantCode, range: "24h", limit: 20 },
+        params: { tenant_code: props.tenantCode, ...presetWindow("24h"), limit: 20 },
       }),
       fetchTenantSpend(props.tenantCode, range),
     ]);

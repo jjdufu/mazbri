@@ -125,7 +125,7 @@ import OpsCard from "@/components/ops/OpsCard.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import PieChart from "@/components/ops/PieChart.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
@@ -271,24 +271,24 @@ function openSampleTrace(row: CallMonitorItem) {
 
 async function reload() {
   loading.value = true;
-  const range = toOlapRange(timeRange.value, true);
+  const window = toOlapWindow(timeRange.value);
   try {
     const [matrix, attr, flag, neu] = await Promise.all([
       postOlapQuery<ErrorCellRow>({
         template: "error_matrix",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<AttributionRow>({
         template: "error_attribution",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<FlagRow>({
         template: "response_flags",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<NewErrorRow>({
         template: "new_error_codes",
-        params: { range },
+        params: { ...window },
       }),
     ]);
     matrixRows.value = (matrix.rows ?? []).filter((r) => Boolean(r.error_code));

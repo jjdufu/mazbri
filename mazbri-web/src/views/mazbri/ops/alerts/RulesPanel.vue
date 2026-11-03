@@ -287,7 +287,7 @@ const { isAdmin } = useOpsRole();
 const ops: AlertOp[] = [">", ">=", "<", "<=", "==", "!="];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
 const olapPlaceholder =
-  '{"query":{"template":"top_by_dim","params":{"dim":"product_id","metric":"p99","range":"15m"}},"value_field":"value"}';
+  '{"query":{"template":"top_by_dim","params":{"dim":"product_id","metric":"p99","start":0,"end":900}},"value_field":"value"}';
 
 const loading = ref(false);
 const saving = ref(false);

@@ -313,8 +313,10 @@ impl Evaluator {
                     .collect())
             }
             RuleKind::Olap => {
-                let expr: OlapExpr = serde_json::from_str(&rule.expr)
+                let mut expr: OlapExpr = serde_json::from_str(&rule.expr)
                     .map_err(|e| format!("OLAP 表达式无法解析: {e}"))?;
+                // 落库表达式只保留窗长；评估时对齐到当前时刻。
+                expr.query.rebase_window_to_now(Utc::now().timestamp());
                 let rows = self
                     .clickhouse
                     .olap_query(&expr.query)

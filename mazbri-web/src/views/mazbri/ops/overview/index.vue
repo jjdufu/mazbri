@@ -26,7 +26,7 @@
         <StatCard
           :label="t('ops.overview.stats.qps')"
           :value="overview?.qps"
-          :hint="instantEmptyHint"
+          :hint="instantCardHint"
           :loading="loading"
           unit="req/s"
           icon="ri:pulse-line"
@@ -39,7 +39,7 @@
           :label="t('ops.overview.stats.successRate')"
           :value="overview?.success_rate"
           unit="%"
-          :hint="instantEmptyHint"
+          :hint="instantCardHint"
           :loading="loading"
           icon="ri:checkbox-circle-line"
           icon-color="#67c23a"
@@ -354,8 +354,8 @@ const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
 const exemplarLoading = ref(false);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
-  preset: "1h",
-  start: Math.floor(Date.now() / 1000) - 3600,
+  preset: "6h",
+  start: Math.floor(Date.now() / 1000) - 6 * 3600,
   end: Math.floor(Date.now() / 1000),
 });
 
@@ -374,19 +374,38 @@ const latencyPrimary = computed(() => {
 const latencySecondary = computed(() => {
   const o = overview.value;
   if (!o) return "";
-  return t("ops.overview.latencySecondary", {
+  const base = t("ops.overview.latencySecondary", {
     p50: fmt(o.p50_latency_ms),
     p95: fmt(o.p95_latency_ms),
   });
+  const w = o.window;
+  if (w?.semantics === "instant") {
+    const inst = t("ops.overview.instantWindowHint", {
+      secs: w.lookback_secs,
+      label: w.label,
+    });
+    return `${base} · ${inst}`;
+  }
+  return base;
 });
 
-const instantEmptyHint = computed(() => {
+/** 瞬时 KPI 固定旁注（来自 overview.window；禁止被页级时间窗改写）。 */
+const instantWindowHint = computed(() => {
+  const w = overview.value?.window;
+  if (!w || w.semantics !== "instant") return "";
+  return t("ops.overview.instantWindowHint", {
+    secs: w.lookback_secs,
+    label: w.label,
+  });
+});
+
+const instantCardHint = computed(() => {
+  const parts = [instantWindowHint.value];
   const o = overview.value;
-  if (!o) return "";
-  if (o.sample_count === 0 || o.success_rate == null) {
-    return t("ops.overview.noSampleHint");
+  if (o && (o.sample_count === 0 || o.success_rate == null)) {
+    parts.push(t("ops.overview.noSampleHint"));
   }
-  return "";
+  return parts.filter(Boolean).join(" · ");
 });
 
 const errorLabel = computed(() => {

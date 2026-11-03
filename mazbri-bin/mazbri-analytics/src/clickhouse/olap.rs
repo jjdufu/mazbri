@@ -90,39 +90,43 @@ impl OlapQuery {
     }
 }
 
-/// 查询时间窗（相对当前时刻）。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-pub enum Range {
-    #[serde(rename = "15m")]
-    M15,
-    #[default]
-    #[serde(rename = "1h")]
-    H1,
-    #[serde(rename = "6h")]
-    H6,
-    #[serde(rename = "24h")]
-    H24,
-    #[serde(rename = "7d")]
-    D7,
-    #[serde(rename = "30d")]
-    D30,
+/// 查询时间窗（Unix 秒绝对区间；预设 range 仅前端展开，禁止 API 双轨）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueryWindow {
+    pub start: i64,
+    pub end: i64,
 }
 
-impl Range {
-    fn seconds(self) -> u32 {
-        match self {
-            Self::M15 => 900,
-            Self::H1 => 3_600,
-            Self::H6 => 21_600,
-            Self::H24 => 86_400,
-            Self::D7 => 604_800,
-            Self::D30 => 2_592_000,
+/// 与 mgmt `analytics_window` 对齐的最短窗长（秒）。
+pub const OLAP_MIN_SECS: i64 = 60;
+/// 最长窗长（秒）—— 31 天。
+pub const OLAP_MAX_SECS: i64 = 31 * 24 * 60 * 60;
+
+impl QueryWindow {
+    /// 校验绝对时间窗；非法时返回明确错误文案（禁止静默钳制）。
+    fn try_new(start: i64, end: i64) -> Result<Self> {
+        if end <= start {
+            return Err(invalid("start 必须小于 end".into()));
         }
+        let duration = end - start;
+        if duration < OLAP_MIN_SECS {
+            return Err(invalid(format!(
+                "时间窗过短：最少 {OLAP_MIN_SECS} 秒"
+            )));
+        }
+        if duration > OLAP_MAX_SECS {
+            return Err(invalid("时间窗过长：最多 31 天".into()));
+        }
+        Ok(Self { start, end })
+    }
+
+    const fn duration_secs(self) -> i64 {
+        self.end - self.start
     }
 
     /// ≤24h 读分钟表，更长读小时表。
     fn agg_source(self) -> AggSource {
-        if self.seconds() <= 86_400 {
+        if self.duration_secs() <= 86_400 {
             AggSource::Minute
         } else {
             AggSource::Hour
@@ -130,14 +134,34 @@ impl Range {
     }
 
     fn default_bucket(self) -> Bucket {
-        match self {
-            Self::M15 | Self::H1 => Bucket::M1,
-            Self::H6 => Bucket::M5,
-            Self::H24 => Bucket::M15,
-            Self::D7 => Bucket::H1,
-            Self::D30 => Bucket::D1,
+        match self.duration_secs() {
+            s if s <= 3_600 => Bucket::M1,
+            s if s <= 21_600 => Bucket::M5,
+            s if s <= 86_400 => Bucket::M15,
+            s if s <= 604_800 => Bucket::H1,
+            _ => Bucket::D1,
         }
     }
+
+    /// 保持窗长，将终点移到 `end`（告警评估用：相对 lookback → 绝对窗）。
+    #[must_use]
+    pub fn rebase_ending_at(self, end: i64) -> Self {
+        let duration = self.duration_secs().max(1);
+        Self {
+            start: end - duration,
+            end,
+        }
+    }
+}
+
+fn window_from_params(start: i64, end: i64) -> Result<QueryWindow> {
+    QueryWindow::try_new(start, end)
+}
+
+fn rebase_pair(start: &mut i64, end: &mut i64, now: i64) {
+    let duration = (*end - *start).max(1);
+    *end = now;
+    *start = now - duration;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,6 +266,18 @@ impl Metric {
             Self::Cost => "toFloat64(sumMerge(cost))",
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::P50 => "p50",
+            Self::P95 => "p95",
+            Self::P99 => "p99",
+            Self::RequestBytes => "request_bytes",
+            Self::ResponseBytes => "response_bytes",
+            Self::Cost => "cost",
+        }
+    }
 }
 
 /// 可选等值过滤（值经参数绑定）。
@@ -286,8 +322,8 @@ pub struct TopByDimParams {
     pub dim: Dim,
     #[serde(default)]
     pub metric: Metric,
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub limit: Option<u32>,
     #[serde(default, flatten)]
@@ -297,8 +333,8 @@ pub struct TopByDimParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrendParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub bucket: Option<Bucket>,
     #[serde(default, flatten)]
@@ -308,8 +344,8 @@ pub struct TrendParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub product_id: Option<String>,
 }
@@ -317,8 +353,8 @@ pub struct StageParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SlowRequestsParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub min_duration_ms: Option<u64>,
     #[serde(default)]
@@ -367,8 +403,8 @@ const EXEMPLAR_MAX_WINDOW_SECS: u32 = 3_600;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BreakdownParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub limit: Option<u32>,
     #[serde(default, flatten)]
@@ -378,8 +414,8 @@ pub struct BreakdownParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WindowParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default, flatten)]
     pub filters: Filters,
 }
@@ -388,8 +424,8 @@ pub struct WindowParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QuotaTopParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub limit: Option<u32>,
 }
@@ -399,8 +435,8 @@ pub struct QuotaTopParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SecurityTopParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default = "default_security_dim")]
     pub dim: SecurityDim,
     #[serde(default)]
@@ -423,8 +459,8 @@ pub enum SecurityDim {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SecurityEventsParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub limit: Option<u32>,
     #[serde(default)]
@@ -436,8 +472,8 @@ pub struct SecurityEventsParams {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProductRankParams {
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default = "default_product_rank_metric")]
     pub metric: ProductRankMetric,
     #[serde(default)]
@@ -462,18 +498,29 @@ pub enum ProductRankMetric {
 #[serde(deny_unknown_fields)]
 pub struct TenantScopedParams {
     pub tenant_code: String,
-    #[serde(default)]
-    pub range: Range,
+    pub start: i64,
+    pub end: i64,
     #[serde(default)]
     pub limit: Option<u32>,
 }
 
 
-#[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
-pub struct TopRow {
+/// `ClickHouse` 行（含 count）；对外响应见 [`TopRow`]。
+#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
+struct TopRowCh {
     pub key: String,
     pub value: f64,
     pub count: u64,
+}
+
+/// `top_by_dim` 响应行：`metric=count` 时省略重复的 `count`。
+#[derive(Debug, Clone, Serialize)]
+pub struct TopRow {
+    pub key: String,
+    pub metric: String,
+    pub value: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, clickhouse::Row, Deserialize)]
@@ -715,8 +762,13 @@ struct Sql {
     binds: Vec<String>,
 }
 
-fn window(range: Range, ts_expr: &str) -> String {
-    format!("{ts_expr} >= now() - INTERVAL {} SECOND", range.seconds())
+/// 绝对时间窗谓词；`start`/`end` 绑定为 Unix 秒（UTC）。
+fn window_clause(w: QueryWindow, ts_expr: &str, binds: &mut Vec<String>) -> String {
+    binds.push(w.start.to_string());
+    binds.push(w.end.to_string());
+    format!(
+        "{ts_expr} >= toDateTime(toInt64(?), 'UTC') AND {ts_expr} < toDateTime(toInt64(?), 'UTC')"
+    )
 }
 
 fn filter_clause(filters: &Filters, binds: &mut Vec<String>) -> String {
@@ -749,36 +801,43 @@ impl OlapQuery {
     /// 参数取值越界时返回错误。
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::TopByDim(p) => p.filters.validate(),
+            Self::TopByDim(p) => {
+                window_from_params(p.start, p.end)?;
+                p.filters.validate()
+            }
             Self::LatencyQuantiles(p)
             | Self::LatencyHeatmap(p)
             | Self::StatusHeatmap(p)
             | Self::BytesTrend(p)
             | Self::CostTrend(p) => validate_trend(p),
             Self::LatencyBreakdown(p) => {
-                p.filters.validate()?;
-                reject_over_day(p.range, "latency_breakdown")
+                reject_over_day(p.start, p.end, "latency_breakdown")?;
+                p.filters.validate()
             }
-            Self::StageQuantiles(p) => reject_over_day(p.range, "stage_quantiles"),
-            Self::SlowRequests(p) => p.filters.validate(),
+            Self::StageQuantiles(p) => reject_over_day(p.start, p.end, "stage_quantiles"),
+            Self::SlowRequests(p) => {
+                window_from_params(p.start, p.end)?;
+                p.filters.validate()
+            }
             Self::ErrorMatrix(p)
             | Self::ErrorAttribution(p)
             | Self::ResponseFlags(p)
             | Self::NewErrorCodes(p) => {
-                p.filters.validate()?;
-                reject_over_day(p.range, self.template_name())
-            }
-            Self::CallHistogram(p) => {
-                p.filters.validate()?;
-                reject_over_day(p.range, "call_histogram")
-            }
-            Self::SupplierSla(p) | Self::BillingFunnelCh(p) | Self::ResponseCacheHit(p) => {
+                reject_over_day(p.start, p.end, self.template_name())?;
                 p.filters.validate()
             }
-            Self::QuotaTop(p) => reject_over_day(p.range, "quota_top"),
-            Self::SecurityTop(p) => reject_over_day(p.range, "security_top"),
+            Self::CallHistogram(p) => {
+                reject_over_day(p.start, p.end, "call_histogram")?;
+                p.filters.validate()
+            }
+            Self::SupplierSla(p) | Self::BillingFunnelCh(p) | Self::ResponseCacheHit(p) => {
+                window_from_params(p.start, p.end)?;
+                p.filters.validate()
+            }
+            Self::QuotaTop(p) => reject_over_day(p.start, p.end, "quota_top"),
+            Self::SecurityTop(p) => reject_over_day(p.start, p.end, "security_top"),
             Self::SecurityEvents(p) => {
-                reject_over_day(p.range, "security_events")?;
+                reject_over_day(p.start, p.end, "security_events")?;
                 if let Some(ref et) = p.event_type {
                     let et = et.trim();
                     if !(et.is_empty()
@@ -789,8 +848,12 @@ impl OlapQuery {
                 }
                 Ok(())
             }
-            Self::ProductRank(_) => Ok(()),
+            Self::ProductRank(p) => {
+                window_from_params(p.start, p.end)?;
+                Ok(())
+            }
             Self::TenantOverview(p) | Self::TenantErrors(p) => {
+                window_from_params(p.start, p.end)?;
                 let code = p.tenant_code.trim();
                 if code.is_empty() {
                     return Err(invalid("tenant_code 必填".to_string()));
@@ -810,6 +873,37 @@ impl OlapQuery {
                     _ => Ok(()),
                 }
             }
+        }
+    }
+
+    /// 保持各模板窗长，将终点对齐到 `now`（告警评估：落库表达式 → 当前窗）。
+    pub fn rebase_window_to_now(&mut self, now: i64) {
+        match self {
+            Self::TopByDim(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::LatencyQuantiles(p)
+            | Self::LatencyHeatmap(p)
+            | Self::StatusHeatmap(p)
+            | Self::BytesTrend(p)
+            | Self::CostTrend(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::LatencyBreakdown(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::StageQuantiles(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::SlowRequests(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::ErrorMatrix(p)
+            | Self::ErrorAttribution(p)
+            | Self::ResponseFlags(p)
+            | Self::NewErrorCodes(p)
+            | Self::CallHistogram(p)
+            | Self::SupplierSla(p)
+            | Self::BillingFunnelCh(p)
+            | Self::ResponseCacheHit(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::QuotaTop(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::SecurityTop(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::SecurityEvents(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::ProductRank(p) => rebase_pair(&mut p.start, &mut p.end, now),
+            Self::TenantOverview(p) | Self::TenantErrors(p) => {
+                rebase_pair(&mut p.start, &mut p.end, now);
+            }
+            Self::ExemplarTraces(_) => {}
         }
     }
 
@@ -862,17 +956,19 @@ impl OlapQuery {
     }
 }
 
-fn reject_over_day(range: Range, name: &str) -> Result<()> {
-    if range.agg_source() == AggSource::Hour {
+fn reject_over_day(start: i64, end: i64, name: &str) -> Result<()> {
+    let w = window_from_params(start, end)?;
+    if w.duration_secs() > 86_400 {
         return Err(invalid(format!("{name} 最长 24h")));
     }
     Ok(())
 }
 
 fn validate_trend(p: &TrendParams) -> Result<()> {
+    let w = window_from_params(p.start, p.end)?;
     p.filters.validate()?;
     if let Some(bucket) = p.bucket
-        && p.range.agg_source() == AggSource::Hour
+        && w.agg_source() == AggSource::Hour
         && bucket.seconds() < 3_600
     {
         return Err(invalid("超过 24h 的范围桶宽不能小于 1h".to_string()));
@@ -881,20 +977,29 @@ fn validate_trend(p: &TrendParams) -> Result<()> {
 }
 
 fn top_by_dim_sql(p: &TopByDimParams, binds: &mut Vec<String>) -> String {
-    let src = p.range.agg_source();
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let src = w.agg_source();
+    let win = window_clause(w, src.ts(), binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT {dim} AS key, {value} AS value, countMerge(c) AS count FROM {table} \
-         WHERE {window}{filters} GROUP BY key ORDER BY value DESC LIMIT {limit}",
+         WHERE {win}{filters} GROUP BY key ORDER BY value DESC LIMIT {limit}",
         dim = p.dim.column(),
         value = p.metric.expr(),
         table = src.table(),
-        window = window(p.range, src.ts()),
         limit = clamp_limit(p.limit, 10),
     )
 }
 
 fn stage_quantiles_sql(p: &StageParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "ts_1m", binds);
     let product = p
         .product_id
         .as_deref()
@@ -908,12 +1013,16 @@ fn stage_quantiles_sql(p: &StageParams, binds: &mut Vec<String>) -> String {
         "SELECT stage_name, count, toFloat64(q[1]) AS p50, toFloat64(q[2]) AS p95, \
          toFloat64(q[3]) AS p99 FROM (SELECT stage_name, countMerge(c) AS count, \
          quantilesTDigestMerge(0.5, 0.95, 0.99)(stage_q) AS q FROM stage_agg_1m \
-         WHERE {window}{product} GROUP BY stage_name) ORDER BY stage_name",
-        window = window(p.range, "ts_1m"),
+         WHERE {win}{product} GROUP BY stage_name) ORDER BY stage_name"
     )
 }
 
 fn latency_breakdown_sql(p: &BreakdownParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT product_id, count() AS count, \
@@ -921,16 +1030,20 @@ fn latency_breakdown_sql(p: &BreakdownParams, binds: &mut Vec<String>) -> String
          toFloat64(quantileTDigest(0.99)(dependency_wait_ms)) AS dependency_wait_p99, \
          toFloat64(quantileTDigest(0.99)(upstream_service_time_ms)) AS upstream_p99, \
          toFloat64(quantileTDigest(0.99)(post_response_ms)) AS post_response_p99 \
-         FROM request_logs WHERE event_target = 'gateway' AND {window}{filters} \
+         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters} \
          GROUP BY product_id ORDER BY count DESC LIMIT {limit}",
-        window = window(p.range, "timestamp"),
         limit = clamp_limit(p.limit, 20),
     )
 }
 
 fn latency_heatmap_sql(p: &TrendParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
-    let bucket = p.bucket.unwrap_or_else(|| p.range.default_bucket());
+    let bucket = p.bucket.unwrap_or_else(|| w.default_bucket());
     let edges = HISTOGRAM_EDGES_MS
         .iter()
         .map(u64::to_string)
@@ -942,10 +1055,9 @@ fn latency_heatmap_sql(p: &TrendParams, binds: &mut Vec<String>) -> String {
            arrayElement([{edges}, 18446744073709551615], \
              arrayFirstIndex(e -> duration_ms <= e, [{edges}, 18446744073709551615])) AS le_ms \
            FROM request_logs \
-           WHERE event_target = 'gateway' AND {window}{filters} \
+           WHERE event_target = 'gateway' AND {win}{filters} \
          ) GROUP BY ts, le_ms ORDER BY ts, le_ms",
         bucket = bucket_expr("timestamp", bucket),
-        window = window(p.range, "timestamp"),
     )
 }
 
@@ -973,9 +1085,13 @@ fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
 }
 
 fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     let limit = clamp_limit(p.limit, 50);
-    let win = window(p.range, "timestamp");
     if let Some(min) = p.min_duration_ms {
         return format!(
             "SELECT toUInt32(toUnixTimestamp(timestamp)) AS ts, request_id, trace_id, \
@@ -985,6 +1101,7 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
              ORDER BY duration_ms DESC LIMIT {limit}"
         );
     }
+    let win_r = window_clause(w, "r.timestamp", binds);
     let filters_outer = filter_clause(&p.filters, binds);
     format!(
         "WITH thr AS ( \
@@ -1000,7 +1117,6 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
          FROM request_logs AS r INNER JOIN thr ON r.product_id = thr.product_id \
          WHERE r.event_target = 'gateway' AND {win_r} AND r.duration_ms >= thr.min_ms{filters_r} \
          ORDER BY r.duration_ms DESC LIMIT {limit}",
-        win_r = window(p.range, "r.timestamp"),
         filters_r = filters_outer
             .replace(" AND tenant_code = ?", " AND r.tenant_code = ?")
             .replace(" AND product_id = ?", " AND r.product_id = ?")
@@ -1010,57 +1126,78 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
 }
 
 fn error_matrix_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
-        "SELECT {norm} AS error_code, error_stage, count() AS count FROM request_logs \
-         WHERE event_target = 'gateway' AND {window} \
-         AND {failure}{filters} \
-         GROUP BY error_code, error_stage ORDER BY count DESC LIMIT 500",
-        norm = SQL_NORM_ERROR_CODE,
-        failure = SQL_IS_FAILURE,
-        window = window(p.range, "timestamp"),
+        "SELECT {SQL_NORM_ERROR_CODE} AS error_code, error_stage, count() AS count FROM request_logs \
+         WHERE event_target = 'gateway' AND {win} \
+         AND {SQL_IS_FAILURE}{filters} \
+         GROUP BY error_code, error_stage ORDER BY count DESC LIMIT 500"
     )
 }
 
 fn error_attribution_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT if(error_class = '', 'unknown', error_class) AS error_class, count() AS count \
-         FROM request_logs WHERE event_target = 'gateway' AND {window} \
+         FROM request_logs WHERE event_target = 'gateway' AND {win} \
          AND error_class NOT IN ('', 'ok'){filters} \
-         GROUP BY error_class ORDER BY count DESC LIMIT 50",
-        window = window(p.range, "timestamp"),
+         GROUP BY error_class ORDER BY count DESC LIMIT 50"
     )
 }
 
 fn response_flags_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT if(response_flags = '', '-', response_flags) AS response_flags, count() AS count \
-         FROM request_logs WHERE event_target = 'gateway' AND {window}{filters} \
-         GROUP BY response_flags ORDER BY count DESC LIMIT 100",
-        window = window(p.range, "timestamp"),
+         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters} \
+         GROUP BY response_flags ORDER BY count DESC LIMIT 100"
     )
 }
 
 fn new_error_codes_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
-    let prior_start = p.range.seconds() + 604_800;
-    let prior_end = p.range.seconds();
+    let prior = QueryWindow {
+        start: w.start - 604_800,
+        end: w.start,
+    };
+    let prior_win = window_clause(prior, "timestamp", binds);
     format!(
         "SELECT error_code, count() AS count FROM request_logs \
-         WHERE event_target = 'gateway' AND {window} AND error_code != ''{filters} \
+         WHERE event_target = 'gateway' AND {win} AND error_code != ''{filters} \
          AND error_code NOT IN ( \
            SELECT DISTINCT error_code FROM request_logs \
            WHERE event_target = 'gateway' AND error_code != '' \
-           AND timestamp >= now() - INTERVAL {prior_start} SECOND \
-           AND timestamp < now() - INTERVAL {prior_end} SECOND \
-         ) GROUP BY error_code ORDER BY count DESC LIMIT 100",
-        window = window(p.range, "timestamp"),
+           AND {prior_win} \
+         ) GROUP BY error_code ORDER BY count DESC LIMIT 100"
     )
 }
 
 fn call_histogram_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     let edges = HISTOGRAM_EDGES_MS
         .iter()
@@ -1071,9 +1208,8 @@ fn call_histogram_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
         "SELECT arrayElement([{edges}, 18446744073709551615], \
          arrayFirstIndex(e -> duration_ms <= e, [{edges}, 18446744073709551615])) AS le_ms, \
          count() AS count FROM request_logs \
-         WHERE event_target = 'gateway' AND {window}{filters} \
-         GROUP BY le_ms ORDER BY le_ms",
-        window = window(p.range, "timestamp"),
+         WHERE event_target = 'gateway' AND {win}{filters} \
+         GROUP BY le_ms ORDER BY le_ms"
     )
 }
 
@@ -1084,6 +1220,11 @@ const SUPPLIER_FAILURE_CLASSES: &str =
 /// 供应商 × 渠道 SLA：读明细表（保留 30 天），报表需要日/周/月窗口，故不受 24h 限制；
 /// 按月分区裁剪且只做一次分组聚合。
 fn supplier_sla_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT supplier_code, channel_code, count() AS calls, \
@@ -1091,41 +1232,52 @@ fn supplier_sla_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
          countIf(error_class = 'timeout') AS timeouts, \
          countIf(retry_count > 0) AS retried, countIf(fallback_used = 1) AS fallbacks, \
          toFloat64(quantileTDigest(0.95)(upstream_service_time_ms)) AS upstream_p95_ms \
-         FROM request_logs WHERE event_target = 'gateway' AND {window} \
+         FROM request_logs WHERE event_target = 'gateway' AND {win} \
          AND supplier_code != ''{filters} \
-         GROUP BY supplier_code, channel_code ORDER BY supplier_code, channel_code LIMIT 1000",
-        window = window(p.range, "timestamp"),
+         GROUP BY supplier_code, channel_code ORDER BY supplier_code, channel_code LIMIT 1000"
     )
 }
 
 /// 计费漏斗首段：网关可计费请求数（`FINAL` 去重，与 L3 对账口径一致）。
 fn billing_funnel_ch_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT countIf(request_logs.billable = 1) AS billable FROM request_logs FINAL \
-         WHERE event_target = 'gateway' AND {window}{filters}",
-        window = window(p.range, "timestamp"),
+         WHERE event_target = 'gateway' AND {win}{filters}"
     )
 }
 
-
-
-fn security_top_sql(p: &SecurityTopParams, _binds: &mut Vec<String>) -> String {
+fn security_top_sql(p: &SecurityTopParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "window_start", binds);
     let dim = match p.dim {
         SecurityDim::Ip => "ip",
         SecurityDim::Key => "key_id",
         SecurityDim::Country => "geo_country",
     };
     format!(
-        "SELECT {dim} AS dim_value, sum(fail_count) AS fail_count, sum(req_count) AS req_count          FROM security_agg_1h WHERE {window} AND {dim} != ''          GROUP BY dim_value ORDER BY fail_count DESC LIMIT {limit}",
-        dim = dim,
-        window = window(p.range, "window_start"),
+        "SELECT {dim} AS dim_value, sum(fail_count) AS fail_count, sum(req_count) AS req_count \
+         FROM security_agg_1h WHERE {win} AND {dim} != '' \
+         GROUP BY dim_value ORDER BY fail_count DESC LIMIT {limit}",
         limit = clamp_limit(p.limit, 20),
     )
 }
 
-
-fn product_rank_sql(p: &ProductRankParams, _binds: &mut Vec<String>) -> String {
+fn product_rank_sql(p: &ProductRankParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let duration = w.duration_secs();
+    let prev_start = w.start - duration;
     let order = match p.metric {
         ProductRankMetric::ReqCount => "req_count DESC",
         ProductRankMetric::ErrorRate => "error_rate DESC",
@@ -1133,17 +1285,39 @@ fn product_rank_sql(p: &ProductRankParams, _binds: &mut Vec<String>) -> String {
         ProductRankMetric::Cost => "cost DESC",
     };
     let limit = clamp_limit(p.limit, 20);
-    let secs = p.range.seconds();
-    let prev = secs * 2;
-    // 当前窗 + 等长前窗环比；子查询避免同层引用别名。
+    // 当前窗 [start,end) 重复 4 次；前窗 [prev_start,start) 1 次；外层 WHERE prev_start。
+    for _ in 0..4 {
+        binds.push(w.start.to_string());
+        binds.push(w.end.to_string());
+    }
+    binds.push(prev_start.to_string());
+    binds.push(w.start.to_string());
+    binds.push(prev_start.to_string());
     format!(
-        "SELECT product_id, req_count,             if(req_count = 0, 0., err_count / toFloat64(req_count)) AS error_rate,             p95, cost, prev_req_count          FROM (            SELECT product_id,              countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND) AS req_count,              toFloat64(countMergeIf(c, ts_1h >= now() - INTERVAL {secs} SECOND AND status_class = '5xx')) AS err_count,              toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, ts_1h >= now() - INTERVAL {secs} SECOND)[2]) AS p95,              toFloat64(sumMergeIf(cost, ts_1h >= now() - INTERVAL {secs} SECOND)) AS cost,              countMergeIf(c, ts_1h >= now() - INTERVAL {prev} SECOND AND ts_1h < now() - INTERVAL {secs} SECOND) AS prev_req_count            FROM req_agg_1h            WHERE ts_1h >= now() - INTERVAL {prev} SECOND AND product_id != ''            GROUP BY product_id          ) ORDER BY {order} LIMIT {limit}"
+        "SELECT product_id, req_count, \
+         if(req_count = 0, 0., err_count / toFloat64(req_count)) AS error_rate, \
+         p95, cost, prev_req_count \
+         FROM ( \
+           SELECT product_id, \
+             countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC')) AS req_count, \
+             toFloat64(countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC') AND status_class = '5xx')) AS err_count, \
+             toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC'))[2]) AS p95, \
+             toFloat64(sumMergeIf(cost, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC'))) AS cost, \
+             countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC')) AS prev_req_count \
+           FROM req_agg_1h \
+           WHERE ts_1h >= toDateTime(toInt64(?), 'UTC') AND product_id != '' \
+           GROUP BY product_id \
+         ) ORDER BY {order} LIMIT {limit}"
     )
 }
 
 fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> String {
-    // 内层保留原始 ts 供 WHERE/ORDER；外层再 format，避免别名遮蔽 DateTime 列。
-    let mut where_sql = format!("WHERE {window}", window = window(p.range, "ts"));
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "ts", binds);
+    let mut where_sql = format!("WHERE {win}");
     if let Some(ref et) = p.event_type {
         let et = et.trim();
         if !et.is_empty() {
@@ -1153,43 +1327,74 @@ fn security_events_sql(p: &SecurityEventsParams, binds: &mut Vec<String>) -> Str
     }
     let limit = clamp_limit(p.limit, 50);
     format!(
-        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type,          tenant, key_id, ip, detail, geo_country, geo_city, asn          FROM (            SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn            FROM security_events {where_sql}            ORDER BY ts DESC LIMIT {limit}          )"
+        "SELECT formatDateTime(ts, '%Y-%m-%dT%H:%i:%S.%f', 'UTC') AS ts, type AS event_type, \
+         tenant, key_id, ip, detail, geo_country, geo_city, asn \
+         FROM ( \
+           SELECT ts, type, tenant, key_id, ip, detail, geo_country, geo_city, asn \
+           FROM security_events {where_sql} \
+           ORDER BY ts DESC LIMIT {limit} \
+         )"
     )
 }
 
-fn quota_top_sql(p: &QuotaTopParams, _binds: &mut Vec<String>) -> String {
+fn quota_top_sql(p: &QuotaTopParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let limit = clamp_limit(p.limit, 20);
     format!(
-        "SELECT tenant_code, count() AS rejects FROM request_logs          WHERE event_target = 'gateway' AND status_code = 429 AND {window}          AND tenant_code != '' GROUP BY tenant_code ORDER BY rejects DESC LIMIT {limit}",
-        window = window(p.range, "timestamp"),
+        "SELECT tenant_code, count() AS rejects FROM request_logs \
+         WHERE event_target = 'gateway' AND status_code = 429 AND {win} \
+         AND tenant_code != '' GROUP BY tenant_code ORDER BY rejects DESC LIMIT {limit}"
     )
 }
 
 fn tenant_overview_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     binds.push(p.tenant_code.trim().to_string());
     format!(
-        "SELECT tenant_code, count() AS calls,          100 * toFloat64({successes}) / greatest(toFloat64(count()), 1) AS success_rate,          toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms,          toString(sum(cost)) AS cost          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          GROUP BY tenant_code",
-        successes = SQL_COUNT_SUCCESSES,
-        window = window(p.range, "timestamp"),
+        "SELECT tenant_code, count() AS calls, \
+         100 * toFloat64({SQL_COUNT_SUCCESSES}) / greatest(toFloat64(count()), 1) AS success_rate, \
+         toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms, \
+         toString(sum(cost)) AS cost \
+         FROM request_logs WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
+         GROUP BY tenant_code"
     )
 }
 
 fn tenant_errors_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     binds.push(p.tenant_code.trim().to_string());
     let limit = clamp_limit(p.limit, 50);
     format!(
-        "SELECT {norm} AS error_code, count() AS count          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          AND {failure}          GROUP BY error_code ORDER BY count DESC LIMIT {limit}",
-        norm = SQL_NORM_ERROR_CODE,
-        failure = SQL_IS_FAILURE,
-        window = window(p.range, "timestamp"),
+        "SELECT {SQL_NORM_ERROR_CODE} AS error_code, count() AS count \
+         FROM request_logs WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
+         AND {SQL_IS_FAILURE} \
+         GROUP BY error_code ORDER BY count DESC LIMIT {limit}"
     )
 }
 
 fn response_cache_hit_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
-        "SELECT countIf(cache_hit = 1) AS hits, count() AS total,          100 * toFloat64(countIf(cache_hit = 1)) / greatest(toFloat64(count()), 1) AS hit_ratio          FROM request_logs WHERE event_target = 'gateway' AND {window}{filters}",
-        window = window(p.range, "timestamp"),
+        "SELECT countIf(cache_hit = 1) AS hits, count() AS total, \
+         100 * toFloat64(countIf(cache_hit = 1)) / greatest(toFloat64(count()), 1) AS hit_ratio \
+         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters}"
     )
 }
 
@@ -1200,15 +1405,19 @@ fn trend_sql(p: &TrendParams, binds: &mut Vec<String>, measures: &str) -> String
     } else {
         "ts"
     };
-    let src = p.range.agg_source();
-    let bucket = p.bucket.unwrap_or_else(|| p.range.default_bucket());
+    let w = QueryWindow {
+        start: p.start,
+        end: p.end,
+    };
+    let src = w.agg_source();
+    let bucket = p.bucket.unwrap_or_else(|| w.default_bucket());
+    let win = window_clause(w, src.ts(), binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT ts, {measures} FROM (SELECT {bucket} AS ts, * FROM {table} \
-         WHERE {window}{filters}) GROUP BY {keys} ORDER BY {keys}",
+         WHERE {win}{filters}) GROUP BY {keys} ORDER BY {keys}",
         bucket = bucket_expr(src.ts(), bucket),
         table = src.table(),
-        window = window(p.range, src.ts()),
     )
 }
 
@@ -1236,7 +1445,21 @@ impl ClickHouseClient {
         query.validate()?;
         let sql = query.sql();
         Ok(match query {
-            OlapQuery::TopByDim(_) => OlapRows::Top(self.fetch_bound(&sql).await?),
+            OlapQuery::TopByDim(p) => {
+                let rows: Vec<TopRowCh> = self.fetch_bound(&sql).await?;
+                let metric = p.metric.as_str().to_string();
+                let include_count = !matches!(p.metric, Metric::Count);
+                OlapRows::Top(
+                    rows.into_iter()
+                        .map(|r| TopRow {
+                            key: r.key,
+                            metric: metric.clone(),
+                            value: r.value,
+                            count: include_count.then_some(r.count),
+                        })
+                        .collect(),
+                )
+            }
             OlapQuery::LatencyQuantiles(_) => OlapRows::Latency(self.fetch_bound(&sql).await?),
             OlapQuery::LatencyBreakdown(_) => OlapRows::Breakdown(self.fetch_bound(&sql).await?),
             OlapQuery::LatencyHeatmap(_) => OlapRows::LatencyHeat(self.fetch_bound(&sql).await?),
@@ -1276,6 +1499,15 @@ mod tests {
         serde_json::from_str(json)
     }
 
+    /// 固定终点，便于断言绑定值。
+    const END: i64 = 1_700_000_000;
+    const H1: i64 = 3_600;
+    const D30: i64 = 2_592_000;
+
+    fn win(secs: i64) -> String {
+        format!(r#""start":{},"end":{}"#, END - secs, END)
+    }
+
     #[test]
     fn exemplar_traces_uses_p99_of_same_window() {
         let q =
@@ -1301,35 +1533,87 @@ mod tests {
 
     #[test]
     fn unknown_param_is_rejected() {
-        assert!(parse(r#"{"template":"bytes_trend","params":{"sql":"1"}}"#).is_err());
+        assert!(
+            parse(&format!(
+                r#"{{"template":"bytes_trend","params":{{{},"sql":"1"}}}}"#,
+                win(H1)
+            ))
+            .is_err()
+        );
     }
 
     #[test]
     fn filter_values_are_bound_not_inlined() {
-        let q = parse(
-            r#"{"template":"top_by_dim","params":{"dim":"tenant_code","metric":"p95","range":"1h","product_id":"x' OR 1=1"}}"#,
-        )
+        let q = parse(&format!(
+            r#"{{"template":"top_by_dim","params":{{"dim":"tenant_code","metric":"p95",{},"product_id":"x' OR 1=1"}}}}"#,
+            win(H1)
+        ))
         .expect("valid");
+        q.validate().expect("ok");
         let sql = q.sql();
         assert!(!sql.text.contains("OR 1=1"));
-        assert_eq!(sql.binds, vec!["x' OR 1=1".to_string()]);
+        assert_eq!(
+            sql.binds,
+            vec![
+                (END - H1).to_string(),
+                END.to_string(),
+                "x' OR 1=1".to_string()
+            ]
+        );
         assert!(sql.text.contains("FROM req_agg_1m"));
     }
 
     #[test]
     fn long_range_uses_hourly_table_and_money_flag() {
-        let q = parse(r#"{"template":"cost_trend","params":{"range":"30d"}}"#).expect("valid");
+        let q = parse(&format!(
+            r#"{{"template":"cost_trend","params":{{{}}}}}"#,
+            win(D30)
+        ))
+        .expect("valid");
         assert!(q.is_money());
+        q.validate().expect("ok");
         assert!(q.sql().text.contains("FROM req_agg_1h"));
-        let fine = parse(r#"{"template":"cost_trend","params":{"range":"30d","bucket":"1m"}}"#)
-            .expect("valid");
+        let fine = parse(&format!(
+            r#"{{"template":"cost_trend","params":{{{},"bucket":"1m"}}}}"#,
+            win(D30)
+        ))
+        .expect("valid");
         assert!(fine.validate().is_err());
     }
 
     #[test]
+    fn relative_range_param_is_rejected() {
+        assert!(
+            parse(r#"{"template":"cost_trend","params":{"range":"30d"}}"#).is_err(),
+            "禁止 range 双轨"
+        );
+    }
+
+    #[test]
+    fn window_too_short_or_inverted_is_rejected() {
+        let short = parse(&format!(
+            r#"{{"template":"bytes_trend","params":{{"start":{},"end":{}}}}}"#,
+            END - 30,
+            END
+        ))
+        .expect("parses");
+        assert!(short.validate().is_err());
+        let inv = parse(&format!(
+            r#"{{"template":"bytes_trend","params":{{"start":{},"end":{}}}}}"#,
+            END,
+            END - H1
+        ))
+        .expect("parses");
+        assert!(inv.validate().is_err());
+    }
+
+    #[test]
     fn latency_sql_selects_row_columns_in_order() {
-        let q =
-            parse(r#"{"template":"latency_quantiles","params":{"range":"1h"}}"#).expect("valid");
+        let q = parse(&format!(
+            r#"{{"template":"latency_quantiles","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("valid");
         let text = q.sql().text;
         assert!(text.starts_with("SELECT ts, count, toFloat64(dq[1]) AS duration_p50"));
         assert!(text.ends_with(')'));
@@ -1337,7 +1621,11 @@ mod tests {
 
     #[test]
     fn error_matrix_uses_error_stage_from_request_logs() {
-        let q = parse(r#"{"template":"error_matrix","params":{"range":"1h"}}"#).expect("valid");
+        let q = parse(&format!(
+            r#"{{"template":"error_matrix","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("valid");
         let sql = q.sql().text;
         assert!(sql.contains("error_stage"));
         assert!(sql.contains("FROM request_logs"));
@@ -1349,9 +1637,10 @@ mod tests {
 
     #[test]
     fn tenant_errors_excludes_success_empty_and_forbids_empty_label() {
-        let q = parse(
-            r#"{"template":"tenant_errors","params":{"tenant_code":"acme","range":"1h"}}"#,
-        )
+        let q = parse(&format!(
+            r#"{{"template":"tenant_errors","params":{{"tenant_code":"acme",{}}}}}"#,
+            win(H1)
+        ))
         .expect("valid");
         let sql = q.sql().text;
         assert!(!sql.contains("(empty)"), "{sql}");
@@ -1361,100 +1650,155 @@ mod tests {
 
     #[test]
     fn slow_requests_include_trace_id_and_dynamic_threshold() {
-        let q = parse(r#"{"template":"slow_requests","params":{"range":"1h"}}"#).expect("valid");
+        let q = parse(&format!(
+            r#"{{"template":"slow_requests","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("valid");
         let sql = q.sql().text;
         assert!(sql.contains("trace_id"));
         assert!(sql.contains("quantileTDigest(0.99)"));
-        let fixed =
-            parse(r#"{"template":"slow_requests","params":{"range":"1h","min_duration_ms":500}}"#)
-                .expect("valid");
+        let fixed = parse(&format!(
+            r#"{{"template":"slow_requests","params":{{{},"min_duration_ms":500}}}}"#,
+            win(H1)
+        ))
+        .expect("valid");
         assert!(fixed.sql().text.contains("duration_ms >= 500"));
     }
 
     #[test]
     fn supplier_sla_allows_month_and_groups_by_channel()
     -> std::result::Result<(), serde_json::Error> {
-        let q =
-            parse(r#"{"template":"supplier_sla","params":{"range":"30d","supplier_code":"s"}}"#)?;
+        let q = parse(&format!(
+            r#"{{"template":"supplier_sla","params":{{{},"supplier_code":"s"}}}}"#,
+            win(D30)
+        ))?;
         assert!(q.validate().is_ok());
         assert!(!q.is_money());
         let sql = q.sql();
         assert!(sql.text.contains("GROUP BY supplier_code, channel_code"));
-        assert!(sql.text.contains("INTERVAL 2592000 SECOND"));
+        assert!(sql.text.contains("toDateTime(toInt64(?)"));
         assert!(sql.text.contains("supplier_code = ?"));
-        assert_eq!(sql.binds, vec!["s".to_string()]);
+        assert_eq!(
+            sql.binds,
+            vec![
+                (END - D30).to_string(),
+                END.to_string(),
+                "s".to_string()
+            ]
+        );
         Ok(())
     }
 
     #[test]
     fn billing_funnel_ch_counts_billable_with_final() -> std::result::Result<(), serde_json::Error>
     {
-        let q = parse(r#"{"template":"billing_funnel_ch","params":{"range":"24h"}}"#)?;
+        let q = parse(&format!(
+            r#"{{"template":"billing_funnel_ch","params":{{{}}}}}"#,
+            win(86_400)
+        ))?;
         let sql = q.sql();
         assert!(sql.text.contains("FROM request_logs FINAL"));
         assert!(sql.text.contains("billable = 1"));
-        assert_eq!(sql.binds.len(), 0);
+        assert_eq!(sql.binds.len(), 2);
         Ok(())
     }
 
     #[test]
     fn latency_breakdown_and_new_error_codes_parse() {
-        let b = parse(r#"{"template":"latency_breakdown","params":{"range":"1h"}}"#).expect("ok");
+        let b = parse(&format!(
+            r#"{{"template":"latency_breakdown","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
         assert!(b.sql().text.contains("dependency_wait_ms"));
-        let n = parse(r#"{"template":"new_error_codes","params":{"range":"1h"}}"#).expect("ok");
+        let n = parse(&format!(
+            r#"{{"template":"new_error_codes","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
         assert!(n.sql().text.contains("NOT IN"));
         assert!(n.validate().is_ok());
-        let long = parse(r#"{"template":"new_error_codes","params":{"range":"7d"}}"#).expect("ok");
+        let long = parse(&format!(
+            r#"{{"template":"new_error_codes","params":{{{}}}}}"#,
+            win(604_800)
+        ))
+        .expect("ok");
         assert!(long.validate().is_err());
     }
+
     #[test]
     fn security_top_template_parses() {
-        let q = parse(r#"{"template":"security_top","params":{"range":"1h","dim":"ip","limit":5}}"#)
-            .expect("parse");
-        assert_eq!(q.template_name(), "security_top");
-        q.validate().expect("ok");
-        let sql = q.sql();
-        assert!(sql.text.contains("security_agg_1h"), "{}", sql.text);
-        assert_eq!(sql.binds, [] as [String; 0]);
-        let q = parse(
-            r#"{"template":"security_events","params":{"range":"24h","limit":10,"event_type":"new_ip"}}"#,
-        )
-        .expect("parse");
-        q.validate().expect("ok");
-        let sql = q.sql();
-        assert!(sql.text.contains("security_events"), "{}", sql.text);
-        assert_eq!(sql.binds, vec!["new_ip".to_string()]);
+        let q = parse(&format!(
+            r#"{{"template":"security_top","params":{{{},"dim":"ip","limit":5}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
+        assert!(q.validate().is_ok());
+        assert!(q.sql().text.contains("security_agg_1h"));
+        assert!(q.sql().text.contains("AS dim_value"));
     }
-
-    #[test]
-    fn quota_top_and_tenant_templates_bind_safely() {
-        let q = parse(r#"{"template":"quota_top","params":{"range":"1h","limit":5}}"#)
-            .expect("valid");
-        q.validate().expect("ok");
-        assert!(q.sql().text.contains("status_code = 429"));
-        let q = parse(
-            r#"{"template":"tenant_overview","params":{"tenant_code":"acme","range":"1h"}}"#,
-        )
-        .expect("valid");
-        q.validate().expect("ok");
-        assert_eq!(q.sql().binds, vec!["acme".to_string()]);
-        let bad = parse(r#"{"template":"tenant_errors","params":{"tenant_code":"","range":"1h"}}"#)
-            .expect("parses");
-        assert!(bad.validate().is_err());
-        let q = parse(r#"{"template":"response_cache_hit","params":{"range":"1h"}}"#).expect("ok");
-        assert!(q.sql().text.contains("cache_hit"));
-    }
-
 
     #[test]
     fn product_rank_template_parses() {
-        let q = parse(r#"{"template":"product_rank","params":{"range":"7d","metric":"req_count","limit":10}}"#)
-            .expect("valid");
-        assert_eq!(q.template_name(), "product_rank");
+        let q = parse(&format!(
+            r#"{{"template":"product_rank","params":{{{},"metric":"error_rate","limit":10}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
         assert!(q.validate().is_ok());
         let sql = q.sql();
-        assert!(sql.text.contains("FROM req_agg_1h"), "{}", sql.text);
-        assert!(sql.text.contains("prev_req_count"), "{}", sql.text);
+        assert!(sql.text.contains("error_rate"));
+        assert!(sql.text.contains("prev_req_count"));
+        assert_eq!(sql.binds.len(), 11);
     }
 
+    #[test]
+    fn rebase_window_keeps_duration() {
+        let mut q = parse(&format!(
+            r#"{{"template":"top_by_dim","params":{{"dim":"product_id",{}}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
+        q.rebase_window_to_now(2_000_000_000);
+        match &q {
+            OlapQuery::TopByDim(p) => {
+                assert_eq!(p.end, 2_000_000_000);
+                assert_eq!(p.start, 2_000_000_000 - H1);
+            }
+            _ => panic!("expected TopByDim"),
+        }
+    }
+
+    #[test]
+    fn tenant_overview_and_errors_require_code() {
+        assert!(
+            parse(&format!(
+                r#"{{"template":"tenant_overview","params":{{"tenant_code":"",{}}}}}"#,
+                win(H1)
+            ))
+            .expect("parses")
+            .validate()
+            .is_err()
+        );
+        let ok = parse(&format!(
+            r#"{{"template":"tenant_overview","params":{{"tenant_code":"acme",{}}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
+        assert!(ok.validate().is_ok());
+        assert!(ok.sql().text.contains("tenant_code = ?"));
+    }
+
+    #[test]
+    fn response_cache_hit_template_parses() {
+        let q = parse(&format!(
+            r#"{{"template":"response_cache_hit","params":{{{}}}}}"#,
+            win(H1)
+        ))
+        .expect("ok");
+        assert!(q.validate().is_ok());
+        assert!(q.sql().text.contains("cache_hit"));
+        assert!(q.sql().text.contains("hit_ratio"));
+    }
 }

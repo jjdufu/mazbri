@@ -156,6 +156,7 @@ import {
 import { listSloStatus } from "@/api/opsReliability";
 import { fetchAlertEvents } from "@/api/alerts";
 import { postOlapQuery } from "@/api/olap";
+import { presetWindow } from "@/composables/ops/useOlapRange";
 import { fetchFinanceOverview } from "@/api/billing-ops";
 import type { MetricOverview, ServiceHealthRow, TopologyGraph } from "@/types/api/monitoring";
 import type { SloStatusRow } from "@/api/opsReliability";
@@ -302,10 +303,11 @@ async function loadAll() {
   } catch {
     alertText.value = t("ops.screen.noData");
   }
+  const screenWindow = presetWindow("24h");
   try {
     const rank = await postOlapQuery({
       template: "product_rank",
-      params: { range: "24h", metric: "req_count", limit: 10 },
+      params: { ...screenWindow, metric: "req_count", limit: 10 },
     });
     const rows = (rank as { rows?: Record<string, unknown>[] }).rows ?? [];
     topProducts.value = rows.map((r) => ({
@@ -318,7 +320,7 @@ async function loadAll() {
   try {
     const sla = await postOlapQuery({
       template: "supplier_sla",
-      params: { range: "24h" },
+      params: { ...screenWindow },
     });
     const rows = (sla as { rows?: Record<string, unknown>[] }).rows ?? [];
     supplierWall.value = rows.slice(0, 24).map((r) => {
@@ -334,7 +336,7 @@ async function loadAll() {
   try {
     const geo = await postOlapQuery({
       template: "security_top",
-      params: { range: "24h", dim: "country", limit: 10 },
+      params: { ...screenWindow, dim: "country", limit: 10 },
     });
     const rows = (geo as { rows?: Record<string, unknown>[] }).rows ?? [];
     const max = Math.max(1, ...rows.map((r) => Number(r.fail_count ?? r.req_count ?? 0)));

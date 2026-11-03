@@ -1,6 +1,5 @@
-import type { OlapRange } from "@/types/api/olap";
-
-export type OpsRange = OlapRange;
+/** 计费运维相对时间档（非 OLAP；OLAP 仅用绝对 start/end）。 */
+export type OpsRange = "15m" | "1h" | "6h" | "24h" | "7d" | "30d";
 
 export interface StatusCount {
   status: string;

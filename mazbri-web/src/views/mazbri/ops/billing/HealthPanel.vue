@@ -120,7 +120,7 @@ import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow, toOpsRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
@@ -158,8 +158,8 @@ const { t } = useI18n();
 const { resolveStep } = useStep();
 
 const timeRange = ref<TimeRangeValue>({
-  preset: "24h",
-  start: Math.floor(Date.now() / 1000) - 86400,
+  preset: "6h",
+  start: Math.floor(Date.now() / 1000) - 6 * 3600,
   end: Math.floor(Date.now() / 1000),
 });
 const refreshInterval = ref(60);
@@ -315,7 +315,7 @@ function offsetOf(page: number) {
 
 async function fetchPage(page: number) {
   return fetchBillingFailures(
-    toOlapRange(timeRange.value),
+    toOpsRange(timeRange.value),
     PAGE_SIZE,
     offsetOf(page),
   );
@@ -346,16 +346,17 @@ async function reload() {
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
-  const range = toOlapRange(timeRange.value);
+  const window = toOlapWindow(timeRange.value);
+  const opsRange = toOpsRange(timeRange.value);
   failurePage.value = 1;
   deadPage.value = 1;
   try {
     const [ch, pg, fail, ...charts] = await Promise.all([
       postOlapQuery<FunnelChRow>({
         template: "billing_funnel_ch",
-        params: { range },
+        params: { ...window },
       }),
-      fetchBillingFunnel(range),
+      fetchBillingFunnel(opsRange),
       fetchPage(1),
       ...CHART_METRICS.map((metric) =>
         fetchMetricTimeseries({ metric, start, end, step }),

@@ -37,9 +37,9 @@ const LABEL_MAP = {
 
 const { t } = useI18n();
 const { tabs, defaultTab } = useMergedShellTabs("flow", LABEL_MAP);
-/** 与原限流叶页一致：默认 24h / 60s；缓存 Tab 共用。 */
+/** 产品默认时间窗 6h / 60s；缓存 Tab 共用。 */
 const { timeRange, refreshInterval, bumpReload } = provideOpsSharedRange(
-  "24h",
+  "6h",
   60,
 );
 </script>
