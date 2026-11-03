@@ -76,7 +76,7 @@ pub struct AuthFlowConfig {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub request_body_tpl: String,
-    /// 凭据：落库为 `enc:v1:…`；API 响应脱敏为 `••••••••`。
+    /// 凭据：落库为 `enc:v2:<alg>:…`（自描述 AEAD）；API 响应脱敏为 `••••••••`。
     #[serde(default)]
     pub credentials: HashMap<String, String>,
     #[serde(default)]
@@ -624,7 +624,7 @@ mod tests {
             .credentials
             .get("username")
             .unwrap();
-        assert!(stored.starts_with("enc:v1:"));
+        assert!(stored.starts_with("enc:v2:aes-256-gcm:"));
         cfg = cfg.decrypt_credentials_for_runtime().unwrap();
         assert_eq!(
             cfg.auth_flow
@@ -641,7 +641,7 @@ mod tests {
     fn mask_hides_encrypted() {
         let json = serde_json::json!({
             "auth_flow": {
-                "credentials": { "password": "enc:v1:abc" }
+                "credentials": { "password": "enc:v2:aes-256-gcm:abc" }
             }
         });
         let masked = mask_config_credentials(json);

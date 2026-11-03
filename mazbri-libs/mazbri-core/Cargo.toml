@@ -29,7 +29,6 @@ flate2 = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
-aes-gcm = { workspace = true }
 base64 = "0.22"
 hex = { workspace = true }
 rand = { workspace = true }

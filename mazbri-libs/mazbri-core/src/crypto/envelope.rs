@@ -1,4 +1,4 @@
-//! 租户密钥包装信封：算法字段走注册表 kebab-case（无硬编码 AES 唯一性）。
+//! 租户密钥包装信封：`algorithm` 为注册表 kebab-case AEAD id（与 init-dbs wrapping 闭集一致）。
 
 use mazbri_crypto::id::AlgorithmId;
 use mazbri_crypto::parse_algorithm_id;
