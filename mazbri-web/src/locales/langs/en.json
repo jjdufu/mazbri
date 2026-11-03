@@ -4158,11 +4158,14 @@
     "overview": {
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
-      "viewerSlim": "Slim overview: sensitive amounts and admin actions are hidden",
+      "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
+      "timeRangeHint": "KPI cards are near-instant; the time range applies to charts and platform stats",
+      "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
+      "billingOldestAgeHint": "Oldest pending {age} s",
       "stats": {
         "qps": "Business QPS",
         "successRate": "Success rate",
-        "latency": "P50 / P95 / P99",
+        "latency": "P99 latency",
         "errorRates": "4xx / 5xx rate",
         "circuitOpen": "Open breakers",
         "ratelimit": "Rate-limit denies",

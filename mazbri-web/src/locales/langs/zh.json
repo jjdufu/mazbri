@@ -4163,11 +4163,14 @@
     "overview": {
       "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
-      "viewerSlim": "精简总览：敏感金额与管理入口已隐藏",
+      "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
+      "timeRangeHint": "KPI 卡为近瞬时值；时间范围作用于曲线与平台统计",
+      "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
+      "billingOldestAgeHint": "最老待处理 {age} s",
       "stats": {
         "qps": "业务 QPS",
         "successRate": "成功率",
-        "latency": "P50 / P95 / P99",
+        "latency": "P99 时延",
         "errorRates": "4xx / 5xx 率",
         "circuitOpen": "熔断打开数",
         "ratelimit": "限流拒绝率",

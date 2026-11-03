@@ -9,8 +9,12 @@
       </ElButton>
     </template>
 
+    <p class="ops-overview__range-hint">
+      {{ t("ops.overview.timeRangeHint") }}
+    </p>
+
     <ElAlert
-      v-if="isViewerSlim"
+      v-if="isViewer"
       type="info"
       :closable="false"
       class="ops-overview__slim"
@@ -25,6 +29,7 @@
           :loading="loading"
           unit="req/s"
           icon="ri:pulse-line"
+          :interactive="canDrill('2.1')"
           @click="drill('2.1')"
         />
       </ElCol>
@@ -37,17 +42,21 @@
           icon="ri:checkbox-circle-line"
           icon-color="#67c23a"
           icon-background="rgba(103, 194, 58, 0.12)"
+          :interactive="canDrill('2.4')"
           @click="drill('2.4')"
         />
       </ElCol>
       <ElCol :xs="24" :sm="12" :lg="6">
         <StatCard
           :label="t('ops.overview.stats.latency')"
-          :value="latencyLabel"
+          :value="latencyPrimary"
+          unit="ms"
+          :hint="latencySecondary"
           :loading="loading"
           icon="ri:timer-line"
           icon-color="#e6a23c"
           icon-background="rgba(230, 162, 60, 0.12)"
+          :interactive="canDrill('2.2')"
           @click="drill('2.2')"
         />
       </ElCol>
@@ -59,6 +68,7 @@
           icon="ri:error-warning-line"
           icon-color="#f56c6c"
           icon-background="rgba(245, 108, 108, 0.12)"
+          :interactive="canDrill('2.4')"
           @click="drill('2.4')"
         />
       </ElCol>
@@ -71,6 +81,7 @@
           :value="overview?.circuit_breaker_open_count"
           :loading="loading"
           icon="ri:shut-down-line"
+          :interactive="canDrill('3.2')"
           @click="drill('3.2')"
         />
       </ElCol>
@@ -81,38 +92,50 @@
           unit="ops/s"
           :loading="loading"
           icon="ri:stop-circle-line"
+          :interactive="canDrill('4.1')"
           @click="drill('4.1')"
         />
       </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
+      <ElCol
+        :xs="24"
+        :sm="12"
+        :lg="6"
+        :class="{ 'ops-overview__tenant--muted': isViewer }"
+      >
         <StatCard
           :label="t('ops.overview.stats.activeTenants')"
           :value="platform?.tenant_stats?.active_tenants"
           :loading="loading"
-          :hide-amount="isViewerSlim"
           icon="ri:building-line"
         />
       </ElCol>
     </ElRow>
 
-    <ElRow :gutter="16" class="ops-overview__cards">
-      <ElCol
-        v-for="card in billingCards"
-        :key="card.key"
-        :xs="12"
-        :sm="6"
-        :lg="6"
-      >
-        <StatCard
-          :label="t(`ops.overview.stats.${card.key}`)"
-          :value="overview?.billing_pipeline?.[card.field]"
-          :unit="card.unit"
-          :loading="loading"
-          icon="ri:stack-line"
-          @click="drill('6.1')"
-        />
-      </ElCol>
-    </ElRow>
+    <RoleGate gate="biz">
+      <ElRow :gutter="16" class="ops-overview__cards">
+        <ElCol :xs="24" :sm="12" :lg="12">
+          <StatCard
+            :label="t('ops.overview.stats.billingBacklog')"
+            :value="overview?.billing_pipeline?.backlog"
+            :hint="billingBacklogHint"
+            :loading="loading"
+            icon="ri:stack-line"
+            :interactive="canDrill('6.1')"
+            @click="drill('6.1')"
+          />
+        </ElCol>
+        <ElCol :xs="24" :sm="12" :lg="12">
+          <StatCard
+            :label="t('ops.overview.stats.billingDeadLetters')"
+            :value="overview?.billing_pipeline?.dead_letters"
+            :loading="loading"
+            icon="ri:mail-forbid-line"
+            :interactive="canDrill('6.1')"
+            @click="drill('6.1')"
+          />
+        </ElCol>
+      </ElRow>
+    </RoleGate>
 
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="14">
@@ -221,12 +244,12 @@
             :series="p99Series"
             :loading="loading"
             height="240px"
-            @point-click="onP99Click"
+            :on-point-click="p99ClickHandler"
           />
         </ElCard>
       </ElCol>
     </ElRow>
-    </OpsPage>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -239,53 +262,197 @@ import TimeRangePicker, {
 } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
+import RoleGate from "@/components/ops/RoleGate.vue";
 import StatCard from "@/components/ops/StatCard.vue";
-import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
+import MultiSeriesChart, {
+  type PointClick,
+} from "@/components/ops/MultiSeriesChart.vue";
 import { useDrilldown } from "@/composables/ops/useDrilldown";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
+import { useRoleGatedLoader } from "@/composables/ops/useRoleGatedLoader";
 import { fetchMetricTimeseries, fetchMetricsOverview } from "@/api/monitoring";
 import { fetchPlatformStats } from "@/api/analytics";
 import { fetchAlertSummary } from "@/api/alerts";
 import type { AlertSummary } from "@/types/api/alerts";
 import type { PlatformStats } from "@/types/api/analytics";
-import type {
-  BillingPipelineOverview,
-  MetricOverview,
-  MetricSeries,
-} from "@/types/api/monitoring";
-import { useUserStore } from "@/store/modules/user";
+import type { MetricOverview, MetricSeries } from "@/types/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
 import type { ExemplarRow } from "@/types/api/olap";
+import { buildCallsRoute } from "@/utils/ops/calls-link";
 import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
 import { buildAlertsRoute } from "@/utils/ops/alerts-link";
-import { BILLING_PATH } from "@/utils/ops/billing-link";
-import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
-import { UPSTREAM_PATH } from "@/utils/ops/upstream-link";
-import { FLOW_PATH } from "@/utils/ops/flow-link";
 import {
   buildServiceDetailRoute,
   buildServicesRoute,
 } from "@/utils/ops/services-link";
-import { useOpsRole } from "@/composables/ops/useOpsRole";
+import {
+  canOverviewDrill,
+  resolveOverviewDrill,
+  type OverviewDrillId,
+} from "@/utils/ops/overview-drill";
+import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
 
 defineOptions({ name: "OpsOverview" });
+
+type OverviewLoadKey = "overview" | "platform" | "qps" | "p99" | "alerts";
+
+const OVERVIEW_LOAD_TASKS: readonly RoleGatedTask<OverviewLoadKey>[] = [
+  { key: "overview", gate: "all" },
+  { key: "platform", gate: "all" },
+  { key: "qps", gate: "all" },
+  { key: "p99", gate: "all" },
+  { key: "alerts", gate: "all" },
+];
 
 const { t } = useI18n();
 const router = useRouter();
 const { drilldown } = useDrilldown();
-const userStore = useUserStore();
-const { isAdmin } = useOpsRole();
+const { isAdmin, isBiz, isViewer } = useOpsRole();
 
-const loading = ref(false);
 const overview = ref<MetricOverview | null>(null);
 const platform = ref<PlatformStats | null>(null);
 const qpsSeries = ref<MetricSeries | null>(null);
 const p99Series = ref<MetricSeries | null>(null);
+const alertSummary = ref<AlertSummary | null>(null);
 const exemplarLoading = ref(false);
+const refreshInterval = ref(30);
+const timeRange = ref<TimeRangeValue>({
+  preset: "1h",
+  start: Math.floor(Date.now() / 1000) - 3600,
+  end: Math.floor(Date.now() / 1000),
+});
 
-/** P99 point click → exemplar requests at/above P99 around that point → slow trace list. */
-async function onP99Click(point: { timestamp: number }) {
+const drillRole = computed(() => ({
+  isAdmin: isAdmin.value,
+  isBiz: isBiz.value,
+  isViewer: isViewer.value,
+}));
+
+const latencyPrimary = computed(() => {
+  const o = overview.value;
+  if (!o) return null;
+  return o.p99_latency_ms;
+});
+
+const latencySecondary = computed(() => {
+  const o = overview.value;
+  if (!o) return "";
+  return t("ops.overview.latencySecondary", {
+    p50: fmt(o.p50_latency_ms),
+    p95: fmt(o.p95_latency_ms),
+  });
+});
+
+const errorLabel = computed(() => {
+  const o = overview.value;
+  if (!o) return "—";
+  return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
+});
+
+const billingBacklogHint = computed(() => {
+  const age = overview.value?.billing_pipeline?.oldest_pending_age_seconds;
+  if (age === undefined || age === null) return "";
+  return t("ops.overview.billingOldestAgeHint", { age: fmt(age) });
+});
+
+/** VIEWER 关闭 exemplar；ADMIN → Trace；BIZ → 调用检索。 */
+const p99ClickHandler = computed(() =>
+  isViewer.value ? undefined : onP99Click,
+);
+
+const {
+  loading,
+  load: loadOverviewBundle,
+} = useRoleGatedLoader<OverviewLoadKey, unknown>({
+  tasks: OVERVIEW_LOAD_TASKS,
+  run: async (key) => {
+    switch (key) {
+      case "overview":
+        return fetchMetricsOverview();
+      case "platform":
+        return fetchPlatformStats({
+          start_time: timeRange.value.start,
+          end_time: timeRange.value.end,
+        }).catch(() => null);
+      case "qps":
+        return fetchMetricTimeseries({
+          metric: "qps",
+          start: timeRange.value.start,
+          end: timeRange.value.end,
+        }).catch(() => null);
+      case "p99":
+        return fetchMetricTimeseries({
+          metric: "p99_latency_ms",
+          start: timeRange.value.start,
+          end: timeRange.value.end,
+        }).catch(() => null);
+      case "alerts":
+        return fetchAlertSummary().catch(() => null);
+      default: {
+        const _exhaustive: never = key;
+        return _exhaustive;
+      }
+    }
+  },
+});
+
+function alertLabels(labels: Record<string, string>) {
+  return Object.entries(labels)
+    .filter(([key]) => key !== "category" && key !== "unit")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
+function fmt(n: number) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
+    n,
+  );
+}
+
+function canDrill(id: OverviewDrillId): boolean {
+  return canOverviewDrill(id, drillRole.value);
+}
+
+function drill(id: OverviewDrillId) {
+  const target = resolveOverviewDrill(id, drillRole.value);
+  if (!target) return;
+  drilldown({
+    path: target.path,
+    query: target.query,
+  });
+}
+
+function openServiceHealth(service: string) {
+  if (isAdmin.value) {
+    void router.push(buildServiceDetailRoute(service));
+    return;
+  }
+  void router.push(buildServicesRoute({ tab: "health" }));
+}
+
+async function onP99Click(point: PointClick) {
+  if (isViewer.value) return;
+
   const span = timeRange.value.end - timeRange.value.start;
   const windowSecs = Math.min(3600, Math.max(60, Math.ceil(span / 120)));
+  const start = point.timestamp - windowSecs;
+  const end = point.timestamp + windowSecs;
+
+  // 管理员（BIZ 非超管）：进调用检索，不打 exemplar / Trace。
+  if (!isAdmin.value) {
+    void router.push(
+      buildCallsRoute({
+        tab: "customer",
+        start,
+        end,
+        filters: {
+          duration_ms_gte: Math.max(0, Math.floor(point.value)),
+        },
+      }),
+    );
+    return;
+  }
+
   exemplarLoading.value = true;
   try {
     const res = await postOlapQuery<ExemplarRow>({
@@ -302,8 +469,8 @@ async function onP99Click(point: { timestamp: number }) {
     );
     void router.push(
       buildTraceSearchRoute({
-        start: point.timestamp - windowSecs,
-        end: point.timestamp + windowSecs,
+        start,
+        end,
         filters: { min_duration_ms: threshold },
       }),
     );
@@ -313,86 +480,6 @@ async function onP99Click(point: { timestamp: number }) {
     exemplarLoading.value = false;
   }
 }
-const alertSummary = ref<AlertSummary | null>(null);
-const refreshInterval = ref(30);
-const timeRange = ref<TimeRangeValue>({
-  preset: "1h",
-  start: Math.floor(Date.now() / 1000) - 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-
-const billingCards: {
-  key: string;
-  field: keyof BillingPipelineOverview;
-  unit: string;
-}[] = [
-  { key: "billingBacklog", field: "backlog", unit: "" },
-  { key: "billingOldestAge", field: "oldest_pending_age_seconds", unit: "s" },
-  { key: "billingDeadLetters", field: "dead_letters", unit: "" },
-  { key: "billingLagP99", field: "charge_lag_p99_ms", unit: "ms" },
-];
-
-const roles = computed(() => (userStore.info?.roles as string[]) || []);
-const isViewerSlim = computed(
-  () => roles.value.includes("R_VIEWER") && !roles.value.includes("R_ADMIN"),
-);
-
-const latencyLabel = computed(() => {
-  const o = overview.value;
-  if (!o) return "—";
-  return `P50 ${fmt(o.p50_latency_ms)} / P95 ${fmt(o.p95_latency_ms)} / P99 ${fmt(o.p99_latency_ms)}`;
-});
-const errorLabel = computed(() => {
-  const o = overview.value;
-  if (!o) return "—";
-  return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
-});
-
-/** StatCard 下钻目标（仅卡片点击；底部按钮条已按 step-11 删除）。 */
-const drillRoutes: Record<
-  string,
-  { path: string; query?: Record<string, string> }
-> = {
-  "2.1": { path: TRAFFIC_PATH, query: { tab: "red" } },
-  "2.2": { path: TRAFFIC_PATH, query: { tab: "latency" } },
-  "2.4": { path: TRAFFIC_PATH, query: { tab: "errors" } },
-  "3.2": { path: UPSTREAM_PATH, query: { tab: "breaker" } },
-  "4.1": { path: FLOW_PATH, query: { tab: "ratelimit" } },
-  "6.1": { path: BILLING_PATH, query: { tab: "health" } },
-};
-
-function alertLabels(labels: Record<string, string>) {
-  return Object.entries(labels)
-    .filter(([key]) => key !== "category" && key !== "unit")
-    .map(([key, value]) => `${key}=${value}`)
-    .join(", ");
-}
-
-function fmt(n: number) {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
-    n,
-  );
-}
-
-function openServiceHealth(service: string) {
-  // 详情仅超管；其他角色落到健康矩阵，避免 403。
-  if (isAdmin.value) {
-    void router.push(buildServiceDetailRoute(service));
-    return;
-  }
-  void router.push(buildServicesRoute({ tab: "health" }));
-}
-
-function drill(id: string) {
-  const target = drillRoutes[id];
-  if (!target) {
-    return;
-  }
-  drilldown({
-    path: target.path,
-    query: target.query,
-  });
-}
 
 function openScreen() {
   const url = `${window.location.origin}${window.location.pathname}#/screen`;
@@ -400,37 +487,18 @@ function openScreen() {
 }
 
 async function reload() {
-  loading.value = true;
   try {
-    const [ov, plat, qps, p99, alerts] = await Promise.all([
-      fetchMetricsOverview(),
-      fetchPlatformStats({
-        start_time: timeRange.value.start,
-        end_time: timeRange.value.end,
-      }).catch(() => null),
-      fetchMetricTimeseries({
-        metric: "qps",
-        start: timeRange.value.start,
-        end: timeRange.value.end,
-      }).catch(() => null),
-      fetchMetricTimeseries({
-        metric: "p99_latency_ms",
-        start: timeRange.value.start,
-        end: timeRange.value.end,
-      }).catch(() => null),
-      fetchAlertSummary().catch(() => null),
-    ]);
-    overview.value = ov;
-    platform.value = plat;
-    qpsSeries.value = qps;
-    p99Series.value = p99;
-    alertSummary.value = alerts;
+    const bundle = await loadOverviewBundle();
+    overview.value = (bundle.overview as MetricOverview | undefined) ?? null;
+    platform.value = (bundle.platform as PlatformStats | null | undefined) ?? null;
+    qpsSeries.value = (bundle.qps as MetricSeries | null | undefined) ?? null;
+    p99Series.value = (bundle.p99 as MetricSeries | null | undefined) ?? null;
+    alertSummary.value =
+      (bundle.alerts as AlertSummary | null | undefined) ?? null;
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.overview.loadFailed"),
     );
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -438,6 +506,12 @@ onMounted(reload);
 </script>
 
 <style scoped>
+.ops-overview__range-hint {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
 .ops-overview__cards {
   margin-top: 0;
 }
@@ -449,6 +523,10 @@ onMounted(reload);
 }
 .ops-overview__slim {
   margin: 0;
+}
+.ops-overview__tenant--muted :deep(.ops-stat-card__value) {
+  color: var(--el-text-color-regular);
+  font-weight: 500;
 }
 .ops-overview__panel {
   min-height: 180px;
