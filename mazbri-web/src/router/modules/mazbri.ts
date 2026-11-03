@@ -244,17 +244,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "services-topology",
-        name: "OpsServiceTopology",
-        component: "/mazbri/ops/services/topology",
-        meta: {
-          title: "menus.mazbri.serviceTopology",
-          icon: "ri:node-tree",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "traffic",
         name: "OpsTraffic",
         component: "/mazbri/ops/traffic/index",

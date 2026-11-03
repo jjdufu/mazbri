@@ -133,7 +133,7 @@
               <ElButton
                 link
                 type="primary"
-                @click="router.push('/ops/services')"
+                @click="router.push(buildServicesRoute({ tab: 'health' }))"
               >
                 {{ t("ops.overview.openMatrix") }}
               </ElButton>
@@ -146,7 +146,7 @@
               type="button"
               class="ops-overview__light"
               :title="item.name"
-              @click="router.push(`/ops/services/${item.service}`)"
+              @click="openServiceHealth(item.service)"
             >
               <span class="ops-overview__dot" :data-status="item.status"></span>
               <span class="ops-overview__light-name">{{ item.name }}</span>
@@ -309,6 +309,12 @@ import { BILLING_PATH } from "@/utils/ops/billing-link";
 import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
 import { UPSTREAM_PATH } from "@/utils/ops/upstream-link";
 import { FLOW_PATH } from "@/utils/ops/flow-link";
+import {
+  SERVICES_PATH,
+  buildServiceDetailRoute,
+  buildServicesRoute,
+} from "@/utils/ops/services-link";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -316,6 +322,7 @@ const { t } = useI18n();
 const router = useRouter();
 const { drilldown } = useDrilldown();
 const userStore = useUserStore();
+const { isAdmin } = useOpsRole();
 
 const loading = ref(false);
 const overview = ref<MetricOverview | null>(null);
@@ -446,7 +453,8 @@ const drillTargets = computed<DrillTarget[]>(() => [
     id: "1.1",
     label: t("ops.overview.openMatrix"),
     enabled: true,
-    path: "/ops/services",
+    path: SERVICES_PATH,
+    query: { tab: "health" },
   },
 ]);
 
@@ -461,6 +469,15 @@ function fmt(n: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
     n,
   );
+}
+
+function openServiceHealth(service: string) {
+  // 详情仅超管；其他角色落到健康矩阵，避免 403。
+  if (isAdmin.value) {
+    void router.push(buildServiceDetailRoute(service));
+    return;
+  }
+  void router.push(buildServicesRoute({ tab: "health" }));
 }
 
 function drill(id: string) {

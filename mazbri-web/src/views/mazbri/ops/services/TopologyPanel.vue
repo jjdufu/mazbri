@@ -1,43 +1,46 @@
 <template>
-  <OpsPage :title="t('ops.services.topologyPage.title')">
-    <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="reload" />
-      <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
-    <p class="ops-topology__hint">{{ t("ops.services.topologyPage.hint") }}</p>
+  <div class="ops-services-topology-panel">
+    <OpsPanelToolbar>
+      <TimeRangePicker v-model="timeRange" @change="bumpReload" />
+    </OpsPanelToolbar>
+    <p class="ops-services-topology-panel__hint">
+      {{ t("ops.services.topologyPage.hint") }}
+    </p>
     <OpsCard>
-      <div ref="graphRef" v-loading="loading" class="ops-topology__graph" />
+      <div
+        ref="graphRef"
+        v-loading="loading"
+        class="ops-services-topology-panel__graph"
+      />
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import TimeRangePicker from "@/components/ops/TimeRangePicker.vue";
-import type { TimeRangeValue } from "@/utils/ops/time-range";
-import { echarts, type EChartsOption } from "@/plugins/echarts";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
+import TimeRangePicker from "@/components/ops/TimeRangePicker.vue";
 import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
+import { echarts, type EChartsOption } from "@/plugins/echarts";
 import { fetchServiceTopology } from "@/api/monitoring";
 import type { TopologyEdge, TopologyGraph } from "@/types/api/monitoring";
 
-defineOptions({ name: "OpsServiceTopology" });
+defineOptions({ name: "OpsServicesTopologyPanel" });
 
 const { t } = useI18n();
 const router = useRouter();
+const { timeRange, reloadTick, bumpReload } = useOpsSharedRange();
 const graphRef = ref<HTMLDivElement>();
 const loading = ref(false);
-const refreshInterval = ref(30);
-const now = Math.floor(Date.now() / 1000);
-const timeRange = ref<TimeRangeValue>({ preset: "1h", start: now - 3600, end: now });
 let chart: echarts.ECharts | null = null;
 let seq = 0;
 let graph: TopologyGraph | null = null;
+let unbindResize: (() => void) | null = null;
 
 const HEALTH: Record<string, string> = {
   green: "#67c23a",
@@ -114,7 +117,6 @@ function render() {
           source: e.source,
           target: e.target,
           label: {
-            // Keep edge labels off by default to avoid overlap; show on hover emphasis.
             show: false,
             formatter: `${e.qps.toFixed(1)} · ${(e.error_rate * 100).toFixed(0)}%`,
             fontSize: 10,
@@ -173,9 +175,11 @@ async function reload() {
   }
 }
 
-let unbindResize: (() => void) | null = null;
-
 onMounted(() => {
+  void reload();
+});
+
+watch(reloadTick, () => {
   void reload();
 });
 
@@ -188,16 +192,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ops-topology__title {
-  margin: 0;
-  font-size: 20px;
-}
-.ops-topology__hint {
-  margin: 4px 0 0;
+.ops-services-topology-panel__hint {
+  margin: 0 0 12px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
-.ops-topology__graph {
+
+.ops-services-topology-panel__graph {
   flex: 1;
   min-height: 560px;
   border: 1px solid var(--el-border-color-lighter);
