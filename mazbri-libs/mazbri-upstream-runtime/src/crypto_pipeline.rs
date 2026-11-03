@@ -906,6 +906,23 @@ fn signing_message(
                     CanonInput::Raw(&bytes),
                 )?);
             }
+            // SignOnly：BIZ 槽位字段名即被签原文（如 envelope sm3 的 payload）。
+            if profile.crypt.is_none()
+                && let Some(biz) = profile.slots.iter().find(|s| s.role == role::BIZ)
+                && let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(primary)
+                && let Some(v) = map.get(&biz.name)
+            {
+                let bytes = match v {
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    other => serde_json::to_vec(other).map_err(|e| PipelineError::JsonScope {
+                        reason: e.to_string(),
+                    })?,
+                };
+                return Ok(canon::material(
+                    CanonStyle::Raw,
+                    CanonInput::Raw(&bytes),
+                )?);
+            }
             Ok(canon::material(
                 CanonStyle::Raw,
                 CanonInput::Raw(primary),
@@ -1009,6 +1026,26 @@ fn place_biz_or_body(
     body: &[u8],
 ) -> Result<(), PipelineError> {
     if SlotBags::has_role(&profile.slots, role::BIZ) {
+        // 若 body 已是含 BIZ 字段名的 JSON 对象：保留对象，只把该字段值写入槽位，
+        // 避免把整包 JSON 再塞进 payload 字段（SignOnly + raw 签单字段的通用形态）。
+        if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(body) {
+            let biz_name = profile
+                .slots
+                .iter()
+                .find(|s| s.role == role::BIZ)
+                .map(|s| s.name.clone());
+            if let Some(name) = biz_name.as_ref()
+                && let Some(v) = map.get(name)
+            {
+                let field_text = match v {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                require_write_role(&mut parts.slots, &profile.slots, role::BIZ, &field_text)?;
+                parts.body = body.to_vec();
+                return Ok(());
+            }
+        }
         let text = std::str::from_utf8(body).map_err(|_| PipelineError::InvalidInput {
             reason: "biz body not utf8".into(),
         })?;
