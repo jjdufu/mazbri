@@ -875,7 +875,15 @@
       "slo": "SLO / 错误预算",
       "anomaly": "异常检测",
       "alertSilences": "告警静默",
-      "serviceTopology": "服务拓扑"
+      "serviceTopology": "服务拓扑",
+      "opsInfra": "基础设施",
+      "opsAlerts": "告警中心",
+      "opsBilling": "计费与对账",
+      "opsTraffic": "流量与质量",
+      "opsUpstream": "上游健康",
+      "opsFlow": "流量治理",
+      "opsReliability": "可靠性",
+      "opsServices": "服务概览"
     }
   },
   "systemSettings": {
@@ -4772,6 +4780,10 @@
       "colBase": "基线",
       "colScore": "得分",
       "colStatus": "状态"
+    },
+    "mergedShell": {
+      "placeholder": "内容将在后续步骤迁入此 Tab。",
+      "empty": "当前角色没有可查看的 Tab。"
     }
   }
 }

@@ -875,7 +875,15 @@
       "slo": "SLO / Error Budget",
       "anomaly": "Anomaly",
       "alertSilences": "Alert silences",
-      "serviceTopology": "Service topology"
+      "serviceTopology": "Service topology",
+      "opsInfra": "Infrastructure",
+      "opsAlerts": "Alert center",
+      "opsBilling": "Billing & reconcile",
+      "opsTraffic": "Traffic & quality",
+      "opsUpstream": "Upstream health",
+      "opsFlow": "Traffic governance",
+      "opsReliability": "Reliability",
+      "opsServices": "Services overview"
     }
   },
   "systemSettings": {
@@ -4767,6 +4775,10 @@
       "colBase": "Baseline",
       "colScore": "Score",
       "colStatus": "Status"
+    },
+    "mergedShell": {
+      "placeholder": "Content will move into this tab in a later step.",
+      "empty": "No tabs available for the current role."
     }
   }
 }

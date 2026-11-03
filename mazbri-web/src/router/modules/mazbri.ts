@@ -221,10 +221,10 @@ export const mazbriRoutes: AppRouteRecord[] = [
     children: [
       {
         path: "services",
-        name: "OpsServiceHealth",
+        name: "OpsServices",
         component: "/mazbri/ops/services/index",
         meta: {
-          title: "menus.mazbri.serviceHealth",
+          title: "menus.mazbri.opsServices",
           icon: "ri:heart-pulse-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
@@ -252,6 +252,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:node-tree",
           keepAlive: false,
           roles: ["R_ADMIN"],
+        },
+      },
+      {
+        path: "traffic",
+        name: "OpsTraffic",
+        component: "/mazbri/ops/traffic/index",
+        meta: {
+          title: "menus.mazbri.opsTraffic",
+          icon: "ri:dashboard-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -285,6 +296,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:error-warning-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
+        path: "traffic/products",
+        name: "OpsTrafficProducts",
+        component: "/mazbri/ops/traffic/products",
+        meta: {
+          title: "menus.mazbri.productRank",
+          icon: "ri:bar-chart-2-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {
@@ -323,6 +345,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "upstream",
+        name: "OpsUpstream",
+        component: "/mazbri/ops/upstream/index",
+        meta: {
+          title: "menus.mazbri.opsUpstream",
+          icon: "ri:shield-check-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "upstream/sla",
         name: "OpsUpstreamSla",
         component: "/mazbri/ops/upstream/sla",
@@ -345,6 +378,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "billing",
+        name: "OpsBilling",
+        component: "/mazbri/ops/billing/index",
+        meta: {
+          title: "menus.mazbri.opsBilling",
+          icon: "ri:bill-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
         path: "billing/health",
         name: "OpsBillingHealth",
         component: "/mazbri/ops/billing/health",
@@ -362,6 +406,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.billingReconcile",
           icon: "ri:calendar-check-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE"],
+        },
+      },
+      {
+        path: "flow",
+        name: "OpsFlow",
+        component: "/mazbri/ops/flow/index",
+        meta: {
+          title: "menus.mazbri.opsFlow",
+          icon: "ri:speed-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -389,17 +444,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "assets/changes",
-        name: "OpsAssetsChanges",
-        component: "/mazbri/ops/assets/changes",
-        meta: {
-          title: "menus.mazbri.assetsChanges",
-          icon: "ri:git-commit-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
         path: "security",
         name: "OpsSecurityEvents",
         component: "/mazbri/ops/security/index",
@@ -411,14 +455,14 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "traffic/products",
-        name: "OpsTrafficProducts",
-        component: "/mazbri/ops/traffic/products",
+        path: "reliability",
+        name: "OpsReliability",
+        component: "/mazbri/ops/reliability/index",
         meta: {
-          title: "menus.mazbri.productRank",
-          icon: "ri:bar-chart-2-line",
+          title: "menus.mazbri.opsReliability",
+          icon: "ri:shield-star-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+          roles: ["R_ADMIN"],
         },
       },
       {
@@ -450,6 +494,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.slo",
           icon: "ri:shield-check-line",
+          keepAlive: false,
+          roles: ["R_ADMIN"],
+        },
+      },
+      {
+        path: "infra",
+        name: "OpsInfra",
+        component: "/mazbri/ops/infra/index",
+        meta: {
+          title: "menus.mazbri.opsInfra",
+          icon: "ri:server-line",
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
@@ -488,6 +543,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
+        path: "alerts",
+        name: "OpsAlerts",
+        component: "/mazbri/ops/alerts/index",
+        meta: {
+          title: "menus.mazbri.opsAlerts",
+          icon: "ri:alarm-warning-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+        },
+      },
+      {
         path: "alerts/events",
         name: "OpsAlertEvents",
         component: "/mazbri/ops/alerts/events",
@@ -518,6 +584,17 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:volume-mute-line",
           keepAlive: false,
           roles: ["R_ADMIN"],
+        },
+      },
+      {
+        path: "assets/changes",
+        name: "OpsAssetsChanges",
+        component: "/mazbri/ops/assets/changes",
+        meta: {
+          title: "menus.mazbri.assetsChanges",
+          icon: "ri:git-commit-line",
+          keepAlive: false,
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
       {
