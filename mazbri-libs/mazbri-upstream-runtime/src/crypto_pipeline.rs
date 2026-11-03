@@ -885,10 +885,32 @@ fn signing_message(
 ) -> Result<Vec<u8>, PipelineError> {
     let pairs = ctx.canon_fields;
     match profile.canon {
-        CanonStyle::Raw => Ok(canon::material(
-            CanonStyle::Raw,
-            CanonInput::Raw(primary),
-        )?),
+        CanonStyle::Raw => {
+            // 旧厂常见：raw 实际签某个具名字段明文（sign_then_encrypt + named_fields）。
+            if let Some(field) = profile
+                .crypt
+                .as_ref()
+                .and_then(|c| c.fields.first())
+                .cloned()
+                && let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(primary)
+                && let Some(v) = map.get(&field)
+            {
+                let bytes = match v {
+                    Value::String(s) => s.as_bytes().to_vec(),
+                    other => serde_json::to_vec(other).map_err(|e| PipelineError::JsonScope {
+                        reason: e.to_string(),
+                    })?,
+                };
+                return Ok(canon::material(
+                    CanonStyle::Raw,
+                    CanonInput::Raw(&bytes),
+                )?);
+            }
+            Ok(canon::material(
+                CanonStyle::Raw,
+                CanonInput::Raw(primary),
+            )?)
+        }
         CanonStyle::SortedKv => {
             if pairs.is_empty() {
                 return Err(PipelineError::InvalidInput {

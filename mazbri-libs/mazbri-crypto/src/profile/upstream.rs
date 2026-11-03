@@ -213,7 +213,7 @@ pub struct UpstreamCryptoProfile {
     #[serde(default, skip_serializing_if = "is_canon_key_affix_none")]
     pub canon_key_affix: CanonKeyAffix,
     /// 是否允许 Legacy 算法。
-#[serde(default)]
+    #[serde(default)]
     pub allow_insecure: bool,
 }
 
