@@ -566,6 +566,7 @@ pub static ROUTES: &[RouteAudit] = &[
         CODE,
     ),
     read("/tenants/{code}/account/transactions", R::Account),
+    read("/tenants/{code}/spend", R::Billing),
     secure(
         "POST",
         "/tenants/{code}/api-keys",

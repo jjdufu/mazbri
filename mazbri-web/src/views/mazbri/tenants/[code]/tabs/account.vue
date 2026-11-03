@@ -38,6 +38,13 @@
             ·
             {{ account?.currency || "CNY" }}
           </div>
+          <div v-if="spend" class="balance-meta spend-meta">
+            {{ $t("tenant.account.windowSpend") }}
+            ·
+            {{ spend.window.label }}
+            ·
+            {{ formatBalance(spend.tenant_spend) }}
+          </div>
         </div>
 
         <CommonActionPanel
@@ -354,9 +361,11 @@ import type {
 } from "@/types/api/tenant";
 import {
   fetchTenantAccount,
+  fetchTenantSpend,
   rechargeTenantAccount,
   refundTenantAccount,
   getTenantTransactions,
+  type TenantSpend,
 } from "@/api/tenant";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonActionPanel from "@/components/common/action-panel/index.vue";
@@ -376,6 +385,7 @@ const recharging = ref(false);
 const refunding = ref(false);
 const transactionsLoading = ref(false);
 const account = ref<TenantAccount | null>(null);
+const spend = ref<TenantSpend | null>(null);
 const accountActions = ref<{
   recharge: boolean;
   refund: boolean;
@@ -569,8 +579,16 @@ const getPaymentMethodLabel = (method?: string) => {
 const loadAccount = async () => {
   loading.value = true;
   try {
-    const res = await fetchTenantAccount(props.tenantCode);
+    const to = new Date();
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - 29);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const [res, sp] = await Promise.all([
+      fetchTenantAccount(props.tenantCode),
+      fetchTenantSpend(props.tenantCode, { from: fmt(from), to: fmt(to) }),
+    ]);
     account.value = res;
+    spend.value = sp;
     if (res.actions) {
       accountActions.value = res.actions;
     }

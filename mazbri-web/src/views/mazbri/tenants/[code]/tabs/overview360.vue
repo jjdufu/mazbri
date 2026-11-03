@@ -11,7 +11,13 @@
         <StatCard :label="t('tenant.overview360.p95')" :value="overview?.p95_ms ?? null" unit="ms" :loading="loading" :digits="0" />
       </ElCol>
       <ElCol :xs="12" :lg="4">
-        <StatCard :label="t('tenant.overview360.cost')" :value="costNum" :loading="loading" :digits="4" />
+        <StatCard
+          :label="t('tenant.overview360.tenantSpend')"
+          :value="spendNum"
+          :hint="spend?.window?.label"
+          :loading="loading"
+          :digits="4"
+        />
       </ElCol>
       <ElCol :xs="12" :lg="4">
         <StatCard :label="t('tenant.overview360.health')" :value="healthScore" :loading="loading" :digits="0" />
@@ -31,6 +37,7 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import StatCard from "@/components/ops/StatCard.vue";
 import { postOlapQuery } from "@/api/olap";
+import { fetchTenantSpend, type TenantSpend } from "@/api/tenant";
 import type { TenantErrorRow, TenantOverviewRow } from "@/types/api/olap";
 import type { ColumnOption } from "@/types/component";
 
@@ -40,10 +47,11 @@ defineOptions({ name: "TenantOverview360" });
 const { t } = useI18n();
 const loading = ref(false);
 const overview = ref<TenantOverviewRow | null>(null);
+const spend = ref<TenantSpend | null>(null);
 const errors = ref<TenantErrorRow[]>([]);
 
-const costNum = computed(() => {
-  const n = Number(overview.value?.cost ?? NaN);
+const spendNum = computed(() => {
+  const n = Number(spend.value?.tenant_spend ?? NaN);
   return Number.isFinite(n) ? n : null;
 });
 
@@ -61,11 +69,20 @@ const errorColumns = computed<ColumnOption<TenantErrorRow>[]>(() => [
   { prop: "count", label: t("tenant.overview360.count") },
 ]);
 
+function last30DayRange() {
+  const to = new Date();
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - 29);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: fmt(from), to: fmt(to) };
+}
+
 async function reload() {
   if (!props.tenantCode) return;
   loading.value = true;
   try {
-    const [ov, er] = await Promise.all([
+    const range = last30DayRange();
+    const [ov, er, sp] = await Promise.all([
       postOlapQuery<TenantOverviewRow>({
         template: "tenant_overview",
         params: { tenant_code: props.tenantCode, range: "24h" },
@@ -74,9 +91,11 @@ async function reload() {
         template: "tenant_errors",
         params: { tenant_code: props.tenantCode, range: "24h", limit: 20 },
       }),
+      fetchTenantSpend(props.tenantCode, range),
     ]);
     overview.value = ov.rows?.[0] ?? null;
     errors.value = er.rows ?? [];
+    spend.value = sp;
   } catch {
     ElMessage.error(t("tenant.overview360.loadFailed"));
   } finally {

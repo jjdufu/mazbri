@@ -2982,7 +2982,8 @@
         "refundAmountRequired": "Please enter a refund amount",
         "refundAmountPositive": "Refund amount must be greater than 0",
         "refundReasonRequired": "Please enter a refund reason"
-      }
+      },
+      "windowSpend": "Window spend (finance SSOT)"
     },
     "createDialog": {
       "placeholders": {
@@ -3194,12 +3195,12 @@
       "calls": "Calls",
       "successRate": "Success rate",
       "p95": "P95",
-      "cost": "Spend",
       "health": "Health score",
       "errors": "Errors",
       "errorCode": "Error code",
       "count": "Count",
-      "loadFailed": "Failed to load tenant 360"
+      "loadFailed": "Failed to load tenant 360",
+      "tenantSpend": "Window spend"
     }
   },
   "rateLimit": {
@@ -4321,7 +4322,13 @@
       "avgSpend": "Avg daily spend (7d)",
       "daysLeft": "Days left",
       "status": "Status",
-      "loadFailed": "Failed to load finance overview"
+      "loadFailed": "Failed to load finance overview",
+      "tenantSpend": "Tenant spend",
+      "tenantName": "Tenant name",
+      "tenantCode": "Tenant code",
+      "costUnavailableTitle": "Cost not connected",
+      "costUnavailableDesc": "Upstream cost is not available for this window; margin shows as \"—\" instead of a fake 100%.",
+      "windowFallback": "Last {days} days"
     },
     "services": {
       "refresh": "Refresh",

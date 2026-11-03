@@ -223,10 +223,13 @@ const todayRevenue = computed(() => {
   return day?.revenue ?? finance.value?.revenue_total ?? null;
 });
 const todayCost = computed(() => {
+  if (finance.value && finance.value.cost_status !== "ok") return null;
   const day = finance.value?.days?.at(-1);
+  if (day && day.cost_status !== "ok") return null;
   return day?.cost ?? finance.value?.cost_total ?? null;
 });
 const todayMargin = computed(() => {
+  if (finance.value && finance.value.cost_status !== "ok") return null;
   const day = finance.value?.days?.at(-1);
   return day?.margin ?? finance.value?.margin_total ?? null;
 });

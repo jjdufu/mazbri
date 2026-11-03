@@ -1,7 +1,7 @@
 use super::super::state::AppState;
 use super::super::{
-    api_key_handlers, config_handlers, product, ratelimit_command_handlers, tenant_crypto_handlers,
-    tenant_handlers, whitelist_handlers,
+    api_key_handlers, config_handlers, finance_ops_handlers, product, ratelimit_command_handlers,
+    tenant_crypto_handlers, tenant_handlers, whitelist_handlers,
 };
 use axum::{
     Router,
@@ -142,5 +142,9 @@ fn product_account_routes() -> Router<AppState> {
         .route(
             "/tenants/{code}/account/transactions",
             get(product::list_tenant_transactions),
+        )
+        .route(
+            "/tenants/{code}/spend",
+            get(finance_ops_handlers::get_tenant_spend),
         )
 }

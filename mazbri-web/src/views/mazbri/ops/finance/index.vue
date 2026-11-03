@@ -9,11 +9,22 @@
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </template>
 
+    <ElAlert
+      v-if="costUnavailable"
+      class="finance-cost-alert"
+      type="warning"
+      :title="t('ops.finance.costUnavailableTitle')"
+      :description="t('ops.finance.costUnavailableDesc')"
+      show-icon
+      :closable="false"
+    />
+
     <ElRow :gutter="16">
       <ElCol :xs="12" :lg="6">
         <StatCard
           :label="t('ops.finance.revenue')"
           :value="num(overview?.revenue_total)"
+          :hint="windowHint"
           :loading="loading"
           :digits="2"
         />
@@ -21,7 +32,8 @@
       <ElCol :xs="12" :lg="6">
         <StatCard
           :label="t('ops.finance.cost')"
-          :value="num(overview?.cost_total)"
+          :value="costUnavailable ? null : num(overview?.cost_total)"
+          :hint="windowHint"
           :loading="loading"
           :digits="2"
         />
@@ -30,6 +42,7 @@
         <StatCard
           :label="t('ops.finance.margin')"
           :value="num(overview?.margin_total)"
+          :hint="windowHint"
           :loading="loading"
           :digits="2"
         />
@@ -39,6 +52,7 @@
           :label="t('ops.finance.marginRate')"
           :value="overview?.margin_rate ?? null"
           unit="%"
+          :hint="windowHint"
           :loading="loading"
           :digits="1"
         />
@@ -67,7 +81,7 @@
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="8">
         <OpsCard :title="t('ops.finance.rankTenant')">
-          <ArtTable :data="ranks?.by_tenant ?? []" :loading="loading" :columns="rankColumns" stripe />
+          <ArtTable :data="ranks?.by_tenant ?? []" :loading="loading" :columns="tenantRankColumns" stripe />
         </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="8">
@@ -123,21 +137,37 @@ function num(v?: string | null) {
   return Number.isFinite(n) ? n : null;
 }
 
+const costUnavailable = computed(
+  () => overview.value != null && overview.value.cost_status !== "ok",
+);
+
+const windowHint = computed(
+  () => overview.value?.window?.label ?? t("ops.finance.windowFallback", { days: days.value }),
+);
+
 const dayLabels = computed(() => overview.value?.days.map((d) => d.day) ?? []);
-const trendSeries = computed(() => [
-  {
-    name: t("ops.finance.revenue"),
-    data: overview.value?.days.map((d) => Number(d.revenue) || 0) ?? [],
-  },
-  {
-    name: t("ops.finance.cost"),
-    data: overview.value?.days.map((d) => Number(d.cost) || 0) ?? [],
-  },
-  {
-    name: t("ops.finance.margin"),
-    data: overview.value?.days.map((d) => Number(d.margin) || 0) ?? [],
-  },
-]);
+const trendSeries = computed(() => {
+  const series = [
+    {
+      name: t("ops.finance.revenue"),
+      data: overview.value?.days.map((d) => Number(d.revenue) || 0) ?? [],
+    },
+  ];
+  if (!costUnavailable.value) {
+    series.push({
+      name: t("ops.finance.cost"),
+      data: overview.value?.days.map((d) => Number(d.cost) || 0) ?? [],
+    });
+    series.push({
+      name: t("ops.finance.margin"),
+      data:
+        overview.value?.days.map((d) =>
+          d.margin == null || d.margin === "" ? 0 : Number(d.margin) || 0,
+        ) ?? [],
+    });
+  }
+  return series;
+});
 
 const rankColumns = computed<ColumnOption[]>(() => [
   { prop: "key", label: t("ops.finance.key") },
@@ -146,8 +176,17 @@ const rankColumns = computed<ColumnOption[]>(() => [
   { prop: "margin", label: t("ops.finance.margin") },
 ]);
 
+const tenantRankColumns = computed<ColumnOption[]>(() => [
+  { prop: "tenant_name", label: t("ops.finance.tenantName") },
+  { prop: "tenant_code", label: t("ops.finance.tenantCode") },
+  { prop: "revenue", label: t("ops.finance.revenue") },
+  { prop: "cost", label: t("ops.finance.cost") },
+  { prop: "margin", label: t("ops.finance.margin") },
+]);
+
 const balanceColumns = computed<ColumnOption<BalanceRow>[]>(() => [
-  { prop: "tenant_id", label: t("ops.finance.tenantId") },
+  { prop: "tenant_name", label: t("ops.finance.tenantName") },
+  { prop: "tenant_code", label: t("ops.finance.tenantCode") },
   { prop: "available_balance", label: t("ops.finance.available") },
   { prop: "recent_recharge", label: t("ops.finance.recharge") },
   { prop: "avg_daily_spend", label: t("ops.finance.avgSpend") },
@@ -177,4 +216,7 @@ onMounted(reload);
 </script>
 
 <style scoped>
+.finance-cost-alert {
+  margin-bottom: 16px;
+}
 </style>

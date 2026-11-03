@@ -295,6 +295,30 @@ export function deleteTenantCryptoKey(
     signal,
   });
 }
+export interface TenantSpend {
+  window: { start: string; end: string; semantics: string; label: string };
+  tenant_id: string;
+  tenant_code: string;
+  tenant_name: string;
+  tenant_spend: string;
+  revenue_platform: string;
+  cost_total: string;
+  cost_status: "ok" | "unavailable" | "partial";
+  margin_total: string | null;
+  margin_rate: number | null;
+}
+export function fetchTenantSpend(
+  code: string,
+  params?: { from?: string; to?: string },
+  signal?: AbortSignal,
+) {
+  return request.get<TenantSpend>({
+    url: `${BASE_PATH}/${code}/spend`,
+    params,
+    signal,
+    showErrorMessage: false,
+  });
+}
 export function fetchTenantAccount(code: string, signal?: AbortSignal) {
   return request.get<TenantAccount>({
     url: `${BASE_PATH}/${code}/account`,

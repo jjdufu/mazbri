@@ -342,6 +342,7 @@ pub const RULES: &[RouteRule] = &[
         "/tenants/{code}/request-keys/{kid}/retire",
         Roles(BIZ),
     ),
+    rule("GET", "/tenants/{code}/spend", AnyRole),
     rule("GET", "/tenants/{code}/whitelist", AnyRole),
     rule("POST", "/tenants/{code}/whitelist", Roles(BIZ)),
     rule("DELETE", "/tenants/{code}/whitelist/{ip}", Roles(BIZ)),

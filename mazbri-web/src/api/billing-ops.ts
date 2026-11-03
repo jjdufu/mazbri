@@ -9,6 +9,15 @@ import type {
 
 const BASE_PATH = `${API_BASE_PATH}/billing/ops`;
 
+export type CostStatus = "ok" | "unavailable" | "partial";
+
+export interface MoneyWindow {
+  start: string;
+  end: string;
+  semantics: string;
+  label: string;
+}
+
 export async function fetchBillingFunnel(range: OpsRange) {
   return request.get<BillingFunnelPg>({
     url: `${BASE_PATH}/funnel`,
@@ -38,28 +47,54 @@ export async function fetchSupplierCosts(range: OpsRange) {
 }
 
 export interface FinanceOverview {
+  window: MoneyWindow;
   days: Array<{
     day: string;
     revenue: string;
     cost: string;
-    margin: string;
+    cost_status: CostStatus;
+    margin: string | null;
     margin_rate: number | null;
   }>;
   revenue_total: string;
   cost_total: string;
-  margin_total: string;
+  cost_status: CostStatus;
+  margin_total: string | null;
   margin_rate: number | null;
   inverted_days: string[];
 }
 
 export interface FinanceRanks {
-  by_tenant: Array<{ key: string; revenue: string; cost: string; margin: string }>;
-  by_product: Array<{ key: string; revenue: string; cost: string; margin: string }>;
-  by_supplier: Array<{ key: string; revenue: string; cost: string; margin: string }>;
+  window: MoneyWindow;
+  by_tenant: Array<{
+    key: string;
+    tenant_code?: string | null;
+    tenant_name?: string | null;
+    revenue: string;
+    cost: string;
+    cost_status: CostStatus;
+    margin: string | null;
+  }>;
+  by_product: Array<{
+    key: string;
+    revenue: string;
+    cost: string;
+    cost_status: CostStatus;
+    margin: string | null;
+  }>;
+  by_supplier: Array<{
+    key: string;
+    revenue: string;
+    cost: string;
+    cost_status: CostStatus;
+    margin: string | null;
+  }>;
 }
 
 export interface BalanceRow {
   tenant_id: string;
+  tenant_code: string | null;
+  tenant_name: string | null;
   balance: string;
   credit_limit: string;
   available_balance: string;
