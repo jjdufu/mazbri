@@ -98,7 +98,9 @@ pub struct RequestParts {
 }
 
 impl RequestParts {
-    fn blank() -> Self {
+    /// 空组包结果。
+    #[must_use]
+    pub fn blank() -> Self {
         Self {
             slots: SlotBags::new(),
             body: Vec::new(),
@@ -1091,4 +1093,170 @@ pub fn default_slots_json_cipher_sign_iv() -> Vec<SlotSpec> {
             name: "iv".into(),
         },
     ]
+}
+
+
+/// 从供应商凭证映射构造 [`PipelineKeys`]。
+///
+/// 约定键名（显式优先）：
+/// - 数据密钥：`crypto_data_key` / `data_key`（hex → base64 → utf8）
+/// - MAC：`crypto_mac_key` / `mac_key`；回退 `client_secret` / `app_secret` / `secret`（**始终 utf8**，避免口令被误 hex 解码）
+/// - 签名私钥 PEM：`crypto_sign_private_pem` / `sign_private_pem`
+/// - 验签公钥 PEM：`crypto_verify_public_pem` / `verify_public_pem`
+/// - 包装公钥 PEM：`crypto_wrap_public_pem` / `wrap_public_pem`
+/// - 解包私钥 PEM：`crypto_unwrap_private_pem` / `unwrap_private_pem`
+///
+/// 本函数**不**记录凭证或密钥材料。
+#[must_use]
+pub fn pipeline_keys_from_credentials<S: ::std::hash::BuildHasher>(
+    credentials: &std::collections::HashMap<String, String, S>,
+) -> PipelineKeys {
+    let mut keys = PipelineKeys::empty();
+    if let Some(raw) = first_cred(credentials, &["crypto_data_key", "data_key"]) {
+        keys.data = Some(KeyRef::raw(KeyPurpose::DataEncryption, decode_key_material(raw)));
+    }
+    if let Some(raw) = first_cred(credentials, &["crypto_mac_key", "mac_key"]) {
+        keys.mac = Some(KeyRef::raw(KeyPurpose::Mac, decode_key_material(raw)));
+    } else if let Some(raw) = first_cred(credentials, &["client_secret", "app_secret", "secret"]) {
+        keys.mac = Some(KeyRef::raw(KeyPurpose::Mac, raw.as_bytes().to_vec()));
+    }
+    if let Some(pem) = first_cred(
+        credentials,
+        &["crypto_sign_private_pem", "sign_private_pem"],
+    ) {
+        keys.sign_private = Some(KeyRef::pem(KeyPurpose::AsymSign, pem.to_owned()));
+    }
+    if let Some(pem) = first_cred(
+        credentials,
+        &["crypto_verify_public_pem", "verify_public_pem"],
+    ) {
+        keys.verify_public = Some(KeyRef::pem(KeyPurpose::AsymSign, pem.to_owned()));
+    }
+    if let Some(pem) = first_cred(credentials, &["crypto_wrap_public_pem", "wrap_public_pem"]) {
+        keys.wrap_public = Some(KeyRef::pem(KeyPurpose::KeyWrap, pem.to_owned()));
+    }
+    if let Some(pem) = first_cred(
+        credentials,
+        &["crypto_unwrap_private_pem", "unwrap_private_pem"],
+    ) {
+        keys.unwrap_private = Some(KeyRef::pem(KeyPurpose::KeyWrap, pem.to_owned()));
+    }
+    keys
+}
+
+fn first_cred<'a, S: ::std::hash::BuildHasher>(
+    credentials: &'a std::collections::HashMap<String, String, S>,
+    names: &[&str],
+) -> Option<&'a str> {
+    for name in names {
+        if let Some(v) = credentials.get(*name) {
+            let t = v.trim();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
+fn decode_key_material(raw: &str) -> Vec<u8> {
+    use base64::Engine as _;
+    let t = raw.trim();
+    if t.len() >= 16
+        && t.len().is_multiple_of(2)
+        && t.bytes().all(|b| b.is_ascii_hexdigit())
+        && let Ok(bytes) = hex::decode(t)
+    {
+        return bytes;
+    }
+    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(t)
+        && !bytes.is_empty()
+    {
+        return bytes;
+    }
+    t.as_bytes().to_vec()
+}
+
+/// `sign_form` 默认槽位：`sign` +（`SignOnly`→`biz` / 其它→`cipher`）落在 form；加密订单附带 `iv`。
+#[must_use]
+pub fn default_slots_sign_form(order: CryptoOrder) -> Vec<SlotSpec> {
+    let mut slots = vec![SlotSpec {
+        role: role::SIGN.into(),
+        location: SlotLocation::Form,
+        name: "sign".into(),
+    }];
+    match order {
+        CryptoOrder::SignOnly => slots.push(SlotSpec {
+            role: role::BIZ.into(),
+            location: SlotLocation::Form,
+            name: "biz_content".into(),
+        }),
+        CryptoOrder::EncryptOnly
+        | CryptoOrder::AeadOnly
+        | CryptoOrder::EncryptThenSign
+        | CryptoOrder::SignThenEncrypt => {
+            slots.push(SlotSpec {
+                role: role::CIPHER.into(),
+                location: SlotLocation::Form,
+                name: "biz_content".into(),
+            });
+            slots.push(SlotSpec {
+                role: role::IV.into(),
+                location: SlotLocation::Form,
+                name: "iv".into(),
+            });
+        }
+    }
+    slots
+}
+
+/// 从 JSON 响应按 profile 槽位装填 [`RequestParts`]（供 `open_response`）。
+#[must_use]
+pub fn parts_from_json_object(map: &Map<String, Value>, profile: &UpstreamCryptoProfile) -> RequestParts {
+    let mut parts = RequestParts::blank();
+    for spec in &profile.slots {
+        if spec.location != SlotLocation::Json {
+            continue;
+        }
+        let Some(val) = map.get(&spec.name) else {
+            continue;
+        };
+        let text = match val {
+            Value::String(s) => s.clone(),
+            Value::Null => continue,
+            other => other.to_string(),
+        };
+        let _ = parts.slots.write_spec(spec, text);
+    }
+    if let Ok(bytes) = serde_json::to_vec(map) {
+        parts.body = bytes;
+    }
+    parts
+}
+
+#[cfg(test)]
+mod keys_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn credentials_map_client_secret_to_mac_utf8() {
+        let mut creds = HashMap::new();
+        creds.insert("client_secret".into(), "aabb".into()); // 短 hex 形口令仍按 utf8
+        let keys = pipeline_keys_from_credentials(&creds);
+        let mac = keys.mac.expect("mac");
+        assert_eq!(mac.raw_bytes().expect("raw"), b"aabb");
+    }
+
+    #[test]
+    fn credentials_map_crypto_data_key_hex() {
+        let mut creds = HashMap::new();
+        creds.insert(
+            "crypto_data_key".into(),
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+        );
+        let keys = pipeline_keys_from_credentials(&creds);
+        let data = keys.data.expect("data");
+        assert_eq!(data.raw_bytes().expect("raw").len(), 32);
+    }
 }

@@ -3,24 +3,54 @@ use crate::types::{BodyKind, ExecuteError};
 use mazbri_core::BodyEncoding;
 use serde_json::Value;
 
+use super::crypto_wire::{apply_parts, ensure_profile_slots, maybe_open_json_body, seal_body};
 use super::{AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, parse_json_body};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
     let spec = &ctx.input.spec;
     let method = spec.request.method.as_str();
     let path = spec.request.path.as_str();
-    let query = super::merge_request_query(ctx.auth, spec);
-    let url = append_query(&join_url(ctx.base_url, path), &query);
+    let mut query = super::merge_request_query(ctx.auth, spec);
     let encoding = spec.request.body_encoding;
     let mut headers = super::merge_request_headers(ctx.auth, spec);
-    let body = outbound_body(method, encoding, &ctx.input.payload)?;
-    if body.is_some() {
-        if encoding == BodyEncoding::Form {
-            super::force_urlencoded_content_type(&mut headers);
+
+    let body = if let Some(profile) = spec.crypto.as_ref() {
+        if method.eq_ignore_ascii_case("GET")
+            || method.eq_ignore_ascii_case("HEAD")
+            || encoding == BodyEncoding::None
+        {
+            None
         } else {
-            super::apply_json_content_type_override(&mut headers, spec);
+            let raw = if ctx.input.payload.is_null() {
+                b"{}".to_vec()
+            } else {
+                serde_json::to_vec(&ctx.input.payload)
+                    .map_err(|e| ExecuteError::SpecInvalid(format!("payload json: {e}")))?
+            };
+            let mut profile = profile.clone();
+            ensure_profile_slots(&mut profile, false);
+            let sealed = seal_body(&raw, &profile, ctx.pipeline_keys, ctx.registry, &[])?;
+            let wire = apply_parts(&mut headers, &mut query, &sealed)?;
+            if matches!(wire, Some(BodyKind::Form(_))) {
+                super::force_urlencoded_content_type(&mut headers);
+            } else {
+                super::apply_json_content_type_override(&mut headers, spec);
+            }
+            wire
         }
-    }
+    } else {
+        let body = outbound_body(method, encoding, &ctx.input.payload)?;
+        if body.is_some() {
+            if encoding == BodyEncoding::Form {
+                super::force_urlencoded_content_type(&mut headers);
+            } else {
+                super::apply_json_content_type_override(&mut headers, spec);
+            }
+        }
+        body
+    };
+
+    let url = append_query(&join_url(ctx.base_url, path), &query);
     let response = super::dispatch_http(
         ctx,
         HttpCall {
@@ -39,7 +69,18 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             response,
         });
     }
-    let json = parse_json_body(&response.body).unwrap_or_else(|_| {
+    let body_for_parse = if let Some(profile) = spec.crypto.as_ref() {
+        maybe_open_json_body(
+            &response.body,
+            profile,
+            ctx.pipeline_keys,
+            ctx.registry,
+            &[],
+        )
+    } else {
+        response.body.clone()
+    };
+    let json = parse_json_body(&body_for_parse).unwrap_or_else(|_| {
         serde_json::Value::String(String::from_utf8_lossy(&response.body).into_owned())
     });
     let (payload, biz_error) = apply_ok_and_unwrap(&json, spec)?;

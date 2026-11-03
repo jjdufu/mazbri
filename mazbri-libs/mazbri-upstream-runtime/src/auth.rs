@@ -178,7 +178,7 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
     let fmt = |raw: &str| inject_fmt.replace("{}", raw);
 
     match profile {
-        // SignForm: per-request HMAC is assembled by the sign_form adapter.
+        // SignForm: per-request MAC/签名由 sign_form 适配器经 crypto_pipeline 完成。
         AuthProfile::None
         | AuthProfile::SignForm
         | AuthProfile::Digest

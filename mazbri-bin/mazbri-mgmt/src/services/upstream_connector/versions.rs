@@ -326,6 +326,7 @@ async fn prepare_live_input(
             mask_secrets: true,
             collect_trace: true,
         },
+        pipeline_keys: Some(mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials)),
         credentials,
         artifact_bytes,
         cache_key: Some(format!("live:{supplier_id}")),

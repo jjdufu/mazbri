@@ -28,8 +28,9 @@ mod types;
 
 pub use assert::{Assertion, AssertionResult, evaluate_assertions};
 pub use crypto_pipeline::{
-    default_slots_json_cipher_sign_iv, open_response, seal_request, PipelineContext, PipelineError,
-    PipelineKeys, RequestParts,
+    default_slots_json_cipher_sign_iv, default_slots_sign_form, open_response,
+    parts_from_json_object, pipeline_keys_from_credentials, seal_request, PipelineContext,
+    PipelineError, PipelineKeys, RequestParts,
 };
 pub use engine::{RuntimeEngine, RuntimeLimits, resolve_timeout};
 pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};

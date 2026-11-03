@@ -6,6 +6,8 @@ use thiserror::Error;
 
 use mazbri_core::{ChannelEgressSpec, SupplierConfig};
 
+use crate::crypto_pipeline::PipelineKeys;
+
 /// Default max body bytes captured into stage summaries (64 KiB).
 pub const DEFAULT_MAX_BODY_CAPTURE: usize = 64 * 1024;
 
@@ -126,6 +128,8 @@ pub struct InvokeInput {
     pub options: ExecuteOptions,
     /// Decrypted credential map (supplier `auth_flow.credentials`).
     pub credentials: HashMap<String, String>,
+    /// 显式注入的流水线密钥（bypass / 探针）；`None` 时引擎从 `credentials` 推导。
+    pub pipeline_keys: Option<PipelineKeys>,
     /// gRPC `FileDescriptorSet` / optional WSDL bytes.
     pub artifact_bytes: Option<Vec<u8>>,
     pub cache_key: Option<String>,

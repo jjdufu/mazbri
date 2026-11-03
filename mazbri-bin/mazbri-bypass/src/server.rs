@@ -48,7 +48,10 @@ impl UnaryService<InvokeRequest> for ExecuteMethod {
 
     fn call(&mut self, request: Request<InvokeRequest>) -> Self::Future {
         let inner = Arc::clone(&self.0);
-        Box::pin(async move { Ok(inner.execute(request).await) })
+        Box::pin(async move {
+            let response = Box::pin(inner.execute(request)).await;
+            Ok(response)
+        })
     }
 }
 

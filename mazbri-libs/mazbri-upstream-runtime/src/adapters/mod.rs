@@ -2,6 +2,7 @@
 
 mod graphql;
 mod grpc;
+mod crypto_wire;
 mod http_envelope;
 mod http_json;
 mod job_poll;
@@ -30,6 +31,10 @@ pub struct AdapterCtx<'a> {
     pub timeout: Duration,
     pub ws_handshake_timeout: Duration,
     pub job_poll_min_interval: Duration,
+    /// 解析后的流水线密钥（bypass 注入或凭证映射）。
+    pub pipeline_keys: &'a crate::crypto_pipeline::PipelineKeys,
+    /// 算法注册表（与 Profile 校验 / pipeline 共用）。
+    pub registry: &'a mazbri_crypto::AlgorithmRegistry,
 }
 
 pub struct AdapterOutcome {
@@ -413,6 +418,7 @@ mod tests {
             mode: ExecuteMode::Business,
             options: ExecuteOptions::default(),
             credentials: HashMap::new(),
+            pipeline_keys: None,
             artifact_bytes: None,
             cache_key: None,
         }
@@ -435,6 +441,8 @@ mod tests {
         let ssrf = SsrfChecker::with_allow_private(true);
         let input = invoke_input(request_id);
         let auth = auth_with(HashMap::new(), vec![]);
+        let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
+        let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
         let ctx = AdapterCtx {
             client: &client,
             ssrf: &ssrf,
@@ -444,6 +452,8 @@ mod tests {
             timeout: Duration::from_secs(2),
             ws_handshake_timeout: Duration::from_secs(2),
             job_poll_min_interval: Duration::from_millis(10),
+            pipeline_keys: &pipeline_keys,
+            registry: &registry,
         };
         let url = format!("http://{addr}/");
         dispatch_http(
