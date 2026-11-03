@@ -28,9 +28,19 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
                     .map_err(|e| ExecuteError::SpecInvalid(format!("payload json: {e}")))?
             };
             let mut profile = profile.clone();
-            ensure_profile_slots(&mut profile, false);
+            let form_style = encoding == BodyEncoding::Form;
+            ensure_profile_slots(&mut profile, form_style);
             let sealed = seal_body(&raw, &profile, ctx.pipeline_keys, ctx.registry, &[])?;
-            let wire = apply_parts(&mut headers, &mut query, &sealed)?;
+            let mut wire = apply_parts(&mut headers, &mut query, &sealed)?;
+            // named_fields 等场景 seal 后 body 仍是 JSON 对象：按请求编码压成 form。
+            if form_style
+                && let Some(BodyKind::Json(s)) = wire
+            {
+                let v: Value = serde_json::from_str(&s).map_err(|e| {
+                    ExecuteError::AdapterFailed(format!("crypto form from json: {e}"))
+                })?;
+                wire = Some(BodyKind::Form(encode_form_object(&v)?));
+            }
             if matches!(wire, Some(BodyKind::Form(_))) {
                 super::force_urlencoded_content_type(&mut headers);
             } else {

@@ -53,7 +53,7 @@ pub use sm::{
     SM4_BLOCK_LEN, SM4_KEY_LEN,
 };
 pub use profile::{
-    BindingSpec, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, KeySelection,
+    BindingSpec, CanonKeyAffix, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, KeySelection,
     SignSpec, SlotLocation, SlotSpec, TenantTransportProfile, TransportMode, UpstreamCryptoProfile,
     WireEncoding, WireEncodings, WrapSpec, DEFAULT_CLOCK_SKEW_SECS, DEFAULT_NONCE_TTL_SECS,
     PROFILE_VERSION_V1,

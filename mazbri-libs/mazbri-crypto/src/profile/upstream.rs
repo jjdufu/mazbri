@@ -39,6 +39,19 @@ pub enum CanonStyle {
     JwsStyle,
 }
 
+/// 摘要/签名拼串时是否把密钥材料缀到 canon 字节上（兼容旧厂 `MD5(sorted_kv+key)` 一类）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonKeyAffix {
+    /// 不缀密钥（默认）。
+    #[default]
+    None,
+    /// 密钥前置（可选 sep 由 pipeline 的 `canon_sep` 决定）。
+    Prefix,
+    /// 密钥后置。
+    Suffix,
+}
+
 /// Hex 字母大小写。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -196,8 +209,11 @@ pub struct UpstreamCryptoProfile {
     /// 可选响应侧解密规格（缺省表示与请求对称或明文）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_crypt: Option<CryptSpec>,
+        /// 拼串时是否缀密钥（仅 digest-as-sign / 旧互操作；MAC/非对称签名忽略）。
+    #[serde(default, skip_serializing_if = "is_canon_key_affix_none")]
+    pub canon_key_affix: CanonKeyAffix,
     /// 是否允许 Legacy 算法。
-    #[serde(default)]
+#[serde(default)]
     pub allow_insecure: bool,
 }
 
@@ -217,6 +233,7 @@ impl UpstreamCryptoProfile {
             iv: IvSource::Random,
             scope: CipherScope::WholeBody,
             response_crypt: None,
+            canon_key_affix: CanonKeyAffix::None,
             allow_insecure: false,
         }
     }
@@ -244,7 +261,7 @@ impl UpstreamCryptoProfile {
             }
             CryptoOrder::EncryptOnly => {
                 let crypt = self.require_crypt(registry, "crypt")?;
-                Self::ensure_block_has_integrity(crypt, false)?;
+                Self::ensure_block_has_integrity(crypt, false, self.allow_insecure)?;
                 if self.sign.is_some() {
                     return Err(CryptoError::InvalidProfile {
                         reason: "order=encrypt_only must not set sign".to_owned(),
@@ -300,7 +317,7 @@ impl UpstreamCryptoProfile {
                     });
                 }
             } else if matches!(self.order, CryptoOrder::EncryptOnly) {
-                Self::ensure_block_has_integrity(resp, false)?;
+                Self::ensure_block_has_integrity(resp, false, self.allow_insecure)?;
             }
         }
 
@@ -315,9 +332,20 @@ impl UpstreamCryptoProfile {
         let meta = registry.get(sign.alg)?;
         match meta.kind {
             AlgorithmKind::Mac | AlgorithmKind::AsymSign => {}
+            AlgorithmKind::Digest if self.allow_insecure => {
+                // 旧互操作：明文摘要当作「签名」字段（须显式 allow_insecure）。
+            }
             other => {
                 return Err(CryptoError::InvalidProfile {
-                    reason: format!("sign.alg {} kind {other:?} is not mac|asym_sign", sign.alg),
+                    reason: format!(
+                        "sign.alg {} kind {other:?} is not mac|asym_sign{}",
+                        sign.alg,
+                        if matches!(other, AlgorithmKind::Digest) {
+                            " (digest-as-sign requires allow_insecure=true)"
+                        } else {
+                            ""
+                        }
+                    ),
                 });
             }
         }
@@ -357,17 +385,19 @@ impl UpstreamCryptoProfile {
     }
 
     /// 非 AEAD 在无签名步骤时必须拒绝（CBC 等禁止裸用）。
+    /// `allow_insecure=true` 时放行旧厂 `encrypt_only` 裸分组密码（DES/ECB 等）。
     fn ensure_block_has_integrity(
         crypt: &CryptSpec,
         has_sign_step: bool,
+        allow_insecure: bool,
     ) -> Result<(), CryptoError> {
-        if has_sign_step {
+        if has_sign_step || allow_insecure {
             return Ok(());
         }
         if crypt.alg.kind() == AlgorithmKind::BlockCipher {
             return Err(CryptoError::InvalidProfile {
                 reason: format!(
-                    "block cipher {} without mac/sign integrity is forbidden (set sign step or use aead)",
+                    "block cipher {} without mac/sign integrity is forbidden (set sign step, use aead, or allow_insecure)",
                     crypt.alg
                 ),
             });
@@ -407,3 +437,9 @@ impl CryptSpec {
         self.fields.is_empty()
     }
 }
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_canon_key_affix_none(v: &CanonKeyAffix) -> bool {
+    matches!(v, CanonKeyAffix::None)
+}
+

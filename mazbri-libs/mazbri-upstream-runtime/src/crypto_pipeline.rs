@@ -8,9 +8,9 @@ use mazbri_crypto::legacy::assert_not_legacy_or_allowed;
 use mazbri_crypto::symmetric::AES_BLOCK_LEN;
 use mazbri_crypto::{
     AeadSeal, AlgorithmId, AlgorithmKind, AlgorithmRegistry, AsymBox, AsymSign, BlockCipher,
-    CanonStyle, CipherScope, CryptSpec, CryptoError, CryptoOrder, HexCase, IvSource, KeyPurpose,
-    KeyRef, Mac, SignSpec, SlotLocation, SlotSpec, UpstreamCryptoProfile, WireEncoding,
-    SM4_BLOCK_LEN,
+    CanonKeyAffix, CanonStyle, CipherScope, CryptSpec, CryptoError, CryptoOrder, Digest, HexCase,
+    IvSource, KeyPurpose, KeyRef, Mac, SlotLocation, SlotSpec, UpstreamCryptoProfile,
+    WireEncoding, SM4_BLOCK_LEN,
 };
 use rand::Rng;
 use serde_json::{Map, Value};
@@ -153,6 +153,9 @@ pub enum PipelineError {
         /// 原因。
         reason: String,
     },
+    /// 签名/摘要校验失败。
+    #[error("signature verify failed")]
+    VerifyFailed,
 }
 
 /// 客户端组包：按 profile order 对 `body` 执行 seal。
@@ -228,7 +231,7 @@ fn seal_sign_only(
 ) -> Result<RequestParts, PipelineError> {
     let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
     let message = signing_message(profile, body, ctx)?;
-    let sig = compute_sign(sign, keys, ctx, &message, profile.allow_insecure)?;
+    let sig = compute_sign(profile, keys, ctx, &message)?;
     let encoded = encode_wire(
         sign.encoding.unwrap_or(profile.encodings.signature),
         &sig,
@@ -257,7 +260,7 @@ fn seal_with_encrypt(
     if matches!(sign_mode, SignMode::BeforeEncrypt) {
         let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
         let message = signing_message(profile, body, ctx)?;
-        let sig = compute_sign(sign, keys, ctx, &message, profile.allow_insecure)?;
+        let sig = compute_sign(profile, keys, ctx, &message)?;
         let encoded = encode_wire(
             sign.encoding.unwrap_or(profile.encodings.signature),
             &sig,
@@ -311,7 +314,7 @@ fn seal_with_encrypt(
         let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
         let encoded_cipher = read_encoded_cipher(&parts, profile)?;
         let message = signing_message(profile, encoded_cipher.as_bytes(), ctx)?;
-        let sig = compute_sign(sign, keys, ctx, &message, profile.allow_insecure)?;
+        let sig = compute_sign(profile, keys, ctx, &message)?;
         let encoded_sig = encode_wire(
             sign.encoding.unwrap_or(profile.encodings.signature),
             &sig,
@@ -349,7 +352,7 @@ fn open_sign_only(
     )?;
     let body = recover_biz_body(parts, profile)?;
     let message = signing_message(profile, &body, ctx)?;
-    verify_sign(sign, keys, ctx, &message, &sig, profile.allow_insecure)?;
+    verify_sign(profile, keys, ctx, &message, &sig)?;
     Ok(body)
 }
 
@@ -371,7 +374,7 @@ fn open_with_encrypt(
         )?;
         let encoded_cipher = read_encoded_cipher(parts, profile)?;
         let message = signing_message(profile, encoded_cipher.as_bytes(), ctx)?;
-        verify_sign(sign, keys, ctx, &message, &sig, profile.allow_insecure)?;
+        verify_sign(profile, keys, ctx, &message, &sig)?;
     }
 
     let session = resolve_data_key_for_open(parts, profile, keys, ctx)?;
@@ -402,7 +405,7 @@ fn open_with_encrypt(
             &encoded_sig,
         )?;
         let message = signing_message(profile, &plain, ctx)?;
-        verify_sign(sign, keys, ctx, &message, &sig, profile.allow_insecure)?;
+        verify_sign(profile, keys, ctx, &message, &sig)?;
     }
 
     Ok(plain)
@@ -730,20 +733,22 @@ fn decrypt_ecb_legacy(
 }
 
 fn compute_sign(
-    sign: &SignSpec,
+    profile: &UpstreamCryptoProfile,
     keys: &PipelineKeys,
     ctx: &PipelineContext<'_>,
     message: &[u8],
-    allow_insecure: bool,
 ) -> Result<Vec<u8>, PipelineError> {
-    assert_not_legacy_or_allowed(sign.alg, allow_insecure)?;
+    let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
+    assert_not_legacy_or_allowed(sign.alg, profile.allow_insecure)
+        .map_err(PipelineError::Crypto)?;
+    let message = affix_canon_key(profile, keys, ctx, message)?;
     match sign.alg.kind() {
         AlgorithmKind::Mac => {
             let key = keys.mac.as_ref().ok_or(PipelineError::MissingKey { role: "mac" })?;
             if let Ok(mac) = ctx.registry.mac(sign.alg) {
-                return Ok(mac.sign(key, message)?);
+                return Ok(mac.sign(key, &message)?);
             }
-            Ok(ctx.registry.gm_mac(sign.alg)?.sign(key, message)?)
+            Ok(ctx.registry.gm_mac(sign.alg)?.sign(key, &message)?)
         }
         AlgorithmKind::AsymSign => {
             let key = keys
@@ -753,9 +758,22 @@ fn compute_sign(
                     role: "sign_private",
                 })?;
             if let Ok(signer) = ctx.registry.asym_sign(sign.alg) {
-                return Ok(signer.sign(key, message)?);
+                return Ok(signer.sign(key, &message)?);
             }
-            Ok(ctx.registry.sm2_sign(sign.alg)?.sign(key, message)?)
+            Ok(ctx.registry.sm2_sign(sign.alg)?.sign(key, &message)?)
+        }
+        AlgorithmKind::Digest if profile.allow_insecure => {
+            if let Ok(d) = ctx.registry.digest(sign.alg) {
+                return Ok(d.hash(&message)?);
+            }
+            if sign.alg == AlgorithmId::Md5 {
+                let h = mazbri_crypto::legacy_algs::md5_hash(true, &message)
+                    .map_err(PipelineError::Crypto)?;
+                return Ok(h.to_vec());
+            }
+            Err(PipelineError::InvalidInput {
+                reason: format!("unsupported digest-as-sign alg {}", sign.alg),
+            })
         }
         other => Err(PipelineError::InvalidInput {
             reason: format!("sign.alg kind {other:?}"),
@@ -764,24 +782,26 @@ fn compute_sign(
 }
 
 fn verify_sign(
-    sign: &SignSpec,
+    profile: &UpstreamCryptoProfile,
     keys: &PipelineKeys,
     ctx: &PipelineContext<'_>,
     message: &[u8],
     signature: &[u8],
-    allow_insecure: bool,
 ) -> Result<(), PipelineError> {
-    assert_not_legacy_or_allowed(sign.alg, allow_insecure)?;
+    let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
+    assert_not_legacy_or_allowed(sign.alg, profile.allow_insecure)
+        .map_err(PipelineError::Crypto)?;
+    let message = affix_canon_key(profile, keys, ctx, message)?;
     match sign.alg.kind() {
         AlgorithmKind::Mac => {
             let key = keys.mac.as_ref().ok_or(PipelineError::MissingKey { role: "mac" })?;
             if let Ok(mac) = ctx.registry.mac(sign.alg) {
-                return Ok(mac.verify(key, message, signature)?);
+                return Ok(mac.verify(key, &message, signature)?);
             }
             Ok(ctx
                 .registry
                 .gm_mac(sign.alg)?
-                .verify(key, message, signature)?)
+                .verify(key, &message, signature)?)
         }
         AlgorithmKind::AsymSign => {
             let key = keys
@@ -792,16 +812,69 @@ fn verify_sign(
                     role: "verify_public",
                 })?;
             if let Ok(signer) = ctx.registry.asym_sign(sign.alg) {
-                return Ok(signer.verify(key, message, signature)?);
+                return Ok(signer.verify(key, &message, signature)?);
             }
             Ok(ctx
                 .registry
                 .sm2_sign(sign.alg)?
-                .verify(key, message, signature)?)
+                .verify(key, &message, signature)?)
+        }
+        AlgorithmKind::Digest if profile.allow_insecure => {
+            let got = if let Ok(d) = ctx.registry.digest(sign.alg) {
+                d.hash(&message)?
+            } else if sign.alg == AlgorithmId::Md5 {
+                mazbri_crypto::legacy_algs::md5_hash(true, &message)
+                    .map_err(PipelineError::Crypto)?
+                    .to_vec()
+            } else {
+                return Err(PipelineError::InvalidInput {
+                    reason: format!("unsupported digest-as-sign alg {}", sign.alg),
+                });
+            };
+            if got.as_slice() == signature {
+                Ok(())
+            } else {
+                Err(PipelineError::VerifyFailed)
+            }
         }
         other => Err(PipelineError::InvalidInput {
             reason: format!("sign.alg kind {other:?}"),
         }),
+    }
+}
+
+fn affix_canon_key(
+    profile: &UpstreamCryptoProfile,
+    keys: &PipelineKeys,
+    ctx: &PipelineContext<'_>,
+    message: &[u8],
+) -> Result<Vec<u8>, PipelineError> {
+    match profile.canon_key_affix {
+        CanonKeyAffix::None => Ok(message.to_vec()),
+        CanonKeyAffix::Prefix | CanonKeyAffix::Suffix => {
+            let key = keys.mac.as_ref().ok_or(PipelineError::MissingKey { role: "mac" })?;
+            let kb = key.raw_bytes().map_err(PipelineError::Crypto)?;
+            let sep = ctx.canon_sep.as_bytes();
+            let mut out = Vec::with_capacity(message.len() + sep.len() + kb.len());
+            match profile.canon_key_affix {
+                CanonKeyAffix::Prefix => {
+                    out.extend_from_slice(kb);
+                    if !sep.is_empty() {
+                        out.extend_from_slice(sep);
+                    }
+                    out.extend_from_slice(message);
+                }
+                CanonKeyAffix::Suffix => {
+                    out.extend_from_slice(message);
+                    if !sep.is_empty() {
+                        out.extend_from_slice(sep);
+                    }
+                    out.extend_from_slice(kb);
+                }
+                CanonKeyAffix::None => unreachable!(),
+            }
+            Ok(out)
+        }
     }
 }
 
