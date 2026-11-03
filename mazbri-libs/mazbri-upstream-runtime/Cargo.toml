@@ -9,6 +9,7 @@ description = "Shared transparent upstream auth/transform/HTTP runtime (bypass +
 
 [dependencies]
 mazbri-core = { version = "0.1.0", path = "../mazbri-core" }
+mazbri-crypto = { workspace = true }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
