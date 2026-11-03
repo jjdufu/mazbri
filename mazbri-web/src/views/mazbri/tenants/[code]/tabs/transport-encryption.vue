@@ -1,5 +1,5 @@
 <template>
-  <div class="transport-encryption-tab">
+  <TenantTabShell>
     <ElAlert
       v-if="isInitialized && licenseStatus !== null && !tenantCryptoEnabled"
       type="warning"
@@ -25,8 +25,7 @@
           >
             {{ $t("tenant.transportEncryption.actions.goRootPackage") }}
           </ElButton>
-        </div>
-      </template>
+        </div></template>
     </ElAlert>
 
     <div class="strategy-grid">
@@ -345,10 +344,10 @@
         }}</ElButton>
       </template>
     </CenteredDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import {
   activateTenantCryptoKey,
   createTenantCryptoKey,

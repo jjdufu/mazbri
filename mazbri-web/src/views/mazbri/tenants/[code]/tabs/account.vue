@@ -1,5 +1,5 @@
 <template>
-  <div class="account-tab">
+  <TenantTabShell>
     <ElCard
       v-loading="loading"
       shadow="never"
@@ -13,8 +13,7 @@
               <span class="account-overview-subtitle">{{
                 $t("tenant.account.overviewSubtitle")
               }}</span>
-            </div>
-          </template>
+            </div></template>
         </SurfaceCardHeader>
       </template>
 
@@ -334,17 +333,17 @@
           v-if="refundForm.amount > currentBalance"
           block
           tone="warning"
-          class="-mt-1.5 mb-3.5"
+          class="account-inline-alert"
         >
           {{ $t("tenant.account.refundExceedsBalance") }}
         </CommonInlineHint>
         <MfaRequiredHint block />
       </ElForm>
     </EditDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import {
   ElMessage,
   type FormInstance,
@@ -741,7 +740,7 @@ onMounted(() => {
 .balance-label {
   font-size: 14px;
   color: var(--text-color-secondary);
-  margin-bottom: 8px;
+  margin-bottom: var(--ops-space-xs, 8px);
 }
 
 .balance-amount {
@@ -764,7 +763,7 @@ onMounted(() => {
 }
 
 .balance-meta {
-  margin-top: 12px;
+  margin-top: var(--ops-space-sm, 12px);
   font-size: 13px;
   color: var(--text-color-secondary);
 }
@@ -814,13 +813,13 @@ onMounted(() => {
   }
 
   :deep(.el-table__header th.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 
   :deep(.el-table__body td.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 }
 
@@ -847,7 +846,7 @@ onMounted(() => {
 }
 
 .pagination-wrapper {
-  margin-top: 20px;
+  margin-top: var(--ops-space-lg, 20px);
   display: flex;
   justify-content: flex-end;
 }
@@ -873,7 +872,7 @@ onMounted(() => {
 }
 
 .surface-panel-pagination {
-  margin-top: 12px;
+  margin-top: var(--ops-space-sm, 12px);
 }
 
 .account-action-dialog {
@@ -909,8 +908,8 @@ onMounted(() => {
 
   :deep(.text-input .el-textarea__inner) {
     min-height: 82px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 
   :deep(.dialog-balance-strip),
@@ -919,7 +918,7 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: var(--ops-section-gap, 16px);
     padding: 10px 12px;
     border-radius: var(--el-border-radius-small);
     background: var(--el-fill-color-light);
@@ -940,7 +939,7 @@ onMounted(() => {
   }
 
   :deep(.el-form-item) {
-    margin-bottom: 14px;
+    margin-bottom: var(--ops-section-gap, 16px);
   }
 
   :deep(.el-form-item__label) {
@@ -985,5 +984,8 @@ onMounted(() => {
       padding-right: 16px;
     }
   }
+}
+.account-inline-alert {
+  margin: calc(-1 * var(--ops-space-xs, 8px)) 0 var(--ops-space-md, 16px);
 }
 </style>

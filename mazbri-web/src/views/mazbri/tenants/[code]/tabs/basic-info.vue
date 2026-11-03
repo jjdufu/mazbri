@@ -1,6 +1,6 @@
 <template>
-  <div class="basic-info-tab">
-    <ElCard v-loading="loading" shadow="never">
+  <TenantTabShell :loading="loading">
+    <ElCard shadow="never" class="ops-surface-card">
       <template #header>
         <SurfaceCardHeader :title="$t('tenant.detail.basicInfo.title')">
           <template #actions>
@@ -88,10 +88,11 @@
       v-if="tenant?.tenant_code"
       :tenant-code="tenant.tenant_code"
     />
-  </div>
+  </TenantTabShell>
 </template>
 
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";

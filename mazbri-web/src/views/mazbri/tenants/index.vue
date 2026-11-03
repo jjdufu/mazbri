@@ -3,9 +3,12 @@
     :title="$t('menus.mazbri.tenantList')"
     icon="ri:building-line"
   >
-    <div ref="pageRef" class="tenant-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-      <ResourceTableShell
+    <div ref="pageRef" class="tenant-list-page ops-page-fill">
+      <ResourceTablePageShell
+      v-model="searchKeyword"
+      v-model:filters="listFilters"
       v-model:columns="columns"
+      :filter-catalog="tenantsCatalog"
       :title="$t('tenant.list.title')"
       :data="tableData"
       :loading="loading"
@@ -13,38 +16,30 @@
       :pagination="pagination"
       :fit="true"
       table-layout="auto"
+      :show-import="true"
+      :import-label="$t('common.actions.import')"
+      :import-roles="['R_ADMIN', 'R_FINANCE']"
+      :export-items="exportItems"
+      :export-disabled="tableData.length === 0"
+      :export-roles="['R_ADMIN', 'R_FINANCE']"
+      :show-primary="true"
+      :primary-label="$t('tenant.actions.addTenant')"
+      :primary-roles="['R_ADMIN', 'R_FINANCE']"
+      :show-delete="true"
+      :delete-total-count="tableData.length"
+      :delete-selected-count="selectedRows.length"
+      :delete-roles="['R_ADMIN', 'R_FINANCE']"
+      :delete-label="$t('common.actions.delete')"
       @refresh="getData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
+      @search="handleSearch"
+      @import="openImport"
+      @export="handleExportCommand"
+      @primary="handleCreate"
+      @delete="(type: 'all' | 'selected') => handleDeleteCommand(type, tableData)"
     >
-      <template #actions>
-        <ResourceTableActionBar
-          v-model="searchKeyword"
-          v-model:filters="listFilters"
-          :filter-catalog="tenantsCatalog"
-          :show-import="true"
-          :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_FINANCE']"
-          :export-items="exportItems"
-          :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_FINANCE']"
-          :show-primary="true"
-          :primary-label="$t('tenant.actions.addTenant')"
-          :primary-roles="['R_ADMIN', 'R_FINANCE']"
-          :show-delete="true"
-          :delete-total-count="tableData.length"
-          :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_FINANCE']"
-          :delete-label="$t('common.actions.delete')"
-          @search="handleSearch"
-          @import="openImport"
-          @export="handleExportCommand"
-          @primary="handleCreate"
-          @delete="(type) => handleDeleteCommand(type, tableData)"
-        />
-      </template>
-
       <template #status="{ row }">
         <StatusIndicator :type="getStatusType(tenantStatusKey(row))">
           {{ getStatusLabel(tenantStatusKey(row)) }}
@@ -86,7 +81,7 @@
           </ElButton>
         </TableActionRow>
       </template>
-    </ResourceTableShell>
+    </ResourceTablePageShell>
 
     <CreateDialog v-model="createVisible" @success="getData" />
     <ImportDialog
@@ -124,8 +119,7 @@ import {
 import CreateDialog from "./modules/create-dialog.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
-import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
-import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
+import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import {
   exportResourceCsv,
@@ -569,3 +563,9 @@ const handleDelete = async (row: Tenant) => {
   }
 };
 </script>
+
+<style scoped>
+.tenant-list-page {
+  min-width: 0;
+}
+</style>

@@ -3,11 +3,7 @@
     :title="$t('menus.mazbri.billList')"
     icon="ri:file-list-3-line"
   >
-    <div
-      ref="pageRef"
-      class="bill-ops-page"
-      style="display: flex; flex-direction: column; flex: 1; min-height: 0"
-    >
+    <div ref="pageRef" class="bill-ops-page ops-page-fill">
       <ResourceTablePageShell
           v-model:columns="columns"
           v-model="searchKeyword"

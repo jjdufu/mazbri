@@ -9,10 +9,11 @@
       </ElButton>
     </template>
 
-    <ElEmpty
+    <EmptyState
       v-if="!loading && rows.length === 0"
-      :description="t('ops.overview.changeEmpty')"
+      compact
       :image-size="56"
+      :description="t('ops.overview.changeEmpty')"
     />
     <OpsTableWrap v-else>
       <ArtTable
@@ -86,6 +87,7 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import { resolveStep } from "@/composables/ops/useStep";

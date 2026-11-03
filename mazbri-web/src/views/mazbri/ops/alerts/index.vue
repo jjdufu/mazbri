@@ -1,6 +1,7 @@
 <template>
   <OpsMergedShell
     :title="t('menus.mazbri.opsAlerts')"
+    :subtitle="t('ops.layout.alertsSubtitle')"
     :tabs="tabs"
     :default-tab="defaultTab"
   >

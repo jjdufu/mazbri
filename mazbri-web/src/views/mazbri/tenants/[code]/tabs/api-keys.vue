@@ -1,5 +1,5 @@
 <template>
-  <div class="api-keys-tab">
+  <TenantTabShell>
     <ResourceTableShell
       v-model:columns="apiKeyColumns"
       :title="$t('tenant.tabs.apiKeys')"
@@ -159,10 +159,10 @@
         }}</ElButton>
       </template>
     </CenteredDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type {

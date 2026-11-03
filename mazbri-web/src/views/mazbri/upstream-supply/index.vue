@@ -3,7 +3,7 @@
     :title="$t('menus.mazbri.upstreamSupply')"
     icon="ri:building-4-line"
   >
-    <div class="upstream-supply-page">
+    <div class="upstream-supply-page ops-page-stack">
       <div class="tab-segmented">
         <ElSegmented
           :model-value="activeTab"
@@ -71,9 +71,10 @@ function onAccessSuccess() {
   flex-direction: column;
   flex: 1;
   height: 100%;
+  gap: var(--ops-section-gap, 16px);
 
   .tab-segmented {
-    margin-bottom: 16px;
+    margin-bottom: 0;
     flex-shrink: 0;
 
     .el-segmented {

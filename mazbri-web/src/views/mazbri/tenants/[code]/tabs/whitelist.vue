@@ -1,5 +1,5 @@
 <template>
-  <div class="whitelist-tab">
+  <TenantTabShell>
     <ResourceTableShell
       v-model:columns="whitelistColumns"
       :loading="loading"
@@ -15,8 +15,7 @@
           <ElTag type="info" size="small" class="ml-2">
             {{ entries.length }} {{ $t("tenant.whitelist.ruleSuffix") }}
           </ElTag>
-        </div>
-      </template>
+        </div></template>
       <template #actions>
         <TableExportDropdown
           :items="exportItems"
@@ -44,10 +43,7 @@
       </template>
 
       <template #empty>
-        <ElEmpty
-          v-if="!loading"
-          :description="$t('tenant.whitelist.emptyTitle')"
-        >
+        <EmptyState v-if="!loading" compact>
           <template #description>
             <CommonInlineHint block size="sm">{{
               $t("tenant.whitelist.emptyHint1")
@@ -56,7 +52,7 @@
               $t("tenant.whitelist.emptyHint2")
             }}</CommonInlineHint>
           </template>
-        </ElEmpty>
+        </EmptyState>
       </template>
 
       <template #ip_address="{ row }">
@@ -174,10 +170,11 @@
       :show-error-message="false"
       @success="loadData"
     />
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";

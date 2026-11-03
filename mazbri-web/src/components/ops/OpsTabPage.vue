@@ -1,7 +1,10 @@
 <template>
-  <OpsPage :title="title">
+  <OpsPage :title="title" :subtitle="subtitle">
     <template v-if="$slots.title" #title>
       <slot name="title" />
+    </template>
+    <template v-if="$slots.subtitle" #subtitle>
+      <slot name="subtitle" />
     </template>
     <template #actions>
       <slot name="actions" />
@@ -45,12 +48,14 @@ defineOptions({ name: "OpsTabPage" });
 const props = withDefaults(
   defineProps<{
     title?: string;
+    subtitle?: string;
     /** 已经按角色过滤后的可见 Tab。 */
     tabs: OpsTabDef[];
     modelValue?: string;
   }>(),
   {
     title: undefined,
+    subtitle: undefined,
     modelValue: undefined,
   },
 );

@@ -4886,6 +4886,24 @@
     },
     "charts": {
       "empty": "暂无数据"
+    },
+    "layout": {
+      "windowSubtitle": "时间窗：{label}",
+      "instantSubtitle": "瞬时指标旁注近 60s；窗聚合见副标题",
+      "billingSubtitle": "漏斗与队列按所选时间窗聚合；同步透传模式无积压语义",
+      "alertsSubtitle": "事件 / 规则 / 静默同一骨架；写操作仍按角色裁剪",
+      "trafficSubtitle": "RED / 时延 / 错误共享页级时间窗与刷新"
     }
+  },
+  "layout": {
+    "forbidden": {
+      "title": "无权限查看此内容",
+      "description": "当前角色不能访问该区块。如需操作请联系管理员。"
+    },
+    "empty": {
+      "default": "暂无数据",
+      "retry": "重试"
+    },
+    "loading": "加载中…"
   }
 }

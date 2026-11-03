@@ -1,10 +1,14 @@
 <template>
   <OpsTabPage
     :title="title"
+    :subtitle="subtitle"
     :tabs="visibleTabs"
     :model-value="activeTab"
     @update:model-value="handleTabChange"
   >
+    <template v-if="$slots.subtitle" #subtitle>
+      <slot name="subtitle" />
+    </template>
     <template v-if="$slots.actions" #actions>
       <slot name="actions" />
     </template>
@@ -23,7 +27,7 @@
 
     <template #empty>
       <slot name="empty">
-        <p class="ops-merged-shell__placeholder">{{ emptyText }}</p>
+        <EmptyState :description="emptyText" />
       </slot>
     </template>
   </OpsTabPage>
@@ -33,6 +37,7 @@
 import { computed, toRef } from "vue";
 import { useI18n } from "vue-i18n";
 import OpsTabPage from "@/components/ops/OpsTabPage.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { useOpsTab, type OpsTabDef } from "@/composables/ops/useOpsTab";
 
 defineOptions({ name: "OpsMergedShell" });
@@ -40,6 +45,7 @@ defineOptions({ name: "OpsMergedShell" });
 const props = withDefaults(
   defineProps<{
     title: string;
+    subtitle?: string;
     tabs: OpsTabDef[];
     defaultTab?: string;
     queryKey?: string;
@@ -48,6 +54,7 @@ const props = withDefaults(
     emptyText?: string;
   }>(),
   {
+    subtitle: undefined,
     defaultTab: undefined,
     queryKey: "tab",
     placeholder: undefined,
@@ -75,7 +82,7 @@ const emptyText = computed(
 <style scoped lang="scss">
 .ops-merged-shell__placeholder {
   margin: 0;
-  padding: 12px 0;
+  padding: var(--ops-space-sm, 12px) 0;
   color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 1.5;

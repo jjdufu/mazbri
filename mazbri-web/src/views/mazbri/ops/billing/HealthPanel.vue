@@ -5,7 +5,7 @@
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </OpsPanelToolbar>
 
-    <ElRow :gutter="16">
+    <OpsKpiRow>
       <ElCol
         v-for="card in statCards"
         :key="card.label"
@@ -21,7 +21,7 @@
           :digits="card.digits"
         />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
@@ -134,6 +134,7 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
+import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOpsRange } from "@/composables/ops/useOlapRange";
@@ -403,6 +404,6 @@ onMounted(reload);
   margin-top: 8px;
 }
 .funnel-mode-hint {
-  margin-bottom: 12px;
+  margin-bottom: var(--ops-space-sm, 12px);
 }
 </style>

@@ -71,6 +71,7 @@ function onCardClick(event: MouseEvent) {
 <style scoped>
 .ops-stat-card {
   height: 100%;
+  min-height: var(--ops-kpi-min-height, 96px);
 }
 .ops-stat-card--interactive {
   cursor: pointer;

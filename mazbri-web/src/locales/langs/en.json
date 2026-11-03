@@ -4881,6 +4881,24 @@
     },
     "charts": {
       "empty": "No data"
+    },
+    "layout": {
+      "windowSubtitle": "Window: {label}",
+      "instantSubtitle": "Instant KPIs use a ~60s lookback; window aggregates are named in the subtitle",
+      "billingSubtitle": "Funnel and queues follow the selected window; sync pass-through has no backlog semantics",
+      "alertsSubtitle": "Events / rules / silences share one shell; writes stay role-gated",
+      "trafficSubtitle": "RED / latency / errors share the page time range and refresh"
     }
+  },
+  "layout": {
+    "forbidden": {
+      "title": "You cannot view this content",
+      "description": "Your role cannot access this block. Ask an administrator if you need write access."
+    },
+    "empty": {
+      "default": "No data",
+      "retry": "Retry"
+    },
+    "loading": "Loading…"
   }
 }

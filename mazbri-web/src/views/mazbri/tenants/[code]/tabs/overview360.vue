@@ -1,16 +1,33 @@
 <template>
-  <div class="tenant-360">
-    <ElRow :gutter="12">
-      <ElCol :xs="12" :lg="4">
-        <StatCard :label="t('tenant.overview360.calls')" :value="overview?.calls ?? null" :loading="loading" :digits="0" />
+  <TenantTabShell :loading="loading">
+    <OpsKpiRow>
+      <ElCol :xs="12" :sm="12" :md="8" :lg="4">
+        <StatCard
+          :label="t('tenant.overview360.calls')"
+          :value="overview?.calls ?? null"
+          :loading="loading"
+          :digits="0"
+        />
       </ElCol>
-      <ElCol :xs="12" :lg="4">
-        <StatCard :label="t('tenant.overview360.successRate')" :value="overview?.success_rate ?? null" unit="%" :loading="loading" :digits="1" />
+      <ElCol :xs="12" :sm="12" :md="8" :lg="4">
+        <StatCard
+          :label="t('tenant.overview360.successRate')"
+          :value="overview?.success_rate ?? null"
+          unit="%"
+          :loading="loading"
+          :digits="1"
+        />
       </ElCol>
-      <ElCol :xs="12" :lg="4">
-        <StatCard :label="t('tenant.overview360.p95')" :value="overview?.p95_ms ?? null" unit="ms" :loading="loading" :digits="0" />
+      <ElCol :xs="12" :sm="12" :md="8" :lg="4">
+        <StatCard
+          :label="t('tenant.overview360.p95')"
+          :value="overview?.p95_ms ?? null"
+          unit="ms"
+          :loading="loading"
+          :digits="0"
+        />
       </ElCol>
-      <ElCol :xs="12" :lg="4">
+      <ElCol :xs="12" :sm="12" :md="8" :lg="4">
         <StatCard
           :label="t('tenant.overview360.tenantSpend')"
           :value="spendNum"
@@ -19,16 +36,31 @@
           :digits="4"
         />
       </ElCol>
-      <ElCol :xs="12" :lg="4">
-        <StatCard :label="t('tenant.overview360.health')" :value="healthScore" :loading="loading" :digits="0" />
+      <ElCol :xs="12" :sm="12" :md="8" :lg="4">
+        <StatCard
+          :label="t('tenant.overview360.health')"
+          :value="healthScore"
+          :loading="loading"
+          :digits="0"
+        />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
-    <div class="ops-traffic__card">
-      <h3>{{ t("tenant.overview360.errors") }}</h3>
-      <ArtTable :data="errors" :loading="loading" :columns="errorColumns" stripe />
-    </div>
-  </div>
+    <OpsCard :title="t('tenant.overview360.errors')">
+      <ArtTable
+        v-if="errors.length || loading"
+        :data="errors"
+        :loading="loading"
+        :columns="errorColumns"
+        stripe
+      />
+      <EmptyState
+        v-else
+        compact
+        :description="t('common.feedback.noData')"
+      />
+    </OpsCard>
+  </TenantTabShell>
 </template>
 
 <script setup lang="ts">
@@ -36,6 +68,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import StatCard from "@/components/ops/StatCard.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { postOlapQuery } from "@/api/olap";
 import { presetWindow } from "@/composables/ops/useOlapRange";
 import { fetchTenantSpend, type TenantSpend } from "@/api/tenant";
@@ -90,7 +126,11 @@ async function reload() {
       }),
       postOlapQuery<TenantErrorRow>({
         template: "tenant_errors",
-        params: { tenant_code: props.tenantCode, ...presetWindow("24h"), limit: 20 },
+        params: {
+          tenant_code: props.tenantCode,
+          ...presetWindow("24h"),
+          limit: 20,
+        },
       }),
       fetchTenantSpend(props.tenantCode, range),
     ]);
@@ -107,12 +147,3 @@ async function reload() {
 watch(() => props.tenantCode, reload);
 onMounted(reload);
 </script>
-
-<style scoped>
-.ops-traffic__card {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
-</style>

@@ -1,5 +1,8 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.opsOverview')">
+  <OpsPage
+    :title="t('menus.mazbri.opsOverview')"
+    :subtitle="t('ops.overview.timeRangeHint')"
+  >
     <template #actions>
       <TimeRangePicker v-model="timeRange" @change="reload" />
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
@@ -9,10 +12,6 @@
       </ElButton>
     </template>
 
-    <p class="ops-overview__range-hint">
-      {{ t("ops.overview.timeRangeHint") }}
-    </p>
-
     <ElAlert
       v-if="isViewer"
       type="info"
@@ -21,7 +20,7 @@
       :title="t('ops.overview.viewerSlim')"
     />
 
-    <ElRow :gutter="16" class="ops-overview__cards">
+    <OpsKpiRow>
       <ElCol :xs="24" :sm="12" :lg="6">
         <StatCard
           :label="t('ops.overview.stats.qps')"
@@ -74,9 +73,9 @@
           @click="drill('2.4')"
         />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
-    <ElRow :gutter="16" class="ops-overview__cards">
+    <OpsKpiRow>
       <ElCol :xs="24" :sm="12" :lg="6">
         <StatCard
           :label="t('ops.overview.stats.circuitOpen')"
@@ -111,10 +110,10 @@
           icon="ri:building-line"
         />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
     <RoleGate gate="biz">
-      <ElRow :gutter="16" class="ops-overview__cards">
+      <OpsKpiRow>
         <ElCol :xs="24" :sm="12" :lg="12">
           <StatCard
             :label="t('ops.overview.stats.billingBacklog')"
@@ -136,13 +135,13 @@
             @click="drill('6.1')"
           />
         </ElCol>
-      </ElRow>
+      </OpsKpiRow>
     </RoleGate>
 
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="14">
-        <ElCard shadow="never" class="ops-overview__panel">
-          <template #header>
+        <OpsCard class="ops-main-panel">
+          <template #title>
             <div class="ops-overview__panel-head">
               <span>{{ t("ops.overview.healthLights") }}</span>
               <ElButton
@@ -167,11 +166,11 @@
               <span class="ops-overview__light-name">{{ item.name }}</span>
             </button>
           </div>
-        </ElCard>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="10">
-        <ElCard shadow="never" class="ops-overview__alerts">
-          <template #header>
+        <OpsCard class="ops-main-panel">
+          <template #title>
             <div class="ops-overview__panel-head">
               <span>{{ t("ops.overview.alerts") }}</span>
               <ElButton
@@ -223,27 +222,27 @@
               }}</span>
             </button>
           </div>
-          <p v-else class="ops-overview__slim">
-            {{ t("ops.overview.alertsNone") }}
-          </p>
-        </ElCard>
+          <EmptyState
+            v-else
+            compact
+            :description="t('ops.overview.alertsNone')"
+          />
+        </OpsCard>
       </ElCol>
     </ElRow>
 
     <ElRow :gutter="16" class="ops-overview__charts">
       <ElCol :xs="24" :lg="12">
-        <ElCard shadow="never">
-          <template #header>{{ t("ops.overview.charts.qps") }}</template>
+        <OpsCard :title="t('ops.overview.charts.qps')" class="ops-main-panel">
           <MultiSeriesChart
             :series="qpsSeries"
             :loading="loading"
             height="240px"
           />
-        </ElCard>
+        </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="12">
-        <ElCard shadow="never">
-          <template #header>{{ t("ops.overview.charts.p99") }}</template>
+        <OpsCard :title="t('ops.overview.charts.p99')" class="ops-main-panel">
           <MultiSeriesChart
             v-loading="exemplarLoading"
             :series="p99Series"
@@ -251,7 +250,7 @@
             height="240px"
             :on-point-click="p99ClickHandler"
           />
-        </ElCard>
+        </OpsCard>
       </ElCol>
     </ElRow>
 
@@ -578,21 +577,6 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-overview__range-hint {
-  margin: 0 0 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.ops-overview__cards {
-  margin-top: 0;
-}
-.ops-overview__cards :deep(.el-col) {
-  display: flex;
-}
-.ops-overview__cards :deep(.el-col > *) {
-  width: 100%;
-}
 .ops-overview__slim {
   margin: 0;
 }
@@ -600,20 +584,14 @@ onMounted(reload);
   color: var(--el-text-color-regular);
   font-weight: 500;
 }
-.ops-overview__panel {
-  min-height: 180px;
-}
-.ops-overview__alerts {
-  margin-bottom: 16px;
-}
 .ops-overview__alert-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ops-space-xs, 8px);
 }
 .ops-overview__alert-item {
   display: flex;
-  gap: 8px;
+  gap: var(--ops-space-xs, 8px);
   align-items: center;
   padding: 4px 0;
   border: none;
@@ -632,15 +610,17 @@ onMounted(reload);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  gap: var(--ops-space-xs, 8px);
 }
 .ops-overview__lights {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--ops-space-sm, 12px);
 }
 .ops-overview__light {
   display: inline-flex;
-  gap: 6px;
+  gap: var(--ops-space-xs, 8px);
   align-items: center;
   padding: 6px 10px;
   border: 1px solid var(--el-border-color);
@@ -669,10 +649,7 @@ onMounted(reload);
 .ops-overview__placeholder-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.ops-overview__charts {
-  margin-bottom: 8px;
+  gap: var(--ops-space-xs, 8px);
+  margin-bottom: var(--ops-space-sm, 12px);
 }
 </style>

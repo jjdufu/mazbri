@@ -24,8 +24,7 @@ defineProps<{ title?: string }>();
 
 <style scoped>
 .ops-card {
-  margin-bottom: 12px;
-  padding: 12px 16px;
+  padding: var(--ops-space-sm, 12px) var(--ops-space-md, 16px);
   border-radius: 8px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
@@ -39,7 +38,7 @@ defineProps<{ title?: string }>();
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--ops-space-xs, 8px);
 }
 .ops-card__title {
   margin: 0;

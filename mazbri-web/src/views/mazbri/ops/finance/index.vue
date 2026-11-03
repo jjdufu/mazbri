@@ -1,12 +1,15 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.financeOverview')">
+  <OpsPage
+    :title="t('menus.mazbri.financeOverview')"
+    :subtitle="windowHint"
+  >
     <template #actions>
-      <ElSelect v-model="days" style="width: 120px" @change="reload">
-          <ElOption :value="7" label="7d" />
-          <ElOption :value="30" label="30d" />
-          <ElOption :value="90" label="90d" />
-        </ElSelect>
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
+      <ElSelect v-model="days" class="finance-days-select" @change="reload">
+        <ElOption :value="7" label="7d" />
+        <ElOption :value="30" label="30d" />
+        <ElOption :value="90" label="90d" />
+      </ElSelect>
+      <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </template>
 
     <ElAlert
@@ -19,8 +22,8 @@
       :closable="false"
     />
 
-    <ElRow :gutter="16">
-      <ElCol :xs="12" :lg="6">
+    <OpsKpiRow>
+      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.revenue')"
           :value="num(overview?.revenue_total)"
@@ -29,7 +32,7 @@
           :digits="2"
         />
       </ElCol>
-      <ElCol :xs="12" :lg="6">
+      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.cost')"
           :value="costUnavailable ? null : num(overview?.cost_total)"
@@ -38,7 +41,7 @@
           :digits="2"
         />
       </ElCol>
-      <ElCol :xs="12" :lg="6">
+      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.margin')"
           :value="num(overview?.margin_total)"
@@ -47,7 +50,7 @@
           :digits="2"
         />
       </ElCol>
-      <ElCol :xs="12" :lg="6">
+      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.marginRate')"
           :value="overview?.margin_rate ?? null"
@@ -57,7 +60,7 @@
           :digits="1"
         />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
     <OpsCard v-if="(overview?.inverted_days?.length ?? 0) > 0">
       <ElAlert
@@ -110,6 +113,7 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   fetchFinanceBalances,

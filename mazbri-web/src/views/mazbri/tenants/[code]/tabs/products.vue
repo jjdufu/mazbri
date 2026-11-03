@@ -1,5 +1,5 @@
 <template>
-  <div class="products-tab">
+  <TenantTabShell>
     <ResourceTableShell
       v-model:columns="productColumns"
       :title="$t('tenant.products.title')"
@@ -131,10 +131,10 @@
       :product="selectedProduct"
       @updated="getData"
     />
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
@@ -399,8 +399,8 @@ watch(
 <style scoped lang="scss">
 .tenant-product-table {
   :deep(.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 }
 </style>
