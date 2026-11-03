@@ -71,14 +71,16 @@ pub fn routes() -> Router<AppState> {
 fn crypto_routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/tenants/{code}/crypto",
+            get(tenant_crypto_handlers::get_tenant_crypto),
+        )
+        .route(
             "/tenants/{code}/crypto-profile",
-            get(tenant_crypto_handlers::get_crypto_profile)
-                .put(tenant_crypto_handlers::update_crypto_profile),
+            axum::routing::put(tenant_crypto_handlers::update_crypto_profile),
         )
         .route(
             "/tenants/{code}/crypto-keys",
-            get(tenant_crypto_handlers::list_crypto_keys)
-                .post(tenant_crypto_handlers::create_crypto_key),
+            post(tenant_crypto_handlers::create_crypto_key),
         )
         .route(
             "/tenants/{code}/crypto-keys/rotate",

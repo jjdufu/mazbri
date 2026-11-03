@@ -25,7 +25,7 @@ use tower::ServiceExt;
 /// 允许对所有角色开放的敏感读取（只返回元数据，不含密钥材料），新增条目须在评审中说明理由。
 const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
     // 只返回密钥版本、算法、状态与摘要等元数据；加密后的密钥字段 skip_serializing。
-    "/tenants/{code}/crypto-keys",
+    "/tenants/{code}/crypto",
     // 只返回请求密钥 kid、状态与时间，不返回密钥值。
     "/tenants/{code}/request-keys",
     // 只导出接口名、方法与 URL，不含请求头 / 鉴权配置（与 GET drafts/{id} 可见内容一致）。

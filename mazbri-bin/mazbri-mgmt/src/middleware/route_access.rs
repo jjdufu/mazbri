@@ -291,7 +291,7 @@ pub const RULES: &[RouteRule] = &[
     rule("DELETE", "/tenants/{code}/config/ratelimit", Roles(BIZ)),
     rule("GET", "/tenants/{code}/config/ratelimit", AnyRole),
     rule("PUT", "/tenants/{code}/config/ratelimit", Roles(BIZ)),
-    rule("GET", "/tenants/{code}/crypto-keys", AnyRole),
+    rule("GET", "/tenants/{code}/crypto", AnyRole),
     rule("POST", "/tenants/{code}/crypto-keys", Roles(BIZ)),
     rule("POST", "/tenants/{code}/crypto-keys/rotate", Roles(BIZ)),
     rule(
@@ -314,7 +314,6 @@ pub const RULES: &[RouteRule] = &[
         "/tenants/{code}/crypto-keys/{version}/disable",
         Roles(BIZ),
     ),
-    rule("GET", "/tenants/{code}/crypto-profile", AnyRole),
     rule("PUT", "/tenants/{code}/crypto-profile", Roles(BIZ)),
     rule("PUT", "/tenants/{code}/enabled", Roles(BIZ)),
     rule("GET", "/tenants/{code}/products", AnyRole),

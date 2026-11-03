@@ -1482,7 +1482,7 @@
       "tenantRequestKeyCreate": "Create Request Signing Key",
       "tenantRequestKeyRetire": "Retire Request Signing Key",
       "tenantRequestKeyList": "View Request Signing Keys",
-      "tenantCryptoKeyList": "View Tenant Crypto Keys",
+      "tenantCryptoKeyList": "View Tenant Transport Encryption",
       "tenantEnabledChange": "Enable/Disable Tenant",
       "apikeyList": "View API Keys",
       "certificateViewFull": "View Full Certificate",

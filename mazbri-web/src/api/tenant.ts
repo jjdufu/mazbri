@@ -32,7 +32,7 @@ import type {
   RemoveFromWhitelistResponse,
   TenantCryptoProfile,
   UpdateTenantCryptoProfileRequest,
-  TenantCryptoKeyListResponse,
+  TenantCryptoBundle,
   TenantCryptoKeyCreateResponse,
   TenantCryptoKey,
 } from "@/types/api/tenant";
@@ -214,9 +214,9 @@ export function setTenantEnabled(
     signal,
   });
 }
-export function fetchTenantCryptoProfile(code: string, signal?: AbortSignal) {
-  return request.get<TenantCryptoProfile>({
-    url: `${BASE_PATH}/${code}/crypto-profile`,
+export function fetchTenantCrypto(code: string, signal?: AbortSignal) {
+  return request.get<TenantCryptoBundle>({
+    url: `${BASE_PATH}/${code}/crypto`,
     signal,
   });
 }
@@ -229,12 +229,6 @@ export function updateTenantCryptoProfile(
     url: `${BASE_PATH}/${code}/crypto-profile`,
     params: data,
     showSuccessMessage: true,
-    signal,
-  });
-}
-export function fetchTenantCryptoKeys(code: string, signal?: AbortSignal) {
-  return request.get<TenantCryptoKeyListResponse>({
-    url: `${BASE_PATH}/${code}/crypto-keys`,
     signal,
   });
 }

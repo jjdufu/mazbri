@@ -1482,7 +1482,7 @@
       "tenantRequestKeyCreate": "创建请求签名密钥",
       "tenantRequestKeyRetire": "退役请求签名密钥",
       "tenantRequestKeyList": "查看请求签名密钥",
-      "tenantCryptoKeyList": "查看租户加密密钥",
+      "tenantCryptoKeyList": "查看租户传输加密配置",
       "tenantEnabledChange": "启停租户",
       "apikeyList": "查看 API 密钥",
       "certificateViewFull": "查看完整证书",

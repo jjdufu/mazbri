@@ -203,7 +203,7 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("tenant.request_key_create", "创建请求签名密钥"),
     ("tenant.request_key_retire", "退役请求签名密钥"),
     ("tenant.request_key_list", "查看请求签名密钥"),
-    ("tenant.crypto_key_list", "查看租户加密密钥"),
+    ("tenant.crypto_key_list", "查看租户传输加密配置"),
     ("tenant.enabled_change", "启停租户"),
     ("apikey.list", "查看 API 密钥"),
     ("certificate.view_full", "查看完整证书"),

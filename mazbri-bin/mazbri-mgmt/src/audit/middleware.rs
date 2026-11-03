@@ -606,7 +606,7 @@ mod tests {
                         }
                     }),
                 )
-                .route("/tenants/{code}/crypto-keys", get(|| async { "keys" }))
+                .route("/tenants/{code}/crypto", get(|| async { "crypto" }))
                 .route("/tenants/{code}/enabled", axum::routing::put(slow_handler))
                 .route("/products", get(denied))
                 .route("/auth/login", post(failed_login))
@@ -691,7 +691,7 @@ mod tests {
     async fn sensitive_get_is_persisted_even_when_disabled() {
         let harness = Harness::new(false);
         let app = harness.app();
-        let req = request("GET", "/api/v1/mgmt/tenants/t1/crypto-keys", "");
+        let req = request("GET", "/api/v1/mgmt/tenants/t1/crypto", "");
         assert_eq!(send(&app, req).await, StatusCode::OK);
         let rows = harness.rows().await;
         assert_eq!(rows.len(), 1);

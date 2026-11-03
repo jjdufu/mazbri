@@ -2,7 +2,7 @@ use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_cli
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::mfa_guard::require_category;
-use crate::middleware::auth::{AdminClaims, can_manage_tenants, extract_user_id, is_admin};
+use crate::middleware::auth::{AdminClaims, can_manage_tenants, can_write_business, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::mfa::Category;
 use crate::services::tenant_crypto as svc;
@@ -33,14 +33,26 @@ fn log_tenant_crypto_audit(
     Ok(())
 }
 
+/// 传输加密页统一读取：`{ profile, keys, license_status, actions }`。
+///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_crypto_profile(
+pub async fn get_tenant_crypto(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let data = svc::get_profile(&state.db, &code).await?;
+    let data = svc::get_crypto_bundle(
+        &state.db,
+        &state.cert_http_client,
+        &state.cert_service.url,
+        &state.cert_service.token,
+        &code,
+        can_write_business(&claims),
+        is_admin(&claims),
+    )
+    .await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -209,16 +221,6 @@ pub async fn rotate_crypto_key(
     Ok(crate::response::created(data).into_response())
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_crypto_keys(
-    State(state): State<AppState>,
-    Path(code): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
-    let data = svc::list_keys(&state.db, &code).await?;
-    Ok(ApiResponse::ok(data))
-}
 
 /// # Errors
 ///
@@ -593,6 +595,23 @@ mod tests {
             authorize_allow_insecure(&claims("R_FINANCE"), true),
             Err(ApiError::Forbidden)
         ));
+    }
+
+    fn crypto_write_actions(claims: &AdminClaims) -> (bool, bool) {
+        (can_write_business(claims), is_admin(claims))
+    }
+
+    #[test]
+    fn write_actions_are_biz_and_allow_insecure_is_super_admin() {
+        let (biz_admin, super_admin) = crypto_write_actions(&claims("R_ADMIN"));
+        assert!(biz_admin);
+        assert!(super_admin);
+        let (biz_finance, super_finance) = crypto_write_actions(&claims("R_FINANCE"));
+        assert!(biz_finance);
+        assert!(!super_finance);
+        let (biz_viewer, super_viewer) = crypto_write_actions(&claims("R_VIEWER"));
+        assert!(!biz_viewer);
+        assert!(!super_viewer);
     }
 
     #[test]

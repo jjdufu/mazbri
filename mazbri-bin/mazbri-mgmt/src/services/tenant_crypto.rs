@@ -1,6 +1,6 @@
 use crate::error::ApiError;
 use crate::repositories::tenant_crypto as repo;
-use crate::services::license::ensure_license_issuance_allowed;
+use crate::services::license::{ensure_license_issuance_allowed, fetch_license_status};
 use crate::services::root_package::fetch_root_material_bundle;
 use crate::services::tenant::resolve_tenant_id;
 use mazbri_core::crypto::tenant_key::{
@@ -382,6 +382,48 @@ pub async fn list_keys(pool: &PgPool, code: &str) -> Result<serde_json::Value, A
         .await
         .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
     Ok(serde_json::json!({ "keys": keys }))
+}
+
+/// 租户传输加密页单一读取契约：`profile` + `keys` + `license_status` + `actions`。
+///
+/// `license_status` 经 cert 服务令牌拉取，**不按角色裁剪**；写能力只体现在 `actions`。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn get_crypto_bundle(
+    pool: &PgPool,
+    cert_client: &reqwest::Client,
+    cert_service_url: &str,
+    cert_service_token: &str,
+    code: &str,
+    can_write: bool,
+    is_super_admin: bool,
+) -> Result<serde_json::Value, ApiError> {
+    let profile = get_profile(pool, code).await?;
+    let keys_value = list_keys(pool, code).await?;
+    let keys = keys_value
+        .get("keys")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    let license_status =
+        fetch_license_status(cert_client, cert_service_url, cert_service_token).await?;
+    Ok(serde_json::json!({
+        "profile": profile,
+        "keys": keys,
+        "license_status": license_status,
+        "actions": {
+            "update_profile": can_write,
+            "create_key": can_write,
+            "rotate_key": can_write,
+            "activate_key": can_write,
+            "deprecate_key": can_write,
+            "disable_key": can_write,
+            "delete_key": can_write,
+            "allow_insecure": is_super_admin,
+            "manage_root_package": is_super_admin,
+        }
+    }))
 }
 
 /// # Errors

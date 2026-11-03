@@ -348,8 +348,41 @@ export interface TenantCryptoKey {
   updated_at: ISODateString;
   metadata: Record<string, unknown>;
 }
-export interface TenantCryptoKeyListResponse {
+export interface TenantCryptoActions {
+  update_profile: boolean;
+  create_key: boolean;
+  rotate_key: boolean;
+  activate_key: boolean;
+  deprecate_key: boolean;
+  disable_key: boolean;
+  delete_key: boolean;
+  allow_insecure: boolean;
+  manage_root_package: boolean;
+}
+
+/** 许可证态（与 cert decision_json / LicenseStatus 对齐，camelCase）。 */
+export interface TenantCryptoLicenseStatus {
+  status: string;
+  active: boolean;
+  issuanceAllowed: boolean;
+  decryptionAllowed: boolean;
+  sequence: number | null;
+  keyVersion: string | null;
+  customerId: string | null;
+  installationId: string | null;
+  notBefore: string | null;
+  expiresAt: string | null;
+  graceUntil: string | null;
+  secondsToExpiry: number | null;
+  secondsToGraceEnd: number | null;
+}
+
+/** GET /tenants/{code}/crypto 统一契约。 */
+export interface TenantCryptoBundle {
+  profile: TenantCryptoProfile;
   keys: TenantCryptoKey[];
+  license_status: TenantCryptoLicenseStatus;
+  actions: TenantCryptoActions;
 }
 export interface TenantCryptoKeyCreateResponse {
   keyVersion: string;
