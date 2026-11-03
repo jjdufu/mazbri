@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.18](https://github.com/jjdufu/mazbri/compare/v0.2.17...v0.2.18) (2026-11-03)
+
+
+### Bug Fixes
+
+* **crypto:** 租户密钥按数据算法取前缀（SM4 用 16B） ([e8c8ac9](https://github.com/jjdufu/mazbri/commit/e8c8ac95ec591aff7ff77bcf656f09de40b1bad6))
+* **upstream:** DES-CBC 走 legacy 实现；OAuth 表单模板凭据 URL 编码 ([3feffc4](https://github.com/jjdufu/mazbri/commit/3feffc46e03023154d6c337de358161df6dcebab))
+* **upstream:** GET 负载摊进 query；SignOnly 对 BIZ 字段做 raw 签 ([049ebf0](https://github.com/jjdufu/mazbri/commit/049ebf0d1fc3e5f9521479fb1d944fe5be06505b))
+* **upstream:** 上游对接通用修复（digest-as-sign/encrypt_only、sorted_kv 推导、GET→query、DES-CBC/OAuth 编码、SM4 密钥前缀） ([c4a54bc](https://github.com/jjdufu/mazbri/commit/c4a54bc714dc9f9e9f2f7df33aa40efdce123b05))
+* **upstream:** 允许 allow_insecure 下 digest-as-sign 与 encrypt_only 裸分组密码 ([9a2fa37](https://github.com/jjdufu/mazbri/commit/9a2fa37ecedd2e5702d5df1dd32e94f4500f2f44))
+
 ## [0.2.17](https://github.com/jjdufu/mazbri/compare/v0.2.16...v0.2.17) (2026-11-03)
 
 
