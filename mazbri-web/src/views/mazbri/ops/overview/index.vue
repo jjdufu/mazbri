@@ -194,6 +194,9 @@
                 t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 })
               }}
             </ElTag>
+            <RoleGate gate="admin">
+              <CertExpiryBadge :days="overview?.cert_min_expiry_days" />
+            </RoleGate>
           </div>
           <div
             v-if="alertSummary?.latest.length"
@@ -250,6 +253,17 @@
       </ElCol>
     </ElRow>
 
+    <RoleGate gate="admin">
+      <InfraHealthStrip ref="infraStripRef" />
+    </RoleGate>
+
+    <SloBudgetPanel
+      ref="sloBudgetRef"
+      :connected="overview?.error_budget_connected"
+      :remaining="overview?.error_budget_remaining"
+      :slo-name="overview?.error_budget_slo"
+    />
+
     <ProductTopN ref="productTopNRef" :time-range="timeRange" />
 
     <RoleGate gate="biz">
@@ -298,9 +312,12 @@ import {
   type OverviewDrillId,
 } from "@/utils/ops/overview-drill";
 import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
+import CertExpiryBadge from "./modules/CertExpiryBadge.vue";
+import InfraHealthStrip from "./modules/InfraHealthStrip.vue";
 import ProductTopN from "./modules/ProductTopN.vue";
 import RecentAnomalies from "./modules/RecentAnomalies.vue";
 import RecentChanges from "./modules/RecentChanges.vue";
+import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -329,6 +346,8 @@ const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(
   null,
 );
 const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
+const infraStripRef = ref<InstanceType<typeof InfraHealthStrip> | null>(null);
+const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
 const exemplarLoading = ref(false);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
@@ -510,6 +529,8 @@ async function reload() {
     p99Series.value = (bundle.p99 as MetricSeries | null | undefined) ?? null;
     alertSummary.value =
       (bundle.alerts as AlertSummary | null | undefined) ?? null;
+    await infraStripRef.value?.reload();
+    await sloBudgetRef.value?.reload();
     await productTopNRef.value?.reload();
     await recentAnomaliesRef.value?.reload();
     await recentChangesRef.value?.reload();

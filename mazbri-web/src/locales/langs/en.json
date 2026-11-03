@@ -4181,13 +4181,11 @@
       },
       "healthLights": "Service health lights",
       "openMatrix": "Service health matrix",
-      "placeholders": "Coming later",
       "alerts": "Active alerts",
       "alertsFiring": "Firing {n}",
       "alertsAcked": "Acked {n}",
       "alertsNone": "No active alerts",
       "alertsOpen": "Alert events",
-      "errorBudgetPending": "Error budget: not connected (step 24)",
       "drillDisabled": "Target page is not online yet",
       "productTop": "Top products",
       "productZeroBadge": "Zero-call {n}",
@@ -4216,6 +4214,20 @@
         "ratelimit": "4.1 Rate limits",
         "billing": "6.1 Billing pipeline",
         "certs": "12.1 Certificates"
+      },
+      "certExpiryBadge": "Cert expires in {days}d",
+      "sloBudgetTitle": "Error budget / SLO",
+      "sloBudgetSlim": "{name}: {remaining} left",
+      "sloBudgetDefaultName": "SLO",
+      "sloBudgetLoadFailed": "Failed to load error budget",
+      "infraStrip": {
+        "title": "Infra health",
+        "open": "Infrastructure",
+        "loadFailed": "Failed to load infra strip",
+        "pg": "PostgreSQL",
+        "redis": "Redis",
+        "pipeline": "Pipeline freshness",
+        "hostCpu": "Host CPU"
       }
     },
     "screen": {

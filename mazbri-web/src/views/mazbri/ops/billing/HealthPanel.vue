@@ -134,6 +134,7 @@ import type {
   FunnelStage,
 } from "@/types/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
+import { aggregateLastMetricValue } from "@/utils/ops/metric-series";
 
 defineOptions({ name: "OpsBillingHealthPanel" });
 
@@ -203,13 +204,7 @@ const funnelColumns = computed<ColumnOption<FunnelStage>[]>(() => [
 
 /** 每条序列取最后一个点后聚合；无数据为 null。 */
 function latest(metric: ChartMetric, reduce: "sum" | "max"): number | null {
-  const values = (series.value[metric]?.series ?? [])
-    .map((s) => s.points[s.points.length - 1]?.value)
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  if (values.length === 0) return null;
-  return reduce === "sum"
-    ? values.reduce((a, b) => a + b, 0)
-    : Math.max(...values);
+  return aggregateLastMetricValue(series.value[metric], reduce);
 }
 
 /** p50 / p99 两条序列合并到一张图，按分位数标注。 */

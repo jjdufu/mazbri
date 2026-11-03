@@ -52,6 +52,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import OpsMetricChartGrid from "@/components/ops/OpsMetricChartGrid.vue";
+import { aggregateLastMetricValue } from "@/utils/ops/metric-series";
 import StatCard from "@/components/ops/StatCard.vue";
 import { useMetricTimeseriesPanel } from "@/composables/ops/useMetricTimeseriesPanel";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
@@ -79,11 +80,7 @@ const olapLoading = ref(false);
 const responseHit = ref<number | null>(null);
 
 function latest(metric: string): number | null {
-  const values = (series.value[metric]?.series ?? [])
-    .map((s) => s.points[s.points.length - 1]?.value)
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  if (values.length === 0) return null;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  return aggregateLastMetricValue(series.value[metric], "avg");
 }
 
 const cacheHitLatest = computed(() => latest("cache_hit_ratio"));
