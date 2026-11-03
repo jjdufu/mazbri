@@ -100,4 +100,6 @@ jobs:
       version: ${{ needs.release-please.outputs.tag_name }}
     permissions:
       contents: write
+      actions: read
+      pull-requests: read
     secrets: inherit
