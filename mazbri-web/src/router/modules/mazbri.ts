@@ -379,18 +379,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "assets/changes",
-        name: "OpsAssetsChanges",
-        component: "/mazbri/ops/assets/changes",
-        meta: {
-          title: "menus.mazbri.assetsChanges",
-          icon: "ri:git-commit-line",
-          isHide: true,
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
         path: "tenants",
         redirect: "/operations/tenants",
         meta: {

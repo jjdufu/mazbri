@@ -4203,6 +4203,12 @@
       "anomalyEmpty": "暂无异常事件",
       "anomalyDetail": "异常详情",
       "anomalyLoadFailed": "加载异常事件失败",
+      "recentChanges": "近 24 小时变更",
+      "changeEmpty": "近 24 小时无变更事件",
+      "changeDetailTitle": "变更详情",
+      "changeDetail": "详情",
+      "changeCharts": "路由/发布趋势",
+      "changeLoadFailed": "加载变更事件失败",
       "charts": {
         "qps": "业务 QPS",
         "p99": "业务 P99"

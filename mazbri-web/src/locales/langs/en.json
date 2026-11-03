@@ -4198,6 +4198,12 @@
       "anomalyEmpty": "No anomaly events",
       "anomalyDetail": "Anomaly detail",
       "anomalyLoadFailed": "Failed to load anomalies",
+      "recentChanges": "Changes (last 24h)",
+      "changeEmpty": "No changes in the last 24 hours",
+      "changeDetailTitle": "Change detail",
+      "changeDetail": "Detail",
+      "changeCharts": "Route / publish trends",
+      "changeLoadFailed": "Failed to load changes",
       "charts": {
         "qps": "Business QPS",
         "p99": "Business P99"

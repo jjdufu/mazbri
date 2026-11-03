@@ -254,6 +254,7 @@
 
     <RoleGate gate="biz">
       <RecentAnomalies ref="recentAnomaliesRef" />
+      <RecentChanges ref="recentChangesRef" />
     </RoleGate>
   </OpsPage>
 </template>
@@ -299,6 +300,7 @@ import {
 import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
 import ProductTopN from "./modules/ProductTopN.vue";
 import RecentAnomalies from "./modules/RecentAnomalies.vue";
+import RecentChanges from "./modules/RecentChanges.vue";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -326,6 +328,7 @@ const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
 const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(
   null,
 );
+const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
 const exemplarLoading = ref(false);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
@@ -509,6 +512,7 @@ async function reload() {
       (bundle.alerts as AlertSummary | null | undefined) ?? null;
     await productTopNRef.value?.reload();
     await recentAnomaliesRef.value?.reload();
+    await recentChangesRef.value?.reload();
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.overview.loadFailed"),
