@@ -193,6 +193,23 @@ pub fn data_key_len(data_alg: AlgorithmId) -> Result<usize, TransportCryptoError
     }
 }
 
+/// 从租户密钥材料切出数据算法所需前缀（租户密钥恒为 32 字节，SM4 等短密钥算法取前缀）。
+///
+/// # Errors
+///
+/// 密钥短于算法要求，或算法不受支持时返回错误。
+pub fn data_key_prefix(
+    data_alg: AlgorithmId,
+    key: &[u8],
+) -> Result<&[u8], TransportCryptoError> {
+    let len = data_key_len(data_alg)?;
+    if key.len() < len {
+        return Err(TransportCryptoError::InvalidKeyLength);
+    }
+    Ok(&key[..len])
+}
+
+
 /// 使用注册表 MAC 对载荷签名，返回 hex。
 ///
 /// # Errors
@@ -465,6 +482,7 @@ pub fn seal_envelope(
         ));
     }
 
+    let data_key = data_key_prefix(data_alg, data_key)?;
     let parts = encrypt_with_alg(registry, data_alg, data_key, plaintext, tenant_id.as_bytes())?;
     let nonce = generate_nonce_base64url();
     let mut envelope = TransportEnvelope {
@@ -514,6 +532,7 @@ pub fn open_envelope(
             "signature present without mac_alg".to_owned(),
         ));
     }
+    let data_key = data_key_prefix(data_alg, data_key)?;
     decrypt_with_alg(
         registry,
         data_alg,
@@ -657,6 +676,13 @@ mod tests {
         let data_key = [5u8; 16];
         let mac_key = [7u8; 32];
         roundtrip(SUITE_GM_SM4_HMAC_SM3, &data_key, Some(&mac_key));
+    }
+
+    #[test]
+    fn roundtrip_gm_sm4_hmac_sm3_with_32byte_tenant_secret() {
+        // create_key 产出 32 字节租户密钥；数据侧取前 16 字节，MAC 用全长。
+        let tenant_secret = [5u8; 32];
+        roundtrip(SUITE_GM_SM4_HMAC_SM3, &tenant_secret, Some(&tenant_secret));
     }
 
     #[test]

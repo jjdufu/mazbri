@@ -71,14 +71,62 @@ pub(crate) fn seal_body(
     registry: &AlgorithmRegistry,
     canon_fields: &[(String, String)],
 ) -> Result<RequestParts, ExecuteError> {
+    let derived;
+    let fields: &[(String, String)] = if canon_fields.is_empty() {
+        derived = derive_canon_fields_from_body(body, profile)?;
+        derived.as_slice()
+    } else {
+        canon_fields
+    };
     let ctx = PipelineContext {
         registry,
-        canon_fields,
+        canon_fields: fields,
         canon_sep: "&",
         aad: &[],
         field_iv: None,
     };
     seal_request(body, profile, keys, &ctx).map_err(|e| map_pipeline_err(&e))
+}
+
+/// `sorted_kv` / `concat` 且调用方未给拼串字段时，从 JSON 对象扁平字段推导（跳过 sign 槽位名）。
+fn derive_canon_fields_from_body(
+    body: &[u8],
+    profile: &UpstreamCryptoProfile,
+) -> Result<Vec<(String, String)>, ExecuteError> {
+    match profile.canon {
+        CanonStyle::SortedKv | CanonStyle::Concat => {}
+        _ => return Ok(Vec::new()),
+    }
+    let value: Value = serde_json::from_slice(body).map_err(|e| {
+        ExecuteError::AdapterFailed(format!("crypto canon from json body: {e}"))
+    })?;
+    let obj = value.as_object().ok_or_else(|| {
+        ExecuteError::AdapterFailed("crypto sorted_kv/concat 需要 JSON 对象 body".into())
+    })?;
+    let skip: std::collections::HashSet<&str> = profile
+        .slots
+        .iter()
+        .filter(|s| s.role == crate::slots::role::SIGN)
+        .map(|s| s.name.as_str())
+        .collect();
+    let mut out = Vec::new();
+    for (k, v) in obj {
+        if skip.contains(k.as_str()) || k == "sign" {
+            continue;
+        }
+        match v {
+            Value::Null => {}
+            Value::String(s) => out.push((k.clone(), s.clone())),
+            Value::Number(n) => out.push((k.clone(), n.to_string())),
+            Value::Bool(b) => out.push((k.clone(), if *b { "true" } else { "false" }.into())),
+            Value::Object(_) | Value::Array(_) => {
+                return Err(ExecuteError::AdapterFailed(
+                    "crypto canon 暂不支持嵌套 object/array 字段".into(),
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 将槽位合并进 headers/query，并得到 HTTP body。
@@ -110,6 +158,15 @@ pub(crate) fn apply_parts(
         return Ok(Some(BodyKind::Form(encoded)));
     }
     if !parts.slots.json.is_empty() {
+        // 若 body 已是 JSON 对象（明文业务 / named_fields），把槽位字段合并进去，避免只剩 sign。
+        if let Ok(Value::Object(mut map)) = serde_json::from_slice::<Value>(&parts.body) {
+            for (k, v) in &parts.slots.json {
+                map.insert(k.clone(), v.clone());
+            }
+            let raw = serde_json::to_string(&map)
+                .map_err(|e| ExecuteError::AdapterFailed(format!("crypto json merge: {e}")))?;
+            return Ok(Some(BodyKind::Json(raw)));
+        }
         let raw = serde_json::to_string(&parts.slots.json)
             .map_err(|e| ExecuteError::AdapterFailed(format!("crypto json body: {e}")))?;
         return Ok(Some(BodyKind::Json(raw)));

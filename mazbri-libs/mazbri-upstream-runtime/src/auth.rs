@@ -406,10 +406,19 @@ async fn fetch_oauth_cc_form(
         .map(str::trim)
         .filter(|s| !s.is_empty());
     if let Some(tpl) = tpl {
+        let form_ct = auth.headers.iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case("content-type")
+                && v.to_ascii_lowercase().contains("application/x-www-form-urlencoded")
+        });
         let mut body = tpl.to_string();
         for (k, v) in credentials {
             let placeholder = format!("{{{{{k}}}}}");
-            body = body.replace(&placeholder, v);
+            let repl = if form_ct {
+                url_encode(v)
+            } else {
+                v.clone()
+            };
+            body = body.replace(&placeholder, &repl);
         }
         builder = apply_auth_headers(builder, &auth.headers, request_id);
         if method != Method::GET {

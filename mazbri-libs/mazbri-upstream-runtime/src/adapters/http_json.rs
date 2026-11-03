@@ -14,6 +14,11 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let encoding = spec.request.body_encoding;
     let mut headers = super::merge_request_headers(ctx.auth, spec);
 
+    // GET/HEAD 无 body：把 JSON 对象标量字段摊进 query（通用，便于 posts/search 等）。
+    if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
+        append_payload_to_query(&mut query, &ctx.input.payload)?;
+    }
+
     let body = if let Some(profile) = spec.crypto.as_ref() {
         if method.eq_ignore_ascii_case("GET")
             || method.eq_ignore_ascii_case("HEAD")
@@ -28,9 +33,19 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
                     .map_err(|e| ExecuteError::SpecInvalid(format!("payload json: {e}")))?
             };
             let mut profile = profile.clone();
-            ensure_profile_slots(&mut profile, false);
+            let form_style = encoding == BodyEncoding::Form;
+            ensure_profile_slots(&mut profile, form_style);
             let sealed = seal_body(&raw, &profile, ctx.pipeline_keys, ctx.registry, &[])?;
-            let wire = apply_parts(&mut headers, &mut query, &sealed)?;
+            let mut wire = apply_parts(&mut headers, &mut query, &sealed)?;
+            // named_fields 等场景 seal 后 body 仍是 JSON 对象：按请求编码压成 form。
+            if form_style
+                && let Some(BodyKind::Json(s)) = wire
+            {
+                let v: Value = serde_json::from_str(&s).map_err(|e| {
+                    ExecuteError::AdapterFailed(format!("crypto form from json: {e}"))
+                })?;
+                wire = Some(BodyKind::Form(encode_form_object(&v)?));
+            }
             if matches!(wire, Some(BodyKind::Form(_))) {
                 super::force_urlencoded_content_type(&mut headers);
             } else {
@@ -114,6 +129,36 @@ pub(crate) fn outbound_body(
     Ok(Some(BodyKind::Json(raw)))
 }
 
+
+/// Flatten a JSON object of scalars into query pairs (skip null; reject nest).
+fn append_payload_to_query(
+    query: &mut Vec<(String, String)>,
+    payload: &Value,
+) -> Result<(), ExecuteError> {
+    if payload.is_null() {
+        return Ok(());
+    }
+    let obj = payload.as_object().ok_or_else(|| {
+        ExecuteError::SpecInvalid("GET/HEAD payload 须为 JSON 对象（标量字段→query）".into())
+    })?;
+    let mut keys: Vec<&String> = obj.keys().collect();
+    keys.sort();
+    for k in keys {
+        match &obj[k] {
+            Value::Null => {}
+            Value::Object(_) | Value::Array(_) => {
+                return Err(ExecuteError::SpecInvalid(
+                    "GET/HEAD query 扁平化不支持嵌套 object/array".into(),
+                ));
+            }
+            Value::String(s) => query.push((k.clone(), s.clone())),
+            Value::Number(n) => query.push((k.clone(), n.to_string())),
+            Value::Bool(b) => query.push((k.clone(), if *b { "true" } else { "false" }.into())),
+        }
+    }
+    Ok(())
+}
+
 /// Flat JSON object → `k=v&k=v` with sorted keys. Nested object/array is `SpecInvalid`.
 pub(crate) fn encode_form_object(payload: &Value) -> Result<String, ExecuteError> {
     let obj = payload
@@ -149,6 +194,21 @@ fn form_pair(k: &str, v: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn get_payload_flattens_to_query_helper() {
+        let mut q = vec![("keep".into(), "1".into())];
+        append_payload_to_query(&mut q, &serde_json::json!({"b": "x", "a": 2})).unwrap();
+        assert_eq!(
+            q,
+            vec![
+                ("keep".into(), "1".into()),
+                ("a".into(), "2".into()),
+                ("b".into(), "x".into()),
+            ]
+        );
+    }
 
     #[test]
     fn get_never_has_body() {

@@ -13,6 +13,6 @@ pub use tenant_transport::{
     DEFAULT_NONCE_TTL_SECS, PROFILE_VERSION_V1,
 };
 pub use upstream::{
-    CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, SignSpec, SlotLocation,
-    SlotSpec, UpstreamCryptoProfile, WireEncoding, WireEncodings, WrapSpec,
+    CanonKeyAffix, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, SignSpec,
+    SlotLocation, SlotSpec, UpstreamCryptoProfile, WireEncoding, WireEncodings, WrapSpec,
 };
