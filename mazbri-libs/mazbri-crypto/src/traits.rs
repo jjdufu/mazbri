@@ -59,6 +59,18 @@ pub enum CryptoError {
         /// 原因说明。
         reason: String,
     },
+    /// 未知命名套件（禁止静默回落默认算法）。
+    #[error("unknown suite: {name}")]
+    UnknownSuite {
+        /// 原始套件名。
+        name: String,
+    },
+    /// Profile 字段组合非法（安全规则 / 顺序 / 槽位等）。
+    #[error("invalid profile: {reason}")]
+    InvalidProfile {
+        /// 原因说明。
+        reason: String,
+    },
 }
 
 /// AEAD 密封 / 打开。

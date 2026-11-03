@@ -131,11 +131,11 @@ fn sm2_sign_verify_default_user_id() {
 #[test]
 fn suite_gm_sm4_hmac_sm3_mapping() {
     assert_eq!(
-        suite_data_alg(SUITE_GM_SM4_HMAC_SM3),
-        Some(AlgorithmId::Sm4CbcPkcs7)
+        suite_data_alg(SUITE_GM_SM4_HMAC_SM3).expect("data"),
+        AlgorithmId::Sm4CbcPkcs7
     );
     assert_eq!(
-        suite_mac_alg(SUITE_GM_SM4_HMAC_SM3),
+        suite_mac_alg(SUITE_GM_SM4_HMAC_SM3).expect("mac"),
         Some(AlgorithmId::HmacSm3)
     );
     assert!(require_mac_registered());

@@ -7,6 +7,7 @@
 //! - [`AlgorithmRegistry`]：后续步骤只「注册实现」，业务不散落算法常量
 //! - step-02：对称/AEAD + 摘要/MAC
 //! - step-03：非对称（RSA/ECDSA/Ed25519）、国密（SM2/SM3/SM4）、legacy 门闩实现
+//! - step-04：[`profile`]（`TenantTransportProfile` / `UpstreamCryptoProfile`）与命名套件解析
 //! - Legacy 唯一门闩：[`legacy::assert_not_legacy_or_allowed`]
 //!
 //! # 非目标（本 crate）
@@ -30,6 +31,7 @@ pub mod legacy;
 pub mod legacy_algs;
 pub mod mac;
 pub mod material;
+pub mod profile;
 pub mod registry;
 pub mod security;
 pub mod sm;
@@ -50,8 +52,15 @@ pub use sm::{
     Sm2EncryptAlgorithm, Sm2SignAlgorithm, Sm4Algorithm, SM2_DEFAULT_USER_ID, SM3_OUTPUT_LEN,
     SM4_BLOCK_LEN, SM4_KEY_LEN,
 };
+pub use profile::{
+    BindingSpec, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, KeySelection,
+    SignSpec, SlotLocation, SlotSpec, TenantTransportProfile, TransportMode, UpstreamCryptoProfile,
+    WireEncoding, WireEncodings, WrapSpec, DEFAULT_CLOCK_SKEW_SECS, DEFAULT_NONCE_TTL_SECS,
+    PROFILE_VERSION_V1,
+};
 pub use suite::{
-    suite_data_alg, suite_mac_alg, SUITE_GM_SM4_HMAC_SM3, SUITE_TENANT_DEFAULT_2026_11,
+    known_suites, resolve_suite, suite_data_alg, suite_mac_alg, SuiteSpec, SUITE_GM_SM4_HMAC_SM3,
+    SUITE_TENANT_CHACHA20, SUITE_TENANT_DEFAULT_2026_11,
 };
 pub use symmetric::{decrypt_cfb, encrypt_cfb, CfbParams, SymmetricAlgorithm};
 pub use traits::{AeadSeal, AsymBox, AsymSign, BlockCipher, CryptoError, Digest, Mac};

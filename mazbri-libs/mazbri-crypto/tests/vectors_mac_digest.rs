@@ -1,8 +1,8 @@
 //! HMAC / SHA / BLAKE3 已知答案与注册表查询。
 
 use mazbri_crypto::{
-    require_mac_for, AlgorithmId, AlgorithmRegistry, Digest, DigestAlgorithm, KeyPurpose, KeyRef,
-    Mac, MacAlgorithm, SecurityClass,
+    require_mac_for, AlgorithmId, AlgorithmRegistry, CryptoError, Digest, DigestAlgorithm,
+    KeyPurpose, KeyRef, Mac, MacAlgorithm, SecurityClass,
 };
 
 fn unhex(s: &str) -> Vec<u8> {
@@ -108,8 +108,9 @@ fn sha_and_blake3_digests() {
 #[test]
 fn suite_tenant_default_maps_aes256_gcm() {
     assert_eq!(
-        mazbri_crypto::suite_data_alg(mazbri_crypto::SUITE_TENANT_DEFAULT_2026_11),
-        Some(AlgorithmId::Aes256Gcm)
+        mazbri_crypto::suite_data_alg(mazbri_crypto::SUITE_TENANT_DEFAULT_2026_11).expect("suite"),
+        AlgorithmId::Aes256Gcm
     );
-    assert_eq!(mazbri_crypto::suite_data_alg("suite/unknown"), None);
+    let err = mazbri_crypto::suite_data_alg("suite/unknown").expect_err("unknown");
+    assert!(matches!(err, CryptoError::UnknownSuite { .. }));
 }
