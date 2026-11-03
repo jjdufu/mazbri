@@ -148,7 +148,7 @@
       <template #amount="{ row }">
         <span :class="['amount', getAmountClass(row.transaction_type)]">
           {{ getAmountPrefix(row.transaction_type)
-          }}{{ formatAmount(row.amount) }}
+          }}{{ formatMoney(row.amount) }}
         </span>
       </template>
       <template #balance_change="{ row }">
@@ -374,7 +374,7 @@ import ResourceTableShell from "@/components/common/resource-table-shell/index.v
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { formatAmount, formatDateTime } from "@/utils/format";
+import { formatMoney, formatDateTime } from "@/utils/format";
 defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
@@ -542,7 +542,7 @@ const balanceAfterRefund = computed(() => {
 });
 
 const formatBalance = (balance: string | number | null | undefined) => {
-  return formatAmount(balance);
+  return formatMoney(balance);
 };
 
 const getTransactionTypeLabel = (type: string) => {

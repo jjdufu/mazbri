@@ -380,6 +380,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, defineComponent, h, ref, watch, type PropType } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -553,12 +554,12 @@ function isErrorEvent(ev: TraceSpanEvent): boolean {
 }
 
 function formatNs(ns: number): string {
-  return new Date(Math.floor(ns / 1e6)).toLocaleString();
+  return formatDateTime(Math.floor(ns / 1e6));
 }
 
 function formatTime(value: string): string {
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? value : formatDateTime(d);
 }
 
 function formatEventTime(value: number | string | undefined): string {

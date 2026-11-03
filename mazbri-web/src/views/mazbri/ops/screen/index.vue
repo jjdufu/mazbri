@@ -139,6 +139,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -458,7 +459,7 @@ async function renderTopo(start: number, end: number) {
 }
 
 function tickClock() {
-  clock.value = new Date().toLocaleString();
+  clock.value = formatDateTime(new Date());
 }
 
 function rotatePanel() {

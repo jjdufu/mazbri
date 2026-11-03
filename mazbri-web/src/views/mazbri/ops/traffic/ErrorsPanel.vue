@@ -116,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -257,7 +258,7 @@ function formatSampleTime(value: CallMonitorItem["timestamp"]): string {
   const sec = sampleSeconds(value);
   return sec === undefined
     ? String(value ?? "")
-    : new Date(sec * 1000).toLocaleString();
+    : formatDateTime(sec);
 }
 
 function openSampleTrace(row: CallMonitorItem) {

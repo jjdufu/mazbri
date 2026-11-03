@@ -270,7 +270,8 @@
       "valid": "Valid",
       "expiringSoon": "Expiring Soon",
       "expired": "Expired",
-      "revoked": "Revoked"
+      "revoked": "Revoked",
+      "closed": "Closed"
     },
     "roleLabels": {
       "admin": "Super Administrator",
@@ -354,7 +355,13 @@
     "edit": "Edit",
     "success": "Success",
     "failed": "Failed",
-    "confirmDelete": "Delete?"
+    "confirmDelete": "Delete?",
+    "severityLabels": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Info"
+    },
+    "copyId": "Copy ID"
   },
   "config": {
     "globalComponents": {
@@ -4309,7 +4316,7 @@
       "exitToDashboard": "Back to overview"
     },
     "finance": {
-      "placeholder": "Finance overview will be completed in a later step",
+      "placeholder": "Finance overview",
       "revenue": "Revenue",
       "cost": "Cost",
       "margin": "Margin",
@@ -4320,7 +4327,7 @@
       "rankProduct": "By product",
       "rankSupplier": "By supplier",
       "balances": "Balances & runway",
-      "key": "Key",
+      "key": "ID",
       "tenantId": "Tenant ID",
       "available": "Available",
       "recharge": "Recharge (30d)",
@@ -4333,7 +4340,16 @@
       "tenantCode": "Tenant code",
       "costUnavailableTitle": "Cost not connected",
       "costUnavailableDesc": "Upstream cost is not available for this window; margin shows as \"—\" instead of a fake 100%.",
-      "windowFallback": "Last {days} days"
+      "windowFallback": "Last {days} days",
+      "displayName": "Name",
+      "productName": "Product name",
+      "supplierName": "Supplier name",
+      "copyKey": "Copy ID",
+      "unnamed": "Unnamed",
+      "daysUnit": "days",
+      "statusActive": "Active",
+      "statusSuspended": "Suspended",
+      "statusClosed": "Closed"
     },
     "services": {
       "refresh": "Refresh",

@@ -241,7 +241,7 @@ import {
   formatAlertValue,
   resolveAlertI18nLabel,
 } from "@/utils/ops/alerts-format";
-import { getStatusLabel } from "@/utils/display-labels";
+import { getSeverityLabel, getStatusLabel } from "@/utils/display-labels";
 import { stripAlertEventIdQuery } from "@/utils/ops/alerts-link";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 
@@ -256,7 +256,7 @@ function alertStatusText(status: string): string {
 
 function alertSeverityText(severity: string): string {
   const labeled = resolveAlertI18nLabel("ops.alerts.severity", severity, t, te);
-  return labeled === severity ? getStatusLabel(severity) : labeled;
+  return labeled === severity ? getSeverityLabel(severity) : labeled;
 }
 
 const route = useRoute();

@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -132,9 +133,7 @@ const columns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
     label: t("ops.services.columns.restart"),
     minWidth: 160,
     formatter: (row) =>
-      row.last_restart_ts
-        ? new Date(row.last_restart_ts * 1000).toLocaleString()
-        : "—",
+      row.last_restart_ts ? formatDateTime(row.last_restart_ts) : "—",
   },
   {
     prop: "version",

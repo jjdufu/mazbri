@@ -59,11 +59,12 @@ pub struct FinanceOverview {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RankRow {
+    /// 稳定主键（租户 UUID / `product_id` / `supplier_code`），仅次要「复制 ID」用。
     pub key: String,
+    /// 面向 UI 的名称；与 `key` 分离，禁止把裸 UUID 当唯一展示列。
+    pub display_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_name: Option<String>,
     pub revenue: String,
     pub cost: String,
     pub cost_status: &'static str,
@@ -247,6 +248,85 @@ async fn load_tenant_labels(
     Ok(map)
 }
 
+async fn load_product_names(
+    platform: &PgPool,
+    product_ids: &[String],
+) -> Result<HashMap<String, String>, BillingError> {
+    if product_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query(
+        "SELECT product_id, COALESCE(name, '') AS name FROM products WHERE product_id = ANY($1)",
+    )
+    .bind(product_ids)
+    .fetch_all(platform)
+    .await
+    .map_err(db_err("product names for finance ranks"))?;
+    let mut map = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let id: String = row.get("product_id");
+        let name: String = row.get("name");
+        map.insert(id, name);
+    }
+    Ok(map)
+}
+
+async fn load_supplier_names(
+    platform: &PgPool,
+    codes: &[String],
+) -> Result<HashMap<String, String>, BillingError> {
+    if codes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query(
+        "SELECT supplier_code, COALESCE(name, '') AS name FROM suppliers WHERE supplier_code = ANY($1)",
+    )
+    .bind(codes)
+    .fetch_all(platform)
+    .await
+    .map_err(db_err("supplier names for finance ranks"))?;
+    let mut map = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let code: String = row.get("supplier_code");
+        let name: String = row.get("name");
+        map.insert(code, name);
+    }
+    Ok(map)
+}
+
+/// 名称优先，其次编码；UUID 主键不得回落成裸 UUID 展示名。
+fn pick_display_name(
+    name: Option<&str>,
+    code: Option<&str>,
+    key: &str,
+    key_is_uuid: bool,
+) -> String {
+    for candidate in [name, code].into_iter().flatten() {
+        let trimmed = candidate.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if key_is_uuid {
+        String::new()
+    } else {
+        key.to_string()
+    }
+}
+
+fn round_days_remaining(avail: Decimal, avg_daily: Decimal) -> Option<f64> {
+    let avg_f = dec_f64(avg_daily);
+    if avg_f <= 0.0 {
+        return None;
+    }
+    let days = dec_f64(avail) / avg_f;
+    Some((days * 10.0).round() / 10.0)
+}
+
+fn round_money_dec(v: Decimal) -> String {
+    format!("{:.2}", dec_f64(v))
+}
+
 /// 最近 `days` 天经营总览（默认 30）。
 ///
 /// # Errors
@@ -348,17 +428,17 @@ async fn rank_query(
 
 fn to_rank_row(
     key: String,
+    display_name: String,
     revenue: Decimal,
     cost: Decimal,
     has_cost: bool,
     tenant_code: Option<String>,
-    tenant_name: Option<String>,
 ) -> RankRow {
     let status = day_cost_status(has_cost);
     RankRow {
         key,
+        display_name,
         tenant_code,
-        tenant_name,
         revenue: dec(revenue),
         cost: dec(cost),
         cost_status: status,
@@ -366,7 +446,7 @@ fn to_rank_row(
     }
 }
 
-/// 按租户 / 产品 / 供应商排行；租户维附带 `tenant_code` / `tenant_name`。
+/// 按租户 / 产品 / 供应商排行；每行必带 `display_name`，`key` 仅作复制 ID。
 ///
 /// # Errors
 ///
@@ -400,11 +480,17 @@ pub async fn finance_ranks(
                 .ok()
                 .and_then(|id| labels.get(&id).cloned())
                 .map_or((None, None), |(c, n)| (Some(c), Some(n)));
-            to_rank_row(key, revenue, cost, has_cost, code, name)
+            let display_name = pick_display_name(
+                name.as_deref(),
+                code.as_deref(),
+                &key,
+                true,
+            );
+            to_rank_row(key, display_name, revenue, cost, has_cost, code)
         })
         .collect();
 
-    let by_product = rank_query(
+    let by_product_raw = rank_query(
         billing,
         since,
         end,
@@ -412,14 +498,19 @@ pub async fn finance_ranks(
         "AND product_id <> '' AND revenue <> 0",
         limit,
     )
-    .await?
-    .into_iter()
-    .map(|(key, revenue, cost, has_cost)| {
-        to_rank_row(key, revenue, cost, has_cost, None, None)
-    })
-    .collect();
+    .await?;
+    let product_ids: Vec<String> = by_product_raw.iter().map(|(k, _, _, _)| k.clone()).collect();
+    let product_names = load_product_names(platform, &product_ids).await?;
+    let by_product = by_product_raw
+        .into_iter()
+        .map(|(key, revenue, cost, has_cost)| {
+            let name = product_names.get(&key).map(String::as_str);
+            let display_name = pick_display_name(name, Some(&key), &key, false);
+            to_rank_row(key, display_name, revenue, cost, has_cost, None)
+        })
+        .collect();
 
-    let by_supplier = rank_query(
+    let by_supplier_raw = rank_query(
         billing,
         since,
         end,
@@ -427,12 +518,20 @@ pub async fn finance_ranks(
         "AND supplier_code <> '' AND (cost <> 0 OR has_cost)",
         limit,
     )
-    .await?
-    .into_iter()
-    .map(|(key, revenue, cost, has_cost)| {
-        to_rank_row(key, revenue, cost, has_cost, None, None)
-    })
-    .collect();
+    .await?;
+    let supplier_codes: Vec<String> = by_supplier_raw
+        .iter()
+        .map(|(k, _, _, _)| k.clone())
+        .collect();
+    let supplier_names = load_supplier_names(platform, &supplier_codes).await?;
+    let by_supplier = by_supplier_raw
+        .into_iter()
+        .map(|(key, revenue, cost, has_cost)| {
+            let name = supplier_names.get(&key).map(String::as_str);
+            let display_name = pick_display_name(name, Some(&key), &key, false);
+            to_rank_row(key, display_name, revenue, cost, has_cost, None)
+        })
+        .collect();
 
     Ok(FinanceRanks {
         window,
@@ -491,12 +590,7 @@ pub async fn finance_balances(
             let tenant_id: Uuid = row.get("tenant_id");
             let avail: Decimal = row.get("available_balance");
             let avg: Decimal = row.get("avg_daily_spend");
-            let avg_f = dec_f64(avg);
-            let days_remaining = if avg_f > 0.0 {
-                Some(dec_f64(avail) / avg_f)
-            } else {
-                None
-            };
+            let days_remaining = round_days_remaining(avail, avg);
             let (tenant_code, tenant_name) = labels
                 .get(&tenant_id)
                 .cloned()
@@ -505,12 +599,12 @@ pub async fn finance_balances(
                 tenant_id: tenant_id.to_string(),
                 tenant_code,
                 tenant_name,
-                balance: dec(row.get("balance")),
-                credit_limit: dec(row.get("credit_limit")),
-                available_balance: dec(avail),
+                balance: round_money_dec(row.get("balance")),
+                credit_limit: round_money_dec(row.get("credit_limit")),
+                available_balance: round_money_dec(avail),
                 status: row.get("status"),
-                recent_recharge: dec(row.get("recent_recharge")),
-                avg_daily_spend: dec(avg),
+                recent_recharge: round_money_dec(row.get("recent_recharge")),
+                avg_daily_spend: round_money_dec(avg),
                 days_remaining,
             }
         })
@@ -673,5 +767,36 @@ mod tests {
             Some("60")
         );
         assert!(margin_rate_pct(COST_STATUS_OK, d("0"), d("1")).is_none());
+    }
+
+    #[test]
+    fn pick_display_name_never_exposes_bare_uuid() {
+        let uuid = "28467749-3701-4a13-9abc-1234567890ab";
+        assert_eq!(
+            pick_display_name(Some("演示租户"), Some("demo"), uuid, true),
+            "演示租户"
+        );
+        assert_eq!(
+            pick_display_name(None, Some("demo"), uuid, true),
+            "demo"
+        );
+        assert_eq!(pick_display_name(None, None, uuid, true), "");
+        assert_eq!(
+            pick_display_name(None, None, "80000001", false),
+            "80000001"
+        );
+        assert_eq!(
+            pick_display_name(Some("身份证核验"), None, "80000001", false),
+            "身份证核验"
+        );
+    }
+
+    #[test]
+    fn round_days_remaining_one_decimal() {
+        assert_eq!(
+            round_days_remaining(d("38.428811455"), d("1")),
+            Some(38.4)
+        );
+        assert!(round_days_remaining(d("100"), d("0")).is_none());
     }
 }

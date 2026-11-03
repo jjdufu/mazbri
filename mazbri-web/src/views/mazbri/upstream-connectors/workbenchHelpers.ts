@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/utils/format";
 
 
 import type {
@@ -601,7 +602,7 @@ export function findUnresolvedVars(
 
 export function formatTime(iso: string) {
   try {
-    return new Date(iso).toLocaleString();
+    return formatDateTime(iso);
   } catch {
     return iso;
   }

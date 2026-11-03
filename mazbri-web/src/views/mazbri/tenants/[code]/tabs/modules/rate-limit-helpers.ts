@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/utils/format";
 
 import { $t } from "@/locales";
 
@@ -11,7 +12,7 @@ export const commandTypeLabel = (type: string) => {
 export const formatTime = (value?: string | null) => {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString();
+    return formatDateTime(value);
   } catch {
     return value;
   }

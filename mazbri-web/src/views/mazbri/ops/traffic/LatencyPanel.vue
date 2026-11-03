@@ -57,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -151,7 +152,7 @@ const slowColumns = computed<ColumnOption<SlowRow>[]>(() => [
   {
     prop: "ts",
     label: t("ops.traffic.columns.time"),
-    formatter: (row) => new Date(row.ts * 1000).toLocaleString(),
+    formatter: (row) => formatDateTime(row.ts),
   },
   { prop: "request_id", label: "request_id" },
   { prop: "trace_id", label: "trace_id" },

@@ -64,31 +64,21 @@ export interface FinanceOverview {
   inverted_days: string[];
 }
 
+export interface FinanceRankRow {
+  key: string;
+  display_name: string;
+  tenant_code?: string | null;
+  revenue: string;
+  cost: string;
+  cost_status: CostStatus;
+  margin: string | null;
+}
+
 export interface FinanceRanks {
   window: MoneyWindow;
-  by_tenant: Array<{
-    key: string;
-    tenant_code?: string | null;
-    tenant_name?: string | null;
-    revenue: string;
-    cost: string;
-    cost_status: CostStatus;
-    margin: string | null;
-  }>;
-  by_product: Array<{
-    key: string;
-    revenue: string;
-    cost: string;
-    cost_status: CostStatus;
-    margin: string | null;
-  }>;
-  by_supplier: Array<{
-    key: string;
-    revenue: string;
-    cost: string;
-    cost_status: CostStatus;
-    margin: string | null;
-  }>;
+  by_tenant: FinanceRankRow[];
+  by_product: FinanceRankRow[];
+  by_supplier: FinanceRankRow[];
 }
 
 export interface BalanceRow {

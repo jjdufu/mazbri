@@ -431,12 +431,12 @@
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.usageAmount')"
             >
-              {{ formatAmount(detailView.amount.usageBillable) }}
+              {{ formatMoney(detailView.amount.usageBillable) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.billItemsTotal')"
             >
-              {{ formatAmount(detailView.amount.billItemsTotal) }}
+              {{ formatMoney(detailView.amount.billItemsTotal) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.amountDiff')"
@@ -449,7 +449,7 @@
                     !detailView.amount.diffIsZero,
                 }"
               >
-                {{ formatAmount(detailView.amount.diff) }}
+                {{ formatMoney(detailView.amount.diff) }}
                 <template v-if="detailView.amount.diffIsZero">
                   · {{ $t("billing.reconciliation.detail.amountMatch") }}
                 </template>
@@ -569,7 +569,7 @@ import { ROLES_BIZ } from "@/utils/ops/roles";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
-import { formatAmount, formatDate } from "@/utils/format";
+import { formatMoney, formatDate } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { buildCallsRoute } from "@/utils/ops/calls-link";

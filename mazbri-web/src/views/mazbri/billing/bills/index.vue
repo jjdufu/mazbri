@@ -64,7 +64,7 @@
           </template>
           <template #total="{ row }">
             <span class="font-medium">
-              {{ formatAmount(row.total) }}
+              {{ formatMoney(row.total) }}
             </span>
           </template>
           <template #status="{ row }">
@@ -134,7 +134,7 @@
                 :eyebrow="$t('billing.detail.overview')"
                 :title="getBillDisplayName(currentBill)"
                 :subtitle="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
-                :amount="formatAmount(currentBill.total)"
+                :amount="formatMoney(currentBill.total)"
                 :meta="formatDate(currentBill.created_at)"
               />
 
@@ -160,7 +160,7 @@
                   {{ formatDate(currentBill.due_date) }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('billing.labels.total')">
-                  {{ formatAmount(currentBill.total) }}
+                  {{ formatMoney(currentBill.total) }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('billing.labels.totalCalls')">
                   {{ currentBill.total_calls ?? 0 }}
@@ -185,7 +185,7 @@
                   :description="
                     $t('billing.detail.itemsCount', { count: billItems.length })
                   "
-                  :meta="formatAmount(currentBill.total)"
+                  :meta="formatMoney(currentBill.total)"
                 />
               </template>
 
@@ -198,10 +198,10 @@
                 class="bill-detail-items-table"
               >
                 <template #unit_price="{ row }">
-                  {{ formatAmount(row.unit_price) }}
+                  {{ formatMoney(row.unit_price) }}
                 </template>
                 <template #total="{ row }">
-                  {{ formatAmount(row.total) }}
+                  {{ formatMoney(row.total) }}
                 </template>
               </ArtTable>
             </ElCard>
@@ -234,7 +234,7 @@
                 class="bill-detail-items-table"
               >
                 <template #amount="{ row }">
-                  {{ formatAmount(row.amount) }}
+                  {{ formatMoney(row.amount) }}
                 </template>
                 <template #status="{ row }">
                   <ElTag
@@ -491,7 +491,7 @@ import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
 import { fetchAllPages } from "@/utils/table/fetchAllPages";
-import { formatDate, formatAmount, formatBytes } from "@/utils/format";
+import { formatDate, formatMoney, formatBytes } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
@@ -818,7 +818,7 @@ const getBillCellText = (columnKey: string, bill: Bill) => {
     case "period_end":
       return formatDateOnly(bill.period_end);
     case "total":
-      return formatAmount(bill.total);
+      return formatMoney(bill.total);
     case "operations":
       return $t("common.actions.details");
     default:
