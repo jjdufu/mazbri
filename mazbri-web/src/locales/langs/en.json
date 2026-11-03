@@ -105,6 +105,11 @@
     "errors": {
       "componentNotFound": "Component not found: {componentPath}"
     },
+    "chunkHardRefresh": {
+      "title": "Management UI updated",
+      "message": "Static assets for the management UI have been updated (this page’s scripts are stale). Hard-refresh to load the latest build; otherwise the UI may go blank or misbehave.",
+      "confirm": "Hard refresh"
+    },
     "languages": {
       "zh": "Simplified Chinese",
       "en": "English"

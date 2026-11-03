@@ -4,6 +4,7 @@ import { staticRoutes } from "./routes/staticRoutes";
 import { configureNProgress } from "@/utils/router";
 import { setupBeforeEachGuard } from "./guards/beforeEach";
 import { setupAfterEachGuard } from "./guards/afterEach";
+import { installChunkHardRefresh } from "@/utils/sys/chunk-hard-refresh";
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: staticRoutes,
@@ -12,6 +13,7 @@ export function initRouter(app: App<Element>): void {
   configureNProgress();
   setupBeforeEachGuard(router);
   setupAfterEachGuard(router);
+  installChunkHardRefresh(router);
   app.use(router);
 }
 /** Role priority for the landing page: R_ADMIN > R_FINANCE > R_VIEWER. */

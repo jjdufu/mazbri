@@ -105,6 +105,11 @@
     "errors": {
       "componentNotFound": "组件未找到：{componentPath}"
     },
+    "chunkHardRefresh": {
+      "title": "管理端已更新",
+      "message": "检测到管理端静态资源已更新（旧页面脚本失效）。请硬刷新以加载最新版本，否则可能白屏或功能异常。",
+      "confirm": "硬刷新"
+    },
     "languages": {
       "zh": "简体中文",
       "en": "English"
