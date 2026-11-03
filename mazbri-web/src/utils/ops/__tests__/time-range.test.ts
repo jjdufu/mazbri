@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pickerRangeOf, rangeFromQuery, sameRange } from "../time-range";
+import {
+  defaultTimeRange,
+  pickerRangeOf,
+  PRESET_SECONDS,
+  rangeFromQuery,
+  sameRange,
+} from "../time-range";
 
 test("rangeFromQuery reads Unix seconds from the route query", () => {
   const r = rangeFromQuery({
@@ -30,4 +36,13 @@ test("sameRange compares preset and bounds", () => {
   assert.ok(sameRange(v, { ...v }));
   assert.ok(!sameRange(v, { ...v, end: 3 }));
   assert.ok(!sameRange(null, v));
+});
+
+test("defaultTimeRange uses preset seconds", () => {
+  const before = Math.floor(Date.now() / 1000);
+  const range = defaultTimeRange("1h");
+  const after = Math.floor(Date.now() / 1000);
+  assert.equal(range.preset, "1h");
+  assert.ok(range.end >= before && range.end <= after);
+  assert.equal(range.end - range.start, PRESET_SECONDS["1h"]);
 });

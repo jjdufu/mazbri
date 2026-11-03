@@ -55,3 +55,12 @@ export function pickerRangeOf(value: Pick<TimeRangeValue, "start" | "end">): [nu
 export function sameRange(a: TimeRangeValue | null, b: TimeRangeValue | null): boolean {
   return !!a && !!b && a.preset === b.preset && a.start === b.start && a.end === b.end;
 }
+
+/** 默认近 1h（或指定预设）时间窗，供运维父页共用。 */
+export function defaultTimeRange(
+  preset: Exclude<TimeRangePreset, "custom"> = "1h",
+): TimeRangeValue {
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - PRESET_SECONDS[preset];
+  return { preset, start, end };
+}
