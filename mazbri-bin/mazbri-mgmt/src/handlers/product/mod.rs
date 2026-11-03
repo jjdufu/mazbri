@@ -35,14 +35,14 @@ pub struct RefundResponse {
 pub struct TransactionListQuery {
     #[serde(default = "default_page_transactions")]
     pub page: u32,
-    #[serde(default = "default_limit_transactions")]
-    pub limit: u32,
+    #[serde(default = "default_page_size_transactions")]
+    pub page_size: u32,
     pub transaction_type: Option<String>,
 }
 const fn default_page_transactions() -> u32 {
     1
 }
-const fn default_limit_transactions() -> u32 {
+const fn default_page_size_transactions() -> u32 {
     20
 }
 #[derive(Debug, serde::Serialize)]
@@ -59,11 +59,16 @@ pub struct Transaction {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 #[derive(Debug, serde::Serialize)]
+pub struct TransactionListPagination {
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+    pub total_pages: u64,
+}
+#[derive(Debug, serde::Serialize)]
 pub struct TransactionListResponse {
     pub transactions: Vec<Transaction>,
-    pub total: i64,
-    pub page: u32,
-    pub limit: u32,
+    pub pagination: TransactionListPagination,
 }
 pub use access::{
     get_tenant_product_config, grant_tenant_access, list_authorizations, list_product_tenants,

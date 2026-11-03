@@ -8,6 +8,13 @@ export interface PaginationConfig {
 
   pageCount?: number;
 }
+/** Canonical list pagination object returned by mgmt list APIs. */
+export interface ListPagination {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
 export interface ApiResponse<T> {
   code: number;
   message: string;

@@ -147,6 +147,7 @@ import ControlPanelPageShell from "@/components/common/control-panel-page-shell/
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import {
   getRoleType,
@@ -458,8 +459,10 @@ const transformAdminImportRow = (
 });
 const loadAdminImportRows = async () => {
   try {
-    const res = await fetchAdminList({ page_size: 1000 });
-    adminImportRows.value = res.items;
+    adminImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchAdminList({ page, page_size: pageSize });
+      return { items: res.items, total: res.total };
+    });
   } catch {
     adminImportRows.value = tableData.value;
   }

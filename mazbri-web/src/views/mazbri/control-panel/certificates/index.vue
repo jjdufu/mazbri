@@ -148,6 +148,7 @@ import { useLicenseGate } from "@/composables/useLicenseGate";
 import { useListQuery } from "@/composables/useListQuery";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
@@ -306,8 +307,15 @@ const handleCurrentChange = (page: number) => {
 const handleIssue = async () => {
   if (!ensureLicenseActive()) return;
   try {
-    const res = await fetchCertificateList({ limit: 1000 });
-    issuedSubjects.value = res.data.map((cert) => cert.subject);
+    const certs = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchCertificateList({
+        page,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      return { items: res.data, total: res.pagination.total };
+    });
+    issuedSubjects.value = certs.map((cert) => cert.subject);
   } catch (error) {
     logger.error("Failed to load issued subjects:", error);
     issuedSubjects.value = [];

@@ -81,18 +81,16 @@ const normalizeBillLineItems = (items?: BillLineItemApiRow[]): BillLineItem[] =>
     total: toDecimalString(item.total ?? item.total_amount),
   }));
 const normalizeBillListResponse = (
-  response: Partial<BillListResponse> & {
+  response: BillListResponse & {
     bills?: BillApiRow[];
   },
-  params?: BillListQuery,
 ): BillListResponse => {
-  const bills = (response.bills ?? []).map(normalizeBill);
+  if (!response.pagination) {
+    throw new Error("bill list response missing pagination");
+  }
   return {
-    bills,
-    total: typeof response.total === "number" ? response.total : bills.length,
-    page: response.page ?? params?.page ?? 1,
-    limit: response.limit ?? params?.limit ?? (bills.length || 10),
-    total_pages: response.total_pages,
+    bills: (response.bills ?? []).map(normalizeBill),
+    pagination: response.pagination,
   };
 };
 const normalizeBillDetailResponse = (
@@ -130,7 +128,6 @@ export async function fetchBillList(params?: BillListQuery) {
       params,
       showErrorMessage: false,
     }),
-    params,
   );
 }
 export async function fetchBillById(id: string): Promise<BillDetailResponse> {

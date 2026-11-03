@@ -129,12 +129,16 @@ impl IntoResponse for BillingError {
     }
 }
 #[derive(Debug, Serialize)]
+pub struct BillListPagination {
+    pub page: u32,
+    pub page_size: u32,
+    pub total: i64,
+    pub total_pages: u64,
+}
+#[derive(Debug, Serialize)]
 pub struct BillListResponse {
     pub bills: Vec<repo::BillRow>,
-    pub total: i64,
-    pub page: u32,
-    pub limit: u32,
-    pub total_pages: u64,
+    pub pagination: BillListPagination,
 }
 #[derive(Debug, Serialize)]
 pub struct BillDetailResponse {

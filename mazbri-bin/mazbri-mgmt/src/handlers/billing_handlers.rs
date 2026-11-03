@@ -37,7 +37,7 @@ pub struct BillListQuery {
     #[serde(default = "default_page")]
     pub page: u32,
     #[serde(default = "default_limit")]
-    pub limit: u32,
+    pub page_size: u32,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,7 +88,7 @@ pub async fn list_bills(
             status: query.status,
             filters_json: query.filters,
             page: query.page,
-            limit: query.limit,
+            page_size: query.page_size,
         },
     )
     .await?;

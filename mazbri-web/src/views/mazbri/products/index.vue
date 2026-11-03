@@ -122,6 +122,7 @@ import {
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
@@ -229,12 +230,12 @@ useAdaptiveTableColumns({
 });
 const pagination = reactive({
   page: 1,
-  limit: 10,
+  page_size: 10,
   total: 0,
 });
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
-  size: pagination.limit,
+  size: pagination.page_size,
   total: pagination.total,
 }));
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
@@ -304,25 +305,28 @@ const loadData = async () => {
         ? JSON.stringify(listFilters.value)
         : undefined,
       page: pagination.page,
-      limit: pagination.limit,
+      page_size: pagination.page_size,
     });
     tableData.value = res.products;
-    pagination.total = res.pagination?.total ?? 0;
+    pagination.total = res.pagination.total;
   }).catch((error) => {
     logger.error("Failed to load product list:", error);
   });
 };
 const loadImportProducts = async () => {
   try {
-    const res = await fetchProductList();
-    importProducts.value = res.products;
+    importProducts.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchProductList({ page, page_size: pageSize });
+      return { items: res.products, total: res.pagination.total };
+    });
   } catch (error) {
     logger.error("Failed to load import product list:", error);
     importProducts.value = tableData.value;
   }
 };
 const handlePageSizeChange = (size: number) => {
-  pagination.limit = size;
+  pagination.page_size = size;
+  pagination.page = 1;
   loadData();
 };
 const handleCurrentPageChange = (page: number) => {

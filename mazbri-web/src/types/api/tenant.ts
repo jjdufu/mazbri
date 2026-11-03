@@ -1,4 +1,4 @@
-import type { ISODateString, DecimalString } from "./common";
+import type { ISODateString, DecimalString, ListPagination } from "./common";
 export interface Tenant {
   tenant_code: string;
   tenant_id: string;
@@ -96,14 +96,12 @@ export interface Transaction {
 }
 export interface TransactionListQuery {
   page?: number;
-  limit?: number;
+  page_size?: number;
   transaction_type?: "credit" | "refund" | "charge" | "adjustment" | "payment";
 }
 export interface TransactionListResponse {
   transactions: Transaction[];
-  total: number;
-  page: number;
-  limit: number;
+  pagination: ListPagination;
 }
 
 export interface ApiLimitOverride {
@@ -243,10 +241,14 @@ export interface TenantProduct {
   granted_at: ISODateString;
   updated_at?: ISODateString;
 }
+export interface TenantProductListQuery {
+  page?: number;
+  page_size?: number;
+}
 export interface TenantProductListResponse {
   tenant_id: string;
   products: TenantProduct[];
-  total: number;
+  pagination: ListPagination;
   actions?: {
     grant: boolean;
     revoke: boolean;

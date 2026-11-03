@@ -124,6 +124,7 @@ import CreateAuthorizationDialog from "./modules/CreateAuthorizationDialog.vue";
 import ChannelConfigDrawer from "@/components/common/channel-config-dialog/index.vue";
 import { ElMessage } from "element-plus";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import type { ColumnOption } from "@/types/component";
 import { formatDateTime as formatDate } from "@/utils/format";
@@ -189,7 +190,7 @@ const table = useTable({
   transform: {
     responseAdapter: (res: AuthorizationListResponse) => ({
       records: res.authorizations,
-      total: res.pagination?.total ?? 0,
+      total: res.pagination.total,
     }),
   },
 });
@@ -319,12 +320,18 @@ const parseUnitPrice = (value?: string) => {
 };
 const loadImportOptions = async () => {
   try {
-    const [tenantRes, productRes] = await Promise.all([
-      fetchTenantList({ page_size: 1000 }),
-      fetchProductList({ page_size: 1000 }),
+    const [tenants, products] = await Promise.all([
+      fetchAllPages(async (page, pageSize) => {
+        const res = await fetchTenantList({ page, page_size: pageSize });
+        return { items: res.tenants, total: res.pagination.total };
+      }),
+      fetchAllPages(async (page, pageSize) => {
+        const res = await fetchProductList({ page, page_size: pageSize });
+        return { items: res.products, total: res.pagination.total };
+      }),
     ]);
-    importTenants.value = tenantRes.tenants;
-    importProducts.value = productRes.products;
+    importTenants.value = tenants;
+    importProducts.value = products;
   } catch (error) {
     logger.error("Failed to load authorization import options:", error);
     importTenants.value = [];

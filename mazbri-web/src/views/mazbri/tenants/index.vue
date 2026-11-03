@@ -135,6 +135,7 @@ import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import { useTable } from "@/hooks/core/useTable";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { formatDateTime as formatDate } from "@/utils/format";
@@ -247,7 +248,7 @@ const table = useTable({
   transform: {
     responseAdapter: (res: TenantListResponse) => ({
       records: res.tenants,
-      total: res.pagination?.total ?? 0,
+      total: res.pagination.total,
     }),
   },
 });
@@ -456,8 +457,10 @@ const transformTenantImportRow = (
 });
 const loadTenantImportRows = async () => {
   try {
-    const res = await fetchTenantList({ page_size: 1000 });
-    tenantImportRows.value = res.tenants;
+    tenantImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchTenantList({ page, page_size: pageSize });
+      return { items: res.tenants, total: res.pagination.total };
+    });
   } catch {
     tenantImportRows.value = tableData.value;
   }

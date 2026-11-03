@@ -126,6 +126,7 @@ import {
 } from "@/api/supplier";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import { ROLES_BIZ } from "@/utils/ops/roles";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
@@ -361,8 +362,10 @@ const transformSupplierImportRow = (
 });
 const loadSupplierImportRows = async () => {
   try {
-    const res = await fetchSuppliers({ page_size: 10000 });
-    supplierImportRows.value = res.suppliers;
+    supplierImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchSuppliers({ page, page_size: pageSize });
+      return { items: res.suppliers, total: res.pagination.total };
+    });
   } catch {
     supplierImportRows.value = tableData.value;
   }

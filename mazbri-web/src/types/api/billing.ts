@@ -1,4 +1,4 @@
-import type { ISODateString, DecimalString } from "./common";
+import type { ISODateString, DecimalString, ListPagination } from "./common";
 export interface Account {
   id: string;
   tenant_id: string;
@@ -56,14 +56,11 @@ export interface BillDetailResponse {
 }
 export interface BillListResponse {
   bills: Bill[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages?: number;
+  pagination: ListPagination;
 }
 export interface BillListQuery {
   page?: number;
-  limit?: number;
+  page_size?: number;
   tenant_id?: string;
   q?: string;
   status?: "pending" | "processing" | "paid" | "overdue" | "cancelled";

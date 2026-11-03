@@ -178,6 +178,7 @@
 
 <script setup lang="ts">
 import { ROLES_BIZ } from "@/utils/ops/roles";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import {
   ElMessage,
   ElMessageBox,
@@ -580,16 +581,24 @@ const resolveSupplier = (supplierCode: string) =>
   suppliers.value.find((item) => item.supplier_code === supplierCode);
 const loadSuppliers = async () => {
   try {
-    const res = await fetchSuppliers({ status: "active", page_size: 10000 });
-    suppliers.value = res.suppliers;
+    suppliers.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchSuppliers({
+        status: "active",
+        page,
+        page_size: pageSize,
+      });
+      return { items: res.suppliers, total: res.pagination.total };
+    });
   } catch {
     suppliers.value = [];
   }
 };
 const loadChannelImportRows = async () => {
   try {
-    const res = await fetchChannels({ page_size: 10000 });
-    channelImportRows.value = res.channels;
+    channelImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchChannels({ page, page_size: pageSize });
+      return { items: res.channels, total: res.pagination.total };
+    });
   } catch {
     channelImportRows.value = tableData.value;
   }

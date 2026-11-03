@@ -1,7 +1,7 @@
 use crate::audit::{AuditAction, AuditResourceType, AuditService, create_audit_log, tenant_audit};
 use crate::handlers::product::{
-    RechargeRequest, RefundRequest, RefundResponse, Transaction, TransactionListQuery,
-    TransactionListResponse,
+    RechargeRequest, RefundRequest, RefundResponse, Transaction, TransactionListPagination,
+    TransactionListQuery, TransactionListResponse,
 };
 use crate::handlers::types::ListParams;
 use crate::repositories::product as repo;
@@ -826,22 +826,25 @@ pub async fn list_tenant_transactions(
             "Transaction type must be one of: credit, refund, charge, adjustment, payment",
         );
     }
-    let limit = query.limit.clamp(1, 100);
+    let page = if query.page == 0 { 1 } else { query.page };
+    let page_size = query
+        .page_size
+        .clamp(1, crate::handlers::types::MAX_PAGE_SIZE);
     match repo::get_tenant_transactions(
         billing_db,
         tenant_id,
-        i32::saturating_from(query.page),
-        i32::saturating_from(limit),
+        i32::saturating_from(page),
+        i32::saturating_from(page_size),
         &query.transaction_type,
     )
     .await
     {
         Ok(rows) => {
             let mut transactions = Vec::new();
-            let mut total = 0i64;
+            let mut total = 0u64;
             for row in &rows {
                 if total == 0 {
-                    total = row.total_count;
+                    total = u64::try_from(row.total_count.max(0)).unwrap_or(0);
                 }
                 transactions.push(Transaction {
                     id: row.id,
@@ -856,11 +859,23 @@ pub async fn list_tenant_transactions(
                     created_at: row.created_at,
                 });
             }
+            let total_pages = if total == 0 {
+                0
+            } else {
+                mazbri_core::num::f64_to_u64(
+                    (mazbri_core::num::u64_to_f64(total)
+                        / mazbri_core::num::u64_to_f64(u64::from(page_size)))
+                    .ceil(),
+                )
+            };
             let response_json = match serde_json::to_value(TransactionListResponse {
                 transactions,
-                total,
-                page: query.page,
-                limit,
+                pagination: TransactionListPagination {
+                    page,
+                    page_size,
+                    total,
+                    total_pages,
+                },
             }) {
                 Ok(v) => v,
                 Err(e) => {

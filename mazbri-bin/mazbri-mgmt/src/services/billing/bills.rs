@@ -1,6 +1,6 @@
 use super::{
-    BillDetailResponse, BillListResponse, BillStatus, BillingError, FromStr, PgPool, Utc,
-    enrich_bill_rows, error, normalize_bill_status, repo, tenant_repo, validate_limit,
+    BillDetailResponse, BillListPagination, BillListResponse, BillStatus, BillingError, FromStr,
+    PgPool, Utc, enrich_bill_rows, error, normalize_bill_status, repo, tenant_repo, validate_limit,
 };
 
 /// `list_bills` 的入参。
@@ -11,7 +11,7 @@ pub struct ListBillsParams<'a> {
     pub status: Option<String>,
     pub filters_json: Option<String>,
     pub page: u32,
-    pub limit: u32,
+    pub page_size: u32,
 }
 
 /// # Errors
@@ -28,9 +28,9 @@ pub async fn list_bills(
         status,
         filters_json,
         page,
-        limit,
+        page_size,
     } = params;
-    validate_limit(limit)?;
+    validate_limit(page_size)?;
     let page = page.max(1);
     let status = normalize_bill_status(status.as_ref())?;
     let search = search
@@ -55,7 +55,7 @@ pub async fn list_bills(
     } else {
         Vec::new()
     };
-    let offset = i64::from(page.saturating_sub(1).saturating_mul(limit));
+    let offset = i64::from(page.saturating_sub(1).saturating_mul(page_size));
     let total = repo::count_bills(
         billing_db,
         tenant_id,
@@ -77,7 +77,7 @@ pub async fn list_bills(
             matched_tenant_ids: &matched_tenant_ids,
             status: status.as_deref(),
             filters: &filters,
-            limit: i64::from(limit),
+            limit: i64::from(page_size),
             offset,
         },
     )
@@ -88,14 +88,16 @@ pub async fn list_bills(
     })?;
     let bills = enrich_bill_rows(db, bills).await?;
     let total_pages = mazbri_core::num::f64_to_u64(
-        (mazbri_core::num::i64_to_f64(total) / f64::from(limit)).ceil(),
+        (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
     );
     Ok(BillListResponse {
         bills,
-        total,
-        page,
-        limit,
-        total_pages,
+        pagination: BillListPagination {
+            page,
+            page_size,
+            total,
+            total_pages,
+        },
     })
 }
 /// # Errors

@@ -17,6 +17,7 @@ import type {
   TenantProductConfig,
   CBProPolicyConfig,
   UpdateTenantProductConfigRequest,
+  TenantProductListQuery,
   TenantProductListResponse,
   TenantRateLimitConfig,
   TenantCacheConfig,
@@ -482,24 +483,33 @@ export function updateApiKeyWarmup(
     signal,
   });
 }
-export function fetchTenantProducts(tenantCode: string, signal?: AbortSignal) {
+export function fetchTenantProducts(
+  tenantCode: string,
+  params?: TenantProductListQuery,
+  signal?: AbortSignal,
+) {
   return request
     .get<{
-      tenant_code: string;
+      tenant_code?: string;
       products: TenantProductApiItem[];
+      pagination: TenantProductListResponse["pagination"];
       actions?: TenantProductListResponse["actions"];
     }>({
       url: tenantPath(tenantCode, "products"),
+      params,
       signal,
     })
-    .then(
-      (res): TenantProductListResponse => ({
-        tenant_id: res.tenant_code,
+    .then((res): TenantProductListResponse => {
+      if (!res.pagination) {
+        throw new Error("tenant products response missing pagination");
+      }
+      return {
+        tenant_id: res.tenant_code ?? tenantCode,
         products: res.products.map(normalizeTenantProduct),
-        total: res.products.length,
+        pagination: res.pagination,
         actions: res.actions,
-      }),
-    );
+      };
+    });
 }
 export function fetchTenantProductConfig(
   tenantCode: string,

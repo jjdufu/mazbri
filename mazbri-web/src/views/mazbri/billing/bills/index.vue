@@ -493,6 +493,7 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { formatDate, formatAmount, formatBytes } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
@@ -749,12 +750,12 @@ const emptyDescription = computed(() =>
 );
 const pagination = reactive({
   page: 1,
-  limit: 10,
+  page_size: 10,
   total: 0,
 });
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
-  size: pagination.limit,
+  size: pagination.page_size,
   total: pagination.total,
 }));
 const exportItems = computed(() => [
@@ -910,11 +911,11 @@ const loadData = async () => {
     const res = await fetchBillList({
       ...searchForm,
       page: pagination.page,
-      limit: pagination.limit,
+      page_size: pagination.page_size,
       filters: listFilters.value.length ? JSON.stringify(listFilters.value) : undefined,
     });
     bills.value = res.bills;
-    pagination.total = res.total;
+    pagination.total = res.pagination.total;
   }).catch((error) => {
     logger.error("Failed to load bills:", error);
   });
@@ -924,8 +925,10 @@ const loadTenants = async () => {
     return;
   }
   await runWithLoading(tenantsLoading, async () => {
-    const response = await fetchTenantList({ page_size: 1000 });
-    tenants.value = response.tenants;
+    tenants.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchTenantList({ page, page_size: pageSize });
+      return { items: response.tenants, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load tenants for bill generation:", error);
     ElMessage.error($t("billing.messages.loadTenantsFailed"));
@@ -939,8 +942,10 @@ const loadChannels = async () => {
     return;
   }
   await runWithLoading(channelsLoading, async () => {
-    const response = await fetchChannels({ page_size: 1000 });
-    channels.value = response.channels;
+    channels.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchChannels({ page, page_size: pageSize });
+      return { items: response.channels, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load channels for bill generation:", error);
     ElMessage.error($t("billing.messages.loadChannelsFailed"));
@@ -954,15 +959,17 @@ const loadSuppliers = async () => {
     return;
   }
   await runWithLoading(suppliersLoading, async () => {
-    const response = await fetchSuppliers({ page_size: 1000 });
-    suppliers.value = response.suppliers;
+    suppliers.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchSuppliers({ page, page_size: pageSize });
+      return { items: response.suppliers, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load suppliers for bill generation:", error);
     ElMessage.error($t("billing.messages.loadSuppliersFailed"));
   });
 };
 const handlePageSizeChange = (size: number) => {
-  pagination.limit = size;
+  pagination.page_size = size;
   pagination.page = 1;
   loadData();
 };

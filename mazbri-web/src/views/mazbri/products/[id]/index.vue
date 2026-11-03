@@ -288,6 +288,7 @@ import ResourceTableShell from "@/components/common/resource-table-shell/index.v
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useUserStore } from "@/store/modules/user";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
@@ -405,8 +406,13 @@ const loadAuthorizedTenants = async () => {
       const accessRes = await fetchProductTenants(productCode.value);
       let tenants: Awaited<ReturnType<typeof fetchTenantList>>["tenants"] = [];
       try {
-        const tenantRes = await fetchTenantList({ page_size: 1000 });
-        tenants = tenantRes.tenants;
+        tenants = await fetchAllPages(async (page, pageSize) => {
+          const tenantRes = await fetchTenantList({
+            page,
+            page_size: pageSize,
+          });
+          return { items: tenantRes.tenants, total: tenantRes.pagination.total };
+        });
       } catch (error) {
         logger.error(
           "Failed to load tenant directory for product access:",

@@ -398,7 +398,7 @@ const transactionsTotal = ref(0);
 const transactionFilter = ref("");
 const pagination = reactive({
   page: 1,
-  limit: 20,
+  page_size: 20,
 });
 const transactionColumns = ref<ColumnOption<Transaction>[]>([
   {
@@ -446,7 +446,7 @@ const transactionColumns = ref<ColumnOption<Transaction>[]>([
 ]);
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
-  size: pagination.limit,
+  size: pagination.page_size,
   total: transactionsTotal.value,
 }));
 const reasonCodeOptions = [
@@ -603,7 +603,7 @@ const loadTransactions = async () => {
   try {
     const params: TransactionListQuery = {
       page: pagination.page,
-      limit: pagination.limit,
+      page_size: pagination.page_size,
       transaction_type:
         (transactionFilter.value as
           | "credit"
@@ -615,7 +615,7 @@ const loadTransactions = async () => {
     };
     const res = await getTenantTransactions(props.tenantCode, params);
     transactions.value = res.transactions;
-    transactionsTotal.value = res.total;
+    transactionsTotal.value = res.pagination.total;
   } catch (error) {
     logger.error("Failed to load transactions:", error);
   } finally {
@@ -627,7 +627,7 @@ const handleFilterChange = () => {
   loadTransactions();
 };
 const handlePageSizeChange = (size: number) => {
-  pagination.limit = size;
+  pagination.page_size = size;
   pagination.page = 1;
   loadTransactions();
 };

@@ -106,6 +106,7 @@ import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 
 defineOptions({ name: "ChannelEdit" });
 
@@ -172,8 +173,14 @@ const goBack = () => {
 
 const loadSuppliers = async () => {
   try {
-    const res = await fetchSuppliers({ status: "active", page_size: 10000 });
-    suppliers.value = res.suppliers;
+    suppliers.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchSuppliers({
+        status: "active",
+        page,
+        page_size: pageSize,
+      });
+      return { items: res.suppliers, total: res.pagination.total };
+    });
   } catch {
     suppliers.value = [];
   }
