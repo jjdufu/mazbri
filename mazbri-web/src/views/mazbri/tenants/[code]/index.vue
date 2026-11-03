@@ -1,43 +1,38 @@
 <template>
-  <div class="tenant-detail-page">
-    <ElPageHeader @back="router.back()">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          tenant?.name || $t("tenant.detail.pageTitle")
-        }}</span>
-      </template>
-      <template #extra>
-        <ElTag :type="getStatusType(tenantStatusKey)">
-          {{ getStatusLabel(tenantStatusKey) }}
-        </ElTag>
-      </template>
-    </ElPageHeader>
-
-    <div class="tab-segmented mt-5">
+  <TenantDetailShell>
+    <template #header>
+      <ElPageHeader @back="router.back()">
+        <template #content>
+          <span class="tenant-detail-shell__page-title">{{
+            tenant?.name || $t("tenant.detail.pageTitle")
+          }}</span>
+        </template>
+      </ElPageHeader>
+    </template>
+    <template #extra>
+      <ElTag :type="getStatusType(tenantStatusKey)">
+        {{ getStatusLabel(tenantStatusKey) }}
+      </ElTag>
+    </template>
+    <template #tabs>
       <ElSegmented
         :model-value="activeTab"
         :options="tabOptions"
         @change="handleTabChange"
       />
-    </div>
+    </template>
 
-
-    <div
-      v-if="tenantCode && isTabLoaded('overview360')"
-      v-show="activeTab === 'overview360'"
-      class="mt-5"
-    >
+    <div v-if="tenantCode && isTabLoaded('overview360')" v-show="activeTab === 'overview360'">
       <Overview360Tab :tenant-code="tenantCode" />
     </div>
 
-    <div v-show="activeTab === 'basic'" class="mt-5">
+    <div v-show="activeTab === 'basic'">
       <BasicInfoTab :tenant="tenant" :loading="loading" @refresh="loadData" />
     </div>
 
     <div
       v-if="canViewApiKeys && tenantCode && isTabLoaded('api-keys')"
       v-show="activeTab === 'api-keys'"
-      class="mt-5"
     >
       <ApiKeysTab :tenant-code="tenantCode" />
     </div>
@@ -45,7 +40,6 @@
     <div
       v-if="tenantCode && isTabLoaded('whitelist')"
       v-show="activeTab === 'whitelist'"
-      class="mt-5"
     >
       <WhitelistTab :tenant-code="tenantCode" />
     </div>
@@ -53,7 +47,6 @@
     <div
       v-if="tenantCode && isTabLoaded('access-strategy')"
       v-show="activeTab === 'access-strategy'"
-      class="mt-5"
     >
       <AccessStrategyTab :tenant-code="tenantCode" />
     </div>
@@ -61,7 +54,6 @@
     <div
       v-if="tenantCode && isTabLoaded('products')"
       v-show="activeTab === 'products'"
-      class="mt-5"
     >
       <ProductsTab :tenant-code="tenantCode" />
     </div>
@@ -69,7 +61,6 @@
     <div
       v-if="tenantCode && isTabLoaded('transport-encryption')"
       v-show="activeTab === 'transport-encryption'"
-      class="mt-5"
     >
       <TransportEncryptionTab :tenant-code="tenantCode" />
     </div>
@@ -77,11 +68,10 @@
     <div
       v-if="tenantCode && isTabLoaded('account')"
       v-show="activeTab === 'account'"
-      class="mt-5"
     >
       <AccountTab :tenant-code="tenantCode" />
     </div>
-  </div>
+  </TenantDetailShell>
 </template>
 
 <script setup lang="ts">
@@ -89,6 +79,7 @@ import { $t } from "@/locales";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import type { Tenant } from "@/types/api/tenant";
 import { fetchTenantById } from "@/api/tenant";
+import TenantDetailShell from "@/components/common/tenant-detail-shell/index.vue";
 import BasicInfoTab from "./tabs/basic-info.vue";
 import ApiKeysTab from "./tabs/api-keys.vue";
 import WhitelistTab from "./tabs/whitelist.vue";
@@ -185,14 +176,9 @@ onActivated(() => {
 </script>
 
 <style scoped lang="scss">
-.tenant-detail-page {
-  .tab-segmented {
-    margin-bottom: 16px;
-
-    .el-segmented {
-      height: 40px;
-      padding: 4px;
-    }
-  }
+.tenant-detail-shell__page-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 </style>

@@ -1,3 +1,4 @@
+// 间距 / KPI 卡高见 ops-layout-tokens.scss（step11）。
 // 运维 Tab 页 / Dashboard / 账号安全与平台策略卡共用表面样式。
 // 后续步骤禁止在各 index.vue 再复制 divergent 的 card-header / settings-panel。
 
@@ -65,6 +66,6 @@
 .ops-tab-page-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ops-section-gap, 16px);
   min-width: 0;
 }

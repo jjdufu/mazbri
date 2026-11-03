@@ -5,7 +5,7 @@
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </OpsPanelToolbar>
 
-    <ElRow :gutter="16">
+    <OpsKpiRow>
       <ElCol
         v-for="card in statCards"
         :key="card.label"
@@ -21,11 +21,27 @@
           :digits="card.digits"
         />
       </ElCol>
-    </ElRow>
+    </OpsKpiRow>
 
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="12">
-        <OpsCard :title="t('ops.billing.funnel')">
+        <OpsCard :title="funnelTitle">
+          <ElAlert
+            v-if="funnel?.mode === 'sync_pass_through'"
+            :title="t('ops.billing.noBacklog')"
+            type="success"
+            :closable="false"
+            show-icon
+            class="funnel-mode-hint"
+          />
+          <ElAlert
+            v-else-if="funnel?.mode === 'async_funnel'"
+            :title="t('ops.billing.asyncFunnelHint')"
+            type="info"
+            :closable="false"
+            show-icon
+            class="funnel-mode-hint"
+          />
           <CategoryBarChart
             :categories="funnelCategories"
             :series="funnelSeries"
@@ -118,15 +134,14 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
+import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOpsRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
-import { postOlapQuery } from "@/api/olap";
 import { fetchBillingFailures, fetchBillingFunnel } from "@/api/billing-ops";
 import type { MetricSeries } from "@/types/api/monitoring";
-import type { FunnelChRow } from "@/types/api/olap";
 import type {
   BillingFunnelPg,
   ChargeFailureRow,
@@ -158,13 +173,12 @@ const { t } = useI18n();
 const { resolveStep } = useStep();
 
 const timeRange = ref<TimeRangeValue>({
-  preset: "24h",
-  start: Math.floor(Date.now() / 1000) - 86400,
+  preset: "6h",
+  start: Math.floor(Date.now() / 1000) - 6 * 3600,
   end: Math.floor(Date.now() / 1000),
 });
 const refreshInterval = ref(60);
 const loading = ref(false);
-const chBillable = ref(0);
 const funnel = ref<BillingFunnelPg | null>(null);
 const failures = ref<ChargeFailureRow[]>([]);
 const deadLetters = ref<DeadLetterRow[]>([]);
@@ -179,27 +193,33 @@ const series = ref<Record<ChartMetric, MetricSeries | null>>(
   >,
 );
 
-/** 四段漏斗：CH billable=1 → usage_outbox → usage_charge_queue → ledger_entries。 */
-const funnelRows = computed<FunnelStage[]>(() => {
-  const pg = funnel.value?.stages ?? [];
-  const head: FunnelStage = {
-    stage: "clickhouse_billable",
-    count: chBillable.value,
-    diff: 0,
-  };
-  return [head, ...pg].map((row, i, all) => ({
-    ...row,
-    diff: i === 0 ? 0 : all[i - 1].count - row.count,
-  }));
-});
-const funnelCategories = computed(() => funnelRows.value.map((r) => r.stage));
+/** 仅用后端契约三段（outbox/queue/ledger）；禁止前端拼 CH 假漏斗段。 */
+const funnelRows = computed<FunnelStage[]>(() => funnel.value?.stages ?? []);
+const funnelTitle = computed(() =>
+  funnel.value?.mode === "sync_pass_through"
+    ? t("ops.billing.pipelineHealth")
+    : t("ops.billing.funnel"),
+);
+const funnelCategories = computed(() =>
+  funnelRows.value.map((r) => r.name || r.key),
+);
 const funnelSeries = computed(() => [
   { name: t("ops.billing.count"), data: funnelRows.value.map((r) => r.count) },
 ]);
+const formatRatio = (ratio: number | null | undefined) => {
+  if (ratio === null || ratio === undefined || Number.isNaN(ratio)) return "—";
+  return `${(ratio * 100).toFixed(1)}%`;
+};
 const funnelColumns = computed<ColumnOption<FunnelStage>[]>(() => [
-  { prop: "stage", label: t("ops.billing.stage") },
+  { prop: "key", label: t("ops.billing.stage") },
+  { prop: "name", label: t("ops.billing.stageName") },
   { prop: "count", label: t("ops.billing.count") },
-  { prop: "diff", label: t("ops.billing.diff") },
+  {
+    prop: "ratio_from_prev",
+    label: t("ops.billing.ratioFromPrev"),
+    formatter: (row: FunnelStage) => formatRatio(row.ratio_from_prev),
+  },
+  { prop: "failed", label: t("ops.billing.stageFailed") },
 ]);
 
 /** 每条序列取最后一个点后聚合；无数据为 null。 */
@@ -315,7 +335,7 @@ function offsetOf(page: number) {
 
 async function fetchPage(page: number) {
   return fetchBillingFailures(
-    toOlapRange(timeRange.value),
+    toOpsRange(timeRange.value),
     PAGE_SIZE,
     offsetOf(page),
   );
@@ -346,22 +366,17 @@ async function reload() {
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
-  const range = toOlapRange(timeRange.value);
+  const opsRange = toOpsRange(timeRange.value);
   failurePage.value = 1;
   deadPage.value = 1;
   try {
-    const [ch, pg, fail, ...charts] = await Promise.all([
-      postOlapQuery<FunnelChRow>({
-        template: "billing_funnel_ch",
-        params: { range },
-      }),
-      fetchBillingFunnel(range),
+    const [pg, fail, ...charts] = await Promise.all([
+      fetchBillingFunnel(opsRange),
       fetchPage(1),
       ...CHART_METRICS.map((metric) =>
         fetchMetricTimeseries({ metric, start, end, step }),
       ),
     ]);
-    chBillable.value = ch.rows?.[0]?.billable ?? 0;
     funnel.value = pg;
     failures.value = fail.failures ?? [];
     deadLetters.value = fail.dead_letters ?? [];
@@ -387,5 +402,8 @@ onMounted(reload);
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
+}
+.funnel-mode-hint {
+  margin-bottom: var(--ops-space-sm, 12px);
 }
 </style>

@@ -63,7 +63,7 @@ function pad2(value: string): string {
 }
 
 /**
- * 把 ISO 时间格式化成东八区墙上时钟。不用 utils/format.ts 的 formatDateTime（那是 ISO UTC）。
+ * 把 ISO 时间格式化成东八区墙上时钟并附 (UTC+8)。通用墙钟请用 utils/format.ts 的 formatDateTime。
  * `2026-10-27T07:15:00Z` → `2026-10-27 15:15:00 (UTC+8)`。
  */
 export function formatExpiryUtc8(iso: string): string {

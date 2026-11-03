@@ -4,13 +4,19 @@
       <ElCol :xs="24" :lg="14">
         <OpsCard :title="t('ops.traffic.errorMatrix')">
           <HeatmapChart
+            v-if="matrixRows.length > 0 || loading"
             :cells="matrixCells"
             :x-labels="matrixX"
             :y-labels="matrixY"
             :loading="loading"
             height="320px"
           />
-          <OpsTableWrap>
+          <ElEmpty
+            v-else
+            :description="t('ops.traffic.noErrors')"
+            :image-size="72"
+          />
+          <OpsTableWrap v-if="matrixRows.length > 0 || loading">
             <ArtTable
               :data="matrixRows"
               :loading="loading"
@@ -110,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -119,7 +126,7 @@ import OpsCard from "@/components/ops/OpsCard.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import PieChart from "@/components/ops/PieChart.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
@@ -251,7 +258,7 @@ function formatSampleTime(value: CallMonitorItem["timestamp"]): string {
   const sec = sampleSeconds(value);
   return sec === undefined
     ? String(value ?? "")
-    : new Date(sec * 1000).toLocaleString();
+    : formatDateTime(sec);
 }
 
 function openSampleTrace(row: CallMonitorItem) {
@@ -265,30 +272,30 @@ function openSampleTrace(row: CallMonitorItem) {
 
 async function reload() {
   loading.value = true;
-  const range = toOlapRange(timeRange.value, true);
+  const window = toOlapWindow(timeRange.value);
   try {
     const [matrix, attr, flag, neu] = await Promise.all([
       postOlapQuery<ErrorCellRow>({
         template: "error_matrix",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<AttributionRow>({
         template: "error_attribution",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<FlagRow>({
         template: "response_flags",
-        params: { range },
+        params: { ...window },
       }),
       postOlapQuery<NewErrorRow>({
         template: "new_error_codes",
-        params: { range },
+        params: { ...window },
       }),
     ]);
-    matrixRows.value = matrix.rows ?? [];
+    matrixRows.value = (matrix.rows ?? []).filter((r) => Boolean(r.error_code));
     attribution.value = attr.rows ?? [];
     flags.value = flag.rows ?? [];
-    newErrors.value = neu.rows ?? [];
+    newErrors.value = (neu.rows ?? []).filter((r) => Boolean(r.error_code));
   } catch {
     ElMessage.error(t("ops.traffic.loadFailed"));
   } finally {

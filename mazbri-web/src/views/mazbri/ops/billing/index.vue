@@ -1,6 +1,7 @@
 <template>
   <OpsMergedShell
     :title="t('menus.mazbri.opsBilling')"
+    :subtitle="t('ops.layout.billingSubtitle')"
     :tabs="tabs"
     :default-tab="defaultTab"
   >

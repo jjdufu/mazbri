@@ -25,7 +25,7 @@ use tower::ServiceExt;
 /// 允许对所有角色开放的敏感读取（只返回元数据，不含密钥材料），新增条目须在评审中说明理由。
 const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
     // 只返回密钥版本、算法、状态与摘要等元数据；加密后的密钥字段 skip_serializing。
-    "/tenants/{code}/crypto-keys",
+    "/tenants/{code}/crypto",
     // 只返回请求密钥 kid、状态与时间，不返回密钥值。
     "/tenants/{code}/request-keys",
     // 只导出接口名、方法与 URL，不含请求头 / 鉴权配置（与 GET drafts/{id} 可见内容一致）。
@@ -517,7 +517,7 @@ fn main_router_applies_access_layer_inside_auth_layer() {
 
 #[test]
 fn ops_stats_and_alerts_follow_role_matrix() {
-    // 观察者可读大盘
+    // 观察者可读大盘 + 调用检索只读
     for (method, path) in [
         ("GET", "/stats/platform"),
         ("GET", "/stats/metrics/overview"),
@@ -529,17 +529,22 @@ fn ops_stats_and_alerts_follow_role_matrix() {
         ("GET", "/stats/ops/slos/status"),
         ("GET", "/alerts/events"),
         ("GET", "/alerts/summary"),
-    ] {
-        assert_eq!(access_of(method, path), Access::AnyRole, "{method} {path}");
-    }
-
-    // 管理员可读（观察者 403）
-    for (method, path) in [
         ("GET", "/stats/calls/customer"),
         ("GET", "/stats/calls/upstream"),
         ("GET", "/stats/calls/customer/histogram"),
         ("GET", "/stats/calls/upstream/histogram"),
         ("GET", "/stats/calls/stages"),
+    ] {
+        assert_eq!(access_of(method, path), Access::AnyRole, "{method} {path}");
+        assert_eq!(
+            decide(Some(Access::AnyRole), Some("R_VIEWER")),
+            Ok(()),
+            "VIEWER must read {method} {path}"
+        );
+    }
+
+    // 管理员可读（观察者 403）
+    for (method, path) in [
         ("GET", "/stats/ops/changes"),
         ("GET", "/stats/ops/anomalies"),
         ("GET", "/billing/ops/funnel"),
@@ -602,6 +607,52 @@ fn ops_stats_and_alerts_follow_role_matrix() {
             decide(Some(Access::Roles(ADMIN)), Some("R_ADMIN")),
             Ok(()),
             "ADMIN must be allowed for {method} {path}"
+        );
+    }
+}
+
+#[test]
+fn viewer_is_denied_on_biz_write_routes() {
+    // 观察者对上游删除、接入策略写、crypto key 删除等写路由必须 403。
+    for (method, path) in [
+        ("DELETE", "/suppliers/{id}"),
+        ("POST", "/suppliers"),
+        ("PUT", "/suppliers/{id}"),
+        ("DELETE", "/channels/{id}"),
+        ("POST", "/channels"),
+        ("PUT", "/channels/{id}"),
+        ("PUT", "/tenants/{code}/config/cache"),
+        ("PUT", "/tenants/{code}/config/ratelimit"),
+        ("DELETE", "/tenants/{code}/config/ratelimit"),
+        ("DELETE", "/tenants/{code}/crypto-keys/{version}"),
+        ("POST", "/tenants/{code}/crypto-keys"),
+        ("PUT", "/tenants/{code}/crypto-profile"),
+        ("POST", "/products/{product_id}/grant"),
+        ("POST", "/products/{product_id}/revoke"),
+        ("POST", "/tenants/{code}/account/recharge"),
+        ("POST", "/tenants/{code}/account/refund"),
+        ("DELETE", "/tenants/{code}"),
+        ("PUT", "/tenants/{code}/enabled"),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::Roles(BIZ),
+            "{method} {path} must stay BIZ write"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(BIZ)), Some("R_VIEWER")),
+            Err(Denial::Role(BIZ)),
+            "VIEWER must be denied for {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(BIZ)), Some("R_FINANCE")),
+            Ok(()),
+            "FINANCE must write {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(BIZ)), Some("R_ADMIN")),
+            Ok(()),
+            "ADMIN must write {method} {path}"
         );
     }
 }

@@ -55,7 +55,7 @@ import OpsMetricChartGrid from "@/components/ops/OpsMetricChartGrid.vue";
 import { aggregateLastMetricValue } from "@/utils/ops/metric-series";
 import StatCard from "@/components/ops/StatCard.vue";
 import { useMetricTimeseriesPanel } from "@/composables/ops/useMetricTimeseriesPanel";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import {
@@ -90,10 +90,10 @@ const memoryLatest = computed(() => latest("cache_memory_mb"));
 async function reloadOlap() {
   olapLoading.value = true;
   try {
-    const range = toOlapRange(timeRange.value);
+    const window = toOlapWindow(timeRange.value);
     const resp = await postOlapQuery<ResponseCacheHitRow>({
       template: "response_cache_hit",
-      params: { range },
+      params: { ...window },
     });
     responseHit.value = resp.rows?.[0]?.hit_ratio ?? null;
   } catch {

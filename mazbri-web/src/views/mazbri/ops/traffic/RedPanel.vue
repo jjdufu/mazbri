@@ -89,7 +89,7 @@ import OpsCard from "@/components/ops/OpsCard.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
@@ -143,11 +143,21 @@ const topCategories = computed(() => topRows.value.map((r) => r.key || "—"));
 const topSeries = computed(() => [
   { name: metric.value, data: topRows.value.map((r) => r.value) },
 ]);
-const topColumns = computed<ColumnOption<TopRow>[]>(() => [
-  { prop: "key", label: t("ops.traffic.columns.key") },
-  { prop: "value", label: t("ops.traffic.columns.value") },
-  { prop: "count", label: t("ops.traffic.columns.count") },
-]);
+const metricColumnLabel = computed(() => {
+  const opt = metricOptions.value.find((item) => item.value === metric.value);
+  return opt?.label ?? t("ops.traffic.columns.value");
+});
+
+const topColumns = computed<ColumnOption<TopRow>[]>(() => {
+  const cols: ColumnOption<TopRow>[] = [
+    { prop: "key", label: t("ops.traffic.columns.key") },
+    { prop: "value", label: metricColumnLabel.value },
+  ];
+  if (metric.value !== "count") {
+    cols.push({ prop: "count", label: t("ops.traffic.columns.count") });
+  }
+  return cols;
+});
 
 const statusX = computed(() => {
   const set = new Set(statusRows.value.map((r) => formatClockHm(r.ts)));
@@ -195,7 +205,7 @@ async function loadTop() {
       params: {
         dim: dim.value,
         metric: metric.value,
-        range: toOlapRange(timeRange.value),
+        ...toOlapWindow(timeRange.value),
         limit: 15,
       },
     });
@@ -212,7 +222,7 @@ async function reload() {
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
-  const range = toOlapRange(timeRange.value);
+  const window = toOlapWindow(timeRange.value);
   try {
     const [qps, err, p95, heat, bytes] = await Promise.all([
       fetchMetricTimeseries({ metric: "qps_by_mode", start, end, step }),
@@ -225,9 +235,9 @@ async function reload() {
       }),
       postOlapQuery<HeatmapRow>({
         template: "status_heatmap",
-        params: { range },
+        params: { ...window },
       }),
-      postOlapQuery<BytesRow>({ template: "bytes_trend", params: { range } }),
+      postOlapQuery<BytesRow>({ template: "bytes_trend", params: { ...window } }),
     ]);
     qpsSeries.value = qps;
     errorSeries.value = err;

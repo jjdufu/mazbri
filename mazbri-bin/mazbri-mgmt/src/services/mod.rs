@@ -3,6 +3,7 @@ pub mod admin_management;
 pub mod alert_ops;
 pub mod alerts;
 pub mod analytics;
+pub mod call_semantics;
 pub mod analytics_window;
 pub mod api_key;
 pub mod appearance;

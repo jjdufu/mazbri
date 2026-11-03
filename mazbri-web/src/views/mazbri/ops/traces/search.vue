@@ -226,6 +226,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -324,7 +325,7 @@ const emptyText = computed(() =>
 );
 
 function formatMs(ms: number): string {
-  return new Date(ms).toLocaleString();
+  return formatDateTime(ms);
 }
 
 function clampedRange(maxSeconds: number): { start: number; end: number } {

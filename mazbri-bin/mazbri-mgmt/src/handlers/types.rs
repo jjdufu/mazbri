@@ -24,7 +24,9 @@ impl ListParams {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
-        if self.page_size > MAX_PAGE_SIZE {
+        if self.page_size == 0 {
+            Err("page_size 必须大于 0".to_string())
+        } else if self.page_size > MAX_PAGE_SIZE {
             Err(format!(
                 "page_size 超过最大限制: {} > {}",
                 self.page_size, MAX_PAGE_SIZE
@@ -35,7 +37,7 @@ impl ListParams {
     }
     #[must_use]
     pub fn capped_page_size(&self) -> u32 {
-        self.page_size.min(MAX_PAGE_SIZE)
+        self.page_size.clamp(1, MAX_PAGE_SIZE)
     }
     #[must_use]
     pub fn offset(&self) -> u32 {
@@ -226,7 +228,9 @@ impl AdminListParams {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
-        if self.page_size > MAX_PAGE_SIZE {
+        if self.page_size == 0 {
+            Err("page_size 必须大于 0".to_string())
+        } else if self.page_size > MAX_PAGE_SIZE {
             Err(format!(
                 "page_size 超过最大限制: {} > {}",
                 self.page_size, MAX_PAGE_SIZE
@@ -237,7 +241,7 @@ impl AdminListParams {
     }
     #[must_use]
     pub fn capped_page_size(&self) -> u32 {
-        self.page_size.min(MAX_PAGE_SIZE)
+        self.page_size.clamp(1, MAX_PAGE_SIZE)
     }
     #[must_use]
     pub fn offset(&self) -> u32 {

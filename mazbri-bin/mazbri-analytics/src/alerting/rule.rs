@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn olap_expr_parses_template_query() {
         let expr: OlapExpr = serde_json::from_str(
-            r#"{"query":{"template":"top_by_dim","params":{"dim":"product_id","range":"15m"}},"value_field":"value"}"#,
+            r#"{"query":{"template":"top_by_dim","params":{"dim":"product_id","start":0,"end":900}},"value_field":"value"}"#,
         )
         .expect("olap expr");
         assert_eq!(expr.value_field.as_deref(), Some("value"));

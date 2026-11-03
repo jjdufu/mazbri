@@ -1,4 +1,7 @@
 //! 步骤 27：用户偏好读写。
+//!
+//! 个人 UI 偏好（如 `last_path`）不属于安全审计范围：`PUT /admin/preferences`
+//! 在 `audit/route_map` 登记为 Read 语义，成功不落 `/audit-logs`。
 
 use super::AppState;
 use crate::middleware::auth::{AdminClaims, extract_user_id};

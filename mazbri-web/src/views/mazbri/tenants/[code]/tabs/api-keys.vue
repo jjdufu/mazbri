@@ -1,5 +1,5 @@
 <template>
-  <div class="api-keys-tab">
+  <TenantTabShell>
     <ResourceTableShell
       v-model:columns="apiKeyColumns"
       :title="$t('tenant.tabs.apiKeys')"
@@ -12,7 +12,7 @@
       <template #actions>
         <ElButton
           v-if="apiKeyActions.create"
-          v-roles="['R_ADMIN', 'R_FINANCE']"
+          v-roles="ROLES_BIZ"
           type="primary"
           @click="handleCreate"
         >
@@ -44,7 +44,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="success"
             @click="handleRenew(row)"
@@ -53,7 +53,7 @@
           </ElButton>
           <ElButton
             v-if="apiKeyActions.delete"
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -159,10 +159,10 @@
         }}</ElButton>
       </template>
     </CenteredDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type {
@@ -174,6 +174,7 @@ import type {
 import { fetchTenantApiKeys, createApiKey, deleteApiKey } from "@/api/tenant";
 import { updateApiKey as updateApiKeyApi } from "@/api/api-key";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
@@ -196,8 +197,8 @@ const apiKeyActions = ref<{
   create: boolean;
   delete: boolean;
 }>({
-  create: true,
-  delete: true,
+  create: false,
+  delete: false,
 });
 const createVisible = ref(false);
 const renewVisible = ref(false);

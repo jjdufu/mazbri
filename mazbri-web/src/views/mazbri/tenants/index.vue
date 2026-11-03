@@ -3,9 +3,12 @@
     :title="$t('menus.mazbri.tenantList')"
     icon="ri:building-line"
   >
-    <div ref="pageRef" class="tenant-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-      <ResourceTableShell
+    <div ref="pageRef" class="tenant-list-page ops-page-fill">
+      <ResourceTablePageShell
+      v-model="searchKeyword"
+      v-model:filters="listFilters"
       v-model:columns="columns"
+      :filter-catalog="tenantsCatalog"
       :title="$t('tenant.list.title')"
       :data="tableData"
       :loading="loading"
@@ -13,38 +16,30 @@
       :pagination="pagination"
       :fit="true"
       table-layout="auto"
+      :show-import="true"
+      :import-label="$t('common.actions.import')"
+      :import-roles="['R_ADMIN', 'R_FINANCE']"
+      :export-items="exportItems"
+      :export-disabled="tableData.length === 0"
+      :export-roles="['R_ADMIN', 'R_FINANCE']"
+      :show-primary="true"
+      :primary-label="$t('tenant.actions.addTenant')"
+      :primary-roles="['R_ADMIN', 'R_FINANCE']"
+      :show-delete="true"
+      :delete-total-count="tableData.length"
+      :delete-selected-count="selectedRows.length"
+      :delete-roles="['R_ADMIN', 'R_FINANCE']"
+      :delete-label="$t('common.actions.delete')"
       @refresh="getData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
+      @search="handleSearch"
+      @import="openImport"
+      @export="handleExportCommand"
+      @primary="handleCreate"
+      @delete="(type: 'all' | 'selected') => handleDeleteCommand(type, tableData)"
     >
-      <template #actions>
-        <ResourceTableActionBar
-          v-model="searchKeyword"
-          v-model:filters="listFilters"
-          :filter-catalog="tenantsCatalog"
-          :show-import="true"
-          :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_FINANCE']"
-          :export-items="exportItems"
-          :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_FINANCE']"
-          :show-primary="true"
-          :primary-label="$t('tenant.actions.addTenant')"
-          :primary-roles="['R_ADMIN', 'R_FINANCE']"
-          :show-delete="true"
-          :delete-total-count="tableData.length"
-          :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_FINANCE']"
-          :delete-label="$t('common.actions.delete')"
-          @search="handleSearch"
-          @import="openImport"
-          @export="handleExportCommand"
-          @primary="handleCreate"
-          @delete="(type) => handleDeleteCommand(type, tableData)"
-        />
-      </template>
-
       <template #status="{ row }">
         <StatusIndicator :type="getStatusType(tenantStatusKey(row))">
           {{ getStatusLabel(tenantStatusKey(row)) }}
@@ -60,7 +55,7 @@
           }}</ElButton>
           <ElButton
             v-if="row.enabled"
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="warning"
             @click="handleToggleStatus(row, false)"
@@ -69,7 +64,7 @@
           </ElButton>
           <ElButton
             v-else
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="success"
             @click="handleToggleStatus(row, true)"
@@ -77,7 +72,7 @@
             {{ $t("tenant.actions.enable") }}
           </ElButton>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -86,7 +81,7 @@
           </ElButton>
         </TableActionRow>
       </template>
-    </ResourceTableShell>
+    </ResourceTablePageShell>
 
     <CreateDialog v-model="createVisible" @success="getData" />
     <ImportDialog
@@ -110,6 +105,7 @@
 <script setup lang="ts">
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   Tenant,
   TenantListResponse,
@@ -120,12 +116,10 @@ import {
   deleteTenant,
   setTenantEnabled,
 } from "@/api/tenant";
-import { useUserStore } from "@/store/modules/user";
 import CreateDialog from "./modules/create-dialog.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
-import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
-import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
+import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import {
   exportResourceCsv,
@@ -135,6 +129,7 @@ import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import { useTable } from "@/hooks/core/useTable";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { formatDateTime as formatDate } from "@/utils/format";
@@ -247,7 +242,7 @@ const table = useTable({
   transform: {
     responseAdapter: (res: TenantListResponse) => ({
       records: res.tenants,
-      total: res.pagination?.total ?? 0,
+      total: res.pagination.total,
     }),
   },
 });
@@ -335,8 +330,6 @@ const getTenantColumnWeight = (columnKey: string) => {
       return 1;
   }
 };
-const userStore = useUserStore();
-
 function tenantStatusKey(row: Tenant): "enabled" | "disabled" {
   return row.enabled ? "enabled" : "disabled";
 }
@@ -382,9 +375,6 @@ const exportItems = computed(() => [
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<Tenant>({
     deleteApi: async (row) => {
-      if (!userStore.canWriteBusiness) {
-        throw new Error("forbidden");
-      }
       await deleteTenant(row.tenant_code);
     },
     getItemName: (row) => row.name,
@@ -461,8 +451,10 @@ const transformTenantImportRow = (
 });
 const loadTenantImportRows = async () => {
   try {
-    const res = await fetchTenantList({ page_size: 1000 });
-    tenantImportRows.value = res.tenants;
+    tenantImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchTenantList({ page, page_size: pageSize });
+      return { items: res.tenants, total: res.pagination.total };
+    });
   } catch {
     tenantImportRows.value = tableData.value;
   }
@@ -551,10 +543,6 @@ const handleToggleStatus = async (row: Tenant, enable: boolean) => {
 };
 
 const handleDelete = async (row: Tenant) => {
-  if (!userStore.canWriteBusiness) {
-    ElMessage.error($t("common.feedback.unknownError"));
-    return;
-  }
   try {
     await ElMessageBox.confirm(
       $t("tenant.messages.deleteTenantConfirm", { name: row.name }),
@@ -575,3 +563,9 @@ const handleDelete = async (row: Tenant) => {
   }
 };
 </script>
+
+<style scoped>
+.tenant-list-page {
+  min-width: 0;
+}
+</style>

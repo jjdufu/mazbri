@@ -7,6 +7,7 @@ import type {
   BillDetailResponse,
   BillLineItem,
   BillListResponse,
+  BillListSummary,
   BillListQuery,
   GenerateBillRequest,
   GenerateBillResponse,
@@ -80,19 +81,24 @@ const normalizeBillLineItems = (items?: BillLineItemApiRow[]): BillLineItem[] =>
     unit_price: toDecimalString(item.unit_price),
     total: toDecimalString(item.total ?? item.total_amount),
   }));
-const normalizeBillListResponse = (
-  response: Partial<BillListResponse> & {
-    bills?: BillApiRow[];
-  },
-  params?: BillListQuery,
-): BillListResponse => {
-  const bills = (response.bills ?? []).map(normalizeBill);
+const normalizeBillListResponse = (response: {
+  items?: BillApiRow[];
+  pagination?: BillListResponse["pagination"];
+  summary?: BillListSummary;
+}): BillListResponse => {
+  if (!response.pagination) {
+    throw new Error("bill list response missing pagination");
+  }
+  if (!response.summary) {
+    throw new Error("bill list response missing summary");
+  }
+  if (!Array.isArray(response.items)) {
+    throw new Error("bill list response missing items");
+  }
   return {
-    bills,
-    total: typeof response.total === "number" ? response.total : bills.length,
-    page: response.page ?? params?.page ?? 1,
-    limit: response.limit ?? params?.limit ?? (bills.length || 10),
-    total_pages: response.total_pages,
+    items: response.items.map(normalizeBill),
+    pagination: response.pagination,
+    summary: response.summary,
   };
 };
 const normalizeBillDetailResponse = (
@@ -130,7 +136,6 @@ export async function fetchBillList(params?: BillListQuery) {
       params,
       showErrorMessage: false,
     }),
-    params,
   );
 }
 export async function fetchBillById(id: string): Promise<BillDetailResponse> {

@@ -3,11 +3,7 @@
     :title="$t('menus.mazbri.billList')"
     icon="ri:file-list-3-line"
   >
-    <div
-      ref="pageRef"
-      class="bill-ops-page"
-      style="display: flex; flex-direction: column; flex: 1; min-height: 0"
-    >
+    <div ref="pageRef" class="bill-ops-page ops-page-fill">
       <ResourceTablePageShell
           v-model:columns="columns"
           v-model="searchKeyword"
@@ -68,7 +64,7 @@
           </template>
           <template #total="{ row }">
             <span class="font-medium">
-              {{ formatAmount(row.total) }}
+              {{ formatMoney(row.total) }}
             </span>
           </template>
           <template #status="{ row }">
@@ -83,7 +79,7 @@
               }}</ElButton>
               <ElButton
                 v-if="canMarkPaid(row.status)"
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="success"
                 @click="handleUpdateStatus(row, 'paid')"
@@ -92,7 +88,7 @@
               </ElButton>
               <ElButton
                 v-if="canMarkOverdue(row.status)"
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="warning"
                 @click="handleUpdateStatus(row, 'overdue')"
@@ -100,7 +96,7 @@
                 {{ $t("billing.actions.markOverdue") }}
               </ElButton>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-roles="ROLES_BIZ"
                 link
                 type="danger"
                 @click="handleDeleteRow(row)"
@@ -138,7 +134,7 @@
                 :eyebrow="$t('billing.detail.overview')"
                 :title="getBillDisplayName(currentBill)"
                 :subtitle="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
-                :amount="formatAmount(currentBill.total)"
+                :amount="formatMoney(currentBill.total)"
                 :meta="formatDate(currentBill.created_at)"
               />
 
@@ -164,7 +160,7 @@
                   {{ formatDate(currentBill.due_date) }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('billing.labels.total')">
-                  {{ formatAmount(currentBill.total) }}
+                  {{ formatMoney(currentBill.total) }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('billing.labels.totalCalls')">
                   {{ currentBill.total_calls ?? 0 }}
@@ -189,7 +185,7 @@
                   :description="
                     $t('billing.detail.itemsCount', { count: billItems.length })
                   "
-                  :meta="formatAmount(currentBill.total)"
+                  :meta="formatMoney(currentBill.total)"
                 />
               </template>
 
@@ -202,10 +198,10 @@
                 class="bill-detail-items-table"
               >
                 <template #unit_price="{ row }">
-                  {{ formatAmount(row.unit_price) }}
+                  {{ formatMoney(row.unit_price) }}
                 </template>
                 <template #total="{ row }">
-                  {{ formatAmount(row.total) }}
+                  {{ formatMoney(row.total) }}
                 </template>
               </ArtTable>
             </ElCard>
@@ -218,7 +214,7 @@
                 >
                   <template #actions>
                     <ElButton
-                      v-roles="['R_ADMIN', 'R_FINANCE']"
+                      v-roles="ROLES_BIZ"
                       type="primary"
                       size="small"
                       @click="openCreateAdjustment"
@@ -238,7 +234,7 @@
                 class="bill-detail-items-table"
               >
                 <template #amount="{ row }">
-                  {{ formatAmount(row.amount) }}
+                  {{ formatMoney(row.amount) }}
                 </template>
                 <template #status="{ row }">
                   <ElTag
@@ -258,7 +254,7 @@
                 <template #operations="{ row }">
                   <ElButton
                     v-if="row.status === 'posted'"
-                    v-roles="['R_ADMIN', 'R_FINANCE']"
+                    v-roles="ROLES_BIZ"
                     link
                     type="danger"
                     @click="handleVoidAdjustment(row)"
@@ -462,6 +458,7 @@ import type {
   Bill,
   BillLineItem,
   BillListQuery,
+  BillListSummary,
   GenerateBillRequest,
 } from "@/types/api/billing";
 import {
@@ -482,6 +479,7 @@ import type { Tenant } from "@/types/api/tenant";
 import { fetchChannels, type Channel } from "@/api/route-management";
 import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import CommonDetailHero from "@/components/common/detail-hero/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
@@ -492,7 +490,8 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
-import { formatDate, formatAmount, formatBytes } from "@/utils/format";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
+import { formatDate, formatMoney, formatBytes } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
@@ -741,19 +740,28 @@ const generateRules: FormRules = {
 const hasActiveSearch = computed(
   () => Boolean(searchForm.q?.trim()) || listFilters.value.length > 0,
 );
-const emptyDescription = computed(() =>
-  hasActiveSearch.value
-    ? $t("billing.empty.noMatch")
-    : $t("billing.empty.noData"),
-);
+const listSummary = ref<BillListSummary | null>(null);
+const emptyDescription = computed(() => {
+  const hint = listSummary.value?.status_hint;
+  if (hint === "filtered_empty" || (hasActiveSearch.value && bills.value.length === 0)) {
+    return $t("billing.empty.filteredEmpty");
+  }
+  if (hint === "pending_generation") {
+    return $t("billing.empty.pendingGeneration");
+  }
+  if (hint === "no_billing_cycle") {
+    return $t("billing.empty.noBillingCycle");
+  }
+  return $t("billing.empty.noData");
+});
 const pagination = reactive({
   page: 1,
-  limit: 10,
+  page_size: 10,
   total: 0,
 });
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
-  size: pagination.limit,
+  size: pagination.page_size,
   total: pagination.total,
 }));
 const exportItems = computed(() => [
@@ -810,7 +818,7 @@ const getBillCellText = (columnKey: string, bill: Bill) => {
     case "period_end":
       return formatDateOnly(bill.period_end);
     case "total":
-      return formatAmount(bill.total);
+      return formatMoney(bill.total);
     case "operations":
       return $t("common.actions.details");
     default:
@@ -909,11 +917,12 @@ const loadData = async () => {
     const res = await fetchBillList({
       ...searchForm,
       page: pagination.page,
-      limit: pagination.limit,
+      page_size: pagination.page_size,
       filters: listFilters.value.length ? JSON.stringify(listFilters.value) : undefined,
     });
-    bills.value = res.bills;
-    pagination.total = res.total;
+    bills.value = res.items;
+    listSummary.value = res.summary;
+    pagination.total = res.pagination.total;
   }).catch((error) => {
     logger.error("Failed to load bills:", error);
   });
@@ -923,8 +932,10 @@ const loadTenants = async () => {
     return;
   }
   await runWithLoading(tenantsLoading, async () => {
-    const response = await fetchTenantList({ page_size: 1000 });
-    tenants.value = response.tenants;
+    tenants.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchTenantList({ page, page_size: pageSize });
+      return { items: response.tenants, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load tenants for bill generation:", error);
     ElMessage.error($t("billing.messages.loadTenantsFailed"));
@@ -938,8 +949,10 @@ const loadChannels = async () => {
     return;
   }
   await runWithLoading(channelsLoading, async () => {
-    const response = await fetchChannels({ page_size: 1000 });
-    channels.value = response.channels;
+    channels.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchChannels({ page, page_size: pageSize });
+      return { items: response.channels, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load channels for bill generation:", error);
     ElMessage.error($t("billing.messages.loadChannelsFailed"));
@@ -953,15 +966,17 @@ const loadSuppliers = async () => {
     return;
   }
   await runWithLoading(suppliersLoading, async () => {
-    const response = await fetchSuppliers({ page_size: 1000 });
-    suppliers.value = response.suppliers;
+    suppliers.value = await fetchAllPages(async (page, pageSize) => {
+      const response = await fetchSuppliers({ page, page_size: pageSize });
+      return { items: response.suppliers, total: response.pagination.total };
+    });
   }).catch((error) => {
     logger.error("Failed to load suppliers for bill generation:", error);
     ElMessage.error($t("billing.messages.loadSuppliersFailed"));
   });
 };
 const handlePageSizeChange = (size: number) => {
-  pagination.limit = size;
+  pagination.page_size = size;
   pagination.page = 1;
   loadData();
 };

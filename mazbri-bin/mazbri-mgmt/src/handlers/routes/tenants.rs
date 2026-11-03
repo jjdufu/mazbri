@@ -1,7 +1,7 @@
 use super::super::state::AppState;
 use super::super::{
-    api_key_handlers, config_handlers, product, ratelimit_command_handlers, tenant_crypto_handlers,
-    tenant_handlers, whitelist_handlers,
+    api_key_handlers, config_handlers, finance_ops_handlers, product, ratelimit_command_handlers,
+    tenant_crypto_handlers, tenant_handlers, whitelist_handlers,
 };
 use axum::{
     Router,
@@ -71,14 +71,16 @@ pub fn routes() -> Router<AppState> {
 fn crypto_routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/tenants/{code}/crypto",
+            get(tenant_crypto_handlers::get_tenant_crypto),
+        )
+        .route(
             "/tenants/{code}/crypto-profile",
-            get(tenant_crypto_handlers::get_crypto_profile)
-                .put(tenant_crypto_handlers::update_crypto_profile),
+            axum::routing::put(tenant_crypto_handlers::update_crypto_profile),
         )
         .route(
             "/tenants/{code}/crypto-keys",
-            get(tenant_crypto_handlers::list_crypto_keys)
-                .post(tenant_crypto_handlers::create_crypto_key),
+            post(tenant_crypto_handlers::create_crypto_key),
         )
         .route(
             "/tenants/{code}/crypto-keys/rotate",
@@ -142,5 +144,9 @@ fn product_account_routes() -> Router<AppState> {
         .route(
             "/tenants/{code}/account/transactions",
             get(product::list_tenant_transactions),
+        )
+        .route(
+            "/tenants/{code}/spend",
+            get(finance_ops_handlers::get_tenant_spend),
         )
 }

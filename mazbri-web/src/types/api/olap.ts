@@ -1,5 +1,3 @@
-export type OlapRange = "15m" | "1h" | "6h" | "24h" | "7d" | "30d";
-
 export type OlapDim =
   | "tenant_code"
   | "product_id"
@@ -32,8 +30,10 @@ export interface OlapResponse<T = Record<string, unknown>> {
 
 export interface TopRow {
   key: string;
+  metric: string;
   value: number;
-  count: number;
+  /** metric=count 时后端省略，避免与 value 重复。 */
+  count?: number;
 }
 
 export interface HeatmapRow {

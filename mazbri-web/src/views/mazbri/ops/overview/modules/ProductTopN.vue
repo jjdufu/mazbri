@@ -64,7 +64,7 @@ import { ElMessage } from "element-plus";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import type { TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import { zeroCallProducts } from "@/api/opsReliability";
 import type { ColumnOption } from "@/types/component";
@@ -109,16 +109,20 @@ const zeroColumns = computed<ColumnOption[]>(() => [
 async function reload() {
   loading.value = true;
   try {
-    const range = toOlapRange(props.timeRange);
+    const window = toOlapWindow(props.timeRange);
+    const activeWindow = {
+      start: window.end - 30 * 86400,
+      end: window.end,
+    };
     const [rankRes, activeRes] = await Promise.all([
       postOlapQuery<ProductRankRow>({
         template: "product_rank",
-        params: { range, metric: metric.value, limit: 10 },
+        params: { ...window, metric: metric.value, limit: 10 },
       }),
       // 零调用差集按近 30 天有调用的产品（与文案一致），与 TopN 排序窗解耦。
       postOlapQuery<ProductRankRow>({
         template: "product_rank",
-        params: { range: "30d", metric: "req_count", limit: 1000 },
+        params: { ...activeWindow, metric: "req_count", limit: 1000 },
       }),
     ]);
     rows.value = normalizeProductRankRows(rankRes.rows);

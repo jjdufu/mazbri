@@ -39,7 +39,7 @@ import TimeRangePicker, {
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { toOlapWindow } from "@/composables/ops/useOlapRange";
 import { postOlapQuery } from "@/api/olap";
 import type { ColumnOption } from "@/types/component";
 
@@ -64,8 +64,8 @@ interface EventRow {
 
 const { t } = useI18n();
 const timeRange = ref<TimeRangeValue>({
-  preset: "24h",
-  start: Math.floor(Date.now() / 1000) - 86400,
+  preset: "6h",
+  start: Math.floor(Date.now() / 1000) - 6 * 3600,
   end: Math.floor(Date.now() / 1000),
 });
 const refreshInterval = ref(60);
@@ -95,12 +95,12 @@ const eventColumns = computed<ColumnOption[]>(() => [
 async function reload() {
   loading.value = true;
   try {
-    const range = toOlapRange(timeRange.value);
+    const window = toOlapWindow(timeRange.value);
     const [ip, key, country, ev] = await Promise.all([
-      postOlapQuery({ template: "security_top", params: { range, dim: "ip", limit: 10 } }),
-      postOlapQuery({ template: "security_top", params: { range, dim: "key", limit: 10 } }),
-      postOlapQuery({ template: "security_top", params: { range, dim: "country", limit: 10 } }),
-      postOlapQuery({ template: "security_events", params: { range, limit: 50 } }),
+      postOlapQuery({ template: "security_top", params: { ...window, dim: "ip", limit: 10 } }),
+      postOlapQuery({ template: "security_top", params: { ...window, dim: "key", limit: 10 } }),
+      postOlapQuery({ template: "security_top", params: { ...window, dim: "country", limit: 10 } }),
+      postOlapQuery({ template: "security_events", params: { ...window, limit: 50 } }),
     ]);
     topIp.value = ((ip as unknown as { rows?: TopRow[] }).rows) || [];
     topKey.value = ((key as unknown as { rows?: TopRow[] }).rows) || [];

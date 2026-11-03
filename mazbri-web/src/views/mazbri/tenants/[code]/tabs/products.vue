@@ -1,17 +1,21 @@
 <template>
-  <div class="products-tab">
+  <TenantTabShell>
     <ResourceTableShell
       v-model:columns="productColumns"
       :title="$t('tenant.products.title')"
       :loading="loading"
       :data="products"
+      :pagination="pagination"
       :show-toolbar="false"
       table-class="surface-panel-table tenant-product-table"
       stripe
       border
+      @pagination:size-change="handleSizeChange"
+      @pagination:current-change="handleCurrentChange"
     >
       <template #actions>
         <ElButton
+          v-roles="ROLES_BIZ"
           link
           type="primary"
           class="mr-3"
@@ -26,7 +30,7 @@
         </ElButton>
         <ElButton
           v-if="productActions.grant"
-          v-roles="['R_ADMIN', 'R_FINANCE']"
+          v-roles="ROLES_BIZ"
           type="primary"
           @click="handleGrant"
         >
@@ -59,7 +63,7 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="primary"
             @click="handleConfigure(row)"
@@ -68,7 +72,7 @@
           </ElButton>
           <ElButton
             v-if="productActions.revoke"
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleRevoke(row)"
@@ -125,15 +129,19 @@
       v-model="configDrawerVisible"
       :tenant-code="resolvedTenantCode"
       :product="selectedProduct"
-      @updated="loadData"
+      @updated="getData"
     />
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
-import type { TenantProduct } from "@/types/api/tenant";
+import { ROLES_BIZ } from "@/utils/ops/roles";
+import type {
+  TenantProduct,
+  TenantProductListResponse,
+} from "@/types/api/tenant";
 import type { Product } from "@/types/api/product";
 import {
   fetchTenantProducts,
@@ -145,6 +153,8 @@ import { fetchProductList } from "@/api/product";
 import EditDialog from "@/components/common/EditDialog.vue";
 import ChannelConfigDrawer from "@/components/common/channel-config-dialog/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
+import { useTable } from "@/hooks/core/useTable";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
@@ -154,15 +164,13 @@ const props = defineProps<{
   tenantCode: string;
 }>();
 const router = useRouter();
-const loading = ref(false);
 const granting = ref(false);
-const products = ref<TenantProduct[]>([]);
 const productActions = ref<{
   grant: boolean;
   revoke: boolean;
 }>({
-  grant: true,
-  revoke: true,
+  grant: false,
+  revoke: false,
 });
 const availableProducts = ref<Product[]>([]);
 const grantVisible = ref(false);
@@ -221,6 +229,46 @@ const selectedGrantProduct = computed(
       (product) => product.product_id === grantForm.productId,
     ) || null,
 );
+const emptyProductListResponse = (): TenantProductListResponse => ({
+  tenant_id: "",
+  products: [],
+  pagination: { page: 1, page_size: 20, total: 0, total_pages: 0 },
+  actions: { grant: false, revoke: false },
+});
+const table = useTable({
+  core: {
+    apiFn: async (params: { page?: number; page_size?: number }) => {
+      const code = resolvedTenantCode.value;
+      if (!isValidTenantCode(code)) {
+        productActions.value = { grant: false, revoke: false };
+        return emptyProductListResponse();
+      }
+      const res = await fetchTenantProducts(code, {
+        page: params.page,
+        page_size: params.page_size,
+      });
+      productActions.value = res.actions ?? { grant: false, revoke: false };
+      return res;
+    },
+    apiParams: {},
+    immediate: false,
+    paginationKey: { current: "page", size: "page_size" },
+  },
+  transform: {
+    responseAdapter: (res: TenantProductListResponse) => ({
+      records: res.products,
+      total: res.pagination.total,
+    }),
+  },
+});
+const {
+  data: products,
+  loading,
+  pagination,
+  getData,
+  handleSizeChange,
+  handleCurrentChange,
+} = table;
 const resetGrantForm = () => {
   grantForm.productId = "";
   grantForm.unit_price = "0.001";
@@ -231,32 +279,29 @@ watch(selectedGrantProduct, (product) => {
     grantForm.cb_pro_fallback = false;
   }
 });
-const loadData = async () => {
+const loadAvailableProducts = async () => {
   const code = resolvedTenantCode.value;
   if (!isValidTenantCode(code)) {
-    products.value = [];
-    logger.warn("ProductsTab: skip load; invalid tenantCode", props.tenantCode);
+    availableProducts.value = [];
     return;
   }
-  loading.value = true;
   try {
-    const res = await fetchTenantProducts(code);
-    products.value = res.products;
-    if (res.actions) {
-      productActions.value = res.actions;
-    }
-  } catch (error) {
-    logger.error("Failed to load tenant products:", error);
-  } finally {
-    loading.value = false;
-  }
-};
-const loadAvailableProducts = async () => {
-  try {
-    const res = await fetchProductList({ page_size: 100 });
-    const grantedIds = new Set(products.value.map((p) => p.product_id));
-    availableProducts.value = res.products.filter(
-      (p) => !grantedIds.has(p.product_id),
+    const [catalog, granted] = await Promise.all([
+      fetchAllPages(async (page, pageSize) => {
+        const res = await fetchProductList({ page, page_size: pageSize });
+        return { items: res.products, total: res.pagination.total };
+      }),
+      fetchAllPages(async (page, pageSize) => {
+        const res = await fetchTenantProducts(code, {
+          page,
+          page_size: pageSize,
+        });
+        return { items: res.products, total: res.pagination.total };
+      }),
+    ]);
+    const grantedIds = new Set(granted.map((item) => item.product_id));
+    availableProducts.value = catalog.filter(
+      (product) => !grantedIds.has(product.product_id),
     );
   } catch (error) {
     logger.error("Failed to load products:", error);
@@ -296,13 +341,11 @@ const handleSubmitGrant = async () => {
       cb_pro_fallback: selectedGrantProduct.value?.cb_pro_enabled
         ? grantForm.cb_pro_fallback
         : false,
-
-
       cbpro: createDefaultCBProPolicyConfig(),
     });
     ElMessage.success($t("common.feedback.authorizationGranted"));
     grantVisible.value = false;
-    loadData();
+    getData();
   } catch (error) {
     logger.error("Failed to grant product:", error);
   } finally {
@@ -327,7 +370,7 @@ const handleRevoke = async (row: TenantProduct) => {
     );
     await revokeProduct(code, row.product_id);
     ElMessage.success($t("common.feedback.authorizationRevoked"));
-    loadData();
+    getData();
   } catch (error) {
     if (error !== "cancel") {
       logger.error("Failed to revoke product:", error);
@@ -339,7 +382,14 @@ watch(
   resolvedTenantCode,
   (code, prev) => {
     if (code && code !== prev) {
-      loadData();
+      if (!isValidTenantCode(code)) {
+        logger.warn(
+          "ProductsTab: skip load; invalid tenantCode",
+          props.tenantCode,
+        );
+        return;
+      }
+      getData();
     }
   },
   { immediate: true },
@@ -349,9 +399,8 @@ watch(
 <style scoped lang="scss">
 .tenant-product-table {
   :deep(.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 }
-
 </style>

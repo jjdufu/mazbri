@@ -1,14 +1,24 @@
+export interface InstantKpiWindow {
+  semantics: "instant" | string;
+  lookback_secs: number;
+  label: string;
+}
+
 export interface MetricOverview {
-  /** 业务 QPS（网关代理请求） */
-  qps: number;
-  /** 成功率 % */
-  success_rate: number;
-  error_rate: number;
-  error_rate_4xx: number;
-  error_rate_5xx: number;
-  p50_latency_ms: number;
-  p95_latency_ms: number;
-  p99_latency_ms: number;
+  /** 瞬时 KPI 窗（禁止扁平 kpi_semantics 兼容字段） */
+  window: InstantKpiWindow;
+  /** 近瞬时窗内样本数；0 = 无流量 */
+  sample_count: number;
+  /** 业务 QPS；无样本为 null */
+  qps: number | null;
+  /** 成功率 %；无样本为 null（禁止用 0 冒充） */
+  success_rate: number | null;
+  error_rate: number | null;
+  error_rate_4xx: number | null;
+  error_rate_5xx: number | null;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  p99_latency_ms: number | null;
   active_connections: number;
   proxy_active_connections: number;
   rate_limit_rejections_per_sec: number;
@@ -22,10 +32,6 @@ export interface MetricOverview {
   error_budget_connected: boolean;
   error_budget_remaining?: number | null;
   error_budget_slo?: string | null;
-  /** 固定 `instant`：KPI 为近瞬时值，与 UI 时间范围无关（step-21 方案 B） */
-  kpi_semantics?: "instant" | string;
-  /** 瞬时 KPI 回看秒数（与后端 INSTANT_LOOKBACK_SECS 对齐） */
-  instant_lookback_secs?: number;
 }
 /** 计费链路概览：来自 billing 自身暴露的 Prometheus 指标。 */
 export interface BillingPipelineOverview {

@@ -313,10 +313,10 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
         severity: &str,
         kind_label: &str,
     ) -> Result<(), String> {
+        // 真实 SLO 燃烧规则禁止打 seed；演示种子仅显式 seed-mock 注入且带 seed 标签。
         let labels = serde_json::json!({
             "category": "slo",
-            "burn": kind_label,
-            "seed": "dev19-mock"
+            "burn": kind_label
         });
         let notify = serde_json::json!({"enabled": false, "emails": [], "webhooks": []});
         sqlx::query(
@@ -453,5 +453,16 @@ mod tests {
             interval_secs: 300,
         };
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn slo_burn_rule_labels_have_no_seed() {
+        let labels = serde_json::json!({
+            "category": "slo",
+            "burn": "page"
+        });
+        assert!(labels.get("seed").is_none());
+        assert_eq!(labels["category"], "slo");
+        assert_eq!(labels["burn"], "page");
     }
 }

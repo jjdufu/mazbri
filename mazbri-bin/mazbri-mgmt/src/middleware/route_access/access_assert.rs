@@ -94,14 +94,14 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("PUT", "/settings/mfa", Access::Roles(ADMIN)),
     ("GET", "/settings/password-policy", Access::AnyRole),
     ("PUT", "/settings/password-policy", Access::Roles(ADMIN)),
-    // Trace ADMIN；调用检索 BIZ
+    // Trace ADMIN；调用检索 AnyRole（观察者只读开放，写仍无对应路由）
     ("GET", "/stats/traces/search", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/dependencies", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/{trace_id}", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/billing", Access::Roles(ADMIN)),
-    ("GET", "/stats/calls/customer", Access::Roles(BIZ)),
-    ("GET", "/stats/calls/upstream", Access::Roles(BIZ)),
-    ("GET", "/stats/calls/stages", Access::Roles(BIZ)),
+    ("GET", "/stats/calls/customer", Access::AnyRole),
+    ("GET", "/stats/calls/upstream", Access::AnyRole),
+    ("GET", "/stats/calls/stages", Access::AnyRole),
     // overview / 大盘读 AnyRole（字段裁剪在 handler，不靠放宽本表）
     ("GET", "/stats/metrics/overview", Access::AnyRole),
 ];
@@ -143,5 +143,5 @@ pub fn assert_ia_audit_matrix_groups() {
     assert_access_eq("GET", "/settings/mfa", Access::AnyRole);
     assert_access_eq("PUT", "/settings/mfa", Access::Roles(ADMIN));
     assert_prefix_access("/stats/traces/", Access::Roles(ADMIN), &[]);
-    assert_prefix_access("/stats/calls/", Access::Roles(BIZ), &[]);
+    assert_prefix_access("/stats/calls/", Access::AnyRole, &[]);
 }

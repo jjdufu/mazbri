@@ -1,7 +1,7 @@
 <template>
-  <div class="transport-encryption-tab">
+  <TenantTabShell>
     <ElAlert
-      v-if="isInitialized && !tenantCryptoEnabled"
+      v-if="isInitialized && licenseStatus !== null && !tenantCryptoEnabled"
       type="warning"
       show-icon
       :closable="false"
@@ -12,15 +12,20 @@
           <span>
             {{
               $t("tenant.transportEncryption.alert.currentStatus", {
-                status: getStatusLabel(rootStatus.status),
+                status: getStatusLabel(licenseStatus?.status ?? ""),
               })
             }}
           </span>
-          <ElButton link type="primary" @click="goToRootPackagePage">
+          <ElButton
+            v-if="cryptoActions.manage_root_package"
+            v-roles="ROLES_ADMIN"
+            link
+            type="primary"
+            @click="goToRootPackagePage"
+          >
             {{ $t("tenant.transportEncryption.actions.goRootPackage") }}
           </ElButton>
-        </div>
-      </template>
+        </div></template>
     </ElAlert>
 
     <div class="strategy-grid">
@@ -38,7 +43,8 @@
             </template>
             <template #actions>
               <ElButton
-                v-roles="['R_ADMIN', 'R_FINANCE']"
+                v-if="cryptoActions.update_profile"
+                v-roles="ROLES_BIZ"
                 type="primary"
                 :loading="saving"
                 :disabled="!tenantCryptoEnabled"
@@ -68,10 +74,11 @@
                       class="mode-card"
                       :class="{
                         active: form.encryptionMode === option.value,
-                        disabled: !tenantCryptoEnabled,
+                        disabled: !tenantCryptoEnabled || !canWriteBusiness,
                       }"
                       @click="
                         tenantCryptoEnabled &&
+                        canWriteBusiness &&
                         (form.encryptionMode = option.value)
                       "
                     >
@@ -96,7 +103,9 @@
                   <CryptoSuiteSelect
                     v-model="suiteForm"
                     :disabled="
-                      !tenantCryptoEnabled || form.encryptionMode === 'none'
+                      !tenantCryptoEnabled ||
+                      !canWriteBusiness ||
+                      form.encryptionMode === 'none'
                     "
                     :can-toggle-insecure="isSuperAdmin"
                   />
@@ -113,7 +122,9 @@
                     v-model="form.currentKeyVersion"
                     clearable
                     :disabled="
-                      form.encryptionMode === 'none' || !tenantCryptoEnabled
+                      form.encryptionMode === 'none' ||
+                      !tenantCryptoEnabled ||
+                      !canWriteBusiness
                     "
                     :placeholder="
                       $t(
@@ -145,7 +156,7 @@
                   <CommonSwitchRow>
                     <ElSwitch
                       v-model="form.requireSignature"
-                      :disabled="!tenantCryptoEnabled || form.encryptionMode === 'none'"
+                      :disabled="!tenantCryptoEnabled || !canWriteBusiness || form.encryptionMode === 'none'"
                     />
                     <span class="switch-text ml-2">
                       {{
@@ -174,7 +185,7 @@
                     :min="60"
                     :max="3600"
                     :step="60"
-                    :disabled="!tenantCryptoEnabled"
+                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
                   />
                 </div>
               </div>
@@ -190,7 +201,7 @@
                     :min="60"
                     :max="3600"
                     :step="60"
-                    :disabled="!tenantCryptoEnabled"
+                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
                   />
                 </div>
               </div>
@@ -212,6 +223,8 @@
             </template>
             <template #actions>
               <ElButton
+                v-if="cryptoActions.create_key"
+                v-roles="ROLES_BIZ"
                 :loading="creating"
                 :disabled="!tenantCryptoEnabled"
                 @click="createKey"
@@ -219,6 +232,8 @@
                 {{ $t("tenant.transportEncryption.actions.createKey") }}
               </ElButton>
               <ElButton
+                v-if="cryptoActions.rotate_key"
+                v-roles="ROLES_BIZ"
                 type="primary"
                 :loading="rotating"
                 :disabled="!tenantCryptoEnabled"
@@ -247,7 +262,8 @@
           <template #operations="{ row }">
             <CommonInlineRow gap="8px">
               <ElButton
-                v-if="row.status !== 'active'"
+                v-if="cryptoActions.activate_key && row.status !== 'active'"
+                v-roles="ROLES_BIZ"
                 link
                 type="primary"
                 :disabled="!tenantCryptoEnabled"
@@ -256,16 +272,21 @@
                 {{ $t("tenant.transportEncryption.actions.activate") }}
               </ElButton>
               <ElButton
-                v-if="row.status !== 'disabled'"
+                v-if="cryptoActions.disable_key && row.status !== 'disabled'"
+                v-roles="ROLES_BIZ"
                 link
                 type="warning"
+                :disabled="!tenantCryptoEnabled"
                 @click="setStatus(row.key_version, 'disable')"
               >
                 {{ $t("tenant.transportEncryption.actions.disable") }}
               </ElButton>
               <ElButton
+                v-if="cryptoActions.delete_key"
+                v-roles="ROLES_BIZ"
                 link
                 type="danger"
+                :disabled="!tenantCryptoEnabled"
                 @click="handleDelete(row.key_version)"
               >
                 {{ $t("tenant.transportEncryption.actions.delete") }}
@@ -323,28 +344,27 @@
         }}</ElButton>
       </template>
     </CenteredDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import {
   activateTenantCryptoKey,
   createTenantCryptoKey,
   deleteTenantCryptoKey,
   disableTenantCryptoKey,
-  fetchTenantCryptoKeys,
-  fetchTenantCryptoProfile,
+  fetchTenantCrypto,
   rotateTenantCryptoKey,
   updateTenantCryptoProfile,
 } from "@/api/tenant";
-import { fetchLicenseStatus } from "@/api/authorizations";
 import { $t } from "@/locales";
 import type {
+  TenantCryptoActions,
   TenantCryptoKey,
   TenantCryptoKeyCreateResponse,
+  TenantCryptoLicenseStatus,
   TenantEncryptionMode,
 } from "@/types/api/tenant";
-import type { LicenseStatus } from "@/types/api/authorizations";
 import { logger } from "@/utils/sys";
 import { getStatusLabel } from "@/utils/display-labels";
 import type { ColumnOption } from "@/types/component";
@@ -357,7 +377,7 @@ import CommonFormGrid from "@/components/common/form-grid/index.vue";
 import CryptoSuiteSelect, {
   type CryptoSuiteSelectValue,
 } from "@/components/crypto/CryptoSuiteSelect.vue";
-import { useUserStore } from "@/store/modules/user";
+import { ROLES_ADMIN, ROLES_BIZ } from "@/utils/ops/roles";
 
 const props = defineProps<{
   tenantCode: string;
@@ -372,23 +392,22 @@ const rotating = ref(false);
 const keys = ref<TenantCryptoKey[]>([]);
 const revealedKey = ref<TenantCryptoKeyCreateResponse | null>(null);
 const secretDialogVisible = ref(false);
-const rootStatus = reactive<LicenseStatus>({
-  status: "unconfigured",
-  active: false,
-  issuanceAllowed: false,
-  decryptionAllowed: false,
-  sequence: null,
-  keyVersion: null,
-  customerId: null,
-  installationId: null,
-  notBefore: null,
-  expiresAt: null,
-  graceUntil: null,
-  secondsToExpiry: null,
-  secondsToGraceEnd: null,
+/** 未加载成功前为 null，禁止猜默认 unconfigured。 */
+const licenseStatus = ref<TenantCryptoLicenseStatus | null>(null);
+const cryptoActions = ref<TenantCryptoActions>({
+  update_profile: false,
+  create_key: false,
+  rotate_key: false,
+  activate_key: false,
+  deprecate_key: false,
+  disable_key: false,
+  delete_key: false,
+  allow_insecure: false,
+  manage_root_package: false,
 });
-const userStore = useUserStore();
-const isSuperAdmin = computed(() => userStore.isAdmin);
+/** 写能力与不安全开关以 bundle.actions 为准，禁止与本地角色态分叉。 */
+const isSuperAdmin = computed(() => cryptoActions.value.allow_insecure);
+const canWriteBusiness = computed(() => cryptoActions.value.update_profile);
 
 const form = reactive({
   encryptionMode: "none" as TenantEncryptionMode,
@@ -429,7 +448,9 @@ const cardOptions = computed(() => [
 const activeKeys = computed(() =>
   keys.value.filter((key) => key.status === "active"),
 );
-const tenantCryptoEnabled = computed(() => rootStatus.issuanceAllowed === true);
+const tenantCryptoEnabled = computed(
+  () => licenseStatus.value?.issuanceAllowed === true,
+);
 
 const keyColumns = ref<ColumnOption[]>([
   {
@@ -490,44 +511,60 @@ const statusType = (status: string) => {
   return "danger";
 };
 
+const applyProfile = (profile: {
+  encryption_mode: TenantEncryptionMode;
+  require_signature: boolean;
+  current_key_version?: string | null;
+  nonce_ttl_seconds: number;
+  clock_skew_seconds: number;
+  suite?: string | null;
+  data_alg?: string | null;
+  mac_alg?: string | null;
+  allow_insecure: boolean;
+}) => {
+  form.encryptionMode = profile.encryption_mode;
+  form.requireSignature =
+    profile.encryption_mode === "none" ? false : profile.require_signature;
+  form.currentKeyVersion = profile.current_key_version ?? undefined;
+  form.nonceTtlSeconds = profile.nonce_ttl_seconds;
+  form.clockSkewSeconds = profile.clock_skew_seconds;
+  suiteForm.suite = profile.suite ?? null;
+  suiteForm.dataAlg = profile.data_alg ?? null;
+  suiteForm.macAlg = profile.mac_alg ?? null;
+  suiteForm.allowInsecure = profile.allow_insecure === true;
+  if (
+    form.encryptionMode !== "none" &&
+    !suiteForm.suite &&
+    !suiteForm.dataAlg
+  ) {
+    suiteForm.suite = "suite/tenant-default-2026-11";
+  }
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
-    const [profileResult, keyListResult, rootResult] = await Promise.allSettled(
-      [
-        fetchTenantCryptoProfile(props.tenantCode),
-        fetchTenantCryptoKeys(props.tenantCode),
-        fetchLicenseStatus(),
-      ],
-    );
-    if (profileResult.status === "fulfilled") {
-      const profile = profileResult.value;
-      form.encryptionMode = profile.encryption_mode;
-      form.requireSignature =
-        profile.encryption_mode === "none" ? false : profile.require_signature;
-      form.currentKeyVersion = profile.current_key_version ?? undefined;
-      form.nonceTtlSeconds = profile.nonce_ttl_seconds;
-      form.clockSkewSeconds = profile.clock_skew_seconds;
-      suiteForm.suite = profile.suite ?? null;
-      suiteForm.dataAlg = profile.data_alg ?? null;
-      suiteForm.macAlg = profile.mac_alg ?? null;
-      suiteForm.allowInsecure = profile.allow_insecure === true;
-      if (
-        form.encryptionMode !== "none" &&
-        !suiteForm.suite &&
-        !suiteForm.dataAlg
-      ) {
-        suiteForm.suite = "suite/tenant-default-2026-11";
-      }
-    }
-    if (keyListResult.status === "fulfilled") {
-      keys.value = keyListResult.value.keys;
-    }
-    if (rootResult.status === "fulfilled") {
-      Object.assign(rootStatus, rootResult.value);
-    }
+    const bundle = await fetchTenantCrypto(props.tenantCode);
+    applyProfile(bundle.profile);
+    keys.value = bundle.keys;
+    licenseStatus.value = bundle.license_status;
+    cryptoActions.value = bundle.actions;
     isInitialized.value = true;
   } catch (error) {
+    // 加载失败不猜许可证态，保持 null，黄条不渲染。
+    licenseStatus.value = null;
+    cryptoActions.value = {
+      update_profile: false,
+      create_key: false,
+      rotate_key: false,
+      activate_key: false,
+      deprecate_key: false,
+      disable_key: false,
+      delete_key: false,
+      allow_insecure: false,
+      manage_root_package: false,
+    };
+    isInitialized.value = false;
     logger.error("Failed to load tenant crypto settings:", error);
   } finally {
     loading.value = false;
@@ -544,7 +581,7 @@ const showSecret = (key: TenantCryptoKeyCreateResponse) => {
 };
 
 const createKey = async () => {
-  if (!tenantCryptoEnabled.value) return;
+  if (!tenantCryptoEnabled.value || !cryptoActions.value.create_key) return;
   creating.value = true;
   try {
     showSecret(await createTenantCryptoKey(props.tenantCode));
@@ -555,7 +592,7 @@ const createKey = async () => {
 };
 
 const rotateKey = async () => {
-  if (!tenantCryptoEnabled.value) return;
+  if (!tenantCryptoEnabled.value || !cryptoActions.value.rotate_key) return;
   rotating.value = true;
   try {
     showSecret(await rotateTenantCryptoKey(props.tenantCode));
@@ -566,7 +603,9 @@ const rotateKey = async () => {
 };
 
 const setStatus = async (version: string, action: "activate" | "disable") => {
-  if (!tenantCryptoEnabled.value && action !== "disable") return;
+  if (!tenantCryptoEnabled.value) return;
+  if (action === "activate" && !cryptoActions.value.activate_key) return;
+  if (action === "disable" && !cryptoActions.value.disable_key) return;
   if (action === "activate")
     await activateTenantCryptoKey(props.tenantCode, version);
   if (action === "disable")
@@ -575,6 +614,7 @@ const setStatus = async (version: string, action: "activate" | "disable") => {
 };
 
 const handleDelete = async (version: string) => {
+  if (!tenantCryptoEnabled.value || !cryptoActions.value.delete_key) return;
   try {
     await ElMessageBox.confirm(
       $t("tenant.transportEncryption.messages.deleteKeyConfirm", { version }),
@@ -596,11 +636,8 @@ const handleDelete = async (version: string) => {
 };
 
 const saveProfile = async () => {
-  if (!tenantCryptoEnabled.value) return;
-  if (suiteForm.allowInsecure && !isSuperAdmin.value) {
-    ElMessage.error(
-      $t("tenant.transportEncryption.hints.allowInsecureAdminOnly"),
-    );
+  if (!tenantCryptoEnabled.value || !cryptoActions.value.update_profile) return;
+  if (suiteForm.allowInsecure && !cryptoActions.value.allow_insecure) {
     return;
   }
   saving.value = true;

@@ -1,8 +1,9 @@
 import type { AlertSeverity, AlertStatus } from "@/types/api/alerts";
+import { formatWallClock } from "@/utils/ops/call-filters";
 
 /** Element Plus tag type 映射：告警严重级别。 */
 export function alertSeverityTag(
-  severity: AlertSeverity,
+  severity: AlertSeverity | string,
 ): "danger" | "warning" | "info" {
   if (severity === "critical") return "danger";
   if (severity === "warning") return "warning";
@@ -11,25 +12,60 @@ export function alertSeverityTag(
 
 /** Element Plus tag type 映射：事件状态。 */
 export function alertStatusTag(
-  status: AlertStatus,
-): "danger" | "warning" | "success" {
+  status: AlertStatus | string,
+): "danger" | "warning" | "success" | "info" {
   if (status === "firing") return "danger";
   if (status === "acked") return "warning";
-  return "success";
+  if (status === "resolved") return "success";
+  return "info";
 }
 
 /** 时间线节点颜色：已恢复优先，否则按严重级别。 */
 export function alertTimelineType(
-  status: AlertStatus,
-  severity: AlertSeverity,
-): "success" | "danger" | "warning" {
+  status: AlertStatus | string,
+  severity: AlertSeverity | string,
+): "success" | "danger" | "warning" | "info" {
   if (status === "resolved") return "success";
-  return severity === "critical" ? "danger" : "warning";
+  if (severity === "critical") return "danger";
+  if (severity === "warning") return "warning";
+  return "info";
 }
 
-export function formatAlertTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
+/**
+ * 把 ISO8601 / epoch 秒·毫秒·微秒·纳秒规范成 Asia/Shanghai 墙钟短格式。
+ * 禁止把原始毫秒数字直接 toString 甩给 UI。
+ */
+export function formatAlertTime(
+  value: string | number | null | undefined,
+): string {
+  if (value == null || value === "") return "—";
+  const ms = coerceToEpochMs(value);
+  if (ms == null) return "—";
+  return formatWallClock(ms);
+}
+
+function coerceToEpochMs(value: string | number): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return normalizeEpochToMs(value);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return null;
+    return normalizeEpochToMs(n);
+  }
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeEpochToMs(n: number): number {
+  const abs = Math.abs(n);
+  if (abs >= 1e18) return Math.trunc(n / 1e6); // ns → ms
+  if (abs >= 1e14) return Math.trunc(n / 1e3); // µs → ms
+  if (abs >= 1e11) return Math.trunc(n); // already ms
+  return Math.trunc(n * 1000); // s → ms
 }
 
 export function formatAlertValue(value: number): string {
@@ -49,11 +85,11 @@ export function formatAlertLabels(
   return text || fallback;
 }
 
-/** 静默/抑制 matchers 展示；空视为匹配全部。 */
+/** 静默/抑制 matchers 展示；空视为匹配全部（中文主文案）。 */
 export function formatAlertMatchers(
   matchers: Record<string, string> | null | undefined,
 ): string {
-  return formatAlertLabels(matchers, "(all)");
+  return formatAlertLabels(matchers, "全部");
 }
 
 /**
@@ -93,4 +129,22 @@ export const ALERT_EMAIL_PATTERN =
 
 export function isValidAlertEmail(email: string): boolean {
   return ALERT_EMAIL_PATTERN.test(email);
+}
+
+/**
+ * 已知状态走 i18n；未知状态走 display-labels（再回落原文）。
+ */
+/**
+ * 已知键走 i18n；未知回落原文。
+ * 面板层可再包 `getStatusLabel`（display-labels）做通用状态中文兜底。
+ */
+export function resolveAlertI18nLabel(
+  prefix: "ops.alerts.status" | "ops.alerts.severity",
+  value: string,
+  translate: (key: string) => string,
+  hasKey: (key: string) => boolean,
+): string {
+  const key = `${prefix}.${value}`;
+  if (hasKey(key)) return translate(key);
+  return value;
 }

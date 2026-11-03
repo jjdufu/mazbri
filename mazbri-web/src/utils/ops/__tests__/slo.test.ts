@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildSloTableColumns,
   formatBudgetRemaining,
+  formatSloTimestamp,
   hasSlimErrorBudget,
   hasSloBudgetData,
   mergeSloBudgetRows,
@@ -67,4 +68,10 @@ describe("slo helpers", () => {
     assert.equal(formatBudgetRemaining(0.8123), "81.23%");
     assert.equal(formatBudgetRemaining(null), "—");
   });
+});
+
+it("formatSloTimestamp never returns raw epoch ms", () => {
+  const out = formatSloTimestamp("2026-11-03T10:45:00.000Z");
+  assert.equal(out, "2026-11-03 18:45:00");
+  assert.equal(formatSloTimestamp(null), null);
 });

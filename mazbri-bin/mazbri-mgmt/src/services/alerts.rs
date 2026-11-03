@@ -84,6 +84,10 @@ pub struct EventListQuery {
     pub page: Option<u32>,
     #[serde(default)]
     pub page_size: Option<u32>,
+    /// 默认 false：业务列表剔除 `labels.seed`（dev19-mock 等演示种子）。
+    /// 仅超级管理员诊断可在 handler 层置 true。
+    #[serde(default)]
+    pub include_seed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,10 +505,12 @@ pub async fn list_events(
     }
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(20).clamp(1, MAX_PAGE_SIZE);
+    // include_seed=false 时剔除 labels 含 seed 键的演示/脏数据事件。
     let filter = "($1::text IS NULL OR e.status = $1 OR ($1 = 'active' AND e.status IN ('firing', 'acked'))) \
          AND ($2::text IS NULL OR e.severity = $2) \
          AND ($3::uuid IS NULL OR e.rule_id = $3) \
-         AND ($4::uuid IS NULL OR e.id = $4)";
+         AND ($4::uuid IS NULL OR e.id = $4) \
+         AND ($5::bool OR NOT (COALESCE(e.labels, '{}'::jsonb) ? 'seed'))";
     let total: i64 = sqlx::query(&format!(
         "SELECT count(*) AS total FROM alert_events e WHERE {filter}"
     ))
@@ -512,17 +518,19 @@ pub async fn list_events(
     .bind(query.severity.as_deref())
     .bind(query.rule_id)
     .bind(query.event_id)
+    .bind(query.include_seed)
     .fetch_one(pool)
     .await?
     .try_get("total")?;
     let rows = sqlx::query(&format!(
         "SELECT {EVENT_COLUMNS} FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id \
-         WHERE {filter} ORDER BY e.started_at DESC, e.id LIMIT $5 OFFSET $6"
+         WHERE {filter} ORDER BY e.started_at DESC, e.id LIMIT $6 OFFSET $7"
     ))
     .bind(query.status.as_deref())
     .bind(query.severity.as_deref())
     .bind(query.rule_id)
     .bind(query.event_id)
+    .bind(query.include_seed)
     .bind(i64::from(page_size))
     .bind(i64::from(page - 1) * i64::from(page_size))
     .fetch_all(pool)
@@ -606,13 +614,9 @@ pub async fn assign_event(
 ///
 /// 数据库失败时返回错误。
 pub async fn summary(pool: &PgPool) -> Result<AlertSummary, AlertError> {
+    // 概览与列表默认路径一致：永远不把 seed 演示事件计入 KPI。
     let row = sqlx::query(
-        "SELECT count(*) FILTER (WHERE status = 'firing') AS firing, \
-                count(*) FILTER (WHERE status = 'acked') AS acked, \
-                count(*) FILTER (WHERE severity = 'critical') AS critical, \
-                count(*) FILTER (WHERE severity = 'warning') AS warning, \
-                count(*) FILTER (WHERE severity = 'info') AS info \
-         FROM alert_events WHERE status IN ('firing', 'acked')",
+        "SELECT count(*) FILTER (WHERE status = 'firing') AS firing,                 count(*) FILTER (WHERE status = 'acked') AS acked,                 count(*) FILTER (WHERE severity = 'critical') AS critical,                 count(*) FILTER (WHERE severity = 'warning') AS warning,                 count(*) FILTER (WHERE severity = 'info') AS info          FROM alert_events          WHERE status IN ('firing', 'acked')            AND NOT (COALESCE(labels, '{}'::jsonb) ? 'seed')",
     )
     .fetch_one(pool)
     .await?;
@@ -741,5 +745,20 @@ mod tests {
         assert!(serde_json::from_value::<AlertRuleInput>(raw).is_err());
         let raw = serde_json::json!({"status": "firing", "q": "x"});
         assert!(serde_json::from_value::<EventListQuery>(raw).is_err());
+    }
+
+    #[test]
+    fn event_list_include_seed_defaults_false() {
+        let q: EventListQuery = serde_json::from_value(serde_json::json!({
+            "status": "firing"
+        }))
+        .expect("query");
+        assert!(!q.include_seed);
+        let q: EventListQuery = serde_json::from_value(serde_json::json!({
+            "include_seed": true
+        }))
+        .expect("query");
+        assert!(q.include_seed);
+        assert!(!EventListQuery::default().include_seed);
     }
 }

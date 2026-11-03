@@ -1,9 +1,18 @@
 <template>
-  <div ref="chartRef" v-loading="loading" class="ops-multi-series-chart"></div>
+  <div v-loading="loading" class="ops-multi-series-chart">
+    <div
+      v-if="!loading && isEmpty"
+      class="ops-multi-series-chart__empty"
+    >
+      {{ emptyText }}
+    </div>
+    <div v-show="!isEmpty" ref="chartRef" class="ops-multi-series-chart__canvas"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import type { MetricSeries } from "@/types/api/monitoring";
 import {
@@ -44,9 +53,18 @@ const props = withDefaults(
   },
 );
 
+const { t } = useI18n();
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let unbindResize: (() => void) | null = null;
+
+const pointCount = computed(() => {
+  const seriesList = props.series?.series ?? [];
+  return seriesList.reduce((sum, s) => sum + (s.points?.length ?? 0), 0);
+});
+const isEmpty = computed(() => pointCount.value === 0);
+const fewPoints = computed(() => pointCount.value > 0 && pointCount.value <= 2);
+const emptyText = computed(() => t("ops.charts.empty"));
 
 function buildOption(data: MetricSeries | null): EChartsOption {
   const seriesList = data?.series ?? [];
@@ -56,6 +74,7 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       .join(" / ");
     return label || `${data?.label || data?.metric || "series"}#${i + 1}`;
   });
+  const sparse = fewPoints.value;
   return {
     tooltip: { trigger: "axis" },
     legend: { data: legend, type: "scroll", top: 0 },
@@ -73,15 +92,18 @@ function buildOption(data: MetricSeries | null): EChartsOption {
     yAxis: {
       type: "value",
       name: data?.unit || "",
-      scale: true,
+      // 单点/稀点禁止 scale 夸张放大；固定从 0 起。
+      min: 0,
+      scale: false,
       axisLabel: { hideOverlap: true },
     },
     series: seriesList.map((s, i) => {
       const base: Record<string, unknown> = {
         name: legend[i],
         type: "line",
-        showSymbol: false,
-        smooth: true,
+        showSymbol: sparse,
+        symbolSize: sparse ? 8 : 4,
+        smooth: !sparse,
         data: (s.points || []).map((p) => [p.timestamp * 1000, p.value]),
       };
       if (i === 0 && (props.annotations?.length ?? 0) > 0) {
@@ -142,6 +164,12 @@ function ensureChart() {
 }
 
 function render() {
+  if (isEmpty.value) {
+    if (chart) {
+      chart.clear();
+    }
+    return;
+  }
   const instance = ensureChart();
   if (!instance) return;
   instance.setOption(buildOption(props.series), true);
@@ -159,7 +187,7 @@ onUnmounted(() => {
 });
 
 watch(
-  () => props.series,
+  () => [props.series, isEmpty.value] as const,
   () => render(),
   { deep: true },
 );
@@ -167,9 +195,23 @@ watch(
 
 <style scoped>
 .ops-multi-series-chart {
+  position: relative;
   width: 100%;
   height: v-bind(height);
   min-height: 200px;
   overflow: hidden;
+}
+.ops-multi-series-chart__canvas {
+  width: 100%;
+  height: 100%;
+}
+.ops-multi-series-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 </style>

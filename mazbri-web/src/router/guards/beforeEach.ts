@@ -207,17 +207,15 @@ async function handleDynamicRoutes(
     }
     if (!hasPermission) {
       closeLoading();
-      logger.warn("[RouteGuard] User lacks permission; redirected to home", {
+      logger.warn("[RouteGuard] User lacks permission; redirected to 403", {
         service: "mazbri-mgmt-web",
         event: "route_guard_permission_denied",
         severity: "warn",
         error_code: ErrorCodes.PERMISSION_DENIED,
         path: to.path,
+        fallback: validatedPath,
       });
-      next({
-        path: validatedPath,
-        replace: true,
-      });
+      next({ name: "Exception403", replace: true });
     } else {
       next({
         path: to.path,
@@ -329,14 +327,14 @@ function handleResolvedRoute(
     return;
   }
   if (to.matched.length > 0) {
-    const { hasPermission, path: safePath } =
-      RoutePermissionValidator.validatePath(
-        to.path,
-        menuStore.menuList,
-        homePath.value || "/",
-      );
+    const { hasPermission } = RoutePermissionValidator.validatePath(
+      to.path,
+      menuStore.menuList,
+      homePath.value || "/",
+    );
     if (!hasPermission) {
-      next({ path: safePath, replace: true });
+      // 角色不匹配统一进 403 页，禁止静默回首页造成空白叠层。
+      next({ name: "Exception403", replace: true });
       return;
     }
     setWorktab(to);
@@ -344,14 +342,14 @@ function handleResolvedRoute(
     next();
     return;
   }
-  // 未注册动态路由：若菜单权限也不允许，回 home，避免无权限页落到 404。
-  const { hasPermission, path: safePath } = RoutePermissionValidator.validatePath(
+  // 未注册动态路由：若菜单权限也不允许，进 403（而非回首页叠层或误进 404）。
+  const { hasPermission } = RoutePermissionValidator.validatePath(
     to.path,
     menuStore.menuList,
     homePath.value || "/",
   );
-  if (!hasPermission && safePath && safePath !== to.path) {
-    next({ path: safePath, replace: true });
+  if (!hasPermission) {
+    next({ name: "Exception403", replace: true });
     return;
   }
   next({ name: "Exception404" });

@@ -9,7 +9,7 @@
         </template>
         <template #actions>
           <ElButton
-            v-roles="['R_ADMIN', 'R_FINANCE']"
+            v-roles="ROLES_BIZ"
             :loading="saving"
             type="primary"
             @click="handleSave"
@@ -29,7 +29,7 @@
             <span>{{ $t("tenant.cachePolicy.fields.enabled") }}</span>
           </div>
           <CommonSwitchRow>
-            <ElSwitch v-model="form.enabled" />
+            <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
             <span class="switch-text ml-2">
               {{
                 form.enabled
@@ -45,7 +45,7 @@
             <span>{{ $t("tenant.cachePolicy.fields.isolated") }}</span>
           </div>
           <CommonSwitchRow>
-            <ElSwitch v-model="form.tenant_isolated" :disabled="!form.enabled" />
+            <ElSwitch v-model="form.tenant_isolated" :disabled="!form.enabled || !canWriteBusiness" />
             <span class="switch-text ml-2">
               {{
                 form.tenant_isolated
@@ -64,7 +64,7 @@
                 <span>{{ $t("tenant.cachePolicy.fields.ttl") }}</span>
               </div>
               <div class="form-row-content">
-                <ElInputNumber v-model="form.default_ttl" :min="0" />
+                <ElInputNumber v-model="form.default_ttl" :min="0" :disabled="!canWriteBusiness" />
               </div>
             </div>
             <div class="form-row-item">
@@ -72,7 +72,7 @@
                 <span>{{ $t("tenant.cachePolicy.fields.maxSize") }}</span>
               </div>
               <div class="form-row-content">
-                <ElInputNumber v-model="form.max_cache_size" :min="0" />
+                <ElInputNumber v-model="form.max_cache_size" :min="0" :disabled="!canWriteBusiness" />
               </div>
             </div>
           </div>
@@ -84,7 +84,7 @@
               $t("tenant.cachePolicy.warmupList")
             }}</span>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="primary"
               @click="addWarmupKey"
@@ -106,12 +106,13 @@
               <ElInput
                 v-model="row.key"
                 :placeholder="$t('tenant.cachePolicy.fields.warmupKeys')"
+                :disabled="!canWriteBusiness"
               />
             </template>
             <template #operations="{ $index }">
               <TableActionRow>
                 <ElButton
-                  v-roles="['R_ADMIN', 'R_FINANCE']"
+                  v-roles="ROLES_BIZ"
                   link
                   type="danger"
                   @click="removeWarmupKey($index)"
@@ -129,7 +130,7 @@
               $t("tenant.cachePolicy.apiOverrides")
             }}</span>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="primary"
               @click="addOverride"
@@ -151,10 +152,11 @@
               <ElInput
                 v-model="row.path"
                 :placeholder="$t('tenant.cachePolicy.apiPathPlaceholder')"
+                :disabled="!canWriteBusiness"
               />
             </template>
             <template #ttl="{ row }">
-              <ElInputNumber v-model="row.ttl" :min="0">
+              <ElInputNumber v-model="row.ttl" :min="0" :disabled="!canWriteBusiness">
                 <template #suffix>{{
                   $t("tenant.cachePolicy.seconds")
                 }}</template>
@@ -163,7 +165,7 @@
             <template #operations="{ $index }">
               <TableActionRow>
                 <ElButton
-                  v-roles="['R_ADMIN', 'R_FINANCE']"
+                  v-roles="ROLES_BIZ"
                   link
                   type="danger"
                   @click="removeOverride($index)"
@@ -185,6 +187,7 @@ import type { TenantCacheConfig } from "@/types/api/tenant";
 import { fetchTenantCacheConfig, updateTenantCacheConfig } from "@/api/tenant";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { useUserStore } from "@/store/modules/user";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { logger } from "@/utils/sys";
 import { $t } from "@/locales";
 import type { ColumnOption } from "@/types/component";

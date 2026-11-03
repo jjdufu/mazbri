@@ -69,6 +69,8 @@ export interface AlertEventQuery {
   event_id?: string;
   page?: number;
   page_size?: number;
+  /** 默认 false；仅超管诊断可 true。业务页不要传。 */
+  include_seed?: boolean;
 }
 
 export interface AlertEventPage {

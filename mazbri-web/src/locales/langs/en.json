@@ -105,6 +105,11 @@
     "errors": {
       "componentNotFound": "Component not found: {componentPath}"
     },
+    "chunkHardRefresh": {
+      "title": "Management UI updated",
+      "message": "Static assets for the management UI have been updated (this page’s scripts are stale). Hard-refresh to load the latest build; otherwise the UI may go blank or misbehave.",
+      "confirm": "Hard refresh"
+    },
     "languages": {
       "zh": "Simplified Chinese",
       "en": "English"
@@ -270,7 +275,8 @@
       "valid": "Valid",
       "expiringSoon": "Expiring Soon",
       "expired": "Expired",
-      "revoked": "Revoked"
+      "revoked": "Revoked",
+      "closed": "Closed"
     },
     "roleLabels": {
       "admin": "Super Administrator",
@@ -354,7 +360,13 @@
     "edit": "Edit",
     "success": "Success",
     "failed": "Failed",
-    "confirmDelete": "Delete?"
+    "confirmDelete": "Delete?",
+    "severityLabels": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Info"
+    },
+    "copyId": "Copy ID"
   },
   "config": {
     "globalComponents": {
@@ -1383,7 +1395,7 @@
       "userLogout": "Logout",
       "userUpdate": "Update User",
       "userDelete": "Delete User",
-      "userSettingsUpdate": "Update User Settings",
+      "userSettingsUpdate": "Update User Profile Settings",
       "quotaUpdate": "Update Quota Config",
       "planChange": "Change Plan",
       "productGrant": "Grant Product",
@@ -1482,7 +1494,7 @@
       "tenantRequestKeyCreate": "Create Request Signing Key",
       "tenantRequestKeyRetire": "Retire Request Signing Key",
       "tenantRequestKeyList": "View Request Signing Keys",
-      "tenantCryptoKeyList": "View Tenant Crypto Keys",
+      "tenantCryptoKeyList": "View Tenant Transport Encryption",
       "tenantEnabledChange": "Enable/Disable Tenant",
       "apikeyList": "View API Keys",
       "certificateViewFull": "View Full Certificate",
@@ -2762,8 +2774,11 @@
       "periodRangeComplete": "Please select a complete date range"
     },
     "empty": {
-      "noMatch": "No bills matched the filters",
-      "noData": "No bills"
+      "noMatch": "No bills match the current filters",
+      "noData": "No bills yet",
+      "filteredEmpty": "No results for the current filters",
+      "pendingGeneration": "Unbilled usage exists; bill generation has not been triggered",
+      "noBillingCycle": "No tenant billing cycle or billable usage yet"
     },
     "deleteConfirm": {
       "title": "Delete Bill",
@@ -2982,7 +2997,8 @@
         "refundAmountRequired": "Please enter a refund amount",
         "refundAmountPositive": "Refund amount must be greater than 0",
         "refundReasonRequired": "Please enter a refund reason"
-      }
+      },
+      "windowSpend": "Window spend (finance SSOT)"
     },
     "createDialog": {
       "placeholders": {
@@ -3194,12 +3210,12 @@
       "calls": "Calls",
       "successRate": "Success rate",
       "p95": "P95",
-      "cost": "Spend",
       "health": "Health score",
       "errors": "Errors",
       "errorCode": "Error code",
       "count": "Count",
-      "loadFailed": "Failed to load tenant 360"
+      "loadFailed": "Failed to load tenant 360",
+      "tenantSpend": "Window spend"
     }
   },
   "rateLimit": {
@@ -4224,7 +4240,7 @@
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
-      "timeRangeHint": "KPI cards are near-instant; the time range applies to charts, platform stats, and product TopN",
+      "timeRangeHint": "Default window is 6 hours (your choice is never silently overwritten). KPI cards are near-instant (~60s); the picker only drives charts, platform stats, and product TopN.",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "Oldest pending {age} s",
       "stats": {
@@ -4277,7 +4293,9 @@
         "redis": "Redis",
         "pipeline": "Pipeline freshness",
         "hostCpu": "Host CPU"
-      }
+      },
+      "noSampleHint": "No samples in the instant window",
+      "instantWindowHint": "Near-instant {secs}s ({label})"
     },
     "screen": {
       "title": "Ops Screen",
@@ -4303,7 +4321,7 @@
       "exitToDashboard": "Back to overview"
     },
     "finance": {
-      "placeholder": "Finance overview will be completed in a later step",
+      "placeholder": "Finance overview",
       "revenue": "Revenue",
       "cost": "Cost",
       "margin": "Margin",
@@ -4314,14 +4332,29 @@
       "rankProduct": "By product",
       "rankSupplier": "By supplier",
       "balances": "Balances & runway",
-      "key": "Key",
+      "key": "ID",
       "tenantId": "Tenant ID",
       "available": "Available",
       "recharge": "Recharge (30d)",
       "avgSpend": "Avg daily spend (7d)",
       "daysLeft": "Days left",
       "status": "Status",
-      "loadFailed": "Failed to load finance overview"
+      "loadFailed": "Failed to load finance overview",
+      "tenantSpend": "Tenant spend",
+      "tenantName": "Tenant name",
+      "tenantCode": "Tenant code",
+      "costUnavailableTitle": "Cost not connected",
+      "costUnavailableDesc": "Upstream cost is not available for this window; margin shows as \"—\" instead of a fake 100%.",
+      "windowFallback": "Last {days} days",
+      "displayName": "Name",
+      "productName": "Product name",
+      "supplierName": "Supplier name",
+      "copyKey": "Copy ID",
+      "unnamed": "Unnamed",
+      "daysUnit": "days",
+      "statusActive": "Active",
+      "statusSuspended": "Suspended",
+      "statusClosed": "Closed"
     },
     "services": {
       "refresh": "Refresh",
@@ -4404,7 +4437,8 @@
         "value": "Value",
         "count": "Count",
         "time": "Time"
-      }
+      },
+      "noErrors": "No errors"
     },
     "upstream": {
       "exportCsv": "Export CSV",
@@ -4441,7 +4475,6 @@
       "funnel": "Billing funnel",
       "stage": "Stage",
       "count": "Count",
-      "diff": "Diff vs previous",
       "queueTrend": "Backlog by stage",
       "oldestAge": "Oldest pending age by stage",
       "failureTrend": "Charge failures by reason",
@@ -4466,7 +4499,13 @@
         "error": "Error",
         "source": "Source"
       },
-      "loadFailed": "Failed to load billing pipeline data"
+      "loadFailed": "Failed to load billing pipeline data",
+      "pipelineHealth": "Billing pipeline health",
+      "noBacklog": "No backlog: stage counts match with no failures (pass-through)",
+      "asyncFunnelHint": "Drops or failures present — interpret as a conversion funnel",
+      "stageName": "Name",
+      "ratioFromPrev": "Conversion vs previous",
+      "stageFailed": "Failed"
     },
     "calls": {
       "tabs": {
@@ -4860,6 +4899,27 @@
     "mergedShell": {
       "placeholder": "Content will move into this tab in a later step.",
       "empty": "No tabs available for the current role."
+    },
+    "charts": {
+      "empty": "No data"
+    },
+    "layout": {
+      "windowSubtitle": "Window: {label}",
+      "instantSubtitle": "Instant KPIs use a ~60s lookback; window aggregates are named in the subtitle",
+      "billingSubtitle": "Funnel and queues follow the selected window; sync pass-through has no backlog semantics",
+      "alertsSubtitle": "Events / rules / silences share one shell; writes stay role-gated",
+      "trafficSubtitle": "RED / latency / errors share the page time range and refresh"
     }
+  },
+  "layout": {
+    "forbidden": {
+      "title": "You cannot view this content",
+      "description": "Your role cannot access this block. Ask an administrator if you need write access."
+    },
+    "empty": {
+      "default": "No data",
+      "retry": "Retry"
+    },
+    "loading": "Loading…"
   }
 }

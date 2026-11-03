@@ -91,6 +91,7 @@ import type { Product } from "@/types/api/product";
 import EditDialog from "@/components/common/EditDialog.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 const props = defineProps<{
   modelValue: boolean;
 }>();
@@ -143,16 +144,22 @@ watch(selectedProduct, (val) => {
 });
 const loadOptions = async () => {
   try {
-    const [tenantRes, productRes] = await Promise.all([
+    const [tenantItems, productItems] = await Promise.all([
       runWithLoading(tenantsLoading, async () =>
-        fetchTenantList({ page_size: 1000 }),
+        fetchAllPages(async (page, pageSize) => {
+          const res = await fetchTenantList({ page, page_size: pageSize });
+          return { items: res.tenants, total: res.pagination.total };
+        }),
       ),
       runWithLoading(productsLoading, async () =>
-        fetchProductList({ page_size: 1000 }),
+        fetchAllPages(async (page, pageSize) => {
+          const res = await fetchProductList({ page, page_size: pageSize });
+          return { items: res.products, total: res.pagination.total };
+        }),
       ),
     ]);
-    tenants.value = tenantRes.tenants;
-    products.value = productRes.products;
+    tenants.value = tenantItems;
+    products.value = productItems;
   } catch (error) {
     logger.error("Failed to load options for authorization:", error);
   }

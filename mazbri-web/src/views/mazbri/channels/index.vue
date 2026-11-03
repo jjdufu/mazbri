@@ -21,16 +21,19 @@
           :filter-catalog="channelsCatalog"
           :show-import="true"
           :import-label="$t('common.actions.import')"
+          :import-roles="[...ROLES_BIZ]"
           :import-disabled="!canCreateChannel"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
           :show-primary="true"
           :primary-label="$t('channels.actions.add')"
+          :primary-roles="[...ROLES_BIZ]"
           :primary-disabled="!canCreateChannel"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
+          :delete-roles="[...ROLES_BIZ]"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -85,7 +88,12 @@
           <ElButton link type="primary" @click="handleView(row)">{{
             $t("common.actions.details")
           }}</ElButton>
-          <ElButton link type="danger" @click="handleDelete(row)">{{
+          <ElButton
+            v-roles="ROLES_BIZ"
+            link
+            type="danger"
+            @click="handleDelete(row)"
+          >{{
             $t("common.actions.delete")
           }}</ElButton>
         </TableActionRow>
@@ -169,6 +177,8 @@
 </template>
 
 <script setup lang="ts">
+import { ROLES_BIZ } from "@/utils/ops/roles";
+import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import {
   ElMessage,
   ElMessageBox,
@@ -571,16 +581,24 @@ const resolveSupplier = (supplierCode: string) =>
   suppliers.value.find((item) => item.supplier_code === supplierCode);
 const loadSuppliers = async () => {
   try {
-    const res = await fetchSuppliers({ status: "active", page_size: 10000 });
-    suppliers.value = res.suppliers;
+    suppliers.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchSuppliers({
+        status: "active",
+        page,
+        page_size: pageSize,
+      });
+      return { items: res.suppliers, total: res.pagination.total };
+    });
   } catch {
     suppliers.value = [];
   }
 };
 const loadChannelImportRows = async () => {
   try {
-    const res = await fetchChannels({ page_size: 10000 });
-    channelImportRows.value = res.channels;
+    channelImportRows.value = await fetchAllPages(async (page, pageSize) => {
+      const res = await fetchChannels({ page, page_size: pageSize });
+      return { items: res.channels, total: res.pagination.total };
+    });
   } catch {
     channelImportRows.value = tableData.value;
   }

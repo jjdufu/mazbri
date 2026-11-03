@@ -1,4 +1,4 @@
-import type { ISODateString, DecimalString } from "./common";
+import type { ISODateString, DecimalString, ListPagination } from "./common";
 export interface Tenant {
   tenant_code: string;
   tenant_id: string;
@@ -96,14 +96,12 @@ export interface Transaction {
 }
 export interface TransactionListQuery {
   page?: number;
-  limit?: number;
+  page_size?: number;
   transaction_type?: "credit" | "refund" | "charge" | "adjustment" | "payment";
 }
 export interface TransactionListResponse {
   transactions: Transaction[];
-  total: number;
-  page: number;
-  limit: number;
+  pagination: ListPagination;
 }
 
 export interface ApiLimitOverride {
@@ -243,10 +241,14 @@ export interface TenantProduct {
   granted_at: ISODateString;
   updated_at?: ISODateString;
 }
+export interface TenantProductListQuery {
+  page?: number;
+  page_size?: number;
+}
 export interface TenantProductListResponse {
   tenant_id: string;
   products: TenantProduct[];
-  total: number;
+  pagination: ListPagination;
   actions?: {
     grant: boolean;
     revoke: boolean;
@@ -346,8 +348,41 @@ export interface TenantCryptoKey {
   updated_at: ISODateString;
   metadata: Record<string, unknown>;
 }
-export interface TenantCryptoKeyListResponse {
+export interface TenantCryptoActions {
+  update_profile: boolean;
+  create_key: boolean;
+  rotate_key: boolean;
+  activate_key: boolean;
+  deprecate_key: boolean;
+  disable_key: boolean;
+  delete_key: boolean;
+  allow_insecure: boolean;
+  manage_root_package: boolean;
+}
+
+/** 许可证态（与 cert decision_json / LicenseStatus 对齐，camelCase）。 */
+export interface TenantCryptoLicenseStatus {
+  status: string;
+  active: boolean;
+  issuanceAllowed: boolean;
+  decryptionAllowed: boolean;
+  sequence: number | null;
+  keyVersion: string | null;
+  customerId: string | null;
+  installationId: string | null;
+  notBefore: string | null;
+  expiresAt: string | null;
+  graceUntil: string | null;
+  secondsToExpiry: number | null;
+  secondsToGraceEnd: number | null;
+}
+
+/** GET /tenants/{code}/crypto 统一契约。 */
+export interface TenantCryptoBundle {
+  profile: TenantCryptoProfile;
   keys: TenantCryptoKey[];
+  license_status: TenantCryptoLicenseStatus;
+  actions: TenantCryptoActions;
 }
 export interface TenantCryptoKeyCreateResponse {
   keyVersion: string;

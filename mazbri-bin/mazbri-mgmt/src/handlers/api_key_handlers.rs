@@ -63,7 +63,13 @@ pub async fn list_api_keys(
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
-    let data = svc::list_api_keys(&state.db, &state.auth_db, &code).await?;
+    let data = svc::list_api_keys(
+        &state.db,
+        &state.auth_db,
+        &code,
+        can_manage_tenants(&claims),
+    )
+    .await?;
     Ok(ApiResponse::ok(data))
 }
 /// # Errors

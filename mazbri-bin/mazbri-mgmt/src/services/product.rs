@@ -1,7 +1,7 @@
 use crate::audit::{AuditAction, AuditResourceType, AuditService, create_audit_log, tenant_audit};
 use crate::handlers::product::{
-    RechargeRequest, RefundRequest, RefundResponse, Transaction, TransactionListQuery,
-    TransactionListResponse,
+    RechargeRequest, RefundRequest, RefundResponse, Transaction, TransactionListPagination,
+    TransactionListQuery, TransactionListResponse,
 };
 use crate::handlers::types::ListParams;
 use crate::repositories::product as repo;
@@ -532,6 +532,7 @@ pub async fn list_tenant_products(
     product_service: &mazbri_product::ProductService,
     tenant_id: uuid::Uuid,
     params: &ListParams,
+    can_write: bool,
 ) -> axum::response::Response {
     match product_service.list_tenant_products(tenant_id).await {
         Ok(products) => {
@@ -557,7 +558,7 @@ pub async fn list_tenant_products(
             crate::response::ApiResponse::ok(serde_json::json!(
                 { "products" : page, "pagination" : { "page" : params.page,
                 "page_size" : page_size, "total" : total, "total_pages" :
-                total_pages, }, "actions" : { "grant" : true, "revoke" : true } }
+                total_pages, }, "actions" : { "grant" : can_write, "revoke" : can_write } }
             ))
             .into_response()
         }
@@ -572,6 +573,7 @@ pub async fn get_tenant_account(
     billing_db: &PgPool,
     tenant_id: uuid::Uuid,
     id_or_code: &str,
+    can_write: bool,
 ) -> axum::response::Response {
     if !repo::tenant_exists(db, tenant_id).await {
         return crate::response::ApiResponse::err(
@@ -595,13 +597,13 @@ pub async fn get_tenant_account(
         .unwrap_or_else(|| ("UNKNOWN".to_string(), "UNKNOWN".to_string()));
     match repo::get_tenant_account(billing_db, tenant_id).await {
         Ok(Some(account)) => {
-            let can_refund = account.balance > Decimal::ZERO;
-            account_response(&account, &tenant_code, &tenant_id_str, can_refund)
+            let can_refund = can_write && account.balance > Decimal::ZERO;
+            account_response(&account, &tenant_code, &tenant_id_str, can_write, can_refund)
         }
         Ok(None) => match repo::create_tenant_account(billing_db, tenant_id).await {
             Ok(account) => {
-                let can_refund = account.balance > Decimal::ZERO;
-                account_response(&account, &tenant_code, &tenant_id_str, can_refund)
+                let can_refund = can_write && account.balance > Decimal::ZERO;
+                account_response(&account, &tenant_code, &tenant_id_str, can_write, can_refund)
             }
             Err(e) => crate::response::ApiResponse::err(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -824,22 +826,25 @@ pub async fn list_tenant_transactions(
             "Transaction type must be one of: credit, refund, charge, adjustment, payment",
         );
     }
-    let limit = query.limit.clamp(1, 100);
+    let page = if query.page == 0 { 1 } else { query.page };
+    let page_size = query
+        .page_size
+        .clamp(1, crate::handlers::types::MAX_PAGE_SIZE);
     match repo::get_tenant_transactions(
         billing_db,
         tenant_id,
-        i32::saturating_from(query.page),
-        i32::saturating_from(limit),
+        i32::saturating_from(page),
+        i32::saturating_from(page_size),
         &query.transaction_type,
     )
     .await
     {
         Ok(rows) => {
             let mut transactions = Vec::new();
-            let mut total = 0i64;
+            let mut total = 0u64;
             for row in &rows {
                 if total == 0 {
-                    total = row.total_count;
+                    total = u64::try_from(row.total_count.max(0)).unwrap_or(0);
                 }
                 transactions.push(Transaction {
                     id: row.id,
@@ -854,11 +859,23 @@ pub async fn list_tenant_transactions(
                     created_at: row.created_at,
                 });
             }
+            let total_pages = if total == 0 {
+                0
+            } else {
+                mazbri_core::num::f64_to_u64(
+                    (mazbri_core::num::u64_to_f64(total)
+                        / mazbri_core::num::u64_to_f64(u64::from(page_size)))
+                    .ceil(),
+                )
+            };
             let response_json = match serde_json::to_value(TransactionListResponse {
                 transactions,
-                total,
-                page: query.page,
-                limit,
+                pagination: TransactionListPagination {
+                    page,
+                    page_size,
+                    total,
+                    total_pages,
+                },
             }) {
                 Ok(v) => v,
                 Err(e) => {
@@ -881,6 +898,7 @@ fn account_response(
     account: &repo::TenantAccountRow,
     tenant_code: &str,
     tenant_id_str: &str,
+    can_recharge: bool,
     can_refund: bool,
 ) -> axum::response::Response {
     crate::response::ApiResponse::ok(serde_json::json!(
@@ -890,7 +908,7 @@ fn account_response(
         .to_string(), "status" : account.status, "credit_tier" : account
         .credit_tier, "billing_cycle" : account.billing_cycle, "created_at" :
         account.created_at, "updated_at" : account.updated_at, "actions" : {
-        "recharge" : true, "refund" : can_refund } }
+        "recharge" : can_recharge, "refund" : can_refund } }
     ))
     .into_response()
 }

@@ -14,22 +14,10 @@ import { API_BASE_PATH, API_PATHS } from "@/config/api";
 import { normalizeUpstreamUrlInput } from "@/utils";
 const BASE_PATH = `${API_BASE_PATH}${API_PATHS.PRODUCTS}`;
 const AUTH_BASE_PATH = `${API_BASE_PATH}${API_PATHS.AUTHORIZATIONS}`;
-function normalizeProductListQuery(params?: ProductListQuery) {
-  if (!params) return undefined;
-  const { limit, page_size, ...rest } = params;
-  return {
-    ...rest,
-    ...(typeof page_size === "number"
-      ? { page_size }
-      : typeof limit === "number"
-        ? { page_size: limit }
-        : {}),
-  };
-}
 export function fetchProductList(params?: ProductListQuery) {
   return request.get<ProductListResponse>({
     url: BASE_PATH,
-    params: normalizeProductListQuery(params),
+    params,
   });
 }
 export function fetchProductById(id: string) {

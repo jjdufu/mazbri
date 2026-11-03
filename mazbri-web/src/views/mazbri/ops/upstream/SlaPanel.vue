@@ -37,12 +37,18 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import { toOlapRange } from "@/composables/ops/useOlapRange";
+import {
+  toOlapWindow,
+  toOpsRange,
+  windowEndingAt,
+  type OlapWindow,
+} from "@/composables/ops/useOlapRange";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import { fetchSupplierCosts } from "@/api/billing-ops";
 import { useUserStore } from "@/store/modules/user";
-import type { OlapRange, SlaRow } from "@/types/api/olap";
+import type { SlaRow } from "@/types/api/olap";
+import type { OpsRange } from "@/types/api/billing-ops";
 import type { SupplierCostRow } from "@/types/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
 
@@ -115,10 +121,10 @@ function toTableRows(rows: SlaRow[], costs: SupplierCostRow[]): SlaTableRow[] {
   });
 }
 
-async function load(range: OlapRange) {
+async function load(window: OlapWindow, opsRange: OpsRange) {
   const [sla, costs] = await Promise.all([
-    postOlapQuery<SlaRow>({ template: "supplier_sla", params: { range } }),
-    canSeeCost.value ? fetchSupplierCosts(range) : Promise.resolve([]),
+    postOlapQuery<SlaRow>({ template: "supplier_sla", params: { ...window } }),
+    canSeeCost.value ? fetchSupplierCosts(opsRange) : Promise.resolve([]),
   ]);
   return toTableRows(sla.rows ?? [], costs ?? []);
 }
@@ -165,10 +171,19 @@ function csvCell(value: string | number) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-async function exportCsv(range: OlapRange) {
+async function exportCsv(range: OpsRange) {
   exporting.value = true;
   try {
-    const rows = await load(range);
+    const end = Math.floor(Date.now() / 1000);
+    const secs: Record<OpsRange, number> = {
+      "15m": 900,
+      "1h": 3600,
+      "6h": 6 * 3600,
+      "24h": 86400,
+      "7d": 7 * 86400,
+      "30d": 30 * 86400,
+    };
+    const rows = await load(windowEndingAt(end, secs[range]), range);
     const header = [
       "supplier_code",
       "channel_code",
@@ -216,7 +231,10 @@ async function exportCsv(range: OlapRange) {
 async function reload() {
   loading.value = true;
   try {
-    tableRows.value = await load(toOlapRange(timeRange.value));
+    tableRows.value = await load(
+      toOlapWindow(timeRange.value),
+      toOpsRange(timeRange.value),
+    );
   } catch {
     ElMessage.error(t("ops.upstream.loadFailed"));
   } finally {

@@ -26,7 +26,7 @@ export const OPS_SHARED_RANGE_KEY: InjectionKey<OpsSharedRange> =
  * 禁止各 Tab 再各自维护一套 range。
  */
 export function provideOpsSharedRange(
-  initialPreset: Parameters<typeof defaultTimeRange>[0] = "1h",
+  initialPreset: Parameters<typeof defaultTimeRange>[0] = "6h",
   initialRefreshSeconds = 60,
 ): OpsSharedRange {
   const timeRange = ref<TimeRangeValue>(defaultTimeRange(initialPreset));

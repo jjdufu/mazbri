@@ -1,5 +1,6 @@
 import type { SloDefinition, SloStatusRow } from "@/api/opsReliability";
 import type { ColumnOption } from "@/types/component";
+import { formatAlertTime } from "@/utils/ops/alerts-format";
 
 /** SLO 合并行（定义 ∪ 状态）。 */
 export interface SloBudgetRow {
@@ -57,7 +58,7 @@ export function mergeSloBudgetRows(
       burn_5m: s.burn_5m ?? null,
       burn_page: s.burn_page ?? null,
       burn_ticket: s.burn_ticket ?? null,
-      ts: s.ts ?? null,
+      ts: formatSloTimestamp(s.ts),
     }));
   }
   return defs.map((d) => {
@@ -72,7 +73,7 @@ export function mergeSloBudgetRows(
       burn_5m: s?.burn_5m ?? null,
       burn_page: s?.burn_page ?? null,
       burn_ticket: s?.burn_ticket ?? null,
-      ts: s?.ts ?? null,
+      ts: formatSloTimestamp(s?.ts),
     };
   });
 }
@@ -125,6 +126,15 @@ export function buildSloTableColumns(
       minWidth: d.minWidth,
     }),
   );
+}
+
+/** SLO 采样时间：ISO / epoch → Asia/Shanghai 墙钟；禁止透传原始 ms。 */
+export function formatSloTimestamp(
+  value: string | number | null | undefined,
+): string | null {
+  if (value == null || value === "") return null;
+  const formatted = formatAlertTime(value);
+  return formatted === "—" ? null : formatted;
 }
 
 /** 剩余预算展示为百分比文案；null → — */

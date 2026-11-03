@@ -1,12 +1,17 @@
 <template>
   <div class="ops-page">
     <div
-      v-if="title || $slots.title || $slots.actions"
+      v-if="title || $slots.title || subtitle || $slots.subtitle || $slots.actions"
       class="ops-page__toolbar"
     >
-      <h2 v-if="title || $slots.title" class="ops-page__title">
-        <slot name="title">{{ title }}</slot>
-      </h2>
+      <div class="ops-page__heading">
+        <h2 v-if="title || $slots.title" class="ops-page__title">
+          <slot name="title">{{ title }}</slot>
+        </h2>
+        <p v-if="subtitle || $slots.subtitle" class="ops-page__subtitle">
+          <slot name="subtitle">{{ subtitle }}</slot>
+        </p>
+      </div>
       <div v-if="$slots.actions" class="ops-page__actions">
         <slot name="actions" />
       </div>
@@ -17,7 +22,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: "OpsPage" });
-defineProps<{ title?: string }>();
+defineProps<{ title?: string; subtitle?: string }>();
 </script>
 
 <style scoped>
@@ -27,8 +32,8 @@ defineProps<{ title?: string }>();
 .ops-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: var(--ops-page-gap, 16px);
+  padding: var(--ops-page-padding, 16px);
   min-width: 0;
   min-height: var(--art-full-height, calc(100vh - 48px));
   box-sizing: border-box;
@@ -36,10 +41,17 @@ defineProps<{ title?: string }>();
 .ops-page__toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
+  gap: var(--ops-space-sm, 12px);
+  align-items: flex-start;
   justify-content: space-between;
   flex-shrink: 0;
+}
+.ops-page__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 .ops-page__title {
   margin: 0;
@@ -47,10 +59,18 @@ defineProps<{ title?: string }>();
   font-weight: 600;
   line-height: 1.3;
 }
+.ops-page__subtitle {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
 .ops-page__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ops-header-actions-gap, 8px);
   align-items: center;
+  flex-shrink: 0;
 }
 </style>

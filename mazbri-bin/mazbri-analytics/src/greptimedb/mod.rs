@@ -5,7 +5,7 @@ pub mod traces;
 mod types;
 pub use client::GreptimeDBClient;
 pub use metrics::{
-    MetricCatalogItem, MetricDataPoint, MetricOverview, MetricQueryParams, MetricSeries,
+    InstantKpiWindow, MetricCatalogItem, MetricDataPoint, MetricOverview, MetricQueryParams, MetricSeries,
     MetricSeriesData, ServiceHealthLight, ServiceHealthRow, ServiceMetricTarget,
     default_service_targets,
 };

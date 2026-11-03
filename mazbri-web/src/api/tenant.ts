@@ -17,6 +17,7 @@ import type {
   TenantProductConfig,
   CBProPolicyConfig,
   UpdateTenantProductConfigRequest,
+  TenantProductListQuery,
   TenantProductListResponse,
   TenantRateLimitConfig,
   TenantCacheConfig,
@@ -31,7 +32,7 @@ import type {
   RemoveFromWhitelistResponse,
   TenantCryptoProfile,
   UpdateTenantCryptoProfileRequest,
-  TenantCryptoKeyListResponse,
+  TenantCryptoBundle,
   TenantCryptoKeyCreateResponse,
   TenantCryptoKey,
 } from "@/types/api/tenant";
@@ -213,9 +214,9 @@ export function setTenantEnabled(
     signal,
   });
 }
-export function fetchTenantCryptoProfile(code: string, signal?: AbortSignal) {
-  return request.get<TenantCryptoProfile>({
-    url: `${BASE_PATH}/${code}/crypto-profile`,
+export function fetchTenantCrypto(code: string, signal?: AbortSignal) {
+  return request.get<TenantCryptoBundle>({
+    url: `${BASE_PATH}/${code}/crypto`,
     signal,
   });
 }
@@ -228,12 +229,6 @@ export function updateTenantCryptoProfile(
     url: `${BASE_PATH}/${code}/crypto-profile`,
     params: data,
     showSuccessMessage: true,
-    signal,
-  });
-}
-export function fetchTenantCryptoKeys(code: string, signal?: AbortSignal) {
-  return request.get<TenantCryptoKeyListResponse>({
-    url: `${BASE_PATH}/${code}/crypto-keys`,
     signal,
   });
 }
@@ -293,6 +288,30 @@ export function deleteTenantCryptoKey(
     url: `${BASE_PATH}/${code}/crypto-keys/${version}`,
     showSuccessMessage: true,
     signal,
+  });
+}
+export interface TenantSpend {
+  window: { start: string; end: string; semantics: string; label: string };
+  tenant_id: string;
+  tenant_code: string;
+  tenant_name: string;
+  tenant_spend: string;
+  revenue_platform: string;
+  cost_total: string;
+  cost_status: "ok" | "unavailable" | "partial";
+  margin_total: string | null;
+  margin_rate: number | null;
+}
+export function fetchTenantSpend(
+  code: string,
+  params?: { from?: string; to?: string },
+  signal?: AbortSignal,
+) {
+  return request.get<TenantSpend>({
+    url: `${BASE_PATH}/${code}/spend`,
+    params,
+    signal,
+    showErrorMessage: false,
   });
 }
 export function fetchTenantAccount(code: string, signal?: AbortSignal) {
@@ -458,24 +477,33 @@ export function updateApiKeyWarmup(
     signal,
   });
 }
-export function fetchTenantProducts(tenantCode: string, signal?: AbortSignal) {
+export function fetchTenantProducts(
+  tenantCode: string,
+  params?: TenantProductListQuery,
+  signal?: AbortSignal,
+) {
   return request
     .get<{
-      tenant_code: string;
+      tenant_code?: string;
       products: TenantProductApiItem[];
+      pagination: TenantProductListResponse["pagination"];
       actions?: TenantProductListResponse["actions"];
     }>({
       url: tenantPath(tenantCode, "products"),
+      params,
       signal,
     })
-    .then(
-      (res): TenantProductListResponse => ({
-        tenant_id: res.tenant_code,
+    .then((res): TenantProductListResponse => {
+      if (!res.pagination) {
+        throw new Error("tenant products response missing pagination");
+      }
+      return {
+        tenant_id: res.tenant_code ?? tenantCode,
         products: res.products.map(normalizeTenantProduct),
-        total: res.products.length,
+        pagination: res.pagination,
         actions: res.actions,
-      }),
-    );
+      };
+    });
 }
 export function fetchTenantProductConfig(
   tenantCode: string,

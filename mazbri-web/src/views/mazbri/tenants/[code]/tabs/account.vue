@@ -1,5 +1,5 @@
 <template>
-  <div class="account-tab">
+  <TenantTabShell>
     <ElCard
       v-loading="loading"
       shadow="never"
@@ -13,8 +13,7 @@
               <span class="account-overview-subtitle">{{
                 $t("tenant.account.overviewSubtitle")
               }}</span>
-            </div>
-          </template>
+            </div></template>
         </SurfaceCardHeader>
       </template>
 
@@ -38,6 +37,13 @@
             ·
             {{ account?.currency || "CNY" }}
           </div>
+          <div v-if="spend" class="balance-meta spend-meta">
+            {{ $t("tenant.account.windowSpend") }}
+            ·
+            {{ spend.window.label }}
+            ·
+            {{ formatBalance(spend.tenant_spend) }}
+          </div>
         </div>
 
         <CommonActionPanel
@@ -48,7 +54,7 @@
           <template #actions>
             <ElButton
               v-if="accountActions.recharge"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="primary"
               @click="handleRecharge"
             >
@@ -59,7 +65,7 @@
             </ElButton>
             <ElButton
               v-if="accountActions.refund"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               type="warning"
               @click="handleRefund"
             >
@@ -142,7 +148,7 @@
       <template #amount="{ row }">
         <span :class="['amount', getAmountClass(row.transaction_type)]">
           {{ getAmountPrefix(row.transaction_type)
-          }}{{ formatAmount(row.amount) }}
+          }}{{ formatMoney(row.amount) }}
         </span>
       </template>
       <template #balance_change="{ row }">
@@ -327,23 +333,24 @@
           v-if="refundForm.amount > currentBalance"
           block
           tone="warning"
-          class="-mt-1.5 mb-3.5"
+          class="account-inline-alert"
         >
           {{ $t("tenant.account.refundExceedsBalance") }}
         </CommonInlineHint>
         <MfaRequiredHint block />
       </ElForm>
     </EditDialog>
-  </div>
+  </TenantTabShell>
 </template>
-
 <script setup lang="ts">
+import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import {
   ElMessage,
   type FormInstance,
   type FormRules,
 } from "element-plus";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   TenantAccount,
   RechargeRequest,
@@ -353,9 +360,11 @@ import type {
 } from "@/types/api/tenant";
 import {
   fetchTenantAccount,
+  fetchTenantSpend,
   rechargeTenantAccount,
   refundTenantAccount,
   getTenantTransactions,
+  type TenantSpend,
 } from "@/api/tenant";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CommonActionPanel from "@/components/common/action-panel/index.vue";
@@ -365,7 +374,7 @@ import ResourceTableShell from "@/components/common/resource-table-shell/index.v
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { formatAmount, formatDateTime } from "@/utils/format";
+import { formatMoney, formatDateTime } from "@/utils/format";
 defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
@@ -375,19 +384,20 @@ const recharging = ref(false);
 const refunding = ref(false);
 const transactionsLoading = ref(false);
 const account = ref<TenantAccount | null>(null);
+const spend = ref<TenantSpend | null>(null);
 const accountActions = ref<{
   recharge: boolean;
   refund: boolean;
 }>({
-  recharge: true,
-  refund: true,
+  recharge: false,
+  refund: false,
 });
 const transactions = ref<Transaction[]>([]);
 const transactionsTotal = ref(0);
 const transactionFilter = ref("");
 const pagination = reactive({
   page: 1,
-  limit: 20,
+  page_size: 20,
 });
 const transactionColumns = ref<ColumnOption<Transaction>[]>([
   {
@@ -435,7 +445,7 @@ const transactionColumns = ref<ColumnOption<Transaction>[]>([
 ]);
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
-  size: pagination.limit,
+  size: pagination.page_size,
   total: transactionsTotal.value,
 }));
 const reasonCodeOptions = [
@@ -532,7 +542,7 @@ const balanceAfterRefund = computed(() => {
 });
 
 const formatBalance = (balance: string | number | null | undefined) => {
-  return formatAmount(balance);
+  return formatMoney(balance);
 };
 
 const getTransactionTypeLabel = (type: string) => {
@@ -568,8 +578,16 @@ const getPaymentMethodLabel = (method?: string) => {
 const loadAccount = async () => {
   loading.value = true;
   try {
-    const res = await fetchTenantAccount(props.tenantCode);
+    const to = new Date();
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - 29);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const [res, sp] = await Promise.all([
+      fetchTenantAccount(props.tenantCode),
+      fetchTenantSpend(props.tenantCode, { from: fmt(from), to: fmt(to) }),
+    ]);
     account.value = res;
+    spend.value = sp;
     if (res.actions) {
       accountActions.value = res.actions;
     }
@@ -584,7 +602,7 @@ const loadTransactions = async () => {
   try {
     const params: TransactionListQuery = {
       page: pagination.page,
-      limit: pagination.limit,
+      page_size: pagination.page_size,
       transaction_type:
         (transactionFilter.value as
           | "credit"
@@ -596,7 +614,7 @@ const loadTransactions = async () => {
     };
     const res = await getTenantTransactions(props.tenantCode, params);
     transactions.value = res.transactions;
-    transactionsTotal.value = res.total;
+    transactionsTotal.value = res.pagination.total;
   } catch (error) {
     logger.error("Failed to load transactions:", error);
   } finally {
@@ -608,7 +626,7 @@ const handleFilterChange = () => {
   loadTransactions();
 };
 const handlePageSizeChange = (size: number) => {
-  pagination.limit = size;
+  pagination.page_size = size;
   pagination.page = 1;
   loadTransactions();
 };
@@ -722,7 +740,7 @@ onMounted(() => {
 .balance-label {
   font-size: 14px;
   color: var(--text-color-secondary);
-  margin-bottom: 8px;
+  margin-bottom: var(--ops-space-xs, 8px);
 }
 
 .balance-amount {
@@ -745,7 +763,7 @@ onMounted(() => {
 }
 
 .balance-meta {
-  margin-top: 12px;
+  margin-top: var(--ops-space-sm, 12px);
   font-size: 13px;
   color: var(--text-color-secondary);
 }
@@ -795,13 +813,13 @@ onMounted(() => {
   }
 
   :deep(.el-table__header th.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 
   :deep(.el-table__body td.el-table__cell) {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 }
 
@@ -828,7 +846,7 @@ onMounted(() => {
 }
 
 .pagination-wrapper {
-  margin-top: 20px;
+  margin-top: var(--ops-space-lg, 20px);
   display: flex;
   justify-content: flex-end;
 }
@@ -854,7 +872,7 @@ onMounted(() => {
 }
 
 .surface-panel-pagination {
-  margin-top: 12px;
+  margin-top: var(--ops-space-sm, 12px);
 }
 
 .account-action-dialog {
@@ -890,8 +908,8 @@ onMounted(() => {
 
   :deep(.text-input .el-textarea__inner) {
     min-height: 82px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: var(--ops-space-sm, 12px);
+    padding-bottom: var(--ops-space-sm, 12px);
   }
 
   :deep(.dialog-balance-strip),
@@ -900,7 +918,7 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: var(--ops-section-gap, 16px);
     padding: 10px 12px;
     border-radius: var(--el-border-radius-small);
     background: var(--el-fill-color-light);
@@ -921,7 +939,7 @@ onMounted(() => {
   }
 
   :deep(.el-form-item) {
-    margin-bottom: 14px;
+    margin-bottom: var(--ops-section-gap, 16px);
   }
 
   :deep(.el-form-item__label) {
@@ -966,5 +984,8 @@ onMounted(() => {
       padding-right: 16px;
     }
   }
+}
+.account-inline-alert {
+  margin: calc(-1 * var(--ops-space-xs, 8px)) 0 var(--ops-space-md, 16px);
 }
 </style>

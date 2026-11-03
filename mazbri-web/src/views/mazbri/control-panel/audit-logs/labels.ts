@@ -96,6 +96,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "password.first_login_change":
     "auditLogs.explicitActions.passwordFirstLoginChange",
   "password.change": "auditLogs.explicitActions.passwordChange",
+  // /settings/user 显式资料；个人 UI 偏好不再产生此动作
   "user.settings_update": "auditLogs.explicitActions.userSettingsUpdate",
   "tenant.ratelimit_update": "auditLogs.explicitActions.tenantRateLimitUpdate",
   "tenant.ratelimit_delete": "auditLogs.explicitActions.tenantRateLimitDelete",

@@ -139,6 +139,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "@/utils/format";
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -156,6 +157,7 @@ import {
 import { listSloStatus } from "@/api/opsReliability";
 import { fetchAlertEvents } from "@/api/alerts";
 import { postOlapQuery } from "@/api/olap";
+import { presetWindow } from "@/composables/ops/useOlapRange";
 import { fetchFinanceOverview } from "@/api/billing-ops";
 import type { MetricOverview, ServiceHealthRow, TopologyGraph } from "@/types/api/monitoring";
 import type { SloStatusRow } from "@/api/opsReliability";
@@ -223,26 +225,32 @@ const todayRevenue = computed(() => {
   return day?.revenue ?? finance.value?.revenue_total ?? null;
 });
 const todayCost = computed(() => {
+  if (finance.value && finance.value.cost_status !== "ok") return null;
   const day = finance.value?.days?.at(-1);
+  if (day && day.cost_status !== "ok") return null;
   return day?.cost ?? finance.value?.cost_total ?? null;
 });
 const todayMargin = computed(() => {
+  if (finance.value && finance.value.cost_status !== "ok") return null;
   const day = finance.value?.days?.at(-1);
   return day?.margin ?? finance.value?.margin_total ?? null;
 });
 
 function fmt(n?: number | null) {
-  return new Intl.NumberFormat().format(n ?? 0);
+  if (n === null || n === undefined) return "—";
+  return new Intl.NumberFormat().format(n);
 }
 function pct(n?: number | null) {
-  return `${(n ?? 0).toFixed(2)}%`;
+  if (n === null || n === undefined) return "—";
+  return `${n.toFixed(2)}%`;
 }
 function pct01(n?: number | null) {
   if (n == null) return "-";
   return `${(n * 100).toFixed(0)}%`;
 }
 function ms(n?: number | null) {
-  return `${(n ?? 0).toFixed(1)} ms`;
+  if (n === null || n === undefined) return "—";
+  return `${n.toFixed(1)} ms`;
 }
 function money(n?: number | string | null) {
   if (n == null || n === "") return "-";
@@ -296,10 +304,11 @@ async function loadAll() {
   } catch {
     alertText.value = t("ops.screen.noData");
   }
+  const screenWindow = presetWindow("24h");
   try {
     const rank = await postOlapQuery({
       template: "product_rank",
-      params: { range: "24h", metric: "req_count", limit: 10 },
+      params: { ...screenWindow, metric: "req_count", limit: 10 },
     });
     const rows = (rank as { rows?: Record<string, unknown>[] }).rows ?? [];
     topProducts.value = rows.map((r) => ({
@@ -312,7 +321,7 @@ async function loadAll() {
   try {
     const sla = await postOlapQuery({
       template: "supplier_sla",
-      params: { range: "24h" },
+      params: { ...screenWindow },
     });
     const rows = (sla as { rows?: Record<string, unknown>[] }).rows ?? [];
     supplierWall.value = rows.slice(0, 24).map((r) => {
@@ -328,7 +337,7 @@ async function loadAll() {
   try {
     const geo = await postOlapQuery({
       template: "security_top",
-      params: { range: "24h", dim: "country", limit: 10 },
+      params: { ...screenWindow, dim: "country", limit: 10 },
     });
     const rows = (geo as { rows?: Record<string, unknown>[] }).rows ?? [];
     const max = Math.max(1, ...rows.map((r) => Number(r.fail_count ?? r.req_count ?? 0)));
@@ -450,7 +459,7 @@ async function renderTopo(start: number, end: number) {
 }
 
 function tickClock() {
-  clock.value = new Date().toLocaleString();
+  clock.value = formatDateTime(new Date());
 }
 
 function rotatePanel() {

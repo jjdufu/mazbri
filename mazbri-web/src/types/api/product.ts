@@ -18,14 +18,13 @@ export interface Product {
 export interface ProductListQuery {
   page?: number;
   page_size?: number;
-  limit?: number;
   q?: string;
 
   filters?: string;
 }
 export interface ProductListResponse {
   products: Product[];
-  pagination?: {
+  pagination: {
     page: number;
     page_size: number;
     total: number;

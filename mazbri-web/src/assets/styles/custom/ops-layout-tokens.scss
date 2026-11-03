@@ -1,0 +1,53 @@
+// 布局设计系统 token（step11）。页面禁止再写散装魔法 margin/padding/卡高。
+// 与 OpsPage overflow 规则配套：内容列只设 min-height，不设固定 height 压扁首卡。
+
+:root {
+  --ops-space-xs: 8px;
+  --ops-space-sm: 12px;
+  --ops-space-md: 16px;
+  --ops-space-lg: 20px;
+
+  --ops-page-padding: var(--ops-space-md);
+  --ops-page-gap: var(--ops-space-md);
+  --ops-section-gap: var(--ops-space-md);
+  --ops-filter-main-gap: var(--ops-space-md);
+  --ops-kpi-gutter: 16px;
+  --ops-kpi-min-height: 96px;
+  --ops-card-min-height: 180px;
+  --ops-main-chart-min-height: 240px;
+  --ops-header-actions-gap: 8px;
+}
+
+.ops-kpi-row {
+  min-width: 0;
+
+  > .el-col {
+    display: flex;
+    margin-bottom: var(--ops-space-md);
+  }
+
+  > .el-col > * {
+    width: 100%;
+    min-height: var(--ops-kpi-min-height);
+  }
+}
+
+.ops-page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap);
+  min-width: 0;
+}
+
+.ops-page-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ops-main-panel {
+  min-height: var(--ops-card-min-height);
+  min-width: 0;
+}

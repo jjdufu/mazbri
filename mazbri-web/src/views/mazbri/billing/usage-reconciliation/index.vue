@@ -9,7 +9,7 @@
       style="display: flex; flex-direction: column; flex: 1; min-height: 0"
     >
       <div
-        v-roles="['R_ADMIN', 'R_FINANCE']"
+        v-roles="ROLES_BIZ"
         v-loading="settingsLoading"
         class="usage-recon-settings"
       >
@@ -233,7 +233,7 @@
             </ElButton>
             <ElButton
               v-if="canAcknowledge(row.status)"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="warning"
               @click="openResolve(row, 'acknowledged')"
@@ -242,7 +242,7 @@
             </ElButton>
             <ElButton
               v-if="canResolve(row.status)"
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="success"
               @click="openResolve(row, 'resolved')"
@@ -250,7 +250,7 @@
               {{ $t("billing.reconciliation.resolve") }}
             </ElButton>
             <ElButton
-              v-roles="['R_ADMIN', 'R_FINANCE']"
+              v-roles="ROLES_BIZ"
               link
               type="danger"
               @click="handleDeleteRow(row)"
@@ -431,12 +431,12 @@
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.usageAmount')"
             >
-              {{ formatAmount(detailView.amount.usageBillable) }}
+              {{ formatMoney(detailView.amount.usageBillable) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.billItemsTotal')"
             >
-              {{ formatAmount(detailView.amount.billItemsTotal) }}
+              {{ formatMoney(detailView.amount.billItemsTotal) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('billing.reconciliation.detail.amountDiff')"
@@ -449,7 +449,7 @@
                     !detailView.amount.diffIsZero,
                 }"
               >
-                {{ formatAmount(detailView.amount.diff) }}
+                {{ formatMoney(detailView.amount.diff) }}
                 <template v-if="detailView.amount.diffIsZero">
                   · {{ $t("billing.reconciliation.detail.amountMatch") }}
                 </template>
@@ -565,10 +565,11 @@ import {
   type ReconciliationSettings,
 } from "@/api/billing";
 import { $t } from "@/locales";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
-import { formatAmount, formatDate } from "@/utils/format";
+import { formatMoney, formatDate } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
