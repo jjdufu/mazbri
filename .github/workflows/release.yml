@@ -276,7 +276,17 @@ jobs:
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           rustup default "$RUST_TOOLCHAIN"
 
+      - name: Runner info
+        run: |
+          echo "runner: $RUNNER_NAME ($RUNNER_OS/$RUNNER_ARCH)"
+          echo "cpus: $(nproc)"
+          free -h
+          df -h "$GITHUB_WORKSPACE"
+          rustc -vV
+          cargo -V
+
       - name: Cache cargo
+        id: cargo-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: mazbri-bin
@@ -288,10 +298,38 @@ jobs:
         working-directory: mazbri-bin
         env:
           PACKAGES: ${{ needs.plan.outputs.packages }}
+          CACHE_HIT: ${{ steps.cargo-cache.outputs.cache-hit }}
+          # 非 TTY 下也输出进度条（已完成/总数 + 正在编译的 crate）
+          CARGO_TERM_PROGRESS_WHEN: always
+          CARGO_TERM_PROGRESS_WIDTH: '120'
         run: |
           set -euo pipefail
+          echo "cache-hit: ${CACHE_HIT:-false}"
+          echo "packages: $PACKAGES"
+          # 心跳：cargo 在 crate 内部 codegen / LTO / 链接期间不输出，
+          # 每 60s 打一行负载、内存和正在运行的 rustc crate / 链接器，避免看起来像卡住
+          (
+            while sleep 60; do
+              crates="$(pgrep -a rustc | grep -o -- '--crate-name [^ ]*' | awk '{print $2}' | sort -u | paste -sd' ' || true)"
+              linkers="$(pgrep -c -x 'ld|ld.lld|ld.bfd|cc|collect2' || true)"
+              echo "[heartbeat $(date -u +%T)Z] load=$(cut -d' ' -f1-3 /proc/loadavg) mem_avail=$(awk '/MemAvailable/{printf "%dMiB",$2/1024}' /proc/meminfo) linkers=${linkers:-0} rustc=[${crates:-none}]"
+            done
+          ) &
+          hb=$!
+          trap 'kill "$hb" 2>/dev/null || true' EXIT
+          start=$(date +%s)
           # shellcheck disable=SC2086
-          cargo build --release --locked $PACKAGES
+          cargo build --release --locked --timings $PACKAGES
+          echo "cargo build took $(( $(date +%s) - start ))s"
+
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ matrix.arch }}
+          path: mazbri-bin/target/cargo-timings/cargo-timing*.html
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Collect binaries
         env:
@@ -303,6 +341,19 @@ jobs:
             cp "mazbri-bin/target/release/$b" out/${{ matrix.arch }}/
           done
           file out/${{ matrix.arch }}/*
+          ls -lh out/${{ matrix.arch }}/
+          sha256sum out/${{ matrix.arch }}/*
+          {
+            echo "### compile (${{ matrix.arch }})"
+            echo
+            echo "| binary | size | sha256 |"
+            echo "|---|---|---|"
+            for f in out/${{ matrix.arch }}/*; do
+              echo "| $(basename "$f") | $(du -h "$f" | cut -f1) | \`$(sha256sum "$f" | cut -c1-16)\` |"
+            done
+            echo
+            echo "每个 crate 的编译耗时见 artifact \`cargo-timings-${{ matrix.arch }}\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
           # runtime is debian trixie (glibc 2.41); fail early if a binary needs more
           for f in out/${{ matrix.arch }}/*; do
             need="$(objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
