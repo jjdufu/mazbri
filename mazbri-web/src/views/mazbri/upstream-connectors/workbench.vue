@@ -711,6 +711,7 @@ const configForm = ref<SupplierConfigForm>({
 });
 
 const userStore = useUserStore();
+const isSuperAdmin = computed(() => userStore.isAdmin);
 const canForcePublish = computed(() => userStore.canWriteBusiness);
 
 const gate = computed(() =>
