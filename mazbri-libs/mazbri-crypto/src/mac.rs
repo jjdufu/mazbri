@@ -1,4 +1,4 @@
-//! HMAC 原语：`hmac-sha256` / `hmac-sha384` / `hmac-sha512`。
+//! HMAC 原语：`hmac-sha256` / `hmac-sha384` / `hmac-sha512` / `hmac-sm3`。
 
 use hmac::{Hmac, Mac as HmacMac};
 use sha2::{Sha256, Sha384, Sha512};
@@ -11,6 +11,7 @@ use crate::traits::{CryptoError, Mac};
 type HmacSha256 = Hmac<Sha256>;
 type HmacSha384 = Hmac<Sha384>;
 type HmacSha512 = Hmac<Sha512>;
+type HmacSm3 = Hmac<sm3::Sm3>;
 
 /// 本步已实现的 MAC 算法句柄。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +22,8 @@ pub enum MacAlgorithm {
     HmacSha384,
     /// `hmac-sha512`
     HmacSha512,
+    /// `hmac-sm3`
+    HmacSm3,
 }
 
 impl MacAlgorithm {
@@ -34,6 +37,7 @@ impl MacAlgorithm {
             AlgorithmId::HmacSha256 => Ok(Self::HmacSha256),
             AlgorithmId::HmacSha384 => Ok(Self::HmacSha384),
             AlgorithmId::HmacSha512 => Ok(Self::HmacSha512),
+            AlgorithmId::HmacSm3 => Ok(Self::HmacSm3),
             other => Err(CryptoError::Unsupported {
                 reason: format!("not an implemented MAC: {other}"),
             }),
@@ -47,6 +51,7 @@ impl MacAlgorithm {
             Self::HmacSha256 => AlgorithmId::HmacSha256,
             Self::HmacSha384 => AlgorithmId::HmacSha384,
             Self::HmacSha512 => AlgorithmId::HmacSha512,
+            Self::HmacSm3 => AlgorithmId::HmacSm3,
         }
     }
 
@@ -54,7 +59,7 @@ impl MacAlgorithm {
     #[must_use]
     pub const fn tag_len(self) -> usize {
         match self {
-            Self::HmacSha256 => 32,
+            Self::HmacSha256 | Self::HmacSm3 => 32,
             Self::HmacSha384 => 48,
             Self::HmacSha512 => 64,
         }
@@ -87,6 +92,15 @@ impl Mac for MacAlgorithm {
                 let mut mac = <HmacSha512 as HmacMac>::new_from_slice(key_bytes).map_err(|_| {
                     CryptoError::InvalidKey {
                         reason: "hmac-sha512 key init failed".to_owned(),
+                    }
+                })?;
+                mac.update(message);
+                Ok(mac.finalize().into_bytes().to_vec())
+            }
+            Self::HmacSm3 => {
+                let mut mac = <HmacSm3 as HmacMac>::new_from_slice(key_bytes).map_err(|_| {
+                    CryptoError::InvalidKey {
+                        reason: "hmac-sm3 key init failed".to_owned(),
                     }
                 })?;
                 mac.update(message);

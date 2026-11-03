@@ -24,9 +24,24 @@ hmac = { workspace = true }
 digest = { workspace = true }
 blake3 = { workspace = true }
 subtle = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+p384 = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["alloc", "pkcs8", "pem", "zeroize"] }
+sm3 = { workspace = true }
+sm4 = { workspace = true }
+libsm = { workspace = true }
+des = { workspace = true }
+md-5 = { workspace = true }
+ecb = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+p384 = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["alloc", "pkcs8", "pem", "zeroize"] }
+libsm = { workspace = true }
 
 [lints]
 workspace = true

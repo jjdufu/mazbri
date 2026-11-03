@@ -138,6 +138,20 @@ impl KeyRef {
         }
     }
 
+    /// 取 PEM 文本。
+    ///
+    /// # Errors
+    ///
+    /// [`CryptoError::InvalidKey`]：材料为原始字节而非 PEM。
+    pub fn pem_str(&self) -> Result<&str, CryptoError> {
+        match self {
+            Self::Pem { pem, .. } => Ok(pem.as_str()),
+            Self::Raw { .. } => Err(CryptoError::InvalidKey {
+                reason: "expected PEM key material, got raw bytes".to_owned(),
+            }),
+        }
+    }
+
     /// 用途。
     #[must_use]
     pub const fn purpose(&self) -> KeyPurpose {

@@ -1,4 +1,4 @@
-//! 摘要原语：SHA-256/384/512 与 BLAKE3。
+//! 摘要原语：SHA-256/384/512、BLAKE3 与 SM3。
 
 use digest::Digest as DigestTrait;
 use sha2::{Sha256, Sha384, Sha512};
@@ -17,6 +17,8 @@ pub enum DigestAlgorithm {
     Sha512,
     /// `blake3`（Mainstream；内部完整性可选）
     Blake3,
+    /// `sm3`（国密）
+    Sm3,
 }
 
 impl DigestAlgorithm {
@@ -31,6 +33,7 @@ impl DigestAlgorithm {
             AlgorithmId::Sha384 => Ok(Self::Sha384),
             AlgorithmId::Sha512 => Ok(Self::Sha512),
             AlgorithmId::Blake3 => Ok(Self::Blake3),
+            AlgorithmId::Sm3 => Ok(Self::Sm3),
             other => Err(CryptoError::Unsupported {
                 reason: format!("not an implemented digest: {other}"),
             }),
@@ -45,6 +48,7 @@ impl DigestAlgorithm {
             Self::Sha384 => AlgorithmId::Sha384,
             Self::Sha512 => AlgorithmId::Sha512,
             Self::Blake3 => AlgorithmId::Blake3,
+            Self::Sm3 => AlgorithmId::Sm3,
         }
     }
 
@@ -52,7 +56,7 @@ impl DigestAlgorithm {
     #[must_use]
     pub const fn output_len(self) -> usize {
         match self {
-            Self::Sha256 | Self::Blake3 => 32,
+            Self::Sha256 | Self::Blake3 | Self::Sm3 => 32,
             Self::Sha384 => 48,
             Self::Sha512 => 64,
         }
@@ -66,6 +70,7 @@ impl Digest for DigestAlgorithm {
             Self::Sha384 => Ok(Sha384::digest(message).to_vec()),
             Self::Sha512 => Ok(Sha512::digest(message).to_vec()),
             Self::Blake3 => Ok(blake3::hash(message).as_bytes().to_vec()),
+            Self::Sm3 => Ok(sm3::Sm3::digest(message).to_vec()),
         }
     }
 }

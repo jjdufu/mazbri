@@ -133,8 +133,15 @@ cfb-mode = "0.8"
 cfb8 = "0.8"
 blake3 = "1.5"
 digest = "0.10"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8"] }
-rsa = { version = "0.9", default-features = false, features = ["std", "pem"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
+rsa = { version = "0.9", default-features = false, features = ["std", "pem", "sha2", "getrandom", "hazmat"] }
+sm3 = "0.4"
+sm4 = "0.5"
+libsm = "0.6"
+des = "0.8"
+md-5 = "0.10"
+ecb = { version = "0.1", features = ["alloc"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

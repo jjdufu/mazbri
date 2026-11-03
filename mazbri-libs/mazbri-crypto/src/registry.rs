@@ -5,10 +5,12 @@
 use std::collections::BTreeMap;
 
 use crate::aead::AeadAlgorithm;
+use crate::asym::{AsymBoxAlgorithm, AsymSignAlgorithm};
 use crate::digest::DigestAlgorithm;
 use crate::id::{AlgorithmId, AlgorithmKind};
 use crate::mac::MacAlgorithm;
 use crate::security::SecurityClass;
+use crate::sm::{GmDigestAlgorithm, GmMacAlgorithm, Sm2EncryptAlgorithm, Sm2SignAlgorithm, Sm4Algorithm};
 use crate::symmetric::SymmetricAlgorithm;
 use crate::traits::CryptoError;
 
@@ -25,6 +27,8 @@ pub const fn require_mac_for(id: AlgorithmId) -> bool {
             | AlgorithmId::Aes128Ctr
             | AlgorithmId::Aes256Cfb
             | AlgorithmId::Aes128Cfb
+            | AlgorithmId::Sm4CbcPkcs7
+            | AlgorithmId::Sm4Ctr
     )
 }
 
@@ -69,11 +73,13 @@ impl AlgorithmRegistry {
         Self::default()
     }
 
-    /// step-02 默认注册表：对称/AEAD + 摘要/MAC（不含国密/非对称/legacy）。
+    /// step-03 默认注册表：闭集全部 id（含国密 / 非对称 / legacy）。
+    ///
+    /// SM9 **不**在闭集中；见 [`parse_algorithm_id`]。
     #[must_use]
     pub fn default_registry() -> Self {
         let mut registry = Self::new();
-        for id in STEP02_IDS {
+        for id in AlgorithmId::all() {
             registry.register_id(*id);
         }
         registry
@@ -173,25 +179,99 @@ impl AlgorithmRegistry {
         let _ = self.get(id)?;
         DigestAlgorithm::from_id(id)
     }
+
+    /// 查询国密摘要句柄（与 [`Self::digest`] 对 `sm3` 等价路径）。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn gm_digest(&self, id: AlgorithmId) -> Result<GmDigestAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        GmDigestAlgorithm::from_id(id)
+    }
+
+    /// 查询国密 MAC 句柄。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn gm_mac(&self, id: AlgorithmId) -> Result<GmMacAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        GmMacAlgorithm::from_id(id)
+    }
+
+    /// 查询 SM4（非 ECB）句柄。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn sm4(&self, id: AlgorithmId) -> Result<Sm4Algorithm, CryptoError> {
+        let _ = self.get(id)?;
+        Sm4Algorithm::from_id(id)
+    }
+
+    /// 查询非对称密封句柄。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn asym_box(&self, id: AlgorithmId) -> Result<AsymBoxAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        AsymBoxAlgorithm::from_id(id)
+    }
+
+    /// 查询非对称签名句柄。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn asym_sign(&self, id: AlgorithmId) -> Result<AsymSignAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        AsymSignAlgorithm::from_id(id)
+    }
+
+    /// 查询 SM2 加密句柄（默认 C1C3C2）。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn sm2_encrypt(&self, id: AlgorithmId) -> Result<Sm2EncryptAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        Sm2EncryptAlgorithm::from_id(id)
+    }
+
+    /// 查询 SM2 签名句柄（默认 `user_id`）。
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::NotRegistered`]
+    /// - [`CryptoError::Unsupported`]
+    pub fn sm2_sign(&self, id: AlgorithmId) -> Result<Sm2SignAlgorithm, CryptoError> {
+        let _ = self.get(id)?;
+        Sm2SignAlgorithm::from_id(id)
+    }
 }
 
-/// step-02 注册的闭集子集。
-const STEP02_IDS: &[AlgorithmId] = &[
-    AlgorithmId::Aes128Gcm,
-    AlgorithmId::Aes192Gcm,
-    AlgorithmId::Aes256Gcm,
-    AlgorithmId::Chacha20Poly1305,
-    AlgorithmId::Aes128Cbc,
-    AlgorithmId::Aes256Cbc,
-    AlgorithmId::Aes128Ctr,
-    AlgorithmId::Aes256Ctr,
-    AlgorithmId::Aes128Cfb,
-    AlgorithmId::Aes256Cfb,
-    AlgorithmId::Sha256,
-    AlgorithmId::Sha384,
-    AlgorithmId::Sha512,
-    AlgorithmId::HmacSha256,
-    AlgorithmId::HmacSha384,
-    AlgorithmId::HmacSha512,
-    AlgorithmId::Blake3,
-];
+/// 解析算法 id 字符串。
+///
+/// - 闭集 kebab-case → [`AlgorithmId`]
+/// - 以 `sm9-` 开头 → [`CryptoError::Unsupported`]（明确不做）
+/// - 其它 → [`CryptoError::UnknownAlgorithmId`]
+///
+/// # Errors
+///
+/// 见上。
+pub fn parse_algorithm_id(raw: &str) -> Result<AlgorithmId, CryptoError> {
+    if raw.starts_with("sm9-") || raw == "sm9" {
+        return Err(CryptoError::Unsupported {
+            reason: format!("SM9 is not implemented: {raw}"),
+        });
+    }
+    raw.parse()
+}
