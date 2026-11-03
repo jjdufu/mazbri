@@ -1,3 +1,11 @@
+/**
+ * Workbench 鉴权矩阵：会话 / 换票 / 注入凭证。
+ *
+ * 与业务体加解密的边界：
+ * - 本模块只管 auth.profile 与 sign_form 等凭证字段；
+ * - 业务体 order / 算法 / 槽位由 `cryptoProfileHelpers` → `egress.crypto` 负责；
+ * - 禁止在此再挂一套 HMAC/算法下拉，避免与 CryptoProfileEditor 双 UI。
+ */
 export type AuthFlowLike = {
   credentials: { key: string; value: string }[];
   method: string;

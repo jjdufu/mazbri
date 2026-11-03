@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "order": "aead_only",
+  "crypt": {
+    "alg": "aes-256-gcm"
+  },
+  "canon": "raw",
+  "encodings": {
+    "payload": "base64",
+    "signature": "base64",
+    "iv": "base64"
+  },
+  "slots": [
+    {
+      "role": "cipher",
+      "location": "json",
+      "name": "cipherText"
+    }
+  ],
+  "iv": "random",
+  "scope": "whole_body",
+  "allow_insecure": false
+}

@@ -5,8 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mazbri_core::AdapterKind;
+use mazbri_crypto::AlgorithmRegistry;
 
 use crate::adapters::{AdapterCtx, AdapterOutcome, invoke_adapter, merge_request_headers};
+use crate::crypto_pipeline::pipeline_keys_from_credentials;
 use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
 use crate::ssrf::SsrfChecker;
@@ -220,6 +222,10 @@ impl RuntimeEngine {
             }));
         }
         let u_start = Instant::now();
+        let pipeline_keys = input.pipeline_keys.clone().unwrap_or_else(|| {
+            pipeline_keys_from_credentials(&input.credentials)
+        });
+        let registry = AlgorithmRegistry::default_registry();
         let ctx = AdapterCtx {
             client: &self.client,
             ssrf: &self.ssrf,
@@ -229,6 +235,8 @@ impl RuntimeEngine {
             timeout: input.timeout,
             ws_handshake_timeout: self.limits.ws_handshake_timeout,
             job_poll_min_interval: self.limits.job_poll_min_interval,
+            pipeline_keys: &pipeline_keys,
+            registry: &registry,
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,

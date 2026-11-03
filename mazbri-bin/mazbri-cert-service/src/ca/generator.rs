@@ -1,11 +1,9 @@
 use crate::config::CertConfig;
 use crate::error::{CertError, CertResult};
-use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, KeyInit},
-};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use hkdf::Hkdf;
+use mazbri_crypto::aead::AEAD_NONCE_LEN;
+use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use rcgen::Ia5String;
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType, IsCa, KeyPair,
@@ -140,16 +138,14 @@ impl CaManager {
         Self::encrypt_with_key(&key_pem, &new_key)
     }
     fn encrypt_with_key(key_pem: &str, encryption_key: &[u8; 32]) -> CertResult<String> {
-        let cipher = Aes256Gcm::new_from_slice(encryption_key)
-            .map_err(|e| CertError::KeyEncryption(format!("Failed to create cipher: {e}")))?;
-        let nonce_bytes: [u8; 12] = rand::random();
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(nonce, key_pem.as_bytes())
+        let key_ref = KeyRef::raw(KeyPurpose::KeyWrap, encryption_key.to_vec());
+        let nonce_bytes: [u8; AEAD_NONCE_LEN] = rand::random();
+        let packed = AeadAlgorithm::Aes256Gcm
+            .seal(&key_ref, &nonce_bytes, b"", key_pem.as_bytes())
             .map_err(|e| CertError::KeyEncryption(format!("Encryption failed: {e}")))?;
         let mut combined = nonce_bytes.to_vec();
-        combined.extend(ciphertext);
-        Ok(BASE64.encode(&combined))
+        combined.extend(packed);
+        Ok(BASE64.encode(combined))
     }
     /// # Errors
     ///
@@ -168,17 +164,15 @@ impl CaManager {
         let combined = BASE64
             .decode(encrypted_key)
             .map_err(|e| CertError::KeyEncryption(format!("Base64 decode failed: {e}")))?;
-        if combined.len() < 12 {
+        if combined.len() < AEAD_NONCE_LEN {
             return Err(CertError::KeyEncryption(
                 "Invalid encrypted key format".into(),
             ));
         }
-        let (nonce_bytes, ciphertext) = combined.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let cipher = Aes256Gcm::new_from_slice(encryption_key)
-            .map_err(|e| CertError::KeyEncryption(format!("Failed to create cipher: {e}")))?;
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
+        let (nonce_bytes, ciphertext) = combined.split_at(AEAD_NONCE_LEN);
+        let key_ref = KeyRef::raw(KeyPurpose::KeyWrap, encryption_key.to_vec());
+        let plaintext = AeadAlgorithm::Aes256Gcm
+            .open(&key_ref, nonce_bytes, b"", ciphertext)
             .map_err(|e| CertError::KeyEncryption(format!("Decryption failed: {e}")))?;
         String::from_utf8(plaintext)
             .map_err(|e| CertError::KeyEncryption(format!("Invalid UTF-8: {e}")))

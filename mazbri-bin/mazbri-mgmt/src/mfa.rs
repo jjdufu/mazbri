@@ -1,15 +1,16 @@
 use crate::config::MfaConfig;
-use aes_gcm::{
-    Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, OsRng},
-};
 use argon2::{
-    password_hash::{SaltString, rand_core::RngCore},
+    password_hash::{
+        SaltString,
+        rand_core::{OsRng, RngCore},
+    },
     {PasswordHasher, PasswordVerifier},
 };
 use base32::{Alphabet, decode as base32_decode, encode as base32_encode};
 use hkdf::Hkdf;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_crypto::aead::AEAD_NONCE_LEN;
+use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use moka::future::Cache;
 use rand::RngExt;
 use sha1::Sha1;
@@ -393,18 +394,16 @@ impl MfaService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn encrypt_secret(&self, secret: &str) -> Result<String, MfaError> {
-        let cipher = Aes256Gcm::new_from_slice(&*self.encryption_key)
-            .map_err(|e| MfaError::Encryption(format!("Failed to create cipher: {e}")))?;
-        let mut nonce_bytes = [0u8; 12];
+        let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, self.encryption_key.to_vec());
+        let mut nonce_bytes = [0u8; AEAD_NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(nonce, secret.as_bytes())
+        let packed = AeadAlgorithm::Aes256Gcm
+            .seal(&key_ref, &nonce_bytes, b"", secret.as_bytes())
             .map_err(|e| MfaError::Encryption(format!("Encryption failed: {e}")))?;
-        let mut result = Vec::with_capacity(12 + ciphertext.len());
+        let mut result = Vec::with_capacity(AEAD_NONCE_LEN + packed.len());
         result.extend_from_slice(&nonce_bytes);
-        result.extend_from_slice(&ciphertext);
-        Ok(hex::encode(&result))
+        result.extend_from_slice(&packed);
+        Ok(hex::encode(result))
     }
     /// # Errors
     ///
@@ -412,15 +411,13 @@ impl MfaService {
     pub fn decrypt_secret(&self, encrypted_secret: &str) -> Result<String, MfaError> {
         let encrypted_bytes = hex::decode(encrypted_secret)
             .map_err(|e| MfaError::Encryption(format!("Invalid hex encoding: {e}")))?;
-        if encrypted_bytes.len() < 12 {
+        if encrypted_bytes.len() < AEAD_NONCE_LEN {
             return Err(MfaError::Encryption("Encrypted data too short".into()));
         }
-        let (nonce_bytes, ciphertext) = encrypted_bytes.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let cipher = Aes256Gcm::new_from_slice(&*self.encryption_key)
-            .map_err(|e| MfaError::Encryption(format!("Failed to create cipher: {e}")))?;
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
+        let (nonce_bytes, ciphertext) = encrypted_bytes.split_at(AEAD_NONCE_LEN);
+        let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, self.encryption_key.to_vec());
+        let plaintext = AeadAlgorithm::Aes256Gcm
+            .open(&key_ref, nonce_bytes, b"", ciphertext)
             .map_err(|e| MfaError::Encryption(format!("Decryption failed: {e}")))?;
         String::from_utf8(plaintext)
             .map_err(|e| MfaError::Encryption(format!("Invalid UTF-8: {e}")))

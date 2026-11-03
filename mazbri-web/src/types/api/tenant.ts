@@ -298,11 +298,15 @@ export type TenantCryptoKeyStatus =
 export interface TenantCryptoProfile {
   tenant_id: string;
   encryption_mode: TenantEncryptionMode;
+  profile_version: number;
+  suite?: string | null;
+  data_alg?: string | null;
+  mac_alg?: string | null;
   require_signature: boolean;
-  request_algorithm: string;
-  response_algorithm: string;
-  signature_algorithm: string;
-  current_key_version?: string;
+  allow_insecure: boolean;
+  require_request_binding: boolean;
+  signature_version: string;
+  current_key_version?: string | null;
   nonce_ttl_seconds: number;
   clock_skew_seconds: number;
   config: Record<string, unknown>;
@@ -311,7 +315,13 @@ export interface TenantCryptoProfile {
 }
 export interface UpdateTenantCryptoProfileRequest {
   encryptionMode: TenantEncryptionMode;
+  suite?: string | null;
+  dataAlg?: string | null;
+  macAlg?: string | null;
+  allowInsecure?: boolean;
   requireSignature: boolean;
+  requireRequestBinding?: boolean;
+  signatureVersion?: string;
   nonceTtlSeconds: number;
   clockSkewSeconds: number;
   currentKeyVersion?: string;

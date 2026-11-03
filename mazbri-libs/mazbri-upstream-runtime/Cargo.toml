@@ -9,6 +9,7 @@ description = "Shared transparent upstream auth/transform/HTTP runtime (bypass +
 
 [dependencies]
 mazbri-core = { version = "0.1.0", path = "../mazbri-core" }
+mazbri-crypto = { workspace = true }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
@@ -33,6 +34,9 @@ url = "2.5"
 urlencoding = "2"
 
 [dev-dependencies]
+base64 = "0.22"
+hex = "0.4"
+urlencoding = "2.1"
 tokio = { version = "1.35", features = ["full", "test-util", "macros"] }
 
 [lints]

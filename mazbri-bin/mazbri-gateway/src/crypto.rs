@@ -8,9 +8,11 @@ use mazbri_core::crypto::tenant_key::{
     verify_secret_key_digest,
 };
 use mazbri_core::crypto::transport::{
-    DATA_ALGORITHM, SIGNATURE_ALGORITHM, TransportEnvelope, canonical_signature_payload,
-    decrypt_aes_256_gcm, encrypt_aes_256_gcm, generate_nonce_base64url, sign_payload,
-    validate_transport_algorithms, verify_payload_signature,
+    SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
+};
+use mazbri_core::crypto::{
+    AlgorithmId, AlgorithmRegistry, CryptoError, KeySelection, TenantTransportProfile,
+    TransportMode, parse_algorithm_id,
 };
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use mazbri_core::num::SaturatingFrom;
@@ -128,12 +130,59 @@ pub fn register_crypto_metrics() -> Result<(), prometheus::Error> {
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
 pub struct TenantCryptoProfile {
     pub encryption_mode: String,
+    pub profile_version: i32,
+    pub suite: Option<String>,
+    pub data_alg: Option<String>,
+    pub mac_alg: Option<String>,
     pub require_signature: bool,
+    pub allow_insecure: bool,
     pub require_request_binding: bool,
     pub signature_version: String,
     pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
+}
+
+impl TenantCryptoProfile {
+    /// 将 DB 行映射为 [`TenantTransportProfile`]（算法 id 为闭集 kebab-case）。
+    ///
+    /// # Errors
+    ///
+    /// mode / 算法字符串非法、legacy 未放行时返回清晰的 `ProxyError`。
+    pub fn transport_profile(&self) -> Result<TenantTransportProfile, ProxyError> {
+        let mode = parse_transport_mode(&self.encryption_mode)?;
+        let data_alg = parse_optional_alg(self.data_alg.as_deref(), "data_alg")?;
+        let mac_alg = parse_optional_alg(self.mac_alg.as_deref(), "mac_alg")?;
+        let key = self.current_key_version.as_ref().map(|version| KeySelection::Latest {
+            key_id: version.clone(),
+        });
+        let profile_version = u32::try_from(self.profile_version).map_err(|_| {
+            ProxyError::InternalError("tenant crypto profile_version must be >= 0".to_string())
+        })?;
+        let nonce_ttl_secs = u32::try_from(self.nonce_ttl_seconds).map_err(|_| {
+            ProxyError::InternalError("tenant crypto nonce_ttl_seconds must be >= 0".to_string())
+        })?;
+        let clock_skew_secs = u32::try_from(self.clock_skew_seconds).map_err(|_| {
+            ProxyError::InternalError("tenant crypto clock_skew_seconds must be >= 0".to_string())
+        })?;
+        Ok(TenantTransportProfile {
+            version: if profile_version == 0 {
+                1
+            } else {
+                profile_version
+            },
+            mode,
+            suite: self.suite.clone(),
+            data_alg,
+            mac_alg,
+            key,
+            require_signature: self.require_signature,
+            allow_insecure: self.allow_insecure,
+            binding: None,
+            nonce_ttl_secs,
+            clock_skew_secs,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
@@ -149,7 +198,12 @@ pub struct TenantCryptoKey {
 struct TenantCryptoSnapshotRow {
     pub tenant_id: Uuid,
     pub encryption_mode: String,
+    pub profile_version: i32,
+    pub suite: Option<String>,
+    pub data_alg: Option<String>,
+    pub mac_alg: Option<String>,
     pub require_signature: bool,
+    pub allow_insecure: bool,
     pub require_request_binding: bool,
     pub signature_version: String,
     pub current_key_version: Option<String>,
@@ -189,6 +243,7 @@ pub struct TenantCryptoState {
     redis: RedisClient,
     cert_service_url: String,
     cert_service_token: String,
+    registry: AlgorithmRegistry,
 }
 
 impl TenantCryptoState {
@@ -225,6 +280,7 @@ impl TenantCryptoState {
             redis,
             cert_service_url: cert_service_url.to_string(),
             cert_service_token,
+            registry: AlgorithmRegistry::default_registry(),
         })
     }
 
@@ -243,7 +299,12 @@ impl TenantCryptoState {
         let Some(snapshot) = snapshot else {
             let profile = TenantCryptoProfile {
                 encryption_mode: "none".to_string(),
-                require_signature: true,
+                profile_version: 1,
+                suite: None,
+                data_alg: None,
+                mac_alg: None,
+                require_signature: false,
+                allow_insecure: false,
                 require_request_binding: false,
                 signature_version: "hmac-v1".to_string(),
                 current_key_version: None,
@@ -359,7 +420,8 @@ impl TenantCryptoState {
     pub async fn refresh_active_crypto_snapshot_cache(&self) -> Result<(), ProxyError> {
         let snapshots = sqlx::query_as::<_, TenantCryptoSnapshotRow>(
             r"
-            SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
+            SELECT p.tenant_id, p.encryption_mode, p.profile_version, p.suite, p.data_alg, p.mac_alg,
+                p.require_signature, p.allow_insecure, p.require_request_binding,
                 p.signature_version, p.current_key_version,
                 p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
@@ -468,7 +530,8 @@ impl TenantCryptoState {
     ) -> Result<Option<TenantCryptoSnapshotRow>, ProxyError> {
         sqlx::query_as::<_, TenantCryptoSnapshotRow>(
             r"
-            SELECT p.tenant_id, p.encryption_mode, p.require_signature, p.require_request_binding,
+            SELECT p.tenant_id, p.encryption_mode, p.profile_version, p.suite, p.data_alg, p.mac_alg,
+                p.require_signature, p.allow_insecure, p.require_request_binding,
                 p.signature_version, p.current_key_version,
                 p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
                 k.secret_key_digest, k.status AS key_status
@@ -489,7 +552,12 @@ impl TenantCryptoState {
     fn profile_from_snapshot(snapshot: &TenantCryptoSnapshotRow) -> TenantCryptoProfile {
         TenantCryptoProfile {
             encryption_mode: snapshot.encryption_mode.clone(),
+            profile_version: snapshot.profile_version,
+            suite: snapshot.suite.clone(),
+            data_alg: snapshot.data_alg.clone(),
+            mac_alg: snapshot.mac_alg.clone(),
             require_signature: snapshot.require_signature,
+            allow_insecure: snapshot.allow_insecure,
             require_request_binding: snapshot.require_request_binding,
             signature_version: snapshot.signature_version.clone(),
             current_key_version: snapshot.current_key_version.clone(),
@@ -589,14 +657,12 @@ impl TenantCryptoState {
             GatewayRequestPayload::Encrypted(envelope) => {
                 if profile.encryption_mode == "none" {
                     return Err(ProxyError::BadRequest(
-                        "Invalid proxy request body".to_string(),
+                        "Encrypted envelope is not allowed when encryption_mode=none".to_string(),
                     ));
                 }
                 let tenant_id_str = tenant_id.to_string();
+                let transport = profile.transport_profile()?;
                 let preflight_started_at = Instant::now();
-                validate_transport_algorithms(&envelope).map_err(|_| {
-                    ProxyError::BadRequest("Invalid encrypted request envelope".to_string())
-                })?;
                 validate_timestamp(&envelope, profile.clock_skew_seconds)?;
                 timing.preflight = mazbri_core::num::millis_u64(preflight_started_at.elapsed());
                 self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
@@ -604,25 +670,23 @@ impl TenantCryptoState {
                 let tenant_key = self
                     .tenant_key(tenant_id, &envelope.key_version, &mut timing)
                     .await?;
+                let mac_key = envelope
+                    .mac_alg
+                    .as_ref()
+                    .map(|_| tenant_key.as_slice());
                 let signature_started_at = Instant::now();
-                if profile.require_signature {
-                    let payload = canonical_signature_payload(&envelope, &tenant_id_str, http_path);
-                    verify_payload_signature(&tenant_key, &payload, &envelope.signature).map_err(
-                        |_| ProxyError::Forbidden("Invalid encrypted request".to_string()),
-                    )?;
-                }
-                timing.signature = mazbri_core::num::millis_u64(signature_started_at.elapsed());
                 let decrypt_started_at = Instant::now();
-                let plaintext = decrypt_aes_256_gcm(
+                let plaintext = open_envelope(
+                    &transport,
+                    &self.registry,
                     &tenant_key,
-                    &envelope.iv,
-                    &envelope.ciphertext,
-                    &envelope.tag,
-                    tenant_id_str.as_bytes(),
+                    mac_key,
+                    &tenant_id_str,
+                    http_path,
+                    &envelope,
                 )
-                .map_err(|_| {
-                    ProxyError::BadRequest("Invalid encrypted request body".to_string())
-                })?;
+                .map_err(map_transport_crypto_error)?;
+                timing.signature = mazbri_core::num::millis_u64(signature_started_at.elapsed());
                 timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
                 let parse_started_at = Instant::now();
                 let req = serde_json::from_slice::<GatewayRequest>(&plaintext).map_err(|_| {
@@ -645,35 +709,32 @@ impl TenantCryptoState {
         plaintext: &[u8],
         http_path: &str,
     ) -> Result<TransportEnvelope, ProxyError> {
+        if profile.encryption_mode != "full" {
+            return Err(ProxyError::InternalError(
+                "response encryption requires encryption_mode=full".to_string(),
+            ));
+        }
         let key_version = profile.current_key_version.as_deref().ok_or_else(|| {
             ProxyError::InternalError("tenant crypto current key is not configured".to_string())
         })?;
+        let transport = profile.transport_profile()?;
         let mut timing = TenantCryptoTiming::default();
         let tenant_key = self.tenant_key(tenant_id, key_version, &mut timing).await?;
-        let timestamp = Utc::now().timestamp_millis();
-        let nonce = generate_nonce_base64url();
         let tenant_id_str = tenant_id.to_string();
-        let encrypted = encrypt_aes_256_gcm(&tenant_key, plaintext, tenant_id_str.as_bytes())
-            .map_err(|error| {
-                ProxyError::InternalError(format!("failed to encrypt response: {error}"))
-            })?;
-        let mut envelope = TransportEnvelope {
-            encrypted: true,
-            key_version: key_version.to_string(),
-            algorithm: DATA_ALGORITHM.to_string(),
-            signature_algorithm: SIGNATURE_ALGORITHM.to_string(),
-            timestamp,
-            nonce,
-            iv: encrypted.iv,
-            ciphertext: encrypted.ciphertext,
-            tag: encrypted.tag,
-            signature: String::new(),
-        };
-        let payload = canonical_signature_payload(&envelope, &tenant_id_str, http_path);
-        envelope.signature = sign_payload(&tenant_key, &payload).map_err(|error| {
-            ProxyError::InternalError(format!("failed to sign encrypted response: {error}"))
-        })?;
-        Ok(envelope)
+        let (_, mac_alg) = transport.effective_algs().map_err(map_crypto_profile_error)?;
+        let mac_key = mac_alg.map(|_| tenant_key.as_slice());
+        seal_envelope(SealEnvelopeParams {
+            profile: &transport,
+            registry: &self.registry,
+            data_key: &tenant_key,
+            mac_key,
+            key_version,
+            tenant_id: &tenant_id_str,
+            http_path,
+            plaintext,
+            timestamp: Utc::now().timestamp(),
+        })
+        .map_err(map_transport_crypto_error)
     }
 
     async fn tenant_key(
@@ -1066,14 +1127,89 @@ fn validate_timestamp(
     envelope: &TransportEnvelope,
     clock_skew_seconds: i32,
 ) -> Result<(), ProxyError> {
-    let now = Utc::now().timestamp_millis();
-    let skew_ms = i64::from(clock_skew_seconds) * 1000;
-    if (now - envelope.timestamp).abs() > skew_ms {
+    let now = Utc::now().timestamp();
+    let skew = i64::from(clock_skew_seconds);
+    if (now - envelope.timestamp).abs() > skew {
         return Err(ProxyError::Forbidden(
-            "Invalid encrypted request".to_string(),
+            "Encrypted request timestamp outside allowed clock skew".to_string(),
         ));
     }
     Ok(())
+}
+
+fn parse_transport_mode(raw: &str) -> Result<TransportMode, ProxyError> {
+    match raw {
+        "none" => Ok(TransportMode::None),
+        "request" => Ok(TransportMode::Request),
+        "full" => Ok(TransportMode::Full),
+        other => Err(ProxyError::BadRequest(format!(
+            "unsupported encryption_mode '{other}' (expected none|request|full)"
+        ))),
+    }
+}
+
+fn parse_optional_alg(raw: Option<&str>, field: &str) -> Result<Option<AlgorithmId>, ProxyError> {
+    match raw {
+        None => Ok(None),
+        Some(value) => parse_algorithm_id(value).map(Some).map_err(|error| match error {
+            CryptoError::UnknownAlgorithmId { raw } => ProxyError::BadRequest(format!(
+                "unsupported {field} '{raw}' (legacy uppercase/aliases are denied; use kebab-case closed-set id)"
+            )),
+            other => ProxyError::BadRequest(format!("invalid {field}: {other}")),
+        }),
+    }
+}
+
+fn map_crypto_profile_error(error: CryptoError) -> ProxyError {
+    match error {
+        CryptoError::LegacyNotAllowed { id } => ProxyError::Forbidden(format!(
+            "legacy algorithm denied (allow_insecure=false): {id}"
+        )),
+        CryptoError::UnknownAlgorithmId { raw } => ProxyError::BadRequest(format!(
+            "unsupported algorithm '{raw}' (closed-set kebab-case required)"
+        )),
+        CryptoError::NotRegistered { id } => ProxyError::BadRequest(format!(
+            "unsupported algorithm '{id}' (not registered)"
+        )),
+        CryptoError::UnknownSuite { name } => ProxyError::BadRequest(format!(
+            "unsupported suite '{name}'"
+        )),
+        CryptoError::InvalidProfile { reason } => ProxyError::BadRequest(format!(
+            "invalid tenant transport profile: {reason}"
+        )),
+        other => ProxyError::BadRequest(format!("invalid tenant transport profile: {other}")),
+    }
+}
+
+fn map_transport_crypto_error(
+    error: mazbri_core::crypto::transport::TransportCryptoError,
+) -> ProxyError {
+    use mazbri_core::crypto::transport::TransportCryptoError;
+    match error {
+        TransportCryptoError::UnsupportedAlgorithm => ProxyError::BadRequest(
+            "unsupported transport algorithm (closed-set kebab-case required; legacy aliases denied)"
+                .to_string(),
+        ),
+        TransportCryptoError::Crypto(inner) => map_crypto_profile_error(inner),
+        TransportCryptoError::InvalidProfile(reason) => ProxyError::BadRequest(format!(
+            "invalid transport envelope/profile: {reason}"
+        )),
+        TransportCryptoError::SignatureMismatch => {
+            ProxyError::Forbidden("Invalid encrypted request signature".to_string())
+        }
+        TransportCryptoError::DecryptFailed | TransportCryptoError::InvalidCiphertext => {
+            ProxyError::BadRequest("Invalid encrypted request body".to_string())
+        }
+        TransportCryptoError::InvalidKeyLength | TransportCryptoError::InvalidIv => {
+            ProxyError::BadRequest("Invalid encrypted request envelope".to_string())
+        }
+        TransportCryptoError::InvalidSignature => {
+            ProxyError::BadRequest("Invalid encrypted request signature encoding".to_string())
+        }
+        TransportCryptoError::EncryptFailed => {
+            ProxyError::InternalError("failed to encrypt transport envelope".to_string())
+        }
+    }
 }
 
 /// Suggested Retry-After when the idempotency store is unavailable.
@@ -1097,6 +1233,144 @@ pub(crate) fn idempotency_unavailable(
     );
     ProxyError::IdempotencyUnavailable {
         retry_after_secs: IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS,
+    }
+}
+
+#[cfg(test)]
+mod transport_profile_tests {
+    use super::{
+        map_crypto_profile_error, map_transport_crypto_error, parse_optional_alg,
+        parse_transport_mode, TenantCryptoProfile,
+    };
+    use crate::gateway::ProxyError;
+    use mazbri_core::crypto::transport::{
+        SealEnvelopeParams, open_envelope, seal_envelope, TransportCryptoError,
+    };
+    use mazbri_core::crypto::{
+        AlgorithmId, AlgorithmRegistry, CryptoError, KeySelection, TransportMode,
+        SUITE_TENANT_DEFAULT_2026_11,
+    };
+
+    fn full_aes_db_profile() -> TenantCryptoProfile {
+        TenantCryptoProfile {
+            encryption_mode: "full".into(),
+            profile_version: 1,
+            suite: Some(SUITE_TENANT_DEFAULT_2026_11.into()),
+            data_alg: Some("aes-256-gcm".into()),
+            mac_alg: None,
+            require_signature: false,
+            allow_insecure: false,
+            require_request_binding: false,
+            signature_version: "hmac-v1".into(),
+            current_key_version: Some("v1".into()),
+            nonce_ttl_seconds: 300,
+            clock_skew_seconds: 300,
+        }
+    }
+
+    #[test]
+    fn parses_modes_and_rejects_unknown() {
+        assert!(matches!(
+            parse_transport_mode("none").unwrap(),
+            TransportMode::None
+        ));
+        assert!(matches!(
+            parse_transport_mode("request").unwrap(),
+            TransportMode::Request
+        ));
+        assert!(matches!(
+            parse_transport_mode("full").unwrap(),
+            TransportMode::Full
+        ));
+        let err = parse_transport_mode("legacy").unwrap_err();
+        assert!(err.to_string().contains("unsupported encryption_mode"));
+    }
+
+    #[test]
+    fn rejects_uppercase_algorithm_alias() {
+        let err = parse_optional_alg(Some("AES-256-GCM"), "data_alg").unwrap_err();
+        assert!(err.to_string().contains("unsupported data_alg"));
+    }
+
+    #[test]
+    fn mode_full_aes_roundtrip_via_profile_seal_open() {
+        let registry = AlgorithmRegistry::default_registry();
+        let db_profile = full_aes_db_profile();
+        let transport = db_profile.transport_profile().expect("transport");
+        transport.validate(&registry).expect("validate");
+        let key = [11u8; 32];
+        let plaintext = br#"{"ok":true}"#;
+        let sealed = seal_envelope(SealEnvelopeParams {
+            profile: &transport,
+            registry: &registry,
+            data_key: &key,
+            mac_key: None,
+            key_version: "v1",
+            tenant_id: "11111111-1111-1111-1111-111111111111",
+            http_path: "/api/v1/gateway",
+            plaintext,
+            timestamp: 1_710_000_000,
+        })
+        .expect("seal");
+        assert_eq!(sealed.data_alg, "aes-256-gcm");
+        let opened = open_envelope(
+            &transport,
+            &registry,
+            &key,
+            None,
+            "11111111-1111-1111-1111-111111111111",
+            "/api/v1/gateway",
+            &sealed,
+        )
+        .expect("open");
+        assert_eq!(opened, plaintext);
+    }
+
+    #[test]
+    fn mode_none_cannot_be_used_for_encrypting_profile_fields() {
+        let profile = TenantCryptoProfile {
+            encryption_mode: "none".into(),
+            profile_version: 1,
+            suite: None,
+            data_alg: None,
+            mac_alg: None,
+            require_signature: false,
+            allow_insecure: false,
+            require_request_binding: false,
+            signature_version: "hmac-v1".into(),
+            current_key_version: None,
+            nonce_ttl_seconds: 300,
+            clock_skew_seconds: 300,
+        };
+        let transport = profile.transport_profile().expect("transport");
+        assert!(matches!(transport.mode, TransportMode::None));
+        let registry = AlgorithmRegistry::default_registry();
+        transport.validate(&registry).expect("plaintext profile ok");
+    }
+
+    #[test]
+    fn legacy_denied_maps_to_forbidden() {
+        let err = map_crypto_profile_error(CryptoError::LegacyNotAllowed {
+            id: AlgorithmId::Aes256Ecb,
+        });
+        match err {
+            ProxyError::Forbidden(msg) => {
+                assert!(msg.contains("legacy algorithm denied"));
+                assert!(msg.contains("aes-256-ecb"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let err = map_transport_crypto_error(TransportCryptoError::UnsupportedAlgorithm);
+        assert!(matches!(err, ProxyError::BadRequest(_)));
+    }
+
+    #[test]
+    fn key_selection_uses_current_key_version() {
+        let transport = full_aes_db_profile().transport_profile().unwrap();
+        match transport.key {
+            Some(KeySelection::Latest { key_id }) => assert_eq!(key_id, "v1"),
+            other => panic!("unexpected key {other:?}"),
+        }
     }
 }
 

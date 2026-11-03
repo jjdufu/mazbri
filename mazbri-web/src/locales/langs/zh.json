@@ -2836,13 +2836,39 @@
       },
       "fields": {
         "encryptionMode": "加密模式",
+        "suite": "算法套件",
+        "dataAlg": "数据算法",
+        "macAlg": "MAC 算法",
+        "allowInsecure": "允许不安全（Legacy）算法",
+        "advancedAlgorithms": "高级：单独指定算法",
         "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
         "nonceTtlSeconds": "Nonce 有效期（秒）",
         "clockSkewSeconds": "时间戳容忍窗口（秒）"
       },
       "placeholders": {
-        "selectActiveKey": "选择 active 密钥"
+        "selectActiveKey": "选择 active 密钥",
+        "selectSuite": "选择推荐套件",
+        "selectDataAlg": "选择数据算法（kebab-case）",
+        "selectMacAlg": "选择 MAC 算法（kebab-case）"
+      },
+      "suites": {
+        "tenantDefault": "推荐默认（AES-256-GCM）",
+        "gmSm4HmacSm3": "国密（SM4-CBC + HMAC-SM3）",
+        "tenantChacha20": "ChaCha20-Poly1305"
+      },
+      "securityClass": {
+        "recommended": "推荐",
+        "mainstream": "主流",
+        "gm": "国密",
+        "legacy": "不安全"
+      },
+      "hints": {
+        "suiteFollows": "跟随套件：数据 {data}，MAC {mac}",
+        "noMac": "无（AEAD 内置完整性）",
+        "macRequired": "当前数据算法为非 AEAD，必须配置 MAC",
+        "allowInsecure": "仅在兼容旧系统时勾选；启用后才可选 Legacy 算法",
+        "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」"
       },
       "modes": {
         "none": "关闭",
@@ -3658,7 +3684,7 @@
     "authSecret": "Secret",
     "authTokenPath": "换票路径（相对 base）",
     "authRawCredentials": "高级：原始凭证 KV",
-    "authSignAdapterHint": "HMAC 在 sign_form 适配器组包。请到出站规格将适配器改为 sign_form。",
+    "authSignAdapterHint": "业务体签名算法在「出站规格 → 业务体加解密」配置。若上游走表单槽位，可将适配器改为 sign_form。",
     "authJwtAlgo": "算法",
     "authJwtTtl": "TTL（秒）",
     "authJwtKid": "kid",
@@ -3710,7 +3736,7 @@
     "authHintOauth": "client_credentials 换票。空模板走默认 form；非空模板作为换票 body。",
     "authHintGettoken": "GET 换票：app_id / secret 进 query。jsonpath 空则 $.token。",
     "authHintBasic": "用户名 / 密码写入 Authorization: Basic（查找链含 username/password）。",
-    "authHintSign": "HMAC 由 sign_form 适配器组包；本 Tab 不换票、不 inject。",
+    "authHintSign": "sign_form 鉴权只配置 App ID / Secret 等凭证；业务体签名与加解密算法请到「出站规格 → 业务体加解密」配置（egress.crypto），本 Tab 不换票、不 inject。",
     "authHintGrpc": "secret 同时写入 metadata 与同名 header。位置锁定 metadata。",
     "authHintBearer": "静态 token，按注入格式写入（默认 Authorization: Bearer {}）。",
     "authHintJwt": "每次请求用密钥现签 JWT 再注入，不是换票返回的 JWT。",
@@ -3868,6 +3894,69 @@
       "contractId": "契约 ID",
       "envName": "变量名",
       "versionNo": "版本号"
+    },
+    "cryptoEnable": "启用业务体加解密 / 签名（egress.crypto）",
+    "cryptoAuthBoundaryHint": "鉴权 Tab 的 sign_form 只配置凭证；业务体算法 / order / 槽位只在本区编辑，二者不是两套签名 UI。",
+    "cryptoImportTemplate": "从通用模板导入",
+    "cryptoOrder": "处理顺序 (order)",
+    "cryptoSignAlg": "签名 / MAC 算法",
+    "cryptoCryptAlg": "加密算法",
+    "cryptoCanon": "拼串风格 (canon)",
+    "cryptoEncPayload": "密文编码",
+    "cryptoEncSignature": "签名编码",
+    "cryptoEncIv": "IV 编码",
+    "cryptoIvSource": "IV 来源",
+    "cryptoScope": "密文作用域",
+    "cryptoCryptFields": "加密字段列表",
+    "cryptoResponseFields": "响应解密字段",
+    "cryptoFieldsPlaceholder": "逗号分隔，如 biz_content, data",
+    "cryptoSlots": "槽位放置",
+    "cryptoSlotsEmpty": "未配置槽位时由适配器默认放置。",
+    "cryptoAddSlot": "添加槽位",
+    "cryptoSlotRole": "角色（sign/cipher/biz…）",
+    "cryptoSlotName": "字段名",
+    "cryptoResponseCrypt": "响应侧解密（可选）",
+    "cryptoAllowInsecure": "允许 Legacy 算法 (allow_insecure)",
+    "cryptoAllowInsecureHint": "仅在对接旧系统时开启；会放行 ECB / HMAC-MD5 等弱算法。",
+    "cryptoAllowInsecureAdminOnly": "仅超级管理员可开启 Legacy 门闩。",
+    "cryptoSelectAlg": "选择算法",
+    "cryptoSelectAlgOptional": "可选；留空表示不单独配置响应解密",
+    "cryptoValidationTitle": "业务密文配置尚未通过预校验",
+    "cryptoSection": "业务体加解密",
+    "cryptoOrders": {
+      "sign_then_encrypt": "先签名再加密",
+      "encrypt_then_sign": "先加密再签名",
+      "encrypt_only": "仅加密",
+      "sign_only": "仅签名 / MAC",
+      "aead_only": "仅 AEAD"
+    },
+    "cryptoCanons": {
+      "sorted_kv": "键排序拼接",
+      "concat": "固定顺序拼接",
+      "raw": "原始字节",
+      "jws_style": "JWS 风格"
+    },
+    "cryptoIvSources": {
+      "random": "随机",
+      "random_prefix": "随机并前置",
+      "key_derive": "密钥派生",
+      "field": "取自字段"
+    },
+    "cryptoScopes": {
+      "whole_body": "整包 body",
+      "named_fields": "具名字段"
+    },
+    "cryptoWireEncodings": {
+      "base64": "Base64",
+      "base64_url": "Base64URL",
+      "hex_lower": "Hex（小写）",
+      "hex_upper": "Hex（大写）"
+    },
+    "cryptoTemplates": {
+      "aeadAes256Gcm": "AEAD · AES-256-GCM",
+      "gmSm4CbcHmacSm3": "国密 · SM4-CBC + HMAC-SM3",
+      "signOnlyHmacSha256": "仅签名 · HMAC-SHA256",
+      "encryptThenSignAesCbc": "加密后签名 · AES-CBC + HMAC"
     }
   },
   "listQueryBar": {

@@ -220,6 +220,21 @@ html.radius-zero .connector-workbench-page {
   font: inherit;
   color: inherit;
 }
+
+.connector-workbench-page .wb-sheet-row.is-block {
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  padding: 10px 0 12px;
+}
+.connector-workbench-page .wb-sheet-row.is-block .wb-sheet-row__label {
+  padding: 0 16px 8px;
+  white-space: normal;
+}
+.connector-workbench-page .wb-sheet-row.is-block .wb-sheet-row__control {
+  align-items: stretch;
+  padding: 0 16px;
+}
 .connector-workbench-page .wb-sheet > .wb-sheet-row:last-child,
 .connector-workbench-page .wb-sheet > .wb-ghost:last-child {
   border-bottom: none;

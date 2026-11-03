@@ -46,6 +46,8 @@ export interface ConnectorEndpoint {
   ws?: Record<string, unknown>;
   soap?: Record<string, unknown>;
   sign_form?: Record<string, unknown>;
+  /** 业务体加解密 / 签名 profile；发布时写入 ChannelEgressSpec.crypto */
+  crypto?: Record<string, unknown> | null;
   egress?: Record<string, unknown>;
 
   tag?: string;

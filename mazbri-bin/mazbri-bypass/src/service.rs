@@ -11,7 +11,8 @@ use mazbri_core::{
 };
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
-    ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeLimits, SsrfChecker, TokenCache,
+    pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
+    RuntimeLimits, SsrfChecker, TokenCache,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -299,6 +300,8 @@ impl MazbriBypassServiceImpl {
             _ => None,
         };
 
+        // 密钥仅经 PipelineKeys / KeyRef 注入 runtime；禁止明文日志。
+        let pipeline_keys = Some(pipeline_keys_from_credentials(&credentials));
         let input = InvokeInput {
             supplier_id: req.supplier_id.clone(),
             supplier_code: req.supplier_code.clone(),
@@ -316,6 +319,7 @@ impl MazbriBypassServiceImpl {
                 collect_trace: false,
             },
             credentials,
+            pipeline_keys,
             artifact_bytes,
             cache_key: None,
         };
@@ -556,4 +560,28 @@ fn emit_bypass_access(
         })
         .build();
     emit_access_log("mazbri-bypass.access", &event);
+}
+
+
+#[cfg(test)]
+mod pipeline_key_tests {
+    use mazbri_upstream_runtime::pipeline_keys_from_credentials;
+    use std::collections::HashMap;
+
+    #[test]
+    fn bypass_injects_pipeline_keys_from_credentials() {
+        let mut credentials = HashMap::new();
+        credentials.insert("client_secret".into(), "unit-test-secret".into());
+        credentials.insert(
+            "crypto_data_key".into(),
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into(),
+        );
+        let keys = pipeline_keys_from_credentials(&credentials);
+        assert!(keys.mac.is_some());
+        assert!(keys.data.is_some());
+        // 确保 Debug 不泄露密钥材料
+        let dbg = format!("{keys:?}");
+        assert!(!dbg.contains("unit-test-secret"));
+        assert!(!dbg.contains("00112233445566778899aabbccddeeff"));
+    }
 }

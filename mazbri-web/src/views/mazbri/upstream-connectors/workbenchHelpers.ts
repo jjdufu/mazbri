@@ -562,6 +562,7 @@ export function workbenchEnvSurfaceParts(args: {
     if (typeof ws.path === "string") parts.push(ws.path);
     if (ep.soap) parts.push(JSON.stringify(ep.soap));
     if (ep.sign_form) parts.push(JSON.stringify(ep.sign_form));
+    if (ep.crypto) parts.push(JSON.stringify(ep.crypto));
   }
   const auth = args.authFlow;
   if (auth) {

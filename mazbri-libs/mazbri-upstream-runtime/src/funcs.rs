@@ -2,12 +2,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use hmac::{Hmac, Mac};
 use rand::RngExt;
-use sha2::Sha256;
-use std::collections::BTreeMap;
-
-type HmacSha256 = Hmac<Sha256>;
 
 pub fn now_unix() -> i64 {
     chrono::Utc::now().timestamp()
@@ -26,32 +21,6 @@ pub fn nonce(len: usize) -> String {
         .collect()
 }
 
-/// ASCII-sort keys, drop empty values, join `k=v` with `&`.
-pub fn sort_kv_join(fields: &BTreeMap<String, String>) -> String {
-    fields
-        .iter()
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
-pub fn hmac_sha256_b64(secret: &str, message: &str) -> String {
-    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
-        Ok(m) => m,
-        Err(_) => match HmacSha256::new_from_slice(&[0u8]) {
-            Ok(m) => m,
-            Err(_) => return String::new(),
-        },
-    };
-    mac.update(message.as_bytes());
-    STANDARD.encode(mac.finalize().into_bytes())
-}
-
-pub fn hmac_sha256_b64_verify(secret: &str, message: &str, signature: &str) -> bool {
-    let expected = hmac_sha256_b64(secret, message);
-    expected == signature
-}
 
 pub fn basic_b64(id: &str, secret: &str) -> String {
     STANDARD.encode(format!("{id}:{secret}").as_bytes())
@@ -79,6 +48,7 @@ pub fn url_encode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mazbri_crypto::{AlgorithmId, AlgorithmRegistry, KeyPurpose, KeyRef, Mac};
 
     #[test]
     fn nonce_charset_and_len() {
@@ -91,15 +61,13 @@ mod tests {
     }
 
     #[test]
-    fn sort_and_hmac_stable() {
-        let mut m = BTreeMap::new();
-        m.insert("b".into(), "2".into());
-        m.insert("a".into(), "1".into());
-        m.insert("z".into(), String::new());
-        assert_eq!(sort_kv_join(&m), "a=1&b=2");
-        let sig = hmac_sha256_b64("secret", "a=1&b=2");
-        assert!(hmac_sha256_b64_verify("secret", "a=1&b=2", &sig));
-        assert!(!hmac_sha256_b64_verify("secret", "a=1&b=3", &sig));
+    fn mac_via_registry_replaces_adapter_hmac_helper() {
+        let reg = AlgorithmRegistry::default_registry();
+        let mac = reg.mac(AlgorithmId::HmacSha256).expect("mac");
+        let key = KeyRef::raw(KeyPurpose::Mac, b"secret".to_vec());
+        let tag = mac.sign(&key, b"a=1&b=2").expect("sign");
+        mac.verify(&key, b"a=1&b=2", &tag).expect("verify");
+        assert!(mac.verify(&key, b"a=1&b=3", &tag).is_err());
     }
 
     #[test]

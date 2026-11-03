@@ -315,6 +315,18 @@
                           :append-to="pageMount"
                           @update:model-value="onBodyEncodingChange(String($event))"
                         />
+                        <div class="wb-sheet-row is-block">
+                          <div class="wb-sheet-row__label">{{
+                            $t("upstreamConnector.cryptoSection")
+                          }}</div>
+                          <div class="wb-sheet-row__control">
+                            <CryptoProfileEditor
+                              :model-value="activeEp.crypto"
+                              :can-toggle-insecure="isSuperAdmin"
+                              @update:model-value="onCryptoProfileChange"
+                            />
+                          </div>
+                        </div>
                       <WorkbenchKvRows
                         v-if="activeEp.adapter === 'graphql'"
                         v-model="gqlEnumRows"
@@ -528,6 +540,11 @@ import {
   type KvRow,
   type ParsedImport,
 } from "./workbenchHelpers";
+import CryptoProfileEditor from "./CryptoProfileEditor.vue";
+import {
+  parseCryptoProfile,
+  validateCryptoProfileClient,
+} from "./cryptoProfileHelpers";
 import WorkbenchSplit from "./WorkbenchSplit.vue";
 import WorkbenchVSplit from "./WorkbenchVSplit.vue";
 import WorkbenchEndpointList from "./WorkbenchEndpointList.vue";
@@ -694,6 +711,7 @@ const configForm = ref<SupplierConfigForm>({
 });
 
 const userStore = useUserStore();
+const isSuperAdmin = computed(() => userStore.isAdmin);
 const canForcePublish = computed(() => userStore.canWriteBusiness);
 
 const gate = computed(() =>
@@ -731,7 +749,8 @@ const transformFilled = computed(() => {
   if ((ep.operation || "").trim()) return true;
   if ((ep.unwrap || "").trim()) return true;
   const wrap = (ep.wrap || "").trim();
-  return Boolean(wrap) && wrap !== "none";
+  if (Boolean(wrap) && wrap !== "none") return true;
+  return Boolean(ep.crypto && typeof ep.crypto === "object");
 });
 const assertFilled = computed(() =>
   (activeEp.value?.assertions || []).some((a) => (a.type || "").trim()),
@@ -1029,6 +1048,24 @@ function setEpAuthProfile(profile: string) {
   if (!ep) return;
   const next = profile === "inherit" ? "none" : profile;
   ep.auth = { ...(ep.auth || {}), profile: next };
+}
+
+
+function onCryptoProfileChange(value: Record<string, unknown> | null) {
+  if (!activeEp.value) return;
+  activeEp.value.crypto = value;
+}
+
+function cryptoIssuesOnEndpoints(): string[] {
+  const msgs: string[] = [];
+  for (const ep of endpoints.value) {
+    if (!ep.crypto) continue;
+    const issues = validateCryptoProfileClient(parseCryptoProfile(ep.crypto));
+    for (const issue of issues) {
+      msgs.push(`${ep.name || ep.path || ep.id || "endpoint"}: ${issue.message}`);
+    }
+  }
+  return msgs;
 }
 
 function onBodyEncodingChange(value: string) {
@@ -1540,6 +1577,11 @@ async function openPublish() {
   publishResult.value = null;
   publishChannels.value = autoChannelsFromEndpoints(endpoints.value);
   if (draft.value?.name) publishForm.value.supplier_name = draft.value.name;
+  const cryptoMsgs = cryptoIssuesOnEndpoints();
+  if (cryptoMsgs.length) {
+    ElMessage.warning(cryptoMsgs[0]);
+    return;
+  }
   try {
     await saveDraft({ silent: true });
   } catch {
@@ -1552,6 +1594,11 @@ async function openPublish() {
 async function doPublish() {
   if (!draft.value) return;
   if (blockIfUnresolved(unresolvedAll.value)) return;
+  const cryptoMsgsPublish = cryptoIssuesOnEndpoints();
+  if (cryptoMsgsPublish.length) {
+    ElMessage.warning(cryptoMsgsPublish[0]);
+    return;
+  }
   if (!draft.value.name.trim() || !draft.value.upstream_url.trim()) {
     ElMessage.warning($t("upstreamConnector.fieldsRequired"));
     return;

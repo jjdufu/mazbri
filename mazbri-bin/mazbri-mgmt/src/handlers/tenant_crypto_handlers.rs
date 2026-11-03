@@ -53,13 +53,25 @@ pub async fn update_crypto_profile(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(code): Path<String>,
-    Json(payload): Json<svc::UpdateCryptoProfileRequest>,
+    Json(mut payload): Json<svc::UpdateCryptoProfileRequest>,
 ) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
+    // allow_insecure 仅超级管理员可改写；非管理员强制沿用库中现值。
+    if !is_admin(&claims) {
+        let current = svc::get_profile(&state.db, &code).await?;
+        let current_allow = current
+            .get("allow_insecure")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if payload.allow_insecure && !current_allow {
+            return Err(ApiError::Forbidden);
+        }
+        payload.allow_insecure = current_allow;
+    }
     if let Err(response) = require_category(&state, &claims, Category::Key).await {
         return Ok(*response);
     }
@@ -79,15 +91,21 @@ pub async fn update_crypto_profile(
         &claims,
         AuditAction::TenantCryptoProfileUpdate,
         tenant_id.to_string(),
-        serde_json::json!(
-            { "tenant_code" : code, "tenant_id" : tenant_id, "encryption_mode" :
-            payload.encryption_mode, "require_signature" : payload
-            .require_signature, "require_request_binding" : payload.require_request_binding,
-            "signature_version" : payload.signature_version, "nonce_ttl_seconds" : payload
-            .nonce_ttl_seconds, "clock_skew_seconds" : payload
-            .clock_skew_seconds, "current_key_version" : payload
-            .current_key_version }
-        ),
+        serde_json::json!({
+            "tenant_code": code,
+            "tenant_id": tenant_id,
+            "encryption_mode": payload.encryption_mode,
+            "suite": payload.suite,
+            "data_alg": payload.data_alg,
+            "mac_alg": payload.mac_alg,
+            "require_signature": payload.require_signature,
+            "allow_insecure": payload.allow_insecure,
+            "require_request_binding": payload.require_request_binding,
+            "signature_version": payload.signature_version,
+            "nonce_ttl_seconds": payload.nonce_ttl_seconds,
+            "clock_skew_seconds": payload.clock_skew_seconds,
+            "current_key_version": payload.current_key_version
+        }),
         client_ip,
     )?;
     Ok(ApiResponse::ok(data).into_response())
@@ -557,6 +575,24 @@ mod tests {
             sid: uuid::Uuid::nil().to_string(),
             sxp: None,
         }
+    }
+
+    fn authorize_allow_insecure(claims: &AdminClaims, allow_insecure: bool) -> Result<(), ApiError> {
+        if allow_insecure && !is_admin(claims) {
+            return Err(ApiError::Forbidden);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn allow_insecure_requires_super_admin() {
+        assert!(authorize_allow_insecure(&claims("R_ADMIN"), true).is_ok());
+        assert!(authorize_allow_insecure(&claims("R_ADMIN"), false).is_ok());
+        assert!(authorize_allow_insecure(&claims("R_FINANCE"), false).is_ok());
+        assert!(matches!(
+            authorize_allow_insecure(&claims("R_FINANCE"), true),
+            Err(ApiError::Forbidden)
+        ));
     }
 
     #[test]

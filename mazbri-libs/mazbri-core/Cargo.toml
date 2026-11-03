@@ -29,10 +29,8 @@ flate2 = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
-aes-gcm = { workspace = true }
 base64 = "0.22"
 hex = { workspace = true }
-hmac = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 redis = { workspace = true }
@@ -40,6 +38,7 @@ redis = { workspace = true }
 tarpc = { workspace = true }
 uuid = { workspace = true }
 mazbri-rpc = { workspace = true }
+mazbri-crypto = { workspace = true }
 
 hostname = "0.4"
 

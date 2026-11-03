@@ -26,6 +26,7 @@ mazbri-i18n = { version = "0.1.0", path = "../../mazbri-libs/mazbri-i18n" }
 mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
 mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-runtime" }
 mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit" }
+mazbri-crypto = { version = "0.1.0", path = "../../mazbri-libs/mazbri-crypto" }
 
 time = { version = "=0.3.47", features = ["formatting", "parsing"] }
 axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
@@ -72,7 +73,6 @@ prometheus = {version = "0.14"}
 
 totp-lite = {version = "2.0"}
 qrcode = {version = "0.14"}
-aes-gcm = {version = "0.10"}
 hkdf = {version = "0.12"}
 base32 = {version = "0.5"}
 hex = "0.4"

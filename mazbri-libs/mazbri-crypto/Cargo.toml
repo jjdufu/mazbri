@@ -1,0 +1,48 @@
+[package]
+name = "mazbri-crypto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Software-only cryptography registry and primitives for Mazbri (no HSM)"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+aes-gcm = { workspace = true }
+chacha20poly1305 = { workspace = true }
+aes = { workspace = true }
+cbc = { workspace = true }
+ctr = { workspace = true }
+cfb-mode = { workspace = true }
+cfb8 = { workspace = true }
+cipher = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+digest = { workspace = true }
+blake3 = { workspace = true }
+subtle = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+p384 = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["alloc", "pkcs8", "pem", "zeroize"] }
+sm3 = { workspace = true }
+sm4 = { workspace = true }
+libsm = { workspace = true }
+des = { workspace = true }
+md-5 = { workspace = true }
+ecb = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+p384 = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["alloc", "pkcs8", "pem", "zeroize"] }
+libsm = { workspace = true }
+
+[lints]
+workspace = true

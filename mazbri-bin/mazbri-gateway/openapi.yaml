@@ -4,7 +4,8 @@ info:
   version: "1.0.0"
   description: |
     租户数据面：API Key 换短 JWT，然后 `POST /api/v1/gateway` 调用产品。
-    鉴权默认 `Authorization: Bearer`。可选 HTTP 请求绑定头（HMAC-SHA256）。
+    鉴权默认 `Authorization: Bearer`。可选 HTTP 请求绑定头（默认 `hmac-sha256`）。
+    数据面加密信封见 `TransportEnvelope`（闭集 kebab-case 算法 id；按租户 Profile mode=none|request|full）。
     HMAC 在 OAS 3.0 没有一等类型；生成器以 Bearer 为主，签名见文档与官方 SDK。
 servers:
   - url: https://gateway.example.com
@@ -105,7 +106,7 @@ components:
       name: X-Mazbri-Signature
       in: header
       required: false
-      description: HMAC-SHA256(key, canonical) 的 Base64。打开请求绑定后必填。
+      description: hmac-sha256(key, canonical) 的 Base64。打开请求绑定后必填。
       schema:
         type: string
     MazbriSignatureInput:
@@ -203,11 +204,14 @@ components:
         body: {}
     TransportEnvelope:
       type: object
+      description: |
+        租户传输信封（camelCase）。`dataAlg` / `macAlg` 为 mazbri-crypto 闭集 kebab-case id
+       （如 `aes-256-gcm`、`hmac-sha256`）。禁止历史大写别名（如 AES-256-GCM）。
+        行为由租户 Profile 的 mode 决定：`none` 明文；`request` 仅请求加密；`full` 请求+响应双向。
       required:
         - encrypted
-        - key_version
-        - algorithm
-        - signature_algorithm
+        - keyVersion
+        - dataAlg
         - timestamp
         - nonce
         - iv
@@ -219,25 +223,57 @@ components:
           type: boolean
         keyVersion:
           type: string
-        algorithm:
+          example: v1
+        dataAlg:
           type: string
-          example: AES-256-GCM
-        signatureAlgorithm:
+          description: 数据算法 AlgorithmId（kebab-case）
+          enum:
+            - aes-256-gcm
+            - aes-128-gcm
+            - aes-192-gcm
+            - chacha20-poly1305
+            - aes-256-cbc
+            - aes-128-cbc
+            - aes-256-ctr
+            - aes-128-ctr
+            - aes-256-cfb
+            - aes-128-cfb
+            - sm4-cbc-pkcs7
+            - sm4-ctr
+            - aes-256-ecb
+            - aes-128-ecb
+            - sm4-ecb-pkcs7
+            - des-cbc-pkcs5
+          example: aes-256-gcm
+        macAlg:
           type: string
-          example: HMAC-SHA256
+          nullable: true
+          description: 外挂 MAC/签名算法；AEAD 且 Profile 不要求时可省略
+          enum:
+            - hmac-sha256
+            - hmac-sha384
+            - hmac-sha512
+            - hmac-sm3
+            - hmac-md5
+          example: hmac-sha256
         timestamp:
           type: integer
           format: int64
+          description: Unix 秒
         nonce:
           type: string
         iv:
           type: string
+          description: 标准 Base64 IV / AEAD nonce
         ciphertext:
           type: string
+          description: 标准 Base64 密文（不含 AEAD tag）
         tag:
           type: string
+          description: 标准 Base64 AEAD tag；非 AEAD 为空串
         signature:
           type: string
+          description: 外层 MAC hex；无 macAlg 时为空串
     GatewayResponse:
       type: object
       required: [success, status]

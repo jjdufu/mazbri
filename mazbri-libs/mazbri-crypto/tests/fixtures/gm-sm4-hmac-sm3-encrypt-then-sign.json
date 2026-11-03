@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "order": "encrypt_then_sign",
+  "sign": {
+    "alg": "hmac-sm3",
+    "encoding": {
+      "hex": {
+        "case": "lower"
+      }
+    }
+  },
+  "crypt": {
+    "alg": "sm4-cbc-pkcs7",
+    "encoding": {
+      "hex": {
+        "case": "lower"
+      }
+    }
+  },
+  "canon": "sorted_kv",
+  "encodings": {
+    "payload": "base64",
+    "signature": "base64",
+    "iv": "base64"
+  },
+  "slots": [
+    {
+      "role": "sign",
+      "location": "header",
+      "name": "X-Sign"
+    },
+    {
+      "role": "cipher",
+      "location": "json",
+      "name": "encryptData"
+    }
+  ],
+  "iv": "random",
+  "scope": "whole_body",
+  "allow_insecure": false
+}
