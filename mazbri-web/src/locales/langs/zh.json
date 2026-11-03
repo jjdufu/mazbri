@@ -840,7 +840,6 @@
       "systemSettings": "系统配置",
       "appearanceSettings": "外观设置",
       "mfaSettings": "MFA 设置",
-      "passwordPolicy": "安全设置",
       "controlPanel": "控制面板",
       "configCenter": "配置中心",
       "connectorWorkbench": "免代码接入",
@@ -1020,10 +1019,12 @@
       "issuerName": "发行者名称",
       "totpDigits": "验证码位数（位）",
       "totpPeriod": "验证码周期（秒）",
-      "backupCodesCount": "备用码数量（个）"
+      "backupCodesCount": "备用码数量（个）",
+      "specialChars": "允许的特殊字符"
     },
     "placeholders": {
-      "issuerName": "Mazbri"
+      "issuerName": "Mazbri",
+      "specialChars": "!@#$%^&*()_+-="
     },
     "options": {
       "totpDigits6": "6 位",
@@ -1056,7 +1057,11 @@
     },
     "messages": {
       "noPermission": "仅超级管理员可配置安全设置。",
-      "savedSuccess": "设置已保存"
+      "savedSuccess": "设置已保存",
+      "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
+    },
+    "hints": {
+      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。"
     }
   },
   "channels": {
@@ -4119,7 +4124,20 @@
       "newRequired": "请输入新密码",
       "confirmRequired": "请再次输入新密码",
       "mismatch": "两次输入的新密码不一致",
-      "policyHint": "新密码需符合系统密码策略（长度、字符类型、历史密码限制）。"
+      "policyHint": "新密码需符合系统密码策略（长度、字符类型、历史密码限制）。",
+      "summaryTitle": "当前密码策略",
+      "summary": {
+        "length": "长度 {min}–{max} 位",
+        "uppercase": "大写字母",
+        "lowercase": "小写字母",
+        "digit": "数字",
+        "special": "特殊字符（{chars}）",
+        "charTypes": "须包含：{types}",
+        "charTypesNone": "不强制字符类型",
+        "history": "不可与最近 {count} 次密码重复",
+        "maxAge": "有效期 {days} 天（提前 {warning} 天提醒）",
+        "maxAgeOff": "不强制密码过期"
+      }
     },
     "actions": {
       "bind": "绑定 MFA",
@@ -4137,7 +4155,9 @@
     "platformPolicy": {
       "title": "平台安全策略",
       "description": "密码复杂度、过期与登录防护、平台 TOTP 参数（影响全体用户）",
-      "readOnlyHint": "仅超级管理员可修改平台策略；当前为只读查看"
+      "readOnlyHint": "仅超级管理员可修改平台策略；当前为只读查看",
+      "sessionHint": "管理端会话时长由系统配置决定，与本页密码策略相互独立。",
+      "sessionLink": "打开系统配置"
     }
   },
   "ops": {

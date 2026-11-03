@@ -68,13 +68,8 @@ export function generatePasswordFromPolicy(policy: PasswordPolicy): string {
 export async function generatePasswordWithFetch(): Promise<string> {
   try {
     const response = await fetchPasswordPolicy();
-    const rawData =
-      (
-        response as {
-          data?: unknown;
-        }
-      ).data ?? response;
-    if (!isPasswordPolicy(rawData)) {
+    const policy = resolvePasswordPolicyPayload(response);
+    if (!policy) {
       logger.warn("[Password] Invalid password policy format; using fallback", {
         service: "mazbri-mgmt-web",
         event: "password_policy_fallback",
@@ -83,8 +78,89 @@ export async function generatePasswordWithFetch(): Promise<string> {
       });
       return secureFallbackPassword();
     }
-    return generatePasswordFromPolicy(rawData);
+    return generatePasswordFromPolicy(policy);
   } catch {
     return secureFallbackPassword();
   }
+}
+
+export type PasswordPolicyTranslate = (
+  key: string,
+  params?: Record<string, unknown>,
+) => string;
+
+/**
+ * 将平台密码策略渲染为改密旁只读摘要行（长度 / 字符类 / 特殊字符集 / 历史与过期）。
+ */
+export function formatPasswordPolicySummaryLines(
+  policy: PasswordPolicy,
+  t: PasswordPolicyTranslate,
+): string[] {
+  const lines: string[] = [
+    t("accountSecurity.password.summary.length", {
+      min: policy.min_length,
+      max: policy.max_length,
+    }),
+  ];
+
+  const charParts: string[] = [];
+  if (policy.require_uppercase) {
+    charParts.push(t("accountSecurity.password.summary.uppercase"));
+  }
+  if (policy.require_lowercase) {
+    charParts.push(t("accountSecurity.password.summary.lowercase"));
+  }
+  if (policy.require_digit) {
+    charParts.push(t("accountSecurity.password.summary.digit"));
+  }
+  if (policy.require_special_char) {
+    charParts.push(
+      t("accountSecurity.password.summary.special", {
+        chars: policy.special_chars || DEFAULT_SPECIAL,
+      }),
+    );
+  }
+  if (charParts.length > 0) {
+    lines.push(
+      t("accountSecurity.password.summary.charTypes", {
+        types: charParts.join(" · "),
+      }),
+    );
+  } else {
+    lines.push(t("accountSecurity.password.summary.charTypesNone"));
+  }
+
+  if (policy.prevent_reuse_count > 0) {
+    lines.push(
+      t("accountSecurity.password.summary.history", {
+        count: policy.prevent_reuse_count,
+      }),
+    );
+  }
+  if (policy.max_age_days > 0) {
+    lines.push(
+      t("accountSecurity.password.summary.maxAge", {
+        days: policy.max_age_days,
+        warning: policy.warning_days,
+      }),
+    );
+  } else {
+    lines.push(t("accountSecurity.password.summary.maxAgeOff"));
+  }
+
+  return lines;
+}
+
+/** 解析 fetchPasswordPolicy 响应（支持 data 包裹或直接对象）。 */
+export function resolvePasswordPolicyPayload(
+  response: unknown,
+): PasswordPolicy | null {
+  const raw =
+    response &&
+    typeof response === "object" &&
+    "data" in response &&
+    (response as { data?: unknown }).data !== undefined
+      ? (response as { data: unknown }).data
+      : response;
+  return isPasswordPolicy(raw) ? raw : null;
 }

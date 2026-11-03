@@ -69,17 +69,6 @@ export const controlPanelRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "password-policy",
-        name: "PasswordPolicy",
-        component: "/mazbri/control-panel/security/password-policy/index",
-        meta: {
-          title: "menus.mazbri.passwordPolicy",
-          icon: "ri:lock-password-line",
-          keepAlive: true,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "system",
         name: "SystemConfig",
         component: "/mazbri/control-panel/system/index",

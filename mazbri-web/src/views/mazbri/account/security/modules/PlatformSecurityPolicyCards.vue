@@ -92,6 +92,26 @@
               :disabled="!canEdit"
             />
           </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('securityPolicy.fields.specialChars')"
+          >
+            <ExpandOnFocusInput
+              v-model="editForm.special_chars"
+              :placeholder="$t('securityPolicy.placeholders.specialChars')"
+              :compact-width="160"
+              :expand-width="320"
+              :disabled="!canEdit || !editForm.require_special_char"
+            />
+          </CommonSettingRow>
+          <CommonInlineHint
+            v-if="editForm.require_special_char"
+            block
+            size="xs"
+          >
+            {{ $t("securityPolicy.hints.specialChars") }}
+          </CommonInlineHint>
         </div>
       </ElCard>
 
@@ -306,23 +326,12 @@ import {
   type UpdateMfaSettingsRequest,
   type MfaSettings,
 } from "@/api/audit";
-import type { PasswordPolicy } from "@/types/api/settings";
+import { unwrapResponsePayload } from "@/utils/http/response";
+import { resolvePasswordPolicyPayload } from "@/utils/password";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
 
 defineOptions({ name: "PlatformSecurityPolicyCards" });
-
-function unwrapData<T>(response: T | { data?: T }): T {
-  if (
-    response &&
-    typeof response === "object" &&
-    "data" in response &&
-    (response as { data?: T }).data !== undefined
-  ) {
-    return (response as { data: T }).data;
-  }
-  return response as T;
-}
 
 const { isAdmin } = useOpsRole();
 const canEdit = isAdmin;
@@ -353,7 +362,7 @@ const mfaForm = reactive<MfaSettings>({
 
 async function loadPolicy(): Promise<void> {
   const response = await fetchPasswordPolicy();
-  const policy = unwrapData<PasswordPolicy>(response);
+  const policy = resolvePasswordPolicyPayload(response);
   if (!policy) return;
   Object.assign(editForm, {
     min_length: policy.min_length,
@@ -373,7 +382,7 @@ async function loadPolicy(): Promise<void> {
 
 async function loadMfa(): Promise<void> {
   const res = await fetchMfaSettings();
-  const data = unwrapData<MfaSettings>(res);
+  const data = unwrapResponsePayload<MfaSettings>(res);
   mfaForm.totp_issuer = data.totp_issuer || "Mazbri";
   mfaForm.totp_digits = data.totp_digits || 6;
   mfaForm.totp_period = data.totp_period || 30;
@@ -390,6 +399,13 @@ async function loadAll(): Promise<void> {
 
 async function handleSaveAll(): Promise<void> {
   if (!canEdit.value) return;
+  if (
+    editForm.require_special_char &&
+    !(editForm.special_chars || "").trim()
+  ) {
+    ElMessage.warning($t("securityPolicy.messages.specialCharsRequired"));
+    return;
+  }
   await runWithLoading(saving, async () => {
     const mfaPayload: UpdateMfaSettingsRequest = {
       totp_issuer: mfaForm.totp_issuer,
@@ -397,8 +413,12 @@ async function handleSaveAll(): Promise<void> {
       totp_period: mfaForm.totp_period,
       backup_codes_count: mfaForm.backup_codes_count,
     };
+    const policyPayload = {
+      ...toRaw(editForm),
+      special_chars: (editForm.special_chars || "").trim(),
+    };
     await Promise.all([
-      updatePasswordPolicy(toRaw(editForm)),
+      updatePasswordPolicy(policyPayload),
       updateMfaSettings(mfaPayload),
     ]);
     ElMessage.success($t("securityPolicy.messages.savedSuccess"));

@@ -840,7 +840,6 @@
       "systemSettings": "System Settings",
       "appearanceSettings": "Appearance Settings",
       "mfaSettings": "MFA Settings",
-      "passwordPolicy": "Security Settings",
       "controlPanel": "Control Panel",
       "configCenter": "Config Center",
       "connectorWorkbench": "Code-free Access",
@@ -1020,10 +1019,12 @@
       "issuerName": "Issuer Name",
       "totpDigits": "Code Digits (digits)",
       "totpPeriod": "Code Period (seconds)",
-      "backupCodesCount": "Backup Codes (pcs)"
+      "backupCodesCount": "Backup Codes (pcs)",
+      "specialChars": "Allowed special characters"
     },
     "placeholders": {
-      "issuerName": "Mazbri"
+      "issuerName": "Mazbri",
+      "specialChars": "!@#$%^&*()_+-="
     },
     "options": {
       "totpDigits6": "6 digits",
@@ -1056,7 +1057,11 @@
     },
     "messages": {
       "noPermission": "Only the super administrator can configure security settings.",
-      "savedSuccess": "Settings saved"
+      "savedSuccess": "Settings saved",
+      "specialCharsRequired": "Special character set cannot be empty when special characters are required."
+    },
+    "hints": {
+      "specialChars": "When special characters are required, the new password must include at least one character from this set."
     }
   },
   "channels": {
@@ -4114,7 +4119,20 @@
       "newRequired": "Please enter a new password",
       "confirmRequired": "Please enter the new password again",
       "mismatch": "The new passwords do not match",
-      "policyHint": "The new password must satisfy the password policy (length, character types, history)."
+      "policyHint": "The new password must satisfy the password policy (length, character types, history).",
+      "summaryTitle": "Current password policy",
+      "summary": {
+        "length": "Length {min}–{max} characters",
+        "uppercase": "uppercase",
+        "lowercase": "lowercase",
+        "digit": "digit",
+        "special": "special ({chars})",
+        "charTypes": "Must include: {types}",
+        "charTypesNone": "No character-type requirements",
+        "history": "Cannot reuse the last {count} passwords",
+        "maxAge": "Expires in {days} days (warn {warning} days ahead)",
+        "maxAgeOff": "Password expiration is off"
+      }
     },
     "actions": {
       "bind": "Set up MFA",
@@ -4132,7 +4150,9 @@
     "platformPolicy": {
       "title": "Platform Security Policy",
       "description": "Password complexity, expiration, login protection, and platform TOTP settings (applies to all users)",
-      "readOnlyHint": "Only the super administrator can change platform policy; this view is read-only"
+      "readOnlyHint": "Only the super administrator can change platform policy; this view is read-only",
+      "sessionHint": "Admin session lifetime is controlled by system settings, independent of the password policy on this page.",
+      "sessionLink": "Open system settings"
     }
   },
   "ops": {

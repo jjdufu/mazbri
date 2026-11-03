@@ -258,9 +258,19 @@
               autocomplete="new-password"
             />
           </ElFormItem>
-          <CommonInlineHint block size="xs">
-            {{ $t("accountSecurity.password.policyHint") }}
-          </CommonInlineHint>
+          <div class="password-policy-summary">
+            <div class="password-policy-summary__title">
+              {{ $t("accountSecurity.password.summaryTitle") }}
+            </div>
+            <ul v-if="passwordPolicyLines.length" class="password-policy-summary__list">
+              <li v-for="(line, idx) in passwordPolicyLines" :key="idx">
+                {{ line }}
+              </li>
+            </ul>
+            <CommonInlineHint v-else block size="xs">
+              {{ $t("accountSecurity.password.policyHint") }}
+            </CommonInlineHint>
+          </div>
           <div class="card-actions">
             <ElButton
               type="primary"
@@ -292,12 +302,33 @@
         </div>
       </div>
       <PlatformSecurityPolicyCards />
+      <div class="platform-policy-section__footnote">
+        <CommonInlineHint block size="xs">
+          <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="platform-policy-section__link"
+            @click="goSystemSettings"
+          >
+            {{ $t("accountSecurity.platformPolicy.sessionLink") }}
+          </button>
+        </CommonInlineHint>
+      </div>
     </section>
   </ControlPanelPageShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   ElMessage,
   ElMessageBox,
@@ -320,6 +351,7 @@ import {
   getMfaStatus,
   regenerateBackupCodes,
 } from "@/api/auth";
+import { fetchPasswordPolicy } from "@/api/audit";
 import type {
   ChangePasswordRequest,
   MfaSessionRefresh,
@@ -327,6 +359,7 @@ import type {
   MfaStatus,
 } from "@/types/api";
 import { runWithLoading } from "@/composables/useAsyncState";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
 import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { copyTextToClipboard } from "@/utils/clipboard";
@@ -340,13 +373,21 @@ import {
 } from "@/utils/http/mfa-step-up-state";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { HttpError } from "@/utils/http/error";
+import {
+  formatPasswordPolicySummaryLines,
+  resolvePasswordPolicyPayload,
+} from "@/utils/password";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
 
 defineOptions({ name: "AccountSecurity" });
 
+const route = useRoute();
+const router = useRouter();
 const userStore = useUserStore();
 const stepUpStore = useMfaStepUpStore();
+const { isAdmin } = useOpsRole();
+const passwordPolicyLines = ref<string[]>([]);
 const { nowMs, windows } = storeToRefs(stepUpStore);
 const categoryList = MFA_CATEGORIES;
 const endingCategory = ref<MfaCategory | null>(null);
@@ -633,10 +674,51 @@ async function handleChangePassword(): Promise<void> {
   });
 }
 
+async function loadPasswordPolicySummary(): Promise<void> {
+  try {
+    const response = await fetchPasswordPolicy();
+    const policy = resolvePasswordPolicyPayload(response);
+    passwordPolicyLines.value = policy
+      ? formatPasswordPolicySummaryLines(policy, $t)
+      : [];
+  } catch (error) {
+    passwordPolicyLines.value = [];
+    logger.warn("Failed to load password policy summary:", error);
+  }
+}
+
+function shouldFocusPlatformPolicy(): boolean {
+  if (route.hash === "#platform-policy") return true;
+  const section = route.query.section;
+  return section === "platform" || (Array.isArray(section) && section[0] === "platform");
+}
+
+function scrollToPlatformPolicy(): void {
+  if (!shouldFocusPlatformPolicy()) return;
+  void nextTick(() => {
+    document
+      .getElementById("platform-policy")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+function goSystemSettings(): void {
+  void router.push({ path: "/control-panel/system" });
+}
+
 onMounted(() => {
   void loadStatus();
+  void loadPasswordPolicySummary();
   void stepUpStore.refresh().catch(() => undefined);
+  scrollToPlatformPolicy();
 });
+
+watch(
+  () => [route.hash, route.query.section] as const,
+  () => {
+    scrollToPlatformPolicy();
+  },
+);
 </script>
 
 <style scoped lang="scss">
@@ -865,5 +947,45 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.5;
   color: var(--el-text-color-secondary);
+}
+
+.password-policy-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.password-policy-summary__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+}
+
+.password-policy-summary__list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+
+.platform-policy-section__footnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.platform-policy-section__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 </style>
