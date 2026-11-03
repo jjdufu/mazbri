@@ -1,3 +1,10 @@
+-- =============================================================================
+-- DEV ONLY · 显式种子（make -C docker/cwork/scripts seed-mock）
+-- 禁止：redep / 生产 init-dbs / 默认启动路径自动执行本文件。
+-- 作用库：mazbri_ratelimit。本脚本不写 alert_rules/alert_events；
+-- 若另插告警演示数据，必须 labels.seed=dev19-mock，列表 API 默认过滤。
+-- =============================================================================
+
 -- Run against mazbri_ratelimit
 -- 租户 CN5XGJRW / product 8019900019
 -- 产品级 api_limits 压到 qps=2/burst=2，便于打出 429。

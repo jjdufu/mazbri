@@ -52,7 +52,7 @@
         >
           <span class="ops-alerts__timeline-title">{{ item.rule_name }}</span>
           <ElTag size="small" :type="alertStatusTag(item.status)">
-            {{ t(`ops.alerts.status.${item.status}`) }}
+            {{ alertStatusText(item.status) }}
           </ElTag>
           <span class="ops-alerts__muted">
             {{ formatAlertLabels(item.labels) }} ·
@@ -79,14 +79,14 @@
           <ElTableColumn :label="t('ops.alerts.columns.severity')" width="100">
             <template #default="{ row }">
               <ElTag :type="alertSeverityTag(row.severity)" size="small">
-                {{ t(`ops.alerts.severity.${row.severity}`) }}
+                {{ alertSeverityText(row.severity) }}
               </ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn :label="t('ops.alerts.columns.status')" width="180">
             <template #default="{ row }">
               <ElTag :type="alertStatusTag(row.status)" size="small">
-                {{ t(`ops.alerts.status.${row.status}`) }}
+                {{ alertStatusText(row.status) }}
               </ElTag>
               <ElTag
                 v-if="row.silenced"
@@ -186,7 +186,7 @@
           <ElTimelineItem
             v-for="(c, idx) in relatedChanges"
             :key="idx"
-            :timestamp="c.ts"
+            :timestamp="formatAlertTime(c.ts)"
             placement="top"
           >
             {{ c.kind }} · {{ c.title }}
@@ -239,13 +239,26 @@ import {
   formatAlertLabels,
   formatAlertTime,
   formatAlertValue,
+  resolveAlertI18nLabel,
 } from "@/utils/ops/alerts-format";
+import { getStatusLabel } from "@/utils/display-labels";
 import { stripAlertEventIdQuery } from "@/utils/ops/alerts-link";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 
 defineOptions({ name: "OpsAlertEventsPanel" });
 
-const { t } = useI18n();
+const { t, te } = useI18n();
+
+function alertStatusText(status: string): string {
+  const labeled = resolveAlertI18nLabel("ops.alerts.status", status, t, te);
+  return labeled === status ? getStatusLabel(status) : labeled;
+}
+
+function alertSeverityText(severity: string): string {
+  const labeled = resolveAlertI18nLabel("ops.alerts.severity", severity, t, te);
+  return labeled === severity ? getStatusLabel(severity) : labeled;
+}
+
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();

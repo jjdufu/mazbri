@@ -1,3 +1,9 @@
+-- =============================================================================
+-- DEV ONLY · 显式种子（make -C docker/cwork/scripts seed-mock）
+-- 禁止：redep / 生产 init-dbs / 默认启动路径自动执行本文件。
+-- 作用库：mazbri_cache。不写告警表；告警演示须带 labels.seed=dev19-mock。
+-- =============================================================================
+
 -- Run against mazbri_cache
 INSERT INTO cache_configs (
   tenant_id, enabled, default_ttl, max_cache_size, api_ttl, tenant_isolated, warmup_enabled

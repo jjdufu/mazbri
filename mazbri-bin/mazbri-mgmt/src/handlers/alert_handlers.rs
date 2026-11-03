@@ -1,7 +1,7 @@
 //! 告警中心 HTTP 处理器：规则 CRUD（平台配置类 step-up）、事件列表 / 确认 / 指派、概览统计。
 use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
-use crate::middleware::auth::{AdminClaims, extract_user_id};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::alerts::{
     self as svc, AlertError, AlertRuleInput, AssignInput, EnabledInput, EventListQuery,
@@ -261,8 +261,16 @@ pub async fn delete_alert_rule(
 
 pub async fn list_alert_events(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(query): Query<EventListQuery>,
 ) -> Response {
+    if query.include_seed && !is_admin(&claims) {
+        return ApiResponse::err(
+            StatusCode::FORBIDDEN,
+            "仅超级管理员可查看种子告警",
+        )
+        .into_response();
+    }
     match svc::list_events(&state.admin_db, &query).await {
         Ok(page) => ApiResponse::ok(page).into_response(),
         Err(error) => error.into_response(),
