@@ -200,8 +200,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-      }
-      }
+      },
     ],
   },
   {

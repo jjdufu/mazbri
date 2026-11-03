@@ -326,7 +326,6 @@ import {
   type UpdateMfaSettingsRequest,
   type MfaSettings,
 } from "@/api/audit";
-import { unwrapResponsePayload } from "@/utils/http/response";
 import { resolvePasswordPolicyPayload } from "@/utils/password";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
@@ -381,8 +380,9 @@ async function loadPolicy(): Promise<void> {
 }
 
 async function loadMfa(): Promise<void> {
+  // fetchMfaSettings 经 http 解包后仍为 `{ data: MfaSettings }` 信封。
   const res = await fetchMfaSettings();
-  const data = unwrapResponsePayload<MfaSettings>(res);
+  const data = res.data;
   mfaForm.totp_issuer = data.totp_issuer || "Mazbri";
   mfaForm.totp_digits = data.totp_digits || 6;
   mfaForm.totp_period = data.totp_period || 30;

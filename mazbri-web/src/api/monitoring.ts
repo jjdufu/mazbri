@@ -9,6 +9,7 @@ import type {
   TopologyGraph,
 } from "@/types/api/monitoring";
 const BASE_PATH = `${API_BASE_PATH}/stats/metrics`;
+/** Overview KPI 为瞬时语义，不传时间范围；曲线请用 fetchMetricTimeseries。 */
 export async function fetchMetricsOverview() {
   return request.get<MetricOverview>({
     url: `${BASE_PATH}/overview`,

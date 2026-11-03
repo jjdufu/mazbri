@@ -2,7 +2,8 @@ use super::{
     ADMIN, ALL_ROLES, Access, BIZ, Denial, RULES, decide, lookup, route_access_middleware,
 };
 use super::access_assert::{
-    access_of, assert_access_eq, assert_ia_routes_not_widened, assert_prefix_access,
+    access_of, assert_access_eq, assert_ia_audit_matrix_groups, assert_ia_routes_not_widened,
+    assert_prefix_access,
 };
 use crate::audit::AuditScope;
 use crate::audit::route_map::{self, RouteKind, route_sources::source_routes};
@@ -609,6 +610,7 @@ fn ops_stats_and_alerts_follow_role_matrix() {
 fn ia_critical_routes_must_not_widen() {
     // 运维 IA / Dashboard / 账号安全合并不得放宽后端门禁。
     assert_ia_routes_not_widened();
+    assert_ia_audit_matrix_groups();
     assert_access_eq("GET", "/alerts/rules", Access::Roles(ADMIN));
     assert_access_eq("PUT", "/settings/password-policy", Access::Roles(ADMIN));
     assert_prefix_access("/alerts/silences", Access::Roles(ADMIN), &[]);
