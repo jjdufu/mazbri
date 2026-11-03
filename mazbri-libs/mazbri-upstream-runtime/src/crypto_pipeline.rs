@@ -653,6 +653,14 @@ fn encrypt_alg(
             if iv.is_empty() {
                 return encrypt_ecb_legacy(alg, key, plaintext, allow_insecure);
             }
+            if alg == AlgorithmId::DesCbcPkcs5 {
+                return Ok(mazbri_crypto::legacy_algs::des_cbc_encrypt(
+                    allow_insecure,
+                    key,
+                    iv,
+                    plaintext,
+                )?);
+            }
             if let Ok(sm4) = registry.sm4(alg) {
                 return Ok(sm4.encrypt(key, iv, plaintext)?);
             }
@@ -683,6 +691,14 @@ fn decrypt_alg(
         AlgorithmKind::BlockCipher => {
             if iv.is_empty() {
                 return decrypt_ecb_legacy(alg, key, ciphertext, allow_insecure);
+            }
+            if alg == AlgorithmId::DesCbcPkcs5 {
+                return Ok(mazbri_crypto::legacy_algs::des_cbc_decrypt(
+                    allow_insecure,
+                    key,
+                    iv,
+                    ciphertext,
+                )?);
             }
             if let Ok(sm4) = registry.sm4(alg) {
                 return Ok(sm4.decrypt(key, iv, ciphertext)?);
