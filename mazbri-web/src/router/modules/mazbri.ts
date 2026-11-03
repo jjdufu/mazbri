@@ -345,28 +345,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "flow/ratelimit",
-        name: "OpsFlowRatelimit",
-        component: "/mazbri/ops/flow/ratelimit",
-        meta: {
-          title: "menus.mazbri.flowRatelimit",
-          icon: "ri:speed-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "flow/cache",
-        name: "OpsFlowCache",
-        component: "/mazbri/ops/flow/cache",
-        meta: {
-          title: "menus.mazbri.flowCache",
-          icon: "ri:database-2-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "security",
         name: "OpsSecurityEvents",
         component: "/mazbri/ops/security/index",

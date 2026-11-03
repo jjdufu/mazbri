@@ -101,3 +101,33 @@ test("services topology ADMIN-only; health ALL", () => {
   );
   assert.equal(result.activeTab, "health");
 });
+
+test("flow cache is ADMIN; ratelimit is BIZ; FINANCE falls back from cache", () => {
+  const tabs = getMergedRouteTabs("flow");
+  assert.deepEqual(tabs[0]?.roles, ROLES_BIZ);
+  assert.deepEqual(tabs[1]?.roles, ROLES_ADMIN);
+  const finance = resolveOpsTab({
+    role: "R_FINANCE",
+    tabs: [...tabs],
+    queryTab: "cache",
+    preferredDefault: MERGED_DEFAULT_TAB.flow,
+  });
+  assert.deepEqual(
+    finance.visibleTabs.map((tab) => tab.id),
+    ["ratelimit"],
+  );
+  assert.equal(finance.activeTab, "ratelimit");
+  assert.equal(finance.fellBack, true);
+
+  const admin = resolveOpsTab({
+    role: "R_ADMIN",
+    tabs: [...tabs],
+    queryTab: "cache",
+    preferredDefault: MERGED_DEFAULT_TAB.flow,
+  });
+  assert.deepEqual(
+    admin.visibleTabs.map((tab) => tab.id),
+    ["ratelimit", "cache"],
+  );
+  assert.equal(admin.activeTab, "cache");
+});

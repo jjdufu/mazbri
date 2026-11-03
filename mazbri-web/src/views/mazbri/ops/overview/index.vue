@@ -308,6 +308,7 @@ import { buildAlertsRoute } from "@/utils/ops/alerts-link";
 import { BILLING_PATH } from "@/utils/ops/billing-link";
 import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
 import { UPSTREAM_PATH } from "@/utils/ops/upstream-link";
+import { FLOW_PATH } from "@/utils/ops/flow-link";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -426,7 +427,13 @@ const drillTargets = computed<DrillTarget[]>(() => [
     path: UPSTREAM_PATH,
     query: { tab: "breaker" },
   },
-  { id: "4.1", label: t("ops.overview.drill.ratelimit"), enabled: false },
+  {
+    id: "4.1",
+    label: t("ops.overview.drill.ratelimit"),
+    enabled: true,
+    path: FLOW_PATH,
+    query: { tab: "ratelimit" },
+  },
   {
     id: "6.1",
     label: t("ops.overview.drill.billing"),
