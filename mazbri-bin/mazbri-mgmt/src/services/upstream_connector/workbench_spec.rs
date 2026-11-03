@@ -447,8 +447,11 @@ fn spec_json_from_endpoint(ep: &Value, upstream_url: &str) -> Result<Value, ApiE
     if let Some(unwrap) = non_empty_str(ep, "unwrap") {
         obj.insert("response".into(), serde_json::json!({ "unwrap": unwrap }));
     }
-    for key in ["graphql", "job_poll", "sign_form", "soap", "ws", "auth"] {
+    for key in ["graphql", "job_poll", "sign_form", "soap", "ws", "auth", "crypto"] {
         if let Some(v) = ep.get(key) {
+            if key == "crypto" && v.is_null() {
+                continue;
+            }
             obj.insert(key.into(), v.clone());
         }
     }
@@ -1189,6 +1192,35 @@ mod tests {
         let b = build_workbench_spec(&empty_ep, &empty_env(), None, "https://up.example")
             .expect("empty");
         assert_ne!(a.fingerprint, b.fingerprint);
+    }
+
+    #[test]
+    fn crypto_profile_enters_assembled_spec() {
+        let ep = serde_json::json!({
+            "method": "POST",
+            "path": "/",
+            "body_encoding": "json",
+            "crypto": {
+                "version": 1,
+                "order": "aead_only",
+                "canon": "raw",
+                "encodings": {
+                    "payload": "base64",
+                    "signature": "base64",
+                    "iv": "base64"
+                },
+                "iv": "random",
+                "scope": "whole_body",
+                "allow_insecure": false,
+                "crypt": { "alg": "aes-256-gcm" }
+            }
+        });
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://u.example").expect("ok");
+        let crypto = built.spec.crypto.expect("crypto present");
+        let crypto_v = serde_json::to_value(&crypto).expect("ser");
+        assert_eq!(crypto_v["order"], "aead_only");
+        assert_eq!(crypto_v["crypt"]["alg"], "aes-256-gcm");
     }
 
     #[test]

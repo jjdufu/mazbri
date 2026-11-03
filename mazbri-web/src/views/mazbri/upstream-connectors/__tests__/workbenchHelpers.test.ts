@@ -8,6 +8,7 @@ import {
   ensureCredentialKeys,
   sanitizeAuthSpec,
 } from "../authMatrix";
+import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
 
 
 const groups: Record<string, string> = {
@@ -91,3 +92,7 @@ assert.equal(oauth?.token_url, "https://idp.example/token");
 assert.ok(oauth?.request_body_tpl);
 
 console.log("workbenchHelpers authMatrix ok");
+
+assert.equal(isAuthSignFormProfile("sign_form"), true);
+assert.equal(isAuthSignFormProfile("bearer"), false);
+console.log("workbenchHelpers auth vs body crypto boundary ok");

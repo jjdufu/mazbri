@@ -3679,7 +3679,7 @@
     "authSecret": "Secret",
     "authTokenPath": "Token path (relative to base)",
     "authRawCredentials": "Advanced: raw credential KV",
-    "authSignAdapterHint": "HMAC is assembled by the sign_form adapter. Change the adapter on the egress tab.",
+    "authSignAdapterHint": "Body signing algorithms are configured under Transform → Body crypto. Switch the adapter to sign_form if the peer expects form slots.",
     "authJwtAlgo": "Algorithm",
     "authJwtTtl": "TTL (seconds)",
     "authJwtKid": "kid",
@@ -3731,7 +3731,7 @@
     "authHintOauth": "client_credentials ticket. Empty template keeps the default form; a non-empty template is the token body.",
     "authHintGettoken": "GET ticket: app_id / secret as query. Empty jsonpath defaults to $.token.",
     "authHintBasic": "Username / password become Authorization: Basic (lookup includes username/password).",
-    "authHintSign": "HMAC is assembled by the sign_form adapter; this tab does not fetch or inject.",
+    "authHintSign": "sign_form auth only holds App ID / Secret credentials. Configure body sign/cipher algorithms under Transform → Body crypto (egress.crypto). This tab does not fetch or inject.",
     "authHintGrpc": "The secret is written to metadata and the same header. Location is locked to metadata.",
     "authHintBearer": "Static token injected with the format (default Authorization: Bearer {}).",
     "authHintJwt": "Sign a JWT with the key on each request, then inject. Not a ticket-returned JWT.",
@@ -3889,6 +3889,69 @@
       "contractId": "Contract ID",
       "envName": "Variable name",
       "versionNo": "Version"
+    },
+    "cryptoEnable": "Enable body crypto / sign (egress.crypto)",
+    "cryptoAuthBoundaryHint": "Auth tab sign_form only holds credentials; body algorithms / order / slots are edited here—not a second signing UI.",
+    "cryptoImportTemplate": "Import from template",
+    "cryptoOrder": "Crypto order",
+    "cryptoSignAlg": "Sign / MAC algorithm",
+    "cryptoCryptAlg": "Cipher algorithm",
+    "cryptoCanon": "Canon style",
+    "cryptoEncPayload": "Payload encoding",
+    "cryptoEncSignature": "Signature encoding",
+    "cryptoEncIv": "IV encoding",
+    "cryptoIvSource": "IV source",
+    "cryptoScope": "Cipher scope",
+    "cryptoCryptFields": "Cipher field list",
+    "cryptoResponseFields": "Response decrypt fields",
+    "cryptoFieldsPlaceholder": "Comma-separated, e.g. biz_content, data",
+    "cryptoSlots": "Slot placement",
+    "cryptoSlotsEmpty": "Empty slots fall back to adapter defaults.",
+    "cryptoAddSlot": "Add slot",
+    "cryptoSlotRole": "Role (sign/cipher/biz…)",
+    "cryptoSlotName": "Field name",
+    "cryptoResponseCrypt": "Response decrypt (optional)",
+    "cryptoAllowInsecure": "Allow legacy algorithms (allow_insecure)",
+    "cryptoAllowInsecureHint": "Enable only for legacy peers; unlocks ECB / HMAC-MD5 and similar weak algorithms.",
+    "cryptoAllowInsecureAdminOnly": "Only a super admin can toggle the legacy gate.",
+    "cryptoSelectAlg": "Select algorithm",
+    "cryptoSelectAlgOptional": "Optional; leave empty to skip response decrypt",
+    "cryptoValidationTitle": "Body crypto profile failed client validation",
+    "cryptoSection": "Body crypto",
+    "cryptoOrders": {
+      "sign_then_encrypt": "Sign then encrypt",
+      "encrypt_then_sign": "Encrypt then sign",
+      "encrypt_only": "Encrypt only",
+      "sign_only": "Sign / MAC only",
+      "aead_only": "AEAD only"
+    },
+    "cryptoCanons": {
+      "sorted_kv": "Sorted key-value",
+      "concat": "Fixed concat",
+      "raw": "Raw bytes",
+      "jws_style": "JWS style"
+    },
+    "cryptoIvSources": {
+      "random": "Random",
+      "random_prefix": "Random prefix",
+      "key_derive": "Key derive",
+      "field": "From field"
+    },
+    "cryptoScopes": {
+      "whole_body": "Whole body",
+      "named_fields": "Named fields"
+    },
+    "cryptoWireEncodings": {
+      "base64": "Base64",
+      "base64_url": "Base64URL",
+      "hex_lower": "Hex (lower)",
+      "hex_upper": "Hex (upper)"
+    },
+    "cryptoTemplates": {
+      "aeadAes256Gcm": "AEAD · AES-256-GCM",
+      "gmSm4CbcHmacSm3": "GM · SM4-CBC + HMAC-SM3",
+      "signOnlyHmacSha256": "Sign-only · HMAC-SHA256",
+      "encryptThenSignAesCbc": "Encrypt-then-sign · AES-CBC + HMAC"
     }
   },
   "listQueryBar": {
