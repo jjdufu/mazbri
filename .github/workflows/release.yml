@@ -133,9 +133,10 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # Strict gate again right before release (decision 6: PR + pre-release).
-  # Runs in parallel with compile; nothing is pushed or published unless it
-  # succeeds (image / retag / notes all need it).
+  # Light pre-publish gate (ci.yml via workflow_call): smoke/noop only —
+  # clippy/test already ran on the feature PR. Runs in parallel with compile
+  # (amd64∥arm64 matrix unchanged); image / retag / notes still need it so a
+  # failed smoke blocks push.
   gate:
     needs: meta
     uses: ./.github/workflows/ci.yml

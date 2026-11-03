@@ -1,10 +1,14 @@
 name: CI
 
-# Strict gate: runs on every PR / push to main, and is called again by
-# release.yml right before images are built (decision: gate in both places).
+# Quality gate for every PR / push to main. Also reusable via workflow_call
+# from release.yml as a light pre-publish check (smoke only — not a second
+# full clippy/test pass).
 #
 # PR 侧按路径缩范围（web-only 跳过 libs、bin 仅 -p mazbri-mgmt）；
-# main push 若对应功能 PR 已全量绿则跳过重活（Release gate 仍全量，不跳）。
+# main push 若对应功能 PR 已绿则跳过重活。
+# Release 通过 workflow_call 调用时只跑轻量门（changes + smoke + noop +
+# CI result）；clippy/test 以功能 PR CI 为准，compile 仍由 release.yml 的
+# amd64∥arm64 matrix 负责。
 on:
   push:
     branches: [main]
@@ -131,9 +135,9 @@ jobs:
           if [ -n "$pr" ] && [ "$force" = false ]; then
             head_sha=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
             echo "Merged PR #$pr head=$head_sha"
-            # 只要该 head 上已有成功的本仓库 CI workflow run，即视为已全量闸过。
-            # （路径缩略的 PR 也会成功；若其未跑 libs，合 main 跳过等于少测 —
-            #  完整性仍由 Release gate 兜住。这是约定的保守去重。）
+            # 只要该 head 上已有成功的本仓库 CI workflow run，即视为已闸过。
+            # （路径缩略的 PR 也会成功；若其未跑 libs，合 main 跳过等于少测。
+            #  单人开发约定：质量以功能 PR CI 为准，发版不再全量兜底。）
             ok=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
               --commit "$head_sha" --status success --limit 5 \
               --json databaseId,conclusion,event \
@@ -218,13 +222,18 @@ jobs:
                 bin_scope=mgmt
               fi
             fi
+          elif [ "$EVENT" = "workflow_call" ]; then
+            # Release 调用：功能 PR 已验过；跳过 frontend/libs/bin，只留 smoke/noop
+            run_frontend=false
+            run_libs=false
+            run_bin=false
+            skip_heavy=true
           else
-            # push(main 未去重) / workflow_dispatch / workflow_call(Release gate)：全量
+            # push(main 未去重) / workflow_dispatch：全量
             run_frontend=true
             run_libs=true
             run_bin=true
             bin_scope=workspace
-            # workflow_call 时 github.workflow 是调用方名，不会走 dedupe；此处保持全量
           fi
 
           {
