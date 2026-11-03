@@ -4045,7 +4045,7 @@
   "accountSecurity": {
     "page": {
       "title": "Account Security",
-      "subtitle": "Manage two-factor authentication (MFA) and the password of your account"
+      "subtitle": "Manage MFA and the password for your account; platform security policy is below"
     },
     "mfa": {
       "title": "Two-Factor Authentication (MFA)",
@@ -4128,6 +4128,11 @@
     "messages": {
       "copied": "Copied to clipboard",
       "copyFailed": "Copy failed, please copy manually"
+    },
+    "platformPolicy": {
+      "title": "Platform Security Policy",
+      "description": "Password complexity, expiration, login protection, and platform TOTP settings (applies to all users)",
+      "readOnlyHint": "Only the super administrator can change platform policy; this view is read-only"
     }
   },
   "ops": {

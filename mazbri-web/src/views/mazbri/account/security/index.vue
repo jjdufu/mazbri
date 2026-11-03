@@ -273,6 +273,26 @@
         </ElForm>
       </ElCard>
     </div>
+
+    <section id="platform-policy" class="platform-policy-section">
+      <div class="platform-policy-section__header">
+        <div class="platform-policy-section__title-wrap">
+          <ArtSvgIcon
+            icon="ri:shield-settings-line"
+            class="platform-policy-section__icon"
+          />
+          <div>
+            <h2 class="platform-policy-section__title">
+              {{ $t("accountSecurity.platformPolicy.title") }}
+            </h2>
+            <p class="platform-policy-section__desc">
+              {{ $t("accountSecurity.platformPolicy.description") }}
+            </p>
+          </div>
+        </div>
+      </div>
+      <PlatformSecurityPolicyCards />
+    </section>
   </ControlPanelPageShell>
 </template>
 
@@ -290,6 +310,7 @@ import ControlPanelPageShell from "@/components/common/control-panel-page-shell/
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import PlatformSecurityPolicyCards from "./modules/PlatformSecurityPolicyCards.vue";
 import {
   changePassword,
   disableMfa,
@@ -802,5 +823,47 @@ onMounted(() => {
   .setup-body {
     flex-direction: column;
   }
+}
+
+.platform-policy-section {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.platform-policy-section__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.platform-policy-section__title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.platform-policy-section__icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--el-color-primary);
+}
+
+.platform-policy-section__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.platform-policy-section__desc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 </style>

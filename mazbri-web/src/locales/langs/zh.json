@@ -4050,7 +4050,7 @@
   "accountSecurity": {
     "page": {
       "title": "账号安全",
-      "subtitle": "管理当前登录账号的两步验证（MFA）与登录密码"
+      "subtitle": "管理当前账号的两步验证与登录密码；平台安全策略见下方分区"
     },
     "mfa": {
       "title": "两步验证（MFA）",
@@ -4133,6 +4133,11 @@
     "messages": {
       "copied": "已复制到剪贴板",
       "copyFailed": "复制失败，请手动复制"
+    },
+    "platformPolicy": {
+      "title": "平台安全策略",
+      "description": "密码复杂度、过期与登录防护、平台 TOTP 参数（影响全体用户）",
+      "readOnlyHint": "仅超级管理员可修改平台策略；当前为只读查看"
     }
   },
   "ops": {
