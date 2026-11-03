@@ -29,6 +29,7 @@ export const useMenuStore = defineStore("menuStore", () => {
     if (!path || !userStore.isLogin) return;
     if (path.startsWith("/auth/") || path === RoutesAlias.Login) return;
     if (path.startsWith("/exception/")) return;
+    // 个人 UI 偏好：不进安全审计；失败静默（API 已 showErrorMessage:false）。
     void putPreferences({ last_path: path }).catch(() => undefined);
   };
 

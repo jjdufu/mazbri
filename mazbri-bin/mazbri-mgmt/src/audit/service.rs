@@ -70,6 +70,9 @@ fn resolve_ip_address(ip_address: Option<&str>, details: &serde_json::Value) -> 
 }
 
 /// 动作 → 中文标签（SQL 搜索与导出共用；前端标签见 `audit-logs/labels.ts`，由测试保证同步）。
+///
+/// 契约：个人 UI 偏好（`PUT /admin/preferences`）不入库安全审计，亦不出现在本表默认动作噪声中；
+/// `user.settings_update` 仅对应 `/settings/user` 显式资料变更。
 pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("admin.login", "管理员登录"),
     ("admin.logout", "管理员登出"),
@@ -147,7 +150,8 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("tenant.crypto_verify", "校验租户加密密钥"),
     ("password.first_login_change", "首次登录修改密码"),
     ("password.change", "修改密码"),
-    ("user.settings_update", "更新用户设置"),
+    // 仅 /settings/user（语言/邮箱等显式资料）；个人 UI 偏好不再使用此动作。
+    ("user.settings_update", "更新用户资料"),
     ("tenant.ratelimit_update", "更新限流配置"),
     ("tenant.ratelimit_delete", "删除限流配置"),
     ("tenant.cache_update", "更新缓存配置"),
@@ -732,12 +736,21 @@ fn push_audit_where(
         .map_err(|e| sqlx::Error::Protocol(e.message))
 }
 
+/// 从安全审计列表/导出中剔除个人 UI 偏好路径（含历史「更新用户设置」刷屏记录）。
+fn push_exclude_personal_preferences(builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+    builder.push(" AND COALESCE(path, '') NOT LIKE '%/admin/preferences'");
+}
+
 /// 追加显式字段过滤条件。
 fn push_audit_conditions(
     builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     query: &AuditLogQuery,
     keyword: Option<&str>,
 ) {
+    // 个人 UI 偏好不属安全审计范围：默认查询/导出排除 path 含 /admin/preferences 的历史噪音。
+    // 治本已在 route_map 将 PUT preferences 改为 Read（成功不落库）；此处清理存量。
+    // 无 include 兼容别名；禁止「先记再前端过滤」当长期方案。
+    push_exclude_personal_preferences(builder);
     if let Some(tid) = query.tenant_id.map(|id| id.to_string()) {
         builder.push(" AND (details->>'tenant_id' = ");
         builder.push_bind(tid.clone());
@@ -841,6 +854,19 @@ mod where_tests {
         assert_eq!(count, export);
         assert!(count.contains("ILIKE"));
         assert!(count.contains("action"));
+        assert!(
+            count.contains("/admin/preferences"),
+            "默认查询须排除个人偏好路径噪音: {count}"
+        );
+    }
+
+    #[test]
+    fn default_query_excludes_personal_preferences_path() {
+        let sql = where_sql(&AuditLogQuery::default(), "SELECT 1 WHERE 1=1");
+        assert!(
+            sql.contains("NOT LIKE") && sql.contains("/admin/preferences"),
+            "缺少偏好路径排除: {sql}"
+        );
     }
 
     #[test]

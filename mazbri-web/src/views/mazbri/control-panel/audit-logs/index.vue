@@ -656,6 +656,7 @@ const buildQueryParams = (includePagination = true) => {
 const loadData = async () => {
   const params = buildQueryParams();
   await runWithLoading(loading, async () => {
+    // 后端默认排除 /admin/preferences 个人偏好噪音（route_map 治本 + 查询侧清存量）。
     const res = await fetchAuditLogList(params);
     tableData.value = res.logs;
     pagination.total = res.total;

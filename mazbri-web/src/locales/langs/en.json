@@ -1383,7 +1383,7 @@
       "userLogout": "Logout",
       "userUpdate": "Update User",
       "userDelete": "Delete User",
-      "userSettingsUpdate": "Update User Settings",
+      "userSettingsUpdate": "Update User Profile Settings",
       "quotaUpdate": "Update Quota Config",
       "planChange": "Change Plan",
       "productGrant": "Grant Product",
