@@ -307,6 +307,7 @@ import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
 import { buildAlertsRoute } from "@/utils/ops/alerts-link";
 import { BILLING_PATH } from "@/utils/ops/billing-link";
 import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
+import { UPSTREAM_PATH } from "@/utils/ops/upstream-link";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -422,7 +423,8 @@ const drillTargets = computed<DrillTarget[]>(() => [
     id: "3.2",
     label: t("ops.overview.drill.circuit"),
     enabled: true,
-    path: "/ops/upstream/breaker",
+    path: UPSTREAM_PATH,
+    query: { tab: "breaker" },
   },
   { id: "4.1", label: t("ops.overview.drill.ratelimit"), enabled: false },
   {

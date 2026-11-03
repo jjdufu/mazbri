@@ -323,28 +323,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "upstream/sla",
-        name: "OpsUpstreamSla",
-        component: "/mazbri/ops/upstream/sla",
-        meta: {
-          title: "menus.mazbri.upstreamSla",
-          icon: "ri:shield-check-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream/breaker",
-        name: "OpsUpstreamBreaker",
-        component: "/mazbri/ops/upstream/breaker",
-        meta: {
-          title: "menus.mazbri.upstreamBreaker",
-          icon: "ri:flashlight-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "billing",
         name: "OpsBilling",
         component: "/mazbri/ops/billing/index",

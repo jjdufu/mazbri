@@ -1,19 +1,17 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.upstreamSla')">
-    <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-        <ElDropdown @command="exportCsv">
-          <ElButton :loading="exporting">{{ t("ops.upstream.exportCsv") }}</ElButton>
-          <template #dropdown>
-            <ElDropdownMenu>
-              <ElDropdownItem command="24h">{{ t("ops.upstream.report.day") }}</ElDropdownItem>
-              <ElDropdownItem command="7d">{{ t("ops.upstream.report.week") }}</ElDropdownItem>
-              <ElDropdownItem command="30d">{{ t("ops.upstream.report.month") }}</ElDropdownItem>
-            </ElDropdownMenu>
-          </template>
-        </ElDropdown>
-    </template>
+  <div class="ops-upstream-panel">
+    <OpsPanelToolbar>
+      <ElDropdown @command="exportCsv">
+        <ElButton :loading="exporting">{{ t("ops.upstream.exportCsv") }}</ElButton>
+        <template #dropdown>
+          <ElDropdownMenu>
+            <ElDropdownItem command="24h">{{ t("ops.upstream.report.day") }}</ElDropdownItem>
+            <ElDropdownItem command="7d">{{ t("ops.upstream.report.week") }}</ElDropdownItem>
+            <ElDropdownItem command="30d">{{ t("ops.upstream.report.month") }}</ElDropdownItem>
+          </ElDropdownMenu>
+        </template>
+      </ElDropdown>
+    </OpsPanelToolbar>
 
     <OpsCard :title="t('ops.upstream.slaTable')">
       <p class="ops-sla__hint">{{ t("ops.upstream.thresholdHint") }}</p>
@@ -30,20 +28,17 @@
         </template>
       </ArtTable>
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import { fetchSupplierCosts } from "@/api/billing-ops";
 import { useUserStore } from "@/store/modules/user";
@@ -51,7 +46,7 @@ import type { OlapRange, SlaRow } from "@/types/api/olap";
 import type { SupplierCostRow } from "@/types/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
 
-defineOptions({ name: "OpsUpstreamSla" });
+defineOptions({ name: "OpsUpstreamSlaPanel" });
 
 type Level = "green" | "yellow" | "red";
 
@@ -75,13 +70,8 @@ const YELLOW_AT = 0.99;
 const { t } = useI18n();
 const userStore = useUserStore();
 const canSeeCost = computed(() => userStore.canWriteBusiness);
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-const timeRange = ref<TimeRangeValue>({
-  preset: "24h",
-  start: Math.floor(Date.now() / 1000) - 86400,
-  end: Math.floor(Date.now() / 1000),
-});
-const refreshInterval = ref(60);
 const loading = ref(false);
 const exporting = ref(false);
 const tableRows = ref<SlaTableRow[]>([]);
@@ -234,11 +224,25 @@ async function reload() {
   }
 }
 
-onMounted(reload);
+onMounted(() => {
+  void reload();
+});
+
+watch(
+  () =>
+    [
+      timeRange.value.start,
+      timeRange.value.end,
+      timeRange.value.preset,
+      reloadTick.value,
+    ] as const,
+  () => {
+    void reload();
+  },
+);
 </script>
 
 <style scoped>
-
 .ops-sla__hint {
   margin: 0 0 8px;
   color: var(--el-text-color-secondary);
