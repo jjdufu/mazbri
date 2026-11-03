@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.16](https://github.com/jjdufu/mazbri/compare/v0.2.15...v0.2.16) (2026-11-03)
+
+
+### Features
+
+* **crypto:** step-03 非对称/国密/遗留原语落地 ([a69c014](https://github.com/jjdufu/mazbri/commit/a69c014fea145eff2e06cb7117814154e161d198))
+* **crypto:** step-04 落地 TenantTransport/Upstream Profile 与命名套件 ([065a1f4](https://github.com/jjdufu/mazbri/commit/065a1f45dd01cf4be24a5f6be726ccf8d9fd6570))
+* **crypto:** step-06 破坏性改写 core 传输/信封/租户密钥走 mazbri-crypto ([2f8cdcd](https://github.com/jjdufu/mazbri/commit/2f8cdcd79dd0e071dd86156c30a00cb0be7f88d3))
+* **crypto:** step-07 Gateway/SDK/OpenAPI 按 Profile 破坏性封包 ([af496e0](https://github.com/jjdufu/mazbri/commit/af496e0e7dd45d33126c612cc4315fcb9a627cde))
+* **crypto:** step-08 mgmt/租户传输 UI 对齐 suite 与闭集算法 ([0c312bf](https://github.com/jjdufu/mazbri/commit/0c312bfefd890d88eda62945ea96cab5c4f20d27))
+* **crypto:** step-09 ChannelEgressSpec.crypto 与校验（删除 HMAC-only） ([a2e34ee](https://github.com/jjdufu/mazbri/commit/a2e34ee0e45bc4f85395b42a85d61ffac8f0ef93))
+* **crypto:** 实现对称/AEAD 与摘要/MAC 原语及向量测试（step-02） ([cc46235](https://github.com/jjdufu/mazbri/commit/cc462353e2d14202fefa680f3fe279896127d309))
+* **crypto:** 平台软件加解密闭集与 Profile 专项（step-01～15） ([919fb48](https://github.com/jjdufu/mazbri/commit/919fb48d34d83237b59b506a53664d8da0f0af42))
+* **crypto:** 新增 mazbri-crypto 骨架与算法注册表（step-01） ([7d8f929](https://github.com/jjdufu/mazbri/commit/7d8f929faff70baba7b08c52726208d7bd6c0f7a))
+
+
+### Bug Fixes
+
+* **web:** workbench 补齐 isSuperAdmin，修复 CryptoProfileEditor 类型检查 ([f91f092](https://github.com/jjdufu/mazbri/commit/f91f092f98d3a24d020e781a9deb8a56210025b7))
+
 ## [0.2.15](https://github.com/jjdufu/mazbri/compare/v0.2.14...v0.2.15) (2026-11-03)
 
 
