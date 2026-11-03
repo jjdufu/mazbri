@@ -255,18 +255,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "traffic/products",
-        name: "OpsTrafficProducts",
-        component: "/mazbri/ops/traffic/products",
-        meta: {
-          title: "menus.mazbri.productRank",
-          icon: "ri:bar-chart-2-line",
-          isHide: true,
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
         path: "calls",
         name: "OpsCalls",
         component: "/mazbri/ops/calls/index",

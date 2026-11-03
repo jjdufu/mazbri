@@ -4164,7 +4164,7 @@
       "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
-      "timeRangeHint": "KPI 卡为近瞬时值；时间范围作用于曲线与平台统计",
+      "timeRangeHint": "KPI 卡为近瞬时值；时间范围作用于曲线、平台统计与产品 TopN",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "最老待处理 {age} s",
       "stats": {
@@ -4194,6 +4194,11 @@
       "alertsOpen": "告警事件",
       "errorBudgetPending": "错误预算：未接入（步骤 24）",
       "drillDisabled": "目标页面尚未上线",
+      "productTop": "产品 TopN",
+      "productZeroBadge": "零调用 {n}",
+      "productZeroExpand": "展开零调用产品",
+      "productZeroCollapse": "收起",
+      "productTopLoadFailed": "加载产品排行失败",
       "charts": {
         "qps": "业务 QPS",
         "p99": "业务 P99"

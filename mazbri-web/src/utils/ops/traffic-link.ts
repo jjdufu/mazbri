@@ -1,6 +1,6 @@
 import type { RouteLocationRaw } from "vue-router";
 
-/** 流量与质量父路由（合并后唯一入口；产品排行仍独立直至 Dashboard fold）。 */
+/** 流量与质量父路由（合并后唯一入口；产品 TopN 已并入 Dashboard）。 */
 export const TRAFFIC_PATH = "/ops/traffic";
 
 export type TrafficTabId = "red" | "latency" | "errors";

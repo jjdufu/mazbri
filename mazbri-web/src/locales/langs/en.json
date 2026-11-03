@@ -4159,7 +4159,7 @@
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
-      "timeRangeHint": "KPI cards are near-instant; the time range applies to charts and platform stats",
+      "timeRangeHint": "KPI cards are near-instant; the time range applies to charts, platform stats, and product TopN",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "Oldest pending {age} s",
       "stats": {
@@ -4189,6 +4189,11 @@
       "alertsOpen": "Alert events",
       "errorBudgetPending": "Error budget: not connected (step 24)",
       "drillDisabled": "Target page is not online yet",
+      "productTop": "Top products",
+      "productZeroBadge": "Zero-call {n}",
+      "productZeroExpand": "Show zero-call products",
+      "productZeroCollapse": "Hide",
+      "productTopLoadFailed": "Failed to load product ranking",
       "charts": {
         "qps": "Business QPS",
         "p99": "Business P99"
