@@ -64,3 +64,9 @@ export function defaultTimeRange(
   const start = end - PRESET_SECONDS[preset];
   return { preset, start, end };
 }
+
+/** 将 Unix 秒格式化为 HH:mm（本地时区），供热力图轴标签等共用。 */
+export function formatClockHm(tsSeconds: number): string {
+  const d = new Date(tsSeconds * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

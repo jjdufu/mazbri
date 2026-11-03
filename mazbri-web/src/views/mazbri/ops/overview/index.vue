@@ -306,6 +306,7 @@ import type { ExemplarRow } from "@/types/api/olap";
 import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
 import { buildAlertsRoute } from "@/utils/ops/alerts-link";
 import { BILLING_PATH } from "@/utils/ops/billing-link";
+import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -400,19 +401,22 @@ const drillTargets = computed<DrillTarget[]>(() => [
     id: "2.1",
     label: t("ops.overview.drill.gatewayRed"),
     enabled: true,
-    path: "/ops/traffic/red",
+    path: TRAFFIC_PATH,
+    query: { tab: "red" },
   },
   {
     id: "2.2",
     label: t("ops.overview.drill.latency"),
     enabled: true,
-    path: "/ops/traffic/latency",
+    path: TRAFFIC_PATH,
+    query: { tab: "latency" },
   },
   {
     id: "2.4",
     label: t("ops.overview.drill.errors"),
     enabled: true,
-    path: "/ops/traffic/errors",
+    path: TRAFFIC_PATH,
+    query: { tab: "errors" },
   },
   {
     id: "3.2",

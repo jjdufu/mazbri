@@ -1,10 +1,5 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.trafficRed')">
-    <template #actions>
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
-
+  <div class="ops-traffic-panel">
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="8">
         <OpsCard :title="t('ops.traffic.qpsByMode')">
@@ -53,13 +48,13 @@
       />
       <OpsTableWrap>
         <ArtTable
-        :data="topRows"
-        :loading="loadingTop"
-        :columns="topColumns"
-        class="surface-panel-table"
-        stripe
-        @row-click="onTopRowClick"
-      />
+          :data="topRows"
+          :loading="loadingTop"
+          :columns="topColumns"
+          class="surface-panel-table"
+          stripe
+          @row-click="onTopRowClick"
+        />
       </OpsTableWrap>
     </OpsCard>
 
@@ -81,29 +76,26 @@
         </OpsCard>
       </ElCol>
     </ElRow>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
+import { formatClockHm } from "@/utils/ops/time-range";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BytesRow,
@@ -114,17 +106,12 @@ import type {
 } from "@/types/api/olap";
 import type { ColumnOption } from "@/types/component";
 
-defineOptions({ name: "OpsTrafficRed" });
+defineOptions({ name: "OpsTrafficRedPanel" });
 
 const { t } = useI18n();
 const { resolveStep } = useStep();
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-const timeRange = ref<TimeRangeValue>({
-  preset: "6h",
-  start: Math.floor(Date.now() / 1000) - 6 * 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-const refreshInterval = ref(30);
 const loading = ref(false);
 const loadingTop = ref(false);
 const dim = ref<OlapDim>("product_id");
@@ -163,7 +150,7 @@ const topColumns = computed<ColumnOption<TopRow>[]>(() => [
 ]);
 
 const statusX = computed(() => {
-  const set = new Set(statusRows.value.map((r) => formatTs(r.ts)));
+  const set = new Set(statusRows.value.map((r) => formatClockHm(r.ts)));
   return [...set];
 });
 const statusY = computed(() => {
@@ -172,16 +159,11 @@ const statusY = computed(() => {
 });
 const statusCells = computed<HeatCell[]>(() =>
   statusRows.value.map((r) => ({
-    x: formatTs(r.ts),
+    x: formatClockHm(r.ts),
     y: r.status_class || "—",
     value: r.count,
   })),
 );
-
-function formatTs(ts: number) {
-  const d = new Date(ts * 1000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 const router = useRouter();
 
@@ -281,7 +263,22 @@ async function reload() {
   }
 }
 
-onMounted(reload);
+onMounted(() => {
+  void reload();
+});
+
+watch(
+  () =>
+    [
+      timeRange.value.start,
+      timeRange.value.end,
+      timeRange.value.preset,
+      reloadTick.value,
+    ] as const,
+  () => {
+    void reload();
+  },
+);
 </script>
 
 <style scoped>

@@ -1,10 +1,5 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.trafficErrors')">
-    <template #actions>
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
-
+  <div class="ops-traffic-panel">
     <ElRow :gutter="16">
       <ElCol :xs="24" :lg="14">
         <OpsCard :title="t('ops.traffic.errorMatrix')">
@@ -16,15 +11,15 @@
             height="320px"
           />
           <OpsTableWrap>
-        <ArtTable
-            :data="matrixRows"
-            :loading="loading"
-            :columns="matrixColumns"
-            class="surface-panel-table"
-            stripe
-            @row-click="onErrorClick"
-          />
-      </OpsTableWrap>
+            <ArtTable
+              :data="matrixRows"
+              :loading="loading"
+              :columns="matrixColumns"
+              class="surface-panel-table"
+              stripe
+              @row-click="onErrorClick"
+            />
+          </OpsTableWrap>
         </OpsCard>
       </ElCol>
       <ElCol :xs="24" :lg="10">
@@ -62,74 +57,70 @@
         </ElButton>
       </div>
       <OpsTableWrap>
-      <ElTable
-        v-loading="sampleLoading"
-        :data="samples"
-        size="small"
-        stripe
-        :empty-text="t('ops.traces.sampleHint')"
-      >
-        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="170">
-          <template #default="{ row }">{{
-            formatSampleTime(row.timestamp)
-          }}</template>
-        </ElTableColumn>
-        <ElTableColumn prop="serial_no" label="request_id" min-width="260" />
-        <ElTableColumn
-          prop="tenant_name"
-          :label="t('ops.traces.form.tenant')"
-          min-width="120"
-        />
-        <ElTableColumn prop="status_code" label="status" width="80" />
-        <ElTableColumn prop="error_stage" label="error_stage" min-width="120" />
-        <ElTableColumn prop="duration_ms" label="ms" width="90" />
-        <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
-          <template #default="{ row }">
-            <ElLink
-              v-if="row.trace_id"
-              type="primary"
-              @click="openSampleTrace(row)"
-            >
-              {{ row.trace_id }}
-            </ElLink>
-            <span v-else>—</span>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+        <ElTable
+          v-loading="sampleLoading"
+          :data="samples"
+          size="small"
+          stripe
+          :empty-text="t('ops.traces.sampleHint')"
+        >
+          <ElTableColumn :label="t('ops.traces.columns.start')" min-width="170">
+            <template #default="{ row }">{{
+              formatSampleTime(row.timestamp)
+            }}</template>
+          </ElTableColumn>
+          <ElTableColumn prop="serial_no" label="request_id" min-width="260" />
+          <ElTableColumn
+            prop="tenant_name"
+            :label="t('ops.traces.form.tenant')"
+            min-width="120"
+          />
+          <ElTableColumn prop="status_code" label="status" width="80" />
+          <ElTableColumn prop="error_stage" label="error_stage" min-width="120" />
+          <ElTableColumn prop="duration_ms" label="ms" width="90" />
+          <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
+            <template #default="{ row }">
+              <ElLink
+                v-if="row.trace_id"
+                type="primary"
+                @click="openSampleTrace(row)"
+              >
+                {{ row.trace_id }}
+              </ElLink>
+              <span v-else>—</span>
+            </template>
+          </ElTableColumn>
+        </ElTable>
       </OpsTableWrap>
     </OpsCard>
 
     <OpsCard :title="t('ops.traffic.newErrorCodes')">
       <OpsTableWrap>
         <ArtTable
-        :data="newErrors"
-        :loading="loading"
-        :columns="newColumns"
-        class="surface-panel-table"
-        stripe
-        @row-click="onErrorClick"
-      />
+          :data="newErrors"
+          :loading="loading"
+          :columns="newColumns"
+          class="surface-panel-table"
+          stripe
+          @row-click="onErrorClick"
+        />
       </OpsTableWrap>
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import PieChart from "@/components/ops/PieChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
 import {
@@ -151,16 +142,11 @@ import type {
 } from "@/types/api/olap";
 import type { ColumnOption } from "@/types/component";
 
-defineOptions({ name: "OpsTrafficErrors" });
+defineOptions({ name: "OpsTrafficErrorsPanel" });
 
 const { t } = useI18n();
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-const timeRange = ref<TimeRangeValue>({
-  preset: "6h",
-  start: Math.floor(Date.now() / 1000) - 6 * 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-const refreshInterval = ref(30);
 const loading = ref(false);
 const matrixRows = ref<ErrorCellRow[]>([]);
 const attribution = ref<AttributionRow[]>([]);
@@ -310,7 +296,22 @@ async function reload() {
   }
 }
 
-onMounted(reload);
+onMounted(() => {
+  void reload();
+});
+
+watch(
+  () =>
+    [
+      timeRange.value.start,
+      timeRange.value.end,
+      timeRange.value.preset,
+      reloadTick.value,
+    ] as const,
+  () => {
+    void reload();
+  },
+);
 </script>
 
 <style scoped>

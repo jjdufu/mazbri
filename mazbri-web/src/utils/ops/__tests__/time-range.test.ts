@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   defaultTimeRange,
+  formatClockHm,
   pickerRangeOf,
   PRESET_SECONDS,
   rangeFromQuery,
@@ -46,3 +47,9 @@ test("defaultTimeRange uses preset seconds", () => {
   assert.ok(range.end >= before && range.end <= after);
   assert.equal(range.end - range.start, PRESET_SECONDS["1h"]);
 });
+
+test("formatClockHm pads hours and minutes", () => {
+  const label = formatClockHm(1704067500);
+  assert.match(label, /^\d{2}:\d{2}$/);
+});
+

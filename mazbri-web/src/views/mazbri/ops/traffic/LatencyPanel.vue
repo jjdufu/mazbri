@@ -1,10 +1,5 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.trafficLatency')">
-    <template #actions>
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
-
+  <div class="ops-traffic-panel">
     <OpsCard :title="t('ops.traffic.latencyBreakdown')">
       <CategoryBarChart
         :categories="breakdownCategories"
@@ -49,39 +44,36 @@
     <OpsCard :title="t('ops.traffic.slowRequests')">
       <OpsTableWrap>
         <ArtTable
-        :data="slowRows"
-        :loading="loading"
-        :columns="slowColumns"
-        class="surface-panel-table"
-        stripe
-        @row-click="onSlowClick"
-      />
+          :data="slowRows"
+          :loading="loading"
+          :columns="slowColumns"
+          class="surface-panel-table"
+          stripe
+          @row-click="onSlowClick"
+        />
       </OpsTableWrap>
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import HeatmapChart, { type HeatCell } from "@/components/ops/HeatmapChart.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { formatClockHm } from "@/utils/ops/time-range";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BreakdownRow,
@@ -91,17 +83,12 @@ import type {
 } from "@/types/api/olap";
 import type { ColumnOption } from "@/types/component";
 
-defineOptions({ name: "OpsTrafficLatency" });
+defineOptions({ name: "OpsTrafficLatencyPanel" });
 
 const { t } = useI18n();
 const { resolveStep } = useStep();
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-const timeRange = ref<TimeRangeValue>({
-  preset: "6h",
-  start: Math.floor(Date.now() / 1000) - 6 * 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-const refreshInterval = ref(30);
 const loading = ref(false);
 const breakdown = ref<BreakdownRow[]>([]);
 const stages = ref<StageRow[]>([]);
@@ -145,7 +132,7 @@ const stageSeries = computed(() => [
 ]);
 
 const heatX = computed(() => [
-  ...new Set(heatRows.value.map((r) => formatTs(r.ts))),
+  ...new Set(heatRows.value.map((r) => formatClockHm(r.ts))),
 ]);
 const heatY = computed(() =>
   [...new Set(heatRows.value.map((r) => String(r.le_ms)))].sort(
@@ -154,7 +141,7 @@ const heatY = computed(() =>
 );
 const heatCells = computed<HeatCell[]>(() =>
   heatRows.value.map((r) => ({
-    x: formatTs(r.ts),
+    x: formatClockHm(r.ts),
     y: String(r.le_ms),
     value: r.count,
   })),
@@ -175,11 +162,6 @@ const slowColumns = computed<ColumnOption<SlowRow>[]>(() => [
   { prop: "status_code", label: "status" },
   { prop: "error_code", label: "error_code" },
 ]);
-
-function formatTs(ts: number) {
-  const d = new Date(ts * 1000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 const router = useRouter();
 
@@ -240,8 +222,20 @@ async function reload() {
   }
 }
 
-onMounted(reload);
-</script>
+onMounted(() => {
+  void reload();
+});
 
-<style scoped>
-</style>
+watch(
+  () =>
+    [
+      timeRange.value.start,
+      timeRange.value.end,
+      timeRange.value.preset,
+      reloadTick.value,
+    ] as const,
+  () => {
+    void reload();
+  },
+);
+</script>
