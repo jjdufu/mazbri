@@ -9,8 +9,7 @@ export type MergedOpsDomain =
   | "traffic"
   | "upstream"
   | "flow"
-  | "services"
-  | "reliability";
+  | "services";
 
 type TabSeed<T extends string> = Omit<OpsTabDef<T>, "label"> & { id: T };
 
@@ -52,10 +51,6 @@ const SERVICES_TABS = [
   { id: "topology", roles: ROLES_ADMIN },
 ] as const satisfies readonly TabSeed<"health" | "topology">[];
 
-const RELIABILITY_TABS = [
-  { id: "capacity", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<"capacity">[];
-
 const DOMAIN_TABS = {
   infra: INFRA_TABS,
   alerts: ALERTS_TABS,
@@ -64,7 +59,6 @@ const DOMAIN_TABS = {
   upstream: UPSTREAM_TABS,
   flow: FLOW_TABS,
   services: SERVICES_TABS,
-  reliability: RELIABILITY_TABS,
 } as const;
 
 export type MergedTabId<D extends MergedOpsDomain> =
@@ -81,7 +75,6 @@ export const MERGED_DEFAULT_TAB: {
   upstream: "sla",
   flow: "ratelimit",
   services: "health",
-  reliability: "capacity",
 };
 
 /**

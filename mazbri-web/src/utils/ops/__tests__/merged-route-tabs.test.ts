@@ -33,8 +33,8 @@ test("VIEWER on alerts only sees events", () => {
   assert.equal(result.fellBack, true);
 });
 
-test("VIEWER cannot see billing/flow/infra/reliability parents' tabs", () => {
-  for (const domain of ["billing", "flow", "infra", "reliability"] as const) {
+test("VIEWER cannot see billing/flow/infra parents' tabs", () => {
+  for (const domain of ["billing", "flow", "infra"] as const) {
     const result = resolveOpsTab({
       role: "R_VIEWER",
       tabs: [...getMergedRouteTabs(domain)],

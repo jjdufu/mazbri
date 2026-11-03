@@ -261,6 +261,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.productRank",
           icon: "ri:bar-chart-2-line",
+          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
@@ -356,23 +357,13 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "reliability/capacity",
-        name: "OpsReliabilityCapacity",
-        component: "/mazbri/ops/reliability/capacity",
-        meta: {
-          title: "menus.mazbri.capacity",
-          icon: "ri:dashboard-2-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "reliability/anomaly",
         name: "OpsReliabilityAnomaly",
         component: "/mazbri/ops/reliability/anomaly",
         meta: {
           title: "menus.mazbri.anomaly",
           icon: "ri:alarm-warning-line",
+          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -384,6 +375,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.slo",
           icon: "ri:shield-check-line",
+          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
@@ -417,6 +409,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.assetsChanges",
           icon: "ri:git-commit-line",
+          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
