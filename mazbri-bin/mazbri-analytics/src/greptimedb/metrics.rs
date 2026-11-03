@@ -116,14 +116,15 @@ pub struct MetricOverview {
     pub active_connections: f64,
     pub proxy_active_connections: f64,
     pub rate_limit_rejections_per_sec: f64,
-    /// 计费链路健康（billing 自出指标）
+    /// 计费链路健康（billing 自出指标）；mgmt 按角色可能省略
     pub billing_pipeline: BillingPipelineOverview,
     pub circuit_breaker_open_count: f64,
+    /// 证书最短到期天数；mgmt 仅对超管保留
     pub cert_min_expiry_days: f64,
     pub service_health: Vec<ServiceHealthLight>,
-    /// Alert feed lands in step 09.
+    /// 告警摘要已由独立 `/alerts/summary` 提供；此标志表示 overview 侧告警通道可用。
     pub alerts_connected: bool,
-    /// Error-budget feed lands in step 24.
+    /// 是否已接入错误预算快照。
     pub error_budget_connected: bool,
     /// 主 SLO 剩余错误预算比例（有数据时）。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -131,6 +132,10 @@ pub struct MetricOverview {
     /// 主 SLO 名称。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_budget_slo: Option<String>,
+    /// KPI 语义：固定 `"instant"`（近 [`OVERVIEW_WINDOW_SECS`] 的 rate 窗），不随 UI 时间范围变化。
+    pub kpi_semantics: String,
+    /// 瞬时 KPI 回看秒数（与 mgmt `INSTANT_LOOKBACK_SECS` 对齐）。
+    pub instant_lookback_secs: u64,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricQueryParams {
@@ -275,6 +280,8 @@ impl GreptimeDBClient {
                     error_budget_connected: error_budget_remaining.is_some(),
                     error_budget_remaining,
                     error_budget_slo,
+                    kpi_semantics: "instant".to_string(),
+                    instant_lookback_secs: OVERVIEW_WINDOW_SECS,
                 })
             }),
         )
@@ -1538,7 +1545,10 @@ fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Re
 const SCRAPE_INTERVAL_SECS: u64 = 15;
 /// 各服务指标端口（与 vector 抓取目标一致）。
 const DEFAULT_SCRAPE_PORT: u16 = 9000;
-/// 概览即时值的 rate 窗口。
+/// 概览瞬时 KPI 的 `PromQL` rate 窗口（秒）。
+///
+/// 与 mgmt `analytics_window::INSTANT_LOOKBACK_SECS`（60）对齐：
+/// overview **不接受** `from/to`/`range`，固定近窗瞬时语义（IA step-21 方案 B）。
 const OVERVIEW_WINDOW_SECS: u64 = 4 * SCRAPE_INTERVAL_SECS;
 /// 服务级 QPS 排除的探活/指标路径与 404。
 const PROBE_EXCLUSION: &str = r#"path!~"/health|/ready|/metrics",status!="404""#;
@@ -2023,5 +2033,12 @@ mod tests {
         assert_eq!(series[0].points.len(), 1);
         assert_eq!(series[1].points[0].timestamp, 1);
         Ok(())
+    }
+
+    #[test]
+    fn overview_window_matches_instant_lookback() {
+        // 与 mgmt `analytics_window::INSTANT_LOOKBACK_SECS` 对齐；方案 B 瞬时 KPI。
+        assert_eq!(super::OVERVIEW_WINDOW_SECS, 60);
+        assert_eq!(super::OVERVIEW_WINDOW_SECS, 4 * super::SCRAPE_INTERVAL_SECS);
     }
 }

@@ -12,10 +12,6 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     redirect: (to) => ({ path: "/auth/login", query: to.query }),
   },
   {
-    path: "/ops/overview",
-    redirect: (to) => ({ path: "/dashboard", query: to.query }),
-  },
-  {
     path: "/403",
     name: "Exception403",
     component: () => import("@views/exception/403/index.vue"),

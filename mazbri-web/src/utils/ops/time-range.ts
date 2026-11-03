@@ -55,3 +55,18 @@ export function pickerRangeOf(value: Pick<TimeRangeValue, "start" | "end">): [nu
 export function sameRange(a: TimeRangeValue | null, b: TimeRangeValue | null): boolean {
   return !!a && !!b && a.preset === b.preset && a.start === b.start && a.end === b.end;
 }
+
+/** 默认近 1h（或指定预设）时间窗，供运维父页共用。 */
+export function defaultTimeRange(
+  preset: Exclude<TimeRangePreset, "custom"> = "1h",
+): TimeRangeValue {
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - PRESET_SECONDS[preset];
+  return { preset, start, end };
+}
+
+/** 将 Unix 秒格式化为 HH:mm（本地时区），供热力图轴标签等共用。 */
+export function formatClockHm(tsSeconds: number): string {
+  const d = new Date(tsSeconds * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

@@ -2,7 +2,7 @@
   <div class="ops-service-detail art-full-height">
     <div class="ops-service-detail__toolbar">
       <div>
-        <ElButton link type="primary" @click="router.push('/ops/services')">
+        <ElButton link type="primary" @click="router.push(buildServicesRoute({ tab: 'health' }))">
           ← {{ t("ops.services.backToMatrix") }}
         </ElButton>
         <h2>{{ title }}</h2>
@@ -115,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import { buildServicesRoute } from "@/utils/ops/services-link";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";

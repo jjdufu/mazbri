@@ -1,0 +1,70 @@
+// 运维 Tab 页 / Dashboard / 账号安全与平台策略卡共用表面样式。
+// 后续步骤禁止在各 index.vue 再复制 divergent 的 card-header / settings-panel。
+
+.ops-surface-card {
+  min-width: 0;
+
+  :deep(.el-card__header) {
+    padding: 20px 20px 0 !important;
+    border-bottom: none !important;
+  }
+
+  :deep(.el-card__body) {
+    padding: 12px 20px 20px !important;
+  }
+}
+
+.card-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.card-header-icon {
+  font-size: 18px;
+  color: var(--el-color-primary);
+}
+
+// 卡片内部扁平分区：不再嵌套带边框灰盒。
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 4px 0 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.ops-settings-panel {
+  @extend .settings-panel;
+}
+
+.ops-settings-panel--secure {
+  :deep(.common-setting-row--inline) {
+    gap: 12px;
+  }
+
+  :deep(.common-setting-row__label) {
+    width: 140px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  :deep(.common-setting-row__control) {
+    display: flex;
+    justify-content: flex-end;
+    overflow: visible;
+    position: relative;
+  }
+}
+
+.ops-tab-page-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}

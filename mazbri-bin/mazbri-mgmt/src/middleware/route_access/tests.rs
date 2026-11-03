@@ -1,6 +1,10 @@
 use super::{
     ADMIN, ALL_ROLES, Access, BIZ, Denial, RULES, decide, lookup, route_access_middleware,
 };
+use super::access_assert::{
+    access_of, assert_access_eq, assert_ia_audit_matrix_groups, assert_ia_routes_not_widened,
+    assert_prefix_access,
+};
 use crate::audit::AuditScope;
 use crate::audit::route_map::{self, RouteKind, route_sources::source_routes};
 use crate::middleware::auth::{AdminClaims, PUBLIC_ROUTES, RouteAuth, route_auth};
@@ -149,11 +153,6 @@ fn every_non_get_route_requires_explicit_roles_or_self_service() {
             rule.path
         );
     }
-}
-
-fn access_of(method: &str, path: &str) -> Access {
-    let method = Method::from_bytes(method.as_bytes()).expect("合法 HTTP 方法");
-    lookup(&method, path).unwrap_or_else(|| panic!("{path} 未登记"))
 }
 
 #[test]
@@ -605,4 +604,14 @@ fn ops_stats_and_alerts_follow_role_matrix() {
             "ADMIN must be allowed for {method} {path}"
         );
     }
+}
+
+#[test]
+fn ia_critical_routes_must_not_widen() {
+    // 运维 IA / Dashboard / 账号安全合并不得放宽后端门禁。
+    assert_ia_routes_not_widened();
+    assert_ia_audit_matrix_groups();
+    assert_access_eq("GET", "/alerts/rules", Access::Roles(ADMIN));
+    assert_access_eq("PUT", "/settings/password-policy", Access::Roles(ADMIN));
+    assert_prefix_access("/alerts/silences", Access::Roles(ADMIN), &[]);
 }

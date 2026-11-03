@@ -12,14 +12,20 @@ export interface MetricOverview {
   active_connections: number;
   proxy_active_connections: number;
   rate_limit_rejections_per_sec: number;
-  billing_pipeline: BillingPipelineOverview;
+  /** 计费链路；观察者响应中由后端省略 */
+  billing_pipeline?: BillingPipelineOverview;
   circuit_breaker_open_count: number;
-  cert_min_expiry_days: number;
+  /** 证书最短到期天数；非超管响应中由后端省略 */
+  cert_min_expiry_days?: number;
   service_health: ServiceHealthLight[];
   alerts_connected: boolean;
   error_budget_connected: boolean;
   error_budget_remaining?: number | null;
   error_budget_slo?: string | null;
+  /** 固定 `instant`：KPI 为近瞬时值，与 UI 时间范围无关（step-21 方案 B） */
+  kpi_semantics?: "instant" | string;
+  /** 瞬时 KPI 回看秒数（与后端 INSTANT_LOOKBACK_SECS 对齐） */
+  instant_lookback_secs?: number;
 }
 /** 计费链路概览：来自 billing 自身暴露的 Prometheus 指标。 */
 export interface BillingPipelineOverview {

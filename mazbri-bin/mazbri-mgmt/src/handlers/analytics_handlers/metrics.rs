@@ -5,8 +5,12 @@ use crate::services::analytics::{
 };
 use axum::Json;
 use axum::extract::{Extension, Query, State};
-pub async fn get_metrics_overview(State(state): State<AppState>) -> axum::response::Response {
-    analytics::get_metrics_overview(&state.analytics_client).await
+/// `GET /stats/metrics/overview`：瞬时 KPI（方案 B）；按角色裁剪计费/证书字段。
+pub async fn get_metrics_overview(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+) -> axum::response::Response {
+    analytics::get_metrics_overview(&state.analytics_client, &claims.role).await
 }
 pub async fn get_metrics_catalog(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_metrics_catalog(&state.analytics_client).await
