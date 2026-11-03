@@ -1,7 +1,9 @@
-import { BILLING_PATH } from "./billing-link";
-import { FLOW_PATH } from "./flow-link";
-import { TRAFFIC_PATH } from "./traffic-link";
-import { UPSTREAM_PATH } from "./upstream-link";
+import {
+  BILLING_PATH,
+  FLOW_PATH,
+  TRAFFIC_PATH,
+  UPSTREAM_PATH,
+} from "./opsRoutes";
 
 /** Dashboard StatCard 下钻 id（与历史编号对齐，仅内部使用）。 */
 export type OverviewDrillId = "2.1" | "2.2" | "2.4" | "3.2" | "4.1" | "6.1";

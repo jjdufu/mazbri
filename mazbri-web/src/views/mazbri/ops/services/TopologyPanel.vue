@@ -29,6 +29,7 @@ import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import { fetchServiceTopology } from "@/api/monitoring";
 import type { TopologyEdge, TopologyGraph } from "@/types/api/monitoring";
+import { buildTraceSearchRoute } from "@/utils/ops/opsRoutes";
 
 defineOptions({ name: "OpsServicesTopologyPanel" });
 
@@ -140,15 +141,13 @@ function render() {
     if (params.dataType !== "edge") return;
     const edge = data.edges[params.dataIndex as number];
     if (!edge) return;
-    void router.push({
-      path: "/ops/traces",
-      query: {
-        tab: "results",
-        service: edge.source,
-        start: String(data.start),
-        end: String(data.end),
-      },
-    });
+    void router.push(
+      buildTraceSearchRoute({
+        start: data.start,
+        end: data.end,
+        filters: { service: edge.source },
+      }),
+    );
   });
 }
 

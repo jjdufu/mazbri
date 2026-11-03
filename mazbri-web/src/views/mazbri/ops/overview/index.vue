@@ -299,18 +299,19 @@ import type { PlatformStats } from "@/types/api/analytics";
 import type { MetricOverview, MetricSeries } from "@/types/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
 import type { ExemplarRow } from "@/types/api/olap";
-import { buildCallsRoute } from "@/utils/ops/calls-link";
-import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
-import { buildAlertsRoute } from "@/utils/ops/alerts-link";
-import {
-  buildServiceDetailRoute,
-  buildServicesRoute,
-} from "@/utils/ops/services-link";
 import {
   canOverviewDrill,
   resolveOverviewDrill,
   type OverviewDrillId,
 } from "@/utils/ops/overview-drill";
+import {
+  buildAlertsRoute,
+  buildCallsRoute,
+  buildScreenHref,
+  buildServiceDetailRoute,
+  buildServicesRoute,
+  buildTraceSearchRoute,
+} from "@/utils/ops/opsRoutes";
 import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
 import CertExpiryBadge from "./modules/CertExpiryBadge.vue";
 import InfraHealthStrip from "./modules/InfraHealthStrip.vue";
@@ -516,7 +517,7 @@ async function onP99Click(point: PointClick) {
 }
 
 function openScreen() {
-  const url = `${window.location.origin}${window.location.pathname}#/screen`;
+  const url = buildScreenHref(window.location.origin, window.location.pathname);
   window.open(url, "_blank", "noopener,noreferrer");
 }
 

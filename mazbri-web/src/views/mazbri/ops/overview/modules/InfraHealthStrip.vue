@@ -44,7 +44,7 @@ import {
   formatInfraStripValue,
   type InfraStripReading,
 } from "@/utils/ops/infra-health";
-import { buildInfraRoute, type InfraTabId } from "@/utils/ops/infra-link";
+import { buildInfraRoute, type InfraTabId } from "@/utils/ops/opsRoutes";
 
 defineOptions({ name: "OpsOverviewInfraHealthStrip" });
 

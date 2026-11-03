@@ -1,4 +1,8 @@
 import type { AppRouteRecord } from "@/types/router";
+import {
+  SERVICES_PATH,
+  TRACES_PATH,
+} from "@/utils/ops/opsRoutes";
 export const mazbriRoutes: AppRouteRecord[] = [
   {
     path: "/dashboard",
@@ -196,15 +200,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
-      },
-      {
-        path: "usage-reconciliation",
-        redirect: { path: "/ops/billing", query: { tab: "reconcile" } },
-        meta: {
-          title: "menus.mazbri.usageReconciliation",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
+      }
       }
     ],
   },
@@ -238,7 +234,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.serviceDetail",
           icon: "ri:heart-pulse-line",
           isHide: true,
-          activePath: "/ops/services",
+          activePath: SERVICES_PATH,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
@@ -284,7 +280,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.opsTraceDetail",
           icon: "ri:node-tree",
           isHide: true,
-          activePath: "/ops/traces",
+          activePath: TRACES_PATH,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
@@ -366,127 +362,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-      {
-        path: "tenants",
-        redirect: "/operations/tenants",
-        meta: {
-          title: "menus.mazbri.tenantList",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "tenants/:code",
-        redirect: (to) => `/operations/tenants/${String(to.params.code)}`,
-        meta: {
-          title: "menus.mazbri.tenantDetail",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "product-authorization",
-        redirect: "/operations/product-authorization",
-        meta: {
-          title: "menus.mazbri.productAuthorization",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "products/:id",
-        redirect: (to) => `/operations/products/${String(to.params.id)}`,
-        meta: {
-          title: "menus.mazbri.productDetail",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream-supply",
-        redirect: "/operations/upstream-supply",
-        meta: {
-          title: "menus.mazbri.upstreamSupply",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream-supply/workbench",
-        redirect: "/operations/upstream-supply/workbench",
-        meta: {
-          title: "upstreamConnector.workbenchTitle",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "upstream-supply/suppliers/:id",
-        redirect: (to) => `/operations/upstream-supply/suppliers/${String(to.params.id)}`,
-        meta: {
-          title: "supplier.detail.pageTitle",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream-supply/suppliers/:id/edit",
-        redirect: (to) =>
-          `/operations/upstream-supply/suppliers/${String(to.params.id)}/edit`,
-        meta: {
-          title: "supplier.form.editTitle",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "upstream-supply/channels/:id",
-        redirect: (to) => `/operations/upstream-supply/channels/${String(to.params.id)}`,
-        meta: {
-          title: "channels.detail.pageTitle",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream-supply/channels/:id/edit",
-        redirect: (to) =>
-          `/operations/upstream-supply/channels/${String(to.params.id)}/edit`,
-        meta: {
-          title: "channels.dialog.editTitle",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "callbacks",
-        redirect: "/operations/callbacks",
-        meta: {
-          title: "menus.mazbri.callbackList",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "bills",
-        redirect: "/operations/bills",
-        meta: {
-          title: "menus.mazbri.billList",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "usage-reconciliation",
-        redirect: { path: "/ops/billing", query: { tab: "reconcile" } },
-        meta: {
-          title: "menus.mazbri.usageReconciliation",
-          isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      }
     ],
   },
-  
-  
 ];
