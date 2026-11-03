@@ -4278,7 +4278,8 @@
         "redis": "Redis",
         "pipeline": "Pipeline freshness",
         "hostCpu": "Host CPU"
-      }
+      },
+      "noSampleHint": "No samples in the instant window"
     },
     "screen": {
       "title": "Ops Screen",
@@ -4411,7 +4412,8 @@
         "value": "Value",
         "count": "Count",
         "time": "Time"
-      }
+      },
+      "noErrors": "No errors"
     },
     "upstream": {
       "exportCsv": "Export CSV",

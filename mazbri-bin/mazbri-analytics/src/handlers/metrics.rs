@@ -7,7 +7,7 @@ use axum::{
 };
 use mazbri_analytics::greptimedb::{GreptimeDBClient, MetricQueryParams};
 use tracing::error;
-/// 指标概览：瞬时 KPI（`kpi_semantics=instant`），不接受时间范围参数。
+/// 指标概览：瞬时 KPI（`window.semantics=instant`），不接受时间范围参数；无样本时率类字段为 null。
 pub async fn get_metrics_overview(State(state): State<AppState>) -> Response {
     let Some(client) = metrics_client(&state) else {
         return greptimedb_unavailable();

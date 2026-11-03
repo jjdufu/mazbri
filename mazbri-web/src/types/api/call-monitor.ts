@@ -52,11 +52,14 @@ export interface CallMonitorItem {
   internal_ms: number;
   post_response_ms: number;
   status_code: number;
+  /** 业务成功（后端 SSOT） */
+  success: boolean;
 
   response_result: string;
 
   response_flags?: string;
-  error_code?: string;
+  /** 失败规范化码；成功为 null */
+  error_code?: string | null;
   error_stage?: string;
   detail: Record<string, unknown>;
 }

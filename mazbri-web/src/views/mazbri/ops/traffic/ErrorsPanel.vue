@@ -4,13 +4,19 @@
       <ElCol :xs="24" :lg="14">
         <OpsCard :title="t('ops.traffic.errorMatrix')">
           <HeatmapChart
+            v-if="matrixRows.length > 0 || loading"
             :cells="matrixCells"
             :x-labels="matrixX"
             :y-labels="matrixY"
             :loading="loading"
             height="320px"
           />
-          <OpsTableWrap>
+          <ElEmpty
+            v-else
+            :description="t('ops.traffic.noErrors')"
+            :image-size="72"
+          />
+          <OpsTableWrap v-if="matrixRows.length > 0 || loading">
             <ArtTable
               :data="matrixRows"
               :loading="loading"
@@ -285,10 +291,10 @@ async function reload() {
         params: { range },
       }),
     ]);
-    matrixRows.value = matrix.rows ?? [];
+    matrixRows.value = (matrix.rows ?? []).filter((r) => Boolean(r.error_code));
     attribution.value = attr.rows ?? [];
     flags.value = flag.rows ?? [];
-    newErrors.value = neu.rows ?? [];
+    newErrors.value = (neu.rows ?? []).filter((r) => Boolean(r.error_code));
   } catch {
     ElMessage.error(t("ops.traffic.loadFailed"));
   } finally {

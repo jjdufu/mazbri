@@ -1,3 +1,4 @@
+use crate::call_semantics::{SQL_COUNT_FAILURES, SQL_COUNT_SUCCESSES};
 use crate::error::Result;
 use crate::greptimedb::{RequestLogAggregationParams, RequestLogQueryParams};
 use crate::greptimedb::{
@@ -198,13 +199,13 @@ pub fn build_request_logs_latest_universe_data_sql(
 }
 
 /// 调用量与错误随时间分布：与明细列表共用同一组过滤条件，保证框选区间计数一致。
-/// 错误口径：`status_code >= 400` 或带 `error_code`。
+/// 错误口径：[`crate::call_semantics::SQL_IS_FAILURE`]（与成功率 SSOT 对账）。
 #[must_use]
 pub fn build_request_logs_histogram_sql(where_clause: &str, bucket_seconds: u32) -> String {
     format!(
         "SELECT toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND)) AS ts, \
          toUInt64(count()) AS calls, \
-         toUInt64(countIf(status_code >= 400 OR error_code != '')) AS errors \
+         toUInt64({SQL_COUNT_FAILURES}) AS errors \
          FROM request_logs FINAL{where_clause} GROUP BY ts ORDER BY ts"
     )
 }
@@ -306,18 +307,18 @@ pub fn build_aggregation_by_time_sql(time_expr: &str, where_clause: &str) -> Str
 pub fn build_upstream_usage_summary_sql(extra_conditions: &[String]) -> String {
     let mut conditions = vec!["event_target = 'bypass'".to_string()];
     conditions.extend(extra_conditions.iter().cloned());
+    let where_clause = conditions.join(" AND ");
     format!(
         "SELECT \
             supplier_id, supplier_code, channel_id, channel_code, \
             toUInt64(count()) AS total_calls, \
-            toUInt64(countIf(status_code >= 200 AND status_code < 400)) AS success_calls, \
-            toUInt64(countIf(status_code < 200 OR status_code >= 400)) AS failed_calls, \
+            toUInt64({SQL_COUNT_SUCCESSES}) AS success_calls, \
+            toUInt64({SQL_COUNT_FAILURES}) AS failed_calls, \
             toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes, \
             toUInt64(sum(duration_ms)) AS total_latency_ms \
          FROM request_logs FINAL \
-         WHERE {} \
-         GROUP BY supplier_id, supplier_code, channel_id, channel_code",
-        conditions.join(" AND ")
+         WHERE {where_clause} \
+         GROUP BY supplier_id, supplier_code, channel_id, channel_code"
     )
 }
 
@@ -340,16 +341,14 @@ mod upstream_usage_sql_tests {
     #[test]
     fn aggregates_calls_bytes_and_latency_per_supplier_channel() {
         let sql = squash(&build_upstream_usage_summary_sql(&[]));
-        for frag in [
-            "toUInt64(count()) AS total_calls",
-            "toUInt64(countIf(status_code >= 200 AND status_code < 400)) AS success_calls",
-            "toUInt64(countIf(status_code < 200 OR status_code >= 400)) AS failed_calls",
-            "toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes",
-            "toUInt64(sum(duration_ms)) AS total_latency_ms",
-            "GROUP BY supplier_id, supplier_code, channel_id, channel_code",
-        ] {
-            assert!(sql.contains(frag), "missing `{frag}` in {sql}");
-        }
+        assert!(sql.contains("toUInt64(count()) AS total_calls"));
+        assert!(sql.contains("AS success_calls"));
+        assert!(sql.contains("AS failed_calls"));
+        assert!(sql.contains("countIf"), "须用 call_semantics countIf: {sql}");
+        assert!(sql.contains("toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes"));
+        assert!(sql.contains("toUInt64(sum(duration_ms)) AS total_latency_ms"));
+        assert!(sql.contains("GROUP BY supplier_id, supplier_code, channel_id, channel_code"));
+        assert!(!sql.contains("(empty)"));
     }
 
     #[test]
@@ -375,7 +374,8 @@ mod call_search_sql_tests {
     fn histogram_counts_calls_and_errors_per_bucket() {
         let sql = build_request_logs_histogram_sql(" WHERE event_target = 'gateway'", 60);
         assert!(sql.contains("INTERVAL 60 SECOND"));
-        assert!(sql.contains("countIf(status_code >= 400 OR error_code != '')"));
+        assert!(sql.contains("countIf(NOT ("), "直方图错误须对齐 SQL_IS_FAILURE: {sql}");
+        assert!(!sql.contains("(empty)"));
         assert!(sql.contains("FROM request_logs FINAL WHERE event_target = 'gateway' GROUP BY ts"));
     }
 

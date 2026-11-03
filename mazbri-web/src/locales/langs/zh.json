@@ -4283,7 +4283,8 @@
         "redis": "Redis",
         "pipeline": "管道新鲜度",
         "hostCpu": "主机 CPU"
-      }
+      },
+      "noSampleHint": "近瞬时无样本"
     },
     "screen": {
       "title": "运营大屏",
@@ -4416,7 +4417,8 @@
         "value": "指标",
         "count": "次数",
         "time": "时间"
-      }
+      },
+      "noErrors": "无错误"
     },
     "upstream": {
       "exportCsv": "导出 CSV",

@@ -7,8 +7,9 @@
 //! UI 时间范围只作用于曲线 / 平台统计 / 产品 `TopN` 等旁路查询
 //!（前端 `ops.overview.timeRangeHint` 已旁注）。
 //!
-//! 时序查询走 [`resolve_timeseries_window`]；overview 响应按角色裁剪走
-//! [`apply_overview_field_gate`]。禁止各 handler 再复制一套窗长/瞬时判断。
+//! 时序查询走 [`resolve_timeseries_window`]；overview 响应经
+//! [`apply_overview_field_gate`] 写入嵌套 `window` 并按角色裁剪。
+//! 禁止扁平 `kpi_semantics` / `instant_lookback_secs` 兼容字段。
 
 /// 相对时间窗（秒）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,21 +164,28 @@ impl OverviewFieldGate {
     }
 }
 
-/// 为 overview JSON 写入瞬时语义元数据，并按角色省略敏感字段块。
+/// 为 overview JSON 写入嵌套瞬时 `window`，并按角色省略敏感字段块。
 ///
-/// - 始终写入 `kpi_semantics=instant` 与 `instant_lookback_secs`；
+/// - 始终写入 `window = { semantics: instant, lookback_secs, label }`；
+/// - 删除历史扁平 `kpi_semantics` / `instant_lookback_secs`（零兼容层）；
+/// - 若缺 `sample_count` 则补 0；
 /// - VIEWER：去掉 `billing_pipeline`；
 /// - 非 ADMIN：去掉 `cert_min_expiry_days`（超管证书徽章）。
 pub fn apply_overview_field_gate(body: &mut serde_json::Value, gate: OverviewFieldGate) {
     if let Some(obj) = body.as_object_mut() {
         obj.insert(
-            "kpi_semantics".into(),
-            serde_json::Value::String(KPI_SEMANTICS_INSTANT.to_string()),
+            "window".into(),
+            serde_json::json!({
+                "semantics": KPI_SEMANTICS_INSTANT,
+                "lookback_secs": INSTANT_LOOKBACK_SECS,
+                "label": format!("近瞬时（{INSTANT_LOOKBACK_SECS}s）"),
+            }),
         );
-        obj.insert(
-            "instant_lookback_secs".into(),
-            serde_json::json!(INSTANT_LOOKBACK_SECS),
-        );
+        obj.remove("kpi_semantics");
+        obj.remove("instant_lookback_secs");
+        if !obj.contains_key("sample_count") {
+            obj.insert("sample_count".into(), serde_json::json!(0));
+        }
         if !gate.include_billing() {
             obj.remove("billing_pipeline");
         }
@@ -250,21 +258,45 @@ mod tests {
     fn apply_overview_field_gate_strips_for_viewer() {
         let mut body = serde_json::json!({
             "qps": 1.0,
+            "kpi_semantics": "instant",
+            "instant_lookback_secs": 60,
             "billing_pipeline": { "backlog": 1 },
             "cert_min_expiry_days": 30
         });
         apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_VIEWER"));
         let obj = body.as_object().expect("object");
+        let window = obj.get("window").and_then(|v| v.as_object()).expect("window");
         assert_eq!(
-            obj.get("kpi_semantics").and_then(|v| v.as_str()),
+            window.get("semantics").and_then(|v| v.as_str()),
             Some(KPI_SEMANTICS_INSTANT)
         );
         assert_eq!(
-            obj.get("instant_lookback_secs").and_then(serde_json::Value::as_i64),
+            window.get("lookback_secs").and_then(serde_json::Value::as_i64),
             Some(INSTANT_LOOKBACK_SECS)
+        );
+        assert!(!obj.contains_key("kpi_semantics"));
+        assert!(!obj.contains_key("instant_lookback_secs"));
+        assert_eq!(
+            obj.get("sample_count").and_then(serde_json::Value::as_u64),
+            Some(0)
         );
         assert!(!obj.contains_key("billing_pipeline"));
         assert!(!obj.contains_key("cert_min_expiry_days"));
+    }
+
+    #[test]
+    fn empty_overview_rates_stay_null_after_gate() {
+        let mut body = serde_json::json!({
+            "sample_count": 0,
+            "qps": null,
+            "success_rate": null,
+            "error_rate": null
+        });
+        apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_ADMIN"));
+        let obj = body.as_object().expect("object");
+        assert!(obj.get("success_rate").is_some_and(serde_json::Value::is_null));
+        assert!(obj.get("qps").is_some_and(serde_json::Value::is_null));
+        assert!(obj.contains_key("window"));
     }
 
     #[test]

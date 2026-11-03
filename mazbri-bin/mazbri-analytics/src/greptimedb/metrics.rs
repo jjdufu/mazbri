@@ -100,19 +100,31 @@ pub struct ServiceHealthRow {
     pub open_fds: Option<f64>,
 }
 
+/// 瞬时 KPI 时间窗（契约 `window`；禁止扁平 `kpi_semantics` 兼容字段）。
+#[derive(Debug, Clone, Serialize)]
+pub struct InstantKpiWindow {
+    pub semantics: &'static str,
+    pub lookback_secs: u64,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricOverview {
-    /// 业务 QPS（网关代理请求，不含探活/管理端）
-    pub qps: f64,
-    /// 成功率（%，result = ok）；无流量时为 0
-    pub success_rate: f64,
-    /// 业务错误率（%，result != ok）；无流量时为 0
-    pub error_rate: f64,
-    pub error_rate_4xx: f64,
-    pub error_rate_5xx: f64,
-    pub p50_latency_ms: f64,
-    pub p95_latency_ms: f64,
-    pub p99_latency_ms: f64,
+    /// 瞬时窗元数据（固定 semantics=instant）。
+    pub window: InstantKpiWindow,
+    /// 近瞬时窗内网关代理请求样本数；无流量为 0。
+    pub sample_count: u64,
+    /// 业务 QPS；无样本时为 `null`（禁止用 0 冒充）。
+    pub qps: Option<f64>,
+    /// 成功率（%，result = ok）；无样本时为 `null`。
+    pub success_rate: Option<f64>,
+    /// 业务错误率（%，result != ok）；无样本时为 `null`。
+    pub error_rate: Option<f64>,
+    pub error_rate_4xx: Option<f64>,
+    pub error_rate_5xx: Option<f64>,
+    pub p50_latency_ms: Option<f64>,
+    pub p95_latency_ms: Option<f64>,
+    pub p99_latency_ms: Option<f64>,
     pub active_connections: f64,
     pub proxy_active_connections: f64,
     pub rate_limit_rejections_per_sec: f64,
@@ -132,10 +144,6 @@ pub struct MetricOverview {
     /// 主 SLO 名称。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_budget_slo: Option<String>,
-    /// KPI 语义：固定 `"instant"`（近 [`OVERVIEW_WINDOW_SECS`] 的 rate 窗），不随 UI 时间范围变化。
-    pub kpi_semantics: String,
-    /// 瞬时 KPI 回看秒数（与 mgmt `INSTANT_LOOKBACK_SECS` 对齐）。
-    pub instant_lookback_secs: u64,
 }
 #[derive(Debug, Clone, Deserialize)]
 pub struct MetricQueryParams {
@@ -187,6 +195,71 @@ struct PrometheusResult {
     #[serde(default)]
     values: Option<Vec<(serde_json::Value, serde_json::Value)>>,
 }
+
+
+struct OverviewRawKpis {
+    qps: Option<f64>,
+    success_rate: Option<f64>,
+    error_rate: Option<f64>,
+    error_rate_4xx: Option<f64>,
+    error_rate_5xx: Option<f64>,
+    p50: Option<f64>,
+    p95: Option<f64>,
+    p99: Option<f64>,
+    sample_raw: Option<f64>,
+    active_connections: f64,
+    proxy_active_connections: f64,
+    rate_limit_rejections_per_sec: f64,
+    billing_pipeline: BillingPipelineOverview,
+    circuit_breaker_open_count: f64,
+    cert_min_expiry_days: f64,
+    service_health: Vec<ServiceHealthLight>,
+}
+
+/// `PromQL` `increase` 样本数 → u64；非有限或 ≤0 视为无样本。
+fn sample_count_from_increase(raw: Option<f64>) -> u64 {
+    raw.filter(|v| v.is_finite() && *v > 0.0)
+        .map_or(0, |v| mazbri_core::num::f64_to_u64(v.round().max(0.0)))
+}
+
+struct GatedInstantRates {
+    qps: Option<f64>,
+    success_rate: Option<f64>,
+    error_rate: Option<f64>,
+    error_rate_4xx: Option<f64>,
+    error_rate_5xx: Option<f64>,
+    p50_latency_ms: Option<f64>,
+    p95_latency_ms: Option<f64>,
+    p99_latency_ms: Option<f64>,
+}
+
+/// 无样本时率/延迟 KPI 一律 `None`，禁止 0% 冒充。
+fn gate_instant_rate_kpis(sample_count: u64, raw: &OverviewRawKpis) -> GatedInstantRates {
+    let finite = |v: Option<f64>| v.filter(|x| x.is_finite());
+    if sample_count == 0 {
+        return GatedInstantRates {
+            qps: None,
+            success_rate: None,
+            error_rate: None,
+            error_rate_4xx: None,
+            error_rate_5xx: None,
+            p50_latency_ms: None,
+            p95_latency_ms: None,
+            p99_latency_ms: None,
+        };
+    }
+    GatedInstantRates {
+        qps: finite(raw.qps),
+        success_rate: finite(raw.success_rate),
+        error_rate: finite(raw.error_rate),
+        error_rate_4xx: finite(raw.error_rate_4xx),
+        error_rate_5xx: finite(raw.error_rate_5xx),
+        p50_latency_ms: finite(raw.p50).map(|v| v * 1000.0),
+        p95_latency_ms: finite(raw.p95).map(|v| v * 1000.0),
+        p99_latency_ms: finite(raw.p99).map(|v| v * 1000.0),
+    }
+}
+
 impl GreptimeDBClient {
     /// # Errors
     ///
@@ -195,97 +268,109 @@ impl GreptimeDBClient {
         self.with_query_timeout(
             "metrics_overview",
             Box::pin(async {
-                let w = OVERVIEW_WINDOW_SECS;
-                let qps_q = business_qps_query(w);
-                let success_q = business_success_rate_query(w);
-                let error_q = business_error_rate_query(ErrorClass::All, w);
-                let error_4xx_q = business_error_rate_query(ErrorClass::Client, w);
-                let error_5xx_q = business_error_rate_query(ErrorClass::Server, w);
-                let p50_q = business_latency_quantile_query(0.50, w);
-                let p95_q = business_latency_quantile_query(0.95, w);
-                let p99_q = business_latency_quantile_query(0.99, w);
-                let ratelimit_q = format!(
-                    r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{w}s]))"#
-                );
-                let qps = self.prometheus_instant_value(&qps_q);
-                let success_rate = self.prometheus_instant_value(&success_q);
-                let error_rate = self.prometheus_instant_value(&error_q);
-                let error_rate_4xx = self.prometheus_instant_value(&error_4xx_q);
-                let error_rate_5xx = self.prometheus_instant_value(&error_5xx_q);
-                let p50_latency_raw = self.prometheus_instant_value(&p50_q);
-                let p95_latency_raw = self.prometheus_instant_value(&p95_q);
-                let p99_latency_raw = self.prometheus_instant_value(&p99_q);
-                let active_connections = self.prometheus_instant_value("sum(active_connections)");
-                let proxy_active_connections =
-                    self.prometheus_instant_value("sum(active_proxy_connections)");
-                let rate_limit_rejections_per_sec = self.prometheus_instant_value(&ratelimit_q);
-                let billing_pipeline = self.query_billing_pipeline_overview(w);
-                let circuit_breaker_open_count =
-                    self.prometheus_instant_value("count(circuit_breaker_state > 0)");
-                let cert_min_expiry_days =
-                    self.prometheus_instant_value("min(cert_min_expiry_days)");
-                let service_health = self.load_service_health_lights();
-                let (
-                    qps,
-                    success_rate,
-                    error_rate,
-                    error_rate_4xx,
-                    error_rate_5xx,
-                    p50_val,
-                    p95_val,
-                    p99_val,
-                    active_connections,
-                    proxy_active_connections,
-                    rate_limit_rejections_per_sec,
-                    billing_pipeline,
-                    circuit_breaker_open_count,
-                    cert_min_expiry_days,
-                    service_health,
-                ) = tokio::try_join!(
-                    qps,
-                    success_rate,
-                    error_rate,
-                    error_rate_4xx,
-                    error_rate_5xx,
-                    p50_latency_raw,
-                    p95_latency_raw,
-                    p99_latency_raw,
-                    active_connections,
-                    proxy_active_connections,
-                    rate_limit_rejections_per_sec,
-                    billing_pipeline,
-                    circuit_breaker_open_count,
-                    cert_min_expiry_days,
-                    service_health,
-                )?;
+                let raw = self.fetch_overview_raw_kpis(OVERVIEW_WINDOW_SECS).await?;
+                let sample_count = sample_count_from_increase(raw.sample_raw);
+                let rates = gate_instant_rate_kpis(sample_count, &raw);
                 let (error_budget_slo, error_budget_remaining) =
                     self.load_error_budget_snapshot().await;
                 Ok(MetricOverview {
-                    qps,
-                    success_rate,
-                    error_rate,
-                    error_rate_4xx,
-                    error_rate_5xx,
-                    p50_latency_ms: finite_or_zero(p50_val) * 1000.0,
-                    p95_latency_ms: finite_or_zero(p95_val) * 1000.0,
-                    p99_latency_ms: finite_or_zero(p99_val) * 1000.0,
-                    active_connections,
-                    proxy_active_connections,
-                    rate_limit_rejections_per_sec,
-                    billing_pipeline,
-                    circuit_breaker_open_count,
-                    cert_min_expiry_days,
-                    service_health,
+                    window: InstantKpiWindow {
+                        semantics: "instant",
+                        lookback_secs: OVERVIEW_WINDOW_SECS,
+                        label: format!("近瞬时（{OVERVIEW_WINDOW_SECS}s）"),
+                    },
+                    sample_count,
+                    qps: rates.qps,
+                    success_rate: rates.success_rate,
+                    error_rate: rates.error_rate,
+                    error_rate_4xx: rates.error_rate_4xx,
+                    error_rate_5xx: rates.error_rate_5xx,
+                    p50_latency_ms: rates.p50_latency_ms,
+                    p95_latency_ms: rates.p95_latency_ms,
+                    p99_latency_ms: rates.p99_latency_ms,
+                    active_connections: raw.active_connections,
+                    proxy_active_connections: raw.proxy_active_connections,
+                    rate_limit_rejections_per_sec: raw.rate_limit_rejections_per_sec,
+                    billing_pipeline: raw.billing_pipeline,
+                    circuit_breaker_open_count: raw.circuit_breaker_open_count,
+                    cert_min_expiry_days: raw.cert_min_expiry_days,
+                    service_health: raw.service_health,
                     alerts_connected: true,
                     error_budget_connected: error_budget_remaining.is_some(),
                     error_budget_remaining,
                     error_budget_slo,
-                    kpi_semantics: "instant".to_string(),
-                    instant_lookback_secs: OVERVIEW_WINDOW_SECS,
                 })
             }),
         )
         .await
+    }
+
+    /// 并行拉取 overview 瞬时原始 KPI（未按 `sample_count` 门控）。
+    async fn fetch_overview_raw_kpis(&self, w: u64) -> Result<OverviewRawKpis> {
+        let qps_q = business_qps_query(w);
+        let success_q = business_success_rate_query(w);
+        let error_q = business_error_rate_query(ErrorClass::All, w);
+        let error_4xx_q = business_error_rate_query(ErrorClass::Client, w);
+        let error_5xx_q = business_error_rate_query(ErrorClass::Server, w);
+        let p50_q = business_latency_quantile_query(0.50, w);
+        let p95_q = business_latency_quantile_query(0.95, w);
+        let p99_q = business_latency_quantile_query(0.99, w);
+        let ratelimit_q =
+            format!(r#"sum(rate(gateway_ratelimit_decisions_total{{decision="deny"}}[{w}s]))"#);
+        let sample_q = format!("sum(increase(api_proxy_requests_total[{w}s]))");
+        let (
+            qps,
+            success_rate,
+            error_rate,
+            error_rate_4xx,
+            error_rate_5xx,
+            p50,
+            p95,
+            p99,
+            sample_raw,
+            active_connections,
+            proxy_active_connections,
+            rate_limit_rejections_per_sec,
+            billing_pipeline,
+            circuit_breaker_open_count,
+            cert_min_expiry_days,
+            service_health,
+        ) = tokio::try_join!(
+            self.prometheus_instant_value_opt(&qps_q),
+            self.prometheus_instant_value_opt(&success_q),
+            self.prometheus_instant_value_opt(&error_q),
+            self.prometheus_instant_value_opt(&error_4xx_q),
+            self.prometheus_instant_value_opt(&error_5xx_q),
+            self.prometheus_instant_value_opt(&p50_q),
+            self.prometheus_instant_value_opt(&p95_q),
+            self.prometheus_instant_value_opt(&p99_q),
+            self.prometheus_instant_value_opt(&sample_q),
+            self.prometheus_instant_value("sum(active_connections)"),
+            self.prometheus_instant_value("sum(active_proxy_connections)"),
+            self.prometheus_instant_value(&ratelimit_q),
+            self.query_billing_pipeline_overview(w),
+            self.prometheus_instant_value("count(circuit_breaker_state > 0)"),
+            self.prometheus_instant_value("min(cert_min_expiry_days)"),
+            self.load_service_health_lights(),
+        )?;
+        Ok(OverviewRawKpis {
+            qps,
+            success_rate,
+            error_rate,
+            error_rate_4xx,
+            error_rate_5xx,
+            p50,
+            p95,
+            p99,
+            sample_raw,
+            active_connections,
+            proxy_active_connections,
+            rate_limit_rejections_per_sec,
+            billing_pipeline,
+            circuit_breaker_open_count,
+            cert_min_expiry_days,
+            service_health,
+        })
     }
 
     async fn load_error_budget_snapshot(&self) -> (Option<String>, Option<f64>) {
@@ -460,7 +545,8 @@ impl GreptimeDBClient {
     pub fn metric_catalog(&self) -> Vec<MetricCatalogItem> {
         metric_catalog()
     }
-    async fn prometheus_instant_value(&self, query: &str) -> Result<f64> {
+    /// 无序列时返回 `None`（瞬时 KPI 空态）；gauge 类调用方用 [`Self::prometheus_instant_value`]。
+    async fn prometheus_instant_value_opt(&self, query: &str) -> Result<Option<f64>> {
         let url = format!(
             "{}/v1/prometheus/api/v1/query?db={}&query={}",
             self.http_url,
@@ -482,8 +568,11 @@ impl GreptimeDBClient {
             .as_ref()
             .and_then(|data| data.result.first())
             .and_then(|result| result.value.as_ref())
-            .and_then(|(_, value)| parse_prometheus_number(value))
-            .unwrap_or(0.0))
+            .and_then(|(_, value)| parse_prometheus_number(value)))
+    }
+
+    async fn prometheus_instant_value(&self, query: &str) -> Result<f64> {
+        Ok(self.prometheus_instant_value_opt(query).await?.unwrap_or(0.0))
     }
     /// 按某标签拆分的即时向量（标签值 → 数值）。
     /// 执行 `PromQL` 即时查询，返回每条序列的标签与数值（非有限值的序列被丢弃）。
@@ -2037,8 +2126,18 @@ mod tests {
 
     #[test]
     fn overview_window_matches_instant_lookback() {
-        // 与 mgmt `analytics_window::INSTANT_LOOKBACK_SECS` 对齐；方案 B 瞬时 KPI。
         assert_eq!(super::OVERVIEW_WINDOW_SECS, 60);
         assert_eq!(super::OVERVIEW_WINDOW_SECS, 4 * super::SCRAPE_INTERVAL_SECS);
+    }
+
+    #[test]
+    fn instant_kpi_window_label_mentions_lookback() {
+        let window = super::InstantKpiWindow {
+            semantics: "instant",
+            lookback_secs: super::OVERVIEW_WINDOW_SECS,
+            label: format!("近瞬时（{}s）", super::OVERVIEW_WINDOW_SECS),
+        };
+        assert_eq!(window.semantics, "instant");
+        assert!(window.label.contains("60"));
     }
 }

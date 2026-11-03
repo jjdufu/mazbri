@@ -235,17 +235,20 @@ const todayMargin = computed(() => {
 });
 
 function fmt(n?: number | null) {
-  return new Intl.NumberFormat().format(n ?? 0);
+  if (n === null || n === undefined) return "—";
+  return new Intl.NumberFormat().format(n);
 }
 function pct(n?: number | null) {
-  return `${(n ?? 0).toFixed(2)}%`;
+  if (n === null || n === undefined) return "—";
+  return `${n.toFixed(2)}%`;
 }
 function pct01(n?: number | null) {
   if (n == null) return "-";
   return `${(n * 100).toFixed(0)}%`;
 }
 function ms(n?: number | null) {
-  return `${(n ?? 0).toFixed(1)} ms`;
+  if (n === null || n === undefined) return "—";
+  return `${n.toFixed(1)} ms`;
 }
 function money(n?: number | string | null) {
   if (n == null || n === "") return "-";

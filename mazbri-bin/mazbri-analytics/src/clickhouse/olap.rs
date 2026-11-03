@@ -3,6 +3,7 @@
 
 use super::client::ClickHouseClient;
 use crate::error::{AnalyticsError, Result};
+use crate::call_semantics::{SQL_COUNT_SUCCESSES, SQL_IS_FAILURE, SQL_NORM_ERROR_CODE};
 use serde::{Deserialize, Serialize};
 
 /// 模板请求体：`{"template": "...", "params": {...}}`。
@@ -1011,10 +1012,12 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
 fn error_matrix_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     let filters = filter_clause(&p.filters, binds);
     format!(
-        "SELECT error_code, error_stage, count() AS count FROM request_logs \
+        "SELECT {norm} AS error_code, error_stage, count() AS count FROM request_logs \
          WHERE event_target = 'gateway' AND {window} \
-         AND (error_code != '' OR error_stage != ''){filters} \
+         AND {failure}{filters} \
          GROUP BY error_code, error_stage ORDER BY count DESC LIMIT 500",
+        norm = SQL_NORM_ERROR_CODE,
+        failure = SQL_IS_FAILURE,
         window = window(p.range, "timestamp"),
     )
 }
@@ -1165,7 +1168,8 @@ fn quota_top_sql(p: &QuotaTopParams, _binds: &mut Vec<String>) -> String {
 fn tenant_overview_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String {
     binds.push(p.tenant_code.trim().to_string());
     format!(
-        "SELECT tenant_code, count() AS calls,          100 * toFloat64(countIf(status_code >= 200 AND status_code < 400)) / greatest(toFloat64(count()), 1) AS success_rate,          toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms,          toString(sum(cost)) AS cost          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          GROUP BY tenant_code",
+        "SELECT tenant_code, count() AS calls,          100 * toFloat64({successes}) / greatest(toFloat64(count()), 1) AS success_rate,          toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms,          toString(sum(cost)) AS cost          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          GROUP BY tenant_code",
+        successes = SQL_COUNT_SUCCESSES,
         window = window(p.range, "timestamp"),
     )
 }
@@ -1174,7 +1178,9 @@ fn tenant_errors_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String 
     binds.push(p.tenant_code.trim().to_string());
     let limit = clamp_limit(p.limit, 50);
     format!(
-        "SELECT if(error_code = '', '(empty)', error_code) AS error_code, count() AS count          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          AND (error_code != '' OR status_code >= 400)          GROUP BY error_code ORDER BY count DESC LIMIT {limit}",
+        "SELECT {norm} AS error_code, count() AS count          FROM request_logs WHERE event_target = 'gateway' AND {window} AND tenant_code = ?          AND {failure}          GROUP BY error_code ORDER BY count DESC LIMIT {limit}",
+        norm = SQL_NORM_ERROR_CODE,
+        failure = SQL_IS_FAILURE,
         window = window(p.range, "timestamp"),
     )
 }
@@ -1336,6 +1342,21 @@ mod tests {
         assert!(sql.contains("error_stage"));
         assert!(sql.contains("FROM request_logs"));
         assert!(!sql.contains("countMerge"));
+        assert!(sql.contains("UNKNOWN"), "空失败码应规范为 UNKNOWN: {sql}");
+        assert!(!sql.contains("(empty)"), "禁止 (empty) 标签: {sql}");
+        assert!(sql.contains("NOT ("), "须按 is_success SSOT 排除成功行: {sql}");
+    }
+
+    #[test]
+    fn tenant_errors_excludes_success_empty_and_forbids_empty_label() {
+        let q = parse(
+            r#"{"template":"tenant_errors","params":{"tenant_code":"acme","range":"1h"}}"#,
+        )
+        .expect("valid");
+        let sql = q.sql().text;
+        assert!(!sql.contains("(empty)"), "{sql}");
+        assert!(sql.contains("UNKNOWN"), "{sql}");
+        assert!(sql.contains("NOT ("), "{sql}");
     }
 
     #[test]

@@ -26,6 +26,7 @@
         <StatCard
           :label="t('ops.overview.stats.qps')"
           :value="overview?.qps"
+          :hint="instantEmptyHint"
           :loading="loading"
           unit="req/s"
           icon="ri:pulse-line"
@@ -38,6 +39,7 @@
           :label="t('ops.overview.stats.successRate')"
           :value="overview?.success_rate"
           unit="%"
+          :hint="instantEmptyHint"
           :loading="loading"
           icon="ri:checkbox-circle-line"
           icon-color="#67c23a"
@@ -378,9 +380,21 @@ const latencySecondary = computed(() => {
   });
 });
 
+const instantEmptyHint = computed(() => {
+  const o = overview.value;
+  if (!o) return "";
+  if (o.sample_count === 0 || o.success_rate == null) {
+    return t("ops.overview.noSampleHint");
+  }
+  return "";
+});
+
 const errorLabel = computed(() => {
   const o = overview.value;
   if (!o) return "—";
+  if (o.sample_count === 0 || o.error_rate_4xx == null || o.error_rate_5xx == null) {
+    return "—";
+  }
   return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
 });
 
@@ -438,10 +452,9 @@ function alertLabels(labels: Record<string, string>) {
     .join(", ");
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
-    n,
-  );
+function fmt(n: number | null | undefined) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
 }
 
 function canDrill(id: OverviewDrillId): boolean {

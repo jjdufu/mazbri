@@ -571,7 +571,10 @@ pub struct CallMonitorItem {
     pub post_response_ms: u64,
     pub status_code: u16,
     pub response_result: String,
-    pub error_code: String,
+    /// 业务成功（与 analytics `is_success_row` 对齐）。
+    pub success: bool,
+    /// 失败时的规范化错误码；成功为 `null`（禁止空串 / `(empty)`）。
+    pub error_code: Option<String>,
     pub error_stage: String,
     pub response_flags: String,
     pub detail: serde_json::Value,
@@ -1068,39 +1071,14 @@ fn map_call_monitor_item(
     let channel_meta = channel_names
         .get(&channel_id)
         .or_else(|| channel_names.get(&channel_code));
-    let status_code = u16::saturating_from(
-        row.get("status_code")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0),
-    );
-    let duration_ms = row
-        .get("duration_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let upstream_service_time_ms = row
-        .get("upstream_service_time_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let dependency_wait_ms = row
-        .get("dependency_wait_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let internal_ms = row
-        .get("internal_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let post_response_ms = row
-        .get("post_response_ms")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let cache_hit = row
-        .get("cache_hit")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let fallback_used = row
-        .get("fallback_used")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
+    let status_code = u16::saturating_from(u64_field(&row, "status_code"));
+    let duration_ms = u64_field(&row, "duration_ms");
+    let upstream_service_time_ms = u64_field(&row, "upstream_service_time_ms");
+    let dependency_wait_ms = u64_field(&row, "dependency_wait_ms");
+    let internal_ms = u64_field(&row, "internal_ms");
+    let post_response_ms = u64_field(&row, "post_response_ms");
+    let cache_hit = bool_field(&row, "cache_hit");
+    let fallback_used = bool_field(&row, "fallback_used");
     let base_channel_name = first_non_empty(&[
         channel_meta
             .as_ref()
@@ -1111,6 +1089,13 @@ fn map_call_monitor_item(
     ]);
     // Response-cache hit or CBPro fallback: prefix matched route channel for ops visibility.
     let channel_name = with_cb_channel_prefix(base_channel_name, cache_hit, fallback_used);
+    let raw_error_code = string_field(&row, "error_code");
+    let raw_error_class = string_field(&row, "error_class");
+    let (success, error_code) = crate::services::call_semantics::normalize_call_error_code(
+        status_code,
+        &raw_error_code,
+        &raw_error_class,
+    );
     CallMonitorItem {
         timestamp: row
             .get("timestamp")
@@ -1155,7 +1140,8 @@ fn map_call_monitor_item(
             string_field(&row, "response_result"),
             string_field(&row, "response_flags"),
         ]),
-        error_code: string_field(&row, "error_code"),
+        success,
+        error_code,
         error_stage: string_field(&row, "error_stage"),
         response_flags: string_field(&row, "response_flags"),
         detail: row,
@@ -1166,6 +1152,12 @@ fn string_field(row: &serde_json::Value, key: &str) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string()
+}
+fn u64_field(row: &serde_json::Value, key: &str) -> u64 {
+    row.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0)
+}
+fn bool_field(row: &serde_json::Value, key: &str) -> bool {
+    row.get(key).and_then(serde_json::Value::as_bool).unwrap_or(false)
 }
 fn normalize_serial_no(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -1334,16 +1326,17 @@ pub async fn get_metric_timeseries(
     }
 }
 fn empty_metrics_overview() -> serde_json::Value {
-    // 瞬时语义元数据由 apply_overview_field_gate 统一写入；此处只放指标骨架。
+    // 瞬时窗由 apply_overview_field_gate 写入；无样本率类字段为 null（禁止 0%）。
     serde_json::json!({
-        "qps": 0.0,
-        "success_rate": 0.0,
-        "error_rate": 0.0,
-        "error_rate_4xx": 0.0,
-        "error_rate_5xx": 0.0,
-        "p50_latency_ms": 0.0,
-        "p95_latency_ms": 0.0,
-        "p99_latency_ms": 0.0,
+        "sample_count": 0,
+        "qps": null,
+        "success_rate": null,
+        "error_rate": null,
+        "error_rate_4xx": null,
+        "error_rate_5xx": null,
+        "p50_latency_ms": null,
+        "p95_latency_ms": null,
+        "p99_latency_ms": null,
         "active_connections": 0.0,
         "proxy_active_connections": 0.0,
         "rate_limit_rejections_per_sec": 0.0,
