@@ -241,7 +241,7 @@
               :key="item.id"
               size="small"
               :disabled="!item.enabled"
-              @click="item.enabled && router.push(item.path!)"
+              @click="item.enabled && router.push({ path: item.path!, query: item.query })"
             >
               {{ item.label }}
             </ElButton>
@@ -305,6 +305,7 @@ import { postOlapQuery } from "@/api/olap";
 import type { ExemplarRow } from "@/types/api/olap";
 import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
 import { buildAlertsRoute } from "@/utils/ops/alerts-link";
+import { BILLING_PATH } from "@/utils/ops/billing-link";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -386,7 +387,15 @@ const errorLabel = computed(() => {
   return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
 });
 
-const drillTargets = computed(() => [
+type DrillTarget = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  path?: string;
+  query?: Record<string, string>;
+};
+
+const drillTargets = computed<DrillTarget[]>(() => [
   {
     id: "2.1",
     label: t("ops.overview.drill.gatewayRed"),
@@ -416,7 +425,8 @@ const drillTargets = computed(() => [
     id: "6.1",
     label: t("ops.overview.drill.billing"),
     enabled: true,
-    path: "/ops/billing/health",
+    path: BILLING_PATH,
+    query: { tab: "health" },
   },
   { id: "12.1", label: t("ops.overview.drill.certs"), enabled: false },
   {
@@ -446,7 +456,10 @@ function drill(id: string) {
     ElMessage.info(t("ops.overview.drillDisabled"));
     return;
   }
-  drilldown({ path: target.path });
+  drilldown({
+    path: target.path,
+    query: target.query,
+  });
 }
 
 function openScreen() {

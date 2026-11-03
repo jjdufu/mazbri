@@ -1,13 +1,13 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.billingReconcile')">
-    <template #actions>
+  <div class="ops-billing-panel">
+    <OpsPanelToolbar>
       <ElSelect v-model="days" style="width: 120px" @change="loadCalendar">
-          <ElOption :value="7" label="7d" />
-          <ElOption :value="30" label="30d" />
-          <ElOption :value="90" label="90d" />
-        </ElSelect>
-        <AutoRefresh v-model="refreshInterval" @tick="loadCalendar" />
-    </template>
+        <ElOption :value="7" label="7d" />
+        <ElOption :value="30" label="30d" />
+        <ElOption :value="90" label="90d" />
+      </ElSelect>
+      <AutoRefresh v-model="refreshInterval" @tick="loadCalendar" />
+    </OpsPanelToolbar>
 
     <OpsCard :title="t('ops.reconcile.calendar')">
       <div class="calendar-grid">
@@ -25,7 +25,7 @@
     </OpsCard>
 
     <UsageReconciliationPanel />
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -33,7 +33,7 @@ import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   fetchReconcileCalendar,
@@ -41,7 +41,7 @@ import {
 } from "@/api/billing-ops";
 import UsageReconciliationPanel from "@/views/mazbri/billing/usage-reconciliation/index.vue";
 
-defineOptions({ name: "OpsBillingReconcile" });
+defineOptions({ name: "OpsBillingReconcilePanel" });
 
 const { t } = useI18n();
 const days = ref(30);

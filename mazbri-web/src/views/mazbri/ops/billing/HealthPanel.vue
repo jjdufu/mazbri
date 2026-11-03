@@ -1,9 +1,9 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.billingHealth')">
-    <template #actions>
+  <div class="ops-billing-panel">
+    <OpsPanelToolbar>
       <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
+      <AutoRefresh v-model="refreshInterval" @tick="reload" />
+    </OpsPanelToolbar>
 
     <ElRow :gutter="16">
       <ElCol
@@ -104,7 +104,7 @@
         />
       </div>
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -118,7 +118,7 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOlapRange } from "@/composables/ops/useOlapRange";
 import { useStep } from "@/composables/ops/useStep";
@@ -135,7 +135,7 @@ import type {
 } from "@/types/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
 
-defineOptions({ name: "OpsBillingHealth" });
+defineOptions({ name: "OpsBillingHealthPanel" });
 
 /** 趋势全部来自 analytics 指标目录（billing 自身暴露的 Prometheus 指标）。 */
 const CHART_METRICS = [

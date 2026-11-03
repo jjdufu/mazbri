@@ -199,11 +199,11 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
       {
         path: "usage-reconciliation",
-        redirect: "/ops/billing/reconcile",
+        redirect: { path: "/ops/billing", query: { tab: "reconcile" } },
         meta: {
           title: "menus.mazbri.usageReconciliation",
           isHide: true,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       }
     ],
@@ -384,28 +384,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         meta: {
           title: "menus.mazbri.opsBilling",
           icon: "ri:bill-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "billing/health",
-        name: "OpsBillingHealth",
-        component: "/mazbri/ops/billing/health",
-        meta: {
-          title: "menus.mazbri.billingHealth",
-          icon: "ri:bill-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "billing/reconcile",
-        name: "OpsBillingReconcile",
-        component: "/mazbri/ops/billing/reconcile",
-        meta: {
-          title: "menus.mazbri.billingReconcile",
-          icon: "ri:calendar-check-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE"],
         },
@@ -643,7 +621,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
       },
       {
         path: "usage-reconciliation",
-        redirect: "/ops/billing/reconcile",
+        redirect: { path: "/ops/billing", query: { tab: "reconcile" } },
         meta: {
           title: "menus.mazbri.usageReconciliation",
           isHide: true,
