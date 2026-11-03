@@ -3,23 +3,33 @@ use mazbri_core::crypto::request_binding::{
     sign_hmac_sha256_base64,
 };
 use mazbri_core::crypto::transport::{
-    DATA_ALGORITHM, SIGNATURE_ALGORITHM, TransportEnvelope, canonical_signature_payload,
-    decrypt_aes_256_gcm, encrypt_aes_256_gcm, generate_nonce_base64url, sign_payload,
-    validate_transport_algorithms, verify_payload_signature,
+    SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
+};
+use mazbri_core::crypto::{
+    AlgorithmRegistry, TenantTransportProfile, TransportMode,
 };
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+/// Official SDK client configuration (destructive Profile-based transport).
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
+    /// Gateway base URL (no trailing slash required).
     pub gateway_base_url: String,
+    /// Tenant UUID string (also AEAD AAD).
     pub tenant_id: String,
+    /// API key for `/auth/token`.
     pub api_key: String,
+    /// Tenant data-plane key material (also used as MAC key when `mac_alg` is set).
     pub tenant_key: Vec<u8>,
+    /// Active key version string (e.g. `v1`).
     pub key_version: String,
-    /// HMAC-SHA256 request-binding key (`tenant_request_keys`). When set, SDK sends binding headers.
+    /// Tenant transport Profile (`mode=none|request|full` + suite/algs).
+    pub transport: TenantTransportProfile,
+    /// Optional HTTP request-binding HMAC key (`tenant_request_keys`).
     pub request_hmac_key: Option<Vec<u8>>,
+    /// Optional request-binding key id.
     pub request_key_id: Option<String>,
 }
 
@@ -59,6 +69,10 @@ pub enum Error {
     Token(String),
     #[error("gateway response invalid: {0}")]
     Gateway(String),
+    #[error("unsupported transport algorithm: {0}")]
+    UnsupportedAlgorithm(String),
+    #[error("legacy transport algorithm denied: {0}")]
+    LegacyDenied(String),
 }
 
 #[derive(Clone)]
@@ -66,6 +80,7 @@ pub struct MazbriClient {
     client: Client,
     config: ClientConfig,
     access_token: String,
+    registry: AlgorithmRegistry,
 }
 
 impl MazbriClient {
@@ -74,10 +89,16 @@ impl MazbriClient {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn new(config: ClientConfig) -> Result<Self, Error> {
         let client = Client::builder().build()?;
+        let registry = AlgorithmRegistry::default_registry();
+        config
+            .transport
+            .validate(&registry)
+            .map_err(map_profile_error)?;
         let mut sdk = Self {
             client,
             config,
             access_token: String::new(),
+            registry,
         };
         let token = sdk.fetch_token().await?;
         sdk.access_token = token
@@ -171,30 +192,42 @@ impl MazbriClient {
         })
     }
 
-    fn encrypt_request(&self, plaintext: &[u8]) -> Result<TransportEnvelope, Error> {
-        let encrypted = encrypt_aes_256_gcm(
-            &self.config.tenant_key,
+    fn seal_request(&self, plaintext: &[u8]) -> Result<TransportEnvelope, Error> {
+        let (_, mac_alg) = self
+            .config
+            .transport
+            .effective_algs()
+            .map_err(map_profile_error)?;
+        let mac_key = mac_alg.map(|_| self.config.tenant_key.as_slice());
+        seal_envelope(SealEnvelopeParams {
+            profile: &self.config.transport,
+            registry: &self.registry,
+            data_key: &self.config.tenant_key,
+            mac_key,
+            key_version: &self.config.key_version,
+            tenant_id: &self.config.tenant_id,
+            http_path: "/api/v1/gateway",
             plaintext,
-            self.config.tenant_id.as_bytes(),
-        )?;
-        let timestamp = chrono::Utc::now().timestamp_millis();
-        let nonce = generate_nonce_base64url();
-        let mut envelope = TransportEnvelope {
-            encrypted: true,
-            key_version: self.config.key_version.clone(),
-            algorithm: DATA_ALGORITHM.to_string(),
-            signature_algorithm: SIGNATURE_ALGORITHM.to_string(),
-            timestamp,
-            nonce,
-            iv: encrypted.iv,
-            ciphertext: encrypted.ciphertext,
-            tag: encrypted.tag,
-            signature: String::new(),
-        };
-        let payload =
-            canonical_signature_payload(&envelope, &self.config.tenant_id, "/api/v1/gateway");
-        envelope.signature = sign_payload(&self.config.tenant_key, &payload)?;
-        Ok(envelope)
+            timestamp: chrono::Utc::now().timestamp(),
+        })
+        .map_err(map_crypto_error)
+    }
+
+    fn open_response(&self, envelope: &TransportEnvelope) -> Result<Vec<u8>, Error> {
+        let mac_key = envelope
+            .mac_alg
+            .as_ref()
+            .map(|_| self.config.tenant_key.as_slice());
+        open_envelope(
+            &self.config.transport,
+            &self.registry,
+            &self.config.tenant_key,
+            mac_key,
+            &self.config.tenant_id,
+            "/api/v1/gateway",
+            envelope,
+        )
+        .map_err(map_crypto_error)
     }
 
     async fn send_request(
@@ -203,10 +236,15 @@ impl MazbriClient {
         extra_headers: Option<&HeaderMap>,
     ) -> Result<CallResult<GatewayResponseEnvelope>, Error> {
         let plaintext = serde_json::to_vec(request)?;
-        let envelope = self.encrypt_request(&plaintext)?;
-        let body = serde_json::to_vec(&envelope).map_err(|error| {
-            Error::Gateway(format!("failed to serialize encrypted envelope: {error}"))
-        })?;
+        let body = match self.config.transport.mode {
+            TransportMode::None => plaintext,
+            TransportMode::Request | TransportMode::Full => {
+                let envelope = self.seal_request(&plaintext)?;
+                serde_json::to_vec(&envelope).map_err(|error| {
+                    Error::Gateway(format!("failed to serialize encrypted envelope: {error}"))
+                })?
+            }
+        };
         let mut request_builder = self
             .client
             .post(self.invoke_url())
@@ -221,21 +259,25 @@ impl MazbriClient {
         let http_status = response.status().as_u16();
         let raw = response.bytes().await?;
         let response_bytes = raw.len();
-        let payload = if let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(&raw) {
-            validate_transport_algorithms(&envelope)?;
-            let canonical =
-                canonical_signature_payload(&envelope, &self.config.tenant_id, "/api/v1/gateway");
-            verify_payload_signature(&self.config.tenant_key, &canonical, &envelope.signature)?;
-            let plaintext = decrypt_aes_256_gcm(
-                &self.config.tenant_key,
-                &envelope.iv,
-                &envelope.ciphertext,
-                &envelope.tag,
-                self.config.tenant_id.as_bytes(),
-            )?;
-            Self::deserialize_gateway_response(&plaintext)?
-        } else {
-            Self::deserialize_gateway_response(&raw)?
+        let payload = match self.config.transport.mode {
+            TransportMode::Full => {
+                let envelope: TransportEnvelope = serde_json::from_slice(&raw).map_err(|error| {
+                    Error::Gateway(format!(
+                        "mode=full expects TransportEnvelope response: {error}"
+                    ))
+                })?;
+                let plaintext = self.open_response(&envelope)?;
+                Self::deserialize_gateway_response(&plaintext)?
+            }
+            TransportMode::None | TransportMode::Request => {
+                if let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(&raw) {
+                    return Err(Error::Gateway(format!(
+                        "unexpected encrypted response under mode={:?} (data_alg={})",
+                        self.config.transport.mode, envelope.data_alg
+                    )));
+                }
+                Self::deserialize_gateway_response(&raw)?
+            }
         };
         Ok(CallResult {
             response: payload,
@@ -314,6 +356,40 @@ impl MazbriClient {
     }
 }
 
+fn map_profile_error(error: mazbri_core::crypto::CryptoError) -> Error {
+    use mazbri_core::crypto::CryptoError;
+    match error {
+        CryptoError::LegacyNotAllowed { id } => Error::LegacyDenied(id.as_str().to_owned()),
+        CryptoError::UnknownAlgorithmId { raw } => Error::UnsupportedAlgorithm(raw),
+        CryptoError::NotRegistered { id } => Error::UnsupportedAlgorithm(id.as_str().to_owned()),
+        CryptoError::Unsupported { reason } => Error::UnsupportedAlgorithm(reason),
+        other => Error::Gateway(format!("invalid transport profile: {other}")),
+    }
+}
+
+fn map_crypto_error(error: mazbri_core::crypto::transport::TransportCryptoError) -> Error {
+    use mazbri_core::crypto::transport::TransportCryptoError;
+    use mazbri_core::crypto::CryptoError;
+    match error {
+        TransportCryptoError::UnsupportedAlgorithm => {
+            Error::UnsupportedAlgorithm("closed-set algorithm required".into())
+        }
+        TransportCryptoError::Crypto(CryptoError::LegacyNotAllowed { id }) => {
+            Error::LegacyDenied(id.as_str().to_owned())
+        }
+        TransportCryptoError::Crypto(CryptoError::UnknownAlgorithmId { raw }) => {
+            Error::UnsupportedAlgorithm(raw)
+        }
+        TransportCryptoError::Crypto(CryptoError::NotRegistered { id }) => {
+            Error::UnsupportedAlgorithm(id.as_str().to_owned())
+        }
+        TransportCryptoError::InvalidProfile(reason) => Error::Gateway(format!(
+            "invalid transport profile or envelope: {reason}"
+        )),
+        other => Error::Crypto(other),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayResponseEnvelope {
     pub success: bool,
@@ -356,6 +432,106 @@ impl From<GatewayResponseEnvelopeJsonWire> for GatewayResponseEnvelope {
             request_id: value.request_id,
             content_type: value.content_type,
             body_encoding: value.body_encoding,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mazbri_core::crypto::transport::{open_envelope, seal_envelope, SealEnvelopeParams};
+    use mazbri_core::crypto::{
+        AlgorithmId, AlgorithmRegistry, KeySelection, TenantTransportProfile, TransportMode,
+        SUITE_TENANT_DEFAULT_2026_11,
+    };
+
+    fn aes_full_profile() -> TenantTransportProfile {
+        let mut profile =
+            TenantTransportProfile::from_named_suite(SUITE_TENANT_DEFAULT_2026_11, TransportMode::Full)
+                .expect("suite");
+        profile.key = Some(KeySelection::Latest {
+            key_id: "tenant-default".into(),
+        });
+        profile
+    }
+
+    #[test]
+    fn mode_none_profile_validates_without_algs() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = TenantTransportProfile::plaintext();
+        profile.validate(&registry).expect("plaintext ok");
+        assert!(matches!(profile.mode, TransportMode::None));
+    }
+
+    #[test]
+    fn mode_full_aes_256_gcm_roundtrip_via_seal_open() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = aes_full_profile();
+        profile.validate(&registry).expect("profile");
+        let key = [9u8; 32];
+        let plaintext = br#"{"product_id":"demo"}"#;
+        let sealed = seal_envelope(SealEnvelopeParams {
+            profile: &profile,
+            registry: &registry,
+            data_key: &key,
+            mac_key: None,
+            key_version: "v1",
+            tenant_id: "tenant-1",
+            http_path: "/api/v1/gateway",
+            plaintext,
+            timestamp: 1_710_000_000,
+        })
+        .expect("seal");
+        assert_eq!(sealed.data_alg, "aes-256-gcm");
+        assert!(sealed.mac_alg.is_none());
+        let opened = open_envelope(
+            &profile,
+            &registry,
+            &key,
+            None,
+            "tenant-1",
+            "/api/v1/gateway",
+            &sealed,
+        )
+        .expect("open");
+        assert_eq!(opened, plaintext);
+    }
+
+    #[test]
+    fn legacy_alg_without_allow_insecure_is_denied() {
+        let registry = AlgorithmRegistry::default_registry();
+        let mut profile = TenantTransportProfile::from_named_suite(
+            SUITE_TENANT_DEFAULT_2026_11,
+            TransportMode::Request,
+        )
+        .expect("suite");
+        profile.key = Some(KeySelection::Latest {
+            key_id: "tenant-default".into(),
+        });
+        profile.suite = None;
+        profile.data_alg = Some(AlgorithmId::Aes256Ecb);
+        profile.mac_alg = Some(AlgorithmId::HmacSha256);
+        profile.allow_insecure = false;
+        let err = profile.validate(&registry).expect_err("legacy denied");
+        assert!(matches!(
+            err,
+            mazbri_core::crypto::CryptoError::LegacyNotAllowed { .. }
+        ));
+    }
+
+    #[test]
+    fn map_crypto_error_surfaces_legacy_and_unsupported() {
+        use mazbri_core::crypto::transport::TransportCryptoError;
+        use mazbri_core::crypto::{AlgorithmId, CryptoError};
+        match map_crypto_error(TransportCryptoError::Crypto(CryptoError::LegacyNotAllowed {
+            id: AlgorithmId::Aes256Ecb,
+        })) {
+            Error::LegacyDenied(id) => assert_eq!(id, "aes-256-ecb"),
+            other => panic!("unexpected {other:?}"),
+        }
+        match map_crypto_error(TransportCryptoError::UnsupportedAlgorithm) {
+            Error::UnsupportedAlgorithm(_) => {}
+            other => panic!("unexpected {other:?}"),
         }
     }
 }

@@ -16,5 +16,5 @@ pub use mazbri_crypto::suite::{
     known_suites, resolve_suite, SUITE_GM_SM4_HMAC_SM3, SUITE_TENANT_CHACHA20,
     SUITE_TENANT_DEFAULT_2026_11,
 };
-pub use mazbri_crypto::{AlgorithmId, AlgorithmKind};
+pub use mazbri_crypto::{AlgorithmId, AlgorithmKind, CryptoError};
 pub use transport::default_suite;
