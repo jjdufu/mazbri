@@ -251,6 +251,10 @@
     </ElRow>
 
     <ProductTopN ref="productTopNRef" :time-range="timeRange" />
+
+    <RoleGate gate="biz">
+      <RecentAnomalies ref="recentAnomaliesRef" />
+    </RoleGate>
   </OpsPage>
 </template>
 
@@ -294,6 +298,7 @@ import {
 } from "@/utils/ops/overview-drill";
 import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
 import ProductTopN from "./modules/ProductTopN.vue";
+import RecentAnomalies from "./modules/RecentAnomalies.vue";
 
 defineOptions({ name: "OpsOverview" });
 
@@ -318,6 +323,9 @@ const qpsSeries = ref<MetricSeries | null>(null);
 const p99Series = ref<MetricSeries | null>(null);
 const alertSummary = ref<AlertSummary | null>(null);
 const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
+const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(
+  null,
+);
 const exemplarLoading = ref(false);
 const refreshInterval = ref(30);
 const timeRange = ref<TimeRangeValue>({
@@ -500,6 +508,7 @@ async function reload() {
     alertSummary.value =
       (bundle.alerts as AlertSummary | null | undefined) ?? null;
     await productTopNRef.value?.reload();
+    await recentAnomaliesRef.value?.reload();
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.overview.loadFailed"),

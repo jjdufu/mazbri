@@ -345,18 +345,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "reliability/anomaly",
-        name: "OpsReliabilityAnomaly",
-        component: "/mazbri/ops/reliability/anomaly",
-        meta: {
-          title: "menus.mazbri.anomaly",
-          icon: "ri:alarm-warning-line",
-          isHide: true,
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
         path: "reliability/slo",
         name: "OpsReliabilitySlo",
         component: "/mazbri/ops/reliability/slo",

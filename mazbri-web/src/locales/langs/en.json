@@ -4194,6 +4194,10 @@
       "productZeroExpand": "Show zero-call products",
       "productZeroCollapse": "Hide",
       "productTopLoadFailed": "Failed to load product ranking",
+      "recentAnomalies": "Recent anomalies",
+      "anomalyEmpty": "No anomaly events",
+      "anomalyDetail": "Anomaly detail",
+      "anomalyLoadFailed": "Failed to load anomalies",
       "charts": {
         "qps": "Business QPS",
         "p99": "Business P99"
@@ -4782,7 +4786,8 @@
       "colValue": "Value",
       "colBase": "Baseline",
       "colScore": "Score",
-      "colStatus": "Status"
+      "colStatus": "Status",
+      "colDetail": "Detail"
     },
     "mergedShell": {
       "placeholder": "Content will move into this tab in a later step.",

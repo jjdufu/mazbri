@@ -4199,6 +4199,10 @@
       "productZeroExpand": "展开零调用产品",
       "productZeroCollapse": "收起",
       "productTopLoadFailed": "加载产品排行失败",
+      "recentAnomalies": "近期异常",
+      "anomalyEmpty": "暂无异常事件",
+      "anomalyDetail": "异常详情",
+      "anomalyLoadFailed": "加载异常事件失败",
       "charts": {
         "qps": "业务 QPS",
         "p99": "业务 P99"
@@ -4787,7 +4791,8 @@
       "colValue": "值",
       "colBase": "基线",
       "colScore": "得分",
-      "colStatus": "状态"
+      "colStatus": "状态",
+      "colDetail": "详情"
     },
     "mergedShell": {
       "placeholder": "内容将在后续步骤迁入此 Tab。",
