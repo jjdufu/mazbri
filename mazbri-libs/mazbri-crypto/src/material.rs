@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::traits::CryptoError;
+
 /// 密钥用途标记（与具体算法解耦）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,6 +120,21 @@ impl KeyRef {
         Self::Pem {
             purpose,
             pem: pem.into(),
+        }
+    }
+
+
+    /// 取原始密钥字节。
+    ///
+    /// # Errors
+    ///
+    /// [`CryptoError::InvalidKey`]：材料为 PEM 而非原始字节。
+    pub fn raw_bytes(&self) -> Result<&[u8], CryptoError> {
+        match self {
+            Self::Raw { bytes, .. } => Ok(bytes.as_slice()),
+            Self::Pem { .. } => Err(CryptoError::InvalidKey {
+                reason: "expected raw key bytes, got PEM".to_owned(),
+            }),
         }
     }
 

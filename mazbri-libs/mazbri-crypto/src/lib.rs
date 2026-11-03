@@ -5,6 +5,7 @@
 //! - 闭集 [`AlgorithmId`] 与 [`SecurityClass`]
 //! - 原语 traits（[`AeadSeal`]、[`BlockCipher`]、[`Mac`]、[`Digest`]、[`AsymBox`]、[`AsymSign`]）
 //! - [`AlgorithmRegistry`]：后续步骤只「注册实现」，业务不散落算法常量
+//! - step-02：对称/AEAD + 摘要/MAC 实现与向量测试
 //! - Legacy 唯一门闩：[`legacy::assert_not_legacy_or_allowed`]
 //!
 //! # 非目标（本 crate）
@@ -19,17 +20,27 @@
 
 #![forbid(unsafe_code)]
 
+pub mod aead;
+pub mod digest;
 pub mod id;
 pub mod legacy;
+pub mod mac;
 pub mod material;
 pub mod registry;
 pub mod security;
+pub mod suite;
+pub mod symmetric;
 pub mod traits;
 
+pub use aead::AeadAlgorithm;
+pub use digest::DigestAlgorithm;
 pub use id::{AlgorithmId, AlgorithmKind};
+pub use mac::MacAlgorithm;
 pub use material::{KeyPurpose, KeyRef, NoncePolicy, ZeroizingBytes};
-pub use registry::{AlgorithmMeta, AlgorithmRegistry};
+pub use registry::{require_mac_for, AlgorithmMeta, AlgorithmRegistry};
 pub use security::SecurityClass;
+pub use suite::{suite_data_alg, SUITE_TENANT_DEFAULT_2026_11};
+pub use symmetric::{decrypt_cfb, encrypt_cfb, CfbParams, SymmetricAlgorithm};
 pub use traits::{
     AeadSeal, AsymBox, AsymSign, BlockCipher, CryptoError, Digest, Mac,
 };
