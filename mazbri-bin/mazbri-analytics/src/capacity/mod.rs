@@ -49,13 +49,13 @@ struct DailyQps {
 }
 
 /// 简单线性回归 y = a + b x，返回 (intercept, slope)。
-#[allow(clippy::cast_precision_loss)]
 fn linear_fit(xs: &[f64], ys: &[f64]) -> Option<(f64, f64)> {
     let n = xs.len();
     if n < 3 || n != ys.len() {
         return None;
     }
-    let n_f = n as f64;
+    // u32→f64 对全部 u32 精确；拒绝异常超长序列以免 usize→f64 丢精度。
+    let n_f = f64::from(u32::try_from(n).ok()?);
     let mean_x = xs.iter().sum::<f64>() / n_f;
     let mean_y = ys.iter().sum::<f64>() / n_f;
     let mut num = 0.0;
