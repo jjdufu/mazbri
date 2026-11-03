@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.17](https://github.com/jjdufu/mazbri/compare/v0.2.16...v0.2.17) (2026-11-03)
+
+
+### Features
+
+* **mgmt:** i18n 与展示格式统一（名称·小数·状态）（step12） ([b0750ac](https://github.com/jjdufu/mazbri/commit/b0750acdb62c6453bf578ea6b9b23373e2ca1a13))
+* **mgmt:** 传输加密页权限与许可证态一致（step10） ([07eb2cc](https://github.com/jjdufu/mazbri/commit/07eb2cce531f3792d659ac9d0b3ec9b4186fca9c))
+* **mgmt:** 列表分页完整性与禁止假全量拉取（step05） ([fc90e28](https://github.com/jjdufu/mazbri/commit/fc90e284008482ec0c5771c2257b0ff8229c97b9))
+* **mgmt:** 前端 chunk 失效硬刷新提示（step13） ([52452c3](https://github.com/jjdufu/mazbri/commit/52452c3433def7ff4463d5a997098fe2e667bd17))
+* **mgmt:** 告警种子过滤与时间墙钟化（step09） ([240a182](https://github.com/jjdufu/mazbri/commit/240a1825d37af9a6dd9d4b8221b2d3d911f60b2b))
+* **mgmt:** 审计噪音治理——个人偏好退出安全审计（step08） ([08037ea](https://github.com/jjdufu/mazbri/commit/08037ea0b7233e2c46dfc5ca569c0e4532bd5bec))
+* **mgmt:** 对齐 RBAC 四层，去掉假 actions 与静默回首页 ([23b00ca](https://github.com/jjdufu/mazbri/commit/23b00ca542a7c4cbbba1232104db4229d69a5757))
+* **mgmt:** 布局设计系统与信息架构重整（step11） ([2d4d416](https://github.com/jjdufu/mazbri/commit/2d4d416b51bb7fe457033f30397cc3a0d4be11f8))
+* **mgmt:** 管理后台破坏性改造（RBAC/金额SSOT/语义/分页/布局等 step02–13） ([622b535](https://github.com/jjdufu/mazbri/commit/622b535fc4788a6c79ea79d22d773824a793f4ae))
+* **mgmt:** 经营金额 SSOT（step03）— cost_status/window/租户名，禁假 100% 毛利 ([1c098c9](https://github.com/jjdufu/mazbri/commit/1c098c9f5e4b8d02afbc2b54b71932032f26f962))
+* **mgmt:** 计费漏斗真实转化与账单生命周期空态（step07） ([af96bf1](https://github.com/jjdufu/mazbri/commit/af96bf1233dfa0a49db036faf8d0e9e947c4578e))
+* **mgmt:** 调用/错误语义 SSOT 与瞬时 KPI 空态（step04） ([5c84bf4](https://github.com/jjdufu/mazbri/commit/5c84bf401d5a71c6344cb59befd1ff192e14b7b4))
+* **mgmt:** 运维图表/TopN/时间窗统一（step06） ([622e141](https://github.com/jjdufu/mazbri/commit/622e141fdbeccf8869f690472444f856bfb8d94d))
+
 ## [0.2.16](https://github.com/jjdufu/mazbri/compare/v0.2.15...v0.2.16) (2026-11-03)
 
 
