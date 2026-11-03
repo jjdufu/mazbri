@@ -6,15 +6,29 @@ name: CI
 #
 # PR 侧按路径缩范围（web-only 跳过 libs、bin 仅 -p mazbri-mgmt）；
 # main push 若对应功能 PR 已绿则跳过重活。
-# Release 通过 workflow_call 调用时只跑轻量门（changes + smoke + noop +
-# CI result）；clippy/test 以功能 PR CI 为准，compile 仍由 release.yml 的
-# amd64∥arm64 matrix 负责。
+# Release 通过 workflow_call + inputs.skip_heavy=true 只跑轻量门
+# （changes + smoke + noop + CI result）；clippy/test 以功能 PR CI 为准，
+# compile 仍由 release.yml 的 amd64∥arm64 matrix 负责。
+#
+# 注意：被 workflow_call 调用时 github.event_name 仍是调用方顶层事件
+# （通常为 push），不会变成 workflow_call。发版跳过重活必须看
+# inputs.skip_heavy，不要再写 EVENT == workflow_call。
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      skip_heavy:
+        description: >-
+          Skip frontend/libs/bin clippy+test (keep changes/smoke/noop/CI
+          result). Default true because the only caller today is release.yml
+          (light pre-publish gate). Pass false for a full reusable gate.
+          Direct pull_request/push triggers ignore this input.
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -158,6 +172,8 @@ jobs:
         env:
           RP_SKIP: ${{ steps.rp.outputs.skip }}
           DEDUPE_SKIP: ${{ steps.dedupe.outputs.skip_heavy }}
+          # workflow_call input only; empty on direct pull_request/push.
+          SKIP_HEAVY_INPUT: ${{ inputs.skip_heavy }}
           EVENT: ${{ github.event_name }}
           WORKFLOW: ${{ github.workflow }}
           F_WEB: ${{ steps.filter.outputs.web }}
@@ -180,6 +196,14 @@ jobs:
             run_bin=false
             skip_heavy=true
           elif [ "${DEDUPE_SKIP:-false}" = "true" ]; then
+            run_frontend=false
+            run_libs=false
+            run_bin=false
+            skip_heavy=true
+          elif [ "${SKIP_HEAVY_INPUT:-}" = "true" ]; then
+            # Release（或其它 workflow_call）显式 skip_heavy。
+            # github.event_name 仍是顶层事件（常见 push），绝不会是
+            # workflow_call —— 已在 v0.2.17 验证；勿再靠 EVENT 判断。
             run_frontend=false
             run_libs=false
             run_bin=false
@@ -222,14 +246,8 @@ jobs:
                 bin_scope=mgmt
               fi
             fi
-          elif [ "$EVENT" = "workflow_call" ]; then
-            # Release 调用：功能 PR 已验过；跳过 frontend/libs/bin，只留 smoke/noop
-            run_frontend=false
-            run_libs=false
-            run_bin=false
-            skip_heavy=true
           else
-            # push(main 未去重) / workflow_dispatch：全量
+            # push(main 未去重) / workflow_dispatch / workflow_call(skip_heavy=false)：全量
             run_frontend=true
             run_libs=true
             run_bin=true
@@ -243,7 +261,7 @@ jobs:
             echo "bin_scope=$bin_scope"
             echo "skip_heavy=$skip_heavy"
           } >> "$GITHUB_OUTPUT"
-          echo "flags: frontend=$run_frontend libs=$run_libs bin=$run_bin scope=$bin_scope skip_heavy=$skip_heavy"
+          echo "flags: EVENT=$EVENT WORKFLOW=$WORKFLOW SKIP_HEAVY_INPUT=${SKIP_HEAVY_INPUT:-} frontend=$run_frontend libs=$run_libs bin=$run_bin scope=$bin_scope skip_heavy=$skip_heavy"
 
   frontend:
     name: Frontend typecheck, build, test

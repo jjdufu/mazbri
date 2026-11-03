@@ -137,9 +137,13 @@ jobs:
   # clippy/test already ran on the feature PR. Runs in parallel with compile
   # (amd64∥arm64 matrix unchanged); image / retag / notes still need it so a
   # failed smoke blocks push.
+  # Must pass skip_heavy: github.event_name inside the reusable workflow is
+  # still the top-level event (push), never workflow_call.
   gate:
     needs: meta
     uses: ./.github/workflows/ci.yml
+    with:
+      skip_heavy: true
     permissions:
       contents: read
       actions: read
