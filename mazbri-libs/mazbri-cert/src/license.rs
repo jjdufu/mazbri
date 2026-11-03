@@ -1,12 +1,10 @@
 use crate::error::{CertError, CertResult};
-use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, KeyInit, Payload},
-};
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD},
 };
+use mazbri_crypto::aead::AEAD_NONCE_LEN;
+use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use hkdf::Hkdf;
@@ -362,14 +360,14 @@ pub fn unseal_for_installation(
     let bytes = BASE64
         .decode(sealed.as_bytes())
         .map_err(|_| license_error(LICENSE_ASSET_DIGEST_MISMATCH, "许可证资产摘要不一致"))?;
-    if bytes.len() < 32 + 12 + 16 {
+    if bytes.len() < 32 + AEAD_NONCE_LEN + 16 {
         return Err(license_error(
             LICENSE_ASSET_DIGEST_MISMATCH,
             "许可证资产摘要不一致",
         ));
     }
     let (ephemeral_public, rest) = bytes.split_at(32);
-    let (nonce, ciphertext) = rest.split_at(12);
+    let (nonce, ciphertext) = rest.split_at(AEAD_NONCE_LEN);
     let mut ephemeral_public_arr = [0u8; 32];
     ephemeral_public_arr.copy_from_slice(ephemeral_public);
     let static_secret = StaticSecret::from(*installation_private);
@@ -379,17 +377,9 @@ pub fn unseal_for_installation(
         &ephemeral_public_arr,
         installation_public,
     )?;
-    let cipher = Aes256Gcm::new_from_slice(&cek).map_err(|error| {
-        CertError::KeyEncryption(format!("Failed to create license cipher: {error}"))
-    })?;
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: aad.as_bytes(),
-            },
-        )
+    let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, cek.to_vec());
+    let plaintext = AeadAlgorithm::Aes256Gcm
+        .open(&key_ref, nonce, aad.as_bytes(), ciphertext)
         .map_err(|_| license_error(LICENSE_ASSET_DIGEST_MISMATCH, "许可证资产摘要不一致"));
     cek.zeroize();
     plaintext
@@ -681,23 +671,15 @@ fn seal_with_shared(
     plaintext: &[u8],
 ) -> CertResult<String> {
     let mut cek = derive_cek(shared, ephemeral_public, installation_public)?;
-    let cipher = Aes256Gcm::new_from_slice(&cek).map_err(|error| {
-        CertError::KeyEncryption(format!("Failed to create license cipher: {error}"))
-    })?;
-    let nonce_bytes: [u8; 12] = rand::random();
-    let encrypted = cipher
-        .encrypt(
-            Nonce::from_slice(&nonce_bytes),
-            Payload {
-                msg: plaintext,
-                aad: aad.as_bytes(),
-            },
-        )
+    let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, cek.to_vec());
+    let nonce_bytes: [u8; AEAD_NONCE_LEN] = rand::random();
+    let encrypted = AeadAlgorithm::Aes256Gcm
+        .seal(&key_ref, &nonce_bytes, aad.as_bytes(), plaintext)
         .map_err(|error| {
             CertError::KeyEncryption(format!("Failed to seal license asset: {error}"))
         })?;
     cek.zeroize();
-    let mut packed = Vec::with_capacity(32 + 12 + encrypted.len());
+    let mut packed = Vec::with_capacity(32 + AEAD_NONCE_LEN + encrypted.len());
     packed.extend_from_slice(ephemeral_public);
     packed.extend_from_slice(&nonce_bytes);
     packed.extend_from_slice(&encrypted);

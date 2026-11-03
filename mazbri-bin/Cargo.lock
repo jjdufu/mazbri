@@ -2876,7 +2876,6 @@ dependencies = [
 name = "mazbri-cert"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "axum",
  "base64 0.22.1",
@@ -2885,6 +2884,7 @@ dependencies = [
  "hex",
  "hkdf",
  "mazbri-core",
+ "mazbri-crypto",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -2901,7 +2901,6 @@ dependencies = [
 name = "mazbri-cert-service"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "argon2",
  "axum",
@@ -2917,6 +2916,7 @@ dependencies = [
  "mazbri-audit",
  "mazbri-cert",
  "mazbri-core",
+ "mazbri-crypto",
  "mazbri-rpc",
  "mazbri-service",
  "mazbri-tls",
@@ -2949,7 +2949,6 @@ dependencies = [
 name = "mazbri-core"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "async-trait",
  "axum",
@@ -3090,7 +3089,6 @@ dependencies = [
 name = "mazbri-mgmt"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "argon2",
  "axum",
@@ -3111,6 +3109,7 @@ dependencies = [
  "mazbri-cache",
  "mazbri-callback",
  "mazbri-core",
+ "mazbri-crypto",
  "mazbri-i18n",
  "mazbri-product",
  "mazbri-service",

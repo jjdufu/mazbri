@@ -1,6 +1,7 @@
 use super::error::ConfigError;
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use hkdf::Hkdf;
+use mazbri_crypto::aead::AEAD_NONCE_LEN;
+use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use rand::random;
 use sha2::Sha256;
 use sqlx::{PgPool, Row};
@@ -65,17 +66,15 @@ impl ConfigEncryption {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn encrypt(&self, plaintext: &str) -> Result<String, EncryptionError> {
         let key = self.get_encryption_key().await?;
-        let cipher = Aes256Gcm::new_from_slice(&key)
+        let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
+        let nonce_bytes: [u8; AEAD_NONCE_LEN] = random();
+        let packed = AeadAlgorithm::Aes256Gcm
+            .seal(&key_ref, &nonce_bytes, b"", plaintext.as_bytes())
             .map_err(|e| EncryptionError::Encryption(e.to_string()))?;
-        let nonce_bytes: [u8; 12] = random();
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext.as_bytes())
-            .map_err(|e| EncryptionError::Encryption(e.to_string()))?;
-        let mut result = Vec::with_capacity(12 + ciphertext.len());
+        let mut result = Vec::with_capacity(AEAD_NONCE_LEN + packed.len());
         result.extend_from_slice(&nonce_bytes);
-        result.extend_from_slice(&ciphertext);
-        Ok(format!("enc:{}", hex::encode(&result)))
+        result.extend_from_slice(&packed);
+        Ok(format!("enc:{}", hex::encode(result)))
     }
     /// # Errors
     ///
@@ -87,18 +86,16 @@ impl ConfigEncryption {
         let hex_data = &content[4..];
         let bytes = hex::decode(hex_data)
             .map_err(|e| EncryptionError::InvalidFormat(format!("hex decode failed: {e}")))?;
-        if bytes.len() < 12 {
+        if bytes.len() < AEAD_NONCE_LEN {
             return Err(EncryptionError::InvalidFormat(
                 "encrypted data too short".to_string(),
             ));
         }
-        let (nonce_bytes, ciphertext) = bytes.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let (nonce_bytes, ciphertext) = bytes.split_at(AEAD_NONCE_LEN);
         let key = self.get_encryption_key().await?;
-        let cipher = Aes256Gcm::new_from_slice(&key)
-            .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
+        let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
+        let plaintext = AeadAlgorithm::Aes256Gcm
+            .open(&key_ref, nonce_bytes, b"", ciphertext)
             .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
         String::from_utf8(plaintext).map_err(|e| EncryptionError::Decryption(e.to_string()))
     }

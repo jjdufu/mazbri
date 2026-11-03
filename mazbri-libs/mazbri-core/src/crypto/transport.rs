@@ -14,7 +14,7 @@ use mazbri_crypto::traits::{AeadSeal, BlockCipher, CryptoError, Mac};
 use mazbri_crypto::{SUITE_TENANT_DEFAULT_2026_11, resolve_suite};
 use serde::{Deserialize, Serialize};
 
-/// 默认租户传输套件名（替代旧 `DATA_ALGORITHM` 常量唯一真相）。
+/// 默认租户传输套件名（闭集 kebab-case；禁止再引入单一硬编码算法常量）。
 #[must_use]
 pub fn default_suite() -> &'static str {
     SUITE_TENANT_DEFAULT_2026_11

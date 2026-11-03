@@ -1,11 +1,9 @@
 use crate::error::{CertError, CertResult};
-use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, KeyInit},
-};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use hkdf::Hkdf;
+use mazbri_crypto::aead::AEAD_NONCE_LEN;
+use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -175,16 +173,14 @@ pub fn wrap_root_material(
     plaintext: &[u8],
 ) -> CertResult<(String, String, String)> {
     let storage_key = derive_storage_key(storage_password);
-    let cipher = Aes256Gcm::new_from_slice(&storage_key)
-        .map_err(|e| CertError::KeyEncryption(format!("Failed to create storage cipher: {e}")))?;
-    let iv_bytes: [u8; 12] = rand::random();
-    let nonce = Nonce::from_slice(&iv_bytes);
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+    let key_ref = KeyRef::raw(KeyPurpose::KeyWrap, storage_key.to_vec());
+    let iv_bytes: [u8; AEAD_NONCE_LEN] = rand::random();
+    let packed = AeadAlgorithm::Aes256Gcm
+        .seal(&key_ref, &iv_bytes, b"", plaintext)
         .map_err(|e| CertError::KeyEncryption(format!("Failed to wrap root material: {e}")))?;
     let digest = material_digest(package_id, material_type, key_version, plaintext);
     let mut encoded = iv_bytes.to_vec();
-    encoded.extend(ciphertext);
+    encoded.extend(packed);
     Ok((
         BASE64.encode(encoded),
         digest,
@@ -200,16 +196,15 @@ pub fn unwrap_root_material(storage_password: &str, encrypted_secret: &str) -> C
     let encrypted = BASE64
         .decode(encrypted_secret.as_bytes())
         .map_err(|e| CertError::InvalidRequest(format!("Invalid encrypted root material: {e}")))?;
-    if encrypted.len() < 28 {
+    if encrypted.len() < AEAD_NONCE_LEN + 16 {
         return Err(CertError::InvalidRequest(
             "Encrypted root material is too short".to_string(),
         ));
     }
-    let (iv_bytes, ciphertext_and_tag) = encrypted.split_at(12);
-    let cipher = Aes256Gcm::new_from_slice(&storage_key)
-        .map_err(|e| CertError::KeyEncryption(format!("Failed to create storage cipher: {e}")))?;
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(iv_bytes), ciphertext_and_tag)
+    let (iv_bytes, ciphertext_and_tag) = encrypted.split_at(AEAD_NONCE_LEN);
+    let key_ref = KeyRef::raw(KeyPurpose::KeyWrap, storage_key.to_vec());
+    let plaintext = AeadAlgorithm::Aes256Gcm
+        .open(&key_ref, iv_bytes, b"", ciphertext_and_tag)
         .map_err(|e| CertError::KeyEncryption(format!("Failed to unwrap root material: {e}")))?;
     Ok(plaintext)
 }

@@ -2389,7 +2389,6 @@ dependencies = [
 name = "mazbri-cert"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "axum",
  "base64",
@@ -2398,6 +2397,7 @@ dependencies = [
  "hex",
  "hkdf",
  "mazbri-core",
+ "mazbri-crypto",
  "rand 0.10.2",
  "serde",
  "serde_json",
