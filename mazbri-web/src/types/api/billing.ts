@@ -54,9 +54,22 @@ export interface BillDetailResponse {
   bill: Bill;
   items: BillLineItem[];
 }
+export type BillListStatusHint =
+  | "ok"
+  | "filtered_empty"
+  | "pending_generation"
+  | "no_billing_cycle";
+
+export interface BillListSummary {
+  unbilled_usage: string;
+  last_generated_at: string | null;
+  status_hint: BillListStatusHint;
+}
+
 export interface BillListResponse {
-  bills: Bill[];
+  items: Bill[];
   pagination: ListPagination;
+  summary: BillListSummary;
 }
 export interface BillListQuery {
   page?: number;

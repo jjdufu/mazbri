@@ -135,10 +135,21 @@ pub struct BillListPagination {
     pub total: i64,
     pub total_pages: u64,
 }
+/// 账单列表生命周期摘要（空态文案依据；非兼容别名）。
+#[derive(Debug, Serialize)]
+pub struct BillListSummary {
+    /// 尚未被任何未取消账单账期覆盖的应计用量金额（decimal 字符串）。
+    pub unbilled_usage: String,
+    pub last_generated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `ok` | `filtered_empty` | `pending_generation` | `no_billing_cycle`
+    pub status_hint: &'static str,
+}
+
 #[derive(Debug, Serialize)]
 pub struct BillListResponse {
-    pub bills: Vec<repo::BillRow>,
+    pub items: Vec<repo::BillRow>,
     pub pagination: BillListPagination,
+    pub summary: BillListSummary,
 }
 #[derive(Debug, Serialize)]
 pub struct BillDetailResponse {

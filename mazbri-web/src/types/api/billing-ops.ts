@@ -1,20 +1,34 @@
 /** 计费运维相对时间档（非 OLAP；OLAP 仅用绝对 start/end）。 */
 export type OpsRange = "15m" | "1h" | "6h" | "24h" | "7d" | "30d";
 
+/** 漏斗/管道健康模式：平线无失败为 sync_pass_through（展示无堆积），有跌落/失败为 async_funnel。 */
+export type BillingFunnelMode = "sync_pass_through" | "async_funnel";
+
 export interface StatusCount {
   status: string;
   count: number;
 }
 
+export interface FunnelWindow {
+  start: string;
+  end: string;
+  semantics: "window" | string;
+  label: string;
+}
+
 export interface FunnelStage {
-  stage: string;
+  key: string;
+  name: string;
   count: number;
-  diff: number;
+  /** 相对上一段转化率；首段或缺上一段样本时为 null/省略。 */
+  ratio_from_prev?: number | null;
+  failed: number;
 }
 
 export interface BillingFunnelPg {
-  since: string;
+  window: FunnelWindow;
   stages: FunnelStage[];
+  mode: BillingFunnelMode;
   outbox_by_status: StatusCount[];
   queue_by_status: StatusCount[];
   charge_failures: number;

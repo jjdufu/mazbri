@@ -462,6 +462,7 @@ import type {
   Bill,
   BillLineItem,
   BillListQuery,
+  BillListSummary,
   GenerateBillRequest,
 } from "@/types/api/billing";
 import {
@@ -743,11 +744,20 @@ const generateRules: FormRules = {
 const hasActiveSearch = computed(
   () => Boolean(searchForm.q?.trim()) || listFilters.value.length > 0,
 );
-const emptyDescription = computed(() =>
-  hasActiveSearch.value
-    ? $t("billing.empty.noMatch")
-    : $t("billing.empty.noData"),
-);
+const listSummary = ref<BillListSummary | null>(null);
+const emptyDescription = computed(() => {
+  const hint = listSummary.value?.status_hint;
+  if (hint === "filtered_empty" || (hasActiveSearch.value && bills.value.length === 0)) {
+    return $t("billing.empty.filteredEmpty");
+  }
+  if (hint === "pending_generation") {
+    return $t("billing.empty.pendingGeneration");
+  }
+  if (hint === "no_billing_cycle") {
+    return $t("billing.empty.noBillingCycle");
+  }
+  return $t("billing.empty.noData");
+});
 const pagination = reactive({
   page: 1,
   page_size: 10,
@@ -914,7 +924,8 @@ const loadData = async () => {
       page_size: pagination.page_size,
       filters: listFilters.value.length ? JSON.stringify(listFilters.value) : undefined,
     });
-    bills.value = res.bills;
+    bills.value = res.items;
+    listSummary.value = res.summary;
     pagination.total = res.pagination.total;
   }).catch((error) => {
     logger.error("Failed to load bills:", error);

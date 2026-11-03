@@ -7,6 +7,7 @@ import type {
   BillDetailResponse,
   BillLineItem,
   BillListResponse,
+  BillListSummary,
   BillListQuery,
   GenerateBillRequest,
   GenerateBillResponse,
@@ -80,17 +81,24 @@ const normalizeBillLineItems = (items?: BillLineItemApiRow[]): BillLineItem[] =>
     unit_price: toDecimalString(item.unit_price),
     total: toDecimalString(item.total ?? item.total_amount),
   }));
-const normalizeBillListResponse = (
-  response: BillListResponse & {
-    bills?: BillApiRow[];
-  },
-): BillListResponse => {
+const normalizeBillListResponse = (response: {
+  items?: BillApiRow[];
+  pagination?: BillListResponse["pagination"];
+  summary?: BillListSummary;
+}): BillListResponse => {
   if (!response.pagination) {
     throw new Error("bill list response missing pagination");
   }
+  if (!response.summary) {
+    throw new Error("bill list response missing summary");
+  }
+  if (!Array.isArray(response.items)) {
+    throw new Error("bill list response missing items");
+  }
   return {
-    bills: (response.bills ?? []).map(normalizeBill),
+    items: response.items.map(normalizeBill),
     pagination: response.pagination,
+    summary: response.summary,
   };
 };
 const normalizeBillDetailResponse = (

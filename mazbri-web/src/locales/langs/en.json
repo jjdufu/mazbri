@@ -2762,8 +2762,11 @@
       "periodRangeComplete": "Please select a complete date range"
     },
     "empty": {
-      "noMatch": "No bills matched the filters",
-      "noData": "No bills"
+      "noMatch": "No bills match the current filters",
+      "noData": "No bills yet",
+      "filteredEmpty": "No results for the current filters",
+      "pendingGeneration": "Unbilled usage exists; bill generation has not been triggered",
+      "noBillingCycle": "No tenant billing cycle or billable usage yet"
     },
     "deleteConfirm": {
       "title": "Delete Bill",
@@ -4451,7 +4454,6 @@
       "funnel": "Billing funnel",
       "stage": "Stage",
       "count": "Count",
-      "diff": "Diff vs previous",
       "queueTrend": "Backlog by stage",
       "oldestAge": "Oldest pending age by stage",
       "failureTrend": "Charge failures by reason",
@@ -4476,7 +4478,13 @@
         "error": "Error",
         "source": "Source"
       },
-      "loadFailed": "Failed to load billing pipeline data"
+      "loadFailed": "Failed to load billing pipeline data",
+      "pipelineHealth": "Billing pipeline health",
+      "noBacklog": "No backlog: stage counts match with no failures (pass-through)",
+      "asyncFunnelHint": "Drops or failures present — interpret as a conversion funnel",
+      "stageName": "Name",
+      "ratioFromPrev": "Conversion vs previous",
+      "stageFailed": "Failed"
     },
     "calls": {
       "tabs": {

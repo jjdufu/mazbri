@@ -2763,7 +2763,10 @@
     },
     "empty": {
       "noMatch": "未找到符合筛选条件的账单",
-      "noData": "暂无账单"
+      "noData": "暂无账单",
+      "filteredEmpty": "当前筛选无结果",
+      "pendingGeneration": "存在未出账用量，尚未触发生成账单",
+      "noBillingCycle": "暂无租户账单周期或无可出账用量"
     },
     "deleteConfirm": {
       "title": "删除账单",
@@ -4456,7 +4459,6 @@
       "funnel": "计费漏斗",
       "stage": "阶段",
       "count": "计数",
-      "diff": "与上一段差值",
       "queueTrend": "积压（按阶段）",
       "oldestAge": "最老待处理年龄（按阶段）",
       "failureTrend": "扣费失败（按原因）",
@@ -4481,7 +4483,13 @@
         "error": "错误",
         "source": "来源"
       },
-      "loadFailed": "加载计费链路数据失败"
+      "loadFailed": "加载计费链路数据失败",
+      "pipelineHealth": "计费管道健康",
+      "noBacklog": "无堆积：各段计数一致且无失败（同步直通观感）",
+      "asyncFunnelHint": "存在跌落或失败，按漏斗转化解读",
+      "stageName": "名称",
+      "ratioFromPrev": "相对上一段转化率",
+      "stageFailed": "失败"
     },
     "calls": {
       "tabs": {

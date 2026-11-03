@@ -1,7 +1,9 @@
 use super::{
-    BillDetailResponse, BillListPagination, BillListResponse, BillStatus, BillingError, FromStr,
-    PgPool, Utc, enrich_bill_rows, error, normalize_bill_status, repo, tenant_repo, validate_limit,
+    BillDetailResponse, BillListPagination, BillListResponse, BillListSummary, BillStatus,
+    BillingError, FromStr, PgPool, Utc, enrich_bill_rows, error, normalize_bill_status, repo,
+    tenant_repo, validate_limit,
 };
+use rust_decimal::Decimal;
 
 /// `list_bills` 的入参。
 pub struct ListBillsParams<'a> {
@@ -90,14 +92,66 @@ pub async fn list_bills(
     let total_pages = mazbri_core::num::f64_to_u64(
         (mazbri_core::num::i64_to_f64(total) / f64::from(page_size)).ceil(),
     );
+    let has_active_filters = tenant_id.is_some()
+        || search.is_some()
+        || status.is_some()
+        || !filters.is_empty();
+    let summary = load_bill_list_summary(billing_db, total, has_active_filters).await?;
     Ok(BillListResponse {
-        bills,
+        items: bills,
         pagination: BillListPagination {
             page,
             page_size,
             total,
             total_pages,
         },
+        summary,
+    })
+}
+
+/// 账单列表空态 hint：有结果 → `ok`；筛选无命中 → `filtered_empty`；
+/// 无账单但有未出账用量 → `pending_generation`；否则 → `no_billing_cycle`。
+#[must_use]
+pub fn bill_list_status_hint(
+    filtered_total: i64,
+    has_active_filters: bool,
+    unbilled: Decimal,
+) -> &'static str {
+    if filtered_total > 0 {
+        "ok"
+    } else if has_active_filters {
+        "filtered_empty"
+    } else if unbilled > Decimal::ZERO {
+        "pending_generation"
+    } else {
+        "no_billing_cycle"
+    }
+}
+
+/// 拉取未出账用量与最近出账时间，拼装列表 `summary`。
+async fn load_bill_list_summary(
+    billing_db: &PgPool,
+    filtered_total: i64,
+    has_active_filters: bool,
+) -> Result<BillListSummary, BillingError> {
+    let (last_generated_at, unbilled) = tokio::try_join!(
+        async {
+            repo::last_bill_generated_at(billing_db).await.map_err(|e| {
+                error!("Database error fetching last bill generated_at: {}", e);
+                BillingError::Database
+            })
+        },
+        async {
+            repo::unbilled_usage_amount(billing_db).await.map_err(|e| {
+                error!("Database error summing unbilled usage: {}", e);
+                BillingError::Database
+            })
+        },
+    )?;
+    Ok(BillListSummary {
+        unbilled_usage: unbilled.normalize().to_string(),
+        last_generated_at,
+        status_hint: bill_list_status_hint(filtered_total, has_active_filters, unbilled),
     })
 }
 /// # Errors
@@ -200,4 +254,28 @@ pub async fn update_bill_status(
         return Err(BillingError::BillNotFound(bill_id));
     }
     get_bill(db, billing_db, bill_id).await
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::bill_list_status_hint;
+    use rust_decimal::Decimal;
+
+    #[test]
+    fn status_hint_covers_lifecycle_cases() {
+        assert_eq!(bill_list_status_hint(3, false, Decimal::ZERO), "ok");
+        assert_eq!(
+            bill_list_status_hint(0, true, Decimal::new(10, 0)),
+            "filtered_empty"
+        );
+        assert_eq!(
+            bill_list_status_hint(0, false, Decimal::new(10, 0)),
+            "pending_generation"
+        );
+        assert_eq!(
+            bill_list_status_hint(0, false, Decimal::ZERO),
+            "no_billing_cycle"
+        );
+    }
 }

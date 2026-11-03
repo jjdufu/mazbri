@@ -588,6 +588,41 @@ pub async fn list_billing_adjustments(
     .await
 }
 
+/// 最近一次账单生成时间（`bills.created_at` 最大值）。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn last_bill_generated_at(
+    pool: &PgPool,
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    sqlx::query_scalar("SELECT MAX(created_at) FROM bills")
+        .fetch_one(pool)
+        .await
+}
+
+/// 尚未被任何未取消账单账期覆盖的应计用量合计。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn unbilled_usage_amount(pool: &PgPool) -> Result<Decimal, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COALESCE(SUM(ur.billable_amount), 0)::numeric
+         FROM usage_records ur
+         WHERE NOT EXISTS (
+             SELECT 1 FROM bills b
+             WHERE b.tenant_id = ur.tenant_id
+               AND b.bill_kind = 'customer'
+               AND b.status <> 'cancelled'
+               AND ur.recorded_at >= b.billing_period_start
+               AND ur.recorded_at <= b.billing_period_end
+         )",
+    )
+    .fetch_one(pool)
+    .await
+}
+
 /// Sum of billable amounts in `usage_records` for a day window.
 ///
 /// # Errors
