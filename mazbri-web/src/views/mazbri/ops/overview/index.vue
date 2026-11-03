@@ -86,16 +86,6 @@
       </ElCol>
       <ElCol :xs="24" :sm="12" :lg="6">
         <StatCard
-          :label="t('ops.overview.stats.certExpiry')"
-          :value="overview?.cert_min_expiry_days"
-          unit="d"
-          :loading="loading"
-          icon="ri:shield-check-line"
-          @click="drill('12.1')"
-        />
-      </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
           :label="t('ops.overview.stats.activeTenants')"
           :value="platform?.tenant_stats?.active_tenants"
           :loading="loading"
@@ -209,44 +199,6 @@
             {{ t("ops.overview.alertsNone") }}
           </p>
         </ElCard>
-        <ElCard shadow="never" class="ops-overview__panel">
-          <template #header>{{ t("ops.overview.placeholders") }}</template>
-          <div class="ops-overview__placeholder-grid">
-            <template v-if="overview?.error_budget_connected">
-              <ElTag type="success">
-                {{ overview.error_budget_slo || t("menus.mazbri.slo") }}
-                ·
-                {{
-                  overview.error_budget_remaining == null
-                    ? "-"
-                    : (overview.error_budget_remaining * 100).toFixed(1) + "%"
-                }}
-              </ElTag>
-              <ElButton
-                size="small"
-                text
-                type="primary"
-                @click="router.push('/ops/reliability/slo')"
-              >
-                {{ t("menus.mazbri.slo") }}
-              </ElButton>
-            </template>
-            <ElTag v-else type="info">{{
-              t("ops.overview.errorBudgetPending")
-            }}</ElTag>
-          </div>
-          <div class="ops-overview__drilldowns">
-            <ElButton
-              v-for="item in drillTargets"
-              :key="item.id"
-              size="small"
-              :disabled="!item.enabled"
-              @click="item.enabled && router.push({ path: item.path!, query: item.query })"
-            >
-              {{ item.label }}
-            </ElButton>
-          </div>
-        </ElCard>
       </ElCol>
     </ElRow>
 
@@ -310,7 +262,6 @@ import { TRAFFIC_PATH } from "@/utils/ops/traffic-link";
 import { UPSTREAM_PATH } from "@/utils/ops/upstream-link";
 import { FLOW_PATH } from "@/utils/ops/flow-link";
 import {
-  SERVICES_PATH,
   buildServiceDetailRoute,
   buildServicesRoute,
 } from "@/utils/ops/services-link";
@@ -397,66 +348,18 @@ const errorLabel = computed(() => {
   return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
 });
 
-type DrillTarget = {
-  id: string;
-  label: string;
-  enabled: boolean;
-  path?: string;
-  query?: Record<string, string>;
+/** StatCard 下钻目标（仅卡片点击；底部按钮条已按 step-11 删除）。 */
+const drillRoutes: Record<
+  string,
+  { path: string; query?: Record<string, string> }
+> = {
+  "2.1": { path: TRAFFIC_PATH, query: { tab: "red" } },
+  "2.2": { path: TRAFFIC_PATH, query: { tab: "latency" } },
+  "2.4": { path: TRAFFIC_PATH, query: { tab: "errors" } },
+  "3.2": { path: UPSTREAM_PATH, query: { tab: "breaker" } },
+  "4.1": { path: FLOW_PATH, query: { tab: "ratelimit" } },
+  "6.1": { path: BILLING_PATH, query: { tab: "health" } },
 };
-
-const drillTargets = computed<DrillTarget[]>(() => [
-  {
-    id: "2.1",
-    label: t("ops.overview.drill.gatewayRed"),
-    enabled: true,
-    path: TRAFFIC_PATH,
-    query: { tab: "red" },
-  },
-  {
-    id: "2.2",
-    label: t("ops.overview.drill.latency"),
-    enabled: true,
-    path: TRAFFIC_PATH,
-    query: { tab: "latency" },
-  },
-  {
-    id: "2.4",
-    label: t("ops.overview.drill.errors"),
-    enabled: true,
-    path: TRAFFIC_PATH,
-    query: { tab: "errors" },
-  },
-  {
-    id: "3.2",
-    label: t("ops.overview.drill.circuit"),
-    enabled: true,
-    path: UPSTREAM_PATH,
-    query: { tab: "breaker" },
-  },
-  {
-    id: "4.1",
-    label: t("ops.overview.drill.ratelimit"),
-    enabled: true,
-    path: FLOW_PATH,
-    query: { tab: "ratelimit" },
-  },
-  {
-    id: "6.1",
-    label: t("ops.overview.drill.billing"),
-    enabled: true,
-    path: BILLING_PATH,
-    query: { tab: "health" },
-  },
-  { id: "12.1", label: t("ops.overview.drill.certs"), enabled: false },
-  {
-    id: "1.1",
-    label: t("ops.overview.openMatrix"),
-    enabled: true,
-    path: SERVICES_PATH,
-    query: { tab: "health" },
-  },
-]);
 
 function alertLabels(labels: Record<string, string>) {
   return Object.entries(labels)
@@ -481,9 +384,8 @@ function openServiceHealth(service: string) {
 }
 
 function drill(id: string) {
-  const target = drillTargets.value.find((item) => item.id === id);
-  if (!target?.enabled || !target.path) {
-    ElMessage.info(t("ops.overview.drillDisabled"));
+  const target = drillRoutes[id];
+  if (!target) {
     return;
   }
   drilldown({
@@ -619,11 +521,6 @@ onMounted(reload);
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
-}
-.ops-overview__drilldowns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .ops-overview__charts {
   margin-bottom: 8px;
