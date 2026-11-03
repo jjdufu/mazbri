@@ -2247,6 +2247,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mazbri-crypto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.19",
+ "zeroize",
+]
+
+[[package]]
 name = "mazbri-i18n"
 version = "0.1.0"
 dependencies = [

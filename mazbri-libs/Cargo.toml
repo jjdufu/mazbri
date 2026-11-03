@@ -16,6 +16,7 @@ members = [
     "mazbri-registry",
     "mazbri-callback",
     "mazbri-cert",
+    "mazbri-crypto",
     "mazbri-upstream-runtime",
     "mazbri-audit"
 ]
@@ -38,6 +39,7 @@ mazbri-core = { version = "0.1.0", path = "mazbri-core" }
 mazbri-tls = { version = "0.1.0", path = "mazbri-tls" }
 mazbri-sdk = { version = "0.1.0", path = "mazbri-sdk" }
 mazbri-cert = { version = "0.1.0", path = "mazbri-cert" }
+mazbri-crypto = { version = "0.1.0", path = "mazbri-crypto" }
 mazbri-upstream-runtime = { version = "0.1.0", path = "mazbri-upstream-runtime" }
 mazbri-auth = { version = "0.1.0", path = "mazbri-auth" }
 mazbri-registry = { version = "0.1.0", path = "mazbri-registry" }
@@ -114,12 +116,21 @@ qrcode = "0.14"
 aes-gcm = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
-zeroize = "1.8"
+zeroize = { version = "1.8", features = ["derive"] }
 ed25519-dalek = { version = "3.0.0", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets"] }
 base32 = "0.5"
 rust-embed = {version = "8.7", features = ["interpolate-folder-path"]}
 mime_guess = "2.0"
+
+chacha20poly1305 = "0.10"
+subtle = "2.6"
+cbc = "0.1"
+cipher = "0.4"
+ctr = "0.9"
+aes = "0.8"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8"] }
+rsa = { version = "0.9", default-features = false, features = ["std", "pem"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"
