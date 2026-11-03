@@ -17,6 +17,7 @@ import {
   buildBillingRoute,
   buildFlowRoute,
   buildInfraRoute,
+  buildDashboardHref,
   buildScreenHref,
   buildServicesRoute,
   buildTrafficRoute,
@@ -73,5 +74,12 @@ test("buildScreenHref uses hash SCREEN_PATH", () => {
   assert.equal(
     buildScreenHref("http://192.168.50.50:8085", "/"),
     "http://192.168.50.50:8085/#/screen",
+  );
+});
+
+test("buildDashboardHref uses hash DASHBOARD_PATH", () => {
+  assert.equal(
+    buildDashboardHref("http://192.168.50.50:8085", "/"),
+    "http://192.168.50.50:8085/#/dashboard",
   );
 });

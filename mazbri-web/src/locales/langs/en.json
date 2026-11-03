@@ -794,7 +794,6 @@
     },
     "mazbri": {
       "title": "Mazbri Management",
-      "dashboard": "Ops Overview",
       "users": "User Management",
       "userManagement": "User Management",
       "userDetail": "User Detail",
@@ -822,7 +821,6 @@
       "usageReconciliation": "Usage Reconciliation",
       "analytics": "Analytics",
       "analyticsOverview": "Overview",
-      "rateLimitAnalytics": "Rate Limit",
       "operations": "Operations",
       "routeConfig": "Route Rules",
       "advancedRouteConfig": "Route Strategy",
@@ -839,7 +837,6 @@
       "settings": "Settings",
       "systemSettings": "System Settings",
       "appearanceSettings": "Appearance Settings",
-      "mfaSettings": "MFA Settings",
       "controlPanel": "Control Panel",
       "configCenter": "Config Center",
       "connectorWorkbench": "Code-free Access",
@@ -856,7 +853,7 @@
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
       "billingHealth": "Billing Pipeline",
-      "opsCalls": "Call search",
+      "opsCalls": "Call Search",
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
@@ -867,22 +864,17 @@
       "flowRatelimit": "Rate Limit",
       "flowCache": "Cache",
       "billingReconcile": "Reconciliation",
-      "assetsChanges": "Change Timeline",
       "securityEvents": "Auth & Security",
-      "productRank": "Product Rank",
-      "capacity": "Capacity",
-      "slo": "SLO / Error Budget",
-      "anomaly": "Anomaly",
       "alertSilences": "Alert silences",
       "serviceTopology": "Service topology",
       "opsInfra": "Infrastructure",
-      "opsAlerts": "Alert center",
-      "opsBilling": "Billing & reconcile",
-      "opsTraffic": "Traffic & quality",
-      "opsUpstream": "Upstream health",
-      "opsFlow": "Traffic governance",
+      "opsAlerts": "Alert Center",
+      "opsBilling": "Billing & Reconcile",
+      "opsTraffic": "Traffic & Quality",
+      "opsUpstream": "Upstream Health",
+      "opsFlow": "Traffic Governance",
       "opsReliability": "Reliability",
-      "opsServices": "Services overview"
+      "opsServices": "Services Overview"
     }
   },
   "systemSettings": {
@@ -969,39 +961,22 @@
     }
   },
   "securityPolicy": {
-    "page": {
-      "title": "Security Settings"
-    },
     "actions": {
       "saveSettings": "Save Settings"
     },
     "sections": {
-      "password": {
-        "title": "Password Policy"
-      },
       "complexity": {
-        "title": "Complexity Requirements",
-        "description": "Control password length, character types, and special character sets."
+        "title": "Complexity Requirements"
       },
       "expiration": {
-        "title": "Expiration and Reuse",
-        "description": "Set password validity, reminder timing, and history reuse restrictions."
+        "title": "Expiration and Reuse"
       },
       "loginProtection": {
-        "title": "Login Protection",
-        "description": "Limit consecutive failures and configure account lockout duration."
-      },
-      "mfa": {
-        "title": "MFA Configuration"
+        "title": "Login Protection"
       },
       "totp": {
         "title": "TOTP Parameters",
-        "description": "Control the authenticator display name, code digits, and refresh interval.",
         "digitsPeriodWarning": "Changing the number of digits or the period makes already enrolled authenticators stop matching immediately. Confirm a backup code still works, or be ready to bind again, before saving."
-      },
-      "process": {
-        "title": "Usage Flow",
-        "description": "Help administrators confirm the end-user enablement path."
       }
     },
     "fields": {
@@ -1032,31 +1007,7 @@
       "totpPeriod30": "30 seconds",
       "totpPeriod60": "60 seconds"
     },
-    "units": {
-      "chars": "chars",
-      "days": "days",
-      "daysBefore": "days before",
-      "recentPasswords": "recent passwords cannot be reused",
-      "failuresBeforeLock": "failed attempts before lock",
-      "minutes": "minutes",
-      "count": "count"
-    },
-    "steps": {
-      "install": {
-        "title": "Install Authenticator App",
-        "description": "Install a compatible TOTP authenticator app."
-      },
-      "scan": {
-        "title": "Scan QR Code",
-        "description": "Scan the QR code at login."
-      },
-      "enter": {
-        "title": "Enter Code",
-        "description": "Enter the code shown in the authenticator app each time you log in."
-      }
-    },
     "messages": {
-      "noPermission": "Only the super administrator can configure security settings.",
       "savedSuccess": "Settings saved",
       "specialCharsRequired": "Special character set cannot be empty when special characters are required."
     },
@@ -4194,15 +4145,9 @@
         "errorRates": "4xx / 5xx rate",
         "circuitOpen": "Open breakers",
         "ratelimit": "Rate-limit denies",
-        "certExpiry": "Min cert expiry",
         "activeTenants": "Active tenants",
         "billingBacklog": "Billing backlog",
-        "billingOldestAge": "Oldest pending age",
-        "billingDeadLetters": "Billing dead letters",
-        "billingLagP99": "Charge lag P99",
-        "totalRequests": "Total requests",
-        "totalBytes": "Total bytes",
-        "avgResponseMs": "Avg response"
+        "billingDeadLetters": "Billing dead letters"
       },
       "healthLights": "Service health lights",
       "openMatrix": "Service health matrix",
@@ -4211,7 +4156,6 @@
       "alertsAcked": "Acked {n}",
       "alertsNone": "No active alerts",
       "alertsOpen": "Alert events",
-      "drillDisabled": "Target page is not online yet",
       "productTop": "Top products",
       "productZeroBadge": "Zero-call {n}",
       "productZeroExpand": "Show zero-call products",
@@ -4230,15 +4174,6 @@
       "charts": {
         "qps": "Business QPS",
         "p99": "Business P99"
-      },
-      "drill": {
-        "gatewayRed": "2.1 Gateway RED",
-        "latency": "2.2 Latency breakdown",
-        "errors": "2.4 Error analysis",
-        "circuit": "3.2 Circuit / retry",
-        "ratelimit": "4.1 Rate limits",
-        "billing": "6.1 Billing pipeline",
-        "certs": "12.1 Certificates"
       },
       "certExpiryBadge": "Cert expires in {days}d",
       "sloBudgetTitle": "Error budget / SLO",
@@ -4275,7 +4210,8 @@
       "geo": "Geo heatmap",
       "topology": "Topology",
       "resources": "Cluster capacity",
-      "noData": "No data"
+      "noData": "No data",
+      "exitToDashboard": "Back to overview"
     },
     "finance": {
       "placeholder": "Finance overview will be completed in a later step",

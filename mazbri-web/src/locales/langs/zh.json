@@ -794,7 +794,6 @@
     },
     "mazbri": {
       "title": "Mazbri 管理",
-      "dashboard": "全局总览",
       "users": "用户管理",
       "userManagement": "用户管理",
       "userDetail": "用户详情",
@@ -822,7 +821,6 @@
       "usageReconciliation": "用量对账",
       "analytics": "分析统计",
       "analyticsOverview": "统计概览",
-      "rateLimitAnalytics": "限流分析",
       "operations": "运营管理",
       "routeConfig": "路由规则",
       "advancedRouteConfig": "路由策略",
@@ -839,7 +837,6 @@
       "settings": "系统设置",
       "systemSettings": "系统配置",
       "appearanceSettings": "外观设置",
-      "mfaSettings": "MFA 设置",
       "controlPanel": "控制面板",
       "configCenter": "配置中心",
       "connectorWorkbench": "免代码接入",
@@ -867,12 +864,7 @@
       "flowRatelimit": "限流配额",
       "flowCache": "缓存",
       "billingReconcile": "对账中心",
-      "assetsChanges": "变更时间线",
       "securityEvents": "鉴权与安全事件",
-      "productRank": "产品排行",
-      "capacity": "容量规划",
-      "slo": "SLO / 错误预算",
-      "anomaly": "异常检测",
       "alertSilences": "告警静默",
       "serviceTopology": "服务拓扑",
       "opsInfra": "基础设施",
@@ -969,39 +961,22 @@
     }
   },
   "securityPolicy": {
-    "page": {
-      "title": "安全设置"
-    },
     "actions": {
       "saveSettings": "保存设置"
     },
     "sections": {
-      "password": {
-        "title": "密码策略"
-      },
       "complexity": {
-        "title": "复杂度要求",
-        "description": "控制密码长度、字符类型与特殊字符集。"
+        "title": "复杂度要求"
       },
       "expiration": {
-        "title": "过期与复用",
-        "description": "设置密码有效期、提醒时机与历史密码复用限制。"
+        "title": "过期与复用"
       },
       "loginProtection": {
-        "title": "登录保护",
-        "description": "限制连续失败次数并配置账号锁定时长。"
-      },
-      "mfa": {
-        "title": "MFA 配置"
+        "title": "登录保护"
       },
       "totp": {
         "title": "TOTP 参数",
-        "description": "控制验证器显示名称、验证码位数与刷新周期。",
         "digitsPeriodWarning": "修改验证码位数或周期会使已绑定的验证器立即失配。请先确认备用码仍可使用，或准备重新绑定，否则窗口过期后可能无法再验证。"
-      },
-      "process": {
-        "title": "使用流程",
-        "description": "帮助管理员确认最终用户的启用路径。"
       }
     },
     "fields": {
@@ -1032,31 +1007,7 @@
       "totpPeriod30": "30 秒",
       "totpPeriod60": "60 秒"
     },
-    "units": {
-      "chars": "位",
-      "days": "天",
-      "daysBefore": "天前提醒",
-      "recentPasswords": "个最近密码不可重复",
-      "failuresBeforeLock": "次失败后锁定",
-      "minutes": "分钟",
-      "count": "个"
-    },
-    "steps": {
-      "install": {
-        "title": "安装验证器应用",
-        "description": "安装兼容的 TOTP 验证器应用。"
-      },
-      "scan": {
-        "title": "扫描二维码",
-        "description": "登录时用验证器扫描二维码。"
-      },
-      "enter": {
-        "title": "输入验证码",
-        "description": "每次登录时输入验证器应用中显示的验证码。"
-      }
-    },
     "messages": {
-      "noPermission": "仅超级管理员可配置安全设置。",
       "savedSuccess": "设置已保存",
       "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
     },
@@ -4199,15 +4150,9 @@
         "errorRates": "4xx / 5xx 率",
         "circuitOpen": "熔断打开数",
         "ratelimit": "限流拒绝率",
-        "certExpiry": "证书最短到期",
         "activeTenants": "活跃租户",
         "billingBacklog": "计费积压",
-        "billingOldestAge": "最老待处理年龄",
-        "billingDeadLetters": "计费死信",
-        "billingLagP99": "入账延迟 P99",
-        "totalRequests": "总请求数",
-        "totalBytes": "总流量",
-        "avgResponseMs": "平均响应"
+        "billingDeadLetters": "计费死信"
       },
       "healthLights": "服务健康灯",
       "openMatrix": "服务健康矩阵",
@@ -4216,7 +4161,6 @@
       "alertsAcked": "已确认 {n}",
       "alertsNone": "当前无活跃告警",
       "alertsOpen": "告警事件",
-      "drillDisabled": "目标页面尚未上线",
       "productTop": "产品 TopN",
       "productZeroBadge": "零调用 {n}",
       "productZeroExpand": "展开零调用产品",
@@ -4235,15 +4179,6 @@
       "charts": {
         "qps": "业务 QPS",
         "p99": "业务 P99"
-      },
-      "drill": {
-        "gatewayRed": "2.1 网关 RED",
-        "latency": "2.2 时延分解",
-        "errors": "2.4 错误分析",
-        "circuit": "3.2 熔断重试",
-        "ratelimit": "4.1 限流配额",
-        "billing": "6.1 计费链路",
-        "certs": "12.1 证书资产"
       },
       "certExpiryBadge": "证书将过期（{days} 天）",
       "sloBudgetTitle": "错误预算 / SLO",
@@ -4280,7 +4215,8 @@
       "geo": "地域热力",
       "topology": "服务拓扑",
       "resources": "集群水位",
-      "noData": "暂无数据"
+      "noData": "暂无数据",
+      "exitToDashboard": "返回总览"
     },
     "finance": {
       "placeholder": "经营看板",

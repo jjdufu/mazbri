@@ -17,6 +17,14 @@
         </div>
         <span>{{ clock }}</span>
         <AutoRefresh v-model="refreshInterval" @tick="loadAll" />
+        <button
+          type="button"
+          class="ops-screen__exit"
+          :aria-label="t('ops.screen.exitToDashboard')"
+          @click="exitToDashboard"
+        >
+          {{ t("ops.screen.exitToDashboard") }}
+        </button>
       </div>
     </header>
 
@@ -133,7 +141,9 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { useUserStore } from "@/store/modules/user";
+import { DASHBOARD_PATH } from "@/utils/ops/opsRoutes";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import { echarts } from "@/plugins/echarts";
 import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
@@ -173,6 +183,12 @@ const userStore = useUserStore();
 const canSeeFinance = computed(() => userStore.canWriteBusiness);
 const canSeeTopology = computed(() => userStore.isAdmin);
 const panels = ["overview", "business", "resource"] as const;
+const router = useRouter();
+
+function exitToDashboard(): void {
+  void router.push(DASHBOARD_PATH);
+}
+
 const panel = ref<(typeof panels)[number]>("overview");
 const refreshInterval = ref(30);
 const clock = ref("");
@@ -605,4 +621,19 @@ onUnmounted(() => {
 .ok { color: #67c23a; }
 .bad { color: #f56c6c; }
 .is-empty { color: #6b7c93; padding: 12px 0; }
+
+.ops-screen__exit {
+  margin-left: 8px;
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.ops-screen__exit:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+}
 </style>

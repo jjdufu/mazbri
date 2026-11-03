@@ -55,3 +55,8 @@ export const OPS_SECURITY_PATH = "/ops/security";
 export function buildScreenHref(origin: string, pathname: string): string {
   return `${origin}${pathname}#${SCREEN_PATH}`;
 }
+
+/** 打开运维总览（新窗口 hash 路由；大屏返回总览时复用）。 */
+export function buildDashboardHref(origin: string, pathname: string): string {
+  return `${origin}${pathname}#${DASHBOARD_PATH}`;
+}
