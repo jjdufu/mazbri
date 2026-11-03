@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.2.15](https://github.com/jjdufu/mazbri/compare/v0.2.14...v0.2.15) (2026-11-03)
+
+
+### Features
+
+* **account:** step-18 平台安全策略嵌进账号安全页 ([7fd269c](https://github.com/jjdufu/mazbri/commit/7fd269c3065627c2df9aa8571ce1cfb1705392e0))
+* **account:** step-19 删除控制台安全设置路由并完善账号安全摘要 ([2c098b6](https://github.com/jjdufu/mazbri/commit/2c098b688f362e78ced825cb3e132c43d3a13e4e))
+* **ops-ia:** step-01 落地运维 IA 共享前后端基建 ([7a18e2b](https://github.com/jjdufu/mazbri/commit/7a18e2bae05c0fde7e48c796ccc93dc39e15e95d))
+* **ops-ia:** step-02 重写运维监控一级路由骨架 ([d9a4846](https://github.com/jjdufu/mazbri/commit/d9a48464edab949eedce59b50fa3bce53713dec6))
+* **ops-ia:** step-03 合并基础设施为 /ops/infra 三 Tab ([a3498c5](https://github.com/jjdufu/mazbri/commit/a3498c57be63695149189af92c1b3b199311cdbf))
+* **ops:** step-04 告警中心合并为 /ops/alerts 三 Tab ([08806ad](https://github.com/jjdufu/mazbri/commit/08806ad32044f471e49bf51d663b1f4c9e21bd48))
+* **ops:** step-05 计费与对账合并为 /ops/billing 两 Tab ([288e0d0](https://github.com/jjdufu/mazbri/commit/288e0d0b255751ad1b2a9b14e0c571ae9efe9aab))
+* **ops:** step-06 流量与质量合并为 /ops/traffic 三 Tab ([8fb601c](https://github.com/jjdufu/mazbri/commit/8fb601c5f81ce1f71a9a09b30ece1478f4dc26b2))
+* **ops:** step-07 上游健康合并为 /ops/upstream 两 Tab ([1bcaa19](https://github.com/jjdufu/mazbri/commit/1bcaa19f087346659c6c0b37463f3f9a0aed9c2c))
+* **ops:** step-08 流量治理合并为 /ops/flow 两 Tab ([6f5c3a7](https://github.com/jjdufu/mazbri/commit/6f5c3a76da784c158bb9b1d3be6ec7d07f936123))
+* **ops:** step-09 服务概览合并为 /ops/services 两 Tab ([d7e8930](https://github.com/jjdufu/mazbri/commit/d7e89308f6c3e49add8c3f643aa4d104b603fe07))
+* **ops:** step-10 可靠性仅容量；侧栏撤异常/SLO/产品/变更 ([bc90af4](https://github.com/jjdufu/mazbri/commit/bc90af43155fa1fdcb088d477943b5d1371c5953))
+* **ops:** step-11 Dashboard 裁剪占位与低价值块 ([93b38c3](https://github.com/jjdufu/mazbri/commit/93b38c3c69bf3c0eb0bd5a625ac220d86568c6f7))
+* **ops:** step-12 Dashboard 组件收缩与角色门控 ([a138f06](https://github.com/jjdufu/mazbri/commit/a138f0658c18bc70f4d206d00e07e4d002ecb13d))
+* **ops:** step-13 Dashboard 并入产品 TopN；删除产品排行路由 ([4cac408](https://github.com/jjdufu/mazbri/commit/4cac4083e27574785ddabc56c484374b2ada8925))
+* **ops:** step-14 Dashboard 并入近期异常；删除异常检测路由 ([909eebe](https://github.com/jjdufu/mazbri/commit/909eebe37658195085aa737ac522cec5cf88968a))
+* **ops:** step-15 Dashboard 并入近 24h 变更；删除变更时间线路由 ([cfa6744](https://github.com/jjdufu/mazbri/commit/cfa674471175b179c11b331bd0e2888c6c84bfb9))
+* **ops:** step-16 Dashboard 并入 SLO/证书徽章/底座红灯；删除 SLO 路由 ([49165f4](https://github.com/jjdufu/mazbri/commit/49165f4d2d2073413adeae157879d861e1ac24f8))
+* **ops:** step-17 全库下钻/通知链统一到新 IA，清除兼容 redirect ([355b8f2](https://github.com/jjdufu/mazbri/commit/355b8f2ff8d052377e9c3fa1afbb9e6814e78194))
+* **ops:** step-20 对齐 i18n/菜单文案并补齐大屏与总览互链 ([75c3c54](https://github.com/jjdufu/mazbri/commit/75c3c543da615d2dd0a2f4c20e43124c7040c782))
+* **ops:** step-21 钉死 route_access 审计并统一 overview 瞬时时间窗 ([9a80440](https://github.com/jjdufu/mazbri/commit/9a80440d137bd5aa39214ba566273366482d9d3f))
+* **ops:** 运维信息架构重构（侧栏收敛 / Tab 壳 / Dashboard 折叠） ([f227974](https://github.com/jjdufu/mazbri/commit/f227974038e091384e4d5a10304ad0ce687a3821))
+
+
+### Bug Fixes
+
+* **ci:** 补齐 Release 调用 ci.yml 的 actions/PR 读权限 ([3f8869b](https://github.com/jjdufu/mazbri/commit/3f8869bcc39d7e100383ea03c626d6d9705fec20))
+* **ci:** 补齐 Release 调用 ci.yml 的 actions/PR 读权限 ([e8db9f6](https://github.com/jjdufu/mazbri/commit/e8db9f6da4320228e20848cc9a2e19ab7633958a))
+
 ## [0.2.14](https://github.com/jjdufu/mazbri/compare/v0.2.13...v0.2.14) (2026-11-02)
 
 
