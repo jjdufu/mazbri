@@ -5,6 +5,8 @@
 //! execute it through `mazbri-upstream-runtime`. Protocol work does **not**
 //! live in the gateway.
 
+use mazbri_crypto::profile::UpstreamCryptoProfile;
+use mazbri_crypto::registry::AlgorithmRegistry;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -564,6 +566,10 @@ pub struct WsUnarySpec {
     pub auth_in: Option<Vec<String>>,
 }
 
+/// `sign_form` 适配器的表单槽位糖：写入 `charset` / `version` / `sign_type` 等字段。
+///
+/// 签名 / MAC **算法权威**在 [`ChannelEgressSpec::crypto`] 的 `sign`；
+/// `sign_type` 仅表示对端表单声明字段，不再单独构成第二套算法闭集。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SignFormSpec {
@@ -571,6 +577,7 @@ pub struct SignFormSpec {
     pub charset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// 对端表单中的 `sign_type` 字段值（非算法闭集权威）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_type: Option<String>,
 }
@@ -612,6 +619,9 @@ pub struct ChannelEgressSpec {
     pub sign_form: Option<SignFormSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soap: Option<SoapSpec>,
+    /// 上游业务体加解密 / 签名 Profile；`None`（或 JSON 无 `crypto` 键）表示不做业务密文，仅原有 JSON wrap/auth。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypto: Option<UpstreamCryptoProfile>,
 }
 
 impl ChannelEgressSpec {
@@ -907,18 +917,7 @@ fn validate_adapter_options(
                 }
             }
         }
-        AdapterKind::SignForm => {
-            if let Some(ref sf) = spec.sign_form
-                && let Some(ref st) = sf.sign_type
-            {
-                let t = st.trim();
-                if !t.is_empty() && !t.eq_ignore_ascii_case("HMAC-SHA256") {
-                    return Err(ChannelEgressError::new(format!(
-                        "sign_form.sign_type '{st}' 第一期仅支持 HMAC-SHA256"
-                    )));
-                }
-            }
-        }
+        // SignForm：算法权威在 egress.crypto；sign_type 仅为表单字段，不再做 HMAC-only 限制。
         _ => {}
     }
     Ok(())
@@ -950,7 +949,20 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
         }
     }
 
+    validate_egress_crypto(spec.crypto.as_ref())?;
     validate_adapter_options(spec, adapter)
+}
+
+fn validate_egress_crypto(
+    crypto: Option<&UpstreamCryptoProfile>,
+) -> Result<(), ChannelEgressError> {
+    let Some(profile) = crypto else {
+        return Ok(());
+    };
+    let registry = AlgorithmRegistry::default_registry();
+    profile.validate(&registry).map_err(|e| {
+        ChannelEgressError::new(format!("egress.crypto 校验失败: {e}"))
+    })
 }
 
 fn validate_outbound_url(raw: &str, field: &str) -> Result<(), ChannelEgressError> {
@@ -1221,5 +1233,149 @@ mod tests {
         });
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("aws"), "{err}");
+    }
+
+    #[test]
+    fn crypto_absent_equals_none_roundtrip() {
+        let v = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/v1", "body_encoding": "json"}
+        });
+        let spec = parse_and_validate_egress(&v).unwrap();
+        assert!(spec.crypto.is_none());
+        let out = serde_json::to_value(&spec).unwrap();
+        assert!(out.get("crypto").is_none());
+    }
+
+    #[test]
+    fn crypto_sign_only_hmac_sm3_ok() {
+        let v = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "crypto": {
+                "version": 1,
+                "order": "sign_only",
+                "sign": {"alg": "hmac-sm3"},
+                "canon": "sorted_kv",
+                "encodings": {
+                    "payload": "base64",
+                    "signature": {"hex": {"case": "lower"}},
+                    "iv": "base64"
+                },
+                "iv": "random",
+                "scope": "whole_body",
+                "allow_insecure": false
+            }
+        });
+        let spec = parse_and_validate_egress(&v).unwrap();
+        let crypto = spec.crypto.as_ref().expect("crypto");
+        assert_eq!(crypto.order, mazbri_crypto::CryptoOrder::SignOnly);
+        assert_eq!(
+            crypto.sign.as_ref().unwrap().alg,
+            mazbri_crypto::AlgorithmId::HmacSm3
+        );
+        let again = serde_json::from_value::<ChannelEgressSpec>(serde_json::to_value(&spec).unwrap())
+            .unwrap();
+        assert_eq!(again.crypto, spec.crypto);
+    }
+
+    #[test]
+    fn crypto_encrypt_then_sign_order_ok() {
+        let v = serde_json::json!({
+            "adapter": "sign_form",
+            "operation": "pay",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "sign_form": {"sign_type": "HMAC-SM3"},
+            "crypto": {
+                "version": 1,
+                "order": "encrypt_then_sign",
+                "sign": {"alg": "hmac-sm3"},
+                "crypt": {"alg": "sm4-cbc-pkcs7"},
+                "canon": "sorted_kv",
+                "encodings": {
+                    "payload": {"hex": {"case": "lower"}},
+                    "signature": "base64",
+                    "iv": "base64"
+                },
+                "slots": [
+                    {"role": "sign", "location": "form", "name": "sign"},
+                    {"role": "cipher", "location": "form", "name": "biz_content"}
+                ],
+                "iv": "random",
+                "scope": "whole_body"
+            }
+        });
+        parse_and_validate_egress(&v).unwrap();
+    }
+
+    #[test]
+    fn crypto_rejects_legacy_without_allow_insecure() {
+        let v = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "crypto": {
+                "version": 1,
+                "order": "encrypt_then_sign",
+                "sign": {"alg": "hmac-sha256"},
+                "crypt": {"alg": "aes-128-ecb"},
+                "canon": "raw",
+                "encodings": {
+                    "payload": "base64",
+                    "signature": "base64",
+                    "iv": "base64"
+                },
+                "iv": "random",
+                "scope": "whole_body",
+                "allow_insecure": false
+            }
+        });
+        let err = parse_and_validate_egress(&v).unwrap_err().to_string();
+        assert!(err.contains("egress.crypto"), "{err}");
+        assert!(
+            err.contains("legacy") || err.contains("allow_insecure"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn crypto_rejects_order_mismatch_sign_only_with_crypt() {
+        let v = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "crypto": {
+                "version": 1,
+                "order": "sign_only",
+                "sign": {"alg": "hmac-sha256"},
+                "crypt": {"alg": "aes-256-gcm"},
+                "canon": "raw",
+                "encodings": {
+                    "payload": "base64",
+                    "signature": "base64",
+                    "iv": "base64"
+                },
+                "iv": "random",
+                "scope": "whole_body"
+            }
+        });
+        let err = parse_and_validate_egress(&v).unwrap_err().to_string();
+        assert!(err.contains("egress.crypto"), "{err}");
+        assert!(err.contains("must not set crypt") || err.contains("invalid profile"), "{err}");
+    }
+
+    #[test]
+    fn sign_form_sign_type_no_longer_hmac_only() {
+        let v = serde_json::json!({
+            "adapter": "sign_form",
+            "operation": "pay",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "sign_form": {"sign_type": "hmac-sm3"}
+        });
+        parse_and_validate_egress(&v).unwrap();
     }
 }

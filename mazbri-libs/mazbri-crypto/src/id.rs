@@ -5,7 +5,7 @@
 use core::fmt;
 use core::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::security::SecurityClass;
 use crate::traits::CryptoError;
@@ -31,8 +31,7 @@ pub enum AlgorithmKind {
 /// 2026-11 软件闭集算法 id（kebab-case）。
 ///
 /// 不含 SM9 / HSM / 后量子；不含厂商专用别名。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AlgorithmId {
     // —— AEAD（推荐 / 主流）——
     /// AES-256-GCM（租户传输推荐默认）。
@@ -321,6 +320,25 @@ impl fmt::Display for AlgorithmId {
     }
 }
 
+impl Serialize for AlgorithmId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AlgorithmId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 impl FromStr for AlgorithmId {
     type Err = CryptoError;
 
@@ -358,5 +376,17 @@ mod tests {
             "aes256gcm".parse::<AlgorithmId>(),
             Err(CryptoError::UnknownAlgorithmId { .. })
         ));
+    }
+
+    #[test]
+    fn serde_json_uses_as_str_wire_ids() {
+        for id in AlgorithmId::all() {
+            let json = serde_json::to_string(id).expect("ser");
+            assert_eq!(json, format!("\"{}\"", id.as_str()));
+            let back: AlgorithmId = serde_json::from_str(&json).expect("de");
+            assert_eq!(back, *id);
+        }
+        // 禁止 serde 默认 kebab 把 Aes256Gcm 编成 aes256-gcm
+        assert!(serde_json::from_str::<AlgorithmId>("\"aes256-gcm\"").is_err());
     }
 }

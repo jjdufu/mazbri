@@ -36,6 +36,7 @@ md-5 = { workspace = true }
 ecb = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 hex = { workspace = true }
 rsa = { workspace = true }
 p256 = { workspace = true }

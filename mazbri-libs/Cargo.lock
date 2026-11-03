@@ -2477,6 +2477,7 @@ dependencies = [
  "p384",
  "rsa",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "sm3",
  "sm4",

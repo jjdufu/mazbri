@@ -8,8 +8,10 @@ pub mod tenant_key;
 pub mod transport;
 
 pub use mazbri_crypto::profile::{
-    BindingSpec, KeySelection, TenantTransportProfile, TransportMode, DEFAULT_CLOCK_SKEW_SECS,
-    DEFAULT_NONCE_TTL_SECS, PROFILE_VERSION_V1,
+    BindingSpec, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, KeySelection,
+    SignSpec, SlotLocation, SlotSpec, TenantTransportProfile, TransportMode, UpstreamCryptoProfile,
+    WireEncoding, WireEncodings, WrapSpec, DEFAULT_CLOCK_SKEW_SECS, DEFAULT_NONCE_TTL_SECS,
+    PROFILE_VERSION_V1,
 };
 pub use mazbri_crypto::registry::{parse_algorithm_id, AlgorithmRegistry};
 pub use mazbri_crypto::suite::{
