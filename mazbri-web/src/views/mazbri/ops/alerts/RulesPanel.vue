@@ -1,13 +1,13 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.alertRules')">
-    <template #actions>
-      <ElButton v-if="canEdit" type="primary" @click="openCreate">
+  <div class="ops-alerts-panel">
+    <OpsPanelToolbar>
+      <ElButton v-if="isAdmin" type="primary" @click="openCreate">
         {{ t("ops.alerts.rules.create") }}
       </ElButton>
       <ElButton :loading="loading" @click="reload">{{
         t("ops.alerts.rules.refresh")
       }}</ElButton>
-    </template>
+    </OpsPanelToolbar>
 
     <OpsCard>
       <p class="ops-alerts__hint">{{ t("ops.alerts.rules.hint") }}</p>
@@ -19,7 +19,7 @@
           <template #default="{ row }">
             <ElSwitch
               :model-value="row.enabled"
-              :disabled="!canEdit"
+              :disabled="!isAdmin"
               @change="
                 (value: string | number | boolean) =>
                   toggle(row, Boolean(value))
@@ -37,7 +37,7 @@
           width="100"
         >
           <template #default="{ row }">
-            <ElTag :type="severityTag(row.severity)" size="small">
+            <ElTag :type="alertSeverityTag(row.severity)" size="small">
               {{ t(`ops.alerts.severity.${row.severity}`) }}
             </ElTag>
           </template>
@@ -82,7 +82,7 @@
               v-if="row.active_events"
               link
               type="danger"
-              @click="router.push({ path: '/ops/alerts/events' })"
+              @click="goEvents"
             >
               {{ row.active_events }}
             </ElButton>
@@ -90,7 +90,7 @@
           </template>
         </ElTableColumn>
         <ElTableColumn
-          v-if="canEdit"
+          v-if="isAdmin"
           :label="t('ops.alerts.columns.actions')"
           width="130"
           fixed="right"
@@ -239,13 +239,11 @@
         </ElButton>
       </template>
     </ElDialog>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
+import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import {
@@ -254,6 +252,8 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import {
   createAlertRule,
   deleteAlertRule,
@@ -261,6 +261,7 @@ import {
   setAlertRuleEnabled,
   updateAlertRule,
 } from "@/api/alerts";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
 import type {
   AlertOp,
   AlertRule,
@@ -268,13 +269,20 @@ import type {
   AlertRuleKind,
   AlertSeverity,
 } from "@/types/api/alerts";
-import { useUserStore } from "@/store/modules/user";
+import {
+  alertSeverityTag,
+  formatAlertLabelsText,
+  isValidAlertEmail,
+  parseAlertLabelsText,
+  parseAlertListText,
+} from "@/utils/ops/alerts-format";
+import { buildAlertsRoute } from "@/utils/ops/alerts-link";
 
-defineOptions({ name: "OpsAlertRules" });
+defineOptions({ name: "OpsAlertRulesPanel" });
 
 const { t } = useI18n();
 const router = useRouter();
-const userStore = useUserStore();
+const { isAdmin } = useOpsRole();
 
 const ops: AlertOp[] = [">", ">=", "<", "<=", "==", "!="];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
@@ -320,32 +328,6 @@ const emptyForm = (): RuleForm => ({
 
 const form = reactive<RuleForm>(emptyForm());
 
-const roles = computed(() => (userStore.info?.roles as string[]) || []);
-const canEdit = computed(() =>
-  roles.value.some((role) => role === "R_ADMIN"),
-);
-
-function parseLabels(text: string): Record<string, string> | null {
-  const labels: Record<string, string> = {};
-  for (const line of text.split(/[\n,]/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const idx = trimmed.indexOf("=");
-    if (idx <= 0) return null;
-    labels[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
-  }
-  return labels;
-}
-
-const EMAIL_PATTERN = /^[^\s@<>,;"()[\]\\]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
-
-function parseList(text: string) {
-  return text
-    .split(/[\s,;]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 const formRules: FormRules<RuleForm> = {
   name: [
     {
@@ -364,15 +346,15 @@ const formRules: FormRules<RuleForm> = {
   emailsText: [
     {
       validator: (_rule, value: string, callback) => {
-        const emails = parseList(value);
-        if (!emails.every((email) => EMAIL_PATTERN.test(email))) {
+        const emails = parseAlertListText(value);
+        if (!emails.every((email) => isValidAlertEmail(email))) {
           callback(new Error(t("ops.alerts.rules.form.emailsInvalid")));
           return;
         }
         if (
           form.notifyEnabled &&
           emails.length === 0 &&
-          parseList(form.webhooksText).length === 0
+          parseAlertListText(form.webhooksText).length === 0
         ) {
           callback(new Error(t("ops.alerts.rules.form.notifyRequired")));
           return;
@@ -385,7 +367,7 @@ const formRules: FormRules<RuleForm> = {
   labelsText: [
     {
       validator: (_rule, value: string, callback) =>
-        parseLabels(value)
+        parseAlertLabelsText(value)
           ? callback()
           : callback(new Error(t("ops.alerts.rules.form.labelsInvalid"))),
       trigger: "blur",
@@ -393,10 +375,8 @@ const formRules: FormRules<RuleForm> = {
   ],
 };
 
-function severityTag(severity: AlertSeverity) {
-  if (severity === "critical") return "danger";
-  if (severity === "warning") return "warning";
-  return "info";
+function goEvents() {
+  void router.push(buildAlertsRoute({ tab: "events" }));
 }
 
 async function reload() {
@@ -424,11 +404,10 @@ function openEdit(rule: AlertRule) {
     op: rule.op,
     for_seconds: rule.for_seconds,
     severity: rule.severity,
-    labelsText: Object.entries(rule.labels)
-      .map(([k, v]) => `${k}=${v}`)
-      .join("\n"),
-    emailsText: rule.notify.emails.join("\n"),
-    webhooksText: rule.notify.webhooks.join("\n"),
+    labelsText: formatAlertLabelsText(rule.labels),
+    notifyEnabled: rule.notify?.enabled ?? false,
+    emailsText: (rule.notify?.emails || []).join("\n"),
+    webhooksText: (rule.notify?.webhooks || []).join("\n"),
     enabled: rule.enabled,
   });
   dialogVisible.value = true;
@@ -446,11 +425,11 @@ async function save() {
     op: form.op,
     for_seconds: form.for_seconds,
     severity: form.severity,
-    labels: parseLabels(form.labelsText) || {},
+    labels: parseAlertLabelsText(form.labelsText) || {},
     notify: {
       enabled: form.notifyEnabled,
-      emails: parseList(form.emailsText),
-      webhooks: parseList(form.webhooksText),
+      emails: parseAlertListText(form.emailsText),
+      webhooks: parseAlertListText(form.webhooksText),
     },
     enabled: form.enabled,
   };

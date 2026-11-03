@@ -521,39 +521,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "alerts/events",
-        name: "OpsAlertEvents",
-        component: "/mazbri/ops/alerts/events",
-        meta: {
-          title: "menus.mazbri.alertEvents",
-          icon: "ri:alarm-warning-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "alerts/rules",
-        name: "OpsAlertRules",
-        component: "/mazbri/ops/alerts/rules",
-        meta: {
-          title: "menus.mazbri.alertRules",
-          icon: "ri:list-settings-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
-        path: "alerts/silences",
-        name: "OpsAlertSilences",
-        component: "/mazbri/ops/alerts/silences",
-        meta: {
-          title: "menus.mazbri.alertSilences",
-          icon: "ri:volume-mute-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "assets/changes",
         name: "OpsAssetsChanges",
         component: "/mazbri/ops/assets/changes",

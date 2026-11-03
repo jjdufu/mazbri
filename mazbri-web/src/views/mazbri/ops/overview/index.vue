@@ -162,7 +162,7 @@
               <ElButton
                 link
                 type="primary"
-                @click="router.push('/ops/alerts/events')"
+                @click="router.push(buildAlertsRoute())"
               >
                 {{ t("ops.overview.alertsOpen") }}
               </ElButton>
@@ -192,10 +192,7 @@
               type="button"
               class="ops-overview__alert-item"
               @click="
-                router.push({
-                  path: '/ops/alerts/events',
-                  query: { event_id: item.id },
-                })
+                router.push(buildAlertsRoute({ eventId: item.id }))
               "
             >
               <span
@@ -307,6 +304,7 @@ import { useUserStore } from "@/store/modules/user";
 import { postOlapQuery } from "@/api/olap";
 import type { ExemplarRow } from "@/types/api/olap";
 import { buildTraceSearchRoute } from "@/utils/ops/trace-link";
+import { buildAlertsRoute } from "@/utils/ops/alerts-link";
 
 defineOptions({ name: "OpsOverview" });
 
