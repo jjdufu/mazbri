@@ -1,15 +1,15 @@
-//! Overview / 运维指标时间窗与瞬时语义的**单一**拼装入口。
+//! Overview / 运维指标时间窗与字段裁剪的拼装入口。
 //!
-//! ## KPI 时间窗策略（step-21，方案 B）
+//! ## KPI 时间窗策略（ops-ui：跟窗 + 此刻）
 //!
-//! `GET /stats/metrics/overview` 的 KPI **固定为瞬时语义**：
-//! 使用近 [`INSTANT_LOOKBACK_SECS`] 秒的 `PromQL` rate 窗，**不**接受 `from/to`/`range`。
-//! UI 时间范围只作用于曲线 / 平台统计 / 产品 `TopN` 等旁路查询
-//!（前端 `ops.overview.timeRangeHint` 已旁注）。
+//! `GET /stats/metrics/overview` 由 analytics 决定嵌套 `window`：
+//! - 默认 / `mode=range` + start/end → `semantics=range`（跟 UI 时间窗）
+//! - `mode=instant` → `semantics=instant`（近 [`INSTANT_LOOKBACK_SECS`] 秒）
 //!
-//! 时序查询走 [`resolve_timeseries_window`]；overview 响应经
-//! [`apply_overview_field_gate`] 写入嵌套 `window` 并按角色裁剪。
+//! mgmt 的 [`apply_overview_field_gate`] **保留** analytics 下发的 `window`；
+//! 仅在缺失时补瞬时默认，并按角色裁剪敏感字段。
 //! 禁止扁平 `kpi_semantics` / `instant_lookback_secs` 兼容字段。
+//! 时序查询走 [`resolve_timeseries_window`]。
 
 /// 相对时间窗（秒）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +67,9 @@ pub const TIMESERIES_MAX_SECS: i64 = 31 * 24 * 60 * 60;
 
 /// Overview KPI 语义标记（写入响应，便于 OpenAPI/前端对齐）。
 pub const KPI_SEMANTICS_INSTANT: &str = "instant";
+
+/// 跟时间窗的 KPI 语义标记。
+pub const KPI_SEMANTICS_RANGE: &str = "range";
 
 /// 是否应按「瞬时」语义取尾部切片（窗长显著大于瞬时回看时）。
 #[must_use]
@@ -171,23 +174,32 @@ impl OverviewFieldGate {
     }
 }
 
-/// 为 overview JSON 写入嵌套瞬时 `window`，并按角色省略敏感字段块。
+/// 整理 overview JSON：保留 analytics 的 `window`，并按角色省略敏感字段块。
 ///
-/// - 始终写入 `window = { semantics: instant, lookback_secs, label }`；
+/// - 若已有合法嵌套 `window.semantics`（`range` / `instant`）则**不改写**；
+/// - 否则补默认瞬时窗 `window = { semantics: instant, lookback_secs, label }`；
 /// - 删除历史扁平 `kpi_semantics` / `instant_lookback_secs`（零兼容层）；
 /// - 若缺 `sample_count` 则补 0；
 /// - VIEWER：去掉 `billing_pipeline`；
 /// - 非 ADMIN：去掉 `cert_min_expiry_days`（超管证书徽章）。
 pub fn apply_overview_field_gate(body: &mut serde_json::Value, gate: OverviewFieldGate) {
     if let Some(obj) = body.as_object_mut() {
-        obj.insert(
-            "window".into(),
-            serde_json::json!({
-                "semantics": KPI_SEMANTICS_INSTANT,
-                "lookback_secs": INSTANT_LOOKBACK_SECS,
-                "label": format!("近瞬时（{INSTANT_LOOKBACK_SECS}s）"),
-            }),
-        );
+        let keep_window = obj
+            .get("window")
+            .and_then(|v| v.as_object())
+            .and_then(|w| w.get("semantics"))
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s == KPI_SEMANTICS_RANGE || s == KPI_SEMANTICS_INSTANT);
+        if !keep_window {
+            obj.insert(
+                "window".into(),
+                serde_json::json!({
+                    "semantics": KPI_SEMANTICS_INSTANT,
+                    "lookback_secs": INSTANT_LOOKBACK_SECS,
+                    "label": format!("近瞬时（{INSTANT_LOOKBACK_SECS}s）"),
+                }),
+            );
+        }
         obj.remove("kpi_semantics");
         obj.remove("instant_lookback_secs");
         if !obj.contains_key("sample_count") {
@@ -307,6 +319,33 @@ mod tests {
         assert!(obj.get("success_rate").is_some_and(serde_json::Value::is_null));
         assert!(obj.get("qps").is_some_and(serde_json::Value::is_null));
         assert!(obj.contains_key("window"));
+    }
+
+    #[test]
+    fn apply_overview_field_gate_preserves_analytics_range_window() {
+        let mut body = serde_json::json!({
+            "qps": 1.0,
+            "sample_count": 9,
+            "window": {
+                "semantics": "range",
+                "lookback_secs": 3600,
+                "label": "所选时间窗（3600s）"
+            }
+        });
+        apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_ADMIN"));
+        let window = body
+            .as_object()
+            .and_then(|o| o.get("window"))
+            .and_then(|v| v.as_object())
+            .expect("window");
+        assert_eq!(
+            window.get("semantics").and_then(|v| v.as_str()),
+            Some(KPI_SEMANTICS_RANGE)
+        );
+        assert_eq!(
+            window.get("lookback_secs").and_then(serde_json::Value::as_i64),
+            Some(3600)
+        );
     }
 
     #[test]
