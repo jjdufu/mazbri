@@ -1,5 +1,7 @@
 import type { ISODateString, DecimalString, ListPagination } from "./common";
 export interface Tenant {
+  /** tenants.id：加密 AAD 用的租户 UUID */
+  uuid: string;
   tenant_code: string;
   tenant_id: string;
   name: string;

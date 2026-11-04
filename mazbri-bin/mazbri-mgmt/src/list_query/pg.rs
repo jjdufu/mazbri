@@ -722,4 +722,21 @@ mod tests {
         assert!(sql.contains("created_at >="));
         assert!(sql.contains("created_at <"));
     }
+
+    #[test]
+    fn products_channel_code_filter_uses_primary_channel_subquery() {
+        let catalog = crate::list_query::products_catalog();
+        let filters = vec![ListFilter {
+            field: "channel_code".into(),
+            op: FilterOp::Eq,
+            value: Some(FilterValue::String("CH-1".into())),
+        }];
+        let validated = validate_filters(&catalog, &filters).unwrap();
+        let mut builder: QueryBuilder<'_, Postgres> =
+            QueryBuilder::new("SELECT 1 FROM products WHERE 1=1");
+        apply_pg_filters(&mut builder, &validated).unwrap();
+        let sql = builder.sql();
+        assert!(sql.contains("r.product_id = products.id"), "{sql}");
+        assert!(sql.contains("LIMIT 1) = $1"), "{sql}");
+    }
 }

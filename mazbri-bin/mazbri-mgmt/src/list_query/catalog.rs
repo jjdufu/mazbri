@@ -481,6 +481,13 @@ pub fn products_catalog() -> ResourceFilterCatalog {
     }
 }
 
+/// 产品主渠道编码（相关子查询，外层表为 `products`）。
+const PRODUCT_PRIMARY_CHANNEL_CODE_SQL: &str = "(SELECT c.channel_code FROM route_rules r \
+     JOIN route_channel_bindings b ON b.route_rule_id = r.id \
+     JOIN channels c ON c.id = b.channel_id \
+     WHERE r.product_id = products.id \
+     ORDER BY r.priority, r.created_at, b.channel_order LIMIT 1)";
+
 const PRODUCTS_FIELDS: &[FilterFieldDef] = &[
     FilterFieldDef {
         field: "product_id",
@@ -505,6 +512,15 @@ const PRODUCTS_FIELDS: &[FilterFieldDef] = &[
         in_q: false,
         requires_time_window: false,
         sql_expr: "enabled",
+    },
+    // 主渠道编码：优先级最高的路由规则下 channel_order 最小的绑定渠道。
+    FilterFieldDef {
+        field: "channel_code",
+        value_type: FilterValueType::String,
+        ops: &[FilterOp::Eq, FilterOp::In],
+        in_q: false,
+        requires_time_window: false,
+        sql_expr: PRODUCT_PRIMARY_CHANNEL_CODE_SQL,
     },
     FilterFieldDef {
         field: "created_at",
