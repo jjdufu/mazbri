@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mazbri_core::channel_egress::{ADAPTER_HTTP_ENVELOPE, ADAPTER_SIGN_FORM};
-use mazbri_core::{BodyEncoding, ChannelEgressSpec, EgressRequestSpec};
+use mazbri_core::{BodyEncoding, ChannelEgressSpec, EgressRequestSpec, EgressResponseSpec, WRAP_METHOD_BIZ_CONTENT};
 use mazbri_crypto::{
     AlgorithmId, AlgorithmRegistry, CanonStyle, CipherScope, CryptSpec, CryptoOrder, IvSource,
     KeyPurpose, KeyRef, Mac, SignSpec, SlotLocation, SlotSpec, UpstreamCryptoProfile, WireEncodings,
@@ -127,8 +127,13 @@ async fn http_envelope_aead_seal_via_pipeline() {
             method: "POST".into(),
             path: "/env".into(),
             body_encoding: BodyEncoding::Json,
+            wrap: Some(WRAP_METHOD_BIZ_CONTENT.into()),
             ..Default::default()
         },
+        response: Some(EgressResponseSpec {
+            unwrap: Some("$.data".into()),
+            ..Default::default()
+        }),
         crypto: Some(profile),
         ..Default::default()
     };
