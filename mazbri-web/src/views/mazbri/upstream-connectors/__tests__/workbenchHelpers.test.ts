@@ -216,12 +216,12 @@ console.log("workbenchHelpers HSplit/VSplit persist parse ok");
     method: "POST",
     path: "/jobs",
     operation: "submit",
-    job_poll: { query_path: "", job_id_jsonpath: "", status_jsonpath: "" },
+    job_poll: { query_path: "", job_id_jsonpath: "" },
   };
   const miss = listMissingAdapterFields(jp).map((m) => m.path);
   assert.ok(miss.includes("job_poll.query_path"), String(miss));
   assert.ok(miss.includes("job_poll.job_id_jsonpath"), String(miss));
-  assert.ok(miss.includes("job_poll.status_jsonpath"), String(miss));
+  assert.ok(!miss.includes("job_poll.status_jsonpath"), String(miss));
 }
 
 console.log("workbenchHelpers adapter required fields ok");

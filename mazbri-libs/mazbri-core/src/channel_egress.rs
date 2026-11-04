@@ -535,6 +535,14 @@ pub struct GraphqlSpec {
     pub enum_map: Option<HashMap<String, String>>,
 }
 
+/// `job_poll` 适配器选项（submit-only / 请求级单次 query；**无** invoke 内轮询）。
+///
+/// - `submit_path`：提交路径；缺省用 `request.path`
+/// - `query_path`：状态查询路径模板，须含 `{job_id}`（请求级 `job_poll_mode=query` 时用）
+/// - `job_id_jsonpath`：从 **submit** 响应解析 job 标识
+///
+/// 已删除仅服务同步轮询的 `poll_interval_ms` / `status_jsonpath` / `result_jsonpath` /
+/// `message_jsonpath`（`deny_unknown_fields` 下旧草稿含这些键会直接拒收）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct JobPollSpec {
@@ -544,14 +552,6 @@ pub struct JobPollSpec {
     pub query_path: String,
     #[serde(default)]
     pub job_id_jsonpath: String,
-    #[serde(default)]
-    pub status_jsonpath: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result_jsonpath: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_jsonpath: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub poll_interval_ms: Option<u64>,
 }
 
 /// WebSocket 单次调用选项。组包权威在 [`EgressRequestSpec::wrap`]（与 `http_envelope` 同一套），
@@ -870,7 +870,7 @@ fn validate_egress_auth(auth: &AuthSpec, adapter: AdapterKind) -> Result<(), Cha
 /// - `ws_unary`：`operation` + `request.wrap` + `ws.path`；`ws.auth_in` 可选但取值闭集
 /// - `graphql`：`graphql.document`
 /// - `grpc`：`artifact_id`
-/// - `job_poll`：`job_poll.{query_path,job_id_jsonpath,status_jsonpath}`
+/// - `job_poll`：`job_poll.{query_path,job_id_jsonpath}`（submit-only；无轮询间隔字段）
 /// - `sign_form`：仅 `operation`（算法在 crypto）
 fn validate_adapter_options(
     spec: &ChannelEgressSpec,
@@ -918,16 +918,6 @@ fn validate_job_poll_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgre
     }
     if jp.job_id_jsonpath.trim().is_empty() {
         return Err(ChannelEgressError::new("job_poll.job_id_jsonpath 不能为空"));
-    }
-    if jp.status_jsonpath.trim().is_empty() {
-        return Err(ChannelEgressError::new("job_poll.status_jsonpath 不能为空"));
-    }
-    if let Some(ms) = jp.poll_interval_ms
-        && ms == 0
-    {
-        return Err(ChannelEgressError::new(
-            "job_poll.poll_interval_ms 必须大于 0",
-        ));
     }
     Ok(())
 }

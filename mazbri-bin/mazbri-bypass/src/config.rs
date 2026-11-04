@@ -27,8 +27,6 @@ pub struct UpstreamConfig {
     pub user_agent: String,
     #[serde(default = "default_ws_handshake_timeout_secs")]
     pub ws_handshake_timeout_secs: u64,
-    #[serde(default = "default_job_poll_min_interval_ms")]
-    pub job_poll_min_interval_ms: u64,
     #[serde(default = "default_grpc_max_concurrency")]
     pub grpc_max_concurrency: u32,
 }
@@ -47,10 +45,6 @@ fn default_user_agent() -> String {
 
 fn default_ws_handshake_timeout_secs() -> u64 {
     10
-}
-
-fn default_job_poll_min_interval_ms() -> u64 {
-    200
 }
 
 fn default_grpc_max_concurrency() -> u32 {
@@ -73,9 +67,6 @@ impl UpstreamConfig {
         }
         if self.ws_handshake_timeout_secs == 0 {
             anyhow::bail!("ws_handshake_timeout_secs must be greater than 0");
-        }
-        if self.job_poll_min_interval_ms == 0 {
-            anyhow::bail!("job_poll_min_interval_ms must be greater than 0");
         }
         if self.grpc_max_concurrency == 0 {
             anyhow::bail!("grpc_max_concurrency must be greater than 0");

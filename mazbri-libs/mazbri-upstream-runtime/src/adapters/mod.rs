@@ -30,7 +30,6 @@ pub struct AdapterCtx<'a> {
     pub auth: &'a AppliedAuth,
     pub timeout: Duration,
     pub ws_handshake_timeout: Duration,
-    pub job_poll_min_interval: Duration,
     /// 解析后的流水线密钥（bypass 注入或凭证映射）。
     pub pipeline_keys: &'a crate::crypto_pipeline::PipelineKeys,
     /// 算法注册表（与 Profile 校验 / pipeline 共用）。
@@ -451,7 +450,6 @@ mod tests {
             auth: &auth,
             timeout: Duration::from_secs(2),
             ws_handshake_timeout: Duration::from_secs(2),
-            job_poll_min_interval: Duration::from_millis(10),
             pipeline_keys: &pipeline_keys,
             registry: &registry,
         };

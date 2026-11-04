@@ -73,6 +73,9 @@
 
     <div v-if="adapterKind === 'job_poll'" class="wb-body__extra">
       <p class="wb-body__section">{{ $t("upstreamConnector.adapterParamsSection") }}</p>
+      <p class="wb-hint is-warn">
+        {{ $t("upstreamConnector.jobPollAsyncHint") }}
+      </p>
       <WorkbenchGhostField
         :label="$t('upstreamConnector.jobSubmitPath')"
         :model-value="jobField('submit_path')"
@@ -90,32 +93,6 @@
         :model-value="jobField('job_id_jsonpath')"
         placeholder="$.job_id"
         @update:model-value="setJob('job_id_jsonpath', String($event))"
-      />
-      <WorkbenchGhostField
-        :label="$t('upstreamConnector.jobStatusPath')"
-        :model-value="jobField('status_jsonpath')"
-        placeholder="$.status"
-        @update:model-value="setJob('status_jsonpath', String($event))"
-      />
-      <WorkbenchGhostField
-        :label="$t('upstreamConnector.jobResultPath')"
-        :model-value="jobField('result_jsonpath')"
-        placeholder="$.result"
-        @update:model-value="setJob('result_jsonpath', String($event))"
-      />
-      <WorkbenchGhostField
-        :label="$t('upstreamConnector.jobMessagePath')"
-        :model-value="jobField('message_jsonpath')"
-        placeholder="$.message"
-        @update:model-value="setJob('message_jsonpath', String($event))"
-      />
-      <WorkbenchGhostField
-        :label="$t('upstreamConnector.jobPollInterval')"
-        kind="number"
-        :model-value="jobInterval"
-        :min="1"
-        :step="100"
-        @update:model-value="setJob('poll_interval_ms', Number($event) || 500)"
       />
     </div>
 
@@ -399,14 +376,6 @@ function jobField(key: string): string {
   const raw = (props.endpoint.job_poll || {}) as Record<string, unknown>;
   return String(raw[key] ?? "");
 }
-
-const jobInterval = computed(() => {
-  const n = Number(
-    (props.endpoint.job_poll as Record<string, unknown> | undefined)
-      ?.poll_interval_ms,
-  );
-  return Number.isFinite(n) && n > 0 ? n : 500;
-});
 
 function setJob(key: string, value: unknown) {
   ensureEndpointAdapterFields(props.endpoint);

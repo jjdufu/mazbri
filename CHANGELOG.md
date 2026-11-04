@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### ⚠ BREAKING CHANGES
+
+* **upstream/job_poll:** invoke 改为 submit-only（或请求级一次性 `job_poll_mode=query`），**禁止**在网关/bypass 内 sleep+轮询至终态。响应默认 `{"job_id":...}`；终态由租户轮询/回调完成。删除 Spec 字段 `poll_interval_ms`/`status_jsonpath`/`result_jsonpath`/`message_jsonpath` 与 bypass `job_poll_min_interval_ms`（`deny_unknown_fields`，旧配置需迁移）。无同步兼容开关。
+
+
 ## [0.2.20](https://github.com/jjdufu/mazbri/compare/v0.2.19...v0.2.20) (2026-11-04)
 
 

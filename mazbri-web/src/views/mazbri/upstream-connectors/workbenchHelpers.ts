@@ -1218,10 +1218,6 @@ export function defaultJobPollSpec(): Record<string, unknown> {
     submit_path: "",
     query_path: "/jobs/{job_id}",
     job_id_jsonpath: "$.job_id",
-    status_jsonpath: "$.status",
-    result_jsonpath: "$.result",
-    message_jsonpath: "$.message",
-    poll_interval_ms: 500,
   };
 }
 
@@ -1318,9 +1314,6 @@ export function listMissingAdapterFields(
       }
       if (!String(jp.job_id_jsonpath ?? "").trim()) {
         missing.push({ path: "job_poll.job_id_jsonpath", labelKey: "upstreamConnector.jobIdPath" });
-      }
-      if (!String(jp.status_jsonpath ?? "").trim()) {
-        missing.push({ path: "job_poll.status_jsonpath", labelKey: "upstreamConnector.jobStatusPath" });
       }
       break;
     }

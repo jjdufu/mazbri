@@ -3775,7 +3775,7 @@
       "grpc": "gRPC",
       "soap_xml": "SOAP XML",
       "ws_unary": "WebSocket 单次",
-      "job_poll": "任务轮询"
+      "job_poll": "任务提交（异步）"
     },
     "wrapNames": {
       "method_biz_content": "method + biz_content",
@@ -3788,12 +3788,11 @@
     "graphqlVariablesMap": "变量名映射（租户字段 → GraphQL）",
     "graphqlEnumMap": "枚举值映射",
     "jobSubmitPath": "提交路径",
-    "jobQueryPath": "查询路径",
+    "jobQueryPath": "查询路径（请求级 query 用）",
     "jobIdPath": "job_id JSONPath",
-    "jobStatusPath": "status JSONPath",
-    "jobResultPath": "result JSONPath",
-    "jobMessagePath": "message JSONPath",
-    "jobPollInterval": "轮询间隔 (ms)",
+    "jobPollAsyncHint": "生产路径不会在网关/bypass 内轮询终态：默认一次提交即返回 job_id；租户可用 job_poll_mode=query 单次查状态，或走回调。高风险，勿当高 QPS 同步上游。",
+    "jobPollRiskTag": "异步·高风险",
+    "jobPollRiskPublish": "含 job_poll 端点：发布后生产调用仅 submit（或请求级单次 query），不会在网关内等到任务成功。",
     "artifactId": "工件 ID",
     "artifactUpload": "上传 FileDescriptorSet",
     "artifactUploaded": "工件已上传",

@@ -117,6 +117,14 @@
         :closable="false"
         class="mb-3"
       />
+      <ElAlert
+        v-if="hasJobPollEndpoint"
+        type="warning"
+        :title="$t('upstreamConnector.jobPollRiskPublish')"
+        show-icon
+        :closable="false"
+        class="mb-3"
+      />
 
       <div class="wb-pub__section">
         <div class="wb-pub__h">{{ $t("upstreamConnector.gateChecklist") }}</div>
@@ -239,6 +247,10 @@ type MissingRow = {
   name: string;
   fields: MissingAdapterField[];
 };
+
+const hasJobPollEndpoint = computed(() =>
+  (props.endpoints || []).some((ep) => (ep.adapter || "http_json") === "job_poll"),
+);
 
 const missingAdapterSummary = computed((): MissingRow[] => {
   const eps = props.endpoints || [];

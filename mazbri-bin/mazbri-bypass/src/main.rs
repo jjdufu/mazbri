@@ -54,9 +54,6 @@ async fn main() -> Result<()> {
             ws_handshake_timeout: std::time::Duration::from_secs(
                 runtime.ctx.config.upstream.ws_handshake_timeout_secs,
             ),
-            job_poll_min_interval: std::time::Duration::from_millis(
-                runtime.ctx.config.upstream.job_poll_min_interval_ms,
-            ),
         });
 
         let addr = runtime.ctx.config.server.socket_addr()?;

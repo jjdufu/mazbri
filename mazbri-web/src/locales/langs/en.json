@@ -3770,7 +3770,7 @@
       "grpc": "gRPC",
       "soap_xml": "SOAP XML",
       "ws_unary": "WebSocket unary",
-      "job_poll": "Job poll"
+      "job_poll": "Job submit (async)"
     },
     "wrapNames": {
       "method_biz_content": "method + biz_content",
@@ -3783,12 +3783,11 @@
     "graphqlVariablesMap": "Variable map (tenant field → GraphQL)",
     "graphqlEnumMap": "Enum value map",
     "jobSubmitPath": "Submit path",
-    "jobQueryPath": "Query path",
+    "jobQueryPath": "Query path (request-level query)",
     "jobIdPath": "job_id JSONPath",
-    "jobStatusPath": "status JSONPath",
-    "jobResultPath": "result JSONPath",
-    "jobMessagePath": "message JSONPath",
-    "jobPollInterval": "Poll interval (ms)",
+    "jobPollAsyncHint": "Production does not poll to a terminal state inside the gateway/bypass: default is one submit returning job_id; tenants may send job_poll_mode=query once, or use callbacks. High risk — not for high-QPS sync upstreams.",
+    "jobPollRiskTag": "Async · high risk",
+    "jobPollRiskPublish": "Includes job_poll endpoints: after publish, production calls only submit (or one request-level query) and will not wait for job success inside the gateway.",
     "artifactId": "Artifact ID",
     "artifactUpload": "Upload FileDescriptorSet",
     "artifactUploaded": "Artifact uploaded",

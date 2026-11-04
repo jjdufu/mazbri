@@ -20,14 +20,12 @@ use crate::types::{
 #[derive(Debug, Clone)]
 pub struct RuntimeLimits {
     pub ws_handshake_timeout: Duration,
-    pub job_poll_min_interval: Duration,
 }
 
 impl Default for RuntimeLimits {
     fn default() -> Self {
         Self {
             ws_handshake_timeout: Duration::from_secs(10),
-            job_poll_min_interval: Duration::from_millis(200),
         }
     }
 }
@@ -234,7 +232,6 @@ impl RuntimeEngine {
             auth: &applied,
             timeout: input.timeout,
             ws_handshake_timeout: self.limits.ws_handshake_timeout,
-            job_poll_min_interval: self.limits.job_poll_min_interval,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
         };

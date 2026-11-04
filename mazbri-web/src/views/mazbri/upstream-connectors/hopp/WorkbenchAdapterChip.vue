@@ -2,11 +2,15 @@
   <button
     type="button"
     class="wb-adapter-chip"
+    :class="{ 'wb-adapter-chip--risk': isJobPoll }"
     :title="chipTitle"
     :aria-label="chipAriaLabel"
     @click="emit('edit')"
   >
     <span class="wb-adapter-chip__text">{{ displayName }}</span>
+    <span v-if="isJobPoll" class="wb-adapter-chip__risk">{{
+      $t("upstreamConnector.jobPollRiskTag")
+    }}</span>
   </button>
 </template>
 
@@ -25,6 +29,8 @@ const emit = defineEmits<{
   edit: [];
 }>();
 
+const isJobPoll = computed(() => (props.adapter || "http_json") === "job_poll");
+
 const displayName = computed(() => {
   const enc = (props.encoding || "").trim().toLowerCase();
   if ((props.adapter || "http_json") === "http_json" && enc === "form") {
@@ -39,13 +45,19 @@ const displayName = computed(() => {
 const adapterCode = computed(() => props.adapter || "http_json");
 
 /** 完整可见名 + 适配器码；窄宽 ellipsis 时靠 title/aria，禁止无 title 硬截断 */
-const chipTitle = computed(
-  () => `${displayName.value} (${adapterCode.value}) · ${$t("upstreamConnector.adapterChipHint")}`,
-);
+const chipTitle = computed(() => {
+  const base = `${displayName.value} (${adapterCode.value}) · ${$t("upstreamConnector.adapterChipHint")}`;
+  return isJobPoll.value
+    ? `${base} · ${$t("upstreamConnector.jobPollRiskTag")}`
+    : base;
+});
 
-const chipAriaLabel = computed(
-  () => `${displayName.value} (${adapterCode.value})`,
-);
+const chipAriaLabel = computed(() => {
+  const base = `${displayName.value} (${adapterCode.value})`;
+  return isJobPoll.value
+    ? `${base}, ${$t("upstreamConnector.jobPollRiskTag")}`
+    : base;
+});
 </script>
 
 <style scoped lang="scss">
@@ -53,7 +65,7 @@ const chipAriaLabel = computed(
   flex: 0 1 auto;
   flex-shrink: 1;
   min-width: 4.5rem;
-  max-width: 16rem;
+  max-width: 18rem;
   height: auto;
   min-height: var(--wb-urlbar-h, 32px);
   padding: 4px 10px;
@@ -68,10 +80,19 @@ const chipAriaLabel = computed(
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   text-align: center;
   &:hover {
     color: var(--wb-text, var(--el-text-color-primary));
     background: var(--wb-surface-hover, var(--el-fill-color));
+  }
+  &--risk {
+    border-color: color-mix(
+      in srgb,
+      var(--wb-danger, var(--el-color-danger)) 45%,
+      var(--wb-divider-subtle, var(--el-border-color-extra-light))
+    );
+    color: var(--wb-danger, var(--el-color-danger));
   }
 }
 .wb-adapter-chip__text {
@@ -79,5 +100,19 @@ const chipAriaLabel = computed(
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: normal;
+}
+.wb-adapter-chip__risk {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wb-danger, var(--el-color-danger));
+  background: color-mix(
+    in srgb,
+    var(--wb-danger, var(--el-color-danger)) 12%,
+    transparent
+  );
 }
 </style>
