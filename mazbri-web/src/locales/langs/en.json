@@ -3568,9 +3568,7 @@
       "title": "Onboarding succeeded",
       "subtitle": "Platform route_version = {version}",
       "reloadHint": "Hot-reload typically within ~5s.",
-      "copyCurl": "Copy curl sample",
-      "goSuppliers": "Back to upstream supply",
-      "gatewayUrlMissing": "Tenant gateway URL is not set. Configure it in System Settings → Tenant Gateway URL."
+      "goSuppliers": "Back to upstream supply"
     },
     "useAccessWizard": "Use the Access Upstream wizard to create",
     "placeholders": {

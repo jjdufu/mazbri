@@ -3573,9 +3573,7 @@
       "title": "接入成功",
       "subtitle": "平台 route_version = {version}",
       "reloadHint": "约 5 秒内热加载生效。",
-      "copyCurl": "复制联调命令",
-      "goSuppliers": "返回上游供给",
-      "gatewayUrlMissing": "未配置租户网关地址，请在 系统设置 → 租户网关地址 中填写后再复制调用示例"
+      "goSuppliers": "返回上游供给"
     },
     "useAccessWizard": "新建请使用【接入上游】统一向导",
     "placeholders": {

@@ -140,24 +140,6 @@
           <ElDescriptionsItem label="route_version">{{ result.route_version }}</ElDescriptionsItem>
         </ElDescriptions>
         <p class="hint">{{ $t("upstreamOnboarding.done.reloadHint") }}</p>
-        <template v-if="curlSample">
-          <ElInput
-            :model-value="curlSample"
-            type="textarea"
-            :rows="5"
-            readonly
-            class="mb"
-          />
-          <ElButton type="primary" @click="copyCurl">
-            {{ $t("upstreamOnboarding.done.copyCurl") }}
-          </ElButton>
-        </template>
-        <ElAlert
-          v-else
-          type="warning"
-          :closable="false"
-          :title="$t('upstreamOnboarding.done.gatewayUrlMissing')"
-        />
       </div>
     </div>
 
@@ -203,8 +185,6 @@ import {
   type OnboardingRequest,
   type OnboardingResult,
 } from "@/api/upstream-onboarding";
-import { fetchSystemSettings } from "@/api/settings";
-import { useSettingStore } from "@/store/modules/setting";
 import { stripUrlScheme } from "@/utils/sensitive";
 
 
@@ -289,7 +269,6 @@ const basicRules = computed<FormRules>(() => ({
 watch(visible, (open) => {
   if (open) {
     resetAll();
-    void refreshTenantGatewayUrl();
   }
 });
 
@@ -393,60 +372,6 @@ async function submit() {
 
 function formatPlan(plan: NonNullable<OnboardingResult["plan"]>) {
   return JSON.stringify(plan, null, 2);
-}
-
-const settingStore = useSettingStore();
-const runtimeGatewayUrl = ref("");
-
-function normalizeGatewayBase(raw: string): string {
-  return raw.trim().replace(/\/+$/, "");
-}
-
-function resolveGatewayBaseUrl(): string {
-  const fromRuntime = normalizeGatewayBase(runtimeGatewayUrl.value);
-  if (fromRuntime) return fromRuntime;
-  const fromStore = normalizeGatewayBase(settingStore.tenantGatewayUrl || "");
-  return fromStore;
-}
-
-async function refreshTenantGatewayUrl() {
-  try {
-    const settings = await fetchSystemSettings();
-    const url = normalizeGatewayBase(settings.tenant_gateway_url || "");
-    if (url) {
-      runtimeGatewayUrl.value = url;
-      settingStore.applySystemSettings({
-        ...settings,
-        tenant_gateway_url: url,
-      });
-    }
-  } catch {
-    void 0;
-  }
-}
-
-const curlSample = computed(() => {
-  const product = form.product_id.trim() || "8012345678";
-  const gateway = resolveGatewayBaseUrl();
-  if (!gateway) return "";
-  const pathPrefix = (form.path_prefix || "/").trim() || "/";
-  return `curl -sS -X POST '${gateway}/api/v1/gateway' \\
-  -H 'Authorization: Bearer <access_token>' \\
-  -H 'Content-Type: application/json' \\
-  -d '{"product_id":"${product}","method":"POST","path":"${pathPrefix}","body":{}}'
-
-# gateway=${gateway}
-# route_version=${result.value?.route_version ?? "N/A"}；热加载约 ≤5s
-# 修改地址：控制台 → 系统设置 → 租户网关地址（tenant_gateway_url）`;
-});
-
-async function copyCurl() {
-  try {
-    await navigator.clipboard.writeText(curlSample.value);
-    ElMessage.success($t("common.feedback.copySuccess"));
-  } catch {
-    ElMessage.error($t("common.feedback.copyFailed"));
-  }
 }
 
 function handleClosed() {
