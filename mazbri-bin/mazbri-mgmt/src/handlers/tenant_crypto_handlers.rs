@@ -489,10 +489,17 @@ pub async fn create_request_key(
     Extension(claims): Extension<AdminClaims>,
     headers: HeaderMap,
     Path(code): Path<String>,
+    body: axum::body::Bytes,
 ) -> Result<Response, ApiError> {
     if !can_manage_tenants(&claims) {
         return Err(ApiError::Forbidden);
     }
+    let request: svc::CreateRequestKeyRequest = if body.iter().all(u8::is_ascii_whitespace) {
+        svc::CreateRequestKeyRequest::default()
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|error| ApiError::validation(format!("invalid request body: {error}")))?
+    };
     let actor_id = extract_user_id(&claims)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code).await?;
     if let Err(response) = require_category(&state, &claims, Category::Key).await {
@@ -504,6 +511,7 @@ pub async fn create_request_key(
         &state.cert_service.url,
         &state.cert_service.token,
         &code,
+        &request,
         actor_id,
     )
     .await?;
@@ -516,6 +524,7 @@ pub async fn create_request_key(
         serde_json::json!({
             "tenant_code": code,
             "kid": data.get("kid"),
+            "alg": data.get("alg"),
             "kind": "request_binding"
         }),
         client_ip,
