@@ -1,16 +1,17 @@
 use super::super::AppState;
 use crate::middleware::auth::AdminClaims;
 use crate::services::analytics::{
-    self, CallMonitorParams, CallStageParams, MetricsTimeseriesParams,
+    self, CallMonitorParams, CallStageParams, MetricsOverviewParams, MetricsTimeseriesParams,
 };
 use axum::Json;
 use axum::extract::{Extension, Query, State};
-/// `GET /stats/metrics/overview`：瞬时 KPI（方案 B）；按角色裁剪计费/证书字段。
+/// `GET /stats/metrics/overview`：默认跟时间窗；`mode=instant` 为此刻；按角色裁剪计费/证书字段。
 pub async fn get_metrics_overview(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
+    Query(params): Query<MetricsOverviewParams>,
 ) -> axum::response::Response {
-    analytics::get_metrics_overview(&state.analytics_client, &claims.role).await
+    analytics::get_metrics_overview(&state.analytics_client, &claims.role, &params).await
 }
 pub async fn get_metrics_catalog(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_metrics_catalog(&state.analytics_client).await

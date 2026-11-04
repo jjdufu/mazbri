@@ -11,6 +11,14 @@ pub async fn search_traces(
     traces::search(&state.analytics_client, &params).await
 }
 
+/// `GET /stats/traces/services`
+pub async fn list_trace_services(
+    State(state): State<AppState>,
+    Query(params): Query<TraceWindowParams>,
+) -> axum::response::Response {
+    traces::services(&state.analytics_client, &params).await
+}
+
 /// `GET /stats/traces/dependencies`
 pub async fn get_trace_dependencies(
     State(state): State<AppState>,

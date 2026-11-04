@@ -84,9 +84,6 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("GET", "/stats/ops/anomalies", Access::Roles(BIZ)),
     ("GET", "/stats/ops/changes", Access::Roles(BIZ)),
     // 容量 / 压测 / SLO 列表 ADMIN；SLO 状态 AnyRole
-    ("GET", "/stats/ops/capacity", Access::Roles(ADMIN)),
-    ("GET", "/stats/ops/loadtests", Access::Roles(ADMIN)),
-    ("POST", "/stats/ops/loadtests", Access::Roles(ADMIN)),
     ("GET", "/stats/ops/slos", Access::Roles(ADMIN)),
     ("GET", "/stats/ops/slos/status", Access::AnyRole),
     // 平台策略：读 AnyRole，写 ADMIN（账号安全页嵌入后仍不放宽写）
@@ -99,6 +96,7 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("GET", "/stats/traces/dependencies", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/{trace_id}", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/billing", Access::Roles(ADMIN)),
+    ("GET", "/stats/traces/services", Access::Roles(ADMIN)),
     ("GET", "/stats/calls/customer", Access::AnyRole),
     ("GET", "/stats/calls/upstream", Access::AnyRole),
     ("GET", "/stats/calls/stages", Access::AnyRole),
@@ -133,9 +131,6 @@ pub fn assert_ia_audit_matrix_groups() {
     assert_access_eq("POST", "/alerts/events/{id}/assign", Access::Roles(ADMIN));
     assert_access_eq("GET", "/stats/ops/anomalies", Access::Roles(BIZ));
     assert_access_eq("GET", "/stats/ops/changes", Access::Roles(BIZ));
-    assert_access_eq("GET", "/stats/ops/capacity", Access::Roles(ADMIN));
-    assert_access_eq("GET", "/stats/ops/loadtests", Access::Roles(ADMIN));
-    assert_access_eq("POST", "/stats/ops/loadtests", Access::Roles(ADMIN));
     assert_access_eq("GET", "/stats/ops/slos", Access::Roles(ADMIN));
     assert_access_eq("GET", "/stats/ops/slos/status", Access::AnyRole);
     assert_access_eq("GET", "/settings/password-policy", Access::AnyRole);

@@ -151,8 +151,11 @@ impl AnalyticsHttpClient {
     /// # Errors
     ///
     /// 见 [`AnalyticsError`]。
-    pub async fn metrics_overview(&self) -> AnalyticsResult<serde_json::Value> {
-        self.get_json("/api/v1/metrics/overview", &[]).await
+    pub async fn metrics_overview(
+        &self,
+        params: &[(&str, String)],
+    ) -> AnalyticsResult<serde_json::Value> {
+        self.get_json("/api/v1/metrics/overview", params).await
     }
     /// # Errors
     ///
@@ -424,7 +427,7 @@ mod tests {
             retry_after_secs: 7,
         })
         .expect("client");
-        let err = client.metrics_overview().await.expect_err("must fail");
+        let err = client.metrics_overview(&[]).await.expect_err("must fail");
         assert!(matches!(err, AnalyticsError::Unavailable { .. }));
         assert!(!err.to_string().contains(&addr.to_string()));
         let resp = err.into_response("指标总览");

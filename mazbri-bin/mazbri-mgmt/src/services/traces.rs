@@ -119,6 +119,19 @@ pub async fn detail(
     .await
 }
 
+pub async fn services(
+    client: &AnalyticsHttpClient,
+    params: &TraceWindowParams,
+) -> axum::response::Response {
+    forward(
+        client,
+        "/services",
+        &window_params(params),
+        "trace 服务列表查询",
+    )
+    .await
+}
+
 pub async fn dependencies(
     client: &AnalyticsHttpClient,
     params: &TraceWindowParams,

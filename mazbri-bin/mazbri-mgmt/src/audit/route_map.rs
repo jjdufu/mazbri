@@ -671,10 +671,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/metrics/topology", R::System),
     read_post("/stats/olap/query", R::System),
     read("/stats/ops/changes", R::System),
-    read("/stats/ops/loadtests", R::System),
-    write("POST", "/stats/ops/loadtests", A::SettingsUpdate, R::System, None),
     read("/stats/ops/anomalies", R::System),
-    read("/stats/ops/capacity", R::System),
     read("/stats/ops/slos", R::System),
     read("/stats/ops/slos/status", R::System),
     read_post("/stats/ops/products/zero-calls", R::System),
@@ -689,6 +686,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/traces/search", R::System),
     read("/stats/traces/dependencies", R::System),
     read("/stats/traces/billing", R::System),
+    read("/stats/traces/services", R::System),
     read("/stats/traces/{trace_id}", R::System),
     // ---- settings / audit ----
     read("/settings/system", R::System),
