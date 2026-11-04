@@ -127,17 +127,18 @@ function onInput(ev: Event) {
 }
 .wb-ghost__label {
   box-sizing: border-box;
-  flex: 0 0 var(--wb-label-col, 10.5rem);
-  width: var(--wb-label-col, 10.5rem);
-  display: block;
-  padding: 0 12px 0 16px;
-  font-size: 12px;
+  flex: 0 0 var(--wb-label-col, 12.5rem);
+  width: var(--wb-label-col, 12.5rem);
+  display: flex;
+  align-items: center;
+  padding: 6px 12px 6px 16px;
+  font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  line-height: 32px;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
   overflow: visible;
-  text-overflow: clip;
 }
 .wb-ghost__control {
   flex: 1;

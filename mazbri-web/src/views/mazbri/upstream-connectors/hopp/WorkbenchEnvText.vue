@@ -244,7 +244,7 @@ defineExpose({
 }
 .wb-env__overlay,
 .wb-env__input {
-  font-size: 13px;
+  font-size: var(--wb-fs-url, 13px);
   line-height: 38px;
   padding: 0 12px;
   white-space: nowrap;
@@ -316,8 +316,8 @@ defineExpose({
 }
 .wb-env-suggest__val {
   color: var(--el-text-color-placeholder);
-  font-size: 12px;
-  max-width: 10rem;
+  font-size: var(--wb-fs-tiny, 11px);
+  max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

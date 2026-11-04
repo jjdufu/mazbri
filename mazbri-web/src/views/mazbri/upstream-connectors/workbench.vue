@@ -2123,7 +2123,7 @@ watch(
   flex-wrap: nowrap;
 }
 .wb-save-status {
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
@@ -2177,6 +2177,7 @@ watch(
   align-items: center;
   flex-wrap: nowrap;
   flex-shrink: 0;
+  min-width: 0;
 }
 .wb-runbar__actions {
   display: flex;
@@ -2200,14 +2201,14 @@ watch(
   }
 }
 .wb-env-chip {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   height: var(--wb-urlbar-h, 32px);
   padding: 0 10px;
   border: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
   border-radius: var(--wb-radius, 4px);
   background: var(--wb-surface-input, var(--el-fill-color-light));
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  font-size: 12px;
+  font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -2280,7 +2281,7 @@ watch(
   justify-content: center;
   gap: 6px;
   height: 100%;
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   font-weight: 600;
   padding: 0;
   &:disabled {
@@ -2340,8 +2341,8 @@ watch(
   }
   :deep(.el-tabs__item) {
     height: var(--wb-tab-h);
-    padding: 0 16px;
-    font-size: 12px;
+    padding: 0 14px;
+    font-size: var(--wb-fs-body);
     font-weight: 600;
     color: var(--wb-text-muted);
   }
@@ -2379,9 +2380,20 @@ watch(
   }
   .wb-runbar {
     flex-wrap: wrap;
+    align-items: stretch;
   }
   .wb-urlbar {
+    flex: 1 1 100%;
     min-width: 100%;
+  }
+  .wb-env-chip,
+  :deep(.wb-adapter-chip) {
+    flex: 0 1 auto;
+  }
+  .wb-runbar__actions {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 </style>

@@ -463,7 +463,7 @@ watch(
   overflow: auto;
 }
 .wb-eps__tag {
-  font-size: 10px;
+  font-size: var(--wb-fs-tiny, 11px);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -533,10 +533,10 @@ watch(
   min-width: 0;
 }
 .wb-eps__method {
-  font-size: 10px;
+  font-size: var(--wb-fs-tiny, 11px);
   font-weight: 700;
   letter-spacing: 0.02em;
-  width: 46px;
+  width: 3.25rem;
   flex-shrink: 0;
   text-align: center;
   overflow: hidden;
@@ -584,7 +584,7 @@ watch(
   }
 }
 .wb-eps__path {
-  font-size: 11px;
+  font-size: var(--wb-fs-tiny, 11px);
   color: var(--el-text-color-placeholder);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -606,7 +606,7 @@ watch(
   border: none;
   outline: none;
   background: transparent;
-  font-size: 11px;
+  font-size: var(--wb-fs-tiny, 11px);
   line-height: 16px;
   padding: 2px 0;
   color: var(--wb-text, var(--el-text-color-primary));
@@ -691,7 +691,7 @@ watch(
   border: none;
   background: transparent;
   padding: 4px 2px;
-  font-size: 11px;
+  font-size: var(--wb-fs-tiny, 11px);
   color: var(--el-text-color-secondary);
   cursor: pointer;
   text-align: left;

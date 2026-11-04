@@ -2,10 +2,11 @@
   <button
     type="button"
     class="wb-adapter-chip"
-    :title="hint"
+    :title="chipTitle"
+    :aria-label="chipAriaLabel"
     @click="emit('edit')"
   >
-    {{ displayName }}
+    <span class="wb-adapter-chip__text">{{ displayName }}</span>
   </button>
 </template>
 
@@ -35,33 +36,48 @@ const displayName = computed(() => {
   return t === key ? a : t;
 });
 
-const hint = computed(() => {
-  const a = props.adapter || "http_json";
-  return `${$t("upstreamConnector.adapterChipHint")} (${a})`;
-});
+const adapterCode = computed(() => props.adapter || "http_json");
+
+/** 完整可见名 + 适配器码；窄宽 ellipsis 时靠 title/aria，禁止无 title 硬截断 */
+const chipTitle = computed(
+  () => `${displayName.value} (${adapterCode.value}) · ${$t("upstreamConnector.adapterChipHint")}`,
+);
+
+const chipAriaLabel = computed(
+  () => `${displayName.value} (${adapterCode.value})`,
+);
 </script>
 
 <style scoped lang="scss">
 .wb-adapter-chip {
+  flex: 0 1 auto;
   flex-shrink: 1;
-  min-width: 0;
-  height: var(--wb-urlbar-h, 32px);
-  max-width: 9rem;
-  padding: 0 10px;
+  min-width: 4.5rem;
+  max-width: 16rem;
+  height: auto;
+  min-height: var(--wb-urlbar-h, 32px);
+  padding: 4px 10px;
   border: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
   border-radius: var(--wb-radius, var(--art-form-control-radius));
   background: var(--wb-surface-input, var(--el-fill-color-light));
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  font-size: 12px;
+  font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.25;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   &:hover {
     color: var(--wb-text, var(--el-text-color-primary));
     background: var(--wb-surface-hover, var(--el-fill-color));
   }
+}
+.wb-adapter-chip__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 </style>

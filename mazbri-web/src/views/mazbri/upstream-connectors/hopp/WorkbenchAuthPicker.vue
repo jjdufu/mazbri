@@ -201,20 +201,22 @@ function setSessionDefault() {
 }
 .wb-hopp-sticky__label {
   box-sizing: border-box;
-  flex: 0 0 var(--wb-label-col, 10.5rem);
-  width: var(--wb-label-col, 10.5rem);
-  font-size: 12px;
+  flex: 0 0 var(--wb-label-col, 12.5rem);
+  width: var(--wb-label-col, 12.5rem);
+  font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  padding: 0 12px 0 16px;
-  white-space: nowrap;
+  padding: 6px 12px 6px 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   overflow: visible;
 }
 .wb-hopp-sticky__session {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wb-fs-body, 13px);
   color: var(--wb-text-muted, var(--el-text-color-secondary));
   min-width: 0;
 }
@@ -233,7 +235,7 @@ function setSessionDefault() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wb-fs-body, 13px);
   color: var(--wb-text-muted, var(--el-text-color-secondary));
   padding: 0 8px;
   cursor: pointer;

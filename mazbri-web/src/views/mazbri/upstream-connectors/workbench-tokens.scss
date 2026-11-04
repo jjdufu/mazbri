@@ -3,13 +3,13 @@
 .connector-workbench-page {
   --wb-font-sans: inherit;
   --wb-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --wb-fs-body: 12px;
-  --wb-fs-tiny: 10px;
+  --wb-fs-body: 13px;
+  --wb-fs-tiny: 11px;
   --wb-fs-url: 13px;
   --wb-radius: 4px;
   --wb-urlbar-h: 32px;
   --wb-tab-h: 36px;
-  --wb-label-col: 10.5rem;
+  --wb-label-col: 12.5rem;
   --wb-runbar-gap: 8px;
   --wb-accent: var(--el-color-primary);
   --wb-accent-contrast: var(--el-color-white);
@@ -123,11 +123,13 @@ html.radius-zero .connector-workbench-page {
   box-sizing: border-box;
   flex: 0 0 var(--wb-label-col);
   width: var(--wb-label-col);
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   font-weight: 600;
   color: var(--wb-text-muted);
-  padding: 0 12px 0 16px;
-  white-space: nowrap;
+  padding: 6px 12px 6px 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   overflow: visible;
 }
 
@@ -142,7 +144,7 @@ html.radius-zero .connector-workbench-page {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   color: var(--wb-text-muted);
   padding: 0 8px;
   cursor: pointer;
@@ -241,13 +243,15 @@ html.radius-zero .connector-workbench-page {
 }
 .connector-workbench-page .wb-sheet-row__label {
   box-sizing: border-box;
-  padding: 0 12px 0 16px;
-  font-size: 12px;
+  padding: 6px 12px 6px 16px;
+  font-size: var(--wb-fs-body);
   font-weight: 600;
   color: var(--wb-text-muted);
   display: flex;
   align-items: center;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 .connector-workbench-page .wb-sheet-row.is-head .wb-sheet-row__label {
   flex: 0 0 auto;
@@ -270,7 +274,7 @@ html.radius-zero .connector-workbench-page {
   justify-content: flex-end;
 }
 .connector-workbench-page .wb-sheet-row__summary {
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   font-weight: 400;
   color: var(--wb-text-faint);
   white-space: nowrap;
@@ -330,7 +334,7 @@ html.radius-zero .connector-workbench-page {
   gap: 8px;
   min-height: 36px;
   padding: 0 4px 0 0;
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   font-weight: 600;
   color: var(--wb-text-muted);
   background: var(--wb-surface);
@@ -348,13 +352,15 @@ html.radius-zero .connector-workbench-page {
   box-sizing: border-box;
   flex: 0 0 var(--wb-label-col);
   width: var(--wb-label-col);
-  padding: 0 12px 0 16px;
-  white-space: nowrap;
+  padding: 6px 12px 6px 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .connector-workbench-page .wb-section__summary {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--wb-fs-body);
   font-weight: 400;
   color: var(--wb-text-faint);
   white-space: nowrap;
