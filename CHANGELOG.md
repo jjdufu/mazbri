@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.19](https://github.com/jjdufu/mazbri/compare/v0.2.18...v0.2.19) (2026-11-04)
+
+
+### Features
+
+* **crypto/core/sdk:** 请求绑定支持非对称签名（rsa-v1/ecdsa-v1/ed25519-v1/sm2-v1） ([00a40a7](https://github.com/jjdufu/mazbri/commit/00a40a722735b09dfb16a4bf62ec81ecd5ed453b))
+* **gateway/mgmt:** 请求绑定非对称签名落地（gateway 校验 + mgmt 公钥注册） ([5c1f749](https://github.com/jjdufu/mazbri/commit/5c1f749569a87057a044ae347401060e96b1d5f6))
+* improve-0.2.18（analytics 503、租户 uuid、非对称请求绑定、协议规范） ([ab3fdbc](https://github.com/jjdufu/mazbri/commit/ab3fdbc398c4fe76635aff444c09d642f1d1913e))
+* **mgmt:** 租户响应返回 uuid，产品列表支持按渠道编码筛选 ([1b68fc7](https://github.com/jjdufu/mazbri/commit/1b68fc7e3dbc358a7808418d5a244f000cd56776))
+* **protocol:** 对外租户接入协议规范 + 固定测试向量 + 多语言示例；传输层 legacy 分派、mgmt 读接口副作用修复 ([70b6ba3](https://github.com/jjdufu/mazbri/commit/70b6ba365ea9e57d9580d8f3d299a06fe1886734))
+
+
+### Bug Fixes
+
+* **mgmt:** mgmt 调 analytics 的错误统一为 503/502/4xx 透传，去掉假空数据兜底 ([f420086](https://github.com/jjdufu/mazbri/commit/f420086d5b16809ccbbde304b2cc0c95b9a062a3))
+
 ## [0.2.18](https://github.com/jjdufu/mazbri/compare/v0.2.17...v0.2.18) (2026-11-03)
 
 
