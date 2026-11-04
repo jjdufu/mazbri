@@ -1,9 +1,12 @@
 use super::{
-    ApiError, Arc, AuditAction, AuditLogRequest, AuditResourceType, AuditService, Duration,
-    ExecuteMode, ExecuteOptions, InvokeInput, LiveRunRequest, PgPool, RollbackRequest, Row, RunDto,
-    RuntimeEngine, SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes,
+    ApiError, AuditAction, AuditLogRequest, AuditResourceType, AuditService, LiveRunRequest, PgPool,
+    RollbackRequest, Row, RunDto, SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes,
     mask_config_credentials, repo,
 };
+use crate::services::bypass_probe::{
+    self, BypassProbeClient, PROBE_PATH_BYPASS_GRPC, ProbeInvokeParams, ProbeOutcome,
+};
+use mazbri_core::hash_egress_spec_json;
 use mazbri_core::num::SaturatingFrom;
 
 // ---------- Versions / Rollback / Live ----------
@@ -158,11 +161,10 @@ pub async fn rollback(
     }))
 }
 
-/// `live_run` 的入参。
+/// `live_run` 的入参（C1：经 bypass gRPC，不经 gateway 计费）。
 pub struct LiveRunParams<'a> {
     pub audit: &'a AuditService,
-    /// 按 `[ssrf]` 配置构建的共享 runtime（含 SSRF checker）。
-    pub engine: &'a RuntimeEngine,
+    pub bypass: &'a BypassProbeClient,
     pub supplier_id: Uuid,
     pub req: LiveRunRequest,
     pub actor: &'a str,
@@ -178,7 +180,7 @@ pub struct LiveRunParams<'a> {
 pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto, ApiError> {
     let LiveRunParams {
         audit,
-        engine,
+        bypass,
         supplier_id,
         req,
         actor,
@@ -187,12 +189,45 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         default_timeout_ms,
         max_body_bytes,
     } = params;
-    let input =
-        prepare_live_input(pool, supplier_id, req, default_timeout_ms, max_body_bytes).await?;
-    let result = engine.invoke(input).await;
-    let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
+    let prepared =
+        prepare_live_bypass(pool, supplier_id, req, default_timeout_ms, max_body_bytes).await?;
 
-    connector_metrics::record_run("live", result.ok, result.error_code.as_deref());
+    let invoke_req = bypass_probe::build_probe_invoke_request(&ProbeInvokeParams {
+        channel_id: &prepared.channel_id,
+        request_id: &prepared.request_id,
+        timeout_ms: prepared.timeout_ms,
+        payload_json: &prepared.payload_json,
+        egress_spec_json: &prepared.egress_spec_json,
+        supplier_id: &prepared.supplier_id,
+        supplier_code: &prepared.supplier_code,
+        supplier_config_json: &prepared.supplier_config_json,
+    });
+
+    let outcome = match bypass.execute_invoke(invoke_req).await {
+        Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
+        Err(e) => ProbeOutcome {
+            ok: false,
+            latency_ms: 0,
+            error_code: Some(if e.contains("BYPASS_CONNECT") {
+                "BYPASS_UNAVAILABLE".into()
+            } else {
+                "BYPASS_GRPC_ERROR".into()
+            }),
+            error_message: Some(e),
+            payload: None,
+            status: None,
+            url: None,
+            adapter: None,
+            biz_error: None,
+            stages: serde_json::json!([{
+                "name": "bypass_grpc",
+                "ok": false,
+                "response_summary": {"probe_path": PROBE_PATH_BYPASS_GRPC},
+            }]),
+        },
+    };
+
+    connector_metrics::record_run("live", outcome.ok, outcome.error_code.as_deref());
 
     let run_row = repo::insert_run(
         pool,
@@ -200,16 +235,17 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
             draft_id: None,
             supplier_id: Some(supplier_id),
             mode: "live",
-            ok: result.ok,
-            latency_ms: Some(i32::saturating_from(result.latency_ms)),
-            stages: &stages_json,
+            ok: outcome.ok,
+            latency_ms: Some(i32::saturating_from(outcome.latency_ms)),
+            stages: &outcome.stages,
             assertions: &serde_json::json!([]),
-            error_code: result.error_code.as_deref(),
-            error_message: result.error_message.as_deref(),
+            error_code: outcome.error_code.as_deref(),
+            error_message: outcome.error_message.as_deref(),
             endpoint_key: None,
             testcase_id: None,
             actor: Some(actor),
             spec_fingerprint: None,
+            probe_path: Some(PROBE_PATH_BYPASS_GRPC),
         },
     )
     .await
@@ -220,16 +256,22 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
         resource_id: Some(supplier_id.to_string()),
-        details: Some(serde_json::json!({"mode":"live","ok": result.ok})),
+        details: Some(serde_json::json!({
+            "mode": "live",
+            "ok": outcome.ok,
+            "probe_path": PROBE_PATH_BYPASS_GRPC,
+        })),
         ip_address: client_ip,
         ..Default::default()
     });
 
-    let response_preview = result.response.map(|r| {
+    let response_preview = outcome.payload.as_ref().map(|p| {
         serde_json::json!({
-            "status": r.status,
-            "body_preview": String::from_utf8_lossy(&r.body).chars().take(4096).collect::<String>(),
-            "url": r.final_url,
+            "status": outcome.status.unwrap_or(if outcome.ok { 200 } else { 400 }),
+            "body_preview": p.to_string().chars().take(4096).collect::<String>(),
+            "url": outcome.url.clone().unwrap_or_default(),
+            "adapter": outcome.adapter,
+            "probe_path": PROBE_PATH_BYPASS_GRPC,
         })
     });
     Ok(super::run::run_dto_from_row(run_row, response_preview))
@@ -253,14 +295,25 @@ pub async fn cleanup_old_runs(pool: &PgPool, retention_days: u32) -> Result<u64,
     Ok(n)
 }
 
-/// 线上试跑入参：已发布通道 `channels.config.egress` + 供应商配置，`mode=Live`。
-async fn prepare_live_input(
+struct PreparedLiveBypass {
+    channel_id: String,
+    request_id: String,
+    timeout_ms: u64,
+    payload_json: String,
+    egress_spec_json: String,
+    supplier_id: String,
+    supplier_code: String,
+    supplier_config_json: String,
+}
+
+/// 线上试跑：已发布通道 egress + 供应商密文 config → bypass Invoke（同生产进程路径，不经 gateway）。
+async fn prepare_live_bypass(
     pool: &PgPool,
     supplier_id: Uuid,
     req: LiveRunRequest,
     default_timeout_ms: u64,
     max_body_bytes: usize,
-) -> Result<InvokeInput, ApiError> {
+) -> Result<PreparedLiveBypass, ApiError> {
     let row = sqlx::query("SELECT id, supplier_code, config FROM suppliers WHERE id = $1")
         .bind(supplier_id)
         .fetch_optional(pool)
@@ -284,13 +337,14 @@ async fn prepare_live_input(
     let spec = mazbri_core::parse_channel_config_egress(&channel_config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
 
+    // 校验可解析；密钥保持密文交给 bypass 解密（mgmt 不 decrypt）。
     let cfg = SupplierConfig::parse_and_validate(&config)
-        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?
-        .decrypt_credentials_for_runtime()
-        .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    let supplier_config_json = serde_json::to_string(&cfg)
+        .map_err(|e| ApiError::internal(format!("serialize supplier config: {e}")))?;
 
-    let payload = req.payload;
-    if payload.to_string().len() > max_body_bytes {
+    let payload_json = req.payload.to_string();
+    if payload_json.len() > max_body_bytes {
         return Err(ApiError::validation(format!(
             "request body exceeds max_body_bytes ({max_body_bytes})"
         )));
@@ -300,35 +354,23 @@ async fn prepare_live_input(
         .timeout_ms
         .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
         .unwrap_or(default_timeout_ms);
-    let credentials = cfg
-        .auth_flow
-        .as_ref()
-        .map(|auth| auth.credentials.clone())
-        .unwrap_or_default();
-    let artifact_bytes = match spec.artifact_id.as_deref() {
-        Some(aid) => load_artifact_bytes(pool, aid).await?,
-        None => None,
-    };
 
-    Ok(InvokeInput {
-        supplier_id: supplier_id.to_string(),
-        supplier_code,
+    if let Some(aid) = spec.artifact_id.as_deref() {
+        let _ = load_artifact_bytes(pool, aid).await?;
+    }
+
+    let egress_spec_json = serde_json::to_string(&spec)
+        .map_err(|e| ApiError::internal(format!("serialize egress: {e}")))?;
+    let _ = hash_egress_spec_json(&egress_spec_json);
+
+    Ok(PreparedLiveBypass {
         channel_id: channel_id.to_string(),
         request_id: Uuid::new_v4().to_string(),
-        payload,
-        spec,
-        config: Some(Arc::new(cfg)),
-        timeout: Duration::from_millis(timeout_ms),
-        mode: ExecuteMode::Live,
-        options: ExecuteOptions {
-            follow_redirects: false,
-            max_body_capture_bytes: 64 * 1024,
-            mask_secrets: true,
-            collect_trace: true,
-        },
-        pipeline_keys: Some(mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials)),
-        credentials,
-        artifact_bytes,
-        cache_key: Some(format!("live:{supplier_id}")),
+        timeout_ms,
+        payload_json,
+        egress_spec_json,
+        supplier_id: supplier_id.to_string(),
+        supplier_code,
+        supplier_config_json,
     })
 }

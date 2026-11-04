@@ -58,8 +58,9 @@ mod tests {
             .as_array()
             .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
             .unwrap_or_default();
-        assert_eq!(mtls.len(), 8);
-        for excluded in ["mazbri-cert", "mazbri-mgmt", "mazbri-analytics"] {
+        assert_eq!(mtls.len(), 9);
+        assert!(mtls.contains(&"mazbri-mgmt"));
+        for excluded in ["mazbri-cert", "mazbri-analytics"] {
             assert!(!mtls.contains(&excluded), "{excluded}");
         }
     }

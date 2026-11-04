@@ -189,6 +189,8 @@ pub struct MgmtApiConfig {
     /// Upstream connector probe / live-run limits (optional section).
     #[serde(default)]
     pub connector_probe: ConnectorProbeConfig,
+    /// C1：工作台 business/live 经 bypass gRPC Invoke 的地址（`host:port`，无 scheme；不经 gateway 计费）。
+    pub bypass_url: String,
     /// 用量对账阈值与默认 scope（mgmt 管理面）。
     #[serde(default)]
     pub billing_reconciliation: BillingReconciliationConfig,
@@ -203,6 +205,28 @@ pub struct MgmtApiConfig {
     #[serde(default)]
     pub audit: crate::audit::AuditConfig,
 }
+
+impl MgmtApiConfig {
+    fn validate_bypass_url(url: &str) -> Result<()> {
+        let u = url.trim();
+        if u.is_empty() {
+            anyhow::bail!(
+                "bypass_url is required (host:port) for connector workbench C1 probes\n                     bypass_url 为必填项（host:port），供工作台 business/live 经 bypass 试调"
+            );
+        }
+        if u.contains("://") {
+            anyhow::bail!("bypass_url must be host:port without scheme, got {u}");
+        }
+        let Some((host, port)) = u.rsplit_once(':') else {
+            anyhow::bail!("bypass_url must be host:port, got {u}");
+        };
+        if host.is_empty() || port.parse::<u16>().is_err() {
+            anyhow::bail!("bypass_url must be host:port with valid port, got {u}");
+        }
+        Ok(())
+    }
+}
+
 impl ValidateConfig for MgmtApiConfig {
     fn validate(&self) -> Result<()> {
         if self.server.port == 0 {
@@ -247,6 +271,7 @@ impl ValidateConfig for MgmtApiConfig {
         if self.connector_probe.default_timeout_ms == 0 {
             anyhow::bail!("connector_probe.default_timeout_ms must be greater than 0");
         }
+        Self::validate_bypass_url(&self.bypass_url)?;
         if !self.billing_reconciliation.loss_ratio_threshold.is_finite()
             || self.billing_reconciliation.loss_ratio_threshold < 0.0
             || self.billing_reconciliation.loss_ratio_threshold > 1.0
@@ -308,6 +333,7 @@ mod ssrf_config_tests {
 
     const BASE: &str = r#"
 service_name = "mazbri-mgmt"
+bypass_url = "mazbri-bypass:8888"
 
 [server]
 host = "0.0.0.0"

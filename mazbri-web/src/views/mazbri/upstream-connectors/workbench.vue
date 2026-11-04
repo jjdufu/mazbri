@@ -185,6 +185,9 @@
                       </div>
                     </div>
                   </div>
+                  <p class="wb-probe-hint text-xs opacity-70 mb-1">
+                    {{ $t("upstreamConnector.probeViaBypass") }}
+                  </p>
                   <p v-if="unresolved.length" class="wb-unresolved">
                     {{
                       $t("upstreamConnector.unresolvedVars", {

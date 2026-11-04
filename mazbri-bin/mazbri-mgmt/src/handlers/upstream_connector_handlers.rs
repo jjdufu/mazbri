@@ -163,6 +163,7 @@ pub async fn create_run(
         svc::RunDraftParams {
             audit: &state.audit,
             engine: &state.connector_runtime,
+            bypass: &state.bypass_probe,
             id,
             req: payload,
             actor: &claims.sub,
@@ -379,7 +380,7 @@ pub async fn live_run(
         &state.db,
         svc::LiveRunParams {
             audit: &state.audit,
-            engine: &state.connector_runtime,
+            bypass: &state.bypass_probe,
             supplier_id,
             req: payload,
             actor: &claims.sub,

@@ -40,6 +40,8 @@ pub struct RunRow {
     pub testcase_id: Option<Uuid>,
     pub actor: Option<String>,
     pub spec_fingerprint: Option<String>,
+    /// 试跑拓扑：`bypass_grpc` 才可作 `require_gate`；`NULL`/其它一律不作门控。
+    pub probe_path: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -355,6 +357,8 @@ pub struct NewRun<'a> {
     pub testcase_id: Option<Uuid>,
     pub actor: Option<&'a str>,
     pub spec_fingerprint: Option<&'a str>,
+    /// 写入 `probe_path`；`business`/`live` 经 bypass 时必须为 `bypass_grpc`。
+    pub probe_path: Option<&'a str>,
 }
 
 /// # Errors
@@ -375,6 +379,7 @@ pub async fn insert_run(pool: &PgPool, params: NewRun<'_>) -> Result<RunRow, sql
         testcase_id,
         actor,
         spec_fingerprint,
+        probe_path,
     } = params;
     let mut stages = stages.clone();
     let mut assertions = assertions.clone();
@@ -385,8 +390,9 @@ pub async fn insert_run(pool: &PgPool, params: NewRun<'_>) -> Result<RunRow, sql
         r"
         INSERT INTO upstream_connector_runs
             (draft_id, supplier_id, mode, ok, latency_ms, stages, assertions,
-             error_code, error_message, endpoint_key, testcase_id, actor, spec_fingerprint)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             error_code, error_message, endpoint_key, testcase_id, actor,
+             spec_fingerprint, probe_path)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
         RETURNING *
         ",
     )
@@ -403,6 +409,7 @@ pub async fn insert_run(pool: &PgPool, params: NewRun<'_>) -> Result<RunRow, sql
     .bind(testcase_id)
     .bind(actor)
     .bind(spec_fingerprint)
+    .bind(probe_path)
     .fetch_one(pool)
     .await
 }
@@ -440,6 +447,7 @@ pub async fn get_run(pool: &PgPool, id: Uuid) -> Result<Option<RunRow>, sqlx::Er
 }
 
 /// Successful business/live runs for a draft within TTL (fingerprint gate).
+/// **仅** `probe_path = bypass_grpc`（C1）；历史 mgmt `RuntimeEngine` 成功记录一律不作门控。
 /// Ignores `upstream_connector_test_cases` and `auth_only`.
 #[derive(Debug, Clone, FromRow)]
 pub struct GateRunRow {
@@ -462,6 +470,7 @@ pub async fn list_recent_gate_runs(
         WHERE draft_id = $1
           AND ok = true
           AND mode IN ('business', 'live')
+          AND probe_path = 'bypass_grpc'
           AND created_at > NOW() - ($2 || ' hours')::interval
         ",
     )

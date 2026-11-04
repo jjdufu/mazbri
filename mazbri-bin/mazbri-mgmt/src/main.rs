@@ -463,6 +463,49 @@ fn init_metrics_and_audit(config: &MgmtApiConfig) -> Result<()> {
     Ok(())
 }
 
+
+
+fn init_connector_runtime(
+    config: &MgmtApiConfig,
+) -> Arc<mazbri_upstream_runtime::RuntimeEngine> {
+    // `[ssrf].allow_private_network`（默认 false）：与 bypass 同语义，开启时 WARN。
+    config.ssrf.log_startup("mazbri-mgmt");
+    Arc::new(mazbri_mgmt::services::upstream_connector::build_connector_runtime(
+        config.ssrf.checker(),
+    ))
+}
+
+/// C1：申请 mgmt 客户端证书并构造 `BypassProbeClient`（不经 gateway 计费）。
+async fn init_bypass_probe_client(
+    config: &MgmtApiConfig,
+) -> Result<(
+    Arc<mazbri_mgmt::services::bypass_probe::BypassProbeClient>,
+    mazbri_tls::RenewalTaskHandle,
+)> {
+    let tls_config = mazbri_tls::TlsConfig {
+        cert_service_url: config.cert_service.base().to_owned(),
+        service_identity: ServiceName::Mgmt.as_str().to_owned(),
+        cert_service_token: get_cert_service_token()?,
+        ..Default::default()
+    };
+    let cert_manager = mazbri_tls::CertManager::new(tls_config);
+    let mgmt_client_cert = cert_manager.initialize().await.map_err(|e| {
+        anyhow::anyhow!("Failed to initialize mgmt mTLS certificate for bypass probe: {e}")
+    })?;
+    let cert_renewal = cert_manager.spawn_renewal_task_managed();
+    info!(
+        subject = %mgmt_client_cert.subject,
+        expires_at = %mgmt_client_cert.expires_at,
+        bypass_url = %config.bypass_url,
+        "mgmt mTLS client cert ready for C1 bypass probe"
+    );
+    let client = Arc::new(mazbri_mgmt::services::bypass_probe::BypassProbeClient::new(
+        config.bypass_url.clone(),
+        mgmt_client_cert,
+    ));
+    Ok((client, cert_renewal))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-mgmt");
@@ -517,11 +560,8 @@ async fn main() -> Result<()> {
         ),
     );
     spawn_connector_run_cleanup(&db, &config.connector_probe);
-    // `[ssrf].allow_private_network`（默认 false）：与 bypass 同语义，开启时 WARN。
-    config.ssrf.log_startup("mazbri-mgmt");
-    let connector_runtime = Arc::new(
-        mazbri_mgmt::services::upstream_connector::build_connector_runtime(config.ssrf.checker()),
-    );
+    let connector_runtime = init_connector_runtime(&config);
+    let (bypass_probe, _cert_renewal) = init_bypass_probe_client(&config).await?;
     // Hot-reloadable reconciliation settings (bootstrap conf = defaults only).
     let billing_reconciliation_settings = Arc::new(
         mazbri_mgmt::services::BillingReconciliationSettingsCache::new(
@@ -557,6 +597,7 @@ async fn main() -> Result<()> {
         billing_reconciliation_settings,
         connector_run_limiter,
         connector_runtime,
+        bypass_probe,
     };
     let _shutdown_handle = create_shutdown_manager();
     let app = create_router(app_state, &auth_state, audit);

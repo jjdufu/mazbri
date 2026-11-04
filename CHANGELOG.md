@@ -4,6 +4,8 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **workbench/probe C1:** 工作台 business/live 试调改走 **mgmt→bypass gRPC Invoke**（不经 gateway 计费）。`require_gate` **只认** `upstream_connector_runs.probe_path=bypass_grpc`；历史 mgmt 内 `RuntimeEngine` 成功记录**作废**不可作门控。删除默认 Send 走 `build_connector_runtime`（engine 仅留 SSRF/`auth_only`/`transform_preview`/microservice，**probe_path=NULL 永不进 gate**）。无 `engine|bypass` 双门控开关。须同步 init-dbs 加 `probe_path` 列；升级后须用新路径重跑门控试跑。
+
 * **upstream/ws_unary:** 废除每 invoke 一次 `connect_async→一帧→close` 作为唯一路径；引入按键复用连接池 + 全局/每键硬并发（`ws_max_concurrent` / `ws_max_concurrent_per_key` / `ws_pool_max_idle_per_key` / `ws_pool_idle_ttl_secs`）。超限**失败快**，禁止无限排队与「池满回退短连」。Binary 帧仍严格失败。旧配置缺字段走 default，但行为已变（有池）。适合中低 QPS；高 QPS 请用 HTTP 适配器。
 
 * **upstream/job_poll:** invoke 改为 submit-only（或请求级一次性 `job_poll_mode=query`），**禁止**在网关/bypass 内 sleep+轮询至终态。响应默认 `{"job_id":...}`；终态由租户轮询/回调完成。删除 Spec 字段 `poll_interval_ms`/`status_jsonpath`/`result_jsonpath`/`message_jsonpath` 与 bypass `job_poll_min_interval_ms`（`deny_unknown_fields`，旧配置需迁移）。无同步兼容开关。
@@ -310,6 +312,8 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **workbench/probe C1:** 工作台 business/live 试调改走 **mgmt→bypass gRPC Invoke**（不经 gateway 计费）。`require_gate` **只认** `upstream_connector_runs.probe_path=bypass_grpc`；历史 mgmt 内 `RuntimeEngine` 成功记录**作废**不可作门控。删除默认 Send 走 `build_connector_runtime`（engine 仅留 SSRF/`auth_only`/`transform_preview`/microservice，**probe_path=NULL 永不进 gate**）。无 `engine|bypass` 双门控开关。须同步 init-dbs 加 `probe_path` 列；升级后须用新路径重跑门控试跑。
+
 * remove Fury/payload codec (JSON only); delete execute/transform, billing_type, tenant status enum (→ enabled), BinaryEncoding; required egress fields and api:* scopes; strict supplier parsing; audit q-only + fixed export; reconciliation gateway-only; idempotency fail-closed on Redis error (503); deny_unknown_fields on owned inputs; pedantic lints clean with no allows.
 
 ### Features
@@ -320,6 +324,8 @@
 
 
 ### ⚠ BREAKING CHANGES
+
+* **workbench/probe C1:** 工作台 business/live 试调改走 **mgmt→bypass gRPC Invoke**（不经 gateway 计费）。`require_gate` **只认** `upstream_connector_runs.probe_path=bypass_grpc`；历史 mgmt 内 `RuntimeEngine` 成功记录**作废**不可作门控。删除默认 Send 走 `build_connector_runtime`（engine 仅留 SSRF/`auth_only`/`transform_preview`/microservice，**probe_path=NULL 永不进 gate**）。无 `engine|bypass` 双门控开关。须同步 init-dbs 加 `probe_path` 列；升级后须用新路径重跑门控试跑。
 
 * service names are now prefixed (mgmt -> mazbri-mgmt, incl. HKDF context; admin DB must be rebuilt); RUNTIME_ENV, bootstrap port/ip, registration.port, presets, DatabaseConfig.url, unused tls fields and cbpro-ext `[clients.gateway]` are removed; every service requires `[cert_service] url` and configs reject unknown fields.
 

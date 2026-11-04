@@ -119,7 +119,8 @@ pub(super) fn default_business() -> String {
     "business".into()
 }
 
-/// 线上试跑：走已发布通道的 egress spec + `RuntimeEngine::invoke`（与 bypass 同路径）。
+/// 线上试跑：已发布通道 egress → **mgmt→bypass gRPC Invoke**（同生产出站进程；不经 gateway 计费）。
+/// 同库配置 ≠ 同进程：不得再暗示「mgmt 内 `RuntimeEngine` 与 bypass 同路径」。
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LiveRunRequest {
@@ -147,6 +148,9 @@ pub struct RunDto {
     pub response_preview: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spec_fingerprint: Option<String>,
+    /// 试跑拓扑：`bypass_grpc` 可作 `require_gate`；`NULL`/其它不作门控。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub probe_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
