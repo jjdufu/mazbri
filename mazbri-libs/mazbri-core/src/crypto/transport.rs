@@ -5,6 +5,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use mazbri_crypto::aead::{AEAD_NONCE_LEN, AEAD_TAG_LEN};
 use mazbri_crypto::id::{AlgorithmId, AlgorithmKind};
 use mazbri_crypto::legacy::assert_not_legacy_or_allowed;
+use mazbri_crypto::legacy_algs;
 use mazbri_crypto::material::{KeyPurpose, KeyRef};
 use mazbri_crypto::parse_algorithm_id;
 use mazbri_crypto::profile::{TenantTransportProfile, TransportMode};
@@ -12,6 +13,7 @@ use mazbri_crypto::registry::AlgorithmRegistry;
 use mazbri_crypto::sm::SM4_BLOCK_LEN;
 use mazbri_crypto::traits::{AeadSeal, BlockCipher, CryptoError, Mac};
 use mazbri_crypto::{SUITE_TENANT_DEFAULT_2026_11, resolve_suite};
+use mazbri_crypto::{sm4_ecb_decrypt, sm4_ecb_encrypt};
 use serde::{Deserialize, Serialize};
 
 /// 默认租户传输套件名（闭集 kebab-case；禁止再引入单一硬编码算法常量）。
@@ -173,22 +175,22 @@ pub fn iv_len_for(data_alg: AlgorithmId) -> Result<usize, TransportCryptoError> 
 /// 非已实现传输数据算法时返回 [`TransportCryptoError::UnsupportedAlgorithm`]。
 pub fn data_key_len(data_alg: AlgorithmId) -> Result<usize, TransportCryptoError> {
     match data_alg {
-        AlgorithmId::Aes128Gcm | AlgorithmId::Aes128Cbc | AlgorithmId::Aes128Ctr | AlgorithmId::Aes128Cfb => {
-            Ok(16)
-        }
+        AlgorithmId::Aes128Gcm
+        | AlgorithmId::Aes128Cbc
+        | AlgorithmId::Aes128Ctr
+        | AlgorithmId::Aes128Cfb
+        | AlgorithmId::Aes128Ecb
+        | AlgorithmId::Sm4CbcPkcs7
+        | AlgorithmId::Sm4Ctr
+        | AlgorithmId::Sm4EcbPkcs7 => Ok(16),
         AlgorithmId::Aes192Gcm => Ok(24),
         AlgorithmId::Aes256Gcm
         | AlgorithmId::Chacha20Poly1305
         | AlgorithmId::Aes256Cbc
         | AlgorithmId::Aes256Ctr
-        | AlgorithmId::Aes256Cfb => Ok(32),
-        AlgorithmId::Sm4CbcPkcs7 | AlgorithmId::Sm4Ctr | AlgorithmId::Sm4EcbPkcs7 => Ok(16),
+        | AlgorithmId::Aes256Cfb
+        | AlgorithmId::Aes256Ecb => Ok(32),
         AlgorithmId::DesCbcPkcs5 => Ok(8),
-        AlgorithmId::Aes256Ecb | AlgorithmId::Aes128Ecb => Ok(if matches!(data_alg, AlgorithmId::Aes128Ecb) {
-            16
-        } else {
-            32
-        }),
         _ => Err(TransportCryptoError::UnsupportedAlgorithm),
     }
 }
@@ -198,10 +200,7 @@ pub fn data_key_len(data_alg: AlgorithmId) -> Result<usize, TransportCryptoError
 /// # Errors
 ///
 /// 密钥短于算法要求，或算法不受支持时返回错误。
-pub fn data_key_prefix(
-    data_alg: AlgorithmId,
-    key: &[u8],
-) -> Result<&[u8], TransportCryptoError> {
+pub fn data_key_prefix(data_alg: AlgorithmId, key: &[u8]) -> Result<&[u8], TransportCryptoError> {
     let len = data_key_len(data_alg)?;
     if key.len() < len {
         return Err(TransportCryptoError::InvalidKeyLength);
@@ -209,6 +208,40 @@ pub fn data_key_prefix(
     Ok(&key[..len])
 }
 
+/// 传输层原语句柄：算法注册表 + legacy 闸门。
+///
+/// legacy 算法（`aes-*-ecb` / `sm4-ecb-pkcs7` / `des-cbc-pkcs5` / `hmac-md5`）只有
+/// `allow_insecure = true` 时可用，闸门统一由 [`mazbri_crypto::legacy`] 判定。
+#[derive(Debug, Clone, Copy)]
+pub struct TransportCipher<'a> {
+    /// 算法注册表。
+    pub registry: &'a AlgorithmRegistry,
+    /// 是否放行 legacy 算法（取自租户 Profile `allow_insecure`）。
+    pub allow_insecure: bool,
+}
+
+impl<'a> TransportCipher<'a> {
+    /// 严格模式（拒绝 legacy），平台内部密钥封装等场景使用。
+    #[must_use]
+    pub const fn strict(registry: &'a AlgorithmRegistry) -> Self {
+        Self {
+            registry,
+            allow_insecure: false,
+        }
+    }
+
+    /// 按租户 Profile 的 `allow_insecure` 构造。
+    #[must_use]
+    pub const fn for_profile(
+        registry: &'a AlgorithmRegistry,
+        profile: &TenantTransportProfile,
+    ) -> Self {
+        Self {
+            registry,
+            allow_insecure: profile.allow_insecure,
+        }
+    }
+}
 
 /// 使用注册表 MAC 对载荷签名，返回 hex。
 ///
@@ -216,14 +249,13 @@ pub fn data_key_prefix(
 ///
 /// 算法未登记或密钥非法时返回错误。
 pub fn sign_payload(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     mac_alg: AlgorithmId,
     key: &[u8],
     payload: &str,
 ) -> Result<String, TransportCryptoError> {
-    let mac = resolve_mac(registry, mac_alg)?;
     let key_ref = KeyRef::raw(KeyPurpose::Mac, key.to_vec());
-    let tag = mac.sign(&key_ref, payload.as_bytes())?;
+    let tag = mac_sign(cipher, mac_alg, &key_ref, payload.as_bytes())?;
     Ok(hex::encode(tag))
 }
 
@@ -233,20 +265,27 @@ pub fn sign_payload(
 ///
 /// 编码非法或标签不匹配时返回错误。
 pub fn verify_payload_signature(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     mac_alg: AlgorithmId,
     key: &[u8],
     payload: &str,
     signature_hex: &str,
 ) -> Result<(), TransportCryptoError> {
-    let mac = resolve_mac(registry, mac_alg)?;
     let key_ref = KeyRef::raw(KeyPurpose::Mac, key.to_vec());
-    let actual = hex::decode(signature_hex.trim()).map_err(|_| TransportCryptoError::InvalidSignature)?;
-    mac.verify(&key_ref, payload.as_bytes(), &actual)
-        .map_err(|err| match err {
-            CryptoError::AuthenticationFailed => TransportCryptoError::SignatureMismatch,
-            other => TransportCryptoError::Crypto(other),
-        })
+    let actual =
+        hex::decode(signature_hex.trim()).map_err(|_| TransportCryptoError::InvalidSignature)?;
+    let verified = if mac_alg == AlgorithmId::HmacMd5 {
+        legacy_algs::hmac_md5_verify(cipher.allow_insecure, &key_ref, payload.as_bytes(), &actual)
+    } else {
+        cipher
+            .registry
+            .mac(mac_alg)?
+            .verify(&key_ref, payload.as_bytes(), &actual)
+    };
+    verified.map_err(|err| match err {
+        CryptoError::AuthenticationFailed => TransportCryptoError::SignatureMismatch,
+        other => TransportCryptoError::Crypto(other),
+    })
 }
 
 /// 按算法密封明文（AEAD 或需外挂 MAC 的对称模式）。
@@ -255,7 +294,7 @@ pub fn verify_payload_signature(
 ///
 /// 算法/密钥/IV 非法或底层加密失败时返回错误。
 pub fn encrypt_with_alg(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     data_alg: AlgorithmId,
     key: &[u8],
     plaintext: &[u8],
@@ -263,7 +302,7 @@ pub fn encrypt_with_alg(
 ) -> Result<EncryptionParts, TransportCryptoError> {
     let iv_len = iv_len_for(data_alg)?;
     let iv = random_bytes(iv_len);
-    encrypt_with_alg_iv(registry, data_alg, key, &iv, plaintext, aad)
+    encrypt_with_alg_iv(cipher, data_alg, key, &iv, plaintext, aad)
 }
 
 /// 指定 IV 的密封。
@@ -272,7 +311,7 @@ pub fn encrypt_with_alg(
 ///
 /// 算法/密钥/IV 非法或底层加密失败时返回错误。
 pub fn encrypt_with_alg_iv(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     data_alg: AlgorithmId,
     key: &[u8],
     iv: &[u8],
@@ -285,9 +324,9 @@ pub fn encrypt_with_alg_iv(
     }
     match data_alg.kind() {
         AlgorithmKind::Aead => {
-            let cipher = registry.aead(data_alg)?;
+            let sealer = cipher.registry.aead(data_alg)?;
             let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
-            let packed = cipher
+            let packed = sealer
                 .seal(&key_ref, iv, aad, plaintext)
                 .map_err(|err| match err {
                     CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
@@ -306,7 +345,7 @@ pub fn encrypt_with_alg_iv(
         }
         AlgorithmKind::BlockCipher => {
             let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
-            let ciphertext = encrypt_block(registry, data_alg, &key_ref, iv, plaintext)?;
+            let ciphertext = encrypt_block(cipher, data_alg, &key_ref, iv, plaintext)?;
             Ok(EncryptionParts {
                 iv: STANDARD.encode(iv),
                 ciphertext: STANDARD.encode(ciphertext),
@@ -323,7 +362,7 @@ pub fn encrypt_with_alg_iv(
 ///
 /// 算法/密钥/编码非法或认证失败时返回错误。
 pub fn decrypt_with_alg(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     data_alg: AlgorithmId,
     key: &[u8],
     iv_b64: &str,
@@ -351,9 +390,10 @@ pub fn decrypt_with_alg(
             }
             let mut combined = ciphertext;
             combined.extend_from_slice(&tag);
-            let opener = registry.aead(data_alg)?;
+            let opener = cipher.registry.aead(data_alg)?;
             let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
-            opener.open(&key_ref, &iv, aad, &combined)
+            opener
+                .open(&key_ref, &iv, aad, &combined)
                 .map_err(|err| match err {
                     CryptoError::AuthenticationFailed => TransportCryptoError::DecryptFailed,
                     CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
@@ -365,7 +405,7 @@ pub fn decrypt_with_alg(
                 return Err(TransportCryptoError::InvalidCiphertext);
             }
             let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, key.to_vec());
-            decrypt_block(registry, data_alg, &key_ref, &iv, &ciphertext)
+            decrypt_block(cipher, data_alg, &key_ref, &iv, &ciphertext)
         }
         _ => Err(TransportCryptoError::UnsupportedAlgorithm),
     }
@@ -469,9 +509,8 @@ pub fn seal_envelope(
         ));
     }
     let (data_alg, mac_alg) = profile.effective_algs()?;
-    let data_alg = data_alg.ok_or_else(|| {
-        TransportCryptoError::InvalidProfile("missing data_alg".to_owned())
-    })?;
+    let data_alg = data_alg
+        .ok_or_else(|| TransportCryptoError::InvalidProfile("missing data_alg".to_owned()))?;
     assert_not_legacy_or_allowed(data_alg, profile.allow_insecure)?;
     if let Some(mac) = mac_alg {
         assert_not_legacy_or_allowed(mac, profile.allow_insecure)?;
@@ -483,7 +522,8 @@ pub fn seal_envelope(
     }
 
     let data_key = data_key_prefix(data_alg, data_key)?;
-    let parts = encrypt_with_alg(registry, data_alg, data_key, plaintext, tenant_id.as_bytes())?;
+    let cipher = TransportCipher::for_profile(registry, profile);
+    let parts = encrypt_with_alg(cipher, data_alg, data_key, plaintext, tenant_id.as_bytes())?;
     let nonce = generate_nonce_base64url();
     let mut envelope = TransportEnvelope {
         encrypted: true,
@@ -501,7 +541,7 @@ pub fn seal_envelope(
     if let Some(mac_id) = mac_alg {
         let key = mac_key.ok_or(TransportCryptoError::InvalidKeyLength)?;
         let payload = canonical_signature_payload(&envelope, tenant_id, http_path);
-        envelope.signature = sign_payload(registry, mac_id, key, &payload)?;
+        envelope.signature = sign_payload(cipher, mac_id, key, &payload)?;
     }
     Ok(envelope)
 }
@@ -521,12 +561,13 @@ pub fn open_envelope(
     envelope: &TransportEnvelope,
 ) -> Result<Vec<u8>, TransportCryptoError> {
     validate_transport_algorithms(envelope, profile, registry)?;
+    let cipher = TransportCipher::for_profile(registry, profile);
     let data_alg = parse_algorithm_id(&envelope.data_alg)?;
     if let Some(mac_raw) = envelope.mac_alg.as_deref() {
         let mac_id = parse_algorithm_id(mac_raw)?;
         let key = mac_key.ok_or(TransportCryptoError::InvalidKeyLength)?;
         let payload = canonical_signature_payload(envelope, tenant_id, http_path);
-        verify_payload_signature(registry, mac_id, key, &payload, &envelope.signature)?;
+        verify_payload_signature(cipher, mac_id, key, &payload, &envelope.signature)?;
     } else if !envelope.signature.is_empty() {
         return Err(TransportCryptoError::InvalidProfile(
             "signature present without mac_alg".to_owned(),
@@ -534,7 +575,7 @@ pub fn open_envelope(
     }
     let data_key = data_key_prefix(data_alg, data_key)?;
     decrypt_with_alg(
-        registry,
+        cipher,
         data_alg,
         data_key,
         &envelope.iv,
@@ -552,53 +593,80 @@ pub fn default_data_alg() -> AlgorithmId {
     resolve_suite(default_suite()).map_or(AlgorithmId::Aes256Gcm, |suite| suite.data_alg)
 }
 
-fn resolve_mac(
-    registry: &AlgorithmRegistry,
+fn map_block_error(err: CryptoError) -> TransportCryptoError {
+    match err {
+        CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
+        CryptoError::InvalidInput { .. } => TransportCryptoError::DecryptFailed,
+        other => TransportCryptoError::Crypto(other),
+    }
+}
+
+/// MAC 计算：`hmac-md5` 走 legacy 闸门，其余走注册表。
+fn mac_sign(
+    cipher: TransportCipher<'_>,
     mac_alg: AlgorithmId,
-) -> Result<mazbri_crypto::MacAlgorithm, TransportCryptoError> {
-    Ok(registry.mac(mac_alg)?)
+    key: &KeyRef,
+    message: &[u8],
+) -> Result<Vec<u8>, TransportCryptoError> {
+    if mac_alg == AlgorithmId::HmacMd5 {
+        return Ok(legacy_algs::hmac_md5_sign(
+            cipher.allow_insecure,
+            key,
+            message,
+        )?);
+    }
+    Ok(cipher.registry.mac(mac_alg)?.sign(key, message)?)
 }
 
 fn encrypt_block(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     data_alg: AlgorithmId,
     key: &KeyRef,
     iv: &[u8],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, TransportCryptoError> {
-    if let Ok(sm4) = registry.sm4(data_alg) {
-        return sm4.encrypt(key, iv, plaintext).map_err(|err| match err {
-            CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
-            other => TransportCryptoError::Crypto(other),
-        });
-    }
-    let cipher = registry.block_cipher(data_alg)?;
-    cipher.encrypt(key, iv, plaintext).map_err(|err| match err {
+    let allow = cipher.allow_insecure;
+    let result = match data_alg {
+        AlgorithmId::Aes128Ecb => legacy_algs::aes128_ecb_encrypt(allow, key, plaintext),
+        AlgorithmId::Aes256Ecb => legacy_algs::aes256_ecb_encrypt(allow, key, plaintext),
+        AlgorithmId::Sm4EcbPkcs7 => sm4_ecb_encrypt(allow, key, plaintext),
+        AlgorithmId::DesCbcPkcs5 => legacy_algs::des_cbc_encrypt(allow, key, iv, plaintext),
+        _ => match cipher.registry.sm4(data_alg) {
+            Ok(sm4) => sm4.encrypt(key, iv, plaintext),
+            Err(_) => cipher
+                .registry
+                .block_cipher(data_alg)?
+                .encrypt(key, iv, plaintext),
+        },
+    };
+    result.map_err(|err| match err {
         CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
         other => TransportCryptoError::Crypto(other),
     })
 }
 
 fn decrypt_block(
-    registry: &AlgorithmRegistry,
+    cipher: TransportCipher<'_>,
     data_alg: AlgorithmId,
     key: &KeyRef,
     iv: &[u8],
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, TransportCryptoError> {
-    if let Ok(sm4) = registry.sm4(data_alg) {
-        return sm4.decrypt(key, iv, ciphertext).map_err(|err| match err {
-            CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
-            CryptoError::InvalidInput { .. } => TransportCryptoError::DecryptFailed,
-            other => TransportCryptoError::Crypto(other),
-        });
-    }
-    let cipher = registry.block_cipher(data_alg)?;
-    cipher.decrypt(key, iv, ciphertext).map_err(|err| match err {
-        CryptoError::InvalidKey { .. } => TransportCryptoError::InvalidKeyLength,
-        CryptoError::InvalidInput { .. } => TransportCryptoError::DecryptFailed,
-        other => TransportCryptoError::Crypto(other),
-    })
+    let allow = cipher.allow_insecure;
+    let result = match data_alg {
+        AlgorithmId::Aes128Ecb => legacy_algs::aes128_ecb_decrypt(allow, key, ciphertext),
+        AlgorithmId::Aes256Ecb => legacy_algs::aes256_ecb_decrypt(allow, key, ciphertext),
+        AlgorithmId::Sm4EcbPkcs7 => sm4_ecb_decrypt(allow, key, ciphertext),
+        AlgorithmId::DesCbcPkcs5 => legacy_algs::des_cbc_decrypt(allow, key, iv, ciphertext),
+        _ => match cipher.registry.sm4(data_alg) {
+            Ok(sm4) => sm4.decrypt(key, iv, ciphertext),
+            Err(_) => cipher
+                .registry
+                .block_cipher(data_alg)?
+                .decrypt(key, iv, ciphertext),
+        },
+    };
+    result.map_err(map_block_error)
 }
 
 fn random_bytes(len: usize) -> Vec<u8> {
@@ -683,6 +751,108 @@ mod tests {
         // create_key 产出 32 字节租户密钥；数据侧取前 16 字节，MAC 用全长。
         let tenant_secret = [5u8; 32];
         roundtrip(SUITE_GM_SM4_HMAC_SM3, &tenant_secret, Some(&tenant_secret));
+    }
+
+    fn custom_profile(
+        data_alg: AlgorithmId,
+        mac_alg: AlgorithmId,
+        allow_insecure: bool,
+    ) -> TenantTransportProfile {
+        let mut profile = profile_for_suite(SUITE_TENANT_DEFAULT_2026_11);
+        profile.suite = None;
+        profile.data_alg = Some(data_alg);
+        profile.mac_alg = Some(mac_alg);
+        profile.require_signature = true;
+        profile.allow_insecure = allow_insecure;
+        profile
+    }
+
+    fn seal_with(
+        profile: &TenantTransportProfile,
+        secret: &[u8],
+    ) -> Result<TransportEnvelope, TransportCryptoError> {
+        let registry = registry();
+        seal_envelope(SealEnvelopeParams {
+            profile,
+            registry: &registry,
+            data_key: secret,
+            mac_key: Some(secret),
+            key_version: "v1",
+            tenant_id: "tenant-legacy",
+            http_path: "/api/v1/gateway",
+            plaintext: b"legacy-roundtrip-payload-over-one-block",
+            timestamp: 1_710_000_000,
+        })
+    }
+
+    #[test]
+    fn legacy_algorithms_roundtrip_when_allowed() {
+        let secret = [0x2au8; 32];
+        let cases = [
+            (AlgorithmId::Aes256Ecb, AlgorithmId::HmacMd5),
+            (AlgorithmId::Aes128Ecb, AlgorithmId::HmacSha256),
+            (AlgorithmId::Sm4EcbPkcs7, AlgorithmId::HmacMd5),
+            (AlgorithmId::DesCbcPkcs5, AlgorithmId::HmacSha256),
+        ];
+        let registry = registry();
+        for (data_alg, mac_alg) in cases {
+            let profile = custom_profile(data_alg, mac_alg, true);
+            profile.validate(&registry).unwrap();
+            let sealed = seal_with(&profile, &secret).unwrap();
+            assert_eq!(sealed.data_alg, data_alg.as_str());
+            assert_eq!(
+                STANDARD.decode(&sealed.iv).unwrap().len(),
+                iv_len_for(data_alg).unwrap()
+            );
+            let opened = open_envelope(
+                &profile,
+                &registry,
+                &secret,
+                Some(&secret),
+                "tenant-legacy",
+                "/api/v1/gateway",
+                &sealed,
+            )
+            .unwrap();
+            assert_eq!(opened, b"legacy-roundtrip-payload-over-one-block");
+
+            let mut tampered = sealed.clone();
+            tampered.timestamp += 1;
+            assert!(matches!(
+                open_envelope(
+                    &profile,
+                    &registry,
+                    &secret,
+                    Some(&secret),
+                    "tenant-legacy",
+                    "/api/v1/gateway",
+                    &tampered
+                ),
+                Err(TransportCryptoError::SignatureMismatch)
+            ));
+        }
+    }
+
+    #[test]
+    fn legacy_algorithms_rejected_without_allow_insecure() {
+        let secret = [0x2au8; 32];
+        let profile = custom_profile(AlgorithmId::DesCbcPkcs5, AlgorithmId::HmacSha256, false);
+        assert!(seal_with(&profile, &secret).is_err());
+        let registry = registry();
+        let strict = TransportCipher::strict(&registry);
+        assert!(
+            encrypt_with_alg(strict, AlgorithmId::Aes128Ecb, &secret[..16], b"x", b"").is_err()
+        );
+        assert!(sign_payload(strict, AlgorithmId::HmacMd5, &secret, "x").is_err());
+        let allowed = TransportCipher {
+            registry: &registry,
+            allow_insecure: true,
+        };
+        let tag = sign_payload(allowed, AlgorithmId::HmacMd5, &secret, "x").unwrap();
+        assert!(
+            verify_payload_signature(strict, AlgorithmId::HmacMd5, &secret, "x", &tag).is_err()
+        );
+        verify_payload_signature(allowed, AlgorithmId::HmacMd5, &secret, "x", &tag).unwrap();
     }
 
     #[test]

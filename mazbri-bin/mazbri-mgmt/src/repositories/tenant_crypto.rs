@@ -67,6 +67,12 @@ pub struct TenantCryptoKeyEventRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// 读取租户 Profile；不存在时插入默认行。
+///
+/// 已存在的行只读不写：`ON CONFLICT DO UPDATE` 即使是空更新也会触发
+/// `BEFORE UPDATE` 触发器改写 `updated_at`，使读接口产生副作用，故用
+/// `DO NOTHING` + 回读已有行。
+///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -76,10 +82,16 @@ pub async fn upsert_profile_defaults(
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
     let sql = format!(
         r"
-        INSERT INTO tenant_crypto_profiles (tenant_id)
-        VALUES ($1)
-        ON CONFLICT (tenant_id) DO UPDATE SET updated_at = tenant_crypto_profiles.updated_at
-        RETURNING {PROFILE_RETURNING}
+        WITH inserted AS (
+            INSERT INTO tenant_crypto_profiles (tenant_id)
+            VALUES ($1)
+            ON CONFLICT (tenant_id) DO NOTHING
+            RETURNING {PROFILE_RETURNING}
+        )
+        SELECT {PROFILE_RETURNING} FROM inserted
+        UNION ALL
+        SELECT {PROFILE_RETURNING} FROM tenant_crypto_profiles
+        WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)
         "
     );
     sqlx::query_as::<_, TenantCryptoProfileRow>(&sql)
