@@ -9,6 +9,12 @@ import {
   sanitizeAuthSpec,
 } from "../authMatrix";
 import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
+import {
+  HSPLIT_DEFAULT_LEFT,
+  VSPLIT_DEFAULT_BOTTOM,
+  parseHSplitState,
+  parseVSplitState,
+} from "../workbenchHelpers";
 
 
 const groups: Record<string, string> = {
@@ -96,3 +102,48 @@ console.log("workbenchHelpers authMatrix ok");
 assert.equal(isAuthSignFormProfile("sign_form"), true);
 assert.equal(isAuthSignFormProfile("bearer"), false);
 console.log("workbenchHelpers auth vs body crypto boundary ok");
+
+assert.deepEqual(parseHSplitState(null), {
+  left: HSPLIT_DEFAULT_LEFT,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState(""), {
+  left: HSPLIT_DEFAULT_LEFT,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState("not-json"), {
+  left: HSPLIT_DEFAULT_LEFT,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState("{}"), {
+  left: HSPLIT_DEFAULT_LEFT,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState(JSON.stringify({ left: 320, collapsed: true })), {
+  left: 320,
+  collapsed: true,
+});
+assert.deepEqual(parseHSplitState(JSON.stringify({ left: 180, collapsed: false })), {
+  left: 180,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState(JSON.stringify({ left: 200 })), {
+  left: 200,
+  collapsed: false,
+});
+assert.deepEqual(parseHSplitState(JSON.stringify({ left: -1, collapsed: true })), {
+  left: HSPLIT_DEFAULT_LEFT,
+  collapsed: true,
+});
+
+// VSplit defaults unchanged (collapsed=true when missing storage)
+assert.deepEqual(parseVSplitState(null), {
+  bottom: VSPLIT_DEFAULT_BOTTOM,
+  collapsed: true,
+});
+assert.equal(
+  parseVSplitState(JSON.stringify({ bottom: 300, collapsed: false })).collapsed,
+  false,
+);
+
+console.log("workbenchHelpers HSplit/VSplit persist parse ok");

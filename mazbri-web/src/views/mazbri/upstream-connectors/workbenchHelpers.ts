@@ -86,12 +86,12 @@ function asPersistObject(raw: string): Record<string, unknown> | null {
 
 
 export function parseHSplitState(raw: string | null): HSplitState {
-  if (!raw) return { left: HSPLIT_DEFAULT_LEFT, collapsed: true };
+  if (!raw) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
   const p = asPersistObject(raw);
-  if (!p) return { left: HSPLIT_DEFAULT_LEFT, collapsed: true };
+  if (!p) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
   return {
     left: finiteNonNeg(p.left, HSPLIT_DEFAULT_LEFT),
-    collapsed: p.collapsed !== false,
+    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
   };
 }
 
