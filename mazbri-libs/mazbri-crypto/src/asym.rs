@@ -116,7 +116,7 @@ fn map_rsa(err: &rsa::Error) -> CryptoError {
     }
 }
 
-fn parse_rsa_public(key: &KeyRef) -> Result<RsaPublicKey, CryptoError> {
+pub(crate) fn parse_rsa_public(key: &KeyRef) -> Result<RsaPublicKey, CryptoError> {
     use rsa::pkcs1::DecodeRsaPublicKey;
     use rsa::pkcs8::DecodePublicKey;
     let pem = key.pem_str()?;
@@ -128,7 +128,7 @@ fn parse_rsa_public(key: &KeyRef) -> Result<RsaPublicKey, CryptoError> {
     })
 }
 
-fn parse_rsa_private(key: &KeyRef) -> Result<RsaPrivateKey, CryptoError> {
+pub(crate) fn parse_rsa_private(key: &KeyRef) -> Result<RsaPrivateKey, CryptoError> {
     use rsa::pkcs1::DecodeRsaPrivateKey;
     use rsa::pkcs8::DecodePrivateKey;
     let pem = key.pem_str()?;
@@ -167,7 +167,7 @@ impl AsymBox for AsymBoxAlgorithm {
     }
 }
 
-fn parse_p256_signing(key: &KeyRef) -> Result<P256SigningKey, CryptoError> {
+pub(crate) fn parse_p256_signing(key: &KeyRef) -> Result<P256SigningKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use p256::pkcs8::DecodePrivateKey;
@@ -188,7 +188,7 @@ fn parse_p256_signing(key: &KeyRef) -> Result<P256SigningKey, CryptoError> {
     }
 }
 
-fn parse_p256_verifying(key: &KeyRef) -> Result<P256VerifyingKey, CryptoError> {
+pub(crate) fn parse_p256_verifying(key: &KeyRef) -> Result<P256VerifyingKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use p256::pkcs8::DecodePublicKey;
@@ -214,7 +214,7 @@ fn parse_p256_verifying(key: &KeyRef) -> Result<P256VerifyingKey, CryptoError> {
     }
 }
 
-fn parse_p384_signing(key: &KeyRef) -> Result<P384SigningKey, CryptoError> {
+pub(crate) fn parse_p384_signing(key: &KeyRef) -> Result<P384SigningKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use p384::pkcs8::DecodePrivateKey;
@@ -239,7 +239,7 @@ fn parse_p384_signing(key: &KeyRef) -> Result<P384SigningKey, CryptoError> {
     }
 }
 
-fn parse_p384_verifying(key: &KeyRef) -> Result<P384VerifyingKey, CryptoError> {
+pub(crate) fn parse_p384_verifying(key: &KeyRef) -> Result<P384VerifyingKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use p384::pkcs8::DecodePublicKey;
@@ -265,7 +265,7 @@ fn parse_p384_verifying(key: &KeyRef) -> Result<P384VerifyingKey, CryptoError> {
     }
 }
 
-fn parse_ed25519_signing(key: &KeyRef) -> Result<SigningKey, CryptoError> {
+pub(crate) fn parse_ed25519_signing(key: &KeyRef) -> Result<SigningKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use ed25519_dalek::pkcs8::DecodePrivateKey;
@@ -285,7 +285,7 @@ fn parse_ed25519_signing(key: &KeyRef) -> Result<SigningKey, CryptoError> {
     }
 }
 
-fn parse_ed25519_verifying(key: &KeyRef) -> Result<VerifyingKey, CryptoError> {
+pub(crate) fn parse_ed25519_verifying(key: &KeyRef) -> Result<VerifyingKey, CryptoError> {
     match key {
         KeyRef::Pem { pem, .. } => {
             use ed25519_dalek::pkcs8::DecodePublicKey;

@@ -1,7 +1,4 @@
-use mazbri_core::crypto::request_binding::{
-    SIGNATURE_INPUT_HMAC_V1, canonical_http_binding, generate_binding_nonce,
-    sign_hmac_sha256_base64,
-};
+use mazbri_core::crypto::request_binding::{RequestBindingError, RequestSigner};
 use mazbri_core::crypto::transport::{
     SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
 };
@@ -11,6 +8,9 @@ use mazbri_core::crypto::{
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+/// Gateway invoke path (also the `path_and_query` covered by request binding).
+pub const GATEWAY_INVOKE_PATH: &str = "/api/v1/gateway";
 
 /// Official SDK client configuration (destructive Profile-based transport).
 #[derive(Debug, Clone)]
@@ -27,10 +27,9 @@ pub struct ClientConfig {
     pub key_version: String,
     /// Tenant transport Profile (`mode=none|request|full` + suite/algs).
     pub transport: TenantTransportProfile,
-    /// Optional HTTP request-binding HMAC key (`tenant_request_keys`).
-    pub request_hmac_key: Option<Vec<u8>>,
-    /// Optional request-binding key id.
-    pub request_key_id: Option<String>,
+    /// Optional HTTP request binding signer (`tenant_request_keys` kid + alg + key):
+    /// HMAC secret or asymmetric private key, see [`RequestSigner::new`].
+    pub request_signer: Option<RequestSigner>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,6 +72,8 @@ pub enum Error {
     UnsupportedAlgorithm(String),
     #[error("legacy transport algorithm denied: {0}")]
     LegacyDenied(String),
+    #[error("request binding failed: {0}")]
+    Binding(#[from] RequestBindingError),
 }
 
 #[derive(Clone)]
@@ -206,7 +207,7 @@ impl MazbriClient {
             mac_key,
             key_version: &self.config.key_version,
             tenant_id: &self.config.tenant_id,
-            http_path: "/api/v1/gateway",
+            http_path: GATEWAY_INVOKE_PATH,
             plaintext,
             timestamp: chrono::Utc::now().timestamp(),
         })
@@ -224,7 +225,7 @@ impl MazbriClient {
             &self.config.tenant_key,
             mac_key,
             &self.config.tenant_id,
-            "/api/v1/gateway",
+            GATEWAY_INVOKE_PATH,
             envelope,
         )
         .map_err(map_crypto_error)
@@ -317,7 +318,7 @@ impl MazbriClient {
     }
 
     fn invoke_url(&self) -> String {
-        format!("{}/api/v1/gateway", self.base_url())
+        format!("{}{GATEWAY_INVOKE_PATH}", self.base_url())
     }
 
     fn apply_request_binding(
@@ -325,26 +326,13 @@ impl MazbriClient {
         mut builder: reqwest::RequestBuilder,
         body: &[u8],
     ) -> Result<reqwest::RequestBuilder, Error> {
-        let Some(key) = self.config.request_hmac_key.as_deref() else {
+        let Some(signer) = self.config.request_signer.as_ref() else {
             return Ok(builder);
         };
-        let kid = self
-            .config
-            .request_key_id
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .unwrap_or("1");
-        let timestamp = chrono::Utc::now().timestamp();
-        let nonce = generate_binding_nonce();
-        let canonical = canonical_http_binding("POST", "/api/v1/gateway", timestamp, &nonce, body);
-        let signature = sign_hmac_sha256_base64(key, &canonical)
-            .map_err(|error| Error::Gateway(format!("request binding sign failed: {error}")))?;
-        builder = builder
-            .header("X-Mazbri-Timestamp", timestamp.to_string())
-            .header("X-Mazbri-Nonce", nonce)
-            .header("X-Mazbri-Signature", signature)
-            .header("X-Mazbri-Signature-Input", SIGNATURE_INPUT_HMAC_V1)
-            .header("X-Mazbri-Key-Id", kid);
+        let headers = signer.sign("POST", GATEWAY_INVOKE_PATH, body)?;
+        for (name, value) in headers.pairs() {
+            builder = builder.header(name, value);
+        }
         Ok(builder)
     }
 
@@ -477,7 +465,7 @@ mod tests {
             mac_key: None,
             key_version: "v1",
             tenant_id: "tenant-1",
-            http_path: "/api/v1/gateway",
+            http_path: GATEWAY_INVOKE_PATH,
             plaintext,
             timestamp: 1_710_000_000,
         })
@@ -490,7 +478,7 @@ mod tests {
             &key,
             None,
             "tenant-1",
-            "/api/v1/gateway",
+            GATEWAY_INVOKE_PATH,
             &sealed,
         )
         .expect("open");
@@ -533,5 +521,69 @@ mod tests {
             Error::UnsupportedAlgorithm(_) => {}
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    fn offline_client(signer: Option<RequestSigner>) -> MazbriClient {
+        MazbriClient {
+            client: Client::builder().build().expect("client"),
+            config: ClientConfig {
+                gateway_base_url: "http://gateway.invalid".into(),
+                tenant_id: "00000000-0000-0000-0000-000000000001".into(),
+                api_key: String::new(),
+                tenant_key: vec![0u8; 32],
+                key_version: "v1".into(),
+                transport: TenantTransportProfile::plaintext(),
+                request_signer: signer,
+            },
+            access_token: String::new(),
+            registry: AlgorithmRegistry::default_registry(),
+        }
+    }
+
+    #[test]
+    fn request_binding_headers_verify_with_registered_public_key() {
+        use mazbri_core::crypto::request_binding::{
+            HEADER_KEY_ID, HEADER_NONCE, HEADER_SIGNATURE, HEADER_SIGNATURE_INPUT,
+            HEADER_TIMESTAMP, binding_key_ref, canonical_http_binding, parse_signature_input,
+            verify_binding,
+        };
+        let body = br#"{"product_id":"p1","path":"/x"}"#;
+        for alg in [AlgorithmId::Ed25519, AlgorithmId::Sm2Sign, AlgorithmId::EcdsaP256Sha256] {
+            let pair = mazbri_core::crypto::generate_sign_keypair(alg).expect("keygen");
+            let signer = RequestSigner::new("3", alg, pair.private_pem.as_bytes()).expect("signer");
+            let sdk = offline_client(Some(signer));
+            let request = sdk
+                .apply_request_binding(sdk.client.post(sdk.invoke_url()), body)
+                .expect("binding")
+                .build()
+                .expect("request");
+            let header = |name: &str| {
+                request
+                    .headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or_else(|| panic!("missing {name}"))
+                    .to_owned()
+            };
+            assert_eq!(header(HEADER_KEY_ID), "3");
+            assert_eq!(parse_signature_input(&header(HEADER_SIGNATURE_INPUT)).expect("input"), alg);
+            let timestamp: i64 = header(HEADER_TIMESTAMP).parse().expect("ts");
+            let canonical =
+                canonical_http_binding("POST", GATEWAY_INVOKE_PATH, timestamp, &header(HEADER_NONCE), body);
+            let public = binding_key_ref(alg, pair.public_pem.as_bytes()).expect("public");
+            verify_binding(&sdk.registry, alg, &public, &canonical, &header(HEADER_SIGNATURE))
+                .unwrap_or_else(|e| panic!("{alg}: {e}"));
+        }
+    }
+
+    #[test]
+    fn request_binding_absent_without_signer() {
+        let sdk = offline_client(None);
+        let request = sdk
+            .apply_request_binding(sdk.client.post(sdk.invoke_url()), b"{}")
+            .expect("binding")
+            .build()
+            .expect("request");
+        assert!(request.headers().get("x-mazbri-signature").is_none());
     }
 }

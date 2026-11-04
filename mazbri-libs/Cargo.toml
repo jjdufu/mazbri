@@ -142,6 +142,10 @@ libsm = "0.6"
 des = "0.8"
 md-5 = "0.10"
 ecb = { version = "0.1", features = ["alloc"] }
+der = { version = "0.7", features = ["alloc", "pem", "oid"] }
+spki = { version = "0.7", features = ["alloc", "pem"] }
+pkcs8 = { version = "0.10", features = ["alloc", "pem"] }
+sec1 = { version = "0.7", features = ["der", "alloc"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"
@@ -164,3 +168,16 @@ debug = 2
 debug-assertions = true
 overflow-checks = true
 rpath = true
+
+# RSA / SM2 大数运算在 debug 下极慢（测试里的 keygen / 签名可达分钟级），仅对这些依赖开优化。
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.libsm]
+opt-level = 3
+
+[profile.dev.package.num-bigint]
+opt-level = 3
