@@ -4,7 +4,13 @@
     :subtitle="t('ops.overview.timeRangeHint')"
   >
     <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="reload" />
+      <TimeRangePicker v-model="timeRange" @change="onTimeRangeChange" />
+      <ElButton
+        :type="kpiMode === 'instant' ? 'primary' : 'default'"
+        @click="setKpiNow"
+      >
+        {{ t("ops.overview.nowButton") }}
+      </ElButton>
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
       <ElButton type="primary" @click="openScreen">
         <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
@@ -25,7 +31,8 @@
         <StatCard
           :label="t('ops.overview.stats.qps')"
           :value="overview?.qps"
-          :hint="instantCardHint"
+          :hint="kpiWindowHint"
+          :empty-text="kpiEmptyText"
           :loading="loading"
           unit="req/s"
           icon="ri:pulse-line"
@@ -38,7 +45,8 @@
           :label="t('ops.overview.stats.successRate')"
           :value="overview?.success_rate"
           unit="%"
-          :hint="instantCardHint"
+          :hint="kpiWindowHint"
+          :empty-text="kpiEmptyText"
           :loading="loading"
           icon="ri:checkbox-circle-line"
           icon-color="#67c23a"
@@ -53,6 +61,7 @@
           :value="latencyPrimary"
           unit="ms"
           :hint="latencySecondary"
+          :empty-text="kpiEmptyText"
           :loading="loading"
           icon="ri:timer-line"
           icon-color="#e6a23c"
@@ -357,6 +366,18 @@ const timeRange = ref<TimeRangeValue>({
   start: Math.floor(Date.now() / 1000) - 6 * 3600,
   end: Math.floor(Date.now() / 1000),
 });
+/** 第一行 KPI：默认跟时间窗；点「此刻」切到近瞬时。 */
+const kpiMode = ref<"range" | "instant">("range");
+
+function setKpiNow() {
+  kpiMode.value = "instant";
+  void reload();
+}
+
+function onTimeRangeChange() {
+  kpiMode.value = "range";
+  void reload();
+}
 
 const drillRole = computed(() => ({
   isAdmin: isAdmin.value,
@@ -388,30 +409,39 @@ const latencySecondary = computed(() => {
   return base;
 });
 
-/** 瞬时 KPI 固定旁注（来自 overview.window；禁止被页级时间窗改写）。 */
-const instantWindowHint = computed(() => {
+/** KPI 窗旁注（来自 overview.window）。 */
+const kpiWindowHint = computed(() => {
   const w = overview.value?.window;
-  if (!w || w.semantics !== "instant") return "";
-  return t("ops.overview.instantWindowHint", {
+  if (!w) return "";
+  if (w.semantics === "instant") {
+    return t("ops.overview.instantWindowHint", {
+      secs: w.lookback_secs,
+      label: w.label,
+    });
+  }
+  return t("ops.overview.rangeWindowHint", {
     secs: w.lookback_secs,
     label: w.label,
   });
 });
 
-const instantCardHint = computed(() => {
-  const parts = [instantWindowHint.value];
+const kpiEmptyText = computed(() => {
   const o = overview.value;
-  if (o && (o.sample_count === 0 || o.success_rate == null)) {
-    parts.push(t("ops.overview.noSampleHint"));
+  if (!o || o.sample_count === 0 || o.success_rate == null) {
+    return o?.window?.semantics === "instant"
+      ? t("ops.overview.noSampleHintInstant")
+      : t("ops.overview.noSampleHint");
   }
-  return parts.filter(Boolean).join(" · ");
+  return "—";
 });
 
 const errorLabel = computed(() => {
   const o = overview.value;
   if (!o) return "—";
   if (o.sample_count === 0 || o.error_rate_4xx == null || o.error_rate_5xx == null) {
-    return "—";
+    return o.window?.semantics === "instant"
+      ? t("ops.overview.noSampleHintInstant")
+      : t("ops.overview.noSampleHint");
   }
   return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
 });
@@ -435,7 +465,13 @@ const {
   run: async (key) => {
     switch (key) {
       case "overview":
-        return fetchMetricsOverview();
+        return kpiMode.value === "instant"
+          ? fetchMetricsOverview({ mode: "instant" })
+          : fetchMetricsOverview({
+              mode: "range",
+              start: timeRange.value.start,
+              end: timeRange.value.end,
+            });
       case "platform":
         return fetchPlatformStats({
           start_time: timeRange.value.start,

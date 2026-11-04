@@ -329,17 +329,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "reliability",
-        name: "OpsReliability",
-        component: "/mazbri/ops/reliability/index",
-        meta: {
-          title: "menus.mazbri.opsReliability",
-          icon: "ri:shield-star-line",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
         path: "infra",
         name: "OpsInfra",
         component: "/mazbri/ops/infra/index",

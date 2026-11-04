@@ -1,6 +1,6 @@
 use super::super::analytics_handlers;
 use super::super::ops_changes_handlers;
-use super::super::ops_reliability_handlers;
+use super::super::ops_anomalies_handlers;
 use super::super::ops_slo_handlers;
 use super::super::state::AppState;
 use axum::{
@@ -51,17 +51,8 @@ fn metrics_and_ops_routes() -> Router<AppState> {
             get(ops_changes_handlers::get_ops_changes),
         )
         .route(
-            "/stats/ops/loadtests",
-            get(ops_reliability_handlers::list_loadtests)
-                .post(ops_reliability_handlers::create_loadtest),
-        )
-        .route(
             "/stats/ops/anomalies",
-            get(ops_reliability_handlers::list_anomalies),
-        )
-        .route(
-            "/stats/ops/capacity",
-            get(ops_reliability_handlers::get_capacity),
+            get(ops_anomalies_handlers::list_anomalies),
         )
         .route("/stats/ops/slos", get(ops_slo_handlers::list_slos))
         .route(
@@ -70,7 +61,7 @@ fn metrics_and_ops_routes() -> Router<AppState> {
         )
         .route(
             "/stats/ops/products/zero-calls",
-            post(ops_reliability_handlers::zero_call_products),
+            post(ops_anomalies_handlers::zero_call_products),
         )
 }
 
@@ -95,6 +86,10 @@ fn calls_and_traces_routes() -> Router<AppState> {
         .route(
             "/stats/calls/stages",
             get(analytics_handlers::get_call_stages),
+        )
+        .route(
+            "/stats/traces/services",
+            get(analytics_handlers::list_trace_services),
         )
         .route(
             "/stats/traces/search",

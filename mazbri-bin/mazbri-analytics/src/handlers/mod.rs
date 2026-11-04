@@ -25,4 +25,4 @@ pub use request::query_request_logs;
 pub use request_analytics::{aggregate_request_logs, get_upstream_billing_summary};
 pub use time::parse_time_string;
 pub use topology::get_topology;
-pub use traces::{get_trace, search_traces, trace_dependencies};
+pub use traces::{get_trace, list_trace_services, search_traces, trace_dependencies};

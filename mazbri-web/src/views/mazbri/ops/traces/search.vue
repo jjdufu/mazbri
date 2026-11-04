@@ -40,6 +40,8 @@
             v-model="form.service"
             clearable
             filterable
+            allow-create
+            default-first-option
             class="ops-traces__mid"
           >
             <ElOption
@@ -235,7 +237,11 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
-import { fetchTraceDependencies, searchTraces } from "@/api/traces";
+import {
+  fetchTraceDependencies,
+  fetchTraceServices,
+  searchTraces,
+} from "@/api/traces";
 import type {
   DependencyEdgeKind,
   DependencyGraph,
@@ -313,12 +319,31 @@ const graphRef = ref<HTMLDivElement>();
 let scatter: echarts.ECharts | null = null;
 let graphChart: echarts.ECharts | null = null;
 
+const catalogServices = ref<string[]>([]);
+
 const serviceOptions = computed(() => {
-  const set = new Set<string>(graph.value?.nodes ?? []);
-  for (const tr of traces.value) set.add(tr.root_service);
+  const set = new Set<string>(catalogServices.value);
+  for (const n of graph.value?.nodes ?? []) {
+    if (n && !n.includes(":")) set.add(n);
+  }
+  for (const tr of traces.value) {
+    if (tr.root_service) set.add(tr.root_service);
+  }
   if (form.service) set.add(form.service);
-  return [...set].filter((s) => s && !s.includes(":")).sort();
+  return [...set].filter(Boolean).sort();
 });
+
+async function loadServiceCatalog() {
+  const { start, end } = clampedRange(MAX_SEARCH_SECONDS);
+  try {
+    const rows = await fetchTraceServices({ start, end });
+    catalogServices.value = (rows ?? [])
+      .map((r) => r.service_name)
+      .filter((s) => s && !s.includes(":"));
+  } catch (error) {
+    logger.error("Failed to load trace services:", error);
+  }
+}
 
 const emptyText = computed(() =>
   searched.value ? t("ops.traces.empty") : t("ops.traces.notSearched"),
@@ -571,6 +596,7 @@ function renderGraph() {
 
 function onRangeChange(value: TimeRangeValue) {
   timeRange.value = value;
+  void loadServiceCatalog();
   if (activeTab.value === "topology") void loadGraph();
   else void runSearch();
 }
@@ -591,6 +617,10 @@ async function onTabChange() {
 
 let unbindScatterResize: (() => void) | null = null;
 let unbindGraphResize: (() => void) | null = null;
+
+onMounted(() => {
+  void loadServiceCatalog();
+});
 
 onUnmounted(() => {
   unbindScatterResize?.();

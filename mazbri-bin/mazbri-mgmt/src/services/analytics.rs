@@ -1160,21 +1160,52 @@ fn first_non_empty(values: &[String]) -> String {
         .cloned()
         .unwrap_or_default()
 }
-/// Overview KPI 为**瞬时**语义（方案 B）：不接受时间范围参数；
+/// Overview KPI：默认跟时间窗；`mode=instant` 为近瞬时「此刻」。
 /// 响应经 [`crate::services::analytics_window::apply_overview_field_gate`] 按角色裁剪。
 pub async fn get_metrics_overview(
     analytics_client: &AnalyticsHttpClient,
     role: &str,
+    params: &MetricsOverviewParams,
 ) -> axum::response::Response {
     use crate::services::analytics_window::{OverviewFieldGate, apply_overview_field_gate};
 
     let gate = OverviewFieldGate::for_role(role);
-    let mut body = match analytics_client.metrics_overview().await {
+    let q = overview_query_params(params);
+    let mut body = match analytics_client.metrics_overview(&q).await {
         Ok(body) => body,
         Err(e) => return e.into_response("指标总览"),
     };
     apply_overview_field_gate(&mut body, gate);
     ApiResponse::ok(body).into_response()
+}
+
+/// `GET /stats/metrics/overview` 参数。
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetricsOverviewParams {
+    #[serde(default)]
+    pub start: Option<i64>,
+    #[serde(default)]
+    pub end: Option<i64>,
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+fn overview_query_params(p: &MetricsOverviewParams) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    if let Some(v) = p.start {
+        out.push(("start", v.to_string()));
+    }
+    if let Some(v) = p.end {
+        out.push(("end", v.to_string()));
+    }
+    if let Some(ref m) = p.mode {
+        let m = m.trim();
+        if !m.is_empty() {
+            out.push(("mode", m.to_string()));
+        }
+    }
+    out
 }
 pub async fn get_metrics_catalog(
     analytics_client: &AnalyticsHttpClient,

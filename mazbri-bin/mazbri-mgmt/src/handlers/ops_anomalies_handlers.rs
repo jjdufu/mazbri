@@ -1,25 +1,14 @@
-//! 步骤 26：压测 / 异常 / 容量 / 零调用产品 API。
+//! 运维异常事件与零调用产品 API（原可靠性页压测/容量已删除）。
 
 use super::AppState;
 use crate::response::ApiResponse;
-use crate::services::ops_reliability as svc;
+use crate::services::ops_anomalies as svc;
 use axum::{
+    Json,
     extract::{Query, State},
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LimitQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-}
-
-const fn default_limit() -> i64 {
-    50
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,38 +18,8 @@ pub struct AnomalyQuery {
     pub kind: Option<String>,
 }
 
-/// `GET /stats/ops/loadtests`
-pub async fn list_loadtests(
-    State(state): State<AppState>,
-    Query(q): Query<LimitQuery>,
-) -> axum::response::Response {
-    match svc::list_loadtests(&state.admin_db, q.limit).await {
-        Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "list loadtests failed");
-            ApiResponse::err(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("压测基线查询失败: {e}"),
-            )
-        }
-    }
-}
-
-/// `POST /stats/ops/loadtests`
-pub async fn create_loadtest(
-    State(state): State<AppState>,
-    Json(req): Json<svc::CreateLoadtestRun>,
-) -> axum::response::Response {
-    match svc::create_loadtest(&state.admin_db, &req).await {
-        Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "create loadtest failed");
-            ApiResponse::err(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("录入压测失败: {e}"),
-            )
-        }
-    }
+const fn default_limit() -> i64 {
+    50
 }
 
 /// `GET /stats/ops/anomalies`
@@ -75,22 +34,6 @@ pub async fn list_anomalies(
             ApiResponse::err(
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("异常事件查询失败: {e}"),
-            )
-        }
-    }
-}
-
-/// `GET /stats/ops/capacity`
-pub async fn get_capacity(
-    State(state): State<AppState>,
-) -> axum::response::Response {
-    match svc::latest_capacity(&state.admin_db).await {
-        Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "capacity snapshot failed");
-            ApiResponse::err(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("容量预测查询失败: {e}"),
             )
         }
     }

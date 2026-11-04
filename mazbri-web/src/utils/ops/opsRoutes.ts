@@ -19,11 +19,6 @@ export { INFRA_PATH, buildInfraRoute } from "./infra-link";
 export type { InfraLinkOptions, InfraTabId } from "./infra-link";
 
 export {
-  RELIABILITY_PATH,
-  buildReliabilityRoute,
-} from "./reliability-link";
-
-export {
   SERVICES_PATH,
   buildServiceDetailRoute,
   buildServicesRoute,

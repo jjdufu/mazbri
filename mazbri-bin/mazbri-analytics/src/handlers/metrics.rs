@@ -6,13 +6,50 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use mazbri_analytics::greptimedb::{GreptimeDBClient, MetricQueryParams};
+use serde::Deserialize;
 use tracing::error;
-/// 指标概览：瞬时 KPI（`window.semantics=instant`），不接受时间范围参数；无样本时率类字段为 null。
-pub async fn get_metrics_overview(State(state): State<AppState>) -> Response {
+/// Overview 查询参数：默认跟时间窗；`mode=instant`（或无 start/end）为近瞬时「此刻」。
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverviewQuery {
+    #[serde(default)]
+    pub start: Option<i64>,
+    #[serde(default)]
+    pub end: Option<i64>,
+    /// `instant` = 此刻；其余或缺省且带 start/end = range。
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+/// 指标概览：默认 `window.semantics=range`（跟 start/end）；`mode=instant` 为近瞬时。
+/// 无样本时率类字段为 null。
+pub async fn get_metrics_overview(
+    State(state): State<AppState>,
+    Query(q): Query<OverviewQuery>,
+) -> Response {
+    use mazbri_analytics::greptimedb::OverviewKpiMode;
     let Some(client) = metrics_client(&state) else {
         return greptimedb_unavailable();
     };
-    match client.query_metrics_overview().await {
+    let mode = match q.mode.as_deref() {
+        Some("instant") => OverviewKpiMode::Instant,
+        _ => match (q.start, q.end) {
+            (Some(start), Some(end)) if start < end => OverviewKpiMode::Range { start, end },
+            (None, None) => OverviewKpiMode::Instant,
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(HandlerError {
+                        error: "invalid_time_range".to_string(),
+                        message: "start/end 无效：须同时提供且 start < end，或使用 mode=instant"
+                            .to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+        },
+    };
+    match client.query_metrics_overview(mode).await {
         Ok(overview) => (StatusCode::OK, Json(overview)).into_response(),
         Err(e) => {
             error!("指标概览查询失败: {}", e);

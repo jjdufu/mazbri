@@ -271,7 +271,7 @@ async function loadAll() {
   const start = end - 3600;
   const dayStart = end - 86400;
   try {
-    overview.value = await fetchMetricsOverview();
+    overview.value = await fetchMetricsOverview({ mode: "instant" });
   } catch {
     /* keep */
   }

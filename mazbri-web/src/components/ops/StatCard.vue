@@ -36,6 +36,8 @@ const props = withDefaults(
     /** 可下钻时显示指针；无交互时不冒充可点。 */
     interactive?: boolean;
     digits?: number;
+    /** 值为空时展示文案（默认 —） */
+    emptyText?: string;
   }>(),
   {
     value: null,
@@ -47,12 +49,13 @@ const props = withDefaults(
     loading: false,
     interactive: false,
     digits: 2,
+    emptyText: "—",
   },
 );
 
 const displayValue = computed(() => {
   if (props.value === null || props.value === undefined || props.value === "") {
-    return "—";
+    return props.emptyText;
   }
   if (typeof props.value === "number") {
     return new Intl.NumberFormat(undefined, {

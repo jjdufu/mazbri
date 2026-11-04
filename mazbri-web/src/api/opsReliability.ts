@@ -3,19 +3,6 @@ import { API_BASE_PATH } from "@/config/api";
 
 const BASE = `${API_BASE_PATH}/stats/ops`;
 
-export interface LoadtestRun {
-  id: string;
-  started_at: string;
-  ended_at: string;
-  scenario: string;
-  products: number;
-  requests: number;
-  p50: number;
-  p95: number;
-  p99: number;
-  internal_p99: number;
-  notes: string;
-}
 
 export interface AnomalyEvent {
   id: string;
@@ -32,17 +19,7 @@ export interface AnomalyEvent {
   status: string;
 }
 
-export interface CapacitySnapshot {
-  detected_at: string | null;
-  holt_next: number | null;
-  qps_cap: number | null;
-  days_to_cap: number | null;
-  detail: Record<string, unknown>;
-}
 
-export function listLoadtests(limit = 20) {
-  return request.get<LoadtestRun[]>({ url: `${BASE}/loadtests`, params: { limit } });
-}
 
 export function listAnomalies(limit = 50, kind?: string) {
   return request.get<AnomalyEvent[]>({
@@ -51,9 +28,6 @@ export function listAnomalies(limit = 50, kind?: string) {
   });
 }
 
-export function getCapacity() {
-  return request.get<CapacitySnapshot>({ url: `${BASE}/capacity` });
-}
 
 export function zeroCallProducts(active_product_ids: string[]) {
   return request.post<{ product_id: string; name?: string }[]>({

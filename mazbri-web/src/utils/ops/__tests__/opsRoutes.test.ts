@@ -7,7 +7,6 @@ import {
   FLOW_PATH,
   INFRA_PATH,
   OPS_SECURITY_PATH,
-  RELIABILITY_PATH,
   SCREEN_PATH,
   SERVICES_PATH,
   TRACES_PATH,
@@ -34,7 +33,6 @@ test("opsRoutes re-exports merged IA parent paths", () => {
   assert.equal(UPSTREAM_PATH, "/ops/upstream");
   assert.equal(FLOW_PATH, "/ops/flow");
   assert.equal(SERVICES_PATH, "/ops/services");
-  assert.equal(RELIABILITY_PATH, "/ops/reliability");
   assert.equal(TRACES_PATH, "/ops/traces");
   assert.equal(OPS_SECURITY_PATH, "/ops/security");
 });
