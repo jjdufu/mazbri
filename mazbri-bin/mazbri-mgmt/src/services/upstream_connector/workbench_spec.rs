@@ -116,6 +116,8 @@ pub const GATE_REASON_NOT_RUN: &str = "not_run";
 pub const GATE_REASON_SPEC_CHANGED: &str = "spec_changed";
 pub const GATE_REASON_UNRESOLVED: &str = "unresolved_vars";
 pub const GATE_REASON_SKIPPED: &str = "skipped";
+/// 端点组装 / `validate_egress_spec` 失败（缺适配器必填等），与「未试跑」区分。
+pub const GATE_REASON_SPEC_INVALID: &str = "spec_invalid";
 
 #[derive(Debug, Clone)]
 pub struct RecentGateRun {
@@ -181,11 +183,12 @@ pub fn evaluate_endpoint_gates(
             continue;
         }
         let Some(fp) = fingerprint else {
+            // assemble / validate 失败且非未展开变量 → 规格不合法（缺必填等）
             items.push(DraftGateItem {
                 endpoint_key: key,
                 fingerprint: None,
                 met: false,
-                reason: GATE_REASON_NOT_RUN.to_string(),
+                reason: GATE_REASON_SPEC_INVALID.to_string(),
             });
             continue;
         };
@@ -1130,6 +1133,52 @@ mod tests {
         assert_eq!(eval.items[0].reason, GATE_REASON_UNRESOLVED);
         assert!(!eval.items[0].met);
     }
+
+    #[test]
+    fn gate_spec_invalid_when_adapter_required_missing() {
+        let endpoints = serde_json::json!([{
+            "id": "ep-soap",
+            "adapter": "soap_xml",
+            "method": "POST",
+            "path": "/soap",
+            "body_encoding": "json",
+            "gate": true
+        }]);
+        let eval = evaluate_endpoint_gates(
+            &endpoints,
+            &std::collections::HashMap::new(),
+            None,
+            "https://up.example",
+            &[],
+        );
+        assert_eq!(eval.items.len(), 1);
+        assert!(!eval.items[0].met);
+        assert_eq!(eval.items[0].reason, GATE_REASON_SPEC_INVALID);
+    }
+
+    #[test]
+    fn gate_spec_invalid_envelope_missing_unwrap() {
+        let endpoints = serde_json::json!([{
+            "id": "ep-env",
+            "adapter": "http_envelope",
+            "operation": "pay",
+            "method": "POST",
+            "path": "/",
+            "body_encoding": "json",
+            "wrap": "method_biz_content",
+            "gate": true
+        }]);
+        let eval = evaluate_endpoint_gates(
+            &endpoints,
+            &std::collections::HashMap::new(),
+            None,
+            "https://up.example",
+            &[],
+        );
+        assert!(!eval.items[0].met);
+        assert_eq!(eval.items[0].reason, GATE_REASON_SPEC_INVALID);
+    }
+
 
     #[test]
     fn post_none_payload_is_null_and_encoding_none() {

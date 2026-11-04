@@ -469,6 +469,7 @@
       :can-force-publish="canForcePublish"
       :leftover-tokens="leftoverTokens"
       :unresolved-vars="unresolvedAll"
+      :endpoints="endpoints"
       @confirm="doPublish"
     />
   </div>

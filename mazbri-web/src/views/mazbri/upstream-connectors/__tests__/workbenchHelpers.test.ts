@@ -12,9 +12,12 @@ import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
 import {
   HSPLIT_DEFAULT_LEFT,
   VSPLIT_DEFAULT_BOTTOM,
+  ensureEndpointAdapterFields,
+  listMissingAdapterFields,
   parseHSplitState,
   parseVSplitState,
 } from "../workbenchHelpers";
+import type { ConnectorEndpoint } from "@/api/upstream-connectors";
 
 
 const groups: Record<string, string> = {
@@ -147,3 +150,78 @@ assert.equal(
 );
 
 console.log("workbenchHelpers HSplit/VSplit persist parse ok");
+
+
+// --- 03 adapter required fields ---
+{
+  const soap: ConnectorEndpoint = {
+    adapter: "soap_xml",
+    method: "POST",
+    path: "/soap",
+  };
+  const miss = listMissingAdapterFields(soap).map((m) => m.path);
+  assert.ok(miss.includes("operation"), String(miss));
+  assert.ok(miss.includes("soap"), String(miss));
+  ensureEndpointAdapterFields(soap);
+  soap.operation = "RenderPhoto";
+  assert.deepEqual(listMissingAdapterFields(soap), []);
+}
+
+{
+  const env: ConnectorEndpoint = {
+    adapter: "http_envelope",
+    method: "POST",
+    path: "/",
+    operation: "pay",
+    wrap: "method_biz_content",
+  };
+  assert.ok(
+    listMissingAdapterFields(env).some((m) => m.path === "response.unwrap"),
+  );
+  env.unwrap = "$.data";
+  assert.deepEqual(listMissingAdapterFields(env), []);
+}
+
+{
+  const ws: ConnectorEndpoint = {
+    adapter: "ws_unary",
+    method: "POST",
+    path: "/ws",
+    operation: "ping",
+  };
+  ensureEndpointAdapterFields(ws);
+  // ensure sets wrap + ws.path
+  assert.deepEqual(listMissingAdapterFields(ws), []);
+  ws.ws = { path: "", auth_in: [] };
+  ws.wrap = "";
+  const miss = listMissingAdapterFields(ws).map((m) => m.path);
+  assert.ok(miss.includes("ws.path"), String(miss));
+  assert.ok(miss.includes("request.wrap"), String(miss));
+}
+
+{
+  const rpc: ConnectorEndpoint = {
+    adapter: "jsonrpc",
+    method: "POST",
+    path: "/rpc",
+  };
+  assert.ok(listMissingAdapterFields(rpc).some((m) => m.path === "operation"));
+  rpc.operation = "sum";
+  assert.deepEqual(listMissingAdapterFields(rpc), []);
+}
+
+{
+  const jp: ConnectorEndpoint = {
+    adapter: "job_poll",
+    method: "POST",
+    path: "/jobs",
+    operation: "submit",
+    job_poll: { query_path: "", job_id_jsonpath: "", status_jsonpath: "" },
+  };
+  const miss = listMissingAdapterFields(jp).map((m) => m.path);
+  assert.ok(miss.includes("job_poll.query_path"), String(miss));
+  assert.ok(miss.includes("job_poll.job_id_jsonpath"), String(miss));
+  assert.ok(miss.includes("job_poll.status_jsonpath"), String(miss));
+}
+
+console.log("workbenchHelpers adapter required fields ok");

@@ -95,6 +95,21 @@
         class="mb-3"
       />
       <ElAlert
+        v-if="missingAdapterSummary.length"
+        type="error"
+        show-icon
+        :closable="false"
+        class="mb-3"
+      >
+        <template #title>{{ $t("upstreamConnector.adapterFieldsMissingPublish") }}</template>
+        <ul class="wb-pub__missing">
+          <li v-for="row in missingAdapterSummary" :key="row.id">
+            <strong>{{ row.name }}</strong>:
+            <code v-for="f in row.fields" :key="f.path" class="wb-pub__field">{{ f.path }}</code>
+          </li>
+        </ul>
+      </ElAlert>
+      <ElAlert
         v-if="leftoverTokens.length"
         type="warning"
         :title="$t('upstreamConnector.staticTokenHint', { headers: leftoverTokens.join(', ') })"
@@ -147,7 +162,7 @@
         <ElButton
           type="primary"
           :loading="publishing"
-          :disabled="unresolvedVars.length > 0"
+          :disabled="unresolvedVars.length > 0 || missingAdapterSummary.length > 0"
           @click="emit('confirm')"
         >
           {{ $t("upstreamConnector.publish") }}
@@ -163,7 +178,13 @@ import HoppSelect from "@/components/common/hopp-select/index.vue";
 import { fetchProductList } from "@/api/product";
 import type { Product } from "@/types/api/product";
 import type { PublishResult } from "@/api/upstream-connectors";
-import type { ChannelDraft, GateEpStatus } from "./workbenchHelpers";
+import type { ConnectorEndpoint } from "@/api/upstream-connectors";
+import {
+  listMissingAdapterFields,
+  type ChannelDraft,
+  type GateEpStatus,
+  type MissingAdapterField,
+} from "./workbenchHelpers";
 
 export type PublishFormModel = {
   mode: string;
@@ -184,6 +205,7 @@ const props = defineProps<{
   canForcePublish: boolean;
   leftoverTokens: string[];
   unresolvedVars: string[];
+  endpoints?: ConnectorEndpoint[];
 }>();
 
 const visible = defineModel<boolean>({ required: true });
@@ -208,8 +230,33 @@ function gateReasonText(reason: string) {
   if (reason === "spec_changed") return t("upstreamConnector.gateReasonSpecChanged");
   if (reason === "unresolved_vars") return t("upstreamConnector.gateReasonUnresolved");
   if (reason === "not_run") return t("upstreamConnector.gateReasonNotRun");
+  if (reason === "spec_invalid") return t("upstreamConnector.gateReasonSpecInvalid");
   return "";
 }
+
+type MissingRow = {
+  id: string;
+  name: string;
+  fields: MissingAdapterField[];
+};
+
+const missingAdapterSummary = computed((): MissingRow[] => {
+  const eps = props.endpoints || [];
+  const out: MissingRow[] = [];
+  for (let i = 0; i < eps.length; i++) {
+    const ep = eps[i];
+    if (ep.gate === false) continue;
+    const fields = listMissingAdapterFields(ep);
+    if (!fields.length) continue;
+    const id = ep.id || `ep-${i + 1}`;
+    out.push({
+      id,
+      name: ep.name || ep.path || id,
+      fields,
+    });
+  }
+  return out;
+});
 
 watch(
   () => form.value.require_gate,
@@ -296,6 +343,18 @@ watch(visible, (v) => {
     color: var(--el-text-color-secondary);
     margin-left: 6px;
   }
+}
+.wb-pub__missing {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  li {
+    margin: 2px 0;
+  }
+}
+.wb-pub__field {
+  margin-left: 6px;
+  font-size: 11px;
 }
 .wb-pub__curl {
   font-size: 11px;
