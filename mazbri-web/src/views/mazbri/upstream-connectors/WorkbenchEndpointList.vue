@@ -18,11 +18,12 @@
           type="button"
           class="wb-eps__session-name"
           :title="$t('upstreamConnector.fields.name')"
-          @click="startSessionEdit"
+          :disabled="readOnly"
+          @click="!readOnly && startSessionEdit()"
         >
           {{ sessionName?.trim() || $t("upstreamConnector.untitledName") }}
         </button>
-        <HoppMenu placement="bottom-end" @click.stop>
+        <HoppMenu v-if="!readOnly" placement="bottom-end" @click.stop>
           <template #trigger>
             <button
               type="button"
@@ -52,7 +53,7 @@
     </div>
     <div class="wb-eps__head">
       <span class="wb-eps__title">{{ $t("upstreamConnector.endpoints") }}</span>
-      <ElButton link type="primary" @click="emit('add')">
+      <ElButton v-if="!readOnly" link type="primary" @click="emit('add')">
         <ArtSvgIcon icon="ri:add-circle-line" />
       </ElButton>
     </div>
@@ -76,7 +77,7 @@
       ghost-class="wb-eps__ghost"
       chosen-class="wb-eps__chosen"
       drag-class="wb-eps__drag"
-      :disabled="endpoints.length <= 1 || Boolean(q.trim())"
+      :disabled="readOnly || endpoints.length <= 1 || Boolean(q.trim())"
       :custom-update="keepSortableDom"
       @end="onSortEnd"
     >
@@ -89,7 +90,7 @@
       >
         <div class="wb-eps__line">
           <span
-            v-if="endpoints.length > 1 && !q.trim()"
+            v-if="!readOnly && endpoints.length > 1 && !q.trim()"
             class="wb-eps__grip"
             :title="$t('upstreamConnector.kvDrag')"
             @click.stop
@@ -114,7 +115,7 @@
             <div
               v-else
               class="wb-eps__name"
-              @click.stop="startRename(originalIndex(ep))"
+              @click.stop="!readOnly && startRename(originalIndex(ep))"
             >
               {{ ep.name || ep.path || "endpoint" }}
             </div>
@@ -128,14 +129,15 @@
               ok: ep.gate !== false && gateOk(ep),
               off: ep.gate === false,
             }"
+            :disabled="readOnly"
             :title="
               ep.gate === false
                 ? $t('upstreamConnector.gateOffHint')
                 : $t('upstreamConnector.gateOnHint')
             "
-            @click.stop="emit('toggle-gate', originalIndex(ep))"
+            @click.stop="!readOnly && emit('toggle-gate', originalIndex(ep))"
           />
-          <HoppMenu placement="bottom-end" @click.stop>
+          <HoppMenu v-if="!readOnly" placement="bottom-end" @click.stop>
             <template #trigger>
               <button
                 type="button"
@@ -178,6 +180,7 @@
             ref="mapCodeRef"
             v-model="ep.channel_code"
             class="wb-eps__map-input"
+            :disabled="readOnly"
             :placeholder="suggestChannelCode(ep, originalIndex(ep))"
             :title="$t('upstreamConnector.fields.channelCode')"
             spellcheck="false"
@@ -185,6 +188,7 @@
           <input
             v-model="ep.path_prefix"
             class="wb-eps__map-input"
+            :disabled="readOnly"
             :placeholder="ep.path || '/'"
             :title="$t('upstreamConnector.fields.pathPrefix')"
             spellcheck="false"
@@ -260,8 +264,10 @@ const props = withDefaults(
     runs?: ConnectorRun[];
     activeRunId?: string | null;
     sessionName: string;
+    /** 财务 / 观察者只读：隐藏导入导出、增删改与拖拽。 */
+    readOnly?: boolean;
   }>(),
-  { runs: () => [], activeRunId: null },
+  { runs: () => [], activeRunId: null, readOnly: false },
 );
 
 const emit = defineEmits<{
@@ -332,6 +338,7 @@ function gateOk(ep: ConnectorEndpoint) {
 }
 
 function startSessionEdit() {
+  if (props.readOnly) return;
   editingSession.value = true;
   void nextTick(() => {
     sessionInputRef.value?.focus();
@@ -340,6 +347,7 @@ function startSessionEdit() {
 }
 
 function startRename(idx: number) {
+  if (props.readOnly) return;
   emit("select", idx);
   editingName.value = idx;
   void nextTick(() => {

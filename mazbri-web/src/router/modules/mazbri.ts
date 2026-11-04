@@ -124,7 +124,8 @@ export const mazbriRoutes: AppRouteRecord[] = [
           isHide: true,
           activePath: "/operations/upstream-supply",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
+          // 财务 / 观察者可只读打开；写与发布由 UI + API 限为 R_ADMIN。
+          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
       {

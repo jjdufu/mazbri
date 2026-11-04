@@ -4,6 +4,7 @@ import {
   canAccessRoles,
   filterByRoles,
   isAdminRole,
+  canWriteUpstreamConnector,
   isBizRole,
   isViewerRole,
   normalizeAdminRole,
@@ -60,4 +61,11 @@ test("filterByRoles keeps items without roles and drops unauthorized ones", () =
     filterByRoles("R_ADMIN", items).map((item) => item.id),
     ["a", "b", "c", "d"],
   );
+});
+
+test("canWriteUpstreamConnector is super-admin only", () => {
+  assert.equal(canWriteUpstreamConnector("R_ADMIN"), true);
+  assert.equal(canWriteUpstreamConnector("R_FINANCE"), false);
+  assert.equal(canWriteUpstreamConnector("R_VIEWER"), false);
+  assert.equal(canWriteUpstreamConnector(undefined), false);
 });

@@ -15,6 +15,14 @@
           {{ $t("upstreamConnector.modeEditSupplier") }}
         </ElTag>
         <ElTag
+          v-if="!canWriteWorkbench"
+          size="small"
+          type="info"
+          effect="plain"
+        >
+          {{ $t("upstreamConnector.readOnlyHint") }}
+        </ElTag>
+        <ElTag
           v-if="saveBadge"
           size="small"
           :type="saveBadge.type"
@@ -27,7 +35,11 @@
 
     <div v-if="!draft && !bootstrapping" class="wb-empty">
       <ElEmpty :description="$t('upstreamConnector.emptyHint')">
-        <ElButton type="primary" @click="createBlankSession()">
+        <ElButton
+          v-if="canWriteWorkbench"
+          type="primary"
+          @click="createBlankSession()"
+        >
           {{ $t("upstreamConnector.newSession") }}
         </ElButton>
       </ElEmpty>
@@ -45,6 +57,7 @@
               :gate-items="gate.items"
               :runs="runs"
               :active-run-id="lastRun?.id"
+              :read-only="!canWriteWorkbench"
               @add="addEndpoint"
               @select="activeEpIdx = $event"
               @toggle-gate="toggleGate"
@@ -60,7 +73,11 @@
           <div class="wb-main">
             <WorkbenchVSplit ref="vsplitRef">
               <template #top>
-                <div v-if="activeEp" class="wb-request">
+                <div
+                  v-if="activeEp"
+                  class="wb-request"
+                  :inert="!canWriteWorkbench || undefined"
+                >
                   <div class="wb-runbar">
                     <div class="wb-urlbar" :class="{ 'is-error': urlMissing }">
                       <div class="wb-urlbar__method">
@@ -95,7 +112,7 @@
                       :encoding="resolvedBodyEncoding(activeEp)"
                       @edit="reqTab = 'transform'"
                     />
-                    <div class="wb-runbar__actions">
+                    <div v-if="canWriteWorkbench" class="wb-runbar__actions">
                       <div class="hopp-btn hopp-btn--primary">
                         <button
                           type="button"
@@ -491,6 +508,7 @@ import {
 } from "@/api/upstream-connectors";
 import { fetchSupplierById } from "@/api/supplier";
 import { useUserStore } from "@/store/modules/user";
+import { canWriteUpstreamConnector } from "@/utils/ops/roles";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import { isHttpError } from "@/utils/http/error";
 import {
@@ -712,7 +730,12 @@ const configForm = ref<SupplierConfigForm>({
 
 const userStore = useUserStore();
 const isSuperAdmin = computed(() => userStore.isAdmin);
-const canForcePublish = computed(() => userStore.canWriteBusiness);
+/** 工作台写权限：仅 R_ADMIN；财务 / Viewer 只读。 */
+const canWriteWorkbench = computed(() =>
+  canWriteUpstreamConnector(userStore.info?.role),
+);
+/** 强制发布仅业务超管（R_ADMIN），与 canWriteWorkbench 同界。 */
+const canForcePublish = computed(() => canWriteWorkbench.value);
 
 const gate = computed(() =>
   gateViewFromServer(endpoints.value, draft.value?.gate),
@@ -1119,6 +1142,7 @@ async function onArtifactFile(ev: Event) {
 }
 
 function onEpAction({ cmd, index }: { cmd: string; index: number }) {
+  if (!canWriteWorkbench.value) return;
   if (cmd === "duplicate") {
     const src = endpoints.value[index];
     if (!src) return;
@@ -1175,6 +1199,7 @@ function sessionHasPersistableContent(): boolean {
 }
 
 function shouldGuardLeave(): boolean {
+  if (!canWriteWorkbench.value) return false;
   if (!draft.value || bootstrapping.value) return false;
   if (!dirty.value) return false;
   return isPersistedDraftId(draft.value.id) || sessionHasPersistableContent();
@@ -1185,6 +1210,7 @@ async function saveDraft(opts?: {
   signal?: AbortSignal;
   skipRouteSync?: boolean;
 }) {
+  if (!canWriteWorkbench.value) return;
   if (!draft.value) return;
   saving.value = true;
   suppressDirty.value = true;
@@ -1242,6 +1268,7 @@ async function saveDraft(opts?: {
 watchDebounced(
   editGen,
   async () => {
+    if (!canWriteWorkbench.value) return;
     if (!dirty.value || bootstrapping.value || saving.value || leavePromptOpen.value || !draft.value) return;
     if (!isPersistedDraftId(draft.value.id) && !sessionHasPersistableContent()) {
       return;
@@ -1311,6 +1338,7 @@ function abortRun() {
 }
 
 function onSendClick() {
+  if (!canWriteWorkbench.value) return;
   if (running.value) {
     abortRun();
     return;
@@ -1528,10 +1556,14 @@ function buildLocalBlankDraft(): ConnectorDraft {
 }
 
 async function createBlankSession() {
+  if (!canWriteWorkbench.value) return;
+
   await openSession(buildLocalBlankDraft());
 }
 
 async function doImport() {
+  if (!canWriteWorkbench.value) return;
+
   importing.value = true;
   try {
     if (importMode.value === "merge" && draft.value) {
@@ -1570,6 +1602,8 @@ async function doImport() {
 }
 
 async function openPublish() {
+  if (!canWriteWorkbench.value) return;
+
   if (!canPublish.value) {
     ElMessage.warning($t("upstreamConnector.publishNeedRun"));
     return;
@@ -1592,6 +1626,7 @@ async function openPublish() {
 }
 
 async function doPublish() {
+  if (!canWriteWorkbench.value) return;
   if (!draft.value) return;
   if (blockIfUnresolved(unresolvedAll.value)) return;
   const cryptoMsgsPublish = cryptoIssuesOnEndpoints();
@@ -1659,6 +1694,7 @@ async function doPublish() {
 }
 
 async function doExport() {
+  if (!canWriteWorkbench.value) return;
   if (!draft.value) return;
   try {
     await saveDraft({ silent: true });
@@ -1679,6 +1715,7 @@ function onSendCommand(cmd: string) {
 }
 
 function onSessionAction(cmd: string) {
+  if (!canWriteWorkbench.value) return;
   if (cmd === "import") showImport.value = true;
   else if (cmd === "export") void doExport();
 }

@@ -4,7 +4,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::mfa_guard::require_category;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin, is_read_only};
+use crate::middleware::auth::{AdminClaims, can_write_upstream_connector, extract_user_id};
 use crate::response::ApiResponse;
 use crate::services::mfa::Category;
 use crate::services::upstream_connector as svc;
@@ -17,8 +17,9 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-fn require_business_admin(claims: &AdminClaims) -> Result<(), ApiError> {
-    if !is_business_admin(claims) {
+fn require_connector_writer(claims: &AdminClaims) -> Result<(), ApiError> {
+    // 财务 / 观察者对工作台只读；写与发布仅超级管理员。
+    if !can_write_upstream_connector(claims) {
         return Err(ApiError::Forbidden);
     }
     Ok(())
@@ -41,7 +42,7 @@ pub async fn create_draft(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::CreateDraftRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::create_draft(&state.db, payload, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
@@ -88,7 +89,7 @@ pub async fn update_draft(
     Path(id): Path<Uuid>,
     Json(payload): Json<svc::UpdateDraftRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::update_draft(&state.db, id, payload).await?;
     Ok(ApiResponse::ok(data))
 }
@@ -101,7 +102,7 @@ pub async fn delete_draft(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     svc::delete_draft(&state.db, id).await?;
     Ok(ApiResponse::ok(serde_json::json!({"deleted": true})))
 }
@@ -114,7 +115,7 @@ pub async fn validate_draft(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::validate_draft(&state.db, state.connector_runtime.ssrf(), id).await?;
     Ok(ApiResponse::ok(data))
 }
@@ -128,7 +129,7 @@ pub async fn transform_preview(
     Path(id): Path<Uuid>,
     Json(payload): Json<svc::RunRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = Box::pin(svc::transform_preview(
         &state.db,
         &state.connector_runtime,
@@ -150,10 +151,7 @@ pub async fn create_run(
     Path(id): Path<Uuid>,
     Json(payload): Json<svc::RunRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
-    if is_read_only(&claims) {
-        return Err(ApiError::Forbidden);
-    }
+    require_connector_writer(&claims)?;
     if let Err(wait) = state.connector_run_limiter.try_acquire() {
         return Err(ApiError::validation(format!(
             "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
@@ -215,7 +213,7 @@ pub async fn publish_draft(
     Path(id): Path<Uuid>,
     Json(payload): Json<svc::PublishRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     // 只有强制发布（跳过发布检查）要求 MFA；普通发布不受影响。
     if payload.options.force.force_publish
         && let Err(response) = require_category(&state, &claims, Category::Platform).await
@@ -231,7 +229,7 @@ pub async fn publish_draft(
             req: payload,
             actor: &claims.sub,
             user_id: extract_user_id(&claims)?,
-            can_force_publish: is_business_admin(&claims),
+            can_force_publish: can_write_upstream_connector(&claims),
             client_ip: extract_client_ip(&headers, Some(addr)),
         },
     )
@@ -247,7 +245,7 @@ pub async fn import_curl(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::CurlImportRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::import_curl(&state.db, payload, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
@@ -260,7 +258,7 @@ pub async fn import_postman(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::PostmanImportRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::import_postman(&state.db, payload, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
@@ -273,7 +271,7 @@ pub async fn import_openapi(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::OpenApiImportRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::import_openapi(&state.db, payload, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
@@ -286,7 +284,7 @@ pub async fn draft_from_supplier(
     Extension(claims): Extension<AdminClaims>,
     Path(supplier_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::draft_from_supplier(&state.db, supplier_id, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
@@ -296,10 +294,11 @@ pub async fn draft_from_supplier(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn export_postman(
     State(state): State<AppState>,
-    _: Extension<AdminClaims>,
+    Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // 所有已登录管理员角色均可查看
+    // 导出与导入/删同属工作台写面：仅超级管理员。
+    require_connector_writer(&claims)?;
     let data = svc::export_postman(&state.db, id).await?;
     Ok(ApiResponse::ok(data))
 }
@@ -344,7 +343,7 @@ pub async fn rollback(
     if let Err(response) = require_category(&state, &claims, Category::Platform).await {
         return Ok(*response);
     }
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::rollback(
         &state.db,
         &state.audit,
@@ -369,7 +368,7 @@ pub async fn live_run(
     Path(supplier_id): Path<Uuid>,
     Json(payload): Json<svc::LiveRunRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     if let Err(wait) = state.connector_run_limiter.try_acquire() {
         return Err(ApiError::validation(format!(
             "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
@@ -402,7 +401,7 @@ pub async fn create_artifact(
     Extension(claims): Extension<AdminClaims>,
     Json(payload): Json<svc::CreateArtifactRequest>,
 ) -> Result<Response, ApiError> {
-    require_business_admin(&claims)?;
+    require_connector_writer(&claims)?;
     let data = svc::create_artifact(&state.db, payload).await?;
     Ok(crate::response::created(data))
 }

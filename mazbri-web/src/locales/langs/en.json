@@ -3967,7 +3967,9 @@
       "gmSm4CbcHmacSm3": "GM · SM4-CBC + HMAC-SM3",
       "signOnlyHmacSha256": "Sign-only · HMAC-SHA256",
       "encryptThenSignAesCbc": "Encrypt-then-sign · AES-CBC + HMAC"
-    }
+    },
+    "viewDraft": "View",
+    "readOnlyHint": "Read-only (finance / viewer cannot edit, import/export, or publish)"
   },
   "listQueryBar": {
     "tooltip": "Search & filters",

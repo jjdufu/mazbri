@@ -3972,7 +3972,9 @@
       "gmSm4CbcHmacSm3": "国密 · SM4-CBC + HMAC-SM3",
       "signOnlyHmacSha256": "仅签名 · HMAC-SHA256",
       "encryptThenSignAesCbc": "加密后签名 · AES-CBC + HMAC"
-    }
+    },
+    "viewDraft": "查看",
+    "readOnlyHint": "只读查看（财务 / 观察者不可改草稿、导入导出或发布）"
   },
   "listQueryBar": {
     "tooltip": "搜索与筛选",
