@@ -328,8 +328,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
-
-      },
       {
         path: "infra",
         name: "OpsInfra",
