@@ -27,6 +27,18 @@ pub struct UpstreamConfig {
     pub user_agent: String,
     #[serde(default = "default_ws_handshake_timeout_secs")]
     pub ws_handshake_timeout_secs: u64,
+    /// 全局 `ws_unary` 并发上限；超限失败快（无排队、无短连回退）。
+    #[serde(default = "default_ws_max_concurrent")]
+    pub ws_max_concurrent: u32,
+    /// 每池键（`base_url` + `ws.path` + auth 指纹）并发上限。
+    #[serde(default = "default_ws_max_concurrent_per_key")]
+    pub ws_max_concurrent_per_key: u32,
+    /// 每键空闲连接上限。
+    #[serde(default = "default_ws_pool_max_idle_per_key")]
+    pub ws_pool_max_idle_per_key: u32,
+    /// 空闲连接 TTL（秒）；借出时丢弃过期连接。
+    #[serde(default = "default_ws_pool_idle_ttl_secs")]
+    pub ws_pool_idle_ttl_secs: u64,
     #[serde(default = "default_grpc_max_concurrency")]
     pub grpc_max_concurrency: u32,
 }
@@ -45,6 +57,22 @@ fn default_user_agent() -> String {
 
 fn default_ws_handshake_timeout_secs() -> u64 {
     10
+}
+
+fn default_ws_max_concurrent() -> u32 {
+    32
+}
+
+fn default_ws_max_concurrent_per_key() -> u32 {
+    8
+}
+
+fn default_ws_pool_max_idle_per_key() -> u32 {
+    4
+}
+
+fn default_ws_pool_idle_ttl_secs() -> u64 {
+    60
 }
 
 fn default_grpc_max_concurrency() -> u32 {
@@ -67,6 +95,18 @@ impl UpstreamConfig {
         }
         if self.ws_handshake_timeout_secs == 0 {
             anyhow::bail!("ws_handshake_timeout_secs must be greater than 0");
+        }
+        if self.ws_max_concurrent == 0 {
+            anyhow::bail!("ws_max_concurrent must be greater than 0");
+        }
+        if self.ws_max_concurrent_per_key == 0 {
+            anyhow::bail!("ws_max_concurrent_per_key must be greater than 0");
+        }
+        if self.ws_pool_max_idle_per_key == 0 {
+            anyhow::bail!("ws_pool_max_idle_per_key must be greater than 0");
+        }
+        if self.ws_pool_idle_ttl_secs == 0 {
+            anyhow::bail!("ws_pool_idle_ttl_secs must be greater than 0");
         }
         if self.grpc_max_concurrency == 0 {
             anyhow::bail!("grpc_max_concurrency must be greater than 0");

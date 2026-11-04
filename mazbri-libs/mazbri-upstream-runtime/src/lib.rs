@@ -25,6 +25,7 @@ mod ssrf;
 mod template;
 mod token_cache;
 mod types;
+mod ws_pool;
 
 pub use assert::{Assertion, AssertionResult, evaluate_assertions};
 pub use crypto_pipeline::{
@@ -33,6 +34,7 @@ pub use crypto_pipeline::{
     PipelineError, PipelineKeys, RequestParts,
 };
 pub use engine::{RuntimeEngine, RuntimeLimits, resolve_timeout};
+pub use ws_pool::{WsPool, WsPoolConfig};
 pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};
 pub use slots::{role as slot_role, SlotBags, SlotError};
 pub use ssrf::{SsrfChecker, SsrfConfig, SsrfSafeResolver, is_always_blocked_ip, is_blocked_ip};

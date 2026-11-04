@@ -4,6 +4,8 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **upstream/ws_unary:** 废除每 invoke 一次 `connect_async→一帧→close` 作为唯一路径；引入按键复用连接池 + 全局/每键硬并发（`ws_max_concurrent` / `ws_max_concurrent_per_key` / `ws_pool_max_idle_per_key` / `ws_pool_idle_ttl_secs`）。超限**失败快**，禁止无限排队与「池满回退短连」。Binary 帧仍严格失败。旧配置缺字段走 default，但行为已变（有池）。适合中低 QPS；高 QPS 请用 HTTP 适配器。
+
 * **upstream/job_poll:** invoke 改为 submit-only（或请求级一次性 `job_poll_mode=query`），**禁止**在网关/bypass 内 sleep+轮询至终态。响应默认 `{"job_id":...}`；终态由租户轮询/回调完成。删除 Spec 字段 `poll_interval_ms`/`status_jsonpath`/`result_jsonpath`/`message_jsonpath` 与 bypass `job_poll_min_interval_ms`（`deny_unknown_fields`，旧配置需迁移）。无同步兼容开关。
 
 

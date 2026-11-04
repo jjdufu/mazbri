@@ -311,6 +311,7 @@ mod tests {
         let auth = auth_empty();
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
         let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+        let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
         let ctx = AdapterCtx {
             client: &client,
             ssrf: &ssrf,
@@ -318,7 +319,7 @@ mod tests {
             base_url: base.as_str(),
             auth: &auth,
             timeout: Duration::from_secs(2),
-            ws_handshake_timeout: Duration::from_secs(2),
+            ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
         };

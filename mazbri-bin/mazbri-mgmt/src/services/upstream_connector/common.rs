@@ -142,7 +142,16 @@ pub fn build_connector_runtime(ssrf: SsrfChecker) -> RuntimeEngine {
             // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
             reqwest::Client::new()
         });
-    RuntimeEngine::new(Arc::new(client), ssrf)
+    // 试跑与 bypass 同池实现；进程短生命周期，用更小的保守上限。
+    RuntimeEngine::new(Arc::new(client), ssrf).with_limits(
+        mazbri_upstream_runtime::RuntimeLimits {
+            ws_handshake_timeout: Duration::from_secs(10),
+            ws_max_concurrent: 8,
+            ws_max_concurrent_per_key: 4,
+            ws_pool_max_idle_per_key: 2,
+            ws_pool_idle_ttl: Duration::from_secs(30),
+        },
+    )
 }
 
 #[cfg(test)]

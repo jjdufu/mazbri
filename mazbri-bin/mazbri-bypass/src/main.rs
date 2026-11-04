@@ -54,6 +54,12 @@ async fn main() -> Result<()> {
             ws_handshake_timeout: std::time::Duration::from_secs(
                 runtime.ctx.config.upstream.ws_handshake_timeout_secs,
             ),
+            ws_max_concurrent: runtime.ctx.config.upstream.ws_max_concurrent,
+            ws_max_concurrent_per_key: runtime.ctx.config.upstream.ws_max_concurrent_per_key,
+            ws_pool_max_idle_per_key: runtime.ctx.config.upstream.ws_pool_max_idle_per_key,
+            ws_pool_idle_ttl: std::time::Duration::from_secs(
+                runtime.ctx.config.upstream.ws_pool_idle_ttl_secs,
+            ),
         });
 
         let addr = runtime.ctx.config.server.socket_addr()?;

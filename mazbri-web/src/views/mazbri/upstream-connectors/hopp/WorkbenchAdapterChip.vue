@@ -2,7 +2,10 @@
   <button
     type="button"
     class="wb-adapter-chip"
-    :class="{ 'wb-adapter-chip--risk': isJobPoll }"
+    :class="{
+      'wb-adapter-chip--risk': isJobPoll,
+      'wb-adapter-chip--pool': isWsUnary,
+    }"
     :title="chipTitle"
     :aria-label="chipAriaLabel"
     @click="emit('edit')"
@@ -10,6 +13,9 @@
     <span class="wb-adapter-chip__text">{{ displayName }}</span>
     <span v-if="isJobPoll" class="wb-adapter-chip__risk">{{
       $t("upstreamConnector.jobPollRiskTag")
+    }}</span>
+    <span v-else-if="isWsUnary" class="wb-adapter-chip__pool">{{
+      $t("upstreamConnector.wsUnaryPoolTag")
     }}</span>
   </button>
 </template>
@@ -30,6 +36,7 @@ const emit = defineEmits<{
 }>();
 
 const isJobPoll = computed(() => (props.adapter || "http_json") === "job_poll");
+const isWsUnary = computed(() => (props.adapter || "http_json") === "ws_unary");
 
 const displayName = computed(() => {
   const enc = (props.encoding || "").trim().toLowerCase();
@@ -47,16 +54,24 @@ const adapterCode = computed(() => props.adapter || "http_json");
 /** 完整可见名 + 适配器码；窄宽 ellipsis 时靠 title/aria，禁止无 title 硬截断 */
 const chipTitle = computed(() => {
   const base = `${displayName.value} (${adapterCode.value}) · ${$t("upstreamConnector.adapterChipHint")}`;
-  return isJobPoll.value
-    ? `${base} · ${$t("upstreamConnector.jobPollRiskTag")}`
-    : base;
+  if (isJobPoll.value) {
+    return `${base} · ${$t("upstreamConnector.jobPollRiskTag")}`;
+  }
+  if (isWsUnary.value) {
+    return `${base} · ${$t("upstreamConnector.wsUnaryPoolTag")} · ${$t("upstreamConnector.wsUnaryPoolHint")}`;
+  }
+  return base;
 });
 
 const chipAriaLabel = computed(() => {
   const base = `${displayName.value} (${adapterCode.value})`;
-  return isJobPoll.value
-    ? `${base}, ${$t("upstreamConnector.jobPollRiskTag")}`
-    : base;
+  if (isJobPoll.value) {
+    return `${base}, ${$t("upstreamConnector.jobPollRiskTag")}`;
+  }
+  if (isWsUnary.value) {
+    return `${base}, ${$t("upstreamConnector.wsUnaryPoolTag")}`;
+  }
+  return base;
 });
 </script>
 
@@ -94,6 +109,13 @@ const chipAriaLabel = computed(() => {
     );
     color: var(--wb-danger, var(--el-color-danger));
   }
+  &--pool {
+    border-color: color-mix(
+      in srgb,
+      var(--wb-accent, var(--el-color-primary)) 40%,
+      var(--wb-divider-subtle, var(--el-border-color-extra-light))
+    );
+  }
 }
 .wb-adapter-chip__text {
   min-width: 0;
@@ -112,6 +134,20 @@ const chipAriaLabel = computed(() => {
   background: color-mix(
     in srgb,
     var(--wb-danger, var(--el-color-danger)) 12%,
+    transparent
+  );
+}
+.wb-adapter-chip__pool {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wb-accent, var(--el-color-primary));
+  background: color-mix(
+    in srgb,
+    var(--wb-accent, var(--el-color-primary)) 12%,
     transparent
   );
 }

@@ -211,6 +211,7 @@
         @update:model-value="setWsAuthIn(String($event))"
       />
       <p class="wb-hint">{{ $t("upstreamConnector.wsAuthInHint") }}</p>
+      <p class="wb-hint">{{ $t("upstreamConnector.wsUnaryPoolHint") }}</p>
     </div>
   </div>
 </template>
