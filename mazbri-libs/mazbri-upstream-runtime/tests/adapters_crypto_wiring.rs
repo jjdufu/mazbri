@@ -131,7 +131,7 @@ async fn http_envelope_aead_seal_via_pipeline() {
             ..Default::default()
         },
         response: Some(EgressResponseSpec {
-            unwrap: Some("$.data".into()),
+            unwrap: Some("$.v".into()),  // spawn_capture_server body: {"ok":true,"v":1}
             ..Default::default()
         }),
         crypto: Some(profile),
