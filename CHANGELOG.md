@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.20](https://github.com/jjdufu/mazbri/compare/v0.2.19...v0.2.20) (2026-11-04)
+
+
+### Bug Fixes
+
+* **analytics:** 运维观测 PromQL/Overview/追踪服务与删容量任务 ([16501d6](https://github.com/jjdufu/mazbri/commit/16501d688c6bd68e77b98db80740b1d61014398b))
+* **mgmt:** overview 字段门控保留 analytics 的 range/instant 窗口语义 ([7da6787](https://github.com/jjdufu/mazbri/commit/7da6787512fc99446982ec2541b159ce3f1fcf81))
+* **mgmt:** Overview 跟窗透传、追踪服务列表、去掉可靠性压测/容量 API ([5519030](https://github.com/jjdufu/mazbri/commit/551903086471e31cf1d215546422420609d258aa))
+* **ops-ui:** 运维观测 PromQL/Overview/追踪服务与删可靠性页 ([c6ced88](https://github.com/jjdufu/mazbri/commit/c6ced88d5e018faf8e8888064df0be16bb2cf7aa))
+* **web:** 删可靠性页；Dashboard「此刻」+ 跟窗 KPI；追踪服务下拉 ([eb58a7e](https://github.com/jjdufu/mazbri/commit/eb58a7ee3d8f5f1ea6d7c5ea2848242ac2ccbeaf))
+* **web:** 补回误删的 opsRoutes 导出并修好可靠性路由残留语法 ([9d8d3c6](https://github.com/jjdufu/mazbri/commit/9d8d3c6372d61edc2048d67a831261743425588f))
+
 ## [0.2.19](https://github.com/jjdufu/mazbri/compare/v0.2.18...v0.2.19) (2026-11-04)
 
 
