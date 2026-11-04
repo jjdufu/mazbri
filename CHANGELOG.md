@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/jjdufu/mazbri/compare/v0.2.20...v0.3.0) (2026-11-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **workbench:** 工作台 business/live 试调改走 mgmt→bypass 隔离管理探针 HTTP（默认 :8890 + 共享 mgmt_probe_token），不经 gateway 计费、不给 mgmt 发 mTLS 客户端证；require_gate 只认 probe_path=bypass_mgmt_probe。同分支另含 job_poll submit-only、ws_unary 连接池硬并发等破坏性变更，见 CHANGELOG Unreleased。
+
+### Bug Fixes
+
+* **upstream-runtime:** http_envelope 加密接线测补齐 wrap/unwrap ([5f59d55](https://github.com/jjdufu/mazbri/commit/5f59d55d921cded3213ad23e947a63b0709b960b))
+* **upstream-runtime:** http_envelope 测 unwrap 对齐 capture 响应 $.v ([4826d2b](https://github.com/jjdufu/mazbri/commit/4826d2b939cee98d5068cedd15fd454372357419))
+* **web:** drafts 导入/导出/删除角色展开为可变数组以过 TS ([0a3493f](https://github.com/jjdufu/mazbri/commit/0a3493f7e056ffcea1e1a762bf696a3cfe2a7df4))
+
+
+### Code Refactoring
+
+* **workbench:** 试调改走 bypass 隔离管理口+共享 token（破坏性） ([987aed4](https://github.com/jjdufu/mazbri/commit/987aed4fe31bee10760bc6a41a137a022e4da05f))
+
 ## [Unreleased]
 
 ### ⚠ BREAKING CHANGES
