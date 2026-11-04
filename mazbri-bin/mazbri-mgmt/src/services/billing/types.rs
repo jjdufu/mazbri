@@ -114,18 +114,20 @@ pub enum BillingError {
     AdjustmentNotFound(uuid::Uuid),
     #[error("Database error")]
     Database,
+    #[error(transparent)]
+    Analytics(#[from] crate::analytics_client::AnalyticsError),
 }
 impl IntoResponse for BillingError {
     fn into_response(self) -> axum::response::Response {
-        let message = self.to_string();
-        let status = match &self {
+        let status = match self {
+            Self::Analytics(e) => return e.into_response("上游账单用量查询"),
             Self::Database => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BillNotFound(_) | Self::DiscrepancyNotFound(_) | Self::AdjustmentNotFound(_) => {
                 StatusCode::NOT_FOUND
             }
             _ => StatusCode::BAD_REQUEST,
         };
-        crate::response::ApiResponse::err(status, message)
+        crate::response::ApiResponse::err(status, self.to_string())
     }
 }
 #[derive(Debug, Serialize)]
