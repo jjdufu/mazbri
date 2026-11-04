@@ -2,10 +2,21 @@
   <button
     type="button"
     class="wb-adapter-chip"
-    :title="hint"
+    :class="{
+      'wb-adapter-chip--risk': isJobPoll,
+      'wb-adapter-chip--pool': isWsUnary,
+    }"
+    :title="chipTitle"
+    :aria-label="chipAriaLabel"
     @click="emit('edit')"
   >
-    {{ displayName }}
+    <span class="wb-adapter-chip__text">{{ displayName }}</span>
+    <span v-if="isJobPoll" class="wb-adapter-chip__risk">{{
+      $t("upstreamConnector.jobPollRiskTag")
+    }}</span>
+    <span v-else-if="isWsUnary" class="wb-adapter-chip__pool">{{
+      $t("upstreamConnector.wsUnaryPoolTag")
+    }}</span>
   </button>
 </template>
 
@@ -24,6 +35,9 @@ const emit = defineEmits<{
   edit: [];
 }>();
 
+const isJobPoll = computed(() => (props.adapter || "http_json") === "job_poll");
+const isWsUnary = computed(() => (props.adapter || "http_json") === "ws_unary");
+
 const displayName = computed(() => {
   const enc = (props.encoding || "").trim().toLowerCase();
   if ((props.adapter || "http_json") === "http_json" && enc === "form") {
@@ -35,33 +49,106 @@ const displayName = computed(() => {
   return t === key ? a : t;
 });
 
-const hint = computed(() => {
-  const a = props.adapter || "http_json";
-  return `${$t("upstreamConnector.adapterChipHint")} (${a})`;
+const adapterCode = computed(() => props.adapter || "http_json");
+
+/** 完整可见名 + 适配器码；窄宽 ellipsis 时靠 title/aria，禁止无 title 硬截断 */
+const chipTitle = computed(() => {
+  const base = `${displayName.value} (${adapterCode.value}) · ${$t("upstreamConnector.adapterChipHint")}`;
+  if (isJobPoll.value) {
+    return `${base} · ${$t("upstreamConnector.jobPollRiskTag")}`;
+  }
+  if (isWsUnary.value) {
+    return `${base} · ${$t("upstreamConnector.wsUnaryPoolTag")} · ${$t("upstreamConnector.wsUnaryPoolHint")}`;
+  }
+  return base;
+});
+
+const chipAriaLabel = computed(() => {
+  const base = `${displayName.value} (${adapterCode.value})`;
+  if (isJobPoll.value) {
+    return `${base}, ${$t("upstreamConnector.jobPollRiskTag")}`;
+  }
+  if (isWsUnary.value) {
+    return `${base}, ${$t("upstreamConnector.wsUnaryPoolTag")}`;
+  }
+  return base;
 });
 </script>
 
 <style scoped lang="scss">
 .wb-adapter-chip {
+  flex: 0 1 auto;
   flex-shrink: 1;
-  min-width: 0;
-  height: var(--wb-urlbar-h, 32px);
-  max-width: 9rem;
-  padding: 0 10px;
+  min-width: 4.5rem;
+  max-width: 18rem;
+  height: auto;
+  min-height: var(--wb-urlbar-h, 32px);
+  padding: 4px 10px;
   border: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
   border-radius: var(--wb-radius, var(--art-form-control-radius));
   background: var(--wb-surface-input, var(--el-fill-color-light));
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  font-size: 12px;
+  font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.25;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
   &:hover {
     color: var(--wb-text, var(--el-text-color-primary));
     background: var(--wb-surface-hover, var(--el-fill-color));
   }
+  &--risk {
+    border-color: color-mix(
+      in srgb,
+      var(--wb-danger, var(--el-color-danger)) 45%,
+      var(--wb-divider-subtle, var(--el-border-color-extra-light))
+    );
+    color: var(--wb-danger, var(--el-color-danger));
+  }
+  &--pool {
+    border-color: color-mix(
+      in srgb,
+      var(--wb-accent, var(--el-color-primary)) 40%,
+      var(--wb-divider-subtle, var(--el-border-color-extra-light))
+    );
+  }
+}
+.wb-adapter-chip__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+.wb-adapter-chip__risk {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wb-danger, var(--el-color-danger));
+  background: color-mix(
+    in srgb,
+    var(--wb-danger, var(--el-color-danger)) 12%,
+    transparent
+  );
+}
+.wb-adapter-chip__pool {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--wb-accent, var(--el-color-primary));
+  background: color-mix(
+    in srgb,
+    var(--wb-accent, var(--el-color-primary)) 12%,
+    transparent
+  );
 }
 </style>

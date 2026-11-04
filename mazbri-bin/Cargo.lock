@@ -2703,6 +2703,7 @@ name = "mazbri-bypass"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "chrono",
  "clap",
  "config",
@@ -2727,6 +2728,7 @@ dependencies = [
  "serde_urlencoded",
  "sha2 0.10.9",
  "sqlx",
+ "subtle",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.8.23",

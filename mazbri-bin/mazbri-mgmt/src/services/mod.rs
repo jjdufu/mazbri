@@ -8,6 +8,7 @@ pub mod analytics_window;
 pub mod api_key;
 pub mod appearance;
 pub mod billing;
+pub mod bypass_probe;
 pub mod billing_ops;
 pub mod finance_ops;
 pub mod ops_changes;

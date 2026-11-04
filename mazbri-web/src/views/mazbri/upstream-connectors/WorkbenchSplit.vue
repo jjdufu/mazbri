@@ -52,7 +52,7 @@ const props = withDefaults(
 
 const rootRef = ref<HTMLElement | null>(null);
 const leftW = ref(HSPLIT_DEFAULT_LEFT);
-const collapsed = ref(true);
+const collapsed = ref(false);
 
 const leftStyle = computed(() => {
   if (collapsed.value) return { width: "0px", minWidth: "0px" };
@@ -63,10 +63,10 @@ onMounted(() => {
   try {
     const st = parseHSplitState(localStorage.getItem(STORAGE_KEY));
     leftW.value = st.left;
+    collapsed.value = st.collapsed;
   } catch {
     void 0;
   }
-  collapsed.value = true;
 });
 
 function persist() {

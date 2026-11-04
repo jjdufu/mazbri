@@ -70,6 +70,7 @@ impl ServiceName {
     ///
     /// cert（CA 本身）、mgmt、analytics 只提供/调用明文 HTTP + Bearer token，
     /// 不走 `ServiceBootstrap::init_mtls`，也不是任何 gRPC/mTLS 链路的对端。
+    /// 工作台试调改走 bypass 隔离管理探针 HTTP（共享 token），mgmt 不再持客户端证。
     #[must_use]
     pub const fn requires_mtls(self) -> bool {
         !matches!(self, Self::Cert | Self::Mgmt | Self::Analytics)

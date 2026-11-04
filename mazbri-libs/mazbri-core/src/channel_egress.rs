@@ -535,6 +535,14 @@ pub struct GraphqlSpec {
     pub enum_map: Option<HashMap<String, String>>,
 }
 
+/// `job_poll` 适配器选项（submit-only / 请求级单次 query；**无** invoke 内轮询）。
+///
+/// - `submit_path`：提交路径；缺省用 `request.path`
+/// - `query_path`：状态查询路径模板，须含 `{job_id}`（请求级 `job_poll_mode=query` 时用）
+/// - `job_id_jsonpath`：从 **submit** 响应解析 job 标识
+///
+/// 已删除仅服务同步轮询的 `poll_interval_ms` / `status_jsonpath` / `result_jsonpath` /
+/// `message_jsonpath`（`deny_unknown_fields` 下旧草稿含这些键会直接拒收）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct JobPollSpec {
@@ -544,23 +552,15 @@ pub struct JobPollSpec {
     pub query_path: String,
     #[serde(default)]
     pub job_id_jsonpath: String,
-    #[serde(default)]
-    pub status_jsonpath: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result_jsonpath: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_jsonpath: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub poll_interval_ms: Option<u64>,
 }
 
+/// WebSocket 单次调用选项。组包权威在 [`EgressRequestSpec::wrap`]（与 `http_envelope` 同一套），
+/// 此处不重复 `wrap` 字段，避免双写。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct WsUnarySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wrap: Option<String>,
     /// header / query / `first_frame` — closed set, combinable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_in: Option<Vec<String>>,
@@ -862,63 +862,118 @@ fn validate_egress_auth(auth: &AuthSpec, adapter: AdapterKind) -> Result<(), Cha
     Ok(())
 }
 
+/// 各适配器必填矩阵（与工作台 Body 表单 / 发布门控同源）：
+/// - `http_json`：无额外适配器块
+/// - `http_envelope`：`operation` + `request.wrap` + `response.unwrap`
+/// - `jsonrpc`：`operation`（= JSON-RPC method；`id` 由运行时 `request_id` 自动填）
+/// - `soap_xml`：`operation`（= 信封操作元素 / 默认 `SOAPAction`）+ `soap` 对象
+/// - `ws_unary`：`operation` + `request.wrap` + `ws.path`；`ws.auth_in` 可选但取值闭集
+/// - `graphql`：`graphql.document`
+/// - `grpc`：`artifact_id`
+/// - `job_poll`：`job_poll.{query_path,job_id_jsonpath}`（submit-only；无轮询间隔字段）
+/// - `sign_form`：仅 `operation`（算法在 crypto）
 fn validate_adapter_options(
     spec: &ChannelEgressSpec,
     adapter: AdapterKind,
 ) -> Result<(), ChannelEgressError> {
     match adapter {
-        AdapterKind::Graphql => {
-            let doc = spec.graphql.as_ref().map_or("", |g| g.document.trim());
-            if doc.is_empty() {
-                return Err(ChannelEgressError::new(
-                    "egress.adapter=graphql 需要 graphql.document",
-                ));
+        AdapterKind::Graphql => validate_graphql_options(spec),
+        AdapterKind::Grpc => validate_grpc_options(spec),
+        AdapterKind::JobPoll => validate_job_poll_options(spec),
+        AdapterKind::HttpEnvelope => validate_http_envelope_options(spec),
+        AdapterKind::SoapXml => validate_soap_options(spec),
+        AdapterKind::WsUnary => validate_ws_unary_options(spec),
+        // Jsonrpc：method = operation；id = request_id（runtime）。
+        // SignForm：算法权威在 egress.crypto。
+        AdapterKind::HttpJson | AdapterKind::Jsonrpc | AdapterKind::SignForm => Ok(()),
+    }
+}
+
+fn validate_graphql_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let doc = spec.graphql.as_ref().map_or("", |g| g.document.trim());
+    if doc.is_empty() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=graphql 需要 graphql.document",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_grpc_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let id = spec.artifact_id.as_deref().map_or("", str::trim);
+    if id.is_empty() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=grpc 需要 egress.artifact_id（FileDescriptorSet）",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_job_poll_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let jp = spec.job_poll.as_ref().ok_or_else(|| {
+        ChannelEgressError::new("egress.adapter=job_poll 需要 job_poll 对象")
+    })?;
+    if jp.query_path.trim().is_empty() {
+        return Err(ChannelEgressError::new("job_poll.query_path 不能为空"));
+    }
+    if jp.job_id_jsonpath.trim().is_empty() {
+        return Err(ChannelEgressError::new("job_poll.job_id_jsonpath 不能为空"));
+    }
+    Ok(())
+}
+
+fn validate_http_envelope_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let wrap = spec.request.wrap.as_deref().map_or("", str::trim);
+    if wrap.is_empty() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=http_envelope 需要 request.wrap",
+        ));
+    }
+    let unwrap = spec
+        .response
+        .as_ref()
+        .and_then(|r| r.unwrap.as_deref())
+        .map_or("", str::trim);
+    if unwrap.is_empty() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=http_envelope 需要 response.unwrap",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_soap_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    if spec.soap.is_none() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=soap_xml 需要 soap 对象（可含 field_map / number_fields）",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_ws_unary_options(spec: &ChannelEgressSpec) -> Result<(), ChannelEgressError> {
+    let ws = spec
+        .ws
+        .as_ref()
+        .ok_or_else(|| ChannelEgressError::new("egress.adapter=ws_unary 需要 ws 对象"))?;
+    let path = ws.path.as_deref().map_or("", str::trim);
+    if path.is_empty() {
+        return Err(ChannelEgressError::new("ws.path 不能为空"));
+    }
+    let wrap = spec.request.wrap.as_deref().map_or("", str::trim);
+    if wrap.is_empty() {
+        return Err(ChannelEgressError::new(
+            "egress.adapter=ws_unary 需要 request.wrap",
+        ));
+    }
+    if let Some(ref auth_in) = ws.auth_in {
+        for loc in auth_in {
+            if !matches!(loc.as_str(), "header" | "query" | "first_frame") {
+                return Err(ChannelEgressError::new(format!(
+                    "unknown ws.auth_in '{loc}'"
+                )));
             }
         }
-        AdapterKind::Grpc => {
-            let id = spec.artifact_id.as_deref().map_or("", str::trim);
-            if id.is_empty() {
-                return Err(ChannelEgressError::new(
-                    "egress.adapter=grpc 需要 egress.artifact_id（FileDescriptorSet）",
-                ));
-            }
-        }
-        AdapterKind::JobPoll => {
-            let jp = spec.job_poll.as_ref().ok_or_else(|| {
-                ChannelEgressError::new("egress.adapter=job_poll 需要 job_poll 对象")
-            })?;
-            if jp.query_path.trim().is_empty() {
-                return Err(ChannelEgressError::new("job_poll.query_path 不能为空"));
-            }
-            if jp.job_id_jsonpath.trim().is_empty() {
-                return Err(ChannelEgressError::new("job_poll.job_id_jsonpath 不能为空"));
-            }
-            if jp.status_jsonpath.trim().is_empty() {
-                return Err(ChannelEgressError::new("job_poll.status_jsonpath 不能为空"));
-            }
-            if let Some(ms) = jp.poll_interval_ms
-                && ms == 0
-            {
-                return Err(ChannelEgressError::new(
-                    "job_poll.poll_interval_ms 必须大于 0",
-                ));
-            }
-        }
-        AdapterKind::WsUnary => {
-            if let Some(ref ws) = spec.ws
-                && let Some(ref auth_in) = ws.auth_in
-            {
-                for loc in auth_in {
-                    if !matches!(loc.as_str(), "header" | "query" | "first_frame") {
-                        return Err(ChannelEgressError::new(format!(
-                            "unknown ws.auth_in '{loc}'"
-                        )));
-                    }
-                }
-            }
-        }
-        // SignForm：算法权威在 egress.crypto；sign_type 仅为表单字段，不再做 HMAC-only 限制。
-        _ => {}
     }
     Ok(())
 }
@@ -1045,6 +1100,120 @@ mod tests {
             "request": {"method": "POST", "path": "/", "body_encoding": "json"}});
         let err = parse_and_validate_egress(&v).unwrap_err().to_string();
         assert!(err.contains("operation"));
+    }
+
+    #[test]
+    fn envelope_requires_wrap_and_unwrap() {
+        let missing_wrap = serde_json::json!({
+            "adapter": "http_envelope",
+            "operation": "pay",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "response": {"unwrap": "$.data"}
+        });
+        let err = parse_and_validate_egress(&missing_wrap).unwrap_err().to_string();
+        assert!(err.contains("request.wrap"), "{err}");
+
+        let missing_unwrap = serde_json::json!({
+            "adapter": "http_envelope",
+            "operation": "pay",
+            "base_url": "https://up.example",
+            "request": {
+                "method": "POST", "path": "/", "body_encoding": "json",
+                "wrap": "method_biz_content"
+            }
+        });
+        let err = parse_and_validate_egress(&missing_unwrap).unwrap_err().to_string();
+        assert!(err.contains("response.unwrap"), "{err}");
+
+        let ok = serde_json::json!({
+            "adapter": "http_envelope",
+            "operation": "pay",
+            "base_url": "https://up.example",
+            "request": {
+                "method": "POST", "path": "/", "body_encoding": "json",
+                "wrap": "method_biz_content"
+            },
+            "response": {"unwrap": "$.data"}
+        });
+        parse_and_validate_egress(&ok).unwrap();
+    }
+
+    #[test]
+    fn soap_requires_soap_object() {
+        let v = serde_json::json!({
+            "adapter": "soap_xml",
+            "operation": "RenderPhoto",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/soap", "body_encoding": "json"}
+        });
+        let err = parse_and_validate_egress(&v).unwrap_err().to_string();
+        assert!(err.contains("soap"), "{err}");
+
+        let ok = serde_json::json!({
+            "adapter": "soap_xml",
+            "operation": "RenderPhoto",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/soap", "body_encoding": "json"},
+            "soap": {"field_map": {"scene": "Scene"}}
+        });
+        parse_and_validate_egress(&ok).unwrap();
+    }
+
+    #[test]
+    fn ws_unary_requires_path_and_wrap() {
+        let missing = serde_json::json!({
+            "adapter": "ws_unary",
+            "operation": "ping",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/ws", "body_encoding": "json"}
+        });
+        let err = parse_and_validate_egress(&missing).unwrap_err().to_string();
+        assert!(err.contains("ws"), "{err}");
+
+        let no_path = serde_json::json!({
+            "adapter": "ws_unary",
+            "operation": "ping",
+            "base_url": "https://up.example",
+            "request": {
+                "method": "POST", "path": "/ws", "body_encoding": "json",
+                "wrap": "none"
+            },
+            "ws": {}
+        });
+        let err = parse_and_validate_egress(&no_path).unwrap_err().to_string();
+        assert!(err.contains("ws.path"), "{err}");
+
+        let ok = serde_json::json!({
+            "adapter": "ws_unary",
+            "operation": "ping",
+            "base_url": "https://up.example",
+            "request": {
+                "method": "POST", "path": "/ws", "body_encoding": "json",
+                "wrap": "none"
+            },
+            "ws": {"path": "/ws/v1", "auth_in": ["header"]}
+        });
+        parse_and_validate_egress(&ok).unwrap();
+    }
+
+    #[test]
+    fn jsonrpc_requires_operation_only() {
+        let missing = serde_json::json!({
+            "adapter": "jsonrpc",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/rpc", "body_encoding": "json"}
+        });
+        let err = parse_and_validate_egress(&missing).unwrap_err().to_string();
+        assert!(err.contains("operation"), "{err}");
+
+        let ok = serde_json::json!({
+            "adapter": "jsonrpc",
+            "operation": "sum",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/rpc", "body_encoding": "json"}
+        });
+        parse_and_validate_egress(&ok).unwrap();
     }
 
     #[test]

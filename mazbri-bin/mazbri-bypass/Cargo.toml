@@ -37,6 +37,8 @@ tracing = {version = "0.1"}
 tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
 tonic-prost = {version = "0.14.6"}
 http = {version = "1.4.0"}
+axum = {version = "0.8.8", features = ["macros"]}
+subtle = "2.6"
 tower = {version = "0.5.3"}
 url = "2.5"
 dns-lookup = "2.0"

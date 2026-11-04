@@ -43,6 +43,14 @@ export function isViewerRole(role: RoleLike): boolean {
 }
 
 /**
+ * 上游免代码工作台写权限：仅 `R_ADMIN`。
+ * `R_FINANCE` / `R_VIEWER` 只能只读打开；不沿用全局 `isBizRole`。
+ */
+export function canWriteUpstreamConnector(role: RoleLike): boolean {
+  return isAdminRole(role);
+}
+
+/**
  * 当前角色是否命中允许列表。
  * - `allowed` 为空视为拒绝（与后端 Roles([]) 非法一致，防御性）。
  * - 未知角色一律拒绝。

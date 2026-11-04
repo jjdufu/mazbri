@@ -463,6 +463,34 @@ fn init_metrics_and_audit(config: &MgmtApiConfig) -> Result<()> {
     Ok(())
 }
 
+
+
+fn init_connector_runtime(
+    config: &MgmtApiConfig,
+) -> Arc<mazbri_upstream_runtime::RuntimeEngine> {
+    // `[ssrf].allow_private_network`（默认 false）：与 bypass 同语义，开启时 WARN。
+    config.ssrf.log_startup("mazbri-mgmt");
+    Arc::new(mazbri_mgmt::services::upstream_connector::build_connector_runtime(
+        config.ssrf.checker(),
+    ))
+}
+
+/// 构造 bypass 管理探针 HTTP 客户端（共享 token；启动不拉 mTLS 证）。
+fn init_bypass_probe_client(
+    config: &MgmtApiConfig,
+) -> Result<Arc<mazbri_mgmt::services::bypass_probe::BypassProbeClient>> {
+    let client = mazbri_mgmt::services::bypass_probe::BypassProbeClient::new(
+        config.bypass_probe_url.clone(),
+        config.mgmt_probe_token.clone(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    info!(
+        bypass_probe_url = %config.bypass_probe_url,
+        "bypass mgmt probe HTTP client ready (token auth; no mTLS)"
+    );
+    Ok(Arc::new(client))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-mgmt");
@@ -517,11 +545,8 @@ async fn main() -> Result<()> {
         ),
     );
     spawn_connector_run_cleanup(&db, &config.connector_probe);
-    // `[ssrf].allow_private_network`（默认 false）：与 bypass 同语义，开启时 WARN。
-    config.ssrf.log_startup("mazbri-mgmt");
-    let connector_runtime = Arc::new(
-        mazbri_mgmt::services::upstream_connector::build_connector_runtime(config.ssrf.checker()),
-    );
+    let connector_runtime = init_connector_runtime(&config);
+    let bypass_probe = init_bypass_probe_client(&config)?;
     // Hot-reloadable reconciliation settings (bootstrap conf = defaults only).
     let billing_reconciliation_settings = Arc::new(
         mazbri_mgmt::services::BillingReconciliationSettingsCache::new(
@@ -557,6 +582,7 @@ async fn main() -> Result<()> {
         billing_reconciliation_settings,
         connector_run_limiter,
         connector_runtime,
+        bypass_probe,
     };
     let _shutdown_handle = create_shutdown_manager();
     let app = create_router(app_state, &auth_state, audit);

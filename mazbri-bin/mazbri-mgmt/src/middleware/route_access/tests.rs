@@ -28,8 +28,6 @@ const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
     "/tenants/{code}/crypto",
     // 只返回请求密钥 kid、状态与时间，不返回密钥值。
     "/tenants/{code}/request-keys",
-    // 只导出接口名、方法与 URL，不含请求头 / 鉴权配置（与 GET drafts/{id} 可见内容一致）。
-    "/upstream-connectors/drafts/{id}/export/postman",
 ];
 
 /// 允许 `SelfService` 的路由：只能作用于调用者本人。
@@ -201,11 +199,11 @@ fn table_mirrors_existing_handler_checks() {
         ("DELETE", "/tenants/{code}", BIZ),
         ("POST", "/tenants/{code}/ratelimit/commands", BIZ),
         ("GET", "/tenants/{code}/ratelimit/commands", BIZ),
-        ("POST", "/upstream-connectors/drafts/{id}/publish", BIZ),
+        ("POST", "/upstream-connectors/drafts/{id}/publish", ADMIN),
         (
             "POST",
             "/upstream-connectors/suppliers/{supplier_id}/rollback",
-            BIZ,
+            ADMIN,
         ),
         ("GET", "/certificates/{id}/full", ADMIN),
         ("PUT", "/settings/mfa", ADMIN),
@@ -258,10 +256,6 @@ fn decision_four_routes_are_granted_to_business_admins() {
         ("DELETE", "/billing/bills/{id}"),
         ("POST", "/tenants/{code}/ratelimit/commands"),
         ("POST", "/tenants/{code}/ratelimit/commands/{id}/cancel"),
-        (
-            "POST",
-            "/upstream-connectors/suppliers/{supplier_id}/rollback",
-        ),
     ] {
         assert_eq!(
             access_of(method, path),
@@ -651,6 +645,67 @@ fn viewer_is_denied_on_biz_write_routes() {
             decide(Some(Access::Roles(BIZ)), Some("R_ADMIN")),
             Ok(()),
             "ADMIN must write {method} {path}"
+        );
+    }
+}
+
+#[test]
+fn upstream_connector_writes_are_super_admin_only() {
+    // 免代码工作台：财务 / 观察者只读；写 / 发布 / 导入导出 / 试跑仅 R_ADMIN。
+    for (method, path) in [
+        ("POST", "/upstream-connectors/drafts"),
+        ("PATCH", "/upstream-connectors/drafts/{id}"),
+        ("DELETE", "/upstream-connectors/drafts/{id}"),
+        ("POST", "/upstream-connectors/drafts/{id}/publish"),
+        ("POST", "/upstream-connectors/drafts/{id}/runs"),
+        ("POST", "/upstream-connectors/drafts/{id}/validate"),
+        ("POST", "/upstream-connectors/drafts/{id}/transform-preview"),
+        ("POST", "/upstream-connectors/import/curl"),
+        ("POST", "/upstream-connectors/import/postman"),
+        ("POST", "/upstream-connectors/import/openapi"),
+        ("POST", "/upstream-connectors/drafts/from-supplier/{supplier_id}"),
+        ("POST", "/upstream-connectors/artifacts"),
+        ("POST", "/upstream-connectors/suppliers/{supplier_id}/rollback"),
+        ("POST", "/upstream-connectors/suppliers/{supplier_id}/runs"),
+        ("GET", "/upstream-connectors/drafts/{id}/export/postman"),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::Roles(ADMIN),
+            "{method} {path} must be ADMIN-only"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_FINANCE")),
+            Err(Denial::Role(ADMIN)),
+            "FINANCE must be denied for {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_VIEWER")),
+            Err(Denial::Role(ADMIN)),
+            "VIEWER must be denied for {method} {path}"
+        );
+        assert_eq!(
+            decide(Some(Access::Roles(ADMIN)), Some("R_ADMIN")),
+            Ok(()),
+            "ADMIN must be allowed for {method} {path}"
+        );
+    }
+    for (method, path) in [
+        ("GET", "/upstream-connectors/drafts"),
+        ("GET", "/upstream-connectors/drafts/{id}"),
+        ("GET", "/upstream-connectors/drafts/{id}/runs"),
+        ("GET", "/upstream-connectors/runs/{run_id}"),
+        ("GET", "/upstream-connectors/artifacts/{id}"),
+        ("GET", "/upstream-connectors/suppliers/{supplier_id}/versions"),
+        (
+            "GET",
+            "/upstream-connectors/suppliers/{supplier_id}/versions/{vid}/diff",
+        ),
+    ] {
+        assert_eq!(
+            access_of(method, path),
+            Access::AnyRole,
+            "{method} {path} must stay readable"
         );
     }
 }

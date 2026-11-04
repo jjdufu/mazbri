@@ -86,12 +86,12 @@ function asPersistObject(raw: string): Record<string, unknown> | null {
 
 
 export function parseHSplitState(raw: string | null): HSplitState {
-  if (!raw) return { left: HSPLIT_DEFAULT_LEFT, collapsed: true };
+  if (!raw) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
   const p = asPersistObject(raw);
-  if (!p) return { left: HSPLIT_DEFAULT_LEFT, collapsed: true };
+  if (!p) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
   return {
     left: finiteNonNeg(p.left, HSPLIT_DEFAULT_LEFT),
-    collapsed: p.collapsed !== false,
+    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
   };
 }
 
@@ -715,20 +715,30 @@ export type AdapterBodyKind =
   | "xml"
   | "graphql"
   | "grpc"
-  | "job_poll";
+  | "job_poll"
+  | "soap_xml"
+  | "ws_unary"
+  | "jsonrpc"
+  | "http_envelope";
 
 export function adapterBodyKind(adapter?: string): AdapterBodyKind {
   switch (adapter) {
     case "sign_form":
       return "form";
     case "soap_xml":
-      return "xml";
+      return "soap_xml";
     case "graphql":
       return "graphql";
     case "grpc":
       return "grpc";
     case "job_poll":
       return "job_poll";
+    case "ws_unary":
+      return "ws_unary";
+    case "jsonrpc":
+      return "jsonrpc";
+    case "http_envelope":
+      return "http_envelope";
     default:
       return "json";
   }
@@ -1208,11 +1218,110 @@ export function defaultJobPollSpec(): Record<string, unknown> {
     submit_path: "",
     query_path: "/jobs/{job_id}",
     job_id_jsonpath: "$.job_id",
-    status_jsonpath: "$.status",
-    result_jsonpath: "$.result",
-    message_jsonpath: "$.message",
-    poll_interval_ms: 500,
   };
+}
+
+export function defaultSoapSpec(): Record<string, unknown> {
+  return {
+    field_map: {},
+    number_fields: [],
+  };
+}
+
+export function defaultWsUnarySpec(ep?: ConnectorEndpoint): Record<string, unknown> {
+  const path = (ep?.ws as { path?: string } | undefined)?.path
+    || (ep?.path || "").trim()
+    || "/";
+  return {
+    path,
+    auth_in: [],
+  };
+}
+
+/** 与 mazbri-core `validate_adapter_options` / `requires_operation` 同源的缺失字段列表。 */
+export type MissingAdapterField = {
+  path: string;
+  labelKey: string;
+};
+
+export function listMissingAdapterFields(
+  ep: ConnectorEndpoint,
+): MissingAdapterField[] {
+  const adapter = (ep.adapter || "http_json").trim();
+  const missing: MissingAdapterField[] = [];
+  const op = (ep.operation || "").trim();
+  // AdapterKind::requires_operation — 除 http_json 外全部需要 operation
+  if (adapter !== "http_json" && !op) {
+    missing.push({ path: "operation", labelKey: "upstreamConnector.operation" });
+  }
+
+  switch (adapter) {
+    case "http_envelope": {
+      if (!(ep.wrap || "").trim()) {
+        missing.push({ path: "request.wrap", labelKey: "upstreamConnector.wrap" });
+      }
+      if (!(ep.unwrap || "").trim()) {
+        missing.push({ path: "response.unwrap", labelKey: "upstreamConnector.unwrap" });
+      }
+      break;
+    }
+    case "soap_xml": {
+      if (!ep.soap || typeof ep.soap !== "object") {
+        missing.push({ path: "soap", labelKey: "upstreamConnector.soapSection" });
+      }
+      break;
+    }
+    case "jsonrpc": {
+      // method = operation；id 由 runtime request_id 自动填
+      break;
+    }
+    case "ws_unary": {
+      const ws = (ep.ws || {}) as Record<string, unknown>;
+      if (!(String(ws.path ?? "").trim())) {
+        missing.push({ path: "ws.path", labelKey: "upstreamConnector.wsPath" });
+      }
+      if (!(ep.wrap || "").trim()) {
+        missing.push({ path: "request.wrap", labelKey: "upstreamConnector.wrap" });
+      }
+      const authIn = ws.auth_in;
+      if (Array.isArray(authIn)) {
+        for (const loc of authIn) {
+          const s = String(loc);
+          if (s && !["header", "query", "first_frame"].includes(s)) {
+            missing.push({ path: "ws.auth_in", labelKey: "upstreamConnector.wsAuthIn" });
+            break;
+          }
+        }
+      }
+      break;
+    }
+    case "graphql": {
+      if (!String(ep.graphql?.document ?? "").trim()) {
+        missing.push({ path: "graphql.document", labelKey: "upstreamConnector.graphqlDocument" });
+      }
+      break;
+    }
+    case "grpc": {
+      if (!(ep.artifact_id || "").trim()) {
+        missing.push({ path: "artifact_id", labelKey: "upstreamConnector.artifactId" });
+      }
+      break;
+    }
+    case "job_poll": {
+      const jp = (ep.job_poll || {}) as Record<string, unknown>;
+      if (!String(jp.query_path ?? "").trim()) {
+        missing.push({ path: "job_poll.query_path", labelKey: "upstreamConnector.jobQueryPath" });
+      }
+      if (!String(jp.job_id_jsonpath ?? "").trim()) {
+        missing.push({ path: "job_poll.job_id_jsonpath", labelKey: "upstreamConnector.jobIdPath" });
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  return missing;
 }
 
 export function ensureEndpointAdapterFields(ep: ConnectorEndpoint): ConnectorEndpoint {
@@ -1223,6 +1332,20 @@ export function ensureEndpointAdapterFields(ep: ConnectorEndpoint): ConnectorEnd
   }
   if (adapter === "job_poll") {
     ep.job_poll = { ...defaultJobPollSpec(), ...(ep.job_poll || {}) };
+  }
+  if (adapter === "soap_xml") {
+    ep.soap = { ...defaultSoapSpec(), ...(ep.soap || {}) };
+  }
+  if (adapter === "ws_unary") {
+    ep.ws = { ...defaultWsUnarySpec(ep), ...(ep.ws || {}) };
+    if (!(ep.wrap || "").trim()) {
+      ep.wrap = "none";
+    }
+  }
+  if (adapter === "http_envelope") {
+    if (!(ep.wrap || "").trim()) {
+      ep.wrap = "method_biz_content";
+    }
   }
   if (!ep.auth) ep.auth = { profile: "none" };
   return ep;

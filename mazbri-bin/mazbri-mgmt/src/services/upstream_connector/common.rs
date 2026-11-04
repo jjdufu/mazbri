@@ -120,7 +120,8 @@ pub(crate) fn channel_config_with_egress(
 pub(crate) const GATE_TTL_HOURS: i32 = 24;
 pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
 
-/// 构建 connector 试跑 / live run 共用的 [`RuntimeEngine`]。
+/// 构建仅用于 SSRF 预检 / `auth_only` / `transform_preview` / microservice 本地探测的 [`RuntimeEngine`]。
+/// **不再作为 business/live 默认 Send**；门控只认 bypass 管理探针（`bypass_mgmt_probe`）。
 ///
 /// `ssrf` 由 mgmt `[ssrf]` 配置生成（启动时构建一次，存于 `AppState::connector_runtime`），
 /// 同时用于连接期 DNS 过滤与 `validate_public_http_url` 预检。
@@ -142,7 +143,16 @@ pub fn build_connector_runtime(ssrf: SsrfChecker) -> RuntimeEngine {
             // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
             reqwest::Client::new()
         });
-    RuntimeEngine::new(Arc::new(client), ssrf)
+    // 试跑与 bypass 同池实现；进程短生命周期，用更小的保守上限。
+    RuntimeEngine::new(Arc::new(client), ssrf).with_limits(
+        mazbri_upstream_runtime::RuntimeLimits {
+            ws_handshake_timeout: Duration::from_secs(10),
+            ws_max_concurrent: 8,
+            ws_max_concurrent_per_key: 4,
+            ws_pool_max_idle_per_key: 2,
+            ws_pool_idle_ttl: Duration::from_secs(30),
+        },
+    )
 }
 
 #[cfg(test)]

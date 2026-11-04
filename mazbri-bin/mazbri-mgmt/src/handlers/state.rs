@@ -3,6 +3,7 @@ use crate::audit::AuditService;
 use crate::config::MgmtApiConfig;
 use crate::mfa::MfaServiceCache;
 use crate::middleware::auth::AdminAuthState;
+use crate::services::bypass_probe::BypassProbeClient;
 use crate::services::connector_rate_limit::SlidingWindowLimiter;
 use crate::services::{BillingReconciliationSettingsCache, MfaSettingsCache, PasswordPolicyCache};
 use mazbri_product::ProductService;
@@ -40,7 +41,9 @@ pub struct AppState {
     pub billing_reconciliation_settings: Arc<BillingReconciliationSettingsCache>,
     /// Global limiter for connector draft/live runs.
     pub connector_run_limiter: Arc<SlidingWindowLimiter>,
-    /// Connector 试跑 / live run 共用 runtime；SSRF 策略来自 `[ssrf]`，
-    /// `connector_runtime.ssrf()` 同时用于 `validate_public_http_url` 预检。
+    /// 仅 SSRF 预检 / `auth_only` / `transform_preview` / microservice 本地探测。
+    /// **不得**再作为 business/live 默认 Send，也 **不得**写入 `probe_path=bypass_mgmt_probe`。
     pub connector_runtime: Arc<RuntimeEngine>,
+    /// business/live 经 bypass 隔离管理探针 HTTP（不经 gateway 计费）。
+    pub bypass_probe: Arc<BypassProbeClient>,
 }

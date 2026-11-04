@@ -126,11 +126,15 @@ export interface ConnectorRun {
   actor?: string | null;
   created_at: string;
   spec_fingerprint?: string | null;
+  /** bypass_mgmt_probe = 经 bypass 管理探针；可作 require_gate。缺省/其它不作门控。 */
+  probe_path?: string | null;
   response_preview?: {
     status?: number;
     body_preview?: string;
     url?: string;
     headers?: Record<string, string>;
+    adapter?: string;
+    probe_path?: string;
   };
 }
 

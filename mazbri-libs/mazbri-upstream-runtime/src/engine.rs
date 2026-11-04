@@ -20,14 +20,36 @@ use crate::types::{
 #[derive(Debug, Clone)]
 pub struct RuntimeLimits {
     pub ws_handshake_timeout: Duration,
-    pub job_poll_min_interval: Duration,
+    /// 全局 `ws_unary` 并发上限（失败快，不排队）。
+    pub ws_max_concurrent: u32,
+    /// 每池键（`base_url` + path + auth 指纹）并发上限。
+    pub ws_max_concurrent_per_key: u32,
+    /// 每键空闲连接上限。
+    pub ws_pool_max_idle_per_key: u32,
+    /// 空闲连接 TTL；借出时丢弃过期连接。
+    pub ws_pool_idle_ttl: Duration,
 }
 
 impl Default for RuntimeLimits {
     fn default() -> Self {
         Self {
             ws_handshake_timeout: Duration::from_secs(10),
-            job_poll_min_interval: Duration::from_millis(200),
+            ws_max_concurrent: 32,
+            ws_max_concurrent_per_key: 8,
+            ws_pool_max_idle_per_key: 4,
+            ws_pool_idle_ttl: Duration::from_secs(60),
+        }
+    }
+}
+
+impl RuntimeLimits {
+    fn ws_pool_config(&self) -> crate::ws_pool::WsPoolConfig {
+        crate::ws_pool::WsPoolConfig {
+            handshake_timeout: self.ws_handshake_timeout,
+            max_concurrent: self.ws_max_concurrent.max(1),
+            max_concurrent_per_key: self.ws_max_concurrent_per_key.max(1),
+            max_idle_per_key: self.ws_pool_max_idle_per_key.max(1),
+            idle_ttl: self.ws_pool_idle_ttl,
         }
     }
 }
@@ -38,16 +60,20 @@ pub struct RuntimeEngine {
     ssrf: SsrfChecker,
     token_cache: Arc<TokenCache>,
     limits: RuntimeLimits,
+    ws_pool: Arc<crate::ws_pool::WsPool>,
 }
 
 impl RuntimeEngine {
     #[must_use]
     pub fn new(client: Arc<reqwest::Client>, ssrf: SsrfChecker) -> Self {
+        let limits = RuntimeLimits::default();
+        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
         Self {
             client,
             ssrf,
             token_cache: Arc::new(TokenCache::new()),
-            limits: RuntimeLimits::default(),
+            limits,
+            ws_pool,
         }
     }
 
@@ -56,18 +82,27 @@ impl RuntimeEngine {
         ssrf: SsrfChecker,
         token_cache: Arc<TokenCache>,
     ) -> Self {
+        let limits = RuntimeLimits::default();
+        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
         Self {
             client,
             ssrf,
             token_cache,
-            limits: RuntimeLimits::default(),
+            limits,
+            ws_pool,
         }
     }
 
     #[must_use]
     pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
+        self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
         self.limits = limits;
         self
+    }
+
+    #[must_use]
+    pub fn ws_pool(&self) -> Arc<crate::ws_pool::WsPool> {
+        self.ws_pool.clone()
     }
 
     #[must_use]
@@ -233,8 +268,7 @@ impl RuntimeEngine {
             base_url,
             auth: &applied,
             timeout: input.timeout,
-            ws_handshake_timeout: self.limits.ws_handshake_timeout,
-            job_poll_min_interval: self.limits.job_poll_min_interval,
+            ws_pool: &self.ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
         };

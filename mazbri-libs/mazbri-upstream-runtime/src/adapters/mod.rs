@@ -29,8 +29,8 @@ pub struct AdapterCtx<'a> {
     pub base_url: &'a str,
     pub auth: &'a AppliedAuth,
     pub timeout: Duration,
-    pub ws_handshake_timeout: Duration,
-    pub job_poll_min_interval: Duration,
+    /// 与 bypass / mgmt 共用的 `ws_unary` 连接池（无 unpooled 回退）。
+    pub ws_pool: &'a crate::ws_pool::WsPool,
     /// 解析后的流水线密钥（bypass 注入或凭证映射）。
     pub pipeline_keys: &'a crate::crypto_pipeline::PipelineKeys,
     /// 算法注册表（与 Profile 校验 / pipeline 共用）。
@@ -443,6 +443,7 @@ mod tests {
         let auth = auth_with(HashMap::new(), vec![]);
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
         let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+        let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
         let ctx = AdapterCtx {
             client: &client,
             ssrf: &ssrf,
@@ -450,8 +451,7 @@ mod tests {
             base_url: "http://127.0.0.1",
             auth: &auth,
             timeout: Duration::from_secs(2),
-            ws_handshake_timeout: Duration::from_secs(2),
-            job_poll_min_interval: Duration::from_millis(10),
+            ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
         };

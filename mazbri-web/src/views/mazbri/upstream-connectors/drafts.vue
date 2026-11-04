@@ -24,15 +24,15 @@
           v-model="searchParams.q"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="['R_ADMIN', 'R_FINANCE']"
+          :import-roles="[...ROLES_ADMIN]"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :export-roles="['R_ADMIN', 'R_FINANCE']"
+          :export-roles="[...ROLES_ADMIN]"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_FINANCE']"
+          :delete-roles="[...ROLES_ADMIN]"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -53,10 +53,14 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton link type="primary" @click="openDraft(row)">
-            {{ $t("upstreamConnector.continueEdit") }}
+            {{
+              canWrite
+                ? $t("upstreamConnector.continueEdit")
+                : $t("upstreamConnector.viewDraft")
+            }}
           </ElButton>
           <ElButton
-            v-roles="ROLES_BIZ"
+            v-roles="ROLES_ADMIN"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -101,13 +105,18 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { $t } from "@/locales";
-import { ROLES_BIZ } from "@/utils/ops/roles";
+import { ROLES_ADMIN, canWriteUpstreamConnector } from "@/utils/ops/roles";
+import { useUserStore } from "@/store/modules/user";
 import { formatDateTime } from "@/utils/format";
 import WorkbenchImportDialog from "./WorkbenchImportDialog.vue";
 
 defineOptions({ name: "ConnectorDraftList" });
 
 const router = useRouter();
+const userStore = useUserStore();
+const canWrite = computed(() =>
+  canWriteUpstreamConnector(userStore.info?.role),
+);
 const loading = ref(false);
 const tableData = ref<ConnectorDraft[]>([]);
 const searchParams = reactive({ q: "" });

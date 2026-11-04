@@ -6,7 +6,11 @@ use super::{
     evaluate_assertions, load_artifact_bytes, mask_config_credentials, parse_workbench_env, repo,
     ssrf, workbench_endpoint_key,
 };
+use crate::services::bypass_probe::{
+    self, BypassProbeClient, PROBE_PATH_BYPASS_MGMT_PROBE, ProbeInvokeParams, ProbeOutcome,
+};
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::hash_egress_spec_json;
 
 // ---------- Validate / Run ----------
 
@@ -57,8 +61,10 @@ pub async fn validate_draft(
 /// `run_draft` 的入参。
 pub struct RunDraftParams<'a> {
     pub audit: &'a AuditService,
-    /// 按 `[ssrf]` 配置构建的共享 runtime（含 SSRF checker）。
+    /// 仅 `auth_only` / `transform_preview`（及 SSRF 预检）使用；**不得**再作 business/live 默认 Send。
     pub engine: &'a RuntimeEngine,
+    /// business/live 经 bypass 隔离管理探针 HTTP（不经 gateway 计费）。
+    pub bypass: &'a BypassProbeClient,
     pub id: Uuid,
     pub req: RunRequest,
     pub actor: &'a str,
@@ -75,6 +81,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
     let RunDraftParams {
         audit,
         engine,
+        bypass,
         id,
         req,
         actor,
@@ -110,69 +117,48 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
         .await;
     }
 
-    let PreparedRun {
-        input,
-        endpoint_key,
-        fingerprint,
-    } = prepare_run_input(pool, &row, &req, default_timeout_ms, max_body_bytes).await?;
-
-    let result = engine.invoke(input).await;
-
-    let assertion_results = run_draft_assertions(&req, &row.endpoints, &result);
-
-    let assertions_ok = assertion_results.is_empty() || assertion_results.iter().all(|a| a.ok);
-    let overall_ok = result.ok && assertions_ok;
-
-    let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
-    let assertions_json = serde_json::to_value(&assertion_results).unwrap_or(serde_json::json!([]));
-
-    let error_code = run_error_code(&result, overall_ok, assertions_ok);
-
-    connector_metrics::record_run(&req.mode, overall_ok, error_code);
-
-    let write_fp = overall_ok && matches!(req.mode.as_str(), "business" | "live");
-    let run_row = repo::insert_run(
-        pool,
-        repo::NewRun {
-            draft_id: Some(id),
-            supplier_id: None,
-            mode: &req.mode,
-            ok: overall_ok,
-            latency_ms: Some(i32::saturating_from(result.latency_ms)),
-            stages: &stages_json,
-            assertions: &assertions_json,
-            error_code,
-            error_message: result.error_message.as_deref(),
-            endpoint_key: endpoint_key.as_deref(),
-            testcase_id: req.testcase_id,
-            actor: Some(actor),
-            spec_fingerprint: if write_fp {
-                Some(fingerprint.as_str())
-            } else {
-                None
-            },
-        },
-    )
-    .await
-    .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
-
-    audit.log(AuditLogRequest {
-        user_id: Some(user_id),
-        action: AuditAction::ConnectorRun,
-        resource_type: AuditResourceType::Supplier,
-        resource_id: Some(id.to_string()),
-        details: Some(serde_json::json!({
-            "run_id": run_row.id,
-            "mode": req.mode,
-            "ok": overall_ok,
-        })),
-        ip_address: client_ip,
-        ..Default::default()
-    });
-
-    let response_preview = run_response_preview(&result);
-
-    Ok(run_dto_from_row(run_row, response_preview))
+    match req.mode.as_str() {
+        "auth_only" | "transform_preview" => {
+            run_draft_local_non_gate(
+                pool,
+                LocalNonGateParams {
+                    audit,
+                    engine,
+                    id,
+                    row: &row,
+                    req: &req,
+                    actor,
+                    user_id,
+                    client_ip,
+                    default_timeout_ms,
+                    max_body_bytes,
+                },
+            )
+            .await
+        }
+        "business" | "live" => {
+            run_draft_via_bypass(
+                pool,
+                BypassRunParams {
+                    audit,
+                    bypass,
+                    ssrf: engine.ssrf(),
+                    id,
+                    row: &row,
+                    req: &req,
+                    actor,
+                    user_id,
+                    client_ip,
+                    default_timeout_ms,
+                    max_body_bytes,
+                },
+            )
+            .await
+        }
+        other => Err(ApiError::validation(format!(
+            "unsupported run mode: {other}（business/live 经 bypass；auth_only/transform_preview 本地；无 engine 兜底）"
+        ))),
+    }
 }
 
 /// `probe_microservice_draft` 的入参。
@@ -247,6 +233,7 @@ pub(super) async fn probe_microservice_draft(
             testcase_id: None,
             actor: Some(actor),
             spec_fingerprint: None,
+            probe_path: None,
         },
     )
     .await
@@ -287,6 +274,7 @@ pub(super) async fn probe_microservice_draft(
         created_at: run_row.created_at,
         response_preview: None,
         spec_fingerprint: None,
+        probe_path: None,
     })
 }
 
@@ -336,6 +324,7 @@ pub async fn list_runs(pool: &PgPool, draft_id: Uuid) -> Result<Vec<RunDto>, Api
             created_at: r.created_at,
             response_preview: None,
             spec_fingerprint: r.spec_fingerprint,
+            probe_path: r.probe_path,
         })
         .collect())
 }
@@ -364,6 +353,7 @@ pub async fn get_run(pool: &PgPool, run_id: Uuid) -> Result<RunDto, ApiError> {
         created_at: r.created_at,
         response_preview: None,
         spec_fingerprint: r.spec_fingerprint,
+        probe_path: r.probe_path,
     })
 }
 
@@ -454,11 +444,436 @@ fn run_response_preview(
     })
 }
 
+
+/// `auth_only` / `transform_preview`：mgmt 本地 `RuntimeEngine`；`probe_path` 为 `NULL`，永不进 gate。
+struct LocalNonGateParams<'a> {
+    audit: &'a AuditService,
+    engine: &'a RuntimeEngine,
+    id: Uuid,
+    row: &'a repo::DraftRow,
+    req: &'a RunRequest,
+    actor: &'a str,
+    user_id: Uuid,
+    client_ip: Option<String>,
+    default_timeout_ms: u64,
+    max_body_bytes: usize,
+}
+
+async fn run_draft_local_non_gate(
+    pool: &PgPool,
+    params: LocalNonGateParams<'_>,
+) -> Result<RunDto, ApiError> {
+    let LocalNonGateParams {
+        audit,
+        engine,
+        id,
+        row,
+        req,
+        actor,
+        user_id,
+        client_ip,
+        default_timeout_ms,
+        max_body_bytes,
+    } = params;
+    let PreparedRun {
+        input,
+        endpoint_key,
+    } = prepare_run_input(pool, row, req, default_timeout_ms, max_body_bytes).await?;
+
+    let result = engine.invoke(input).await;
+    let assertion_results = run_draft_assertions(req, &row.endpoints, &result);
+    let assertions_ok = assertion_results.is_empty() || assertion_results.iter().all(|a| a.ok);
+    let overall_ok = result.ok && assertions_ok;
+    let stages_json = serde_json::to_value(&result.stages).unwrap_or(serde_json::json!([]));
+    let assertions_json = serde_json::to_value(&assertion_results).unwrap_or(serde_json::json!([]));
+    let error_code = run_error_code(&result, overall_ok, assertions_ok);
+    connector_metrics::record_run(&req.mode, overall_ok, error_code);
+
+    let run_row = repo::insert_run(
+        pool,
+        repo::NewRun {
+            draft_id: Some(id),
+            supplier_id: None,
+            mode: &req.mode,
+            ok: overall_ok,
+            latency_ms: Some(i32::saturating_from(result.latency_ms)),
+            stages: &stages_json,
+            assertions: &assertions_json,
+            error_code,
+            error_message: result.error_message.as_deref(),
+            endpoint_key: endpoint_key.as_deref(),
+            testcase_id: req.testcase_id,
+            actor: Some(actor),
+            spec_fingerprint: None,
+            probe_path: None,
+        },
+    )
+    .await
+    .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
+
+    audit.log(AuditLogRequest {
+        user_id: Some(user_id),
+        action: AuditAction::ConnectorRun,
+        resource_type: AuditResourceType::Supplier,
+        resource_id: Some(id.to_string()),
+        details: Some(serde_json::json!({
+            "run_id": run_row.id,
+            "mode": req.mode,
+            "ok": overall_ok,
+            "probe_path": serde_json::Value::Null,
+        })),
+        ip_address: client_ip,
+        ..Default::default()
+    });
+
+    Ok(run_dto_from_row(run_row, run_response_preview(&result)))
+}
+
+/// business/live：mgmt → bypass 管理探针 HTTP；写入 `probe_path=bypass_mgmt_probe`。
+struct BypassRunParams<'a> {
+    audit: &'a AuditService,
+    bypass: &'a BypassProbeClient,
+    ssrf: &'a SsrfChecker,
+    id: Uuid,
+    row: &'a repo::DraftRow,
+    req: &'a RunRequest,
+    actor: &'a str,
+    user_id: Uuid,
+    client_ip: Option<String>,
+    default_timeout_ms: u64,
+    max_body_bytes: usize,
+}
+
+async fn run_draft_via_bypass(
+    pool: &PgPool,
+    params: BypassRunParams<'_>,
+) -> Result<RunDto, ApiError> {
+    let BypassRunParams {
+        audit,
+        bypass,
+        ssrf,
+        id,
+        row,
+        req,
+        actor,
+        user_id,
+        client_ip,
+        default_timeout_ms,
+        max_body_bytes,
+    } = params;
+
+    let prepared =
+        prepare_bypass_probe_from_draft(pool, row, req, default_timeout_ms, max_body_bytes).await?;
+
+    // 双重 SSRF：mgmt 预检 + bypass 进程内再拦。
+    ssrf::validate_public_http_url(ssrf, &prepared.upstream_url_for_ssrf)
+        .await
+        .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+    if let Some(ref token_url) = prepared.token_url_for_ssrf {
+        ssrf::validate_public_http_url(ssrf, token_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+    }
+
+    let invoke_params = ProbeInvokeParams {
+        channel_id: &prepared.channel_id,
+        request_id: &prepared.request_id,
+        timeout_ms: prepared.timeout_ms,
+        payload_json: &prepared.payload_json,
+        egress_spec_json: &prepared.egress_spec_json,
+        supplier_id: &prepared.supplier_id,
+        supplier_code: &prepared.supplier_code,
+        supplier_config_json: &prepared.supplier_config_json,
+    };
+
+    let outcome = match bypass.execute_invoke(&invoke_params).await {
+        Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
+        Err(e) => ProbeOutcome {
+            ok: false,
+            latency_ms: 0,
+            error_code: Some(classify_transport_err(&e)),
+            error_message: Some(e),
+            payload: None,
+            status: None,
+            url: None,
+            adapter: None,
+            biz_error: None,
+            stages: serde_json::json!([{
+                "name": "bypass_mgmt_probe",
+                "ok": false,
+                "error": "transport",
+                "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
+            }]),
+        },
+    };
+
+    let assertion_results = run_bypass_assertions(req, &row.endpoints, &outcome);
+    let assertions_ok = assertion_results.is_empty() || assertion_results.iter().all(|a| a.ok);
+    let overall_ok = outcome.ok && assertions_ok;
+    let assertions_json = serde_json::to_value(&assertion_results).unwrap_or(serde_json::json!([]));
+    let error_code = if overall_ok {
+        None
+    } else if !outcome.ok {
+        outcome.error_code.as_deref()
+    } else {
+        Some("ASSERTION_FAILED")
+    };
+    connector_metrics::record_run(&req.mode, overall_ok, error_code);
+
+    persist_bypass_run(PersistBypassRun {
+        pool,
+        audit,
+        draft_id: id,
+        mode: &req.mode,
+        overall_ok,
+        outcome: &outcome,
+        assertions_json: &assertions_json,
+        error_code,
+        endpoint_key: prepared.endpoint_key.as_deref(),
+        testcase_id: req.testcase_id,
+        actor,
+        user_id,
+        client_ip,
+        fingerprint: &prepared.fingerprint,
+    })
+    .await
+}
+
+struct PersistBypassRun<'a> {
+    pool: &'a PgPool,
+    audit: &'a AuditService,
+    draft_id: Uuid,
+    mode: &'a str,
+    overall_ok: bool,
+    outcome: &'a ProbeOutcome,
+    assertions_json: &'a serde_json::Value,
+    error_code: Option<&'a str>,
+    endpoint_key: Option<&'a str>,
+    testcase_id: Option<Uuid>,
+    actor: &'a str,
+    user_id: Uuid,
+    client_ip: Option<String>,
+    fingerprint: &'a str,
+}
+
+async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError> {
+    let run_row = repo::insert_run(
+        p.pool,
+        repo::NewRun {
+            draft_id: Some(p.draft_id),
+            supplier_id: None,
+            mode: p.mode,
+            ok: p.overall_ok,
+            latency_ms: Some(i32::saturating_from(p.outcome.latency_ms)),
+            stages: &p.outcome.stages,
+            assertions: p.assertions_json,
+            error_code: p.error_code,
+            error_message: p.outcome.error_message.as_deref(),
+            endpoint_key: p.endpoint_key,
+            testcase_id: p.testcase_id,
+            actor: Some(p.actor),
+            spec_fingerprint: if p.overall_ok {
+                Some(p.fingerprint)
+            } else {
+                None
+            },
+            probe_path: Some(PROBE_PATH_BYPASS_MGMT_PROBE),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::internal(format!("insert run: {e}")))?;
+
+    p.audit.log(AuditLogRequest {
+        user_id: Some(p.user_id),
+        action: AuditAction::ConnectorRun,
+        resource_type: AuditResourceType::Supplier,
+        resource_id: Some(p.draft_id.to_string()),
+        details: Some(serde_json::json!({
+            "run_id": run_row.id,
+            "mode": p.mode,
+            "ok": p.overall_ok,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
+        })),
+        ip_address: p.client_ip,
+        ..Default::default()
+    });
+
+    Ok(run_dto_from_row(run_row, bypass_response_preview(p.outcome)))
+}
+
+fn classify_transport_err(err: &str) -> String {
+    if err.contains("BYPASS_PROBE_HTTP") || err.contains("BYPASS_NOT_READY") {
+        "BYPASS_UNAVAILABLE".into()
+    } else {
+        "BYPASS_TRANSPORT".into()
+    }
+}
+
+fn bypass_response_preview(outcome: &ProbeOutcome) -> Option<serde_json::Value> {
+    outcome.payload.as_ref().map(|p| {
+        serde_json::json!({
+            "status": outcome.status.unwrap_or(if outcome.ok { 200 } else { 400 }),
+            "body_preview": p.to_string().chars().take(4096).collect::<String>(),
+            "url": outcome.url.clone().unwrap_or_default(),
+            "adapter": outcome.adapter,
+            "biz_error": outcome.biz_error,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
+        })
+    }).or_else(|| {
+        Some(serde_json::json!({
+            "status": outcome.status,
+            "url": outcome.url,
+            "adapter": outcome.adapter,
+            "error": outcome.error_message,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
+        }))
+    })
+}
+
+fn run_bypass_assertions(
+    req: &RunRequest,
+    endpoints: &serde_json::Value,
+    outcome: &ProbeOutcome,
+) -> Vec<AssertionResult> {
+    if !outcome.ok && outcome.status.is_none() {
+        return Vec::new();
+    }
+    let raw: Vec<serde_json::Value> = if let Some(ref raw_assertions) = req.assertions {
+        raw_assertions.clone()
+    } else {
+        let Some(ep_id) = req.endpoint_id.as_deref() else {
+            return Vec::new();
+        };
+        let Some(arr) = endpoints
+            .as_array()
+            .and_then(|eps| {
+                eps.iter().find(|e| {
+                    e.get("id").and_then(|v| v.as_str()) == Some(ep_id)
+                        || e.get("name").and_then(|v| v.as_str()) == Some(ep_id)
+                })
+            })
+            .and_then(|ep| ep.get("assertions"))
+            .and_then(|v| v.as_array())
+        else {
+            return Vec::new();
+        };
+        arr.clone()
+    };
+    let parsed: Vec<Assertion> = raw
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    let body = outcome
+        .payload
+        .as_ref()
+        .map(|p| serde_json::to_vec(p).unwrap_or_default())
+        .unwrap_or_default();
+    let response = OutboundResponse {
+        status: outcome.status.unwrap_or(if outcome.ok { 200 } else { 400 }),
+        headers: HashMap::default(),
+        body,
+        final_url: outcome.url.clone().unwrap_or_default(),
+        method: "POST".into(),
+        path: "/".into(),
+    };
+    evaluate_assertions(&parsed, Some(&response), outcome.latency_ms)
+}
+
+struct PreparedBypassProbe {
+    channel_id: String,
+    request_id: String,
+    timeout_ms: u64,
+    payload_json: String,
+    egress_spec_json: String,
+    supplier_id: String,
+    supplier_code: String,
+    supplier_config_json: String,
+    endpoint_key: Option<String>,
+    fingerprint: String,
+    upstream_url_for_ssrf: String,
+    token_url_for_ssrf: Option<String>,
+}
+
+/// 草稿物化 egress + 密文 config JSON → bypass Invoke（密钥仅在 bypass 解密）。
+async fn prepare_bypass_probe_from_draft(
+    pool: &PgPool,
+    row: &repo::DraftRow,
+    req: &RunRequest,
+    default_timeout_ms: u64,
+    max_body_bytes: usize,
+) -> Result<PreparedBypassProbe, ApiError> {
+    let env = parse_workbench_env(&row.workbench_env);
+    let mut cfg = SupplierConfig::parse_and_validate(&row.config)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    // 环境变量展开到 config 副本；凭据保持库内密文，bypass 再 decrypt。
+    super::workbench_spec::apply_env_to_supplier_config(&mut cfg, &env);
+    let supplier_config_json = serde_json::to_string(&cfg)
+        .map_err(|e| ApiError::internal(format!("serialize supplier config: {e}")))?;
+
+    let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
+    let empty_ep = serde_json::json!({});
+    let built = build_workbench_spec(ep.unwrap_or(&empty_ep), &env, Some(&cfg), &row.upstream_url)?;
+    let payload_json = built.payload.to_string();
+    if payload_json.len() > max_body_bytes {
+        return Err(ApiError::validation(format!(
+            "request body exceeds max_body_bytes ({max_body_bytes})"
+        )));
+    }
+    let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
+    let timeout_ms = built
+        .spec
+        .timeout_ms
+        .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
+        .unwrap_or(default_timeout_ms);
+
+    // artifact：bypass 按 artifact_id 自库加载；此处仅确保草稿引用可解析（可选预检）。
+    if let Some(ref aid) = built.spec.artifact_id {
+        let _ = load_artifact_bytes(pool, aid).await?;
+    }
+
+    let egress_spec_json = serde_json::to_string(&built.spec)
+        .map_err(|e| ApiError::internal(format!("serialize egress: {e}")))?;
+    // 与生产一致：hash 供 bypass 缓存键（full JSON 始终下发，避免 CONFIG_CACHE_MISS）。
+    let _egress_hash = hash_egress_spec_json(&egress_spec_json);
+
+    let token_url_for_ssrf = cfg
+        .auth_flow
+        .as_ref()
+        .filter(|a| a.enabled)
+        .map(|a| a.token_url.clone());
+
+    let expanded_url = if built.spec.base_url.trim().is_empty() {
+        row.upstream_url.clone()
+    } else {
+        built.spec.base_url.clone()
+    };
+
+    Ok(PreparedBypassProbe {
+        channel_id: endpoint_key
+            .clone()
+            .unwrap_or_else(|| row.id.to_string()),
+        request_id: Uuid::new_v4().to_string(),
+        timeout_ms,
+        payload_json,
+        egress_spec_json,
+        supplier_id: row
+            .linked_supplier_id
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
+        supplier_code: format!("probe:{}", row.draft_code),
+        supplier_config_json,
+        endpoint_key,
+        fingerprint: built.fingerprint,
+        upstream_url_for_ssrf: expanded_url,
+        token_url_for_ssrf,
+    })
+}
+
+
 /// 一次草稿试跑的执行输入。
 struct PreparedRun {
     input: InvokeInput,
     endpoint_key: Option<String>,
-    fingerprint: String,
 }
 
 /// 从已保存草稿构建执行输入（D36：忽略请求体中的 spec/payload）。
@@ -542,7 +957,6 @@ async fn prepare_run_input(
     Ok(PreparedRun {
         input,
         endpoint_key,
-        fingerprint: built.fingerprint,
     })
 }
 
@@ -566,6 +980,7 @@ pub(super) fn run_dto_from_row(
         created_at: run_row.created_at,
         response_preview,
         spec_fingerprint: run_row.spec_fingerprint,
+        probe_path: run_row.probe_path,
     }
 }
 
