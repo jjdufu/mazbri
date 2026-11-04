@@ -3917,7 +3917,7 @@
     "rollbackOk": "回滚成功",
     "opsPanel": "运维 / 版本",
     "probeNote": "连通性探测 ≠ 业务验收",
-    "probeViaBypass": "业务/线上试跑经 bypass gRPC（不经 gateway 计费）",
+    "probeViaBypass": "业务/线上试跑经 bypass 管理探针（不经 gateway 计费）",
     "probePathBypass": "经 bypass",
     "probePathLocal": "本地（不作门控）",
     "fields": {

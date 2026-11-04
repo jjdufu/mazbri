@@ -475,35 +475,20 @@ fn init_connector_runtime(
     ))
 }
 
-/// C1：申请 mgmt 客户端证书并构造 `BypassProbeClient`（不经 gateway 计费）。
-async fn init_bypass_probe_client(
+/// 构造 bypass 管理探针 HTTP 客户端（共享 token；启动不拉 mTLS 证）。
+fn init_bypass_probe_client(
     config: &MgmtApiConfig,
-) -> Result<(
-    Arc<mazbri_mgmt::services::bypass_probe::BypassProbeClient>,
-    mazbri_tls::RenewalTaskHandle,
-)> {
-    let tls_config = mazbri_tls::TlsConfig {
-        cert_service_url: config.cert_service.base().to_owned(),
-        service_identity: ServiceName::Mgmt.as_str().to_owned(),
-        cert_service_token: get_cert_service_token()?,
-        ..Default::default()
-    };
-    let cert_manager = mazbri_tls::CertManager::new(tls_config);
-    let mgmt_client_cert = cert_manager.initialize().await.map_err(|e| {
-        anyhow::anyhow!("Failed to initialize mgmt mTLS certificate for bypass probe: {e}")
-    })?;
-    let cert_renewal = cert_manager.spawn_renewal_task_managed();
+) -> Result<Arc<mazbri_mgmt::services::bypass_probe::BypassProbeClient>> {
+    let client = mazbri_mgmt::services::bypass_probe::BypassProbeClient::new(
+        config.bypass_probe_url.clone(),
+        config.mgmt_probe_token.clone(),
+    )
+    .map_err(anyhow::Error::msg)?;
     info!(
-        subject = %mgmt_client_cert.subject,
-        expires_at = %mgmt_client_cert.expires_at,
-        bypass_url = %config.bypass_url,
-        "mgmt mTLS client cert ready for C1 bypass probe"
+        bypass_probe_url = %config.bypass_probe_url,
+        "bypass mgmt probe HTTP client ready (token auth; no mTLS)"
     );
-    let client = Arc::new(mazbri_mgmt::services::bypass_probe::BypassProbeClient::new(
-        config.bypass_url.clone(),
-        mgmt_client_cert,
-    ));
-    Ok((client, cert_renewal))
+    Ok(Arc::new(client))
 }
 
 #[tokio::main]
@@ -561,7 +546,7 @@ async fn main() -> Result<()> {
     );
     spawn_connector_run_cleanup(&db, &config.connector_probe);
     let connector_runtime = init_connector_runtime(&config);
-    let (bypass_probe, _cert_renewal) = init_bypass_probe_client(&config).await?;
+    let bypass_probe = init_bypass_probe_client(&config)?;
     // Hot-reloadable reconciliation settings (bootstrap conf = defaults only).
     let billing_reconciliation_settings = Arc::new(
         mazbri_mgmt::services::BillingReconciliationSettingsCache::new(

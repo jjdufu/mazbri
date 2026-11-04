@@ -126,7 +126,7 @@ export interface ConnectorRun {
   actor?: string | null;
   created_at: string;
   spec_fingerprint?: string | null;
-  /** bypass_grpc = C1 经 bypass；可作 require_gate。缺省/其它不作门控。 */
+  /** bypass_mgmt_probe = 经 bypass 管理探针；可作 require_gate。缺省/其它不作门控。 */
   probe_path?: string | null;
   response_preview?: {
     status?: number;

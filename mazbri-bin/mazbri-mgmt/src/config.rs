@@ -189,8 +189,10 @@ pub struct MgmtApiConfig {
     /// Upstream connector probe / live-run limits (optional section).
     #[serde(default)]
     pub connector_probe: ConnectorProbeConfig,
-    /// C1：工作台 business/live 经 bypass gRPC Invoke 的地址（`host:port`，无 scheme；不经 gateway 计费）。
-    pub bypass_url: String,
+    /// 工作台 business/live → bypass 隔离管理探针 HTTP 基址（含 scheme，如 `http://mazbri-bypass:8890`）。
+    pub bypass_probe_url: String,
+    /// 与 bypass `[mgmt_probe].mgmt_probe_token` 相同的共享令牌（Bearer）。
+    pub mgmt_probe_token: String,
     /// 用量对账阈值与默认 scope（mgmt 管理面）。
     #[serde(default)]
     pub billing_reconciliation: BillingReconciliationConfig,
@@ -207,21 +209,32 @@ pub struct MgmtApiConfig {
 }
 
 impl MgmtApiConfig {
-    fn validate_bypass_url(url: &str) -> Result<()> {
+    fn validate_bypass_probe_url(url: &str) -> Result<()> {
         let u = url.trim();
         if u.is_empty() {
             anyhow::bail!(
-                "bypass_url is required (host:port) for connector workbench C1 probes\n                     bypass_url 为必填项（host:port），供工作台 business/live 经 bypass 试调"
+                "bypass_probe_url is required (http(s)://host:port) for workbench probes\n                 bypass_probe_url 为必填项（http(s)://host:port），供工作台 business/live 经 bypass 管理探针试调"
             );
         }
-        if u.contains("://") {
-            anyhow::bail!("bypass_url must be host:port without scheme, got {u}");
+        let parsed = url::Url::parse(u).map_err(|e| {
+            anyhow::anyhow!("bypass_probe_url is not a valid URL: {e}")
+        })?;
+        if parsed.scheme() != "http" && parsed.scheme() != "https" {
+            anyhow::bail!("bypass_probe_url scheme must be http or https, got {}", parsed.scheme());
         }
-        let Some((host, port)) = u.rsplit_once(':') else {
-            anyhow::bail!("bypass_url must be host:port, got {u}");
-        };
-        if host.is_empty() || port.parse::<u16>().is_err() {
-            anyhow::bail!("bypass_url must be host:port with valid port, got {u}");
+        if parsed.host_str().is_none() {
+            anyhow::bail!("bypass_probe_url must include a host");
+        }
+        Ok(())
+    }
+
+    fn validate_mgmt_probe_token(token: &str) -> Result<()> {
+        let t = token.trim();
+        if t.is_empty() {
+            anyhow::bail!("mgmt_probe_token is required and must not be empty");
+        }
+        if t.len() < 32 {
+            anyhow::bail!("mgmt_probe_token must be at least 32 characters");
         }
         Ok(())
     }
@@ -271,7 +284,8 @@ impl ValidateConfig for MgmtApiConfig {
         if self.connector_probe.default_timeout_ms == 0 {
             anyhow::bail!("connector_probe.default_timeout_ms must be greater than 0");
         }
-        Self::validate_bypass_url(&self.bypass_url)?;
+        Self::validate_bypass_probe_url(&self.bypass_probe_url)?;
+        Self::validate_mgmt_probe_token(&self.mgmt_probe_token)?;
         if !self.billing_reconciliation.loss_ratio_threshold.is_finite()
             || self.billing_reconciliation.loss_ratio_threshold < 0.0
             || self.billing_reconciliation.loss_ratio_threshold > 1.0
@@ -333,7 +347,8 @@ mod ssrf_config_tests {
 
     const BASE: &str = r#"
 service_name = "mazbri-mgmt"
-bypass_url = "mazbri-bypass:8888"
+bypass_probe_url = "http://mazbri-bypass:8890"
+mgmt_probe_token = "1a71e6a9d100abcb09537e333051dd63e102f39491df18588f8c6bb5a35ed256"
 
 [server]
 host = "0.0.0.0"

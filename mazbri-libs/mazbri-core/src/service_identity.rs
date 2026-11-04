@@ -68,12 +68,12 @@ impl ServiceName {
 
     /// 是否需要 mTLS 服务证书。
     ///
-    /// cert（CA 本身）与 analytics 只提供/调用明文 HTTP + Bearer token。
-    /// mgmt 自工作台试调改走 bypass gRPC（C1）起须持有客户端证书，以对端身份调用 bypass；
-    /// 仍不对外提供 gRPC 服务端，也不走 registry mTLS 入站。
+    /// cert（CA 本身）、mgmt、analytics 只提供/调用明文 HTTP + Bearer token，
+    /// 不走 `ServiceBootstrap::init_mtls`，也不是任何 gRPC/mTLS 链路的对端。
+    /// 工作台试调改走 bypass 隔离管理探针 HTTP（共享 token），mgmt 不再持客户端证。
     #[must_use]
     pub const fn requires_mtls(self) -> bool {
-        !matches!(self, Self::Cert | Self::Analytics)
+        !matches!(self, Self::Cert | Self::Mgmt | Self::Analytics)
     }
 
     /// 需要签发 mTLS 证书的规范服务名（保持 `CANONICAL_SERVICES` 顺序）。
@@ -175,14 +175,12 @@ mod tests {
 
     #[test]
     fn mtls_excludes_http_only_services() {
-        for svc in [ServiceName::Cert, ServiceName::Analytics] {
+        for svc in [ServiceName::Cert, ServiceName::Mgmt, ServiceName::Analytics] {
             assert!(!svc.requires_mtls(), "{svc}");
         }
-        assert!(ServiceName::Mgmt.requires_mtls());
         assert_eq!(
             ServiceName::mtls_names(),
             vec![
-                "mazbri-mgmt",
                 "mazbri-auth",
                 "mazbri-ratelimit",
                 "mazbri-cache",

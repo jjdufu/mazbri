@@ -1,5 +1,6 @@
 mod config;
 mod metrics;
+mod mgmt_probe;
 mod server;
 mod service;
 mod ssrf;
@@ -63,12 +64,24 @@ async fn main() -> Result<()> {
         });
 
         let addr = runtime.ctx.config.server.socket_addr()?;
-        let server_future = server::serve(
-            addr,
-            service,
-            runtime.ctx.managed_certificate.clone(),
-            runtime.ctx.config.server.max_connections,
-        );
+        let grpc_service = service.clone();
+        let cert = runtime.ctx.managed_certificate.clone();
+        let max_connections = runtime.ctx.config.server.max_connections;
+        let grpc_future = server::serve(addr, grpc_service, cert, max_connections);
+
+        let probe_cfg = runtime.ctx.config.mgmt_probe.clone();
+        let server_future = async move {
+            if probe_cfg.enabled {
+                let probe_service = service.clone();
+                tokio::select! {
+                    r = grpc_future => r,
+                    r = mgmt_probe::serve(&probe_cfg, probe_service) => r,
+                }
+            } else {
+                tracing::info!("mgmt_probe disabled; only data-plane mTLS :{}", addr.port());
+                grpc_future.await
+            }
+        };
 
         Ok(runtime.into_output(admin_state, server_future))
     })

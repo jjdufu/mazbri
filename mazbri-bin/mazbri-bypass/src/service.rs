@@ -206,12 +206,19 @@ impl MazbriBypassServiceImpl {
 }
 
 impl MazbriBypassServiceImpl {
-    /// `BypassHttpProxyService/Execute`.
+    /// `BypassHttpProxyService/Execute`（gRPC 入口）。
     pub async fn execute(
         &self,
         request: Request<upstream_proto::InvokeRequest>,
     ) -> Response<upstream_proto::InvokeResponse> {
-        let req = request.into_inner();
+        Response::new(self.execute_invoke(request.into_inner()).await)
+    }
+
+    /// 与 gRPC Execute / mgmt HTTP 探针共用的 invoke 执行面。
+    pub async fn execute_invoke(
+        &self,
+        req: upstream_proto::InvokeRequest,
+    ) -> upstream_proto::InvokeResponse {
         let start_time = Instant::now();
         let span = tracing::info_span!(
             "BypassHttpProxyService.Execute",
@@ -236,7 +243,7 @@ impl MazbriBypassServiceImpl {
             start_time,
             &response,
         );
-        Response::new(response)
+        response
     }
 
     /// `BypassHttpProxyService/Health`.

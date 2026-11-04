@@ -42,8 +42,8 @@ pub struct AppState {
     /// Global limiter for connector draft/live runs.
     pub connector_run_limiter: Arc<SlidingWindowLimiter>,
     /// 仅 SSRF 预检 / `auth_only` / `transform_preview` / microservice 本地探测。
-    /// **不得**再作为 business/live 默认 Send，也 **不得**写入 `probe_path=bypass_grpc`。
+    /// **不得**再作为 business/live 默认 Send，也 **不得**写入 `probe_path=bypass_mgmt_probe`。
     pub connector_runtime: Arc<RuntimeEngine>,
-    /// C1：business/live 经 bypass gRPC Invoke（不经 gateway 计费）。
+    /// business/live 经 bypass 隔离管理探针 HTTP（不经 gateway 计费）。
     pub bypass_probe: Arc<BypassProbeClient>,
 }

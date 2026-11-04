@@ -7,7 +7,7 @@ use super::{
     ssrf, workbench_endpoint_key,
 };
 use crate::services::bypass_probe::{
-    self, BypassProbeClient, PROBE_PATH_BYPASS_GRPC, ProbeInvokeParams, ProbeOutcome,
+    self, BypassProbeClient, PROBE_PATH_BYPASS_MGMT_PROBE, ProbeInvokeParams, ProbeOutcome,
 };
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::hash_egress_spec_json;
@@ -63,7 +63,7 @@ pub struct RunDraftParams<'a> {
     pub audit: &'a AuditService,
     /// 仅 `auth_only` / `transform_preview`（及 SSRF 预检）使用；**不得**再作 business/live 默认 Send。
     pub engine: &'a RuntimeEngine,
-    /// C1：business/live 经 bypass gRPC Invoke（不经 gateway 计费）。
+    /// business/live 经 bypass 隔离管理探针 HTTP（不经 gateway 计费）。
     pub bypass: &'a BypassProbeClient,
     pub id: Uuid,
     pub req: RunRequest,
@@ -529,7 +529,7 @@ async fn run_draft_local_non_gate(
     Ok(run_dto_from_row(run_row, run_response_preview(&result)))
 }
 
-/// C1 business/live：mgmt → bypass gRPC；写入 `probe_path=bypass_grpc`。
+/// business/live：mgmt → bypass 管理探针 HTTP；写入 `probe_path=bypass_mgmt_probe`。
 struct BypassRunParams<'a> {
     audit: &'a AuditService,
     bypass: &'a BypassProbeClient,
@@ -575,7 +575,7 @@ async fn run_draft_via_bypass(
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
     }
 
-    let invoke_req = bypass_probe::build_probe_invoke_request(&ProbeInvokeParams {
+    let invoke_params = ProbeInvokeParams {
         channel_id: &prepared.channel_id,
         request_id: &prepared.request_id,
         timeout_ms: prepared.timeout_ms,
@@ -584,9 +584,9 @@ async fn run_draft_via_bypass(
         supplier_id: &prepared.supplier_id,
         supplier_code: &prepared.supplier_code,
         supplier_config_json: &prepared.supplier_config_json,
-    });
+    };
 
-    let outcome = match bypass.execute_invoke(invoke_req).await {
+    let outcome = match bypass.execute_invoke(&invoke_params).await {
         Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
         Err(e) => ProbeOutcome {
             ok: false,
@@ -599,10 +599,10 @@ async fn run_draft_via_bypass(
             adapter: None,
             biz_error: None,
             stages: serde_json::json!([{
-                "name": "bypass_grpc",
+                "name": "bypass_mgmt_probe",
                 "ok": false,
                 "error": "transport",
-                "response_summary": {"probe_path": PROBE_PATH_BYPASS_GRPC},
+                "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
             }]),
         },
     };
@@ -677,7 +677,7 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
             } else {
                 None
             },
-            probe_path: Some(PROBE_PATH_BYPASS_GRPC),
+            probe_path: Some(PROBE_PATH_BYPASS_MGMT_PROBE),
         },
     )
     .await
@@ -692,7 +692,7 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
             "run_id": run_row.id,
             "mode": p.mode,
             "ok": p.overall_ok,
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         })),
         ip_address: p.client_ip,
         ..Default::default()
@@ -702,10 +702,8 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
 }
 
 fn classify_transport_err(err: &str) -> String {
-    if err.contains("BYPASS_CONNECT") || err.contains("BYPASS_NOT_READY") {
+    if err.contains("BYPASS_PROBE_HTTP") || err.contains("BYPASS_NOT_READY") {
         "BYPASS_UNAVAILABLE".into()
-    } else if err.contains("BYPASS_GRPC") {
-        "BYPASS_GRPC_ERROR".into()
     } else {
         "BYPASS_TRANSPORT".into()
     }
@@ -719,7 +717,7 @@ fn bypass_response_preview(outcome: &ProbeOutcome) -> Option<serde_json::Value> 
             "url": outcome.url.clone().unwrap_or_default(),
             "adapter": outcome.adapter,
             "biz_error": outcome.biz_error,
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         })
     }).or_else(|| {
         Some(serde_json::json!({
@@ -727,7 +725,7 @@ fn bypass_response_preview(outcome: &ProbeOutcome) -> Option<serde_json::Value> 
             "url": outcome.url,
             "adapter": outcome.adapter,
             "error": outcome.error_message,
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         }))
     })
 }

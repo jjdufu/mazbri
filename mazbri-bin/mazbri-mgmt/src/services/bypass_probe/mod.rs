@@ -1,4 +1,4 @@
-//! C1：mgmt → bypass gRPC `Invoke`（工作台 business/live 试调；不经 gateway 计费）。
+//! 工作台 business/live 试调：mgmt → bypass **隔离管理探针 HTTP 口**（不经 gateway 计费）。
 //!
 //! # 威胁建模（草稿未发布试跑）
 //!
@@ -8,23 +8,17 @@
 //!   mgmt 试跑路径不再为 business/live 解密出站凭据。
 //! - **租户隔离**：`tenant_id`/`product_id` 固定为合成值 `mgmt-probe`，不经 gateway
 //!   鉴权/计费/路由；仍受 `connector_probe` 进程内滑动窗口限流。
+//! - **鉴权**：共享 `mgmt_probe_token`（Bearer），**不**使用 cert 主令牌 / mTLS 客户端证。
 //! - **无引擎兜底**：business/live **只**走本客户端；失败即失败，不得回退
 //!   `RuntimeEngine::invoke`。
 
 use mazbri_core::hash_egress_spec_json;
-use mazbri_tls::{ManagedCertificate, resolve_connect_target};
-use mazbri_upstream_contracts::shared::{InvokeRequest, InvokeResponse, TraceContext};
-use mazbri_upstream_contracts::BYPASS_EXECUTE_PATH;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use tonic::Request;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
-use tonic_prost::ProstCodec;
 
 /// 发布 `require_gate` 唯一认的试跑拓扑标记（写入 `upstream_connector_runs.probe_path`）。
-pub const PROBE_PATH_BYPASS_GRPC: &str = "bypass_grpc";
+pub const PROBE_PATH_BYPASS_MGMT_PROBE: &str = "bypass_mgmt_probe";
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -37,148 +31,193 @@ fn hash_config_json(config_json: &str) -> String {
     hex::encode(digest)
 }
 
-/// mgmt 侧 bypass 探针客户端（单 endpoint 缓存 channel；mTLS）。
+#[derive(Debug, Serialize)]
+struct ProbeHttpRequest<'a> {
+    product_id: &'a str,
+    tenant_id: &'a str,
+    channel_id: &'a str,
+    request_id: &'a str,
+    trace: ProbeHttpTrace<'a>,
+    timeout_ms: u64,
+    payload_json: &'a str,
+    egress_spec_hash: String,
+    egress_spec_json: &'a str,
+    supplier_id: &'a str,
+    supplier_code: &'a str,
+    supplier_config_hash: String,
+    supplier_config_json: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeHttpTrace<'a> {
+    #[serde(rename = "request_id")]
+    request: &'a str,
+    #[serde(rename = "trace_id")]
+    trace: &'a str,
+    #[serde(rename = "span_id")]
+    span: String,
+    #[serde(rename = "parent_span_id")]
+    parent_span: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeHttpResponse {
+    success: bool,
+    #[serde(default)]
+    error: String,
+    biz_error: Option<ProbeHttpBizError>,
+    #[serde(default)]
+    payload_json: String,
+    upstream_meta: Option<ProbeHttpUpstreamMeta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeHttpBizError {
+    code: String,
+    message: String,
+    #[serde(default)]
+    details_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeHttpUpstreamMeta {
+    status: u32,
+    url: String,
+    adapter: String,
+    latency_ms: u64,
+}
+
+/// mgmt 侧 bypass 管理探针客户端（HTTP + Bearer token；启动不拉证）。
 #[derive(Clone)]
 pub struct BypassProbeClient {
-    /// `host:port`（无 scheme），与 gateway `[services].bypass_url` 同形。
-    endpoint: String,
-    cert: ManagedCertificate,
-    channel: Arc<RwLock<Option<Channel>>>,
+    /// 完整 URL 前缀，如 `http://mazbri-bypass:8890`。
+    base_url: String,
+    token: String,
+    http: reqwest::Client,
 }
 
 impl BypassProbeClient {
-    #[must_use]
-    pub fn new(endpoint: impl Into<String>, cert: ManagedCertificate) -> Self {
-        Self {
-            endpoint: endpoint.into(),
-            cert,
-            channel: Arc::new(RwLock::new(None)),
-        }
-    }
-
-    #[must_use]
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
-    async fn get_channel(&self) -> Result<Channel, String> {
-        if let Some(ch) = self.channel.read().await.clone() {
-            return Ok(ch);
-        }
-        let mut guard = self.channel.write().await;
-        if let Some(ch) = guard.clone() {
-            return Ok(ch);
-        }
-        let ch = self.connect().await?;
-        *guard = Some(ch.clone());
-        Ok(ch)
-    }
-
-    async fn connect(&self) -> Result<Channel, String> {
-        let uri = format!("https://{}", self.endpoint.trim());
-        let target = resolve_connect_target(&uri)
-            .await
-            .map_err(|e| format!("BYPASS_CONNECT: resolve {}: {e}", self.endpoint))?;
-        let server_name = target.server_name.clone().ok_or_else(|| {
-            format!(
-                "BYPASS_CONNECT: endpoint {} 缺少 DNS server name（mTLS SNI）",
-                self.endpoint
-            )
-        })?;
-        let identity = Identity::from_pem(
-            self.cert.cert_pem.as_bytes(),
-            self.cert.key_pem.as_bytes(),
-        );
-        let ca = Certificate::from_pem(self.cert.ca_cert_pem.as_bytes());
-        let tls = ClientTlsConfig::new()
-            .identity(identity)
-            .ca_certificate(ca)
-            .domain_name(server_name)
-            .assume_http2(true)
-            .timeout(CONNECT_TIMEOUT);
-        let endpoint_uri = format!("https://{}", target.display_addr);
-        let ep = Endpoint::from_shared(endpoint_uri.clone())
-            .map_err(|e| format!("BYPASS_CONNECT: bad endpoint URI: {e}"))?
+    /// # Errors
+    ///
+    /// HTTP 客户端构建失败时返回错误。
+    pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> Result<Self, String> {
+        let http = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
-            .http2_keep_alive_interval(Duration::from_secs(20))
-            .keep_alive_timeout(Duration::from_secs(10))
-            .keep_alive_while_idle(true)
-            .tcp_keepalive(Some(Duration::from_secs(30)))
-            .tls_config(tls)
-            .map_err(|e| format!("BYPASS_CONNECT: tls: {e}"))?;
-        ep.connect()
-            .await
-            .map_err(|e| format!("BYPASS_CONNECT: {e}"))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .map_err(|e| format!("BYPASS_PROBE_HTTP_CLIENT: {e}"))?;
+        Ok(Self {
+            base_url: base_url.into().trim_end_matches('/').to_owned(),
+            token: token.into(),
+            http,
+        })
     }
 
-    /// 丢弃缓存 channel（下次 Invoke 重连）。
-    pub async fn invalidate(&self) {
-        *self.channel.write().await = None;
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
-    /// 一元 Execute；错误透传 bypass / 传输层文案（无静默吞掉）。
+    /// `POST /v1/mgmt-probe/invoke`；错误透传 bypass / 传输层文案（无静默吞掉）。
     ///
     /// # Errors
     ///
-    /// 连接或 gRPC 调用失败时返回可读错误串。
-    pub async fn execute_invoke(&self, request: InvokeRequest) -> Result<InvokeResponse, String> {
-        let channel = self.get_channel().await?;
-        let path = http::uri::PathAndQuery::from_static(BYPASS_EXECUTE_PATH);
-        let mut client = tonic::client::Grpc::new(channel);
-        client
-            .ready()
+    /// 连接或 HTTP 调用失败时返回可读错误串。
+    pub async fn execute_invoke(
+        &self,
+        params: &ProbeInvokeParams<'_>,
+    ) -> Result<ProbeHttpInvokeResult, String> {
+        let request_id = params.request_id;
+        let body = ProbeHttpRequest {
+            product_id: PROBE_PRODUCT_ID,
+            tenant_id: PROBE_TENANT_ID,
+            channel_id: params.channel_id,
+            request_id,
+            trace: ProbeHttpTrace {
+                request: request_id,
+                trace: request_id,
+                span: uuid::Uuid::new_v4().to_string(),
+                parent_span: "",
+            },
+            timeout_ms: params.timeout_ms,
+            payload_json: params.payload_json,
+            egress_spec_hash: hash_egress_spec_json(params.egress_spec_json),
+            egress_spec_json: params.egress_spec_json,
+            supplier_id: params.supplier_id,
+            supplier_code: params.supplier_code,
+            supplier_config_hash: hash_config_json(params.supplier_config_json),
+            supplier_config_json: params.supplier_config_json,
+        };
+        let url = format!("{}/v1/mgmt-probe/invoke", self.base_url);
+        let response = self
+            .http
+            .post(&url)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", self.token),
+            )
+            .json(&body)
+            .send()
             .await
-            .map_err(|e| format!("BYPASS_NOT_READY: {e}"))?;
-        let codec = ProstCodec::<InvokeRequest, InvokeResponse>::default();
-        let response = client
-            .unary(Request::new(request), path, codec)
+            .map_err(|e| format!("BYPASS_PROBE_HTTP: {e}"))?;
+        let status = response.status();
+        let text = response
+            .text()
             .await
-            .map_err(|status| {
-                // 连接级失败时清缓存，避免粘住坏 channel
-                let msg = status.to_string();
-                if msg.contains("transport") || msg.contains("connection") {
-                    let this = self.clone();
-                    tokio::spawn(async move {
-                        this.invalidate().await;
-                    });
-                }
-                format!("BYPASS_GRPC: {status}")
-            })?;
-        Ok(response.into_inner())
+            .map_err(|e| format!("BYPASS_PROBE_HTTP_BODY: {e}"))?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("BYPASS_PROBE_UNAUTHORIZED: mgmt_probe_token rejected".into());
+        }
+        if !status.is_success() {
+            return Err(format!("BYPASS_PROBE_HTTP_{status}: {text}"));
+        }
+        let parsed: ProbeHttpResponse = serde_json::from_str(&text)
+            .map_err(|e| format!("BYPASS_PROBE_HTTP_JSON: {e}; body={text}"))?;
+        Ok(ProbeHttpInvokeResult {
+            success: parsed.success,
+            error: parsed.error,
+            biz_error: parsed.biz_error.map(|b| ProbeBizError {
+                code: b.code,
+                message: b.message,
+                details_json: b.details_json,
+            }),
+            payload_json: parsed.payload_json,
+            upstream_meta: parsed.upstream_meta.map(|m| ProbeUpstreamMeta {
+                status: m.status,
+                url: m.url,
+                adapter: m.adapter,
+                latency_ms: m.latency_ms,
+            }),
+        })
     }
 }
 
-/// 组装 bypass `InvokeRequest`（始终带全量 spec/config，避免探针 `CONFIG_CACHE_MISS` 往返）。
-#[must_use]
-pub fn build_probe_invoke_request(
-    params: &ProbeInvokeParams<'_>,
-) -> InvokeRequest {
-    let egress_spec_json = params.egress_spec_json.to_owned();
-    let supplier_config_json = params.supplier_config_json.to_owned();
-    let request_id = params.request_id.to_owned();
-    InvokeRequest {
-        product_id: PROBE_PRODUCT_ID.into(),
-        tenant_id: PROBE_TENANT_ID.into(),
-        channel_id: params.channel_id.into(),
-        request_id: request_id.clone(),
-        trace: Some(TraceContext {
-            request_id: request_id.clone(),
-            trace_id: request_id.clone(),
-            span_id: uuid::Uuid::new_v4().to_string(),
-            parent_span_id: String::new(),
-        }),
-        timeout_ms: params.timeout_ms,
-        payload_json: params.payload_json.into(),
-        egress_spec_hash: hash_egress_spec_json(&egress_spec_json),
-        egress_spec_json,
-        supplier_id: params.supplier_id.into(),
-        supplier_code: params.supplier_code.into(),
-        supplier_config_hash: hash_config_json(&supplier_config_json),
-        supplier_config_json,
-    }
+/// HTTP 探针原始结果（对应 bypass JSON 响应）。
+#[derive(Debug, Clone)]
+pub struct ProbeHttpInvokeResult {
+    pub success: bool,
+    pub error: String,
+    pub biz_error: Option<ProbeBizError>,
+    pub payload_json: String,
+    pub upstream_meta: Option<ProbeUpstreamMeta>,
 }
 
-/// [`build_probe_invoke_request`] 入参。
+#[derive(Debug, Clone)]
+pub struct ProbeBizError {
+    pub code: String,
+    pub message: String,
+    pub details_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProbeUpstreamMeta {
+    pub status: u32,
+    pub url: String,
+    pub adapter: String,
+    pub latency_ms: u64,
+}
+
+/// [`BypassProbeClient::execute_invoke`] / 组装入参。
 pub struct ProbeInvokeParams<'a> {
     pub channel_id: &'a str,
     pub request_id: &'a str,
@@ -205,12 +244,14 @@ pub struct ProbeOutcome {
     pub stages: serde_json::Value,
 }
 
-/// 将 [`InvokeResponse`] 映射为工作台结果；`success` 且无 `biz_error` 才算业务 ok。
+/// 将探针 HTTP 响应映射为工作台结果；`success` 且无 `biz_error` 才算业务 ok。
 #[must_use]
-pub fn outcome_from_invoke_response(response: &InvokeResponse) -> ProbeOutcome {
+pub fn outcome_from_invoke_response(response: &ProbeHttpInvokeResult) -> ProbeOutcome {
     let meta = response.upstream_meta.as_ref();
     let latency_ms = meta.map_or(0, |m| m.latency_ms);
-    let status = meta.and_then(|m| u16::try_from(m.status).ok()).filter(|s| *s > 0);
+    let status = meta
+        .and_then(|m| u16::try_from(m.status).ok())
+        .filter(|s| *s > 0);
     let url = meta.map(|m| m.url.clone());
     let adapter = meta.map(|m| m.adapter.clone());
 
@@ -243,17 +284,23 @@ pub fn outcome_from_invoke_response(response: &InvokeResponse) -> ProbeOutcome {
     } else if let Some(ref b) = response.biz_error {
         (Some(b.code.clone()), Some(b.message.clone()))
     } else if !response.error.is_empty() {
-        (Some(classify_bypass_error(&response.error)), Some(response.error.clone()))
+        (
+            Some(classify_bypass_error(&response.error)),
+            Some(response.error.clone()),
+        )
     } else {
-        (Some("BYPASS_INVOKE_FAILED".into()), Some("bypass invoke failed".into()))
+        (
+            Some("BYPASS_INVOKE_FAILED".into()),
+            Some("bypass invoke failed".into()),
+        )
     };
 
     let stages = serde_json::json!([{
-        "name": "bypass_grpc",
+        "name": "bypass_mgmt_probe",
         "ok": ok,
         "latency_ms": latency_ms,
         "response_summary": {
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
             "status": status,
             "url": url,
             "adapter": adapter,
@@ -294,3 +341,4 @@ fn classify_bypass_error(error: &str) -> String {
         "BYPASS_UPSTREAM_ERROR".into()
     }
 }
+

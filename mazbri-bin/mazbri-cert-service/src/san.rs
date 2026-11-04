@@ -300,14 +300,12 @@ mod tests {
     #[test]
     fn rejects_http_only_services() -> Result<(), SanError> {
         let p = SanPolicy::from_config(&cfg(SanMode::Compose), &no_env())?;
-        for name in ["mazbri-cert", "mazbri-analytics"] {
+        for name in ["mazbri-cert", "mazbri-mgmt", "mazbri-analytics"] {
             assert!(
                 matches!(p.sans_for_subject(name), Err(SanError::MtlsNotRequired(ref n)) if n == name),
                 "{name}"
             );
         }
-        // mgmt 持客户端证调 bypass 试跑，须可签发
-        assert_eq!(p.sans_for_subject("mazbri-mgmt")?, vec!["mazbri-mgmt"]);
         Ok(())
     }
 }

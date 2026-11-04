@@ -4,7 +4,7 @@ use super::{
     mask_config_credentials, repo,
 };
 use crate::services::bypass_probe::{
-    self, BypassProbeClient, PROBE_PATH_BYPASS_GRPC, ProbeInvokeParams, ProbeOutcome,
+    self, BypassProbeClient, PROBE_PATH_BYPASS_MGMT_PROBE, ProbeInvokeParams, ProbeOutcome,
 };
 use mazbri_core::hash_egress_spec_json;
 use mazbri_core::num::SaturatingFrom;
@@ -161,7 +161,7 @@ pub async fn rollback(
     }))
 }
 
-/// `live_run` 的入参（C1：经 bypass gRPC，不经 gateway 计费）。
+/// `live_run` 的入参（经 bypass 管理探针 HTTP，不经 gateway 计费）。
 pub struct LiveRunParams<'a> {
     pub audit: &'a AuditService,
     pub bypass: &'a BypassProbeClient,
@@ -192,7 +192,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
     let prepared =
         prepare_live_bypass(pool, supplier_id, req, default_timeout_ms, max_body_bytes).await?;
 
-    let invoke_req = bypass_probe::build_probe_invoke_request(&ProbeInvokeParams {
+    let invoke_params = ProbeInvokeParams {
         channel_id: &prepared.channel_id,
         request_id: &prepared.request_id,
         timeout_ms: prepared.timeout_ms,
@@ -201,17 +201,17 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         supplier_id: &prepared.supplier_id,
         supplier_code: &prepared.supplier_code,
         supplier_config_json: &prepared.supplier_config_json,
-    });
+    };
 
-    let outcome = match bypass.execute_invoke(invoke_req).await {
+    let outcome = match bypass.execute_invoke(&invoke_params).await {
         Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
         Err(e) => ProbeOutcome {
             ok: false,
             latency_ms: 0,
-            error_code: Some(if e.contains("BYPASS_CONNECT") {
+            error_code: Some(if e.contains("BYPASS_PROBE_HTTP") {
                 "BYPASS_UNAVAILABLE".into()
             } else {
-                "BYPASS_GRPC_ERROR".into()
+                "BYPASS_PROBE_HTTP_ERROR".into()
             }),
             error_message: Some(e),
             payload: None,
@@ -220,9 +220,9 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
             adapter: None,
             biz_error: None,
             stages: serde_json::json!([{
-                "name": "bypass_grpc",
+                "name": "bypass_mgmt_probe",
                 "ok": false,
-                "response_summary": {"probe_path": PROBE_PATH_BYPASS_GRPC},
+                "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
             }]),
         },
     };
@@ -245,7 +245,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
             testcase_id: None,
             actor: Some(actor),
             spec_fingerprint: None,
-            probe_path: Some(PROBE_PATH_BYPASS_GRPC),
+            probe_path: Some(PROBE_PATH_BYPASS_MGMT_PROBE),
         },
     )
     .await
@@ -259,7 +259,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
         details: Some(serde_json::json!({
             "mode": "live",
             "ok": outcome.ok,
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         })),
         ip_address: client_ip,
         ..Default::default()
@@ -271,7 +271,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
             "body_preview": p.to_string().chars().take(4096).collect::<String>(),
             "url": outcome.url.clone().unwrap_or_default(),
             "adapter": outcome.adapter,
-            "probe_path": PROBE_PATH_BYPASS_GRPC,
+            "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         })
     });
     Ok(super::run::run_dto_from_row(run_row, response_preview))

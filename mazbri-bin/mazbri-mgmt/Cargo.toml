@@ -25,8 +25,6 @@ mazbri-cache = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cache" }
 mazbri-i18n = { version = "0.1.0", path = "../../mazbri-libs/mazbri-i18n" }
 mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
 mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-runtime" }
-mazbri-upstream-contracts = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-contracts" }
-mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
 mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit" }
 mazbri-crypto = { version = "0.1.0", path = "../../mazbri-libs/mazbri-crypto" }
 
@@ -36,9 +34,6 @@ tower = {version = "0.5.3", features = ["full", "discover", "load"]}
 tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip", "fs", "limit", "catch-panic"]}
 
 tokio = {version = "1.35", features = ["full"]}
-tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
-tonic-prost = {version = "0.14.6"}
-http = "1"
 
 sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
 rust_decimal = {version = "1.32", features = ["serde"]}

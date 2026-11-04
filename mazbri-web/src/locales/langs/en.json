@@ -3912,7 +3912,7 @@
     "rollbackOk": "Rollback completed",
     "opsPanel": "Ops / Versions",
     "probeNote": "Connectivity probe ≠ business acceptance",
-    "probeViaBypass": "Business/live probe via bypass gRPC (no gateway billing)",
+    "probeViaBypass": "Business/live probe via bypass mgmt probe (no gateway billing)",
     "probePathBypass": "via bypass",
     "probePathLocal": "local (not a gate)",
     "fields": {

@@ -121,7 +121,7 @@ pub(crate) const GATE_TTL_HOURS: i32 = 24;
 pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
 
 /// 构建仅用于 SSRF 预检 / `auth_only` / `transform_preview` / microservice 本地探测的 [`RuntimeEngine`]。
-/// **C1 后不再作为 business/live 默认 Send**；门控只认 bypass gRPC。
+/// **不再作为 business/live 默认 Send**；门控只认 bypass 管理探针（`bypass_mgmt_probe`）。
 ///
 /// `ssrf` 由 mgmt `[ssrf]` 配置生成（启动时构建一次，存于 `AppState::connector_runtime`），
 /// 同时用于连接期 DNS 过滤与 `validate_public_http_url` 预检。

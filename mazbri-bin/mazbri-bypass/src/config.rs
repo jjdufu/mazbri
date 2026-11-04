@@ -14,6 +14,78 @@ pub struct BypassServiceConfig {
     /// `[ssrf]` 出站 SSRF 策略；缺省即 `allow_private_network = false`。
     #[serde(default)]
     pub ssrf: mazbri_upstream_runtime::SsrfConfig,
+    /// `[mgmt_probe]`：mgmt 工作台试调隔离 HTTP 口（与 8888 mTLS 数据面分离）。
+    #[serde(default)]
+    pub mgmt_probe: MgmtProbeConfig,
+}
+
+/// mgmt ↔ bypass 管理探针口；默认关闭，模板里开启并预置共享 token。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MgmtProbeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_mgmt_probe_host")]
+    pub host: String,
+    #[serde(default = "default_mgmt_probe_port")]
+    pub port: u16,
+    /// 与 mgmt bootstrap `mgmt_probe_token` 相同的共享令牌。
+    #[serde(default)]
+    pub mgmt_probe_token: String,
+}
+
+fn default_mgmt_probe_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_mgmt_probe_port() -> u16 {
+    8890
+}
+
+impl Default for MgmtProbeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: default_mgmt_probe_host(),
+            port: default_mgmt_probe_port(),
+            mgmt_probe_token: String::new(),
+        }
+    }
+}
+
+impl MgmtProbeConfig {
+    pub fn validate(&self, data_plane_port: u16, admin_port: u16) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.host.trim().is_empty() {
+            anyhow::bail!("mgmt_probe.host must not be empty when enabled");
+        }
+        if self.port == 0 {
+            anyhow::bail!("mgmt_probe.port must be greater than 0 when enabled");
+        }
+        if self.port == data_plane_port {
+            anyhow::bail!(
+                "mgmt_probe.port ({}) must differ from data-plane server.port ({})",
+                self.port,
+                data_plane_port
+            );
+        }
+        if admin_port != 0 && self.port == admin_port {
+            anyhow::bail!(
+                "mgmt_probe.port ({}) must differ from admin.port ({})",
+                self.port,
+                admin_port
+            );
+        }
+        if self.mgmt_probe_token.trim().is_empty() {
+            anyhow::bail!("mgmt_probe.mgmt_probe_token must not be empty when enabled");
+        }
+        if self.mgmt_probe_token.len() < 32 {
+            anyhow::bail!("mgmt_probe.mgmt_probe_token must be at least 32 characters");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +204,7 @@ impl ServiceConfig for BypassServiceConfig {
 impl ValidateConfig for BypassServiceConfig {
     fn validate(&self) -> Result<()> {
         self.upstream.validate()?;
+        self.mgmt_probe.validate(self.server.port, self.admin.port)?;
         Ok(())
     }
 }
@@ -178,5 +251,35 @@ password = "p"
         let cfg = parse("[ssrf]\nallow_private_network = false\n").expect("parse");
         assert!(!cfg.ssrf.allow_private_network);
         assert!(parse("[ssrf]\nallow_private = true\n").is_err());
+    }
+
+    #[test]
+    fn mgmt_probe_defaults_disabled() {
+        let cfg = parse("").expect("parse");
+        assert!(!cfg.mgmt_probe.enabled);
+        assert_eq!(cfg.mgmt_probe.port, 8890);
+    }
+
+    #[test]
+    fn mgmt_probe_enabled_requires_token() {
+        let cfg = parse(
+            r#"[mgmt_probe]
+enabled = true
+host = "0.0.0.0"
+port = 8890
+mgmt_probe_token = "1a71e6a9d100abcb09537e333051dd63e102f39491df18588f8c6bb5a35ed256"
+"#,
+        )
+        .expect("parse");
+        assert!(cfg.validate().is_ok());
+        let bad = parse(
+            r#"[mgmt_probe]
+enabled = true
+port = 8890
+mgmt_probe_token = ""
+"#,
+        )
+        .expect("parse");
+        assert!(bad.validate().is_err());
     }
 }
