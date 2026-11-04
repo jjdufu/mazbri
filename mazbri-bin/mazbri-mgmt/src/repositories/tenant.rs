@@ -3,7 +3,8 @@ use serde::Serialize;
 use sqlx::{PgPool, QueryBuilder, Row};
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TenantRow {
-    #[serde(skip_serializing)]
+    /// tenants.id（加密 AAD 用的租户 UUID），对外字段名 `uuid`。
+    #[serde(rename = "uuid")]
     pub id: uuid::Uuid,
     pub tenant_code: String,
     pub tenant_id: String,
@@ -18,7 +19,8 @@ pub struct TenantRow {
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TenantCreateRow {
-    #[serde(skip_serializing)]
+    /// tenants.id（加密 AAD 用的租户 UUID），对外字段名 `uuid`。
+    #[serde(rename = "uuid")]
     pub id: uuid::Uuid,
     pub tenant_code: String,
     pub tenant_id: String,
@@ -32,7 +34,8 @@ pub struct TenantCreateRow {
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TenantUpdateRow {
-    #[serde(skip_serializing)]
+    /// tenants.id（加密 AAD 用的租户 UUID），对外字段名 `uuid`。
+    #[serde(rename = "uuid")]
     pub id: uuid::Uuid,
     pub tenant_code: String,
     pub tenant_id: String,
@@ -44,7 +47,8 @@ pub struct TenantUpdateRow {
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TenantEnabledRow {
-    #[serde(skip_serializing)]
+    /// tenants.id（加密 AAD 用的租户 UUID），对外字段名 `uuid`。
+    #[serde(rename = "uuid")]
     pub id: uuid::Uuid,
     pub tenant_code: String,
     pub name: String,
@@ -395,4 +399,32 @@ pub async fn search_tenant_ids(
     .bind(like)
     .fetch_all(pool)
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tenant_row_exposes_uuid_field() {
+        let id = uuid::Uuid::new_v4();
+        let now = Utc::now();
+        let row = TenantRow {
+            id,
+            tenant_code: "CODE0001".into(),
+            tenant_id: "slug".into(),
+            name: "name".into(),
+            contact_person: None,
+            contact_phone: None,
+            contact_email: None,
+            enabled: true,
+            token_expiration_secs: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let value = serde_json::to_value(&row).unwrap();
+        assert_eq!(value["uuid"], serde_json::json!(id.to_string()));
+        assert!(value.get("id").is_none());
+        assert_eq!(value["tenant_id"], "slug");
+    }
 }

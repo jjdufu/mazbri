@@ -81,7 +81,7 @@ fn window_params(p: &TraceWindowParams) -> Vec<(&'static str, String)> {
     out
 }
 
-/// 透传 analytics 结果：成功包成 `ApiResponse`，404 / 4xx 保留语义，其余视为网关错误。
+/// 透传 analytics 结果：成功包成 `ApiResponse`，失败走 [`crate::analytics_client::AnalyticsError::into_response`]。
 async fn forward(
     client: &AnalyticsHttpClient,
     path: &str,
@@ -89,28 +89,8 @@ async fn forward(
     what: &str,
 ) -> axum::response::Response {
     match client.traces(path, params).await {
-        Ok((status, data)) if status.is_success() => ApiResponse::ok(data).into_response(),
-        Ok((status, data)) if status.is_client_error() => {
-            let message = data
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("参数无效")
-                .to_string();
-            let code = if status == reqwest::StatusCode::NOT_FOUND {
-                StatusCode::NOT_FOUND
-            } else {
-                StatusCode::BAD_REQUEST
-            };
-            ApiResponse::err(code, message)
-        }
-        Ok((status, _)) => {
-            tracing::warn!(%status, "analytics {what} 失败");
-            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("{what}失败"))
-        }
-        Err(e) => {
-            tracing::warn!("analytics {what} 调用失败: {e}");
-            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("{what}失败"))
-        }
+        Ok(data) => ApiResponse::ok(data).into_response(),
+        Err(e) => e.into_response(what),
     }
 }
 

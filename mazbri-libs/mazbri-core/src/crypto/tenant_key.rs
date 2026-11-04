@@ -4,7 +4,7 @@ use super::envelope::{
     DEFAULT_WRAPPING_ALGORITHM, TenantKeyEnvelope, parse_envelope, serialize_envelope,
 };
 use super::transport::{
-    TENANT_SECRET_KEY_BYTES, decrypt_with_alg, default_data_alg, default_suite, encrypt_with_alg,
+    TENANT_SECRET_KEY_BYTES, TransportCipher, decrypt_with_alg, default_data_alg, default_suite, encrypt_with_alg,
     sign_payload,
 };
 use base64::Engine;
@@ -228,7 +228,7 @@ pub fn wrap_new_tenant_key_with_registry(
     let tenant_key = generate_tenant_secret_key();
     let aad = envelope_aad(tenant_id, key_version);
     let parts = encrypt_with_alg(
-        registry,
+        TransportCipher::strict(registry),
         wrapping_alg,
         master_key,
         &tenant_key,
@@ -294,7 +294,7 @@ pub fn unwrap_tenant_key_with_registry(
     let wrapping_alg = mazbri_crypto::parse_algorithm_id(&envelope.algorithm)
         .map_err(|_| TenantKeyError::InvalidEncoding)?;
     let key = decrypt_with_alg(
-        registry,
+        TransportCipher::strict(registry),
         wrapping_alg,
         master_key,
         &envelope.iv,
@@ -342,7 +342,7 @@ pub fn secret_key_digest(
         STANDARD.encode(tenant_secret_key)
     );
     Ok(sign_payload(
-        registry,
+        TransportCipher::strict(registry),
         DEFAULT_INTEGRITY_MAC,
         integrity_key,
         &payload,

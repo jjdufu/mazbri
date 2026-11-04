@@ -67,6 +67,12 @@ pub struct TenantCryptoKeyEventRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// 读取租户 Profile；不存在时插入默认行。
+///
+/// 已存在的行只读不写：`ON CONFLICT DO UPDATE` 即使是空更新也会触发
+/// `BEFORE UPDATE` 触发器改写 `updated_at`，使读接口产生副作用，故用
+/// `DO NOTHING` + 回读已有行。
+///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -76,10 +82,16 @@ pub async fn upsert_profile_defaults(
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
     let sql = format!(
         r"
-        INSERT INTO tenant_crypto_profiles (tenant_id)
-        VALUES ($1)
-        ON CONFLICT (tenant_id) DO UPDATE SET updated_at = tenant_crypto_profiles.updated_at
-        RETURNING {PROFILE_RETURNING}
+        WITH inserted AS (
+            INSERT INTO tenant_crypto_profiles (tenant_id)
+            VALUES ($1)
+            ON CONFLICT (tenant_id) DO NOTHING
+            RETURNING {PROFILE_RETURNING}
+        )
+        SELECT {PROFILE_RETURNING} FROM inserted
+        UNION ALL
+        SELECT {PROFILE_RETURNING} FROM tenant_crypto_profiles
+        WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)
         "
     );
     sqlx::query_as::<_, TenantCryptoProfileRow>(&sql)
@@ -517,6 +529,8 @@ pub struct TenantRequestKeyRow {
     pub kid: String,
     pub alg: String,
     pub status: String,
+    /// 非对称请求密钥登记的公钥文本（SPKI PEM 或 Base64 原始字节）；HMAC 密钥为 `None`。
+    pub public_key: Option<String>,
     pub not_before: Option<DateTime<Utc>>,
     pub not_after: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -532,7 +546,7 @@ pub async fn list_request_keys(
 ) -> Result<Vec<TenantRequestKeyRow>, sqlx::Error> {
     sqlx::query_as::<_, TenantRequestKeyRow>(
         r"
-        SELECT id, tenant_id, kid, alg, status, not_before, not_after, created_at, updated_at
+        SELECT id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
         FROM tenant_request_keys
         WHERE tenant_id = $1
         ORDER BY created_at
@@ -548,10 +562,21 @@ pub struct NewRequestKey<'a> {
     pub tenant_id: uuid::Uuid,
     pub kid: &'a str,
     pub alg: &'a str,
-    pub encrypted_material: &'a str,
+    pub material: RequestKeyMaterial<'a>,
+    /// HMAC：密钥完整性摘要；非对称：公钥文本完整性摘要（同一 `secret_key_digest` 口径）。
     pub material_digest: &'a str,
-    pub wrapping_key_id: &'a str,
     pub actor_id: uuid::Uuid,
+}
+
+/// 请求密钥材料：对称密钥包装后入库，非对称只存公钥。
+pub enum RequestKeyMaterial<'a> {
+    /// HMAC 密钥（根保护包装后的密文与包装 key id）。
+    Wrapped {
+        encrypted_material: &'a str,
+        wrapping_key_id: &'a str,
+    },
+    /// 非对称签名公钥文本。
+    PublicKey(&'a str),
 }
 
 /// # Errors
@@ -565,19 +590,29 @@ pub async fn insert_request_key(
         tenant_id,
         kid,
         alg,
-        encrypted_material,
+        material,
         material_digest,
-        wrapping_key_id,
         actor_id,
     } = params;
+    let (encrypted_material, wrapping_key_id, public_key) = match material {
+        RequestKeyMaterial::Wrapped {
+            encrypted_material,
+            wrapping_key_id,
+        } => (Some(encrypted_material), Some(wrapping_key_id), None),
+        RequestKeyMaterial::PublicKey(public_key) => (None, None, Some(public_key)),
+    };
     sqlx::query_as::<_, TenantRequestKeyRow>(
         r"
         INSERT INTO tenant_request_keys (
             tenant_id, kid, alg, encrypted_material, material_digest, wrapping_key_id,
-            status, created_by, updated_by
+            wrapping_algorithm, public_key, status, created_by, updated_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7)
-        RETURNING id, tenant_id, kid, alg, status, not_before, not_after, created_at, updated_at
+        VALUES (
+            $1, $2, $3, $4, $5, $6,
+            CASE WHEN $4::text IS NULL THEN NULL ELSE 'aes-256-gcm' END,
+            $7, 'active', $8, $8
+        )
+        RETURNING id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
         ",
     )
     .bind(tenant_id)
@@ -586,6 +621,7 @@ pub async fn insert_request_key(
     .bind(encrypted_material)
     .bind(material_digest)
     .bind(wrapping_key_id)
+    .bind(public_key)
     .bind(actor_id)
     .fetch_one(pool)
     .await
@@ -606,7 +642,7 @@ pub async fn set_request_key_status(
         UPDATE tenant_request_keys
         SET status = $3, updated_by = $4, updated_at = NOW()
         WHERE tenant_id = $1 AND kid = $2
-        RETURNING id, tenant_id, kid, alg, status, not_before, not_after, created_at, updated_at
+        RETURNING id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
         ",
     )
     .bind(tenant_id)

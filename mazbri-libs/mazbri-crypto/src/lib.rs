@@ -34,6 +34,7 @@ pub mod material;
 pub mod profile;
 pub mod registry;
 pub mod security;
+pub mod signing_key;
 pub mod sm;
 pub mod suite;
 pub mod symmetric;
@@ -47,8 +48,12 @@ pub use mac::MacAlgorithm;
 pub use material::{KeyPurpose, KeyRef, NoncePolicy, ZeroizingBytes};
 pub use registry::{parse_algorithm_id, require_mac_for, AlgorithmMeta, AlgorithmRegistry};
 pub use security::SecurityClass;
+pub use signing_key::{
+    asym_signer, generate_sign_keypair, key_ref_from_text, validate_sign_public_key, SignKeyPair,
+    RSA_SIGN_KEY_BITS, RSA_SIGN_MIN_BITS,
+};
 pub use sm::{
-    sm4_ecb_decrypt, sm4_ecb_encrypt, GmDigestAlgorithm, GmMacAlgorithm, Sm2CipherMode,
+    sm2_private_key_to_pem, sm2_public_key_to_pem, sm4_ecb_decrypt, sm4_ecb_encrypt, GmDigestAlgorithm, GmMacAlgorithm, Sm2CipherMode,
     Sm2EncryptAlgorithm, Sm2SignAlgorithm, Sm4Algorithm, SM2_DEFAULT_USER_ID, SM3_OUTPUT_LEN,
     SM4_BLOCK_LEN, SM4_KEY_LEN,
 };

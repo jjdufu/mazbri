@@ -88,7 +88,10 @@ pub async fn get_platform_stats(
     let active_tenants = repo::get_active_tenants(db).await;
     let total_products = repo::get_total_products(db).await;
     let (usage_stats, top_products, response_time_distribution) =
-        fetch_usage_from_analytics(analytics_client, params).await;
+        match fetch_usage_from_analytics(analytics_client, params).await {
+            Ok(parts) => parts,
+            Err(e) => return e.into_response("平台统计"),
+        };
     let top_tenants: Vec<serde_json::Value> = Vec::new();
     ApiResponse::ok(serde_json::json!(
         { "time_range" : { "start" : params.start_time, "end" : params.end_time
@@ -103,11 +106,11 @@ pub async fn get_platform_stats(
 async fn fetch_usage_from_analytics(
     client: &AnalyticsHttpClient,
     params: &PlatformStatsParams,
-) -> (
+) -> crate::analytics_client::AnalyticsResult<(
     serde_json::Value,
     Vec<serde_json::Value>,
     Vec<serde_json::Value>,
-) {
+)> {
     let now = chrono::Utc::now();
     let start = params
         .start_time
@@ -120,78 +123,57 @@ async fn fetch_usage_from_analytics(
     let start_str = start.format("%Y-%m-%dT%H:%M:%S").to_string();
     let end_str = end.format("%Y-%m-%dT%H:%M:%S").to_string();
     // Customer-facing volume only — gateway access logs (not gateway+bypass double count).
-    match client
+    let body = client
         .aggregate_requests(&start_str, &end_str, "gateway")
-        .await
-    {
-        Ok(body) => {
-            let total_requests = body
-                .get("total_requests")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            let avg_duration_ms = body
-                .get("avg_duration_ms")
-                .and_then(serde_json::Value::as_f64)
-                .unwrap_or(0.0);
-            let usage_stats = serde_json::json!(
-                { "total_requests" : total_requests, "active_tenants_usage" : 0,
-                "total_bytes" : 0, "avg_duration_ms" : avg_duration_ms, }
-            );
-            let top_products = body
-                .get("by_route")
-                .and_then(|v| v.as_object())
-                .map(|map| {
-                    let mut entries: Vec<_> = map
-                        .iter()
-                        .map(|(route, count)| {
-                            serde_json::json!(
-                                { "product_endpoint" : route, "request_count" : count
-                                .as_u64().unwrap_or(0), "avg_upstream_service_time_ms" : 0.0,
-                                "total_cost" : 0, }
-                            )
-                        })
-                        .collect();
-                    entries.sort_by(|a, b| {
-                        b.get("request_count")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0)
-                            .cmp(
-                                &a.get("request_count")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0),
-                            )
-                    });
-                    entries.truncate(10);
-                    entries
+        .await?;
+    let total_requests = body
+        .get("total_requests")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let avg_duration_ms = body
+        .get("avg_duration_ms")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0);
+    let usage_stats = serde_json::json!(
+        { "total_requests" : total_requests, "active_tenants_usage" : 0,
+        "total_bytes" : 0, "avg_duration_ms" : avg_duration_ms, }
+    );
+    let top_products = body
+        .get("by_route")
+        .and_then(|v| v.as_object())
+        .map(|map| {
+            let mut entries: Vec<_> = map
+                .iter()
+                .map(|(route, count)| {
+                    serde_json::json!(
+                        { "product_endpoint" : route, "request_count" : count
+                        .as_u64().unwrap_or(0), "avg_upstream_service_time_ms" : 0.0,
+                        "total_cost" : 0, }
+                    )
                 })
-                .unwrap_or_default();
-            let response_time_distribution = vec![
-                serde_json::json!({ "bucket" : "< 100ms", "count" : 0 }),
-                serde_json::json!({ "bucket" : "100-500ms", "count" : 0 }),
-                serde_json::json!({ "bucket" : "500ms-1s", "count" : 0 }),
-                serde_json::json!({ "bucket" : "1s-5s", "count" : 0 }),
-                serde_json::json!({ "bucket" : "> 5s", "count" : 0 }),
-            ];
-            (usage_stats, top_products, response_time_distribution)
-        }
-        Err(e) => {
-            tracing::warn!("analytics aggregate_requests 调用失败: {}, 使用降级数据", e);
-            (
-                serde_json::json!(
-                    { "total_requests" : 0, "active_tenants_usage" : 0, "total_bytes" :
-                    0, "avg_duration_ms" : 0.0 }
-                ),
-                Vec::new(),
-                vec![
-                    serde_json::json!({ "bucket" : "< 100ms", "count" : 0 }),
-                    serde_json::json!({ "bucket" : "100-500ms", "count" : 0 }),
-                    serde_json::json!({ "bucket" : "500ms-1s", "count" : 0 }),
-                    serde_json::json!({ "bucket" : "1s-5s", "count" : 0 }),
-                    serde_json::json!({ "bucket" : "> 5s", "count" : 0 }),
-                ],
-            )
-        }
-    }
+                .collect();
+            entries.sort_by(|a, b| {
+                b.get("request_count")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+                    .cmp(
+                        &a.get("request_count")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0),
+                    )
+            });
+            entries.truncate(10);
+            entries
+        })
+        .unwrap_or_default();
+    let response_time_distribution = vec![
+        serde_json::json!({ "bucket" : "< 100ms", "count" : 0 }),
+        serde_json::json!({ "bucket" : "100-500ms", "count" : 0 }),
+        serde_json::json!({ "bucket" : "500ms-1s", "count" : 0 }),
+        serde_json::json!({ "bucket" : "1s-5s", "count" : 0 }),
+        serde_json::json!({ "bucket" : "> 5s", "count" : 0 }),
+    ];
+    Ok((usage_stats, top_products, response_time_distribution))
 }
 pub async fn get_usage_analytics(
     db: &PgPool,
@@ -246,10 +228,8 @@ pub async fn get_usage_analytics(
             })
             .collect::<Vec<_>>(),
         Err(e) => {
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to query analytics: {e}"),
-            );
+            tracing::error!(tenant_id = %tenant_id, error = %e, "租户用量统计查询失败");
+            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "租户用量统计查询失败");
         }
     };
     let mut top_endpoints_builder =
@@ -408,10 +388,8 @@ pub async fn get_ratelimit_analytics(
             })
             .collect::<Vec<_>>(),
         Err(e) => {
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to query rate limit analytics: {e}"),
-            );
+            tracing::error!(tenant_id = %tenant_id, error = %e, "租户限流统计查询失败");
+            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "租户限流统计查询失败");
         }
     };
     let (denial_reasons, scope_breakdown, top_denied_apis) =
@@ -801,12 +779,9 @@ pub async fn get_call_monitor_logs(
     request_params.push(("page_size", page_size.to_string()));
     let body = match analytics_client.query_request_logs(&request_params).await {
         Ok(body) => body,
-        Err(e) => {
-            // Do not mask failures as an empty list with total=0 — that blanks the
-            // table and drops pagination (user cannot navigate back).
-            tracing::warn!("analytics request logs 调用失败: {}", e);
-            return ApiResponse::err(StatusCode::BAD_GATEWAY, format!("查询调用日志失败: {e}"));
-        }
+        // Do not mask failures as an empty list with total=0 — that blanks the
+        // table and drops pagination (user cannot navigate back).
+        Err(e) => return e.into_response("查询调用日志"),
     };
     let data = body
         .get("data")
@@ -860,10 +835,7 @@ pub async fn get_call_histogram(
     };
     match analytics_client.request_histogram(&query.params).await {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics request histogram 调用失败: {}", e);
-            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("查询调用直方图失败: {e}"))
-        }
+        Err(e) => e.into_response("查询调用直方图"),
     }
 }
 
@@ -901,10 +873,7 @@ pub async fn get_call_stages(
     }
     match analytics_client.request_stages(&request_params).await {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics request stages 调用失败: {}", e);
-            ApiResponse::err(StatusCode::BAD_GATEWAY, format!("查询阶段耗时失败: {e}"))
-        }
+        Err(e) => e.into_response("查询阶段耗时"),
     }
 }
 
@@ -1202,10 +1171,7 @@ pub async fn get_metrics_overview(
     let gate = OverviewFieldGate::for_role(role);
     let mut body = match analytics_client.metrics_overview().await {
         Ok(body) => body,
-        Err(e) => {
-            tracing::warn!("analytics metrics overview 调用失败，返回空指标: {}", e);
-            empty_metrics_overview()
-        }
+        Err(e) => return e.into_response("指标总览"),
     };
     apply_overview_field_gate(&mut body, gate);
     ApiResponse::ok(body).into_response()
@@ -1215,10 +1181,7 @@ pub async fn get_metrics_catalog(
 ) -> axum::response::Response {
     match analytics_client.metrics_catalog().await {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics metrics catalog 调用失败，返回默认目录: {}", e);
-            ApiResponse::ok(default_metrics_catalog()).into_response()
-        }
+        Err(e) => e.into_response("指标目录"),
     }
 }
 pub async fn get_services_health(
@@ -1226,10 +1189,7 @@ pub async fn get_services_health(
 ) -> axum::response::Response {
     match analytics_client.metrics_services_health().await {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics services health 调用失败，返回空列表: {}", e);
-            ApiResponse::ok(serde_json::json!([])).into_response()
-        }
+        Err(e) => e.into_response("服务健康"),
     }
 }
 
@@ -1253,15 +1213,7 @@ pub async fn get_metrics_topology(
 ) -> axum::response::Response {
     match analytics_client.metrics_topology(start, end).await {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics topology 调用失败，返回空图: {}", e);
-            ApiResponse::ok(serde_json::json!({
-                "start": start.unwrap_or(0),
-                "end": end.unwrap_or(0),
-                "nodes": [],
-                "edges": [],
-            })).into_response()
-        }
+        Err(e) => e.into_response("服务拓扑"),
     }
 }
 
@@ -1278,23 +1230,8 @@ pub async fn olap_query(
         );
     }
     match analytics_client.olap_query(body).await {
-        Ok((status, data)) if status.is_success() => ApiResponse::ok(data).into_response(),
-        Ok((status, data)) if status.is_client_error() => {
-            let message = data
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("OLAP 查询参数无效")
-                .to_string();
-            ApiResponse::err(StatusCode::BAD_REQUEST, message)
-        }
-        Ok((status, _)) => {
-            tracing::warn!(%status, "analytics OLAP 查询失败");
-            ApiResponse::err(StatusCode::BAD_GATEWAY, "OLAP 查询失败")
-        }
-        Err(e) => {
-            tracing::warn!("analytics OLAP 调用失败: {}", e);
-            ApiResponse::err(StatusCode::BAD_GATEWAY, "OLAP 查询失败")
-        }
+        Ok(data) => ApiResponse::ok(data).into_response(),
+        Err(e) => e.into_response("OLAP 查询"),
     }
 }
 
@@ -1319,108 +1256,9 @@ pub async fn get_metric_timeseries(
         .await
     {
         Ok(body) => ApiResponse::ok(body).into_response(),
-        Err(e) => {
-            tracing::warn!("analytics metric timeseries 调用失败，返回空时序: {}", e);
-            ApiResponse::ok(empty_metric_series(&params.metric)).into_response()
-        }
+        Err(e) => e.into_response("指标时序"),
     }
 }
-fn empty_metrics_overview() -> serde_json::Value {
-    // 瞬时窗由 apply_overview_field_gate 写入；无样本率类字段为 null（禁止 0%）。
-    serde_json::json!({
-        "sample_count": 0,
-        "qps": null,
-        "success_rate": null,
-        "error_rate": null,
-        "error_rate_4xx": null,
-        "error_rate_5xx": null,
-        "p50_latency_ms": null,
-        "p95_latency_ms": null,
-        "p99_latency_ms": null,
-        "active_connections": 0.0,
-        "proxy_active_connections": 0.0,
-        "rate_limit_rejections_per_sec": 0.0,
-        "billing_pipeline": {
-            "backlog": 0.0,
-            "oldest_pending_age_seconds": 0.0,
-            "dead_letters": 0.0,
-            "charge_lag_p99_ms": 0.0
-        },
-        "circuit_breaker_open_count": 0.0,
-        "cert_min_expiry_days": 0.0,
-        "service_health": [],
-        "alerts_connected": false,
-        "error_budget_connected": false,
-        "error_budget_remaining": null,
-        "error_budget_slo": null
-    })
-}
-fn empty_metric_series(metric: &str) -> serde_json::Value {
-    let (label, unit) = metric_label_unit(metric);
-    serde_json::json!({
-        "metric": metric,
-        "label": label,
-        "unit": unit,
-        "series": []
-    })
-}
-/// 监控页可选服务：规范服务名 + 中文名（与 analytics `default_service_targets` 一致）。
-fn default_metric_services() -> serde_json::Value {
-    use mazbri_core::ServiceName as S;
-    let services: Vec<serde_json::Value> = [
-        (S::Auth, "认证服务"),
-        (S::Billing, "计费服务"),
-        (S::Ratelimit, "限流服务"),
-        (S::Cache, "缓存服务"),
-        (S::Cbpro, "熔断保护服务"),
-        (S::CbproExt, "扩展保护服务"),
-        (S::Bypass, "旁路服务"),
-        (S::Cert, "证书服务"),
-        (S::Gateway, "网关"),
-        (S::Mgmt, "管理端"),
-        (S::Analytics, "分析服务"),
-    ]
-    .into_iter()
-    .map(|(svc, name)| serde_json::json!({ "key": svc.as_str(), "name": name }))
-    .collect();
-    serde_json::Value::Array(services)
-}
-fn default_metrics_catalog() -> serde_json::Value {
-    serde_json::json!(
-        { "services" : default_metric_services(), "metrics" : [{ "key" : "qps",
-        "label" : "QPS", "unit" : "req/s", "default_chart" : "line" }, { "key" :
-        "error_rate", "label" : "5xx 错误率", "unit" : "%", "default_chart" : "line"
-        }, { "key" : "p95_latency_ms", "label" : "P95 延迟", "unit" : "ms",
-        "default_chart" : "line" }, { "key" : "p99_latency_ms", "label" : "P99 延迟",
-        "unit" : "ms", "default_chart" : "line" }, { "key" : "active_connections",
-        "label" : "活跃连接", "unit" : "conn", "default_chart" : "line" }, { "key" :
-        "ratelimit_rejections", "label" : "限流拒绝", "unit" : "ops/s",
-        "default_chart" : "line" }, { "key" : "billing_outbox_pending", "label" :
-        "计费积压（按 stage）", "unit" : "jobs", "default_chart" : "line" }, { "key" :
-        "cert_min_expiry_days", "label" : "证书最短到期", "unit" : "days",
-        "default_chart" : "line" }] }
-    )
-}
-fn metric_label_unit(metric: &str) -> (&'static str, &'static str) {
-    match metric {
-        "qps" => ("业务 QPS", "req/s"),
-        "service_qps" => ("服务 QPS（不含探活）", "req/s"),
-        "error_rate" => ("业务错误率", "%"),
-        "error_rate_4xx" => ("4xx 错误率", "%"),
-        "error_rate_5xx" => ("5xx 错误率", "%"),
-        "p50_latency_ms" => ("P50 延迟", "ms"),
-        "p95_latency_ms" => ("P95 延迟", "ms"),
-        "p99_latency_ms" => ("P99 延迟", "ms"),
-        "active_connections" => ("活跃连接", "conn"),
-        "ratelimit_rejections" => ("限流拒绝", "ops/s"),
-        "billing_outbox_pending" => ("计费积压（按 stage）", "jobs"),
-        "cert_min_expiry_days" => ("证书最短到期", "days"),
-        "route_reload_lag_seconds" => ("路由生效延迟（变更写入到网关应用）", "s"),
-        "ratelimit_snapshot_age_seconds" => ("限流快照距上次成功同步", "s"),
-        _ => ("指标", ""),
-    }
-}
-
 #[cfg(test)]
 mod olap_tests {
     use super::olap_is_money;

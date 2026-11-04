@@ -3,6 +3,9 @@ use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
 use crate::redis_client::RedisClient;
 use chrono::Utc;
+use mazbri_core::crypto::request_binding::{
+    binding_key_ref, parse_binding_alg, public_key_digest_scope,
+};
 use mazbri_core::crypto::tenant_key::{
     RootProtectionMaterialBundle, decode_configured_key, unwrap_tenant_key,
     verify_secret_key_digest,
@@ -11,7 +14,7 @@ use mazbri_core::crypto::transport::{
     SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
 };
 use mazbri_core::crypto::{
-    AlgorithmId, AlgorithmRegistry, CryptoError, KeySelection, TenantTransportProfile,
+    AlgorithmId, AlgorithmKind, AlgorithmRegistry, CryptoError, KeyRef, KeySelection, TenantTransportProfile,
     TransportMode, parse_algorithm_id,
 };
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
@@ -237,6 +240,7 @@ pub struct TenantCryptoState {
     db: Arc<PgPool>,
     profile_cache: moka::sync::Cache<Uuid, TenantCryptoProfile>,
     key_cache: moka::sync::Cache<String, Vec<u8>>,
+    request_key_cache: moka::sync::Cache<(Uuid, String), Arc<RequestBindingKey>>,
     root_material_cache: moka::sync::Cache<String, RootProtectionMaterialBundle>,
     root_material_refresh_lock: Arc<tokio::sync::Mutex<()>>,
     http_client: reqwest::Client,
@@ -270,6 +274,12 @@ impl TenantCryptoState {
                 .max_capacity(100_000)
                 .support_invalidation_closures()
                 .time_to_live(Duration::from_mins(15))
+                .build(),
+            // 请求绑定密钥：已解析的 KeyRef（RSA/SM2 解析开销大，按 kid 缓存）；
+            // TTL 较短，使 retire / 过期在 1 分钟内生效。
+            request_key_cache: moka::sync::Cache::builder()
+                .max_capacity(100_000)
+                .time_to_live(Duration::from_mins(1))
                 .build(),
             root_material_cache: moka::sync::Cache::builder()
                 .max_capacity(1)
@@ -950,21 +960,31 @@ impl TenantCryptoState {
             })
     }
 
+    /// 算法注册表。
+    #[must_use]
+    pub const fn registry(&self) -> &AlgorithmRegistry {
+        &self.registry
+    }
+
+    /// 按 (tenant, kid) 取可用的请求绑定密钥（HMAC 解包 / 公钥校验完整性摘要后解析）。
+    ///
+    /// kid 不存在、非 active/retiring、不在有效期、算法不在绑定闭集时返回 `Ok(None)`。
+    ///
     /// # Errors
     ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn request_hmac_key(
+    /// 数据库 / 根材料失败返回 `InternalError`；密钥材料被篡改或非法返回 `Forbidden`。
+    pub async fn request_binding_key(
         &self,
         tenant_id: Uuid,
         kid: &str,
-    ) -> Result<Option<Vec<u8>>, ProxyError> {
-        let cache_key = format!("reqkey:{tenant_id}:{kid}");
-        if let Some(key) = self.key_cache.get(&cache_key) {
+    ) -> Result<Option<Arc<RequestBindingKey>>, ProxyError> {
+        let cache_key = (tenant_id, kid.to_owned());
+        if let Some(key) = self.request_key_cache.get(&cache_key) {
             return Ok(Some(key));
         }
         let row = sqlx::query_as::<_, TenantRequestKeyRow>(
             r"
-            SELECT tenant_id, kid, alg, encrypted_material, material_digest, status,
+            SELECT tenant_id, kid, alg, encrypted_material, public_key, material_digest, status,
                 not_before, not_after
             FROM tenant_request_keys
             WHERE tenant_id = $1 AND kid = $2
@@ -980,53 +1000,60 @@ impl TenantCryptoState {
         let Some(row) = row else {
             return Ok(None);
         };
-        if !matches!(row.status.as_str(), "active" | "retiring") {
+        if !row.usable_at(Utc::now()) {
             return Ok(None);
         }
-        let now = Utc::now();
-        if let Some(not_before) = row.not_before
-            && now < not_before
-        {
+        let Ok(alg) = parse_binding_alg(&row.alg) else {
             return Ok(None);
-        }
-        if let Some(not_after) = row.not_after
-            && now >= not_after
-        {
-            return Ok(None);
-        }
-        if row.alg != "hmac-sha256" {
-            return Ok(None);
-        }
-        let key = self.unwrap_request_key(&row).await?;
-        self.key_cache.insert(cache_key, key.clone());
+        };
+        let material = self.request_key_material(&row, alg).await?;
+        let key = binding_key_ref(alg, &material)
+            .map_err(|_| ProxyError::Forbidden("Invalid request binding key".to_string()))?;
+        let key = Arc::new(RequestBindingKey { alg, key });
+        self.request_key_cache.insert(cache_key, Arc::clone(&key));
         Ok(Some(key))
     }
 
-    async fn unwrap_request_key(&self, row: &TenantRequestKeyRow) -> Result<Vec<u8>, ProxyError> {
+    async fn request_key_material(
+        &self,
+        row: &TenantRequestKeyRow,
+        alg: AlgorithmId,
+    ) -> Result<Vec<u8>, ProxyError> {
+        let invalid = || ProxyError::Forbidden("Invalid request binding key".to_string());
         let materials = self.root_materials().await?;
         let (master_key, integrity_key) = decode_root_materials(&materials)?;
-        let key = unwrap_tenant_key(
-            &row.encrypted_material,
-            &row.tenant_id.to_string(),
-            &row.kid,
-            &master_key,
-        )
-        .map_err(|_| ProxyError::Forbidden("Invalid request binding key".to_string()))?;
+        let tenant = row.tenant_id.to_string();
+        let (material, scope) = if alg.kind() == AlgorithmKind::Mac {
+            let wrapped = row.encrypted_material.as_deref().ok_or_else(invalid)?;
+            let key = unwrap_tenant_key(wrapped, &tenant, &row.kid, &master_key)
+                .map_err(|_| invalid())?;
+            (key, row.kid.clone())
+        } else {
+            let public = row.public_key.as_deref().ok_or_else(invalid)?;
+            (public.as_bytes().to_vec(), public_key_digest_scope(&row.kid))
+        };
         let digest_ok = verify_secret_key_digest(
             &integrity_key,
-            &row.tenant_id.to_string(),
-            &row.kid,
-            &key,
+            &tenant,
+            &scope,
+            &material,
             &row.material_digest,
         )
-        .map_err(|_| ProxyError::Forbidden("Invalid request binding key".to_string()))?;
+        .map_err(|_| invalid())?;
         if !digest_ok {
-            return Err(ProxyError::Forbidden(
-                "Invalid request binding key".to_string(),
-            ));
+            return Err(invalid());
         }
-        Ok(key)
+        Ok(material)
     }
+}
+
+/// 已校验、已解析的请求绑定密钥。
+#[derive(Debug, Clone)]
+pub struct RequestBindingKey {
+    /// 密钥算法（绑定闭集内）。
+    pub alg: AlgorithmId,
+    /// HMAC 原始密钥或客户端公钥。
+    pub key: KeyRef,
 }
 
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
@@ -1034,11 +1061,20 @@ struct TenantRequestKeyRow {
     pub tenant_id: Uuid,
     pub kid: String,
     pub alg: String,
-    pub encrypted_material: String,
+    pub encrypted_material: Option<String>,
+    pub public_key: Option<String>,
     pub material_digest: String,
     pub status: String,
     pub not_before: Option<chrono::DateTime<Utc>>,
     pub not_after: Option<chrono::DateTime<Utc>>,
+}
+
+impl TenantRequestKeyRow {
+    fn usable_at(&self, now: chrono::DateTime<Utc>) -> bool {
+        matches!(self.status.as_str(), "active" | "retiring")
+            && self.not_before.is_none_or(|not_before| now >= not_before)
+            && self.not_after.is_none_or(|not_after| now < not_after)
+    }
 }
 
 /// # Errors

@@ -1,12 +1,11 @@
 use anyhow::Result;
 use mazbri_core::config::ValidateConfig;
-use mazbri_core::{CertServiceConfig, Identity, LogRouteConfig, TracingConfig};
+use mazbri_core::{Identity, LogRouteConfig, TracingConfig};
 use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnalyticsConfig {
     pub service_name: Identity,
-    pub cert_service: CertServiceConfig,
     #[serde(default)]
     pub tracing: TracingConfig,
     #[serde(default)]
@@ -163,7 +162,6 @@ impl GreptimeDBConfig {
 }
 impl ValidateConfig for AnalyticsConfig {
     fn validate(&self) -> Result<()> {
-        self.cert_service.validate()?;
         if let Some(ref greptimedb) = self.greptimedb {
             greptimedb
                 .validate()

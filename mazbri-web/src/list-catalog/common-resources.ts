@@ -31,6 +31,13 @@ export const productsCatalog: ResourceFilterCatalog = {
       label_key: "product.columns.enabled",
     },
     {
+      // 主渠道编码：优先级最高的路由规则下首个绑定渠道
+      field: "channel_code",
+      value_type: "string",
+      ops: ["eq", "in"],
+      label_key: "listFilters.fields.channelCode",
+    },
+    {
       field: "created_at",
       value_type: "datetime",
       ops: DATETIME_OPS,

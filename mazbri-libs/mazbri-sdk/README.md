@@ -16,7 +16,7 @@ Official Rust client for tenant / partner integration with **mazbri-gateway**.
 - API-key → access token exchange
 - **Profile-based** transport seal/open (`TenantTransportProfile`, `mode=none|request|full`)
 - Closed-set kebab-case algorithm ids (e.g. `aes-256-gcm`); legacy uppercase aliases are **rejected**
-- Optional HTTP request binding (`X-Mazbri-*` HMAC headers) when `request_hmac_key` is set
+- Optional HTTP request binding (`X-Mazbri-*` headers) when `request_signer` is set: HMAC (`hmac-v1`) or asymmetric signatures (`rsa-v1` / `ecdsa-v1` / `ed25519-v1` / `sm2-v1`), see below
 - JSON request/response payloads
 - Propagates standard HTTP client stack (`reqwest`)
 
@@ -43,8 +43,7 @@ async fn main() -> anyhow::Result<()> {
         tenant_key: /* raw key bytes matching key_version */ vec![],
         key_version: "v1".into(),
         transport,
-        request_hmac_key: None,
-        request_key_id: None,
+        request_signer: None,
     })
     .await?;
 
@@ -54,6 +53,31 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 For plaintext (`mode=none`) use `TenantTransportProfile::plaintext()` and skip envelope seal/open.
+
+### Request binding
+
+The tenant profile's `signature_version` selects the key family; each request key (kid) has its own algorithm:
+
+| `signature_version` | key algorithms | key material for `RequestSigner::new` |
+|---|---|---|
+| `hmac-v1` | `hmac-sha256` / `hmac-sha384` / `hmac-sha512` / `hmac-sm3` | raw secret bytes returned once by mgmt (`hmacKey`, base64-decoded) |
+| `rsa-v1` | `rsa-pkcs1v15-sign-sha256/384/512` | PKCS#8 / PKCS#1 private PEM (>= 2048 bit) |
+| `ecdsa-v1` | `ecdsa-p256-sha256` / `ecdsa-p384-sha384` | PKCS#8 PEM or base64 raw scalar; signature is P1363 `r‖s` |
+| `ed25519-v1` | `ed25519` | PKCS#8 PEM or base64 32-byte seed |
+| `sm2-v1` | `sm2-sign` | PKCS#8 PEM (OpenSSL 3 `genpkey -algorithm SM2`) or base64 raw scalar; DER signature, default user id |
+
+For asymmetric versions the tenant registers only the **public** key (SPKI PEM) with mgmt; the private key never leaves the client.
+
+```rust
+use mazbri_core::crypto::request_binding::RequestSigner;
+use mazbri_core::crypto::AlgorithmId;
+
+let private_pem = std::fs::read("request-key.pem")?;
+let signer = RequestSigner::new("1", AlgorithmId::RsaPkcs1v15SignSha256, &private_pem)?;
+// ClientConfig { request_signer: Some(signer), .. }
+```
+
+Headers sent: `X-Mazbri-Timestamp`, `X-Mazbri-Nonce`, `X-Mazbri-Signature` (base64), `X-Mazbri-Signature-Input` (`{alg}=v1`), `X-Mazbri-Key-Id`, over `METHOD\npath_and_query\ntimestamp\nnonce\nbody`.
 
 ## Auth & errors
 

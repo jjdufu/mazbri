@@ -173,13 +173,12 @@ pub async fn create_tenant(
         "Created tenant: [{}] {} ({})",
         row.tenant_code, row.name, row.tenant_id
     );
-    Ok(serde_json::json!(
-        { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
-        .name, "contact_person" : row.contact_person, "contact_phone" : row
-        .contact_phone, "contact_email" : row.contact_email, "enabled" : row.enabled,
-        "token_expiration_secs" : row.token_expiration_secs, "created_at" : row
-        .created_at, }
-    ))
+    tenant_json(&row)
+}
+/// 租户行统一序列化为响应 JSON（含 `uuid` = tenants.id）。
+fn tenant_json<T: serde::Serialize>(row: &T) -> Result<serde_json::Value, ApiError> {
+    serde_json::to_value(row)
+        .map_err(|e| ApiError::internal(format!("Failed to serialize tenant: {e}")))
 }
 /// # Errors
 ///
@@ -202,13 +201,7 @@ pub async fn get_tenant(pool: &PgPool, id_or_code: &str) -> Result<serde_json::V
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get tenant: {e}")))?
         .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
-    Ok(serde_json::json!(
-        { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
-        .name, "contact_person" : row.contact_person, "contact_phone" : row
-        .contact_phone, "contact_email" : row.contact_email, "enabled" : row.enabled,
-        "token_expiration_secs" : row.token_expiration_secs, "created_at" : row
-        .created_at, "updated_at" : row.updated_at, }
-    ))
+    tenant_json(&row)
 }
 /// # Errors
 ///
@@ -255,12 +248,7 @@ pub async fn update_tenant(
         )),
         client_ip,
     ));
-    Ok(serde_json::json!(
-        { "tenant_code" : row.tenant_code, "tenant_id" : row.tenant_id, "name" : row
-        .name, "enabled" : row.enabled, "contact_email" : row.contact_email,
-        "token_expiration_secs" : row.token_expiration_secs, "updated_at" : row
-        .updated_at, }
-    ))
+    tenant_json(&row)
 }
 /// Hard-delete tenant (`R_ADMIN` only at handler). Cleans platform row (CASCADE children)
 /// and auth credentials for the same tenant UUID.
@@ -369,6 +357,7 @@ pub async fn set_tenant_enabled(
         client_ip,
     ));
     Ok(serde_json::json!({
+        "uuid": row.id,
         "tenant_code": row.tenant_code,
         "name": row.name,
         "enabled": row.enabled,

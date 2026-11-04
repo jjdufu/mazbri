@@ -28,3 +28,16 @@ strip = true
 # unwind 让请求级 CatchPanicLayer / tarpc 响应任务真正隔离单个请求的 panic；
 # 后台任务等其余 panic 由 mazbri_core::panic_policy 的 hook 直接 abort 进程。
 panic = "unwind"
+
+# RSA / SM2 大数运算在 debug 下极慢（测试里的 keygen / 签名可达分钟级），仅对这些依赖开优化。
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.libsm]
+opt-level = 3
+
+[profile.dev.package.num-bigint]
+opt-level = 3

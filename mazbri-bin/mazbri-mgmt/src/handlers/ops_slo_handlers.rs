@@ -33,10 +33,7 @@ pub async fn list_slo_status(State(state): State<AppState>) -> axum::response::R
     };
     let status = match state.analytics_client.slo_status().await {
         Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = %e, "analytics slo status 不可用");
-            json!({"items": []})
-        }
+        Err(e) => return e.into_response("SLO 状态查询"),
     };
     ApiResponse::ok(json!({
         "definitions": defs.get("items").cloned().unwrap_or(json!([])),

@@ -7,7 +7,12 @@ use mazbri_core::crypto::tenant_key::{
     COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID, decode_configured_key, default_key_metadata,
     generate_key_version, wrap_new_tenant_key,
 };
-use mazbri_core::crypto::tenant_key::{unwrap_tenant_key, verify_secret_key_digest};
+use mazbri_core::crypto::request_binding::{
+    DEFAULT_BINDING_MAC_ALG, SignatureVersion, parse_binding_alg, public_key_digest_scope,
+};
+use mazbri_core::crypto::tenant_key::{
+    secret_key_digest, unwrap_tenant_key, verify_secret_key_digest,
+};
 use mazbri_core::crypto::{
     AlgorithmId, AlgorithmRegistry, BindingSpec, KeySelection, TenantTransportProfile,
     TransportMode, SUITE_TENANT_DEFAULT_2026_11, resolve_suite,
@@ -141,8 +146,12 @@ fn normalized_optional_string(value: Option<&String>) -> Option<&str> {
 
 impl UpdateCryptoProfileRequest {
     fn validate_against_profile(&self) -> Result<TenantTransportProfile, ApiError> {
-        if !matches!(self.signature_version.as_str(), "hmac-v1" | "rsa-v1") {
-            return Err(ApiError::validation("invalid signature_version"));
+        if SignatureVersion::parse(&self.signature_version).is_err() {
+            let allowed: Vec<&str> = SignatureVersion::ALL.iter().map(|v| v.as_str()).collect();
+            return Err(ApiError::validation(format!(
+                "invalid signature_version (allowed: {})",
+                allowed.join(", ")
+            )));
         }
         if !(60..=3600).contains(&self.nonce_ttl_seconds) {
             return Err(ApiError::validation(
@@ -872,17 +881,70 @@ pub async fn list_request_keys(pool: &PgPool, code: &str) -> Result<serde_json::
     Ok(serde_json::json!({ "keys": keys }))
 }
 
+/// 创建请求绑定密钥的请求体（可省略：默认生成 `hmac-sha256` 密钥）。
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct CreateRequestKeyRequest {
+    /// 密钥算法（闭集，见 `request_binding::binding_alg_allowed`）；缺省 `hmac-sha256`。
+    #[serde(default)]
+    pub alg: Option<String>,
+    /// 非对称算法必填：客户端公钥（SPKI PEM，或 Base64 原始字节）；HMAC 算法不得提供。
+    #[serde(default)]
+    pub public_key: Option<String>,
+}
+
+/// 校验后的请求密钥规格。
+#[derive(Debug, PartialEq, Eq)]
+enum RequestKeySpec {
+    Hmac(AlgorithmId),
+    Public { alg: AlgorithmId, public_key: String },
+}
+
+impl CreateRequestKeyRequest {
+    fn validate(&self) -> Result<RequestKeySpec, ApiError> {
+        let raw_alg = normalized_optional_string(self.alg.as_ref()).unwrap_or(DEFAULT_BINDING_MAC_ALG);
+        let alg = parse_binding_alg(raw_alg)
+            .map_err(|_| ApiError::validation(format!("unsupported request key alg: {raw_alg}")))?;
+        let public_key = normalized_optional_string(self.public_key.as_ref());
+        if alg.kind() == mazbri_core::crypto::AlgorithmKind::Mac {
+            if public_key.is_some() {
+                return Err(ApiError::validation(
+                    "publicKey must not be provided for HMAC request keys",
+                ));
+            }
+            return Ok(RequestKeySpec::Hmac(alg));
+        }
+        let public_key = public_key.ok_or_else(|| {
+            ApiError::validation(format!("publicKey is required for {raw_alg} request keys"))
+        })?;
+        if public_key.contains("PRIVATE KEY") {
+            return Err(ApiError::validation(
+                "publicKey must be a public key; never upload private keys",
+            ));
+        }
+        mazbri_core::crypto::validate_sign_public_key(alg, public_key)
+            .map_err(|error| ApiError::validation(format!("invalid publicKey: {error}")))?;
+        Ok(RequestKeySpec::Public {
+            alg,
+            public_key: public_key.to_owned(),
+        })
+    }
+}
+
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 参数非法（算法 / 公钥）、租户不存在、根材料不可用或数据库失败时返回错误。
 pub async fn create_request_key(
     pool: &PgPool,
     cert_client: &reqwest::Client,
     cert_service_url: &str,
     cert_service_token: &str,
     code: &str,
+    request: &CreateRequestKeyRequest,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
+    let spec = request.validate()?;
     ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
     let tenant_id = resolve_tenant_id(pool, code).await?;
     let existing = repo::list_request_keys(pool, tenant_id)
@@ -897,35 +959,73 @@ pub async fn create_request_key(
     let kid = next_kid.max(1).to_string();
     let (master_key, integrity_key) =
         load_root_materials(cert_client, cert_service_url, cert_service_token).await?;
-    let wrapped = wrap_new_tenant_key(
-        &tenant_id.to_string(),
-        &kid,
-        &master_key,
-        &integrity_key,
-        COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID,
-    )
-    .map_err(|error| ApiError::internal(format!("Failed to wrap request key: {error}")))?;
-    let key = repo::insert_request_key(
-        pool,
-        repo::NewRequestKey {
-            tenant_id,
-            kid: &kid,
-            alg: "hmac-sha256",
-            encrypted_material: &wrapped.encrypted_secret_key,
-            material_digest: &wrapped.secret_key_digest,
-            wrapping_key_id: &wrapped.wrapping_key_id,
-            actor_id,
-        },
-    )
-    .await
-    .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;
-    Ok(serde_json::json!({
-        "kid": key.kid,
-        "alg": key.alg,
-        "status": key.status,
-        "hmacKey": wrapped.tenant_secret_key_b64,
-        "shownOnce": true
-    }))
+    let tenant = tenant_id.to_string();
+    match spec {
+        RequestKeySpec::Hmac(alg) => {
+            let wrapped = wrap_new_tenant_key(
+                &tenant,
+                &kid,
+                &master_key,
+                &integrity_key,
+                COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID,
+            )
+            .map_err(|error| ApiError::internal(format!("Failed to wrap request key: {error}")))?;
+            let key = repo::insert_request_key(
+                pool,
+                repo::NewRequestKey {
+                    tenant_id,
+                    kid: &kid,
+                    alg: alg.as_str(),
+                    material: repo::RequestKeyMaterial::Wrapped {
+                        encrypted_material: &wrapped.encrypted_secret_key,
+                        wrapping_key_id: &wrapped.wrapping_key_id,
+                    },
+                    material_digest: &wrapped.secret_key_digest,
+                    actor_id,
+                },
+            )
+            .await
+            .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;
+            Ok(serde_json::json!({
+                "kid": key.kid,
+                "alg": key.alg,
+                "status": key.status,
+                "hmacKey": wrapped.tenant_secret_key_b64,
+                "shownOnce": true
+            }))
+        }
+        RequestKeySpec::Public { alg, public_key } => {
+            let registry = AlgorithmRegistry::default_registry();
+            let digest = secret_key_digest(
+                &registry,
+                &integrity_key,
+                &tenant,
+                &public_key_digest_scope(&kid),
+                public_key.as_bytes(),
+            )
+            .map_err(|error| ApiError::internal(format!("Failed to digest public key: {error}")))?;
+            let key = repo::insert_request_key(
+                pool,
+                repo::NewRequestKey {
+                    tenant_id,
+                    kid: &kid,
+                    alg: alg.as_str(),
+                    material: repo::RequestKeyMaterial::PublicKey(&public_key),
+                    material_digest: &digest,
+                    actor_id,
+                },
+            )
+            .await
+            .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;
+            Ok(serde_json::json!({
+                "kid": key.kid,
+                "alg": key.alg,
+                "status": key.status,
+                "publicKey": key.public_key,
+                "shownOnce": false
+            }))
+        }
+    }
 }
 
 /// # Errors
@@ -948,6 +1048,70 @@ pub async fn retire_request_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_request_key_defaults_to_hmac_sha256() {
+        let spec = CreateRequestKeyRequest::default().validate().unwrap();
+        assert_eq!(spec, RequestKeySpec::Hmac(AlgorithmId::HmacSha256));
+        let sm3 = CreateRequestKeyRequest {
+            alg: Some("hmac-sm3".into()),
+            public_key: None,
+        };
+        assert_eq!(sm3.validate().unwrap(), RequestKeySpec::Hmac(AlgorithmId::HmacSm3));
+    }
+
+    #[test]
+    fn create_request_key_rejects_weak_or_mismatched_material() {
+        let pair = mazbri_core::crypto::generate_sign_keypair(AlgorithmId::Ed25519).unwrap();
+        let cases = [
+            (Some("hmac-md5"), None),
+            (Some("aes-256-gcm"), None),
+            (Some("hmac-sha256"), Some(pair.public_pem.clone())),
+            (Some("ed25519"), None),
+            (Some("ed25519"), Some(pair.private_pem.to_string())),
+            (Some("ecdsa-p256-sha256"), Some(pair.public_pem.clone())),
+            (Some("rsa-pkcs1v15-sign-sha256"), Some("garbage".to_owned())),
+        ];
+        for (alg, public_key) in cases {
+            let request = CreateRequestKeyRequest {
+                alg: alg.map(str::to_owned),
+                public_key,
+            };
+            assert!(request.validate().is_err(), "{alg:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn create_request_key_accepts_public_keys_for_every_asym_version() {
+        for version in SignatureVersion::ALL.into_iter().filter(|v| !v.is_symmetric()) {
+            let alg = version.default_alg();
+            let pair = mazbri_core::crypto::generate_sign_keypair(alg).unwrap();
+            let request = CreateRequestKeyRequest {
+                alg: Some(alg.as_str().to_owned()),
+                public_key: Some(format!("  {}\n", pair.public_pem)),
+            };
+            assert_eq!(
+                request.validate().unwrap(),
+                RequestKeySpec::Public {
+                    alg,
+                    public_key: pair.public_pem.trim().to_owned()
+                },
+                "{version}"
+            );
+        }
+    }
+
+    #[test]
+    fn signature_version_accepts_all_families_only() {
+        for version in SignatureVersion::ALL {
+            let mut request = base_request();
+            request.signature_version = version.as_str().into();
+            assert!(request.validate_against_profile().is_ok(), "{version}");
+        }
+        let mut request = base_request();
+        request.signature_version = "hmac-v2".into();
+        assert!(request.validate_against_profile().is_err());
+    }
 
     fn base_request() -> UpdateCryptoProfileRequest {
         UpdateCryptoProfileRequest {

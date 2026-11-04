@@ -289,10 +289,7 @@ pub async fn generate_upstream_bill(
             channel_id_filter.as_deref(),
         )
         .await
-        .map_err(|e| {
-            error!("Failed to fetch upstream usage summary: {}", e);
-            BillingError::Database
-        })?;
+        .map_err(BillingError::Analytics)?;
 
     let rows = summary_val.as_array().cloned().unwrap_or_default();
 
