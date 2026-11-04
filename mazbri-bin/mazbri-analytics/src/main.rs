@@ -165,7 +165,7 @@ async fn main() -> Result<()> {
             config.admin.clone(),
         ));
     }
-    // alerting / capacity / anomaly / slo 共用一条 mazbri_admin 连接池，避免各建一池
+    // alerting / anomaly / slo 共用一条 mazbri_admin 连接池，避免各建一池
     // 把角色 CONNECTION LIMIT 打满后拖死 mgmt 登录。
     let admin_pool = if let Some(ref alerting) = config.alerting {
         Some(mazbri_core::create_lazy_pool(&alerting.database, None)?)
@@ -194,12 +194,6 @@ async fn main() -> Result<()> {
     }
 
     if let Some(ref admin_pool) = admin_pool {
-        let cap = config.capacity.clone().unwrap_or(mazbri_analytics::capacity::CapacityConfig {
-            enabled: true,
-            interval_secs: 3600,
-            qps_cap: 10_000.0,
-        });
-        mazbri_analytics::capacity::spawn(&cap, Arc::clone(&clickhouse_client), Arc::clone(admin_pool))?;
         let anom = config.anomaly.clone().unwrap_or(mazbri_analytics::anomaly::AnomalyConfig {
             enabled: true,
             interval_secs: 300,

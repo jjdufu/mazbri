@@ -295,6 +295,30 @@ pub struct DependencyQuery {
     pub end: Option<i64>,
 }
 
+
+/// `GET /api/v1/traces/services`
+pub async fn list_trace_services(
+    State(state): State<AppState>,
+    Query(q): Query<DependencyQuery>,
+) -> Response {
+    let Some(client) = state.greptimedb_client.as_ref() else {
+        return unavailable();
+    };
+    let (start, end) = match window(
+        q.start,
+        q.end,
+        DEFAULT_WINDOW_SECS,
+        MAX_DEPENDENCY_WINDOW_SECS,
+    ) {
+        Ok(w) => w,
+        Err(e) => return bad_request(e),
+    };
+    match client.list_trace_services(start, end).await {
+        Ok(services) => Json(services).into_response(),
+        Err(e) => failed("trace 服务列表查询失败", &e),
+    }
+}
+
 /// `GET /api/v1/traces/dependencies`
 pub async fn trace_dependencies(
     State(state): State<AppState>,

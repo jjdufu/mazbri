@@ -2,6 +2,7 @@ use super::client::GreptimeDBClient;
 use crate::error::{AnalyticsError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 const METRICS_DATABASE: &str = "mazbri_metrics";
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceMetricTarget {
@@ -100,9 +101,9 @@ pub struct ServiceHealthRow {
     pub open_fds: Option<f64>,
 }
 
-/// 瞬时 KPI 时间窗（契约 `window`；禁止扁平 `kpi_semantics` 兼容字段）。
+/// Overview 第一行 KPI 时间窗（契约 `window`；`semantics` 为 `range` 或 `instant`）。
 #[derive(Debug, Clone, Serialize)]
-pub struct InstantKpiWindow {
+pub struct OverviewKpiWindow {
     pub semantics: &'static str,
     pub lookback_secs: u64,
     pub label: String,
@@ -110,8 +111,8 @@ pub struct InstantKpiWindow {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricOverview {
-    /// 瞬时窗元数据（固定 semantics=instant）。
-    pub window: InstantKpiWindow,
+    /// KPI 窗元数据：默认 `range`（跟查询窗）；`instant` 为近瞬时（此刻）。
+    pub window: OverviewKpiWindow,
     /// 近瞬时窗内网关代理请求样本数；无流量为 0。
     pub sample_count: u64,
     /// 业务 QPS；无样本时为 `null`（禁止用 0 冒充）。
@@ -222,7 +223,7 @@ fn sample_count_from_increase(raw: Option<f64>) -> u64 {
         .map_or(0, |v| mazbri_core::num::f64_to_u64(v.round().max(0.0)))
 }
 
-struct GatedInstantRates {
+struct GatedRateKpis {
     qps: Option<f64>,
     success_rate: Option<f64>,
     error_rate: Option<f64>,
@@ -233,11 +234,11 @@ struct GatedInstantRates {
     p99_latency_ms: Option<f64>,
 }
 
-/// 无样本时率/延迟 KPI 一律 `None`，禁止 0% 冒充。
-fn gate_instant_rate_kpis(sample_count: u64, raw: &OverviewRawKpis) -> GatedInstantRates {
+/// 无样本时率/延迟 KPI 一律 `None`，禁止 0% 冒充（瞬时与时间窗模式共用）。
+fn gate_rate_kpis(sample_count: u64, raw: &OverviewRawKpis) -> GatedRateKpis {
     let finite = |v: Option<f64>| v.filter(|x| x.is_finite());
     if sample_count == 0 {
-        return GatedInstantRates {
+        return GatedRateKpis {
             qps: None,
             success_rate: None,
             error_rate: None,
@@ -248,7 +249,7 @@ fn gate_instant_rate_kpis(sample_count: u64, raw: &OverviewRawKpis) -> GatedInst
             p99_latency_ms: None,
         };
     }
-    GatedInstantRates {
+    GatedRateKpis {
         qps: finite(raw.qps),
         success_rate: finite(raw.success_rate),
         error_rate: finite(raw.error_rate),
@@ -264,20 +265,52 @@ impl GreptimeDBClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn query_metrics_overview(&self) -> Result<MetricOverview> {
+    /// Overview KPI。
+    ///
+    /// - `mode = Instant`：近瞬时窗（`OVERVIEW_WINDOW_SECS`）。
+    /// - `mode = Range { start, end }`：按所选时间窗聚合（窗长上限 `OVERVIEW_RANGE_MAX_SECS`）。
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖失败或时间窗非法时返回错误。
+    pub async fn query_metrics_overview(&self, mode: OverviewKpiMode) -> Result<MetricOverview> {
+        let (semantics, lookback_secs, label, eval_at) = match mode {
+            OverviewKpiMode::Instant => (
+                "instant",
+                OVERVIEW_WINDOW_SECS,
+                format!("近瞬时（{OVERVIEW_WINDOW_SECS}s）"),
+                None,
+            ),
+            OverviewKpiMode::Range { start, end } => {
+                if start >= end {
+                    return Err(AnalyticsError::Config("start 必须小于 end".to_string()));
+                }
+                let span = u64::try_from(end - start).unwrap_or(0);
+                if span == 0 {
+                    return Err(AnalyticsError::Config("时间窗无效".to_string()));
+                }
+                let lookback = span.clamp(OVERVIEW_WINDOW_SECS, OVERVIEW_RANGE_MAX_SECS);
+                (
+                    "range",
+                    lookback,
+                    format!("所选时间窗（{lookback}s）"),
+                    Some(end),
+                )
+            }
+        };
         self.with_query_timeout(
             "metrics_overview",
-            Box::pin(async {
-                let raw = self.fetch_overview_raw_kpis(OVERVIEW_WINDOW_SECS).await?;
+            Box::pin(async move {
+                let raw = self.fetch_overview_raw_kpis(lookback_secs, eval_at).await?;
                 let sample_count = sample_count_from_increase(raw.sample_raw);
-                let rates = gate_instant_rate_kpis(sample_count, &raw);
+                let rates = gate_rate_kpis(sample_count, &raw);
                 let (error_budget_slo, error_budget_remaining) =
                     self.load_error_budget_snapshot().await;
                 Ok(MetricOverview {
-                    window: InstantKpiWindow {
-                        semantics: "instant",
-                        lookback_secs: OVERVIEW_WINDOW_SECS,
-                        label: format!("近瞬时（{OVERVIEW_WINDOW_SECS}s）"),
+                    window: OverviewKpiWindow {
+                        semantics,
+                        lookback_secs,
+                        label,
                     },
                     sample_count,
                     qps: rates.qps,
@@ -306,7 +339,7 @@ impl GreptimeDBClient {
     }
 
     /// 并行拉取 overview 瞬时原始 KPI（未按 `sample_count` 门控）。
-    async fn fetch_overview_raw_kpis(&self, w: u64) -> Result<OverviewRawKpis> {
+    async fn fetch_overview_raw_kpis(&self, w: u64, eval_at: Option<i64>) -> Result<OverviewRawKpis> {
         let qps_q = business_qps_query(w);
         let success_q = business_success_rate_query(w);
         let error_q = business_error_rate_query(ErrorClass::All, w);
@@ -336,21 +369,21 @@ impl GreptimeDBClient {
             cert_min_expiry_days,
             service_health,
         ) = tokio::try_join!(
-            self.prometheus_instant_value_opt(&qps_q),
-            self.prometheus_instant_value_opt(&success_q),
-            self.prometheus_instant_value_opt(&error_q),
-            self.prometheus_instant_value_opt(&error_4xx_q),
-            self.prometheus_instant_value_opt(&error_5xx_q),
-            self.prometheus_instant_value_opt(&p50_q),
-            self.prometheus_instant_value_opt(&p95_q),
-            self.prometheus_instant_value_opt(&p99_q),
-            self.prometheus_instant_value_opt(&sample_q),
-            self.prometheus_instant_value("sum(active_connections)"),
-            self.prometheus_instant_value("sum(active_proxy_connections)"),
-            self.prometheus_instant_value(&ratelimit_q),
-            self.query_billing_pipeline_overview(w),
-            self.prometheus_instant_value("count(circuit_breaker_state > 0)"),
-            self.prometheus_instant_value("min(cert_min_expiry_days)"),
+            self.prometheus_instant_value_opt_at(&qps_q, eval_at),
+            self.prometheus_instant_value_opt_at(&success_q, eval_at),
+            self.prometheus_instant_value_opt_at(&error_q, eval_at),
+            self.prometheus_instant_value_opt_at(&error_4xx_q, eval_at),
+            self.prometheus_instant_value_opt_at(&error_5xx_q, eval_at),
+            self.prometheus_instant_value_opt_at(&p50_q, eval_at),
+            self.prometheus_instant_value_opt_at(&p95_q, eval_at),
+            self.prometheus_instant_value_opt_at(&p99_q, eval_at),
+            self.prometheus_instant_value_opt_at(&sample_q, eval_at),
+            self.prometheus_instant_value_at("sum(active_connections)", eval_at),
+            self.prometheus_instant_value_at("sum(active_proxy_connections)", eval_at),
+            self.prometheus_instant_value_at(&ratelimit_q, eval_at),
+            self.query_billing_pipeline_overview(w, eval_at),
+            self.prometheus_instant_value_at("count(circuit_breaker_state > 0)", eval_at),
+            self.prometheus_instant_value_at("min(cert_min_expiry_days)", eval_at),
             self.load_service_health_lights(),
         )?;
         Ok(OverviewRawKpis {
@@ -384,15 +417,15 @@ impl GreptimeDBClient {
             .map_or((None, None), |(labels, v)| (labels.get("slo").cloned(), Some(v)))
     }
 
-    async fn query_billing_pipeline_overview(&self, w: u64) -> Result<BillingPipelineOverview> {
+    async fn query_billing_pipeline_overview(&self, w: u64, eval_at: Option<i64>) -> Result<BillingPipelineOverview> {
         let lag_q = format!(
             "histogram_quantile(0.99, sum by (le) (rate(billing_charge_lag_seconds_bucket[{w}s])))"
         );
         let (backlog, oldest_pending_age_seconds, dead_letters, lag_p99) = tokio::try_join!(
-            self.prometheus_instant_value("sum(billing_outbox_pending)"),
-            self.prometheus_instant_value("max(billing_oldest_pending_age_seconds)"),
-            self.prometheus_instant_value("sum(billing_dead_letters)"),
-            self.prometheus_instant_value(&lag_q),
+            self.prometheus_instant_value_at("sum(billing_outbox_pending)", eval_at),
+            self.prometheus_instant_value_at("max(billing_oldest_pending_age_seconds)", eval_at),
+            self.prometheus_instant_value_at("sum(billing_dead_letters)", eval_at),
+            self.prometheus_instant_value_at(&lag_q, eval_at),
         )?;
         Ok(BillingPipelineOverview {
             backlog,
@@ -545,14 +578,21 @@ impl GreptimeDBClient {
     pub fn metric_catalog(&self) -> Vec<MetricCatalogItem> {
         metric_catalog()
     }
-    /// 无序列时返回 `None`（瞬时 KPI 空态）；gauge 类调用方用 [`Self::prometheus_instant_value`]。
-    async fn prometheus_instant_value_opt(&self, query: &str) -> Result<Option<f64>> {
-        let url = format!(
+    /// `eval_at` 为 Unix 秒时带 Prometheus `time=`，使跟窗 KPI 在窗终点求值。
+    async fn prometheus_instant_value_opt_at(
+        &self,
+        query: &str,
+        eval_at: Option<i64>,
+    ) -> Result<Option<f64>> {
+        let mut url = format!(
             "{}/v1/prometheus/api/v1/query?db={}&query={}",
             self.http_url,
             METRICS_DATABASE,
             urlencoding::encode(query)
         );
+        if let Some(ts) = eval_at {
+            let _ = write!(url, "&time={ts}");
+        }
         let envelope = self
             .client
             .get(url)
@@ -571,8 +611,11 @@ impl GreptimeDBClient {
             .and_then(|(_, value)| parse_prometheus_number(value)))
     }
 
-    async fn prometheus_instant_value(&self, query: &str) -> Result<f64> {
-        Ok(self.prometheus_instant_value_opt(query).await?.unwrap_or(0.0))
+    async fn prometheus_instant_value_at(&self, query: &str, eval_at: Option<i64>) -> Result<f64> {
+        Ok(self
+            .prometheus_instant_value_opt_at(query, eval_at)
+            .await?
+            .unwrap_or(0.0))
     }
     /// 按某标签拆分的即时向量（标签值 → 数值）。
     /// 执行 `PromQL` 即时查询，返回每条序列的标签与数值（非有限值的序列被丢弃）。
@@ -905,13 +948,59 @@ fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
 const CONTAINER_DOCKER_FILTER: &str = r#"id=~"/docker/.+",name!="""#;
 const CONTAINER_K8S_FILTER: &str =
     r#"id=~"/kubepods.*|/cri-containerd.*",container_label_io_kubernetes_container_name!="""#;
-const CONTAINER_BY: &str = "name, image, container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name, id";
+/// 明细排障（含 id）；默认图例用下方聚合 BY，避免多副本刷屏。
+/// 默认汇总：compose service / k8s pod+container（勿双采同一容器的 docker+kubelet cAdvisor）。
+/// 默认聚合：compose 服务 / k8s pod+container（不含 id，避免多副本行爆炸）。
+const CONTAINER_BY: &str = "container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name";
+/// 明细：含 name/image/id，供单容器排障（默认查询不用，避免双采重复计数）。
+const CONTAINER_BY_DETAIL: &str = "name, image, container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name, id";
+
+#[inline]
+fn container_group_by(detail: bool) -> &'static str {
+    if detail {
+        CONTAINER_BY_DETAIL
+    } else {
+        CONTAINER_BY
+    }
+}
 const FS_FILTER: &str = r#"filesystem=~"ext4|xfs|overlay""#;
 
-/// `metric{docker} or metric{k8s}`，两边都带 identity 过滤。
+/// 单侧容器序列（docker 或 k8s identity 过滤）。
+fn container_side(metric: &str, filter: &str, selectors_suffix: &str) -> String {
+    format!("{metric}{{{filter}{selectors_suffix}}}")
+}
+
+/// `metric{docker} or metric{k8s}`（gauge / 裸序列用；**不可**再包进 rate/changes/increase）。
 fn container_or(metric: &str, selectors_suffix: &str) -> String {
     format!(
-        "{metric}{{{CONTAINER_DOCKER_FILTER}{selectors_suffix}}} or          {metric}{{{CONTAINER_K8S_FILTER}{selectors_suffix}}}"
+        "{} or {}",
+        container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
+        container_side(metric, CONTAINER_K8S_FILTER, selectors_suffix),
+    )
+}
+
+/// Greptime 不接受 `rate(a or b[w])`，须写成 `rate(a[w]) or rate(b[w])`。
+fn container_rate_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
+    format!(
+        "rate({}[{window}s]) or rate({}[{window}s])",
+        container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
+        container_side(metric, CONTAINER_K8S_FILTER, selectors_suffix),
+    )
+}
+
+fn container_changes_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
+    format!(
+        "changes({}[{window}s]) or changes({}[{window}s])",
+        container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
+        container_side(metric, CONTAINER_K8S_FILTER, selectors_suffix),
+    )
+}
+
+fn container_increase_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
+    format!(
+        "increase({}[{window}s]) or increase({}[{window}s])",
+        container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
+        container_side(metric, CONTAINER_K8S_FILTER, selectors_suffix),
     )
 }
 
@@ -1219,34 +1308,35 @@ fn infra_query_host(metric: &str, window: u64) -> Option<String> {
 }
 
 fn infra_query_container(metric: &str, window: u64) -> Option<String> {
+    let by = container_group_by(false);
     Some(match metric {
         "container_cpu_cores" => format!(
-            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
-            container_or("container_cpu_usage_seconds_total", "")
+            "sum by ({by}) ({})",
+            container_rate_or("container_cpu_usage_seconds_total", window, "")
         ),
         "container_memory_mb" => format!(
-            "sum by ({CONTAINER_BY}) ({}) / 1048576",
+            "sum by ({by}) ({}) / 1048576",
             container_or("container_memory_working_set_bytes", "")
         ),
         "container_restarts" => format!(
-            "sum by ({CONTAINER_BY}) (changes({}[{window}s]))",
-            container_or("container_start_time_seconds", "")
+            "sum by ({by}) ({})",
+            container_changes_or("container_start_time_seconds", window, "")
         ),
         "container_oom_events" => format!(
-            "sum by ({CONTAINER_BY}) (increase({}[{window}s]))",
-            container_or("container_oom_events_total", "")
+            "sum by ({by}) ({})",
+            container_increase_or("container_oom_events_total", window, "")
         ),
         "container_fs_usage_mb" => format!(
-            "sum by ({CONTAINER_BY}) ({}) / 1048576",
+            "sum by ({by}) ({}) / 1048576",
             container_or("container_fs_usage_bytes", "")
         ),
         "container_network_rx_bytes" => format!(
-            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
-            container_or("container_network_receive_bytes_total", "")
+            "sum by ({by}) ({})",
+            container_rate_or("container_network_receive_bytes_total", window, "")
         ),
         "container_network_tx_bytes" => format!(
-            "sum by ({CONTAINER_BY}) (rate({}[{window}s]))",
-            container_or("container_network_transmit_bytes_total", "")
+            "sum by ({by}) ({})",
+            container_rate_or("container_network_transmit_bytes_total", window, "")
         ),
         _ => return None,
     })
@@ -1639,6 +1729,18 @@ const DEFAULT_SCRAPE_PORT: u16 = 9000;
 /// 与 mgmt `analytics_window::INSTANT_LOOKBACK_SECS`（60）对齐：
 /// overview **不接受** `from/to`/`range`，固定近窗瞬时语义（IA step-21 方案 B）。
 const OVERVIEW_WINDOW_SECS: u64 = 4 * SCRAPE_INTERVAL_SECS;
+/// Overview 跟窗模式允许的最大 `PromQL` 窗长（7 天）。
+const OVERVIEW_RANGE_MAX_SECS: u64 = 7 * 24 * 3600;
+
+/// Overview 第一行 KPI 查询模式。
+#[derive(Debug, Clone, Copy)]
+pub enum OverviewKpiMode {
+    /// 近瞬时（约 60s）。
+    Instant,
+    /// 跟所选时间窗（`start`/`end` 为 Unix 秒）。
+    Range { start: i64, end: i64 },
+}
+
 /// 服务级 QPS 排除的探活/指标路径与 404。
 const PROBE_EXCLUSION: &str = r#"path!~"/health|/ready|/metrics",status!="404""#;
 
@@ -2003,11 +2105,36 @@ mod tests {
         assert!(q.contains("host_filesystem_used_ratio"));
         assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#));
         let q = build_metric_query("container_cpu_cores", None, &t, 60)?;
-        assert!(q.contains("container_cpu_usage_seconds_total"));
+        assert!(q.contains("container_cpu_usage_seconds_total"), "{q}");
         assert!(q.contains(r#"name!="""#), "{q}");
         assert!(q.contains("container_label_io_kubernetes_container_name!="), "{q}");
-        assert!(q.contains("container_label_com_docker_compose_service"));
-        assert!(q.contains("container_label_io_kubernetes_pod_name"));
+        assert!(q.contains("container_label_com_docker_compose_service"), "{q}");
+        assert!(q.contains("container_label_io_kubernetes_pod_name"), "{q}");
+        // Greptime: rate(a[w]) or rate(b[w])，禁止 rate(a or b)
+        assert!(q.contains("rate(container_cpu_usage_seconds_total{"), "{q}");
+        assert!(q.contains(") or rate(container_cpu_usage_seconds_total{"), "{q}");
+        assert!(
+            !q.contains(r#"rate(container_cpu_usage_seconds_total{id=~"/docker/.+",name!=""} or"#),
+            "{q}"
+        );
+        let q_rx = build_metric_query("container_network_rx_bytes", None, &t, 60)?;
+        assert!(q_rx.contains(") or rate(container_network_receive_bytes_total{"), "{q_rx}");
+        let q_rst = build_metric_query("container_restarts", None, &t, 60)?;
+        assert!(q_rst.contains("changes(container_start_time_seconds{"), "{q_rst}");
+        assert!(q_rst.contains(") or changes(container_start_time_seconds{"), "{q_rst}");
+        let q_oom = build_metric_query("container_oom_events", None, &t, 60)?;
+        assert!(q_oom.contains("increase(container_oom_events_total{"), "{q_oom}");
+        assert!(q_oom.contains(") or increase(container_oom_events_total{"), "{q_oom}");
+        // 默认按服务/pod 聚合，不含 id；明细 BY 保留 id 供排障钻取
+        assert!(!q.contains(", id)"), "{q}");
+        let detail = container_group_by(true);
+        assert!(
+            detail.contains(", id")
+                && detail.contains("container_label_com_docker_compose_service")
+                && detail.contains("container_label_io_kubernetes_pod_name"),
+            "{detail}"
+        );
+        assert_eq!(container_group_by(false), CONTAINER_BY);
         let q = build_metric_query("vector_buffer_usage_ratio", None, &t, 60)?;
         assert!(q.contains("vector_buffer_size_bytes"));
         let q = build_metric_query("pg_cache_hit_ratio", None, &t, 60)?;
@@ -2132,7 +2259,7 @@ mod tests {
 
     #[test]
     fn instant_kpi_window_label_mentions_lookback() {
-        let window = super::InstantKpiWindow {
+        let window = super::OverviewKpiWindow {
             semantics: "instant",
             lookback_secs: super::OVERVIEW_WINDOW_SECS,
             label: format!("近瞬时（{}s）", super::OVERVIEW_WINDOW_SECS),

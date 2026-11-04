@@ -160,6 +160,14 @@ pub struct DependencyEdge {
     pub p99_ms: f64,
 }
 
+
+/// 时间窗内出现过的服务（任意 span 的 `service_name`）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TraceServiceCount {
+    pub service_name: String,
+    pub span_count: u64,
+}
+
 /// 依赖图。
 #[derive(Debug, Clone, Serialize)]
 pub struct DependencyGraph {
@@ -178,6 +186,16 @@ fn quoted_list(ids: &[String]) -> String {
         .map(|id| format!("'{id}'"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+
+/// 时间窗内 `DISTINCT service_name`（按 span 数降序）。
+#[must_use]
+pub fn build_services_sql(start: i64, end: i64) -> String {
+    format!(
+        "SELECT service_name, count(*) AS span_count FROM {TRACE_TABLE}          WHERE {} AND service_name IS NOT NULL AND service_name <> ''          GROUP BY service_name ORDER BY span_count DESC, service_name ASC",
+        time_window("timestamp", start, end),
+    )
 }
 
 /// 检索聚合 SQL：每个 trace 一行，按开始时间倒序。
@@ -790,6 +808,33 @@ impl GreptimeDBClient {
         }))
     }
 
+
+    /// 时间窗内出现过的服务名（任意 span），含 span 计数。
+    ///
+    /// # Errors
+    ///
+    /// `GreptimeDB` 查询失败或超时时返回错误。
+    pub async fn list_trace_services(
+        &self,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<TraceServiceCount>> {
+        let rows = self
+            .with_query_timeout(
+                "trace services",
+                self.execute_trace_query_rows(&build_services_sql(start, end), "trace services"),
+            )
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| TraceServiceCount {
+                service_name: str_field(&row, "service_name"),
+                span_count: u64_field(&row, "span_count"),
+            })
+            .filter(|s| !s.service_name.is_empty())
+            .collect())
+    }
+
     /// 服务依赖图。
     ///
     /// # Errors
@@ -1136,6 +1181,15 @@ mod tests {
         assert!(validate_trace_id("x' OR 1=1").is_err());
         assert!(validate_service_name("mazbri-gateway").is_ok());
         assert!(validate_service_name("a'b").is_err());
+    }
+
+    #[test]
+    fn build_services_sql_groups_by_service() {
+        let sql = build_services_sql(100, 200);
+        assert!(sql.contains("GROUP BY service_name"), "{sql}");
+        assert!(sql.contains("opentelemetry_traces"), "{sql}");
+        assert!(sql.contains("to_timestamp_seconds(100)"), "{sql}");
+        assert!(sql.contains("to_timestamp_seconds(200)"), "{sql}");
     }
 
     #[test]
