@@ -119,3 +119,8 @@ export interface TraceBillingRow {
   charged_at: string | null;
   recorded_at: string | null;
 }
+
+export interface TraceServiceCount {
+  service_name: string;
+  span_count: number;
+}

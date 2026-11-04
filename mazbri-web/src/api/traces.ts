@@ -6,6 +6,7 @@ import type {
   TraceDetail,
   TraceSearchQuery,
   TraceSearchResponse,
+  TraceServiceCount,
 } from "@/types/api/traces";
 
 const BASE_PATH = `${API_BASE_PATH}/stats/traces`;
@@ -44,6 +45,17 @@ export function fetchTraceBilling(requestIds: string[]) {
   return request.get<TraceBillingRow[]>({
     url: `${BASE_PATH}/billing`,
     params: { request_ids: requestIds.join(",") },
+    showErrorMessage: false,
+  });
+}
+
+export function fetchTraceServices(params: {
+  start?: number;
+  end?: number;
+}) {
+  return request.get<TraceServiceCount[]>({
+    url: `${BASE_PATH}/services`,
+    params,
     showErrorMessage: false,
   });
 }

@@ -885,7 +885,6 @@
       "opsTraffic": "流量与质量",
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
-      "opsReliability": "可靠性",
       "opsServices": "服务概览"
     }
   },
@@ -4245,7 +4244,7 @@
       "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
-      "timeRangeHint": "默认时间窗 6 小时（可改，不会被静默覆盖）。KPI 卡为近瞬时值（固定约 60 秒）；时间范围只作用于曲线、平台统计与产品 TopN。",
+      "timeRangeHint": "默认时间窗 6 小时（可改）。第一行 KPI 默认跟随所选时间窗；点「此刻」切到近瞬时（约 60 秒）。曲线、平台统计与产品 TopN 始终跟时间窗。",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "最老待处理 {age} s",
       "stats": {
@@ -4299,8 +4298,11 @@
         "pipeline": "管道新鲜度",
         "hostCpu": "主机 CPU"
       },
-      "noSampleHint": "近瞬时无样本",
-      "instantWindowHint": "近瞬时 {secs}s（{label}）"
+      "noSampleHint": "所选时间窗内无业务流量",
+      "instantWindowHint": "近瞬时 {secs}s（{label}）",
+      "noSampleHintInstant": "近瞬时无业务流量",
+      "rangeWindowHint": "时间窗 {secs}s（{label}）",
+      "nowButton": "此刻"
     },
     "screen": {
       "title": "运营大屏",
@@ -4863,19 +4865,6 @@
       "colErr": "错误率",
       "colCost": "成本",
       "colName": "名称"
-    },
-    "capacity": {
-      "forecast": "QPS 预测",
-      "holt": "Holt 下一值",
-      "cap": "QPS 上限",
-      "days": "预计触顶（天）",
-      "never": "未触顶",
-      "loadtests": "压测基线对比",
-      "colScenario": "场景",
-      "colProducts": "产品数",
-      "colReqs": "请求数",
-      "colInternal": "内部 P99",
-      "colNotes": "备注"
     },
     "slo": {
       "colName": "名称",

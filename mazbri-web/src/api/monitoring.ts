@@ -9,10 +9,18 @@ import type {
   TopologyGraph,
 } from "@/types/api/monitoring";
 const BASE_PATH = `${API_BASE_PATH}/stats/metrics`;
-/** Overview KPI 为瞬时语义，不传时间范围；曲线请用 fetchMetricTimeseries。 */
-export async function fetchMetricsOverview() {
+export type MetricsOverviewQuery = {
+  start?: number;
+  end?: number;
+  /** `instant` = 此刻近瞬时；缺省且带 start/end = 跟时间窗 */
+  mode?: "instant" | "range";
+};
+
+/** Overview KPI：默认跟时间窗；`mode: "instant"` 为此刻。曲线请用 fetchMetricTimeseries。 */
+export async function fetchMetricsOverview(params: MetricsOverviewQuery = {}) {
   return request.get<MetricOverview>({
     url: `${BASE_PATH}/overview`,
+    params,
     showErrorMessage: false,
   });
 }

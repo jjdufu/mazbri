@@ -885,7 +885,6 @@
       "opsTraffic": "Traffic & Quality",
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
-      "opsReliability": "Reliability",
       "opsServices": "Services Overview"
     }
   },
@@ -4240,7 +4239,7 @@
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
-      "timeRangeHint": "Default window is 6 hours (your choice is never silently overwritten). KPI cards are near-instant (~60s); the picker only drives charts, platform stats, and product TopN.",
+      "timeRangeHint": "Default window is 6 hours (your choice is never silently overwritten). First-row KPIs follow the selected range by default; click NOW for a near-instant (~60s) snapshot. Charts, platform stats, and product TopN always follow the picker.",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
       "billingOldestAgeHint": "Oldest pending {age} s",
       "stats": {
@@ -4294,8 +4293,11 @@
         "pipeline": "Pipeline freshness",
         "hostCpu": "Host CPU"
       },
-      "noSampleHint": "No samples in the instant window",
-      "instantWindowHint": "Near-instant {secs}s ({label})"
+      "noSampleHint": "No business traffic in the selected time range",
+      "instantWindowHint": "Near-instant {secs}s ({label})",
+      "noSampleHintInstant": "No business traffic in the near-instant window",
+      "rangeWindowHint": "Time range {secs}s ({label})",
+      "nowButton": "NOW"
     },
     "screen": {
       "title": "Ops Screen",
@@ -4858,19 +4860,6 @@
       "colErr": "Err%",
       "colCost": "Cost",
       "colName": "Name"
-    },
-    "capacity": {
-      "forecast": "QPS forecast",
-      "holt": "Holt next",
-      "cap": "QPS cap",
-      "days": "Days to cap",
-      "never": "N/A",
-      "loadtests": "Loadtest baselines",
-      "colScenario": "Scenario",
-      "colProducts": "Products",
-      "colReqs": "Requests",
-      "colInternal": "Internal P99",
-      "colNotes": "Notes"
     },
     "slo": {
       "colName": "Name",

@@ -4,24 +4,6 @@
  * 禁止在 views/router 再写 `/ops/...` 魔法字符串。
  */
 
-export { ALERTS_PATH, buildAlertsRoute, stripAlertEventIdQuery } from "./alerts-link";
-export type { AlertsLinkOptions, AlertsTabId } from "./alerts-link";
-
-export { BILLING_PATH, buildBillingRoute } from "./billing-link";
-export type { BillingLinkOptions, BillingTabId } from "./billing-link";
-
-export { CALLS_PATH, buildCallsRoute } from "./calls-link";
-
-export { FLOW_PATH, buildFlowRoute } from "./flow-link";
-export type { FlowLinkOptions, FlowTabId } from "./flow-link";
-
-export { INFRA_PATH, buildInfraRoute } from "./infra-link";
-export type { InfraLinkOptions, InfraTabId } from "./infra-link";
-
-export {
-  RELIABILITY_PATH,
-  buildReliabilityRoute,
-} from "./reliability-link";
 
 export {
   SERVICES_PATH,
