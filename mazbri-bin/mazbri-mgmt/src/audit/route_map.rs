@@ -108,7 +108,7 @@ const fn read(path: &'static str, resource_type: R) -> RouteAudit {
 }
 
 /// 以 POST 承载查询体的只读接口白名单（不产生写审计）。
-pub const POST_READS: &[&str] = &["/stats/olap/query", "/stats/ops/products/zero-calls"];
+pub const POST_READS: &[&str] = &["/stats/olap/query"];
 
 /// 以 PUT 更新个人 UI 偏好等非安全事件的接口白名单（成功不落安全审计库；
 /// 401/403 仍按 Read 语义落库。个人 UI 偏好不属于安全审计范围）。
@@ -663,7 +663,7 @@ pub static ROUTES: &[RouteAudit] = &[
     // ---- analytics ----
     read("/tenants/{code}/analytics", R::Tenant),
     read("/tenants/{code}/analytics/ratelimit", R::Tenant),
-    read("/stats/platform", R::System),
+    read("/stats/ops/inventory", R::System),
     read("/stats/metrics/overview", R::System),
     read("/stats/metrics/timeseries", R::System),
     read("/stats/metrics/catalog", R::System),
@@ -674,7 +674,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/ops/anomalies", R::System),
     read("/stats/ops/slos", R::System),
     read("/stats/ops/slos/status", R::System),
-    read_post("/stats/ops/products/zero-calls", R::System),
+    read("/stats/ops/products/names", R::System),
     // 个人 UI 偏好（last_path 等）：读/写均不进安全审计库；禁止伪装成 appearance.update。
     read("/admin/preferences", R::User),
     read_put("/admin/preferences", R::User),

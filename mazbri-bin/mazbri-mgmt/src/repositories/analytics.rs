@@ -1,22 +1,18 @@
 use sqlx::{PgPool, QueryBuilder};
 type Qb<'a> = QueryBuilder<'a, sqlx::Postgres>;
-pub async fn get_total_tenants(db: &PgPool) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM tenants")
-        .fetch_one(db)
-        .await
-        .unwrap_or_default()
-}
-pub async fn get_active_tenants(db: &PgPool) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM tenants WHERE enabled")
-        .fetch_one(db)
-        .await
-        .unwrap_or_default()
-}
-pub async fn get_total_products(db: &PgPool) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE enabled = true")
-        .fetch_one(db)
-        .await
-        .unwrap_or_default()
+/// 平台规模（非时间窗）：租户总数、已启用租户数、已启用产品数。
+///
+/// # Errors
+///
+/// DB 失败。
+pub async fn platform_inventory(db: &PgPool) -> Result<(i64, i64, i64), sqlx::Error> {
+    sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM tenants), \
+                (SELECT COUNT(*) FROM tenants WHERE enabled), \
+                (SELECT COUNT(*) FROM products WHERE enabled = true)",
+    )
+    .fetch_one(db)
+    .await
 }
 /// # Errors
 ///

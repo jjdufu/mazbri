@@ -5,7 +5,7 @@ use crate::services::analytics::{
 };
 use axum::Json;
 use axum::extract::{Extension, Query, State};
-/// `GET /stats/metrics/overview`：默认跟时间窗；`mode=instant` 为此刻；按角色裁剪计费/证书字段。
+/// `GET /stats/metrics/overview?start&end`：traffic 跟时间窗，realtime/components 为当前时刻；按角色裁剪计费/证书字段。
 pub async fn get_metrics_overview(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,

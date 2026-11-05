@@ -1,4 +1,4 @@
-//! 运维异常事件与零调用产品（压测基线 / 容量预测已随可靠性页删除）。
+//! 运维异常事件与平台产品名录（压测基线 / 容量预测已随可靠性页删除）。
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
@@ -20,32 +20,30 @@ pub struct AnomalyEvent {
     pub status: String,
 }
 
+/// 时间窗 `[start, end)` 内最近的异常事件（按检测时间倒序）。
+///
 /// # Errors
 ///
 /// DB 失败。
 pub async fn list_anomalies(
     pool: &PgPool,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     limit: i64,
-    kind: Option<&str>,
 ) -> Result<Vec<AnomalyEvent>, sqlx::Error> {
     let limit = limit.clamp(1, 200);
-    let rows = if let Some(k) = kind.filter(|s| !s.is_empty()) {
-        sqlx::query(
-            "SELECT id, detected_at, kind, severity, entity_type, entity_id, metric, value, baseline, score, detail, status              FROM anomaly_events WHERE kind = $1 ORDER BY detected_at DESC LIMIT $2",
-        )
-        .bind(k)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?
-    } else {
-        // 容量预测写入已删除；仍过滤历史 capacity_forecast 行，避免脏数据出现在总览。
-        sqlx::query(
-            "SELECT id, detected_at, kind, severity, entity_type, entity_id, metric, value, baseline, score, detail, status              FROM anomaly_events WHERE kind != 'capacity_forecast' ORDER BY detected_at DESC LIMIT $1",
-        )
-        .bind(limit)
-        .fetch_all(pool)
-        .await?
-    };
+    // 容量预测写入已删除；仍过滤历史 capacity_forecast 行，避免脏数据出现在总览。
+    let rows = sqlx::query(
+        "SELECT id, detected_at, kind, severity, entity_type, entity_id, metric, value, baseline, score, detail, status \
+         FROM anomaly_events \
+         WHERE kind != 'capacity_forecast' AND detected_at >= $1 AND detected_at < $2 \
+         ORDER BY detected_at DESC LIMIT $3",
+    )
+    .bind(start)
+    .bind(end)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
     Ok(rows
         .into_iter()
         .map(|row| AnomalyEvent {
@@ -65,9 +63,9 @@ pub async fn list_anomalies(
         .collect())
 }
 
-/// 零调用产品：平台产品 − 近 30 天 CH 有调用产品（由调用方传入 CH 集合）。
+/// 平台已启用产品（id + 名称），供 `TopN` 显示名与零调用差集。
 #[derive(Debug, Clone, Serialize)]
-pub struct ZeroCallProduct {
+pub struct ProductName {
     pub product_id: String,
     pub name: Option<String>,
 }
@@ -75,9 +73,7 @@ pub struct ZeroCallProduct {
 /// # Errors
 ///
 /// DB 失败。
-pub async fn list_platform_products(
-    pool: &PgPool,
-) -> Result<Vec<(String, Option<String>)>, sqlx::Error> {
+pub async fn list_platform_products(pool: &PgPool) -> Result<Vec<ProductName>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT product_id, name FROM products WHERE enabled = TRUE ORDER BY product_id",
     )
@@ -85,6 +81,9 @@ pub async fn list_platform_products(
     .await?;
     Ok(rows
         .into_iter()
-        .map(|r| (r.get("product_id"), r.get("name")))
+        .map(|r| ProductName {
+            product_id: r.get("product_id"),
+            name: r.get("name"),
+        })
         .collect())
 }

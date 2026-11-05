@@ -1,76 +1,68 @@
-//! 运维异常事件与零调用产品 API（原可靠性页压测/容量已删除）。
+//! 运维异常事件与平台产品名录 API。
 
 use super::AppState;
 use crate::response::ApiResponse;
+use crate::services::analytics_window::resolve_timeseries_window;
 use crate::services::ops_anomalies as svc;
 use axum::{
-    Json,
     extract::{Query, State},
+    http::StatusCode,
     response::IntoResponse,
 };
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnomalyQuery {
+    /// 时间窗起点（Unix 秒）。
+    pub start: i64,
+    /// 时间窗终点（Unix 秒）。
+    pub end: i64,
     #[serde(default = "default_limit")]
     pub limit: i64,
-    pub kind: Option<String>,
 }
 
 const fn default_limit() -> i64 {
     50
 }
 
-/// `GET /stats/ops/anomalies`
+/// `GET /stats/ops/anomalies?start&end&limit`：时间窗内最近异常（60s–31d）。
 pub async fn list_anomalies(
     State(state): State<AppState>,
     Query(q): Query<AnomalyQuery>,
 ) -> axum::response::Response {
-    match svc::list_anomalies(&state.admin_db, q.limit, q.kind.as_deref()).await {
+    let window = match resolve_timeseries_window(q.start, q.end) {
+        Ok(w) => w,
+        Err(message) => return ApiResponse::err(StatusCode::BAD_REQUEST, message),
+    };
+    let (Some(start), Some(end)) = (
+        DateTime::<Utc>::from_timestamp(window.start_unix, 0),
+        DateTime::<Utc>::from_timestamp(window.end_unix, 0),
+    ) else {
+        return ApiResponse::err(StatusCode::BAD_REQUEST, "时间戳超出范围");
+    };
+    match svc::list_anomalies(&state.admin_db, start, end, q.limit).await {
         Ok(body) => ApiResponse::ok(body).into_response(),
         Err(e) => {
             tracing::error!(error = %e, "list anomalies failed");
             ApiResponse::err(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 format!("异常事件查询失败: {e}"),
             )
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ZeroCallBody {
-    /// 近 30 天有调用的 `product_id` 列表（前端或代理从 OLAP 取得）。
-    #[serde(default)]
-    pub active_product_ids: Vec<String>,
-}
-
-/// `POST /stats/ops/products/zero-calls`：平台产品 − 活跃集合。
-pub async fn zero_call_products(
-    State(state): State<AppState>,
-    Json(body): Json<ZeroCallBody>,
-) -> axum::response::Response {
-    let active: std::collections::HashSet<_> = body
-        .active_product_ids
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
+/// `GET /stats/ops/products/names`：已启用产品的 id → 名称（TopN 显示名、零调用差集）。
+pub async fn list_product_names(State(state): State<AppState>) -> axum::response::Response {
     match svc::list_platform_products(&state.db).await {
-        Ok(all) => {
-            let zero: Vec<svc::ZeroCallProduct> = all
-                .into_iter()
-                .filter(|(id, _)| !active.contains(id))
-                .map(|(product_id, name)| svc::ZeroCallProduct { product_id, name })
-                .collect();
-            ApiResponse::ok(zero).into_response()
-        }
+        Ok(rows) => ApiResponse::ok(rows).into_response(),
         Err(e) => {
-            tracing::error!(error = %e, "zero-call products failed");
+            tracing::error!(error = %e, "list product names failed");
             ApiResponse::err(
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("零调用产品查询失败: {e}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("产品名录查询失败: {e}"),
             )
         }
     }
