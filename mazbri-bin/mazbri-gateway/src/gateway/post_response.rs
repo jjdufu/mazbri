@@ -178,7 +178,7 @@ pub(crate) async fn record_usage_charge(
     }
     let calc_result = usage_outbox_event.billing_result.clone();
     if produced {
-        // L1: already durable in Redpanda (acks=all); billing consumer writes the outbox.
+        // L1: already enqueued for background batch produce; billing consumer writes the outbox.
         if let Some(cache) = state.balance_cache.as_ref() {
             cache
                 .optimistic_subtract(ctx.tenant_id, calc_result.amount)
@@ -327,7 +327,7 @@ pub async fn drain_on_shutdown(timeout: Duration) {
 /// Hands an event to a single background task that keeps retrying until the DB is back.
 /// Limitation: in-memory only — events still queued when the gateway process exits are lost
 /// (an overflowing queue logs each lost event at ERROR with its `event_id` and amount).
-fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
+pub(crate) fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
     let sender = DEFERRED_TX.get_or_init(|| {
         let (tx, mut rx) = mpsc::channel::<UsageOutboxEvent>(DEFERRED_QUEUE_CAPACITY);
         let service = Arc::clone(service);

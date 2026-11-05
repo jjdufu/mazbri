@@ -32,7 +32,7 @@ use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{Instrument, error, info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
@@ -196,8 +196,7 @@ pub async fn unified_gateway_handler(
             tenant_uuid,
             tenant_product_detail: &tenant_product_detail,
         },
-    )
-    .await;
+    );
     let mut response = build_response(http_status, encrypted_response, serialized.bytes)?;
     response.extensions_mut().insert(super::rejection_log::AccessLogged);
     Ok(response)
@@ -697,12 +696,12 @@ async fn complete_idempotency(ctx: &HandlerCtx<'_>, serialized: &SerializedProxy
     }
 }
 
-async fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
+fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
     let req = ctx.req;
     let fetched = done.fetched;
     let service_total_ms = i32::saturating_from(done.timing.started_at.elapsed().as_millis());
     let (usage_event, usage_event_produced, billing_fields) =
-        prepare_usage_event(ctx, done, service_total_ms).await;
+        prepare_usage_event(ctx, done, service_total_ms);
     spawn_post_response_tasks(
         ctx.state,
         PostResponseTaskArgs {
@@ -793,7 +792,7 @@ async fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
 
 /// Builds the request's usage event, produces it to Redpanda when billable (L1) and returns
 /// (billable event for the post-response path, produced flag, access-log billing fields).
-async fn prepare_usage_event(
+fn prepare_usage_event(
     ctx: &HandlerCtx<'_>,
     done: &CompletedRequest<'_>,
     service_total_ms: i32,
@@ -822,9 +821,7 @@ async fn prepare_usage_event(
     });
     let billable = billable && ctx.state.billing_state.is_some();
     let usage_event_produced = if billable {
-        produce_usage_event(ctx, &usage_event)
-            .instrument(enqueue_span)
-            .await
+        enqueue_span.in_scope(|| produce_usage_event(ctx, usage_event.clone()))
     } else {
         false
     };
@@ -855,24 +852,23 @@ fn upstream_cost(fetched: &FetchedResponse) -> String {
     }
 }
 
-/// L1: synchronously produce the usage event to Redpanda (acks=all) before the response.
-/// Returns false (caller falls back to the outbox/deferred path) when disabled or on error.
-async fn produce_usage_event(
+/// L1: enqueue the usage event for background batch produce (never awaits the broker).
+/// Returns false (caller falls back to the outbox/deferred path) when disabled or queue full.
+fn produce_usage_event(
     ctx: &HandlerCtx<'_>,
-    event: &mazbri_billing::UsageOutboxEvent,
+    event: mazbri_billing::UsageOutboxEvent,
 ) -> bool {
     let Some(producer) = ctx.state.usage_event_producer.as_ref() else {
         return false;
     };
-    match producer.produce(event).await {
-        Ok(_) => true,
-        Err(error) => {
+    match producer.try_enqueue(event) {
+        Ok(()) => true,
+        Err(rejected) => {
             warn!(
                 request_id = %ctx.request_id,
-                event_id = %event.event_id,
-                tenant_id = %event.tenant_id,
-                error = %error,
-                "Usage event produce failed; falling back to outbox path"
+                event_id = %rejected.event_id,
+                tenant_id = %rejected.tenant_id,
+                "Usage event queue full; falling back to outbox path"
             );
             false
         }

@@ -27,7 +27,7 @@ pub use service::{
     UsageBreakdownItem, UsageOutboxEvent, UsageRecord, UsageSummaryInfo,
 };
 pub use types::{ChargeQueueItem, ChargeStatus, QueueConfig};
-pub use usage_events::{UsageEventConsumer, UsageEventProducer, UsageEventsConfig};
+pub use usage_events::{UsageEventConsumer, UsageEventProducer, UsageEventProducerHandles, UsageEventsConfig};
 pub use usage_outbox_worker::UsageOutboxWorker;
 pub use worker::ChargeWorker;
 impl From<BillingError> for CoreError {
