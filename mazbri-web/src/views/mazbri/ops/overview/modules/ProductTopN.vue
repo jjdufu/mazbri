@@ -4,13 +4,13 @@
       <span class="product-topn__title">
         {{ t("ops.overview.productTop") }}
         <ElTag
-          v-if="zeroCount > 0"
+          v-if="zeroRows.length > 0"
           size="small"
           type="info"
           effect="plain"
           class="product-topn__badge"
         >
-          {{ t("ops.overview.productZeroBadge", { n: zeroCount }) }}
+          {{ t("ops.overview.productZeroBadge", { n: zeroRows.length }) }}
         </ElTag>
       </span>
     </template>
@@ -19,25 +19,27 @@
         v-model="metric"
         style="width: 140px"
         size="small"
-        @change="reload"
+        @change="onMetricChange"
       >
         <ElOption value="req_count" :label="t('ops.products.metricReq')" />
         <ElOption value="error_rate" :label="t('ops.products.metricErr')" />
-        <ElOption value="p95" label="P95" />
+        <ElOption value="p95" :label="t('ops.products.metricP95')" />
         <ElOption value="cost" :label="t('ops.products.metricCost')" />
       </ElSelect>
     </template>
 
-    <OpsTableWrap>
-      <ArtTable
-        :data="rows"
-        :loading="loading"
-        :columns="columns"
-        stripe
-      />
+    <EmptyState
+      v-if="loaded && !loading && rows.length === 0"
+      compact
+      :image-size="56"
+      :description="t('ops.products.rankEmpty')"
+    />
+    <OpsTableWrap v-else>
+      <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
     </OpsTableWrap>
+    <p class="product-topn__note">{{ t("ops.products.basisNote") }}</p>
 
-    <div v-if="zeroCount > 0" class="product-topn__zero">
+    <div v-if="zeroRows.length > 0" class="product-topn__zero">
       <ElButton link type="primary" @click="zeroOpen = !zeroOpen">
         {{
           zeroOpen
@@ -46,12 +48,7 @@
         }}
       </ElButton>
       <OpsTableWrap v-if="zeroOpen" class="product-topn__zero-table">
-        <ArtTable
-          :data="zeroRows"
-          :loading="loading"
-          :columns="zeroColumns"
-          stripe
-        />
+        <ArtTable :data="zeroRows" :columns="zeroColumns" stripe />
       </OpsTableWrap>
     </div>
   </OpsCard>
@@ -63,15 +60,18 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
-import type { TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
-import { toOlapWindow } from "@/composables/ops/useOlapRange";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { postOlapQuery } from "@/api/olap";
-import { zeroCallProducts } from "@/api/opsReliability";
+import { listProductNames } from "@/api/opsReliability";
 import type { ColumnOption } from "@/types/component";
+import { formatMoney } from "@/utils/format";
 import {
-  activeProductIdsFromRank,
   normalizeProductRankRows,
-  normalizeZeroCallProducts,
+  productNameMap,
+  productRankDelta,
+  withProductNames,
+  zeroCallProducts,
+  type NamedProductRankRow,
   type ProductRankMetric,
   type ProductRankRow,
   type ZeroCallProductRow,
@@ -79,71 +79,128 @@ import {
 
 defineOptions({ name: "OpsOverviewProductTopN" });
 
-const props = defineProps<{
-  timeRange: TimeRangeValue;
-}>();
+const TOP = 10;
+/** 零调用差集需要窗口内全部活跃产品（OLAP 单次上限）。 */
+const ALL_ACTIVE = 1000;
 
 const { t } = useI18n();
 const metric = ref<ProductRankMetric>("req_count");
 const loading = ref(false);
-const rows = ref<ProductRankRow[]>([]);
+/** 首次成功/失败返回前不显示空态，避免切换时闪「暂无数据」。 */
+const loaded = ref(false);
+const rows = ref<NamedProductRankRow[]>([]);
 const zeroRows = ref<ZeroCallProductRow[]>([]);
 const zeroOpen = ref(false);
+let lastWindow: { start: number; end: number } | null = null;
+let seq = 0;
 
-const zeroCount = computed(() => zeroRows.value.length);
+const nf = new Intl.NumberFormat("zh-CN");
 
-const columns = computed<ColumnOption[]>(() => [
-  { prop: "product_id", label: t("ops.products.colProduct") },
-  { prop: "req_count", label: t("ops.products.colReq"), width: 110 },
-  { prop: "prev_req_count", label: t("ops.products.colPrev"), width: 110 },
-  { prop: "error_rate", label: t("ops.products.colErr"), width: 100 },
-  { prop: "p95", label: "P95", width: 90 },
-  { prop: "cost", label: t("ops.products.colCost"), width: 100 },
+function pct(v: number): string {
+  return `${(v * 100).toFixed(2)}%`;
+}
+
+function deltaText(row: ProductRankRow): string {
+  const d = productRankDelta(row);
+  if (d === null) return t("ops.products.deltaNew");
+  const sign = d > 0 ? "+" : "";
+  return `${sign}${(d * 100).toFixed(1)}%`;
+}
+
+const columns = computed<ColumnOption<NamedProductRankRow>[]>(() => [
+  { prop: "name", label: t("ops.products.colProduct"), minWidth: 160 },
+  {
+    prop: "req_count",
+    label: t("ops.products.colReq"),
+    width: 120,
+    formatter: (r) => nf.format(r.req_count),
+  },
+  {
+    prop: "prev_req_count",
+    label: t("ops.products.colPrev"),
+    width: 120,
+    formatter: (r) => nf.format(r.prev_req_count),
+  },
+  {
+    prop: "delta",
+    label: t("ops.products.colDelta"),
+    width: 90,
+    formatter: (r) => deltaText(r),
+  },
+  {
+    prop: "error_rate",
+    label: t("ops.products.colErr"),
+    width: 110,
+    formatter: (r) => pct(r.error_rate),
+  },
+  {
+    prop: "p95",
+    label: t("ops.products.colP95"),
+    width: 120,
+    formatter: (r) => r.p95.toFixed(1),
+  },
+  {
+    prop: "cost",
+    label: t("ops.products.colCost"),
+    width: 120,
+    formatter: (r) => formatMoney(r.cost),
+  },
 ]);
 
-const zeroColumns = computed<ColumnOption[]>(() => [
-  { prop: "product_id", label: t("ops.products.colProduct") },
+const zeroColumns = computed<ColumnOption<ZeroCallProductRow>[]>(() => [
   { prop: "name", label: t("ops.products.colName") },
+  { prop: "product_id", label: t("ops.products.colId"), width: 160 },
 ]);
 
-async function reload() {
+async function load(window: { start: number; end: number }) {
+  const mine = ++seq;
+  lastWindow = window;
   loading.value = true;
   try {
-    const window = toOlapWindow(props.timeRange);
-    const activeWindow = {
-      start: window.end - 30 * 86400,
-      end: window.end,
-    };
-    const [rankRes, activeRes] = await Promise.all([
+    const needAll = metric.value === "req_count";
+    const [rankRes, allRes, catalog] = await Promise.all([
       postOlapQuery<ProductRankRow>({
         template: "product_rank",
-        params: { ...window, metric: metric.value, limit: 10 },
+        params: { ...window, metric: metric.value, limit: needAll ? ALL_ACTIVE : TOP },
       }),
-      // 零调用差集按近 30 天有调用的产品（与文案一致），与 TopN 排序窗解耦。
-      postOlapQuery<ProductRankRow>({
-        template: "product_rank",
-        params: { ...activeWindow, metric: "req_count", limit: 1000 },
-      }),
+      needAll
+        ? Promise.resolve(null)
+        : postOlapQuery<ProductRankRow>({
+            template: "product_rank",
+            params: { ...window, metric: "req_count", limit: ALL_ACTIVE },
+          }),
+      listProductNames(),
     ]);
-    rows.value = normalizeProductRankRows(rankRes.rows);
-    const active = activeProductIdsFromRank(
-      normalizeProductRankRows(activeRes.rows),
-    );
-    const zero = await zeroCallProducts(active);
-    zeroRows.value = normalizeZeroCallProducts(zero);
+    if (mine !== seq) return;
+    const ranked = normalizeProductRankRows(rankRes.rows);
+    const active = allRes ? normalizeProductRankRows(allRes.rows) : ranked;
+    const names = productNameMap(catalog);
+    rows.value = withProductNames(ranked.slice(0, TOP), names);
+    zeroRows.value = zeroCallProducts(catalog, active);
     if (zeroRows.value.length === 0) zeroOpen.value = false;
   } catch (error) {
+    if (mine !== seq) return;
     rows.value = [];
     zeroRows.value = [];
     zeroOpen.value = false;
     ElMessage.error(
-      error instanceof Error
-        ? error.message
-        : t("ops.overview.productTopLoadFailed"),
+      error instanceof Error ? error.message : t("ops.overview.productTopLoadFailed"),
     );
   } finally {
-    loading.value = false;
+    if (mine === seq) {
+      loading.value = false;
+      loaded.value = true;
+    }
   }
+}
+
+function onMetricChange() {
+  if (lastWindow) void load(lastWindow);
+}
+
+/** 由总览按全局时间窗驱动；窗口由父组件在每次刷新时解析好传入。 */
+function reload(window: { start: number; end: number }) {
+  return load(window);
 }
 
 defineExpose({ reload });
@@ -158,6 +215,11 @@ defineExpose({ reload });
 }
 .product-topn__badge {
   font-weight: 500;
+}
+.product-topn__note {
+  margin: 6px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .product-topn__zero {
   margin-top: 8px;

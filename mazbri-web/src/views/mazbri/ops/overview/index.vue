@@ -1,21 +1,14 @@
 <template>
-  <OpsPage
-    :title="t('menus.mazbri.opsOverview')"
-    :subtitle="t('ops.overview.timeRangeHint')"
-  >
+  <OpsPage :title="t('menus.mazbri.opsOverview')">
     <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="onTimeRangeChange" />
-      <ElButton
-        :type="kpiMode === 'instant' ? 'primary' : 'default'"
-        @click="setKpiNow"
-      >
-        {{ t("ops.overview.nowButton") }}
-      </ElButton>
-      <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      <ElButton type="primary" @click="openScreen">
-        <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
-        {{ t("ops.overview.openScreen") }}
-      </ElButton>
+      <div class="ops-overview__filter" data-role="global-filter">
+        <TimeRangePicker v-model="timeRange" @change="reload" />
+        <AutoRefresh v-model="refreshInterval" @tick="reload" />
+        <ElButton type="primary" @click="openScreen">
+          <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
+          {{ t("ops.overview.openScreen") }}
+        </ElButton>
+      </div>
     </template>
 
     <ElAlert
@@ -26,133 +19,185 @@
       :title="t('ops.overview.viewerSlim')"
     />
 
-    <OpsKpiRow>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.qps')"
-          :value="overview?.qps"
-          :hint="kpiWindowHint"
-          :empty-text="kpiEmptyText"
-          :loading="loading"
-          unit="req/s"
-          icon="ri:pulse-line"
-          :interactive="canDrill('2.1')"
-          @click="drill('2.1')"
-        />
-      </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.successRate')"
-          :value="overview?.success_rate"
-          unit="%"
-          :hint="kpiWindowHint"
-          :empty-text="kpiEmptyText"
-          :loading="loading"
-          icon="ri:checkbox-circle-line"
-          icon-color="#67c23a"
-          icon-background="rgba(103, 194, 58, 0.12)"
-          :interactive="canDrill('2.4')"
-          @click="drill('2.4')"
-        />
-      </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.latency')"
-          :value="latencyPrimary"
-          unit="ms"
-          :hint="latencySecondary"
-          :empty-text="kpiEmptyText"
-          :loading="loading"
-          icon="ri:timer-line"
-          icon-color="#e6a23c"
-          icon-background="rgba(230, 162, 60, 0.12)"
-          :interactive="canDrill('2.2')"
-          @click="drill('2.2')"
-        />
-      </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.errorRates')"
-          :value="errorLabel"
-          :loading="loading"
-          icon="ri:error-warning-line"
-          icon-color="#f56c6c"
-          icon-background="rgba(245, 108, 108, 0.12)"
-          :interactive="canDrill('2.4')"
-          @click="drill('2.4')"
-        />
-      </ElCol>
-    </OpsKpiRow>
-
-    <OpsKpiRow>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.circuitOpen')"
-          :value="overview?.circuit_breaker_open_count"
-          :loading="loading"
-          icon="ri:shut-down-line"
-          :interactive="canDrill('3.2')"
-          @click="drill('3.2')"
-        />
-      </ElCol>
-      <ElCol :xs="24" :sm="12" :lg="6">
-        <StatCard
-          :label="t('ops.overview.stats.ratelimit')"
-          :value="overview?.rate_limit_rejections_per_sec"
-          unit="ops/s"
-          :loading="loading"
-          icon="ri:stop-circle-line"
-          :interactive="canDrill('4.1')"
-          @click="drill('4.1')"
-        />
-      </ElCol>
-      <ElCol
-        :xs="24"
-        :sm="12"
-        :lg="6"
-        :class="{ 'ops-overview__tenant--muted': isViewer }"
-      >
-        <StatCard
-          :label="t('ops.overview.stats.activeTenants')"
-          :value="platform?.tenant_stats?.active_tenants"
-          :loading="loading"
-          icon="ri:building-line"
-        />
-      </ElCol>
-    </OpsKpiRow>
-
-    <RoleGate gate="biz">
+    <!-- KPI：跟随时间窗（窗口汇总） -->
+    <OpsSection
+      id="kpi"
+      :title="t('ops.overview.sections.kpi')"
+      :semantics="windowSemantics"
+    >
       <OpsKpiRow>
-        <ElCol :xs="24" :sm="12" :lg="12">
+        <ElCol v-bind="KPI_COL">
           <StatCard
-            :label="t('ops.overview.stats.billingBacklog')"
-            :value="overview?.billing_pipeline?.backlog"
-            :hint="billingBacklogHint"
+            :label="t('ops.overview.stats.qps')"
+            :value="traffic?.qps"
+            :unit="t('ops.units.perSec')"
+            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
-            icon="ri:stack-line"
-            :interactive="canDrill('6.1')"
-            @click="drill('6.1')"
+            icon="ri:pulse-line"
+            :interactive="canDrill('2.1')"
+            @click="drill('2.1')"
           />
         </ElCol>
-        <ElCol :xs="24" :sm="12" :lg="12">
+        <ElCol v-bind="KPI_COL">
           <StatCard
-            :label="t('ops.overview.stats.billingDeadLetters')"
-            :value="overview?.billing_pipeline?.dead_letters"
+            :label="t('ops.overview.stats.successRate')"
+            :value="traffic?.success_rate"
+            :unit="t('ops.units.percent')"
+            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
-            icon="ri:mail-forbid-line"
-            :interactive="canDrill('6.1')"
-            @click="drill('6.1')"
+            icon="ri:checkbox-circle-line"
+            icon-color="#67c23a"
+            icon-background="rgba(103, 194, 58, 0.12)"
+            :interactive="canDrill('2.4')"
+            @click="drill('2.4')"
+          />
+        </ElCol>
+        <ElCol v-bind="KPI_COL">
+          <StatCard
+            :label="t('ops.overview.stats.latency')"
+            :value="traffic?.p99_latency_ms"
+            :unit="t('ops.units.ms')"
+            :hint="latencyHint(traffic)"
+            :empty-text="trafficEmpty(traffic)"
+            :loading="loading"
+            icon="ri:timer-line"
+            icon-color="#e6a23c"
+            icon-background="rgba(230, 162, 60, 0.12)"
+            :interactive="canDrill('2.2')"
+            @click="drill('2.2')"
+          />
+        </ElCol>
+        <ElCol v-bind="KPI_COL">
+          <StatCard
+            :label="t('ops.overview.stats.error4xx')"
+            :value="traffic?.error_rate_4xx"
+            :unit="t('ops.units.percent')"
+            :empty-text="trafficEmpty(traffic)"
+            :loading="loading"
+            icon="ri:error-warning-line"
+            icon-color="#e6a23c"
+            icon-background="rgba(230, 162, 60, 0.12)"
+            :interactive="canDrill('2.4')"
+            @click="drill('2.4')"
+          />
+        </ElCol>
+        <ElCol v-bind="KPI_COL">
+          <StatCard
+            :label="t('ops.overview.stats.error5xx')"
+            :value="traffic?.error_rate_5xx"
+            :unit="t('ops.units.percent')"
+            :empty-text="trafficEmpty(traffic)"
+            :loading="loading"
+            icon="ri:close-circle-line"
+            icon-color="#f56c6c"
+            icon-background="rgba(245, 108, 108, 0.12)"
+            :interactive="canDrill('2.4')"
+            @click="drill('2.4')"
+          />
+        </ElCol>
+        <ElCol v-bind="KPI_COL">
+          <StatCard
+            :label="t('ops.overview.stats.ratelimit')"
+            :value="traffic?.rate_limit_rejections_per_sec"
+            :unit="t('ops.units.perSec')"
+            :loading="loading"
+            icon="ri:stop-circle-line"
+            :interactive="canDrill('4.1')"
+            @click="drill('4.1')"
           />
         </ElCol>
       </OpsKpiRow>
-    </RoleGate>
+    </OpsSection>
 
-    <ElRow :gutter="16">
-      <ElCol :xs="24" :lg="14">
-        <OpsCard class="ops-main-panel">
-          <template #title>
-            <div class="ops-overview__panel-head">
-              <span>{{ t("ops.overview.healthLights") }}</span>
+    <!-- 实时状态：此刻（不随时间窗） -->
+    <OpsSection
+      id="realtime"
+      :title="t('ops.overview.sections.realtime')"
+      :semantics="realtimeSemantics"
+    >
+      <OpsKpiRow>
+        <ElCol v-bind="RT_COL">
+          <StatCard
+            :label="t('ops.overview.stats.qps')"
+            :value="realtime?.traffic.qps"
+            :unit="t('ops.units.perSec')"
+            :empty-text="realtimeEmpty"
+            :loading="loading"
+            icon="ri:pulse-line"
+          />
+        </ElCol>
+        <ElCol v-bind="RT_COL">
+          <StatCard
+            :label="t('ops.overview.stats.successRate')"
+            :value="realtime?.traffic.success_rate"
+            :unit="t('ops.units.percent')"
+            :empty-text="realtimeEmpty"
+            :loading="loading"
+            icon="ri:checkbox-circle-line"
+            icon-color="#67c23a"
+            icon-background="rgba(103, 194, 58, 0.12)"
+          />
+        </ElCol>
+        <ElCol v-bind="RT_COL">
+          <StatCard
+            :label="t('ops.overview.stats.proxyConnections')"
+            :value="realtime?.proxy_active_connections"
+            :loading="loading"
+            :digits="0"
+            icon="ri:links-line"
+          />
+        </ElCol>
+        <ElCol v-bind="RT_COL">
+          <StatCard
+            :label="t('ops.overview.stats.circuitOpen')"
+            :value="realtime?.circuit_breaker_open_count"
+            :loading="loading"
+            :digits="0"
+            icon="ri:shut-down-line"
+            :interactive="canDrill('3.2')"
+            @click="drill('3.2')"
+          />
+        </ElCol>
+        <ElCol v-bind="RT_COL" :class="{ 'ops-overview__tenant--muted': isViewer }">
+          <StatCard
+            :label="t('ops.overview.stats.enabledTenants')"
+            :value="inventory?.tenants.enabled"
+            :hint="inventoryHint"
+            :loading="loading"
+            :digits="0"
+            icon="ri:building-line"
+          />
+        </ElCol>
+        <RoleGate gate="biz">
+          <ElCol v-bind="RT_COL">
+            <StatCard
+              :label="t('ops.overview.stats.billingBacklog')"
+              :value="realtime?.billing_pipeline?.backlog"
+              :hint="billingBacklogHint"
+              :loading="loading"
+              :digits="0"
+              icon="ri:stack-line"
+              :interactive="canDrill('6.1')"
+              @click="drill('6.1')"
+            />
+          </ElCol>
+        </RoleGate>
+      </OpsKpiRow>
+
+      <ElRow :gutter="16">
+        <ElCol :xs="24" :lg="14">
+          <OpsCard class="ops-main-panel" data-block="components">
+            <template #title>
+              {{ t("ops.overview.components") }}
+            </template>
+            <template #extra>
+              <span class="ops-overview__abnormal" :data-abnormal="abnormalCount">
+                {{
+                  abnormalCount > 0
+                    ? t("ops.components.abnormalOf", { n: abnormalCount, total: components.length })
+                    : t("ops.components.allHealthy", { total: components.length })
+                }}
+              </span>
               <ElButton
                 link
                 type="primary"
@@ -160,155 +205,153 @@
               >
                 {{ t("ops.overview.openMatrix") }}
               </ElButton>
-            </div>
-          </template>
-          <div class="ops-overview__lights">
-            <button
-              v-for="item in overview?.service_health || []"
-              :key="item.service"
-              type="button"
-              class="ops-overview__light"
-              :title="item.name"
-              @click="openServiceHealth(item.service)"
-            >
-              <span class="ops-overview__dot" :data-status="item.status"></span>
-              <span class="ops-overview__light-name">{{ item.name }}</span>
-            </button>
-          </div>
-        </OpsCard>
-      </ElCol>
-      <ElCol :xs="24" :lg="10">
-        <OpsCard class="ops-main-panel">
-          <template #title>
-            <div class="ops-overview__panel-head">
-              <span>{{ t("ops.overview.alerts") }}</span>
-              <ElButton
-                link
-                type="primary"
-                @click="router.push(buildAlertsRoute())"
-              >
+            </template>
+            <ComponentHealthList :components="components" />
+          </OpsCard>
+        </ElCol>
+        <ElCol :xs="24" :lg="10">
+          <OpsCard class="ops-main-panel" data-block="alerts">
+            <template #title>
+              {{ t("ops.overview.alerts") }}
+            </template>
+            <template #extra>
+              <ElButton link type="primary" @click="router.push(buildAlertsRoute())">
                 {{ t("ops.overview.alertsOpen") }}
               </ElButton>
+            </template>
+            <div class="ops-overview__tags">
+              <ElTag :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'">
+                {{ t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 }) }}
+              </ElTag>
+              <ElTag type="warning">
+                {{ t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 }) }}
+              </ElTag>
+              <RoleGate gate="biz">
+                <ElTag
+                  v-if="realtime?.billing_pipeline"
+                  :type="realtime.billing_pipeline.dead_letters > 0 ? 'danger' : 'info'"
+                  class="ops-overview__tag-link"
+                  @click="drill('6.1')"
+                >
+                  {{
+                    t("ops.overview.billingDeadLetters", {
+                      n: realtime.billing_pipeline.dead_letters,
+                    })
+                  }}
+                </ElTag>
+              </RoleGate>
+              <RoleGate gate="admin">
+                <CertExpiryBadge :days="realtime?.cert_min_expiry_days" />
+              </RoleGate>
             </div>
-          </template>
-          <div class="ops-overview__placeholder-grid">
-            <ElTag
-              :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'"
-            >
-              {{
-                t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 })
-              }}
-            </ElTag>
-            <ElTag type="warning">
-              {{
-                t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 })
-              }}
-            </ElTag>
-            <RoleGate gate="admin">
-              <CertExpiryBadge :days="overview?.cert_min_expiry_days" />
-            </RoleGate>
-          </div>
-          <div
-            v-if="alertSummary?.latest.length"
-            class="ops-overview__alert-list"
-          >
-            <button
-              v-for="item in alertSummary.latest"
-              :key="item.id"
-              type="button"
-              class="ops-overview__alert-item"
-              @click="
-                router.push(buildAlertsRoute({ eventId: item.id }))
-              "
-            >
-              <span
-                class="ops-overview__dot"
-                :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
-              ></span>
-              <span>{{ item.rule_name }}</span>
-              <span class="ops-overview__alert-labels">{{
-                alertLabels(item.labels)
-              }}</span>
-            </button>
-          </div>
-          <EmptyState
-            v-else
-            compact
-            :description="t('ops.overview.alertsNone')"
-          />
-        </OpsCard>
-      </ElCol>
-    </ElRow>
+            <div v-if="alertSummary?.latest.length" class="ops-overview__alert-list">
+              <button
+                v-for="item in alertSummary.latest"
+                :key="item.id"
+                type="button"
+                class="ops-overview__alert-item"
+                @click="router.push(buildAlertsRoute({ eventId: item.id }))"
+              >
+                <span
+                  class="ops-overview__dot"
+                  :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
+                ></span>
+                <span>{{ item.rule_name }}</span>
+                <span class="ops-overview__alert-labels">{{ alertLabels(item.labels) }}</span>
+              </button>
+            </div>
+            <EmptyState v-else compact :description="t('ops.overview.alertsNone')" />
+          </OpsCard>
+        </ElCol>
+      </ElRow>
 
-    <ElRow :gutter="16" class="ops-overview__charts">
-      <ElCol :xs="24" :lg="12">
-        <OpsCard :title="t('ops.overview.charts.qps')" class="ops-main-panel">
-          <MultiSeriesChart
-            :series="qpsSeries"
-            :loading="loading"
-            height="240px"
-          />
-        </OpsCard>
-      </ElCol>
-      <ElCol :xs="24" :lg="12">
-        <OpsCard :title="t('ops.overview.charts.p99')" class="ops-main-panel">
-          <MultiSeriesChart
-            v-loading="exemplarLoading"
-            :series="p99Series"
-            :loading="loading"
-            height="240px"
-            :on-point-click="p99ClickHandler"
-          />
-        </OpsCard>
-      </ElCol>
-    </ElRow>
+      <RoleGate gate="admin">
+        <InfraHealthStrip ref="infraStripRef" />
+      </RoleGate>
+    </OpsSection>
 
-    <RoleGate gate="admin">
-      <InfraHealthStrip ref="infraStripRef" />
-    </RoleGate>
+    <!-- 趋势：跟随时间窗 -->
+    <OpsSection
+      id="trend"
+      :title="t('ops.overview.sections.trend')"
+      :semantics="windowSemantics"
+    >
+      <ElRow :gutter="16">
+        <ElCol :xs="24" :lg="12">
+          <OpsCard :title="t('ops.overview.charts.qps')" class="ops-main-panel">
+            <MultiSeriesChart
+              :series="qpsSeries"
+              :loading="loading"
+              :window="chartWindow"
+              height="240px"
+            />
+          </OpsCard>
+        </ElCol>
+        <ElCol :xs="24" :lg="12">
+          <OpsCard :title="t('ops.overview.charts.p99')" class="ops-main-panel">
+            <MultiSeriesChart
+              v-loading="exemplarLoading"
+              :series="p99Series"
+              :loading="loading"
+              :window="chartWindow"
+              height="240px"
+              :on-point-click="p99ClickHandler"
+            />
+          </OpsCard>
+        </ElCol>
+      </ElRow>
+    </OpsSection>
 
-    <SloBudgetPanel
-      ref="sloBudgetRef"
-      :connected="overview?.error_budget_connected"
-      :remaining="overview?.error_budget_remaining"
-      :slo-name="overview?.error_budget_slo"
-    />
-
-    <ProductTopN ref="productTopNRef" :time-range="timeRange" />
-
-    <RoleGate gate="biz">
-      <RecentAnomalies ref="recentAnomaliesRef" />
-      <RecentChanges ref="recentChangesRef" />
-    </RoleGate>
+    <!-- 洞察：跟随时间窗（SLO 为其自身评估窗口，单独标注） -->
+    <OpsSection
+      id="insight"
+      :title="t('ops.overview.sections.insight')"
+      :semantics="windowSemantics"
+    >
+      <ProductTopN ref="productTopNRef" />
+      <RoleGate gate="biz">
+        <RecentAnomalies ref="recentAnomaliesRef" />
+        <RecentChanges ref="recentChangesRef" />
+      </RoleGate>
+      <SloBudgetPanel
+        ref="sloBudgetRef"
+        :connected="overview?.error_budget_connected"
+        :remaining="overview?.error_budget_remaining"
+        :slo-name="overview?.error_budget_slo"
+      />
+    </OpsSection>
   </OpsPage>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
+import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import ComponentHealthList from "@/components/ops/ComponentHealthList.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsSection from "@/components/ops/OpsSection.vue";
 import RoleGate from "@/components/ops/RoleGate.vue";
 import StatCard from "@/components/ops/StatCard.vue";
-import MultiSeriesChart, {
-  type PointClick,
-} from "@/components/ops/MultiSeriesChart.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
+import MultiSeriesChart, { type PointClick } from "@/components/ops/MultiSeriesChart.vue";
 import { useDrilldown } from "@/composables/ops/useDrilldown";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
-import { useRoleGatedLoader } from "@/composables/ops/useRoleGatedLoader";
+import { resolveStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries, fetchMetricsOverview } from "@/api/monitoring";
-import { fetchPlatformStats } from "@/api/analytics";
+import { fetchPlatformInventory } from "@/api/analytics";
 import { fetchAlertSummary } from "@/api/alerts";
-import type { AlertSummary } from "@/types/api/alerts";
-import type { PlatformStats } from "@/types/api/analytics";
-import type { MetricOverview, MetricSeries } from "@/types/api/monitoring";
 import { postOlapQuery } from "@/api/olap";
+import type { AlertSummary } from "@/types/api/alerts";
+import type { PlatformInventory } from "@/types/api/analytics";
+import type { MetricOverview, MetricSeries, TrafficKpis } from "@/types/api/monitoring";
 import type { ExemplarRow } from "@/types/api/olap";
+import { formatWallClockHm, formatWallClockMdHm } from "@/utils/format";
+import { countAbnormal } from "@/utils/ops/components-health";
 import {
   canOverviewDrill,
   resolveOverviewDrill,
@@ -318,11 +361,10 @@ import {
   buildAlertsRoute,
   buildCallsRoute,
   buildScreenHref,
-  buildServiceDetailRoute,
   buildServicesRoute,
   buildTraceSearchRoute,
 } from "@/utils/ops/opsRoutes";
-import type { RoleGatedTask } from "@/utils/ops/role-gated-loader";
+import { defaultTimeRange, resolveRange } from "@/utils/ops/time-range";
 import CertExpiryBadge from "./modules/CertExpiryBadge.vue";
 import InfraHealthStrip from "./modules/InfraHealthStrip.vue";
 import ProductTopN from "./modules/ProductTopN.vue";
@@ -332,15 +374,13 @@ import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
 defineOptions({ name: "OpsOverview" });
 
-type OverviewLoadKey = "overview" | "platform" | "qps" | "p99" | "alerts";
+/** KPI 六卡一行（lg）；窄屏 3/2/1 列，保证每行等宽对齐。 */
+const KPI_COL = { xs: 24, sm: 12, md: 8, lg: 4 } as const;
+/** 实时状态卡：同为六格栅（观察者少一卡时仍左对齐）。 */
+const RT_COL = { xs: 24, sm: 12, md: 8, lg: 4 } as const;
 
-const OVERVIEW_LOAD_TASKS: readonly RoleGatedTask<OverviewLoadKey>[] = [
-  { key: "overview", gate: "all" },
-  { key: "platform", gate: "all" },
-  { key: "qps", gate: "all" },
-  { key: "p99", gate: "all" },
-  { key: "alerts", gate: "all" },
-];
+/** 时间窗下钻：目标页继承同一 tr_*；实时类下钻（熔断/计费）不带窗。 */
+const WINDOWED_DRILLS: ReadonlySet<OverviewDrillId> = new Set(["2.1", "2.2", "2.4", "4.1"]);
 
 const { t } = useI18n();
 const router = useRouter();
@@ -348,36 +388,28 @@ const { drilldown } = useDrilldown();
 const { isAdmin, isBiz, isViewer } = useOpsRole();
 
 const overview = ref<MetricOverview | null>(null);
-const platform = ref<PlatformStats | null>(null);
+const inventory = ref<PlatformInventory | null>(null);
 const qpsSeries = ref<MetricSeries | null>(null);
 const p99Series = ref<MetricSeries | null>(null);
 const alertSummary = ref<AlertSummary | null>(null);
 const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
-const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(
-  null,
-);
+const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(null);
 const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
 const infraStripRef = ref<InstanceType<typeof InfraHealthStrip> | null>(null);
 const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
+const loading = ref(false);
 const exemplarLoading = ref(false);
 const refreshInterval = ref(30);
-const timeRange = ref<TimeRangeValue>({
-  preset: "6h",
-  start: Math.floor(Date.now() / 1000) - 6 * 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-/** 第一行 KPI：默认跟时间窗；点「此刻」切到近瞬时。 */
-const kpiMode = ref<"range" | "instant">("range");
+/** 选择器值（预设或自定义）；URL 带 tr_* 时由 TimeRangePicker 挂载回填，并触发首轮 change。 */
+const timeRange = ref<TimeRangeValue>(defaultTimeRange("6h"));
+/** 本轮实际求值的窗口（预设按「现在」滚动重算），图表 x 轴与之对齐。 */
+const chartWindow = ref<{ start: number; end: number } | null>(null);
+let seq = 0;
 
-function setKpiNow() {
-  kpiMode.value = "instant";
-  void reload();
-}
-
-function onTimeRangeChange() {
-  kpiMode.value = "range";
-  void reload();
-}
+const traffic = computed(() => overview.value?.traffic ?? null);
+const realtime = computed(() => overview.value?.realtime ?? null);
+const components = computed(() => overview.value?.components ?? []);
+const abnormalCount = computed(() => countAbnormal(components.value));
 
 const drillRole = computed(() => ({
   isAdmin: isAdmin.value,
@@ -385,119 +417,68 @@ const drillRole = computed(() => ({
   isViewer: isViewer.value,
 }));
 
-const latencyPrimary = computed(() => {
-  const o = overview.value;
-  if (!o) return null;
-  return o.p99_latency_ms;
-});
+function presetLabel(): string {
+  return t(`ops.timeRange.presets.${timeRange.value.preset}`);
+}
 
-const latencySecondary = computed(() => {
-  const o = overview.value;
-  if (!o) return "";
-  const base = t("ops.overview.latencySecondary", {
-    p50: fmt(o.p50_latency_ms),
-    p95: fmt(o.p95_latency_ms),
-  });
-  const w = o.window;
-  if (w?.semantics === "instant") {
-    const inst = t("ops.overview.instantWindowHint", {
-      secs: w.lookback_secs,
-      label: w.label,
-    });
-    return `${base} · ${inst}`;
-  }
-  return base;
-});
-
-/** KPI 窗旁注（来自 overview.window）。 */
-const kpiWindowHint = computed(() => {
-  const w = overview.value?.window;
-  if (!w) return "";
-  if (w.semantics === "instant") {
-    return t("ops.overview.instantWindowHint", {
-      secs: w.lookback_secs,
-      label: w.label,
-    });
-  }
-  return t("ops.overview.rangeWindowHint", {
-    secs: w.lookback_secs,
-    label: w.label,
+/** 「跟随时间窗 · 11-05 09:00 – 11-05 15:00（6 小时）」——取后端回显的实际窗口。 */
+const windowSemantics = computed(() => {
+  const w = overview.value?.window ?? chartWindow.value;
+  if (!w) return t("ops.overview.followsWindow");
+  return t("ops.overview.windowSemantics", {
+    start: formatWallClockMdHm(w.start * 1000),
+    end: formatWallClockMdHm(w.end * 1000),
+    label: presetLabel(),
   });
 });
 
-const kpiEmptyText = computed(() => {
-  const o = overview.value;
-  if (!o || o.sample_count === 0 || o.success_rate == null) {
-    return o?.window?.semantics === "instant"
-      ? t("ops.overview.noSampleHintInstant")
-      : t("ops.overview.noSampleHint");
-  }
+/** 「此刻 · 近 60 秒 · 截至 15:00」 */
+const realtimeSemantics = computed(() => {
+  const r = realtime.value;
+  if (!r) return t("ops.overview.realtimeNow");
+  return t("ops.overview.realtimeSemantics", {
+    secs: r.lookback_secs,
+    at: formatWallClockHm(r.eval_at * 1000),
+  });
+});
+
+/** 无样本才是「无业务流量」；有样本时率至少为 0，不会落到空态。 */
+function trafficEmpty(k: TrafficKpis | null): string {
+  if (k && k.sample_count === 0) return t("ops.overview.noSampleHint");
+  return "—";
+}
+
+const realtimeEmpty = computed(() => {
+  const k = realtime.value?.traffic;
+  if (k && k.sample_count === 0) return t("ops.overview.realtimeNoSample");
   return "—";
 });
 
-const errorLabel = computed(() => {
-  const o = overview.value;
-  if (!o) return "—";
-  if (o.sample_count === 0 || o.error_rate_4xx == null || o.error_rate_5xx == null) {
-    return o.window?.semantics === "instant"
-      ? t("ops.overview.noSampleHintInstant")
-      : t("ops.overview.noSampleHint");
-  }
-  return `4xx ${fmt(o.error_rate_4xx)}% / 5xx ${fmt(o.error_rate_5xx)}%`;
+function latencyHint(k: TrafficKpis | null): string {
+  if (!k || k.p99_latency_ms == null) return "";
+  return t("ops.overview.latencySecondary", {
+    p50: fmt(k.p50_latency_ms),
+    p95: fmt(k.p95_latency_ms),
+  });
+}
+
+const inventoryHint = computed(() => {
+  const inv = inventory.value;
+  if (!inv) return "";
+  return t("ops.overview.inventoryHint", {
+    total: inv.tenants.total,
+    products: inv.products.enabled,
+  });
 });
 
 const billingBacklogHint = computed(() => {
-  const age = overview.value?.billing_pipeline?.oldest_pending_age_seconds;
+  const age = realtime.value?.billing_pipeline?.oldest_pending_age_seconds;
   if (age === undefined || age === null) return "";
   return t("ops.overview.billingOldestAgeHint", { age: fmt(age) });
 });
 
 /** VIEWER 关闭 exemplar；ADMIN → Trace；BIZ → 调用检索。 */
-const p99ClickHandler = computed(() =>
-  isViewer.value ? undefined : onP99Click,
-);
-
-const {
-  loading,
-  load: loadOverviewBundle,
-} = useRoleGatedLoader<OverviewLoadKey, unknown>({
-  tasks: OVERVIEW_LOAD_TASKS,
-  run: async (key) => {
-    switch (key) {
-      case "overview":
-        return kpiMode.value === "instant"
-          ? fetchMetricsOverview({ mode: "instant" })
-          : fetchMetricsOverview({
-              mode: "range",
-              start: timeRange.value.start,
-              end: timeRange.value.end,
-            });
-      case "platform":
-        return fetchPlatformStats({
-          start_time: timeRange.value.start,
-          end_time: timeRange.value.end,
-        }).catch(() => null);
-      case "qps":
-        return fetchMetricTimeseries({
-          metric: "qps",
-          start: timeRange.value.start,
-          end: timeRange.value.end,
-        }).catch(() => null);
-      case "p99":
-        return fetchMetricTimeseries({
-          metric: "p99_latency_ms",
-          start: timeRange.value.start,
-          end: timeRange.value.end,
-        }).catch(() => null);
-      case "alerts":
-        return fetchAlertSummary().catch(() => null);
-      default: {
-        const _exhaustive: never = key;
-        return _exhaustive;
-      }
-    }
-  },
-});
+const p99ClickHandler = computed(() => (isViewer.value ? undefined : onP99Click));
 
 function alertLabels(labels: Record<string, string>) {
   return Object.entries(labels)
@@ -508,7 +489,7 @@ function alertLabels(labels: Record<string, string>) {
 
 function fmt(n: number | null | undefined) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n);
 }
 
 function canDrill(id: OverviewDrillId): boolean {
@@ -518,24 +499,20 @@ function canDrill(id: OverviewDrillId): boolean {
 function drill(id: OverviewDrillId) {
   const target = resolveOverviewDrill(id, drillRole.value);
   if (!target) return;
-  drilldown({
-    path: target.path,
-    query: target.query,
-  });
-}
-
-function openServiceHealth(service: string) {
-  if (isAdmin.value) {
-    void router.push(buildServiceDetailRoute(service));
-    return;
+  const query: Record<string, string> = { ...target.query };
+  const w = chartWindow.value;
+  if (WINDOWED_DRILLS.has(id) && w) {
+    query.tr_preset = timeRange.value.preset;
+    query.tr_start = String(w.start);
+    query.tr_end = String(w.end);
   }
-  void router.push(buildServicesRoute({ tab: "health" }));
+  drilldown({ path: target.path, query });
 }
 
 async function onP99Click(point: PointClick) {
   if (isViewer.value) return;
-
-  const span = timeRange.value.end - timeRange.value.start;
+  const w = chartWindow.value;
+  const span = w ? w.end - w.start : 3600;
   const windowSecs = Math.min(3600, Math.max(60, Math.ceil(span / 120)));
   const start = point.timestamp - windowSecs;
   const end = point.timestamp + windowSecs;
@@ -547,9 +524,7 @@ async function onP99Click(point: PointClick) {
         tab: "customer",
         start,
         end,
-        filters: {
-          duration_ms_gte: Math.max(0, Math.floor(point.value)),
-        },
+        filters: { duration_ms_gte: Math.max(0, Math.floor(point.value)) },
       }),
     );
     return;
@@ -566,15 +541,9 @@ async function onP99Click(point: PointClick) {
       ElMessage.info(t("ops.traces.exemplarEmpty"));
       return;
     }
-    const threshold = Math.floor(
-      Math.min(...rows.map((r) => r.p99_ms || r.value_ms)),
-    );
+    const threshold = Math.floor(Math.min(...rows.map((r) => r.p99_ms || r.value_ms)));
     void router.push(
-      buildTraceSearchRoute({
-        start,
-        end,
-        filters: { min_duration_ms: threshold },
-      }),
+      buildTraceSearchRoute({ start, end, filters: { min_duration_ms: threshold } }),
     );
   } catch {
     ElMessage.error(t("ops.traces.loadFailed"));
@@ -588,37 +557,77 @@ function openScreen() {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/**
+ * 整页刷新：每轮按「现在」解析一次窗口，所有跟窗块共用同一 [start, end)。
+ * 序号守卫：快速切换时间窗时只采用最后一轮的响应，旧响应直接丢弃。
+ */
 async function reload() {
+  const mine = ++seq;
+  const r = resolveRange(timeRange.value);
+  const win = { start: r.start, end: r.end };
+  const step = resolveStep(win.end - win.start);
+  loading.value = true;
+
+  void productTopNRef.value?.reload(win);
+  void recentAnomaliesRef.value?.reload(win);
+  void recentChangesRef.value?.reload(win);
+  void infraStripRef.value?.reload();
+  void sloBudgetRef.value?.reload();
+
   try {
-    const bundle = await loadOverviewBundle();
-    overview.value = (bundle.overview as MetricOverview | undefined) ?? null;
-    platform.value = (bundle.platform as PlatformStats | null | undefined) ?? null;
-    qpsSeries.value = (bundle.qps as MetricSeries | null | undefined) ?? null;
-    p99Series.value = (bundle.p99 as MetricSeries | null | undefined) ?? null;
-    alertSummary.value =
-      (bundle.alerts as AlertSummary | null | undefined) ?? null;
-    await infraStripRef.value?.reload();
-    await sloBudgetRef.value?.reload();
-    await productTopNRef.value?.reload();
-    await recentAnomaliesRef.value?.reload();
-    await recentChangesRef.value?.reload();
+    const [ov, inv, qps, p99, alerts] = await Promise.all([
+      fetchMetricsOverview(win),
+      fetchPlatformInventory().catch(() => null),
+      fetchMetricTimeseries({ metric: "qps", ...win, step }).catch(() => null),
+      fetchMetricTimeseries({ metric: "p99_latency_ms", ...win, step }).catch(() => null),
+      fetchAlertSummary().catch(() => null),
+    ]);
+    if (mine !== seq) return;
+    chartWindow.value = win;
+    overview.value = ov ?? null;
+    inventory.value = inv;
+    qpsSeries.value = qps;
+    p99Series.value = p99;
+    alertSummary.value = alerts;
   } catch (error) {
-    ElMessage.error(
-      error instanceof Error ? error.message : t("ops.overview.loadFailed"),
-    );
+    if (mine !== seq) return;
+    ElMessage.error(error instanceof Error ? error.message : t("ops.overview.loadFailed"));
+  } finally {
+    if (mine === seq) loading.value = false;
   }
 }
-
-onMounted(reload);
 </script>
 
 <style scoped>
+.ops-overview__filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-xs, 8px);
+}
 .ops-overview__slim {
   margin: 0;
 }
 .ops-overview__tenant--muted :deep(.ops-stat-card__value) {
   color: var(--el-text-color-regular);
   font-weight: 500;
+}
+.ops-overview__abnormal {
+  margin-right: var(--ops-space-xs, 8px);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.ops-overview__abnormal:not([data-abnormal="0"]) {
+  color: var(--el-color-danger);
+}
+.ops-overview__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-xs, 8px);
+  margin-bottom: var(--ops-space-sm, 12px);
+}
+.ops-overview__tag-link {
+  cursor: pointer;
 }
 .ops-overview__alert-list {
   display: flex;
@@ -642,50 +651,17 @@ onMounted(reload);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ops-overview__panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  gap: var(--ops-space-xs, 8px);
-}
-.ops-overview__lights {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ops-space-sm, 12px);
-}
-.ops-overview__light {
-  display: inline-flex;
-  gap: var(--ops-space-xs, 8px);
-  align-items: center;
-  padding: 6px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-}
 .ops-overview__dot {
+  flex: none;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: #909399;
-}
-.ops-overview__dot[data-status="green"] {
-  background: #67c23a;
 }
 .ops-overview__dot[data-status="yellow"] {
   background: #e6a23c;
 }
 .ops-overview__dot[data-status="red"] {
   background: #f56c6c;
-}
-.ops-overview__light-name {
-  font-size: 12px;
-}
-.ops-overview__placeholder-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ops-space-xs, 8px);
-  margin-bottom: var(--ops-space-sm, 12px);
 }
 </style>
