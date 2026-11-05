@@ -12,7 +12,6 @@ members = [
     "mazbri-auth",
     "mazbri-cache",
     "mazbri-product",
-    "mazbri-sdk",
     "mazbri-registry",
     "mazbri-callback",
     "mazbri-cert",
@@ -37,7 +36,6 @@ mazbri-routing = { version = "0.1.0", path = "mazbri-routing" }
 mazbri-admin = { version = "0.1.0", path = "mazbri-admin" }
 mazbri-core = { version = "0.1.0", path = "mazbri-core" }
 mazbri-tls = { version = "0.1.0", path = "mazbri-tls" }
-mazbri-sdk = { version = "0.1.0", path = "mazbri-sdk" }
 mazbri-cert = { version = "0.1.0", path = "mazbri-cert" }
 mazbri-crypto = { version = "0.1.0", path = "mazbri-crypto" }
 mazbri-upstream-runtime = { version = "0.1.0", path = "mazbri-upstream-runtime" }
