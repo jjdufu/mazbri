@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.3](https://github.com/jjdufu/mazbri/compare/v0.3.2...v0.3.3) (2026-11-05)
+
+
+### Features
+
+* **analytics:** 总览改为显式时间窗 + 统一组件健康清单 ([e69a737](https://github.com/jjdufu/mazbri/commit/e69a73702e485f22be5520ad57d96ca9fa41699d))
+* **mgmt:** 总览/异常按时间窗透传，产品名录与平台规模替换旧接口 ([adadb01](https://github.com/jjdufu/mazbri/commit/adadb0125cef7ec3752effe4a36386cefd8be68e))
+* **web:** 共享卡片组件与 zh/en 文案统一 ([0d22090](https://github.com/jjdufu/mazbri/commit/0d220908c954646c5a7c621f925d5690437b66a4))
+* **web:** 总览数据层对齐新接口（显式时间窗、组件健康、产品名录） ([68ae67c](https://github.com/jjdufu/mazbri/commit/68ae67c92999ef05a111487d1f30a709f9f50fe7))
+* **web:** 按方案 B 重做运营总览（全局筛选栏 + 四个分区） ([829972e](https://github.com/jjdufu/mazbri/commit/829972e6f7d0fb36e927d90478b314b0d58c7f87))
+* **web:** 运营总览方案 B 重做、统一组件健康清单与并排卡片等高 ([2b295f8](https://github.com/jjdufu/mazbri/commit/2b295f82de4b5ccb17c97170c547055dce3fd383))
+
+
+### Bug Fixes
+
+* **analytics:** 产品排行按时间窗选分钟/小时聚合，仅返回当前窗有调用的产品 ([75b2ec1](https://github.com/jjdufu/mazbri/commit/75b2ec175ec87b470f2ea59ab3de02ab699a9353))
+* **web:** 大屏复用总览口径与组件健康清单 ([8fb6e1a](https://github.com/jjdufu/mazbri/commit/8fb6e1a1fdbb418105a3c47c5b33cd785c831f4f))
+* **web:** 并排卡片统一等高，消除短卡下方空白 ([3365a77](https://github.com/jjdufu/mazbri/commit/3365a77fc73fab751982a8b95010c529d45f1c4a))
+* **web:** 证书详情状态说明、链路详情右栏改为粘性侧栏 ([c58d200](https://github.com/jjdufu/mazbri/commit/c58d2006e3db12b124851f5fe36bfc69a339a878))
+
 ## [0.3.2](https://github.com/jjdufu/mazbri/compare/v0.3.1...v0.3.2) (2026-11-05)
 
 
