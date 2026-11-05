@@ -1,7 +1,9 @@
 import type { AppRouteRecord } from "@/types/router";
+import { ROLES_ALL } from "@/utils/ops/roles";
+
 /**
- * 当前登录账号的自助页面（不在侧边菜单中展示，从右上角用户菜单进入）。
- * `/account/security` 同时是后端 MFA 守卫返回 `MFA_NOT_ENABLED` 时的 `setup_path`。
+ * MFA 守卫返回的 `setup_path`（`/account/security`）与顶栏快捷入口。
+ * 侧栏入口在控制面板「账号安全」；本路由保持 `isHide`，组件与控制面板子路由共用。
  */
 export const accountRoutes: AppRouteRecord[] = [
   {
@@ -12,7 +14,7 @@ export const accountRoutes: AppRouteRecord[] = [
       title: "menus.mazbri.account",
       icon: "ri:user-line",
       isHide: true,
-      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+      roles: [...ROLES_ALL],
     },
     children: [
       {
@@ -24,7 +26,7 @@ export const accountRoutes: AppRouteRecord[] = [
           icon: "ri:shield-user-line",
           isHide: true,
           keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+          roles: [...ROLES_ALL],
         },
       },
     ],

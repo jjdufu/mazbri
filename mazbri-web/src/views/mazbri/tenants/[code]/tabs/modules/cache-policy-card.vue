@@ -1,191 +1,169 @@
 <template>
-  <ElCard shadow="hover" class="strategy-card cache-policy-card">
-    <template #header>
-      <SurfaceCardHeader stack-on-mobile>
-        <template #left>
-          <div class="header-title">
-            <span>{{ $t("tenant.cachePolicy.title") }}</span>
-          </div>
-        </template>
-        <template #actions>
+  <SettingsCard
+    v-loading="loading"
+    icon="ri:database-2-line"
+    :title="$t('tenant.cachePolicy.title')"
+  >
+    <template #actions>
+      <ElButton
+        v-roles="ROLES_BIZ"
+        :loading="saving"
+        type="primary"
+        @click="handleSave"
+      >
+        {{ $t("common.actions.save") }}
+      </ElButton>
+    </template>
+
+    <CommonSettingRow
+      mode="inline"
+      mobile-stack
+      :label="$t('tenant.cachePolicy.fields.enabled')"
+    >
+      <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
+    </CommonSettingRow>
+    <CommonSettingRow
+      mode="inline"
+      mobile-stack
+      :label="$t('tenant.cachePolicy.fields.isolated')"
+    >
+      <ElSwitch
+        v-model="form.tenant_isolated"
+        :disabled="!form.enabled || !canWriteBusiness"
+      />
+    </CommonSettingRow>
+    <CommonSettingRow
+      mode="inline"
+      mobile-stack
+      :label="$t('tenant.cachePolicy.fields.ttl')"
+    >
+      <ElInputNumber
+        v-model="form.default_ttl"
+        :min="0"
+        :disabled="!canWriteBusiness"
+        class="cache-input-number"
+      />
+    </CommonSettingRow>
+    <CommonSettingRow
+      mode="inline"
+      mobile-stack
+      :label="$t('tenant.cachePolicy.fields.maxSize')"
+    >
+      <ElInputNumber
+        v-model="form.max_cache_size"
+        :min="0"
+        :disabled="!canWriteBusiness"
+        class="cache-input-number"
+      />
+    </CommonSettingRow>
+
+    <CommonSettingRow mode="block">
+      <template #label>
+        <div class="table-row-label">
+          <span>{{ $t("tenant.cachePolicy.warmupList") }}</span>
           <ElButton
             v-roles="ROLES_BIZ"
-            :loading="saving"
+            link
             type="primary"
-            @click="handleSave"
+            @click="addWarmupKey"
           >
-            {{ $t("common.actions.save") }}
+            <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
+            {{ $t("tenant.cachePolicy.newWarmupKeyPlaceholder") }}
           </ElButton>
+        </div>
+      </template>
+      <ArtTable
+        :data="warmupKeysList"
+        :columns="warmupKeysColumns"
+        border
+        stripe
+        empty-height="auto"
+        class="inline-edit-table"
+      >
+        <template #key="{ row }">
+          <ElInput
+            v-model="row.key"
+            :placeholder="$t('tenant.cachePolicy.fields.warmupKeys')"
+            :disabled="!canWriteBusiness"
+          />
         </template>
-      </SurfaceCardHeader>
-    </template>
-
-    <div v-if="loading" v-loading="loading" class="loading-state" />
-
-    <template v-else>
-      <ElForm :model="form" label-position="top" class="strategy-form">
-        <div class="switch-banner-panel">
-          <div class="switch-label">
-            <span>{{ $t("tenant.cachePolicy.fields.enabled") }}</span>
-          </div>
-          <CommonSwitchRow>
-            <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
-            <span class="switch-text ml-2">
-              {{
-                form.enabled
-                  ? $t("rateLimit.enabledOn")
-                  : $t("rateLimit.enabledOff")
-              }}
-            </span>
-          </CommonSwitchRow>
-        </div>
-
-        <div class="switch-banner-panel">
-          <div class="switch-label">
-            <span>{{ $t("tenant.cachePolicy.fields.isolated") }}</span>
-          </div>
-          <CommonSwitchRow>
-            <ElSwitch v-model="form.tenant_isolated" :disabled="!form.enabled || !canWriteBusiness" />
-            <span class="switch-text ml-2">
-              {{
-                form.tenant_isolated
-                  ? $t("rateLimit.enabledOn")
-                  : $t("rateLimit.enabledOff")
-              }}
-            </span>
-          </CommonSwitchRow>
-        </div>
-
-        <div class="settings-panel mb-4">
-          <div class="form-row-grid">
-
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("tenant.cachePolicy.fields.ttl") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber v-model="form.default_ttl" :min="0" :disabled="!canWriteBusiness" />
-              </div>
-            </div>
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("tenant.cachePolicy.fields.maxSize") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber v-model="form.max_cache_size" :min="0" :disabled="!canWriteBusiness" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section-block">
-          <div class="section-actions-row">
-            <span class="section-title-label">{{
-              $t("tenant.cachePolicy.warmupList")
-            }}</span>
+        <template #operations="{ $index }">
+          <TableActionRow>
             <ElButton
               v-roles="ROLES_BIZ"
               link
-              type="primary"
-              @click="addWarmupKey"
+              type="danger"
+              @click="removeWarmupKey($index)"
             >
-              <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-              {{ $t("tenant.cachePolicy.newWarmupKeyPlaceholder") }}
+              <ArtSvgIcon icon="ri:delete-bin-line" />
             </ElButton>
-          </div>
+          </TableActionRow>
+        </template>
+      </ArtTable>
+    </CommonSettingRow>
 
-          <ArtTable
-            :data="warmupKeysList"
-            :columns="warmupKeysColumns"
-            border
-            stripe
-            empty-height="auto"
-            class="warmup-table"
+    <CommonSettingRow mode="block">
+      <template #label>
+        <div class="table-row-label">
+          <span>{{ $t("tenant.cachePolicy.apiOverrides") }}</span>
+          <ElButton
+            v-roles="ROLES_BIZ"
+            link
+            type="primary"
+            @click="addOverride"
           >
-            <template #key="{ row }">
-              <ElInput
-                v-model="row.key"
-                :placeholder="$t('tenant.cachePolicy.fields.warmupKeys')"
-                :disabled="!canWriteBusiness"
-              />
-            </template>
-            <template #operations="{ $index }">
-              <TableActionRow>
-                <ElButton
-                  v-roles="ROLES_BIZ"
-                  link
-                  type="danger"
-                  @click="removeWarmupKey($index)"
-                >
-                  <ArtSvgIcon icon="ri:delete-bin-line" />
-                </ElButton>
-              </TableActionRow>
-            </template>
-          </ArtTable>
+            <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
+            {{ $t("tenant.cachePolicy.addRule") }}
+          </ElButton>
         </div>
-
-        <div class="form-section-block">
-          <div class="section-actions-row">
-            <span class="section-title-label">{{
-              $t("tenant.cachePolicy.apiOverrides")
-            }}</span>
+      </template>
+      <ArtTable
+        :data="overrideList"
+        :columns="overrideColumns"
+        border
+        stripe
+        empty-height="auto"
+        class="inline-edit-table"
+      >
+        <template #path="{ row }">
+          <ElInput
+            v-model="row.path"
+            :placeholder="$t('tenant.cachePolicy.apiPathPlaceholder')"
+            :disabled="!canWriteBusiness"
+          />
+        </template>
+        <template #ttl="{ row }">
+          <ElInputNumber
+            v-model="row.ttl"
+            :min="0"
+            :disabled="!canWriteBusiness"
+          >
+            <template #suffix>{{ $t("tenant.cachePolicy.seconds") }}</template>
+          </ElInputNumber>
+        </template>
+        <template #operations="{ $index }">
+          <TableActionRow>
             <ElButton
               v-roles="ROLES_BIZ"
               link
-              type="primary"
-              @click="addOverride"
+              type="danger"
+              @click="removeOverride($index)"
             >
-              <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-              {{ $t("tenant.cachePolicy.addRule") }}
+              <ArtSvgIcon icon="ri:delete-bin-line" />
             </ElButton>
-          </div>
-
-          <ArtTable
-            :data="overrideList"
-            :columns="overrideColumns"
-            border
-            stripe
-            empty-height="auto"
-            class="override-table"
-          >
-            <template #path="{ row }">
-              <ElInput
-                v-model="row.path"
-                :placeholder="$t('tenant.cachePolicy.apiPathPlaceholder')"
-                :disabled="!canWriteBusiness"
-              />
-            </template>
-            <template #ttl="{ row }">
-              <ElInputNumber v-model="row.ttl" :min="0" :disabled="!canWriteBusiness">
-                <template #suffix>{{
-                  $t("tenant.cachePolicy.seconds")
-                }}</template>
-              </ElInputNumber>
-            </template>
-            <template #operations="{ $index }">
-              <TableActionRow>
-                <ElButton
-                  v-roles="ROLES_BIZ"
-                  link
-                  type="danger"
-                  @click="removeOverride($index)"
-                >
-                  <ArtSvgIcon icon="ri:delete-bin-line" />
-                </ElButton>
-              </TableActionRow>
-            </template>
-          </ArtTable>
-        </div>
-      </ElForm>
-    </template>
-  </ElCard>
+          </TableActionRow>
+        </template>
+      </ArtTable>
+    </CommonSettingRow>
+  </SettingsCard>
 </template>
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import type { TenantCacheConfig } from "@/types/api/tenant";
 import { fetchTenantCacheConfig, updateTenantCacheConfig } from "@/api/tenant";
-import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
+import SettingsCard from "@/components/common/settings-card/index.vue";
+import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import { useUserStore } from "@/store/modules/user";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { logger } from "@/utils/sys";
@@ -348,165 +326,29 @@ onMounted(loadData);
 </script>
 
 <style scoped lang="scss">
-.cache-policy-card {
-  height: 100%;
+.cache-input-number {
+  width: 180px;
+}
 
-  .strategy-form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 10px;
-  }
+.table-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 
-  .switch-banner-panel {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: var(--el-fill-color-blank);
-    border: 1px solid var(--el-border-color-light);
-    border-radius: var(--custom-radius);
-    padding: 12px 16px;
-    transition: all 0.2s ease;
+.inline-edit-table {
+  width: 100%;
 
-    &:hover {
-      border-color: var(--el-border-color-hover);
-    }
-
-    .switch-label {
-      display: flex;
-      align-items: center;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-
-    .switch-text {
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .header-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    font-size: 16px;
-  }
-
-  .header-icon {
-    font-size: 20px;
-    color: var(--el-color-primary);
-  }
-
-  .settings-panel {
-    // Flat section inside the card: no nested bordered/gray box.
+  :deep(.el-input__wrapper) {
+    box-shadow: none !important;
     background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 4px 0 0;
-  }
-
-  .form-row-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .form-row-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    height: 32px;
-
-    .form-row-label {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--el-text-color-regular);
-      display: flex;
-      align-items: center;
-      white-space: nowrap;
-    }
-
-    .form-row-content {
-      flex: 1;
-      max-width: 180px;
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-
-      :deep(.el-input-number) {
-        width: 100%;
-        min-width: 120px;
-      }
-
-      &.align-right {
-        justify-content: flex-end;
-      }
-    }
-
-    &.is-empty {
-      @media (max-width: 768px) {
-        display: none;
-      }
-    }
-  }
-
-  .warmup-table {
-    width: 100%;
-
-    :deep(.el-input__wrapper) {
-      box-shadow: none !important;
-      background: transparent;
-    }
-  }
-
-  .form-section-block {
-    margin-top: 0;
-  }
-
-  .section-actions-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-
-    .section-title-label {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-  }
-
-  .override-table {
-    width: 100%;
-
-    :deep(.el-input__wrapper) {
-      box-shadow: none !important;
-      background: transparent;
-    }
-  }
-
-  .loading-state {
-    height: 200px;
   }
 }
 
 @media (max-width: 768px) {
-  .cache-policy-card {
-    .form-row-grid {
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
-
-    .form-row-item {
-      height: auto;
-
-      .form-row-content {
-        max-width: 160px;
-      }
-    }
+  .cache-input-number {
+    width: 160px;
   }
 }
 </style>

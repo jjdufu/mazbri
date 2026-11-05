@@ -1,11 +1,13 @@
 use super::super::AppState;
 use crate::audit::extract_client_ip;
-use crate::middleware::auth::extract_user_id_response;
+use crate::middleware::auth::{extract_user_id_response, is_admin};
+use crate::response::ApiResponse;
 use crate::services::mfa as svc;
 use crate::services::mfa::Category;
 use axum::{
     Extension,
     extract::{ConnectInfo, State},
+    http::StatusCode,
     response::IntoResponse,
 };
 pub async fn regenerate_backup_codes(
@@ -14,6 +16,10 @@ pub async fn regenerate_backup_codes(
     headers: axum::http::HeaderMap,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
 ) -> axum::response::Response {
+    // 自助重发备用码已取消：仅超管可对本账号调用。
+    if !is_admin(&claims) {
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅超级管理员可重新生成备用码");
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let user_id = match extract_user_id_response(&claims) {
         Ok(uid) => uid,

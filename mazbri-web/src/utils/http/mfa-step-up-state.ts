@@ -46,18 +46,6 @@ export function toClientDeadline(remainingSecs: number, now = Date.now()): numbe
   return now + secs * 1000;
 }
 
-/** 超过 60 分钟仍按分钟累加，例如 3661 → "61:01"。 */
-export function formatMmSs(secs: number): string {
-  const total = Number.isFinite(secs) ? Math.max(0, Math.floor(secs)) : 0;
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-export function isWarning(secs: number): boolean {
-  return Number.isFinite(secs) && secs > 0 && secs <= 120;
-}
-
 function pad2(value: string): string {
   return value.length >= 2 ? value : value.padStart(2, "0");
 }

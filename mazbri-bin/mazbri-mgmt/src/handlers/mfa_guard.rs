@@ -507,6 +507,20 @@ mod tests {
         assert!(
             backup_codes.contains("require_category(") && backup_codes.contains("Category::Mfa")
         );
+        let disable_role = disable
+            .find("仅超级管理员可停用两步验证")
+            .expect("disable role");
+        let disable_mfa = disable
+            .find("require_category(")
+            .expect("disable category");
+        assert!(disable_role < disable_mfa);
+        let backup_role = backup_codes
+            .find("仅超级管理员可重新生成备用码")
+            .expect("backup role");
+        let backup_mfa = backup_codes
+            .find("require_category(")
+            .expect("backup category");
+        assert!(backup_role < backup_mfa);
         let settings_update = handler_source(mfa_settings, "update_mfa_settings");
         assert!(
             settings_update.contains("require_category(")

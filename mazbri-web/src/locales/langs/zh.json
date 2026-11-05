@@ -172,7 +172,7 @@
       "placeholder": "验证码或 8 位备用码",
       "confirm": "确认",
       "cancel": "取消",
-      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类在剩余时间内不用再输。",
+      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，当前这一类短期内不用再输。",
       "categoryLine": "当前类别：{category}",
       "backupHint": "备用码为 8 位，不含 0、1、I、O，将自动转为大写。",
       "invalidFormat": "请输入 {digits} 位数字验证码，或 8 位备用码",
@@ -910,12 +910,9 @@
       "tenantGatewayUrlHint": "租户 API 网关根地址（非管理后台）。",
       "adminEmail": "管理员邮箱",
       "adminEmailPlaceholder": "admin@example.com",
-      "securitySettings": "安全设置",
       "sessionTimeout": "管理端会话超时（分钟，写入 JWT 过期时间）",
-      "maxLoginAttempts": "最大登录尝试次数（次）",
       "saveSettings": "保存设置",
-      "resetToDefault": "重置为默认值",
-      "appearanceSettingsTitle": "外观设置"
+      "resetToDefault": "重置为默认值"
     },
     "theme": {
       "title": "主题设置",
@@ -973,11 +970,11 @@
   },
   "securityPolicy": {
     "actions": {
-      "saveSettings": "保存设置"
+      "savePolicy": "保存策略"
     },
     "sections": {
       "complexity": {
-        "title": "复杂度要求"
+        "title": "密码复杂度"
       },
       "expiration": {
         "title": "过期与复用"
@@ -1023,7 +1020,8 @@
       "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
     },
     "hints": {
-      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。"
+      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。",
+      "lockThreshold": "连续登录失败达到锁定阈值后账号被锁定，锁定时长内无法登录。这是平台唯一生效的登录失败锁定设置（系统配置中不再单独设置）。"
     }
   },
   "channels": {
@@ -2843,11 +2841,6 @@
         "strategy": "传输加密策略",
         "keyVersions": "密钥版本"
       },
-      "formSections": {
-        "basicControl": "基本控制",
-        "security": "安全选项",
-        "timeParams": "时间安全参数"
-      },
       "fields": {
         "encryptionMode": "加密模式",
         "suite": "算法套件",
@@ -3160,7 +3153,6 @@
     },
     "cachePolicy": {
       "title": "代理响应缓存",
-      "globalSettings": "全局缓存配置",
       "apiOverrides": "接口差异配置",
       "warmupList": "数据预热",
       "addRule": "添加规则",
@@ -3230,10 +3222,8 @@
     "seconds": "秒",
     "basicControl": "基础控制",
     "coreThresholds": "核心阈值",
-    "planRateSection": "套餐速率",
-    "planQps": "QPS",
-    "planBurst": "突发",
-    "abuseSection": "滥用防护",
+    "planQps": "套餐 QPS",
+    "planBurst": "套餐突发",
     "clientIpQps": "单 IP QPS",
     "clientIpBurst": "单 IP 突发",
     "bandwidthMbps": "带宽（Mbps，0=不限）",
@@ -3246,8 +3236,6 @@
     "pathPlaceholder": "例如 /posts 或 product:8000000001",
     "overrideExceedsPlan": "接口覆盖「{path}」的 QPS（{limit}）超过套餐速率（{planQps}），请调低后再保存",
     "overrideInvalidLimit": "接口覆盖「{path}」的上限无效",
-    "enabledOn": "开",
-    "enabledOff": "关",
     "clientIpHint": "",
     "bandwidthHint": "",
     "enforcementNotice": "",
@@ -4134,44 +4122,17 @@
   },
   "accountSecurity": {
     "page": {
-      "title": "账号安全",
-      "subtitle": "管理当前账号的两步验证与登录密码；平台安全策略见下方分区"
+      "title": "账号安全"
     },
     "mfa": {
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "description": "敏感操作按类验证。验过的那一类在剩余时间内不用再输，其他类另算。未启用 MFA 的账号不能做这些操作。日常登录和查看不受影响。状态在本页显示。",
+      "hint": "敏感操作需要两步验证，验证通过后一段时间内同类操作不用再输；未启用 MFA 的账号不能做这些操作，日常登录和查看不受影响。同一验证码不能重复使用，连续输错会锁定 MFA，锁定期间已打开的提权都会结束。",
+      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作，普通账号不可自助停用或重新生成备用码。",
       "changedAt": "变更时间",
-      "stepUpExpiry": "到期 {time}",
       "backupCodesRemaining": "剩余备用码",
-      "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。",
-      "categories": {
-        "certificate": "证书",
-        "admin": "管理员",
-        "mfa": "两步验证",
-        "key": "密钥",
-        "finance": "资金",
-        "platform": "平台配置"
-      },
-      "categoryScopes": {
-        "certificate": "签发、续期、吊销、下载完整证书、导入许可证。",
-        "admin": "新建、修改、删除、启停、重置他人密码、强制改密、重置他人 MFA、解除强制绑定 MFA。",
-        "mfa": "关闭自己的 MFA、重新生成备用码、修改发行方、位数、周期和备用码数量。",
-        "key": "租户 API 密钥的创建、修改、吊销；租户加密密钥的配置、创建、轮换、启用、废弃、停用、删除；请求签名密钥的创建、停用；迁移模式导出可恢复密钥。",
-        "finance": "充值、退款、账户调账、出账、异步出账、删除账单、账单调整、作废调整、删除对账差异。",
-        "platform": "配置中心的新建、修改、删除、历史回滚、导入、导出；系统设置；密码策略；上游强制发布、上游回滚；限流控制命令；删除租户。"
-      },
-      "categoryInactive": "未验证",
-      "categoryActive": "已验证，剩余 {time}",
-      "categoryWarning": "即将到期，剩余 {time}",
-      "endCategory": "结束",
-      "endCategoryTitle": "结束{category}验证",
-      "endCategoryConfirm": "结束后，{category}类操作需要重新验证。其他类不受影响。",
-      "endCategoryFailed": "结束这一类验证失败，请稍后重试。",
-      "attemptsHint": "验证码错误会扣减剩余次数。次数用尽后 MFA 将被锁定。",
-      "lockHint": "锁定期间无法验证，已经打开的各类提权都会结束。请在锁定结束后再试。",
-      "replayHint": "同一个验证码不能重复使用。请等待验证器刷新出新码，或改用尚未使用的备用码。"
+      "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。"
     },
     "setup": {
       "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
@@ -4189,7 +4150,7 @@
     "backupCodes": {
       "title": "备用码",
       "hint": "备用码仅显示这一次，每个只能使用一次。格式为 8 位大写字母和数字（不含 0、1、I、O），输入时会自动转为大写。可用于登录，或打开某一类提权窗口。请立即妥善保存。",
-      "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后这一类在剩余时间内不用再输。确定继续吗？"
+      "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后这一类短期内不用再输。确定继续吗？"
     },
     "disable": {
       "title": "停用 MFA",
@@ -4233,9 +4194,7 @@
       "copyFailed": "复制失败，请手动复制"
     },
     "platformPolicy": {
-      "title": "平台安全策略",
-      "description": "密码复杂度、过期与登录防护、平台 TOTP 参数（影响全体用户）",
-      "readOnlyHint": "仅超级管理员可修改平台策略；当前为只读查看",
+      "description": "以下 TOTP 参数、登录保护与密码策略对全体用户生效，修改后点击右上角「保存策略」。",
       "sessionHint": "管理端会话时长由系统配置决定，与本页密码策略相互独立。",
       "sessionLink": "打开系统配置"
     }

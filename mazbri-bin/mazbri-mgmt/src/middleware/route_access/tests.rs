@@ -184,6 +184,17 @@ fn previously_unguarded_routes_are_now_restricted() {
     }
     assert_eq!(access_of("GET", "/settings/user"), Access::SelfService);
     assert_eq!(access_of("PUT", "/settings/user"), Access::SelfService);
+    // 自助停用 / 重发备用码已取消：仅超管可操作（他人解绑走 /admins/{id}/reset-mfa）。
+    assert_eq!(
+        access_of("POST", "/auth/mfa/disable"),
+        Access::Roles(ADMIN)
+    );
+    assert_eq!(
+        access_of("POST", "/auth/mfa/regenerate-codes"),
+        Access::Roles(ADMIN)
+    );
+    assert_eq!(access_of("POST", "/auth/mfa/setup"), Access::SelfService);
+    assert_eq!(access_of("POST", "/auth/mfa/enable"), Access::SelfService);
 }
 
 #[test]

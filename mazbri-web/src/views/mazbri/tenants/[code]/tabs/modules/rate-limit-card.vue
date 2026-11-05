@@ -1,478 +1,435 @@
 <template>
-  <ElCard
+  <SettingsCard
     v-loading="loading"
-    shadow="hover"
-    class="strategy-card rate-limit-card"
+    icon="ri:speed-line"
+    :title="$t('rateLimit.title')"
   >
-    <template #header>
-      <SurfaceCardHeader stack-on-mobile>
-        <template #left>
-          <div class="header-title">
-            <span>{{ $t("rateLimit.title") }}</span>
-          </div>
-        </template>
-        <template #actions>
-          <ElButton
-            v-roles="ROLES_BIZ"
-            type="primary"
-            :loading="saving"
-            @click="handleSave"
-          >
-            {{ $t("common.actions.save") }}
-          </ElButton>
-        </template>
-      </SurfaceCardHeader>
+    <template #actions>
+      <ElButton
+        v-roles="ROLES_BIZ"
+        type="primary"
+        :loading="saving"
+        @click="handleSave"
+      >
+        {{ $t("common.actions.save") }}
+      </ElButton>
     </template>
 
-    <ElForm label-position="top" class="strategy-form">
-      <div class="switch-banner-panel">
-        <div class="switch-label">
-          <span>{{ $t("rateLimit.enablePlan") }}</span>
-        </div>
-        <CommonSwitchRow>
-          <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
-          <span class="switch-text ml-2">
-            {{
-              form.enabled
-                ? $t("rateLimit.enabledOn")
-                : $t("rateLimit.enabledOff")
-            }}
-          </span>
-        </CommonSwitchRow>
+    <CommonSettingRow
+      mode="inline"
+      mobile-stack
+      :label="$t('rateLimit.enablePlan')"
+    >
+      <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
+    </CommonSettingRow>
+    <CommonSettingRow
+      v-roles="ROLES_BIZ"
+      mode="inline"
+      mobile-stack
+      :label="$t('rateLimit.templates.label')"
+    >
+      <div class="template-buttons">
+        <ElButton
+          v-for="tpl in planTemplates"
+          :key="tpl.id"
+          size="small"
+          plain
+          @click="applyTemplate(tpl)"
+        >
+          {{ $t(tpl.nameKey) }}
+        </ElButton>
       </div>
+    </CommonSettingRow>
 
-      <div v-roles="ROLES_BIZ" class="template-bar">
-        <span class="template-label">{{
-          $t("rateLimit.templates.label")
-        }}</span>
-        <div class="template-buttons">
-          <ElButton
-            v-for="tpl in planTemplates"
-            :key="tpl.id"
-            size="small"
-            plain
-            @click="applyTemplate(tpl)"
-          >
-            {{ $t(tpl.nameKey) }}
-          </ElButton>
-        </div>
-      </div>
-
-      <div
-        class="strategy-body-content"
-        :class="{ 'is-disabled': !form.enabled || !canWriteBusiness }"
+    <div
+      class="strategy-body-content"
+      :class="{ 'is-disabled': !form.enabled || !canWriteBusiness }"
+    >
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('rateLimit.planQps')"
       >
-        <div class="settings-panel mb-4">
-          <div class="section-heading">
-            <span class="section-title-label">{{
-              $t("rateLimit.planRateSection")
-            }}</span>
-          </div>
-          <div class="form-row-grid">
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("rateLimit.planQps") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber
-                  v-model="form.max_concurrent"
-                  :min="1"
-                  :step="10"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                  @change="onTenantQpsChange"
-                />
-              </div>
-            </div>
-
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("rateLimit.planBurst") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber
-                  v-model="form.burst_size"
-                  :min="1"
-                  :step="10"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                  @change="onTenantBurstChange"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-panel mb-4">
-          <div class="section-heading">
-            <span class="section-title-label">{{
-              $t("rateLimit.abuseSection")
-            }}</span>
-          </div>
-          <div class="form-row-grid">
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("rateLimit.clientIpQps") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber
-                  v-model="form.client_ip_qps"
-                  :min="1"
-                  :max="form.max_concurrent"
-                  :step="10"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                  @change="markClientIpEdited"
-                />
-              </div>
-            </div>
-
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("rateLimit.clientIpBurst") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber
-                  v-model="form.client_ip_burst"
-                  :min="1"
-                  :max="form.burst_size"
-                  :step="10"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                  @change="markClientIpEdited"
-                />
-              </div>
-            </div>
-
-            <div class="form-row-item">
-              <div class="form-row-label">
-                <span>{{ $t("rateLimit.bandwidthMbps") }}</span>
-              </div>
-              <div class="form-row-content">
-                <ElInputNumber
-                  v-model="form.max_bandwidth_mbps"
-                  :min="0"
-                  :step="10"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section-block collapsible-section">
-          <button
-            type="button"
-            class="collapse-trigger"
-            :disabled="!form.enabled || !canWriteBusiness"
-            @click="apiOverridesExpanded = !apiOverridesExpanded"
-          >
-            <ArtSvgIcon
-              :icon="
-                apiOverridesExpanded
-                  ? 'ri:arrow-down-s-line'
-                  : 'ri:arrow-right-s-line'
-              "
-              class="collapse-icon"
-            />
-            <span class="section-title-label">{{
-              $t("rateLimit.apiOverridesSection")
-            }}</span>
-            <ElTag
-              v-if="apiLimitsList.length > 0"
-              size="small"
-              type="info"
-              class="ml-2"
-            >
-              {{ apiLimitsList.length }}
-            </ElTag>
-          </button>
-
-          <div v-show="apiOverridesExpanded" class="collapse-body">
-            <div class="section-actions-row">
-              <span />
-              <ElButton
-                v-roles="ROLES_BIZ"
-                link
-                type="primary"
-                :disabled="!form.enabled || !canWriteBusiness"
-                @click="addApiLimit"
-              >
-                <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-                {{ $t("rateLimit.addOverride") }}
-              </ElButton>
-            </div>
-
-            <ArtTable
-              :data="apiLimitsList"
-              :columns="apiLimitColumns"
-              border
-              stripe
-              empty-height="auto"
-              class="api-limits-table"
-            >
-              <template #path="{ row }">
-                <ElInput
-                  v-model="row.path"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  :placeholder="$t('rateLimit.pathPlaceholder')"
-                />
-              </template>
-              <template #qps="{ row }">
-                <ElInputNumber
-                  v-model="row.qps"
-                  :min="1"
-                  :max="form.max_concurrent"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                />
-              </template>
-              <template #burst="{ row }">
-                <ElInputNumber
-                  v-model="row.burst"
-                  :min="1"
-                  :max="form.burst_size"
-                  :disabled="!form.enabled || !canWriteBusiness"
-                  class="w-full"
-                />
-              </template>
-              <template #operations="{ $index }">
-                <TableActionRow>
-                  <ElButton
-                    v-roles="ROLES_BIZ"
-                    link
-                    type="danger"
-                    :disabled="!form.enabled || !canWriteBusiness"
-                    @click="removeApiLimit($index)"
-                  >
-                    <ArtSvgIcon icon="ri:delete-bin-line" />
-                  </ElButton>
-                </TableActionRow>
-              </template>
-              <template #empty>
-                <span class="text-secondary">{{
-                  $t("rateLimit.apiOverridesEmpty")
-                }}</span>
-              </template>
-            </ArtTable>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-section-block ops-section collapsible-section">
+        <ElInputNumber
+          v-model="form.max_concurrent"
+          :min="1"
+          :step="10"
+          :disabled="!form.enabled || !canWriteBusiness"
+          class="rate-input-number"
+          @change="onTenantQpsChange"
+        />
+      </CommonSettingRow>
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('rateLimit.planBurst')"
+      >
+        <ElInputNumber
+          v-model="form.burst_size"
+          :min="1"
+          :step="10"
+          :disabled="!form.enabled || !canWriteBusiness"
+          class="rate-input-number"
+          @change="onTenantBurstChange"
+        />
+      </CommonSettingRow>
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('rateLimit.clientIpQps')"
+      >
+        <ElInputNumber
+          v-model="form.client_ip_qps"
+          :min="1"
+          :max="form.max_concurrent"
+          :step="10"
+          :disabled="!form.enabled || !canWriteBusiness"
+          class="rate-input-number"
+          @change="markClientIpEdited"
+        />
+      </CommonSettingRow>
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('rateLimit.clientIpBurst')"
+      >
+        <ElInputNumber
+          v-model="form.client_ip_burst"
+          :min="1"
+          :max="form.burst_size"
+          :step="10"
+          :disabled="!form.enabled || !canWriteBusiness"
+          class="rate-input-number"
+          @change="markClientIpEdited"
+        />
+      </CommonSettingRow>
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('rateLimit.bandwidthMbps')"
+      >
+        <ElInputNumber
+          v-model="form.max_bandwidth_mbps"
+          :min="0"
+          :step="10"
+          :disabled="!form.enabled || !canWriteBusiness"
+          class="rate-input-number"
+        />
+      </CommonSettingRow>
+      <div class="collapsible-section">
         <button
           type="button"
           class="collapse-trigger"
-          @click="opsExpanded = !opsExpanded"
+          :disabled="!form.enabled || !canWriteBusiness"
+          @click="apiOverridesExpanded = !apiOverridesExpanded"
         >
           <ArtSvgIcon
             :icon="
-              opsExpanded ? 'ri:arrow-down-s-line' : 'ri:arrow-right-s-line'
-            "
-            class="collapse-icon"
-          />
-          <span class="section-title-label">{{
-            $t("rateLimit.opsTitle")
-          }}</span>
-          <ElTag
-            v-if="activeCommandCount > 0"
-            size="small"
-            type="warning"
-            class="ml-2"
-          >
-            {{ activeCommandCount }}
-          </ElTag>
-        </button>
-
-        <div v-show="opsExpanded" class="collapse-body">
-          <div class="section-actions-row">
-            <span />
-            <ElButton
-              link
-              type="primary"
-              :loading="commandsLoading"
-              @click="loadCommands"
-            >
-              <ArtSvgIcon icon="ri:refresh-line" class="mr-1" />
-              {{ $t("common.actions.refresh") }}
-            </ElButton>
-          </div>
-
-          <div
-            v-roles="ROLES_BIZ"
-            class="ops-actions-panel mb-4"
-          >
-            <div class="ops-action-row">
-              <ElInputNumber
-                v-model="denyMinutes"
-                :min="1"
-                :max="1440"
-                :step="5"
-                class="ops-input"
-              />
-              <span class="ops-label">{{
-                $t("rateLimit.denyForMinutes")
-              }}</span>
-              <ElButton
-                type="danger"
-                plain
-                :loading="opsBusy"
-                @click="handleIssueDeny"
-              >
-                {{ $t("rateLimit.issueDeny") }}
-              </ElButton>
-            </div>
-            <div class="ops-action-row">
-              <ElInputNumber
-                v-model="quotaMultiplier"
-                :min="0.1"
-                :max="10"
-                :step="0.1"
-                :precision="1"
-                class="ops-input"
-              />
-              <span class="ops-label">{{
-                $t("rateLimit.quotaMultiplier")
-              }}</span>
-              <ElInputNumber
-                v-model="quotaExpiresMinutes"
-                :min="1"
-                :max="10080"
-                :step="10"
-                class="ops-input"
-              />
-              <span class="ops-label">{{
-                $t("rateLimit.expiresInMinutes")
-              }}</span>
-              <ElButton
-                type="warning"
-                plain
-                :loading="opsBusy"
-                @click="handleIssueQuota"
-              >
-                {{ $t("rateLimit.issueQuota") }}
-              </ElButton>
-            </div>
-            <div class="ops-action-row">
-              <ElInput
-                v-model="commandReason"
-                :placeholder="$t('rateLimit.reason')"
-                class="ops-reason"
-                clearable
-              />
-              <ElButton
-                type="primary"
-                plain
-                :loading="opsBusy"
-                @click="handleIssueRefresh"
-              >
-                {{ $t("rateLimit.issueRefresh") }}
-              </ElButton>
-            </div>
-          </div>
-
-          <ArtTable
-            v-loading="commandsLoading"
-            :data="commands"
-            :columns="commandColumns"
-            border
-            stripe
-            empty-height="auto"
-            class="commands-table"
-          >
-            <template #command_type="{ row }">
-              {{ commandTypeLabel(row.command_type) }}
-            </template>
-            <template #status="{ row }">
-              <ElTag
-                :type="row.status === 'active' ? 'success' : 'info'"
-                size="small"
-              >
-                {{
-                  row.status === "active"
-                    ? $t("rateLimit.statusActive")
-                    : $t("rateLimit.statusExpired")
-                }}
-              </ElTag>
-            </template>
-            <template #expires_at="{ row }">
-              {{ formatTime(row.expires_at) }}
-            </template>
-            <template #created_at="{ row }">
-              {{ formatTime(row.created_at) }}
-            </template>
-            <template #operations="{ row }">
-              <TableActionRow>
-                <ElButton
-                  v-if="row.status === 'active'"
-                  v-roles="ROLES_BIZ"
-                  link
-                  type="danger"
-                  :loading="opsBusy"
-                  @click="handleCancelCommand(row)"
-                >
-                  {{ $t("rateLimit.cancelCommand") }}
-                </ElButton>
-              </TableActionRow>
-            </template>
-            <template #empty>
-              <span class="text-secondary">{{
-                $t("rateLimit.noCommands")
-              }}</span>
-            </template>
-          </ArtTable>
-        </div>
-      </div>
-
-      <div class="form-section-block collapsible-section">
-        <button
-          type="button"
-          class="collapse-trigger"
-          @click="reasonGuideExpanded = !reasonGuideExpanded"
-        >
-          <ArtSvgIcon
-            :icon="
-              reasonGuideExpanded
+              apiOverridesExpanded
                 ? 'ri:arrow-down-s-line'
                 : 'ri:arrow-right-s-line'
             "
             class="collapse-icon"
           />
           <span class="section-title-label">{{
-            $t("rateLimit.reasons.title")
+            $t("rateLimit.apiOverridesSection")
           }}</span>
+          <ElTag
+            v-if="apiLimitsList.length > 0"
+            size="small"
+            type="info"
+            class="ml-2"
+          >
+            {{ apiLimitsList.length }}
+          </ElTag>
         </button>
-        <div v-show="reasonGuideExpanded" class="collapse-body">
-          <div class="reason-guide-list">
-            <div
-              v-for="item in reasonGuide"
-              :key="item.reason"
-              class="reason-guide-row"
+
+        <div v-show="apiOverridesExpanded" class="collapse-body">
+          <div class="section-actions-row">
+            <span />
+            <ElButton
+              v-roles="ROLES_BIZ"
+              link
+              type="primary"
+              :disabled="!form.enabled || !canWriteBusiness"
+              @click="addApiLimit"
             >
-              <code class="reason-code">{{ item.reason }}</code>
-              <div class="reason-meta">
-                <span class="reason-talk">{{ $t(item.talkKey) }}</span>
-                <router-link
-                  class="footer-link"
-                  :to="reasonNavLocation(item.target, props.tenantCode)"
+              <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
+              {{ $t("rateLimit.addOverride") }}
+            </ElButton>
+          </div>
+
+          <ArtTable
+            :data="apiLimitsList"
+            :columns="apiLimitColumns"
+            border
+            stripe
+            empty-height="auto"
+            class="api-limits-table"
+          >
+            <template #path="{ row }">
+              <ElInput
+                v-model="row.path"
+                :disabled="!form.enabled || !canWriteBusiness"
+                :placeholder="$t('rateLimit.pathPlaceholder')"
+              />
+            </template>
+            <template #qps="{ row }">
+              <ElInputNumber
+                v-model="row.qps"
+                :min="1"
+                :max="form.max_concurrent"
+                :disabled="!form.enabled || !canWriteBusiness"
+                class="w-full"
+              />
+            </template>
+            <template #burst="{ row }">
+              <ElInputNumber
+                v-model="row.burst"
+                :min="1"
+                :max="form.burst_size"
+                :disabled="!form.enabled || !canWriteBusiness"
+                class="w-full"
+              />
+            </template>
+            <template #operations="{ $index }">
+              <TableActionRow>
+                <ElButton
+                  v-roles="ROLES_BIZ"
+                  link
+                  type="danger"
+                  :disabled="!form.enabled || !canWriteBusiness"
+                  @click="removeApiLimit($index)"
                 >
-                  {{ $t("rateLimit.reasons.goConfig") }}
-                </router-link>
-              </div>
+                  <ArtSvgIcon icon="ri:delete-bin-line" />
+                </ElButton>
+              </TableActionRow>
+            </template>
+            <template #empty>
+              <span class="text-secondary">{{
+                $t("rateLimit.apiOverridesEmpty")
+              }}</span>
+            </template>
+          </ArtTable>
+        </div>
+      </div>
+    </div>
+
+    <div class="collapsible-section">
+      <button
+        type="button"
+        class="collapse-trigger"
+        @click="opsExpanded = !opsExpanded"
+      >
+        <ArtSvgIcon
+          :icon="
+            opsExpanded ? 'ri:arrow-down-s-line' : 'ri:arrow-right-s-line'
+          "
+          class="collapse-icon"
+        />
+        <span class="section-title-label">{{
+          $t("rateLimit.opsTitle")
+        }}</span>
+        <ElTag
+          v-if="activeCommandCount > 0"
+          size="small"
+          type="warning"
+          class="ml-2"
+        >
+          {{ activeCommandCount }}
+        </ElTag>
+      </button>
+
+      <div v-show="opsExpanded" class="collapse-body">
+        <div class="section-actions-row">
+          <span />
+          <ElButton
+            link
+            type="primary"
+            :loading="commandsLoading"
+            @click="loadCommands"
+          >
+            <ArtSvgIcon icon="ri:refresh-line" class="mr-1" />
+            {{ $t("common.actions.refresh") }}
+          </ElButton>
+        </div>
+
+        <div
+          v-roles="ROLES_BIZ"
+          class="ops-actions-panel mb-4"
+        >
+          <div class="ops-action-row">
+            <ElInputNumber
+              v-model="denyMinutes"
+              :min="1"
+              :max="1440"
+              :step="5"
+              class="ops-input"
+            />
+            <span class="ops-label">{{
+              $t("rateLimit.denyForMinutes")
+            }}</span>
+            <ElButton
+              type="danger"
+              plain
+              :loading="opsBusy"
+              @click="handleIssueDeny"
+            >
+              {{ $t("rateLimit.issueDeny") }}
+            </ElButton>
+          </div>
+          <div class="ops-action-row">
+            <ElInputNumber
+              v-model="quotaMultiplier"
+              :min="0.1"
+              :max="10"
+              :step="0.1"
+              :precision="1"
+              class="ops-input"
+            />
+            <span class="ops-label">{{
+              $t("rateLimit.quotaMultiplier")
+            }}</span>
+            <ElInputNumber
+              v-model="quotaExpiresMinutes"
+              :min="1"
+              :max="10080"
+              :step="10"
+              class="ops-input"
+            />
+            <span class="ops-label">{{
+              $t("rateLimit.expiresInMinutes")
+            }}</span>
+            <ElButton
+              type="warning"
+              plain
+              :loading="opsBusy"
+              @click="handleIssueQuota"
+            >
+              {{ $t("rateLimit.issueQuota") }}
+            </ElButton>
+          </div>
+          <div class="ops-action-row">
+            <ElInput
+              v-model="commandReason"
+              :placeholder="$t('rateLimit.reason')"
+              class="ops-reason"
+              clearable
+            />
+            <ElButton
+              type="primary"
+              plain
+              :loading="opsBusy"
+              @click="handleIssueRefresh"
+            >
+              {{ $t("rateLimit.issueRefresh") }}
+            </ElButton>
+          </div>
+        </div>
+
+        <ArtTable
+          v-loading="commandsLoading"
+          :data="commands"
+          :columns="commandColumns"
+          border
+          stripe
+          empty-height="auto"
+          class="commands-table"
+        >
+          <template #command_type="{ row }">
+            {{ commandTypeLabel(row.command_type) }}
+          </template>
+          <template #status="{ row }">
+            <ElTag
+              :type="row.status === 'active' ? 'success' : 'info'"
+              size="small"
+            >
+              {{
+                row.status === "active"
+                  ? $t("rateLimit.statusActive")
+                  : $t("rateLimit.statusExpired")
+              }}
+            </ElTag>
+          </template>
+          <template #expires_at="{ row }">
+            {{ formatTime(row.expires_at) }}
+          </template>
+          <template #created_at="{ row }">
+            {{ formatTime(row.created_at) }}
+          </template>
+          <template #operations="{ row }">
+            <TableActionRow>
+              <ElButton
+                v-if="row.status === 'active'"
+                v-roles="ROLES_BIZ"
+                link
+                type="danger"
+                :loading="opsBusy"
+                @click="handleCancelCommand(row)"
+              >
+                {{ $t("rateLimit.cancelCommand") }}
+              </ElButton>
+            </TableActionRow>
+          </template>
+          <template #empty>
+            <span class="text-secondary">{{
+              $t("rateLimit.noCommands")
+            }}</span>
+          </template>
+        </ArtTable>
+      </div>
+    </div>
+
+    <div class="collapsible-section">
+      <button
+        type="button"
+        class="collapse-trigger"
+        @click="reasonGuideExpanded = !reasonGuideExpanded"
+      >
+        <ArtSvgIcon
+          :icon="
+            reasonGuideExpanded
+              ? 'ri:arrow-down-s-line'
+              : 'ri:arrow-right-s-line'
+          "
+          class="collapse-icon"
+        />
+        <span class="section-title-label">{{
+          $t("rateLimit.reasons.title")
+        }}</span>
+      </button>
+      <div v-show="reasonGuideExpanded" class="collapse-body">
+        <div class="reason-guide-list">
+          <div
+            v-for="item in reasonGuide"
+            :key="item.reason"
+            class="reason-guide-row"
+          >
+            <code class="reason-code">{{ item.reason }}</code>
+            <div class="reason-meta">
+              <span class="reason-talk">{{ $t(item.talkKey) }}</span>
+              <router-link
+                class="footer-link"
+                :to="reasonNavLocation(item.target, props.tenantCode)"
+              >
+                {{ $t("rateLimit.reasons.goConfig") }}
+              </router-link>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="upstream-footer">
-        <span>{{ $t("rateLimit.upstreamFooter") }}</span>
-        <router-link class="footer-link" :to="{ path: '/operations/upstream-supply' }">
-          {{ $t("rateLimit.upstreamFooterLink") }}
-        </router-link>
-      </div>
-    </ElForm>
-  </ElCard>
+    <CommonInlineHint block size="xs">
+      <span>{{ $t("rateLimit.upstreamFooter") }}</span>
+      <router-link
+        class="footer-link"
+        :to="{ path: '/operations/upstream-supply' }"
+      >
+        {{ $t("rateLimit.upstreamFooterLink") }}
+      </router-link>
+    </CommonInlineHint>
+  </SettingsCard>
 </template>
 
 <script setup lang="ts">
@@ -491,8 +448,9 @@ import {
   cancelTenantRateLimitCommand,
 } from "@/api/tenant";
 import { $t } from "@/locales";
-import CommonSwitchRow from "@/components/common/switch-row/index.vue";
-import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
+import SettingsCard from "@/components/common/settings-card/index.vue";
+import CommonSettingRow from "@/components/common/setting-row/index.vue";
+import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import { logger } from "@/utils/sys";
 import { useUserStore } from "@/store/modules/user";
 import { ROLES_BIZ } from "@/utils/ops/roles";
@@ -921,95 +879,27 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.strategy-card {
-  height: 100%;
+.rate-input-number {
+  width: 180px;
 }
 
-:deep(.strategy-card .el-card__header) {
-  padding: 20px 20px 14px;
-}
-
-:deep(.strategy-card .el-card__body) {
-  padding: 0 20px 20px;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.header-icon {
-  font-size: 20px;
-  color: var(--el-color-primary);
-}
-
-.strategy-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.enforcement-notice {
-  margin-bottom: 4px;
-}
-
-.switch-banner-panel {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--custom-radius);
-  padding: 12px 16px;
-  transition: all 0.2s ease;
-
-  &:hover {
-    border-color: var(--el-border-color-hover);
-  }
-
-  .switch-label {
-    display: flex;
-    align-items: center;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-  }
-
-  .switch-text {
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
-  }
-}
-
-.template-bar {
+.template-buttons {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 10px 14px;
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--custom-radius);
+  justify-content: flex-end;
+  gap: 6px;
+}
 
-  .template-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-regular);
-  }
+.strategy-body-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: all 0.3s ease;
 
-  .template-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .template-hint {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
+  &.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+    filter: grayscale(0.2);
   }
 }
 
@@ -1056,83 +946,9 @@ onMounted(() => {
   }
 }
 
-.strategy-body-content {
-  transition: all 0.3s ease;
-
-  &.is-disabled {
-    opacity: 0.55;
-    pointer-events: none;
-    filter: grayscale(0.2);
-  }
-}
-
-.settings-panel {
-  // Flat section inside the card: no nested bordered/gray box.
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 4px 0 0;
-}
-
-.section-heading {
-  margin-bottom: 12px;
-}
-
-.field-hint {
-  margin: -4px 0 8px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
-}
-
-.form-row-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-
-.form-row-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 32px;
-
-  .form-row-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-regular);
-    white-space: nowrap;
-  }
-
-  .form-row-content {
-    flex: 1;
-    max-width: 180px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-
-    :deep(.el-input-number) {
-      width: 100%;
-      min-width: 120px;
-    }
-  }
-
-  &.is-empty {
-    @media (max-width: 768px) {
-      display: none;
-    }
-  }
-}
-
-.form-section-block {
-  margin-top: 0;
-}
-
 .collapsible-section {
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--custom-radius);
-  padding: 0;
   overflow: hidden;
 }
 
@@ -1169,18 +985,10 @@ onMounted(() => {
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
-.ops-section {
-  margin-top: 4px;
-}
-
 .ops-actions-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--el-fill-color-lighter);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--custom-radius);
-  padding: 12px 16px;
 }
 
 .ops-action-row {
@@ -1210,19 +1018,13 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin: 8px 0;
   gap: 8px;
-
-  .section-title-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-  }
 }
 
 .section-title-label {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--el-text-color-primary);
 }
 
@@ -1236,48 +1038,20 @@ onMounted(() => {
   }
 }
 
-.upstream-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 12px 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-lighter);
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--custom-radius);
+.footer-link {
+  margin-left: 4px;
+  color: var(--el-color-primary);
+  font-weight: 500;
+  text-decoration: none;
 
-  .footer-icon {
-    font-size: 16px;
-    color: var(--el-color-primary);
-  }
-
-  .footer-link {
-    color: var(--el-color-primary);
-    font-weight: 500;
-    text-decoration: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
+  &:hover {
+    text-decoration: underline;
   }
 }
 
 @media (max-width: 768px) {
-  .form-row-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .form-row-item {
-    height: auto;
-
-    .form-row-content {
-      max-width: 160px;
-    }
+  .rate-input-number {
+    width: 160px;
   }
 }
 </style>

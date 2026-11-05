@@ -21,7 +21,7 @@ defineOptions({ name: "CommonSettingRow" });
 const props = withDefaults(
   defineProps<{
     label?: string;
-    mode?: "stack" | "inline";
+    mode?: "stack" | "inline" | "block";
     mobileStack?: boolean;
   }>(),
   {
@@ -71,6 +71,17 @@ const rowClasses = computed(() => ({
 }
 
 .common-setting-row--inline .common-setting-row__label {
+  line-height: 1.4;
+}
+
+.common-setting-row--block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.common-setting-row--block .common-setting-row__label {
+  width: auto;
   line-height: 1.4;
 }
 

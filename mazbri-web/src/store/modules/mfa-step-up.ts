@@ -50,7 +50,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
   const mfaRequired = ref(false);
   const totpDigits = ref<6 | 8>(6);
   const serverTime = ref<string | null>(null);
-  const ttlSecs = ref(0);
   const loaded = ref(false);
   const nowMs = ref(Date.now());
   const windows = ref<Record<MfaCategory, CategoryWindow>>(blankWindows());
@@ -119,7 +118,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired.value = Boolean(data.mfa_required);
     totpDigits.value = normalizeDigits(data.totp_digits);
     serverTime.value = data.server_time ?? null;
-    ttlSecs.value = typeof data.ttl_secs === "number" ? data.ttl_secs : 0;
     loaded.value = true;
     const next = blankWindows();
     const seen = new Set<MfaCategory>();
@@ -172,7 +170,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     if (typeof data.totp_digits === "number") {
       totpDigits.value = normalizeDigits(data.totp_digits);
     }
-    if (typeof data.ttl_secs === "number") ttlSecs.value = data.ttl_secs;
     serverTime.value = data.server_time ?? serverTime.value;
     nowMs.value = now;
     scheduleTimers();
@@ -269,13 +266,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     clearTimers();
   }
 
-  function assertEndScope(data: MfaStepUpEndResponse, category?: MfaCategory): void {
-    if (category) {
-      if (data.scope !== "category" || data.category !== category) {
-        throw new Error("unexpected category end response");
-      }
-      return;
-    }
+  function assertEndScope(data: MfaStepUpEndResponse): void {
     if (data.scope !== "all") {
       throw new Error("unexpected step-up end response");
     }
@@ -291,26 +282,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     broadcastChanged();
   }
 
-  async function endCategory(category: MfaCategory): Promise<void> {
-    const ticket = epoch;
-    const { endMfaStepUp } = await import("@/api/auth");
-    const data = await endMfaStepUp(category);
-    assertEndScope(data, category);
-    if (ticket !== epoch) return;
-    windows.value = {
-      ...windows.value,
-      [category]: {
-        active: false,
-        clientDeadline: null,
-        expiresAt: null,
-        reason: "none",
-      },
-    };
-    nowMs.value = Date.now();
-    scheduleTimers();
-    broadcastChanged();
-  }
-
   function reset(): void {
     epoch += 1;
     clearTimers();
@@ -318,7 +289,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired.value = false;
     totpDigits.value = 6;
     serverTime.value = null;
-    ttlSecs.value = 0;
     loaded.value = false;
     clearElevation();
     broadcastChanged();
@@ -376,14 +346,12 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired,
     totpDigits,
     serverTime,
-    ttlSecs,
     loaded,
     nowMs,
     windows,
     refresh,
     stepUp,
     lock,
-    endCategory,
     clearElevation,
     reset,
     remainingNow,

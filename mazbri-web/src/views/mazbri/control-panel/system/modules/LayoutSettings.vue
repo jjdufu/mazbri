@@ -1,45 +1,43 @@
 <template>
-  <div class="layout-settings-body">
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
-      :label="$t('systemSettings.layout.containerWidth')"
-    >
-      <div class="layout-options">
-        <button
-          v-for="option in containerWidthOptions"
-          :key="option.value"
-          type="button"
-          class="layout-option"
-          :class="{ 'is-active': modelValue.containerWidth === option.value }"
-          @click="handleContainerWidthChange(option.value)"
-        >
-          {{ option.label }}
-        </button>
-      </div>
-    </CommonSettingRow>
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
-      :label="$t('systemSettings.layout.boxStyle')"
-    >
-      <div class="layout-options">
-        <button
-          v-for="option in boxStyleOptions"
-          :key="option.type"
-          type="button"
-          class="layout-option"
-          :class="{
-            'is-active':
-              modelValue.boxBorderMode === (option.type === 'border-mode'),
-          }"
-          @click="handleBoxStyleChange(option.type === 'border-mode')"
-        >
-          {{ option.label }}
-        </button>
-      </div>
-    </CommonSettingRow>
-  </div>
+  <CommonSettingRow
+    mode="inline"
+    mobile-stack
+    :label="$t('systemSettings.layout.containerWidth')"
+  >
+    <div class="layout-options">
+      <button
+        v-for="option in containerWidthOptions"
+        :key="option.value"
+        type="button"
+        class="layout-option"
+        :class="{ 'is-active': modelValue.containerWidth === option.value }"
+        @click="handleContainerWidthChange(option.value)"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+  </CommonSettingRow>
+  <CommonSettingRow
+    mode="inline"
+    mobile-stack
+    :label="$t('systemSettings.layout.boxStyle')"
+  >
+    <div class="layout-options">
+      <button
+        v-for="option in boxStyleOptions"
+        :key="option.type"
+        type="button"
+        class="layout-option"
+        :class="{
+          'is-active':
+            modelValue.boxBorderMode === (option.type === 'border-mode'),
+        }"
+        @click="handleBoxStyleChange(option.type === 'border-mode')"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+  </CommonSettingRow>
 </template>
 
 <script setup lang="ts">
@@ -81,28 +79,6 @@ const handleBoxStyleChange = (boxBorderMode: boolean) => {
 </script>
 
 <style scoped lang="scss">
-.layout-settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-:deep(.common-setting-row--inline) {
-  gap: 12px;
-}
-
-:deep(.common-setting-row__label) {
-  width: 110px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-:deep(.common-setting-row__control) {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .layout-options {
   display: flex;
   flex-wrap: wrap;

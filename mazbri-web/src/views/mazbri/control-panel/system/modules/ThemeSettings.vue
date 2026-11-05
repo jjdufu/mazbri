@@ -1,46 +1,44 @@
 <template>
-  <div class="theme-settings-body">
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
-      :label="$t('systemSettings.theme.themeMode')"
-    >
-      <div class="theme-mode-options">
-        <button
-          v-for="option in themeModeOptions"
-          :key="option.value"
-          type="button"
-          class="theme-mode-option"
-          :class="{ 'is-active': modelValue.systemThemeMode === option.value }"
-          @click="handleThemeModeSelect(option.value)"
-        >
-          {{ option.label }}
-        </button>
+  <CommonSettingRow
+    mode="inline"
+    mobile-stack
+    :label="$t('systemSettings.theme.themeMode')"
+  >
+    <div class="theme-mode-options">
+      <button
+        v-for="option in themeModeOptions"
+        :key="option.value"
+        type="button"
+        class="theme-mode-option"
+        :class="{ 'is-active': modelValue.systemThemeMode === option.value }"
+        @click="handleThemeModeSelect(option.value)"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+  </CommonSettingRow>
+  <CommonSettingRow
+    mode="inline"
+    mobile-stack
+    :label="$t('systemSettings.theme.systemThemeColor')"
+  >
+    <div class="color-picker-wrapper">
+      <div
+        v-for="color in mainColors"
+        :key="color"
+        class="color-item"
+        :class="{ 'is-active': modelValue.systemThemeColor === color }"
+        :style="{ background: color }"
+        @click="handleColorSelect(color)"
+      >
+        <ArtSvgIcon
+          v-show="modelValue.systemThemeColor === color"
+          icon="ri:check-fill"
+          class="check-icon"
+        />
       </div>
-    </CommonSettingRow>
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
-      :label="$t('systemSettings.theme.systemThemeColor')"
-    >
-      <div class="color-picker-wrapper">
-        <div
-          v-for="color in mainColors"
-          :key="color"
-          class="color-item"
-          :class="{ 'is-active': modelValue.systemThemeColor === color }"
-          :style="{ background: color }"
-          @click="handleColorSelect(color)"
-        >
-          <ArtSvgIcon
-            v-show="modelValue.systemThemeColor === color"
-            icon="ri:check-fill"
-            class="check-icon"
-          />
-        </div>
-      </div>
-    </CommonSettingRow>
-  </div>
+    </div>
+  </CommonSettingRow>
 </template>
 
 <script setup lang="ts">
@@ -48,7 +46,6 @@ import { useI18n } from "vue-i18n";
 import { computed } from "vue";
 import { SystemThemeEnum } from "@/enums/appEnum";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 const { t } = useI18n();
 interface ThemeSettingsModel {
   systemThemeMode: SystemThemeEnum;
@@ -76,31 +73,6 @@ const handleThemeModeSelect = (mode: SystemThemeEnum) => {
 </script>
 
 <style scoped lang="scss">
-.theme-settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-:deep(.common-setting-row--inline) {
-  gap: 12px;
-}
-
-:deep(.common-setting-row__label) {
-  width: 110px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-:deep(.common-setting-row__control) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-end;
-  width: 100%;
-}
-
 .theme-mode-options {
   display: flex;
   flex-wrap: wrap;

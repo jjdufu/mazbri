@@ -85,7 +85,6 @@ export interface MfaStepUpStatus {
   mfa_enabled: boolean;
   mfa_required: boolean;
   totp_digits: number;
-  ttl_secs: number;
   server_time?: string | null;
   categories: MfaCategoryStatus[];
 }
@@ -101,7 +100,6 @@ export interface MfaStepUpResponse {
   opened_at?: string;
   expires_at?: string;
   remaining_secs: number;
-  ttl_secs: number;
   server_time?: string;
   method?: string;
   totp_digits?: number;

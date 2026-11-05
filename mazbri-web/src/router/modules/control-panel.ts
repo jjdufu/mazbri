@@ -1,4 +1,12 @@
 import type { AppRouteRecord } from "@/types/router";
+import { ROLES_ADMIN, ROLES_ALL } from "@/utils/ops/roles";
+
+/**
+ * 控制面板。
+ * - 父级对全部角色可见，以便 Finance/Viewer 能看到「账号安全」。
+ * - 其余管理子项仍仅 R_ADMIN；侧栏按子项 roles 过滤，非超管不会看到用户/证书等。
+ * - 「账号安全」与隐藏路由 `/account/security` 共用同一页面组件（后者是 MFA setup_path）。
+ */
 export const controlPanelRoutes: AppRouteRecord[] = [
   {
     path: "/control-panel",
@@ -8,9 +16,20 @@ export const controlPanelRoutes: AppRouteRecord[] = [
       title: "menus.mazbri.controlPanel",
       icon: "ri:admin-line",
       order: 30,
-      roles: ["R_ADMIN"],
+      roles: [...ROLES_ALL],
     },
     children: [
+      {
+        path: "account-security",
+        name: "ControlPanelAccountSecurity",
+        component: "/mazbri/account/security/index",
+        meta: {
+          title: "menus.mazbri.accountSecurity",
+          icon: "ri:shield-user-line",
+          keepAlive: false,
+          roles: [...ROLES_ALL],
+        },
+      },
       {
         path: "users",
         name: "UserList",
@@ -19,7 +38,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.userManagement",
           icon: "ri:user-settings-line",
           keepAlive: false,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -31,7 +50,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           icon: "ri:user-line",
           isHide: true,
           keepAlive: true,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -42,7 +61,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.certificateList",
           icon: "ri:award-line",
           keepAlive: false,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -54,7 +73,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           icon: "ri:award-line",
           isHide: true,
           keepAlive: true,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -65,7 +84,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.authorizationManagement",
           icon: "ri:shield-keyhole-line",
           keepAlive: true,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -76,7 +95,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.systemSettings",
           icon: "ri:settings-4-line",
           keepAlive: true,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -87,7 +106,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.auditLogs",
           icon: "ri:file-history-line",
           keepAlive: false,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
       {
@@ -98,7 +117,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.configCenter",
           icon: "ri:settings-3-line",
           keepAlive: false,
-          roles: ["R_ADMIN"],
+          roles: [...ROLES_ADMIN],
         },
       },
     ],

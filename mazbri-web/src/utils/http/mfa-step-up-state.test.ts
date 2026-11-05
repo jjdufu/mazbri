@@ -5,33 +5,10 @@ import {
   classifySubmittedCode,
   emptyCategorySnapshot,
   formatExpiryUtc8,
-  formatMmSs,
   isMfaCategory,
-  isWarning,
   parseBroadcast,
   toClientDeadline,
 } from "./mfa-step-up-state";
-
-test("formatMmSs 按分钟累加，负数当 0", () => {
-  assert.equal(formatMmSs(0), "00:00");
-  assert.equal(formatMmSs(59), "00:59");
-  assert.equal(formatMmSs(60), "01:00");
-  assert.equal(formatMmSs(61), "01:01");
-  assert.equal(formatMmSs(3599), "59:59");
-  assert.equal(formatMmSs(3600), "60:00");
-  assert.equal(formatMmSs(3661), "61:01");
-  assert.equal(formatMmSs(-5), "00:00");
-  assert.equal(formatMmSs(Number.NaN), "00:00");
-});
-
-test("isWarning 边界：大于 0 且不超过 120 秒", () => {
-  assert.equal(isWarning(0), false);
-  assert.equal(isWarning(-1), false);
-  assert.equal(isWarning(1), true);
-  assert.equal(isWarning(120), true);
-  assert.equal(isWarning(121), false);
-  assert.equal(isWarning(Number.NaN), false);
-});
 
 test("六类顺序固定，非法 category 被拒绝", () => {
   assert.deepEqual(MFA_CATEGORIES, [
