@@ -4203,7 +4203,6 @@
     "timeRange": {
       "start": "开始时间",
       "end": "结束时间",
-      "bookmark": "书签区间",
       "presets": {
         "15m": "15 分钟",
         "1h": "1 小时",
@@ -4212,10 +4211,6 @@
         "7d": "7 天",
         "30d": "30 天",
         "custom": "自定义"
-      },
-      "bookmarks": {
-        "loadtest": "压测",
-        "eventReplay": "事件回看"
       }
     },
     "autoRefresh": {
@@ -4228,21 +4223,20 @@
       "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
-      "timeRangeHint": "默认时间窗 6 小时（可改）。第一行 KPI 默认跟随所选时间窗；点「此刻」切到近瞬时（约 60 秒）。曲线、平台统计与产品 TopN 始终跟时间窗。",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
-      "billingOldestAgeHint": "最老待处理 {age} s",
+      "billingOldestAgeHint": "最老待处理 {age} 秒",
       "stats": {
         "qps": "业务 QPS",
         "successRate": "成功率",
         "latency": "P99 时延",
-        "errorRates": "4xx / 5xx 率",
         "circuitOpen": "熔断打开数",
-        "ratelimit": "限流拒绝率",
-        "activeTenants": "活跃租户",
+        "ratelimit": "限流拒绝",
         "billingBacklog": "计费积压",
-        "billingDeadLetters": "计费死信"
+        "error4xx": "4xx 错误率",
+        "error5xx": "5xx 错误率",
+        "enabledTenants": "已启用租户",
+        "proxyConnections": "代理活跃连接"
       },
-      "healthLights": "服务健康灯",
       "openMatrix": "服务健康矩阵",
       "alerts": "活跃告警",
       "alertsFiring": "触发中 {n}",
@@ -4254,15 +4248,15 @@
       "productZeroExpand": "展开零调用产品",
       "productZeroCollapse": "收起",
       "productTopLoadFailed": "加载产品排行失败",
-      "recentAnomalies": "近期异常",
-      "anomalyEmpty": "暂无异常事件",
+      "recentAnomalies": "异常事件",
+      "anomalyEmpty": "所选时间窗内无异常事件",
       "anomalyDetail": "异常详情",
       "anomalyLoadFailed": "加载异常事件失败",
-      "recentChanges": "近 24 小时变更",
-      "changeEmpty": "近 24 小时无变更事件",
+      "recentChanges": "变更与审计事件",
+      "changeEmpty": "所选时间窗内无变更或审计事件",
       "changeDetailTitle": "变更详情",
       "changeDetail": "详情",
-      "changeCharts": "路由/发布趋势",
+      "changeCharts": "路由热更新 / 连接器发布速率",
       "changeLoadFailed": "加载变更事件失败",
       "charts": {
         "qps": "业务 QPS",
@@ -4277,16 +4271,24 @@
         "title": "底座健康",
         "open": "基础设施",
         "loadFailed": "加载底座指标失败",
-        "pg": "PostgreSQL",
-        "redis": "Redis",
         "pipeline": "管道新鲜度",
         "hostCpu": "主机 CPU"
       },
       "noSampleHint": "所选时间窗内无业务流量",
-      "instantWindowHint": "近瞬时 {secs}s（{label}）",
-      "noSampleHintInstant": "近瞬时无业务流量",
-      "rangeWindowHint": "时间窗 {secs}s（{label}）",
-      "nowButton": "此刻"
+      "sections": {
+        "kpi": "关键指标",
+        "realtime": "实时状态",
+        "trend": "趋势",
+        "insight": "洞察"
+      },
+      "followsWindow": "跟随时间窗",
+      "windowSemantics": "跟随时间窗 · {start} – {end}（{label}）",
+      "realtimeNow": "此刻",
+      "realtimeSemantics": "此刻 · 近 {secs} 秒 · 截至 {at}",
+      "realtimeNoSample": "此刻无业务流量",
+      "components": "组件健康",
+      "inventoryHint": "租户共 {total} · 已启用产品 {products}",
+      "billingDeadLetters": "计费死信 {n}"
     },
     "screen": {
       "title": "运营大屏",
@@ -4295,7 +4297,7 @@
         "business": "业务",
         "resource": "资源"
       },
-      "qps": "实时 QPS",
+      "qps": "QPS",
       "successRate": "成功率",
       "p99": "P99 时延",
       "alerts": "活跃告警",
@@ -4307,9 +4309,11 @@
       "supplierSla": "供应商 SLA",
       "geo": "地域热力",
       "topology": "服务拓扑",
-      "resources": "集群水位",
+      "resources": "组件健康",
       "noData": "暂无数据",
-      "exitToDashboard": "返回总览"
+      "exitToDashboard": "返回总览",
+      "lastHour": "近 1 小时",
+      "qpsTrend": "QPS · 近 24 小时"
     },
     "finance": {
       "placeholder": "经营看板",
@@ -4839,16 +4843,21 @@
     },
     "products": {
       "metricReq": "调用量",
-      "metricErr": "错误率",
+      "metricErr": "5xx 错误率",
+      "metricP95": "P95 耗时",
       "metricCost": "成本",
-      "rankTitle": "产品排行",
-      "zeroTitle": "30 天零调用产品",
       "colProduct": "产品",
-      "colReq": "请求",
-      "colPrev": "环比窗",
-      "colErr": "错误率",
-      "colCost": "成本",
-      "colName": "名称"
+      "colReq": "调用量（次）",
+      "colPrev": "上一窗口（次）",
+      "colDelta": "环比",
+      "deltaNew": "新增",
+      "colErr": "5xx 错误率",
+      "colP95": "P95 耗时（ms）",
+      "colCost": "成本（元）",
+      "colName": "名称",
+      "colId": "产品 ID",
+      "rankEmpty": "所选时间窗内无产品调用",
+      "basisNote": "口径：调用日志聚合（≤24 小时按分钟、更长按小时）；错误率仅计 5xx；P95 为调用日志分位，与上方 KPI（网关指标直方图）可能略有差异；上一窗口为紧邻的等长时间窗。"
     },
     "slo": {
       "colName": "名称",
@@ -4887,6 +4896,47 @@
       "billingSubtitle": "漏斗与队列按所选时间窗聚合；同步透传模式无积压语义",
       "alertsSubtitle": "事件 / 规则 / 静默同一骨架；写操作仍按角色裁剪",
       "trafficSubtitle": "RED / 时延 / 错误共享页级时间窗与刷新"
+    },
+    "units": {
+      "perSec": "次/秒",
+      "times": "次",
+      "seconds": "秒",
+      "days": "天",
+      "ms": "ms",
+      "percent": "%"
+    },
+    "components": {
+      "empty": "暂无组件健康数据",
+      "abnormalOf": "{n} 项异常 / 共 {total}",
+      "allHealthy": "全部正常 · 共 {total}",
+      "status": "状态",
+      "version": "版本",
+      "restarts1h": "近 1 小时重启",
+      "cores": "核",
+      "memory": "内存",
+      "group": {
+        "app": "应用服务",
+        "middleware": "中间件",
+        "observability": "可观测性",
+        "other": "其他"
+      },
+      "statusName": {
+        "red": "异常",
+        "yellow": "告警",
+        "unknown": "未知",
+        "green": "正常"
+      },
+      "reason": {
+        "health_check_failed": "健康检查失败",
+        "not_ready": "未就绪",
+        "config_center_disconnected": "配置中心断连",
+        "probe_down": "探活失败",
+        "probe_absent": "无探活数据",
+        "under_replicated": "副本不足",
+        "container_missing": "容器未运行",
+        "recent_restart": "近期重启",
+        "container_metrics_absent": "无容器指标"
+      }
     }
   },
   "layout": {

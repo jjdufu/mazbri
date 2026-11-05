@@ -19,6 +19,10 @@ import {
   OPS_CHART_GRID,
   bindOpsChartResize,
 } from "@/composables/ops/useOpsChartHost";
+import { formatDateTime } from "@/utils/format";
+import { formatAxisTime } from "@/utils/ops/time-range";
+import { localizeUnit } from "@/utils/ops/units";
+import { seriesLegendName } from "@/utils/ops/metric-series";
 
 export interface PointClick {
   /** Unix seconds of the data point nearest to the click. */
@@ -43,6 +47,10 @@ const props = withDefaults(
     annotations?: ChartAnnotation[];
     /** Bound via `@point-click`; when absent the chart is not clickable. */
     onPointClick?: (point: PointClick) => void;
+    /** 所选时间窗（Unix 秒）：x 轴固定为 [start, end]，不随数据点收缩。 */
+    window?: { start: number; end: number } | null;
+    /** y 轴单位覆盖（缺省用后端 unit）。 */
+    unit?: string;
   }>(),
   {
     series: null,
@@ -50,6 +58,8 @@ const props = withDefaults(
     height: "280px",
     annotations: () => [],
     onPointClick: undefined,
+    window: null,
+    unit: undefined,
   },
 );
 
@@ -68,30 +78,39 @@ const emptyText = computed(() => t("ops.charts.empty"));
 
 function buildOption(data: MetricSeries | null): EChartsOption {
   const seriesList = data?.series ?? [];
-  const legend = seriesList.map((s, i) => {
-    const label = Object.values(s.labels || {})
-      .filter(Boolean)
-      .join(" / ");
-    return label || `${data?.label || data?.metric || "series"}#${i + 1}`;
-  });
+  const legend = seriesList.map((s, i) =>
+    seriesLegendName(s, i, seriesList.length, data?.label || data?.metric || ""),
+  );
   const sparse = fewPoints.value;
+  const win = props.window;
+  const spanSecs = win
+    ? win.end - win.start
+    : spanOfPoints(seriesList.flatMap((s) => s.points || []));
+  const unit = localizeUnit(props.unit ?? data?.unit ?? "", t);
   return {
-    tooltip: { trigger: "axis" },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: {
+        label: { formatter: (p: { value: unknown }) => formatDateTime(Number(p.value)) },
+      },
+      valueFormatter: (v: unknown) =>
+        typeof v === "number"
+          ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(v)}${unit ? ` ${unit}` : ""}`
+          : String(v ?? "—"),
+    },
     legend: { data: legend, type: "scroll", top: 0 },
     grid: { ...OPS_CHART_GRID },
     xAxis: {
       type: "time",
+      ...(win ? { min: win.start * 1000, max: win.end * 1000 } : {}),
       axisLabel: {
         hideOverlap: true,
-        formatter: (v: number) => {
-          const d = new Date(v);
-          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-        },
+        formatter: (v: number) => formatAxisTime(v, spanSecs),
       },
     },
     yAxis: {
       type: "value",
-      name: data?.unit || "",
+      name: unit,
       // 单点/稀点禁止 scale 夸张放大；固定从 0 起。
       min: 0,
       scale: false,
@@ -123,6 +142,12 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       return base;
     }),
   };
+}
+
+function spanOfPoints(points: { timestamp: number }[]): number {
+  if (points.length < 2) return 0;
+  const ts = points.map((p) => p.timestamp);
+  return Math.max(...ts) - Math.min(...ts);
 }
 
 /** Maps a click anywhere in the grid to the nearest data point in time (then value). */
@@ -187,7 +212,7 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [props.series, isEmpty.value] as const,
+  () => [props.series, isEmpty.value, props.window, props.unit] as const,
   () => render(),
   { deep: true },
 );

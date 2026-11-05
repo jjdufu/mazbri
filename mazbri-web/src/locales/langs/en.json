@@ -4198,7 +4198,6 @@
     "timeRange": {
       "start": "Start",
       "end": "End",
-      "bookmark": "Bookmark range",
       "presets": {
         "15m": "15m",
         "1h": "1h",
@@ -4207,10 +4206,6 @@
         "7d": "7d",
         "30d": "30d",
         "custom": "Custom"
-      },
-      "bookmarks": {
-        "loadtest": "Load test",
-        "eventReplay": "Event replay"
       }
     },
     "autoRefresh": {
@@ -4223,21 +4218,20 @@
       "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
-      "timeRangeHint": "Default window is 6 hours (your choice is never silently overwritten). First-row KPIs follow the selected range by default; click NOW for a near-instant (~60s) snapshot. Charts, platform stats, and product TopN always follow the picker.",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
-      "billingOldestAgeHint": "Oldest pending {age} s",
+      "billingOldestAgeHint": "Oldest pending {age}s",
       "stats": {
         "qps": "Business QPS",
         "successRate": "Success rate",
         "latency": "P99 latency",
-        "errorRates": "4xx / 5xx rate",
         "circuitOpen": "Open breakers",
         "ratelimit": "Rate-limit denies",
-        "activeTenants": "Active tenants",
         "billingBacklog": "Billing backlog",
-        "billingDeadLetters": "Billing dead letters"
+        "error4xx": "4xx error rate",
+        "error5xx": "5xx error rate",
+        "enabledTenants": "Enabled tenants",
+        "proxyConnections": "Proxy active connections"
       },
-      "healthLights": "Service health lights",
       "openMatrix": "Service health matrix",
       "alerts": "Active alerts",
       "alertsFiring": "Firing {n}",
@@ -4249,15 +4243,15 @@
       "productZeroExpand": "Show zero-call products",
       "productZeroCollapse": "Hide",
       "productTopLoadFailed": "Failed to load product ranking",
-      "recentAnomalies": "Recent anomalies",
-      "anomalyEmpty": "No anomaly events",
+      "recentAnomalies": "Anomaly events",
+      "anomalyEmpty": "No anomaly events in the selected range",
       "anomalyDetail": "Anomaly detail",
       "anomalyLoadFailed": "Failed to load anomalies",
-      "recentChanges": "Changes (last 24h)",
-      "changeEmpty": "No changes in the last 24 hours",
+      "recentChanges": "Change & audit events",
+      "changeEmpty": "No change or audit events in the selected range",
       "changeDetailTitle": "Change detail",
       "changeDetail": "Detail",
-      "changeCharts": "Route / publish trends",
+      "changeCharts": "Route reload / connector publish rate",
       "changeLoadFailed": "Failed to load changes",
       "charts": {
         "qps": "Business QPS",
@@ -4272,16 +4266,24 @@
         "title": "Infra health",
         "open": "Infrastructure",
         "loadFailed": "Failed to load infra strip",
-        "pg": "PostgreSQL",
-        "redis": "Redis",
         "pipeline": "Pipeline freshness",
         "hostCpu": "Host CPU"
       },
       "noSampleHint": "No business traffic in the selected time range",
-      "instantWindowHint": "Near-instant {secs}s ({label})",
-      "noSampleHintInstant": "No business traffic in the near-instant window",
-      "rangeWindowHint": "Time range {secs}s ({label})",
-      "nowButton": "NOW"
+      "sections": {
+        "kpi": "Key metrics",
+        "realtime": "Live status",
+        "trend": "Trends",
+        "insight": "Insights"
+      },
+      "followsWindow": "Follows time range",
+      "windowSemantics": "Follows time range · {start} – {end} ({label})",
+      "realtimeNow": "Now",
+      "realtimeSemantics": "Now · last {secs}s · as of {at}",
+      "realtimeNoSample": "No business traffic right now",
+      "components": "Component health",
+      "inventoryHint": "{total} tenants · {products} enabled products",
+      "billingDeadLetters": "Billing dead letters {n}"
     },
     "screen": {
       "title": "Ops Screen",
@@ -4290,7 +4292,7 @@
         "business": "Business",
         "resource": "Resources"
       },
-      "qps": "Live QPS",
+      "qps": "QPS",
       "successRate": "Success rate",
       "p99": "P99 latency",
       "alerts": "Active alerts",
@@ -4302,9 +4304,11 @@
       "supplierSla": "Supplier SLA",
       "geo": "Geo heatmap",
       "topology": "Topology",
-      "resources": "Cluster capacity",
+      "resources": "Component health",
       "noData": "No data",
-      "exitToDashboard": "Back to overview"
+      "exitToDashboard": "Back to overview",
+      "lastHour": "last 1h",
+      "qpsTrend": "QPS · last 24h"
     },
     "finance": {
       "placeholder": "Finance overview",
@@ -4833,17 +4837,22 @@
       "colDetail": "Detail"
     },
     "products": {
-      "metricReq": "Requests",
-      "metricErr": "Error rate",
+      "metricReq": "Calls",
+      "metricErr": "5xx error rate",
+      "metricP95": "P95 latency",
       "metricCost": "Cost",
-      "rankTitle": "Product rank",
-      "zeroTitle": "Zero-call products (30d)",
       "colProduct": "Product",
-      "colReq": "Reqs",
-      "colPrev": "Prev window",
-      "colErr": "Err%",
-      "colCost": "Cost",
-      "colName": "Name"
+      "colReq": "Calls",
+      "colPrev": "Previous window",
+      "colDelta": "Change",
+      "deltaNew": "New",
+      "colErr": "5xx error rate",
+      "colP95": "P95 latency (ms)",
+      "colCost": "Cost (CNY)",
+      "colName": "Name",
+      "colId": "Product ID",
+      "rankEmpty": "No product calls in the selected range",
+      "basisNote": "Basis: call-log rollups (per minute up to 24h, hourly beyond); error rate counts 5xx only; P95 is a call-log quantile and may differ slightly from the KPI above (gateway histogram); previous window is the adjacent window of equal length."
     },
     "slo": {
       "colName": "Name",
@@ -4882,6 +4891,47 @@
       "billingSubtitle": "Funnel and queues follow the selected window; sync pass-through has no backlog semantics",
       "alertsSubtitle": "Events / rules / silences share one shell; writes stay role-gated",
       "trafficSubtitle": "RED / latency / errors share the page time range and refresh"
+    },
+    "units": {
+      "perSec": "/s",
+      "times": "times",
+      "seconds": "s",
+      "days": "d",
+      "ms": "ms",
+      "percent": "%"
+    },
+    "components": {
+      "empty": "No component health data",
+      "abnormalOf": "{n} abnormal / {total}",
+      "allHealthy": "All healthy · {total}",
+      "status": "Status",
+      "version": "Version",
+      "restarts1h": "Restarts (1h)",
+      "cores": "cores",
+      "memory": "Memory",
+      "group": {
+        "app": "Application services",
+        "middleware": "Middleware",
+        "observability": "Observability",
+        "other": "Other"
+      },
+      "statusName": {
+        "red": "Down",
+        "yellow": "Degraded",
+        "unknown": "Unknown",
+        "green": "Healthy"
+      },
+      "reason": {
+        "health_check_failed": "Health check failed",
+        "not_ready": "Not ready",
+        "config_center_disconnected": "Config center disconnected",
+        "probe_down": "Probe down",
+        "probe_absent": "No probe data",
+        "under_replicated": "Under-replicated",
+        "container_missing": "Container not running",
+        "recent_restart": "Restarted recently",
+        "container_metrics_absent": "No container metrics"
+      }
     }
   },
   "layout": {
