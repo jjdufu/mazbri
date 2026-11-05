@@ -30,11 +30,12 @@ impl ProductService {
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
+                false AS cache_enabled,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
             FROM tenant_products tp
             JOIN products p ON tp.product_id = p.id
-            WHERE tp.tenant_id = $1 AND tp.enabled = true AND p.enabled = true
+                        WHERE tp.tenant_id = $1 AND tp.enabled = true AND p.enabled = true
             ORDER BY tp.created_at DESC
             ",
         )
@@ -78,11 +79,12 @@ impl ProductService {
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
+                false AS cache_enabled,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
             FROM tenant_products tp
             JOIN products p ON tp.product_id = p.id
-            WHERE tp.tenant_id = $1
+                        WHERE tp.tenant_id = $1
               AND p.product_id = $2
               AND tp.enabled = true
               AND p.enabled = true

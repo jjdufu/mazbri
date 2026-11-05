@@ -117,8 +117,7 @@ pub async fn unified_gateway_handler(
     let _conn_guard = ConnectionGuard::new();
     let tenant_id_validation_started_at = Instant::now();
     let tenant_uuid = validate_claims_tenant(&claims, &request_id)?;
-    let tenant_id_validation_ms =
-        mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
+    let tenant_id_validation_ms = mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
     let (req, crypto_profile, request_was_encrypted, crypto_timing) = state
         .proxy_state
         .crypto_state
@@ -154,11 +153,15 @@ pub async fn unified_gateway_handler(
         resolve_product_detail(&ctx, tenant_uuid, tenant_product_detail, &mut timing).await?;
     let fallback_enabled =
         tenant_product_detail.cb_pro_enabled && tenant_product_detail.cb_pro_fallback;
+    let cache_enabled = tenant_product_detail.response_cache.enabled;
     let upstream_started_at = Instant::now();
-    let fetched = fetch_response(&ctx, fallback_enabled, &trace_context, timing.started_at).await?;
+    let fetched = fetch_response(
+        &ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at,
+    )
+    .await?;
     timing.upstream_ms = mazbri_core::num::millis_u64(upstream_started_at.elapsed());
     log_upstream_stage(&ctx, timing.upstream_ms, &fetched);
-    spawn_cache_populate(&ctx, &fetched);
+    spawn_cache_populate(&ctx, &fetched, cache_enabled);
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let response_error = (!(200..300).contains(&status)).then(|| fetched.response.error.clone());
@@ -173,14 +176,8 @@ pub async fn unified_gateway_handler(
         &serialized,
         &fetched,
     );
-    let encrypted_response = encrypt_stage(
-        &ctx,
-        tenant_uuid,
-        &crypto_profile,
-        &serialized,
-        &http_path.0,
-    )
-    .await?;
+    let encrypted_response =
+        encrypt_stage(&ctx, tenant_uuid, &crypto_profile, &serialized, &http_path.0).await?;
     if idempotency_acquired && serialized.success {
         complete_idempotency(&ctx, &serialized).await;
     }
@@ -202,9 +199,7 @@ pub async fn unified_gateway_handler(
     )
     .await;
     let mut response = build_response(http_status, encrypted_response, serialized.bytes)?;
-    response
-        .extensions_mut()
-        .insert(super::rejection_log::AccessLogged);
+    response.extensions_mut().insert(super::rejection_log::AccessLogged);
     Ok(response)
 }
 
@@ -483,17 +478,20 @@ async fn resolve_product_detail(
 async fn fetch_response(
     ctx: &HandlerCtx<'_>,
     fallback_enabled: bool,
+    cache_enabled: bool,
     trace_context: &TraceContext,
     start: Instant,
 ) -> Result<FetchedResponse, ProxyError> {
     let (state, request_id, claims, req) = (ctx.state, ctx.request_id, ctx.claims, ctx.req);
     // H-05: try tenant response cache before upstream (fail-open).
+    // Snapshot gate lives inside try_get_cached_response — disabled = zero RPC.
     let cache_key = super::response_cache::build_proxy_cache_key(req);
     let cache_hit = super::response_cache::try_get_cached_response(
         &state.proxy_state.tarpc_pool,
         &state.proxy_state.services_config.cache,
         &claims.tenant_id,
         &cache_key,
+        cache_enabled,
     )
     .await;
     if let Some(cached) = cache_hit {
@@ -550,8 +548,8 @@ async fn fetch_response(
 }
 
 /// Populate cache after successful upstream (not on cache hits).
-fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse) {
-    if fetched.from_cache {
+fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse, cache_enabled: bool) {
+    if fetched.from_cache || !super::response_cache::should_attempt_cache_rpc(cache_enabled) {
         return;
     }
     let pool = ctx.state.proxy_state.tarpc_pool.clone();
@@ -562,7 +560,13 @@ fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse) {
     let to_cache = fetched.response.clone();
     tokio::spawn(async move {
         super::response_cache::try_put_cached_response(
-            &pool, &endpoint, &tenant_id, &cache_key, &to_cache, &path,
+            &pool,
+            &endpoint,
+            &tenant_id,
+            &cache_key,
+            &to_cache,
+            &path,
+            cache_enabled,
         )
         .await;
     });

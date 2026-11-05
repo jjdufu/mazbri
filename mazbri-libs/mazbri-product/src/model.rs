@@ -318,6 +318,14 @@ pub struct GrantAccessRequest {
     #[serde(default)]
     pub config: Option<TenantProductConfig>,
 }
+/// Tenant response-cache switch for the gateway snapshot gate (off ⇒ skip cache RPC).
+/// `cache_configs` lives in the cache DB, so product queries default this to false;
+/// missing/disabled is the common case the latency fix targets.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TenantResponseCache {
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenantProductDetail {
     pub id: Uuid,
@@ -339,6 +347,9 @@ pub struct TenantProductDetail {
     pub currency: String,
     #[serde(default)]
     pub cb_pro_fallback: bool,
+    /// Tenant-level response cache switch (default off; see `TenantResponseCache`).
+    #[serde(default)]
+    pub response_cache: TenantResponseCache,
     #[serde(default)]
     pub config: TenantProductConfig,
     pub created_at: DateTime<Utc>,

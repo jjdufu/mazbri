@@ -4,6 +4,7 @@ use super::model::{
 };
 pub use super::model::{
     GrantAccessRequest, ProductTenantAccess, TenantProductConfig, TenantProductDetail,
+    TenantResponseCache,
 };
 use crate::ProductConfig;
 use anyhow::{Context, Result};

@@ -17,6 +17,11 @@ use tracing::{debug, warn};
 /// Max body bytes we will put into the tenant response cache.
 const MAX_CACHEABLE_BODY_BYTES: usize = 512 * 1024;
 
+/// Short fail-open timeout for cache get RPC when the snapshot says caching is on.
+/// Kept as a fixed constant (not a new config knob) so a slow/hung cache cannot
+/// add tens of milliseconds to every miss path.
+const CACHE_GET_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(8);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CachedUpstreamResponse {
     pub status: u16,
@@ -126,12 +131,23 @@ pub(crate) fn build_proxy_cache_key(req: &GatewayRequest) -> String {
     format!("proxy:{}", hex::encode(hasher.finalize()))
 }
 
+/// Returns true when the gateway snapshot says the tenant has caching enabled.
+#[must_use]
+pub(crate) fn should_attempt_cache_rpc(cache_enabled: bool) -> bool {
+    cache_enabled
+}
+
 pub(crate) async fn try_get_cached_response(
     pool: &TarpcClientPool,
     endpoint: &ServiceEndpoint,
     tenant_id: &str,
     cache_key: &str,
+    cache_enabled: bool,
 ) -> Option<CachedUpstreamResponse> {
+    // Snapshot gate: disabled / missing cache_configs → zero RPC.
+    if !should_attempt_cache_rpc(cache_enabled) {
+        return None;
+    }
     let client = match pool.get_cache_client(endpoint.url()).await {
         Ok(c) => c,
         Err(e) => {
@@ -139,19 +155,24 @@ pub(crate) async fn try_get_cached_response(
             return None;
         }
     };
-    let response = match client
-        .get(
-            tarpc::context::current(),
-            CacheGetRequest {
-                tenant_id: tenant_id.to_string(),
-                key: cache_key.to_string(),
-            },
-        )
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
+    let get_fut = client.get(
+        tarpc::context::current(),
+        CacheGetRequest {
+            tenant_id: tenant_id.to_string(),
+            key: cache_key.to_string(),
+        },
+    );
+    let response = match tokio::time::timeout(CACHE_GET_TIMEOUT, get_fut).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => {
             debug!(error = %e, "Proxy response cache get: RPC failed (fail-open)");
+            return None;
+        }
+        Err(_) => {
+            debug!(
+                timeout_ms = CACHE_GET_TIMEOUT.as_millis(),
+                "Proxy response cache get: timed out (fail-open)"
+            );
             return None;
         }
     };
@@ -178,7 +199,11 @@ pub(crate) async fn try_put_cached_response(
     cache_key: &str,
     response: &UpstreamResponse,
     path: &str,
+    cache_enabled: bool,
 ) {
+    if !should_attempt_cache_rpc(cache_enabled) {
+        return;
+    }
     let Some(payload) = CachedUpstreamResponse::from_upstream(response) else {
         return;
     };
@@ -224,5 +249,35 @@ pub(crate) async fn try_put_cached_response(
         Err(e) => {
             debug!(error = %e, path = %path, "Proxy response cache set: RPC failed (fail-open)");
         }
+    }
+}
+
+
+#[cfg(test)]
+mod skip_disabled_cache_tests {
+    use super::should_attempt_cache_rpc;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn disabled_snapshot_skips_cache_rpc() {
+        assert!(!should_attempt_cache_rpc(false));
+        assert!(should_attempt_cache_rpc(true));
+    }
+
+    #[tokio::test]
+    async fn cache_get_timeout_fail_opens_within_budget() {
+        let started = Instant::now();
+        let hanging = async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            "never"
+        };
+        let result = tokio::time::timeout(super::CACHE_GET_TIMEOUT, hanging).await;
+        assert!(result.is_err(), "hanging get must time out");
+        assert!(
+            started.elapsed() < Duration::from_millis(50),
+            "fail-open timeout must stay near {} ms, elapsed={:?}",
+            super::CACHE_GET_TIMEOUT.as_millis(),
+            started.elapsed()
+        );
     }
 }

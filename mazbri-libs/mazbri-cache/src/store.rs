@@ -9,12 +9,25 @@ use mazbri_core::CoreError;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::redis::{RedisClient, sha256_hex};
 use serde::{Deserialize, Serialize};
+use dashmap::DashMap;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tracing::Instrument;
 use uuid::Uuid;
 
 const SHARED_MEMORY_NAMESPACE: &str = "__shared__";
+
+/// Short TTL for per-tenant `cache_configs` resolution (including negative cache).
+const CONFIG_RESOLVE_CACHE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone)]
+struct CachedTenantConfig {
+    config: CacheConfig,
+    enabled: bool,
+    fetched_at: Instant,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RedisCacheEnvelope {
@@ -55,6 +68,10 @@ pub struct RedisCache {
     config: Arc<CacheConfig>,
     memory_cache: Arc<MemoryCache>,
     redis: RedisClient,
+    /// Per-tenant `cache_configs` snapshot, including negative (`enabled=false`) entries.
+    config_resolve_cache: Arc<DashMap<String, CachedTenantConfig>>,
+    /// How many times `resolve_config` actually queried Postgres (for tests / diagnostics).
+    config_db_fetches: Arc<AtomicU64>,
 }
 
 impl RedisCache {
@@ -82,7 +99,20 @@ impl RedisCache {
             config: Arc::new(config),
             memory_cache,
             redis,
+            config_resolve_cache: Arc::new(DashMap::new()),
+            config_db_fetches: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Drop a tenant's resolved `cache_configs` entry so the next call reloads from Postgres.
+    pub fn invalidate_config_cache(&self, tenant_id: &str) {
+        self.config_resolve_cache.remove(tenant_id);
+    }
+
+    /// Number of Postgres fetches performed by `resolve_config` (includes negative-cache fills).
+    #[must_use]
+    pub fn config_db_fetch_count(&self) -> u64 {
+        self.config_db_fetches.load(Ordering::Relaxed)
     }
 
     fn memory_namespace<'a>(config: &CacheConfig, tenant_id: &'a str) -> &'a str {
@@ -97,6 +127,29 @@ impl RedisCache {
         &self,
         tenant_id: &str,
     ) -> Result<(CacheConfig, bool), mazbri_core::CoreError> {
+        if let Some(entry) = self.config_resolve_cache.get(tenant_id)
+            && entry.fetched_at.elapsed() < CONFIG_RESOLVE_CACHE_TTL
+        {
+            return Ok((entry.config.clone(), entry.enabled));
+        }
+
+        let resolved = self.fetch_config_from_db(tenant_id).await?;
+        self.config_resolve_cache.insert(
+            tenant_id.to_string(),
+            CachedTenantConfig {
+                config: resolved.0.clone(),
+                enabled: resolved.1,
+                fetched_at: Instant::now(),
+            },
+        );
+        Ok(resolved)
+    }
+
+    async fn fetch_config_from_db(
+        &self,
+        tenant_id: &str,
+    ) -> Result<(CacheConfig, bool), mazbri_core::CoreError> {
+        self.config_db_fetches.fetch_add(1, Ordering::Relaxed);
         let Ok(tenant_uuid) = Uuid::parse_str(tenant_id) else {
             return Ok(((*self.config).clone(), true));
         };
@@ -111,6 +164,7 @@ impl RedisCache {
         .fetch_optional(&*self.db)
         .await?;
         // No tenant cache_configs row → caching disabled (config is the control plane switch).
+        // Negative-cached by the caller so every request does not hit Postgres.
         let Some(row) = row else {
             return Ok(((*self.config).clone(), false));
         };
@@ -546,4 +600,64 @@ pub struct CacheStats {
     pub total_entries: u64,
     pub total_size: u64,
     pub expired_entries: u64,
+}
+
+
+#[cfg(test)]
+mod resolve_config_cache_tests {
+    use super::*;
+
+    async fn test_cache() -> RedisCache {
+        let redis = RedisClient::connect("redis://127.0.0.1:6379")
+            .await
+            .expect("connect local redis for unit test");
+        // Lazy pool: resolve_config cache-hit path never opens a DB connection.
+        let db = PgPool::connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .expect("lazy pool");
+        RedisCache::with_client(Arc::new(db), CacheConfig::default(), redis)
+    }
+
+    #[tokio::test]
+    async fn negative_cache_avoids_second_db_fetch() {
+        let cache = test_cache().await;
+        let tenant = "00000000-0000-0000-0000-000000000001";
+
+        // Seed negative cache as if DB said "no row / disabled".
+        cache.config_resolve_cache.insert(
+            tenant.to_string(),
+            CachedTenantConfig {
+                config: CacheConfig::default(),
+                enabled: false,
+                fetched_at: Instant::now(),
+            },
+        );
+        let before = cache.config_db_fetch_count();
+        let (_cfg, enabled) = cache.resolve_config(tenant).await.expect("resolve");
+        assert!(!enabled, "negative cache must report disabled");
+        assert_eq!(
+            cache.config_db_fetch_count(),
+            before,
+            "cache hit must not query Postgres"
+        );
+
+        let _ = cache.resolve_config(tenant).await.expect("resolve again");
+        assert_eq!(cache.config_db_fetch_count(), before);
+    }
+
+    #[tokio::test]
+    async fn invalidate_forces_reload_path() {
+        let cache = test_cache().await;
+        let tenant = "00000000-0000-0000-0000-000000000002";
+        cache.config_resolve_cache.insert(
+            tenant.to_string(),
+            CachedTenantConfig {
+                config: CacheConfig::default(),
+                enabled: true,
+                fetched_at: Instant::now(),
+            },
+        );
+        assert!(cache.config_resolve_cache.contains_key(tenant));
+        cache.invalidate_config_cache(tenant);
+        assert!(!cache.config_resolve_cache.contains_key(tenant));
+    }
 }
