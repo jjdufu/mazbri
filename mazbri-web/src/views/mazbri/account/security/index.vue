@@ -197,52 +197,61 @@
                 <span>{{ $t("accountSecurity.password.title") }}</span>
               </div>
             </template>
+            <template #actions>
+              <ElButton
+                type="primary"
+                :loading="passwordLoading"
+                @click="handleChangePassword"
+              >
+                {{ $t("accountSecurity.actions.changePassword") }}
+              </ElButton>
+            </template>
           </SurfaceCardHeader>
         </template>
 
-        <ElForm
-          ref="passwordFormRef"
-          :model="passwordForm"
-          :rules="passwordRules"
-          label-position="left"
-          label-width="140px"
-          class="password-form"
-          require-asterisk-position="right"
-          @submit.prevent="handleChangePassword"
-        >
-          <ElFormItem
+        <div class="settings-panel">
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
             :label="$t('accountSecurity.password.current')"
-            prop="current_password"
           >
             <ElInput
               v-model="passwordForm.current_password"
               type="password"
               show-password
               autocomplete="current-password"
+              class="password-input"
+              @keyup.enter="handleChangePassword"
             />
-          </ElFormItem>
-          <ElFormItem
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
             :label="$t('accountSecurity.password.new')"
-            prop="new_password"
           >
             <ElInput
               v-model="passwordForm.new_password"
               type="password"
               show-password
               autocomplete="new-password"
+              class="password-input"
+              @keyup.enter="handleChangePassword"
             />
-          </ElFormItem>
-          <ElFormItem
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
             :label="$t('accountSecurity.password.confirm')"
-            prop="confirm_password"
           >
             <ElInput
               v-model="passwordForm.confirm_password"
               type="password"
               show-password
               autocomplete="new-password"
+              class="password-input"
+              @keyup.enter="handleChangePassword"
             />
-          </ElFormItem>
+          </CommonSettingRow>
           <div v-if="!isAdmin" class="password-policy-summary">
             <div class="password-policy-summary__title">
               {{ $t("accountSecurity.password.summaryTitle") }}
@@ -259,31 +268,10 @@
               {{ $t("accountSecurity.password.policyHint") }}
             </CommonInlineHint>
           </div>
-          <div class="card-actions">
-            <ElButton
-              type="primary"
-              native-type="submit"
-              :loading="passwordLoading"
-            >
-              {{ $t("accountSecurity.actions.changePassword") }}
-            </ElButton>
-          </div>
-        </ElForm>
+        </div>
       </ElCard>
 
-      <section v-if="isAdmin" id="platform-policy" class="policy-block">
-        <div class="policy-block__intro">
-          <div class="card-header-title">
-            <ArtSvgIcon
-              icon="ri:shield-keyhole-line"
-              class="card-header-icon"
-            />
-            <span>{{ $t("accountSecurity.platformPolicy.title") }}</span>
-          </div>
-          <CommonInlineHint block size="xs">
-            {{ $t("accountSecurity.platformPolicy.description") }}
-          </CommonInlineHint>
-        </div>
+      <div v-if="isAdmin" id="platform-policy" class="policy-block">
         <PlatformSecurityPolicyCards />
         <div class="policy-block__footnote">
           <CommonInlineHint block size="xs">
@@ -297,7 +285,7 @@
             </button>
           </CommonInlineHint>
         </div>
-      </section>
+      </div>
     </div>
   </ControlPanelPageShell>
 </template>
@@ -315,8 +303,6 @@ import { useRoute, useRouter } from "vue-router";
 import {
   ElMessage,
   ElMessageBox,
-  type FormInstance,
-  type FormRules,
 } from "element-plus";
 import QrcodeVue from "qrcode.vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
@@ -551,52 +537,43 @@ async function handleDisable(): Promise<void> {
   });
 }
 
-const passwordFormRef = ref<FormInstance>();
 const passwordForm = reactive<ChangePasswordRequest>({
   current_password: "",
   new_password: "",
   confirm_password: "",
 });
-const passwordRules: FormRules<ChangePasswordRequest> = {
-  current_password: [
-    {
-      required: true,
-      message: $t("accountSecurity.password.currentRequired"),
-      trigger: "blur",
-    },
-  ],
-  new_password: [
-    {
-      required: true,
-      message: $t("accountSecurity.password.newRequired"),
-      trigger: "blur",
-    },
-  ],
-  confirm_password: [
-    {
-      required: true,
-      message: $t("accountSecurity.password.confirmRequired"),
-      trigger: "blur",
-    },
-    {
-      validator: (_rule, value, callback) => {
-        if (value && value !== passwordForm.new_password) {
-          callback(new Error($t("accountSecurity.password.mismatch")));
-        } else {
-          callback();
-        }
-      },
-      trigger: "blur",
-    },
-  ],
-};
+
+function validatePasswordForm(): string | null {
+  if (!passwordForm.current_password.trim()) {
+    return $t("accountSecurity.password.currentRequired");
+  }
+  if (!passwordForm.new_password.trim()) {
+    return $t("accountSecurity.password.newRequired");
+  }
+  if (!passwordForm.confirm_password.trim()) {
+    return $t("accountSecurity.password.confirmRequired");
+  }
+  if (passwordForm.confirm_password !== passwordForm.new_password) {
+    return $t("accountSecurity.password.mismatch");
+  }
+  return null;
+}
+
+function resetPasswordForm(): void {
+  passwordForm.current_password = "";
+  passwordForm.new_password = "";
+  passwordForm.confirm_password = "";
+}
 
 async function handleChangePassword(): Promise<void> {
-  const valid = await passwordFormRef.value?.validate().catch(() => false);
-  if (!valid) return;
+  const error = validatePasswordForm();
+  if (error) {
+    ElMessage.warning(error);
+    return;
+  }
   await runWithLoading(passwordLoading, async () => {
     await changePassword({ ...passwordForm });
-    passwordFormRef.value?.resetFields();
+    resetPasswordForm();
   }).catch((error) => {
     logger.error("Failed to change password:", error);
   });
@@ -793,18 +770,8 @@ watch(
   padding-top: 4px;
 }
 
-.password-form {
-  display: flex;
-  flex-direction: column;
-
-  :deep(.el-form-item) {
-    margin-bottom: 14px;
-  }
-
-  :deep(.el-form-item__label) {
-    font-size: 13px;
-    font-weight: 500;
-  }
+.password-input {
+  width: min(100%, 320px);
 }
 
 .password-policy-summary {
@@ -832,13 +799,7 @@ watch(
 .policy-block {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.policy-block__intro {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .policy-block__footnote {
@@ -864,11 +825,8 @@ watch(
     flex-direction: column;
   }
 
-  .password-form {
-    :deep(.el-form-item__label) {
-      width: 100% !important;
-      justify-content: flex-start;
-    }
+  .password-input {
+    width: 100%;
   }
 }
 </style>

@@ -1,33 +1,40 @@
 <template>
-  <div v-loading="loading" class="platform-security-policy">
-    <div class="platform-security-policy__toolbar">
+  <ElCard v-loading="loading" shadow="hover" class="security-card">
+    <template #header>
+      <SurfaceCardHeader>
+        <template #left>
+          <div class="card-header-title">
+            <ArtSvgIcon
+              icon="ri:shield-keyhole-line"
+              class="card-header-icon"
+            />
+            <span>{{ $t("accountSecurity.platformPolicy.title") }}</span>
+          </div>
+        </template>
+        <template #actions>
+          <ElButton
+            v-if="canEdit"
+            type="primary"
+            :loading="saving"
+            @click="handleSaveAll"
+          >
+            <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
+            {{ $t("securityPolicy.actions.saveSettings") }}
+          </ElButton>
+        </template>
+      </SurfaceCardHeader>
+    </template>
+
+    <div class="settings-panel">
+      <CommonInlineHint block size="xs">
+        {{ $t("accountSecurity.platformPolicy.description") }}
+      </CommonInlineHint>
       <CommonInlineHint v-if="!canEdit" block size="xs">
         {{ $t("accountSecurity.platformPolicy.readOnlyHint") }}
       </CommonInlineHint>
-      <template v-else>
-        <MfaRequiredHint block />
-        <ElButton type="primary" :loading="saving" @click="handleSaveAll">
-          <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
-          {{ $t("securityPolicy.actions.saveSettings") }}
-        </ElButton>
-      </template>
-    </div>
+      <MfaRequiredHint v-else block />
 
-    <div class="security-grid">
-      <ElCard shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon
-                  icon="ri:shield-keyhole-line"
-                  class="card-header-icon"
-                />
-                <span>{{ $t("securityPolicy.sections.complexity.title") }}</span>
-              </div>
-            </template>
-          </SurfaceCardHeader>
-        </template>
+      <SettingsSection :title="$t('securityPolicy.sections.complexity.title')">
         <div class="settings-panel">
           <CommonSettingRow
             mode="inline"
@@ -113,24 +120,9 @@
             {{ $t("securityPolicy.hints.specialChars") }}
           </CommonInlineHint>
         </div>
-      </ElCard>
+      </SettingsSection>
 
-      <ElCard shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon
-                  icon="ri:calendar-event-line"
-                  class="card-header-icon"
-                />
-                <span>{{
-                  $t("securityPolicy.sections.expiration.title")
-                }}</span>
-              </div>
-            </template>
-          </SurfaceCardHeader>
-        </template>
+      <SettingsSection :title="$t('securityPolicy.sections.expiration.title')">
         <div class="settings-panel">
           <CommonSettingRow
             mode="inline"
@@ -172,24 +164,11 @@
             />
           </CommonSettingRow>
         </div>
-      </ElCard>
+      </SettingsSection>
 
-      <ElCard shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon
-                  icon="ri:shield-flash-line"
-                  class="card-header-icon"
-                />
-                <span>{{
-                  $t("securityPolicy.sections.loginProtection.title")
-                }}</span>
-              </div>
-            </template>
-          </SurfaceCardHeader>
-        </template>
+      <SettingsSection
+        :title="$t('securityPolicy.sections.loginProtection.title')"
+      >
         <div class="settings-panel">
           <CommonSettingRow
             mode="inline"
@@ -218,19 +197,9 @@
             />
           </CommonSettingRow>
         </div>
-      </ElCard>
+      </SettingsSection>
 
-      <ElCard shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon icon="ri:key-2-line" class="card-header-icon" />
-                <span>{{ $t("securityPolicy.sections.totp.title") }}</span>
-              </div>
-            </template>
-          </SurfaceCardHeader>
-        </template>
+      <SettingsSection :title="$t('securityPolicy.sections.totp.title')">
         <div class="settings-panel">
           <CommonSettingRow
             mode="inline"
@@ -302,9 +271,9 @@
             />
           </CommonSettingRow>
         </div>
-      </ElCard>
+      </SettingsSection>
     </div>
-  </div>
+  </ElCard>
 </template>
 
 <script setup lang="ts">
@@ -313,6 +282,7 @@ import { ElMessage } from "element-plus";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import SettingsSection from "@/components/common/settings-section/index.vue";
 import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
 import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
@@ -437,27 +407,6 @@ onActivated(() => {
 </script>
 
 <style scoped lang="scss">
-.platform-security-policy {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.platform-security-policy__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.security-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
 .security-card {
   min-width: 0;
 
@@ -490,6 +439,16 @@ onActivated(() => {
   gap: 14px;
 }
 
+:deep(.settings-section) {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+:deep(.settings-section__title) {
+  margin: 8px 0 12px;
+}
+
 :deep(.common-setting-row__label) {
   width: 140px;
   font-size: 13px;
@@ -506,11 +465,5 @@ onActivated(() => {
 .setting-input-number,
 .setting-select {
   width: 120px !important;
-}
-
-@media (max-width: 1100px) {
-  .security-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
