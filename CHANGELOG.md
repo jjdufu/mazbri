@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/jjdufu/mazbri/compare/v0.3.0...v0.3.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **web:** 上游接入成功页去掉网关 curl 示例 ([41d7dd2](https://github.com/jjdufu/mazbri/commit/41d7dd2bd6c9e3d4487326cb54a1858875024193))
+* **web:** 上游接入成功页去掉网关 curl 示例 ([f1305b6](https://github.com/jjdufu/mazbri/commit/f1305b67a432c3e0f6582f90a1d11733493e7ea1))
+
 ## [0.3.0](https://github.com/jjdufu/mazbri/compare/v0.2.20...v0.3.0) (2026-11-04)
 
 
