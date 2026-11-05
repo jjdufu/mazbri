@@ -4,7 +4,7 @@
     :subtitle="$t('accountSecurity.page.subtitle')"
     icon="ri:shield-user-line"
   >
-    <div class="security-grid">
+    <div class="security-stack">
       <ElCard v-loading="statusLoading" shadow="hover" class="security-card">
         <template #header>
           <SurfaceCardHeader>
@@ -33,17 +33,17 @@
           <CommonInlineHint block size="xs">
             {{ $t("accountSecurity.mfa.description") }}
           </CommonInlineHint>
-          <CommonInlineHint v-if="mfaEnabled" block size="xs">
-            {{ $t("accountSecurity.mfa.attemptsHint") }}
-          </CommonInlineHint>
-          <CommonInlineHint v-if="mfaEnabled" block size="xs">
-            {{ $t("accountSecurity.mfa.lockHint") }}
-          </CommonInlineHint>
-          <CommonInlineHint v-if="mfaEnabled" block size="xs">
-            {{ $t("accountSecurity.mfa.replayHint") }}
-          </CommonInlineHint>
 
-          <template v-if="mfaEnabled">
+          <template v-if="mfaEnabled && isAdmin">
+            <CommonInlineHint block size="xs">
+              {{ $t("accountSecurity.mfa.attemptsHint") }}
+            </CommonInlineHint>
+            <CommonInlineHint block size="xs">
+              {{ $t("accountSecurity.mfa.lockHint") }}
+            </CommonInlineHint>
+            <CommonInlineHint block size="xs">
+              {{ $t("accountSecurity.mfa.replayHint") }}
+            </CommonInlineHint>
             <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
               {{ $t("accountSecurity.mfa.forcedHint") }}
             </CommonInlineHint>
@@ -97,7 +97,19 @@
             </CommonSettingRow>
           </template>
 
-          <!-- 绑定流程：获取密钥/二维码 → 输入验证码启用 -->
+          <template v-else-if="mfaEnabled">
+            <CommonInlineHint block size="xs">
+              {{ $t("accountSecurity.mfa.enabledOnlyHint") }}
+            </CommonInlineHint>
+            <CommonInlineHint block size="xs" tone="warning">
+              {{ $t("accountSecurity.mfa.adminUnbindHint") }}
+            </CommonInlineHint>
+            <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
+              {{ $t("accountSecurity.mfa.forcedHint") }}
+            </CommonInlineHint>
+          </template>
+
+          <!-- 绑定流程：获取密钥/二维码 → 输入验证码启用（全角色自助） -->
           <div v-if="!mfaEnabled && setupData" class="setup-section">
             <ol class="setup-steps">
               <li>{{ $t("accountSecurity.setup.stepInstall") }}</li>
@@ -171,7 +183,7 @@
           </div>
 
           <div class="card-actions">
-            <template v-if="mfaEnabled">
+            <template v-if="mfaEnabled && isAdmin">
               <ElButton :loading="actionLoading" @click="handleRegenerate">
                 {{ $t("accountSecurity.actions.regenerateCodes") }}
               </ElButton>
@@ -185,13 +197,13 @@
                 {{ $t("accountSecurity.actions.disable") }}
               </ElButton>
             </template>
-            <template v-else-if="setupData">
+            <template v-else-if="!mfaEnabled && setupData">
               <ElButton @click="cancelSetup">
                 {{ $t("common.cancel") }}
               </ElButton>
             </template>
             <ElButton
-              v-else
+              v-else-if="!mfaEnabled"
               type="primary"
               :loading="actionLoading"
               @click="handleStartSetup"
@@ -221,8 +233,10 @@
           ref="passwordFormRef"
           :model="passwordForm"
           :rules="passwordRules"
-          label-position="top"
+          label-position="left"
+          label-width="140px"
           class="password-form"
+          require-asterisk-position="right"
           @submit.prevent="handleChangePassword"
         >
           <ElFormItem
@@ -258,11 +272,14 @@
               autocomplete="new-password"
             />
           </ElFormItem>
-          <div class="password-policy-summary">
+          <div v-if="!isAdmin" class="password-policy-summary">
             <div class="password-policy-summary__title">
               {{ $t("accountSecurity.password.summaryTitle") }}
             </div>
-            <ul v-if="passwordPolicyLines.length" class="password-policy-summary__list">
+            <ul
+              v-if="passwordPolicyLines.length"
+              class="password-policy-summary__list"
+            >
               <li v-for="(line, idx) in passwordPolicyLines" :key="idx">
                 {{ line }}
               </li>
@@ -282,40 +299,35 @@
           </div>
         </ElForm>
       </ElCard>
-    </div>
 
-    <section id="platform-policy" class="platform-policy-section">
-      <div class="platform-policy-section__header">
-        <div class="platform-policy-section__title-wrap">
-          <ArtSvgIcon
-            icon="ri:shield-settings-line"
-            class="platform-policy-section__icon"
-          />
-          <div>
-            <h2 class="platform-policy-section__title">
-              {{ $t("accountSecurity.platformPolicy.title") }}
-            </h2>
-            <p class="platform-policy-section__desc">
-              {{ $t("accountSecurity.platformPolicy.description") }}
-            </p>
+      <section v-if="isAdmin" id="platform-policy" class="policy-block">
+        <div class="policy-block__intro">
+          <div class="card-header-title">
+            <ArtSvgIcon
+              icon="ri:shield-keyhole-line"
+              class="card-header-icon"
+            />
+            <span>{{ $t("accountSecurity.platformPolicy.title") }}</span>
           </div>
+          <CommonInlineHint block size="xs">
+            {{ $t("accountSecurity.platformPolicy.description") }}
+          </CommonInlineHint>
         </div>
-      </div>
-      <PlatformSecurityPolicyCards />
-      <div class="platform-policy-section__footnote">
-        <CommonInlineHint block size="xs">
-          <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
-          <button
-            v-if="isAdmin"
-            type="button"
-            class="platform-policy-section__link"
-            @click="goSystemSettings"
-          >
-            {{ $t("accountSecurity.platformPolicy.sessionLink") }}
-          </button>
-        </CommonInlineHint>
-      </div>
-    </section>
+        <PlatformSecurityPolicyCards />
+        <div class="policy-block__footnote">
+          <CommonInlineHint block size="xs">
+            <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
+            <button
+              type="button"
+              class="policy-block__link"
+              @click="goSystemSettings"
+            >
+              {{ $t("accountSecurity.platformPolicy.sessionLink") }}
+            </button>
+          </CommonInlineHint>
+        </div>
+      </section>
+    </div>
   </ControlPanelPageShell>
 </template>
 
@@ -576,6 +588,7 @@ async function handleEnable(): Promise<void> {
 }
 
 async function handleRegenerate(): Promise<void> {
+  if (!isAdmin.value) return;
   try {
     await ElMessageBox.confirm(
       $t("accountSecurity.backupCodes.regenerateConfirm"),
@@ -595,6 +608,7 @@ async function handleRegenerate(): Promise<void> {
 }
 
 async function handleDisable(): Promise<void> {
+  if (!isAdmin.value) return;
   try {
     await ElMessageBox.confirm(
       $t("accountSecurity.disable.message"),
@@ -675,6 +689,10 @@ async function handleChangePassword(): Promise<void> {
 }
 
 async function loadPasswordPolicySummary(): Promise<void> {
+  if (isAdmin.value) {
+    passwordPolicyLines.value = [];
+    return;
+  }
   try {
     const response = await fetchPasswordPolicy();
     const policy = resolvePasswordPolicyPayload(response);
@@ -688,6 +706,7 @@ async function loadPasswordPolicySummary(): Promise<void> {
 }
 
 function shouldFocusPlatformPolicy(): boolean {
+  if (!isAdmin.value) return false;
   if (route.hash === "#platform-policy") return true;
   const section = route.query.section;
   return section === "platform" || (Array.isArray(section) && section[0] === "platform");
@@ -714,7 +733,7 @@ onMounted(() => {
 });
 
 watch(
-  () => [route.hash, route.query.section] as const,
+  () => [route.hash, route.query.section, isAdmin.value] as const,
   () => {
     scrollToPlatformPolicy();
   },
@@ -722,11 +741,10 @@ watch(
 </script>
 
 <style scoped lang="scss">
-.security-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.security-stack {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
 }
 
 .security-card {
@@ -755,7 +773,6 @@ watch(
   color: var(--el-color-primary);
 }
 
-// 卡片内部为扁平分区，不再嵌套带边框的盒子。
 .settings-panel {
   display: flex;
   flex-direction: column;
@@ -893,60 +910,11 @@ watch(
   :deep(.el-form-item) {
     margin-bottom: 14px;
   }
-}
 
-@media (max-width: 1100px) {
-  .security-grid {
-    grid-template-columns: 1fr;
+  :deep(.el-form-item__label) {
+    font-size: 13px;
+    font-weight: 500;
   }
-}
-
-@media (max-width: 640px) {
-  .setup-body {
-    flex-direction: column;
-  }
-}
-
-.platform-policy-section {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.platform-policy-section__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.platform-policy-section__title-wrap {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-
-.platform-policy-section__icon {
-  margin-top: 2px;
-  flex-shrink: 0;
-  font-size: 20px;
-  color: var(--el-color-primary);
-}
-
-.platform-policy-section__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.platform-policy-section__desc {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
 }
 
 .password-policy-summary {
@@ -971,14 +939,26 @@ watch(
   color: var(--el-text-color-secondary);
 }
 
-.platform-policy-section__footnote {
+.policy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.policy-block__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.policy-block__footnote {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
-.platform-policy-section__link {
+.policy-block__link {
   padding: 0;
   border: 0;
   background: transparent;
@@ -987,5 +967,18 @@ watch(
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .setup-body {
+    flex-direction: column;
+  }
+
+  .password-form {
+    :deep(.el-form-item__label) {
+      width: 100% !important;
+      justify-content: flex-start;
+    }
+  }
 }
 </style>

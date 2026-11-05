@@ -1,11 +1,13 @@
 use super::super::AppState;
 use crate::audit::extract_client_ip;
-use crate::middleware::auth::{REFRESH_COOKIE, cookie_value, extract_user_id_response};
+use crate::middleware::auth::{REFRESH_COOKIE, cookie_value, extract_user_id_response, is_admin};
+use crate::response::ApiResponse;
 use crate::services::mfa as svc;
 use crate::services::mfa::Category;
 use axum::{
     Extension,
     extract::{ConnectInfo, State},
+    http::StatusCode,
     response::IntoResponse,
 };
 pub async fn mfa_disable(
@@ -14,6 +16,10 @@ pub async fn mfa_disable(
     headers: axum::http::HeaderMap,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
 ) -> axum::response::Response {
+    // 自助停用已取消：仅超管可对本账号调用；他人解绑走 /admins/{id}/reset-mfa。
+    if !is_admin(&claims) {
+        return ApiResponse::err(StatusCode::FORBIDDEN, "仅超级管理员可停用两步验证");
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let user_id = match extract_user_id_response(&claims) {
         Ok(uid) => uid,

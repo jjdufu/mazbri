@@ -4130,7 +4130,7 @@
   "accountSecurity": {
     "page": {
       "title": "Account Security",
-      "subtitle": "Manage MFA and the password for your account; platform security policy is below"
+      "subtitle": "Manage MFA and password for the signed-in account"
     },
     "mfa": {
       "title": "Two-Factor Authentication (MFA)",
@@ -4166,7 +4166,9 @@
       "endCategoryFailed": "Could not end this category. Try again.",
       "attemptsHint": "A wrong code uses up a remaining attempt. MFA locks when none remain.",
       "lockHint": "While MFA is locked you cannot verify, and every open category elevation ends. Try again after the lock expires.",
-      "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code."
+      "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code.",
+      "adminUnbindHint": "Only a superadmin can unbind MFA via User Management. After a reset you must sign in again before binding.",
+      "enabledOnlyHint": "MFA is enabled. Non-admin accounts cannot disable it or regenerate backup codes."
     },
     "setup": {
       "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
@@ -4229,7 +4231,7 @@
     },
     "platformPolicy": {
       "title": "Platform Security Policy",
-      "description": "Password complexity, expiration, login protection, and platform TOTP settings (applies to all users)",
+      "description": "Password complexity, expiration, login protection, and platform TOTP settings (applies to all users). Superadmins only.",
       "readOnlyHint": "Only the super administrator can change platform policy; this view is read-only",
       "sessionHint": "Admin session lifetime is controlled by system settings, independent of the password policy on this page.",
       "sessionLink": "Open system settings"

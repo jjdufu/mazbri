@@ -4135,7 +4135,7 @@
   "accountSecurity": {
     "page": {
       "title": "账号安全",
-      "subtitle": "管理当前账号的两步验证与登录密码；平台安全策略见下方分区"
+      "subtitle": "管理当前账号的两步验证与登录密码"
     },
     "mfa": {
       "title": "两步验证（MFA）",
@@ -4171,7 +4171,9 @@
       "endCategoryFailed": "结束这一类验证失败，请稍后重试。",
       "attemptsHint": "验证码错误会扣减剩余次数。次数用尽后 MFA 将被锁定。",
       "lockHint": "锁定期间无法验证，已经打开的各类提权都会结束。请在锁定结束后再试。",
-      "replayHint": "同一个验证码不能重复使用。请等待验证器刷新出新码，或改用尚未使用的备用码。"
+      "replayHint": "同一个验证码不能重复使用。请等待验证器刷新出新码，或改用尚未使用的备用码。",
+      "adminUnbindHint": "解绑只能由超级管理员在「用户管理」中重置 MFA；重置后须重新登录才能再次绑定。",
+      "enabledOnlyHint": "两步验证已启用。普通账号不可自助停用或重新生成备用码。"
     },
     "setup": {
       "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
@@ -4234,7 +4236,7 @@
     },
     "platformPolicy": {
       "title": "平台安全策略",
-      "description": "密码复杂度、过期与登录防护、平台 TOTP 参数（影响全体用户）",
+      "description": "密码复杂度、过期与登录防护、平台 TOTP 参数（影响全体用户）；仅超级管理员可见可改",
       "readOnlyHint": "仅超级管理员可修改平台策略；当前为只读查看",
       "sessionHint": "管理端会话时长由系统配置决定，与本页密码策略相互独立。",
       "sessionLink": "打开系统配置"
