@@ -143,16 +143,15 @@ fn step_up_body(
     window: &StepUpWindow,
     category: Category,
     ttl: u64,
-    configured_ttl: u64,
     digits: u32,
 ) -> serde_json::Value {
+    // 不向客户端暴露配置时长（如 15 分钟）；窗口仍按 mfa.step_up_ttl_secs 生效。
     serde_json::json!({
         "active": true,
         "category": category.as_str(),
         "opened_at": rfc3339(window.opened_at),
         "expires_at": rfc3339(window.until),
         "remaining_secs": ttl,
-        "ttl_secs": configured_ttl,
         "server_time": Utc::now().to_rfc3339(),
         "method": window.method.as_str(),
         "totp_digits": digits,
@@ -310,7 +309,6 @@ pub async fn mfa_step_up(
         &window,
         category,
         ttl,
-        state.config.mfa.step_up_ttl_secs,
         mfa_service.config().digits,
     );
     state.audit.log(crate::audit::user_audit(
@@ -332,7 +330,6 @@ fn status_response(
     mfa_enabled: bool,
     mfa_required: bool,
     digits: u32,
-    ttl_secs: u64,
     categories: &[CategoryStatus],
 ) -> Response {
     let categories = categories
@@ -342,11 +339,11 @@ fn status_response(
             step_up::category_status_body(status, expires_at.as_deref())
         })
         .collect::<Vec<_>>();
+    // 不回传配置 TTL；客户端只需各类剩余秒数做窗口跟踪，不展示固定时长。
     crate::response::ApiResponse::ok(serde_json::json!({
         "mfa_enabled": mfa_enabled,
         "mfa_required": mfa_required,
         "totp_digits": digits,
-        "ttl_secs": ttl_secs,
         "server_time": Utc::now().to_rfc3339(),
         "categories": categories,
     }))
@@ -406,7 +403,6 @@ pub async fn mfa_step_up_status(
         Err(error) => return error.into_response(),
     };
     let digits = configured_digits(&state).await;
-    let ttl_secs = state.config.mfa.step_up_ttl_secs;
     let row = match crate::repositories::mfa::get_mfa_status(&state.admin_db, user_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
@@ -414,7 +410,6 @@ pub async fn mfa_step_up_status(
                 false,
                 false,
                 digits,
-                ttl_secs,
                 &step_up::inactive_categories("invalidated"),
             );
         }
@@ -439,7 +434,6 @@ pub async fn mfa_step_up_status(
                 row.mfa_enabled,
                 row.mfa_required,
                 digits,
-                ttl_secs,
                 &step_up::inactive_categories("invalidated"),
             );
         }
@@ -449,12 +443,11 @@ pub async fn mfa_step_up_status(
             false,
             row.mfa_required,
             digits,
-            ttl_secs,
             &step_up::inactive_categories("none"),
         );
     }
     match load_live_categories(&state, &claims.sid, checked.user_id, checked.epoch).await {
-        Ok(categories) => status_response(true, row.mfa_required, digits, ttl_secs, &categories),
+        Ok(categories) => status_response(true, row.mfa_required, digits, &categories),
         Err(response) => *response,
     }
 }

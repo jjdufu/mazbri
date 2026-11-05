@@ -50,7 +50,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
   const mfaRequired = ref(false);
   const totpDigits = ref<6 | 8>(6);
   const serverTime = ref<string | null>(null);
-  const ttlSecs = ref(0);
   const loaded = ref(false);
   const nowMs = ref(Date.now());
   const windows = ref<Record<MfaCategory, CategoryWindow>>(blankWindows());
@@ -119,7 +118,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired.value = Boolean(data.mfa_required);
     totpDigits.value = normalizeDigits(data.totp_digits);
     serverTime.value = data.server_time ?? null;
-    ttlSecs.value = typeof data.ttl_secs === "number" ? data.ttl_secs : 0;
     loaded.value = true;
     const next = blankWindows();
     const seen = new Set<MfaCategory>();
@@ -172,7 +170,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     if (typeof data.totp_digits === "number") {
       totpDigits.value = normalizeDigits(data.totp_digits);
     }
-    if (typeof data.ttl_secs === "number") ttlSecs.value = data.ttl_secs;
     serverTime.value = data.server_time ?? serverTime.value;
     nowMs.value = now;
     scheduleTimers();
@@ -318,7 +315,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired.value = false;
     totpDigits.value = 6;
     serverTime.value = null;
-    ttlSecs.value = 0;
     loaded.value = false;
     clearElevation();
     broadcastChanged();
@@ -376,7 +372,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     mfaRequired,
     totpDigits,
     serverTime,
-    ttlSecs,
     loaded,
     nowMs,
     windows,

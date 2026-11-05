@@ -172,7 +172,7 @@
       "placeholder": "验证码或 8 位备用码",
       "confirm": "确认",
       "cancel": "取消",
-      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类在剩余时间内不用再输。",
+      "stepUpMessage": "请输入验证器中的验证码或 8 位备用码。通过后，只有当前这一类短期内同类操作无需再输。",
       "categoryLine": "当前类别：{category}",
       "backupHint": "备用码为 8 位，不含 0、1、I、O，将自动转为大写。",
       "invalidFormat": "请输入 {digits} 位数字验证码，或 8 位备用码",
@@ -4141,9 +4141,8 @@
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "description": "敏感操作按类验证。验过的那一类在剩余时间内不用再输，其他类另算。未启用 MFA 的账号不能做这些操作。日常登录和查看不受影响。状态在本页显示。",
+      "description": "敏感操作按类验证。验过的那一类短期内同类操作无需再输，其他类另算。未启用 MFA 的账号不能做这些操作。日常登录和查看不受影响。本页显示各类是否已验证。",
       "changedAt": "变更时间",
-      "stepUpExpiry": "到期 {time}",
       "backupCodesRemaining": "剩余备用码",
       "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。",
       "categories": {
@@ -4163,8 +4162,8 @@
         "platform": "配置中心的新建、修改、删除、历史回滚、导入、导出；系统设置；密码策略；上游强制发布、上游回滚；限流控制命令；删除租户。"
       },
       "categoryInactive": "未验证",
-      "categoryActive": "已验证，剩余 {time}",
-      "categoryWarning": "即将到期，剩余 {time}",
+      "categoryActive": "已验证",
+      "categoryWarning": "即将到期",
       "endCategory": "结束",
       "endCategoryTitle": "结束{category}验证",
       "endCategoryConfirm": "结束后，{category}类操作需要重新验证。其他类不受影响。",
@@ -4191,7 +4190,7 @@
     "backupCodes": {
       "title": "备用码",
       "hint": "备用码仅显示这一次，每个只能使用一次。格式为 8 位大写字母和数字（不含 0、1、I、O），输入时会自动转为大写。可用于登录，或打开某一类提权窗口。请立即妥善保存。",
-      "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后这一类在剩余时间内不用再输。确定继续吗？"
+      "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后同类操作短期内无需再输。确定继续吗？"
     },
     "disable": {
       "title": "停用 MFA",

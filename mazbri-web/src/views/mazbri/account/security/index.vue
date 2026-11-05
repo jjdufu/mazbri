@@ -378,7 +378,6 @@ import { copyTextToClipboard } from "@/utils/clipboard";
 import {
   MFA_CATEGORIES,
   formatExpiryUtc8,
-  formatMmSs,
   isWarning,
   readSessionExpiresIn,
   type MfaCategory,
@@ -436,19 +435,12 @@ function categoryText(category: MfaCategory): string {
   if (!isCategoryOpen(category)) {
     return $t("accountSecurity.mfa.categoryInactive");
   }
-  const time = formatMmSs(categoryRemaining(category));
-  const statusText = $t(
+  // 不展示剩余 MM:SS / 到期时刻；免认证窗口仍按服务端 15 分钟生效。
+  return $t(
     categoryWarning(category)
       ? "accountSecurity.mfa.categoryWarning"
       : "accountSecurity.mfa.categoryActive",
-    { time },
   );
-  const expiry = windows.value[category]?.expiresAt
-    ? formatExpiryUtc8(windows.value[category].expiresAt ?? "")
-    : "";
-  return expiry
-    ? `${statusText} · ${$t("accountSecurity.mfa.stepUpExpiry", { time: expiry })}`
-    : statusText;
 }
 async function confirmEndCategory(category: MfaCategory): Promise<void> {
   const name = $t(`accountSecurity.mfa.categories.${category}`);
