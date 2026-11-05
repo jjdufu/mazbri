@@ -184,7 +184,7 @@
         </RoleGate>
       </OpsKpiRow>
 
-      <ElRow :gutter="16">
+      <ElRow :gutter="16" class="ops-equal-row">
         <ElCol :xs="24" :lg="14">
           <OpsCard class="ops-main-panel" data-block="components">
             <template #title>
@@ -276,7 +276,7 @@
       :title="t('ops.overview.sections.trend')"
       :semantics="windowSemantics"
     >
-      <ElRow :gutter="16">
+      <ElRow :gutter="16" class="ops-equal-row">
         <ElCol :xs="24" :lg="12">
           <OpsCard :title="t('ops.overview.charts.qps')" class="ops-main-panel">
             <MultiSeriesChart

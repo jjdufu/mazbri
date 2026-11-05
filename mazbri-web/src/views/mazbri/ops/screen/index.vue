@@ -534,6 +534,14 @@ onUnmounted(() => {
 .ops-screen__row {
   margin-top: 16px;
 }
+/* 并排卡片等高：与 .ops-equal-row 同口径（大屏卡片为自绘 div，规则写在大屏样式内） */
+.ops-screen__row > .el-col {
+  display: flex;
+  flex-direction: column;
+}
+.ops-screen__row > .el-col > .ops-screen__card {
+  flex: 1 1 auto;
+}
 .ops-screen__card {
   padding: 18px 20px;
   border: 1px solid rgba(120, 160, 220, 0.25);

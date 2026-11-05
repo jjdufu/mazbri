@@ -23,7 +23,7 @@
       </ElCol>
     </OpsKpiRow>
 
-    <ElRow :gutter="16">
+    <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="12">
         <OpsCard :title="funnelTitle">
           <ElAlert
