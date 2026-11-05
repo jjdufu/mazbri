@@ -61,19 +61,6 @@
       @update:model-value="handleUpdate('session_timeout_minutes', $event)"
     />
   </CommonSettingRow>
-  <CommonSettingRow
-    mode="inline"
-    mobile-stack
-    :label="$t('systemSettings.form.maxLoginAttempts')"
-  >
-    <ElInputNumber
-      :model-value="modelValue.max_login_attempts"
-      :min="1"
-      :max="10"
-      class="setting-input-number"
-      @update:model-value="handleUpdate('max_login_attempts', $event)"
-    />
-  </CommonSettingRow>
 </template>
 
 <script setup lang="ts">
@@ -87,7 +74,6 @@ interface BasicSettingsModel {
   tenant_gateway_url?: string;
   admin_email?: string;
   session_timeout_minutes?: number;
-  max_login_attempts?: number;
 }
 
 const props = defineProps<{

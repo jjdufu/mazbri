@@ -18,7 +18,6 @@ export function useSystemSettings() {
     tenant_gateway_url: "",
     admin_email: "",
     session_timeout_minutes: 30,
-    max_login_attempts: 5,
   });
   const systemRules: FormRules = {
     site_name: [],
@@ -67,7 +66,6 @@ export function useSystemSettings() {
         session_timeout_minutes: res.session_timeout
           ? Math.floor(res.session_timeout / 60000)
           : 30,
-        max_login_attempts: res.max_login_attempts || 5,
       };
       Object.assign(systemForm, mappedData);
     }).catch((error) => {

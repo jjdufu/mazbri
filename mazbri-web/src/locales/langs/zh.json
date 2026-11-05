@@ -911,7 +911,6 @@
       "adminEmail": "管理员邮箱",
       "adminEmailPlaceholder": "admin@example.com",
       "sessionTimeout": "管理端会话超时（分钟，写入 JWT 过期时间）",
-      "maxLoginAttempts": "最大登录尝试次数（次）",
       "saveSettings": "保存设置",
       "resetToDefault": "重置为默认值"
     },
@@ -1021,7 +1020,8 @@
       "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
     },
     "hints": {
-      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。"
+      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。",
+      "lockThreshold": "连续登录失败达到锁定阈值后账号被锁定，锁定时长内无法登录。这是平台唯一生效的登录失败锁定设置（系统配置中不再单独设置）。"
     }
   },
   "channels": {

@@ -29,6 +29,9 @@
       />
     </CommonSettingRow>
     <CommonInlineHint block size="xs">
+      {{ $t("securityPolicy.hints.lockThreshold") }}
+    </CommonInlineHint>
+    <CommonInlineHint block size="xs">
       <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
       <ElLink
         type="primary"

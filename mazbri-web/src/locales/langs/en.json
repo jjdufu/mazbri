@@ -908,7 +908,6 @@
       "adminEmail": "Admin Email",
       "adminEmailPlaceholder": "admin@example.com",
       "sessionTimeout": "Admin session timeout (min, sets access JWT expiry)",
-      "maxLoginAttempts": "Max Login Attempts (times)",
       "saveSettings": "Save Settings",
       "resetToDefault": "Reset to Default",
       "tenantGatewayUrl": "Tenant Gateway URL",
@@ -1021,7 +1020,8 @@
       "specialCharsRequired": "Special character set cannot be empty when special characters are required."
     },
     "hints": {
-      "specialChars": "When special characters are required, the new password must include at least one character from this set."
+      "specialChars": "When special characters are required, the new password must include at least one character from this set.",
+      "lockThreshold": "After this many consecutive failed sign-ins the account is locked for the lock duration. This is the only login lockout setting on the platform (no longer set in System Settings)."
     }
   },
   "channels": {

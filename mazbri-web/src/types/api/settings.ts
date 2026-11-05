@@ -18,7 +18,6 @@ export interface UpdateSystemSettingsRequest {
   default_tenant_rate_limit?: number;
   default_tenant_cache_ttl?: number;
   session_timeout_minutes?: number;
-  max_login_attempts?: number;
   session_timeout?: number;
   enable_audit_log?: boolean;
   max_upload_size?: number;
