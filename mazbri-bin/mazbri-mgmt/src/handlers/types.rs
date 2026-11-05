@@ -152,12 +152,6 @@ pub struct AnalyticsParams {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PlatformStatsParams {
-    pub start_time: Option<i64>,
-    pub end_time: Option<i64>,
-}
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AdminLoginRequest {
     pub username: String,
     pub password: String,

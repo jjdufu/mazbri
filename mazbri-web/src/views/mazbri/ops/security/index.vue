@@ -5,7 +5,7 @@
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </template>
 
-    <ElRow :gutter="16">
+    <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="8">
         <OpsCard :title="t('ops.security.topIp')">
           <ArtTable :data="topIp" :loading="loading" :columns="topColumns" stripe />

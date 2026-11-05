@@ -26,6 +26,18 @@ function wallClockParts(ms: number): Record<string, string> {
   return Object.fromEntries(parts.map((p) => [p.type, p.value]));
 }
 
+/** Asia/Shanghai 墙钟 `HH:mm`（epoch 毫秒）。 */
+export function formatWallClockHm(ms: number): string {
+  const g = wallClockParts(ms);
+  return `${g.hour}:${g.minute}`;
+}
+
+/** Asia/Shanghai 墙钟 `MM-DD HH:mm`（epoch 毫秒）。 */
+export function formatWallClockMdHm(ms: number): string {
+  const g = wallClockParts(ms);
+  return `${g.month}-${g.day} ${g.hour}:${g.minute}`;
+}
+
 /**
  * 把 ISO / Date 格式化为 Asia/Shanghai 墙钟日期 `YYYY-MM-DD`。
  * 禁止把原始毫秒数字直接 toString 甩给 UI。

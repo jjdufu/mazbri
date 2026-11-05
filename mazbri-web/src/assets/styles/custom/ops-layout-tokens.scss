@@ -16,6 +16,8 @@
   --ops-card-min-height: 180px;
   --ops-main-chart-min-height: 240px;
   --ops-header-actions-gap: 8px;
+  /* 粘性侧栏顶距：顶栏 h-12（48px，与 --art-full-height 默认扣减同口径）+ 一档间距 */
+  --ops-sticky-top: calc(48px + var(--ops-space-md));
 }
 
 .ops-kpi-row {
@@ -50,4 +52,46 @@
 .ops-main-panel {
   min-height: var(--ops-card-min-height);
   min-width: 0;
+}
+
+/*
+ * 并排卡片等高（与 SettingsCardGrid 同思路）。
+ * ElRow 默认 align-items:stretch，各 ElCol 已等高，但列内卡片是 auto 高，内容少的一侧会在卡片下方露出空白。
+ * 挂在 ElRow 上：列改纵向 flex，最后一张卡吃满剩余高度；卡体随之拉伸，空态在卡内垂直居中。
+ * 同列叠放多卡用 gap 间隔，窄屏换行后用 row-gap 间隔。只做 grow 不做 shrink，OpsCard 的 flex-shrink:0 保持不变。
+ */
+.ops-equal-row {
+  row-gap: var(--ops-space-md);
+
+  > .el-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ops-space-md);
+    min-width: 0;
+  }
+
+  > .el-col > :last-child {
+    flex: 1 1 auto;
+  }
+
+  > .el-col > .ops-card,
+  > .el-col > .el-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  > .el-col > .ops-card > .ops-card__body,
+  > .el-col > .el-card > .el-card__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  > .el-col > .ops-card > .ops-card__body > .el-empty,
+  > .el-col > .ops-card > .ops-card__body > .empty-state,
+  > .el-col > .el-card > .el-card__body > .el-empty,
+  > .el-col > .el-card > .el-card__body > .empty-state {
+    margin-block: auto;
+  }
 }

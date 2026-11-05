@@ -10,14 +10,13 @@ import type {
 } from "@/types/api/monitoring";
 const BASE_PATH = `${API_BASE_PATH}/stats/metrics`;
 export type MetricsOverviewQuery = {
-  start?: number;
-  end?: number;
-  /** `instant` = 此刻近瞬时；缺省且带 start/end = 跟时间窗 */
-  mode?: "instant" | "range";
+  /** Unix 秒（必填，60s–31d） */
+  start: number;
+  end: number;
 };
 
-/** Overview KPI：默认跟时间窗；`mode: "instant"` 为此刻。曲线请用 fetchMetricTimeseries。 */
-export async function fetchMetricsOverview(params: MetricsOverviewQuery = {}) {
+/** 总览：traffic 跟时间窗，realtime / components 为此刻。曲线请用 fetchMetricTimeseries。 */
+export async function fetchMetricsOverview(params: MetricsOverviewQuery) {
   return request.get<MetricOverview>({
     url: `${BASE_PATH}/overview`,
     params,

@@ -1,24 +1,21 @@
-//! Overview / 运维指标时间窗与字段裁剪的拼装入口。
+//! 运维指标时间窗校验与 overview 字段裁剪。
 //!
-//! ## KPI 时间窗策略（ops-ui：跟窗 + 此刻）
+//! `GET /stats/metrics/overview?start&end` 的响应结构由 analytics 决定：
+//! - `window` / `traffic`：跟所选时间窗；
+//! - `realtime`：当前时刻（近 60s）；
+//! - `components`：组件健康（应用服务 / 中间件 / 观测组件）。
 //!
-//! `GET /stats/metrics/overview` 由 analytics 决定嵌套 `window`：
-//! - 默认 / `mode=range` + start/end → `semantics=range`（跟 UI 时间窗）
-//! - `mode=instant` → `semantics=instant`（近 [`INSTANT_LOOKBACK_SECS`] 秒）
-//!
-//! mgmt 的 [`apply_overview_field_gate`] **保留** analytics 下发的 `window`；
-//! 仅在缺失时补瞬时默认，并按角色裁剪敏感字段。
-//! 禁止扁平 `kpi_semantics` / `instant_lookback_secs` 兼容字段。
-//! 时序查询走 [`resolve_timeseries_window`]。
+//! mgmt 只做两件事：用 [`resolve_timeseries_window`] 校验时间窗（60s–31d，不截断），
+//! 以及用 [`apply_overview_field_gate`] 按角色裁剪 `realtime` 里的敏感块。
 
-/// 相对时间窗（秒）。
+/// 绝对时间窗（Unix 秒）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OverviewWindow {
+pub struct TimeWindow {
     pub start_unix: i64,
     pub end_unix: i64,
 }
 
-impl OverviewWindow {
+impl TimeWindow {
     /// 构造时间窗；若起止颠倒或非正长度则返回 `None`。
     #[must_use]
     pub fn try_new(start_unix: i64, end_unix: i64) -> Option<Self> {
@@ -36,67 +33,21 @@ impl OverviewWindow {
     pub const fn duration_secs(self) -> i64 {
         self.end_unix - self.start_unix
     }
-
-    /// 将窗长钳到 `[min_secs, max_secs]`（保持 `end` 不变，必要时左移 `start`）。
-    #[must_use]
-    pub fn clamp_duration(self, min_secs: i64, max_secs: i64) -> Self {
-        let min_secs = min_secs.max(1);
-        let max_secs = max_secs.max(min_secs);
-        let mut duration = self.duration_secs();
-        if duration < min_secs {
-            duration = min_secs;
-        } else if duration > max_secs {
-            duration = max_secs;
-        }
-        Self {
-            start_unix: self.end_unix - duration,
-            end_unix: self.end_unix,
-        }
-    }
 }
 
-/// 瞬时 KPI（QPS / 错误率等）默认回看秒数；须与 analytics
-/// `OVERVIEW_WINDOW_SECS`（4 × 15s 抓取间隔 = 60）保持一致。
-pub const INSTANT_LOOKBACK_SECS: i64 = 60;
-
-/// 时序查询允许的最短窗长（秒）。
+/// 时序 / overview 查询允许的最短窗长（秒）。
 pub const TIMESERIES_MIN_SECS: i64 = 60;
 
-/// 时序查询允许的最长窗长（秒）—— 31 天。
+/// 时序 / overview 查询允许的最长窗长（秒）—— 31 天（与 analytics `OVERVIEW_MAX_SECS` 一致）。
 pub const TIMESERIES_MAX_SECS: i64 = 31 * 24 * 60 * 60;
 
-/// Overview KPI 语义标记（写入响应，便于 OpenAPI/前端对齐）。
-pub const KPI_SEMANTICS_INSTANT: &str = "instant";
-
-/// 跟时间窗的 KPI 语义标记。
-pub const KPI_SEMANTICS_RANGE: &str = "range";
-
-/// 是否应按「瞬时」语义取尾部切片（窗长显著大于瞬时回看时）。
-#[must_use]
-pub const fn prefers_instant_slice(window: OverviewWindow, lookback_secs: i64) -> bool {
-    window.duration_secs() > lookback_secs
-}
-
-/// 瞬时切片：取窗尾 `lookback_secs`；若窗更短则返回原窗。
-#[must_use]
-pub fn instant_slice(window: OverviewWindow, lookback_secs: i64) -> OverviewWindow {
-    let lookback_secs = lookback_secs.max(1);
-    if window.duration_secs() <= lookback_secs {
-        return window;
-    }
-    OverviewWindow {
-        start_unix: window.end_unix - lookback_secs,
-        end_unix: window.end_unix,
-    }
-}
-
-/// 校验时序查询时间窗；非法时返回明确错误（禁止静默钳制改写用户窗）。
+/// 校验时间窗；非法时返回明确错误（禁止静默钳制改写用户窗）。
 ///
 /// # Errors
 ///
 /// 起止非法、过短或过长时返回错误文案。
-pub fn resolve_timeseries_window(start: i64, end: i64) -> Result<OverviewWindow, &'static str> {
-    let Some(window) = OverviewWindow::try_new(start, end) else {
+pub fn resolve_timeseries_window(start: i64, end: i64) -> Result<TimeWindow, &'static str> {
+    let Some(window) = TimeWindow::try_new(start, end) else {
         return Err("start 必须小于 end");
     };
     let duration = window.duration_secs();
@@ -109,15 +60,6 @@ pub fn resolve_timeseries_window(start: i64, end: i64) -> Result<OverviewWindow,
     Ok(window)
 }
 
-/// Overview 响应中可按角色裁剪的字段块。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OverviewFieldBlock {
-    Billing,
-    Anomaly,
-    Changes,
-    AdminInfra,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OverviewRoleKind {
     Admin,
@@ -125,7 +67,7 @@ enum OverviewRoleKind {
     Viewer,
 }
 
-/// 按调用者角色决定 overview 哪些字段块可填充。
+/// 按调用者角色决定 overview 哪些字段块可下发。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverviewFieldGate {
     kind: OverviewRoleKind,
@@ -143,74 +85,35 @@ impl OverviewFieldGate {
         Self { kind }
     }
 
-    /// 当前角色是否允许填充该字段块。
-    #[must_use]
-    pub const fn allows(self, block: OverviewFieldBlock) -> bool {
-        match self.kind {
-            OverviewRoleKind::Admin => true,
-            OverviewRoleKind::Viewer => false,
-            OverviewRoleKind::Finance => !matches!(block, OverviewFieldBlock::AdminInfra),
-        }
-    }
-
+    /// 计费链路（BIZ：超管 + 财务）。
     #[must_use]
     pub const fn include_billing(self) -> bool {
-        self.allows(OverviewFieldBlock::Billing)
+        !matches!(self.kind, OverviewRoleKind::Viewer)
     }
 
-    #[must_use]
-    pub const fn include_anomaly(self) -> bool {
-        self.allows(OverviewFieldBlock::Anomaly)
-    }
-
-    #[must_use]
-    pub const fn include_changes(self) -> bool {
-        self.allows(OverviewFieldBlock::Changes)
-    }
-
+    /// 底座敏感信息（证书到期）：仅超管。
     #[must_use]
     pub const fn include_admin_infra(self) -> bool {
-        self.allows(OverviewFieldBlock::AdminInfra)
+        matches!(self.kind, OverviewRoleKind::Admin)
     }
 }
 
-/// 整理 overview JSON：保留 analytics 的 `window`，并按角色省略敏感字段块。
-///
-/// - 若已有合法嵌套 `window.semantics`（`range` / `instant`）则**不改写**；
-/// - 否则补默认瞬时窗 `window = { semantics: instant, lookback_secs, label }`；
-/// - 删除历史扁平 `kpi_semantics` / `instant_lookback_secs`（零兼容层）；
-/// - 若缺 `sample_count` 则补 0；
-/// - VIEWER：去掉 `billing_pipeline`；
-/// - 非 ADMIN：去掉 `cert_min_expiry_days`（超管证书徽章）。
+/// 按角色裁剪 overview：
+/// - 观察者：去掉 `realtime.billing_pipeline`；
+/// - 非超管：去掉 `realtime.cert_min_expiry_days`。
 pub fn apply_overview_field_gate(body: &mut serde_json::Value, gate: OverviewFieldGate) {
-    if let Some(obj) = body.as_object_mut() {
-        let keep_window = obj
-            .get("window")
-            .and_then(|v| v.as_object())
-            .and_then(|w| w.get("semantics"))
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| s == KPI_SEMANTICS_RANGE || s == KPI_SEMANTICS_INSTANT);
-        if !keep_window {
-            obj.insert(
-                "window".into(),
-                serde_json::json!({
-                    "semantics": KPI_SEMANTICS_INSTANT,
-                    "lookback_secs": INSTANT_LOOKBACK_SECS,
-                    "label": format!("近瞬时（{INSTANT_LOOKBACK_SECS}s）"),
-                }),
-            );
-        }
-        obj.remove("kpi_semantics");
-        obj.remove("instant_lookback_secs");
-        if !obj.contains_key("sample_count") {
-            obj.insert("sample_count".into(), serde_json::json!(0));
-        }
-        if !gate.include_billing() {
-            obj.remove("billing_pipeline");
-        }
-        if !gate.include_admin_infra() {
-            obj.remove("cert_min_expiry_days");
-        }
+    let Some(realtime) = body
+        .as_object_mut()
+        .and_then(|o| o.get_mut("realtime"))
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    if !gate.include_billing() {
+        realtime.remove("billing_pipeline");
+    }
+    if !gate.include_admin_infra() {
+        realtime.remove("cert_min_expiry_days");
     }
 }
 
@@ -220,38 +123,15 @@ mod tests {
 
     #[test]
     fn try_new_rejects_non_positive_span() {
-        assert_eq!(OverviewWindow::try_new(10, 10), None);
-        assert_eq!(OverviewWindow::try_new(11, 10), None);
+        assert_eq!(TimeWindow::try_new(10, 10), None);
+        assert_eq!(TimeWindow::try_new(11, 10), None);
         assert_eq!(
-            OverviewWindow::try_new(1, 2),
-            Some(OverviewWindow {
+            TimeWindow::try_new(1, 2),
+            Some(TimeWindow {
                 start_unix: 1,
                 end_unix: 2
             })
         );
-    }
-
-    #[test]
-    fn clamp_duration_keeps_end() {
-        let window = OverviewWindow {
-            start_unix: 0,
-            end_unix: 10_000,
-        };
-        let clamped = window.clamp_duration(60, 3600);
-        assert_eq!(clamped.end_unix, 10_000);
-        assert_eq!(clamped.duration_secs(), 3600);
-    }
-
-    #[test]
-    fn instant_slice_uses_tail() {
-        let window = OverviewWindow {
-            start_unix: 0,
-            end_unix: 3600,
-        };
-        let slice = instant_slice(window, INSTANT_LOOKBACK_SECS);
-        assert_eq!(slice.end_unix, 3600);
-        assert_eq!(slice.start_unix, 3600 - INSTANT_LOOKBACK_SECS);
-        assert!(prefers_instant_slice(window, INSTANT_LOOKBACK_SECS));
     }
 
     #[test]
@@ -261,7 +141,7 @@ mod tests {
         let finance = OverviewFieldGate::for_role("R_FINANCE");
         assert!(finance.include_billing() && !finance.include_admin_infra());
         let viewer = OverviewFieldGate::for_role("R_VIEWER");
-        assert!(!viewer.include_billing() && !viewer.include_anomaly());
+        assert!(!viewer.include_billing() && !viewer.include_admin_infra());
     }
 
     #[test]
@@ -274,95 +154,48 @@ mod tests {
         );
         let ok = resolve_timeseries_window(0, TIMESERIES_MIN_SECS).expect("边界最短窗");
         assert_eq!(ok.duration_secs(), TIMESERIES_MIN_SECS);
+        let month = resolve_timeseries_window(0, 30 * 86_400).expect("30d 合法");
+        assert_eq!(month.duration_secs(), 30 * 86_400, "不截断");
+    }
+
+    fn sample() -> serde_json::Value {
+        serde_json::json!({
+            "window": { "start": 0, "end": 3600, "lookback_secs": 3600 },
+            "traffic": { "sample_count": 9, "qps": 1.0 },
+            "realtime": {
+                "lookback_secs": 60,
+                "billing_pipeline": { "backlog": 1 },
+                "cert_min_expiry_days": 30
+            },
+            "components": [{ "key": "redis", "status": "green" }]
+        })
     }
 
     #[test]
-    fn apply_overview_field_gate_strips_for_viewer() {
-        let mut body = serde_json::json!({
-            "qps": 1.0,
-            "kpi_semantics": "instant",
-            "instant_lookback_secs": 60,
-            "billing_pipeline": { "backlog": 1 },
-            "cert_min_expiry_days": 30
-        });
+    fn viewer_loses_billing_and_cert() {
+        let mut body = sample();
         apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_VIEWER"));
-        let obj = body.as_object().expect("object");
-        let window = obj.get("window").and_then(|v| v.as_object()).expect("window");
-        assert_eq!(
-            window.get("semantics").and_then(|v| v.as_str()),
-            Some(KPI_SEMANTICS_INSTANT)
-        );
-        assert_eq!(
-            window.get("lookback_secs").and_then(serde_json::Value::as_i64),
-            Some(INSTANT_LOOKBACK_SECS)
-        );
-        assert!(!obj.contains_key("kpi_semantics"));
-        assert!(!obj.contains_key("instant_lookback_secs"));
-        assert_eq!(
-            obj.get("sample_count").and_then(serde_json::Value::as_u64),
-            Some(0)
-        );
-        assert!(!obj.contains_key("billing_pipeline"));
-        assert!(!obj.contains_key("cert_min_expiry_days"));
+        let rt = body["realtime"].as_object().expect("realtime");
+        assert!(!rt.contains_key("billing_pipeline"));
+        assert!(!rt.contains_key("cert_min_expiry_days"));
+        assert_eq!(body["window"]["lookback_secs"], 3600, "时间窗原样保留");
+        assert_eq!(body["components"][0]["key"], "redis", "组件健康对所有角色可见");
     }
 
     #[test]
-    fn empty_overview_rates_stay_null_after_gate() {
-        let mut body = serde_json::json!({
-            "sample_count": 0,
-            "qps": null,
-            "success_rate": null,
-            "error_rate": null
-        });
-        apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_ADMIN"));
-        let obj = body.as_object().expect("object");
-        assert!(obj.get("success_rate").is_some_and(serde_json::Value::is_null));
-        assert!(obj.get("qps").is_some_and(serde_json::Value::is_null));
-        assert!(obj.contains_key("window"));
-    }
-
-    #[test]
-    fn apply_overview_field_gate_preserves_analytics_range_window() {
-        let mut body = serde_json::json!({
-            "qps": 1.0,
-            "sample_count": 9,
-            "window": {
-                "semantics": "range",
-                "lookback_secs": 3600,
-                "label": "所选时间窗（3600s）"
-            }
-        });
-        apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_ADMIN"));
-        let window = body
-            .as_object()
-            .and_then(|o| o.get("window"))
-            .and_then(|v| v.as_object())
-            .expect("window");
-        assert_eq!(
-            window.get("semantics").and_then(|v| v.as_str()),
-            Some(KPI_SEMANTICS_RANGE)
-        );
-        assert_eq!(
-            window.get("lookback_secs").and_then(serde_json::Value::as_i64),
-            Some(3600)
-        );
-    }
-
-    #[test]
-    fn apply_overview_field_gate_finance_keeps_billing() {
-        let mut body = serde_json::json!({
-            "billing_pipeline": { "backlog": 2 },
-            "cert_min_expiry_days": 10
-        });
+    fn finance_keeps_billing_only() {
+        let mut body = sample();
         apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_FINANCE"));
-        let obj = body.as_object().expect("object");
-        assert!(obj.contains_key("billing_pipeline"));
-        assert!(!obj.contains_key("cert_min_expiry_days"));
+        let rt = body["realtime"].as_object().expect("realtime");
+        assert!(rt.contains_key("billing_pipeline"));
+        assert!(!rt.contains_key("cert_min_expiry_days"));
     }
 
     #[test]
-    fn instant_lookback_matches_analytics_scrape_window() {
-        // analytics `OVERVIEW_WINDOW_SECS = 4 * 15`；两侧必须同为 60，避免 KPI 口径漂移。
-        assert_eq!(INSTANT_LOOKBACK_SECS, 60);
+    fn admin_keeps_everything() {
+        let mut body = sample();
+        let before = body.clone();
+        apply_overview_field_gate(&mut body, OverviewFieldGate::for_role("R_ADMIN"));
+        assert_eq!(body, before);
     }
 }

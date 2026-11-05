@@ -19,8 +19,8 @@ fn metrics_and_ops_routes() -> Router<AppState> {
             get(analytics_handlers::get_ratelimit_analytics),
         )
         .route(
-            "/stats/platform",
-            get(analytics_handlers::get_platform_stats),
+            "/stats/ops/inventory",
+            get(analytics_handlers::get_platform_inventory),
         )
         .route(
             "/stats/metrics/overview",
@@ -60,8 +60,8 @@ fn metrics_and_ops_routes() -> Router<AppState> {
             get(ops_slo_handlers::list_slo_status),
         )
         .route(
-            "/stats/ops/products/zero-calls",
-            post(ops_anomalies_handlers::zero_call_products),
+            "/stats/ops/products/names",
+            get(ops_anomalies_handlers::list_product_names),
         )
 }
 

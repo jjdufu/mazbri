@@ -5,7 +5,7 @@
     </template>
 
     <EmptyState
-      v-if="!loading && rows.length === 0"
+      v-if="loaded && !loading && rows.length === 0"
       compact
       :image-size="56"
       :description="t('ops.overview.anomalyEmpty')"
@@ -69,6 +69,8 @@ import {
 
 defineOptions({ name: "OpsOverviewRecentAnomalies" });
 
+const LIMIT = 10;
+
 const { t } = useI18n();
 const loading = ref(false);
 const rows = ref<AnomalyEvent[]>([]);
@@ -83,12 +85,19 @@ function onRowClick(row: AnomalyEvent) {
   drawerOpen.value = true;
 }
 
-async function reload() {
+const loaded = ref(false);
+let seq = 0;
+
+/** 按全局时间窗 [start, end) 取最近异常（容量预测不属于异常，后端已排除）。 */
+async function reload(window: { start: number; end: number }) {
+  const mine = ++seq;
   loading.value = true;
   try {
-    const raw = await listAnomalies(10);
-    rows.value = takeAnomalyTop(normalizeAnomalyEvents(raw), 10);
+    const raw = await listAnomalies({ ...window, limit: LIMIT });
+    if (mine !== seq) return;
+    rows.value = takeAnomalyTop(normalizeAnomalyEvents(raw), LIMIT);
   } catch (error) {
+    if (mine !== seq) return;
     rows.value = [];
     ElMessage.error(
       error instanceof Error
@@ -96,7 +105,10 @@ async function reload() {
         : t("ops.overview.anomalyLoadFailed"),
     );
   } finally {
-    loading.value = false;
+    if (mine === seq) {
+      loading.value = false;
+      loaded.value = true;
+    }
   }
 }
 

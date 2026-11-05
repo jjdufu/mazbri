@@ -774,8 +774,12 @@ watch(traceId, () => void load(), { immediate: true });
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
+/* 右栏粘性：瀑布图超长时跟随滚动停在顶栏下方，自身限高滚动（不拉伸到瀑布图高度） */
 .ops-trace__panel {
-  max-height: 78vh;
+  position: sticky;
+  top: var(--ops-sticky-top);
+  align-self: start;
+  max-height: calc(100vh - var(--ops-sticky-top) - var(--ops-space-md));
   overflow: auto;
 }
 .ops-trace__panel h3,
@@ -949,6 +953,9 @@ watch(traceId, () => void load(), { immediate: true });
 @media (width <= 1200px) {
   .ops-trace__body {
     grid-template-columns: 1fr;
+  }
+  .ops-trace__panel {
+    position: static;
   }
 }
 </style>

@@ -16,20 +16,6 @@
       :end-placeholder="t('ops.timeRange.end')"
       @change="onCustomChange"
     />
-    <ElSelect
-      v-model="bookmark"
-      class="ops-time-range-picker__bookmark"
-      clearable
-      :placeholder="t('ops.timeRange.bookmark')"
-      @change="onBookmarkChange"
-    >
-      <ElOption
-        v-for="item in bookmarkOptions"
-        :key="item.value"
-        :label="item.label"
-        :value="item.value"
-      />
-    </ElSelect>
   </div>
 </template>
 
@@ -48,11 +34,6 @@ import {
 } from "@/utils/ops/time-range";
 
 export type { TimeRangePreset, TimeRangeValue };
-
-const BOOKMARKS: Record<string, number> = {
-  loadtest: 2 * 3600,
-  event_replay: 6 * 3600,
-};
 
 const props = withDefaults(
   defineProps<{
@@ -79,7 +60,6 @@ const preset = ref<TimeRangePreset>("1h");
 /** Epoch milliseconds (ElDatePicker `value-format="x"` works on numbers; numeric strings
  * are parsed as date text and land in the wrong year). The URL keeps Unix seconds. */
 const customRange = ref<[number, number] | null>(null);
-const bookmark = ref<string>("");
 
 const presetOptions = computed(() =>
   (["15m", "1h", "6h", "24h", "7d", "30d", "custom"] as TimeRangePreset[]).map(
@@ -89,11 +69,6 @@ const presetOptions = computed(() =>
     }),
   ),
 );
-
-const bookmarkOptions = computed(() => [
-  { label: t("ops.timeRange.bookmarks.loadtest"), value: "loadtest" },
-  { label: t("ops.timeRange.bookmarks.eventReplay"), value: "event_replay" },
-]);
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
@@ -129,7 +104,6 @@ function publish(value: TimeRangeValue) {
 }
 
 function onPresetChange() {
-  bookmark.value = "";
   if (preset.value !== "custom") {
     customRange.value = null;
   }
@@ -140,15 +114,6 @@ function onCustomChange() {
   if (!customRange.value) return;
   preset.value = "custom";
   publish(buildValue("custom"));
-}
-
-function onBookmarkChange(key: string | null) {
-  if (!key || !BOOKMARKS[key]) return;
-  const end = nowSec();
-  const start = end - BOOKMARKS[key];
-  preset.value = "custom";
-  customRange.value = pickerRangeOf({ start, end });
-  publish({ preset: "custom", start, end });
 }
 
 /** Apply a range from the route query; true when the query carried a valid range. */
@@ -207,8 +172,5 @@ watch(
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-}
-.ops-time-range-picker__bookmark {
-  width: 160px;
 }
 </style>

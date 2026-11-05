@@ -1,5 +1,5 @@
 use crate::analytics_client::AnalyticsHttpClient;
-use crate::handlers::types::{AnalyticsParams, PlatformStatsParams};
+use crate::handlers::types::AnalyticsParams;
 use crate::repositories::analytics as repo;
 use crate::response::ApiResponse;
 use axum::http::StatusCode;
@@ -78,102 +78,19 @@ fn select_ratelimit_sql_template(group_by: Option<&str>) -> &'static str {
         _ => RATELIMIT_ANALYTICS_SQL_DAY,
     }
 }
-pub async fn get_platform_stats(
-    db: &PgPool,
-    analytics_client: &AnalyticsHttpClient,
-    params: &PlatformStatsParams,
-) -> axum::response::Response {
-    info!("Fetching platform-wide statistics");
-    let total_tenants = repo::get_total_tenants(db).await;
-    let active_tenants = repo::get_active_tenants(db).await;
-    let total_products = repo::get_total_products(db).await;
-    let (usage_stats, top_products, response_time_distribution) =
-        match fetch_usage_from_analytics(analytics_client, params).await {
-            Ok(parts) => parts,
-            Err(e) => return e.into_response("平台统计"),
-        };
-    let top_tenants: Vec<serde_json::Value> = Vec::new();
-    ApiResponse::ok(serde_json::json!(
-        { "time_range" : { "start" : params.start_time, "end" : params.end_time
-        }, "tenant_stats" : { "total_tenants" : total_tenants, "active_tenants" :
-        active_tenants }, "product_stats" : { "total_products" : total_products
-        }, "usage_stats" : usage_stats, "top_tenants" : top_tenants,
-        "top_products" : top_products, "response_time_distribution" :
-        response_time_distribution, }
-    ))
-    .into_response()
-}
-async fn fetch_usage_from_analytics(
-    client: &AnalyticsHttpClient,
-    params: &PlatformStatsParams,
-) -> crate::analytics_client::AnalyticsResult<(
-    serde_json::Value,
-    Vec<serde_json::Value>,
-    Vec<serde_json::Value>,
-)> {
-    let now = chrono::Utc::now();
-    let start = params
-        .start_time
-        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-        .unwrap_or_else(|| now - chrono::Duration::hours(24));
-    let end = params
-        .end_time
-        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-        .unwrap_or(now);
-    let start_str = start.format("%Y-%m-%dT%H:%M:%S").to_string();
-    let end_str = end.format("%Y-%m-%dT%H:%M:%S").to_string();
-    // Customer-facing volume only — gateway access logs (not gateway+bypass double count).
-    let body = client
-        .aggregate_requests(&start_str, &end_str, "gateway")
-        .await?;
-    let total_requests = body
-        .get("total_requests")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let avg_duration_ms = body
-        .get("avg_duration_ms")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(0.0);
-    let usage_stats = serde_json::json!(
-        { "total_requests" : total_requests, "active_tenants_usage" : 0,
-        "total_bytes" : 0, "avg_duration_ms" : avg_duration_ms, }
-    );
-    let top_products = body
-        .get("by_route")
-        .and_then(|v| v.as_object())
-        .map(|map| {
-            let mut entries: Vec<_> = map
-                .iter()
-                .map(|(route, count)| {
-                    serde_json::json!(
-                        { "product_endpoint" : route, "request_count" : count
-                        .as_u64().unwrap_or(0), "avg_upstream_service_time_ms" : 0.0,
-                        "total_cost" : 0, }
-                    )
-                })
-                .collect();
-            entries.sort_by(|a, b| {
-                b.get("request_count")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0)
-                    .cmp(
-                        &a.get("request_count")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0),
-                    )
-            });
-            entries.truncate(10);
-            entries
-        })
-        .unwrap_or_default();
-    let response_time_distribution = vec![
-        serde_json::json!({ "bucket" : "< 100ms", "count" : 0 }),
-        serde_json::json!({ "bucket" : "100-500ms", "count" : 0 }),
-        serde_json::json!({ "bucket" : "500ms-1s", "count" : 0 }),
-        serde_json::json!({ "bucket" : "1s-5s", "count" : 0 }),
-        serde_json::json!({ "bucket" : "> 5s", "count" : 0 }),
-    ];
-    Ok((usage_stats, top_products, response_time_distribution))
+/// `GET /stats/ops/inventory`：平台规模（不随时间窗变化）。
+pub async fn get_platform_inventory(db: &PgPool) -> axum::response::Response {
+    match repo::platform_inventory(db).await {
+        Ok((total, enabled, products)) => ApiResponse::ok(serde_json::json!({
+            "tenants": { "total": total, "enabled": enabled },
+            "products": { "enabled": products },
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "platform inventory failed");
+            ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "平台规模查询失败")
+        }
+    }
 }
 pub async fn get_usage_analytics(
     db: &PgPool,
@@ -1160,52 +1077,39 @@ fn first_non_empty(values: &[String]) -> String {
         .cloned()
         .unwrap_or_default()
 }
-/// Overview KPI：默认跟时间窗；`mode=instant` 为近瞬时「此刻」。
+/// Overview：`traffic` 跟 `[start, end]`（60s–31d，不截断），`realtime` / `components` 为当前时刻。
 /// 响应经 [`crate::services::analytics_window::apply_overview_field_gate`] 按角色裁剪。
 pub async fn get_metrics_overview(
     analytics_client: &AnalyticsHttpClient,
     role: &str,
     params: &MetricsOverviewParams,
 ) -> axum::response::Response {
-    use crate::services::analytics_window::{OverviewFieldGate, apply_overview_field_gate};
+    use crate::services::analytics_window::{
+        OverviewFieldGate, apply_overview_field_gate, resolve_timeseries_window,
+    };
 
-    let gate = OverviewFieldGate::for_role(role);
-    let q = overview_query_params(params);
+    let window = match resolve_timeseries_window(params.start, params.end) {
+        Ok(window) => window,
+        Err(message) => return ApiResponse::err(StatusCode::BAD_REQUEST, message),
+    };
+    let q = [
+        ("start", window.start_unix.to_string()),
+        ("end", window.end_unix.to_string()),
+    ];
     let mut body = match analytics_client.metrics_overview(&q).await {
         Ok(body) => body,
         Err(e) => return e.into_response("指标总览"),
     };
-    apply_overview_field_gate(&mut body, gate);
+    apply_overview_field_gate(&mut body, OverviewFieldGate::for_role(role));
     ApiResponse::ok(body).into_response()
 }
 
-/// `GET /stats/metrics/overview` 参数。
-#[derive(Debug, Default, serde::Deserialize)]
+/// `GET /stats/metrics/overview` 参数（Unix 秒，必填）。
+#[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsOverviewParams {
-    #[serde(default)]
-    pub start: Option<i64>,
-    #[serde(default)]
-    pub end: Option<i64>,
-    #[serde(default)]
-    pub mode: Option<String>,
-}
-
-fn overview_query_params(p: &MetricsOverviewParams) -> Vec<(&'static str, String)> {
-    let mut out = Vec::new();
-    if let Some(v) = p.start {
-        out.push(("start", v.to_string()));
-    }
-    if let Some(v) = p.end {
-        out.push(("end", v.to_string()));
-    }
-    if let Some(ref m) = p.mode {
-        let m = m.trim();
-        if !m.is_empty() {
-            out.push(("mode", m.to_string()));
-        }
-    }
-    out
+    pub start: i64,
+    pub end: i64,
 }
 pub async fn get_metrics_catalog(
     analytics_client: &AnalyticsHttpClient,

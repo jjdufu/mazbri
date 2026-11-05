@@ -7,8 +7,8 @@ import {
   evaluateCpuStatus,
   evaluateFreshnessStatus,
   evaluateInfraStripStatus,
-  evaluateUpStatus,
   formatInfraStripValue,
+  worstSeriesLabel,
 } from "../infra-health";
 
 function series(values: number[]): MetricSeries {
@@ -27,9 +27,6 @@ function series(values: number[]): MetricSeries {
 
 describe("infra-health", () => {
   it("status evaluators", () => {
-    assert.equal(evaluateUpStatus(1), "green");
-    assert.equal(evaluateUpStatus(0), "red");
-    assert.equal(evaluateUpStatus(null), "unknown");
     assert.equal(evaluateFreshnessStatus(10), "green");
     assert.equal(evaluateFreshnessStatus(120), "yellow");
     assert.equal(evaluateFreshnessStatus(400), "red");
@@ -39,19 +36,32 @@ describe("infra-health", () => {
   });
 
   it("buildInfraStripReading uses defs", () => {
-    const def = INFRA_STRIP_ITEMS.find((i) => i.id === "pg");
+    assert.deepEqual(INFRA_STRIP_ITEMS.map((i) => i.id), ["pipeline", "hostCpu"]);
+    const def = INFRA_STRIP_ITEMS.find((i) => i.id === "hostCpu");
     assert.ok(def);
-    const reading = buildInfraStripReading(def, series([0, 1]));
+    const reading = buildInfraStripReading(def, series([95, 10]));
     assert.equal(reading.status, "green");
-    assert.equal(reading.value, 1);
+    assert.equal(reading.value, 10);
     assert.equal(evaluateInfraStripStatus("pipeline", 200), "yellow");
   });
 
   it("formatInfraStripValue", () => {
-    assert.equal(formatInfraStripValue("pg", 1), "UP");
-    assert.equal(formatInfraStripValue("redis", 0), "DOWN");
     assert.equal(formatInfraStripValue("pipeline", 12.4), "12s");
     assert.equal(formatInfraStripValue("hostCpu", 66.66), "66.7%");
-    assert.equal(formatInfraStripValue("pg", null), "—");
+    assert.equal(formatInfraStripValue("pipeline", null), "—");
+  });
+
+  it("worstSeriesLabel names the stalest table", () => {
+    const s: MetricSeries = {
+      metric: "pipeline_freshness_seconds",
+      label: "x",
+      unit: "s",
+      series: [
+        { labels: { store: "gt", table: "metrics" }, points: [{ timestamp: 1, value: 5 }] },
+        { labels: { __name__: "m", store: "ch", table: "request_logs" }, points: [{ timestamp: 1, value: 2898 }] },
+      ],
+    };
+    assert.equal(worstSeriesLabel(s), "ch/request_logs");
+    assert.equal(worstSeriesLabel(null), "");
   });
 });

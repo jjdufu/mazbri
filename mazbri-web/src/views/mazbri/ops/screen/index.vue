@@ -30,15 +30,15 @@
 
     <div v-show="panel === 'overview'" class="ops-screen__panel">
       <ElRow :gutter="16">
-        <ElCol :span="6"><ScreenStat :label="t('ops.screen.qps')" :value="fmt(overview?.qps)" /></ElCol>
-        <ElCol :span="6"><ScreenStat :label="t('ops.screen.successRate')" :value="pct(overview?.success_rate)" /></ElCol>
-        <ElCol :span="6"><ScreenStat :label="t('ops.screen.p99')" :value="ms(overview?.p99_latency_ms)" /></ElCol>
+        <ElCol :span="6"><ScreenStat :label="kpiLabel('ops.screen.qps')" :value="perSec(traffic?.qps)" /></ElCol>
+        <ElCol :span="6"><ScreenStat :label="kpiLabel('ops.screen.successRate')" :value="pct(traffic?.success_rate)" /></ElCol>
+        <ElCol :span="6"><ScreenStat :label="kpiLabel('ops.screen.p99')" :value="ms(traffic?.p99_latency_ms)" /></ElCol>
         <ElCol :span="6"><ScreenStat :label="t('ops.screen.burn')" :value="burnLabel" /></ElCol>
       </ElRow>
       <ElRow :gutter="16" class="ops-screen__row">
         <ElCol :span="14">
           <div class="ops-screen__card">
-            <div class="ops-screen__label">{{ t("ops.screen.qps") }} · 24h</div>
+            <div class="ops-screen__label">{{ t("ops.screen.qpsTrend") }}</div>
             <div ref="qpsRef" class="ops-screen__chart" />
           </div>
         </ElCol>
@@ -115,24 +115,7 @@
     <div v-show="panel === 'resource'" class="ops-screen__panel">
       <div class="ops-screen__card">
         <div class="ops-screen__label">{{ t("ops.screen.resources") }}</div>
-        <ElTable :data="healthRows" size="small" class="ops-screen__table" max-height="520">
-          <ElTableColumn prop="service" label="Service" min-width="140" />
-          <ElTableColumn prop="version" label="Ver" width="100" />
-          <ElTableColumn label="CPU" width="100">
-            <template #default="{ row }">{{ row.cpu_cores?.toFixed?.(2) ?? "-" }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="Mem" width="120">
-            <template #default="{ row }">{{ fmtBytes(row.memory_bytes) }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="Pool" width="100">
-            <template #default="{ row }">{{ pct01(row.db_pool_usage) }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="OK" width="70">
-            <template #default="{ row }">
-              <span :class="row.health_ok ? 'ok' : 'bad'">{{ row.health_ok ? "●" : "○" }}</span>
-            </template>
-          </ElTableColumn>
-        </ElTable>
+        <ComponentHealthList :components="overview?.components ?? []" dark />
       </div>
     </div>
   </div>
@@ -146,20 +129,22 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "@/store/modules/user";
 import { DASHBOARD_PATH } from "@/utils/ops/opsRoutes";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import ComponentHealthList from "@/components/ops/ComponentHealthList.vue";
 import { echarts } from "@/plugins/echarts";
 import { bindOpsChartResize } from "@/composables/ops/useOpsChartHost";
 import {
   fetchMetricTimeseries,
   fetchMetricsOverview,
   fetchServiceTopology,
-  fetchServicesHealth,
 } from "@/api/monitoring";
-import { listSloStatus } from "@/api/opsReliability";
+import { listProductNames, listSloStatus } from "@/api/opsReliability";
 import { fetchAlertEvents } from "@/api/alerts";
 import { postOlapQuery } from "@/api/olap";
 import { presetWindow } from "@/composables/ops/useOlapRange";
 import { fetchFinanceOverview } from "@/api/billing-ops";
-import type { MetricOverview, ServiceHealthRow, TopologyGraph } from "@/types/api/monitoring";
+import type { MetricOverview, TopologyGraph } from "@/types/api/monitoring";
+import { productNameMap } from "@/utils/ops/product-rank";
+import { formatAxisTime } from "@/utils/ops/time-range";
 import type { SloStatusRow } from "@/api/opsReliability";
 import type { FinanceOverview } from "@/api/billing-ops";
 import type { AlertEvent } from "@/types/api/alerts";
@@ -197,7 +182,6 @@ const clock = ref("");
 const overview = ref<MetricOverview | null>(null);
 const slo = ref<SloStatusRow[]>([]);
 const finance = ref<FinanceOverview | null>(null);
-const healthRows = ref<ServiceHealthRow[]>([]);
 const topProducts = ref<{ name: string; value: number }[]>([]);
 const supplierWall = ref<{ name: string; tone: string }[]>([]);
 const geoRows = ref<{ dim: string; count: number; width: string }[]>([]);
@@ -236,42 +220,47 @@ const todayMargin = computed(() => {
   return day?.margin ?? finance.value?.margin_total ?? null;
 });
 
+/** 大屏 KPI 窗：近 1 小时（窗口汇总，不用 60 秒瞬时，避免低流量时整排「—」）。 */
+const KPI_WINDOW_SECS = 3600;
+/** QPS 趋势窗：近 24 小时，x 轴固定铺满整窗。 */
+const TREND_WINDOW_SECS = 86400;
+const TREND_STEP_SECS = 300;
+
+const traffic = computed(() => overview.value?.traffic ?? null);
+
+function kpiLabel(key: string) {
+  return `${t(key)} · ${t("ops.screen.lastHour")}`;
+}
+
 function fmt(n?: number | null) {
   if (n === null || n === undefined) return "—";
-  return new Intl.NumberFormat().format(n);
+  return new Intl.NumberFormat("zh-CN").format(n);
+}
+function perSec(n?: number | null) {
+  if (n === null || n === undefined) return "—";
+  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n)} ${t("ops.units.perSec")}`;
 }
 function pct(n?: number | null) {
   if (n === null || n === undefined) return "—";
   return `${n.toFixed(2)}%`;
 }
-function pct01(n?: number | null) {
-  if (n == null) return "-";
-  return `${(n * 100).toFixed(0)}%`;
-}
 function ms(n?: number | null) {
   if (n === null || n === undefined) return "—";
-  return `${n.toFixed(1)} ms`;
+  return `${n.toFixed(1)} ${t("ops.units.ms")}`;
 }
 function money(n?: number | string | null) {
-  if (n == null || n === "") return "-";
+  if (n == null || n === "") return "—";
   const v = typeof n === "string" ? Number(n) : n;
   if (!Number.isFinite(v)) return String(n);
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(v);
-}
-function fmtBytes(n?: number | null) {
-  if (n == null) return "-";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KiB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MiB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GiB`;
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(v);
 }
 
 async function loadAll() {
   const end = Math.floor(Date.now() / 1000);
-  const start = end - 3600;
-  const dayStart = end - 86400;
+  const start = end - KPI_WINDOW_SECS;
+  const dayStart = end - TREND_WINDOW_SECS;
   try {
-    overview.value = await fetchMetricsOverview({ mode: "instant" });
+    overview.value = await fetchMetricsOverview({ start, end });
   } catch {
     /* keep */
   }
@@ -280,11 +269,6 @@ async function loadAll() {
     slo.value = body?.status ?? [];
   } catch {
     slo.value = [];
-  }
-  try {
-    healthRows.value = await fetchServicesHealth();
-  } catch {
-    healthRows.value = [];
   }
   if (canSeeFinance.value) {
     try {
@@ -306,15 +290,19 @@ async function loadAll() {
   }
   const screenWindow = presetWindow("24h");
   try {
-    const rank = await postOlapQuery({
-      template: "product_rank",
-      params: { ...screenWindow, metric: "req_count", limit: 10 },
-    });
+    const [rank, catalog] = await Promise.all([
+      postOlapQuery({
+        template: "product_rank",
+        params: { ...screenWindow, metric: "req_count", limit: 10 },
+      }),
+      listProductNames().catch(() => []),
+    ]);
+    const names = productNameMap(catalog);
     const rows = (rank as { rows?: Record<string, unknown>[] }).rows ?? [];
-    topProducts.value = rows.map((r) => ({
-      name: String(r.product_id ?? r.name ?? "-"),
-      value: Number(r.req_count ?? r.value ?? 0),
-    }));
+    topProducts.value = rows.map((r) => {
+      const id = String(r.product_id ?? "").trim();
+      return { name: names.get(id) ?? id, value: Number(r.req_count ?? 0) };
+    });
   } catch {
     topProducts.value = [];
   }
@@ -324,12 +312,20 @@ async function loadAll() {
       params: { ...screenWindow },
     });
     const rows = (sla as { rows?: Record<string, unknown>[] }).rows ?? [];
-    supplierWall.value = rows.slice(0, 24).map((r) => {
-      const calls = Number(r.calls ?? 0);
-      const failures = Number(r.failures ?? 0);
-      const rate = calls > 0 ? failures / calls : 0;
+    // 模板按供应商×维度出行：同一供应商合并为一格，避免重复 chip。
+    const bySupplier = new Map<string, { calls: number; failures: number }>();
+    for (const r of rows) {
+      const code = String(r.supplier_code ?? "").trim();
+      if (!code) continue;
+      const acc = bySupplier.get(code) ?? { calls: 0, failures: 0 };
+      acc.calls += Number(r.calls ?? 0);
+      acc.failures += Number(r.failures ?? 0);
+      bySupplier.set(code, acc);
+    }
+    supplierWall.value = [...bySupplier.entries()].slice(0, 24).map(([name, a]) => {
+      const rate = a.calls > 0 ? a.failures / a.calls : 0;
       const tone = rate >= 0.05 ? "red" : rate >= 0.01 ? "yellow" : "green";
-      return { name: String(r.supplier_code ?? "-"), tone };
+      return { name, tone };
     });
   } catch {
     supplierWall.value = [];
@@ -370,7 +366,7 @@ async function renderQps(start: number, end: number) {
       metric: "qps",
       start,
       end,
-      step: 300,
+      step: TREND_STEP_SECS,
     });
     const points = series.series?.[0]?.points ?? [];
     qps.setOption(
@@ -379,7 +375,12 @@ async function renderQps(start: number, end: number) {
         grid: { left: 12, right: 16, top: 28, bottom: 24, containLabel: true },
         xAxis: {
           type: "time",
-          axisLabel: { color: "#9fb3cd" },
+          min: start * 1000,
+          max: end * 1000,
+          axisLabel: {
+            color: "#9fb3cd",
+            formatter: (v: number) => formatAxisTime(v, end - start),
+          },
           axisLine: { lineStyle: { color: "#3a4d6a" } },
         },
         yAxis: {
@@ -532,6 +533,14 @@ onUnmounted(() => {
 }
 .ops-screen__row {
   margin-top: 16px;
+}
+/* 并排卡片等高：与 .ops-equal-row 同口径（大屏卡片为自绘 div，规则写在大屏样式内） */
+.ops-screen__row > .el-col {
+  display: flex;
+  flex-direction: column;
+}
+.ops-screen__row > .el-col > .ops-screen__card {
+  flex: 1 1 auto;
 }
 .ops-screen__card {
   padding: 18px 20px;

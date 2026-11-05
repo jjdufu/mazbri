@@ -1,4 +1,5 @@
 use super::client::GreptimeDBClient;
+use super::components::{AppProbe, ComponentHealth, assemble_components};
 use crate::error::{AnalyticsError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -69,14 +70,6 @@ pub struct BillingPipelineOverview {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ServiceHealthLight {
-    pub service: String,
-    pub name: String,
-    /// `green` / `yellow` / `red`
-    pub status: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct ServiceHealthRow {
     pub service: String,
     pub name: String,
@@ -101,42 +94,58 @@ pub struct ServiceHealthRow {
     pub open_fds: Option<f64>,
 }
 
-/// Overview 第一行 KPI 时间窗（契约 `window`；`semantics` 为 `range` 或 `instant`）。
-#[derive(Debug, Clone, Serialize)]
-pub struct OverviewKpiWindow {
-    pub semantics: &'static str,
+/// Overview 时间窗（绝对区间，Unix 秒；与趋势图、TopN 同一窗口）。
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct OverviewWindow {
+    pub start: i64,
+    pub end: i64,
     pub lookback_secs: u64,
-    pub label: String,
 }
 
+/// 业务流量 KPI（网关代理请求口径）。
+///
+/// 无样本（`sample_count = 0`）时率/延迟为 `null`；有样本但没有任何错误序列时错误率为 0。
 #[derive(Debug, Clone, Serialize)]
-pub struct MetricOverview {
-    /// KPI 窗元数据：默认 `range`（跟查询窗）；`instant` 为近瞬时（此刻）。
-    pub window: OverviewKpiWindow,
-    /// 近瞬时窗内网关代理请求样本数；无流量为 0。
+pub struct TrafficKpis {
     pub sample_count: u64,
-    /// 业务 QPS；无样本时为 `null`（禁止用 0 冒充）。
+    /// 窗口平均 QPS（次/秒）。
     pub qps: Option<f64>,
-    /// 成功率（%，result = ok）；无样本时为 `null`。
+    /// 成功率（%，result = ok）。
     pub success_rate: Option<f64>,
-    /// 业务错误率（%，result != ok）；无样本时为 `null`。
+    /// 业务错误率（%，result != ok）。
     pub error_rate: Option<f64>,
     pub error_rate_4xx: Option<f64>,
     pub error_rate_5xx: Option<f64>,
     pub p50_latency_ms: Option<f64>,
     pub p95_latency_ms: Option<f64>,
     pub p99_latency_ms: Option<f64>,
+    /// 限流拒绝速率（次/秒，窗口平均）。
+    pub rate_limit_rejections_per_sec: f64,
+}
+
+/// 实时状态：在当前时刻求值（近 [`REALTIME_LOOKBACK_SECS`] 秒），不随所选时间窗变化。
+#[derive(Debug, Clone, Serialize)]
+pub struct RealtimeStatus {
+    pub eval_at: i64,
+    pub lookback_secs: u64,
+    pub traffic: TrafficKpis,
     pub active_connections: f64,
     pub proxy_active_connections: f64,
-    pub rate_limit_rejections_per_sec: f64,
-    /// 计费链路健康（billing 自出指标）；mgmt 按角色可能省略
-    pub billing_pipeline: BillingPipelineOverview,
     pub circuit_breaker_open_count: f64,
-    /// 证书最短到期天数；mgmt 仅对超管保留
+    /// 计费链路健康（billing 自出指标）；mgmt 对观察者省略。
+    pub billing_pipeline: BillingPipelineOverview,
+    /// 证书最短到期天数；mgmt 仅对超管保留。
     pub cert_min_expiry_days: f64,
-    pub service_health: Vec<ServiceHealthLight>,
-    /// 告警摘要已由独立 `/alerts/summary` 提供；此标志表示 overview 侧告警通道可用。
-    pub alerts_connected: bool,
+}
+
+/// Dashboard 概览：`traffic` 跟所选时间窗；`realtime` / `components` 为当前时刻。
+#[derive(Debug, Clone, Serialize)]
+pub struct MetricOverview {
+    pub window: OverviewWindow,
+    pub traffic: TrafficKpis,
+    pub realtime: RealtimeStatus,
+    /// 组件健康（应用服务 / 中间件 / 观测组件），异常在前。
+    pub components: Vec<ComponentHealth>,
     /// 是否已接入错误预算快照。
     pub error_budget_connected: bool,
     /// 主 SLO 剩余错误预算比例（有数据时）。
@@ -198,7 +207,14 @@ struct PrometheusResult {
 }
 
 
-struct OverviewRawKpis {
+/// `PromQL` `increase` 样本数 → u64；非有限或 ≤0 视为无样本。
+fn sample_count_from_increase(raw: Option<f64>) -> u64 {
+    raw.filter(|v| v.is_finite() && *v > 0.0)
+        .map_or(0, |v| mazbri_core::num::f64_to_u64(v.round().max(0.0)))
+}
+
+/// 流量 KPI 原始读数（未按样本数门控）。
+struct RawTraffic {
     qps: Option<f64>,
     success_rate: Option<f64>,
     error_rate: Option<f64>,
@@ -208,127 +224,84 @@ struct OverviewRawKpis {
     p95: Option<f64>,
     p99: Option<f64>,
     sample_raw: Option<f64>,
-    active_connections: f64,
-    proxy_active_connections: f64,
     rate_limit_rejections_per_sec: f64,
-    billing_pipeline: BillingPipelineOverview,
-    circuit_breaker_open_count: f64,
-    cert_min_expiry_days: f64,
-    service_health: Vec<ServiceHealthLight>,
 }
 
-/// `PromQL` `increase` 样本数 → u64；非有限或 ≤0 视为无样本。
-fn sample_count_from_increase(raw: Option<f64>) -> u64 {
-    raw.filter(|v| v.is_finite() && *v > 0.0)
-        .map_or(0, |v| mazbri_core::num::f64_to_u64(v.round().max(0.0)))
-}
-
-struct GatedRateKpis {
-    qps: Option<f64>,
-    success_rate: Option<f64>,
-    error_rate: Option<f64>,
-    error_rate_4xx: Option<f64>,
-    error_rate_5xx: Option<f64>,
-    p50_latency_ms: Option<f64>,
-    p95_latency_ms: Option<f64>,
-    p99_latency_ms: Option<f64>,
-}
-
-/// 无样本时率/延迟 KPI 一律 `None`，禁止 0% 冒充（瞬时与时间窗模式共用）。
-fn gate_rate_kpis(sample_count: u64, raw: &OverviewRawKpis) -> GatedRateKpis {
+/// 无样本时率/延迟一律 `None`（禁止 0% 冒充）；有样本时错误率缺序列 = 没有错误 = 0。
+fn gate_traffic(raw: &RawTraffic) -> TrafficKpis {
+    let sample_count = sample_count_from_increase(raw.sample_raw);
     let finite = |v: Option<f64>| v.filter(|x| x.is_finite());
-    if sample_count == 0 {
-        return GatedRateKpis {
-            qps: None,
-            success_rate: None,
-            error_rate: None,
-            error_rate_4xx: None,
-            error_rate_5xx: None,
-            p50_latency_ms: None,
-            p95_latency_ms: None,
-            p99_latency_ms: None,
-        };
+    let has = sample_count > 0;
+    let rate = |v: Option<f64>| if has { finite(v) } else { None };
+    let error = |v: Option<f64>| if has { Some(finite(v).unwrap_or(0.0)) } else { None };
+    let ms = |v: Option<f64>| rate(v).map(|x| x * 1000.0);
+    TrafficKpis {
+        sample_count,
+        qps: rate(raw.qps),
+        success_rate: rate(raw.success_rate),
+        error_rate: error(raw.error_rate),
+        error_rate_4xx: error(raw.error_rate_4xx),
+        error_rate_5xx: error(raw.error_rate_5xx),
+        p50_latency_ms: ms(raw.p50),
+        p95_latency_ms: ms(raw.p95),
+        p99_latency_ms: ms(raw.p99),
+        rate_limit_rejections_per_sec: finite_or_zero(raw.rate_limit_rejections_per_sec),
     }
-    GatedRateKpis {
-        qps: finite(raw.qps),
-        success_rate: finite(raw.success_rate),
-        error_rate: finite(raw.error_rate),
-        error_rate_4xx: finite(raw.error_rate_4xx),
-        error_rate_5xx: finite(raw.error_rate_5xx),
-        p50_latency_ms: finite(raw.p50).map(|v| v * 1000.0),
-        p95_latency_ms: finite(raw.p95).map(|v| v * 1000.0),
-        p99_latency_ms: finite(raw.p99).map(|v| v * 1000.0),
+}
+
+/// 校验 overview 时间窗：`OVERVIEW_MIN_SECS ≤ end - start ≤ OVERVIEW_MAX_SECS`，不截断。
+fn overview_window(start: i64, end: i64) -> Result<OverviewWindow> {
+    let span = u64::try_from(end.saturating_sub(start)).unwrap_or(0);
+    if !(OVERVIEW_MIN_SECS..=OVERVIEW_MAX_SECS).contains(&span) {
+        return Err(AnalyticsError::Config(format!(
+            "时间窗须在 {OVERVIEW_MIN_SECS}s 到 {OVERVIEW_MAX_SECS}s 之间"
+        )));
     }
+    Ok(OverviewWindow { start, end, lookback_secs: span })
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 impl GreptimeDBClient {
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    /// Overview KPI。
-    ///
-    /// - `mode = Instant`：近瞬时窗（`OVERVIEW_WINDOW_SECS`）。
-    /// - `mode = Range { start, end }`：按所选时间窗聚合（窗长上限 `OVERVIEW_RANGE_MAX_SECS`）。
+    /// Dashboard 概览：`traffic` 在 `[start, end]` 上聚合（窗口终点求值），
+    /// `realtime` 与 `components` 在当前时刻求值。
     ///
     /// # Errors
     ///
-    /// 底层依赖失败或时间窗非法时返回错误。
-    pub async fn query_metrics_overview(&self, mode: OverviewKpiMode) -> Result<MetricOverview> {
-        let (semantics, lookback_secs, label, eval_at) = match mode {
-            OverviewKpiMode::Instant => (
-                "instant",
-                OVERVIEW_WINDOW_SECS,
-                format!("近瞬时（{OVERVIEW_WINDOW_SECS}s）"),
-                None,
-            ),
-            OverviewKpiMode::Range { start, end } => {
-                if start >= end {
-                    return Err(AnalyticsError::Config("start 必须小于 end".to_string()));
-                }
-                let span = u64::try_from(end - start).unwrap_or(0);
-                if span == 0 {
-                    return Err(AnalyticsError::Config("时间窗无效".to_string()));
-                }
-                let lookback = span.clamp(OVERVIEW_WINDOW_SECS, OVERVIEW_RANGE_MAX_SECS);
-                (
-                    "range",
-                    lookback,
-                    format!("所选时间窗（{lookback}s）"),
-                    Some(end),
-                )
-            }
-        };
+    /// 时间窗非法（[`OVERVIEW_MIN_SECS`]–[`OVERVIEW_MAX_SECS`] 之外）或底层查询失败时返回错误。
+    pub async fn query_metrics_overview(&self, start: i64, end: i64) -> Result<MetricOverview> {
+        let window = overview_window(start, end)?;
         self.with_query_timeout(
             "metrics_overview",
             Box::pin(async move {
-                let raw = self.fetch_overview_raw_kpis(lookback_secs, eval_at).await?;
-                let sample_count = sample_count_from_increase(raw.sample_raw);
-                let rates = gate_rate_kpis(sample_count, &raw);
-                let (error_budget_slo, error_budget_remaining) =
-                    self.load_error_budget_snapshot().await;
+                let eval_at = now_unix();
+                let (traffic, now_traffic, realtime, components, budget) = tokio::try_join!(
+                    self.fetch_traffic(window.lookback_secs, Some(window.end)),
+                    self.fetch_traffic(REALTIME_LOOKBACK_SECS, None),
+                    self.fetch_realtime_gauges(),
+                    self.load_components(),
+                    async { Ok(self.load_error_budget_snapshot().await) },
+                )?;
+                let (billing_pipeline, active, proxy_active, breakers, cert_days) = realtime;
+                let (error_budget_slo, error_budget_remaining) = budget;
                 Ok(MetricOverview {
-                    window: OverviewKpiWindow {
-                        semantics,
-                        lookback_secs,
-                        label,
+                    window,
+                    traffic: gate_traffic(&traffic),
+                    realtime: RealtimeStatus {
+                        eval_at,
+                        lookback_secs: REALTIME_LOOKBACK_SECS,
+                        traffic: gate_traffic(&now_traffic),
+                        active_connections: active,
+                        proxy_active_connections: proxy_active,
+                        circuit_breaker_open_count: breakers,
+                        billing_pipeline,
+                        cert_min_expiry_days: cert_days,
                     },
-                    sample_count,
-                    qps: rates.qps,
-                    success_rate: rates.success_rate,
-                    error_rate: rates.error_rate,
-                    error_rate_4xx: rates.error_rate_4xx,
-                    error_rate_5xx: rates.error_rate_5xx,
-                    p50_latency_ms: rates.p50_latency_ms,
-                    p95_latency_ms: rates.p95_latency_ms,
-                    p99_latency_ms: rates.p99_latency_ms,
-                    active_connections: raw.active_connections,
-                    proxy_active_connections: raw.proxy_active_connections,
-                    rate_limit_rejections_per_sec: raw.rate_limit_rejections_per_sec,
-                    billing_pipeline: raw.billing_pipeline,
-                    circuit_breaker_open_count: raw.circuit_breaker_open_count,
-                    cert_min_expiry_days: raw.cert_min_expiry_days,
-                    service_health: raw.service_health,
-                    alerts_connected: true,
+                    components,
                     error_budget_connected: error_budget_remaining.is_some(),
                     error_budget_remaining,
                     error_budget_slo,
@@ -338,8 +311,44 @@ impl GreptimeDBClient {
         .await
     }
 
-    /// 并行拉取 overview 瞬时原始 KPI（未按 `sample_count` 门控）。
-    async fn fetch_overview_raw_kpis(&self, w: u64, eval_at: Option<i64>) -> Result<OverviewRawKpis> {
+    /// 组件健康列表（应用服务 + 中间件 + 观测组件），异常在前。
+    async fn load_components(&self) -> Result<Vec<ComponentHealth>> {
+        let (rows, probes, containers) = Box::pin(async {
+            tokio::try_join!(
+                self.load_service_health_rows(),
+                self.load_probe_readings(),
+                self.load_container_readings(),
+            )
+        })
+        .await?;
+        let apps = rows
+            .iter()
+            .map(|r| {
+                (
+                    r.service.clone(),
+                    AppProbe {
+                        health_ok: r.health_ok,
+                        ready: r.ready,
+                        config_center: r.config_center,
+                    },
+                )
+            })
+            .collect();
+        let versions = rows
+            .iter()
+            .filter_map(|r| r.version.clone().map(|v| (r.service.clone(), v)))
+            .collect();
+        Ok(assemble_components(
+            &self.service_targets,
+            &apps,
+            &versions,
+            &probes,
+            &containers,
+        ))
+    }
+
+    /// 并行拉取流量 KPI 原始读数；`eval_at = None` 为当前时刻。
+    async fn fetch_traffic(&self, w: u64, eval_at: Option<i64>) -> Result<RawTraffic> {
         let qps_q = business_qps_query(w);
         let success_q = business_success_rate_query(w);
         let error_q = business_error_rate_query(ErrorClass::All, w);
@@ -361,32 +370,23 @@ impl GreptimeDBClient {
             p95,
             p99,
             sample_raw,
-            active_connections,
-            proxy_active_connections,
             rate_limit_rejections_per_sec,
-            billing_pipeline,
-            circuit_breaker_open_count,
-            cert_min_expiry_days,
-            service_health,
-        ) = tokio::try_join!(
-            self.prometheus_instant_value_opt_at(&qps_q, eval_at),
-            self.prometheus_instant_value_opt_at(&success_q, eval_at),
-            self.prometheus_instant_value_opt_at(&error_q, eval_at),
-            self.prometheus_instant_value_opt_at(&error_4xx_q, eval_at),
-            self.prometheus_instant_value_opt_at(&error_5xx_q, eval_at),
-            self.prometheus_instant_value_opt_at(&p50_q, eval_at),
-            self.prometheus_instant_value_opt_at(&p95_q, eval_at),
-            self.prometheus_instant_value_opt_at(&p99_q, eval_at),
-            self.prometheus_instant_value_opt_at(&sample_q, eval_at),
-            self.prometheus_instant_value_at("sum(active_connections)", eval_at),
-            self.prometheus_instant_value_at("sum(active_proxy_connections)", eval_at),
-            self.prometheus_instant_value_at(&ratelimit_q, eval_at),
-            self.query_billing_pipeline_overview(w, eval_at),
-            self.prometheus_instant_value_at("count(circuit_breaker_state > 0)", eval_at),
-            self.prometheus_instant_value_at("min(cert_min_expiry_days)", eval_at),
-            self.load_service_health_lights(),
-        )?;
-        Ok(OverviewRawKpis {
+        ) = Box::pin(async {
+            tokio::try_join!(
+                self.prometheus_instant_value_opt_at(&qps_q, eval_at),
+                self.prometheus_instant_value_opt_at(&success_q, eval_at),
+                self.prometheus_instant_value_opt_at(&error_q, eval_at),
+                self.prometheus_instant_value_opt_at(&error_4xx_q, eval_at),
+                self.prometheus_instant_value_opt_at(&error_5xx_q, eval_at),
+                self.prometheus_instant_value_opt_at(&p50_q, eval_at),
+                self.prometheus_instant_value_opt_at(&p95_q, eval_at),
+                self.prometheus_instant_value_opt_at(&p99_q, eval_at),
+                self.prometheus_instant_value_opt_at(&sample_q, eval_at),
+                self.prometheus_instant_value_at(&ratelimit_q, eval_at),
+            )
+        })
+        .await?;
+        Ok(RawTraffic {
             qps,
             success_rate,
             error_rate,
@@ -396,14 +396,21 @@ impl GreptimeDBClient {
             p95,
             p99,
             sample_raw,
-            active_connections,
-            proxy_active_connections,
             rate_limit_rejections_per_sec,
-            billing_pipeline,
-            circuit_breaker_open_count,
-            cert_min_expiry_days,
-            service_health,
         })
+    }
+
+    /// 当前时刻的仪表类读数：(计费链路, 活跃连接, 代理连接, 熔断打开数, 证书最短天数)。
+    async fn fetch_realtime_gauges(
+        &self,
+    ) -> Result<(BillingPipelineOverview, f64, f64, f64, f64)> {
+        tokio::try_join!(
+            self.query_billing_pipeline_overview(REALTIME_LOOKBACK_SECS),
+            self.prometheus_instant_value_at("sum(active_connections)", None),
+            self.prometheus_instant_value_at("sum(active_proxy_connections)", None),
+            self.prometheus_instant_value_at("count(circuit_breaker_state > 0)", None),
+            self.prometheus_instant_value_at("min(cert_min_expiry_days)", None),
+        )
     }
 
     async fn load_error_budget_snapshot(&self) -> (Option<String>, Option<f64>) {
@@ -417,15 +424,15 @@ impl GreptimeDBClient {
             .map_or((None, None), |(labels, v)| (labels.get("slo").cloned(), Some(v)))
     }
 
-    async fn query_billing_pipeline_overview(&self, w: u64, eval_at: Option<i64>) -> Result<BillingPipelineOverview> {
+    async fn query_billing_pipeline_overview(&self, w: u64) -> Result<BillingPipelineOverview> {
         let lag_q = format!(
             "histogram_quantile(0.99, sum by (le) (rate(billing_charge_lag_seconds_bucket[{w}s])))"
         );
         let (backlog, oldest_pending_age_seconds, dead_letters, lag_p99) = tokio::try_join!(
-            self.prometheus_instant_value_at("sum(billing_outbox_pending)", eval_at),
-            self.prometheus_instant_value_at("max(billing_oldest_pending_age_seconds)", eval_at),
-            self.prometheus_instant_value_at("sum(billing_dead_letters)", eval_at),
-            self.prometheus_instant_value_at(&lag_q, eval_at),
+            self.prometheus_instant_value_at("sum(billing_outbox_pending)", None),
+            self.prometheus_instant_value_at("max(billing_oldest_pending_age_seconds)", None),
+            self.prometheus_instant_value_at("sum(billing_dead_letters)", None),
+            self.prometheus_instant_value_at(&lag_q, None),
         )?;
         Ok(BillingPipelineOverview {
             backlog,
@@ -447,18 +454,6 @@ impl GreptimeDBClient {
         .await
     }
 
-    async fn load_service_health_lights(&self) -> Result<Vec<ServiceHealthLight>> {
-        let rows = self.load_service_health_rows().await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| ServiceHealthLight {
-                service: row.service,
-                name: row.name,
-                status: health_status_color(row.health_ok, row.ready, row.config_center),
-            })
-            .collect())
-    }
-
     async fn load_service_health_rows(&self) -> Result<Vec<ServiceHealthRow>> {
         let health = self
             .prometheus_instant_by_label(r#"mazbri_rpc_health_check{status="healthy"}"#, "service");
@@ -467,7 +462,7 @@ impl GreptimeDBClient {
         let active =
             self.prometheus_instant_by_label("mazbri_db_pool_active_connections", "service");
         let idle = self.prometheus_instant_by_label("mazbri_db_pool_idle_connections", "service");
-        let window = OVERVIEW_WINDOW_SECS;
+        let window = REALTIME_LOOKBACK_SECS;
         let panics = self.prometheus_instant_by_label(
             "sum by (service) (mazbri_recovered_panics_total)",
             "service",
@@ -951,7 +946,7 @@ const CONTAINER_K8S_FILTER: &str =
 /// 明细排障（含 id）；默认图例用下方聚合 BY，避免多副本刷屏。
 /// 默认汇总：compose service / k8s pod+container（勿双采同一容器的 docker+kubelet cAdvisor）。
 /// 默认聚合：compose 服务 / k8s pod+container（不含 id，避免多副本行爆炸）。
-const CONTAINER_BY: &str = "container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name";
+pub(super) const CONTAINER_BY: &str = "container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name";
 /// 明细：含 name/image/id，供单容器排障（默认查询不用，避免双采重复计数）。
 const CONTAINER_BY_DETAIL: &str = "name, image, container_label_com_docker_compose_service, container_label_io_kubernetes_pod_name, container_label_io_kubernetes_container_name, id";
 
@@ -971,7 +966,7 @@ fn container_side(metric: &str, filter: &str, selectors_suffix: &str) -> String 
 }
 
 /// `metric{docker} or metric{k8s}`（gauge / 裸序列用；**不可**再包进 rate/changes/increase）。
-fn container_or(metric: &str, selectors_suffix: &str) -> String {
+pub(super) fn container_or(metric: &str, selectors_suffix: &str) -> String {
     format!(
         "{} or {}",
         container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
@@ -980,7 +975,7 @@ fn container_or(metric: &str, selectors_suffix: &str) -> String {
 }
 
 /// Greptime 不接受 `rate(a or b[w])`，须写成 `rate(a[w]) or rate(b[w])`。
-fn container_rate_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
+pub(super) fn container_rate_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
     format!(
         "rate({}[{window}s]) or rate({}[{window}s])",
         container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
@@ -988,7 +983,7 @@ fn container_rate_or(metric: &str, window: u64, selectors_suffix: &str) -> Strin
     )
 }
 
-fn container_changes_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
+pub(super) fn container_changes_or(metric: &str, window: u64, selectors_suffix: &str) -> String {
     format!(
         "changes({}[{window}s]) or changes({}[{window}s])",
         container_side(metric, CONTAINER_DOCKER_FILTER, selectors_suffix),
@@ -1694,8 +1689,8 @@ pub fn default_service_targets() -> Vec<ServiceMetricTarget> {
         (S::CbproExt, "扩展保护服务"),
         (S::Bypass, "旁路服务"),
         (S::Cert, "证书服务"),
-        (S::Gateway, "网关"),
-        (S::Mgmt, "管理端"),
+        (S::Gateway, "网关服务"),
+        (S::Mgmt, "管理服务"),
         (S::Analytics, "分析服务"),
     ]
     .into_iter()
@@ -1724,22 +1719,12 @@ fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Re
 const SCRAPE_INTERVAL_SECS: u64 = 15;
 /// 各服务指标端口（与 vector 抓取目标一致）。
 const DEFAULT_SCRAPE_PORT: u16 = 9000;
-/// 概览瞬时 KPI 的 `PromQL` rate 窗口（秒）。
-///
-/// 与 mgmt `analytics_window::INSTANT_LOOKBACK_SECS`（60）对齐：
-/// overview **不接受** `from/to`/`range`，固定近窗瞬时语义（IA step-21 方案 B）。
-const OVERVIEW_WINDOW_SECS: u64 = 4 * SCRAPE_INTERVAL_SECS;
-/// Overview 跟窗模式允许的最大 `PromQL` 窗长（7 天）。
-const OVERVIEW_RANGE_MAX_SECS: u64 = 7 * 24 * 3600;
-
-/// Overview 第一行 KPI 查询模式。
-#[derive(Debug, Clone, Copy)]
-pub enum OverviewKpiMode {
-    /// 近瞬时（约 60s）。
-    Instant,
-    /// 跟所选时间窗（`start`/`end` 为 Unix 秒）。
-    Range { start: i64, end: i64 },
-}
+/// 实时状态与服务健康的 `PromQL` rate 窗口（秒，4 × 抓取间隔）。
+pub const REALTIME_LOOKBACK_SECS: u64 = 4 * SCRAPE_INTERVAL_SECS;
+/// Overview 时间窗下限（秒）。
+pub const OVERVIEW_MIN_SECS: u64 = 60;
+/// Overview 时间窗上限（秒，31 天，与时序 / OLAP 查询上限一致）。
+pub const OVERVIEW_MAX_SECS: u64 = 31 * 24 * 3600;
 
 /// 服务级 QPS 排除的探活/指标路径与 404。
 const PROBE_EXCLUSION: &str = r#"path!~"/health|/ready|/metrics",status!="404""#;
@@ -1797,20 +1782,6 @@ fn business_latency_quantile_query(quantile: f64, window: u64) -> String {
 
 fn finite_or_zero(value: f64) -> f64 {
     if value.is_finite() { value } else { 0.0 }
-}
-
-fn health_status_color(
-    health_ok: bool,
-    ready: Option<bool>,
-    config_center: Option<bool>,
-) -> String {
-    if !health_ok || ready == Some(false) {
-        return "red".to_string();
-    }
-    if config_center == Some(false) {
-        return "yellow".to_string();
-    }
-    "green".to_string()
 }
 
 fn build_metric_query(
@@ -2066,14 +2037,6 @@ mod tests {
     }
 
     #[test]
-    fn health_color_prefers_red_then_yellow() {
-        assert_eq!(health_status_color(false, Some(true), Some(true)), "red");
-        assert_eq!(health_status_color(true, Some(false), Some(true)), "red");
-        assert_eq!(health_status_color(true, None, Some(false)), "yellow");
-        assert_eq!(health_status_color(true, None, Some(true)), "green");
-    }
-
-    #[test]
     fn upstream_billing_metrics_split_by_labels() -> Result<()> {
         let t = default_service_targets();
         let q = build_metric_query("breaker_state", None, &t, 60)?;
@@ -2252,19 +2215,54 @@ mod tests {
     }
 
     #[test]
-    fn overview_window_matches_instant_lookback() {
-        assert_eq!(super::OVERVIEW_WINDOW_SECS, 60);
-        assert_eq!(super::OVERVIEW_WINDOW_SECS, 4 * super::SCRAPE_INTERVAL_SECS);
+    fn realtime_lookback_covers_four_scrapes() {
+        assert_eq!(super::REALTIME_LOOKBACK_SECS, 60);
+        assert_eq!(super::REALTIME_LOOKBACK_SECS, 4 * super::SCRAPE_INTERVAL_SECS);
     }
 
     #[test]
-    fn instant_kpi_window_label_mentions_lookback() {
-        let window = super::OverviewKpiWindow {
-            semantics: "instant",
-            lookback_secs: super::OVERVIEW_WINDOW_SECS,
-            label: format!("近瞬时（{}s）", super::OVERVIEW_WINDOW_SECS),
-        };
-        assert_eq!(window.semantics, "instant");
-        assert!(window.label.contains("60"));
+    fn overview_window_rejects_out_of_range_without_clamp() {
+        assert!(super::overview_window(100, 100).is_err());
+        assert!(super::overview_window(0, 59).is_err());
+        let max = i64::try_from(super::OVERVIEW_MAX_SECS).expect("fits");
+        assert!(super::overview_window(0, max + 1).is_err());
+        let w = super::overview_window(0, 30 * 86_400).expect("30d 合法");
+        assert_eq!(w.lookback_secs, 30 * 86_400, "30d 不再被截成 7d");
+        assert_eq!((w.start, w.end), (0, 30 * 86_400));
+    }
+
+    fn raw(sample: Option<f64>, err: Option<f64>) -> super::RawTraffic {
+        super::RawTraffic {
+            qps: Some(1.0),
+            success_rate: Some(100.0),
+            error_rate: err,
+            error_rate_4xx: None,
+            error_rate_5xx: None,
+            p50: Some(0.01),
+            p95: None,
+            p99: Some(0.2),
+            sample_raw: sample,
+            rate_limit_rejections_per_sec: f64::NAN,
+        }
+    }
+
+    #[test]
+    fn traffic_with_samples_reports_zero_errors_not_null() {
+        let t = super::gate_traffic(&raw(Some(509.0), None));
+        assert_eq!(t.sample_count, 509);
+        assert_eq!(t.error_rate, Some(0.0));
+        assert_eq!(t.error_rate_4xx, Some(0.0));
+        assert_eq!(t.error_rate_5xx, Some(0.0));
+        assert_eq!(t.p99_latency_ms, Some(200.0));
+        assert_eq!(t.p95_latency_ms, None, "延迟缺序列仍为 null");
+        assert!(t.rate_limit_rejections_per_sec.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn traffic_without_samples_is_all_null() {
+        let t = super::gate_traffic(&raw(Some(0.0), Some(3.0)));
+        assert_eq!(t.sample_count, 0);
+        assert!(t.qps.is_none() && t.success_rate.is_none() && t.error_rate.is_none());
+        assert!(t.error_rate_4xx.is_none() && t.p99_latency_ms.is_none());
     }
 }

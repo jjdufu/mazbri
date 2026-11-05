@@ -1,17 +1,19 @@
-export interface InstantKpiWindow {
-  semantics: "instant" | string;
+/** 概览所选时间窗（Unix 秒，后端回显，60s–31d，不钳制）。 */
+export interface OverviewWindow {
+  start: number;
+  end: number;
   lookback_secs: number;
-  label: string;
 }
 
-export interface MetricOverview {
-  /** 瞬时 KPI 窗（禁止扁平 kpi_semantics 兼容字段） */
-  window: InstantKpiWindow;
-  /** 近瞬时窗内样本数；0 = 无流量 */
+/**
+ * 业务流量 KPI（网关代理口径）。
+ * 无样本（sample_count = 0）时率/延迟为 null；有样本时错误率至少为 0。
+ */
+export interface TrafficKpis {
   sample_count: number;
-  /** 业务 QPS；无样本为 null */
+  /** 次/秒 */
   qps: number | null;
-  /** 成功率 %；无样本为 null（禁止用 0 冒充） */
+  /** % */
   success_rate: number | null;
   error_rate: number | null;
   error_rate_4xx: number | null;
@@ -19,16 +21,59 @@ export interface MetricOverview {
   p50_latency_ms: number | null;
   p95_latency_ms: number | null;
   p99_latency_ms: number | null;
+  /** 次/秒 */
+  rate_limit_rejections_per_sec: number;
+}
+
+/** 此刻状态（近 lookback_secs 秒，不随时间窗变化）。 */
+export interface RealtimeStatus {
+  eval_at: number;
+  lookback_secs: number;
+  traffic: TrafficKpis;
   active_connections: number;
   proxy_active_connections: number;
-  rate_limit_rejections_per_sec: number;
+  circuit_breaker_open_count: number;
   /** 计费链路；观察者响应中由后端省略 */
   billing_pipeline?: BillingPipelineOverview;
-  circuit_breaker_open_count: number;
   /** 证书最短到期天数；非超管响应中由后端省略 */
   cert_min_expiry_days?: number;
-  service_health: ServiceHealthLight[];
-  alerts_connected: boolean;
+}
+
+export type ComponentGroup = "app" | "middleware" | "observability" | "other";
+export type ComponentStatus = "red" | "yellow" | "unknown" | "green";
+export type ComponentReason =
+  | "health_check_failed"
+  | "not_ready"
+  | "config_center_disconnected"
+  | "probe_down"
+  | "probe_absent"
+  | "under_replicated"
+  | "container_missing"
+  | "recent_restart"
+  | "container_metrics_absent";
+
+/** 组件健康（dashboard 与大屏共用的唯一数据源，后端已按异常优先排序）。 */
+export interface ComponentHealth {
+  key: string;
+  /** 统一中文显示名（后端目录） */
+  name: string;
+  group: ComponentGroup;
+  status: ComponentStatus;
+  reasons: ComponentReason[];
+  container_running: boolean | null;
+  restarts_1h: number | null;
+  cpu_cores: number | null;
+  memory_bytes: number | null;
+  version: string | null;
+}
+
+export interface MetricOverview {
+  window: OverviewWindow;
+  /** 跟所选时间窗 */
+  traffic: TrafficKpis;
+  /** 此刻 */
+  realtime: RealtimeStatus;
+  components: ComponentHealth[];
   error_budget_connected: boolean;
   error_budget_remaining?: number | null;
   error_budget_slo?: string | null;
@@ -40,11 +85,6 @@ export interface BillingPipelineOverview {
   oldest_pending_age_seconds: number;
   dead_letters: number;
   charge_lag_p99_ms: number;
-}
-export interface ServiceHealthLight {
-  service: string;
-  name: string;
-  status: "green" | "yellow" | "red" | string;
 }
 export interface ServiceHealthRow {
   service: string;

@@ -1,6 +1,6 @@
 <template>
   <div class="ops-traffic-panel">
-    <ElRow :gutter="16">
+    <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="8">
         <OpsCard :title="t('ops.traffic.qpsByMode')">
           <MultiSeriesChart :series="qpsSeries" :loading="loading" height="240px" />
@@ -58,7 +58,7 @@
       </OpsTableWrap>
     </OpsCard>
 
-    <ElRow :gutter="16">
+    <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="14">
         <OpsCard :title="t('ops.traffic.statusHeatmap')">
           <HeatmapChart

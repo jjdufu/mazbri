@@ -524,13 +524,13 @@ fn main_router_applies_access_layer_inside_auth_layer() {
 fn ops_stats_and_alerts_follow_role_matrix() {
     // 观察者可读大盘 + 调用检索只读
     for (method, path) in [
-        ("GET", "/stats/platform"),
+        ("GET", "/stats/ops/inventory"),
         ("GET", "/stats/metrics/overview"),
         ("GET", "/stats/metrics/catalog"),
         ("GET", "/stats/metrics/timeseries"),
         ("GET", "/stats/metrics/services/health"),
         ("POST", "/stats/olap/query"),
-        ("POST", "/stats/ops/products/zero-calls"),
+        ("GET", "/stats/ops/products/names"),
         ("GET", "/stats/ops/slos/status"),
         ("GET", "/alerts/events"),
         ("GET", "/alerts/summary"),

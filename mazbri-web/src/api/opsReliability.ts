@@ -3,7 +3,6 @@ import { API_BASE_PATH } from "@/config/api";
 
 const BASE = `${API_BASE_PATH}/stats/ops`;
 
-
 export interface AnomalyEvent {
   id: string;
   detected_at: string;
@@ -19,21 +18,22 @@ export interface AnomalyEvent {
   status: string;
 }
 
-
-
-export function listAnomalies(limit = 50, kind?: string) {
+/** 时间窗 [start, end)（Unix 秒）内最近的异常事件。 */
+export function listAnomalies(params: { start: number; end: number; limit?: number }) {
   return request.get<AnomalyEvent[]>({
     url: `${BASE}/anomalies`,
-    params: { limit, kind },
+    params,
   });
 }
 
+export interface ProductName {
+  product_id: string;
+  name: string | null;
+}
 
-export function zeroCallProducts(active_product_ids: string[]) {
-  return request.post<{ product_id: string; name?: string }[]>({
-    url: `${BASE}/products/zero-calls`,
-    data: { active_product_ids },
-  });
+/** 已启用产品 id → 名称（TopN 显示名、零调用差集）。 */
+export function listProductNames() {
+  return request.get<ProductName[]>({ url: `${BASE}/products/names` });
 }
 
 export interface SloDefinition {

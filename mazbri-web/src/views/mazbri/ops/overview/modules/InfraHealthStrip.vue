@@ -25,6 +25,7 @@
         <span class="infra-health-strip__value">{{
           formatInfraStripValue(item.id, item.value)
         }}</span>
+        <span v-if="item.worst" class="infra-health-strip__worst">{{ item.worst }}</span>
       </button>
     </div>
   </OpsCard>
@@ -123,6 +124,10 @@ defineExpose({ reload });
   background: #f56c6c;
 }
 .infra-health-strip__label {
+  font-size: 12px;
+}
+.infra-health-strip__worst {
+  color: var(--el-text-color-placeholder);
   font-size: 12px;
 }
 .infra-health-strip__value {

@@ -1285,7 +1285,11 @@ fn product_rank_sql(p: &ProductRankParams, binds: &mut Vec<String>) -> String {
         ProductRankMetric::Cost => "cost DESC",
     };
     let limit = clamp_limit(p.limit, 20);
+    // ≤24h 用分钟聚合，避免小时桶把 15m/1h 窗口截成整点（与其它 OLAP 模板一致）。
+    let src = w.agg_source();
+    let ts = src.ts();
     // 当前窗 [start,end) 重复 4 次；前窗 [prev_start,start) 1 次；外层 WHERE prev_start。
+    // 只返回当前窗有调用的产品：仅前窗有量的产品属于“零调用”，由前端按产品名录差集展示。
     for _ in 0..4 {
         binds.push(w.start.to_string());
         binds.push(w.end.to_string());
@@ -1299,15 +1303,16 @@ fn product_rank_sql(p: &ProductRankParams, binds: &mut Vec<String>) -> String {
          p95, cost, prev_req_count \
          FROM ( \
            SELECT product_id, \
-             countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC')) AS req_count, \
-             toFloat64(countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC') AND status_class = '5xx')) AS err_count, \
-             toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC'))[2]) AS p95, \
-             toFloat64(sumMergeIf(cost, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC'))) AS cost, \
-             countMergeIf(c, ts_1h >= toDateTime(toInt64(?), 'UTC') AND ts_1h < toDateTime(toInt64(?), 'UTC')) AS prev_req_count \
-           FROM req_agg_1h \
-           WHERE ts_1h >= toDateTime(toInt64(?), 'UTC') AND product_id != '' \
+             countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC')) AS req_count, \
+             toFloat64(countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC') AND status_class = '5xx')) AS err_count, \
+             toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC'))[2]) AS p95, \
+             toFloat64(sumMergeIf(cost, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC'))) AS cost, \
+             countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC')) AS prev_req_count \
+           FROM {table} \
+           WHERE {ts} >= toDateTime(toInt64(?), 'UTC') AND product_id != '' \
            GROUP BY product_id \
-         ) ORDER BY {order} LIMIT {limit}"
+         ) WHERE req_count > 0 ORDER BY {order} LIMIT {limit}",
+        table = src.table(),
     )
 }
 
@@ -1750,7 +1755,22 @@ mod tests {
         let sql = q.sql();
         assert!(sql.text.contains("error_rate"));
         assert!(sql.text.contains("prev_req_count"));
+        assert!(sql.text.contains("FROM req_agg_1m"), "≤24h 窗口用分钟聚合");
+        assert!(sql.text.contains("WHERE req_count > 0"));
         assert_eq!(sql.binds.len(), 11);
+    }
+
+    #[test]
+    fn product_rank_long_window_uses_hourly_rollup() {
+        let q = parse(&format!(
+            r#"{{"template":"product_rank","params":{{{},"metric":"req_count"}}}}"#,
+            win(7 * 86_400)
+        ))
+        .expect("ok");
+        assert!(q.validate().is_ok());
+        let sql = q.sql().text;
+        assert!(sql.contains("FROM req_agg_1h"));
+        assert!(!sql.contains("ts_1m"));
     }
 
     #[test]

@@ -73,6 +73,8 @@ describe("anomaly helpers", () => {
     ])[0]!;
     assert.equal(anomalyFieldDisplay(row, "value"), "1.5");
     assert.equal(anomalyFieldDisplay(row, "kind"), "—");
+    const at = normalizeAnomalyEvents([{ detected_at: "2026-01-01T16:30:00Z" }])[0]!;
+    assert.equal(anomalyFieldDisplay(at, "detected_at"), "2026-01-02 00:30:00");
     assert.match(anomalyFieldDisplay(row, "detail"), /"k": true/);
   });
 });

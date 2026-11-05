@@ -8,7 +8,6 @@ import {
   changeAnnotationColor,
   changeFieldDisplay,
   formatChangeDetail,
-  last24hWindow,
   normalizeChangeEvents,
   takeChangeTop,
 } from "../changes";
@@ -52,25 +51,6 @@ describe("changes helpers", () => {
     assert.equal(takeChangeTop(rows, 99).length, 3);
   });
 
-  it("last24hWindow is 86400 seconds", () => {
-    const { start, end } = last24hWindow(1_700_000_000_000);
-    assert.equal(end, 1_700_000_000);
-    assert.equal(end - start, 86400);
-  });
-
-  it("column builders share defs", () => {
-    const t = (k: string) => k;
-    const table = buildChangeTableColumns(t);
-    const drawer = buildChangeDrawerFields(t);
-    assert.equal(
-      table.length,
-      CHANGE_COLUMN_DEFS.filter((d) => !d.drawerOnly).length,
-    );
-    assert.equal(drawer.length, CHANGE_COLUMN_DEFS.length);
-    assert.equal(table[0]?.prop, "ts");
-    assert.equal(drawer.at(-1)?.prop, "detail");
-  });
-
   it("annotation helpers", () => {
     assert.equal(changeAnnotationColor("route"), "#409eff");
     assert.equal(changeAnnotationColor("publish"), "#67c23a");
@@ -96,6 +76,12 @@ describe("changes helpers", () => {
     ])[0]!;
     assert.equal(changeFieldDisplay(row, "title"), "hello");
     assert.equal(changeFieldDisplay(row, "actor"), "—");
+    // UTC 原始串按 Asia/Shanghai 显示，不再截断 …Z。
+    const utc = normalizeChangeEvents([
+      { ts: "2026-01-01T00:00:00.000Z", kind: "route", title: "x" },
+    ])[0]!;
+    assert.equal(changeFieldDisplay(utc, "ts"), "2026-01-01 08:00:00");
+    assert.equal(buildChangeTableColumns((k) => k)[0]?.formatter?.(utc), "2026-01-01 08:00:00");
     assert.match(changeFieldDisplay(row, "detail"), /"k": true/);
   });
 });

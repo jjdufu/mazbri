@@ -10,7 +10,7 @@
     @click="onCardClick"
   >
     <span class="ops-stat-card__value">{{ displayValue }}</span>
-    <span v-if="unit" class="ops-stat-card__unit">{{ unit }}</span>
+    <span v-if="unit && hasValue" class="ops-stat-card__unit">{{ unit }}</span>
     <span v-if="hint" class="ops-stat-card__hint" :title="hint">{{
       hint
     }}</span>
@@ -53,8 +53,13 @@ const props = withDefaults(
   },
 );
 
+/** 空值不显示单位（避免「无样本 ms」之类的拼接）。 */
+const hasValue = computed(
+  () => props.value !== null && props.value !== undefined && props.value !== "",
+);
+
 const displayValue = computed(() => {
-  if (props.value === null || props.value === undefined || props.value === "") {
+  if (!hasValue.value) {
     return props.emptyText;
   }
   if (typeof props.value === "number") {

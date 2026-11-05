@@ -166,7 +166,7 @@
       </ElCol>
 
       <ElCol :sm="24" :md="8" :lg="8">
-        <ElCard shadow="never" class="surface-settings-card">
+        <ElCard shadow="never" class="surface-settings-card certificate-detail-page__legend">
           <template #header>
             <span>{{ $t("certificate.detail.sections.statusLegend") }}</span>
           </template>
@@ -371,3 +371,11 @@ onActivated(() => {
   loadData();
 });
 </script>
+
+<style scoped>
+/* 状态说明为说明侧栏：不拉伸到左列高度，滚动时停在顶栏下方 */
+.certificate-detail-page__legend {
+  position: sticky;
+  top: var(--ops-sticky-top);
+}
+</style>

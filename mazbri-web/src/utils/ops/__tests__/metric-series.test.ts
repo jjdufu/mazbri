@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import type { MetricSeries } from "@/types/api/monitoring";
 import {
   aggregateLastMetricValue,
   lastPointValue,
   mapLastPointValues,
+  seriesLegendName,
 } from "../metric-series";
 
 function series(pointsLists: number[][]): MetricSeries {
@@ -47,4 +48,16 @@ describe("metric-series helpers", () => {
     assert.equal(aggregateLastMetricValue(s, "first"), 2);
     assert.equal(aggregateLastMetricValue(null, "max"), null);
   });
+});
+
+test("seriesLegendName hides __name__ and falls back to the metric label", () => {
+  assert.equal(
+    seriesLegendName({ labels: { __name__: "api_proxy_requests_total" } }, 0, 1, "业务 QPS"),
+    "业务 QPS",
+  );
+  assert.equal(seriesLegendName({ labels: {} }, 1, 2, "P99 延迟"), "P99 延迟 #2");
+  assert.equal(
+    seriesLegendName({ labels: { __name__: "x", service: "gateway" } }, 0, 2, "QPS"),
+    "gateway",
+  );
 });

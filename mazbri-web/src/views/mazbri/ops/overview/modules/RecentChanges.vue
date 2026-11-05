@@ -10,7 +10,7 @@
     </template>
 
     <EmptyState
-      v-if="!loading && rows.length === 0"
+      v-if="loaded && !loading && rows.length === 0"
       compact
       :image-size="56"
       :description="t('ops.overview.changeEmpty')"
@@ -65,6 +65,7 @@
             :series="routeSeries"
             :loading="chartsLoading"
             :annotations="annotations"
+            :window="lastWindow"
             height="200px"
           />
         </OpsCard>
@@ -73,6 +74,7 @@
             :series="publishSeries"
             :loading="chartsLoading"
             :annotations="annotations"
+            :window="lastWindow"
             height="200px"
           />
         </OpsCard>
@@ -99,7 +101,6 @@ import {
   buildChangeDrawerFields,
   buildChangeTableColumns,
   changeFieldDisplay,
-  last24hWindow,
   normalizeChangeEvents,
   takeChangeTop,
 } from "@/utils/ops/changes";
@@ -152,19 +153,28 @@ async function loadCharts(start: number, end: number) {
   }
 }
 
+const lastWindow = ref<{ start: number; end: number } | null>(null);
+const loaded = ref(false);
+let seq = 0;
+
 async function openCharts() {
   chartsOpen.value = true;
-  const { start, end } = last24hWindow();
-  await loadCharts(start, end);
+  const w = lastWindow.value;
+  if (w) await loadCharts(w.start, w.end);
 }
 
-async function reload() {
+/** 按全局时间窗取变更与审计事件；速率图沿用同一窗口。 */
+async function reload(window: { start: number; end: number }) {
+  const mine = ++seq;
+  lastWindow.value = window;
   loading.value = true;
   try {
-    const { start, end } = last24hWindow();
-    const raw = await fetchOpsChanges({ start, end, limit: LIST_LIMIT });
+    const raw = await fetchOpsChanges({ ...window, limit: LIST_LIMIT });
+    if (mine !== seq) return;
     rows.value = takeChangeTop(normalizeChangeEvents(raw?.events), LIST_LIMIT);
+    if (chartsOpen.value) void loadCharts(window.start, window.end);
   } catch (error) {
+    if (mine !== seq) return;
     rows.value = [];
     ElMessage.error(
       error instanceof Error
@@ -172,7 +182,10 @@ async function reload() {
         : t("ops.overview.changeLoadFailed"),
     );
   } finally {
-    loading.value = false;
+    if (mine === seq) {
+      loading.value = false;
+      loaded.value = true;
+    }
   }
 }
 
