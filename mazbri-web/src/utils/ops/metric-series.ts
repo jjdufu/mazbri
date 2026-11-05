@@ -45,3 +45,22 @@ export function aggregateLastMetricValue(
     }
   }
 }
+
+/**
+ * 图例名：忽略 `__name__`（原始指标名不进 UI）；无区分标签时用指标中文名，
+ * 多条同名序列追加序号。
+ */
+export function seriesLegendName(
+  series: Pick<MetricSeriesData, "labels">,
+  index: number,
+  total: number,
+  fallback: string,
+): string {
+  const label = Object.entries(series.labels || {})
+    .filter(([key, value]) => key !== "__name__" && Boolean(value))
+    .map(([, value]) => value)
+    .join(" / ");
+  if (label) return label;
+  const base = fallback || "series";
+  return total > 1 ? `${base} #${index + 1}` : base;
+}

@@ -1,5 +1,6 @@
 import type { ChangeEvent } from "@/api/opsChanges";
 import type { ColumnOption } from "@/types/component";
+import { formatDateTime } from "@/utils/format";
 
 /** 变更表列定义（prop + i18n key + 宽度）——列表与抽屉共用一处。 */
 export interface ChangeColumnDef {
@@ -31,6 +32,8 @@ export function buildChangeTableColumns(
     prop: d.prop,
     label: t(d.labelKey),
     width: d.width,
+    // 时间统一按 Asia/Shanghai 显示；空值显示「—」。
+    formatter: (row: ChangeEvent) => changeFieldDisplay(row, d.prop),
   }));
 }
 
@@ -77,15 +80,6 @@ export function takeChangeTop(
   const n = Math.max(0, Math.floor(limit));
   if (n === 0) return [];
   return rows.slice(0, n);
-}
-
-/** 近 24h Unix 秒窗（end 对齐到秒）。 */
-export function last24hWindow(nowMs: number = Date.now()): {
-  start: number;
-  end: number;
-} {
-  const end = Math.floor(nowMs / 1000);
-  return { start: end - 86400, end };
 }
 
 /** 注解颜色：route / publish / 其它。 */
@@ -135,6 +129,7 @@ export function changeFieldDisplay(
   row: ChangeEvent,
   prop: ChangeColumnDef["prop"],
 ): string {
+  if (prop === "ts") return formatDateTime(row.ts || null);
   if (prop === "detail") return formatChangeDetail(row.detail);
   const value = row[prop];
   if (value === null || value === undefined || value === "") return "—";

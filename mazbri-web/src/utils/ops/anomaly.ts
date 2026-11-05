@@ -1,5 +1,6 @@
 import type { AnomalyEvent } from "@/api/opsReliability";
 import type { ColumnOption } from "@/types/component";
+import { formatDateTime } from "@/utils/format";
 
 /** 异常表列定义（prop + i18n key + 宽度）——列表与抽屉共用一处。 */
 export interface AnomalyColumnDef {
@@ -33,6 +34,8 @@ export function buildAnomalyTableColumns(
     prop: d.prop,
     label: t(d.labelKey),
     width: d.width,
+    // 时间统一按 Asia/Shanghai 显示；空值显示「—」。
+    formatter: (row: AnomalyEvent) => anomalyFieldDisplay(row, d.prop),
   }));
 }
 
@@ -101,6 +104,7 @@ export function anomalyFieldDisplay(
   row: AnomalyEvent,
   prop: AnomalyColumnDef["prop"],
 ): string {
+  if (prop === "detected_at") return formatDateTime(row.detected_at || null);
   if (prop === "detail") return formatAnomalyDetail(row.detail);
   const value = row[prop];
   if (value === null || value === undefined || value === "") return "—";

@@ -1,4 +1,5 @@
 /** Shared time-range helpers. URL `tr_start`/`tr_end` are Unix seconds. */
+import { formatWallClockHm, formatWallClockMdHm } from "@/utils/format";
 
 export type TimeRangePreset =
   | "15m"
@@ -65,8 +66,22 @@ export function defaultTimeRange(
   return { preset, start, end };
 }
 
-/** 将 Unix 秒格式化为 HH:mm（本地时区），供热力图轴标签等共用。 */
+/** 将 Unix 秒格式化为 Asia/Shanghai 墙钟 HH:mm，供热力图轴标签等共用。 */
 export function formatClockHm(tsSeconds: number): string {
-  const d = new Date(tsSeconds * 1000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return formatWallClockHm(tsSeconds * 1000);
+}
+
+/**
+ * 时间轴标签：窗口 ≤ 24h 用 `HH:mm`，更长用 `MM-DD HH:mm`（均为 Asia/Shanghai）。
+ */
+export function formatAxisTime(ms: number, spanSecs: number): string {
+  return spanSecs > 86400 ? formatWallClockMdHm(ms) : formatWallClockHm(ms);
+}
+
+/**
+ * 求值用时间窗：预设为滚动窗口，每次刷新以「现在」为终点重算；自定义区间原样返回。
+ */
+export function resolveRange(value: TimeRangeValue, nowSec = Math.floor(Date.now() / 1000)): TimeRangeValue {
+  if (value.preset === "custom") return { ...value };
+  return { preset: value.preset, start: nowSec - PRESET_SECONDS[value.preset], end: nowSec };
 }

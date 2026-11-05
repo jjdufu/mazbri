@@ -1,18 +1,15 @@
 import request from "@/utils/http";
 import type {
-  PlatformStats,
+  PlatformInventory,
   UsageAnalytics,
   AnalyticsQuery,
 } from "@/types/api/analytics";
 import type { RequestOptions } from "@/types/api/common";
 import { API_BASE_PATH } from "@/config/api";
-export function fetchPlatformStats(
-  params?: AnalyticsQuery,
-  options?: RequestOptions,
-) {
-  return request.get<PlatformStats>({
-    url: `${API_BASE_PATH}/stats/platform`,
-    params,
+/** 租户 / 产品规模（非时间窗）。 */
+export function fetchPlatformInventory(options?: RequestOptions) {
+  return request.get<PlatformInventory>({
+    url: `${API_BASE_PATH}/stats/ops/inventory`,
     signal: options?.signal,
   });
 }

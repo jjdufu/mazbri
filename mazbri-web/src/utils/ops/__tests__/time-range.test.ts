@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   defaultTimeRange,
+  formatAxisTime,
   formatClockHm,
+  resolveRange,
   pickerRangeOf,
   PRESET_SECONDS,
   rangeFromQuery,
@@ -48,8 +50,20 @@ test("defaultTimeRange uses preset seconds", () => {
   assert.equal(range.end - range.start, PRESET_SECONDS["1h"]);
 });
 
-test("formatClockHm pads hours and minutes", () => {
-  const label = formatClockHm(1704067500);
-  assert.match(label, /^\d{2}:\d{2}$/);
+test("formatClockHm renders Asia/Shanghai wall clock", () => {
+  // 2024-01-01T00:05:00Z → 08:05 (UTC+8)
+  assert.equal(formatClockHm(1704067500), "08:05");
+});
+
+test("formatAxisTime adds the date only for windows over 24h", () => {
+  assert.equal(formatAxisTime(1704067500_000, 3600), "08:05");
+  assert.equal(formatAxisTime(1704067500_000, 7 * 86400), "01-01 08:05");
+});
+
+test("resolveRange rolls presets to now and keeps custom ranges", () => {
+  const rolled = resolveRange({ preset: "6h", start: 1, end: 2 }, 100_000);
+  assert.deepEqual(rolled, { preset: "6h", start: 100_000 - 6 * 3600, end: 100_000 });
+  const custom = { preset: "custom" as const, start: 10, end: 500 };
+  assert.deepEqual(resolveRange(custom, 100_000), custom);
 });
 

@@ -8,7 +8,7 @@ import type { InfraTabId } from "./infra-link";
 export type InfraStripStatus = "green" | "yellow" | "red" | "unknown";
 
 export interface InfraStripItemDef {
-  id: "pg" | "redis" | "pipeline" | "hostCpu";
+  id: "pipeline" | "hostCpu";
   metric: string;
   /** i18n key under ops.overview.infraStrip.* */
   labelKey: string;
@@ -16,22 +16,11 @@ export interface InfraStripItemDef {
   aggregate: MetricAggregateMode;
 }
 
-/** Dashboard 底座灯条固定四项（与 infra Tab 深链对齐）。 */
+/**
+ * Dashboard 底座灯条（与 infra Tab 深链对齐）。
+ * PG / Redis 存活已并入「组件健康」清单（唯一数据源），这里不再重复。
+ */
 export const INFRA_STRIP_ITEMS: readonly InfraStripItemDef[] = [
-  {
-    id: "pg",
-    metric: "pg_up",
-    labelKey: "ops.overview.infraStrip.pg",
-    tab: "middleware",
-    aggregate: "min",
-  },
-  {
-    id: "redis",
-    metric: "redis_up",
-    labelKey: "ops.overview.infraStrip.redis",
-    tab: "middleware",
-    aggregate: "min",
-  },
   {
     id: "pipeline",
     metric: "pipeline_freshness_seconds",
@@ -66,11 +55,8 @@ export interface InfraStripReading {
   tab: InfraTabId;
   value: number | null;
   status: InfraStripStatus;
-}
-
-export function evaluateUpStatus(value: number | null): InfraStripStatus {
-  if (value === null) return "unknown";
-  return value >= 1 ? "green" : "red";
+  /** 取到最差值的序列标签（如管道新鲜度的 `store/table`），无则为空串。 */
+  worst: string;
 }
 
 export function evaluateFreshnessStatus(value: number | null): InfraStripStatus {
@@ -92,9 +78,6 @@ export function evaluateInfraStripStatus(
   value: number | null,
 ): InfraStripStatus {
   switch (id) {
-    case "pg":
-    case "redis":
-      return evaluateUpStatus(value);
     case "pipeline":
       return evaluateFreshnessStatus(value);
     case "hostCpu":
@@ -119,7 +102,24 @@ export function buildInfraStripReading(
     tab: def.tab,
     value,
     status: evaluateInfraStripStatus(def.id, value),
+    worst: def.aggregate === "max" ? worstSeriesLabel(series) : "",
   };
+}
+
+/** 末点最大的序列标签（去掉 `__name__`，值以 `/` 连接）。 */
+export function worstSeriesLabel(series: MetricSeries | null | undefined): string {
+  let best: { v: number; label: string } | null = null;
+  for (const s of series?.series ?? []) {
+    const last = s.points?.at(-1)?.value;
+    if (last == null || !Number.isFinite(last)) continue;
+    if (best && last <= best.v) continue;
+    const label = Object.entries(s.labels ?? {})
+      .filter(([k]) => k !== "__name__")
+      .map(([, v]) => v)
+      .join("/");
+    best = { v: last, label };
+  }
+  return best?.label ?? "";
 }
 
 /** 灯条展示文案用的数值格式。 */
@@ -129,9 +129,6 @@ export function formatInfraStripValue(
 ): string {
   if (value === null || !Number.isFinite(value)) return "—";
   switch (id) {
-    case "pg":
-    case "redis":
-      return value >= 1 ? "UP" : "DOWN";
     case "pipeline":
       return `${Math.round(value)}s`;
     case "hostCpu":
