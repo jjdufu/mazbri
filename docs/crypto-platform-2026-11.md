@@ -136,7 +136,7 @@ At-rest（supplier_secrets 等）：enc:v2:<kebab-alg>:…
 ## 相关代码入口
 
 - crate：`mazbri-libs/mazbri-crypto`
-- 租户传输：`mazbri-core` transport + gateway / `mazbri-sdk`
+- 租户传输：`mazbri-core` transport + gateway
 - 上游流水线：`mazbri-upstream-runtime`
 - 落库：`mazbri-core` `supplier_secrets`
 - FE：共享套件 / Profile 选择器（租户页与 Workbench 同源闭集）
