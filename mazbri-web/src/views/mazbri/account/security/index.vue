@@ -63,10 +63,7 @@
             >
               <span class="category-status">
                 <span class="category-copy">
-                  <span
-                    class="setting-value"
-                    :class="{ 'is-warning': categoryWarning(category) }"
-                  >
+                  <span class="setting-value">
                     {{ categoryText(category) }}
                   </span>
                   <span class="category-scope">
@@ -378,7 +375,6 @@ import { copyTextToClipboard } from "@/utils/clipboard";
 import {
   MFA_CATEGORIES,
   formatExpiryUtc8,
-  isWarning,
   readSessionExpiresIn,
   type MfaCategory,
 } from "@/utils/http/mfa-step-up-state";
@@ -428,19 +424,11 @@ function categoryRemaining(category: MfaCategory): number {
 function isCategoryOpen(category: MfaCategory): boolean {
   return Boolean(windows.value[category]?.active) && categoryRemaining(category) > 0;
 }
-function categoryWarning(category: MfaCategory): boolean {
-  return isCategoryOpen(category) && isWarning(categoryRemaining(category));
-}
+/** 只展示已验证/未验证；免认证窗口时长（默认 15 分钟）不展示、不可改。 */
 function categoryText(category: MfaCategory): string {
-  if (!isCategoryOpen(category)) {
-    return $t("accountSecurity.mfa.categoryInactive");
-  }
-  // 不展示剩余 MM:SS / 到期时刻；免认证窗口仍按服务端 15 分钟生效。
-  return $t(
-    categoryWarning(category)
-      ? "accountSecurity.mfa.categoryWarning"
-      : "accountSecurity.mfa.categoryActive",
-  );
+  return isCategoryOpen(category)
+    ? $t("accountSecurity.mfa.categoryActive")
+    : $t("accountSecurity.mfa.categoryInactive");
 }
 async function confirmEndCategory(category: MfaCategory): Promise<void> {
   const name = $t(`accountSecurity.mfa.categories.${category}`);
