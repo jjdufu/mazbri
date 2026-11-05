@@ -28,274 +28,218 @@
         </div></template>
     </ElAlert>
 
-    <div class="strategy-grid">
-
-      <ElCard shadow="hover" class="strategy-card">
-        <template #header>
-          <SurfaceCardHeader stack-on-mobile>
-            <template #left>
-              <div class="header-title">
-                <ArtSvgIcon icon="ri:lock-password-line" class="header-icon" />
-                <span>{{
-                  $t("tenant.transportEncryption.sections.strategy")
-                }}</span>
-              </div>
-            </template>
-            <template #actions>
-              <ElButton
-                v-if="cryptoActions.update_profile"
-                v-roles="ROLES_BIZ"
-                type="primary"
-                :loading="saving"
-                :disabled="!tenantCryptoEnabled"
-                @click="saveProfile"
-              >
-                {{ $t("common.actions.save") }}
-              </ElButton>
-            </template>
-          </SurfaceCardHeader>
-        </template>
-
-        <ElForm label-position="top" class="strategy-form">
-
-          <div class="settings-panel">
-            <CommonFormGrid :columns="2" gap="16px 32px">
-              <div class="form-row-item span-2 encryption-mode-section">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.encryptionMode")
-                  }}</span>
-                </div>
-                <div class="form-row-content encryption-mode-content">
-                  <div class="encryption-mode-cards">
-                    <div
-                      v-for="option in cardOptions"
-                      :key="option.value"
-                      class="mode-card"
-                      :class="{
-                        active: form.encryptionMode === option.value,
-                        disabled: !tenantCryptoEnabled || !canWriteBusiness,
-                      }"
-                      @click="
-                        tenantCryptoEnabled &&
-                        canWriteBusiness &&
-                        (form.encryptionMode = option.value)
-                      "
-                    >
-                      <div class="mode-card-icon">
-                        <ArtSvgIcon :icon="option.icon" />
-                      </div>
-                      <div class="mode-card-info">
-                        <div class="mode-card-title">{{ option.label }}</div>
-                        <div class="mode-card-desc">{{ option.desc }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="form-row-item span-2 encryption-suite-section">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.suite")
-                  }}</span>
-                </div>
-                <div class="form-row-content encryption-suite-content">
-                  <CryptoSuiteSelect
-                    v-model="suiteForm"
-                    :disabled="
-                      !tenantCryptoEnabled ||
-                      !canWriteBusiness ||
-                      form.encryptionMode === 'none'
-                    "
-                    :can-toggle-insecure="isSuperAdmin"
-                  />
-                </div>
-              </div>
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.currentKeyVersion")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElSelect
-                    v-model="form.currentKeyVersion"
-                    clearable
-                    :disabled="
-                      form.encryptionMode === 'none' ||
-                      !tenantCryptoEnabled ||
-                      !canWriteBusiness
-                    "
-                    :placeholder="
-                      $t(
-                        'tenant.transportEncryption.placeholders.selectActiveKey',
-                      )
-                    "
-                  >
-                    <ElOption
-                      v-for="key in activeKeys"
-                      :key="key.key_version"
-                      :label="key.key_version"
-                      :value="key.key_version"
-                    />
-                  </ElSelect>
-                </div>
-              </div>
-            </CommonFormGrid>
-          </div>
-
-          <div class="settings-panel">
-            <CommonFormGrid :columns="2" gap="16px 32px">
-              <div class="form-row-item">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.signatureCheck")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <CommonSwitchRow>
-                    <ElSwitch
-                      v-model="form.requireSignature"
-                      :disabled="!tenantCryptoEnabled || !canWriteBusiness || form.encryptionMode === 'none'"
-                    />
-                    <span class="switch-text ml-2">
-                      {{
-                        form.requireSignature
-                          ? $t("common.status.enabled")
-                          : $t("common.status.disabled")
-                      }}
-                    </span>
-                  </CommonSwitchRow>
-                </div>
-              </div>
-            </CommonFormGrid>
-          </div>
-
-          <div class="settings-panel">
-            <CommonFormGrid :columns="2" gap="16px 32px">
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.nonceTtlSeconds")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElInputNumber
-                    v-model="form.nonceTtlSeconds"
-                    :min="60"
-                    :max="3600"
-                    :step="60"
-                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
-                  />
-                </div>
-              </div>
-              <div class="form-row-item span-2">
-                <div class="form-row-label">
-                  <span>{{
-                    $t("tenant.transportEncryption.fields.clockSkewSeconds")
-                  }}</span>
-                </div>
-                <div class="form-row-content">
-                  <ElInputNumber
-                    v-model="form.clockSkewSeconds"
-                    :min="60"
-                    :max="3600"
-                    :step="60"
-                    :disabled="!tenantCryptoEnabled || !canWriteBusiness"
-                  />
-                </div>
-              </div>
-            </CommonFormGrid>
-          </div>
-        </ElForm>
-      </ElCard>
-
-      <ElCard shadow="hover" class="strategy-card">
-        <template #header>
-          <SurfaceCardHeader stack-on-mobile>
-            <template #left>
-              <div class="header-title">
-                <ArtSvgIcon icon="ri:key-2-line" class="header-icon" />
-                <span>{{
-                  $t("tenant.transportEncryption.sections.keyVersions")
-                }}</span>
-              </div>
-            </template>
-            <template #actions>
-              <ElButton
-                v-if="cryptoActions.create_key"
-                v-roles="ROLES_BIZ"
-                :loading="creating"
-                :disabled="!tenantCryptoEnabled"
-                @click="createKey"
-              >
-                {{ $t("tenant.transportEncryption.actions.createKey") }}
-              </ElButton>
-              <ElButton
-                v-if="cryptoActions.rotate_key"
-                v-roles="ROLES_BIZ"
-                type="primary"
-                :loading="rotating"
-                :disabled="!tenantCryptoEnabled"
-                @click="rotateKey"
-              >
-                {{ $t("tenant.transportEncryption.actions.rotateKey") }}
-              </ElButton>
-            </template>
-          </SurfaceCardHeader>
-        </template>
-
-        <ArtTable
-          v-loading="loading"
-          :data="keys"
-          :columns="keyColumns"
-          border
-          stripe
-          empty-height="auto"
-          class="keys-table"
+    <SettingsCardGrid>
+      <template #left>
+        <SettingsCard
+          icon="ri:lock-password-line"
+          :title="$t('tenant.transportEncryption.sections.strategy')"
         >
-          <template #status="{ row }">
-            <StatusIndicator :type="statusType(row.status)">{{
-              getStatusLabel(row.status)
-            }}</StatusIndicator>
+          <template #actions>
+            <ElButton
+              v-if="cryptoActions.update_profile"
+              v-roles="ROLES_BIZ"
+              type="primary"
+              :loading="saving"
+              :disabled="!tenantCryptoEnabled"
+              @click="saveProfile"
+            >
+              {{ $t("common.actions.save") }}
+            </ElButton>
           </template>
-          <template #operations="{ row }">
-            <CommonInlineRow gap="8px">
-              <ElButton
-                v-if="cryptoActions.activate_key && row.status !== 'active'"
-                v-roles="ROLES_BIZ"
-                link
-                type="primary"
-                :disabled="!tenantCryptoEnabled"
-                @click="setStatus(row.key_version, 'activate')"
+
+          <CommonSettingRow
+            mode="block"
+            :label="$t('tenant.transportEncryption.fields.encryptionMode')"
+          >
+            <div class="encryption-mode-cards">
+              <div
+                v-for="option in cardOptions"
+                :key="option.value"
+                class="mode-card"
+                :class="{
+                  active: form.encryptionMode === option.value,
+                  disabled: !tenantCryptoEnabled || !canWriteBusiness,
+                }"
+                @click="
+                  tenantCryptoEnabled &&
+                  canWriteBusiness &&
+                  (form.encryptionMode = option.value)
+                "
               >
-                {{ $t("tenant.transportEncryption.actions.activate") }}
-              </ElButton>
-              <ElButton
-                v-if="cryptoActions.disable_key && row.status !== 'disabled'"
-                v-roles="ROLES_BIZ"
-                link
-                type="warning"
-                :disabled="!tenantCryptoEnabled"
-                @click="setStatus(row.key_version, 'disable')"
-              >
-                {{ $t("tenant.transportEncryption.actions.disable") }}
-              </ElButton>
-              <ElButton
-                v-if="cryptoActions.delete_key"
-                v-roles="ROLES_BIZ"
-                link
-                type="danger"
-                :disabled="!tenantCryptoEnabled"
-                @click="handleDelete(row.key_version)"
-              >
-                {{ $t("tenant.transportEncryption.actions.delete") }}
-              </ElButton>
-            </CommonInlineRow>
+                <div class="mode-card-icon">
+                  <ArtSvgIcon :icon="option.icon" />
+                </div>
+                <div class="mode-card-info">
+                  <div class="mode-card-title">{{ option.label }}</div>
+                  <div class="mode-card-desc">{{ option.desc }}</div>
+                </div>
+              </div>
+            </div>
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="block"
+            :label="$t('tenant.transportEncryption.fields.suite')"
+          >
+            <CryptoSuiteSelect
+              v-model="suiteForm"
+              :disabled="
+                !tenantCryptoEnabled ||
+                !canWriteBusiness ||
+                form.encryptionMode === 'none'
+              "
+              :can-toggle-insecure="isSuperAdmin"
+            />
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('tenant.transportEncryption.fields.currentKeyVersion')"
+          >
+            <ElSelect
+              v-model="form.currentKeyVersion"
+              clearable
+              class="transport-control"
+              :disabled="
+                form.encryptionMode === 'none' ||
+                !tenantCryptoEnabled ||
+                !canWriteBusiness
+              "
+              :placeholder="
+                $t('tenant.transportEncryption.placeholders.selectActiveKey')
+              "
+            >
+              <ElOption
+                v-for="key in activeKeys"
+                :key="key.key_version"
+                :label="key.key_version"
+                :value="key.key_version"
+              />
+            </ElSelect>
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('tenant.transportEncryption.fields.signatureCheck')"
+          >
+            <ElSwitch
+              v-model="form.requireSignature"
+              :disabled="
+                !tenantCryptoEnabled ||
+                !canWriteBusiness ||
+                form.encryptionMode === 'none'
+              "
+            />
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('tenant.transportEncryption.fields.nonceTtlSeconds')"
+          >
+            <ElInputNumber
+              v-model="form.nonceTtlSeconds"
+              :min="60"
+              :max="3600"
+              :step="60"
+              class="transport-control"
+              :disabled="!tenantCryptoEnabled || !canWriteBusiness"
+            />
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('tenant.transportEncryption.fields.clockSkewSeconds')"
+          >
+            <ElInputNumber
+              v-model="form.clockSkewSeconds"
+              :min="60"
+              :max="3600"
+              :step="60"
+              class="transport-control"
+              :disabled="!tenantCryptoEnabled || !canWriteBusiness"
+            />
+          </CommonSettingRow>
+        </SettingsCard>
+      </template>
+
+      <template #right>
+        <SettingsCard
+          icon="ri:key-2-line"
+          :title="$t('tenant.transportEncryption.sections.keyVersions')"
+        >
+          <template #actions>
+            <ElButton
+              v-if="cryptoActions.create_key"
+              v-roles="ROLES_BIZ"
+              :loading="creating"
+              :disabled="!tenantCryptoEnabled"
+              @click="createKey"
+            >
+              {{ $t("tenant.transportEncryption.actions.createKey") }}
+            </ElButton>
+            <ElButton
+              v-if="cryptoActions.rotate_key"
+              v-roles="ROLES_BIZ"
+              type="primary"
+              :loading="rotating"
+              :disabled="!tenantCryptoEnabled"
+              @click="rotateKey"
+            >
+              {{ $t("tenant.transportEncryption.actions.rotateKey") }}
+            </ElButton>
           </template>
-        </ArtTable>
-      </ElCard>
-    </div>
+
+          <ArtTable
+            v-loading="loading"
+            :data="keys"
+            :columns="keyColumns"
+            border
+            stripe
+            empty-height="auto"
+            class="keys-table"
+          >
+            <template #status="{ row }">
+              <StatusIndicator :type="statusType(row.status)">{{
+                getStatusLabel(row.status)
+              }}</StatusIndicator>
+            </template>
+            <template #operations="{ row }">
+              <CommonInlineRow gap="8px">
+                <ElButton
+                  v-if="cryptoActions.activate_key && row.status !== 'active'"
+                  v-roles="ROLES_BIZ"
+                  link
+                  type="primary"
+                  :disabled="!tenantCryptoEnabled"
+                  @click="setStatus(row.key_version, 'activate')"
+                >
+                  {{ $t("tenant.transportEncryption.actions.activate") }}
+                </ElButton>
+                <ElButton
+                  v-if="cryptoActions.disable_key && row.status !== 'disabled'"
+                  v-roles="ROLES_BIZ"
+                  link
+                  type="warning"
+                  :disabled="!tenantCryptoEnabled"
+                  @click="setStatus(row.key_version, 'disable')"
+                >
+                  {{ $t("tenant.transportEncryption.actions.disable") }}
+                </ElButton>
+                <ElButton
+                  v-if="cryptoActions.delete_key"
+                  v-roles="ROLES_BIZ"
+                  link
+                  type="danger"
+                  :disabled="!tenantCryptoEnabled"
+                  @click="handleDelete(row.key_version)"
+                >
+                  {{ $t("tenant.transportEncryption.actions.delete") }}
+                </ElButton>
+              </CommonInlineRow>
+            </template>
+          </ArtTable>
+        </SettingsCard>
+      </template>
+    </SettingsCardGrid>
 
     <CenteredDialog
       v-model="secretDialogVisible"
@@ -368,12 +312,12 @@ import type {
 import { logger } from "@/utils/sys";
 import { getStatusLabel } from "@/utils/display-labels";
 import type { ColumnOption } from "@/types/component";
-import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
-import CommonSwitchRow from "@/components/common/switch-row/index.vue";
+import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
+import SettingsCard from "@/components/common/settings-card/index.vue";
+import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
-import CommonFormGrid from "@/components/common/form-grid/index.vue";
 import CryptoSuiteSelect, {
   type CryptoSuiteSelectValue,
 } from "@/components/crypto/CryptoSuiteSelect.vue";
@@ -665,96 +609,8 @@ onMounted(loadData);
 </script>
 
 <style scoped lang="scss">
-.transport-encryption-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.strategy-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-.strategy-card {
-  min-width: 0;
-  height: 100%;
-}
-
-.strategy-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.header-icon {
-  font-size: 20px;
-  color: var(--el-color-primary);
-}
-
-.settings-panel {
-  // Flat section inside the card: no nested bordered/gray box.
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 4px 0 0;
-}
-
-.form-row-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px 32px;
-}
-
-.form-row-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 32px;
-
-  &.span-2 {
-    grid-column: span 2;
-  }
-
-  .form-row-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-regular);
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-  }
-
-  .form-row-content {
-    flex: 1;
-    max-width: 180px;
-    flex-shrink: 0;
-
-    :deep(.el-input-number) {
-      width: 100%;
-      min-width: 120px;
-    }
-
-    :deep(.el-select) {
-      width: 100%;
-    }
-
-    :deep(.el-segmented) {
-      width: 100%;
-    }
-  }
+.transport-control {
+  width: 180px;
 }
 
 .keys-table {
@@ -772,24 +628,6 @@ onMounted(loadData);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
-}
-
-.form-row-item.encryption-mode-section,
-.form-row-item.encryption-suite-section {
-  height: auto;
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 12px;
-
-  .form-row-label {
-    margin-bottom: 4px;
-  }
-}
-
-.encryption-mode-content,
-.encryption-suite-content {
-  max-width: 100% !important;
   width: 100%;
 }
 
@@ -879,25 +717,5 @@ onMounted(loadData);
   color: var(--el-text-color-secondary);
   line-height: 1.4;
   white-space: normal;
-}
-
-@media (max-width: 768px) {
-  .strategy-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .form-row-item {
-    height: auto;
-
-    .form-row-content {
-      max-width: 160px;
-    }
-  }
-
-  .form-row-item.encryption-mode-section {
-    .form-row-content {
-      max-width: 100%;
-    }
-  }
 }
 </style>

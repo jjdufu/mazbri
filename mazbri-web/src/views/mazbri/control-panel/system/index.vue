@@ -14,119 +14,62 @@
       </ElButton>
     </template>
 
-    <div v-loading="pageLoading" class="strategy-grid">
+    <SettingsCardGrid v-loading="pageLoading">
+      <template #left>
+        <SettingsCard
+          icon="ri:settings-3-line"
+          :title="$t('systemSettings.sections.basic')"
+        >
+          <BasicSettings v-model="systemForm" />
+        </SettingsCard>
+        <SettingsCard
+          icon="ri:eye-line"
+          :title="$t('systemSettings.display.title')"
+        >
+          <DisplaySettings
+            :model-value="localAppearanceSettings"
+            :display-settings="displaySettings"
+            @update:model-value="handleAppearanceModelUpdate"
+          />
+        </SettingsCard>
+      </template>
 
-      <div class="strategy-col">
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon
-                    icon="ri:settings-3-line"
-                    class="card-header-icon"
-                  />
-                  <span>{{ $t("systemSettings.sections.basic") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div class="settings-panel">
-            <BasicSettings v-model="systemForm" />
-          </div>
-        </ElCard>
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon icon="ri:eye-line" class="card-header-icon" />
-                  <span>{{ $t("systemSettings.display.title") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div class="settings-panel">
-            <DisplaySettings
-              :model-value="localAppearanceSettings"
-              :display-settings="displaySettings"
-              @update:model-value="handleAppearanceModelUpdate"
-            />
-          </div>
-        </ElCard>
-      </div>
-
-      <div class="strategy-col">
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon icon="ri:palette-line" class="card-header-icon" />
-                  <span>{{ $t("systemSettings.theme.title") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div class="settings-panel">
-            <ThemeSettings
-              :model-value="localAppearanceSettings"
-              :main-colors="configOptions.mainColors"
-              @update:model-value="handleAppearanceModelUpdate"
-            />
-          </div>
-        </ElCard>
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon
-                    icon="ri:layout-grid-line"
-                    class="card-header-icon"
-                  />
-                  <span>{{ $t("systemSettings.layout.title") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div class="settings-panel">
-            <LayoutSettings
-              :model-value="localAppearanceSettings"
-              :container-width-options="containerWidthOptions"
-              :box-style-options="boxStyleOptionsWithIcon"
-              @update:model-value="handleAppearanceModelUpdate"
-            />
-          </div>
-        </ElCard>
-
-        <ElCard shadow="hover" class="strategy-card">
-          <template #header>
-            <SurfaceCardHeader>
-              <template #left>
-                <div class="card-header-title">
-                  <ArtSvgIcon icon="ri:magic-line" class="card-header-icon" />
-                  <span>{{ $t("systemSettings.style.title") }}</span>
-                </div>
-              </template>
-            </SurfaceCardHeader>
-          </template>
-          <div class="settings-panel">
-            <StyleSettings
-              :model-value="localAppearanceSettings"
-              :tab-style-options="tabStyleOptions"
-              :page-transition-options="pageTransitionOptions"
-              :custom-radius-options="customRadiusOptions"
-              @update:model-value="handleAppearanceModelUpdate"
-            />
-          </div>
-        </ElCard>
-      </div>
-    </div>
+      <template #right>
+        <SettingsCard
+          icon="ri:palette-line"
+          :title="$t('systemSettings.theme.title')"
+        >
+          <ThemeSettings
+            :model-value="localAppearanceSettings"
+            :main-colors="configOptions.mainColors"
+            @update:model-value="handleAppearanceModelUpdate"
+          />
+        </SettingsCard>
+        <SettingsCard
+          icon="ri:layout-grid-line"
+          :title="$t('systemSettings.layout.title')"
+        >
+          <LayoutSettings
+            :model-value="localAppearanceSettings"
+            :container-width-options="containerWidthOptions"
+            :box-style-options="boxStyleOptionsWithIcon"
+            @update:model-value="handleAppearanceModelUpdate"
+          />
+        </SettingsCard>
+        <SettingsCard
+          icon="ri:magic-line"
+          :title="$t('systemSettings.style.title')"
+        >
+          <StyleSettings
+            :model-value="localAppearanceSettings"
+            :tab-style-options="tabStyleOptions"
+            :page-transition-options="pageTransitionOptions"
+            :custom-radius-options="customRadiusOptions"
+            @update:model-value="handleAppearanceModelUpdate"
+          />
+        </SettingsCard>
+      </template>
+    </SettingsCardGrid>
   </ControlPanelPageShell>
 </template>
 
@@ -135,7 +78,8 @@ import { computed, onMounted, onActivated } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
-import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
+import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
+import SettingsCard from "@/components/common/settings-card/index.vue";
 import BasicSettings from "./modules/BasicSettings.vue";
 import ThemeSettings from "./modules/ThemeSettings.vue";
 import LayoutSettings from "./modules/LayoutSettings.vue";
@@ -202,71 +146,3 @@ onActivated(() => {
   loadAppearanceSettings();
 });
 </script>
-
-<style scoped lang="scss">
-
-.strategy-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: stretch;
-}
-
-.strategy-col {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  height: 100%;
-}
-
-.strategy-card {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-
-  &:last-child {
-    flex: 1;
-  }
-
-  :deep(.el-card__header) {
-    padding: 20px 20px 0px !important;
-    border-bottom: none !important;
-  }
-
-  :deep(.el-card__body) {
-    padding: 0 20px 20px !important;
-    overflow: visible !important;
-  }
-}
-
-.card-header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.card-header-icon {
-  font-size: 18px;
-  color: var(--el-color-primary);
-}
-
-.settings-panel {
-  // Flat section inside the card: no nested bordered/gray box.
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 4px 0 0;
-  margin-top: 8px;
-
-  overflow: visible;
-}
-
-@media (max-width: 1100px) {
-  .strategy-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

@@ -907,12 +907,10 @@
       "siteUrlPlaceholder": "https://example.com",
       "adminEmail": "Admin Email",
       "adminEmailPlaceholder": "admin@example.com",
-      "securitySettings": "Security Settings",
       "sessionTimeout": "Admin session timeout (min, sets access JWT expiry)",
       "maxLoginAttempts": "Max Login Attempts (times)",
       "saveSettings": "Save Settings",
       "resetToDefault": "Reset to Default",
-      "appearanceSettingsTitle": "Appearance Settings",
       "tenantGatewayUrl": "Tenant Gateway URL",
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "Tenant API gateway base URL (not the admin console)."
@@ -973,11 +971,11 @@
   },
   "securityPolicy": {
     "actions": {
-      "saveSettings": "Save Settings"
+      "savePolicy": "Save Policy"
     },
     "sections": {
       "complexity": {
-        "title": "Complexity Requirements"
+        "title": "Password Complexity"
       },
       "expiration": {
         "title": "Expiration and Reuse"
@@ -2843,11 +2841,6 @@
         "strategy": "Transport Encryption Policy",
         "keyVersions": "Key Versions"
       },
-      "formSections": {
-        "basicControl": "Basic Control",
-        "security": "Security Options",
-        "timeParams": "Time Security Parameters"
-      },
       "fields": {
         "encryptionMode": "Encryption Mode",
         "suite": "Algorithm Suite",
@@ -3172,7 +3165,6 @@
     },
     "cachePolicy": {
       "title": "Proxy Response Cache",
-      "globalSettings": "Global Cache Config",
       "apiOverrides": "API-level Differentiated Config",
       "warmupList": "Data Preload (Warmup)",
       "addRule": "Add Rule",
@@ -3225,10 +3217,8 @@
     "seconds": "seconds",
     "basicControl": "Basic Control",
     "coreThresholds": "Core Thresholds",
-    "planRateSection": "Plan rate",
-    "planQps": "QPS",
-    "planBurst": "Burst",
-    "abuseSection": "Abuse controls",
+    "planQps": "Plan QPS",
+    "planBurst": "Plan Burst",
     "clientIpQps": "Per-IP QPS",
     "clientIpBurst": "Per-IP burst",
     "bandwidthMbps": "Bandwidth (Mbps, 0=unlimited)",
@@ -3241,8 +3231,6 @@
     "pathPlaceholder": "e.g. /posts or product:8000000001",
     "overrideExceedsPlan": "Override for \"{path}\" ({limit} QPS) exceeds plan rate ({planQps}). Lower it before saving.",
     "overrideInvalidLimit": "Override for \"{path}\" has an invalid limit",
-    "enabledOn": "On",
-    "enabledOff": "Off",
     "clientIpHint": "",
     "bandwidthHint": "",
     "enforcementNotice": "",
@@ -4129,22 +4117,17 @@
   },
   "accountSecurity": {
     "page": {
-      "title": "Account Security",
-      "subtitle": "Manage MFA and password for the signed-in account"
+      "title": "Account Security"
     },
     "mfa": {
       "title": "Two-Factor Authentication (MFA)",
       "statusEnabled": "Enabled",
       "statusDisabled": "Not enabled",
-      "description": "Sensitive actions require two-step verification. After you verify, the same category does not ask again for a while. Accounts without MFA cannot perform these actions. Everyday sign-in and viewing are not affected.",
+      "hint": "Sensitive actions require two-step verification. After you verify, the same category does not ask again for a while. Accounts without MFA cannot perform these actions; everyday sign-in and viewing are not affected. A code cannot be reused, and repeated wrong codes lock MFA, ending every open elevation.",
+      "userHint": "Only a superadmin can disable or reset MFA via User Management; non-admin accounts cannot disable it or regenerate backup codes.",
       "changedAt": "Changed at",
       "backupCodesRemaining": "Backup codes left",
-      "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled.",
-      "attemptsHint": "A wrong code uses up a remaining attempt. MFA locks when none remain.",
-      "lockHint": "While MFA is locked you cannot verify, and every open category elevation ends. Try again after the lock expires.",
-      "replayHint": "The same code cannot be reused. Wait for the authenticator to refresh, or use an unused backup code.",
-      "adminUnbindHint": "Only a superadmin can unbind MFA via User Management. After a reset you must sign in again before binding.",
-      "enabledOnlyHint": "MFA is enabled. Non-admin accounts cannot disable it or regenerate backup codes."
+      "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled."
     },
     "setup": {
       "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
@@ -4206,9 +4189,7 @@
       "copyFailed": "Copy failed, please copy manually"
     },
     "platformPolicy": {
-      "title": "Platform Security Policy",
-      "description": "Password complexity, expiration, login protection, and platform TOTP settings (applies to all users). Superadmins only.",
-      "readOnlyHint": "Only the super administrator can change platform policy; this view is read-only",
+      "description": "The TOTP, login protection and password policies below apply to all users. Click \"Save Policy\" at the top right to apply changes.",
       "sessionHint": "Admin session lifetime is controlled by system settings, independent of the password policy on this page.",
       "sessionLink": "Open system settings"
     }

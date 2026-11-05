@@ -1,626 +1,95 @@
 <template>
   <ControlPanelPageShell
     :title="$t('accountSecurity.page.title')"
-    :subtitle="$t('accountSecurity.page.subtitle')"
     icon="ri:shield-user-line"
   >
-    <div class="security-stack">
-      <ElCard v-loading="statusLoading" shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon
-                  icon="ri:smartphone-line"
-                  class="card-header-icon"
-                />
-                <span>{{ $t("accountSecurity.mfa.title") }}</span>
-              </div>
-            </template>
-            <template #actions>
-              <ElTag :type="mfaEnabled ? 'success' : 'info'" effect="light">
-                {{
-                  mfaEnabled
-                    ? $t("accountSecurity.mfa.statusEnabled")
-                    : $t("accountSecurity.mfa.statusDisabled")
-                }}
-              </ElTag>
-            </template>
-          </SurfaceCardHeader>
+    <template v-if="isAdmin" #actions>
+      <ElButton type="primary" :loading="policySaving" @click="policy.saveAll">
+        <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
+        {{ $t("securityPolicy.actions.savePolicy") }}
+      </ElButton>
+    </template>
+
+    <SettingsCardGrid>
+      <!-- 左列「身份验证」：MFA 绑定 /（超管）TOTP 参数、登录保护 -->
+      <template #left>
+        <MfaCard />
+        <template v-if="isAdmin">
+          <TotpPolicyCard />
+          <LoginProtectionCard />
         </template>
+      </template>
 
-        <div class="settings-panel">
-          <CommonInlineHint block size="xs">
-            {{ $t("accountSecurity.mfa.description") }}
-          </CommonInlineHint>
-
-          <template v-if="mfaEnabled && isAdmin">
-            <CommonInlineHint block size="xs">
-              {{ $t("accountSecurity.mfa.attemptsHint") }}
-            </CommonInlineHint>
-            <CommonInlineHint block size="xs">
-              {{ $t("accountSecurity.mfa.lockHint") }}
-            </CommonInlineHint>
-            <CommonInlineHint block size="xs">
-              {{ $t("accountSecurity.mfa.replayHint") }}
-            </CommonInlineHint>
-            <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
-              {{ $t("accountSecurity.mfa.forcedHint") }}
-            </CommonInlineHint>
-            <CommonSettingRow
-              mode="inline"
-              mobile-stack
-              :label="$t('accountSecurity.mfa.changedAt')"
-            >
-              <span class="setting-value">{{ changedAtText }}</span>
-            </CommonSettingRow>
-            <CommonSettingRow
-              mode="inline"
-              mobile-stack
-              :label="$t('accountSecurity.mfa.backupCodesRemaining')"
-            >
-              <span
-                class="setting-value"
-                :class="{ 'is-warning': backupCodesRemaining <= 2 }"
-              >
-                {{ backupCodesRemaining }}
-              </span>
-            </CommonSettingRow>
-          </template>
-
-          <template v-else-if="mfaEnabled">
-            <CommonInlineHint block size="xs">
-              {{ $t("accountSecurity.mfa.enabledOnlyHint") }}
-            </CommonInlineHint>
-            <CommonInlineHint block size="xs" tone="warning">
-              {{ $t("accountSecurity.mfa.adminUnbindHint") }}
-            </CommonInlineHint>
-            <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
-              {{ $t("accountSecurity.mfa.forcedHint") }}
-            </CommonInlineHint>
-          </template>
-
-          <!-- 绑定流程：获取密钥/二维码 → 输入验证码启用（全角色自助） -->
-          <div v-if="!mfaEnabled && setupData" class="setup-section">
-            <ol class="setup-steps">
-              <li>{{ $t("accountSecurity.setup.stepInstall") }}</li>
-              <li>{{ $t("accountSecurity.setup.stepScan") }}</li>
-              <li>{{ $t("accountSecurity.setup.stepEnter") }}</li>
-            </ol>
-            <div class="setup-body">
-              <div class="qr-wrap">
-                <QrcodeVue
-                  :value="setupData.qr_code_url"
-                  :size="148"
-                  level="M"
-                  render-as="canvas"
-                  background="#ffffff"
-                  foreground="#000000"
-                />
-              </div>
-              <div class="setup-fields">
-                <div class="field-label">
-                  {{ $t("accountSecurity.setup.secretLabel") }}
-                </div>
-                <div class="inline-field">
-                  <ElInput :model-value="setupData.secret" readonly />
-                  <ElButton @click="copyText(setupData.secret)">
-                    {{ $t("accountSecurity.actions.copy") }}
-                  </ElButton>
-                </div>
-                <div class="field-label">
-                  {{
-                    $t("accountSecurity.setup.codeLabel", {
-                      digits: setupDigits,
-                    })
-                  }}
-                </div>
-                <div class="inline-field">
-                  <ElInput
-                    v-model.trim="setupCode"
-                    :maxlength="setupDigits"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    :placeholder="$t('accountSecurity.setup.codePlaceholder')"
-                    @keyup.enter="handleEnable"
-                  />
-                  <ElButton
-                    type="primary"
-                    :loading="actionLoading"
-                    @click="handleEnable"
-                  >
-                    {{ $t("accountSecurity.actions.enable") }}
-                  </ElButton>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="backupCodes.length > 0" class="backup-section">
-            <div class="backup-header">
-              <span class="field-label">
-                {{ $t("accountSecurity.backupCodes.title") }}
-              </span>
-              <ElButton size="small" @click="copyText(backupCodes.join('\n'))">
-                {{ $t("accountSecurity.actions.copyAll") }}
-              </ElButton>
-            </div>
-            <CommonInlineHint block size="xs" tone="warning">
-              {{ $t("accountSecurity.backupCodes.hint") }}
-            </CommonInlineHint>
-            <div class="backup-codes">
-              <code v-for="code in backupCodes" :key="code">{{ code }}</code>
-            </div>
-          </div>
-
-          <div class="card-actions">
-            <template v-if="mfaEnabled && isAdmin">
-              <ElButton :loading="actionLoading" @click="handleRegenerate">
-                {{ $t("accountSecurity.actions.regenerateCodes") }}
-              </ElButton>
-              <ElButton
-                v-if="!mfaRequired"
-                type="danger"
-                plain
-                :loading="actionLoading"
-                @click="handleDisable"
-              >
-                {{ $t("accountSecurity.actions.disable") }}
-              </ElButton>
-            </template>
-            <template v-else-if="!mfaEnabled && setupData">
-              <ElButton @click="cancelSetup">
-                {{ $t("common.cancel") }}
-              </ElButton>
-            </template>
-            <ElButton
-              v-else-if="!mfaEnabled"
-              type="primary"
-              :loading="actionLoading"
-              @click="handleStartSetup"
-            >
-              {{ $t("accountSecurity.actions.bind") }}
-            </ElButton>
-          </div>
-        </div>
-      </ElCard>
-
-      <ElCard shadow="hover" class="security-card">
-        <template #header>
-          <SurfaceCardHeader>
-            <template #left>
-              <div class="card-header-title">
-                <ArtSvgIcon
-                  icon="ri:lock-password-line"
-                  class="card-header-icon"
-                />
-                <span>{{ $t("accountSecurity.password.title") }}</span>
-              </div>
-            </template>
-            <template #actions>
-              <ElButton
-                type="primary"
-                :loading="passwordLoading"
-                @click="handleChangePassword"
-              >
-                {{ $t("accountSecurity.actions.changePassword") }}
-              </ElButton>
-            </template>
-          </SurfaceCardHeader>
+      <!-- 右列「密码」：修改密码 /（超管）密码复杂度、过期与复用 -->
+      <template #right>
+        <PasswordCard />
+        <template v-if="isAdmin">
+          <PasswordComplexityCard />
+          <PasswordExpiryCard />
         </template>
-
-        <div class="settings-panel">
-          <CommonSettingRow
-            mode="inline"
-            mobile-stack
-            :label="$t('accountSecurity.password.current')"
-          >
-            <ElInput
-              v-model="passwordForm.current_password"
-              type="password"
-              show-password
-              autocomplete="current-password"
-              class="password-input"
-              @keyup.enter="handleChangePassword"
-            />
-          </CommonSettingRow>
-          <CommonSettingRow
-            mode="inline"
-            mobile-stack
-            :label="$t('accountSecurity.password.new')"
-          >
-            <ElInput
-              v-model="passwordForm.new_password"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              class="password-input"
-              @keyup.enter="handleChangePassword"
-            />
-          </CommonSettingRow>
-          <CommonSettingRow
-            mode="inline"
-            mobile-stack
-            :label="$t('accountSecurity.password.confirm')"
-          >
-            <ElInput
-              v-model="passwordForm.confirm_password"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              class="password-input"
-              @keyup.enter="handleChangePassword"
-            />
-          </CommonSettingRow>
-          <div v-if="!isAdmin" class="password-policy-summary">
-            <div class="password-policy-summary__title">
-              {{ $t("accountSecurity.password.summaryTitle") }}
-            </div>
-            <ul
-              v-if="passwordPolicyLines.length"
-              class="password-policy-summary__list"
-            >
-              <li v-for="(line, idx) in passwordPolicyLines" :key="idx">
-                {{ line }}
-              </li>
-            </ul>
-            <CommonInlineHint v-else block size="xs">
-              {{ $t("accountSecurity.password.policyHint") }}
-            </CommonInlineHint>
-          </div>
-        </div>
-      </ElCard>
-
-      <div v-if="isAdmin" id="platform-policy" class="policy-block">
-        <PlatformSecurityPolicyCards />
-        <div class="policy-block__footnote">
-          <CommonInlineHint block size="xs">
-            <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
-            <button
-              type="button"
-              class="policy-block__link"
-              @click="goSystemSettings"
-            >
-              {{ $t("accountSecurity.platformPolicy.sessionLink") }}
-            </button>
-          </CommonInlineHint>
-        </div>
-      </div>
-    </div>
+      </template>
+    </SettingsCardGrid>
   </ControlPanelPageShell>
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onMounted,
-  reactive,
-  ref,
-  watch,
-} from "vue";
-import { useRoute, useRouter } from "vue-router";
-import {
-  ElMessage,
-  ElMessageBox,
-} from "element-plus";
-import QrcodeVue from "qrcode.vue";
+import { nextTick, onActivated, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
-import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
-import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import CommonInlineHint from "@/components/common/inline-hint/index.vue";
-import PlatformSecurityPolicyCards from "./modules/PlatformSecurityPolicyCards.vue";
-import {
-  changePassword,
-  disableMfa,
-  enableMfa,
-  fetchGetUserInfo,
-  getMfaSetup,
-  getMfaStatus,
-  regenerateBackupCodes,
-} from "@/api/auth";
-import { fetchPasswordPolicy } from "@/api/audit";
-import type {
-  ChangePasswordRequest,
-  MfaSessionRefresh,
-  MfaSetupResponse,
-  MfaStatus,
-} from "@/types/api";
-import { runWithLoading } from "@/composables/useAsyncState";
+import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
-import { useUserStore } from "@/store/modules/user";
-import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
-import { copyTextToClipboard } from "@/utils/clipboard";
+import MfaCard from "./modules/MfaCard.vue";
+import PasswordCard from "./modules/PasswordCard.vue";
+import TotpPolicyCard from "./modules/TotpPolicyCard.vue";
+import LoginProtectionCard from "./modules/LoginProtectionCard.vue";
+import PasswordComplexityCard from "./modules/PasswordComplexityCard.vue";
+import PasswordExpiryCard from "./modules/PasswordExpiryCard.vue";
 import {
-  formatExpiryUtc8,
-  readSessionExpiresIn,
-} from "@/utils/http/mfa-step-up-state";
-import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
-import { HttpError } from "@/utils/http/error";
-import {
-  formatPasswordPolicySummaryLines,
-  resolvePasswordPolicyPayload,
-} from "@/utils/password";
-import { $t } from "@/locales";
-import { logger } from "@/utils/sys";
+  PLATFORM_POLICY_ANCHOR,
+  providePlatformSecurityPolicy,
+} from "./modules/usePlatformSecurityPolicy";
 
 defineOptions({ name: "AccountSecurity" });
 
 const route = useRoute();
-const router = useRouter();
-const userStore = useUserStore();
-const stepUpStore = useMfaStepUpStore();
 const { isAdmin } = useOpsRole();
-const passwordPolicyLines = ref<string[]>([]);
-const statusLoading = ref(false);
-const actionLoading = ref(false);
-const passwordLoading = ref(false);
-const status = ref<MfaStatus | null>(null);
-const setupData = ref<MfaSetupResponse | null>(null);
-const setupCode = ref("");
-// 备用码只在绑定或重新生成后展示一次，离开页面即丢弃，不做任何持久化。
-const backupCodes = ref<string[]>([]);
+const policy = providePlatformSecurityPolicy();
+const policySaving = policy.saving;
 
-const mfaEnabled = computed(() => Boolean(status.value?.enabled));
-const mfaRequired = computed(() => Boolean(status.value?.mfa_required));
-const backupCodesRemaining = computed(
-  () => status.value?.backup_codes_remaining ?? 0,
-);
-const changedAtText = computed(() => {
-  const changedAt = status.value?.changed_at;
-  if (!changedAt) return "-";
-  return formatExpiryUtc8(changedAt) || "-";
-});
-function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
-  if (!payload) return;
-  const expiresIn = readSessionExpiresIn(payload);
-  if (expiresIn != null) {
-    userStore.setToken(payload.token, expiresIn);
-  }
-}
-function logActionError(message: string, error: unknown): void {
-  if (isMfaStepUpCancelled(error)) return;
-  logger.error(message, error);
-}
-function isWindowUnavailable(error: unknown): boolean {
-  if (!(error instanceof HttpError) || error.code !== 503) return false;
-  const data = error.data;
-  return (
-    !!data &&
-    typeof data === "object" &&
-    (data as { code?: unknown }).code === "MFA_CHECK_UNAVAILABLE"
-  );
-}
-const setupDigits = computed(() => setupData.value?.totp_digits ?? 6);
-
-async function loadStatus(): Promise<void> {
-  await runWithLoading(statusLoading, async () => {
-    status.value = await getMfaStatus();
-  }).catch((error) => {
-    logger.error("Failed to load MFA status:", error);
-  });
-}
-
-/** MFA 状态变化后同步顶部用户信息，供 MfaRequiredHint 等组件使用。 */
-async function refreshUserInfo(): Promise<void> {
-  try {
-    userStore.setUserInfo(await fetchGetUserInfo());
-  } catch (error) {
-    logger.warn("Failed to refresh user info after MFA change:", error);
-  }
-}
-
-async function copyText(text: string): Promise<void> {
-  const ok = await copyTextToClipboard(text);
-  if (ok) {
-    ElMessage.success($t("accountSecurity.messages.copied"));
-  } else {
-    ElMessage.error($t("accountSecurity.messages.copyFailed"));
-  }
-}
-
-async function handleStartSetup(): Promise<void> {
-  let currentPassword = "";
-  try {
-    const { value } = await ElMessageBox.prompt(
-      $t("accountSecurity.setup.passwordMessage"),
-      $t("accountSecurity.setup.passwordTitle"),
-      {
-        inputType: "password",
-        inputPlaceholder: $t("accountSecurity.setup.passwordPlaceholder"),
-        inputValidator: (input: string) =>
-          input.trim().length > 0 ||
-          $t("accountSecurity.setup.passwordRequired"),
-        confirmButtonText: $t("common.confirm"),
-        cancelButtonText: $t("common.cancel"),
-        closeOnClickModal: false,
-      },
-    );
-    currentPassword = String(value);
-  } catch {
-    return;
-  }
-  await runWithLoading(actionLoading, async () => {
-    const data = await getMfaSetup(currentPassword);
-    setupData.value = data;
-    setupCode.value = "";
-    // 绑定阶段生成的备用码在启用成功后才生效，先展示让用户保存。
-    backupCodes.value = data.backup_codes ?? [];
-  }).catch((error) => {
-    logActionError("Failed to start MFA setup:", error);
-  });
-}
-
-function cancelSetup(): void {
-  setupData.value = null;
-  setupCode.value = "";
-  backupCodes.value = [];
-}
-
-async function handleEnable(): Promise<void> {
-  const code = setupCode.value;
-  if (!new RegExp(`^\\d{${setupDigits.value}}$`).test(code)) {
-    ElMessage.warning(
-      $t("accountSecurity.setup.codeInvalid", { digits: setupDigits.value }),
-    );
-    return;
-  }
-  await runWithLoading(actionLoading, async () => {
-    const enabled = await enableMfa({ totp_code: code });
-    applyMfaSessionExpiry(enabled);
-    setupData.value = null;
-    setupCode.value = "";
-    await Promise.all([
-      loadStatus(),
-      refreshUserInfo(),
-      stepUpStore.refresh().catch(() => undefined),
-    ]);
-  }).catch(async (error) => {
-    if (isWindowUnavailable(error)) {
-      await Promise.all([
-        loadStatus(),
-        refreshUserInfo(),
-        stepUpStore.refresh().catch(() => undefined),
-      ]);
-    }
-    logActionError("Failed to enable MFA:", error);
-  });
-}
-
-async function handleRegenerate(): Promise<void> {
-  if (!isAdmin.value) return;
-  try {
-    await ElMessageBox.confirm(
-      $t("accountSecurity.backupCodes.regenerateConfirm"),
-      $t("accountSecurity.actions.regenerateCodes"),
-      { type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  await runWithLoading(actionLoading, async () => {
-    const result = await regenerateBackupCodes();
-    backupCodes.value = result.backup_codes ?? [];
-    await loadStatus();
-  }).catch((error) => {
-    logActionError("Failed to regenerate backup codes:", error);
-  });
-}
-
-async function handleDisable(): Promise<void> {
-  if (!isAdmin.value) return;
-  try {
-    await ElMessageBox.confirm(
-      $t("accountSecurity.disable.message"),
-      $t("accountSecurity.disable.title"),
-      {
-        type: "warning",
-        confirmButtonText: $t("accountSecurity.actions.disable"),
-        cancelButtonText: $t("common.cancel"),
-        closeOnClickModal: false,
-      },
-    );
-  } catch {
-    return;
-  }
-  await runWithLoading(actionLoading, async () => {
-    const refreshed = await disableMfa();
-    applyMfaSessionExpiry(refreshed);
-    backupCodes.value = [];
-    await Promise.all([
-      loadStatus(),
-      refreshUserInfo(),
-      stepUpStore.refresh().catch(() => undefined),
-    ]);
-  }).catch((error) => {
-    logActionError("Failed to disable MFA:", error);
-  });
-}
-
-const passwordForm = reactive<ChangePasswordRequest>({
-  current_password: "",
-  new_password: "",
-  confirm_password: "",
-});
-
-function validatePasswordForm(): string | null {
-  if (!passwordForm.current_password.trim()) {
-    return $t("accountSecurity.password.currentRequired");
-  }
-  if (!passwordForm.new_password.trim()) {
-    return $t("accountSecurity.password.newRequired");
-  }
-  if (!passwordForm.confirm_password.trim()) {
-    return $t("accountSecurity.password.confirmRequired");
-  }
-  if (passwordForm.confirm_password !== passwordForm.new_password) {
-    return $t("accountSecurity.password.mismatch");
-  }
-  return null;
-}
-
-function resetPasswordForm(): void {
-  passwordForm.current_password = "";
-  passwordForm.new_password = "";
-  passwordForm.confirm_password = "";
-}
-
-async function handleChangePassword(): Promise<void> {
-  const error = validatePasswordForm();
-  if (error) {
-    ElMessage.warning(error);
-    return;
-  }
-  await runWithLoading(passwordLoading, async () => {
-    await changePassword({ ...passwordForm });
-    resetPasswordForm();
-  }).catch((error) => {
-    logger.error("Failed to change password:", error);
-  });
-}
-
-async function loadPasswordPolicySummary(): Promise<void> {
-  if (isAdmin.value) {
-    passwordPolicyLines.value = [];
-    return;
-  }
-  try {
-    const response = await fetchPasswordPolicy();
-    const policy = resolvePasswordPolicyPayload(response);
-    passwordPolicyLines.value = policy
-      ? formatPasswordPolicySummaryLines(policy, $t)
-      : [];
-  } catch (error) {
-    passwordPolicyLines.value = [];
-    logger.warn("Failed to load password policy summary:", error);
-  }
+function loadPolicyIfAdmin(): void {
+  if (isAdmin.value) void policy.loadAll();
 }
 
 function shouldFocusPlatformPolicy(): boolean {
   if (!isAdmin.value) return false;
-  if (route.hash === "#platform-policy") return true;
+  if (route.hash === `#${PLATFORM_POLICY_ANCHOR}`) return true;
   const section = route.query.section;
-  return section === "platform" || (Array.isArray(section) && section[0] === "platform");
+  return (
+    section === "platform" ||
+    (Array.isArray(section) && section[0] === "platform")
+  );
 }
 
 function scrollToPlatformPolicy(): void {
   if (!shouldFocusPlatformPolicy()) return;
   void nextTick(() => {
     document
-      .getElementById("platform-policy")
+      .getElementById(PLATFORM_POLICY_ANCHOR)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
-function goSystemSettings(): void {
-  void router.push({ path: "/control-panel/system" });
-}
-
 onMounted(() => {
-  void loadStatus();
-  void loadPasswordPolicySummary();
-  void stepUpStore.refresh().catch(() => undefined);
+  loadPolicyIfAdmin();
   scrollToPlatformPolicy();
+});
+
+onActivated(() => {
+  loadPolicyIfAdmin();
+});
+
+watch(isAdmin, (admin, wasAdmin) => {
+  if (admin && !wasAdmin) void policy.loadAll();
 });
 
 watch(
@@ -630,203 +99,3 @@ watch(
   },
 );
 </script>
-
-<style scoped lang="scss">
-.security-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.security-card {
-  min-width: 0;
-
-  :deep(.el-card__header) {
-    padding: 20px 20px 0 !important;
-    border-bottom: none !important;
-  }
-
-  :deep(.el-card__body) {
-    padding: 12px 20px 20px !important;
-  }
-}
-
-.card-header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.card-header-icon {
-  font-size: 18px;
-  color: var(--el-color-primary);
-}
-
-.settings-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-:deep(.common-setting-row__label) {
-  width: 140px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-:deep(.common-setting-row__control) {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.setting-value {
-  font-size: 13px;
-  color: var(--el-text-color-primary);
-
-  &.is-warning {
-    color: var(--el-color-warning);
-  }
-}
-
-.field-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--el-text-color-regular);
-}
-
-.setup-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.setup-steps {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--el-text-color-secondary);
-  list-style: decimal;
-}
-
-.setup-body {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.qr-wrap {
-  flex-shrink: 0;
-  padding: 8px;
-  background: #ffffff;
-  border-radius: var(--art-form-control-radius);
-}
-
-.setup-fields {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.inline-field {
-  display: flex;
-  gap: 8px;
-}
-
-.backup-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.backup-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.backup-codes {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px 16px;
-
-  code {
-    font-family: var(--el-font-family-mono, ui-monospace, monospace);
-    font-size: 13px;
-    letter-spacing: 0.5px;
-    color: var(--el-text-color-primary);
-  }
-}
-
-.card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  padding-top: 4px;
-}
-
-.password-input {
-  width: min(100%, 320px);
-}
-
-.password-policy-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.password-policy-summary__title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-regular);
-}
-
-.password-policy-summary__list {
-  margin: 0;
-  padding-left: 18px;
-  list-style: disc;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-}
-
-.policy-block {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.policy-block__footnote {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.policy-block__link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--el-color-primary);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-@media (max-width: 640px) {
-  .setup-body {
-    flex-direction: column;
-  }
-
-  .password-input {
-    width: 100%;
-  }
-}
-</style>
