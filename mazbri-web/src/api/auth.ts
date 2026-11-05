@@ -141,10 +141,10 @@ export function stepUpMfa(data: MfaStepUpRequest, signal?: AbortSignal) {
     showErrorMessage: false,
   });
 }
-export function endMfaStepUp(category?: MfaCategory, signal?: AbortSignal) {
+/** 结束当前会话全部 step-up 窗口（锁屏 / 主动收起提权）。 */
+export function endMfaStepUp(signal?: AbortSignal) {
   return request.del<MfaStepUpEndResponse>({
     url: `${AUTH_PATH}/mfa/step-up`,
-    params: category ? { category } : undefined,
     signal,
     showErrorMessage: false,
   });

@@ -266,13 +266,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     clearTimers();
   }
 
-  function assertEndScope(data: MfaStepUpEndResponse, category?: MfaCategory): void {
-    if (category) {
-      if (data.scope !== "category" || data.category !== category) {
-        throw new Error("unexpected category end response");
-      }
-      return;
-    }
+  function assertEndScope(data: MfaStepUpEndResponse): void {
     if (data.scope !== "all") {
       throw new Error("unexpected step-up end response");
     }
@@ -285,26 +279,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     assertEndScope(data);
     if (ticket !== epoch) return;
     clearElevation();
-    broadcastChanged();
-  }
-
-  async function endCategory(category: MfaCategory): Promise<void> {
-    const ticket = epoch;
-    const { endMfaStepUp } = await import("@/api/auth");
-    const data = await endMfaStepUp(category);
-    assertEndScope(data, category);
-    if (ticket !== epoch) return;
-    windows.value = {
-      ...windows.value,
-      [category]: {
-        active: false,
-        clientDeadline: null,
-        expiresAt: null,
-        reason: "none",
-      },
-    };
-    nowMs.value = Date.now();
-    scheduleTimers();
     broadcastChanged();
   }
 
@@ -378,7 +352,6 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     refresh,
     stepUp,
     lock,
-    endCategory,
     clearElevation,
     reset,
     remainingNow,

@@ -55,32 +55,6 @@
               <span class="setting-value">{{ changedAtText }}</span>
             </CommonSettingRow>
             <CommonSettingRow
-              v-for="category in categoryList"
-              :key="category"
-              mode="inline"
-              mobile-stack
-              :label="$t(`accountSecurity.mfa.categories.${category}`)"
-            >
-              <span class="category-status">
-                <span class="category-copy">
-                  <span class="setting-value">
-                    {{ categoryText(category) }}
-                  </span>
-                  <span class="category-scope">
-                    {{ $t(`accountSecurity.mfa.categoryScopes.${category}`) }}
-                  </span>
-                </span>
-                <ElButton
-                  v-if="isCategoryOpen(category)"
-                  size="small"
-                  :loading="endingCategory === category"
-                  @click="confirmEndCategory(category)"
-                >
-                  {{ $t("accountSecurity.mfa.endCategory") }}
-                </ElButton>
-              </span>
-            </CommonSettingRow>
-            <CommonSettingRow
               mode="inline"
               mobile-stack
               :label="$t('accountSecurity.mfa.backupCodesRemaining')"
@@ -344,7 +318,6 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
-import { storeToRefs } from "pinia";
 import QrcodeVue from "qrcode.vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
@@ -373,10 +346,8 @@ import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { copyTextToClipboard } from "@/utils/clipboard";
 import {
-  MFA_CATEGORIES,
   formatExpiryUtc8,
   readSessionExpiresIn,
-  type MfaCategory,
 } from "@/utils/http/mfa-step-up-state";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { HttpError } from "@/utils/http/error";
@@ -395,9 +366,6 @@ const userStore = useUserStore();
 const stepUpStore = useMfaStepUpStore();
 const { isAdmin } = useOpsRole();
 const passwordPolicyLines = ref<string[]>([]);
-const { nowMs, windows } = storeToRefs(stepUpStore);
-const categoryList = MFA_CATEGORIES;
-const endingCategory = ref<MfaCategory | null>(null);
 const statusLoading = ref(false);
 const actionLoading = ref(false);
 const passwordLoading = ref(false);
@@ -417,40 +385,6 @@ const changedAtText = computed(() => {
   if (!changedAt) return "-";
   return formatExpiryUtc8(changedAt) || "-";
 });
-function categoryRemaining(category: MfaCategory): number {
-  void nowMs.value;
-  return stepUpStore.remainingNow(category);
-}
-function isCategoryOpen(category: MfaCategory): boolean {
-  return Boolean(windows.value[category]?.active) && categoryRemaining(category) > 0;
-}
-/** 只展示已验证/未验证；免认证窗口时长（默认 15 分钟）不展示、不可改。 */
-function categoryText(category: MfaCategory): string {
-  return isCategoryOpen(category)
-    ? $t("accountSecurity.mfa.categoryActive")
-    : $t("accountSecurity.mfa.categoryInactive");
-}
-async function confirmEndCategory(category: MfaCategory): Promise<void> {
-  const name = $t(`accountSecurity.mfa.categories.${category}`);
-  try {
-    await ElMessageBox.confirm(
-      $t("accountSecurity.mfa.endCategoryConfirm", { category: name }),
-      $t("accountSecurity.mfa.endCategoryTitle", { category: name }),
-      { type: "warning" },
-    );
-  } catch {
-    return;
-  }
-  endingCategory.value = category;
-  try {
-    await stepUpStore.endCategory(category);
-  } catch (error) {
-    ElMessage.error($t("accountSecurity.mfa.endCategoryFailed"));
-    logActionError("Failed to end MFA category", error);
-  } finally {
-    endingCategory.value = null;
-  }
-}
 function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
   if (!payload) return;
   const expiresIn = readSessionExpiresIn(payload);
@@ -768,30 +702,6 @@ watch(
 :deep(.common-setting-row__control) {
   display: flex;
   justify-content: flex-end;
-}
-
-.category-status {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.category-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-}
-
-.category-scope {
-  max-width: 520px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
-  text-align: right;
 }
 
 .setting-value {
