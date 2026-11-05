@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.2](https://github.com/jjdufu/mazbri/compare/v0.3.1...v0.3.2) (2026-11-05)
+
+
+### Features
+
+* **mgmt:** 账号安全 RBAC 收敛与控制面板设置页统一双列布局 ([c4e0218](https://github.com/jjdufu/mazbri/commit/c4e02181b1ae4f43e3af9aad3de8070f2bfa040d))
+
+
+### Bug Fixes
+
+* **mgmt,web:** 账号安全页 RBAC 收敛与控制面板入口 ([9ce1b70](https://github.com/jjdufu/mazbri/commit/9ce1b70760c243025a454b454f929812f7a92c88))
+* **mgmt,web:** 隐藏 MFA 步进免认证时长展示 ([ebfeb04](https://github.com/jjdufu/mazbri/commit/ebfeb04d5d82689a7ea1d19fe042c6642bac7d6a))
+* **web:** 合并「最大登录尝试」与「锁定阈值」，只保留生效的 password_policy 设置 ([831b6e8](https://github.com/jjdufu/mazbri/commit/831b6e8f681064b7bc05f0a4f635be17a2096eef))
+* **web:** 类别状态只保留已验证/未验证 ([d8ceb29](https://github.com/jjdufu/mazbri/commit/d8ceb296efbd149e6953044d77200b267ec4a606))
+* **web:** 账号安全页去掉 MFA 步进类别面板 ([65fcf68](https://github.com/jjdufu/mazbri/commit/65fcf682f0bf12acca8c536129eac36d6fb03884))
+* **web:** 账号安全页按方案 A 全页单列重构 ([b1f4754](https://github.com/jjdufu/mazbri/commit/b1f475470c9f33f69b32925c13ee8c1f5dfbe8a0))
+
 ## [0.3.1](https://github.com/jjdufu/mazbri/compare/v0.3.0...v0.3.1) (2026-11-05)
 
 
