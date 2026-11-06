@@ -77,7 +77,8 @@ message InvokeUpstreamMeta {
   uint32 status = 1;
   string url = 2;
   string adapter = 3;
-  uint64 latency_ms = 4;
+  // Pure upstream wire time (reqwest send + body read), not full Execute duration.
+  uint64 upstream_wire_ms = 4;
 }
 
 message InvokeRequest {

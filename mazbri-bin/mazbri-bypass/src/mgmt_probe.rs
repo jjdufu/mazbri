@@ -93,7 +93,7 @@ pub struct ProbeUpstreamMetaJson {
     pub status: u32,
     pub url: String,
     pub adapter: String,
-    pub latency_ms: u64,
+    pub upstream_wire_ms: u64,
 }
 
 impl From<ProbeInvokeJson> for InvokeRequest {
@@ -136,7 +136,7 @@ impl From<InvokeResponse> for ProbeInvokeResponseJson {
                 status: m.status,
                 url: m.url,
                 adapter: m.adapter,
-                latency_ms: m.latency_ms,
+                upstream_wire_ms: m.upstream_wire_ms,
             }),
         }
     }

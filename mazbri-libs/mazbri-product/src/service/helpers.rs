@@ -32,6 +32,8 @@ pub(crate) fn tenant_product_detail_from_row(row: &PgRow) -> TenantProductDetail
         unit_price: row.get("unit_price"),
         currency: row.get("currency"),
         cb_pro_fallback: row.get("cb_pro_fallback"),
+        // Filled by ProductService from cache DB `cache_configs` (not platform SQL).
+        response_cache: crate::model::TenantResponseCache::default(),
         config,
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),

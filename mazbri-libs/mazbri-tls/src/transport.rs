@@ -16,6 +16,14 @@ pub struct ConnectTarget {
     pub server_name: Option<String>,
     pub display_addr: String,
 }
+
+/// Enable `TCP_NODELAY` on an internal tarpc socket. Failure is logged and ignored
+/// so a single platform quirk cannot abort the connection.
+pub(crate) fn enable_tcp_nodelay(stream: &TcpStream, peer: impl std::fmt::Display) {
+    if let Err(err) = stream.set_nodelay(true) {
+        warn!(error = %err, peer = %peer, "failed to set TCP_NODELAY on tarpc socket");
+    }
+}
 #[derive(Clone)]
 pub struct TlsAcceptor {
     inner: Arc<RustlsAcceptor>,
@@ -111,6 +119,7 @@ impl TlsConnector {
         let tcp_stream = TcpStream::connect(addr)
             .await
             .map_err(|e| TlsError::HandshakeFailed(format!("TCP connect failed: {e}")))?;
+        enable_tcp_nodelay(&tcp_stream, addr);
         let domain = if let Some(server_name) = server_name {
             rustls::pki_types::ServerName::try_from(server_name)
                 .map_err(|e| TlsError::Config(format!("Invalid server name '{server_name}': {e}")))?
@@ -355,4 +364,34 @@ fn build_client_config(
         builder.with_no_client_auth()
     };
     Ok(Arc::new(client_config))
+}
+
+
+#[cfg(test)]
+mod tcp_nodelay_tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn client_socket_enables_tcp_nodelay_after_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+
+        let accept = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            stream
+        });
+
+        let tcp_stream = TcpStream::connect(addr).await.expect("connect");
+        enable_tcp_nodelay(&tcp_stream, addr);
+
+        assert!(
+            tcp_stream.nodelay().expect("read client nodelay"),
+            "client socket must have TCP_NODELAY enabled"
+        );
+
+        let _peer = accept.await.expect("join accept");
+    }
 }

@@ -1,8 +1,9 @@
 //! L1 billing durability: usage charge events go through Redpanda (Kafka API).
 //!
-//! * Gateway: [`UsageEventProducer::produce`] is awaited **before** the HTTP response is
-//!   returned (acks=all, bounded by `produce_timeout_ms`). On failure the gateway falls back
-//!   to the existing direct outbox insert + in-memory deferred retry queue.
+//! * Gateway: [`UsageEventProducer::try_enqueue`] only `try_send`s into a bounded in-memory
+//!   queue on the response path (never awaits the broker). A background task batches by
+//!   linger / size and `produce`s with acks=all. Queue-full or background produce failure
+//!   falls back to the existing outbox / deferred path — there is no sync-produce success path.
 //! * Billing: [`UsageEventConsumer`] reads every partition and inserts the events into
 //!   `usage_outbox` with `ON CONFLICT (event_id) DO NOTHING`; the consumed offset is stored in
 //!   `usage_event_offsets` **in the same DB transaction** (offset committed only after the DB
@@ -29,15 +30,15 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info, warn};
 
 /// `[usage_events]` (billing) / `[billing.usage_events]` (gateway).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct UsageEventsConfig {
-    /// Gateway: `"redpanda"` = produce before response (fallback: outbox); `"outbox"` = legacy.
-    /// Billing: consumer runs when `"redpanda"`.
+    /// Gateway: `"redpanda"` = enqueue to background batch producer (fallback: outbox);
+    /// `"outbox"` = legacy direct outbox. Billing: consumer runs when `"redpanda"`.
     pub sink: String,
     pub brokers: Vec<String>,
     pub topic: String,
@@ -114,62 +115,212 @@ pub fn partition_for(key: &[u8], partitions: i32) -> i32 {
     i32::try_from(h % n).unwrap_or(0)
 }
 
+/// Bounded in-memory queue capacity for response-path enqueue.
+const USAGE_EVENT_QUEUE_CAPACITY: usize = 4096;
+/// Flush when this many events accumulate for a partition (or overall batch).
+const USAGE_EVENT_BATCH_MAX: usize = 64;
+/// Max time to wait for more events before flushing a non-empty batch.
+const USAGE_EVENT_LINGER: Duration = Duration::from_millis(2);
+/// Side channel for events that failed background produce (gateway drains → outbox).
+const USAGE_EVENT_FAILED_CAPACITY: usize = 4096;
+
 #[derive(Clone)]
 pub struct UsageEventProducer {
-    partitions: Arc<Vec<Arc<PartitionClient>>>,
-    timeout: Duration,
+    tx: mpsc::Sender<UsageOutboxEvent>,
+}
+
+/// Handles returned by [`UsageEventProducer::connect`]: the enqueue handle plus a
+/// receiver of events that the background flusher could not produce (outbox fallback).
+pub struct UsageEventProducerHandles {
+    pub producer: UsageEventProducer,
+    pub failed_rx: mpsc::Receiver<UsageOutboxEvent>,
 }
 
 impl UsageEventProducer {
     /// # Errors
     /// Broker unreachable, SASL failure or unknown topic.
-    pub async fn connect(cfg: &UsageEventsConfig) -> Result<Self, String> {
+    pub async fn connect(cfg: &UsageEventsConfig) -> Result<UsageEventProducerHandles, String> {
         let partitions = cfg.partition_clients().await?;
-        info!(topic = %cfg.topic, partitions = partitions.len(), "usage event producer connected (acks=all)");
-        Ok(Self {
-            partitions: Arc::new(partitions),
-            timeout: Duration::from_millis(cfg.produce_timeout_ms.max(1)),
+        let timeout = Duration::from_millis(cfg.produce_timeout_ms.max(1));
+        let (tx, rx) = mpsc::channel(USAGE_EVENT_QUEUE_CAPACITY);
+        let (failed_tx, failed_rx) = mpsc::channel(USAGE_EVENT_FAILED_CAPACITY);
+        info!(
+            topic = %cfg.topic,
+            partitions = partitions.len(),
+            queue_capacity = USAGE_EVENT_QUEUE_CAPACITY,
+            batch_max = USAGE_EVENT_BATCH_MAX,
+            linger_ms = USAGE_EVENT_LINGER.as_millis(),
+            "usage event producer connected (async batch, acks=all on flush)"
+        );
+        tokio::spawn(run_batch_flusher(
+            rx,
+            failed_tx,
+            Arc::new(partitions),
+            timeout,
+        ));
+        Ok(UsageEventProducerHandles {
+            producer: Self { tx },
+            failed_rx,
         })
     }
 
-    /// Produce one event (key = `event_id`, acks=all). Returns the offset.
+    /// Enqueue one event for background batch produce. Never waits on the broker.
     ///
     /// # Errors
-    /// Serialization, broker error or timeout; the caller falls back to the outbox path.
-    pub async fn produce(&self, event: &UsageOutboxEvent) -> Result<i64, String> {
-        let key = event.event_id.to_string().into_bytes();
-        let n = i32::try_from(self.partitions.len()).unwrap_or(1);
-        let idx = usize::try_from(partition_for(&key, n)).unwrap_or(0);
-        let value = serde_json::to_vec(event).map_err(|e| e.to_string())?;
-        let mut headers = BTreeMap::new();
-        headers.insert(
-            "event_id".to_string(),
-            event.event_id.to_string().into_bytes(),
-        );
-        let record = Record {
-            key: Some(key),
-            value: Some(value),
-            headers,
-            timestamp: Utc::now(),
+    /// Returns the event when the bounded queue is full or the flusher has stopped;
+    /// the caller must write it to the outbox / deferred path.
+    pub fn try_enqueue(&self, event: UsageOutboxEvent) -> Result<(), Box<UsageOutboxEvent>> {
+        self.tx.try_send(event).map_err(|err| match err {
+            mpsc::error::TrySendError::Full(event) | mpsc::error::TrySendError::Closed(event) => {
+                Box::new(event)
+            }
+        })
+    }
+}
+
+fn record_for_event(event: &UsageOutboxEvent, partitions: i32) -> Result<(usize, Record), String> {
+    let key = event.event_id.to_string().into_bytes();
+    let value = serde_json::to_vec(event).map_err(|e| e.to_string())?;
+    let mut headers = BTreeMap::new();
+    headers.insert(
+        "event_id".to_string(),
+        event.event_id.to_string().into_bytes(),
+    );
+    let record = Record {
+        key: Some(key.clone()),
+        value: Some(value),
+        headers,
+        timestamp: Utc::now(),
+    };
+    let idx = usize::try_from(partition_for(&key, partitions)).unwrap_or(0);
+    Ok((idx, record))
+}
+
+async fn run_batch_flusher(
+    mut rx: mpsc::Receiver<UsageOutboxEvent>,
+    failed_tx: mpsc::Sender<UsageOutboxEvent>,
+    partitions: Arc<Vec<Arc<PartitionClient>>>,
+    timeout: Duration,
+) {
+    let partition_count = i32::try_from(partitions.len()).unwrap_or(1);
+    // Per-partition pending events (preserve event for outbox fallback on produce failure).
+    let mut pending: Vec<Vec<UsageOutboxEvent>> = (0..partitions.len()).map(|_| Vec::new()).collect();
+    let mut linger = None::<tokio::time::Instant>;
+
+    loop {
+        let recv_fut = rx.recv();
+        let event = if let Some(deadline) = linger {
+            let sleep = tokio::time::sleep_until(deadline);
+            tokio::pin!(sleep);
+            tokio::select! {
+                ev = recv_fut => ev,
+                () = &mut sleep => {
+                    flush_all(&mut pending, &partitions, timeout, &failed_tx).await;
+                    linger = None;
+                    continue;
+                }
+            }
+        } else {
+            recv_fut.await
         };
-        let pc = &self.partitions[idx];
-        let started = std::time::Instant::now();
-        let result = async {
-            let offsets = tokio::time::timeout(
-                self.timeout,
-                pc.produce(vec![record], Compression::NoCompression),
-            )
-            .await
-            .map_err(|_| format!("produce timeout after {:?}", self.timeout))?
-            .map_err(|e| e.to_string())?;
-            offsets
-                .first()
-                .copied()
-                .ok_or_else(|| "no offset returned".to_string())
+
+        let Some(event) = event else {
+            // Sender dropped: flush remaining and exit.
+            flush_all(&mut pending, &partitions, timeout, &failed_tx).await;
+            break;
+        };
+
+        let Ok((idx, _)) = record_for_event(&event, partition_count) else {
+            warn!(event_id = %event.event_id, "usage event serialize failed; routing to outbox");
+            let _ = failed_tx.try_send(event);
+            continue;
+        };
+        let idx = idx.min(pending.len().saturating_sub(1));
+        pending[idx].push(event);
+        if pending[idx].len() >= USAGE_EVENT_BATCH_MAX {
+            let batch = std::mem::take(&mut pending[idx]);
+            flush_partition(idx, batch, &partitions, timeout, &failed_tx).await;
+            if pending.iter().all(Vec::is_empty) {
+                linger = None;
+            }
+        } else if linger.is_none() {
+            linger = Some(tokio::time::Instant::now() + USAGE_EVENT_LINGER);
         }
-        .await;
-        mazbri_core::metrics::observe_dep("kafka", "produce", started, result.is_ok());
-        result
+    }
+}
+
+async fn flush_all(
+    pending: &mut [Vec<UsageOutboxEvent>],
+    partitions: &[Arc<PartitionClient>],
+    timeout: Duration,
+    failed_tx: &mpsc::Sender<UsageOutboxEvent>,
+) {
+    for (idx, batch) in pending.iter_mut().enumerate() {
+        if batch.is_empty() {
+            continue;
+        }
+        let batch = std::mem::take(batch);
+        flush_partition(idx, batch, partitions, timeout, failed_tx).await;
+    }
+}
+
+async fn flush_partition(
+    idx: usize,
+    batch: Vec<UsageOutboxEvent>,
+    partitions: &[Arc<PartitionClient>],
+    timeout: Duration,
+    failed_tx: &mpsc::Sender<UsageOutboxEvent>,
+) {
+    if batch.is_empty() {
+        return;
+    }
+    let partition_count = i32::try_from(partitions.len()).unwrap_or(1);
+    let mut records = Vec::with_capacity(batch.len());
+    let mut kept = Vec::with_capacity(batch.len());
+    for event in batch {
+        match record_for_event(&event, partition_count) {
+            Ok((_, record)) => {
+                records.push(record);
+                kept.push(event);
+            }
+            Err(error) => {
+                warn!(event_id = %event.event_id, error = %error, "usage event serialize failed; routing to outbox");
+                let _ = failed_tx.try_send(event);
+            }
+        }
+    }
+    if records.is_empty() {
+        return;
+    }
+    let pc = &partitions[idx];
+    let started = std::time::Instant::now();
+    let result = tokio::time::timeout(
+        timeout,
+        pc.produce(records, Compression::NoCompression),
+    )
+    .await;
+    let ok = matches!(&result, Ok(Ok(_)));
+    mazbri_core::metrics::observe_dep("kafka", "produce", started, ok);
+    match result {
+        Ok(Ok(_)) => {
+            debug!(partition = idx, n = kept.len(), "usage event batch produced");
+        }
+        Ok(Err(error)) => {
+            warn!(partition = idx, n = kept.len(), error = %error, "usage event batch produce failed; routing to outbox");
+            for event in kept {
+                if failed_tx.try_send(event).is_err() {
+                    error!("usage event failed channel full/closed; event may need reconcile");
+                }
+            }
+        }
+        Err(_) => {
+            warn!(partition = idx, n = kept.len(), timeout = ?timeout, "usage event batch produce timed out; routing to outbox");
+            for event in kept {
+                if failed_tx.try_send(event).is_err() {
+                    error!("usage event failed channel full/closed; event may need reconcile");
+                }
+            }
+        }
     }
 }
 
@@ -530,5 +681,56 @@ mod tests {
     fn default_sink_is_outbox() {
         let c = UsageEventsConfig::default();
         assert!(!c.redpanda_enabled());
+    }
+
+    #[tokio::test]
+    async fn try_enqueue_reports_full_without_blocking() {
+        let (tx, _rx) = mpsc::channel::<UsageOutboxEvent>(1);
+        let producer = UsageEventProducer { tx };
+        let e1 = sample_event();
+        let e2 = sample_event();
+        assert!(producer.try_enqueue(e1).is_ok());
+        let err = producer.try_enqueue(e2).expect_err("second enqueue must fill");
+        assert!(!err.event_id.is_nil());
+    }
+
+    #[tokio::test]
+    async fn batch_flush_decision_by_size() {
+        // Pure decision helper: accumulating to BATCH_MAX must trigger a flush-sized batch.
+        let mut pending = Vec::<UsageOutboxEvent>::new();
+        for _ in 0..USAGE_EVENT_BATCH_MAX {
+            pending.push(sample_event());
+            if pending.len() >= USAGE_EVENT_BATCH_MAX {
+                break;
+            }
+        }
+        assert_eq!(pending.len(), USAGE_EVENT_BATCH_MAX);
+        let flushed = std::mem::take(&mut pending);
+        assert_eq!(flushed.len(), USAGE_EVENT_BATCH_MAX);
+        assert!(pending.is_empty());
+    }
+
+    fn sample_event() -> UsageOutboxEvent {
+        UsageOutboxEvent {
+            event_id: uuid::Uuid::new_v4(),
+            request_id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            account_id: None,
+            product_id: Some("8000000001".into()),
+            api_endpoint: "/v1/test".into(),
+            http_method: "POST".into(),
+            response_status: 200,
+            request_size: 1,
+            response_size: 1,
+            billing_service_duration_ms: 1,
+            billing_result: crate::calculator::CalculationResult {
+                amount: rust_decimal::Decimal::new(1, 3),
+                units: 1,
+                unit_price: rust_decimal::Decimal::new(1, 3),
+                description: "test".into(),
+            },
+            billing_code: Some(0),
+            trace_parent: None,
+        }
     }
 }

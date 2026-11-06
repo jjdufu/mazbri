@@ -184,6 +184,7 @@ async fn connect_redis(config: &MgmtApiConfig) -> Result<Arc<mazbri_core::redis:
 fn build_product_service(
     db: &PgArc,
     redis: &mazbri_core::redis::RedisClient,
+    cache_db: &PgArc,
 ) -> Arc<ProductService> {
     let product_config = ProductConfig::default();
     let permission_cache = Arc::new(RedisPermissionCache::new(
@@ -194,6 +195,7 @@ fn build_product_service(
         (**db).clone(),
         product_config,
         permission_cache,
+        Some((**cache_db).clone()),
     ))
 }
 
@@ -513,7 +515,7 @@ async fn main() -> Result<()> {
     info!("Connected to database");
     let redis = connect_redis(&config).await?;
     let dbs = connect_mgmt_databases(&config, config_dir).await?;
-    let product_service = build_product_service(&db, &redis);
+    let product_service = build_product_service(&db, &redis, &dbs.cache);
     spawn_product_detail_watch(&db, &config, &product_service);
     let auth_state = create_auth_state(&dbs.admin, &redis).await?;
     if let Some(ref state) = admin_state {

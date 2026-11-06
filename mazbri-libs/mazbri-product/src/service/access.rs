@@ -90,7 +90,7 @@ impl ProductService {
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
             FROM tenant_products tp
             JOIN products p ON tp.product_id = p.id
-            WHERE tp.enabled = true
+                        WHERE tp.enabled = true
               AND p.enabled = true
             ",
         )
@@ -98,8 +98,10 @@ impl ProductService {
         .await?;
         let mut warmed = 0usize;
         for row in rows {
-            let detail = tenant_product_detail_from_row(&row);
+            let mut detail = tenant_product_detail_from_row(&row);
             let tenant_id: Uuid = row.get("tenant_id");
+            detail.response_cache.enabled =
+                self.cache_enabled_lookup.is_enabled(tenant_id).await;
             let product_code = detail.product_code.clone();
             let cache_key = Self::tenant_product_detail_cache_key(tenant_id, &product_code);
             self.tenant_product_detail_cache

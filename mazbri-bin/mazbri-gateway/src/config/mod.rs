@@ -64,6 +64,11 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub cors: CorsConfig,
     pub billing_database: Option<mazbri_core::DatabaseConfig>,
+    /// Cache DB (`mazbri_cache`) for filling product snapshot `response_cache.enabled`
+    /// from `cache_configs`. Same shape as cache-service `[database]`. When absent,
+    /// the snapshot stays disabled and the gateway skips cache RPC.
+    #[serde(default)]
+    pub cache_database: Option<mazbri_core::DatabaseConfig>,
     #[serde(default)]
     pub billing: BillingMiddlewareConfig,
     #[serde(default)]

@@ -88,6 +88,7 @@ pub(super) async fn try_cbpro_fallback(
         error: String::new(),
         content_type: Some("application/json; charset=utf-8".to_string()),
         body_bytes_len,
+        upstream_wire_ms: 0,
     })
 }
 pub(super) async fn resolve_runtime_decision(

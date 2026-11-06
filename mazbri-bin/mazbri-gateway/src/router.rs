@@ -104,7 +104,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let redis = mazbri_core::redis::RedisClient::connect_with_config(&config.redis)
         .await
         .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
-    let product_service = init_product_service(&db, &redis).await;
+    let product_service = init_product_service(&db, &redis, config.cache_database.as_ref()).await;
     let (tarpc_pool, upstream_http2_pool) =
         init_client_pools(&config, &tls_ca_cert, &client_cert, tls_config)?;
     let route_engine =
@@ -146,7 +146,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let (auth_state, auth_service) = init_auth(&config, &db, jwt_secret, tarpc_pool).await;
     let billing_state = create_billing_state(&config, &db).await;
     let balance_cache = build_balance_cache(&config, &redis);
-    let usage_event_producer = build_usage_event_producer(&config).await;
+    let usage_event_producer = build_usage_event_producer(&config, billing_state.as_ref()).await;
     let app_state = AppState {
         proxy_state,
         auth_state,
@@ -184,16 +184,38 @@ where
 async fn init_product_service(
     db: &PgPool,
     redis: &mazbri_core::redis::RedisClient,
+    cache_database: Option<&mazbri_core::DatabaseConfig>,
 ) -> Arc<ProductService> {
     let product_config = ProductConfig::default();
     let permission_cache = Arc::new(RedisPermissionCache::new(
         redis.clone(),
         Duration::from_secs(product_config.cache_ttl_secs),
     ));
+    let cache_db = if let Some(cfg) = cache_database {
+        match mazbri_core::create_pool(cfg, None).await {
+            Ok(pool) => {
+                tracing::info!("Connected to cache database for product snapshot cache_enabled");
+                Some((*pool).clone())
+            }
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "Failed to connect cache database; product snapshot cache_enabled stays false"
+                );
+                None
+            }
+        }
+    } else {
+        tracing::info!(
+            "No cache_database configured; product snapshot cache_enabled stays false"
+        );
+        None
+    };
     let product_service = Arc::new(ProductService::new(
         db.clone(),
         product_config,
         permission_cache,
+        cache_db,
     ));
     if let Err(error) = product_service.warm_tenant_product_detail_cache().await {
         tracing::warn!(error = % error, "Product tenant detail cache warmup failed");
@@ -804,8 +826,10 @@ fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
 
 /// Connects the L1 usage-event producer when `billing.usage_events.sink = "redpanda"`.
 /// A connect failure is logged and the gateway keeps the outbox path (never fails startup).
+/// Background produce failures are drained into the existing outbox / deferred path.
 async fn build_usage_event_producer(
     config: &GatewayConfig,
+    billing_state: Option<&BillingMiddlewareState>,
 ) -> Option<Arc<mazbri_billing::UsageEventProducer>> {
     let cfg = &config.billing.usage_events;
     if !config.billing.enabled || !cfg.redpanda_enabled() {
@@ -813,13 +837,56 @@ async fn build_usage_event_producer(
         return None;
     }
     match mazbri_billing::UsageEventProducer::connect(cfg).await {
-        Ok(producer) => {
-            tracing::info!(topic = %cfg.topic, brokers = ?cfg.brokers, "Usage event sink: redpanda");
-            Some(Arc::new(producer))
+        Ok(handles) => {
+            tracing::info!(
+                topic = %cfg.topic,
+                brokers = ?cfg.brokers,
+                "Usage event sink: redpanda (async batch enqueue)"
+            );
+            if let Some(billing) = billing_state {
+                let service = billing.billing_service.clone();
+                tokio::spawn(async move {
+                    drain_failed_usage_events(handles.failed_rx, service).await;
+                });
+            } else {
+                tokio::spawn(async move {
+                    let mut rx = handles.failed_rx;
+                    while let Some(event) = rx.recv().await {
+                        tracing::error!(
+                            event_id = %event.event_id,
+                            tenant_id = %event.tenant_id,
+                            "Usage event produce failed but billing is disabled; event dropped (reconcile needed)"
+                        );
+                    }
+                });
+            }
+            Some(Arc::new(handles.producer))
         }
         Err(error) => {
             tracing::error!(error = %error, "Usage event producer connect failed; falling back to outbox path");
             None
+        }
+    }
+}
+
+async fn drain_failed_usage_events(
+    mut failed_rx: tokio::sync::mpsc::Receiver<mazbri_billing::UsageOutboxEvent>,
+    service: Arc<mazbri_billing::BillingService>,
+) {
+    while let Some(event) = failed_rx.recv().await {
+        match crate::gateway::post_response::deliver_usage_event(&service, event, 4).await {
+            crate::gateway::post_response::Delivery::Done => {}
+            crate::gateway::post_response::Delivery::AccountNotFound => {
+                tracing::warn!("background usage event outbox skipped: account not found");
+            }
+            crate::gateway::post_response::Delivery::Transient(event, error) => {
+                tracing::warn!(
+                    event_id = %event.event_id,
+                    error = %error,
+                    "background usage event outbox failed; deferring"
+                );
+                crate::gateway::post_response::defer_usage_event(&service, *event);
+            }
         }
     }
 }

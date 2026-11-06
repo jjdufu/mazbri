@@ -23,8 +23,16 @@ pub struct GatewayRequestTiming {
     pub balance_check_ms: u64,
     pub tenant_validation_ms: u64,
     pub product_detail_lookup_ms: u64,
+    /// Pure upstream wire time from bypass (`upstream_meta.upstream_wire_ms`); 0 on cache/CBPro hit.
     pub upstream_ms: u64,
     pub post_response_ms: u64,
+    pub cache_lookup_ms: u64,
+    pub route_match_ms: u64,
+    pub channel_rl_wait_ms: u64,
+    /// gateway↔bypass RTT minus `upstream_ms`.
+    pub bypass_hop_ms: u64,
+    pub billing_enqueue_ms: u64,
+    pub nonce_ms: u64,
     /// Populated by ratelimit middleware for egress bandwidth settle + usage bytes.
     pub bandwidth_prepaid: Option<BandwidthPrepaid>,
 }
@@ -40,6 +48,12 @@ impl GatewayRequestTiming {
             product_detail_lookup_ms: 0,
             upstream_ms: 0,
             post_response_ms: 0,
+            cache_lookup_ms: 0,
+            route_match_ms: 0,
+            channel_rl_wait_ms: 0,
+            bypass_hop_ms: 0,
+            billing_enqueue_ms: 0,
+            nonce_ms: 0,
             bandwidth_prepaid: None,
         }
     }

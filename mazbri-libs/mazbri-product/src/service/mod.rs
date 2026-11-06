@@ -4,6 +4,7 @@ use super::model::{
 };
 pub use super::model::{
     GrantAccessRequest, ProductTenantAccess, TenantProductConfig, TenantProductDetail,
+    TenantResponseCache,
 };
 use crate::ProductConfig;
 use anyhow::{Context, Result};
@@ -21,6 +22,7 @@ mod access;
 mod authorizations;
 mod cache_config;
 mod core;
+mod tenant_cache_enabled;
 mod crud;
 mod helpers;
 mod internal;

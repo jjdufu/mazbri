@@ -331,7 +331,14 @@ impl MazbriBypassServiceImpl {
             cache_key: None,
         };
 
-        let result = self.engine.invoke(input).await;
+        let result = {
+            let span = tracing::info_span!(
+                "upstream.http",
+                channel_id = %req.channel_id,
+                adapter = %spec.adapter,
+            );
+            self.engine.invoke(input).instrument(span).await
+        };
         let duration = start_time.elapsed().as_secs_f64();
         let adapter = spec.adapter.as_str();
 
@@ -421,7 +428,7 @@ fn invoke_success(
             status: u32::from(meta.status),
             url: meta.url,
             adapter: meta.adapter,
-            latency_ms: meta.latency_ms,
+            upstream_wire_ms: meta.latency_ms,
         }),
     }
 }
@@ -539,12 +546,19 @@ fn emit_bypass_access(
             response_bytes,
             user_agent: None,
         })
-        .timing(AccessTimingFields {
-            duration_ms,
-            upstream_service_time_ms: Some(duration_ms),
-            dependency_wait_ms: 0,
-            internal_ms: 0,
-            post_response_ms: 0,
+        .timing({
+            let upstream_wire_ms = response
+                .upstream_meta
+                .as_ref()
+                .map_or(0, |m| m.upstream_wire_ms);
+            AccessTimingFields {
+                duration_ms,
+                // Pure upstream wire time (not full Execute).
+                upstream_service_time_ms: Some(upstream_wire_ms),
+                dependency_wait_ms: 0,
+                internal_ms: duration_ms.saturating_sub(upstream_wire_ms),
+                post_response_ms: 0,
+            }
         })
         .network(AccessNetworkFields {
             upstream_host,

@@ -1,4 +1,5 @@
 use crate::{TlsAcceptor, TlsConnector, TlsError, TlsResult};
+use crate::transport::enable_tcp_nodelay;
 use futures::prelude::*;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -36,7 +37,7 @@ impl TlsTarpcListener {
         async_stream::stream! {
             loop { let (tcp_stream, peer_addr) = match self.listener.accept(). await {
             Ok(conn) => conn, Err(e) => { warn!("Failed to accept connection: {}", e);
-            continue; } }; info!(peer = % peer_addr,
+            continue; } }; enable_tcp_nodelay(&tcp_stream, peer_addr); info!(peer = % peer_addr,
             "TLS tarpc listener accepted TCP connection"); let tls_stream = match self
             .acceptor.accept(tcp_stream). await { Ok(stream) => stream, Err(e) => {
             warn!(peer = % peer_addr, error = % e, "TLS handshake failed"); continue; }
@@ -128,4 +129,33 @@ where
     Codec: tarpc::tokio_serde::Serializer<SinkItem> + tarpc::tokio_serde::Deserializer<Item>,
 {
     TlsTarpcConnector::connect(addr, connector, server_name, codec).await
+}
+
+
+#[cfg(test)]
+mod tcp_nodelay_tests {
+    use tokio::net::{TcpListener, TcpStream};
+
+    #[tokio::test]
+    async fn server_socket_enables_tcp_nodelay_after_accept() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+
+        let client = tokio::spawn(async move {
+            TcpStream::connect(addr).await.expect("client connect")
+        });
+
+        let (tcp_stream, peer_addr) = listener.accept().await.expect("accept");
+        // Mirror TlsTarpcListener::listen: set NODELAY before TLS handshake.
+        crate::transport::enable_tcp_nodelay(&tcp_stream, peer_addr);
+
+        assert!(
+            tcp_stream.nodelay().expect("read server nodelay"),
+            "server socket must have TCP_NODELAY enabled after accept"
+        );
+
+        let _client = client.await.expect("join client");
+    }
 }

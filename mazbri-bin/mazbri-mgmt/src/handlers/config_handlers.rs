@@ -156,6 +156,8 @@ pub async fn update_cache_config(
     };
     match svc::update_cache_config(&state.db, &state.cache_db, tenant_id, &payload).await {
         Ok(data) => {
+            // Drop mgmt-local snapshot of cache_configs.enabled; gateway still relies on TTL.
+            state.product_service.invalidate_cache_enabled(tenant_id);
             let client_ip = extract_client_ip(&headers, Some(addr));
             state.audit.log(create_audit_log(
                 operator_id,
