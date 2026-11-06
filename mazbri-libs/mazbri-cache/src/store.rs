@@ -607,10 +607,9 @@ pub struct CacheStats {
 mod resolve_config_cache_tests {
     use super::*;
 
-    async fn test_cache() -> RedisCache {
-        let redis = RedisClient::connect("redis://127.0.0.1:6379")
-            .await
-            .expect("connect local redis for unit test");
+    fn test_cache() -> RedisCache {
+        let redis = RedisClient::unconnected("redis://127.0.0.1:1")
+            .expect("parse redis url");
         // Lazy pool: resolve_config cache-hit path never opens a DB connection.
         let db = PgPool::connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
             .expect("lazy pool");
@@ -619,7 +618,7 @@ mod resolve_config_cache_tests {
 
     #[tokio::test]
     async fn negative_cache_avoids_second_db_fetch() {
-        let cache = test_cache().await;
+        let cache = test_cache();
         let tenant = "00000000-0000-0000-0000-000000000001";
 
         // Seed negative cache as if DB said "no row / disabled".
@@ -646,7 +645,7 @@ mod resolve_config_cache_tests {
 
     #[tokio::test]
     async fn invalidate_forces_reload_path() {
-        let cache = test_cache().await;
+        let cache = test_cache();
         let tenant = "00000000-0000-0000-0000-000000000002";
         cache.config_resolve_cache.insert(
             tenant.to_string(),

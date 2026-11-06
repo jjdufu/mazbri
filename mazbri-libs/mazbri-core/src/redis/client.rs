@@ -95,6 +95,25 @@ impl RedisClient {
         .await
     }
 
+    /// 只解析 URL、不打开 TCP 连接。供不访问 Redis 的单元测试构造客户端。
+    ///
+    /// # Errors
+    ///
+    /// URL 无法解析时返回错误。
+    pub fn unconnected(url: &str) -> anyhow::Result<Self> {
+        let client = Arc::new(redis::Client::open(url)?);
+        Ok(Self {
+            inner: Arc::new(InnerClient::Standalone {
+                client,
+                managers: Arc::from(Vec::<ConnectionManager>::new()),
+                next_manager_index: Arc::new(AtomicUsize::new(0)),
+            }),
+            key_prefix: Arc::from(""),
+            connect_timeout: Duration::from_secs(1),
+            command_timeout: Duration::from_secs(1),
+        })
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
