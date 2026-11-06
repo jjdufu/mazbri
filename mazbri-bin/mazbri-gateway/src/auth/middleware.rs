@@ -189,6 +189,8 @@ fn log_auth_stage(
             kid = binding_outcome.kid.as_deref().unwrap_or(""),
             nonce = binding_outcome.nonce_trunc.as_deref().unwrap_or(""),
             sig_ok = binding_outcome.sig_ok,
+            key_lookup_ms = binding_outcome.key_lookup_ms,
+            verify_ms = binding_outcome.verify_ms,
             encrypted_request,
             message = "Gateway auth stage completed"
         );
@@ -229,6 +231,8 @@ pub async fn jwt_auth_middleware(
         kid: Some(kid.clone()),
         nonce_trunc: None,
         sig_ok: None,
+        key_lookup_ms: None,
+        verify_ms: None,
     };
     if parts.uri.path() == "/api/v1/gateway" {
         if !claims.can_invoke() {

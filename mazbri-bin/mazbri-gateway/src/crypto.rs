@@ -26,7 +26,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::warn;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 const IDEMPOTENCY_PROCESSING: &str = r#"{"status":"processing"}"#;
@@ -361,6 +361,26 @@ impl TenantCryptoState {
             last_error = Some(error);
         } else {
             record_crypto_maintenance("snapshot_warmup", "success", snapshot_started_at.elapsed());
+        }
+        // SM2 g_table 必须在对外 ready 前于 blocking 线程建好，避免首条 bearer+sig
+        // 把 tokio worker 卡住约 1s+，并误报成 tenant_request_keys 慢 SQL。
+        let sm2_started_at = Instant::now();
+        match tokio::task::spawn_blocking(mazbri_core::crypto::warm_sm2).await {
+            Ok(warm_elapsed) => {
+                record_crypto_maintenance("sm2_table_warmup", "success", sm2_started_at.elapsed());
+                info!(
+                    elapsed_ms = warm_elapsed.as_millis(),
+                    wall_ms = sm2_started_at.elapsed().as_millis(),
+                    "SM2 precompute table (g_table) warmed before ready"
+                );
+            }
+            Err(error) => {
+                record_crypto_maintenance("sm2_table_warmup", "error", sm2_started_at.elapsed());
+                warn!(error = %error, "SM2 precompute table warmup task failed");
+                last_error = Some(ProxyError::InternalError(format!(
+                    "SM2 warm_sm2 spawn_blocking join failed: {error}"
+                )));
+            }
         }
         if let Some(error) = last_error {
             return Err(error);

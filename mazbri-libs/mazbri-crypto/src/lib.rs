@@ -53,7 +53,7 @@ pub use signing_key::{
     RSA_SIGN_KEY_BITS, RSA_SIGN_MIN_BITS,
 };
 pub use sm::{
-    sm2_private_key_to_pem, sm2_public_key_to_pem, sm4_ecb_decrypt, sm4_ecb_encrypt, GmDigestAlgorithm, GmMacAlgorithm, Sm2CipherMode,
+    sm2_private_key_to_pem, sm2_public_key_to_pem, sm4_ecb_decrypt, sm4_ecb_encrypt, warm_sm2, GmDigestAlgorithm, GmMacAlgorithm, Sm2CipherMode,
     Sm2EncryptAlgorithm, Sm2SignAlgorithm, Sm4Algorithm, SM2_DEFAULT_USER_ID, SM3_OUTPUT_LEN,
     SM4_BLOCK_LEN, SM4_KEY_LEN,
 };
