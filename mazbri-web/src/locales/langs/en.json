@@ -4296,7 +4296,7 @@
         "openCalls": "Call logs",
         "openRuntime": "Runtime metrics",
         "empty": "No samples in window",
-        "hint": "Rate-limit / cache details live in summaries; open call logs or runtime metrics."
+        "hint": "Rate-limit / cache details live in summaries; ops sidebar follows the new IA — open call logs or runtime metrics."
       }
     },
     "finance": {
