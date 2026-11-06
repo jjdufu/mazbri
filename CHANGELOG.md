@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.5](https://github.com/jjdufu/mazbri/compare/v0.3.4...v0.3.5) (2026-11-06)
+
+
+### Features
+
+* **crypto:** 增加 SM2 预计算表启动预热 ([0952be8](https://github.com/jjdufu/mazbri/commit/0952be8d4665e648733ecfbe3eb5db11dc41723f))
+
+
+### Bug Fixes
+
+* **gateway:** ready 前预热 SM2 并将请求绑定验签移出 tokio worker ([be919c9](https://github.com/jjdufu/mazbri/commit/be919c920b6ed1ed5671c1da49926218195cc685))
+* **gateway:** SM2 冷启动预热并将验签移出 tokio worker ([d71fbf4](https://github.com/jjdufu/mazbri/commit/d71fbf4b0cb0ba2375b0bc4daeefb1078180964a))
+
 ## [0.3.4](https://github.com/jjdufu/mazbri/compare/v0.3.3...v0.3.4) (2026-11-06)
 
 
