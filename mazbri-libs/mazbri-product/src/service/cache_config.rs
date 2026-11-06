@@ -6,8 +6,15 @@ use super::{
 impl ProductService {
     pub fn clear_cache(&self) {
         self.tenant_product_detail_cache.invalidate_all();
+        self.cache_enabled_lookup.invalidate_all();
         info!("Product cache cleared");
     }
+
+    /// Overlay `response_cache.enabled` from cache DB (30s mem / negative cache).
+    async fn apply_cache_enabled(&self, tenant_id: Uuid, detail: &mut TenantProductDetail) {
+        detail.response_cache.enabled = self.cache_enabled_lookup.is_enabled(tenant_id).await;
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -30,7 +37,6 @@ impl ProductService {
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
-                false AS cache_enabled,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
             FROM tenant_products tp
@@ -42,7 +48,15 @@ impl ProductService {
         .bind(tenant_id)
         .fetch_all(&self.db)
         .await?;
-        let products = rows.iter().map(tenant_product_detail_from_row).collect();
+        let enabled = self.cache_enabled_lookup.is_enabled(tenant_id).await;
+        let products = rows
+            .iter()
+            .map(|row| {
+                let mut detail = tenant_product_detail_from_row(row);
+                detail.response_cache.enabled = enabled;
+                detail
+            })
+            .collect();
         Ok(products)
     }
     /// # Errors
@@ -59,7 +73,11 @@ impl ProductService {
                 tenant_id = % tenant_id, product_id = % product_id,
                 "Cache hit for tenant product detail"
             );
-            return Ok(detail.clone());
+            let mut detail = detail.clone();
+            if let Some(ref mut d) = detail {
+                self.apply_cache_enabled(tenant_id, d).await;
+            }
+            return Ok(detail);
         }
         let row = sqlx::query(
             r"
@@ -79,7 +97,6 @@ impl ProductService {
                 COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
-                false AS cache_enabled,
                 tp.created_at,
                 COALESCE(tp.updated_at, tp.created_at) AS updated_at
             FROM tenant_products tp
@@ -94,7 +111,10 @@ impl ProductService {
         .bind(product_id)
         .fetch_optional(&self.db)
         .await?;
-        let detail = row.as_ref().map(tenant_product_detail_from_row);
+        let mut detail = row.as_ref().map(tenant_product_detail_from_row);
+        if let Some(ref mut d) = detail {
+            self.apply_cache_enabled(tenant_id, d).await;
+        }
         self.tenant_product_detail_cache
             .insert(cache_key, detail.clone());
         Ok(detail)

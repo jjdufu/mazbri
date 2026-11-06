@@ -104,7 +104,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
     let redis = mazbri_core::redis::RedisClient::connect_with_config(&config.redis)
         .await
         .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
-    let product_service = init_product_service(&db, &redis).await;
+    let product_service = init_product_service(&db, &redis, config.cache_database.as_ref()).await;
     let (tarpc_pool, upstream_http2_pool) =
         init_client_pools(&config, &tls_ca_cert, &client_cert, tls_config)?;
     let route_engine =
@@ -184,16 +184,38 @@ where
 async fn init_product_service(
     db: &PgPool,
     redis: &mazbri_core::redis::RedisClient,
+    cache_database: Option<&mazbri_core::DatabaseConfig>,
 ) -> Arc<ProductService> {
     let product_config = ProductConfig::default();
     let permission_cache = Arc::new(RedisPermissionCache::new(
         redis.clone(),
         Duration::from_secs(product_config.cache_ttl_secs),
     ));
+    let cache_db = if let Some(cfg) = cache_database {
+        match mazbri_core::create_pool(cfg, None).await {
+            Ok(pool) => {
+                tracing::info!("Connected to cache database for product snapshot cache_enabled");
+                Some((*pool).clone())
+            }
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    "Failed to connect cache database; product snapshot cache_enabled stays false"
+                );
+                None
+            }
+        }
+    } else {
+        tracing::info!(
+            "No cache_database configured; product snapshot cache_enabled stays false"
+        );
+        None
+    };
     let product_service = Arc::new(ProductService::new(
         db.clone(),
         product_config,
         permission_cache,
+        cache_db,
     ));
     if let Err(error) = product_service.warm_tenant_product_detail_cache().await {
         tracing::warn!(error = % error, "Product tenant detail cache warmup failed");

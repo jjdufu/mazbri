@@ -2,6 +2,7 @@ use super::{
     Arc, Cache, DateTime, PermissionCache, PgPool, ProductConfig, ProductIdValidationError,
     TenantProduct, TenantProductDetail, Utc, Uuid, fmt,
 };
+use super::tenant_cache_enabled::TenantCacheEnabledLookup;
 
 #[derive(Debug)]
 pub enum UpdateTenantProductConfigResult {
@@ -103,4 +104,6 @@ pub struct ProductService {
     pub(crate) config: ProductConfig,
     pub(crate) tenant_product_detail_cache: Cache<String, Option<TenantProductDetail>>,
     pub(crate) permission_cache: Arc<dyn PermissionCache>,
+    /// Fills `TenantResponseCache.enabled` from cache DB `cache_configs`.
+    pub(crate) cache_enabled_lookup: TenantCacheEnabledLookup,
 }

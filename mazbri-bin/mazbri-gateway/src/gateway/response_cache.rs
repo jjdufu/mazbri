@@ -276,8 +276,15 @@ mod skip_disabled_cache_tests {
 
     #[test]
     fn disabled_snapshot_skips_cache_rpc() {
-        assert!(!should_attempt_cache_rpc(false));
-        assert!(should_attempt_cache_rpc(true));
+        // Product snapshot fills this from cache_configs.enabled (or false if missing).
+        assert!(
+            !should_attempt_cache_rpc(false),
+            "false / missing cache_configs must skip RPC"
+        );
+        assert!(
+            should_attempt_cache_rpc(true),
+            "enabled cache_configs must allow RPC"
+        );
     }
 
     #[tokio::test]

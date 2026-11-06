@@ -319,8 +319,8 @@ pub struct GrantAccessRequest {
     pub config: Option<TenantProductConfig>,
 }
 /// Tenant response-cache switch for the gateway snapshot gate (off ⇒ skip cache RPC).
-/// `cache_configs` lives in the cache DB, so product queries default this to false;
-/// missing/disabled is the common case the latency fix targets.
+/// Filled from cache DB `cache_configs.enabled` (short TTL / negative cache);
+/// missing row or `enabled=false` keeps this off so the gateway skips cache RPC.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct TenantResponseCache {
     pub enabled: bool,
