@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.4](https://github.com/jjdufu/mazbri/compare/v0.3.3...v0.3.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **billing:** 用量事件改为有界队列加后台批量写入，响应路径不再同步 produce ([9bf006c](https://github.com/jjdufu/mazbri/commit/9bf006c985b361b6368e08762d7abc5e55e860a4))
+* **cache:** resolve_config 单元测试不再连接本地 Redis ([63b8d25](https://github.com/jjdufu/mazbri/commit/63b8d2503d58470a007d8661afc244e2fa0985f7))
+* **gateway,cache:** 缓存关闭时跳过 RPC，配置查询加内存缓存和短超时 ([600d35d](https://github.com/jjdufu/mazbri/commit/600d35dde747cfb40029546ae874b7279ff95558))
+* **observability:** upstream_ms 改为纯上游耗时并补充分段字段与真实 span ([7a77d0b](https://github.com/jjdufu/mazbri/commit/7a77d0bf56477759cde94d4b9bf026d853543fc7))
+* **product,gateway:** 用 cache_configs 填充产品快照 cache_enabled ([6373cae](https://github.com/jjdufu/mazbri/commit/6373cae5ec628acf87761e63c17a918353ce91c7))
+* **tls:** 内部 tarpc 连接在握手前开启 TCP_NODELAY ([26a7df8](https://github.com/jjdufu/mazbri/commit/26a7df892e6167a4951ce26d85955deff1a839d2))
+* 降低内部 tarpc 时延并按 cache_configs 填充 cache_enabled ([3b6501b](https://github.com/jjdufu/mazbri/commit/3b6501bee0ed41774a5e43b9b5c063309f66af01))
+
 ## [0.3.3](https://github.com/jjdufu/mazbri/compare/v0.3.2...v0.3.3) (2026-11-05)
 
 
