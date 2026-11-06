@@ -24,6 +24,8 @@ use crate::id::AlgorithmId;
 use crate::legacy::assert_not_legacy_or_allowed;
 use crate::material::KeyRef;
 use crate::traits::{AsymBox, AsymSign, BlockCipher, CryptoError, Digest, Mac};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 /// SM4 分组 / IV 长度（字节）。
 pub const SM4_BLOCK_LEN: usize = 16;
@@ -676,3 +678,28 @@ pub fn sm4_ecb_decrypt(
             reason: "sm4-ecb PKCS7 unpad failed".to_owned(),
         })
 }
+
+/// 预热 `libsm` SM2 预计算表（`g_table` / `g_mul`），进程内只真正构建一次。
+///
+/// 首次触达标量乘表需约 1s+ 的同步 `BigUint` 运算；若在 tokio worker 上触发，会卡住调度器并
+/// 把同秒的 `sqlx` await 墙钟拉长成「慢 SQL」误报。应在对外 ready / 收流量前，于
+/// `spawn_blocking` 或独立线程中调用本函数。
+///
+/// 返回值是**本次调用**的墙钟耗时：首次接近建表成本，已预热后接近 0。
+///
+/// # Panics
+///
+/// `libsm` 的 `new_keypair` 失败时 panic（建表路径不可用，后续 SM2 也无法工作）。
+#[must_use]
+pub fn warm_sm2() -> Duration {
+    static WARM: OnceLock<()> = OnceLock::new();
+    let started = Instant::now();
+    WARM.get_or_init(|| {
+        let ctx = SigCtx::new();
+        // new_keypair → EccCtx::g_mul → lazy_static TABLE（g_table）
+        ctx.new_keypair()
+            .expect("SM2 warm_sm2: libsm new_keypair must succeed to build g_table");
+    });
+    started.elapsed()
+}
+

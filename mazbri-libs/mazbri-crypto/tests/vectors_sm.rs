@@ -14,6 +14,7 @@ use mazbri_crypto::{
     parse_algorithm_id, suite_data_alg, suite_mac_alg, AsymBox, AsymSign, BlockCipher, Digest,
     GmDigestAlgorithm, GmMacAlgorithm, KeyPurpose, KeyRef, Mac, MacAlgorithm, Sm2CipherMode,
     Sm2EncryptAlgorithm, Sm2SignAlgorithm, Sm4Algorithm, AlgorithmId, AlgorithmRegistry,
+    warm_sm2,
     CryptoError, SUITE_GM_SM4_HMAC_SM3, SM2_DEFAULT_USER_ID,
 };
 
@@ -153,3 +154,30 @@ fn sm9_is_unsupported() {
     let err2 = parse_algorithm_id("sm9").expect_err("sm9");
     assert!(matches!(err2, CryptoError::Unsupported { .. }));
 }
+
+#[test]
+fn warm_sm2_makes_subsequent_verify_sub_millisecond() {
+    use libsm::sm2::signature::SigCtx;
+    use std::time::Instant;
+
+    let warm_elapsed = warm_sm2();
+    let ctx = SigCtx::new();
+    let (pk, sk) = ctx.new_keypair().expect("keypair after warm");
+    let pk_bytes = ctx.serialize_pubkey(&pk, false).expect("pk");
+    let sk_bytes = ctx.serialize_seckey(&sk).expect("sk");
+    let signer = KeyRef::raw(KeyPurpose::AsymSign, sk_bytes);
+    let verifier = KeyRef::raw(KeyPurpose::AsymSign, pk_bytes);
+    let alg = Sm2SignAlgorithm::default();
+    let msg = b"warm-sm2-verify";
+    let sig = alg.sign(&signer, msg).expect("sign after warm");
+
+    let started = Instant::now();
+    alg.verify(&verifier, msg, &sig).expect("verify after warm");
+    let verify_ms = started.elapsed().as_secs_f64() * 1000.0;
+    assert!(
+        verify_ms < 5.0,
+        "after warm_sm2 ({}), verify must be sub-millisecond-class, got {verify_ms:.3} ms",
+        warm_elapsed.as_millis()
+    );
+}
+

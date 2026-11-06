@@ -20,7 +20,7 @@ pub use mazbri_crypto::suite::{
 };
 pub use mazbri_crypto::{
     AlgorithmId, AlgorithmKind, CryptoError, KeyRef, SignKeyPair, generate_sign_keypair,
-    key_ref_from_text,
+    key_ref_from_text, warm_sm2,
     validate_sign_public_key,
 };
 pub use transport::default_suite;
