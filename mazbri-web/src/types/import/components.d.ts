@@ -151,6 +151,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SectionTitle: typeof import('./../../components/common/section-title/index.vue')['default']
     SecuritySectionGrid: typeof import('./../../components/common/security-section-grid/index.vue')['default']
+    ServiceHexagonGrid: typeof import('./../../components/mazbri/ServiceHexagonGrid.vue')['default']
     SettingRow: typeof import('./../../components/common/setting-row/index.vue')['default']
     SettingsBlock: typeof import('./../../components/common/settings-block/index.vue')['default']
     SettingsCard: typeof import('./../../components/common/settings-card/index.vue')['default']
