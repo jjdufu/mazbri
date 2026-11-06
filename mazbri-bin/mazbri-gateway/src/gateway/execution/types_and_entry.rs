@@ -1,3 +1,4 @@
+use tracing::Instrument;
 use super::{
     Arc, AttemptStatus, CandidateChannel, ChannelAttempt, ChannelRateLimitDecision,
     ChannelRateLimitRequest, CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration,
@@ -21,6 +22,8 @@ pub(crate) struct UpstreamResponse {
     pub(crate) error: String,
     pub(crate) content_type: Option<String>,
     pub(crate) body_bytes_len: u64,
+    /// Pure upstream wire time from bypass (`upstream_meta.upstream_wire_ms`); 0 if none.
+    pub(crate) upstream_wire_ms: u64,
 }
 #[derive(Debug, Clone)]
 pub(crate) enum ProxyBody {
@@ -263,7 +266,13 @@ async fn check_channel_rate_limit(
     channel: &CandidateChannel,
     request_id: &str,
 ) -> Option<ChannelDenied> {
-    match state
+    let started = std::time::Instant::now();
+    let span = tracing::info_span!(
+        "check_channel_rate_limit",
+        channel_id = %channel.channel_id,
+        channel_code = %channel.channel_code,
+    );
+    let decision = state
         .channel_ratelimiter
         .check(ChannelRateLimitRequest {
             channel_id: channel.channel_id.clone(),
@@ -271,8 +280,10 @@ async fn check_channel_rate_limit(
             qps_limit: channel.qps_limit,
             channel_config: channel.channel_config.clone(),
         })
-        .await
-    {
+        .instrument(span)
+        .await;
+    let _channel_rl_ms = started.elapsed();
+    match decision {
         ChannelRateLimitDecision::Allow {
             queue_wait_ms,
             mode,

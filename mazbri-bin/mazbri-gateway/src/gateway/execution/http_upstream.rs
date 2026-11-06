@@ -401,6 +401,7 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
             error: biz.message.clone(),
             content_type: Some("application/json".into()),
             body_bytes_len: bytes_len,
+            upstream_wire_ms: 0,
         };
     }
     let payload = if response.payload_json.is_empty() {
@@ -415,12 +416,17 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
         .map(|m| u16::saturating_from(m.status))
         .filter(|s| *s > 0)
         .unwrap_or(200);
+    let upstream_wire_ms = response
+        .upstream_meta
+        .as_ref()
+        .map_or(0, |m| m.upstream_wire_ms);
     UpstreamResponse {
         status,
         body: ProxyBody::JsonValue(payload),
         error: String::new(),
         content_type: Some("application/json".into()),
         body_bytes_len: response.payload_json.len() as u64,
+        upstream_wire_ms,
     }
 }
 
@@ -459,6 +465,7 @@ async fn execute_plain_request(
                     error: String::new(),
                     content_type,
                     body_bytes_len: data.body_bytes_len,
+                    upstream_wire_ms: 0,
                 });
             }
             Err(error) => {

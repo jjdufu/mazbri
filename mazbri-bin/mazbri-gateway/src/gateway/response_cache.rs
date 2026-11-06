@@ -12,7 +12,7 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{CacheGetRequest, CacheSetRequest};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tracing::{debug, warn};
+use tracing::{debug, warn, Instrument};
 
 /// Max body bytes we will put into the tenant response cache.
 const MAX_CACHEABLE_BODY_BYTES: usize = 512 * 1024;
@@ -100,6 +100,7 @@ impl CachedUpstreamResponse {
             error: self.error,
             content_type: self.content_type,
             body_bytes_len,
+            upstream_wire_ms: 0,
         }
     }
 }
@@ -148,7 +149,17 @@ pub(crate) async fn try_get_cached_response(
     if !should_attempt_cache_rpc(cache_enabled) {
         return None;
     }
-    let client = match pool.get_cache_client(endpoint.url()).await {
+    let span = tracing::info_span!(
+        "response_cache.get",
+        tenant_id = %tenant_id,
+        cache_key = %cache_key,
+    );
+    let started = std::time::Instant::now();
+    let client = match pool
+        .get_cache_client(endpoint.url())
+        .instrument(span.clone())
+        .await
+    {
         Ok(c) => c,
         Err(e) => {
             debug!(error = %e, "Proxy response cache get: client unavailable (fail-open)");
@@ -162,7 +173,10 @@ pub(crate) async fn try_get_cached_response(
             key: cache_key.to_string(),
         },
     );
-    let response = match tokio::time::timeout(CACHE_GET_TIMEOUT, get_fut).await {
+    let response = match tokio::time::timeout(CACHE_GET_TIMEOUT, get_fut)
+        .instrument(span)
+        .await
+    {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
             debug!(error = %e, "Proxy response cache get: RPC failed (fail-open)");
@@ -183,13 +197,15 @@ pub(crate) async fn try_get_cached_response(
     if !response.found || response.value.is_empty() {
         return None;
     }
-    match serde_json::from_slice::<CachedUpstreamResponse>(&response.value) {
+    let cached = match serde_json::from_slice::<CachedUpstreamResponse>(&response.value) {
         Ok(cached) => Some(cached),
         Err(e) => {
             warn!(error = %e, "Proxy response cache get: decode failed");
             None
         }
-    }
+    };
+    debug!(cache_lookup_ms = started.elapsed().as_millis(), hit = cached.is_some(), "response cache get finished");
+    cached
 }
 
 pub(crate) async fn try_put_cached_response(

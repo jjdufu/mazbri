@@ -74,6 +74,9 @@ struct FetchedResponse {
     from_cache: bool,
     from_cbpro_fallback: bool,
     cache_key: String,
+    cache_lookup_ms: u64,
+    /// Wall time of the whole `fetch_response` upstream path (cache miss → bypass hop).
+    fetch_wall_ms: u64,
 }
 
 /// 响应完成后用于后置任务、指标与访问日志的输入。
@@ -82,7 +85,7 @@ struct CompletedRequest<'a> {
     serialized: &'a SerializedProxyResponse,
     response_error: Option<String>,
     request_size: u64,
-    timing: &'a GatewayRequestTiming,
+    timing: &'a mut GatewayRequestTiming,
     headers: &'a HeaderMap,
     source_ip: &'a str,
     user_agent: &'a str,
@@ -154,12 +157,19 @@ pub async fn unified_gateway_handler(
     let fallback_enabled =
         tenant_product_detail.cb_pro_enabled && tenant_product_detail.cb_pro_fallback;
     let cache_enabled = tenant_product_detail.response_cache.enabled;
-    let upstream_started_at = Instant::now();
-    let fetched = fetch_response(
-        &ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at,
-    )
-    .await?;
-    timing.upstream_ms = mazbri_core::num::millis_u64(upstream_started_at.elapsed());
+    let fetched =
+        fetch_response(&ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at)
+            .await?;
+    timing.cache_lookup_ms = fetched.cache_lookup_ms;
+    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
+    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
+        0
+    } else {
+        fetched.response.upstream_wire_ms
+    };
+    timing.bypass_hop_ms = fetched.fetch_wall_ms
+        .saturating_sub(timing.cache_lookup_ms)
+        .saturating_sub(timing.upstream_ms);
     log_upstream_stage(&ctx, timing.upstream_ms, &fetched);
     spawn_cache_populate(&ctx, &fetched, cache_enabled);
     let status = fetched.response.status;
@@ -183,12 +193,12 @@ pub async fn unified_gateway_handler(
     }
     finish_request(
         &ctx,
-        &CompletedRequest {
+        &mut CompletedRequest {
             fetched: &fetched,
             serialized: &serialized,
             response_error,
             request_size,
-            timing: &timing,
+            timing: &mut timing,
             headers: &headers,
             source_ip: &source_ip,
             user_agent: &user_agent,
@@ -482,9 +492,11 @@ async fn fetch_response(
     start: Instant,
 ) -> Result<FetchedResponse, ProxyError> {
     let (state, request_id, claims, req) = (ctx.state, ctx.request_id, ctx.claims, ctx.req);
+    let fetch_started = Instant::now();
     // H-05: try tenant response cache before upstream (fail-open).
     // Snapshot gate lives inside try_get_cached_response — disabled = zero RPC.
     let cache_key = super::response_cache::build_proxy_cache_key(req);
+    let cache_lookup_started = Instant::now();
     let cache_hit = super::response_cache::try_get_cached_response(
         &state.proxy_state.tarpc_pool,
         &state.proxy_state.services_config.cache,
@@ -493,6 +505,11 @@ async fn fetch_response(
         cache_enabled,
     )
     .await;
+    let cache_lookup_ms = if cache_enabled {
+        mazbri_core::num::millis_u64(cache_lookup_started.elapsed())
+    } else {
+        0
+    };
     if let Some(cached) = cache_hit {
         // Attach matched product route so customer-calls shows CB: + channel, not "-".
         let matched_route =
@@ -517,6 +534,8 @@ async fn fetch_response(
             from_cache: true,
             from_cbpro_fallback: false,
             cache_key,
+            cache_lookup_ms,
+            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_started.elapsed()),
         });
     }
     match execute_gateway_request_with_event(
@@ -536,6 +555,8 @@ async fn fetch_response(
             from_cache: false,
             from_cbpro_fallback: resp.from_cbpro_fallback,
             cache_key,
+            cache_lookup_ms,
+            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_started.elapsed()),
         }),
         Err(e) => {
             API_PROXY_DURATION_SECONDS
@@ -696,12 +717,15 @@ async fn complete_idempotency(ctx: &HandlerCtx<'_>, serialized: &SerializedProxy
     }
 }
 
-fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
+fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
     let req = ctx.req;
     let fetched = done.fetched;
     let service_total_ms = i32::saturating_from(done.timing.started_at.elapsed().as_millis());
+    let billing_enqueue_started = Instant::now();
     let (usage_event, usage_event_produced, billing_fields) =
         prepare_usage_event(ctx, done, service_total_ms);
+    done.timing.billing_enqueue_ms =
+        mazbri_core::num::millis_u64(billing_enqueue_started.elapsed());
     spawn_post_response_tasks(
         ctx.state,
         PostResponseTaskArgs {
@@ -724,7 +748,7 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
             usage_event_produced,
         },
     );
-    let timing = done.timing;
+    let timing = &*done.timing;
     let elapsed = timing.started_at.elapsed();
     let customer_total_ms = mazbri_core::num::millis_u64(elapsed);
     // 仅平台依赖等待（限流/余额/产品），不含上游出站等待
@@ -768,7 +792,13 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
             balance_check_ms = timing.balance_check_ms,
             ratelimit_ms = timing.ratelimit_ms,
             product_detail_lookup_ms = timing.product_detail_lookup_ms,
-            message = "Gateway platform timing summary (upstream business RTT excluded from platform_local)"
+            cache_lookup_ms = timing.cache_lookup_ms,
+            route_match_ms = timing.route_match_ms,
+            channel_rl_wait_ms = timing.channel_rl_wait_ms,
+            bypass_hop_ms = timing.bypass_hop_ms,
+            billing_enqueue_ms = timing.billing_enqueue_ms,
+            nonce_ms = timing.nonce_ms,
+            message = "Gateway platform timing summary (upstream_ms = pure wire; internal_ms = total - upstream_ms)"
         );
     }
     emit_gateway_access_log(
@@ -790,8 +820,8 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &CompletedRequest<'_>) {
     );
 }
 
-/// Builds the request's usage event, produces it to Redpanda when billable (L1) and returns
-/// (billable event for the post-response path, produced flag, access-log billing fields).
+/// Builds the request's usage event, enqueues it for background batch produce when billable,
+/// and returns (billable event for the post-response path, enqueued flag, access-log billing fields).
 fn prepare_usage_event(
     ctx: &HandlerCtx<'_>,
     done: &CompletedRequest<'_>,
