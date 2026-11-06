@@ -4270,10 +4270,13 @@
       },
       "noSampleHint": "No business traffic in the selected time range",
       "sections": {
-        "kpi": "Key metrics",
-        "realtime": "Live status",
+        "kpi": "KPI",
+        "realtime": "Now",
         "trend": "Trends",
-        "insight": "Insights"
+        "insight": "Insights",
+        "appsOnline": "Apps online",
+        "trafficQuality": "Traffic quality",
+        "securityGov": "Security & governance"
       },
       "followsWindow": "Follows time range",
       "windowSemantics": "Follows time range · {start} – {end} ({label})",
@@ -4282,7 +4285,19 @@
       "realtimeNoSample": "No business traffic right now",
       "components": "Component health",
       "inventoryHint": "{total} tenants · {products} enabled products",
-      "billingDeadLetters": "Billing dead letters {n}"
+      "billingDeadLetters": "Billing dead letters {n}",
+      "appsOnlineTitle": "Apps online",
+      "openRuntime": "View all",
+      "trafficQualityOpenCalls": "Open call logs",
+      "securityGov": {
+        "topIp": "Auth-fail Top IP",
+        "topKey": "Auth-fail Top Key",
+        "governance": "Rate-limit rejects",
+        "openCalls": "Call logs",
+        "openRuntime": "Runtime metrics",
+        "empty": "No samples in window",
+        "hint": "Rate-limit / cache details live in summaries; open call logs or runtime metrics."
+      }
     },
     "finance": {
       "placeholder": "Finance overview",

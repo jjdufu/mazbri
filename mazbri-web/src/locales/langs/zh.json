@@ -4275,10 +4275,13 @@
       },
       "noSampleHint": "所选时间窗内无业务流量",
       "sections": {
-        "kpi": "关键指标",
-        "realtime": "实时状态",
+        "kpi": "态势 KPI",
+        "realtime": "此刻",
         "trend": "趋势",
-        "insight": "洞察"
+        "insight": "业务洞察",
+        "appsOnline": "应用在线",
+        "trafficQuality": "流量质量",
+        "securityGov": "安全与治理"
       },
       "followsWindow": "跟随时间窗",
       "windowSemantics": "跟随时间窗 · {start} – {end}（{label}）",
@@ -4287,7 +4290,19 @@
       "realtimeNoSample": "此刻无业务流量",
       "components": "组件健康",
       "inventoryHint": "租户共 {total} · 已启用产品 {products}",
-      "billingDeadLetters": "计费死信 {n}"
+      "billingDeadLetters": "计费死信 {n}",
+      "appsOnlineTitle": "应用在线",
+      "openRuntime": "查看全部",
+      "trafficQualityOpenCalls": "查看调用日志",
+      "securityGov": {
+        "topIp": "鉴权失败 Top IP",
+        "topKey": "鉴权失败 Top Key",
+        "governance": "限流拒绝",
+        "openCalls": "调用日志",
+        "openRuntime": "运行指标",
+        "empty": "窗口内暂无样本",
+        "hint": "限流/缓存明细已收入口径摘要；点击进入调用日志或运行指标。"
+      }
     },
     "finance": {
       "placeholder": "经营看板",
