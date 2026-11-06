@@ -46,16 +46,10 @@ export type { UpstreamLinkOptions, UpstreamTabId } from "./upstream-link";
 /** 运维总览（Dashboard）。 */
 export const DASHBOARD_PATH = "/dashboard";
 
-/** @deprecated 运营大屏已下线；步骤 3 删除引用。暂留常量避免中间步骤断裂。 */
-export const SCREEN_PATH = "/screen";
 
 /** 鉴权与安全事件页文件仍在；侧栏已撤，摘要下钻见步骤 4。 */
 export const OPS_SECURITY_PATH = "/ops/security";
 
-/** 打开投屏（新窗口 hash 路由）。步骤 3 删除。 */
-export function buildScreenHref(origin: string, pathname: string): string {
-  return `${origin}${pathname}#${SCREEN_PATH}`;
-}
 
 /** 打开运维总览（新窗口 hash 路由）。 */
 export function buildDashboardHref(origin: string, pathname: string): string {

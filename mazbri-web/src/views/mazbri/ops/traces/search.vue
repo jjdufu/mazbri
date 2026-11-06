@@ -84,143 +84,78 @@
       </ElForm>
     </OpsCard>
 
-    <ElTabs
-      v-model="activeTab"
-      class="ops-traces__tabs"
-      @tab-change="onTabChange"
-    >
-      <ElTabPane :label="t('ops.traces.tabs.results')" name="results" />
-      <ElTabPane :label="t('ops.traces.tabs.topology')" name="topology" />
-    </ElTabs>
-
-    <template v-if="activeTab === 'results'">
-      <OpsCard :title="t('ops.traces.scatter.title')">
+    <OpsCard :title="t('ops.traces.scatter.title')">
       <div class="ops-traces__card-head">
-          <span class="ops-traces__muted">
-            {{ t("ops.traces.scatter.summary", { count: traces.length }) }}
-            <template v-if="resolvedFromLogs !== null">
-              · {{ t("ops.traces.resolved", { count: resolvedFromLogs }) }}
-            </template>
-          </span>
-        </div>
-        <div
-          ref="scatterRef"
-          v-loading="loading"
-          class="ops-traces__scatter"
-        ></div>
-      </OpsCard>
-      <OpsCard>
-        <ElTable
-          v-loading="loading"
-          :data="traces"
-          stripe
-          size="small"
-          :empty-text="emptyText"
-          class="ops-traces__table"
-          @row-click="openTrace"
-        >
-          <ElTableColumn :label="t('ops.traces.columns.start')" min-width="180">
-            <template #default="{ row }">{{ formatMs(row.start_ms) }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.traces.columns.root')" min-width="260">
-            <template #default="{ row }">
-              <span class="ops-traces__service">{{ row.root_service }}</span>
-              {{ row.root_span }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn
-            prop="duration_ms"
-            :label="t('ops.traces.columns.duration')"
-            width="120"
-            sortable
-          >
-            <template #default="{ row }"
-              >{{ row.duration_ms.toFixed(1) }} ms</template
-            >
-          </ElTableColumn>
-          <ElTableColumn
-            prop="span_count"
-            :label="t('ops.traces.columns.spans')"
-            width="90"
-          />
-          <ElTableColumn
-            prop="service_count"
-            :label="t('ops.traces.columns.services')"
-            width="90"
-          />
-          <ElTableColumn
-            prop="error_count"
-            :label="t('ops.traces.columns.errors')"
-            width="90"
-          >
-            <template #default="{ row }">
-              <ElTag v-if="row.error_count > 0" type="danger" size="small">{{
-                row.error_count
-              }}</ElTag>
-              <span v-else>0</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
-            <template #default="{ row }">
-              <ElLink type="primary" @click.stop="openTrace(row)">{{
-                row.trace_id
-              }}</ElLink>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </OpsCard>
-    </template>
-
-    <OpsCard v-else :title="t('ops.traces.topology.title')">
-      <div class="ops-traces__card-head">
-        <span class="ops-traces__muted">{{
-          t("ops.traces.topology.hint")
-        }}</span>
+        <span class="ops-traces__muted">
+          {{ t("ops.traces.scatter.summary", { count: traces.length }) }}
+          <template v-if="resolvedFromLogs !== null">
+            · {{ t("ops.traces.resolved", { count: resolvedFromLogs }) }}
+          </template>
+        </span>
       </div>
       <div
-        ref="graphRef"
-        v-loading="graphLoading"
-        class="ops-traces__graph"
+        ref="scatterRef"
+        v-loading="loading"
+        class="ops-traces__scatter"
       ></div>
+    </OpsCard>
+    <OpsCard>
       <ElTable
-        :data="graph?.edges ?? []"
+        v-loading="loading"
+        :data="traces"
         stripe
         size="small"
+        :empty-text="emptyText"
         class="ops-traces__table"
+        @row-click="openTrace"
       >
-        <ElTableColumn
-          prop="source"
-          :label="t('ops.traces.topology.source')"
-          min-width="140"
-        />
-        <ElTableColumn
-          prop="target"
-          :label="t('ops.traces.topology.target')"
-          min-width="180"
-        />
-        <ElTableColumn
-          prop="kind"
-          :label="t('ops.traces.topology.kind')"
-          width="100"
-        >
-          <template #default="{ row }">{{
-            t(`ops.traces.topology.kinds.${row.kind}`)
-          }}</template>
+        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="180">
+          <template #default="{ row }">{{ formatMs(row.start_ms) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="t('ops.traces.columns.root')" min-width="260">
+          <template #default="{ row }">
+            <span class="ops-traces__service">{{ row.root_service }}</span>
+            {{ row.root_span }}
+          </template>
         </ElTableColumn>
         <ElTableColumn
-          prop="calls"
-          :label="t('ops.traces.topology.calls')"
-          width="100"
+          prop="duration_ms"
+          :label="t('ops.traces.columns.duration')"
+          width="120"
           sortable
+        >
+          <template #default="{ row }"
+            >{{ row.duration_ms.toFixed(1) }} ms</template
+          >
+        </ElTableColumn>
+        <ElTableColumn
+          prop="span_count"
+          :label="t('ops.traces.columns.spans')"
+          width="90"
         />
         <ElTableColumn
-          prop="errors"
-          :label="t('ops.traces.topology.errors')"
-          width="100"
-          sortable
+          prop="service_count"
+          :label="t('ops.traces.columns.services')"
+          width="90"
         />
-        <ElTableColumn prop="p99_ms" label="P99 (ms)" width="110" sortable>
-          <template #default="{ row }">{{ row.p99_ms.toFixed(1) }}</template>
+        <ElTableColumn
+          prop="error_count"
+          :label="t('ops.traces.columns.errors')"
+          width="90"
+        >
+          <template #default="{ row }">
+            <ElTag v-if="row.error_count > 0" type="danger" size="small">{{
+              row.error_count
+            }}</ElTag>
+            <span v-else>0</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
+          <template #default="{ row }">
+            <ElLink type="primary" @click.stop="openTrace(row)">{{
+              row.trace_id
+            }}</ElLink>
+          </template>
         </ElTableColumn>
       </ElTable>
     </OpsCard>
@@ -237,17 +172,8 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
-import {
-  fetchTraceDependencies,
-  fetchTraceServices,
-  searchTraces,
-} from "@/api/traces";
-import type {
-  DependencyEdgeKind,
-  DependencyGraph,
-  TraceSearchQuery,
-  TraceSummary,
-} from "@/types/api/traces";
+import { fetchTraceServices, searchTraces } from "@/api/traces";
+import type { TraceSearchQuery, TraceSummary } from "@/types/api/traces";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
@@ -263,7 +189,6 @@ const router = useRouter();
 
 /** Search window cap enforced by analytics. */
 const MAX_SEARCH_SECONDS = 7 * 86400;
-const MAX_GRAPH_SECONDS = 86400;
 
 interface SearchForm {
   trace_id: string;
@@ -304,28 +229,18 @@ const timeRange = ref<TimeRangeValue>({
   start: Math.floor(Date.now() / 1000) - 3600,
   end: Math.floor(Date.now() / 1000),
 });
-const activeTab = ref<"results" | "topology">(
-  queryString("tab") === "topology" ? "topology" : "results",
-);
 const loading = ref(false);
 const searched = ref(false);
 const traces = ref<TraceSummary[]>([]);
 const resolvedFromLogs = ref<number | null>(null);
-const graph = ref<DependencyGraph | null>(null);
-const graphLoading = ref(false);
 
 const scatterRef = ref<HTMLDivElement>();
-const graphRef = ref<HTMLDivElement>();
 let scatter: echarts.ECharts | null = null;
-let graphChart: echarts.ECharts | null = null;
 
 const catalogServices = ref<string[]>([]);
 
 const serviceOptions = computed(() => {
   const set = new Set<string>(catalogServices.value);
-  for (const n of graph.value?.nodes ?? []) {
-    if (n && !n.includes(":")) set.add(n);
-  }
   for (const tr of traces.value) {
     if (tr.root_service) set.add(tr.root_service);
   }
@@ -391,7 +306,7 @@ function syncRoute() {
     if (v === undefined || v === null || v === "" || v === false) continue;
     query[key] = String(v);
   }
-  query.tab = activeTab.value === "topology" ? "topology" : undefined;
+  query.tab = undefined;
   void router.replace({ query });
 }
 
@@ -498,125 +413,13 @@ function buildScatterOption(): EChartsOption {
   };
 }
 
-const KIND_COLORS: Record<DependencyEdgeKind, string> = {
-  rpc: "#409eff",
-  storage: "#e6a23c",
-  upstream: "#67c23a",
-};
-
-function nodeCategory(name: string): number {
-  if (name.startsWith("upstream:")) return 2;
-  if (name === "redis" || name === "postgres") return 1;
-  return 0;
-}
-
-let graphSeq = 0;
-async function loadGraph() {
-  const seq = ++graphSeq;
-  graphLoading.value = true;
-  try {
-    const res = await fetchTraceDependencies(clampedRange(MAX_GRAPH_SECONDS));
-    if (seq !== graphSeq) return;
-    graph.value = res;
-    await nextTick();
-    renderGraph();
-  } catch (error) {
-    logger.error("Failed to load trace dependencies:", error);
-    if (seq === graphSeq) ElMessage.error(t("ops.traces.topology.loadFailed"));
-  } finally {
-    if (seq === graphSeq) graphLoading.value = false;
-  }
-}
-
-function renderGraph() {
-  if (!graphRef.value || !graph.value) return;
-  if (!graphChart) {
-    graphChart = echarts.init(graphRef.value);
-    unbindGraphResize?.();
-    unbindGraphResize = bindOpsChartResize(graphRef.value, () => graphChart);
-  }
-  const data = graph.value;
-  const maxCalls = Math.max(1, ...data.edges.map((e) => e.calls));
-  const categories = [
-    { name: t("ops.traces.topology.kinds.rpc") },
-    { name: t("ops.traces.topology.kinds.storage") },
-    { name: t("ops.traces.topology.kinds.upstream") },
-  ];
-  const option: EChartsOption = {
-    tooltip: {
-      formatter: (p) => {
-        const item = Array.isArray(p) ? p[0] : p;
-        if (item.dataType === "edge") {
-          const edge = data.edges[item.dataIndex];
-          if (!edge) return "";
-          return `${edge.source} → ${edge.target}<br/>${t("ops.traces.topology.calls")}: ${edge.calls}<br/>${t("ops.traces.topology.errors")}: ${edge.errors}<br/>P99: ${edge.p99_ms.toFixed(1)} ms`;
-        }
-        return String(item.name);
-      },
-    },
-    legend: [{ data: categories.map((c) => c.name), top: 0 }],
-    series: [
-      {
-        type: "graph",
-        layout: "force",
-        roam: true,
-        draggable: true,
-        categories,
-        force: { repulsion: 420, edgeLength: [90, 200] },
-        label: { show: true, position: "right" },
-        edgeSymbol: ["none", "arrow"],
-        edgeSymbolSize: 8,
-        data: data.nodes.map((name) => ({
-          name,
-          category: nodeCategory(name),
-          symbolSize: name === "gateway" ? 44 : 30,
-        })),
-        links: data.edges.map((e) => ({
-          source: e.source,
-          target: e.target,
-          label: {
-            show: false,
-            formatter: `${e.calls} · ${e.p99_ms.toFixed(0)}ms`,
-            fontSize: 10,
-          },
-          emphasis: {
-            label: { show: true, fontSize: 10 },
-          },
-          lineStyle: {
-            color: e.errors > 0 ? "#f56c6c" : KIND_COLORS[e.kind],
-            width: 1 + 4 * (e.calls / maxCalls),
-            curveness: 0.1,
-          },
-        })),
-      },
-    ],
-  };
-  graphChart.setOption(option, true);
-}
-
 function onRangeChange(value: TimeRangeValue) {
   timeRange.value = value;
   void loadServiceCatalog();
-  if (activeTab.value === "topology") void loadGraph();
-  else void runSearch();
-}
-
-async function onTabChange() {
-  syncRoute();
-  await nextTick();
-  if (activeTab.value === "topology") {
-    scatter?.dispose();
-    scatter = null;
-    void loadGraph();
-  } else {
-    graphChart?.dispose();
-    graphChart = null;
-    renderScatter();
-  }
+  void runSearch();
 }
 
 let unbindScatterResize: (() => void) | null = null;
-let unbindGraphResize: (() => void) | null = null;
 
 onMounted(() => {
   void loadServiceCatalog();
@@ -624,13 +427,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   unbindScatterResize?.();
-  unbindGraphResize?.();
   unbindScatterResize = null;
-  unbindGraphResize = null;
   scatter?.dispose();
-  graphChart?.dispose();
   scatter = null;
-  graphChart = null;
 });
 </script>
 
@@ -670,10 +469,6 @@ onUnmounted(() => {
   height: 240px;
   overflow: hidden;
 }
-.ops-traces__graph {
-  height: 460px;
-  overflow: hidden;
-}
 .ops-traces__table :deep(.el-table__row) {
   cursor: pointer;
 }
@@ -684,8 +479,5 @@ onUnmounted(() => {
   font-size: 12px;
   background: var(--el-fill-color);
   border-radius: 4px;
-}
-.ops-traces__tabs :deep(.el-tabs__header) {
-  margin: 0;
 }
 </style>

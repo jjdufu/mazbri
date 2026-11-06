@@ -18,21 +18,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
     },
   },
   {
-    path: "/screen",
-    name: "OpsScreen",
-    component: "/mazbri/ops/screen/index",
-    meta: {
-      title: "menus.mazbri.opsScreen",
-      icon: "ri:tv-2-line",
-      order: 0,
-      isHide: true,
-      isHideTab: true,
-      isFullPage: true,
-      keepAlive: false,
-      roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-    },
-  },
-  {
     path: "/finance/overview",
     name: "FinanceOverview",
     component: "/mazbri/ops/finance/index",

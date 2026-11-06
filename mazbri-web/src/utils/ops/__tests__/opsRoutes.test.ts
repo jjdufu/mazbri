@@ -8,7 +8,6 @@ import {
   INFRA_PATH,
   OPS_SECURITY_PATH,
   RUNTIME_PATH,
-  SCREEN_PATH,
   SERVICES_PATH,
   TRACES_PATH,
   TRAFFIC_PATH,
@@ -18,7 +17,6 @@ import {
   buildFlowRoute,
   buildInfraRoute,
   buildDashboardHref,
-  buildScreenHref,
   buildRuntimeRoute,
   buildServicesRoute,
   buildTrafficRoute,
@@ -27,7 +25,6 @@ import {
 
 test("opsRoutes re-exports merged IA parent paths", () => {
   assert.equal(DASHBOARD_PATH, "/dashboard");
-  assert.equal(SCREEN_PATH, "/screen");
   assert.equal(RUNTIME_PATH, "/ops/runtime");
   assert.equal(INFRA_PATH, RUNTIME_PATH);
   assert.equal(SERVICES_PATH, RUNTIME_PATH);
@@ -75,12 +72,6 @@ test("opsRoutes builders write ?tab= for deep links", () => {
   });
 });
 
-test("buildScreenHref uses hash SCREEN_PATH", () => {
-  assert.equal(
-    buildScreenHref("http://192.168.50.50:8085", "/"),
-    "http://192.168.50.50:8085/#/screen",
-  );
-});
 
 test("buildDashboardHref uses hash DASHBOARD_PATH", () => {
   assert.equal(

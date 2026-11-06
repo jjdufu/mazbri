@@ -855,7 +855,6 @@
       "account": "My Account",
       "accountSecurity": "Account Security",
       "opsOverview": "Ops Overview",
-      "opsScreen": "Ops Screen",
       "financeOverview": "Finance Overview",
       "serviceHealth": "Service Health",
       "serviceDetail": "Service Detail",
@@ -878,7 +877,6 @@
       "billingReconcile": "Reconciliation",
       "securityEvents": "Auth & Security",
       "alertSilences": "Alert silences",
-      "serviceTopology": "Service topology",
       "opsInfra": "Infrastructure",
       "opsAlerts": "Alert Center",
       "opsBilling": "Billing & Reconcile",
@@ -4217,7 +4215,6 @@
       "oneMinute": "1m"
     },
     "overview": {
-      "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
@@ -4287,31 +4284,6 @@
       "inventoryHint": "{total} tenants · {products} enabled products",
       "billingDeadLetters": "Billing dead letters {n}"
     },
-    "screen": {
-      "title": "Ops Screen",
-      "panels": {
-        "overview": "Overview",
-        "business": "Business",
-        "resource": "Resources"
-      },
-      "qps": "QPS",
-      "successRate": "Success rate",
-      "p99": "P99 latency",
-      "alerts": "Active alerts",
-      "burn": "Error budget burn",
-      "revenue": "Revenue today",
-      "cost": "Cost today",
-      "margin": "Margin today",
-      "topProducts": "Top products",
-      "supplierSla": "Supplier SLA",
-      "geo": "Geo heatmap",
-      "topology": "Topology",
-      "resources": "Component health",
-      "noData": "No data",
-      "exitToDashboard": "Back to overview",
-      "lastHour": "last 1h",
-      "qpsTrend": "QPS · last 24h"
-    },
     "finance": {
       "placeholder": "Finance overview",
       "revenue": "Revenue",
@@ -4375,21 +4347,6 @@
         "lastRestart": "Last restart",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
-      },
-      "topologyPage": {
-        "title": "Service topology",
-        "hint": "Static skeleton plus metric / trace / upstream edges; click an edge for slow traces",
-        "loadFailed": "Failed to load topology",
-        "qps": "QPS",
-        "errorRate": "Error rate",
-        "p99": "P99",
-        "origin": "Origin",
-        "origins": {
-          "metric": "Metrics",
-          "span": "Trace",
-          "request_log": "Request logs",
-          "static": "Static"
-        }
       }
     },
     "traffic": {
@@ -4538,8 +4495,7 @@
       "notSearched": "Pick a time range and search",
       "resolved": "{count} traces resolved from call logs",
       "tabs": {
-        "results": "Results",
-        "topology": "Service topology"
+        "results": "Results"
       },
       "form": {
         "tenant": "Tenant",
@@ -4563,21 +4519,6 @@
         "spans": "Spans",
         "services": "Services",
         "errors": "Errors"
-      },
-      "topology": {
-        "title": "Service dependencies",
-        "hint": "Aggregated from span parent links, up to 24 hours; the auth edge only appears on cache misses",
-        "loadFailed": "Failed to load topology",
-        "source": "Caller",
-        "target": "Callee",
-        "kind": "Kind",
-        "calls": "Calls",
-        "errors": "Errors",
-        "kinds": {
-          "rpc": "RPC",
-          "storage": "Storage",
-          "upstream": "Upstream"
-        }
       },
       "detail": {
         "back": "Back",

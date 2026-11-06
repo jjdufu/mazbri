@@ -4,10 +4,6 @@
       <div class="ops-overview__filter" data-role="global-filter">
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-        <ElButton type="primary" @click="openScreen">
-          <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
-          {{ t("ops.overview.openScreen") }}
-        </ElButton>
       </div>
     </template>
 
@@ -360,7 +356,6 @@ import {
 import {
   buildAlertsRoute,
   buildCallsRoute,
-  buildScreenHref,
   buildServicesRoute,
   buildTraceSearchRoute,
 } from "@/utils/ops/opsRoutes";
@@ -552,10 +547,6 @@ async function onP99Click(point: PointClick) {
   }
 }
 
-function openScreen() {
-  const url = buildScreenHref(window.location.origin, window.location.pathname);
-  window.open(url, "_blank", "noopener,noreferrer");
-}
 
 /**
  * 整页刷新：每轮按「现在」解析一次窗口，所有跟窗块共用同一 [start, end)。

@@ -855,7 +855,6 @@
       "account": "个人账号",
       "accountSecurity": "账号安全",
       "opsOverview": "全局总览",
-      "opsScreen": "运营大屏",
       "financeOverview": "经营看板",
       "serviceHealth": "服务健康",
       "serviceDetail": "服务详情",
@@ -878,7 +877,6 @@
       "billingReconcile": "对账中心",
       "securityEvents": "鉴权与安全事件",
       "alertSilences": "告警静默",
-      "serviceTopology": "服务拓扑",
       "opsInfra": "基础设施",
       "opsAlerts": "告警中心",
       "opsBilling": "计费与对账",
@@ -4222,7 +4220,6 @@
       "oneMinute": "1 分钟"
     },
     "overview": {
-      "openScreen": "大屏模式",
       "loadFailed": "加载运营指标失败",
       "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
@@ -4292,31 +4289,6 @@
       "inventoryHint": "租户共 {total} · 已启用产品 {products}",
       "billingDeadLetters": "计费死信 {n}"
     },
-    "screen": {
-      "title": "运营大屏",
-      "panels": {
-        "overview": "总览",
-        "business": "业务",
-        "resource": "资源"
-      },
-      "qps": "QPS",
-      "successRate": "成功率",
-      "p99": "P99 时延",
-      "alerts": "活跃告警",
-      "burn": "错误预算燃烧",
-      "revenue": "今日收入",
-      "cost": "今日成本",
-      "margin": "今日毛利",
-      "topProducts": "Top 产品",
-      "supplierSla": "供应商 SLA",
-      "geo": "地域热力",
-      "topology": "服务拓扑",
-      "resources": "组件健康",
-      "noData": "暂无数据",
-      "exitToDashboard": "返回总览",
-      "lastHour": "近 1 小时",
-      "qpsTrend": "QPS · 近 24 小时"
-    },
     "finance": {
       "placeholder": "经营看板",
       "revenue": "收入",
@@ -4380,21 +4352,6 @@
         "lastRestart": "最近重启",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
-      },
-      "topologyPage": {
-        "title": "服务拓扑",
-        "hint": "静态骨架 + 指标边 / Trace 边 / 上游调用边；点击边可跳到慢 Trace",
-        "loadFailed": "拓扑加载失败",
-        "qps": "QPS",
-        "errorRate": "错误率",
-        "p99": "P99",
-        "origin": "来源",
-        "origins": {
-          "metric": "指标",
-          "span": "Trace",
-          "request_log": "请求日志",
-          "static": "静态"
-        }
       }
     },
     "traffic": {
@@ -4543,8 +4500,7 @@
       "notSearched": "请选择时间范围并检索",
       "resolved": "由调用日志解析出 {count} 个 trace",
       "tabs": {
-        "results": "检索结果",
-        "topology": "服务拓扑"
+        "results": "检索结果"
       },
       "form": {
         "tenant": "租户",
@@ -4568,21 +4524,6 @@
         "spans": "span 数",
         "services": "服务数",
         "errors": "错误数"
-      },
-      "topology": {
-        "title": "服务依赖拓扑",
-        "hint": "基于 span 父子关系聚合，最长 24 小时；鉴权边只在缓存未命中时出现",
-        "loadFailed": "拓扑加载失败",
-        "source": "调用方",
-        "target": "被调方",
-        "kind": "类型",
-        "calls": "调用数",
-        "errors": "错误数",
-        "kinds": {
-          "rpc": "服务调用",
-          "storage": "存储",
-          "upstream": "上游"
-        }
       },
       "detail": {
         "back": "返回",
