@@ -5,26 +5,29 @@ import {
   buildServiceDetailRoute,
   buildServicesRoute,
 } from "../services-link";
+import { RUNTIME_PATH } from "../runtime-link";
 
-test("buildServicesRoute defaults to bare path", () => {
-  assert.deepEqual(buildServicesRoute(), { path: SERVICES_PATH, query: {} });
+test("SERVICES_PATH aliases RUNTIME_PATH", () => {
+  assert.equal(SERVICES_PATH, RUNTIME_PATH);
+  assert.equal(SERVICES_PATH, "/ops/runtime");
 });
 
-test("buildServicesRoute with health tab", () => {
+test("buildServicesRoute always lands on runtime apps", () => {
+  assert.deepEqual(buildServicesRoute(), {
+    path: RUNTIME_PATH,
+    query: { tab: "apps" },
+  });
   assert.deepEqual(buildServicesRoute({ tab: "health" }), {
-    path: SERVICES_PATH,
-    query: { tab: "health" },
+    path: RUNTIME_PATH,
+    query: { tab: "apps" },
+  });
+  assert.deepEqual(buildServicesRoute({ tab: "apps" }), {
+    path: RUNTIME_PATH,
+    query: { tab: "apps" },
   });
 });
 
-test("buildServicesRoute with topology tab", () => {
-  assert.deepEqual(buildServicesRoute({ tab: "topology" }), {
-    path: SERVICES_PATH,
-    query: { tab: "topology" },
-  });
-});
-
-test("buildServiceDetailRoute encodes service id", () => {
+test("buildServiceDetailRoute encodes service id under /ops/services", () => {
   assert.deepEqual(buildServiceDetailRoute("mazbri-gateway"), {
     path: "/ops/services/mazbri-gateway",
   });

@@ -865,7 +865,7 @@
       "upstreamSla": "供应商 SLA",
       "upstreamBreaker": "熔断与重试",
       "billingHealth": "计费链路健康",
-      "opsCalls": "调用检索",
+      "opsCalls": "调用日志",
       "alertEvents": "告警事件",
       "alertRules": "告警规则",
       "opsTraces": "链路追踪",
@@ -885,7 +885,9 @@
       "opsTraffic": "流量与质量",
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
-      "opsServices": "服务概览"
+      "opsServices": "服务概览",
+      "opsRuntime": "运行指标",
+      "runtimeApps": "应用组件"
     }
   },
   "systemSettings": {

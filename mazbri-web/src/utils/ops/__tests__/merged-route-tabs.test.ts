@@ -88,11 +88,11 @@ test("upstream breaker is ADMIN; sla is ALL", () => {
   );
 });
 
-test("services topology ADMIN-only; health ALL", () => {
+test("services health ALL (topology removed)", () => {
   const result = resolveOpsTab({
     role: "R_VIEWER",
     tabs: [...getMergedRouteTabs("services")],
-    queryTab: "topology",
+    queryTab: "health",
     preferredDefault: MERGED_DEFAULT_TAB.services,
   });
   assert.deepEqual(
@@ -100,6 +100,29 @@ test("services topology ADMIN-only; health ALL", () => {
     ["health"],
   );
   assert.equal(result.activeTab, "health");
+});
+
+test("runtime apps ALL; infra tabs ADMIN-only", () => {
+  const tabs = [...getMergedRouteTabs("runtime")];
+  assert.deepEqual(
+    tabs.map((tab) => tab.id),
+    ["apps", "middleware", "pipeline", "hosts"],
+  );
+  assert.deepEqual(tabs[0]?.roles, ROLES_ALL);
+  for (const tab of tabs.slice(1)) {
+    assert.deepEqual(tab.roles, ROLES_ADMIN);
+  }
+  const viewer = resolveOpsTab({
+    role: "R_VIEWER",
+    tabs,
+    queryTab: "hosts",
+    preferredDefault: MERGED_DEFAULT_TAB.runtime,
+  });
+  assert.deepEqual(
+    viewer.visibleTabs.map((tab) => tab.id),
+    ["apps"],
+  );
+  assert.equal(viewer.activeTab, "apps");
 });
 
 test("flow cache is ADMIN; ratelimit is BIZ; FINANCE falls back from cache", () => {

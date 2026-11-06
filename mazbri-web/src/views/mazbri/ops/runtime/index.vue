@@ -1,6 +1,6 @@
 <template>
   <OpsMergedShell
-    :title="t('menus.mazbri.opsInfra')"
+    :title="t('menus.mazbri.opsRuntime')"
     :tabs="tabs"
     :default-tab="defaultTab"
   >
@@ -9,14 +9,17 @@
       <AutoRefresh v-model="refreshInterval" @tick="bumpReload" />
     </template>
 
-    <template #pipeline>
-      <InfraMetricsPanel tab="pipeline" note-key="ops.infra.pipelineNote" />
+    <template #apps>
+      <HealthPanel />
     </template>
     <template #middleware>
       <InfraMetricsPanel
         tab="middleware"
         note-key="ops.infra.middlewareNote"
       />
+    </template>
+    <template #pipeline>
+      <InfraMetricsPanel tab="pipeline" note-key="ops.infra.pipelineNote" />
     </template>
     <template #hosts>
       <InfraMetricsPanel tab="hosts" note-key="ops.infra.hostsNote" />
@@ -31,17 +34,22 @@ import OpsMergedShell from "@/components/ops/OpsMergedShell.vue";
 import TimeRangePicker from "@/components/ops/TimeRangePicker.vue";
 import { useMergedShellTabs } from "@/composables/ops/useMergedShellTabs";
 import { provideOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
-import InfraMetricsPanel from "./InfraMetricsPanel.vue";
+import HealthPanel from "@/views/mazbri/ops/services/HealthPanel.vue";
+import InfraMetricsPanel from "@/views/mazbri/ops/infra/InfraMetricsPanel.vue";
 
-defineOptions({ name: "OpsInfra" });
+defineOptions({ name: "OpsRuntime" });
 
 const LABEL_MAP = {
-  pipeline: "menus.mazbri.infraPipeline",
+  apps: "menus.mazbri.runtimeApps",
   middleware: "menus.mazbri.infraMiddleware",
+  pipeline: "menus.mazbri.infraPipeline",
   hosts: "menus.mazbri.infraHosts",
 } as const;
 
 const { t } = useI18n();
-const { tabs, defaultTab } = useMergedShellTabs("infra", LABEL_MAP);
-const { timeRange, refreshInterval, bumpReload } = provideOpsSharedRange();
+const { tabs, defaultTab } = useMergedShellTabs("runtime", LABEL_MAP);
+const { timeRange, refreshInterval, bumpReload } = provideOpsSharedRange(
+  "1h",
+  30,
+);
 </script>

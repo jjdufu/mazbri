@@ -865,7 +865,7 @@
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
       "billingHealth": "Billing Pipeline",
-      "opsCalls": "Call Search",
+      "opsCalls": "Call Logs",
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
@@ -885,7 +885,9 @@
       "opsTraffic": "Traffic & Quality",
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
-      "opsServices": "Services Overview"
+      "opsServices": "Services Overview",
+      "opsRuntime": "Runtime Metrics",
+      "runtimeApps": "App Components"
     }
   },
   "systemSettings": {
