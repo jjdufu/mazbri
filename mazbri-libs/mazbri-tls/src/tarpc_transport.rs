@@ -36,7 +36,7 @@ impl TlsTarpcListener {
         async_stream::stream! {
             loop { let (tcp_stream, peer_addr) = match self.listener.accept(). await {
             Ok(conn) => conn, Err(e) => { warn!("Failed to accept connection: {}", e);
-            continue; } }; info!(peer = % peer_addr,
+            continue; } }; if let Err(err) = tcp_stream.set_nodelay(true) { warn!(peer = % peer_addr, error = % err, "failed to set TCP_NODELAY on accepted TLS tarpc connection"); } info!(peer = % peer_addr,
             "TLS tarpc listener accepted TCP connection"); let tls_stream = match self
             .acceptor.accept(tcp_stream). await { Ok(stream) => stream, Err(e) => {
             warn!(peer = % peer_addr, error = % e, "TLS handshake failed"); continue; }

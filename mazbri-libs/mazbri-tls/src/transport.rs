@@ -111,6 +111,13 @@ impl TlsConnector {
         let tcp_stream = TcpStream::connect(addr)
             .await
             .map_err(|e| TlsError::HandshakeFailed(format!("TCP connect failed: {e}")))?;
+        if let Err(err) = tcp_stream.set_nodelay(true) {
+            warn!(
+                error = %err,
+                addr = %addr,
+                "failed to set TCP_NODELAY on TLS client connection"
+            );
+        }
         let domain = if let Some(server_name) = server_name {
             rustls::pki_types::ServerName::try_from(server_name)
                 .map_err(|e| TlsError::Config(format!("Invalid server name '{server_name}': {e}")))?
