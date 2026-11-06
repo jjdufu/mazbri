@@ -12,6 +12,7 @@ use mazbri_core::crypto::request_binding::{
     SignatureVersion, canonical_http_binding, parse_signature_input, parse_unix_timestamp,
     truncate_nonce_for_log, validate_binding_nonce, validate_unix_timestamp, verify_binding,
 };
+use std::time::Instant;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -23,6 +24,10 @@ pub struct RequestBindingOutcome {
     pub kid: Option<String>,
     pub nonce_trunc: Option<String>,
     pub sig_ok: Option<bool>,
+    /// 绑定密钥查找（含缓存）耗时；跳过绑定时为 `None`。
+    pub key_lookup_ms: Option<u64>,
+    /// 绑定验签耗时（非对称走 `spawn_blocking`）；跳过绑定时为 `None`。
+    pub verify_ms: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -127,6 +132,77 @@ pub fn verify_binding_signature(
         .map_err(|_| RequestBindingError::signature())
 }
 
+
+
+struct BindingHeaderRefs<'a> {
+    timestamp_raw: &'a str,
+    nonce: &'a str,
+    signature: &'a str,
+    signature_input: &'a str,
+    kid: &'a str,
+}
+
+fn required_binding_headers(headers: &HeaderMap) -> Result<BindingHeaderRefs<'_>, RequestBindingError> {
+    let timestamp_raw = header_str(headers, HEADER_TIMESTAMP);
+    let nonce = header_str(headers, HEADER_NONCE);
+    let signature = header_str(headers, HEADER_SIGNATURE);
+    let signature_input = header_str(headers, HEADER_SIGNATURE_INPUT);
+    let kid = header_str(headers, HEADER_KEY_ID);
+    if timestamp_raw.is_none()
+        || nonce.is_none()
+        || signature.is_none()
+        || signature_input.is_none()
+        || kid.is_none()
+    {
+        return Err(RequestBindingError::missing());
+    }
+    Ok(BindingHeaderRefs {
+        timestamp_raw: timestamp_raw.expect("checked"),
+        nonce: nonce.expect("checked"),
+        signature: signature.expect("checked"),
+        signature_input: signature_input.expect("checked"),
+        kid: kid.expect("checked"),
+    })
+}
+
+/// 对称 HMAC 留在当前 worker；非对称（含 SM2）走 `spawn_blocking`。
+async fn verify_binding_signature_async(
+    crypto: &TenantCryptoState,
+    version: SignatureVersion,
+    key: &RequestBindingKey,
+    signature_input: &str,
+    canonical: &str,
+    signature: &str,
+) -> Result<(), RequestBindingError> {
+    if version.is_symmetric() {
+        return verify_binding_signature(
+            crypto.registry(),
+            version,
+            key,
+            signature_input,
+            canonical,
+            signature,
+        );
+    }
+    let registry = crypto.registry().clone();
+    let key = key.clone();
+    let signature_input = signature_input.to_owned();
+    let canonical = canonical.to_owned();
+    let signature = signature.to_owned();
+    tokio::task::spawn_blocking(move || {
+        verify_binding_signature(
+            &registry,
+            version,
+            &key,
+            &signature_input,
+            &canonical,
+            &signature,
+        )
+    })
+    .await
+    .map_err(|_| RequestBindingError::signature())?
+}
+
 /// `enforce_request_binding` 的入参，字段全部是借用，不产生额外拷贝。
 pub struct RequestBindingInput<'a> {
     pub crypto: &'a TenantCryptoState,
@@ -174,26 +250,18 @@ pub async fn enforce_request_binding(
             kid: None,
             nonce_trunc: None,
             sig_ok: None,
+            key_lookup_ms: None,
+            verify_ms: None,
         });
     }
-    let timestamp_raw = header_str(headers, HEADER_TIMESTAMP);
-    let nonce = header_str(headers, HEADER_NONCE);
-    let signature = header_str(headers, HEADER_SIGNATURE);
-    let signature_input = header_str(headers, HEADER_SIGNATURE_INPUT);
-    let kid = header_str(headers, HEADER_KEY_ID);
-    if timestamp_raw.is_none()
-        || nonce.is_none()
-        || signature.is_none()
-        || signature_input.is_none()
-        || kid.is_none()
-    {
-        return Err(RequestBindingError::missing());
-    }
-    let timestamp_raw = timestamp_raw.expect("checked");
-    let nonce = nonce.expect("checked");
-    let signature = signature.expect("checked");
-    let signature_input = signature_input.expect("checked");
-    let kid = kid.expect("checked");
+    let hdrs = required_binding_headers(headers)?;
+    let BindingHeaderRefs {
+        timestamp_raw,
+        nonce,
+        signature,
+        signature_input,
+        kid,
+    } = hdrs;
     if parse_signature_input(signature_input).is_err() {
         return Err(RequestBindingError::signature());
     }
@@ -207,20 +275,26 @@ pub async fn enforce_request_binding(
     if validate_unix_timestamp(timestamp, now, skew).is_err() {
         return Err(RequestBindingError::timestamp());
     }
+    let key_lookup_started = Instant::now();
     let key = crypto
         .request_binding_key(tenant_id, kid)
         .await
         .map_err(|_| RequestBindingError::kid())?
         .ok_or_else(RequestBindingError::kid)?;
+    let key_lookup_ms = mazbri_core::num::millis_u64(key_lookup_started.elapsed());
     let canonical = canonical_http_binding(method, path_and_query, timestamp, nonce, body);
-    verify_binding_signature(
-        crypto.registry(),
+    let verify_started = Instant::now();
+    // 非对称（含 SM2）走 spawn_blocking，避免重 ECC 卡住 tokio worker。
+    verify_binding_signature_async(
+        crypto,
         version,
         &key,
         signature_input,
         &canonical,
         signature,
-    )?;
+    )
+    .await?;
+    let verify_ms = mazbri_core::num::millis_u64(verify_started.elapsed());
     let inserted = crypto
         .consume_binding_nonce(nonce_prefix, tenant_id, nonce, profile.nonce_ttl_seconds)
         .await
@@ -240,6 +314,8 @@ pub async fn enforce_request_binding(
         kid: Some(kid.to_string()),
         nonce_trunc: Some(truncate_nonce_for_log(nonce)),
         sig_ok: Some(true),
+        key_lookup_ms: Some(key_lookup_ms),
+        verify_ms: Some(verify_ms),
     })
 }
 
