@@ -84,23 +84,6 @@ export interface TraceDetail {
   linked_from: LinkedSpan[];
 }
 
-export type DependencyEdgeKind = "rpc" | "storage" | "upstream";
-
-export interface DependencyEdge {
-  source: string;
-  target: string;
-  kind: DependencyEdgeKind;
-  calls: number;
-  errors: number;
-  p99_ms: number;
-}
-
-export interface DependencyGraph {
-  start: number;
-  end: number;
-  nodes: string[];
-  edges: DependencyEdge[];
-}
 
 export interface TraceBillingRow {
   request_id: string;

@@ -855,7 +855,6 @@
       "account": "My Account",
       "accountSecurity": "Account Security",
       "opsOverview": "Ops Overview",
-      "opsScreen": "Ops Screen",
       "financeOverview": "Finance Overview",
       "serviceHealth": "Service Health",
       "serviceDetail": "Service Detail",
@@ -865,7 +864,7 @@
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
       "billingHealth": "Billing Pipeline",
-      "opsCalls": "Call Search",
+      "opsCalls": "Call Logs",
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
@@ -878,14 +877,15 @@
       "billingReconcile": "Reconciliation",
       "securityEvents": "Auth & Security",
       "alertSilences": "Alert silences",
-      "serviceTopology": "Service topology",
       "opsInfra": "Infrastructure",
       "opsAlerts": "Alert Center",
       "opsBilling": "Billing & Reconcile",
       "opsTraffic": "Traffic & Quality",
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
-      "opsServices": "Services Overview"
+      "opsServices": "Services Overview",
+      "opsRuntime": "Runtime Metrics",
+      "runtimeApps": "App Components"
     }
   },
   "systemSettings": {
@@ -4215,7 +4215,6 @@
       "oneMinute": "1m"
     },
     "overview": {
-      "openScreen": "Fullscreen screen",
       "loadFailed": "Failed to load ops metrics",
       "viewerSlim": "Slim overview: billing and admin drills are hidden by role",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
@@ -4271,10 +4270,13 @@
       },
       "noSampleHint": "No business traffic in the selected time range",
       "sections": {
-        "kpi": "Key metrics",
-        "realtime": "Live status",
+        "kpi": "KPI",
+        "realtime": "Now",
         "trend": "Trends",
-        "insight": "Insights"
+        "insight": "Insights",
+        "appsOnline": "Apps online",
+        "trafficQuality": "Traffic quality",
+        "securityGov": "Security & governance"
       },
       "followsWindow": "Follows time range",
       "windowSemantics": "Follows time range · {start} – {end} ({label})",
@@ -4283,32 +4285,19 @@
       "realtimeNoSample": "No business traffic right now",
       "components": "Component health",
       "inventoryHint": "{total} tenants · {products} enabled products",
-      "billingDeadLetters": "Billing dead letters {n}"
-    },
-    "screen": {
-      "title": "Ops Screen",
-      "panels": {
-        "overview": "Overview",
-        "business": "Business",
-        "resource": "Resources"
-      },
-      "qps": "QPS",
-      "successRate": "Success rate",
-      "p99": "P99 latency",
-      "alerts": "Active alerts",
-      "burn": "Error budget burn",
-      "revenue": "Revenue today",
-      "cost": "Cost today",
-      "margin": "Margin today",
-      "topProducts": "Top products",
-      "supplierSla": "Supplier SLA",
-      "geo": "Geo heatmap",
-      "topology": "Topology",
-      "resources": "Component health",
-      "noData": "No data",
-      "exitToDashboard": "Back to overview",
-      "lastHour": "last 1h",
-      "qpsTrend": "QPS · last 24h"
+      "billingDeadLetters": "Billing dead letters {n}",
+      "appsOnlineTitle": "Apps online",
+      "openRuntime": "View all",
+      "trafficQualityOpenCalls": "Open call logs",
+      "securityGov": {
+        "topIp": "Auth-fail Top IP",
+        "topKey": "Auth-fail Top Key",
+        "governance": "Rate-limit rejects",
+        "openCalls": "Call logs",
+        "openRuntime": "Runtime metrics",
+        "empty": "No samples in window",
+        "hint": "Rate-limit / cache details live in summaries; open call logs or runtime metrics."
+      }
     },
     "finance": {
       "placeholder": "Finance overview",
@@ -4374,21 +4363,10 @@
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
       },
-      "topologyPage": {
-        "title": "Service topology",
-        "hint": "Static skeleton plus metric / trace / upstream edges; click an edge for slow traces",
-        "loadFailed": "Failed to load topology",
-        "qps": "QPS",
-        "errorRate": "Error rate",
-        "p99": "P99",
-        "origin": "Origin",
-        "origins": {
-          "metric": "Metrics",
-          "span": "Trace",
-          "request_log": "Request logs",
-          "static": "Static"
-        }
-      }
+      "hexagonTitle": "App components",
+      "detailTitle": "{name} · details",
+      "openDetail": "Open service detail",
+      "empty": "No health data"
     },
     "traffic": {
       "qpsByMode": "QPS by mode",
@@ -4536,8 +4514,7 @@
       "notSearched": "Pick a time range and search",
       "resolved": "{count} traces resolved from call logs",
       "tabs": {
-        "results": "Results",
-        "topology": "Service topology"
+        "results": "Results"
       },
       "form": {
         "tenant": "Tenant",
@@ -4561,21 +4538,6 @@
         "spans": "Spans",
         "services": "Services",
         "errors": "Errors"
-      },
-      "topology": {
-        "title": "Service dependencies",
-        "hint": "Aggregated from span parent links, up to 24 hours; the auth edge only appears on cache misses",
-        "loadFailed": "Failed to load topology",
-        "source": "Caller",
-        "target": "Callee",
-        "kind": "Kind",
-        "calls": "Calls",
-        "errors": "Errors",
-        "kinds": {
-          "rpc": "RPC",
-          "storage": "Storage",
-          "upstream": "Upstream"
-        }
       },
       "detail": {
         "back": "Back",

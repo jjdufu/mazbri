@@ -1,7 +1,6 @@
 import request from "@/utils/http";
 import { API_BASE_PATH } from "@/config/api";
 import type {
-  DependencyGraph,
   TraceBillingRow,
   TraceDetail,
   TraceSearchQuery,
@@ -30,16 +29,6 @@ export function fetchTrace(
   });
 }
 
-export function fetchTraceDependencies(params: {
-  start?: number;
-  end?: number;
-}) {
-  return request.get<DependencyGraph>({
-    url: `${BASE_PATH}/dependencies`,
-    params,
-    showErrorMessage: false,
-  });
-}
 
 export function fetchTraceBilling(requestIds: string[]) {
   return request.get<TraceBillingRow[]>({

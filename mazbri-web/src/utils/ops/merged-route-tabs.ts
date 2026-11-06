@@ -3,6 +3,7 @@ import type { OpsTabDef } from "./tabs";
 
 /** 合并父路由的 Tab 定义（无 label；页面侧用 i18n 注入）。 */
 export type MergedOpsDomain =
+  | "runtime"
   | "infra"
   | "alerts"
   | "billing"
@@ -48,10 +49,19 @@ const FLOW_TABS = [
 
 const SERVICES_TABS = [
   { id: "health", roles: ROLES_ALL },
-  { id: "topology", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<"health" | "topology">[];
+] as const satisfies readonly TabSeed<"health">[];
+
+const RUNTIME_TABS = [
+  { id: "apps", roles: ROLES_ALL },
+  { id: "middleware", roles: ROLES_ADMIN },
+  { id: "pipeline", roles: ROLES_ADMIN },
+  { id: "hosts", roles: ROLES_ADMIN },
+] as const satisfies readonly TabSeed<
+  "apps" | "middleware" | "pipeline" | "hosts"
+>[];
 
 const DOMAIN_TABS = {
+  runtime: RUNTIME_TABS,
   infra: INFRA_TABS,
   alerts: ALERTS_TABS,
   billing: BILLING_TABS,
@@ -68,6 +78,7 @@ export type MergedTabId<D extends MergedOpsDomain> =
 export const MERGED_DEFAULT_TAB: {
   readonly [D in MergedOpsDomain]: MergedTabId<D>;
 } = {
+  runtime: "apps",
   infra: "pipeline",
   alerts: "events",
   billing: "health",

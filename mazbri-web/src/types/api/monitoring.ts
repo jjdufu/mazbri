@@ -143,34 +143,3 @@ export interface MetricTimeseriesQuery {
   step?: number;
   service?: string;
 }
-
-
-export type TopologyNodeKind = "client" | "service" | "middleware" | "upstream" | string;
-export type TopologyHealth = "green" | "yellow" | "red" | "unknown" | string;
-export type TopologyEdgeKind = "rpc" | "storage" | "upstream" | string;
-export type TopologyOrigin = "metric" | "span" | "request_log" | "static" | string;
-
-export interface TopologyNode {
-  id: string;
-  kind: TopologyNodeKind;
-  health: TopologyHealth;
-}
-
-export interface TopologyEdge {
-  source: string;
-  target: string;
-  kind: TopologyEdgeKind;
-  origin: TopologyOrigin;
-  qps: number;
-  error_rate: number;
-  p99_ms: number;
-  calls: number;
-  errors: number;
-}
-
-export interface TopologyGraph {
-  start: number;
-  end: number;
-  nodes: TopologyNode[];
-  edges: TopologyEdge[];
-}

@@ -1,8 +1,9 @@
 import type { RouteLocationRaw } from "vue-router";
 import type { InfraChartTab } from "./infra-charts";
+import { RUNTIME_PATH, buildRuntimeRoute } from "./runtime-link";
 
-/** 基础设施合并页父路由。 */
-export const INFRA_PATH = "/ops/infra";
+/** 基础设施已并入运行指标；常量指向 RUNTIME_PATH。 */
+export const INFRA_PATH = RUNTIME_PATH;
 
 export type InfraTabId = InfraChartTab;
 
@@ -10,11 +11,12 @@ export interface InfraLinkOptions {
   tab?: InfraTabId;
 }
 
-/** 构建基础设施路由；可选 tab 深链。 */
+/** 构建运行指标路由；middleware/pipeline/hosts 与壳 Tab 一致。 */
 export function buildInfraRoute(
   options: InfraLinkOptions = {},
 ): RouteLocationRaw {
-  const query: Record<string, string> = {};
-  if (options.tab) query.tab = options.tab;
-  return { path: INFRA_PATH, query };
+  if (options.tab) {
+    return buildRuntimeRoute({ tab: options.tab });
+  }
+  return { path: RUNTIME_PATH, query: {} };
 }

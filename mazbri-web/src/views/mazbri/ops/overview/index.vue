@@ -4,10 +4,6 @@
       <div class="ops-overview__filter" data-role="global-filter">
         <TimeRangePicker v-model="timeRange" @change="reload" />
         <AutoRefresh v-model="refreshInterval" @tick="reload" />
-        <ElButton type="primary" @click="openScreen">
-          <ArtSvgIcon icon="ri:tv-2-line" class="mr-1" />
-          {{ t("ops.overview.openScreen") }}
-        </ElButton>
       </div>
     </template>
 
@@ -184,11 +180,19 @@
         </RoleGate>
       </OpsKpiRow>
 
+    </OpsSection>
+
+    <!-- 应用在线：健康摘要（六边形换皮见步骤 5）；下钻运行指标 -->
+    <OpsSection
+      id="apps-online"
+      :title="t('ops.overview.sections.appsOnline')"
+      :semantics="realtimeSemantics"
+    >
       <ElRow :gutter="16" class="ops-equal-row">
         <ElCol :xs="24" :lg="14">
           <OpsCard class="ops-main-panel" data-block="components">
             <template #title>
-              {{ t("ops.overview.components") }}
+              {{ t("ops.overview.appsOnlineTitle") }}
             </template>
             <template #extra>
               <span class="ops-overview__abnormal" :data-abnormal="abnormalCount">
@@ -201,12 +205,12 @@
               <ElButton
                 link
                 type="primary"
-                @click="router.push(buildServicesRoute({ tab: 'health' }))"
+                @click="router.push(buildRuntimeRoute({ tab: 'apps' }))"
               >
-                {{ t("ops.overview.openMatrix") }}
+                {{ t("ops.overview.openRuntime") }}
               </ElButton>
             </template>
-            <ComponentHealthList :components="components" />
+            <AppsOnlineHexagon :components="components" />
           </OpsCard>
         </ElCol>
         <ElCol :xs="24" :lg="10">
@@ -270,12 +274,17 @@
       </RoleGate>
     </OpsSection>
 
-    <!-- 趋势：跟随时间窗 -->
+    <!-- 流量质量摘要：轻图下钻调用日志（禁止整页搬入 traffic） -->
     <OpsSection
-      id="trend"
-      :title="t('ops.overview.sections.trend')"
+      id="traffic-quality"
+      :title="t('ops.overview.sections.trafficQuality')"
       :semantics="windowSemantics"
     >
+      <template #extra>
+        <ElButton link type="primary" @click="openCallsWindow">
+          {{ t("ops.overview.trafficQualityOpenCalls") }}
+        </ElButton>
+      </template>
       <ElRow :gutter="16" class="ops-equal-row">
         <ElCol :xs="24" :lg="12">
           <OpsCard :title="t('ops.overview.charts.qps')" class="ops-main-panel">
@@ -284,6 +293,7 @@
               :loading="loading"
               :window="chartWindow"
               height="240px"
+              :on-point-click="qpsClickHandler"
             />
           </OpsCard>
         </ElCol>
@@ -300,6 +310,21 @@
           </OpsCard>
         </ElCol>
       </ElRow>
+    </OpsSection>
+
+    <!-- 安全与治理摘要 -->
+    <OpsSection
+      id="security-gov"
+      :title="t('ops.overview.sections.securityGov')"
+      :semantics="windowSemantics"
+    >
+      <SecurityGovSummary
+        ref="securityGovRef"
+        :start="chartWindow?.start ?? 0"
+        :end="chartWindow?.end ?? 0"
+        :rate-limit-per-sec="traffic?.rate_limit_rejections_per_sec"
+        :loading-kpi="loading"
+      />
     </OpsSection>
 
     <!-- 洞察：跟随时间窗（SLO 为其自身评估窗口，单独标注） -->
@@ -330,7 +355,7 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import ComponentHealthList from "@/components/ops/ComponentHealthList.vue";
+import AppsOnlineHexagon from "./modules/AppsOnlineHexagon.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
@@ -360,8 +385,7 @@ import {
 import {
   buildAlertsRoute,
   buildCallsRoute,
-  buildScreenHref,
-  buildServicesRoute,
+  buildRuntimeRoute,
   buildTraceSearchRoute,
 } from "@/utils/ops/opsRoutes";
 import { defaultTimeRange, resolveRange } from "@/utils/ops/time-range";
@@ -370,6 +394,7 @@ import InfraHealthStrip from "./modules/InfraHealthStrip.vue";
 import ProductTopN from "./modules/ProductTopN.vue";
 import RecentAnomalies from "./modules/RecentAnomalies.vue";
 import RecentChanges from "./modules/RecentChanges.vue";
+import SecurityGovSummary from "./modules/SecurityGovSummary.vue";
 import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
 defineOptions({ name: "OpsOverview" });
@@ -396,6 +421,7 @@ const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
 const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(null);
 const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
 const infraStripRef = ref<InstanceType<typeof InfraHealthStrip> | null>(null);
+const securityGovRef = ref<InstanceType<typeof SecurityGovSummary> | null>(null);
 const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
 const loading = ref(false);
 const exemplarLoading = ref(false);
@@ -479,6 +505,32 @@ const billingBacklogHint = computed(() => {
 
 /** VIEWER 关闭 exemplar；ADMIN → Trace；BIZ → 调用检索。 */
 const p99ClickHandler = computed(() => (isViewer.value ? undefined : onP99Click));
+const qpsClickHandler = computed(() => (isViewer.value ? undefined : onQpsClick));
+
+function openCallsWindow() {
+  const w = chartWindow.value;
+  if (!w) {
+    void router.push(buildCallsRoute({ tab: "customer" }));
+    return;
+  }
+  void router.push(
+    buildCallsRoute({ tab: "customer", start: w.start, end: w.end }),
+  );
+}
+
+function onQpsClick(point: PointClick) {
+  if (isViewer.value) return;
+  const w = chartWindow.value;
+  const span = w ? w.end - w.start : 3600;
+  const windowSecs = Math.min(3600, Math.max(60, Math.ceil(span / 120)));
+  void router.push(
+    buildCallsRoute({
+      tab: "customer",
+      start: point.timestamp - windowSecs,
+      end: point.timestamp + windowSecs,
+    }),
+  );
+}
 
 function alertLabels(labels: Record<string, string>) {
   return Object.entries(labels)
@@ -505,6 +557,9 @@ function drill(id: OverviewDrillId) {
     query.tr_preset = timeRange.value.preset;
     query.tr_start = String(w.start);
     query.tr_end = String(w.end);
+  }
+  if (target.path === "/ops/calls" && !query.tab) {
+    query.tab = "customer";
   }
   drilldown({ path: target.path, query });
 }
@@ -552,10 +607,6 @@ async function onP99Click(point: PointClick) {
   }
 }
 
-function openScreen() {
-  const url = buildScreenHref(window.location.origin, window.location.pathname);
-  window.open(url, "_blank", "noopener,noreferrer");
-}
 
 /**
  * 整页刷新：每轮按「现在」解析一次窗口，所有跟窗块共用同一 [start, end)。
@@ -572,6 +623,7 @@ async function reload() {
   void recentAnomaliesRef.value?.reload(win);
   void recentChangesRef.value?.reload(win);
   void infraStripRef.value?.reload();
+  void securityGovRef.value?.reload();
   void sloBudgetRef.value?.reload();
 
   try {

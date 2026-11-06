@@ -59,28 +59,11 @@
           class="loading-container"
         />
 
-        <template v-else-if="groupedOnlineServices.length > 0">
-          <div class="hexagon-grid">
-            <div
-              v-for="service in groupedOnlineServices"
-              :key="service.service_name"
-              class="hexagon-item"
-              :class="{ 'is-active': activeServiceName === service.service_name }"
-              @click="handleServiceClick(service.service_name)"
-            >
-              <div class="hexagon-border">
-                <div class="hexagon-inner">
-                  <span class="status-dot pulsating" />
-                  <span class="service-abbreviation" :title="service.service_name">
-                    {{ getShortName(service.service_name) }}
-                  </span>
-                  <span class="hexagon-instance-badge">
-                    {{ service.instances.length }} Ins
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <template v-else-if="hexagonNodes.length > 0">
+          <ServiceHexagonGrid
+            v-model:selected-id="activeServiceName"
+            :nodes="hexagonNodes"
+          />
         </template>
 
         <Transition name="fade-slide">
@@ -134,6 +117,9 @@ import { fetchNodeList } from "@/api/config-center";
 import type { NodeInfo } from "@/types/api/config-center";
 import { logger } from "@/utils/sys";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import ServiceHexagonGrid, {
+  type HexagonNode,
+} from "@/components/mazbri/ServiceHexagonGrid.vue";
 const loading = ref(false);
 const nodes = ref<NodeInfo[]>([]);
 const showDetails = ref(false);
@@ -172,11 +158,6 @@ const onlineNodes = computed(() => {
   return nodes.value.filter((n) => !isOffline(n));
 });
 
-const expandedServices = ref<Record<string, boolean>>({});
-const toggleService = (serviceName: string) => {
-  expandedServices.value[serviceName] = !expandedServices.value[serviceName];
-};
-
 interface GroupedService {
   service_name: string;
   instances: NodeInfo[];
@@ -198,26 +179,21 @@ const groupedOnlineServices = computed<GroupedService[]>(() => {
 
 const activeServiceName = ref<string | null>(null);
 
-const handleServiceClick = (serviceName: string) => {
-  if (activeServiceName.value === serviceName) {
-    activeServiceName.value = null;
-  } else {
-    activeServiceName.value = serviceName;
-  }
-};
+const hexagonNodes = computed<HexagonNode[]>(() =>
+  groupedOnlineServices.value.map((service) => ({
+    id: service.service_name,
+    label: service.service_name,
+    status: "healthy" as const,
+    badge: `${service.instances.length} Ins`,
+  })),
+);
+
 
 const activeService = computed(() => {
   if (!activeServiceName.value) return null;
   return groupedOnlineServices.value.find(s => s.service_name === activeServiceName.value) || null;
 });
 
-const getShortName = (name: string): string => {
-  return name
-    .replace(/^mazbri-/, "")
-    .replace(/-service$/, "")
-    .replace(/-api$/, "")
-    .replace(/-v\d+$/, "");
-};
 
 const formatHeartbeat = (date: string) => {
   const now = Date.now();
@@ -346,109 +322,6 @@ onMounted(() => {
     &:hover {
       background: var(--art-gray-400);
     }
-  }
-}
-
-.hexagon-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 14px;
-  justify-content: flex-start;
-  padding: 10px 4px;
-}
-
-.hexagon-item {
-  position: relative;
-  width: 90px;
-  height: 104px;
-  cursor: pointer;
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), filter 0.22s ease;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.12));
-
-  &:hover {
-    transform: translateY(-4px) scale(1.05);
-    filter: drop-shadow(0 6px 12px color-mix(in srgb, var(--theme-color) 25%, transparent));
-  }
-
-  &.is-active {
-    transform: translateY(-2px) scale(1.02);
-    filter: drop-shadow(0 0 10px var(--theme-color));
-
-    .hexagon-border {
-      background: var(--theme-color);
-    }
-  }
-}
-
-.hexagon-border {
-  width: 100%;
-  height: 100%;
-  background: var(--art-card-border);
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.22s ease;
-}
-
-.hexagon-inner {
-  width: calc(100% - 4px);
-  height: calc(100% - 4px);
-  background: color-mix(in srgb, var(--default-box-color) 96%, var(--theme-color) 4%);
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 6px;
-  box-sizing: border-box;
-}
-
-.service-abbreviation {
-  font-weight: 600;
-  color: var(--art-gray-900);
-  font-size: 12px;
-  text-align: center;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hexagon-instance-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--theme-color);
-  background: color-mix(in srgb, var(--theme-color) 10%, transparent);
-  padding: 1px 5px;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--art-success);
-
-  &.pulsating {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
-    animation: dot-pulse 1.8s infinite;
-  }
-}
-
-@keyframes dot-pulse {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }
 
@@ -615,10 +488,6 @@ onMounted(() => {
 
   .node-detail-toggle {
     flex-wrap: wrap;
-  }
-
-  .hexagon-grid {
-    justify-content: center;
   }
 
   .instances-grid {
