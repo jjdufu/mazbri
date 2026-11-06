@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/jjdufu/mazbri/compare/v0.3.5...v0.3.6) (2026-11-06)
+
+
+### Features
+
+* **web:** 运维控制台按新信息架构发版 ([#61](https://github.com/jjdufu/mazbri/issues/61)) ([c772ef4](https://github.com/jjdufu/mazbri/commit/c772ef4871b7e86596d28677741c2f3970c332f9))
+
 ## [0.3.5](https://github.com/jjdufu/mazbri/compare/v0.3.4...v0.3.5) (2026-11-06)
 
 
