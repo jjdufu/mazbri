@@ -210,7 +210,7 @@
                 {{ t("ops.overview.openRuntime") }}
               </ElButton>
             </template>
-            <ComponentHealthList :components="components" />
+            <AppsOnlineHexagon :components="components" />
           </OpsCard>
         </ElCol>
         <ElCol :xs="24" :lg="10">
@@ -355,7 +355,7 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import ComponentHealthList from "@/components/ops/ComponentHealthList.vue";
+import AppsOnlineHexagon from "./modules/AppsOnlineHexagon.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";

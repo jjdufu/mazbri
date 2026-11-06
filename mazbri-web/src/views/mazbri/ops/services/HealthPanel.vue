@@ -1,14 +1,37 @@
 <template>
-  <div class="ops-services-health-panel">
-    <OpsCard>
+  <div v-loading="loading" class="ops-services-health-panel">
+    <OpsCard :title="t('ops.services.hexagonTitle')">
+      <ServiceHexagonGrid
+        v-model:selected-id="selectedService"
+        :nodes="hexagonNodes"
+      >
+        <template #empty>
+          {{ t("ops.services.empty") }}
+        </template>
+      </ServiceHexagonGrid>
+    </OpsCard>
+
+    <OpsCard
+      v-if="selectedRow"
+      :title="t('ops.services.detailTitle', { name: selectedRow.name })"
+      class="ops-services-health-panel__detail"
+    >
+      <template #extra>
+        <ElButton
+          v-if="isAdmin"
+          link
+          type="primary"
+          @click="openDetail(selectedRow)"
+        >
+          {{ t("ops.services.openDetail") }}
+        </ElButton>
+      </template>
       <OpsTableWrap>
         <ArtTable
-          :data="rows"
-          :loading="loading"
+          :data="[selectedRow]"
           :columns="columns"
           class="surface-panel-table"
           stripe
-          @row-click="onRowClick"
         />
       </OpsTableWrap>
     </OpsCard>
@@ -23,6 +46,10 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
+import ServiceHexagonGrid, {
+  type HexagonNode,
+  type HexagonStatus,
+} from "@/components/mazbri/ServiceHexagonGrid.vue";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { fetchServicesHealth } from "@/api/monitoring";
@@ -38,6 +65,26 @@ const { isAdmin } = useOpsRole();
 const { reloadTick } = useOpsSharedRange();
 const loading = ref(false);
 const rows = ref<ServiceHealthRow[]>([]);
+const selectedService = ref<string | null>(null);
+
+function healthStatus(row: ServiceHealthRow): HexagonStatus {
+  if (!row.health_ok) return "down";
+  if (row.ready === false) return "degraded";
+  return "healthy";
+}
+
+const hexagonNodes = computed<HexagonNode[]>(() =>
+  rows.value.map((row) => ({
+    id: row.service,
+    label: row.name || row.service,
+    status: healthStatus(row),
+    badge: row.version ? `v${row.version}` : undefined,
+  })),
+);
+
+const selectedRow = computed(
+  () => rows.value.find((r) => r.service === selectedService.value) ?? null,
+);
 
 function boolText(value: boolean | null | undefined) {
   if (value === null || value === undefined) return "—";
@@ -143,8 +190,7 @@ const columns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
   },
 ]);
 
-function onRowClick(row: ServiceHealthRow) {
-  // 详情路由仅 ADMIN；非超管点行不跳转，避免 403。
+function openDetail(row: ServiceHealthRow) {
   if (!isAdmin.value) return;
   void router.push(buildServiceDetailRoute(row.service));
 }
@@ -153,6 +199,12 @@ async function load() {
   loading.value = true;
   try {
     rows.value = await fetchServicesHealth();
+    if (
+      selectedService.value &&
+      !rows.value.some((r) => r.service === selectedService.value)
+    ) {
+      selectedService.value = null;
+    }
   } catch (error) {
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.services.loadFailed"),
@@ -170,3 +222,11 @@ watch(reloadTick, () => {
   void load();
 });
 </script>
+
+<style scoped>
+.ops-services-health-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-sm, 12px);
+}
+</style>

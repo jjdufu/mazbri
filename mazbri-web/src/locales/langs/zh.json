@@ -4367,7 +4367,11 @@
         "lastRestart": "最近重启",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
-      }
+      },
+      "hexagonTitle": "应用组件",
+      "detailTitle": "{name} · 明细",
+      "openDetail": "打开服务详情",
+      "empty": "暂无健康数据"
     },
     "traffic": {
       "qpsByMode": "QPS（按 mode）",

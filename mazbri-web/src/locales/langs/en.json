@@ -4362,7 +4362,11 @@
         "lastRestart": "Last restart",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
-      }
+      },
+      "hexagonTitle": "App components",
+      "detailTitle": "{name} · details",
+      "openDetail": "Open service detail",
+      "empty": "No health data"
     },
     "traffic": {
       "qpsByMode": "QPS by mode",
