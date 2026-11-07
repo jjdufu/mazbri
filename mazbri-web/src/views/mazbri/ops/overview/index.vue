@@ -252,7 +252,6 @@
       <ProductTopN ref="productTopNRef" />
       <RoleGate gate="biz">
         <RecentAnomalies ref="recentAnomaliesRef" />
-        <RecentChanges ref="recentChangesRef" />
       </RoleGate>
       <SloBudgetPanel
         ref="sloBudgetRef"
@@ -305,7 +304,6 @@ import { defaultTimeRange, resolveRange } from "@/utils/ops/time-range";
 import CertExpiryBadge from "./modules/CertExpiryBadge.vue";
 import ProductTopN from "./modules/ProductTopN.vue";
 import RecentAnomalies from "./modules/RecentAnomalies.vue";
-import RecentChanges from "./modules/RecentChanges.vue";
 import SecurityGovSummary from "./modules/SecurityGovSummary.vue";
 import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
@@ -331,7 +329,6 @@ const p99Series = ref<MetricSeries | null>(null);
 const alertSummary = ref<AlertSummary | null>(null);
 const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
 const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(null);
-const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
 const securityGovRef = ref<InstanceType<typeof SecurityGovSummary> | null>(null);
 const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
 const loading = ref(false);
@@ -517,7 +514,6 @@ async function reload() {
 
   void productTopNRef.value?.reload(win);
   void recentAnomaliesRef.value?.reload(win);
-  void recentChangesRef.value?.reload(win);
   void securityGovRef.value?.reload();
   void sloBudgetRef.value?.reload();
 

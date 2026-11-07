@@ -22,7 +22,6 @@
           v-model:q="searchForm.q"
           v-model:filters="listFilters"
           :filter-catalog="auditLogsCatalog"
-          :panel-width="260"
           @search="handleSearch"
         />
         <TableHeaderDatePickerPopover
@@ -33,6 +32,10 @@
           value-format="x"
           @change="handleSearch"
         />
+        <ElButton @click="openChangeCharts">
+          <template #icon><ArtSvgIcon icon="ri:line-chart-line" /></template>
+          {{ $t("ops.overview.changeCharts") }}
+        </ElButton>
         <TableExportDropdown
           :items="exportItems"
           :label="$t('common.actions.export')"
@@ -201,6 +204,34 @@
         </ElTable>
       </div>
     </CenteredDialog>
+
+    <AdaptiveDrawer
+      v-model="chartsOpen"
+      :title="$t('ops.overview.changeCharts')"
+      destroy-on-close
+      size="640px"
+    >
+      <div class="audit-change-charts">
+        <OpsCard :title="$t('ops.assets.routeReload')">
+          <MultiSeriesChart
+            :series="routeSeries"
+            :loading="chartsLoading"
+            :annotations="chartAnnotations"
+            :window="chartWindow"
+            height="200px"
+          />
+        </OpsCard>
+        <OpsCard :title="$t('ops.assets.connectorPublish')">
+          <MultiSeriesChart
+            :series="publishSeries"
+            :loading="chartsLoading"
+            :annotations="chartAnnotations"
+            :window="chartWindow"
+            height="200px"
+          />
+        </OpsCard>
+      </div>
+    </AdaptiveDrawer>
   </ControlPanelPageShell>
 </template>
 
@@ -211,11 +242,23 @@ import { auditLogsCatalog } from "@/list-catalog/common-resources";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import TableHeaderDatePickerPopover from "@/components/common/table-header-date-picker-popover/index.vue";
+import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
+import { resolveStep } from "@/composables/ops/useStep";
+import { fetchMetricTimeseries } from "@/api/monitoring";
+import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
+import type { MetricSeries } from "@/types/api/monitoring";
+import {
+  buildChangeAnnotations,
+  normalizeChangeEvents,
+  takeChangeTop,
+} from "@/utils/ops/changes";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { exportResourceCsv } from "@/composables/useResourceCsvImportExport";
 import type {
@@ -252,6 +295,15 @@ const tableData = ref<AuditLog[]>([]);
 const selectedRows = ref<AuditLog[]>([]);
 const detailVisible = ref(false);
 const currentLog = ref<AuditLogDetail | null>(null);
+const chartsOpen = ref(false);
+const chartsLoading = ref(false);
+const routeSeries = ref<MetricSeries | null>(null);
+const publishSeries = ref<MetricSeries | null>(null);
+const changeEvents = ref<ChangeEvent[]>([]);
+const chartWindow = ref<{ start: number; end: number } | null>(null);
+const chartAnnotations = computed(() =>
+  buildChangeAnnotations(changeEvents.value),
+);
 const ACTION_VERB_LABELS: Record<string, string> = {
   login: "auditLogs.verbs.login",
   logout: "auditLogs.verbs.logout",
@@ -697,6 +749,47 @@ const showDetails = async (row: AuditLog) => {
     logger.error("Failed to load audit log detail:", error);
   }
 };
+const resolveChartWindow = (): { start: number; end: number } => {
+  if (timeRange.value?.length === 2) {
+    const start = Math.floor(Number(timeRange.value[0]) / 1000);
+    const end = Math.floor(Number(timeRange.value[1]) / 1000);
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      return { start, end };
+    }
+  }
+  const end = Math.floor(Date.now() / 1000);
+  return { start: end - 6 * 3600, end };
+};
+const openChangeCharts = async () => {
+  chartsOpen.value = true;
+  const win = resolveChartWindow();
+  chartWindow.value = win;
+  chartsLoading.value = true;
+  try {
+    const step = resolveStep(win.end - win.start);
+    const [changesRes, route, publish] = await Promise.all([
+      fetchOpsChanges({ ...win, limit: 50 }).catch(() => null),
+      fetchMetricTimeseries({
+        metric: "route_reload_total",
+        ...win,
+        step,
+      }).catch(() => null),
+      fetchMetricTimeseries({
+        metric: "connector_publish_total",
+        ...win,
+        step,
+      }).catch(() => null),
+    ]);
+    changeEvents.value = takeChangeTop(
+      normalizeChangeEvents(changesRes?.events),
+      50,
+    );
+    routeSeries.value = route;
+    publishSeries.value = publish;
+  } finally {
+    chartsLoading.value = false;
+  }
+};
 const handleExport = async (command: string) => {
   try {
     const exportCommand = command as ExportCommand;
@@ -778,5 +871,10 @@ onMounted(() => {
 .audit-changed {
   font-weight: 600;
   color: var(--el-color-warning);
+}
+.audit-change-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 </style>
