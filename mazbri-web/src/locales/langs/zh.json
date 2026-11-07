@@ -298,7 +298,7 @@
       "rateLimitBurstSize": "突发容量",
       "rateLimitClientIpQps": "单客户端 IP 速率",
       "rateLimitClientIpBurst": "单 IP 突发",
-      "rateLimitWindowDurationSecs": "窗口时长（秒；令牌桶按秒补充）",
+      "rateLimitWindowDurationSecs": "时间窗口（秒）",
       "rateLimitApiOverride": "接口速率覆盖",
       "cacheScope": "全局缓存策略",
       "cacheDefaultTtlSecs": "默认 TTL（秒）",
@@ -399,11 +399,11 @@
         "cappedDesc": "当前匹配共 {total} 条，页面可完整翻阅前 {limit} 条。可缩小时间范围、增加筛选或用流水号精确查找；导出可拉取筛选结果。"
       },
       "mode": {
-        "latest": "截至 {asOf} 最近 {size} 条最新数据",
-        "latestPrefix": "截至 {asOf} 最近 ",
-        "latestSuffix": " 条最新数据",
-        "ranged": "时间范围内检索（条件均为 AND）",
-        "selective": "流水号精确查询（全历史）",
+        "latest": "最新 {size} 条（截至 {asOf}）",
+        "latestPrefix": "截至 {asOf} 最新 ",
+        "latestSuffix": " 条数据",
+        "ranged": "按时间范围检索",
+        "selective": "按流水号精确查询",
         "unknownTime": "—"
       },
       "sections": {
@@ -907,10 +907,10 @@
       "siteUrlPlaceholder": "https://example.com",
       "tenantGatewayUrl": "租户网关地址",
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
-      "tenantGatewayUrlHint": "租户 API 网关根地址（非管理后台）。",
+      "tenantGatewayUrlHint": "租户 API 网关根地址。",
       "adminEmail": "管理员邮箱",
       "adminEmailPlaceholder": "admin@example.com",
-      "sessionTimeout": "管理端会话超时（分钟，写入 JWT 过期时间）",
+      "sessionTimeout": "管理端会话超时（分钟）",
       "saveSettings": "保存设置",
       "resetToDefault": "重置为默认值"
     },
@@ -1021,7 +1021,7 @@
     },
     "hints": {
       "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。",
-      "lockThreshold": "连续登录失败达到锁定阈值后账号被锁定，锁定时长内无法登录。这是平台唯一生效的登录失败锁定设置（系统配置中不再单独设置）。"
+      "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。"
     }
   },
   "channels": {
@@ -1167,7 +1167,7 @@
       "tenant": "租户",
       "priority": "优先级",
       "status": "状态",
-      "routePurpose": "路由用途（仅元数据标签，不参与选路）",
+      "routePurpose": "路由用途",
       "changeReason": "变更原因",
       "tags": "标签",
       "effectiveWindow": "生效窗口",
@@ -1514,7 +1514,7 @@
       "billGenerateAsync": "异步生成账单",
       "reconciliationRun": "定时用量对账",
       "certificateVerify": "证书校验失败",
-      "authorizationRootMaterialRead": "读取根授权素材",
+      "authorizationRootMaterialRead": "读取根授权文件",
       "configCenterTagCreate": "新增配置标签",
       "configCenterTagUpdate": "更新配置标签",
       "configCenterTagDelete": "删除配置标签",
@@ -2012,7 +2012,7 @@
     },
     "baseAuthorization": {
       "page": {
-        "title": "商业授权门闸",
+        "title": "商业授权校验",
         "subtitle": "导入、激活和撤销平台基础授权文件"
       },
       "status": {
@@ -2089,7 +2089,7 @@
         "noRevocablePackage": "当前没有可撤销的授权文件",
         "noRenewablePackage": "当前没有可续期的授权",
         "confirmImportAndActivate": "确定导入并激活基础授权吗？",
-        "confirmRevoke": "确定撤销基础授权吗？依赖 CA 的接口将门闸。",
+        "confirmRevoke": "确定撤销基础授权吗？依赖 CA 的接口将暂停访问。",
         "importSuccess": "授权文件导入成功",
         "activateSuccess": "基础授权已激活",
         "revokeSuccess": "基础授权已撤销",
@@ -2098,7 +2098,7 @@
       },
       "hints": {
         "activateWarning": "激活会初始化 CA 运行态并立即影响证书能力。",
-        "revokeWarning": "撤销后依赖 CA 的接口将重新门闸。"
+        "revokeWarning": "撤销后依赖 CA 的接口将恢复访问限制。"
       },
       "disabledReasons": {
         "unconfigured": "商业基础授权包未导入，请联系管理员添加授权",
@@ -2174,11 +2174,11 @@
         "renewable": "可续期",
         "renewedFromPackageId": "续期来源文件 ID",
         "supersededByPackageId": "被替换文件 ID",
-        "currentKeyVersion": "当前 key version",
-        "wrappingKeyId": "wrapping_key_id",
-        "activeMaterialCount": "活跃材料数",
-        "deprecatedMaterialCount": "废弃材料数",
-        "disabledMaterialCount": "禁用材料数",
+        "currentKeyVersion": "当前密钥版本",
+        "wrappingKeyId": "主密钥标识",
+        "activeMaterialCount": "有效密钥数",
+        "deprecatedMaterialCount": "已废弃密钥数",
+        "disabledMaterialCount": "已禁用密钥数",
         "latestEventType": "最近事件类型",
         "latestEventAt": "最近事件时间"
       },
@@ -2541,16 +2541,16 @@
       "injectPreviewTitle": "注入效果预览",
       "injectLocation": "注入位置",
       "injectPreviewTip": "<DYNAMIC_TOKEN> 仅为示例，网关将自动注入并维护真实令牌。",
-      "authHeaders": "换票请求头"
+      "authHeaders": "令牌获取请求头"
     }
   },
   "billing": {
     "list": {
       "title": "账单列表",
       "searchPlaceholder": "账单 ID / 租户名称",
-      "guidePrefix": "本页仅管理账单。用量一致性请前往",
+      "guidePrefix": "用量一致性核对请前往",
       "guideRecon": "用量对账",
-      "guideMid": "；余额充值/退款请到",
+      "guideMid": "；账户充值或退款请前往",
       "guideAccount": "租户 → 账户",
       "guideSuffix": "。"
     },
@@ -2574,7 +2574,7 @@
       "message": "确认将「{name}」标记为「{status}」？"
     },
     "reconciliation": {
-      "guide": "用量一致性对账：对比计费用量（OLTP）与分析聚合（OLAP）。当前为两方对账，不是完整三方清结算。",
+      "guide": "用量一致性对账：比对计费用量与分析统计数据。",
       "listTitle": "历史差异台账",
       "empty": "暂无对账记录，请选择日期后运行对账",
       "emptyNoMatch": "无匹配的对账记录",
@@ -2596,7 +2596,7 @@
         "selected": "确认删除所选 {count} 条对账记录？此操作不可恢复。"
       },
       "settingsTitle": "运行设置",
-      "settingsHint": "定时对账、阈值与告警可热更，无需改启动配置或重启",
+      "settingsHint": "修改后实时生效",
       "settingsSaved": "对账设置已保存",
       "expandSettings": "点击展开配置项",
       "collapseSettings": "点击收起配置项",
@@ -2683,8 +2683,8 @@
       }
     },
     "adjustments": {
-      "title": "账单更正（台账）",
-      "hint": "仅记录挂在本账单上的更正说明，不改账户余额",
+      "title": "账单调整记录",
+      "hint": "记录本账单的金额调整明细，不直接变更账户余额",
       "add": "添加更正",
       "addTitle": "添加账单更正",
       "empty": "暂无账单更正",
@@ -2697,7 +2697,7 @@
       "void": "作废",
       "voidConfirm": "确认作废该账单更正？",
       "required": "请填写金额与原因",
-      "ledgerOnlyNote": "产品策略：仅台账，不联动 tenant 账户余额。余额请用充值/退款。",
+      "ledgerOnlyNote": "仅记录账单金额调整明细，不直接变更租户账户余额。",
       "types": {
         "credit": "贷记/减免",
         "debit": "借记/补收",
@@ -2846,7 +2846,7 @@
         "suite": "算法套件",
         "dataAlg": "数据算法",
         "macAlg": "MAC 算法",
-        "allowInsecure": "允许不安全（Legacy）算法",
+        "allowInsecure": "允许兼容旧版算法",
         "advancedAlgorithms": "高级：单独指定算法",
         "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
@@ -2854,10 +2854,10 @@
         "clockSkewSeconds": "时间戳容忍窗口（秒）"
       },
       "placeholders": {
-        "selectActiveKey": "选择 active 密钥",
+        "selectActiveKey": "选择有效密钥",
         "selectSuite": "选择推荐套件",
-        "selectDataAlg": "选择数据算法（kebab-case）",
-        "selectMacAlg": "选择 MAC 算法（kebab-case）"
+        "selectDataAlg": "请选择数据加密算法",
+        "selectMacAlg": "请选择 MAC 算法"
       },
       "suites": {
         "tenantDefault": "推荐默认（AES-256-GCM）",
@@ -2929,8 +2929,8 @@
       "quickActionsHint": "",
       "recharge": "充值",
       "refund": "退款",
-      "transactionsTitle": "交易记录（充值/退款）",
-      "transactionsSubtitle": "充值 / 退款",
+      "transactionsTitle": "交易记录",
+      "transactionsSubtitle": "充值与退款明细",
       "filterPlaceholder": "全部类型",
       "filters": {
         "all": "全部",
@@ -2995,7 +2995,7 @@
         "refundAmountPositive": "退款金额必须大于 0",
         "refundReasonRequired": "请输入退款原因"
       },
-      "windowSpend": "近窗消费（与经营看板同源）"
+      "windowSpend": "近期消费"
     },
     "createDialog": {
       "placeholders": {
@@ -3211,7 +3211,7 @@
       "errorCode": "错误码",
       "count": "次数",
       "loadFailed": "租户 360 加载失败",
-      "tenantSpend": "窗内消费"
+      "tenantSpend": "时段内消费"
     }
   },
   "rateLimit": {
@@ -3266,20 +3266,20 @@
       "premium": "高阶（1000 QPS）"
     },
     "gateSummary": {
-      "title": "闸门摘要",
+      "title": "限流策略概览",
       "enabled": "套餐限流",
       "on": "已启用",
       "off": "未启用",
       "planQps": "套餐 QPS",
       "burst": "突发",
       "overrides": "接口覆盖条数",
-      "enforcement": "强制模型",
+      "enforcement": "控制模式",
       "toPlan": "配置客户套餐",
       "toUpstream": "配置上游通道容量",
-      "loadFailed": "闸门摘要加载失败"
+      "loadFailed": "限流概览加载失败"
     },
     "reasons": {
-      "title": "429 reason → 配置入口",
+      "title": "限流原因与配置入口",
       "hint": "",
       "goConfig": "去配置",
       "tenant_qps": {
@@ -3606,7 +3606,7 @@
     "requestPanel": "请求编辑",
     "trace": "响应",
     "assertions": "断言",
-    "runHistory": "试跑历史",
+    "runHistory": "测试记录",
     "send": "发送",
     "sendCancel": "取消等待",
     "runCancelled": "已取消",
@@ -3621,8 +3621,8 @@
     "rawBody": "Raw",
     "jsonTooLarge": "过大，改用 raw",
     "downloadBody": "下载响应",
-    "runBusiness": "业务试跑",
-    "runAuth": "鉴权试跑",
+    "runBusiness": "接口测试",
+    "runAuth": "鉴权测试",
     "runProbe": "连通性探测",
     "transformPreview": "转换预览",
     "bodyPlaceholder": "请求报文 (JSON)",
@@ -3634,8 +3634,8 @@
     "varsTab": "变量",
     "kvDesc": "说明",
     "kvHelp": "勾选后的键值会随请求发送",
-    "kvHelpDetail": "勾选的行会随试跑发送。说明不会发送。取消勾选的行会保留在表中但不会进入请求。无键的行会被忽略。删光后用工具条 + 添加。",
-    "kvDupWarn": "重复键 {keys}：试跑时后者覆盖前者",
+    "kvHelpDetail": "仅发送已勾选的参数行；取消勾选或键名为空的行将被忽略。",
+    "kvDupWarn": "重复键 {keys}：发送时后者覆盖前者",
     "kvBulk": "批量编辑",
     "kvBulkHint": "每行一条。键: 值 或 键: 值 # 说明；未启用的行前加 # ",
     "kvEnable": "启用",
@@ -3645,12 +3645,12 @@
     "responseHeadersTab": "响应头",
     "assertTab": "断言",
     "envVars": "环境变量",
-    "envVarsHint": "试跑时替换路径、请求头、查询参数、报文中的 {'{'}{'{'}var{'}'}{'}'}",
+    "envVarsHint": "发送时自动替换路径、请求头、查询参数、报文中的 {'{'}{'{'}var{'}'}{'}'}",
     "unsaved": "未保存",
     "saved": "已保存",
     "searchEndpoints": "搜索接口",
     "noEndpoints": "暂无接口",
-    "gateShort": "门禁",
+    "gateShort": "校验",
     "duplicate": "复制",
     "paramsTab": "参数",
     "authTab": "鉴权",
@@ -3683,9 +3683,9 @@
     "authClientSecret": "Client Secret",
     "authAppId": "App ID",
     "authSecret": "Secret",
-    "authTokenPath": "换票路径（相对 base）",
+    "authTokenPath": "令牌获取路径",
     "authRawCredentials": "高级：原始凭证 KV",
-    "authSignAdapterHint": "业务体签名算法在「出站规格 → 业务体加解密」配置。若上游走表单槽位，可将适配器改为 sign_form。",
+    "authSignAdapterHint": "业务报文签名算法请在「出站规格 → 业务报文加解密」中配置。",
     "authJwtAlgo": "算法",
     "authJwtTtl": "TTL（秒）",
     "authJwtKid": "kid",
@@ -3721,7 +3721,7 @@
     "urlRequired": "填写上游 URL",
     "urlMissingSend": "未发送：请填写上游 URL",
     "envChip": "环境 · {n} 项",
-    "sessionRuns": "本会话试跑",
+    "sessionRuns": "本次测试",
     "jsonFilterPlaceholder": "过滤键名 / 路径",
     "jsonFilterEmpty": "无匹配节点",
     "commandPalette": "命令盘",
@@ -3733,14 +3733,14 @@
     "shortcutsClose": "关闭面板",
     "methodInvalid": "方法不合法",
     "newSession": "新建会话",
-    "authHintApiKey": "填写 API Key，并选择注入位置 / 字段 / 格式。不换票。",
-    "authHintOauth": "client_credentials 换票。空模板走默认 form；非空模板作为换票 body。",
-    "authHintGettoken": "GET 换票：app_id / secret 进 query。jsonpath 空则 $.token。",
-    "authHintBasic": "用户名 / 密码写入 Authorization: Basic（查找链含 username/password）。",
-    "authHintSign": "sign_form 鉴权只配置 App ID / Secret 等凭证；业务体签名与加解密算法请到「出站规格 → 业务体加解密」配置（egress.crypto），本 Tab 不换票、不 inject。",
-    "authHintGrpc": "secret 同时写入 metadata 与同名 header。位置锁定 metadata。",
-    "authHintBearer": "静态 token，按注入格式写入（默认 Authorization: Bearer {}）。",
-    "authHintJwt": "每次请求用密钥现签 JWT 再注入，不是换票返回的 JWT。",
+    "authHintApiKey": "填写 API Key，并选择注入位置、字段与格式（无需预取令牌）。",
+    "authHintOauth": "通过 client_credentials 获取令牌；空模板使用默认表单，非空模板作为请求体。",
+    "authHintGettoken": "通过 GET 获取令牌：app_id / secret 写入查询参数，默认从 $.token 提取。",
+    "authHintBasic": "用户名 / 密码写入 Authorization: Basic。",
+    "authHintSign": "此处仅配置 App ID / Secret 等凭证；业务报文签名与加解密算法请在「出站规格 → 业务报文加解密」中配置。",
+    "authHintGrpc": "secret 同时写入 metadata 与同名 header。",
+    "authHintBearer": "静态令牌，按注入格式写入（默认 Authorization: Bearer {}）。",
+    "authHintJwt": "每次请求使用本地密钥实时签发 JWT 并注入。",
     "authHintDigest": "第一次出站无 Digest 头；401 挑战后在同一 HTTP 请求上重放一次。",
     "authHintAws": "对最终 HTTP 调用手写 SigV4。需要 region、service 与 AK/SK。",
     "authHintHawk": "对最终 method+url（可选 body）做 Hawk MAC。",
@@ -3790,7 +3790,7 @@
     "kvPhKey": "键",
     "kvPhValue": "值",
     "kvPhDesc": "说明",
-    "authTicketSection": "换票",
+    "authTicketSection": "令牌获取",
     "authInjectSection": "注入",
     "adapterParamsSection": "适配器参数",
     "pipelineSection": "转换对照",
@@ -3814,19 +3814,19 @@
     "importReplace": "替换为新会话",
     "importFile": "从文件读入",
     "channelMapping": "通道映射",
-    "gateChecklist": "门禁清单",
+    "gateChecklist": "发布准入检查",
     "productPlaceholder": "搜索产品",
     "sampleCurl": "示例 curl",
     "importedMerge": "已合并 {n} 个接口",
     "keepOneEndpoint": "至少保留一个接口",
     "unresolvedVars": "未替换变量：{vars}",
     "unresolvedVarsBlock": "存在未展开变量 {vars}，不能发送或发布",
-    "gateReasonNotRun": "未试跑",
+    "gateReasonNotRun": "未测试",
     "gateReasonSpecChanged": "规格已改，请重新发送",
     "gateReasonUnresolved": "未展开变量",
-    "adapterFieldsMissing": "适配器必填未齐，发布 / 门禁会失败：",
-    "adapterFieldsMissingPublish": "以下端点适配器必填缺失，无法发布",
-    "gateReasonSpecInvalid": "规格不合法（缺适配器必填）",
+    "adapterFieldsMissing": "适配器必填项缺失：",
+    "adapterFieldsMissingPublish": "以下端点适配器必填项缺失，无法发布",
+    "gateReasonSpecInvalid": "规格不完整（缺少必填项）",
     "operationHintEnvelope": "信封 method（写入 wrap 后的 method 字段）",
     "jsonrpcMethod": "JSON-RPC method",
     "jsonrpcMethodHint": "对应 egress.operation",
@@ -3846,9 +3846,9 @@
     "wsAuthInFirstFrame": "首帧",
     "wsAuthInHint": "握手超时与池参数见 bypass 配置（ws_handshake_timeout_secs / ws_max_concurrent*）；此处只配 path / wrap / auth_in。",
     "staticTokenHint": "鉴权流未接管的静态令牌头：{headers}（提示，不拦截）",
-    "pipelineEmpty": "转换预览或业务试跑后，这里对照租户请求 / 上游请求 / 上游响应",
+    "pipelineEmpty": "转换预览或接口测试后，这里对照租户请求 / 上游请求 / 上游响应",
     "pipeTenantReq": "租户请求",
-    "pipeUpstreamReq": "变换后（打向上游）",
+    "pipeUpstreamReq": "转换后请求",
     "pipeUpstreamRes": "上游响应",
     "formatJson": "格式化 JSON",
     "collapseSidebar": "收起接口列表",
@@ -3863,7 +3863,7 @@
     "stepConfig": "配置",
     "stepAuth": "鉴权",
     "stepAuthOff": "鉴权未启用",
-    "stepGate": "门禁 {ok}/{total}",
+    "stepGate": "准入校验 {ok}/{total}",
     "stepPublish": "发布",
     "stage": {
       "validate": "校验",
@@ -3873,39 +3873,39 @@
       "upstream": "上游",
       "response_transform": "响应变换"
     },
-    "gate": "门禁",
-    "gateOnHint": "计入门禁，点击取消",
-    "gateOffHint": "不计入门禁，点击计入",
-    "writeConfirmTitle": "确认写操作试跑",
+    "gate": "准入校验",
+    "gateOnHint": "纳入发布校验，点击取消",
+    "gateOffHint": "不纳入发布校验，点击纳入",
+    "writeConfirmTitle": "确认执行写操作测试",
     "writeConfirmMsg": "当前方法可能修改上游数据，确认继续？",
     "publishMode": "发布模式",
     "modeSupplierOnly": "仅供应商",
     "modeSupplierChannels": "供应商 + 通道",
     "modeFull": "完整接入（含路由）",
-    "requireGate": "断言门禁",
+    "requireGate": "响应断言校验",
     "forcePublish": "强制发布",
     "forceReason": "强制原因",
     "comment": "版本备注",
     "publishOk": "发布成功",
-    "runOk": "试跑成功（经 bypass）",
-    "runFail": "试跑失败（经 bypass；错误码透传）",
+    "runOk": "测试通过",
+    "runFail": "测试失败",
     "created": "接入会话已创建",
     "imported": "导入成功",
     "fieldsRequired": "请填写名称与上游 URL",
     "publishFieldsRequired": "请填写供应商编码与名称后再发布",
     "bootstrapFailed": "打开接入会话失败",
-    "transparentOnly": "免代码接入只做 HTTP 透传。微服务请用列表上的「微服务接入」。",
-    "liveRun": "线上试跑（经 bypass）",
+    "transparentOnly": "免代码接入仅支持 HTTP 透传；微服务请使用列表中的「微服务接入」。",
+    "liveRun": "在线测试",
     "versions": "版本",
-    "versionDiff": "版本 Diff",
+    "versionDiff": "版本对比",
     "rollback": "回滚",
-    "rollbackConfirm": "确认回滚到此版本？将写回线上 config 并生成新版本快照。",
+    "rollbackConfirm": "确认回滚到此版本？将恢复线上配置并生成新版本快照。",
     "rollbackOk": "回滚成功",
     "opsPanel": "运维 / 版本",
-    "probeNote": "连通性探测 ≠ 业务验收",
-    "probeViaBypass": "业务/线上试跑经 bypass 管理探针（不经 gateway 计费）",
-    "probePathBypass": "经 bypass",
-    "probePathLocal": "本地（不作门控）",
+    "probeNote": "连通性探测不代表业务响应校验通过",
+    "probeViaBypass": "在线测试通过管理探针发起（不计入网关计费）",
+    "probePathBypass": "管理探针",
+    "probePathLocal": "本地校验",
     "fields": {
       "name": "名称",
       "upstreamUrl": "上游 URL",
@@ -3921,13 +3921,13 @@
       "envName": "变量名",
       "versionNo": "版本号"
     },
-    "cryptoEnable": "启用业务体加解密 / 签名（egress.crypto）",
-    "cryptoAuthBoundaryHint": "鉴权 Tab 的 sign_form 只配置凭证；业务体算法 / order / 槽位只在本区编辑，二者不是两套签名 UI。",
+    "cryptoEnable": "启用业务报文加解密与签名",
+    "cryptoAuthBoundaryHint": "「鉴权」页签仅配置接口凭证；业务报文字段级加解密与签名算法在此处配置。",
     "cryptoImportTemplate": "从通用模板导入",
-    "cryptoOrder": "处理顺序 (order)",
+    "cryptoOrder": "处理顺序",
     "cryptoSignAlg": "签名 / MAC 算法",
     "cryptoCryptAlg": "加密算法",
-    "cryptoCanon": "拼串风格 (canon)",
+    "cryptoCanon": "签名串规范化方式",
     "cryptoEncPayload": "密文编码",
     "cryptoEncSignature": "签名编码",
     "cryptoEncIv": "IV 编码",
@@ -3936,19 +3936,19 @@
     "cryptoCryptFields": "加密字段列表",
     "cryptoResponseFields": "响应解密字段",
     "cryptoFieldsPlaceholder": "逗号分隔，如 biz_content, data",
-    "cryptoSlots": "槽位放置",
-    "cryptoSlotsEmpty": "未配置槽位时由适配器默认放置。",
-    "cryptoAddSlot": "添加槽位",
-    "cryptoSlotRole": "角色（sign/cipher/biz…）",
+    "cryptoSlots": "字段写入映射",
+    "cryptoSlotsEmpty": "未配置映射时按适配器默认位置写入。",
+    "cryptoAddSlot": "添加映射字段",
+    "cryptoSlotRole": "字段用途",
     "cryptoSlotName": "字段名",
     "cryptoResponseCrypt": "响应侧解密（可选）",
-    "cryptoAllowInsecure": "允许 Legacy 算法 (allow_insecure)",
-    "cryptoAllowInsecureHint": "仅在对接旧系统时开启；会放行 ECB / HMAC-MD5 等弱算法。",
-    "cryptoAllowInsecureAdminOnly": "仅超级管理员可开启 Legacy 门闩。",
+    "cryptoAllowInsecure": "允许兼容旧版算法",
+    "cryptoAllowInsecureHint": "仅在对接旧系统时开启；将允许 ECB / HMAC-MD5 等传统算法。",
+    "cryptoAllowInsecureAdminOnly": "仅超级管理员可开启旧版算法兼容开关。",
     "cryptoSelectAlg": "选择算法",
     "cryptoSelectAlgOptional": "可选；留空表示不单独配置响应解密",
     "cryptoValidationTitle": "业务密文配置尚未通过预校验",
-    "cryptoSection": "业务体加解密",
+    "cryptoSection": "业务报文加解密",
     "cryptoOrders": {
       "sign_then_encrypt": "先签名再加密",
       "encrypt_then_sign": "先加密再签名",
@@ -3969,8 +3969,8 @@
       "field": "取自字段"
     },
     "cryptoScopes": {
-      "whole_body": "整包 body",
-      "named_fields": "具名字段"
+      "whole_body": "完整请求体",
+      "named_fields": "指定字段"
     },
     "cryptoWireEncodings": {
       "base64": "Base64",
@@ -3985,12 +3985,12 @@
       "encryptThenSignAesCbc": "加密后签名 · AES-CBC + HMAC"
     },
     "viewDraft": "查看",
-    "readOnlyHint": "只读查看（财务 / 观察者不可改草稿、导入导出或发布）"
+    "readOnlyHint": "当前为只读模式"
   },
   "listQueryBar": {
     "tooltip": "搜索与筛选",
-    "placeholder": "流水号、路径… 或 字段 算子 值",
-    "placeholderSuffix": "或 字段 算子 值",
+    "placeholder": "流水号、路径或筛选条件…",
+    "placeholderSuffix": "或筛选条件",
     "placeholderQOnly": "输入关键字搜索",
     "clearAll": "清除全部",
     "clearInput": "清除输入",
@@ -4019,7 +4019,7 @@
     },
     "parse": {
       "unknown_field": "未知字段：{field}",
-      "op_not_allowed": "字段 {field} 不支持算子 {op}",
+      "op_not_allowed": "字段 {field} 不支持比较符 {op}",
       "invalid_value": "无效的值",
       "invalid_number": "无效的数字",
       "invalid_duration": "无效的时长（如 100、100ms、1.5s）",
@@ -4221,9 +4221,9 @@
     },
     "overview": {
       "loadFailed": "加载运营指标失败",
-      "viewerSlim": "精简总览：计费与管理下钻已按角色隐藏",
+      "viewerSlim": "当前角色为只读视图，计费与管理明细已隐藏",
       "latencySecondary": "P50 {p50} ms · P95 {p95} ms",
-      "billingOldestAgeHint": "最老待处理 {age} 秒",
+      "billingOldestAgeHint": "最长积压 {age} 秒",
       "stats": {
         "qps": "业务 QPS",
         "successRate": "成功率",
@@ -4267,30 +4267,30 @@
       "sloBudgetDefaultName": "SLO",
       "sloBudgetLoadFailed": "加载错误预算失败",
       "infraStrip": {
-        "title": "底座健康",
+        "title": "基础设施状态",
         "open": "基础设施",
-        "loadFailed": "加载底座指标失败",
-        "pipeline": "管道新鲜度",
+        "loadFailed": "加载基础设施指标失败",
+        "pipeline": "数据同步延迟",
         "hostCpu": "主机 CPU"
       },
       "noSampleHint": "所选时间窗内无业务流量",
       "sections": {
         "kpi": "态势 KPI",
-        "realtime": "此刻",
+        "realtime": "实时状态",
         "trend": "趋势",
         "insight": "业务洞察",
         "appsOnline": "应用在线",
         "trafficQuality": "流量质量",
         "securityGov": "安全与治理"
       },
-      "followsWindow": "跟随时间窗",
-      "windowSemantics": "跟随时间窗 · {start} – {end}（{label}）",
-      "realtimeNow": "此刻",
-      "realtimeSemantics": "此刻 · 近 {secs} 秒 · 截至 {at}",
-      "realtimeNoSample": "此刻无业务流量",
+      "followsWindow": "按所选时段统计",
+      "windowSemantics": "统计时段：{start} – {end}（{label}）",
+      "realtimeNow": "实时",
+      "realtimeSemantics": "近 {secs} 秒 · 截至 {at}",
+      "realtimeNoSample": "当前无业务流量",
       "components": "组件健康",
       "inventoryHint": "租户共 {total} · 已启用产品 {products}",
-      "billingDeadLetters": "计费死信 {n}",
+      "billingDeadLetters": "入账异常 {n}",
       "appsOnlineTitle": "应用在线",
       "openRuntime": "查看全部",
       "trafficQualityOpenCalls": "查看调用日志",
@@ -4301,7 +4301,7 @@
         "openCalls": "调用日志",
         "openRuntime": "运行指标",
         "empty": "窗口内暂无样本",
-        "hint": "限流/缓存明细已收入口径摘要；运维侧栏已按新信息架构收口，点击进入调用日志或运行指标。"
+        "hint": ""
       }
     },
     "finance": {
@@ -4328,7 +4328,7 @@
       "tenantName": "租户名称",
       "tenantCode": "租户编码",
       "costUnavailableTitle": "成本未接入",
-      "costUnavailableDesc": "上游成本管道尚未灌入本窗；毛利与毛利率显示为「—」，不再按 0 成本冒充 100%。",
+      "costUnavailableDesc": "当前所选时段暂无上游成本数据，毛利与毛利率暂不计算。",
       "windowFallback": "近 {days} 日",
       "displayName": "名称",
       "productName": "产品名称",
@@ -4448,20 +4448,20 @@
       "funnel": "计费漏斗",
       "stage": "阶段",
       "count": "计数",
-      "queueTrend": "积压（按阶段）",
-      "oldestAge": "最老待处理年龄（按阶段）",
-      "failureTrend": "扣费失败（按原因）",
-      "deadLetterTrend": "死信（按阶段）",
+      "queueTrend": "队列积压趋势",
+      "oldestAge": "最长积压时长趋势",
+      "failureTrend": "扣费失败趋势",
+      "deadLetterTrend": "异常滞留趋势",
       "lagTrend": "入账延迟 P50 / P99（ms）",
       "batchThroughput": "批次条目吞吐",
       "batches": "扣费批次",
       "deductions": "扣费结果",
       "precheck": "余额预检",
-      "failures": "扣费失败",
-      "deadLetters": "死信",
+      "failures": "扣费失败明细",
+      "deadLetters": "异常滞留明细",
       "backlog": "当前积压",
-      "oldestAgeNow": "最老待处理年龄",
-      "deadLettersNow": "当前死信",
+      "oldestAgeNow": "最长积压时长",
+      "deadLettersNow": "当前异常滞留",
       "lagP99": "入账延迟 P99",
       "failureCount": "扣费失败次数",
       "columns": {
@@ -4473,9 +4473,9 @@
         "source": "来源"
       },
       "loadFailed": "加载计费链路数据失败",
-      "pipelineHealth": "计费管道健康",
-      "noBacklog": "无堆积：各段计数一致且无失败（同步直通观感）",
-      "asyncFunnelHint": "存在跌落或失败，按漏斗转化解读",
+      "pipelineHealth": "计费管道状态",
+      "noBacklog": "各阶段处理正常，无队列积压与失败记录",
+      "asyncFunnelHint": "部分阶段存在损耗或失败，请结合下方转化明细排查",
       "stageName": "名称",
       "ratioFromPrev": "相对上一段转化率",
       "stageFailed": "失败"
@@ -4490,8 +4490,8 @@
         "title": "调用时间分布",
         "calls": "成功",
         "errors": "错误",
-        "summary": "共 {total} 次 · 错误 {errors} 次 · 桶宽 {bucket}s",
-        "brushHint": "在图上横向框选可把时间范围收窄到所选区间",
+        "summary": "共 {total} 次 · 错误 {errors} 次 · 统计间隔 {bucket}s",
+        "brushHint": "在图表上横向拖拽框选可缩窄时间范围",
         "loadFailed": "加载调用分布失败"
       },
       "stages": {
@@ -4560,7 +4560,7 @@
         "linksTo": "关联到",
         "linkedFrom": "被关联自",
         "selectSpan": "点击左侧 span 查看详情",
-        "asyncTitle": "异步计费 span（通过 span link 关联）",
+        "asyncTitle": "关联异步计费链路",
         "logs": "调用日志",
         "stages": "阶段耗时",
         "billing": "计费流水"
@@ -4577,7 +4577,7 @@
       },
       "fallback": {
         "title": "未找到该 trace",
-        "description": "trace 可能已过保留期或未被采样，下方按调用日志与阶段耗时展示兜底瀑布。"
+        "description": "该链路可能已超过保留期或未被采样，下方基于调用日志展示各阶段耗时明细。"
       },
       "sampleTitle": "错误样例",
       "sampleHint": "点击上方错误码加载样例，点击 trace_id 打开链路",
@@ -4687,11 +4687,11 @@
       "noRelatedChanges": "无同时段变更"
     },
     "infra": {
-      "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB 吞吐、错误、buffer 与端到端新鲜度。空闲环境可能几乎无写入。",
-      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB 运行态。Redis/PG 不可达时对应 up 曲线掉到 0。",
-      "hostsNote": "主机 USE（CPU/内存/磁盘/网络）与每容器资源。容器名优先 compose service / k8s 标签，否则短 id。重启次数来自 start_time 变化（cAdvisor 无 RestartCount）。",
+      "pipelineNote": "展示日志与指标采集链路的吞吐量、错误数、缓冲区使用率及数据同步延迟。",
+      "middlewareNote": "展示核心数据库与消息中间件运行状态及关键性能指标。",
+      "hostsNote": "展示宿主机与容器的 CPU、内存、磁盘、网络资源使用率及重启情况。",
       "charts": {
-        "pipelineFreshness": "管道新鲜度",
+        "pipelineFreshness": "数据同步延迟",
         "vectorReceived": "Vector 接收",
         "vectorSent": "Vector 发送",
         "vectorErrors": "Vector 错误",
@@ -4728,14 +4728,14 @@
         "hostCpu": "主机 CPU",
         "hostLoad": "主机 load1",
         "hostMem": "主机内存",
-        "hostFs": "主机磁盘（ext4/xfs/overlay）",
+        "hostFs": "主机磁盘使用率",
         "hostDiskRead": "主机磁盘读",
         "hostDiskWrite": "主机磁盘写",
         "hostNetRx": "主机网络收",
         "hostNetTx": "主机网络发",
         "ctrCpu": "容器 CPU",
         "ctrMem": "容器内存",
-        "ctrRestarts": "容器重启（start_time 变化）",
+        "ctrRestarts": "容器重启次数",
         "ctrOom": "容器 OOM",
         "ctrFs": "容器文件系统",
         "ctrNetRx": "容器网络收",
@@ -4747,7 +4747,7 @@
       "quotaUsageRatio": "配额使用率",
       "decisions": "限流决策",
       "channelDecisions": "渠道限流决策",
-      "snapshotAge": "快照年龄",
+      "snapshotAge": "快照滞后时间",
       "snapshotRefresh": "快照刷新",
       "usageFlush": "用量 flush",
       "rejections": "拒绝速率",
@@ -4829,8 +4829,8 @@
       "colSli": "当前 SLI",
       "colBudget": "剩余预算",
       "colBurn5m": "燃烧率 5m",
-      "colBurnPage": "快烧",
-      "colBurnTicket": "慢烧",
+      "colBurnPage": "短期快速消耗",
+      "colBurnTicket": "长期缓慢消耗",
       "colTs": "更新时间"
     },
     "anomaly": {
@@ -4853,11 +4853,11 @@
       "empty": "暂无数据"
     },
     "layout": {
-      "windowSubtitle": "时间窗：{label}",
-      "instantSubtitle": "瞬时指标旁注近 60s；窗聚合见副标题",
-      "billingSubtitle": "漏斗与队列按所选时间窗聚合；同步透传模式无积压语义",
-      "alertsSubtitle": "事件 / 规则 / 静默同一骨架；写操作仍按角色裁剪",
-      "trafficSubtitle": "RED / 时延 / 错误共享页级时间窗与刷新"
+      "windowSubtitle": "统计时段：{label}",
+      "instantSubtitle": "实时指标统计近 60 秒数据",
+      "billingSubtitle": "展示所选时段内的计费流水转化与队列状态；同步直通模式下不产生队列积压。",
+      "alertsSubtitle": "集中管理平台告警事件、评估规则与静默策略。",
+      "trafficSubtitle": "展示所选时段内的请求吞吐、时延分布与错误归因。"
     },
     "units": {
       "perSec": "次/秒",

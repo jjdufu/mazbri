@@ -62,7 +62,6 @@
             />
           </ElCol>
         </OpsKpiRow>
-        <p class="sec-gov__hint">{{ t("ops.overview.securityGov.hint") }}</p>
         <ElButton link type="primary" @click="openRuntime">
           {{ t("ops.overview.securityGov.openRuntime") }}
         </ElButton>

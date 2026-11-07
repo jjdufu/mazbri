@@ -1,7 +1,6 @@
 <template>
   <OpsMergedShell
     :title="t('menus.mazbri.opsTraffic')"
-    :subtitle="t('ops.layout.trafficSubtitle')"
     :tabs="tabs"
     :default-tab="defaultTab"
   >

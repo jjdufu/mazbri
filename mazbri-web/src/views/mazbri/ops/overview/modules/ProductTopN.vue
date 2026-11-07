@@ -1,5 +1,5 @@
 <template>
-  <OpsCard class="product-topn">
+  <OpsCard class="product-topn" :info="t('ops.products.basisNote')">
     <template #title>
       <span class="product-topn__title">
         {{ t("ops.overview.productTop") }}
@@ -37,7 +37,6 @@
     <OpsTableWrap v-else>
       <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
     </OpsTableWrap>
-    <p class="product-topn__note">{{ t("ops.products.basisNote") }}</p>
 
     <div v-if="zeroRows.length > 0" class="product-topn__zero">
       <ElButton link type="primary" @click="zeroOpen = !zeroOpen">

@@ -1,5 +1,5 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.opsOverview')">
+  <OpsPage :title="t('menus.mazbri.opsOverview')" :subtitle="windowSemantics">
     <template #actions>
       <div class="ops-overview__filter" data-role="global-filter">
         <TimeRangePicker v-model="timeRange" @change="reload" />
@@ -19,7 +19,6 @@
     <OpsSection
       id="kpi"
       :title="t('ops.overview.sections.kpi')"
-      :semantics="windowSemantics"
     >
       <OpsKpiRow>
         <ElCol v-bind="KPI_COL">
@@ -278,7 +277,6 @@
     <OpsSection
       id="traffic-quality"
       :title="t('ops.overview.sections.trafficQuality')"
-      :semantics="windowSemantics"
     >
       <template #extra>
         <ElButton link type="primary" @click="openCallsWindow">
@@ -316,7 +314,6 @@
     <OpsSection
       id="security-gov"
       :title="t('ops.overview.sections.securityGov')"
-      :semantics="windowSemantics"
     >
       <SecurityGovSummary
         ref="securityGovRef"
@@ -331,7 +328,6 @@
     <OpsSection
       id="insight"
       :title="t('ops.overview.sections.insight')"
-      :semantics="windowSemantics"
     >
       <ProductTopN ref="productTopNRef" />
       <RoleGate gate="biz">
