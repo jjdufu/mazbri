@@ -10,10 +10,25 @@
         <span class="switch-text ml-2">{{
           $t("upstreamConnector.cryptoEnable")
         }}</span>
+        <ElPopover
+          placement="bottom-start"
+          :width="300"
+          trigger="click"
+        >
+          <div class="cpe-hint-popover">
+            {{ $t("upstreamConnector.cryptoAuthBoundaryHint") }}
+          </div>
+          <template #reference>
+            <button
+              type="button"
+              class="cpe-info-trigger"
+              aria-label="说明"
+            >
+              <ArtSvgIcon icon="ri:information-line" />
+            </button>
+          </template>
+        </ElPopover>
       </CommonSwitchRow>
-      <div class="cpe-hint">
-        {{ $t("upstreamConnector.cryptoAuthBoundaryHint") }}
-      </div>
     </div>
 
     <template v-if="enabled && local">
@@ -643,6 +658,34 @@ function algOptionLabel(alg: CryptoAlgorithmMeta): string {
   &.warning {
     color: var(--el-color-warning);
   }
+}
+
+.cpe-info-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 4px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    color: var(--el-color-primary);
+    background: var(--el-fill-color-light);
+  }
+}
+
+.cpe-hint-popover {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  line-height: 1.5;
 }
 
 .required-mark {

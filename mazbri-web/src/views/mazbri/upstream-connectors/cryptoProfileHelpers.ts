@@ -366,14 +366,14 @@ function checkAlgLegacy(
   if (!meta) {
     issues.push({
       code: "unknown_alg",
-      message: `${field} 算法「${algId}」不在闭集中`,
+      message: `${field} 算法「${algId}」不在支持的算法列表中`,
     });
     return undefined;
   }
   if (meta.legacy && !allowInsecure) {
     issues.push({
       code: "legacy_gate",
-      message: `${field} 使用 Legacy 算法「${algId}」，须显式开启 allow_insecure`,
+      message: `${field} 使用旧版算法「${algId}」，需开启兼容旧版算法开关`,
       legacy: true,
     });
   }

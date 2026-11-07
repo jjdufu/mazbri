@@ -25,23 +25,7 @@
 
     <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="12">
-        <OpsCard :title="funnelTitle">
-          <ElAlert
-            v-if="funnel?.mode === 'sync_pass_through'"
-            :title="t('ops.billing.noBacklog')"
-            type="success"
-            :closable="false"
-            show-icon
-            class="funnel-mode-hint"
-          />
-          <ElAlert
-            v-else-if="funnel?.mode === 'async_funnel'"
-            :title="t('ops.billing.asyncFunnelHint')"
-            type="info"
-            :closable="false"
-            show-icon
-            class="funnel-mode-hint"
-          />
+        <OpsCard :title="funnelTitle" :info="funnelHint">
           <CategoryBarChart
             :categories="funnelCategories"
             :series="funnelSeries"
@@ -200,6 +184,15 @@ const funnelTitle = computed(() =>
     ? t("ops.billing.pipelineHealth")
     : t("ops.billing.funnel"),
 );
+const funnelHint = computed(() => {
+  if (funnel.value?.mode === "sync_pass_through") {
+    return t("ops.billing.noBacklog");
+  }
+  if (funnel.value?.mode === "async_funnel") {
+    return t("ops.billing.asyncFunnelHint");
+  }
+  return undefined;
+});
 const funnelCategories = computed(() =>
   funnelRows.value.map((r) => r.name || r.key),
 );

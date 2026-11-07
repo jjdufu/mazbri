@@ -1,14 +1,16 @@
 <template>
   <div class="ops-metric-chart-grid ops-tab-page-grid">
-    <p v-if="note" class="ops-metric-chart-grid__note">{{ note }}</p>
     <ElRow :gutter="16">
       <ElCol
-        v-for="chart in charts"
+        v-for="(chart, idx) in charts"
         :key="chart.metric"
         :xs="24"
         :lg="12"
       >
-        <OpsCard :title="chartTitle(chart)">
+        <OpsCard
+          :title="chartTitle(chart)"
+          :info="idx === 0 ? note : undefined"
+        >
           <MultiSeriesChart
             :series="series[chart.metric]"
             :loading="loading"

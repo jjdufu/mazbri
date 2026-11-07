@@ -9,8 +9,7 @@
       }}</ElButton>
     </OpsPanelToolbar>
 
-    <OpsCard>
-      <p class="ops-alerts__hint">{{ t("ops.alerts.silences.hint") }}</p>
+    <OpsCard :title="t('menus.mazbri.alertSilences')" :info="t('ops.alerts.silences.hint')">
       <ElTable v-loading="loading" :data="rows" row-key="id" size="small">
         <ElTableColumn
           :label="t('ops.alerts.silences.matchers')"

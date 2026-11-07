@@ -3,7 +3,10 @@
     <template #title>
       <div class="ops-calls__title">
         <h2>{{ t("menus.mazbri.opsCalls") }}</h2>
-        <CallMonitorModeHint v-if="activeTab !== 'stages'" :hint="modeHint" />
+        <CallMonitorModeHint
+          v-if="activeTab !== 'stages' && modeHint?.kind === 'latest'"
+          :hint="modeHint"
+        />
       </div>
     </template>
     <template #actions>
@@ -21,9 +24,11 @@
     </ElTabs>
 
     <template v-if="activeTab !== 'stages'">
-      <OpsCard>
-        <div class="ops-calls__card-head">
-          <h3>{{ t("ops.calls.histogram.title") }}</h3>
+      <OpsCard
+        :title="t('ops.calls.histogram.title')"
+        :info="t('ops.calls.histogram.brushHint')"
+      >
+        <template #extra>
           <span class="ops-calls__summary">
             {{
               t("ops.calls.histogram.summary", {
@@ -33,9 +38,8 @@
               })
             }}
           </span>
-        </div>
+        </template>
         <div ref="chartRef" v-loading="histogramLoading" class="ops-calls__chart"></div>
-        <div class="ops-calls__hint">{{ t("ops.calls.histogram.brushHint") }}</div>
       </OpsCard>
       <div class="ops-calls__table">
         <CallMonitorTable

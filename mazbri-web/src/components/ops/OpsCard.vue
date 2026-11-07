@@ -1,12 +1,33 @@
 <template>
   <div class="ops-card">
     <div
-      v-if="title || $slots.title || $slots.extra"
+      v-if="title || $slots.title || info || $slots.info || $slots.extra"
       class="ops-card__head"
     >
-      <h3 v-if="title || $slots.title" class="ops-card__title">
-        <slot name="title">{{ title }}</slot>
-      </h3>
+      <div v-if="title || $slots.title || info || $slots.info" class="ops-card__title-wrap">
+        <h3 v-if="title || $slots.title" class="ops-card__title">
+          <slot name="title">{{ title }}</slot>
+        </h3>
+        <ElPopover
+          v-if="info || $slots.info"
+          placement="bottom-start"
+          :width="300"
+          trigger="click"
+        >
+          <div class="ops-card__info-popover">
+            <slot name="info">{{ info }}</slot>
+          </div>
+          <template #reference>
+            <button
+              type="button"
+              class="ops-card__info-trigger"
+              aria-label="说明"
+            >
+              <ArtSvgIcon icon="ri:information-line" />
+            </button>
+          </template>
+        </ElPopover>
+      </div>
       <div v-if="$slots.extra" class="ops-card__extra">
         <slot name="extra" />
       </div>
@@ -19,7 +40,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: "OpsCard" });
-defineProps<{ title?: string }>();
+defineProps<{ title?: string; info?: string }>();
 </script>
 
 <style scoped>
@@ -40,12 +61,43 @@ defineProps<{ title?: string }>();
   align-items: center;
   margin-bottom: var(--ops-space-xs, 8px);
 }
+.ops-card__title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+  min-width: 0;
+}
 .ops-card__title {
   margin: 0;
-  margin-right: auto;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
+}
+.ops-card__info-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-top: -2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.ops-card__info-trigger:hover {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color-light);
+}
+.ops-card__info-popover {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .ops-card__extra {
   display: flex;
