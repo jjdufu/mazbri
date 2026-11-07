@@ -940,7 +940,9 @@ fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
 /// 容器名标签：compose 来自 cAdvisor docker 白名单（`name` / compose service 标签）；
 /// 裸 k8s 来自 kubelet cAdvisor（kubernetes pod/container 标签）。
 /// 查询侧要求至少有 name（docker）或 k8s container 名，丢掉仅有 id 的序列，避免图例短 hex。
-const CONTAINER_DOCKER_FILTER: &str = r#"id=~"/docker/.+",name!="""#;
+/// 同时兼容 Docker cgroupfs 驱动（`/docker/<id>`）与 systemd cgroup 驱动（`/system.slice/docker-<id>.scope`）。
+const CONTAINER_DOCKER_FILTER: &str =
+    r#"id=~"/docker/.+|/system\\.slice/docker-.+",name!="""#;
 const CONTAINER_K8S_FILTER: &str =
     r#"id=~"/kubepods.*|/cri-containerd.*",container_label_io_kubernetes_container_name!="""#;
 /// 明细排障（含 id）；默认图例用下方聚合 BY，避免多副本刷屏。
@@ -2069,17 +2071,14 @@ mod tests {
         assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#));
         let q = build_metric_query("container_cpu_cores", None, &t, 60)?;
         assert!(q.contains("container_cpu_usage_seconds_total"), "{q}");
-        assert!(q.contains(r#"name!="""#), "{q}");
+        assert!(q.contains(r#"id=~"/docker/.+|/system\\.slice/docker-.+",name!="""#), "{q}");
         assert!(q.contains("container_label_io_kubernetes_container_name!="), "{q}");
         assert!(q.contains("container_label_com_docker_compose_service"), "{q}");
         assert!(q.contains("container_label_io_kubernetes_pod_name"), "{q}");
         // Greptime: rate(a[w]) or rate(b[w])，禁止 rate(a or b)
         assert!(q.contains("rate(container_cpu_usage_seconds_total{"), "{q}");
         assert!(q.contains(") or rate(container_cpu_usage_seconds_total{"), "{q}");
-        assert!(
-            !q.contains(r#"rate(container_cpu_usage_seconds_total{id=~"/docker/.+",name!=""} or"#),
-            "{q}"
-        );
+        assert!(!q.contains("} or container_cpu_usage_seconds_total{"), "{q}");
         let q_rx = build_metric_query("container_network_rx_bytes", None, &t, 60)?;
         assert!(q_rx.contains(") or rate(container_network_receive_bytes_total{"), "{q_rx}");
         let q_rst = build_metric_query("container_restarts", None, &t, 60)?;
