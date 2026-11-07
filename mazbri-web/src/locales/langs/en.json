@@ -450,8 +450,8 @@
         "days": "days"
       },
       "noData": "No data available",
-      "customerTitle": "Customer Monitoring",
-      "upstreamTitle": "Upstream Monitoring",
+      "customerTitle": "Customer Call Logs",
+      "upstreamTitle": "Upstream Call Logs",
       "tooltip": {
         "timeRange": "Time range filter",
         "collapse": "Collapse time"

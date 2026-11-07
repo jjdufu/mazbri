@@ -450,8 +450,8 @@
         "days": "天"
       },
       "noData": "暂无数据",
-      "customerTitle": "客户监控",
-      "upstreamTitle": "上游监控",
+      "customerTitle": "客户调用明细",
+      "upstreamTitle": "上游调用明细",
       "tooltip": {
         "timeRange": "时间范围筛选",
         "collapse": "收起时间"

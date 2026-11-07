@@ -11,14 +11,9 @@
       :fit="true"
       table-layout="fixed"
       @refresh="onManualRefresh"
-      @selection-change="handleSelectionChange"
       @pagination:size-change="handlePageSizeChange"
       @pagination:current-change="handleCurrentPageChange"
     >
-
-      <template #serial_no="{ row }">
-        <span class="serial-no-cell">{{ row.serial_no || "-" }}</span>
-      </template>
       <template #actions>
         <ListQueryBar
           v-model:q="q"
@@ -35,7 +30,7 @@
           :label="$t('operations.monitoring.actions.export')"
           @command="
             (command) =>
-              handleExportCommand(command as 'page' | 'selected' | 'filtered')
+              handleExportCommand(command as 'page' | 'filtered')
           "
         />
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
@@ -54,19 +49,60 @@
         </div>
       </template>
 
+      <template #serial_no="{ row }">
+        <span v-if="row.serial_no" class="compact-id-cell">
+          <ElTooltip
+            :content="row.serial_no"
+            placement="top"
+            :show-after="200"
+          >
+            <span class="serial-no-cell">{{
+              formatCompactId(row.serial_no)
+            }}</span>
+          </ElTooltip>
+          <button
+            type="button"
+            class="compact-id-copy"
+            :title="$t('common.actions.copy')"
+            @click.stop="copyIdText(row.serial_no)"
+          >
+            <ArtSvgIcon icon="ri:file-copy-line" />
+          </button>
+        </span>
+        <span v-else>-</span>
+      </template>
+
       <template #trace_id="{ row }">
-        <ElLink
-          v-if="row.trace_id"
-          type="primary"
-          class="trace-id-cell"
-          @click="openTraceFor(row)"
-        >
-          {{ row.trace_id }}
-        </ElLink>
+        <span v-if="row.trace_id" class="compact-id-cell">
+          <ElTooltip
+            :content="row.trace_id"
+            placement="top"
+            :show-after="200"
+          >
+            <ElLink
+              type="primary"
+              class="trace-id-cell"
+              @click="openTraceFor(row)"
+            >
+              {{ formatCompactId(row.trace_id) }}
+            </ElLink>
+          </ElTooltip>
+          <button
+            type="button"
+            class="compact-id-copy"
+            :title="$t('common.actions.copy')"
+            @click.stop="copyIdText(row.trace_id)"
+          >
+            <ArtSvgIcon icon="ri:file-copy-line" />
+          </button>
+        </span>
         <span v-else>-</span>
       </template>
       <template #tenant_name="{ row }">
         {{ row.tenant_name || row.tenant_id || "-" }}
+      </template>
+      <template #supplier="{ row }">
+        {{ row.supplier || row.supplier_name || "-" }}
       </template>
       <template #channel_name="{ row }">
         <ElTooltip
@@ -288,7 +324,6 @@ import {
   fetchUpstreamCallLogs,
 } from "@/api/call-monitor";
 import { runWithLoading } from "@/composables/useAsyncState";
-import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
 import { formatUrlDisplay, sanitizeSensitiveValue } from "@/utils/sensitive";
 import type {
@@ -446,6 +481,22 @@ function openTraceFor(row: CallMonitorItem) {
   emit("openTrace", row.trace_id, unixSecondsOf(row.timestamp ?? row.response_time));
 }
 
+function formatCompactId(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= 16) return trimmed;
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-6)}`;
+}
+
+async function copyIdText(value: string) {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    ElMessage.success($t("common.messages.copySuccess"));
+  } catch {
+    ElMessage.error($t("common.messages.copyFailed"));
+  }
+}
+
 defineExpose({ refresh: onManualRefresh });
 
 const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
@@ -536,7 +587,9 @@ const getCallMonitorCellText = (
 ) => {
   switch (columnKey) {
     case "serial_no":
-      return row.serial_no || "-";
+      return row.serial_no ? formatCompactId(row.serial_no) : "-";
+    case "trace_id":
+      return row.trace_id ? formatCompactId(row.trace_id) : "-";
     case "supplier":
       return row.supplier || row.supplier_name || "-";
     case "tenant_name":
@@ -681,24 +734,11 @@ const exportItems = computed(() => [
     disabled: tableData.value.length === 0,
   },
   {
-    command: "selected",
-    label: $t("operations.monitoring.actions.exportSelected", {
-      count: selectedRows.value.length,
-    }),
-    disabled: selectedRows.value.length === 0,
-  },
-  {
     command: "filtered",
     label: $t("operations.monitoring.actions.exportFiltered"),
+    disabled: pagination.total === 0 && tableData.value.length === 0,
   },
 ]);
-const { selectedRows, handleSelectionChange } =
-  useTableSelection<CallMonitorItem>({
-    deleteApi: async () => {},
-    getItemName: (row) => row.serial_no,
-    getItemId: (row) => row.serial_no,
-    actionLabel: $t("operations.monitoring.actions.export"),
-  });
 const buildColumns = (
   currentMode: "customer" | "upstream",
 ): ColumnOption<CallMonitorItem>[] => {
@@ -713,36 +753,56 @@ const buildColumns = (
           onOpenTrace: (traceId: string) => emit("openTrace", traceId),
         }),
     },
-    { type: "selection", width: 48 },
     {
-      prop: "serial_no",
-      label: $t("operations.monitoring.columns.serialNo"),
-
-      minWidth: 310,
-      maxWidth: 340,
+      prop: "response_time",
+      label: $t("operations.monitoring.columns.responseTime"),
+      minWidth: 168,
+      maxWidth: 196,
       useSlot: true,
-      showOverflowTooltip: false,
     },
     {
-      prop: "trace_id",
-      label: "trace_id",
-      minWidth: 270,
-      maxWidth: 300,
+      prop: "status_code",
+      label: $t("operations.monitoring.columns.statusCode"),
+      minWidth: 76,
+      maxWidth: 92,
       useSlot: true,
-      showOverflowTooltip: false,
     },
   ];
 
   if (currentMode === "customer") {
     columns.push({
+      prop: "duration_ms",
+      label: $t("operations.monitoring.columns.customerLatency"),
+      minWidth: 84,
+      maxWidth: 108,
+      useSlot: true,
+    });
+    columns.push({
       prop: "tenant_name",
       label: $t("operations.monitoring.columns.tenantName"),
-      minWidth: 72,
-      maxWidth: 120,
+      minWidth: 100,
+      maxWidth: 160,
+      useSlot: true,
+      showOverflowTooltip: true,
+    });
+  } else {
+    columns.push({
+      prop: "upstream_service_time_ms",
+      label: $t("operations.monitoring.columns.upstreamLatency"),
+      minWidth: 84,
+      maxWidth: 108,
+      useSlot: true,
+    });
+    columns.push({
+      prop: "supplier",
+      label: $t("operations.monitoring.columns.supplier"),
+      minWidth: 100,
+      maxWidth: 160,
       useSlot: true,
       showOverflowTooltip: true,
     });
   }
+
   columns.push(
     {
       prop: "channel_name",
@@ -750,70 +810,53 @@ const buildColumns = (
         currentMode === "upstream"
           ? $t("operations.monitoring.columns.channelNameUpstream")
           : $t("operations.monitoring.columns.channelName"),
-
-      minWidth: 100,
+      minWidth: 110,
       maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: false,
     },
     {
-      prop: "response_time",
-      label: $t("operations.monitoring.columns.responseTime"),
-      minWidth: 180,
-      maxWidth: 220,
+      prop: "serial_no",
+      label: $t("operations.monitoring.columns.serialNo"),
+      minWidth: 156,
+      maxWidth: 196,
       useSlot: true,
+      showOverflowTooltip: false,
+    },
+    {
+      prop: "trace_id",
+      label: "trace_id",
+      minWidth: 156,
+      maxWidth: 196,
+      useSlot: true,
+      showOverflowTooltip: false,
     },
   );
+
   if (currentMode === "customer") {
     columns.push({
       prop: "request_ip",
       label: $t("operations.monitoring.columns.requestIp"),
-
-      minWidth: 120,
-      maxWidth: 148,
+      minWidth: 116,
+      maxWidth: 144,
       useSlot: true,
       showOverflowTooltip: true,
     });
-  }
-  if (currentMode === "customer") {
-    columns.push({
-      prop: "duration_ms",
-      label: $t("operations.monitoring.columns.customerLatency"),
-      minWidth: 80,
-      maxWidth: 100,
-      useSlot: true,
-    });
-  } else {
-    columns.push({
-      prop: "upstream_service_time_ms",
-      label: $t("operations.monitoring.columns.upstreamLatency"),
-      minWidth: 80,
-      maxWidth: 100,
-      useSlot: true,
-    });
-  }
-  columns.push({
-    prop: "status_code",
-    label: $t("operations.monitoring.columns.statusCode"),
-    minWidth: 72,
-    maxWidth: 96,
-    useSlot: true,
-  });
-  if (currentMode === "customer") {
     columns.push({
       prop: "response_result",
       label: $t("operations.monitoring.columns.responseResult"),
-      minWidth: 100,
-      maxWidth: 200,
+      minWidth: 96,
+      maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: true,
     });
   }
+
   columns.push({
     prop: "operations",
     label: $t("common.fields.operations"),
-    minWidth: 80,
-    width: 80,
+    minWidth: 72,
+    width: 72,
     fixed: "right",
     useSlot: true,
   });
@@ -825,9 +868,8 @@ useAdaptiveTableColumns({
   containerRef: tablePageRef,
   rows: tableData,
   baseColumns: () => buildColumns(props.mode),
-  selectionWidth: 48,
-  operationsWidth: 80,
-  softMinCap: 168,
+  operationsWidth: 72,
+  softMinCap: 0,
   fitContainer: true,
   getCellText: ({ columnKey, row }) =>
     getCallMonitorCellText(columnKey, row, props.mode),
@@ -994,13 +1036,9 @@ const downloadDetailJson = () => {
   );
 };
 const handleExportCommand = async (
-  command: "page" | "selected" | "filtered",
+  command: "page" | "filtered",
 ) => {
   if (exporting.value) return;
-  if (command === "selected") {
-    await exportLogsArchive(selectedRows.value, "selected");
-    return;
-  }
   if (command === "page") {
     await exportLogsArchive(tableData.value, "page");
     return;
@@ -1133,8 +1171,47 @@ onMounted(() => {
   display: inline-block;
   max-width: 100%;
   white-space: nowrap;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+}
+
+.trace-id-cell {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+}
+
+.compact-id-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.compact-id-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.65;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
+
+  &:hover {
+    opacity: 1;
+    color: var(--el-color-primary);
+    background: var(--el-fill-color-light);
+  }
 }
 
 .channel-name-cell {
