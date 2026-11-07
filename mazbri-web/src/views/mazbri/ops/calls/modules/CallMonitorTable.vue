@@ -1,5 +1,5 @@
 <template>
-  <div ref="tablePageRef" class="call-monitor-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div class="call-monitor-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
     <ResourceTableShell
       v-model:columns="columns"
       :title="title"
@@ -9,7 +9,6 @@
       :show-total="false"
       :empty-text="emptyDescription"
       :fit="true"
-      table-layout="fixed"
       @refresh="onManualRefresh"
       @pagination:size-change="handlePageSizeChange"
       @pagination:current-change="handleCurrentPageChange"
@@ -347,7 +346,6 @@ import { h } from "vue";
 import StageBreakdown from "./StageBreakdown.vue";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
-import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { useListQuery } from "@/composables/useListQuery";
 import {
   CALL_MONITOR_UNIVERSE_SIZE,
@@ -412,7 +410,6 @@ const props = withDefaults(
   }>(),
   { timeRange: null, seedFilters: () => [] },
 );
-const tablePageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
 const detailVisible = ref(false);
@@ -615,92 +612,6 @@ const channelNameHoverContent = (row: CallMonitorItem | null | undefined) => {
   return `${channelLine}\n${$t("operations.monitoring.columns.supplier")}: ${supplier}`;
 };
 
-const getCallMonitorCellText = (
-  columnKey: string,
-  row: CallMonitorItem,
-  currentMode: "customer" | "upstream",
-) => {
-  switch (columnKey) {
-    case "serial_no":
-      return row.serial_no ? formatCompactId(row.serial_no) : "-";
-    case "trace_id":
-      return row.trace_id ? formatCompactId(row.trace_id) : "-";
-    case "supplier":
-      return row.supplier || row.supplier_name || "-";
-    case "tenant_name":
-      return row.tenant_name || row.tenant_id || "-";
-    case "channel_name":
-      return formatChannelName(row);
-    case "response_time":
-      return formatTimestampWithMillis(row.response_time);
-    case "request_ip":
-      return row.request_ip || row.client_ip || "-";
-    case "duration_ms":
-      return `${row.duration_ms} ms`;
-    case "upstream_service_time_ms":
-      return `${row.upstream_service_time_ms} ms`;
-    case "status_code":
-      return String(row.status_code ?? "-");
-    case "response_result":
-      return getCallMonitorResponseResult(row);
-    case "operations":
-      return $t("common.actions.details");
-    default:
-      return currentMode === "customer"
-        ? row.tenant_name || row.tenant_id || "-"
-        : row.supplier || row.supplier_name || "-";
-  }
-};
-
-
-
-
-const getCallMonitorColumnWeight = (
-  columnKey: string,
-  mode: "grow" | "shrink" = "grow",
-) => {
-  if (mode === "shrink") {
-    switch (columnKey) {
-      case "serial_no":
-        return 0.08;
-      case "channel_name":
-      case "tenant_name":
-      case "response_result":
-        return 2.4;
-      case "response_time":
-        return 1.1;
-      case "request_ip":
-        return 0.6;
-      case "duration_ms":
-      case "upstream_service_time_ms":
-      case "status_code":
-        return 0.5;
-      default:
-        return 1;
-    }
-  }
-
-  switch (columnKey) {
-    case "serial_no":
-      return 0.4;
-    case "channel_name":
-    case "tenant_name":
-      return 0.35;
-    case "response_time":
-      return 1.6;
-    case "request_ip":
-      return 1.2;
-    case "duration_ms":
-    case "upstream_service_time_ms":
-      return 0.8;
-    case "status_code":
-      return 0.6;
-    case "response_result":
-      return 1.5;
-    default:
-      return 1;
-  }
-};
 const extractRawFields = (
   detail: Record<string, unknown> | null | undefined,
 ) => {
@@ -897,20 +808,13 @@ const buildColumns = (
   });
   return columns;
 };
-const columns = ref<ColumnOption<CallMonitorItem>[]>([]);
-useAdaptiveTableColumns({
-  columns,
-  containerRef: tablePageRef,
-  rows: tableData,
-  baseColumns: () => buildColumns(props.mode),
-  operationsWidth: 72,
-  softMinCap: 0,
-  fitContainer: true,
-  getCellText: ({ columnKey, row }) =>
-    getCallMonitorCellText(columnKey, row, props.mode),
-  getColumnWeight: ({ columnKey, mode }) =>
-    getCallMonitorColumnWeight(columnKey, mode),
-});
+const columns = ref<ColumnOption<CallMonitorItem>[]>(buildColumns(props.mode));
+watch(
+  () => props.mode,
+  (mode) => {
+    columns.value = buildColumns(mode);
+  },
+);
 const applyResponseMeta = (response: CallMonitorResponse) => {
   const total = response.total || 0;
   pagination.total = total;
