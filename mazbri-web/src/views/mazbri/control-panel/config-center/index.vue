@@ -3,53 +3,51 @@
     :title="$t('configCenter.page.title')"
     icon="ri:settings-3-line"
   >
-    <div class="toolbar">
-      <ResourceTableActionBar
-        v-model="searchKeyword"
-        v-model:filters="listFilters"
-        :filter-catalog="configCenterCatalog"
-        :show-import="true"
-        :import-label="$t('configCenter.actions.import')"
-        :import-disabled="authorizationDisabled"
-        :import-disabled-reason="authorizationDisabledReason"
-        :show-export="true"
-        :export-items="exportItems"
-        :export-label="$t('configCenter.actions.export')"
-        :export-disabled="authorizationDisabled || tableData.length === 0"
-        :export-disabled-reason="
-          authorizationDisabled ? authorizationDisabledReason : undefined
-        "
-        :show-primary="true"
-        :primary-label="$t('configCenter.actions.create')"
-        :primary-disabled="authorizationDisabled"
-        :primary-disabled-reason="authorizationDisabledReason"
-        :show-delete="true"
-        :delete-total-count="tableData.length"
-        :delete-selected-count="selectedRows.length"
-        :delete-label="$t('common.actions.delete')"
-        :delete-disabled="authorizationDisabled"
-        :delete-disabled-reason="authorizationDisabledReason"
-        @search="refresh.handleSearch"
-        @import="handleImport"
-        @export="handleExportCommand"
-        @primary="handleCreate"
-        @delete="handleDeleteAction"
-      />
-    </div>
-
     <ResourceTableShell
       :columns="[]"
       :loading="loading"
       :data="tableData"
       :pagination="pagination"
-      :show-header="false"
+      :show-toolbar="false"
       table-class="surface-panel-table"
-      show-toolbar
-      toolbar-layout="size,fullscreen,columns,settings"
       @selection-change="handleTableSelectionChange"
       @pagination:size-change="refresh.handleSizeChange"
       @pagination:current-change="refresh.handleCurrentChange"
     >
+      <template #actions>
+        <ResourceTableActionBar
+          v-model="searchKeyword"
+          v-model:filters="listFilters"
+          :filter-catalog="configCenterCatalog"
+          :show-import="true"
+          :import-label="$t('configCenter.actions.import')"
+          :import-disabled="authorizationDisabled"
+          :import-disabled-reason="authorizationDisabledReason"
+          :show-export="true"
+          :export-items="exportItems"
+          :export-label="$t('configCenter.actions.export')"
+          :export-disabled="authorizationDisabled || tableData.length === 0"
+          :export-disabled-reason="
+            authorizationDisabled ? authorizationDisabledReason : undefined
+          "
+          :show-primary="true"
+          :primary-label="$t('configCenter.actions.create')"
+          :primary-disabled="authorizationDisabled"
+          :primary-disabled-reason="authorizationDisabledReason"
+          :show-delete="true"
+          :delete-total-count="tableData.length"
+          :delete-selected-count="selectedRows.length"
+          :delete-label="$t('common.actions.delete')"
+          :delete-disabled="authorizationDisabled"
+          :delete-disabled-reason="authorizationDisabledReason"
+          @search="refresh.handleSearch"
+          @import="handleImport"
+          @export="handleExportCommand"
+          @primary="handleCreate"
+          @delete="handleDeleteAction"
+        />
+      </template>
+
       <template #default>
         <ElTableColumn type="selection" width="55" />
         <ElTableColumn
@@ -336,18 +334,6 @@ onMounted(() => {
     height: 40px;
     padding: 4px;
   }
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--default-box-color);
-  border: 1px solid var(--art-card-border);
-  border-radius: calc(var(--custom-radius) + 2px);
 }
 
 .service-name-cell {

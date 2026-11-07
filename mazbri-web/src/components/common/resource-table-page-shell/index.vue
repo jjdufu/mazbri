@@ -218,7 +218,7 @@ const props = withDefaults(
     size: undefined,
     showActionBar: true,
     filterCatalog: undefined,
-    searchPanelWidth: 260,
+    searchPanelWidth: 240,
     liveCommit: true,
     showSearch: true,
     showImport: false,

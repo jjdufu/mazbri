@@ -7,18 +7,31 @@
       :data="tableData"
       :pagination="artPagination"
       :show-total="false"
+      :show-toolbar="false"
       :empty-text="emptyDescription"
       :fit="true"
       @refresh="onManualRefresh"
       @pagination:size-change="handlePageSizeChange"
       @pagination:current-change="handleCurrentPageChange"
     >
+      <template #headerLeft>
+        <div v-if="quickFilters.length" class="call-monitor-quick-filters">
+          <ElCheckTag
+            v-for="qf in quickFilters"
+            :key="qf.id"
+            :checked="isQuickFilterActive(qf)"
+            class="call-monitor-quick-tag"
+            @change="toggleQuickFilter(qf)"
+          >
+            {{ $t(qf.label_key) }}
+          </ElCheckTag>
+        </div>
+      </template>
       <template #actions>
         <ListQueryBar
           v-model:q="q"
           v-model:filters="filters"
           always-expanded
-          :panel-width="380"
           :placeholder="queryPlaceholder"
           :catalog="listCatalog"
           @search="onQueryBarSearch"
@@ -33,19 +46,6 @@
           "
         />
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
-      </template>
-      <template #toolbarLeft>
-        <div v-if="quickFilters.length" class="call-monitor-quick-filters">
-          <ElCheckTag
-            v-for="qf in quickFilters"
-            :key="qf.id"
-            :checked="isQuickFilterActive(qf)"
-            class="call-monitor-quick-tag"
-            @change="toggleQuickFilter(qf)"
-          >
-            {{ $t(qf.label_key) }}
-          </ElCheckTag>
-        </div>
       </template>
 
       <template #serial_no="{ row }">

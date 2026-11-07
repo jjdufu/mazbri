@@ -207,7 +207,7 @@ const props = withDefaults(
   }>(),
   {
     filterCatalog: undefined,
-    searchPanelWidth: 260,
+    searchPanelWidth: 240,
     liveCommit: true,
     showSearch: true,
     showImport: false,
