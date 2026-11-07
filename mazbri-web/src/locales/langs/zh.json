@@ -4475,6 +4475,7 @@
         "errors": "错误",
         "summary": "共 {total} 次 · 错误 {errors} 次 · 统计间隔 {bucket}s",
         "brushHint": "在图表上横向拖拽框选可缩窄时间范围",
+        "resetZoom": "还原时间窗",
         "loadFailed": "加载调用分布失败"
       },
       "stages": {

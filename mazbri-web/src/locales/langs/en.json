@@ -4470,6 +4470,7 @@
         "errors": "Errors",
         "summary": "{total} calls · {errors} errors · bucket {bucket}s",
         "brushHint": "Brush horizontally on the chart to narrow the time range",
+        "resetZoom": "Reset zoom",
         "loadFailed": "Failed to load call distribution"
       },
       "stages": {

@@ -18,17 +18,38 @@
       :info="t('ops.calls.histogram.brushHint')"
     >
       <template #extra>
-        <span class="ops-calls__summary">
-          {{
-            t("ops.calls.histogram.summary", {
-              total: histogram?.total ?? 0,
-              errors: histogram?.errors ?? 0,
-              bucket: histogram?.bucket_seconds ?? 0,
-            })
-          }}
-        </span>
+        <div class="ops-calls__histogram-extra">
+          <ElButton
+            v-if="previousRange"
+            link
+            type="primary"
+            size="small"
+            @click="restorePreviousRange"
+          >
+            {{ t("ops.calls.histogram.resetZoom") }}
+          </ElButton>
+          <span class="ops-calls__summary">
+            {{
+              t("ops.calls.histogram.summary", {
+                total: histogram?.total ?? 0,
+                errors: histogram?.errors ?? 0,
+                bucket: histogram?.bucket_seconds ?? 0,
+              })
+            }}
+          </span>
+        </div>
       </template>
-      <div ref="chartRef" v-loading="histogramLoading" class="ops-calls__chart"></div>
+      <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
+        <EmptyState
+          v-if="!histogramLoading && (!histogram || histogram.total === 0)"
+          :description="t('operations.monitoring.empty.noData')"
+        />
+        <div
+          v-show="histogram && histogram.total > 0"
+          ref="chartRef"
+          class="ops-calls__chart"
+        ></div>
+      </div>
     </OpsCard>
     <div class="ops-calls__table">
       <CallMonitorTable
@@ -60,6 +81,7 @@ import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import {
@@ -123,6 +145,7 @@ function filtersFromRoute(): ListFilter[] {
 const activeTab = ref<CallsTab>(initialTab());
 const seedFilters = filtersFromRoute();
 const timeRange = ref<TimeRangeValue | null>(null);
+const previousRange = ref<TimeRangeValue | null>(null);
 const refreshInterval = ref(0);
 const tableRef = ref<InstanceType<typeof CallMonitorTable> | null>(null);
 
@@ -133,7 +156,23 @@ const tableRange = computed<CallTimeRange | null>(() =>
 );
 
 function onRangeChange(value: TimeRangeValue) {
+  previousRange.value = null;
   timeRange.value = value;
+}
+
+function restorePreviousRange() {
+  if (!previousRange.value) return;
+  const prev = previousRange.value;
+  previousRange.value = null;
+  timeRange.value = prev;
+  void router.replace({
+    query: {
+      ...route.query,
+      tr_preset: prev.preset,
+      tr_start: String(prev.start),
+      tr_end: String(prev.end),
+    },
+  });
 }
 
 function onRefreshTick() {
@@ -214,6 +253,9 @@ function onBrushEnd(params: unknown) {
   const start = first.ts;
   const end = Math.min(last.ts + data.bucket_seconds, data.end);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+  if (timeRange.value) {
+    previousRange.value = { ...timeRange.value };
+  }
   const value: TimeRangeValue = { preset: "custom", start, end };
   timeRange.value = value;
   void router.replace({
@@ -227,7 +269,13 @@ function onBrushEnd(params: unknown) {
 }
 
 function renderChart() {
-  if (!chartRef.value || !histogram.value) return;
+  if (!chartRef.value || !histogram.value || histogram.value.total === 0) {
+    unbindChartResize?.();
+    unbindChartResize = null;
+    chart?.dispose();
+    chart = null;
+    return;
+  }
   if (!chart) {
     chart = echarts.init(chartRef.value);
     chart.on("brushEnd", onBrushEnd);
@@ -235,6 +283,7 @@ function renderChart() {
     unbindChartResize = bindOpsChartResize(chartRef.value, () => chart);
   }
   chart.setOption(buildOption(histogram.value), true);
+  chart.resize();
   chart.dispatchAction({
     type: "takeGlobalCursor",
     key: "brush",
@@ -286,9 +335,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.ops-calls__histogram-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
 .ops-calls__summary {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.ops-calls__chart-wrap {
+  width: 100%;
+  min-height: 180px;
 }
 .ops-calls__chart {
   width: 100%;

@@ -183,16 +183,37 @@
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.serialNo')"
                 >
-                  {{ currentDetail.serial_no }}
+                  <span class="compact-id-cell">
+                    <span class="serial-no-cell">{{ currentDetail.serial_no }}</span>
+                    <button
+                      v-if="currentDetail.serial_no"
+                      type="button"
+                      class="compact-id-copy"
+                      :title="$t('common.actions.copy')"
+                      @click="copyIdText(currentDetail.serial_no)"
+                    >
+                      <ArtSvgIcon icon="ri:file-copy-line" />
+                    </button>
+                  </span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="trace_id">
-                  <ElLink
-                    v-if="currentDetail.trace_id"
-                    type="primary"
-                    @click="openTraceFor(currentDetail)"
-                  >
-                    {{ currentDetail.trace_id }}
-                  </ElLink>
+                  <span v-if="currentDetail.trace_id" class="compact-id-cell">
+                    <ElLink
+                      type="primary"
+                      class="trace-id-cell"
+                      @click="openTraceFor(currentDetail)"
+                    >
+                      {{ currentDetail.trace_id }}
+                    </ElLink>
+                    <button
+                      type="button"
+                      class="compact-id-copy"
+                      :title="$t('common.actions.copy')"
+                      @click="copyIdText(currentDetail.trace_id)"
+                    >
+                      <ArtSvgIcon icon="ri:file-copy-line" />
+                    </button>
+                  </span>
                   <span v-else>-</span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
@@ -262,6 +283,19 @@
                   {{ getCallMonitorResponseResult(currentDetail) }}
                 </ElDescriptionsItem>
               </ElDescriptions>
+            </ElCard>
+
+            <ElCard shadow="never" class="detail-card">
+              <template #header>
+                <SurfaceCardHeader
+                  :title="$t('ops.calls.stages.breakdown')"
+                />
+              </template>
+              <StageBreakdown
+                :request-id="currentDetail.serial_no"
+                :trace-id="currentDetail.trace_id"
+                @open-trace="() => currentDetail && openTraceFor(currentDetail)"
+              />
             </ElCard>
 
             <ElCard shadow="never" class="detail-card detail-card--compact">
@@ -383,6 +417,7 @@ const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
 const detailVisible = ref(false);
 const currentDetail = ref<CallMonitorItem | null>(null);
+const autoOpenedSeedDetail = ref(false);
 const exporting = ref(false);
 const pagination = reactive({
   page: 1,
@@ -917,6 +952,14 @@ const loadData = async (opts?: { silent?: boolean }) => {
     applyResponseMeta(response);
     if (safePage !== requestedPage) {
       pagination.page = safePage;
+    }
+    if (
+      !autoOpenedSeedDetail.value &&
+      rows.length === 1 &&
+      Boolean(requestIdFromFilters(props.seedFilters))
+    ) {
+      autoOpenedSeedDetail.value = true;
+      showDetail(rows[0]!);
     }
   };
 
