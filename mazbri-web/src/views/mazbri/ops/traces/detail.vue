@@ -614,7 +614,7 @@ function openLinked(target: string, spanId: string) {
 
 function openCalls(requestId: string) {
   void router.push(
-    buildCallsRoute({ tab: "stages", filters: { request_id: requestId } }),
+    buildCallsRoute({ tab: "customer", filters: { request_id: requestId } }),
   );
 }
 

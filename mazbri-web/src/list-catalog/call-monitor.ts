@@ -248,5 +248,3 @@ export function callMonitorCatalogFor(
 
 
 export const CALL_MONITOR_UNIVERSE_SIZE = 20_000;
-
-export const CALL_MONITOR_LATEST_REFRESH_MS = 30_000;

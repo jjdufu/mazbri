@@ -4462,8 +4462,7 @@
     "calls": {
       "tabs": {
         "customer": "Customer calls",
-        "upstream": "Upstream calls",
-        "stages": "Stages"
+        "upstream": "Upstream calls"
       },
       "histogram": {
         "title": "Call distribution",

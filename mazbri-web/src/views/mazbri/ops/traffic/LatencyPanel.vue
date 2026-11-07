@@ -176,7 +176,7 @@ function onSlowClick(row: SlowRow) {
   }
   if (!row.request_id) return;
   void router.push(
-    buildCallsRoute({ tab: "stages", filters: { request_id: row.request_id } }),
+    buildCallsRoute({ tab: "customer", filters: { request_id: row.request_id } }),
   );
 }
 

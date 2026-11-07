@@ -4467,8 +4467,7 @@
     "calls": {
       "tabs": {
         "customer": "客户调用",
-        "upstream": "上游调用",
-        "stages": "阶段耗时"
+        "upstream": "上游调用"
       },
       "histogram": {
         "title": "调用时间分布",

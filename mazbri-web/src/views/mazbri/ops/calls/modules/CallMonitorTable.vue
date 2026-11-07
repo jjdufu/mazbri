@@ -251,7 +251,6 @@
 
 <script setup lang="ts">
 import {
-  formatWallClock,
   timestampFiltersFromRange,
   timestampFiltersToUnix,
 } from "@/utils/ops/call-filters";
@@ -268,7 +267,6 @@ import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { useListQuery } from "@/composables/useListQuery";
 import {
-  CALL_MONITOR_LATEST_REFRESH_MS,
   CALL_MONITOR_UNIVERSE_SIZE,
   callMonitorCatalogFor,
 } from "@/list-catalog";
@@ -290,7 +288,6 @@ import type {
 } from "@/types/api/call-monitor";
 import type { ListFilter } from "@/types/list-query";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import type { CallMonitorModeHintPayload } from "./CallMonitorModeHint.vue";
 import {
   clampPageToSafeRange,
   MAX_TABLE_BROWSE_TOTAL,
@@ -347,8 +344,6 @@ const pagination = reactive({
 });
 const lastQueryMode = ref<CallMonitorQueryMode | string>("latest");
 const lastUniverseSize = ref(CALL_MONITOR_UNIVERSE_SIZE);
-const dataAsOf = ref<number | null>(null);
-const browseCapped = ref(false);
 
 const listCatalog = computed(() => callMonitorCatalogFor(props.mode));
 const { q, filters, toRequestParams } = useListQuery({
@@ -396,40 +391,7 @@ const onManualRefresh = () => {
   loadData();
 };
 
-const refreshInSec = ref(0);
-
-const nextRefreshAtMs = ref<number | null>(null);
-
-
-const modeHint = computed((): CallMonitorModeHintPayload => {
-  const mode = lastQueryMode.value || "latest";
-  if (mode === "selective") {
-    return {
-      kind: "text",
-      text: $t("operations.monitoring.mode.selective"),
-    };
-  }
-  if (mode === "ranged") {
-    const base = $t("operations.monitoring.mode.ranged");
-    const text = browseCapped.value
-      ? `${base} · ${$t("operations.monitoring.browse.cappedTitle")}`
-      : base;
-    return { kind: "text", text };
-  }
-  const asOf =
-    dataAsOf.value != null
-      ? formatWallClock(dataAsOf.value)
-      : $t("operations.monitoring.mode.unknownTime");
-  return {
-    kind: "latest",
-    asOf,
-    size: lastUniverseSize.value || CALL_MONITOR_UNIVERSE_SIZE,
-    refreshIn: refreshInSec.value,
-  };
-});
-
 const emit = defineEmits<{
-  modeHintChange: [hint: CallMonitorModeHintPayload];
   /** Current filter params without paging; drives the histogram. */
   queryChange: [query: CallHistogramQuery];
   /** `start` is the row's Unix-second timestamp hint for the trace query window. */
@@ -440,48 +402,8 @@ function openTraceFor(row: CallMonitorItem) {
   if (!row.trace_id) return;
   emit("openTrace", row.trace_id, unixSecondsOf(row.timestamp ?? row.response_time));
 }
-watch(
-  modeHint,
-  (hint) => {
-    emit("modeHintChange", hint);
-  },
-  { immediate: true, deep: true },
-);
 
-const tickRefreshCountdown = () => {
-  const deadline = nextRefreshAtMs.value;
-  if (deadline == null) {
-    refreshInSec.value = 0;
-    return;
-  }
-  const leftMs = deadline - Date.now();
-  refreshInSec.value = Math.max(0, Math.ceil(leftMs / 1000));
-};
-
-
-const canScheduleAutoRefresh = () => {
-
-  if (hasTimestampFilter(filters.value)) {
-    return false;
-  }
-  if (parseRequestIdLookup(q.value) || requestIdFromFilters(filters.value)) {
-    return false;
-  }
-  if (lastQueryMode.value && lastQueryMode.value !== "latest") {
-    return false;
-  }
-  return true;
-};
-
-const armLatestRefreshCountdown = () => {
-  if (!canScheduleAutoRefresh()) {
-    nextRefreshAtMs.value = null;
-    refreshInSec.value = 0;
-    return;
-  }
-  nextRefreshAtMs.value = Date.now() + CALL_MONITOR_LATEST_REFRESH_MS;
-  tickRefreshCountdown();
-};
+defineExpose({ refresh: onManualRefresh });
 
 const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -878,15 +800,6 @@ const applyResponseMeta = (response: CallMonitorResponse) => {
   lastQueryMode.value = response.query_mode || "latest";
   lastUniverseSize.value =
     response.universe_size || CALL_MONITOR_UNIVERSE_SIZE;
-  browseCapped.value = Boolean(response.browse_capped);
-  dataAsOf.value = Date.now();
-
-  if ((response.query_mode || "latest") === "latest") {
-    armLatestRefreshCountdown();
-  } else {
-    nextRefreshAtMs.value = null;
-    refreshInSec.value = 0;
-  }
 };
 
 const loadData = async (opts?: { silent?: boolean }) => {
@@ -1122,38 +1035,8 @@ const statusTagType = (statusCode: number) => {
   if (statusCode >= 300) return "warning";
   return "info";
 };
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let countdownTimer: ReturnType<typeof setInterval> | null = null;
-
-const shouldAutoRefresh = () => {
-  if (detailVisible.value || loading.value || exporting.value) return false;
-  return canScheduleAutoRefresh();
-};
-
 onMounted(() => {
   loadData();
-  countdownTimer = setInterval(() => {
-    tickRefreshCountdown();
-  }, 1000);
-  refreshTimer = setInterval(() => {
-    if (shouldAutoRefresh()) {
-      void loadData({ silent: true });
-    } else {
-      nextRefreshAtMs.value = null;
-      refreshInSec.value = 0;
-    }
-  }, CALL_MONITOR_LATEST_REFRESH_MS);
-});
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
 });
 </script>
 
