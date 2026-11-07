@@ -9,7 +9,8 @@ export interface TraceSearchQuery {
   min_duration_ms?: number;
   max_duration_ms?: number;
   errors_only?: boolean;
-  limit?: number;
+  page?: number;
+  page_size?: number;
 }
 
 export interface TraceSummary {
@@ -27,6 +28,9 @@ export interface TraceSummary {
 export interface TraceSearchResponse {
   start: number;
   end: number;
+  total: number;
+  page: number;
+  page_size: number;
   resolved_from_logs: number | null;
   traces: TraceSummary[];
 }
