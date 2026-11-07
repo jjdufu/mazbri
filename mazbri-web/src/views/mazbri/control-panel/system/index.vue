@@ -127,10 +127,12 @@ const saveLoading = computed(
 );
 
 const handleSaveAll = async () => {
-  await saveSystemSettings({ silent: true });
+  const systemSaved = await saveSystemSettings({ silent: true });
+  if (!systemSaved) {
+    return;
+  }
   const appearanceResult = await saveAppearanceSettings({ silent: true });
-  if (appearanceResult === "local") {
-    ElMessage.warning(t("systemSettings.messages.appearanceSavedLocally"));
+  if (appearanceResult !== "server") {
     return;
   }
   ElMessage.success(t("systemSettings.messages.savedSuccess"));

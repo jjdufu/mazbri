@@ -15,11 +15,18 @@
       </ElTag>
     </template>
     <template #tabs>
-      <ElSegmented
+      <ElTabs
         :model-value="activeTab"
-        :options="tabOptions"
-        @change="handleTabChange"
-      />
+        class="tenant-detail-tabs"
+        @tab-change="handleTabChange"
+      >
+        <ElTabPane
+          v-for="item in tabOptions"
+          :key="item.value"
+          :label="item.label"
+          :name="item.value"
+        />
+      </ElTabs>
     </template>
 
     <div v-if="tenantCode && isTabLoaded('overview360')" v-show="activeTab === 'overview360'">

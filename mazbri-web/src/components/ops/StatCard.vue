@@ -9,11 +9,15 @@
     :loading="loading"
     @click="onCardClick"
   >
-    <span
-      class="ops-stat-card__value"
-      :class="{ 'ops-stat-card__value--empty': !hasValue }"
-    >{{ displayValue }}</span>
-    <span v-if="unit && hasValue" class="ops-stat-card__unit">{{ unit }}</span>
+    <div class="ops-stat-card__main">
+      <span
+        class="ops-stat-card__value"
+        :class="{ 'ops-stat-card__value--empty': !hasValue }"
+      >{{ displayValue }}</span>
+      <span v-if="unit && hasValue" class="ops-stat-card__unit">{{
+        unit
+      }}</span>
+    </div>
     <span v-if="hint" class="ops-stat-card__hint" :title="hint">{{
       hint
     }}</span>
@@ -86,6 +90,11 @@ function onCardClick(event: MouseEvent) {
 }
 .ops-stat-card--interactive {
   cursor: pointer;
+}
+.ops-stat-card__main {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
 }
 .ops-stat-card__value {
   font-size: 18px;

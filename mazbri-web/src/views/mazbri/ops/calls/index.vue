@@ -1,17 +1,22 @@
 <template>
   <OpsPage :title="t('menus.mazbri.opsCalls')">
-    <template #actions>
-      <TimeRangePicker
-        :model-value="timeRange ?? undefined"
-        @change="onRangeChange"
-      />
-      <AutoRefresh v-model="refreshInterval" @tick="onRefreshTick" />
-    </template>
-
-    <ElTabs v-model="activeTab" class="ops-calls__tabs" @tab-change="onTabChange">
-      <ElTabPane :label="t('ops.calls.tabs.customer')" name="customer" />
-      <ElTabPane :label="t('ops.calls.tabs.upstream')" name="upstream" />
-    </ElTabs>
+    <div class="ops-calls__header">
+      <ElTabs
+        v-model="activeTab"
+        class="ops-calls__tabs"
+        @tab-change="onTabChange"
+      >
+        <ElTabPane :label="t('ops.calls.tabs.customer')" name="customer" />
+        <ElTabPane :label="t('ops.calls.tabs.upstream')" name="upstream" />
+      </ElTabs>
+      <div class="ops-calls__actions">
+        <TimeRangePicker
+          :model-value="timeRange ?? undefined"
+          @change="onRangeChange"
+        />
+        <AutoRefresh v-model="refreshInterval" @tick="onRefreshTick" />
+      </div>
+    </div>
 
     <OpsCard
       :title="t('ops.calls.histogram.title')"
@@ -334,7 +339,39 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+.ops-calls__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+.ops-calls__tabs {
+  min-width: 0;
+
+  :deep(.el-tabs__header) {
+    margin: 0 !important;
+  }
+
+  :deep(.el-tabs__nav-wrap::after) {
+    display: none !important;
+  }
+
+  :deep(.el-tabs__content) {
+    display: none !important;
+  }
+}
+.ops-calls__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-bottom: 4px;
+}
 .ops-calls__histogram-extra {
   display: inline-flex;
   align-items: center;

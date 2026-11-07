@@ -530,6 +530,6 @@ onUnmounted(() => {
   margin-right: 6px;
   font-size: 12px;
   background: var(--el-fill-color);
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 </style>

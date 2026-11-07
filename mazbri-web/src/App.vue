@@ -16,7 +16,6 @@ import { checkStorageCompatibility } from "./utils/storage";
 import { initializeTheme } from "./hooks/core/useTheme";
 import { logger } from "./utils/sys/logger";
 import { ErrorCodes } from "./constants/error-codes";
-import { startExpandOnFocusInputAuto } from "./composables/useExpandOnFocusInputs";
 const router = useRouter();
 const userStore = useUserStore();
 const mfaStepUpStore = useMfaStepUpStore();
@@ -26,7 +25,6 @@ const locales = {
   zh: zh,
   en: en,
 };
-let stopExpandOnFocusAuto: (() => void) | undefined;
 const initializeSettings = async () => {
   if (userStore.isLogin) {
     try {
@@ -63,14 +61,6 @@ onMounted(async () => {
   toggleTransition(false);
   systemUpgrade();
   await initializeSettings();
-
-  stopExpandOnFocusAuto = startExpandOnFocusInputAuto({
-    maxCompactWidth: 120,
-    expandWidth: 360,
-  });
-});
-onBeforeUnmount(() => {
-  stopExpandOnFocusAuto?.();
 });
 router.afterEach(() => {
   settingStore.applyToDom();

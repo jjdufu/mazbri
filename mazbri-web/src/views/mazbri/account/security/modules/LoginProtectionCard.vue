@@ -3,6 +3,7 @@
     v-loading="loading"
     icon="ri:login-box-line"
     :title="$t('securityPolicy.sections.loginProtection.title')"
+    :info="loginProtectionInfo"
   >
     <CommonSettingRow
       mode="inline"
@@ -28,44 +29,22 @@
         class="setting-input-number"
       />
     </CommonSettingRow>
-    <CommonInlineHint block size="xs">
-      {{ $t("securityPolicy.hints.lockThreshold") }}
-    </CommonInlineHint>
-    <CommonInlineHint block size="xs">
-      <span>{{ $t("accountSecurity.platformPolicy.sessionHint") }}</span>
-      <ElLink
-        type="primary"
-        underline="never"
-        class="session-link"
-        @click="goSystemSettings"
-      >
-        {{ $t("accountSecurity.platformPolicy.sessionLink") }}
-      </ElLink>
-    </CommonInlineHint>
   </SettingsCard>
 </template>
 
 <script setup lang="ts">
-import { useRouter } from "vue-router";
+import { computed } from "vue";
 import SettingsCard from "@/components/common/settings-card/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import CommonInlineHint from "@/components/common/inline-hint/index.vue";
+import { $t } from "@/locales";
 import { usePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "LoginProtectionCard" });
 
-const router = useRouter();
 const { policyForm, loading } = usePlatformSecurityPolicy();
 
-function goSystemSettings(): void {
-  void router.push({ path: "/control-panel/system" });
-}
+const loginProtectionInfo = computed(
+  () =>
+    `${$t("securityPolicy.hints.lockThreshold")}\n${$t("accountSecurity.platformPolicy.sessionHint")}`,
+);
 </script>
-
-<style scoped lang="scss">
-.session-link {
-  margin-left: 6px;
-  font-size: inherit;
-  vertical-align: baseline;
-}
-</style>

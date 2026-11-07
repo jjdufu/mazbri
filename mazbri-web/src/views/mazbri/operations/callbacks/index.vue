@@ -4,13 +4,18 @@
     icon="ri:webhook-line"
   >
     <div class="callback-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-    <div class="tab-segmented">
-      <ElSegmented
-        :model-value="activeTab"
-        :options="tabOptions"
-        @change="handleTabChange"
+    <ElTabs
+      :model-value="activeTab"
+      class="page-header-tabs"
+      @tab-change="handleTabChange"
+    >
+      <ElTabPane
+        v-for="item in tabOptions"
+        :key="item.value"
+        :label="item.label"
+        :name="item.value"
       />
-    </div>
+    </ElTabs>
 
     <div v-show="activeTab === 'subscriptions'" class="tab-panel" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
       <ResourceTableShell
@@ -589,13 +594,16 @@ onMounted(() => {
   flex: 1;
   height: 100%;
 
-  .tab-segmented {
-    margin-bottom: 16px;
+  .page-header-tabs {
+    margin-bottom: 12px;
     flex-shrink: 0;
 
-    .el-segmented {
-      height: 40px;
-      padding: 4px;
+    :deep(.el-tabs__header) {
+      margin: 0 !important;
+    }
+
+    :deep(.el-tabs__content) {
+      display: none !important;
     }
   }
 

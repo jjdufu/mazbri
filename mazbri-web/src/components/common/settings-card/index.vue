@@ -6,6 +6,25 @@
           <div class="settings-card__title">
             <ArtSvgIcon v-if="icon" :icon="icon" class="settings-card__icon" />
             <span>{{ title }}</span>
+            <ElPopover
+              v-if="info || $slots.info"
+              placement="bottom-start"
+              :width="320"
+              trigger="click"
+            >
+              <div class="settings-card__info-popover">
+                <slot name="info">{{ info }}</slot>
+              </div>
+              <template #reference>
+                <button
+                  type="button"
+                  class="settings-card__info-trigger"
+                  aria-label="说明"
+                >
+                  <ArtSvgIcon icon="ri:information-line" />
+                </button>
+              </template>
+            </ElPopover>
             <slot name="title-extra" />
           </div>
         </template>
@@ -34,9 +53,11 @@ withDefaults(
   defineProps<{
     title: string;
     icon?: string;
+    info?: string;
   }>(),
   {
     icon: "",
+    info: "",
   },
 );
 </script>
@@ -71,6 +92,34 @@ withDefaults(
 .settings-card__icon {
   font-size: 18px;
   color: var(--el-color-primary);
+}
+
+.settings-card__info-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    color: var(--el-color-primary);
+    background: var(--el-fill-color-light);
+  }
+}
+
+.settings-card__info-popover {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-line;
 }
 
 .settings-card__body {
@@ -110,6 +159,10 @@ withDefaults(
   :deep(.setting-input-number),
   :deep(.setting-select) {
     width: 120px !important;
+  }
+
+  :deep(.setting-input) {
+    width: min(100%, 260px) !important;
   }
 }
 

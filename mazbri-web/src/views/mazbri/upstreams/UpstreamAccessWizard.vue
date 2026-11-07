@@ -454,7 +454,7 @@ defineExpose({
   overflow: auto;
   font-size: 12px;
   background: var(--el-fill-color-light);
-  border-radius: 6px;
+  border-radius: var(--art-form-control-radius);
   white-space: pre-wrap;
   word-break: break-all;
 }

@@ -591,6 +591,7 @@ mod tests {
         let cc_history = include_str!("config_center/history.rs");
         let cc_import = include_str!("config_center/import_export.rs");
         let settings = include_str!("admin/settings.rs");
+        let appearance = include_str!("appearance_handlers.rs");
         let password_policy = include_str!("password_policy_handlers.rs");
         let tenants = include_str!("tenant_handlers.rs");
         let ratelimit = include_str!("ratelimit_command_handlers.rs");
@@ -604,6 +605,8 @@ mod tests {
                 (cc_import, "import_configs"),
                 (cc_import, "export_configs"),
                 (settings, "update_system_settings"),
+                (appearance, "update_appearance_settings"),
+                (appearance, "reset_appearance_settings"),
                 (password_policy, "update_password_policy"),
                 (upstream, "rollback"),
                 (ratelimit, "create_control_command"),

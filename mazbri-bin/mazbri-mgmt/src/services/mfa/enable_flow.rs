@@ -15,11 +15,13 @@ pub struct EnableParams<'a> {
     pub pool: &'a PgPool,
     pub redis: &'a mazbri_core::redis::RedisClient,
     pub mfa_cache: &'a Arc<MfaServiceCache>,
+    pub mfa_settings_cache: &'a Arc<crate::services::MfaSettingsCache>,
     pub audit: &'a AuditService,
     pub claims: &'a crate::middleware::auth::AdminClaims,
     pub jwt_secret: &'a str,
     pub access_ttl_fallback: u64,
     pub totp_code: &'a str,
+    pub totp_issuer: Option<&'a str>,
     pub refresh_token: Option<&'a str>,
     pub client_ip: Option<String>,
 }
@@ -29,11 +31,13 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
         pool,
         redis,
         mfa_cache,
+        mfa_settings_cache,
         audit,
         claims,
         jwt_secret,
         access_ttl_fallback,
         totp_code,
+        totp_issuer,
         refresh_token,
         client_ip,
     } = params;
@@ -81,6 +85,27 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
     if let Err(response) = commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
         return *response;
+    }
+    if claims.role == "R_ADMIN"
+        && let Some(issuer) = totp_issuer.map(str::trim).filter(|s| !s.is_empty())
+    {
+        let user_id_str = user_id.to_string();
+        if crate::repositories::mfa_settings::update_mfa_settings(
+            pool,
+            crate::repositories::mfa_settings::UpdateMfaSettingsParams {
+                totp_issuer: Some(issuer.to_string()),
+                totp_digits: Some(6),
+                totp_period: Some(30),
+                backup_codes_count: Some(10),
+                updated_by: &user_id_str,
+            },
+        )
+        .await
+        .is_ok()
+        {
+            mfa_settings_cache.invalidate().await;
+            mfa_cache.invalidate().await;
+        }
     }
     finish_enabled_session(FinishEnable {
         pool,

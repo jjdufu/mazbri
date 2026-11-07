@@ -906,7 +906,7 @@
       "siteUrl": "Site URL",
       "siteUrlPlaceholder": "https://example.com",
       "adminEmail": "Admin Email",
-      "adminEmailPlaceholder": "admin@example.com",
+      "adminEmailPlaceholder": "admin{'@'}example.com",
       "sessionTimeout": "Admin session timeout (min, sets access JWT expiry)",
       "saveSettings": "Save Settings",
       "resetToDefault": "Reset to Default",
@@ -1007,7 +1007,7 @@
     },
     "placeholders": {
       "issuerName": "Mazbri",
-      "specialChars": "!@#$%^&*()_+-="
+      "specialChars": "!{'@'}#$%^&*()_+-="
     },
     "options": {
       "totpDigits6": "6 digits",
@@ -1017,11 +1017,13 @@
     },
     "messages": {
       "savedSuccess": "Settings saved",
-      "specialCharsRequired": "Special character set cannot be empty when special characters are required."
+      "specialCharsRequired": "Special character set cannot be empty when special characters are required.",
+      "issuerRequired": "Issuer name cannot be empty."
     },
     "hints": {
-      "specialChars": "When special characters are required, the new password must include at least one character from this set.",
-      "lockThreshold": "After this many consecutive failed sign-ins the account is locked for the lock duration. This is the only login lockout setting on the platform (no longer set in System Settings)."
+      "specialChars": "Configure password length and character requirements; when special characters are required, new passwords must contain at least one listed character.",
+      "lockThreshold": "Accounts are automatically locked after reaching the failed login threshold.",
+      "expiration": "Passwords expire after the configured validity period (0 disables expiration); history check prevents reusing recent passwords."
     }
   },
   "channels": {
@@ -2516,7 +2518,7 @@
       "credKey": "Key",
       "credValue": "Value",
       "requestBodyTpl": "Login body template",
-      "requestBodyTplHint": "Supports placeholders like {{username}}; empty auto-builds credentials.",
+      "requestBodyTplHint": "Supports placeholders like {'{{username}}'}; empty auto-builds credentials.",
       "tokenJsonpath": "Token path",
       "expiryJsonpath": "Expiry path",
       "injectKey": "Inject field",
@@ -3718,7 +3720,7 @@
     "authHintBasic": "Username / password become Authorization: Basic (lookup includes username/password).",
     "authHintSign": "sign_form auth only holds App ID / Secret credentials. Configure body sign/cipher algorithms under Transform → Body crypto (egress.crypto). This tab does not fetch or inject.",
     "authHintGrpc": "The secret is written to metadata and the same header. Location is locked to metadata.",
-    "authHintBearer": "Static token injected with the format (default Authorization: Bearer {}).",
+    "authHintBearer": "Static token injected with the format (default Authorization: Bearer {'{}'}).",
     "authHintJwt": "Sign a JWT with the key on each request, then inject. Not a ticket-returned JWT.",
     "authHintDigest": "First outbound has no Digest header; after a 401 challenge the same HTTP call is replayed once.",
     "authHintAws": "Hand-written SigV4 over the final HTTP call. Requires region, service, and AK/SK.",
@@ -4107,11 +4109,13 @@
       "title": "Two-Factor Authentication (MFA)",
       "statusEnabled": "Enabled",
       "statusDisabled": "Not enabled",
-      "hint": "Sensitive actions require two-step verification. After you verify, the same category does not ask again for a while. Accounts without MFA cannot perform these actions; everyday sign-in and viewing are not affected. A code cannot be reused, and repeated wrong codes lock MFA, ending every open elevation.",
-      "userHint": "Only a superadmin can disable or reset MFA via User Management; non-admin accounts cannot disable it or regenerate backup codes.",
+      "hint": "Sensitive actions require 2FA (6 digits / 30s). Verified categories remain unlocked for a short window; repeated failures temporarily lock MFA.",
+      "userHint": "Only a superadmin can disable or reset MFA via User Management.",
+      "specLabel": "Specification",
+      "specValue": "TOTP 6 digits · 30s",
       "changedAt": "Changed at",
       "backupCodesRemaining": "Backup codes left",
-      "forcedHint": "MFA is required for this account. A super admin must lift the requirement before it can be disabled."
+      "forcedHint": "MFA is mandatory for this account and can only be lifted by a superadmin."
     },
     "setup": {
       "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
@@ -4137,6 +4141,9 @@
     },
     "password": {
       "title": "Change Password",
+      "statusConfigured": "Configured",
+      "lengthLabel": "Length requirement",
+      "expiryLabel": "Expiration policy",
       "current": "Current password",
       "new": "New password",
       "confirm": "Confirm new password",
@@ -4144,7 +4151,7 @@
       "newRequired": "Please enter a new password",
       "confirmRequired": "Please enter the new password again",
       "mismatch": "The new passwords do not match",
-      "policyHint": "The new password must satisfy the password policy (length, character types, history).",
+      "policyHint": "The new password must satisfy platform complexity and history rules.",
       "summaryTitle": "Current password policy",
       "summary": {
         "length": "Length {min}–{max} characters",
@@ -4615,7 +4622,7 @@
           "labelsInvalid": "One key=value per line",
           "emails": "Email recipients",
           "emailsHint": "Default channel. One address per line, up to 20; sent by analytics over SMTP on firing and on resolve, requires [alerting.smtp].",
-          "emailsInvalid": "Enter addresses in name@domain form",
+          "emailsInvalid": "Enter addresses in name{'@'}domain form",
           "webhooks": "Webhooks (optional)",
           "webhooksHint": "One http(s) URL per line; SSRF-checked on save; JSON is POSTed on firing and on resolve.",
           "required": "Required",

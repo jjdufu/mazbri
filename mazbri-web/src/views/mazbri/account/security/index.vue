@@ -11,22 +11,17 @@
     </template>
 
     <SettingsCardGrid>
-      <!-- 左列「身份验证」：MFA 绑定 /（超管）TOTP 参数、登录保护 -->
       <template #left>
         <MfaCard />
-        <template v-if="isAdmin">
-          <TotpPolicyCard />
-          <LoginProtectionCard />
-        </template>
+        <PasswordComplexityCard v-if="isAdmin" />
       </template>
 
-      <!-- 右列「密码」：修改密码 /（超管）密码复杂度、过期与复用 -->
       <template #right>
-        <PasswordCard />
         <template v-if="isAdmin">
-          <PasswordComplexityCard />
+          <LoginProtectionCard />
           <PasswordExpiryCard />
         </template>
+        <PasswordCard />
       </template>
     </SettingsCardGrid>
   </ControlPanelPageShell>
@@ -40,7 +35,6 @@ import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import MfaCard from "./modules/MfaCard.vue";
 import PasswordCard from "./modules/PasswordCard.vue";
-import TotpPolicyCard from "./modules/TotpPolicyCard.vue";
 import LoginProtectionCard from "./modules/LoginProtectionCard.vue";
 import PasswordComplexityCard from "./modules/PasswordComplexityCard.vue";
 import PasswordExpiryCard from "./modules/PasswordExpiryCard.vue";

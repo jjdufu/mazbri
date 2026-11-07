@@ -3,6 +3,7 @@
     v-loading="loading"
     icon="ri:history-line"
     :title="$t('securityPolicy.sections.expiration.title')"
+    :info="$t('securityPolicy.hints.expiration')"
   >
     <CommonSettingRow
       mode="inline"

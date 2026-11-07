@@ -117,7 +117,7 @@ const visible = defineModel<boolean>({ required: true });
         width: 3px;
         height: 14px;
         background-color: var(--el-color-primary);
-        border-radius: 4px;
+        border-radius: var(--art-form-control-radius-sm);
       }
 
       .dark & {

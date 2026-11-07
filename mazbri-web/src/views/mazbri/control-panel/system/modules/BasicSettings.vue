@@ -4,10 +4,10 @@
     mobile-stack
     :label="$t('systemSettings.form.siteName')"
   >
-    <ExpandOnFocusInput
+    <ElInput
       :model-value="modelValue.site_name"
       :placeholder="$t('systemSettings.form.siteNamePlaceholder')"
-      :compact-width="120"
+      class="setting-input"
       @update:model-value="handleUpdate('site_name', $event)"
     />
   </CommonSettingRow>
@@ -16,10 +16,10 @@
     mobile-stack
     :label="$t('systemSettings.form.siteUrl')"
   >
-    <ExpandOnFocusInput
+    <ElInput
       :model-value="modelValue.site_url"
       :placeholder="$t('systemSettings.form.siteUrlPlaceholder')"
-      :compact-width="120"
+      class="setting-input"
       @update:model-value="handleUpdate('site_url', $event)"
     />
   </CommonSettingRow>
@@ -28,11 +28,11 @@
     mobile-stack
     :label="$t('systemSettings.form.tenantGatewayUrl')"
   >
-    <ExpandOnFocusInput
+    <ElInput
       :model-value="modelValue.tenant_gateway_url"
       :placeholder="$t('systemSettings.form.tenantGatewayUrlPlaceholder')"
       :title="$t('systemSettings.form.tenantGatewayUrlHint')"
-      :compact-width="120"
+      class="setting-input"
       @update:model-value="handleUpdate('tenant_gateway_url', $event)"
     />
   </CommonSettingRow>
@@ -41,10 +41,10 @@
     mobile-stack
     :label="$t('systemSettings.form.adminEmail')"
   >
-    <ExpandOnFocusInput
+    <ElInput
       :model-value="modelValue.admin_email"
       :placeholder="$t('systemSettings.form.adminEmailPlaceholder')"
-      :compact-width="120"
+      class="setting-input"
       @update:model-value="handleUpdate('admin_email', $event)"
     />
   </CommonSettingRow>
@@ -65,7 +65,6 @@
 
 <script setup lang="ts">
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
 
 interface BasicSettingsModel {
   site_name?: string;

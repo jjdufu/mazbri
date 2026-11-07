@@ -20,11 +20,13 @@ pub async fn mfa_enable(
         pool: &state.admin_db,
         redis: &state.redis,
         mfa_cache: &state.mfa_cache,
+        mfa_settings_cache: &state.mfa_settings_cache,
         audit: &state.audit,
         claims: &claims,
         jwt_secret: &state.auth_state.jwt_secret,
         access_ttl_fallback: state.config.auth.jwt_expiration_secs,
         totp_code: &req.totp_code,
+        totp_issuer: req.totp_issuer.as_deref(),
         refresh_token: refresh_token.as_deref(),
         client_ip,
     })

@@ -115,12 +115,10 @@
                   mode="inline"
                   :label="$t('billing.reconciliation.alertWebhook')"
                 >
-                  <ExpandOnFocusInput
+                  <ElInput
                     v-model="settingsForm.alert.webhook_url"
                     clearable
-                    :compact-width="180"
-                    :expand-width="420"
-                    class="setting-control"
+                    class="setting-control setting-control--wide"
                     :placeholder="
                       $t('billing.reconciliation.alertWebhookPlaceholder')
                     "
@@ -542,7 +540,6 @@ import { useRouter } from "vue-router";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
 import TableHeaderDatePickerPopover from "@/components/common/table-header-date-picker-popover/index.vue";
 import DatePicker from "@/components/common/DatePicker.vue";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
@@ -1322,7 +1319,7 @@ onMounted(() => {
 
 .usage-recon-detail__summary {
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
 }
@@ -1400,7 +1397,7 @@ onMounted(() => {
   max-height: 280px;
   overflow: auto;
   background: var(--el-fill-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

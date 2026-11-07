@@ -1,8 +1,10 @@
 <template>
   <SettingsCard
+    :id="PLATFORM_POLICY_ANCHOR"
     v-loading="loading"
     icon="ri:shield-check-line"
     :title="$t('securityPolicy.sections.complexity.title')"
+    :info="$t('securityPolicy.hints.specialChars')"
   >
     <CommonSettingRow
       mode="inline"
@@ -42,17 +44,13 @@
       mobile-stack
       :label="$t('securityPolicy.fields.specialChars')"
     >
-      <ExpandOnFocusInput
+      <ElInput
         v-model="policyForm.special_chars"
         :placeholder="$t('securityPolicy.placeholders.specialChars')"
-        :compact-width="160"
-        :expand-width="320"
         :disabled="!policyForm.require_special_char"
+        class="setting-input"
       />
     </CommonSettingRow>
-    <CommonInlineHint v-if="policyForm.require_special_char" block size="xs">
-      {{ $t("securityPolicy.hints.specialChars") }}
-    </CommonInlineHint>
   </SettingsCard>
 </template>
 
@@ -61,9 +59,10 @@ import SettingsCard from "@/components/common/settings-card/index.vue";
 import SettingsToggleGrid from "@/components/common/settings-toggle-grid/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import CommonToggleTile from "@/components/common/toggle-tile/index.vue";
-import CommonInlineHint from "@/components/common/inline-hint/index.vue";
-import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
-import { usePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
+import {
+  PLATFORM_POLICY_ANCHOR,
+  usePlatformSecurityPolicy,
+} from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "PasswordComplexityCard" });
 

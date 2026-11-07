@@ -768,7 +768,7 @@ watch(traceId, () => void load(), { immediate: true });
   padding: 12px 16px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
 }
 /* 右栏粘性：瀑布图超长时跟随滚动停在顶栏下方，自身限高滚动（不拉伸到瀑布图高度） */
 .ops-trace__panel {
@@ -916,7 +916,7 @@ watch(traceId, () => void load(), { immediate: true });
   padding: 6px 8px;
   margin-bottom: 6px;
   background: var(--el-fill-color-lighter);
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 .ops-trace__event.is-error {
   border-left: 3px solid #f56c6c;

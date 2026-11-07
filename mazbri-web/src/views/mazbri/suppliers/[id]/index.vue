@@ -819,7 +819,7 @@ onMounted(async () => {
   min-height: 40px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   background: var(--el-fill-color-light);
   border-left: 3px solid var(--el-color-primary);
 }

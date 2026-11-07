@@ -67,9 +67,12 @@ defineProps<{ title?: string }>();
 .tenant-detail-shell__tabs {
   flex-shrink: 0;
 
-  :deep(.el-segmented) {
-    height: 40px;
-    padding: 4px;
+  :deep(.el-tabs__header) {
+    margin: 0 !important;
+  }
+
+  :deep(.el-tabs__content) {
+    display: none !important;
   }
 }
 

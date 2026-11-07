@@ -3,6 +3,7 @@
     v-loading="statusLoading"
     icon="ri:smartphone-line"
     :title="$t('accountSecurity.mfa.title')"
+    :info="mfaInfoText"
   >
     <template #title-extra>
       <ElTag
@@ -45,17 +46,21 @@
       </ElButton>
     </template>
 
-    <CommonInlineHint block size="xs">
-      {{ $t("accountSecurity.mfa.hint") }}
-      <template v-if="!isAdmin">
-        {{ $t("accountSecurity.mfa.userHint") }}
-      </template>
-    </CommonInlineHint>
-    <CommonInlineHint v-if="mfaRequired" block size="xs" tone="warning">
-      {{ $t("accountSecurity.mfa.forcedHint") }}
-    </CommonInlineHint>
-
-    <template v-if="mfaEnabled && isAdmin">
+    <template v-if="mfaEnabled">
+      <CommonSettingRow
+        v-if="isAdmin"
+        mode="inline"
+        mobile-stack
+        :label="$t('securityPolicy.fields.issuerName')"
+      >
+        <ElInput
+          v-model="mfaForm.totp_issuer"
+          class="setting-input"
+          :disabled="issuerSaving"
+          :placeholder="$t('securityPolicy.placeholders.issuerName')"
+          @change="handleIssuerSave"
+        />
+      </CommonSettingRow>
       <CommonSettingRow
         mode="inline"
         mobile-stack
@@ -77,17 +82,31 @@
       </CommonSettingRow>
     </template>
 
-    <!-- 绑定流程：获取密钥/二维码 → 输入验证码启用（全角色自助） -->
+    <template v-else-if="!setupData">
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('accountSecurity.mfa.specLabel')"
+      >
+        <span class="setting-value">{{
+          $t("accountSecurity.mfa.specValue")
+        }}</span>
+      </CommonSettingRow>
+      <CommonSettingRow
+        mode="inline"
+        mobile-stack
+        :label="$t('accountSecurity.mfa.changedAt')"
+      >
+        <span class="setting-value">{{ changedAtText }}</span>
+      </CommonSettingRow>
+    </template>
+
+    <!-- 绑定流程：获取密钥/二维码 → 可实时调整发行者名称 → 输入验证码启用 -->
     <template v-if="!mfaEnabled && setupData">
-      <ol class="setup-steps">
-        <li>{{ $t("accountSecurity.setup.stepInstall") }}</li>
-        <li>{{ $t("accountSecurity.setup.stepScan") }}</li>
-        <li>{{ $t("accountSecurity.setup.stepEnter") }}</li>
-      </ol>
       <div class="setup-body">
         <div class="qr-wrap">
           <QrcodeVue
-            :value="setupData.qr_code_url"
+            :value="liveQrCodeUrl"
             :size="148"
             level="M"
             render-as="canvas"
@@ -96,6 +115,16 @@
           />
         </div>
         <div class="setup-fields">
+          <CommonSettingRow
+            v-if="isAdmin"
+            mode="block"
+            :label="$t('securityPolicy.fields.issuerName')"
+          >
+            <ElInput
+              v-model="setupIssuer"
+              :placeholder="$t('securityPolicy.placeholders.issuerName')"
+            />
+          </CommonSettingRow>
           <CommonSettingRow
             mode="block"
             :label="$t('accountSecurity.setup.secretLabel')"
@@ -141,9 +170,6 @@
       :label="$t('accountSecurity.backupCodes.title')"
     >
       <div class="backup-block">
-        <CommonInlineHint block size="xs" tone="warning">
-          {{ $t("accountSecurity.backupCodes.hint") }}
-        </CommonInlineHint>
         <div class="backup-codes">
           <code v-for="code in backupCodes" :key="code">{{ code }}</code>
         </div>
@@ -163,7 +189,6 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import QrcodeVue from "qrcode.vue";
 import SettingsCard from "@/components/common/settings-card/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import {
   disableMfa,
   enableMfa,
@@ -172,6 +197,7 @@ import {
   getMfaStatus,
   regenerateBackupCodes,
 } from "@/api/auth";
+import { updateMfaSettings } from "@/api/audit";
 import type {
   MfaSessionRefresh,
   MfaSetupResponse,
@@ -190,18 +216,21 @@ import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { HttpError } from "@/utils/http/error";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
+import { usePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "MfaCard" });
 
 const userStore = useUserStore();
 const stepUpStore = useMfaStepUpStore();
 const { isAdmin } = useOpsRole();
+const { mfaForm } = usePlatformSecurityPolicy();
 const statusLoading = ref(false);
 const actionLoading = ref(false);
+const issuerSaving = ref(false);
 const status = ref<MfaStatus | null>(null);
 const setupData = ref<MfaSetupResponse | null>(null);
 const setupCode = ref("");
-// 备用码只在绑定或重新生成后展示一次，离开页面即丢弃，不做任何持久化。
+const setupIssuer = ref("Mazbri");
 const backupCodes = ref<string[]>([]);
 
 const mfaEnabled = computed(() => Boolean(status.value?.enabled));
@@ -214,7 +243,28 @@ const changedAtText = computed(() => {
   if (!changedAt) return "-";
   return formatExpiryUtc8(changedAt) || "-";
 });
-const setupDigits = computed(() => setupData.value?.totp_digits ?? 6);
+const setupDigits = computed(() => 6);
+
+const mfaInfoText = computed(() => {
+  const parts = [$t("accountSecurity.mfa.hint")];
+  if (!isAdmin.value) {
+    parts.push($t("accountSecurity.mfa.userHint"));
+  }
+  if (mfaRequired.value) {
+    parts.push($t("accountSecurity.mfa.forcedHint"));
+  }
+  return parts.join("\n");
+});
+
+const liveQrCodeUrl = computed(() => {
+  if (!setupData.value) return "";
+  const issuer = setupIssuer.value.trim() || "Mazbri";
+  const username = userStore.info?.username || "admin";
+  const secret = setupData.value.secret;
+  const encodedIssuer = encodeURIComponent(issuer);
+  const encodedAccount = encodeURIComponent(username);
+  return `otpauth://totp/${encodedIssuer}:${encodedAccount}?secret=${secret}&issuer=${encodedIssuer}&digits=6&period=30`;
+});
 
 function applyMfaSessionExpiry(payload: MfaSessionRefresh | void): void {
   if (!payload) return;
@@ -247,7 +297,6 @@ async function loadStatus(): Promise<void> {
   });
 }
 
-/** MFA 状态变化后同步顶部用户信息，供 MfaRequiredHint 等组件使用。 */
 async function refreshUserInfo(): Promise<void> {
   try {
     userStore.setUserInfo(await fetchGetUserInfo());
@@ -262,6 +311,27 @@ async function refreshAfterMfaChange(): Promise<void> {
     refreshUserInfo(),
     stepUpStore.refresh().catch(() => undefined),
   ]);
+}
+
+async function handleIssuerSave(): Promise<void> {
+  if (!isAdmin.value) return;
+  const issuer = mfaForm.totp_issuer.trim();
+  if (!issuer) {
+    ElMessage.warning($t("securityPolicy.messages.issuerRequired"));
+    mfaForm.totp_issuer = "Mazbri";
+    return;
+  }
+  await runWithLoading(issuerSaving, async () => {
+    await updateMfaSettings({
+      totp_issuer: issuer,
+      totp_digits: 6,
+      totp_period: 30,
+      backup_codes_count: 10,
+    });
+    ElMessage.success($t("securityPolicy.messages.savedSuccess"));
+  }).catch((error) => {
+    logActionError("Failed to update TOTP issuer:", error);
+  });
 }
 
 async function copyText(text: string): Promise<void> {
@@ -298,7 +368,7 @@ async function handleStartSetup(): Promise<void> {
     const data = await getMfaSetup(currentPassword);
     setupData.value = data;
     setupCode.value = "";
-    // 绑定阶段生成的备用码在启用成功后才生效，先展示让用户保存。
+    setupIssuer.value = mfaForm.totp_issuer || "Mazbri";
     backupCodes.value = data.backup_codes ?? [];
   }).catch((error) => {
     logActionError("Failed to start MFA setup:", error);
@@ -319,9 +389,16 @@ async function handleEnable(): Promise<void> {
     );
     return;
   }
+  const issuer = setupIssuer.value.trim() || "Mazbri";
   await runWithLoading(actionLoading, async () => {
-    const enabled = await enableMfa({ totp_code: code });
+    const enabled = await enableMfa({
+      totp_code: code,
+      totp_issuer: isAdmin.value ? issuer : undefined,
+    });
     applyMfaSessionExpiry(enabled);
+    if (isAdmin.value) {
+      mfaForm.totp_issuer = issuer;
+    }
     setupData.value = null;
     setupCode.value = "";
     await refreshAfterMfaChange();
@@ -393,15 +470,6 @@ onMounted(() => {
   &.is-warning {
     color: var(--el-color-warning);
   }
-}
-
-.setup-steps {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--el-text-color-secondary);
-  list-style: decimal;
 }
 
 .setup-body {

@@ -879,7 +879,7 @@
       "alertSilences": "告警静默",
       "opsInfra": "基础设施",
       "opsAlerts": "告警中心",
-      "opsBilling": "计费与对账",
+      "opsBilling": "计费对账",
       "opsTraffic": "流量与质量",
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
@@ -909,7 +909,7 @@
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "租户 API 网关根地址。",
       "adminEmail": "管理员邮箱",
-      "adminEmailPlaceholder": "admin@example.com",
+      "adminEmailPlaceholder": "admin{'@'}example.com",
       "sessionTimeout": "管理端会话超时（分钟）",
       "saveSettings": "保存设置",
       "resetToDefault": "重置为默认值"
@@ -1007,7 +1007,7 @@
     },
     "placeholders": {
       "issuerName": "Mazbri",
-      "specialChars": "!@#$%^&*()_+-="
+      "specialChars": "!{'@'}#$%^&*()_+-="
     },
     "options": {
       "totpDigits6": "6 位",
@@ -1017,11 +1017,13 @@
     },
     "messages": {
       "savedSuccess": "设置已保存",
-      "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
+      "specialCharsRequired": "已要求特殊字符时，字符集不能为空。",
+      "issuerRequired": "发行者名称不能为空。"
     },
     "hints": {
-      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。",
-      "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。"
+      "specialChars": "配置全平台密码长度与字符组合要求；开启特殊字符后，新密码须至少包含所列字符之一。",
+      "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。",
+      "expiration": "密码达到有效期后需强制改密（0 表示永不过期），历史密码检查可防止重复使用近期旧密码。"
     }
   },
   "channels": {
@@ -2516,7 +2518,7 @@
       "credKey": "键",
       "credValue": "值",
       "requestBodyTpl": "登录请求体模板",
-      "requestBodyTplHint": "支持 {{username}} 等占位符；空则自动组凭证。",
+      "requestBodyTplHint": "支持 {'{{username}}'} 等占位符；空则自动组凭证。",
       "tokenJsonpath": "Token 提取",
       "expiryJsonpath": "有效期提取",
       "injectKey": "注入字段",
@@ -3723,7 +3725,7 @@
     "authHintBasic": "用户名 / 密码写入 Authorization: Basic。",
     "authHintSign": "此处仅配置 App ID / Secret 等凭证；业务报文签名与加解密算法请在「出站规格 → 业务报文加解密」中配置。",
     "authHintGrpc": "secret 同时写入 metadata 与同名 header。",
-    "authHintBearer": "静态令牌，按注入格式写入（默认 Authorization: Bearer {}）。",
+    "authHintBearer": "静态令牌，按注入格式写入（默认 Authorization: Bearer {'{}'}）。",
     "authHintJwt": "每次请求使用本地密钥实时签发 JWT 并注入。",
     "authHintDigest": "第一次出站无 Digest 头；401 挑战后在同一 HTTP 请求上重放一次。",
     "authHintAws": "对最终 HTTP 调用手写 SigV4。需要 region、service 与 AK/SK。",
@@ -4112,11 +4114,13 @@
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "hint": "敏感操作需要两步验证，验证通过后一段时间内同类操作不用再输；未启用 MFA 的账号不能做这些操作，日常登录和查看不受影响。同一验证码不能重复使用，连续输错会锁定 MFA，锁定期间已打开的提权都会结束。",
-      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作，普通账号不可自助停用或重新生成备用码。",
+      "hint": "敏感操作需两步验证（默认 6 位 / 30 秒），验证通过后窗口期内免重复输入；连续输错将触发临时锁定。",
+      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作。",
+      "specLabel": "验证规格",
+      "specValue": "TOTP 6 位 · 30 秒",
       "changedAt": "变更时间",
       "backupCodesRemaining": "剩余备用码",
-      "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。"
+      "forcedHint": "当前账号已开启强制 MFA 保护，需超级管理员解除后才可停用。"
     },
     "setup": {
       "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
@@ -4142,6 +4146,9 @@
     },
     "password": {
       "title": "修改密码",
+      "statusConfigured": "已设置",
+      "lengthLabel": "长度要求",
+      "expiryLabel": "有效期策略",
       "current": "当前密码",
       "new": "新密码",
       "confirm": "确认新密码",
@@ -4149,7 +4156,7 @@
       "newRequired": "请输入新密码",
       "confirmRequired": "请再次输入新密码",
       "mismatch": "两次输入的新密码不一致",
-      "policyHint": "新密码需符合系统密码策略（长度、字符类型、历史密码限制）。",
+      "policyHint": "新密码需符合平台密码复杂度与历史密码限制，修改后当前会话保持有效。",
       "summaryTitle": "当前密码策略",
       "summary": {
         "length": "长度 {min}–{max} 位",
@@ -4620,7 +4627,7 @@
           "labelsInvalid": "每行一个 key=value",
           "emails": "邮件收件人",
           "emailsHint": "默认通知渠道。每行一个地址，最多 20 个；触发与恢复时由 analytics 经 SMTP 发送，需配置 [alerting.smtp]。",
-          "emailsInvalid": "请输入 name@domain 形式的邮件地址",
+          "emailsInvalid": "请输入 name{'@'}domain 形式的邮件地址",
           "webhooks": "Webhook（可选）",
           "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
           "required": "必填",

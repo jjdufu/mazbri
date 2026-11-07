@@ -5,23 +5,17 @@
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </OpsPanelToolbar>
 
-    <OpsKpiRow>
-      <ElCol
+    <div class="ops-billing__kpi-grid">
+      <StatCard
         v-for="card in statCards"
         :key="card.label"
-        :xs="12"
-        :sm="8"
-        :lg="4"
-      >
-        <StatCard
-          :label="card.label"
-          :value="card.value"
-          :unit="card.unit"
-          :loading="loading"
-          :digits="card.digits"
-        />
-      </ElCol>
-    </OpsKpiRow>
+        :label="card.label"
+        :value="card.value"
+        :unit="card.unit"
+        :loading="loading"
+        :digits="card.digits"
+      />
+    </div>
 
     <ElRow :gutter="16" class="ops-equal-row">
       <ElCol :xs="24" :lg="12">
@@ -41,23 +35,32 @@
           />
         </OpsCard>
       </ElCol>
-      <ElCol :xs="24" :lg="12">
+      <ElCol :xs="24" :lg="12" class="ops-billing__stacked-col">
         <OpsCard :title="t('ops.billing.queueTrend')">
           <MultiSeriesChart
             :series="series.billing_outbox_pending"
             :loading="loading"
-            height="200px"
+            height="180px"
           />
         </OpsCard>
         <OpsCard :title="t('ops.billing.oldestAge')">
           <MultiSeriesChart
             :series="series.billing_oldest_pending_age"
             :loading="loading"
-            height="200px"
+            height="180px"
           />
         </OpsCard>
       </ElCol>
-      <ElCol v-for="chart in trendCharts" :key="chart.metric" :xs="24" :lg="8">
+    </ElRow>
+
+    <ElRow :gutter="16" class="ops-equal-row">
+      <ElCol
+        v-for="chart in trendCharts"
+        :key="chart.metric"
+        :xs="24"
+        :md="12"
+        :lg="8"
+      >
         <OpsCard :title="t(chart.title)">
           <MultiSeriesChart
             :series="chart.data"
@@ -68,42 +71,49 @@
       </ElCol>
     </ElRow>
 
-    <OpsCard :title="t('ops.billing.failures')">
-      <ArtTable
-        :data="failures"
-        :loading="loading"
-        :columns="failureColumns"
-        class="surface-panel-table"
-        stripe
-      />
-      <div class="ops-traffic__pager">
-        <ElPagination
-          v-model:current-page="failurePage"
-          :page-size="PAGE_SIZE"
-          :total="failuresTotal"
-          layout="total, prev, pager, next"
-          @current-change="loadFailures"
-        />
-      </div>
-    </OpsCard>
-    <OpsCard :title="t('ops.billing.deadLetters')">
-      <ArtTable
-        :data="deadLetters"
-        :loading="loading"
-        :columns="deadColumns"
-        class="surface-panel-table"
-        stripe
-      />
-      <div class="ops-traffic__pager">
-        <ElPagination
-          v-model:current-page="deadPage"
-          :page-size="PAGE_SIZE"
-          :total="deadLettersTotal"
-          layout="total, prev, pager, next"
-          @current-change="loadDeadLetters"
-        />
-      </div>
-    </OpsCard>
+    <ElRow :gutter="16" class="ops-equal-row">
+      <ElCol :xs="24" :lg="12">
+        <OpsCard :title="t('ops.billing.failures')">
+          <ArtTable
+            :data="failures"
+            :loading="loading"
+            :columns="failureColumns"
+            class="surface-panel-table"
+            stripe
+          />
+          <div class="ops-traffic__pager">
+            <ElPagination
+              v-model:current-page="failurePage"
+              :page-size="PAGE_SIZE"
+              :total="failuresTotal"
+              layout="total, prev, pager, next"
+              @current-change="loadFailures"
+            />
+          </div>
+        </OpsCard>
+      </ElCol>
+      <ElCol :xs="24" :lg="12">
+        <OpsCard :title="t('ops.billing.deadLetters')">
+          <ArtTable
+            :data="deadLetters"
+            :loading="loading"
+            :columns="deadColumns"
+            :empty-text="t('common.noData', '暂无数据')"
+            class="surface-panel-table"
+            stripe
+          />
+          <div class="ops-traffic__pager">
+            <ElPagination
+              v-model:current-page="deadPage"
+              :page-size="PAGE_SIZE"
+              :total="deadLettersTotal"
+              layout="total, prev, pager, next"
+              @current-change="loadDeadLetters"
+            />
+          </div>
+        </OpsCard>
+      </ElCol>
+    </ElRow>
   </div>
 </template>
 
@@ -118,7 +128,6 @@ import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
-import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import { toOpsRange } from "@/composables/ops/useOlapRange";
@@ -238,6 +247,23 @@ const lagSeries = computed<MetricSeries | null>(() => {
   };
 });
 
+const batchThroughputSeries = computed<MetricSeries | null>(() => {
+  const items = series.value.billing_charge_items;
+  const batches = series.value.billing_charge_batches;
+  if (!items && !batches) return null;
+  const tag = (data: MetricSeries | null, kind: string) =>
+    (data?.series ?? []).map((s) => ({
+      ...s,
+      labels: { ...s.labels, kind },
+    }));
+  return {
+    metric: "billing_charge_throughput",
+    label: t("ops.billing.batchThroughput"),
+    unit: items?.unit ?? batches?.unit ?? "",
+    series: [...tag(items, "items"), ...tag(batches, "batches")],
+  };
+});
+
 const trendCharts = computed(() => [
   {
     metric: "failures",
@@ -251,14 +277,9 @@ const trendCharts = computed(() => [
   },
   { metric: "lag", title: "ops.billing.lagTrend", data: lagSeries.value },
   {
-    metric: "items",
+    metric: "throughput",
     title: "ops.billing.batchThroughput",
-    data: series.value.billing_charge_items,
-  },
-  {
-    metric: "batches",
-    title: "ops.billing.batches",
-    data: series.value.billing_charge_batches,
+    data: batchThroughputSeries.value,
   },
   {
     metric: "deductions",
@@ -391,12 +412,38 @@ onMounted(reload);
 </script>
 
 <style scoped>
+.ops-billing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  min-width: 0;
+}
+.ops-billing__kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1200px) {
+  .ops-billing__kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 768px) {
+  .ops-billing__kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.ops-billing__stacked-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ops-billing__stacked-col :deep(.ops-card) {
+  flex: 1;
+}
 .ops-traffic__pager {
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
-}
-.funnel-mode-hint {
-  margin-bottom: var(--ops-space-sm, 12px);
 }
 </style>

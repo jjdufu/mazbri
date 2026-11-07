@@ -586,7 +586,7 @@ onMounted(() => {
     font-family: "SF Mono", "Monaco", "Inconsolata", monospace;
     background-color: var(--fill-color-light);
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--art-form-control-radius-sm);
     font-size: 13px;
   }
 

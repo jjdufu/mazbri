@@ -5,10 +5,8 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import {
   fetchMfaSettings,
   fetchPasswordPolicy,
-  updateMfaSettings,
   updatePasswordPolicy,
   type MfaSettings,
-  type UpdateMfaSettingsRequest,
   type UpdatePasswordPolicyRequest,
 } from "@/api/audit";
 import { resolvePasswordPolicyPayload } from "@/utils/password";
@@ -108,20 +106,11 @@ function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
       return;
     }
     await runWithLoading(saving, async () => {
-      const mfaPayload: UpdateMfaSettingsRequest = {
-        totp_issuer: mfaForm.totp_issuer,
-        totp_digits: mfaForm.totp_digits,
-        totp_period: mfaForm.totp_period,
-        backup_codes_count: mfaForm.backup_codes_count,
-      };
       const policyPayload: UpdatePasswordPolicyRequest = {
         ...toRaw(policyForm),
         special_chars: (policyForm.special_chars || "").trim(),
       };
-      await Promise.all([
-        updatePasswordPolicy(policyPayload),
-        updateMfaSettings(mfaPayload),
-      ]);
+      await updatePasswordPolicy(policyPayload);
       ElMessage.success($t("securityPolicy.messages.savedSuccess"));
     }).catch((error) => {
       logger.error("Failed to save platform security policy:", error);

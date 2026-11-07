@@ -64,7 +64,7 @@
   row-gap: var(--ops-space-md);
 
   > .el-col {
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     gap: var(--ops-space-md);
     min-width: 0;

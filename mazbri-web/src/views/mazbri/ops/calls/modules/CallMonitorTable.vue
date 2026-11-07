@@ -1143,7 +1143,7 @@ onMounted(() => {
   justify-content: center;
   padding: 2px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   font-size: 13px;

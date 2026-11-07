@@ -706,14 +706,14 @@ pub static ROUTES: &[RouteAudit] = &[
         None,
     ),
     read("/settings/appearance", R::System),
-    write(
+    secure(
         "PUT",
         "/settings/appearance",
         A::AppearanceUpdate,
         R::System,
         None,
     ),
-    write(
+    secure(
         "POST",
         "/settings/appearance/reset",
         A::AppearanceReset,

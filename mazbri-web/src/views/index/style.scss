@@ -39,7 +39,7 @@
           padding: 12px;
           overflow: hidden;
           background: var(--default-box-color);
-          border-radius: calc(var(--custom-radius) / 2 + 2px) !important;
+          border-radius: var(--art-card-radius) !important;
         }
       }
     }

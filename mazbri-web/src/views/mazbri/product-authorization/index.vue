@@ -4,13 +4,18 @@
     icon="ri:shield-user-line"
   >
     <div class="product-authorization-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-      <div class="tab-segmented">
-        <ElSegmented
-          v-model="activeTab"
-          :options="tabOptions"
-          @change="handleTabChange"
+      <ElTabs
+        :model-value="activeTab"
+        class="page-header-tabs"
+        @tab-change="handleTabChange"
+      >
+        <ElTabPane
+          v-for="item in tabOptions"
+          :key="item.value"
+          :label="item.label"
+          :name="item.value"
         />
-      </div>
+      </ElTabs>
 
       <div v-show="activeTab === 'products'" class="tab-panel">
         <ProductList />
@@ -54,13 +59,16 @@ const { activeTab, handleTabChange } = useTabRouteSync<ProductAuthorizationTab>(
   flex: 1;
   height: 100%;
 
-  .tab-segmented {
-    margin-bottom: 16px;
+  .page-header-tabs {
+    margin-bottom: 12px;
     flex-shrink: 0;
 
-    .el-segmented {
-      height: 40px;
-      padding: 4px;
+    :deep(.el-tabs__header) {
+      margin: 0 !important;
+    }
+
+    :deep(.el-tabs__content) {
+      display: none !important;
     }
   }
 

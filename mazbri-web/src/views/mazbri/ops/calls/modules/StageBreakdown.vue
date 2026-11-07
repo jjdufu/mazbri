@@ -147,12 +147,12 @@ watch(() => props.requestId, load);
 .stage-breakdown__track {
   height: 10px;
   background: var(--el-fill-color-light);
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 .stage-breakdown__bar {
   height: 100%;
   background: var(--el-color-primary);
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 .stage-breakdown__bar.is-error {
   background: var(--el-color-danger);

@@ -10,7 +10,7 @@
     </OpsPanelToolbar>
 
     <OpsCard :title="t('ops.reconcile.calendar')">
-      <div class="calendar-grid">
+      <div v-if="calendar.length > 0" class="calendar-grid">
         <div
           v-for="d in calendar"
           :key="d.day"
@@ -22,6 +22,11 @@
           <div class="status">{{ d.status }}</div>
         </div>
       </div>
+      <ElEmpty
+        v-else
+        :image-size="56"
+        :description="t('billing.reconciliation.emptyDefault')"
+      />
     </OpsCard>
 
     <UsageReconciliationPanel />
@@ -73,7 +78,7 @@ onMounted(loadCalendar);
 }
 .calendar-cell {
   padding: 8px;
-  border-radius: 6px;
+  border-radius: var(--art-form-control-radius);
   border: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-light);
   text-align: center;

@@ -926,7 +926,7 @@ onMounted(() => {
     flex-shrink: 0;
     font-size: 12px;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--art-form-control-radius-sm);
     background: var(--el-fill-color);
     color: var(--el-color-primary);
   }

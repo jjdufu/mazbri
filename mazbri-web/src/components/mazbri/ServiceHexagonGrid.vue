@@ -263,7 +263,7 @@ function onSelect(id: string) {
   color: var(--theme-color);
   background: color-mix(in srgb, var(--theme-color) 10%, transparent);
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: var(--art-form-control-radius-sm);
   max-width: 88%;
   overflow: hidden;
   text-overflow: ellipsis;

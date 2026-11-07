@@ -46,7 +46,7 @@ defineProps<{ title?: string; info?: string }>();
 <style scoped>
 .ops-card {
   padding: var(--ops-space-sm, 12px) var(--ops-space-md, 16px);
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   min-width: 0;

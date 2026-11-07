@@ -1273,7 +1273,7 @@ watch(
 
 .bill-detail-overview-card,
 .bill-detail-items-card {
-  border-radius: 16px;
+  border-radius: var(--art-card-radius);
 }
 
 .bill-detail-descriptions {

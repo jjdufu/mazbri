@@ -4,13 +4,18 @@
     icon="ri:building-4-line"
   >
     <div class="upstream-supply-page ops-page-stack">
-      <div class="tab-segmented">
-        <ElSegmented
-          :model-value="activeTab"
-          :options="tabOptions"
-          @change="handleTabChange"
+      <ElTabs
+        :model-value="activeTab"
+        class="page-header-tabs"
+        @tab-change="handleTabChange"
+      >
+        <ElTabPane
+          v-for="item in tabOptions"
+          :key="item.value"
+          :label="item.label"
+          :name="item.value"
         />
-      </div>
+      </ElTabs>
 
       <div v-show="activeTab === 'suppliers'" class="tab-panel">
         <SupplierList ref="supplierListRef" @access="openMicroserviceAccess" />
@@ -73,13 +78,16 @@ function onAccessSuccess() {
   height: 100%;
   gap: var(--ops-section-gap, 16px);
 
-  .tab-segmented {
+  .page-header-tabs {
     margin-bottom: 0;
     flex-shrink: 0;
 
-    .el-segmented {
-      height: 40px;
-      padding: 4px;
+    :deep(.el-tabs__header) {
+      margin: 0 !important;
+    }
+
+    :deep(.el-tabs__content) {
+      display: none !important;
     }
   }
 
