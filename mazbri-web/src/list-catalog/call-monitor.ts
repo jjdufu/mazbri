@@ -181,12 +181,15 @@ export const customerCallMonitorCatalog: ResourceFilterCatalog = {
   max_filters: 16,
   fields: [
     withLabel(FIELD.request_id, "operations.monitoring.columns.serialNo"),
+    FIELD.trace_id,
     withLabel(FIELD.timestamp, "operations.monitoring.columns.responseTime"),
     withLabel(FIELD.tenant_code, "operations.monitoring.columns.tenantName"),
+    FIELD.product_id,
     withLabel(FIELD.channel_code, "operations.monitoring.columns.channelName"),
     withLabel(FIELD.client_ip, "operations.monitoring.columns.requestIp"),
     withLabel(FIELD.duration_ms, "operations.monitoring.columns.customerLatency"),
     withLabel(FIELD.status_code, "operations.monitoring.columns.statusCode"),
+    FIELD.error_code,
   ],
   quick_filters: [
     {
@@ -212,7 +215,9 @@ export const upstreamCallMonitorCatalog: ResourceFilterCatalog = {
   max_filters: 16,
   fields: [
     withLabel(FIELD.request_id, "operations.monitoring.columns.serialNo"),
+    FIELD.trace_id,
     withLabel(FIELD.timestamp, "operations.monitoring.columns.responseTime"),
+    withLabel(FIELD.supplier_code, "operations.monitoring.columns.supplier"),
     withLabel(
       FIELD.channel_code,
       "operations.monitoring.columns.channelNameUpstream",
@@ -222,6 +227,7 @@ export const upstreamCallMonitorCatalog: ResourceFilterCatalog = {
       "operations.monitoring.columns.upstreamLatency",
     ),
     withLabel(FIELD.status_code, "operations.monitoring.columns.statusCode"),
+    FIELD.error_code,
   ],
   quick_filters: [
     {

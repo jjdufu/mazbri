@@ -58,6 +58,7 @@
 
     <template v-else>
       <button
+        v-if="!alwaysExpanded"
         type="button"
         class="list-query-bar__trigger is-expanded-btn"
         :aria-label="collapseText"
@@ -70,11 +71,6 @@
           class="list-query-bar__badge list-query-bar__badge--inline"
         >{{ activeConditionCount }}</span>
       </button>
-
-
-
-
-
 
       <div
         class="list-query-bar__panel"
@@ -94,6 +90,11 @@
           }"
           @mousedown="onFieldMouseDown"
         >
+          <ArtSvgIcon
+            v-if="alwaysExpanded"
+            :icon="collapseIcon"
+            class="list-query-bar__prefix-icon"
+          />
 
           <div
             v-if="filtersModel.length || qModel.trim()"
@@ -256,10 +257,7 @@ const props = withDefaults(
     panelWidth?: number | string;
     collapseIcon?: string;
     collapseText?: string;
-
-
-
-
+    alwaysExpanded?: boolean;
     liveCommit?: boolean;
   }>(),
   {
@@ -271,6 +269,7 @@ const props = withDefaults(
     panelWidth: 260,
     collapseIcon: "ri:search-line",
     collapseText: undefined,
+    alwaysExpanded: false,
     liveCommit: true,
   },
 );
@@ -287,7 +286,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const expanded = ref(false);
+const expanded = ref(props.alwaysExpanded);
 const suggestOpen = ref(false);
 const draftText = ref("");
 const parseError = ref<string | null>(null);
@@ -358,7 +357,10 @@ const hasCommittedChips = computed(
 
 
 const isIdleChips = computed(
-  () => hasCommittedChips.value && !hasDraftText.value,
+  () =>
+    !props.alwaysExpanded &&
+    hasCommittedChips.value &&
+    !hasDraftText.value,
 );
 
 
@@ -477,7 +479,9 @@ watch(
 );
 
 
-const resolvedPlaceholder = computed(() => "");
+const resolvedPlaceholder = computed(() =>
+  hasCommittedChips.value ? "" : (props.placeholder ?? ""),
+);
 
 
 const qChipText = computed(() => qModel.value.trim());
@@ -695,7 +699,9 @@ const handleExpand = async () => {
 
 const handleCollapse = () => {
   clearLiveCommitTimer();
-  expanded.value = false;
+  if (!props.alwaysExpanded) {
+    expanded.value = false;
+  }
   suggestOpen.value = false;
   suggestIndex.value = -1;
 };
@@ -1090,6 +1096,12 @@ const clearAllQuery = () => {
 
 .list-query-bar__chips {
   display: contents;
+}
+
+.list-query-bar__prefix-icon {
+  flex-shrink: 0;
+  color: var(--el-text-color-placeholder);
+  font-size: 15px;
 }
 
 .list-query-bar__input {

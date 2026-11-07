@@ -23,6 +23,9 @@
         <ListQueryBar
           v-model:q="q"
           v-model:filters="filters"
+          always-expanded
+          :panel-width="380"
+          :placeholder="queryPlaceholder"
           :catalog="listCatalog"
           @search="onQueryBarSearch"
         />
@@ -36,6 +39,19 @@
           "
         />
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
+      </template>
+      <template #toolbarLeft>
+        <div v-if="quickFilters.length" class="call-monitor-quick-filters">
+          <ElCheckTag
+            v-for="qf in quickFilters"
+            :key="qf.id"
+            :checked="isQuickFilterActive(qf)"
+            class="call-monitor-quick-tag"
+            @change="toggleQuickFilter(qf)"
+          >
+            {{ $t(qf.label_key) }}
+          </ElCheckTag>
+        </div>
       </template>
 
       <template #trace_id="{ row }">
@@ -250,10 +266,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  timestampFiltersFromRange,
-  timestampFiltersToUnix,
-} from "@/utils/ops/call-filters";
+import { timestampFiltersToUnix } from "@/utils/ops/call-filters";
 import { unixSecondsOf } from "@/utils/ops/trace-link";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
@@ -286,7 +299,7 @@ import type {
   CallMonitorQueryMode,
   CallMonitorResponse,
 } from "@/types/api/call-monitor";
-import type { ListFilter } from "@/types/list-query";
+import type { ListFilter, QuickFilterDef } from "@/types/list-query";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import {
   clampPageToSafeRange,
@@ -346,6 +359,14 @@ const lastQueryMode = ref<CallMonitorQueryMode | string>("latest");
 const lastUniverseSize = ref(CALL_MONITOR_UNIVERSE_SIZE);
 
 const listCatalog = computed(() => callMonitorCatalogFor(props.mode));
+const queryPlaceholder = computed(() =>
+  props.mode === "upstream"
+    ? $t("operations.monitoring.placeholders.upstream")
+    : $t("operations.monitoring.placeholders.customer"),
+);
+const quickFilters = computed<QuickFilterDef[]>(
+  () => listCatalog.value.quick_filters ?? [],
+);
 const { q, filters, toRequestParams } = useListQuery({
   catalog: listCatalog,
   searchOnQChange: false,
@@ -354,20 +375,42 @@ const { q, filters, toRequestParams } = useListQuery({
   mapRequestFilters: timestampFiltersToUnix,
 });
 
+filters.value = [...props.seedFilters];
 
-filters.value = [
-  ...filters.value.filter((f) => f.field !== "timestamp"),
-  ...props.seedFilters,
-  ...timestampFiltersFromRange(props.timeRange),
-];
+const isQuickFilterActive = (qf: QuickFilterDef): boolean =>
+  qf.filters.every((target) =>
+    filters.value.some(
+      (f) =>
+        f.field === target.field &&
+        f.op === target.op &&
+        String(f.value) === String(target.value),
+    ),
+  );
+
+const toggleQuickFilter = (qf: QuickFilterDef) => {
+  if (isQuickFilterActive(qf)) {
+    filters.value = filters.value.filter(
+      (f) =>
+        !qf.filters.some(
+          (target) =>
+            f.field === target.field &&
+            f.op === target.op &&
+            String(f.value) === String(target.value),
+        ),
+    );
+  } else {
+    const next = filters.value.filter(
+      (f) => !qf.filters.some((target) => f.field === target.field),
+    );
+    filters.value = [...next, ...qf.filters];
+  }
+  pagination.page = 1;
+  loadData();
+};
 
 watch(
   () => props.timeRange,
-  (range) => {
-    filters.value = [
-      ...filters.value.filter((f) => f.field !== "timestamp"),
-      ...timestampFiltersFromRange(range),
-    ];
+  () => {
     pagination.page = 1;
     loadData();
   },
@@ -886,9 +929,18 @@ const buildQuery = (
 
 
 
+  const timeWindowParams =
+    props.timeRange && !hasTimestampFilter(filters.value)
+      ? {
+          start_time: props.timeRange.start,
+          end_time: props.timeRange.end,
+        }
+      : {};
+
   return toRequestParams({
     page,
     page_size: pageSize,
+    ...timeWindowParams,
   }) as CallMonitorQuery;
 };
 const buildHistogramQuery = (): CallHistogramQuery => {
@@ -1043,6 +1095,17 @@ onMounted(() => {
 <style scoped lang="scss">
 .detail-drawer-body {
   padding-right: 8px;
+}
+
+.call-monitor-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.call-monitor-quick-tag {
+  user-select: none;
 }
 
 .detail-toolbar {
