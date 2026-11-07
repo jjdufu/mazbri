@@ -89,9 +89,14 @@ export interface BillingPipelineOverview {
 export interface ServiceHealthRow {
   service: string;
   name: string;
+  group?: ComponentGroup;
+  status?: ComponentStatus;
+  reasons?: ComponentReason[];
   health_ok: boolean;
   ready: boolean | null;
   config_center: boolean | null;
+  container_running?: boolean | null;
+  restarts_1h?: number | null;
   db_pool_usage: number | null;
   panic_count: number | null;
   tokio_busy: number | null;

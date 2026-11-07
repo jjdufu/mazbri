@@ -7,6 +7,7 @@ export type RuntimeTabId = "apps" | "middleware" | "pipeline" | "hosts";
 
 export interface RuntimeLinkOptions {
   tab?: RuntimeTabId;
+  service?: string;
 }
 
 /** 构建运行指标路由；可选 tab 深链（query.tab，与 OpsMergedShell 约定一致）。 */
@@ -15,5 +16,6 @@ export function buildRuntimeRoute(
 ): RouteLocationRaw {
   const query: Record<string, string> = {};
   if (options.tab) query.tab = options.tab;
+  if (options.service) query.service = options.service;
   return { path: RUNTIME_PATH, query };
 }
