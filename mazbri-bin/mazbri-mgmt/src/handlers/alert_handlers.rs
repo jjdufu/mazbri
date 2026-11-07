@@ -1,10 +1,10 @@
-//! 告警中心 HTTP 处理器：规则 CRUD（平台配置类 step-up）、事件列表 / 确认 / 指派、概览统计。
+//! 告警中心 HTTP 处理器：规则 CRUD（平台配置类 step-up）、事件列表、概览统计。
 use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::middleware::auth::{AdminClaims, extract_user_id, is_admin};
 use crate::response::ApiResponse;
 use crate::services::alerts::{
-    self as svc, AlertError, AlertRuleInput, AssignInput, EnabledInput, EventListQuery,
+    self as svc, AlertError, AlertRuleInput, EnabledInput, EventListQuery,
 };
 use axum::{
     Extension, Json,
@@ -280,59 +280,6 @@ pub async fn list_alert_events(
 pub async fn alert_summary(State(state): State<AppState>) -> Response {
     match svc::summary(&state.admin_db).await {
         Ok(summary) => ApiResponse::ok(summary).into_response(),
-        Err(error) => error.into_response(),
-    }
-}
-
-pub async fn ack_alert_event(
-    State(state): State<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(claims): Extension<AdminClaims>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Response {
-    let ctx = match write_context(&claims, &headers, addr) {
-        Ok(ctx) => ctx,
-        Err(response) => return *response,
-    };
-    match svc::ack_event(&state.admin_db, id, &claims.sub).await {
-        Ok(event) => {
-            audit(
-                &state,
-                &ctx,
-                AuditAction::AlertEventAck,
-                id,
-                serde_json::json!({ "rule": event.rule_name, "acked_by": event.acked_by }),
-            );
-            ApiResponse::ok(event).into_response()
-        }
-        Err(error) => error.into_response(),
-    }
-}
-
-pub async fn assign_alert_event(
-    State(state): State<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(claims): Extension<AdminClaims>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<AssignInput>,
-) -> Response {
-    let ctx = match write_context(&claims, &headers, addr) {
-        Ok(ctx) => ctx,
-        Err(response) => return *response,
-    };
-    match svc::assign_event(&state.admin_db, id, payload.assignee.as_deref()).await {
-        Ok(event) => {
-            audit(
-                &state,
-                &ctx,
-                AuditAction::AlertEventAssign,
-                id,
-                serde_json::json!({ "rule": event.rule_name, "assignee": event.assignee }),
-            );
-            ApiResponse::ok(event).into_response()
-        }
         Err(error) => error.into_response(),
     }
 }

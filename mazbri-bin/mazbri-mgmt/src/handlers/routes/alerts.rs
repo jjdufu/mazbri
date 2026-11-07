@@ -3,7 +3,7 @@ use super::super::alert_ops_handlers as ops;
 use super::super::state::AppState;
 use axum::{
     Router,
-    routing::{get, post, put},
+    routing::{get, put},
 };
 
 pub fn routes() -> Router<AppState> {
@@ -18,8 +18,6 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/alerts/rules/{id}/enabled", put(h::set_alert_rule_enabled))
         .route("/alerts/events", get(h::list_alert_events))
-        .route("/alerts/events/{id}/ack", post(h::ack_alert_event))
-        .route("/alerts/events/{id}/assign", post(h::assign_alert_event))
         .route("/alerts/summary", get(h::alert_summary))
         .route(
             "/alerts/silences",

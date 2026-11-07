@@ -168,9 +168,6 @@
           <ElTag :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'">
             {{ t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 }) }}
           </ElTag>
-          <ElTag type="warning">
-            {{ t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 }) }}
-          </ElTag>
           <RoleGate gate="admin">
             <CertExpiryBadge :days="realtime?.cert_min_expiry_days" />
           </RoleGate>

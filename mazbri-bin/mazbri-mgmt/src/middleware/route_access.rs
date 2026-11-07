@@ -67,8 +67,6 @@ pub const RULES: &[RouteRule] = &[
     rule("POST", "/admins/{id}/reset-mfa", Roles(ADMIN)),
     rule("PUT", "/admins/{id}/status", Roles(ADMIN)),
     rule("GET", "/alerts/events", AnyRole),
-    rule("POST", "/alerts/events/{id}/ack", Roles(ADMIN)),
-    rule("POST", "/alerts/events/{id}/assign", Roles(ADMIN)),
     rule("GET", "/alerts/rules", Roles(ADMIN)),
     rule("POST", "/alerts/rules", Roles(ADMIN)),
     rule("PUT", "/alerts/rules/{id}", Roles(ADMIN)),

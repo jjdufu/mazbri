@@ -8,7 +8,6 @@
         style="width: 140px"
         @change="search"
       >
-        <ElOption value="active" :label="t('ops.alerts.status.active')" />
         <ElOption
           v-for="s in statuses"
           :key="s"
@@ -147,32 +146,6 @@
               {{ row.resolved_at ? formatAlertTime(row.resolved_at) : "—" }}
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.ackedBy')" width="110">
-            <template #default="{ row }">{{ row.acked_by || "—" }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.assignee')" width="110">
-            <template #default="{ row }">{{ row.assignee || "—" }}</template>
-          </ElTableColumn>
-          <ElTableColumn
-            v-if="isAdmin"
-            :label="t('ops.alerts.columns.actions')"
-            width="170"
-            fixed="right"
-          >
-            <template #default="{ row }">
-              <ElButton
-                v-if="row.status === 'firing'"
-                link
-                type="primary"
-                @click="ack(row)"
-              >
-                {{ t("ops.alerts.ack") }}
-              </ElButton>
-              <ElButton link type="primary" @click="assign(row)">
-                {{ t("ops.alerts.assign") }}
-              </ElButton>
-            </template>
-          </ElTableColumn>
         </ElTable>
       </OpsTableWrap>
       <div v-if="selected" class="ops-alerts__related">
@@ -213,19 +186,12 @@
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
-import {
-  ackAlertEvent,
-  assignAlertEvent,
-  fetchAlertEvents,
-} from "@/api/alerts";
+import { fetchAlertEvents } from "@/api/alerts";
 import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
-import { useOpsRole } from "@/composables/ops/useOpsRole";
-import { useUserStore } from "@/store/modules/user";
 import type {
   AlertEvent,
   AlertEventQuery,
@@ -261,10 +227,8 @@ function alertSeverityText(severity: string): string {
 
 const route = useRoute();
 const router = useRouter();
-const userStore = useUserStore();
-const { isAdmin } = useOpsRole();
 
-const statuses: AlertStatus[] = ["firing", "acked", "resolved"];
+const statuses: AlertStatus[] = ["firing", "resolved"];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
 
 const loading = ref(false);
@@ -324,34 +288,6 @@ function clearEventFilter() {
   filters.event_id = "";
   void router.replace({ query: stripAlertEventIdQuery(route.query) });
   search();
-}
-
-async function ack(row: AlertEvent) {
-  await ackAlertEvent(row.id);
-  ElMessage.success(t("ops.alerts.ackDone"));
-  await reload();
-}
-
-async function assign(row: AlertEvent) {
-  let value: string;
-  try {
-    const result = await ElMessageBox.prompt(
-      t("ops.alerts.assignPrompt"),
-      t("ops.alerts.assign"),
-      {
-        inputValue: row.assignee || userStore.info?.userName || "",
-        inputPattern: /^.{0,64}$/,
-        inputErrorMessage: t("ops.alerts.assignInvalid"),
-      },
-    );
-    value = result.value;
-  } catch {
-    return;
-  }
-  const assignee = value.trim();
-  await assignAlertEvent(row.id, assignee || null);
-  ElMessage.success(t("ops.alerts.assignDone"));
-  await reload();
 }
 
 async function selectRow(row: AlertEvent) {

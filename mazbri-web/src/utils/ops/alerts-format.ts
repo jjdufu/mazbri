@@ -13,9 +13,8 @@ export function alertSeverityTag(
 /** Element Plus tag type 映射：事件状态。 */
 export function alertStatusTag(
   status: AlertStatus | string,
-): "danger" | "warning" | "success" | "info" {
+): "danger" | "success" | "info" {
   if (status === "firing") return "danger";
-  if (status === "acked") return "warning";
   if (status === "resolved") return "success";
   return "info";
 }

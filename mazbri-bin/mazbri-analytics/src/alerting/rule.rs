@@ -120,7 +120,7 @@ pub struct Sample {
     pub value: f64,
 }
 
-/// 数据库中处于活跃状态（firing / acked）的事件。
+/// 数据库中处于活跃状态（firing）的事件。
 #[derive(Debug, Clone)]
 pub struct ActiveEvent {
     pub id: Uuid,

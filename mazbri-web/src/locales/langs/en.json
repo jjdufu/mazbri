@@ -1531,8 +1531,6 @@
       "alertRuleCreate": "Create alert rule",
       "alertRuleUpdate": "Update alert rule",
       "alertRuleDelete": "Delete alert rule",
-      "alertEventAck": "Acknowledge alert",
-      "alertEventAssign": "Assign alert",
       "alertSilenceCreate": "Create alert silence",
       "alertSilenceDelete": "Delete alert silence",
       "alertInhibitCreate": "Create alert inhibit",
@@ -4220,7 +4218,6 @@
       "openMatrix": "Service health matrix",
       "alerts": "Active alerts",
       "alertsFiring": "Firing {n}",
-      "alertsAcked": "Acked {n}",
       "alertsNone": "No active alerts",
       "alertsOpen": "Alert events",
       "productTop": "Top products",
@@ -4568,21 +4565,13 @@
       "timeline": "Event timeline",
       "empty": "No alert events",
       "resolvedAt": "resolved at",
-      "ack": "Ack",
-      "ackDone": "Acknowledged",
-      "assign": "Assign",
-      "assignPrompt": "Assignee username (empty to unassign)",
-      "assignInvalid": "At most 64 characters",
-      "assignDone": "Assigned",
       "filters": {
         "status": "Status",
         "severity": "Severity",
         "event": "Event"
       },
       "status": {
-        "active": "Active",
         "firing": "Firing",
-        "acked": "Acked",
         "resolved": "Resolved"
       },
       "severity": {
@@ -4597,10 +4586,7 @@
         "labels": "Labels",
         "value": "Value / threshold",
         "startedAt": "Started",
-        "resolvedAt": "Resolved",
-        "ackedBy": "Acked by",
-        "assignee": "Assignee",
-        "actions": "Actions"
+        "resolvedAt": "Resolved"
       },
       "rules": {
         "create": "New rule",

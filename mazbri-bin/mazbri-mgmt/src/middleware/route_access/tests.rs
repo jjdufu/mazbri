@@ -588,8 +588,6 @@ fn ops_stats_and_alerts_follow_role_matrix() {
         ("POST", "/alerts/inhibits"),
         ("PUT", "/alerts/inhibits/{id}"),
         ("DELETE", "/alerts/inhibits/{id}"),
-        ("POST", "/alerts/events/{id}/ack"),
-        ("POST", "/alerts/events/{id}/assign"),
     ] {
         assert_eq!(
             access_of(method, path),

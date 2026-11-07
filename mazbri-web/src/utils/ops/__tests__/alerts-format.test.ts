@@ -18,7 +18,6 @@ test("severity / status / timeline tag mapping", () => {
   assert.equal(alertSeverityTag("warning"), "warning");
   assert.equal(alertSeverityTag("info"), "info");
   assert.equal(alertStatusTag("firing"), "danger");
-  assert.equal(alertStatusTag("acked"), "warning");
   assert.equal(alertStatusTag("resolved"), "success");
   assert.equal(alertTimelineType("resolved", "critical"), "success");
   assert.equal(alertTimelineType("firing", "critical"), "danger");

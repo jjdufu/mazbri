@@ -124,7 +124,7 @@ impl EvaluationSession {
         Ok(rules)
     }
 
-    /// 加载全部活跃（firing / acked）事件。
+    /// 加载全部活跃（firing）事件。
     ///
     /// # Errors
     ///
@@ -132,7 +132,7 @@ impl EvaluationSession {
     pub async fn active_events(&mut self) -> Result<Vec<ActiveEvent>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, rule_id, fingerprint, value FROM alert_events \
-             WHERE status IN ('firing', 'acked')",
+             WHERE status = 'firing'",
         )
         .fetch_all(&mut *self.conn)
         .await?;
@@ -158,6 +158,7 @@ impl EvaluationSession {
         params: FireInsert<'_>,
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let labels = serde_json::to_value(params.labels).unwrap_or_else(|_| serde_json::json!({}));
+        // ON CONFLICT 谓词需与 PostgreSQL 部分唯一索引定义严格匹配以供仲裁推断。
         let row = sqlx::query(
             "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited)              VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9)              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING              RETURNING id",
         )
@@ -182,7 +183,7 @@ impl EvaluationSession {
     pub async fn refresh_value(&mut self, event_id: Uuid, value: f64) -> Result<(), sqlx::Error> {
         sqlx::query(
             "UPDATE alert_events SET value = $2, updated_at = now() \
-             WHERE id = $1 AND status IN ('firing', 'acked')",
+             WHERE id = $1 AND status = 'firing'",
         )
         .bind(event_id)
         .bind(value)
@@ -199,7 +200,7 @@ impl EvaluationSession {
     pub async fn resolve(&mut self, event_id: Uuid) -> Result<Option<ResolvedEvent>, sqlx::Error> {
         let row = sqlx::query(
             "UPDATE alert_events SET status = 'resolved', resolved_at = now(), updated_at = now() \
-             WHERE id = $1 AND status IN ('firing', 'acked') \
+             WHERE id = $1 AND status = 'firing' \
              RETURNING id, rule_id, labels, value, started_at, resolved_at",
         )
         .bind(event_id)
@@ -276,7 +277,7 @@ impl EvaluationSession {
         &mut self,
     ) -> Result<Vec<crate::alerting::filter::ActiveLabels>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT labels FROM alert_events WHERE status IN ('firing', 'acked')",
+            "SELECT labels FROM alert_events WHERE status = 'firing'",
         )
         .fetch_all(&mut *self.conn)
         .await?;

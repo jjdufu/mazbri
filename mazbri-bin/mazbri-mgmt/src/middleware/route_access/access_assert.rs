@@ -58,11 +58,9 @@ pub fn assert_prefix_access(prefix: &str, expected: Access, excluded: &[&str]) {
 /// 元组：`(method, path, expected)`。覆盖 step-21 审计表要点；
 /// UI Tab 合并、Dashboard 折叠不得把下列任一条改成更宽策略。
 pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
-    // 告警：事件/摘要 AnyRole；确认/指派 ADMIN；规则/静默/抑制 ADMIN
+    // 告警：事件/摘要 AnyRole；规则/静默/抑制 ADMIN
     ("GET", "/alerts/events", Access::AnyRole),
     ("GET", "/alerts/summary", Access::AnyRole),
-    ("POST", "/alerts/events/{id}/ack", Access::Roles(ADMIN)),
-    ("POST", "/alerts/events/{id}/assign", Access::Roles(ADMIN)),
     ("GET", "/alerts/rules", Access::Roles(ADMIN)),
     ("POST", "/alerts/rules", Access::Roles(ADMIN)),
     ("PUT", "/alerts/rules/{id}", Access::Roles(ADMIN)),
@@ -127,8 +125,6 @@ pub fn assert_ia_audit_matrix_groups() {
     assert_prefix_access("/billing/ops/", Access::Roles(BIZ), &[]);
     assert_access_eq("GET", "/alerts/events", Access::AnyRole);
     assert_access_eq("GET", "/alerts/summary", Access::AnyRole);
-    assert_access_eq("POST", "/alerts/events/{id}/ack", Access::Roles(ADMIN));
-    assert_access_eq("POST", "/alerts/events/{id}/assign", Access::Roles(ADMIN));
     assert_access_eq("GET", "/stats/ops/anomalies", Access::Roles(BIZ));
     assert_access_eq("GET", "/stats/ops/changes", Access::Roles(BIZ));
     assert_access_eq("GET", "/stats/ops/slos", Access::Roles(ADMIN));

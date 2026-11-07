@@ -1,4 +1,4 @@
-//! 告警中心：规则 CRUD、事件查询 / 确认 / 指派与概览统计（`mazbri_admin` 库）。
+//! 告警中心：规则 CRUD、事件查询与概览统计（`mazbri_admin` 库）。
 //!
 //! 评估与通知由 analytics 的 `alerting` 模块完成，这里只负责管理面读写。
 use chrono::{DateTime, Utc};
@@ -10,7 +10,7 @@ use uuid::Uuid;
 pub const KINDS: [&str; 2] = ["promql", "olap"];
 pub const OPS: [&str; 6] = [">", ">=", "<", "<=", "==", "!="];
 pub const SEVERITIES: [&str; 3] = ["critical", "warning", "info"];
-pub const STATUSES: [&str; 3] = ["firing", "acked", "resolved"];
+pub const STATUSES: [&str; 2] = ["firing", "resolved"];
 const MAX_EXPR_LEN: usize = 4000;
 const MAX_FOR_SECONDS: i32 = 86_400;
 const MAX_LABELS: usize = 20;
@@ -58,14 +58,6 @@ const fn default_true() -> bool {
 #[serde(deny_unknown_fields)]
 pub struct EnabledInput {
     pub enabled: bool,
-}
-
-/// 指派请求体；`assignee` 为空表示取消指派。
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AssignInput {
-    #[serde(default)]
-    pub assignee: Option<String>,
 }
 
 /// 事件列表查询参数。
@@ -122,9 +114,6 @@ pub struct AlertEvent {
     pub op: String,
     pub started_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
-    pub acked_by: Option<String>,
-    pub acked_at: Option<DateTime<Utc>>,
-    pub assignee: Option<String>,
     pub trace_ids: Vec<String>,
     pub silenced: bool,
     pub inhibited: bool,
@@ -143,7 +132,6 @@ pub struct PaginatedEvents {
 #[derive(Debug, Serialize)]
 pub struct AlertSummary {
     pub firing: i64,
-    pub acked: i64,
     pub critical: i64,
     pub warning: i64,
     pub info: i64,
@@ -305,10 +293,10 @@ fn validate_olap_expr(expr: &str) -> Result<(), AlertError> {
 
 const RULE_COLUMNS: &str = "r.id, r.name, r.kind, r.expr, r.threshold, r.op, r.for_seconds, r.severity, \
      r.labels, r.notify, r.enabled, r.created_at, r.updated_at, \
-     (SELECT count(*) FROM alert_events e WHERE e.rule_id = r.id AND e.status IN ('firing', 'acked')) AS active_events";
+     (SELECT count(*) FROM alert_events e WHERE e.rule_id = r.id AND e.status = 'firing') AS active_events";
 
 const EVENT_COLUMNS: &str = "e.id, e.rule_id, r.name AS rule_name, e.fingerprint, e.status, e.severity, e.labels, \
-     e.value, r.threshold, r.op, e.started_at, e.resolved_at, e.acked_by, e.acked_at, e.assignee, \
+     e.value, r.threshold, r.op, e.started_at, e.resolved_at, \
      e.trace_ids, e.silenced, e.inhibited, e.updated_at";
 
 fn rule_from_row(row: &PgRow) -> Result<AlertRule, sqlx::Error> {
@@ -344,9 +332,6 @@ fn event_from_row(row: &PgRow) -> Result<AlertEvent, sqlx::Error> {
         op: row.try_get("op")?,
         started_at: row.try_get("started_at")?,
         resolved_at: row.try_get("resolved_at")?,
-        acked_by: row.try_get("acked_by")?,
-        acked_at: row.try_get("acked_at")?,
-        assignee: row.try_get("assignee")?,
         trace_ids: row.try_get("trace_ids")?,
         silenced: row.try_get("silenced")?,
         inhibited: row.try_get("inhibited")?,
@@ -490,10 +475,9 @@ pub async fn list_events(
 ) -> Result<PaginatedEvents, AlertError> {
     if let Some(status) = query.status.as_deref()
         && !STATUSES.contains(&status)
-        && status != "active"
     {
         return Err(AlertError::Validation(
-            "status 只能是 firing / acked / resolved / active".to_string(),
+            "status 只能是 firing / resolved".to_string(),
         ));
     }
     if let Some(severity) = query.severity.as_deref()
@@ -506,7 +490,7 @@ pub async fn list_events(
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(20).clamp(1, MAX_PAGE_SIZE);
     // include_seed=false 时剔除 labels 含 seed 键的演示/脏数据事件。
-    let filter = "($1::text IS NULL OR e.status = $1 OR ($1 = 'active' AND e.status IN ('firing', 'acked'))) \
+    let filter = "($1::text IS NULL OR e.status = $1) \
          AND ($2::text IS NULL OR e.severity = $2) \
          AND ($3::uuid IS NULL OR e.rule_id = $3) \
          AND ($4::uuid IS NULL OR e.id = $4) \
@@ -543,87 +527,26 @@ pub async fn list_events(
     })
 }
 
-async fn get_event(pool: &PgPool, id: Uuid) -> Result<AlertEvent, AlertError> {
-    let row = sqlx::query(&format!(
-        "SELECT {EVENT_COLUMNS} FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id WHERE e.id = $1"
-    ))
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(AlertError::NotFound("告警事件不存在"))?;
-    Ok(event_from_row(&row)?)
-}
-
-/// 确认 firing 事件（事件仍保持活跃，恢复后由评估器置为 resolved）。
-///
-/// # Errors
-///
-/// 事件不存在、不处于 firing 状态或数据库失败时返回错误。
-pub async fn ack_event(pool: &PgPool, id: Uuid, username: &str) -> Result<AlertEvent, AlertError> {
-    let result = sqlx::query(
-        "UPDATE alert_events SET status = 'acked', acked_by = $2, acked_at = now(), updated_at = now() \
-         WHERE id = $1 AND status = 'firing'",
-    )
-    .bind(id)
-    .bind(username)
-    .execute(pool)
-    .await?;
-    let event = get_event(pool, id).await?;
-    if result.rows_affected() == 0 {
-        return Err(AlertError::Conflict("只有触发中的告警可以确认"));
-    }
-    Ok(event)
-}
-
-/// 指派处理人；处理人必须是启用中的管理员账号。
-///
-/// # Errors
-///
-/// 处理人不存在、事件不存在或数据库失败时返回错误。
-pub async fn assign_event(
-    pool: &PgPool,
-    id: Uuid,
-    assignee: Option<&str>,
-) -> Result<AlertEvent, AlertError> {
-    let assignee = assignee.map(str::trim).filter(|s| !s.is_empty());
-    if let Some(name) = assignee {
-        let exists = sqlx::query("SELECT 1 FROM admin_users WHERE username = $1 AND is_active")
-            .bind(name)
-            .fetch_optional(pool)
-            .await?
-            .is_some();
-        if !exists {
-            return Err(AlertError::Validation(
-                "指派对象不是启用中的管理员".to_string(),
-            ));
-        }
-    }
-    let result =
-        sqlx::query("UPDATE alert_events SET assignee = $2, updated_at = now() WHERE id = $1")
-            .bind(id)
-            .bind(assignee)
-            .execute(pool)
-            .await?;
-    if result.rows_affected() == 0 {
-        return Err(AlertError::NotFound("告警事件不存在"));
-    }
-    get_event(pool, id).await
-}
-
 /// # Errors
 ///
 /// 数据库失败时返回错误。
 pub async fn summary(pool: &PgPool) -> Result<AlertSummary, AlertError> {
     // 概览与列表默认路径一致：永远不把 seed 演示事件计入 KPI。
     let row = sqlx::query(
-        "SELECT count(*) FILTER (WHERE status = 'firing') AS firing,                 count(*) FILTER (WHERE status = 'acked') AS acked,                 count(*) FILTER (WHERE severity = 'critical') AS critical,                 count(*) FILTER (WHERE severity = 'warning') AS warning,                 count(*) FILTER (WHERE severity = 'info') AS info          FROM alert_events          WHERE status IN ('firing', 'acked')            AND NOT (COALESCE(labels, '{}'::jsonb) ? 'seed')",
+        "SELECT count(*) AS firing, \
+                count(*) FILTER (WHERE severity = 'critical') AS critical, \
+                count(*) FILTER (WHERE severity = 'warning') AS warning, \
+                count(*) FILTER (WHERE severity = 'info') AS info \
+         FROM alert_events \
+         WHERE status = 'firing' \
+           AND NOT (COALESCE(labels, '{}'::jsonb) ? 'seed')",
     )
     .fetch_one(pool)
     .await?;
     let latest = list_events(
         pool,
         &EventListQuery {
-            status: Some("active".to_string()),
+            status: Some("firing".to_string()),
             page_size: Some(5),
             ..EventListQuery::default()
         },
@@ -632,7 +555,6 @@ pub async fn summary(pool: &PgPool) -> Result<AlertSummary, AlertError> {
     .data;
     Ok(AlertSummary {
         firing: row.try_get("firing")?,
-        acked: row.try_get("acked")?,
         critical: row.try_get("critical")?,
         warning: row.try_get("warning")?,
         info: row.try_get("info")?,

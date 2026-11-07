@@ -100,8 +100,6 @@ export type AuditAction =
   | "alert_rule.create"
   | "alert_rule.update"
   | "alert_rule.delete"
-  | "alert_event.ack"
-  | "alert_event.assign"
   | "certificate.issue"
   | "certificate.renew"
   | "certificate.revoke"
