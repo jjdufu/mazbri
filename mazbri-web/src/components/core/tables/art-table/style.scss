@@ -1,5 +1,7 @@
 .art-table {
   position: relative;
+  flex: 1;
+  min-height: 0;
   height: 100%;
   width: 100%;
   min-width: 0;
@@ -9,9 +11,48 @@
 
   .el-table {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     height: auto !important;
     margin-top: 10px;
     width: 100%;
+  }
+
+  :deep(.el-table__inner-wrapper) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  :deep(.el-table__body-wrapper) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+
+    .el-scrollbar {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .el-scrollbar__wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .el-scrollbar__view {
+      flex: 1;
+      min-height: 0;
+      display: flex !important;
+      flex-direction: column;
+    }
   }
 
 
@@ -56,6 +97,11 @@
   &.is-empty {
     :deep(.el-scrollbar__wrap) {
       display: flex;
+    }
+
+    :deep(.el-table__empty-block) {
+      flex: 1;
+      height: auto !important;
     }
   }
 

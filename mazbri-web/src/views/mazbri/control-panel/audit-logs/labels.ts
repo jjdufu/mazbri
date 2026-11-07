@@ -58,8 +58,6 @@ export const ACTION_LABELS: Record<string, string> = {
   "alert_rule.create": "auditLogs.explicitActions.alertRuleCreate",
   "alert_rule.update": "auditLogs.explicitActions.alertRuleUpdate",
   "alert_rule.delete": "auditLogs.explicitActions.alertRuleDelete",
-  "alert_event.ack": "auditLogs.explicitActions.alertEventAck",
-  "alert_event.assign": "auditLogs.explicitActions.alertEventAssign",
   "alert_silence.create": "auditLogs.explicitActions.alertSilenceCreate",
   "alert_silence.delete": "auditLogs.explicitActions.alertSilenceDelete",
   "alert_inhibit.create": "auditLogs.explicitActions.alertInhibitCreate",

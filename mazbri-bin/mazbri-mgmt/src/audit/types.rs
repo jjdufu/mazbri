@@ -57,8 +57,6 @@ audit_actions! {
     AlertRuleCreate => "alert_rule.create",
     AlertRuleUpdate => "alert_rule.update",
     AlertRuleDelete => "alert_rule.delete",
-    AlertEventAck => "alert_event.ack",
-    AlertEventAssign => "alert_event.assign",
     AlertSilenceCreate => "alert_silence.create",
     AlertSilenceDelete => "alert_silence.delete",
     AlertInhibitCreate => "alert_inhibit.create",

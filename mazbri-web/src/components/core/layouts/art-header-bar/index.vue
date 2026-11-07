@@ -43,12 +43,6 @@
           @click="reload"
         />
 
-        <ArtFastEnter
-          v-if="shouldShowFastEnter && width >= headerBarFastEnterMinWidth"
-        >
-          <ArtIconButton icon="ri:function-line" class="ml-3" />
-        </ArtFastEnter>
-
         <ArtBreadcrumb
           v-if="
             (shouldShowBreadcrumb && isLeftMenu) ||
@@ -138,11 +132,9 @@ const menuStore = useMenuStore();
 const {
   shouldShowMenuButton,
   shouldShowRefreshButton,
-  shouldShowFastEnter,
   shouldShowBreadcrumb,
   shouldShowLanguage,
   shouldShowThemeToggle,
-  fastEnterMinWidth: headerBarFastEnterMinWidth,
 } = useHeaderBar();
 const { menuOpen, menuType, isDark, tabStyle } = storeToRefs(settingStore);
 const { siteName } = storeToRefs(settingStore);

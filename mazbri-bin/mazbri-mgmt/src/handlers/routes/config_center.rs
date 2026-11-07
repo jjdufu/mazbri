@@ -33,5 +33,4 @@ pub fn routes() -> Router<AppState> {
         .route("/config-center/export", get(cc::export_configs))
         .route("/config-center/import", post(cc::import_configs))
         .route("/config-center/validate", post(cc::validate_toml_endpoint))
-        .route("/config-center/nodes", get(cc::list_nodes))
 }

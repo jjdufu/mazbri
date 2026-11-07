@@ -9,7 +9,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use mazbri_analytics::greptimedb::traces::{
-    MAX_SEARCH_LIMIT, TraceSearchFilter, TraceSummary, validate_service_name, validate_trace_id,
+    DEFAULT_SEARCH_PAGE_SIZE, MAX_SEARCH_PAGE_SIZE, TraceSearchFilter, TraceSummary,
+    validate_service_name, validate_trace_id,
 };
 use mazbri_analytics::greptimedb::{EventTarget, validate_like_param};
 use serde::{Deserialize, Serialize};
@@ -108,13 +109,18 @@ pub struct TraceSearchQuery {
     #[serde(default)]
     pub errors_only: bool,
     #[serde(default)]
-    pub limit: Option<u32>,
+    pub page: Option<u32>,
+    #[serde(default)]
+    pub page_size: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TraceSearchResponse {
     pub start: i64,
     pub end: i64,
+    pub total: u64,
+    pub page: u32,
+    pub page_size: u32,
     /// 条件经 `request_logs` 解析出的候选 trace 数（未经 CH 解析时为 `None`）。
     pub resolved_from_logs: Option<usize>,
     pub traces: Vec<TraceSummary>,
@@ -177,7 +183,11 @@ fn parse_search(
         min_duration_ms: q.min_duration_ms,
         max_duration_ms: q.max_duration_ms,
         errors_only: q.errors_only,
-        limit: q.limit.unwrap_or(50).clamp(1, MAX_SEARCH_LIMIT),
+        page: q.page.unwrap_or(1).max(1),
+        page_size: q
+            .page_size
+            .unwrap_or(DEFAULT_SEARCH_PAGE_SIZE)
+            .clamp(1, MAX_SEARCH_PAGE_SIZE),
     };
     Ok((filter, lookup))
 }
@@ -216,11 +226,14 @@ pub async fn search_traces(
         filter.trace_ids = Some(ids);
     }
     match client.search_traces(&filter).await {
-        Ok(traces) => Json(TraceSearchResponse {
+        Ok(page) => Json(TraceSearchResponse {
             start: filter.start,
             end: filter.end,
+            total: page.total,
+            page: page.page,
+            page_size: page.page_size,
             resolved_from_logs,
-            traces,
+            traces: page.traces,
         })
         .into_response(),
         Err(e) => failed("trace 检索失败", &e),
@@ -350,7 +363,8 @@ mod tests {
     fn search_defaults_to_last_hour() {
         let (f, lookup) = parse_search(&TraceSearchQuery::default()).expect("default ok");
         assert_eq!(f.end - f.start, DEFAULT_WINDOW_SECS);
-        assert_eq!(f.limit, 50);
+        assert_eq!(f.page, 1);
+        assert_eq!(f.page_size, DEFAULT_SEARCH_PAGE_SIZE);
         assert!(lookup.is_none());
     }
 

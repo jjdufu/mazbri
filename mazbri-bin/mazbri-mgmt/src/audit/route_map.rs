@@ -896,20 +896,6 @@ pub static ROUTES: &[RouteAudit] = &[
         ID,
     ),
     read("/alerts/events", R::Alert),
-    write(
-        "POST",
-        "/alerts/events/{id}/ack",
-        A::AlertEventAck,
-        R::Alert,
-        ID,
-    ),
-    write(
-        "POST",
-        "/alerts/events/{id}/assign",
-        A::AlertEventAssign,
-        R::Alert,
-        ID,
-    ),
     read("/alerts/summary", R::Alert),
     read("/alerts/silences", R::Alert),
     secure("POST", "/alerts/silences", A::AlertSilenceCreate, R::Alert, None),
@@ -976,7 +962,6 @@ pub static ROUTES: &[RouteAudit] = &[
         R::ConfigCenter,
         None,
     ),
-    read("/config-center/nodes", R::ConfigCenter),
     // ---- callbacks ----
     read("/callbacks/subscriptions", R::Callback),
     write(

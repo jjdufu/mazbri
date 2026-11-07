@@ -1,3 +1,9 @@
+<!--
+  [不可更改] 全站列表搜索框统一规范：
+  1. 高度严格对齐 Element Plus default 按钮（32px），禁止使用 36px/38px 导致与同行按钮高低错位；
+  2. 默认常驻展开（alwaysExpanded: true）且默认宽度统一为 240px，内置前缀搜索图标，
+     避免折叠态（36px）与展开态（含外部「收起搜索」按钮达 363px）切换时挤压同行操作按钮换行。
+-->
 <template>
   <div
     ref="rootRef"
@@ -58,6 +64,7 @@
 
     <template v-else>
       <button
+        v-if="!alwaysExpanded"
         type="button"
         class="list-query-bar__trigger is-expanded-btn"
         :aria-label="collapseText"
@@ -70,11 +77,6 @@
           class="list-query-bar__badge list-query-bar__badge--inline"
         >{{ activeConditionCount }}</span>
       </button>
-
-
-
-
-
 
       <div
         class="list-query-bar__panel"
@@ -94,6 +96,11 @@
           }"
           @mousedown="onFieldMouseDown"
         >
+          <ArtSvgIcon
+            v-if="alwaysExpanded"
+            :icon="collapseIcon"
+            class="list-query-bar__prefix-icon"
+          />
 
           <div
             v-if="filtersModel.length || qModel.trim()"
@@ -256,10 +263,7 @@ const props = withDefaults(
     panelWidth?: number | string;
     collapseIcon?: string;
     collapseText?: string;
-
-
-
-
+    alwaysExpanded?: boolean;
     liveCommit?: boolean;
   }>(),
   {
@@ -268,9 +272,10 @@ const props = withDefaults(
     placeholder: undefined,
     tooltip: undefined,
 
-    panelWidth: 260,
+    panelWidth: 240,
     collapseIcon: "ri:search-line",
     collapseText: undefined,
+    alwaysExpanded: true,
     liveCommit: true,
   },
 );
@@ -287,7 +292,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const expanded = ref(false);
+const expanded = ref(props.alwaysExpanded);
 const suggestOpen = ref(false);
 const draftText = ref("");
 const parseError = ref<string | null>(null);
@@ -336,7 +341,7 @@ const normalizedWidth = computed(() =>
 const designWidthPx = computed(() => {
   if (typeof props.panelWidth === "number") return props.panelWidth;
   const n = parseFloat(String(props.panelWidth));
-  return Number.isFinite(n) ? n : 260;
+  return Number.isFinite(n) ? n : 240;
 });
 
 
@@ -358,7 +363,10 @@ const hasCommittedChips = computed(
 
 
 const isIdleChips = computed(
-  () => hasCommittedChips.value && !hasDraftText.value,
+  () =>
+    !props.alwaysExpanded &&
+    hasCommittedChips.value &&
+    !hasDraftText.value,
 );
 
 
@@ -477,7 +485,9 @@ watch(
 );
 
 
-const resolvedPlaceholder = computed(() => "");
+const resolvedPlaceholder = computed(() =>
+  hasCommittedChips.value ? "" : (props.placeholder ?? ""),
+);
 
 
 const qChipText = computed(() => qModel.value.trim());
@@ -695,7 +705,9 @@ const handleExpand = async () => {
 
 const handleCollapse = () => {
   clearLiveCommitTimer();
-  expanded.value = false;
+  if (!props.alwaysExpanded) {
+    expanded.value = false;
+  }
   suggestOpen.value = false;
   suggestIndex.value = -1;
 };
@@ -967,8 +979,8 @@ const clearAllQuery = () => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
 
@@ -989,7 +1001,7 @@ const clearAllQuery = () => {
 
   &.is-expanded-btn {
     width: auto;
-    height: 36px;
+    height: 32px;
     padding: 0 10px;
   }
 }
@@ -1033,8 +1045,8 @@ const clearAllQuery = () => {
   flex: 0 0 auto;
   flex-direction: column;
   gap: 4px;
-  width: var(--list-query-bar-width, 260px);
-  max-width: min(100vw - 48px, var(--list-query-bar-width, 260px));
+  width: var(--list-query-bar-width, 240px);
+  max-width: min(100vw - 48px, var(--list-query-bar-width, 240px));
   min-width: 0;
   box-sizing: border-box;
 
@@ -1044,7 +1056,7 @@ const clearAllQuery = () => {
   }
 
   &.is-drafting {
-    width: var(--list-query-bar-width, 260px);
+    width: var(--list-query-bar-width, 240px);
   }
 }
 
@@ -1057,8 +1069,8 @@ const clearAllQuery = () => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 36px;
-  padding: 3px 10px;
+  min-height: 32px;
+  padding: 2px 10px;
   border: 1px solid var(--el-border-color);
   border-radius: var(--el-border-radius-base);
   background: var(--el-fill-color-blank);
@@ -1090,6 +1102,12 @@ const clearAllQuery = () => {
 
 .list-query-bar__chips {
   display: contents;
+}
+
+.list-query-bar__prefix-icon {
+  flex-shrink: 0;
+  color: var(--el-text-color-placeholder);
+  font-size: 15px;
 }
 
 .list-query-bar__input {
@@ -1126,7 +1144,7 @@ const clearAllQuery = () => {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
-    min-height: 28px;
+    min-height: 24px;
     padding-left: 0 !important;
     padding-right: 4px !important;
     border-radius: 0 !important;
@@ -1145,8 +1163,8 @@ const clearAllQuery = () => {
   }
 
   :deep(.el-input__inner) {
-    height: 28px;
-    line-height: 28px;
+    height: 24px;
+    line-height: 24px;
     min-width: 0 !important;
     width: 100% !important;
     padding: 0 !important;
@@ -1166,7 +1184,7 @@ const clearAllQuery = () => {
 
 .list-query-bar__clear {
   flex-shrink: 0;
-  height: 36px;
+  height: 32px;
   align-self: flex-start;
 }
 
@@ -1214,7 +1232,7 @@ const clearAllQuery = () => {
   }
 
   .list-query-bar__panel {
-    width: min(100%, var(--list-query-bar-width, 260px));
+    width: min(100%, var(--list-query-bar-width, 240px));
     max-width: 100%;
 
     &.is-idle-chips {
@@ -1222,7 +1240,7 @@ const clearAllQuery = () => {
     }
 
     &.is-drafting {
-      width: min(100%, var(--list-query-bar-width, 260px));
+      width: min(100%, var(--list-query-bar-width, 240px));
     }
   }
 }

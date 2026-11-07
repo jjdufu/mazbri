@@ -9,13 +9,6 @@
       border
       @selection-change="handleSelectionChange"
     >
-      <template #headerLeft>
-        <div class="surface-card-left">
-          <span>{{ $t("tenant.whitelist.title") }}</span>
-          <ElTag type="info" size="small" class="ml-2">
-            {{ entries.length }} {{ $t("tenant.whitelist.ruleSuffix") }}
-          </ElTag>
-        </div></template>
       <template #actions>
         <TableExportDropdown
           :items="exportItems"

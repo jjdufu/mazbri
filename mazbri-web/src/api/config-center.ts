@@ -12,8 +12,6 @@ import type {
   RollbackRequest,
   ExportQuery,
   ImportConfigsResult,
-  NodeListResponse,
-  NodeListQuery,
 } from "@/types/api/config-center";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 const BASE_PATH = `${API_BASE_PATH}${API_PATHS.CONFIG_CENTER}`;
@@ -107,11 +105,5 @@ export function validateToml(content: string) {
   return request.post<ValidateTomlResponse>({
     url: `${BASE_PATH}/validate`,
     data: { content },
-  });
-}
-export function fetchNodeList(params?: NodeListQuery) {
-  return request.get<NodeListResponse>({
-    url: `${BASE_PATH}/nodes`,
-    params,
   });
 }

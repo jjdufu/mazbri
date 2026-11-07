@@ -1,16 +1,17 @@
+<!--
+  [不可更改] 页面标题统一由顶部导航栏面包屑（ArtBreadcrumb）承担。
+  严禁在 OpsPage 或任何业务子页面内部渲染重复的大标题（h1/h2/.ops-page__title），
+  以保证全站信息密度与导航层级唯一性。今后开发新页面必须遵守此规则。
+-->
 <template>
   <div class="ops-page">
     <div
-      v-if="title || $slots.title || subtitle || $slots.subtitle || $slots.actions"
+      v-if="subtitle || $slots.subtitle || $slots.actions"
       class="ops-page__toolbar"
     >
-      <div class="ops-page__heading">
+      <div v-if="subtitle || $slots.subtitle" class="ops-page__heading">
         <div class="ops-page__title-row">
-          <h2 v-if="title || $slots.title" class="ops-page__title">
-            <slot name="title">{{ title }}</slot>
-          </h2>
           <ElPopover
-            v-if="subtitle || $slots.subtitle"
             placement="bottom-start"
             :width="320"
             trigger="click"
@@ -40,6 +41,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: "OpsPage" });
+// [不可更改] title 属性仅保留签名避免调用方传参报错，严禁在模板中渲染页面级大标题。
 defineProps<{ title?: string; subtitle?: string }>();
 </script>
 
@@ -77,12 +79,6 @@ defineProps<{ title?: string; subtitle?: string }>();
   gap: 4px;
   min-width: 0;
 }
-.ops-page__title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.3;
-}
 .ops-page__info-trigger {
   display: inline-flex;
   align-items: center;
@@ -90,7 +86,6 @@ defineProps<{ title?: string; subtitle?: string }>();
   width: 18px;
   height: 18px;
   padding: 0;
-  margin-top: -4px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -114,5 +109,6 @@ defineProps<{ title?: string; subtitle?: string }>();
   gap: var(--ops-header-actions-gap, 8px);
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 </style>

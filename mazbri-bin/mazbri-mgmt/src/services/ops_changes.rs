@@ -40,6 +40,8 @@ pub async fn list_changes(
                status, service, failure_reason, details, old_value, new_value
         FROM audit_logs_view
         WHERE created_at >= $1 AND created_at < $2
+          AND COALESCE(path, '') NOT LIKE '%/admin/preferences'
+          AND action NOT LIKE 'audit_log.%'
         ORDER BY created_at DESC
         LIMIT $3
         ",

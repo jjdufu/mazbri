@@ -21,7 +21,6 @@ const STATUS_TYPE_MAP: Record<string, TagType> = {
   pending_import: "info",
   deleted: "danger",
   firing: "danger",
-  acked: "warning",
   resolved: "success",
 };
 
@@ -64,7 +63,6 @@ export function getStatusLabel(
     pending_import: $t("common.statusLabels.pendingImport"),
     deleted: $t("common.statusLabels.deleted"),
     firing: $t("ops.alerts.status.firing"),
-    acked: $t("ops.alerts.status.acked"),
     resolved: $t("ops.alerts.status.resolved"),
   };
   return (

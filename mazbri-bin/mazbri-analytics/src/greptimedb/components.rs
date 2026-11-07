@@ -213,8 +213,10 @@ const CLICKHOUSE_DISK: &str = "ClickHouseAsyncMetrics_FilesystemLogsPathTotalByt
 const REDPANDA_PARTITIONS: &str = "redpanda_cluster_partitions";
 const REDPANDA_UNDER_REPLICATED: &str = "redpanda_kafka_under_replicated_replicas";
 
-/// 叠加容器层：容器缺失 → 红；近 1h 重启 → 至少黄。
-/// `base = None` 表示只有容器探针：cAdvisor 无数据时判为未知。
+/// 叠加容器层：
+/// - 容器存在：正常叠加近期重启判定；
+/// - 容器不存在但组件自身探针已就绪（Green/Yellow，如外部独立部署的中间件）：保留组件探针状态，`container_running = None`；
+/// - 容器不存在且无探针（`ContainerOnly`）或探针异常/缺失（Red/Unknown）：判为红（`ContainerMissing`）。
 fn apply_container(
     key: &str,
     base: Option<(ComponentStatus, Vec<ComponentReason>)>,
@@ -226,18 +228,22 @@ fn apply_container(
         });
         return (status, reasons, None, None);
     }
-    let (mut status, mut reasons) = base.unwrap_or((ComponentStatus::Green, Vec::new()));
     let running = containers.running.contains_key(key);
     if !running {
-        status = ComponentStatus::Red;
+        if let Some((status @ (ComponentStatus::Green | ComponentStatus::Yellow), reasons)) = base {
+            return (status, reasons, None, None);
+        }
+        let (_, mut reasons) = base.unwrap_or((ComponentStatus::Red, Vec::new()));
         reasons.push(ComponentReason::ContainerMissing);
+        return (ComponentStatus::Red, reasons, Some(false), None);
     }
+    let (mut status, mut reasons) = base.unwrap_or((ComponentStatus::Green, Vec::new()));
     let restarts = containers.restarts.get(key).copied();
     if restarts.is_some_and(|r| r > 0.0) {
         status = status.worse(ComponentStatus::Yellow);
         reasons.push(ComponentReason::RecentRestart);
     }
-    (status, reasons, Some(running), restarts)
+    (status, reasons, Some(true), restarts)
 }
 
 /// 汇总组件列表并排序：异常在前，其次按分组、目录顺序。
@@ -338,6 +344,22 @@ fn by_container(rows: Vec<(BTreeMap<String, String>, f64)>) -> BTreeMap<String, 
     out
 }
 
+fn by_container_max(rows: Vec<(BTreeMap<String, String>, f64)>) -> BTreeMap<String, f64> {
+    let mut out: BTreeMap<String, f64> = BTreeMap::new();
+    for (labels, v) in rows {
+        if let Some(key) = container_key(&labels) {
+            out.entry(key)
+                .and_modify(|cur| {
+                    if v > *cur {
+                        *cur = v;
+                    }
+                })
+                .or_insert(v);
+        }
+    }
+    out
+}
+
 impl GreptimeDBClient {
     /// 拉取中间件探针读数（[`MIDDLEWARE_CATALOG`] 引用的全部指标）。
     pub(super) async fn load_probe_readings(&self) -> Result<ProbeReadings> {
@@ -358,7 +380,8 @@ impl GreptimeDBClient {
     /// 拉取 cAdvisor 容器读数。
     pub(super) async fn load_container_readings(&self) -> Result<ContainerReadings> {
         let sum = |inner: String| format!("sum by ({CONTAINER_BY}) ({inner})");
-        let running_q = sum(container_or("container_start_time_seconds", ""));
+        let max = |inner: String| format!("max by ({CONTAINER_BY}) ({inner})");
+        let running_q = max(container_or("container_start_time_seconds", ""));
         let restarts_q = sum(container_changes_or(
             "container_start_time_seconds",
             RESTART_LOOKBACK_SECS,
@@ -376,7 +399,7 @@ impl GreptimeDBClient {
             self.query_instant_vector(&cpu_q),
             self.query_instant_vector(&mem_q),
         )?;
-        let running = by_container(running);
+        let running = by_container_max(running);
         Ok(ContainerReadings {
             available: !running.is_empty(),
             running,

@@ -9,7 +9,10 @@
     :loading="loading"
     @click="onCardClick"
   >
-    <span class="ops-stat-card__value">{{ displayValue }}</span>
+    <span
+      class="ops-stat-card__value"
+      :class="{ 'ops-stat-card__value--empty': !hasValue }"
+    >{{ displayValue }}</span>
     <span v-if="unit && hasValue" class="ops-stat-card__unit">{{ unit }}</span>
     <span v-if="hint" class="ops-stat-card__hint" :title="hint">{{
       hint
@@ -36,7 +39,7 @@ const props = withDefaults(
     /** 可下钻时显示指针；无交互时不冒充可点。 */
     interactive?: boolean;
     digits?: number;
-    /** 值为空时展示文案（默认 —） */
+    /** 值为空时展示文案（默认 N/A） */
     emptyText?: string;
   }>(),
   {
@@ -49,7 +52,7 @@ const props = withDefaults(
     loading: false,
     interactive: false,
     digits: 2,
-    emptyText: "—",
+    emptyText: "N/A",
   },
 );
 
@@ -88,6 +91,11 @@ function onCardClick(event: MouseEvent) {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.ops-stat-card__value--empty {
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
 }
 .ops-stat-card__unit {
   margin-left: 4px;

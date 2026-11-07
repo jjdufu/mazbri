@@ -1,5 +1,8 @@
 use super::client::GreptimeDBClient;
-use super::components::{AppProbe, ComponentHealth, assemble_components};
+use super::components::{
+    AppProbe, ComponentGroup, ComponentHealth, ComponentReason, ComponentStatus,
+    assemble_components,
+};
 use crate::error::{AnalyticsError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -73,25 +76,45 @@ pub struct BillingPipelineOverview {
 pub struct ServiceHealthRow {
     pub service: String,
     pub name: String,
+    pub group: ComponentGroup,
+    pub status: ComponentStatus,
+    pub reasons: Vec<ComponentReason>,
     pub health_ok: bool,
     pub ready: Option<bool>,
     pub config_center: Option<bool>,
+    pub container_running: Option<bool>,
+    pub restarts_1h: Option<f64>,
     /// active / (active + idle); absent when both are 0 or metric missing
     pub db_pool_usage: Option<f64>,
     /// 已恢复 panic 累计数（`mazbri_recovered_panics_total`）
     pub panic_count: Option<f64>,
     /// tokio worker 繁忙占比（0–1，busy 秒速率 / worker 数）
     pub tokio_busy: Option<f64>,
-    /// 进程启动时间（unix 秒，`process_start_time_seconds`）
+    /// 进程或容器启动时间（unix 秒，`process_start_time_seconds` 或 `container_start_time_seconds`）
     pub last_restart_ts: Option<i64>,
     /// `版本 (git_sha)`，来自 `mazbri_build_info`
     pub version: Option<String>,
-    /// CPU 使用（核）
+    /// CPU 使用（核，优先进程指标，回退 cAdvisor 容器指标）
     pub cpu_cores: Option<f64>,
-    /// 常驻内存（字节）
+    /// 内存（字节，优先进程常驻内存，回退 cAdvisor 容器 working set）
     pub memory_bytes: Option<f64>,
     /// 打开的文件描述符数
     pub open_fds: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+struct AppRuntimeSnapshot {
+    health_ok: bool,
+    ready: Option<bool>,
+    config_center: Option<bool>,
+    db_pool_usage: Option<f64>,
+    panic_count: Option<f64>,
+    tokio_busy: Option<f64>,
+    last_restart_ts: Option<i64>,
+    version: Option<String>,
+    cpu_cores: Option<f64>,
+    memory_bytes: Option<f64>,
+    open_fds: Option<f64>,
 }
 
 /// Overview 时间窗（绝对区间，Unix 秒；与趋势图、TopN 同一窗口）。
@@ -315,7 +338,7 @@ impl GreptimeDBClient {
     async fn load_components(&self) -> Result<Vec<ComponentHealth>> {
         let (rows, probes, containers) = Box::pin(async {
             tokio::try_join!(
-                self.load_service_health_rows(),
+                self.load_app_runtime_snapshots(),
                 self.load_probe_readings(),
                 self.load_container_readings(),
             )
@@ -323,9 +346,9 @@ impl GreptimeDBClient {
         .await?;
         let apps = rows
             .iter()
-            .map(|r| {
+            .map(|(k, r)| {
                 (
-                    r.service.clone(),
+                    k.clone(),
                     AppProbe {
                         health_ok: r.health_ok,
                         ready: r.ready,
@@ -336,7 +359,7 @@ impl GreptimeDBClient {
             .collect();
         let versions = rows
             .iter()
-            .filter_map(|r| r.version.clone().map(|v| (r.service.clone(), v)))
+            .filter_map(|(k, r)| r.version.clone().map(|v| (k.clone(), v)))
             .collect();
         Ok(assemble_components(
             &self.service_targets,
@@ -455,6 +478,98 @@ impl GreptimeDBClient {
     }
 
     async fn load_service_health_rows(&self) -> Result<Vec<ServiceHealthRow>> {
+        let (rows, probes, containers) = Box::pin(async {
+            tokio::try_join!(
+                self.load_app_runtime_snapshots(),
+                self.load_probe_readings(),
+                self.load_container_readings(),
+            )
+        })
+        .await?;
+        let apps = rows
+            .iter()
+            .map(|(k, r)| {
+                (
+                    k.clone(),
+                    AppProbe {
+                        health_ok: r.health_ok,
+                        ready: r.ready,
+                        config_center: r.config_center,
+                    },
+                )
+            })
+            .collect();
+        let versions = rows
+            .iter()
+            .filter_map(|(k, r)| r.version.clone().map(|v| (k.clone(), v)))
+            .collect();
+        let components = assemble_components(
+            &self.service_targets,
+            &apps,
+            &versions,
+            &probes,
+            &containers,
+        );
+        Ok(components
+            .into_iter()
+            .map(|c| {
+                let container_start_ts =
+                    containers.running.get(&c.key).and_then(|v| epoch_secs(*v));
+                if let Some(app) = rows.get(&c.key) {
+                    ServiceHealthRow {
+                        service: c.key,
+                        name: c.name,
+                        group: c.group,
+                        status: c.status,
+                        reasons: c.reasons,
+                        health_ok: app.health_ok,
+                        ready: app.ready,
+                        config_center: app.config_center,
+                        container_running: c.container_running,
+                        restarts_1h: c.restarts_1h,
+                        db_pool_usage: app.db_pool_usage,
+                        panic_count: app.panic_count,
+                        tokio_busy: app.tokio_busy,
+                        last_restart_ts: app.last_restart_ts.or(container_start_ts),
+                        version: c.version.or_else(|| app.version.clone()),
+                        cpu_cores: app.cpu_cores.or(c.cpu_cores),
+                        memory_bytes: app.memory_bytes.or(c.memory_bytes),
+                        open_fds: app.open_fds,
+                    }
+                } else {
+                    let health_ok =
+                        matches!(c.status, ComponentStatus::Green | ComponentStatus::Yellow);
+                    let ready = match c.status {
+                        ComponentStatus::Green => Some(true),
+                        ComponentStatus::Yellow | ComponentStatus::Red => Some(false),
+                        ComponentStatus::Unknown => None,
+                    };
+                    ServiceHealthRow {
+                        service: c.key,
+                        name: c.name,
+                        group: c.group,
+                        status: c.status,
+                        reasons: c.reasons,
+                        health_ok,
+                        ready,
+                        config_center: None,
+                        container_running: c.container_running,
+                        restarts_1h: c.restarts_1h,
+                        db_pool_usage: None,
+                        panic_count: None,
+                        tokio_busy: None,
+                        last_restart_ts: container_start_ts,
+                        version: c.version,
+                        cpu_cores: c.cpu_cores,
+                        memory_bytes: c.memory_bytes,
+                        open_fds: None,
+                    }
+                }
+            })
+            .collect())
+    }
+
+    async fn load_app_runtime_snapshots(&self) -> Result<BTreeMap<String, AppRuntimeSnapshot>> {
         let health = self
             .prometheus_instant_by_label(r#"mazbri_rpc_health_check{status="healthy"}"#, "service");
         let ready = self.prometheus_instant_by_label("mazbri_rpc_ready", "service");
@@ -505,21 +620,22 @@ impl GreptimeDBClient {
                 let i = idle.get(&target.key).copied().unwrap_or(0.0);
                 let denom = a + i;
                 let db_pool_usage = if denom > 0.0 { Some(a / denom) } else { None };
-                ServiceHealthRow {
-                    service: target.key.clone(),
-                    name: target.name.clone(),
-                    health_ok,
-                    ready,
-                    config_center,
-                    db_pool_usage,
-                    panic_count: panics.get(&target.key).copied(),
-                    tokio_busy: busy.get(&target.key).copied(),
-                    last_restart_ts: started.get(&target.key).and_then(|v| epoch_secs(*v)),
-                    version: versions.get(&target.key).cloned(),
-                    cpu_cores: cpu.get(&target.key).copied(),
-                    memory_bytes: memory.get(&target.key).copied(),
-                    open_fds: fds.get(&target.key).copied(),
-                }
+                (
+                    target.key.clone(),
+                    AppRuntimeSnapshot {
+                        health_ok,
+                        ready,
+                        config_center,
+                        db_pool_usage,
+                        panic_count: panics.get(&target.key).copied(),
+                        tokio_busy: busy.get(&target.key).copied(),
+                        last_restart_ts: started.get(&target.key).and_then(|v| epoch_secs(*v)),
+                        version: versions.get(&target.key).cloned(),
+                        cpu_cores: cpu.get(&target.key).copied(),
+                        memory_bytes: memory.get(&target.key).copied(),
+                        open_fds: fds.get(&target.key).copied(),
+                    },
+                )
             })
             .collect())
     }
@@ -940,7 +1056,9 @@ fn metric_catalog_service_runtime() -> Vec<MetricCatalogItem> {
 /// 容器名标签：compose 来自 cAdvisor docker 白名单（`name` / compose service 标签）；
 /// 裸 k8s 来自 kubelet cAdvisor（kubernetes pod/container 标签）。
 /// 查询侧要求至少有 name（docker）或 k8s container 名，丢掉仅有 id 的序列，避免图例短 hex。
-const CONTAINER_DOCKER_FILTER: &str = r#"id=~"/docker/.+",name!="""#;
+/// 同时兼容 Docker cgroupfs 驱动（`/docker/<id>`）与 systemd cgroup 驱动（`/system.slice/docker-<id>.scope`）。
+const CONTAINER_DOCKER_FILTER: &str =
+    r#"id=~"/docker/.+|/system\\.slice/docker-.+",name!="""#;
 const CONTAINER_K8S_FILTER: &str =
     r#"id=~"/kubepods.*|/cri-containerd.*",container_label_io_kubernetes_container_name!="""#;
 /// 明细排障（含 id）；默认图例用下方聚合 BY，避免多副本刷屏。
@@ -1703,7 +1821,7 @@ pub fn default_service_targets() -> Vec<ServiceMetricTarget> {
     .collect()
 }
 fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Result<String> {
-    match service {
+    match service.map(str::trim).filter(|s| !s.is_empty()) {
         Some("all") | None => Ok(String::new()),
         Some(key) => {
             let target = targets
@@ -2069,17 +2187,14 @@ mod tests {
         assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#));
         let q = build_metric_query("container_cpu_cores", None, &t, 60)?;
         assert!(q.contains("container_cpu_usage_seconds_total"), "{q}");
-        assert!(q.contains(r#"name!="""#), "{q}");
+        assert!(q.contains(r#"id=~"/docker/.+|/system\\.slice/docker-.+",name!="""#), "{q}");
         assert!(q.contains("container_label_io_kubernetes_container_name!="), "{q}");
         assert!(q.contains("container_label_com_docker_compose_service"), "{q}");
         assert!(q.contains("container_label_io_kubernetes_pod_name"), "{q}");
         // Greptime: rate(a[w]) or rate(b[w])，禁止 rate(a or b)
         assert!(q.contains("rate(container_cpu_usage_seconds_total{"), "{q}");
         assert!(q.contains(") or rate(container_cpu_usage_seconds_total{"), "{q}");
-        assert!(
-            !q.contains(r#"rate(container_cpu_usage_seconds_total{id=~"/docker/.+",name!=""} or"#),
-            "{q}"
-        );
+        assert!(!q.contains("} or container_cpu_usage_seconds_total{"), "{q}");
         let q_rx = build_metric_query("container_network_rx_bytes", None, &t, 60)?;
         assert!(q_rx.contains(") or rate(container_network_receive_bytes_total{"), "{q_rx}");
         let q_rst = build_metric_query("container_restarts", None, &t, 60)?;
@@ -2264,5 +2379,19 @@ mod tests {
         assert_eq!(t.sample_count, 0);
         assert!(t.qps.is_none() && t.success_rate.is_none() && t.error_rate.is_none());
         assert!(t.error_rate_4xx.is_none() && t.p99_latency_ms.is_none());
+    }
+
+    #[test]
+    fn endpoint_filter_treats_blank_service_as_unfiltered() -> Result<()> {
+        let targets = default_service_targets();
+        assert_eq!(super::endpoint_filter(None, &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some(""), &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some("   "), &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some("all"), &targets)?, "");
+        assert_eq!(
+            super::endpoint_filter(Some("mazbri-gateway"), &targets)?,
+            r#"{service="mazbri-gateway"}"#
+        );
+        Ok(())
     }
 }

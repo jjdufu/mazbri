@@ -173,7 +173,7 @@ fn previously_unguarded_routes_are_now_restricted() {
         .iter()
         .filter(|rule| rule.path.starts_with("/config-center/"))
         .collect();
-    assert!(config_center.len() >= 12);
+    assert!(config_center.len() >= 11);
     for rule in config_center {
         let expected = if rule.path == "/config-center/service-names" {
             Access::AnyRole
@@ -588,8 +588,6 @@ fn ops_stats_and_alerts_follow_role_matrix() {
         ("POST", "/alerts/inhibits"),
         ("PUT", "/alerts/inhibits/{id}"),
         ("DELETE", "/alerts/inhibits/{id}"),
-        ("POST", "/alerts/events/{id}/ack"),
-        ("POST", "/alerts/events/{id}/assign"),
     ] {
         assert_eq!(
             access_of(method, path),

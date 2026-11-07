@@ -117,8 +117,6 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("alert_rule.create", "创建告警规则"),
     ("alert_rule.update", "更新告警规则"),
     ("alert_rule.delete", "删除告警规则"),
-    ("alert_event.ack", "确认告警事件"),
-    ("alert_event.assign", "指派告警事件"),
     ("alert_silence.create", "创建告警静默"),
     ("alert_silence.delete", "删除告警静默"),
     ("alert_inhibit.create", "创建告警抑制"),

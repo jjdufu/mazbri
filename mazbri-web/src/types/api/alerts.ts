@@ -1,7 +1,7 @@
 export type AlertRuleKind = "promql" | "olap";
 export type AlertOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 export type AlertSeverity = "critical" | "warning" | "info";
-export type AlertStatus = "firing" | "acked" | "resolved";
+export type AlertStatus = "firing" | "resolved";
 
 /** 规则通知：enabled=false 只落库；true 时 emails/webhooks 至少一项。 */
 export interface AlertNotify {
@@ -53,9 +53,6 @@ export interface AlertEvent {
   op: AlertOp;
   started_at: string;
   resolved_at: string | null;
-  acked_by: string | null;
-  acked_at: string | null;
-  assignee: string | null;
   trace_ids: string[];
   silenced: boolean;
   inhibited: boolean;
@@ -63,7 +60,7 @@ export interface AlertEvent {
 }
 
 export interface AlertEventQuery {
-  status?: AlertStatus | "active";
+  status?: AlertStatus;
   severity?: AlertSeverity;
   rule_id?: string;
   event_id?: string;
@@ -82,7 +79,6 @@ export interface AlertEventPage {
 
 export interface AlertSummary {
   firing: number;
-  acked: number;
   critical: number;
   warning: number;
   info: number;

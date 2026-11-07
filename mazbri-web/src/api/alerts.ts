@@ -1,7 +1,6 @@
 import request from "@/utils/http";
 import { API_BASE_PATH } from "@/config/api";
 import type {
-  AlertEvent,
   AlertEventPage,
   AlertEventQuery,
   AlertRule,
@@ -36,17 +35,6 @@ export function deleteAlertRule(id: string) {
 
 export function fetchAlertEvents(params: AlertEventQuery) {
   return request.get<AlertEventPage>({ url: `${BASE_PATH}/events`, params });
-}
-
-export function ackAlertEvent(id: string) {
-  return request.post<AlertEvent>({ url: `${BASE_PATH}/events/${id}/ack` });
-}
-
-export function assignAlertEvent(id: string, assignee: string | null) {
-  return request.post<AlertEvent>({
-    url: `${BASE_PATH}/events/${id}/assign`,
-    data: { assignee },
-  });
 }
 
 export function fetchAlertSummary() {

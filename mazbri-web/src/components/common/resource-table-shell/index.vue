@@ -1,12 +1,27 @@
+<!--
+  [不可更改] 列表页主标题统一由顶部导航栏面包屑（ArtBreadcrumb）承担，总条数统一由底部分页栏承担。
+  严禁在表格卡片头部（ResourceTableShell / SurfaceCardHeader）渲染与面包屑冲突的大标题（props.title）
+  或重复的「共 X 条」标签，以保障页面信息密度与样式统一。今后开发新页面必须遵守此规则。
+-->
 <template>
   <ArtTableCard>
-    <template v-if="props.showHeader" #header>
+    <template
+      v-if="
+        props.showHeader &&
+        ($slots.header ||
+          $slots.headerLeft ||
+          props.description ||
+          props.meta ||
+          $slots.actions)
+      "
+      #header
+    >
       <slot name="header">
         <SurfaceCardHeader
-          :title="props.title"
+          :title="''"
           :description="props.description"
           :meta="props.meta"
-          :total="headerTotal"
+          :total="null"
           :align="props.headerAlign"
           :stack-on-mobile="props.stackHeaderOnMobile"
         >
@@ -153,18 +168,6 @@ const reservedSlotNames = new Set([
 const columnsModel = computed({
   get: () => props.columns,
   set: (value: ColumnOption<T>[]) => emit("update:columns", value),
-});
-
-
-const headerTotal = computed(() => {
-  if (!props.showTotal || !props.pagination) {
-    return null;
-  }
-  const total = props.pagination.total;
-  if (total == null || !Number.isFinite(total)) {
-    return 0;
-  }
-  return Math.max(0, Math.floor(total));
 });
 
 const tableSlots = computed(() =>

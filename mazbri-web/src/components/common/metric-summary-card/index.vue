@@ -46,7 +46,7 @@ withDefaults(
   height: 100%;
 
   :deep(.el-card__body) {
-    padding: 16px 20px;
+    padding: 14px 16px;
     height: 100%;
     box-sizing: border-box;
   }
@@ -55,14 +55,14 @@ withDefaults(
 .metric-summary-card__content {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
   height: 100%;
 }
 
 .metric-summary-card__icon {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--el-border-radius-small);
   display: flex;
   align-items: center;
@@ -79,7 +79,7 @@ withDefaults(
 }
 
 .metric-summary-card__label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

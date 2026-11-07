@@ -26,7 +26,6 @@
             :label="t('ops.overview.stats.qps')"
             :value="traffic?.qps"
             :unit="t('ops.units.perSec')"
-            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
             icon="ri:pulse-line"
             :interactive="canDrill('2.1')"
@@ -38,7 +37,6 @@
             :label="t('ops.overview.stats.successRate')"
             :value="traffic?.success_rate"
             :unit="t('ops.units.percent')"
-            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
             icon="ri:checkbox-circle-line"
             icon-color="#67c23a"
@@ -53,7 +51,6 @@
             :value="traffic?.p99_latency_ms"
             :unit="t('ops.units.ms')"
             :hint="latencyHint(traffic)"
-            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
             icon="ri:timer-line"
             icon-color="#e6a23c"
@@ -67,7 +64,6 @@
             :label="t('ops.overview.stats.error4xx')"
             :value="traffic?.error_rate_4xx"
             :unit="t('ops.units.percent')"
-            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
             icon="ri:error-warning-line"
             icon-color="#e6a23c"
@@ -81,7 +77,6 @@
             :label="t('ops.overview.stats.error5xx')"
             :value="traffic?.error_rate_5xx"
             :unit="t('ops.units.percent')"
-            :empty-text="trafficEmpty(traffic)"
             :loading="loading"
             icon="ri:close-circle-line"
             icon-color="#f56c6c"
@@ -111,28 +106,6 @@
       :semantics="realtimeSemantics"
     >
       <OpsKpiRow>
-        <ElCol v-bind="RT_COL">
-          <StatCard
-            :label="t('ops.overview.stats.qps')"
-            :value="realtime?.traffic.qps"
-            :unit="t('ops.units.perSec')"
-            :empty-text="realtimeEmpty"
-            :loading="loading"
-            icon="ri:pulse-line"
-          />
-        </ElCol>
-        <ElCol v-bind="RT_COL">
-          <StatCard
-            :label="t('ops.overview.stats.successRate')"
-            :value="realtime?.traffic.success_rate"
-            :unit="t('ops.units.percent')"
-            :empty-text="realtimeEmpty"
-            :loading="loading"
-            icon="ri:checkbox-circle-line"
-            icon-color="#67c23a"
-            icon-background="rgba(103, 194, 58, 0.12)"
-          />
-        </ElCol>
         <ElCol v-bind="RT_COL">
           <StatCard
             :label="t('ops.overview.stats.proxyConnections')"
@@ -178,99 +151,45 @@
           </ElCol>
         </RoleGate>
       </OpsKpiRow>
-
     </OpsSection>
 
-    <!-- 应用在线：健康摘要（六边形换皮见步骤 5）；下钻运行指标 -->
+    <!-- 活跃告警：独占一行 -->
     <OpsSection
-      id="apps-online"
-      :title="t('ops.overview.sections.appsOnline')"
-      :semantics="realtimeSemantics"
+      id="active-alerts"
+      :title="t('ops.overview.alerts')"
     >
-      <ElRow :gutter="16" class="ops-equal-row">
-        <ElCol :xs="24" :lg="14">
-          <OpsCard class="ops-main-panel" data-block="components">
-            <template #title>
-              {{ t("ops.overview.appsOnlineTitle") }}
-            </template>
-            <template #extra>
-              <span class="ops-overview__abnormal" :data-abnormal="abnormalCount">
-                {{
-                  abnormalCount > 0
-                    ? t("ops.components.abnormalOf", { n: abnormalCount, total: components.length })
-                    : t("ops.components.allHealthy", { total: components.length })
-                }}
-              </span>
-              <ElButton
-                link
-                type="primary"
-                @click="router.push(buildRuntimeRoute({ tab: 'apps' }))"
-              >
-                {{ t("ops.overview.openRuntime") }}
-              </ElButton>
-            </template>
-            <AppsOnlineHexagon :components="components" />
-          </OpsCard>
-        </ElCol>
-        <ElCol :xs="24" :lg="10">
-          <OpsCard class="ops-main-panel" data-block="alerts">
-            <template #title>
-              {{ t("ops.overview.alerts") }}
-            </template>
-            <template #extra>
-              <ElButton link type="primary" @click="router.push(buildAlertsRoute())">
-                {{ t("ops.overview.alertsOpen") }}
-              </ElButton>
-            </template>
-            <div class="ops-overview__tags">
-              <ElTag :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'">
-                {{ t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 }) }}
-              </ElTag>
-              <ElTag type="warning">
-                {{ t("ops.overview.alertsAcked", { n: alertSummary?.acked ?? 0 }) }}
-              </ElTag>
-              <RoleGate gate="biz">
-                <ElTag
-                  v-if="realtime?.billing_pipeline"
-                  :type="realtime.billing_pipeline.dead_letters > 0 ? 'danger' : 'info'"
-                  class="ops-overview__tag-link"
-                  @click="drill('6.1')"
-                >
-                  {{
-                    t("ops.overview.billingDeadLetters", {
-                      n: realtime.billing_pipeline.dead_letters,
-                    })
-                  }}
-                </ElTag>
-              </RoleGate>
-              <RoleGate gate="admin">
-                <CertExpiryBadge :days="realtime?.cert_min_expiry_days" />
-              </RoleGate>
-            </div>
-            <div v-if="alertSummary?.latest.length" class="ops-overview__alert-list">
-              <button
-                v-for="item in alertSummary.latest"
-                :key="item.id"
-                type="button"
-                class="ops-overview__alert-item"
-                @click="router.push(buildAlertsRoute({ eventId: item.id }))"
-              >
-                <span
-                  class="ops-overview__dot"
-                  :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
-                ></span>
-                <span>{{ item.rule_name }}</span>
-                <span class="ops-overview__alert-labels">{{ alertLabels(item.labels) }}</span>
-              </button>
-            </div>
-            <EmptyState v-else compact :description="t('ops.overview.alertsNone')" />
-          </OpsCard>
-        </ElCol>
-      </ElRow>
-
-      <RoleGate gate="admin">
-        <InfraHealthStrip ref="infraStripRef" />
-      </RoleGate>
+      <template #extra>
+        <ElButton link type="primary" @click="router.push(buildAlertsRoute())">
+          {{ t("ops.overview.alertsOpen") }}
+        </ElButton>
+      </template>
+      <OpsCard class="ops-main-panel" data-block="alerts">
+        <div class="ops-overview__tags">
+          <ElTag :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'">
+            {{ t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 }) }}
+          </ElTag>
+          <RoleGate gate="admin">
+            <CertExpiryBadge :days="realtime?.cert_min_expiry_days" />
+          </RoleGate>
+        </div>
+        <div v-if="alertSummary?.latest.length" class="ops-overview__alert-list">
+          <button
+            v-for="item in alertSummary.latest"
+            :key="item.id"
+            type="button"
+            class="ops-overview__alert-item"
+            @click="router.push(buildAlertsRoute({ eventId: item.id }))"
+          >
+            <span
+              class="ops-overview__dot"
+              :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
+            ></span>
+            <span>{{ item.rule_name }}</span>
+            <span class="ops-overview__alert-labels">{{ alertLabels(item.labels) }}</span>
+          </button>
+        </div>
+        <EmptyState v-else compact :description="t('ops.overview.alertsNone')" />
+      </OpsCard>
     </OpsSection>
 
     <!-- 流量质量摘要：轻图下钻调用日志（禁止整页搬入 traffic） -->
@@ -319,8 +238,6 @@
         ref="securityGovRef"
         :start="chartWindow?.start ?? 0"
         :end="chartWindow?.end ?? 0"
-        :rate-limit-per-sec="traffic?.rate_limit_rejections_per_sec"
-        :loading-kpi="loading"
       />
     </OpsSection>
 
@@ -332,7 +249,6 @@
       <ProductTopN ref="productTopNRef" />
       <RoleGate gate="biz">
         <RecentAnomalies ref="recentAnomaliesRef" />
-        <RecentChanges ref="recentChangesRef" />
       </RoleGate>
       <SloBudgetPanel
         ref="sloBudgetRef"
@@ -351,7 +267,6 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import AppsOnlineHexagon from "./modules/AppsOnlineHexagon.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
@@ -372,7 +287,6 @@ import type { PlatformInventory } from "@/types/api/analytics";
 import type { MetricOverview, MetricSeries, TrafficKpis } from "@/types/api/monitoring";
 import type { ExemplarRow } from "@/types/api/olap";
 import { formatWallClockHm, formatWallClockMdHm } from "@/utils/format";
-import { countAbnormal } from "@/utils/ops/components-health";
 import {
   canOverviewDrill,
   resolveOverviewDrill,
@@ -381,15 +295,12 @@ import {
 import {
   buildAlertsRoute,
   buildCallsRoute,
-  buildRuntimeRoute,
   buildTraceSearchRoute,
 } from "@/utils/ops/opsRoutes";
 import { defaultTimeRange, resolveRange } from "@/utils/ops/time-range";
 import CertExpiryBadge from "./modules/CertExpiryBadge.vue";
-import InfraHealthStrip from "./modules/InfraHealthStrip.vue";
 import ProductTopN from "./modules/ProductTopN.vue";
 import RecentAnomalies from "./modules/RecentAnomalies.vue";
-import RecentChanges from "./modules/RecentChanges.vue";
 import SecurityGovSummary from "./modules/SecurityGovSummary.vue";
 import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
@@ -397,8 +308,8 @@ defineOptions({ name: "OpsOverview" });
 
 /** KPI 六卡一行（lg）；窄屏 3/2/1 列，保证每行等宽对齐。 */
 const KPI_COL = { xs: 24, sm: 12, md: 8, lg: 4 } as const;
-/** 实时状态卡：同为六格栅（观察者少一卡时仍左对齐）。 */
-const RT_COL = { xs: 24, sm: 12, md: 8, lg: 4 } as const;
+/** 实时状态四卡一行（lg）；观察者少一卡时仍左对齐。 */
+const RT_COL = { xs: 24, sm: 12, md: 6, lg: 6 } as const;
 
 /** 时间窗下钻：目标页继承同一 tr_*；实时类下钻（熔断/计费）不带窗。 */
 const WINDOWED_DRILLS: ReadonlySet<OverviewDrillId> = new Set(["2.1", "2.2", "2.4", "4.1"]);
@@ -415,8 +326,6 @@ const p99Series = ref<MetricSeries | null>(null);
 const alertSummary = ref<AlertSummary | null>(null);
 const productTopNRef = ref<InstanceType<typeof ProductTopN> | null>(null);
 const recentAnomaliesRef = ref<InstanceType<typeof RecentAnomalies> | null>(null);
-const recentChangesRef = ref<InstanceType<typeof RecentChanges> | null>(null);
-const infraStripRef = ref<InstanceType<typeof InfraHealthStrip> | null>(null);
 const securityGovRef = ref<InstanceType<typeof SecurityGovSummary> | null>(null);
 const sloBudgetRef = ref<InstanceType<typeof SloBudgetPanel> | null>(null);
 const loading = ref(false);
@@ -430,8 +339,6 @@ let seq = 0;
 
 const traffic = computed(() => overview.value?.traffic ?? null);
 const realtime = computed(() => overview.value?.realtime ?? null);
-const components = computed(() => overview.value?.components ?? []);
-const abnormalCount = computed(() => countAbnormal(components.value));
 
 const drillRole = computed(() => ({
   isAdmin: isAdmin.value,
@@ -462,18 +369,6 @@ const realtimeSemantics = computed(() => {
     secs: r.lookback_secs,
     at: formatWallClockHm(r.eval_at * 1000),
   });
-});
-
-/** 无样本才是「无业务流量」；有样本时率至少为 0，不会落到空态。 */
-function trafficEmpty(k: TrafficKpis | null): string {
-  if (k && k.sample_count === 0) return t("ops.overview.noSampleHint");
-  return "—";
-}
-
-const realtimeEmpty = computed(() => {
-  const k = realtime.value?.traffic;
-  if (k && k.sample_count === 0) return t("ops.overview.realtimeNoSample");
-  return "—";
 });
 
 function latencyHint(k: TrafficKpis | null): string {
@@ -536,7 +431,7 @@ function alertLabels(labels: Record<string, string>) {
 }
 
 function fmt(n: number | null | undefined) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  if (n === null || n === undefined || Number.isNaN(n)) return "N/A";
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n);
 }
 
@@ -603,7 +498,6 @@ async function onP99Click(point: PointClick) {
   }
 }
 
-
 /**
  * 整页刷新：每轮按「现在」解析一次窗口，所有跟窗块共用同一 [start, end)。
  * 序号守卫：快速切换时间窗时只采用最后一轮的响应，旧响应直接丢弃。
@@ -617,8 +511,6 @@ async function reload() {
 
   void productTopNRef.value?.reload(win);
   void recentAnomaliesRef.value?.reload(win);
-  void recentChangesRef.value?.reload(win);
-  void infraStripRef.value?.reload();
   void securityGovRef.value?.reload();
   void sloBudgetRef.value?.reload();
 
@@ -660,22 +552,11 @@ async function reload() {
   color: var(--el-text-color-regular);
   font-weight: 500;
 }
-.ops-overview__abnormal {
-  margin-right: var(--ops-space-xs, 8px);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.ops-overview__abnormal:not([data-abnormal="0"]) {
-  color: var(--el-color-danger);
-}
 .ops-overview__tags {
   display: flex;
   flex-wrap: wrap;
   gap: var(--ops-space-xs, 8px);
   margin-bottom: var(--ops-space-sm, 12px);
-}
-.ops-overview__tag-link {
-  cursor: pointer;
 }
 .ops-overview__alert-list {
   display: flex;

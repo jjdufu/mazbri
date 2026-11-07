@@ -62,5 +62,6 @@ defineProps<{
   flex-direction: column;
   gap: var(--ops-page-gap, 16px);
   min-width: 0;
+  overflow-x: hidden;
 }
 </style>

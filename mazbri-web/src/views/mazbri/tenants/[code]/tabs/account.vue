@@ -104,7 +104,6 @@
               v-model="transactionFilter"
               :placeholder="$t('tenant.account.filterPlaceholder')"
               clearable
-              size="small"
               class="transactions-filter"
               @change="handleFilterChange"
             >

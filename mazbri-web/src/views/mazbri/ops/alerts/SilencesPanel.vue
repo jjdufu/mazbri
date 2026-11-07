@@ -1,15 +1,20 @@
 <template>
   <div class="ops-alerts-panel">
     <OpsPanelToolbar>
-      <ElButton v-if="isAdmin" type="primary" @click="openCreate">{{
-        t("ops.alerts.silences.create")
-      }}</ElButton>
       <ElButton :loading="loading" @click="reload">{{
         t("common.refresh")
       }}</ElButton>
     </OpsPanelToolbar>
 
-    <OpsCard :title="t('menus.mazbri.alertSilences')" :info="t('ops.alerts.silences.hint')">
+    <OpsCard
+      :title="t('menus.mazbri.alertSilences')"
+      :info="t('ops.alerts.silences.hint')"
+    >
+      <template #extra>
+        <ElButton v-if="isAdmin" type="primary" @click="openCreate">{{
+          t("ops.alerts.silences.create")
+        }}</ElButton>
+      </template>
       <ElTable v-loading="loading" :data="rows" row-key="id" size="small">
         <ElTableColumn
           :label="t('ops.alerts.silences.matchers')"
@@ -46,21 +51,19 @@
           </template>
         </ElTableColumn>
       </ElTable>
-      <ElDivider />
-      <h3>{{ t("ops.alerts.inhibits.title") }}</h3>
-      <ElButton
-        v-if="isAdmin"
-        size="small"
-        type="primary"
-        @click="openInhibit"
-        >{{ t("ops.alerts.inhibits.create") }}</ElButton
-      >
+    </OpsCard>
+
+    <OpsCard :title="t('ops.alerts.inhibits.title')">
+      <template #extra>
+        <ElButton v-if="isAdmin" type="primary" @click="openInhibit">{{
+          t("ops.alerts.inhibits.create")
+        }}</ElButton>
+      </template>
       <ElTable
         v-loading="loadingInhibits"
         :data="inhibits"
         row-key="id"
         size="small"
-        class="ops-alerts__inhibit-table"
       >
         <ElTableColumn
           prop="name"
@@ -100,10 +103,12 @@
       </ElTable>
     </OpsCard>
 
-    <ElDialog
+    <EditDialog
       v-model="dialog"
       :title="t('ops.alerts.silences.create')"
       width="480px"
+      :saving="saving"
+      @confirm="save"
     >
       <ElForm label-width="100px">
         <ElFormItem :label="t('ops.alerts.silences.matchers')">
@@ -132,18 +137,14 @@
           <ElInput v-model="form.comment" />
         </ElFormItem>
       </ElForm>
-      <template #footer>
-        <ElButton @click="dialog = false">{{ t("common.cancel") }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="save">{{
-          t("common.confirm")
-        }}</ElButton>
-      </template>
-    </ElDialog>
+    </EditDialog>
 
-    <ElDialog
+    <EditDialog
       v-model="inhibitDialog"
       :title="t('ops.alerts.inhibits.create')"
       width="520px"
+      :saving="saving"
+      @confirm="saveInhibit"
     >
       <ElForm label-width="110px">
         <ElFormItem :label="t('ops.alerts.inhibits.name')">
@@ -169,15 +170,7 @@
           <ElInput v-model="inhibitForm.equalText" placeholder="product_id" />
         </ElFormItem>
       </ElForm>
-      <template #footer>
-        <ElButton @click="inhibitDialog = false">{{
-          t("common.cancel")
-        }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="saveInhibit">{{
-          t("common.confirm")
-        }}</ElButton>
-      </template>
-    </ElDialog>
+    </EditDialog>
   </div>
 </template>
 
@@ -185,6 +178,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
+import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import {
@@ -319,11 +313,9 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-alerts__hint {
-  color: var(--el-text-color-secondary);
-  margin-bottom: 12px;
-}
-.ops-alerts__inhibit-table {
-  margin-top: 12px;
+.ops-alerts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
 }
 </style>

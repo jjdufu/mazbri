@@ -1,5 +1,5 @@
 <template>
-  <div ref="tablePageRef" class="call-monitor-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div class="call-monitor-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
     <ResourceTableShell
       v-model:columns="columns"
       :title="title"
@@ -7,22 +7,32 @@
       :data="tableData"
       :pagination="artPagination"
       :show-total="false"
+      :show-toolbar="false"
       :empty-text="emptyDescription"
       :fit="true"
-      table-layout="fixed"
       @refresh="onManualRefresh"
-      @selection-change="handleSelectionChange"
       @pagination:size-change="handlePageSizeChange"
       @pagination:current-change="handleCurrentPageChange"
     >
-
-      <template #serial_no="{ row }">
-        <span class="serial-no-cell">{{ row.serial_no || "-" }}</span>
+      <template #headerLeft>
+        <div v-if="quickFilters.length" class="call-monitor-quick-filters">
+          <ElCheckTag
+            v-for="qf in quickFilters"
+            :key="qf.id"
+            :checked="isQuickFilterActive(qf)"
+            class="call-monitor-quick-tag"
+            @change="toggleQuickFilter(qf)"
+          >
+            {{ $t(qf.label_key) }}
+          </ElCheckTag>
+        </div>
       </template>
       <template #actions>
         <ListQueryBar
           v-model:q="q"
           v-model:filters="filters"
+          always-expanded
+          :placeholder="queryPlaceholder"
           :catalog="listCatalog"
           @search="onQueryBarSearch"
         />
@@ -32,25 +42,66 @@
           :label="$t('operations.monitoring.actions.export')"
           @command="
             (command) =>
-              handleExportCommand(command as 'page' | 'selected' | 'filtered')
+              handleExportCommand(command as 'page' | 'filtered')
           "
         />
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
       </template>
 
+      <template #serial_no="{ row }">
+        <span v-if="row.serial_no" class="compact-id-cell">
+          <ElTooltip
+            :content="row.serial_no"
+            placement="top"
+            :show-after="200"
+          >
+            <span class="serial-no-cell">{{
+              formatCompactId(row.serial_no)
+            }}</span>
+          </ElTooltip>
+          <button
+            type="button"
+            class="compact-id-copy"
+            :title="$t('common.actions.copy')"
+            @click.stop="copyIdText(row.serial_no)"
+          >
+            <ArtSvgIcon icon="ri:file-copy-line" />
+          </button>
+        </span>
+        <span v-else>-</span>
+      </template>
+
       <template #trace_id="{ row }">
-        <ElLink
-          v-if="row.trace_id"
-          type="primary"
-          class="trace-id-cell"
-          @click="openTraceFor(row)"
-        >
-          {{ row.trace_id }}
-        </ElLink>
+        <span v-if="row.trace_id" class="compact-id-cell">
+          <ElTooltip
+            :content="row.trace_id"
+            placement="top"
+            :show-after="200"
+          >
+            <ElLink
+              type="primary"
+              class="trace-id-cell"
+              @click="openTraceFor(row)"
+            >
+              {{ formatCompactId(row.trace_id) }}
+            </ElLink>
+          </ElTooltip>
+          <button
+            type="button"
+            class="compact-id-copy"
+            :title="$t('common.actions.copy')"
+            @click.stop="copyIdText(row.trace_id)"
+          >
+            <ArtSvgIcon icon="ri:file-copy-line" />
+          </button>
+        </span>
         <span v-else>-</span>
       </template>
       <template #tenant_name="{ row }">
         {{ row.tenant_name || row.tenant_id || "-" }}
+      </template>
+      <template #supplier="{ row }">
+        {{ row.supplier || row.supplier_name || "-" }}
       </template>
       <template #channel_name="{ row }">
         <ElTooltip
@@ -131,16 +182,37 @@
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.serialNo')"
                 >
-                  {{ currentDetail.serial_no }}
+                  <span class="compact-id-cell">
+                    <span class="serial-no-cell">{{ currentDetail.serial_no }}</span>
+                    <button
+                      v-if="currentDetail.serial_no"
+                      type="button"
+                      class="compact-id-copy"
+                      :title="$t('common.actions.copy')"
+                      @click="copyIdText(currentDetail.serial_no)"
+                    >
+                      <ArtSvgIcon icon="ri:file-copy-line" />
+                    </button>
+                  </span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem label="trace_id">
-                  <ElLink
-                    v-if="currentDetail.trace_id"
-                    type="primary"
-                    @click="openTraceFor(currentDetail)"
-                  >
-                    {{ currentDetail.trace_id }}
-                  </ElLink>
+                  <span v-if="currentDetail.trace_id" class="compact-id-cell">
+                    <ElLink
+                      type="primary"
+                      class="trace-id-cell"
+                      @click="openTraceFor(currentDetail)"
+                    >
+                      {{ currentDetail.trace_id }}
+                    </ElLink>
+                    <button
+                      type="button"
+                      class="compact-id-copy"
+                      :title="$t('common.actions.copy')"
+                      @click="copyIdText(currentDetail.trace_id)"
+                    >
+                      <ArtSvgIcon icon="ri:file-copy-line" />
+                    </button>
+                  </span>
                   <span v-else>-</span>
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
@@ -212,6 +284,19 @@
               </ElDescriptions>
             </ElCard>
 
+            <ElCard shadow="never" class="detail-card">
+              <template #header>
+                <SurfaceCardHeader
+                  :title="$t('ops.calls.stages.breakdown')"
+                />
+              </template>
+              <StageBreakdown
+                :request-id="currentDetail.serial_no"
+                :trace-id="currentDetail.trace_id"
+                @open-trace="() => currentDetail && openTraceFor(currentDetail)"
+              />
+            </ElCard>
+
             <ElCard shadow="never" class="detail-card detail-card--compact">
               <template #header>
                 <SurfaceCardHeader
@@ -250,11 +335,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  formatWallClock,
-  timestampFiltersFromRange,
-  timestampFiltersToUnix,
-} from "@/utils/ops/call-filters";
+import { timestampFiltersToUnix } from "@/utils/ops/call-filters";
 import { unixSecondsOf } from "@/utils/ops/trace-link";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
@@ -265,10 +346,8 @@ import { h } from "vue";
 import StageBreakdown from "./StageBreakdown.vue";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
-import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { useListQuery } from "@/composables/useListQuery";
 import {
-  CALL_MONITOR_LATEST_REFRESH_MS,
   CALL_MONITOR_UNIVERSE_SIZE,
   callMonitorCatalogFor,
 } from "@/list-catalog";
@@ -277,7 +356,6 @@ import {
   fetchUpstreamCallLogs,
 } from "@/api/call-monitor";
 import { runWithLoading } from "@/composables/useAsyncState";
-import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
 import { formatUrlDisplay, sanitizeSensitiveValue } from "@/utils/sensitive";
 import type {
@@ -288,9 +366,8 @@ import type {
   CallMonitorQueryMode,
   CallMonitorResponse,
 } from "@/types/api/call-monitor";
-import type { ListFilter } from "@/types/list-query";
+import type { ListFilter, QuickFilterDef } from "@/types/list-query";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import type { CallMonitorModeHintPayload } from "./CallMonitorModeHint.vue";
 import {
   clampPageToSafeRange,
   MAX_TABLE_BROWSE_TOTAL,
@@ -333,11 +410,11 @@ const props = withDefaults(
   }>(),
   { timeRange: null, seedFilters: () => [] },
 );
-const tablePageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
 const detailVisible = ref(false);
 const currentDetail = ref<CallMonitorItem | null>(null);
+const autoOpenedSeedDetail = ref(false);
 const exporting = ref(false);
 const pagination = reactive({
   page: 1,
@@ -347,10 +424,16 @@ const pagination = reactive({
 });
 const lastQueryMode = ref<CallMonitorQueryMode | string>("latest");
 const lastUniverseSize = ref(CALL_MONITOR_UNIVERSE_SIZE);
-const dataAsOf = ref<number | null>(null);
-const browseCapped = ref(false);
 
 const listCatalog = computed(() => callMonitorCatalogFor(props.mode));
+const queryPlaceholder = computed(() =>
+  props.mode === "upstream"
+    ? $t("operations.monitoring.placeholders.upstream")
+    : $t("operations.monitoring.placeholders.customer"),
+);
+const quickFilters = computed<QuickFilterDef[]>(
+  () => listCatalog.value.quick_filters ?? [],
+);
 const { q, filters, toRequestParams } = useListQuery({
   catalog: listCatalog,
   searchOnQChange: false,
@@ -359,20 +442,42 @@ const { q, filters, toRequestParams } = useListQuery({
   mapRequestFilters: timestampFiltersToUnix,
 });
 
+filters.value = [...props.seedFilters];
 
-filters.value = [
-  ...filters.value.filter((f) => f.field !== "timestamp"),
-  ...props.seedFilters,
-  ...timestampFiltersFromRange(props.timeRange),
-];
+const isQuickFilterActive = (qf: QuickFilterDef): boolean =>
+  qf.filters.every((target) =>
+    filters.value.some(
+      (f) =>
+        f.field === target.field &&
+        f.op === target.op &&
+        String(f.value) === String(target.value),
+    ),
+  );
+
+const toggleQuickFilter = (qf: QuickFilterDef) => {
+  if (isQuickFilterActive(qf)) {
+    filters.value = filters.value.filter(
+      (f) =>
+        !qf.filters.some(
+          (target) =>
+            f.field === target.field &&
+            f.op === target.op &&
+            String(f.value) === String(target.value),
+        ),
+    );
+  } else {
+    const next = filters.value.filter(
+      (f) => !qf.filters.some((target) => f.field === target.field),
+    );
+    filters.value = [...next, ...qf.filters];
+  }
+  pagination.page = 1;
+  loadData();
+};
 
 watch(
   () => props.timeRange,
-  (range) => {
-    filters.value = [
-      ...filters.value.filter((f) => f.field !== "timestamp"),
-      ...timestampFiltersFromRange(range),
-    ];
+  () => {
     pagination.page = 1;
     loadData();
   },
@@ -396,40 +501,7 @@ const onManualRefresh = () => {
   loadData();
 };
 
-const refreshInSec = ref(0);
-
-const nextRefreshAtMs = ref<number | null>(null);
-
-
-const modeHint = computed((): CallMonitorModeHintPayload => {
-  const mode = lastQueryMode.value || "latest";
-  if (mode === "selective") {
-    return {
-      kind: "text",
-      text: $t("operations.monitoring.mode.selective"),
-    };
-  }
-  if (mode === "ranged") {
-    const base = $t("operations.monitoring.mode.ranged");
-    const text = browseCapped.value
-      ? `${base} · ${$t("operations.monitoring.browse.cappedTitle")}`
-      : base;
-    return { kind: "text", text };
-  }
-  const asOf =
-    dataAsOf.value != null
-      ? formatWallClock(dataAsOf.value)
-      : $t("operations.monitoring.mode.unknownTime");
-  return {
-    kind: "latest",
-    asOf,
-    size: lastUniverseSize.value || CALL_MONITOR_UNIVERSE_SIZE,
-    refreshIn: refreshInSec.value,
-  };
-});
-
 const emit = defineEmits<{
-  modeHintChange: [hint: CallMonitorModeHintPayload];
   /** Current filter params without paging; drives the histogram. */
   queryChange: [query: CallHistogramQuery];
   /** `start` is the row's Unix-second timestamp hint for the trace query window. */
@@ -440,48 +512,24 @@ function openTraceFor(row: CallMonitorItem) {
   if (!row.trace_id) return;
   emit("openTrace", row.trace_id, unixSecondsOf(row.timestamp ?? row.response_time));
 }
-watch(
-  modeHint,
-  (hint) => {
-    emit("modeHintChange", hint);
-  },
-  { immediate: true, deep: true },
-);
 
-const tickRefreshCountdown = () => {
-  const deadline = nextRefreshAtMs.value;
-  if (deadline == null) {
-    refreshInSec.value = 0;
-    return;
-  }
-  const leftMs = deadline - Date.now();
-  refreshInSec.value = Math.max(0, Math.ceil(leftMs / 1000));
-};
+function formatCompactId(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= 16) return trimmed;
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-6)}`;
+}
 
+async function copyIdText(value: string) {
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    ElMessage.success($t("common.messages.copySuccess"));
+  } catch {
+    ElMessage.error($t("common.messages.copyFailed"));
+  }
+}
 
-const canScheduleAutoRefresh = () => {
-
-  if (hasTimestampFilter(filters.value)) {
-    return false;
-  }
-  if (parseRequestIdLookup(q.value) || requestIdFromFilters(filters.value)) {
-    return false;
-  }
-  if (lastQueryMode.value && lastQueryMode.value !== "latest") {
-    return false;
-  }
-  return true;
-};
-
-const armLatestRefreshCountdown = () => {
-  if (!canScheduleAutoRefresh()) {
-    nextRefreshAtMs.value = null;
-    refreshInSec.value = 0;
-    return;
-  }
-  nextRefreshAtMs.value = Date.now() + CALL_MONITOR_LATEST_REFRESH_MS;
-  tickRefreshCountdown();
-};
+defineExpose({ refresh: onManualRefresh });
 
 const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -564,90 +612,6 @@ const channelNameHoverContent = (row: CallMonitorItem | null | undefined) => {
   return `${channelLine}\n${$t("operations.monitoring.columns.supplier")}: ${supplier}`;
 };
 
-const getCallMonitorCellText = (
-  columnKey: string,
-  row: CallMonitorItem,
-  currentMode: "customer" | "upstream",
-) => {
-  switch (columnKey) {
-    case "serial_no":
-      return row.serial_no || "-";
-    case "supplier":
-      return row.supplier || row.supplier_name || "-";
-    case "tenant_name":
-      return row.tenant_name || row.tenant_id || "-";
-    case "channel_name":
-      return formatChannelName(row);
-    case "response_time":
-      return formatTimestampWithMillis(row.response_time);
-    case "request_ip":
-      return row.request_ip || row.client_ip || "-";
-    case "duration_ms":
-      return `${row.duration_ms} ms`;
-    case "upstream_service_time_ms":
-      return `${row.upstream_service_time_ms} ms`;
-    case "status_code":
-      return String(row.status_code ?? "-");
-    case "response_result":
-      return getCallMonitorResponseResult(row);
-    case "operations":
-      return $t("common.actions.details");
-    default:
-      return currentMode === "customer"
-        ? row.tenant_name || row.tenant_id || "-"
-        : row.supplier || row.supplier_name || "-";
-  }
-};
-
-
-
-
-const getCallMonitorColumnWeight = (
-  columnKey: string,
-  mode: "grow" | "shrink" = "grow",
-) => {
-  if (mode === "shrink") {
-    switch (columnKey) {
-      case "serial_no":
-        return 0.08;
-      case "channel_name":
-      case "tenant_name":
-      case "response_result":
-        return 2.4;
-      case "response_time":
-        return 1.1;
-      case "request_ip":
-        return 0.6;
-      case "duration_ms":
-      case "upstream_service_time_ms":
-      case "status_code":
-        return 0.5;
-      default:
-        return 1;
-    }
-  }
-
-  switch (columnKey) {
-    case "serial_no":
-      return 0.4;
-    case "channel_name":
-    case "tenant_name":
-      return 0.35;
-    case "response_time":
-      return 1.6;
-    case "request_ip":
-      return 1.2;
-    case "duration_ms":
-    case "upstream_service_time_ms":
-      return 0.8;
-    case "status_code":
-      return 0.6;
-    case "response_result":
-      return 1.5;
-    default:
-      return 1;
-  }
-};
 const extractRawFields = (
   detail: Record<string, unknown> | null | undefined,
 ) => {
@@ -716,24 +680,11 @@ const exportItems = computed(() => [
     disabled: tableData.value.length === 0,
   },
   {
-    command: "selected",
-    label: $t("operations.monitoring.actions.exportSelected", {
-      count: selectedRows.value.length,
-    }),
-    disabled: selectedRows.value.length === 0,
-  },
-  {
     command: "filtered",
     label: $t("operations.monitoring.actions.exportFiltered"),
+    disabled: pagination.total === 0 && tableData.value.length === 0,
   },
 ]);
-const { selectedRows, handleSelectionChange } =
-  useTableSelection<CallMonitorItem>({
-    deleteApi: async () => {},
-    getItemName: (row) => row.serial_no,
-    getItemId: (row) => row.serial_no,
-    actionLabel: $t("operations.monitoring.actions.export"),
-  });
 const buildColumns = (
   currentMode: "customer" | "upstream",
 ): ColumnOption<CallMonitorItem>[] => {
@@ -748,36 +699,56 @@ const buildColumns = (
           onOpenTrace: (traceId: string) => emit("openTrace", traceId),
         }),
     },
-    { type: "selection", width: 48 },
     {
-      prop: "serial_no",
-      label: $t("operations.monitoring.columns.serialNo"),
-
-      minWidth: 310,
-      maxWidth: 340,
+      prop: "response_time",
+      label: $t("operations.monitoring.columns.responseTime"),
+      minWidth: 152,
+      maxWidth: 196,
       useSlot: true,
-      showOverflowTooltip: false,
     },
     {
-      prop: "trace_id",
-      label: "trace_id",
-      minWidth: 270,
-      maxWidth: 300,
+      prop: "status_code",
+      label: $t("operations.monitoring.columns.statusCode"),
+      minWidth: 72,
+      maxWidth: 92,
       useSlot: true,
-      showOverflowTooltip: false,
     },
   ];
 
   if (currentMode === "customer") {
     columns.push({
+      prop: "duration_ms",
+      label: $t("operations.monitoring.columns.customerLatency"),
+      minWidth: 76,
+      maxWidth: 108,
+      useSlot: true,
+    });
+    columns.push({
       prop: "tenant_name",
       label: $t("operations.monitoring.columns.tenantName"),
-      minWidth: 72,
-      maxWidth: 120,
+      minWidth: 96,
+      maxWidth: 160,
+      useSlot: true,
+      showOverflowTooltip: true,
+    });
+  } else {
+    columns.push({
+      prop: "upstream_service_time_ms",
+      label: $t("operations.monitoring.columns.upstreamLatency"),
+      minWidth: 76,
+      maxWidth: 108,
+      useSlot: true,
+    });
+    columns.push({
+      prop: "supplier",
+      label: $t("operations.monitoring.columns.supplier"),
+      minWidth: 96,
+      maxWidth: 160,
       useSlot: true,
       showOverflowTooltip: true,
     });
   }
+
   columns.push(
     {
       prop: "channel_name",
@@ -785,90 +756,65 @@ const buildColumns = (
         currentMode === "upstream"
           ? $t("operations.monitoring.columns.channelNameUpstream")
           : $t("operations.monitoring.columns.channelName"),
-
       minWidth: 100,
       maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: false,
     },
     {
-      prop: "response_time",
-      label: $t("operations.monitoring.columns.responseTime"),
-      minWidth: 180,
-      maxWidth: 220,
+      prop: "serial_no",
+      label: $t("operations.monitoring.columns.serialNo"),
+      minWidth: 136,
+      maxWidth: 196,
       useSlot: true,
+      showOverflowTooltip: false,
+    },
+    {
+      prop: "trace_id",
+      label: "trace_id",
+      minWidth: 136,
+      maxWidth: 196,
+      useSlot: true,
+      showOverflowTooltip: false,
     },
   );
+
   if (currentMode === "customer") {
     columns.push({
       prop: "request_ip",
       label: $t("operations.monitoring.columns.requestIp"),
-
-      minWidth: 120,
-      maxWidth: 148,
+      minWidth: 104,
+      maxWidth: 144,
       useSlot: true,
       showOverflowTooltip: true,
     });
-  }
-  if (currentMode === "customer") {
-    columns.push({
-      prop: "duration_ms",
-      label: $t("operations.monitoring.columns.customerLatency"),
-      minWidth: 80,
-      maxWidth: 100,
-      useSlot: true,
-    });
-  } else {
-    columns.push({
-      prop: "upstream_service_time_ms",
-      label: $t("operations.monitoring.columns.upstreamLatency"),
-      minWidth: 80,
-      maxWidth: 100,
-      useSlot: true,
-    });
-  }
-  columns.push({
-    prop: "status_code",
-    label: $t("operations.monitoring.columns.statusCode"),
-    minWidth: 72,
-    maxWidth: 96,
-    useSlot: true,
-  });
-  if (currentMode === "customer") {
     columns.push({
       prop: "response_result",
       label: $t("operations.monitoring.columns.responseResult"),
-      minWidth: 100,
-      maxWidth: 200,
+      minWidth: 88,
+      maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: true,
     });
   }
+
   columns.push({
     prop: "operations",
     label: $t("common.fields.operations"),
-    minWidth: 80,
-    width: 80,
+    minWidth: 68,
+    width: 68,
     fixed: "right",
     useSlot: true,
   });
   return columns;
 };
-const columns = ref<ColumnOption<CallMonitorItem>[]>([]);
-useAdaptiveTableColumns({
-  columns,
-  containerRef: tablePageRef,
-  rows: tableData,
-  baseColumns: () => buildColumns(props.mode),
-  selectionWidth: 48,
-  operationsWidth: 80,
-  softMinCap: 168,
-  fitContainer: true,
-  getCellText: ({ columnKey, row }) =>
-    getCallMonitorCellText(columnKey, row, props.mode),
-  getColumnWeight: ({ columnKey, mode }) =>
-    getCallMonitorColumnWeight(columnKey, mode),
-});
+const columns = ref<ColumnOption<CallMonitorItem>[]>(buildColumns(props.mode));
+watch(
+  () => props.mode,
+  (mode) => {
+    columns.value = buildColumns(mode);
+  },
+);
 const applyResponseMeta = (response: CallMonitorResponse) => {
   const total = response.total || 0;
   pagination.total = total;
@@ -878,15 +824,6 @@ const applyResponseMeta = (response: CallMonitorResponse) => {
   lastQueryMode.value = response.query_mode || "latest";
   lastUniverseSize.value =
     response.universe_size || CALL_MONITOR_UNIVERSE_SIZE;
-  browseCapped.value = Boolean(response.browse_capped);
-  dataAsOf.value = Date.now();
-
-  if ((response.query_mode || "latest") === "latest") {
-    armLatestRefreshCountdown();
-  } else {
-    nextRefreshAtMs.value = null;
-    refreshInSec.value = 0;
-  }
 };
 
 const loadData = async (opts?: { silent?: boolean }) => {
@@ -919,6 +856,14 @@ const loadData = async (opts?: { silent?: boolean }) => {
     applyResponseMeta(response);
     if (safePage !== requestedPage) {
       pagination.page = safePage;
+    }
+    if (
+      !autoOpenedSeedDetail.value &&
+      rows.length === 1 &&
+      Boolean(requestIdFromFilters(props.seedFilters))
+    ) {
+      autoOpenedSeedDetail.value = true;
+      showDetail(rows[0]!);
     }
   };
 
@@ -973,9 +918,18 @@ const buildQuery = (
 
 
 
+  const timeWindowParams =
+    props.timeRange && !hasTimestampFilter(filters.value)
+      ? {
+          start_time: props.timeRange.start,
+          end_time: props.timeRange.end,
+        }
+      : {};
+
   return toRequestParams({
     page,
     page_size: pageSize,
+    ...timeWindowParams,
   }) as CallMonitorQuery;
 };
 const buildHistogramQuery = (): CallHistogramQuery => {
@@ -1029,13 +983,9 @@ const downloadDetailJson = () => {
   );
 };
 const handleExportCommand = async (
-  command: "page" | "selected" | "filtered",
+  command: "page" | "filtered",
 ) => {
   if (exporting.value) return;
-  if (command === "selected") {
-    await exportLogsArchive(selectedRows.value, "selected");
-    return;
-  }
   if (command === "page") {
     await exportLogsArchive(tableData.value, "page");
     return;
@@ -1122,44 +1072,25 @@ const statusTagType = (statusCode: number) => {
   if (statusCode >= 300) return "warning";
   return "info";
 };
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let countdownTimer: ReturnType<typeof setInterval> | null = null;
-
-const shouldAutoRefresh = () => {
-  if (detailVisible.value || loading.value || exporting.value) return false;
-  return canScheduleAutoRefresh();
-};
-
 onMounted(() => {
   loadData();
-  countdownTimer = setInterval(() => {
-    tickRefreshCountdown();
-  }, 1000);
-  refreshTimer = setInterval(() => {
-    if (shouldAutoRefresh()) {
-      void loadData({ silent: true });
-    } else {
-      nextRefreshAtMs.value = null;
-      refreshInSec.value = 0;
-    }
-  }, CALL_MONITOR_LATEST_REFRESH_MS);
-});
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
 });
 </script>
 
 <style scoped lang="scss">
 .detail-drawer-body {
   padding-right: 8px;
+}
+
+.call-monitor-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.call-monitor-quick-tag {
+  user-select: none;
 }
 
 .detail-toolbar {
@@ -1187,8 +1118,47 @@ onUnmounted(() => {
   display: inline-block;
   max-width: 100%;
   white-space: nowrap;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+}
+
+.trace-id-cell {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+}
+
+.compact-id-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.compact-id-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.65;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
+
+  &:hover {
+    opacity: 1;
+    color: var(--el-color-primary);
+    background: var(--el-fill-color-light);
+  }
 }
 
 .channel-name-cell {

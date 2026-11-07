@@ -731,7 +731,8 @@ onMounted(async () => {
 
 <style scoped lang="scss">
 .supplier-detail-page {
-  padding-bottom: 24px;
+  padding: var(--ops-page-padding, 16px) var(--ops-page-padding, 16px) 24px;
+  box-sizing: border-box;
 }
 
 .page-header-content {

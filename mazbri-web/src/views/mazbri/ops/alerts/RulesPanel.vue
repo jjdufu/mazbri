@@ -9,11 +9,11 @@
       }}</ElButton>
     </OpsPanelToolbar>
 
-    <OpsCard :title="t('menus.mazbri.alertRules')" :info="t('ops.alerts.rules.hint')">
+    <OpsCard>
       <ElTable v-loading="loading" :data="rules" row-key="id" size="small">
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.enabled')"
-          width="90"
+          width="76"
         >
           <template #default="{ row }">
             <ElSwitch
@@ -29,11 +29,11 @@
         <ElTableColumn
           prop="name"
           :label="t('ops.alerts.rules.columns.name')"
-          min-width="130"
+          min-width="120"
         />
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.severity')"
-          width="100"
+          width="84"
         >
           <template #default="{ row }">
             <ElTag :type="alertSeverityTag(row.severity)" size="small">
@@ -43,7 +43,7 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.expr')"
-          min-width="320"
+          min-width="240"
         >
           <template #default="{ row }">
             <code class="ops-alerts__expr"
@@ -53,7 +53,7 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.condition')"
-          width="150"
+          width="136"
         >
           <template #default="{ row }">
             {{ row.op }} {{ row.threshold }} · {{ row.for_seconds }}s
@@ -61,7 +61,7 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.notify')"
-          width="140"
+          width="128"
         >
           <template #default="{ row }">
             <span v-if="row.notify?.enabled">
@@ -75,7 +75,7 @@
             <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="90">
+        <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="76">
           <template #default="{ row }">
             <ElButton
               v-if="row.active_events"
@@ -91,7 +91,7 @@
         <ElTableColumn
           v-if="isAdmin"
           :label="t('ops.alerts.columns.actions')"
-          width="130"
+          width="116"
           fixed="right"
         >
           <template #default="{ row }">
@@ -106,12 +106,16 @@
       </ElTable>
     </OpsCard>
 
-    <ElDialog
+    <EditDialog
       v-model="dialogVisible"
       :title="
         editingId ? t('ops.alerts.rules.edit') : t('ops.alerts.rules.create')
       "
       width="640px"
+      :cancel-text="t('ops.alerts.rules.cancel')"
+      :confirm-text="t('ops.alerts.rules.save')"
+      :saving="saving"
+      @confirm="save"
     >
       <ElForm
         ref="formRef"
@@ -229,15 +233,7 @@
           </div>
         </ElFormItem>
       </ElForm>
-      <template #footer>
-        <ElButton @click="dialogVisible = false">{{
-          t("ops.alerts.rules.cancel")
-        }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="save">
-          {{ t("ops.alerts.rules.save") }}
-        </ElButton>
-      </template>
-    </ElDialog>
+    </EditDialog>
   </div>
 </template>
 
@@ -251,6 +247,7 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import {

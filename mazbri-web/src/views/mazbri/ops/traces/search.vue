@@ -9,7 +9,7 @@
         :model="form"
         inline
         class="ops-traces__form"
-        @submit.prevent="runSearch"
+        @submit.prevent="submitSearch"
       >
         <ElFormItem label="trace_id">
           <ElInput v-model="form.trace_id" clearable class="ops-traces__wide" />
@@ -87,7 +87,7 @@
     <OpsCard :title="t('ops.traces.scatter.title')">
       <div class="ops-traces__card-head">
         <span class="ops-traces__muted">
-          {{ t("ops.traces.scatter.summary", { count: traces.length }) }}
+          {{ t("ops.traces.scatter.summary", { count: pagination.total }) }}
           <template v-if="resolvedFromLogs !== null">
             · {{ t("ops.traces.resolved", { count: resolvedFromLogs }) }}
           </template>
@@ -99,66 +99,41 @@
         class="ops-traces__scatter"
       ></div>
     </OpsCard>
-    <OpsCard>
-      <ElTable
-        v-loading="loading"
-        :data="traces"
-        stripe
-        size="small"
-        :empty-text="emptyText"
-        class="ops-traces__table"
-        @row-click="openTrace"
+
+    <ResourceTableShell
+      v-model:columns="columns"
+      :loading="loading"
+      :data="traces"
+      :pagination="artPagination"
+      :show-header="false"
+      :show-toolbar="false"
+      :empty-text="emptyText"
+      size="small"
+      stripe
+      table-class="ops-traces__table surface-panel-table"
+      @pagination:size-change="handlePageSizeChange"
+      @pagination:current-change="handleCurrentPageChange"
+    >
+      <template #start_ms="{ row }">{{ formatMs(row.start_ms) }}</template>
+      <template #root_span="{ row }">
+        <span class="ops-traces__service">{{ row.root_service }}</span>
+        {{ row.root_span }}
+      </template>
+      <template #duration_ms="{ row }"
+        >{{ row.duration_ms.toFixed(1) }} ms</template
       >
-        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="180">
-          <template #default="{ row }">{{ formatMs(row.start_ms) }}</template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('ops.traces.columns.root')" min-width="260">
-          <template #default="{ row }">
-            <span class="ops-traces__service">{{ row.root_service }}</span>
-            {{ row.root_span }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          prop="duration_ms"
-          :label="t('ops.traces.columns.duration')"
-          width="120"
-          sortable
-        >
-          <template #default="{ row }"
-            >{{ row.duration_ms.toFixed(1) }} ms</template
-          >
-        </ElTableColumn>
-        <ElTableColumn
-          prop="span_count"
-          :label="t('ops.traces.columns.spans')"
-          width="90"
-        />
-        <ElTableColumn
-          prop="service_count"
-          :label="t('ops.traces.columns.services')"
-          width="90"
-        />
-        <ElTableColumn
-          prop="error_count"
-          :label="t('ops.traces.columns.errors')"
-          width="90"
-        >
-          <template #default="{ row }">
-            <ElTag v-if="row.error_count > 0" type="danger" size="small">{{
-              row.error_count
-            }}</ElTag>
-            <span v-else>0</span>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
-          <template #default="{ row }">
-            <ElLink type="primary" @click.stop="openTrace(row)">{{
-              row.trace_id
-            }}</ElLink>
-          </template>
-        </ElTableColumn>
-      </ElTable>
-    </OpsCard>
+      <template #error_count="{ row }">
+        <ElTag v-if="row.error_count > 0" type="danger" size="small">{{
+          row.error_count
+        }}</ElTag>
+        <span v-else>0</span>
+      </template>
+      <template #trace_id="{ row }">
+        <ElLink type="primary" @click.stop="openTrace(row)">{{
+          row.trace_id
+        }}</ElLink>
+      </template>
+    </ResourceTableShell>
   </OpsPage>
 </template>
 
@@ -168,12 +143,14 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import { fetchTraceServices, searchTraces } from "@/api/traces";
 import type { TraceSearchQuery, TraceSummary } from "@/types/api/traces";
+import type { ColumnOption } from "@/types/component";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
@@ -233,6 +210,59 @@ const loading = ref(false);
 const searched = ref(false);
 const traces = ref<TraceSummary[]>([]);
 const resolvedFromLogs = ref<number | null>(null);
+const pagination = reactive({
+  page: 1,
+  pageSize: 20,
+  total: 0,
+});
+const artPagination = computed(() => ({
+  current: pagination.page,
+  size: pagination.pageSize,
+  total: pagination.total,
+}));
+const columns = ref<ColumnOption<TraceSummary>[]>([
+  {
+    prop: "start_ms",
+    label: t("ops.traces.columns.start"),
+    minWidth: 160,
+    useSlot: true,
+  },
+  {
+    prop: "root_span",
+    label: t("ops.traces.columns.root"),
+    minWidth: 220,
+    useSlot: true,
+  },
+  {
+    prop: "duration_ms",
+    label: t("ops.traces.columns.duration"),
+    width: 120,
+    sortable: true,
+    useSlot: true,
+  },
+  {
+    prop: "span_count",
+    label: t("ops.traces.columns.spans"),
+    width: 90,
+  },
+  {
+    prop: "service_count",
+    label: t("ops.traces.columns.services"),
+    width: 90,
+  },
+  {
+    prop: "error_count",
+    label: t("ops.traces.columns.errors"),
+    width: 90,
+    useSlot: true,
+  },
+  {
+    prop: "trace_id",
+    label: "trace_id",
+    minWidth: 240,
+    useSlot: true,
+  },
+]);
 
 const scatterRef = ref<HTMLDivElement>();
 let scatter: echarts.ECharts | null = null;
@@ -276,7 +306,8 @@ function clampedRange(maxSeconds: number): { start: number; end: number } {
 function buildQuery(): TraceSearchQuery {
   const q: TraceSearchQuery = {
     ...clampedRange(MAX_SEARCH_SECONDS),
-    limit: 100,
+    page: pagination.page,
+    page_size: pagination.pageSize,
   };
   if (form.trace_id.trim()) q.trace_id = form.trace_id.trim().toLowerCase();
   if (form.request_id.trim()) q.request_id = form.request_id.trim();
@@ -318,6 +349,9 @@ async function runSearch() {
     const res = await searchTraces(buildQuery());
     if (seq !== searchSeq) return;
     traces.value = res.traces;
+    pagination.total = res.total;
+    pagination.page = res.page;
+    pagination.pageSize = res.page_size;
     resolvedFromLogs.value = res.resolved_from_logs;
     searched.value = true;
     syncRoute();
@@ -331,6 +365,22 @@ async function runSearch() {
   }
 }
 
+function submitSearch() {
+  pagination.page = 1;
+  void runSearch();
+}
+
+function handleCurrentPageChange(page: number) {
+  pagination.page = page;
+  void runSearch();
+}
+
+function handlePageSizeChange(pageSize: number) {
+  pagination.pageSize = pageSize;
+  pagination.page = 1;
+  void runSearch();
+}
+
 function resetForm() {
   form.trace_id = "";
   form.request_id = "";
@@ -340,6 +390,7 @@ function resetForm() {
   form.min_duration_ms = undefined;
   form.max_duration_ms = undefined;
   form.errors_only = false;
+  pagination.page = 1;
   void runSearch();
 }
 
@@ -415,6 +466,7 @@ function buildScatterOption(): EChartsOption {
 
 function onRangeChange(value: TimeRangeValue) {
   timeRange.value = value;
+  pagination.page = 1;
   void loadServiceCatalog();
   void runSearch();
 }
@@ -448,13 +500,13 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 .ops-traces__wide {
-  width: 280px;
+  width: 180px;
 }
 .ops-traces__mid {
-  width: 160px;
+  width: 130px;
 }
 .ops-traces__num {
-  width: 110px;
+  width: 88px;
 }
 .ops-traces__dash,
 .ops-traces__unit {

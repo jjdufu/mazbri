@@ -1,6 +1,6 @@
 import type { RouteLocationRaw } from "vue-router";
 
-export type CallsTab = "customer" | "upstream" | "stages";
+export type CallsTab = "customer" | "upstream";
 
 /** Route query keys the calls page turns into list filters. */
 export const CALLS_FILTER_KEYS = [

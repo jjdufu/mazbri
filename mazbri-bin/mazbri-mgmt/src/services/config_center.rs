@@ -2,7 +2,7 @@ use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::config_center::{
     ConfigListParams, CreateConfigRequest, ExportParams, HistoryQueryParams, ImportParams,
-    NodeListParams, ServiceListParams, TomlErrorInfo, UpdateConfigRequest, ValidateTomlRequest,
+    ServiceListParams, TomlErrorInfo, UpdateConfigRequest, ValidateTomlRequest,
     ValidateTomlResponse, parse_toml_error_position, validate_toml,
 };
 use crate::middleware::auth;
@@ -333,18 +333,6 @@ pub async fn list_services(
     trace_id: &str,
 ) -> Result<serde_json::Value, ApiError> {
     metadata::list_services(state, params, client_ip, request_id, trace_id).await
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_nodes(
-    state: &AppState,
-    params: &NodeListParams,
-    client_ip: Option<String>,
-    request_id: &str,
-    trace_id: &str,
-) -> Result<serde_json::Value, ApiError> {
-    metadata::list_nodes(state, params, client_ip, request_id, trace_id).await
 }
 /// # Errors
 ///

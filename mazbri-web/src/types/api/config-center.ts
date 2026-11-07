@@ -70,20 +70,3 @@ export interface ImportConfigsResult {
   errors: string[];
   total_extracted_bytes?: number;
 }
-export interface NodeInfo {
-  id: string;
-  service_name: string;
-  ip: string;
-  port: number;
-  started_at: ISODateString;
-  config_version: number;
-  config_md5: string | null;
-  health_check_url: string | null;
-  last_heartbeat_at: ISODateString;
-  created_at: ISODateString;
-}
-export interface NodeListResponse {
-  nodes: NodeInfo[];
-  total: number;
-}
-export type NodeListQuery = Record<string, never>;

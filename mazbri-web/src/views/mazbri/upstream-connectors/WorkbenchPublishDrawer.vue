@@ -1,5 +1,5 @@
 <template>
-  <ElDrawer v-model="visible" :title="$t('upstreamConnector.publish')" size="560px">
+  <AdaptiveDrawer v-model="visible" :title="$t('upstreamConnector.publish')" size="560px">
     <template v-if="result">
       <ElAlert
         type="success"
@@ -177,11 +177,12 @@
         </ElButton>
       </div>
     </template>
-  </ElDrawer>
+  </AdaptiveDrawer>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import HoppSelect from "@/components/common/hopp-select/index.vue";
 import { fetchProductList } from "@/api/product";
 import type { Product } from "@/types/api/product";

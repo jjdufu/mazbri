@@ -150,3 +150,10 @@ const handleDelete = async () => {
 
 onMounted(loadData);
 </script>
+
+<style scoped lang="scss">
+.channel-detail-page {
+  padding: var(--ops-page-padding, 16px);
+  box-sizing: border-box;
+}
+</style>

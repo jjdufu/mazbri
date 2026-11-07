@@ -1,13 +1,8 @@
 <template>
-  <ControlPanelPageShell
-    :title="$t('menus.mazbri.usageReconciliation')"
-    icon="ri:file-search-line"
+  <div
+    ref="pageRef"
+    class="usage-recon-page"
   >
-    <div
-      ref="pageRef"
-      class="usage-recon-page"
-      style="display: flex; flex-direction: column; flex: 1; min-height: 0"
-    >
       <div
         v-roles="ROLES_BIZ"
         v-loading="settingsLoading"
@@ -260,7 +255,6 @@
           </TableActionRow>
         </template>
       </ResourceTablePageShell>
-    </div>
 
     <AdaptiveDrawer v-model="detailVisible" size="680px" destroy-on-close>
       <template #header>
@@ -536,7 +530,7 @@
         </ElFormItem>
       </ElForm>
     </EditDialog>
-  </ControlPanelPageShell>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -545,7 +539,6 @@ import type { ListFilter } from "@/types/list-query";
 import { reconciliationCatalog } from "@/list-catalog/common-resources";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRouter } from "vue-router";
-import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
@@ -1167,7 +1160,12 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .usage-recon-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .usage-recon-settings {

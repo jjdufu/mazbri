@@ -450,8 +450,8 @@
         "days": "days"
       },
       "noData": "No data available",
-      "customerTitle": "Customer Monitoring",
-      "upstreamTitle": "Upstream Monitoring",
+      "customerTitle": "Customer Call Logs",
+      "upstreamTitle": "Upstream Call Logs",
       "tooltip": {
         "timeRange": "Time range filter",
         "collapse": "Collapse time"
@@ -1531,8 +1531,6 @@
       "alertRuleCreate": "Create alert rule",
       "alertRuleUpdate": "Update alert rule",
       "alertRuleDelete": "Delete alert rule",
-      "alertEventAck": "Acknowledge alert",
-      "alertEventAssign": "Assign alert",
       "alertSilenceCreate": "Create alert silence",
       "alertSilenceDelete": "Delete alert silence",
       "alertInhibitCreate": "Create alert inhibit",
@@ -1926,20 +1924,6 @@
     "diffViewer": {
       "version": "Version {version}",
       "noChanges": "The two versions have identical content"
-    },
-    "nodeStatus": {
-      "onlineNodes": "Online Nodes",
-      "totalNodes": "Total Nodes",
-      "onlineRate": "Online Rate",
-      "collapseDetails": "Collapse node details",
-      "expandDetails": "Click to expand node details",
-      "instances": "instances",
-      "time": {
-        "secondsAgo": "{count} seconds ago",
-        "minutesAgo": "{count} minutes ago",
-        "hoursAgo": "{count} hours ago",
-        "daysAgo": "{count} days ago"
-      }
     },
     "messages": {
       "selectConfigToDelete": "Please select configuration entries to delete",
@@ -4234,7 +4218,6 @@
       "openMatrix": "Service health matrix",
       "alerts": "Active alerts",
       "alertsFiring": "Firing {n}",
-      "alertsAcked": "Acked {n}",
       "alertsNone": "No active alerts",
       "alertsOpen": "Alert events",
       "productTop": "Top products",
@@ -4261,14 +4244,6 @@
       "sloBudgetSlim": "{name}: {remaining} left",
       "sloBudgetDefaultName": "SLO",
       "sloBudgetLoadFailed": "Failed to load error budget",
-      "infraStrip": {
-        "title": "Infra health",
-        "open": "Infrastructure",
-        "loadFailed": "Failed to load infra strip",
-        "pipeline": "Pipeline freshness",
-        "hostCpu": "Host CPU"
-      },
-      "noSampleHint": "No business traffic in the selected time range",
       "sections": {
         "kpi": "KPI",
         "realtime": "Now",
@@ -4282,21 +4257,15 @@
       "windowSemantics": "Follows time range · {start} – {end} ({label})",
       "realtimeNow": "Now",
       "realtimeSemantics": "Now · last {secs}s · as of {at}",
-      "realtimeNoSample": "No business traffic right now",
       "components": "Component health",
       "inventoryHint": "{total} tenants · {products} enabled products",
-      "billingDeadLetters": "Billing dead letters {n}",
-      "appsOnlineTitle": "Apps online",
       "openRuntime": "View all",
       "trafficQualityOpenCalls": "Open call logs",
       "securityGov": {
         "topIp": "Auth-fail Top IP",
         "topKey": "Auth-fail Top Key",
-        "governance": "Rate-limit rejects",
         "openCalls": "Call logs",
-        "openRuntime": "Runtime metrics",
-        "empty": "No samples in window",
-        "hint": "Rate-limit / cache details live in summaries; ops sidebar follows the new IA — open call logs or runtime metrics."
+        "empty": "No samples in window"
       }
     },
     "finance": {
@@ -4339,17 +4308,26 @@
       "refresh": "Refresh",
       "ok": "OK",
       "down": "Down",
+      "containerRunning": "Running",
+      "containerStopped": "Stopped",
+      "containerExternal": "External",
       "loadFailed": "Failed to load service health",
       "backToMatrix": "Back to matrix",
       "columns": {
-        "service": "Service",
-        "health": "Health",
+        "service": "Component",
+        "key": "ID",
+        "group": "Group",
+        "status": "Status",
+        "reasons": "Reasons",
+        "health": "Health probe",
         "ready": "Ready",
+        "container": "Container",
+        "restarts1h": "1h restarts",
         "configCenter": "Config center",
         "dbPool": "DB pool",
         "panic": "Panic",
         "tokio": "Tokio busy",
-        "restart": "Last restart",
+        "restart": "Last start",
         "version": "Version",
         "cpu": "CPU (cores)",
         "memory": "Memory",
@@ -4363,9 +4341,12 @@
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
       },
-      "hexagonTitle": "App components",
-      "detailTitle": "{name} · details",
+      "hexagonTitle": "App & infrastructure components",
+      "detailTitle": "{name} · node details",
       "openDetail": "Open service detail",
+      "openMiddleware": "View middleware metrics",
+      "openPipeline": "View pipeline metrics",
+      "openHosts": "View host & container metrics",
       "empty": "No health data"
     },
     "traffic": {
@@ -4478,8 +4459,7 @@
     "calls": {
       "tabs": {
         "customer": "Customer calls",
-        "upstream": "Upstream calls",
-        "stages": "Stages"
+        "upstream": "Upstream calls"
       },
       "histogram": {
         "title": "Call distribution",
@@ -4487,6 +4467,7 @@
         "errors": "Errors",
         "summary": "{total} calls · {errors} errors · bucket {bucket}s",
         "brushHint": "Brush horizontally on the chart to narrow the time range",
+        "resetZoom": "Reset zoom",
         "loadFailed": "Failed to load call distribution"
       },
       "stages": {
@@ -4584,21 +4565,13 @@
       "timeline": "Event timeline",
       "empty": "No alert events",
       "resolvedAt": "resolved at",
-      "ack": "Ack",
-      "ackDone": "Acknowledged",
-      "assign": "Assign",
-      "assignPrompt": "Assignee username (empty to unassign)",
-      "assignInvalid": "At most 64 characters",
-      "assignDone": "Assigned",
       "filters": {
         "status": "Status",
         "severity": "Severity",
         "event": "Event"
       },
       "status": {
-        "active": "Active",
         "firing": "Firing",
-        "acked": "Acked",
         "resolved": "Resolved"
       },
       "severity": {
@@ -4613,10 +4586,7 @@
         "labels": "Labels",
         "value": "Value / threshold",
         "startedAt": "Started",
-        "resolvedAt": "Resolved",
-        "ackedBy": "Acked by",
-        "assignee": "Assignee",
-        "actions": "Actions"
+        "resolvedAt": "Resolved"
       },
       "rules": {
         "create": "New rule",

@@ -6,7 +6,26 @@
     </div>
     <template v-else>
       <div v-for="bar in bars" :key="bar.key" class="stage-breakdown__row">
-        <span class="stage-breakdown__label" :title="bar.label">{{ bar.label }}</span>
+        <div class="stage-breakdown__meta">
+          <span class="stage-breakdown__label" :title="bar.label">{{ bar.label }}</span>
+          <ElTag
+            v-if="bar.statusCode > 0"
+            size="small"
+            :type="bar.error ? 'danger' : 'success'"
+            class="stage-breakdown__tag"
+          >
+            {{ bar.statusCode }}
+          </ElTag>
+          <ElTag
+            v-if="bar.errorCode"
+            size="small"
+            type="danger"
+            effect="plain"
+            class="stage-breakdown__tag"
+          >
+            {{ bar.errorCode }}
+          </ElTag>
+        </div>
         <div class="stage-breakdown__track">
           <div
             class="stage-breakdown__bar"
@@ -14,7 +33,7 @@
             :style="{ width: `${bar.percent}%` }"
           ></div>
         </div>
-        <span class="stage-breakdown__value">{{ bar.ms }} ms</span>
+        <span class="stage-breakdown__value">{{ bar.ms }} ms ({{ bar.share }}%)</span>
       </div>
     </template>
     <div v-if="traceId" class="stage-breakdown__footer">
@@ -36,6 +55,9 @@ export interface StageBar {
   label: string;
   ms: number;
   percent: number;
+  share: number;
+  statusCode: number;
+  errorCode: string;
   error: boolean;
 }
 
@@ -60,6 +82,7 @@ const rows = computed(() => props.stages ?? loaded.value);
 
 const bars = computed<StageBar[]>(() => {
   const max = rows.value.reduce((acc, row) => Math.max(acc, row.stage_ms), 0);
+  const total = rows.value.reduce((acc, row) => acc + Math.max(0, row.stage_ms), 0);
   return rows.value.map((row, index) => ({
     key: `${row.request_id}-${row.attempt_order}-${row.stage_name}-${index}`,
     label:
@@ -67,7 +90,10 @@ const bars = computed<StageBar[]>(() => {
         ? `${row.service}/${row.stage_name} #${row.attempt_order}`
         : `${row.service}/${row.stage_name}`,
     ms: row.stage_ms,
-    percent: max > 0 ? Math.max(2, Math.round((row.stage_ms / max) * 100)) : 2,
+    percent: max > 0 ? Math.max(3, Math.round((row.stage_ms / max) * 100)) : 3,
+    share: total > 0 ? Math.round((Math.max(0, row.stage_ms) / total) * 100) : 0,
+    statusCode: row.status_code ?? 0,
+    errorCode: row.error_code ?? "",
     error: Boolean(row.error_code) || row.status_code >= 400,
   }));
 });
@@ -97,16 +123,26 @@ watch(() => props.requestId, load);
 }
 .stage-breakdown__row {
   display: grid;
-  grid-template-columns: 260px 1fr 90px;
-  gap: 8px;
+  grid-template-columns: minmax(220px, 280px) 1fr 110px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-size: 12px;
+}
+.stage-breakdown__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .stage-breakdown__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--el-font-family-mono, monospace);
+}
+.stage-breakdown__tag {
+  flex-shrink: 0;
 }
 .stage-breakdown__track {
   height: 10px;

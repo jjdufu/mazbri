@@ -14,7 +14,6 @@
 
 
 export {
-  CALL_MONITOR_LATEST_REFRESH_MS,
   CALL_MONITOR_UNIVERSE_SIZE,
   callMonitorCatalog,
   callMonitorCatalogFor,

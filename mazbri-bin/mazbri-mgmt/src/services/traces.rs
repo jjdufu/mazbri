@@ -35,7 +35,9 @@ pub struct TraceSearchParams {
     #[serde(default)]
     pub errors_only: Option<bool>,
     #[serde(default)]
-    pub limit: Option<u32>,
+    pub page: Option<u32>,
+    #[serde(default)]
+    pub page_size: Option<u32>,
 }
 
 /// 详情 / 依赖图的时间窗参数（Unix 秒）。
@@ -70,7 +72,8 @@ fn search_params(p: &TraceSearchParams) -> Vec<(&'static str, String)> {
     push(&mut out, "min_duration_ms", p.min_duration_ms);
     push(&mut out, "max_duration_ms", p.max_duration_ms);
     push(&mut out, "errors_only", p.errors_only.filter(|v| *v));
-    push(&mut out, "limit", p.limit);
+    push(&mut out, "page", p.page);
+    push(&mut out, "page_size", p.page_size);
     out
 }
 
@@ -225,13 +228,17 @@ mod tests {
             service: Some("mazbri-gateway".into()),
             errors_only: Some(false),
             min_duration_ms: Some(1500),
+            page: Some(2),
+            page_size: Some(20),
             ..TraceSearchParams::default()
         };
         assert_eq!(
             search_params(&p),
             vec![
                 ("service", "mazbri-gateway".to_string()),
-                ("min_duration_ms", "1500".to_string())
+                ("min_duration_ms", "1500".to_string()),
+                ("page", "2".to_string()),
+                ("page_size", "20".to_string()),
             ]
         );
     }

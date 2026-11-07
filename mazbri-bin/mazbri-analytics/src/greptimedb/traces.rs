@@ -12,8 +12,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// trace 表名。
 const TRACE_TABLE: &str = "opentelemetry_traces";
-/// 检索结果条数上限。
-pub const MAX_SEARCH_LIMIT: u32 = 200;
+/// 检索默认每页条数。
+pub const DEFAULT_SEARCH_PAGE_SIZE: u32 = 20;
+/// 检索单页条数上限。
+pub const MAX_SEARCH_PAGE_SIZE: u32 = 100;
 /// 单条 trace 最多返回的 span 数。
 const MAX_TRACE_SPANS: u32 = 5_000;
 /// 计费 worker 回链查询窗口：原请求开始后的秒数。
@@ -70,7 +72,19 @@ pub struct TraceSearchFilter {
     pub min_duration_ms: Option<u64>,
     pub max_duration_ms: Option<u64>,
     pub errors_only: bool,
-    pub limit: u32,
+    /// 页码（从 1 开始）。
+    pub page: u32,
+    /// 每页条数。
+    pub page_size: u32,
+}
+
+/// 检索分页结果。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TraceSearchPage {
+    pub total: u64,
+    pub page: u32,
+    pub page_size: u32,
+    pub traces: Vec<TraceSummary>,
 }
 
 /// 检索结果行。
@@ -198,9 +212,10 @@ pub fn build_services_sql(start: i64, end: i64) -> String {
     )
 }
 
-/// 检索聚合 SQL：每个 trace 一行，按开始时间倒序。
-#[must_use]
-pub fn build_search_sql(f: &TraceSearchFilter) -> String {
+const DURATION_EXPR: &str =
+    "(CAST(max(timestamp_end) AS BIGINT) - CAST(min(timestamp) AS BIGINT))";
+
+fn search_where_and_having(f: &TraceSearchFilter) -> (String, String) {
     let mut conds = vec![time_window("timestamp", f.start, f.end)];
     if let Some(ids) = &f.trace_ids {
         conds.push(format!("trace_id IN ({})", quoted_list(ids)));
@@ -211,13 +226,18 @@ pub fn build_search_sql(f: &TraceSearchFilter) -> String {
             time_window("timestamp", f.start, f.end)
         ));
     }
-    let duration = "(CAST(max(timestamp_end) AS BIGINT) - CAST(min(timestamp) AS BIGINT))";
     let mut having = Vec::new();
     if let Some(min) = f.min_duration_ms {
-        having.push(format!("{duration} >= {}", min.saturating_mul(1_000_000)));
+        having.push(format!(
+            "{DURATION_EXPR} >= {}",
+            min.saturating_mul(1_000_000)
+        ));
     }
     if let Some(max) = f.max_duration_ms {
-        having.push(format!("{duration} <= {}", max.saturating_mul(1_000_000)));
+        having.push(format!(
+            "{DURATION_EXPR} <= {}",
+            max.saturating_mul(1_000_000)
+        ));
     }
     if f.errors_only {
         having.push(format!(
@@ -229,19 +249,39 @@ pub fn build_search_sql(f: &TraceSearchFilter) -> String {
     } else {
         format!(" HAVING {}", having.join(" AND "))
     };
+    (conds.join(" AND "), having)
+}
+
+/// 检索匹配的 trace 总数 SQL。
+#[must_use]
+pub fn build_search_count_sql(f: &TraceSearchFilter) -> String {
+    let (conds, having) = search_where_and_having(f);
+    format!(
+        "SELECT count(*) AS total FROM \
+         (SELECT trace_id FROM {TRACE_TABLE} WHERE {conds} GROUP BY trace_id{having}) \
+         AS matched_traces"
+    )
+}
+
+/// 检索聚合分页 SQL：每个 trace 一行，按开始时间（或耗时）倒序分页。
+#[must_use]
+pub fn build_search_sql(f: &TraceSearchFilter) -> String {
+    let (conds, having) = search_where_and_having(f);
     let order = if f.min_duration_ms.is_some() {
         "duration_ns DESC"
     } else {
         "start_ns DESC"
     };
+    let page = f.page.max(1);
+    let page_size = f.page_size.clamp(1, MAX_SEARCH_PAGE_SIZE);
+    let offset = u64::from(page - 1) * u64::from(page_size);
     format!(
         "SELECT trace_id, CAST(min(timestamp) AS BIGINT) AS start_ns, \
-         {duration} AS duration_ns, count(*) AS span_count, \
+         {DURATION_EXPR} AS duration_ns, count(*) AS span_count, \
          count(DISTINCT service_name) AS service_count, \
          sum(CASE WHEN span_status_code = '{STATUS_ERROR}' THEN 1 ELSE 0 END) AS error_count \
-         FROM {TRACE_TABLE} WHERE {conds} GROUP BY trace_id{having} ORDER BY {order} LIMIT {limit}",
-        conds = conds.join(" AND "),
-        limit = f.limit.clamp(1, MAX_SEARCH_LIMIT),
+         FROM {TRACE_TABLE} WHERE {conds} GROUP BY trace_id{having} \
+         ORDER BY {order} LIMIT {page_size} OFFSET {offset}"
     )
 }
 
@@ -723,23 +763,44 @@ fn assemble_graph(
 }
 
 impl GreptimeDBClient {
-    /// trace 检索。
+    /// trace 检索（服务端分页 + 总数统计）。
     ///
     /// # Errors
     ///
     /// `GreptimeDB` 查询失败或超时时返回错误。
-    pub async fn search_traces(&self, filter: &TraceSearchFilter) -> Result<Vec<TraceSummary>> {
+    pub async fn search_traces(&self, filter: &TraceSearchFilter) -> Result<TraceSearchPage> {
+        let page = filter.page.max(1);
+        let page_size = filter.page_size.clamp(1, MAX_SEARCH_PAGE_SIZE);
         if filter.trace_ids.as_ref().is_some_and(Vec::is_empty) {
-            return Ok(Vec::new());
+            return Ok(TraceSearchPage {
+                total: 0,
+                page,
+                page_size,
+                traces: Vec::new(),
+            });
         }
-        let rows = self
-            .with_query_timeout(
+        let count_sql = build_search_count_sql(filter);
+        let search_sql = build_search_sql(filter);
+        let (count_rows, rows) = tokio::try_join!(
+            self.with_query_timeout(
+                "trace search count",
+                self.execute_trace_query_rows(&count_sql, "trace search count"),
+            ),
+            self.with_query_timeout(
                 "trace search",
-                self.execute_trace_query_rows(&build_search_sql(filter), "trace search"),
-            )
-            .await?;
+                self.execute_trace_query_rows(&search_sql, "trace search"),
+            ),
+        )?;
+        let total = count_rows
+            .first()
+            .map_or(0, |row| u64_field(row, "total"));
         if rows.is_empty() {
-            return Ok(Vec::new());
+            return Ok(TraceSearchPage {
+                total,
+                page,
+                page_size,
+                traces: Vec::new(),
+            });
         }
         let ids: Vec<String> = rows.iter().map(|r| str_field(r, "trace_id")).collect();
         let skeleton = self
@@ -751,7 +812,12 @@ impl GreptimeDBClient {
                 ),
             )
             .await?;
-        Ok(summaries_from_rows(&rows, &pick_roots(&skeleton)))
+        Ok(TraceSearchPage {
+            total,
+            page,
+            page_size,
+            traces: summaries_from_rows(&rows, &pick_roots(&skeleton)),
+        })
     }
 
     /// 单条 trace 详情；trace 不存在时返回 `None`。
@@ -1157,8 +1223,8 @@ mod tests {
     }
 
     #[test]
-    fn search_sql_applies_filters() {
-        let sql = build_search_sql(&TraceSearchFilter {
+    fn search_sql_applies_filters_and_pagination() {
+        let filter = TraceSearchFilter {
             start: 100,
             end: 200,
             trace_ids: Some(vec!["ab".into()]),
@@ -1166,13 +1232,20 @@ mod tests {
             min_duration_ms: Some(1_500),
             max_duration_ms: None,
             errors_only: true,
-            limit: 9_999,
-        });
+            page: 3,
+            page_size: 9_999,
+        };
+        let sql = build_search_sql(&filter);
         assert!(sql.contains("trace_id IN ('ab')"));
         assert!(sql.contains("service_name = 'mazbri-bypass'"));
         assert!(sql.contains(">= 1500000000"));
         assert!(sql.contains("> 0"));
-        assert!(sql.contains("ORDER BY duration_ns DESC LIMIT 200"));
+        assert!(sql.contains("ORDER BY duration_ns DESC LIMIT 100 OFFSET 200"));
+
+        let count_sql = build_search_count_sql(&filter);
+        assert!(count_sql.contains("SELECT count(*) AS total FROM"));
+        assert!(count_sql.contains("GROUP BY trace_id HAVING"));
+        assert!(count_sql.contains("AS matched_traces"));
     }
 
     #[test]

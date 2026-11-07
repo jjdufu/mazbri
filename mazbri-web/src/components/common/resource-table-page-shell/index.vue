@@ -1,3 +1,8 @@
+<!--
+  [不可更改] 列表页主标题统一由顶部导航栏面包屑（ArtBreadcrumb）承担，总条数统一由底部分页栏承担。
+  ResourceTablePageShell 委托 ResourceTableShell 渲染表格外壳，严禁在卡片头部渲染重复的大标题或「共 X 条」标签。
+  今后开发新页面必须遵守此规则。
+-->
 <template>
   <ResourceTableShell
     v-model:columns="columnsModel"
@@ -213,7 +218,7 @@ const props = withDefaults(
     size: undefined,
     showActionBar: true,
     filterCatalog: undefined,
-    searchPanelWidth: 260,
+    searchPanelWidth: 240,
     liveCommit: true,
     showSearch: true,
     showImport: false,

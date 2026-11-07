@@ -198,6 +198,7 @@ import {
   resetAdminMfa,
 } from "@/api/admin";
 import EditDialog from "@/components/common/EditDialog.vue";
+import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import ResetPasswordDialog from "../modules/reset-password-dialog.vue";
@@ -352,3 +353,10 @@ onActivated(() => {
   loadData();
 });
 </script>
+
+<style scoped lang="scss">
+.admin-detail-page {
+  padding: var(--ops-page-padding, 16px);
+  box-sizing: border-box;
+}
+</style>

@@ -1,28 +1,29 @@
 <template>
-  <div class="ops-trace art-full-height">
-    <div class="ops-trace__toolbar">
-      <div class="ops-trace__title">
-        <ElButton link @click="goBack"
-          >← {{ t("ops.traces.detail.back") }}</ElButton
-        >
-        <h2>{{ t("ops.traces.detail.title") }}</h2>
-        <code class="ops-trace__id">{{ traceId }}</code>
+  <OpsPage :title="t('ops.traces.detail.title')">
+    <template #actions>
+      <div class="ops-trace__toolbar">
+        <div class="ops-trace__title">
+          <ElButton link type="primary" @click="goBack"
+            >← {{ t("ops.traces.detail.back") }}</ElButton
+          >
+          <code class="ops-trace__id">{{ traceId }}</code>
+        </div>
+        <div v-if="detail" class="ops-trace__meta">
+          <span
+            >{{ t("ops.traces.detail.startedAt") }}
+            {{ formatNs(detail.start_ns) }}</span
+          >
+          <span
+            >{{ t("ops.traces.columns.duration") }}
+            {{ detail.duration_ms.toFixed(2) }} ms</span
+          >
+          <span
+            >{{ t("ops.traces.columns.spans") }} {{ detail.spans.length }}</span
+          >
+          <span>{{ t("ops.traces.columns.errors") }} {{ errorCount }}</span>
+        </div>
       </div>
-      <div v-if="detail" class="ops-trace__meta">
-        <span
-          >{{ t("ops.traces.detail.startedAt") }}
-          {{ formatNs(detail.start_ns) }}</span
-        >
-        <span
-          >{{ t("ops.traces.columns.duration") }}
-          {{ detail.duration_ms.toFixed(2) }} ms</span
-        >
-        <span
-          >{{ t("ops.traces.columns.spans") }} {{ detail.spans.length }}</span
-        >
-        <span>{{ t("ops.traces.columns.errors") }} {{ errorCount }}</span>
-      </div>
-    </div>
+    </template>
 
     <ElAlert
       v-if="missing"
@@ -235,8 +236,10 @@
       </div>
     </div>
 
-    <div v-if="detail && detail.linked_from.length" class="ops-trace__card">
-      <h3>{{ t("ops.traces.detail.asyncTitle") }}</h3>
+    <OpsCard
+      v-if="detail && detail.linked_from.length"
+      :title="t('ops.traces.detail.asyncTitle')"
+    >
       <div
         v-for="link in detail.linked_from"
         :key="`${link.trace_id}-${link.span_id}`"
@@ -253,9 +256,9 @@
         </ElLink>
         <span class="ops-trace__muted">← {{ link.linked_span_id }}</span>
       </div>
-    </div>
+    </OpsCard>
 
-    <div class="ops-trace__card">
+    <OpsCard>
       <ElTabs v-model="bottomTab">
         <ElTabPane
           :label="`${t('ops.traces.detail.logs')} (${calls.length})`"
@@ -375,8 +378,8 @@
           </ElTable>
         </ElTabPane>
       </ElTabs>
-    </div>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
@@ -385,6 +388,8 @@ import { computed, defineComponent, h, ref, watch, type PropType } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import { fetchTrace, fetchTraceBilling } from "@/api/traces";
 import { fetchCallStages } from "@/api/call-monitor";
 import type {
@@ -614,7 +619,7 @@ function openLinked(target: string, spanId: string) {
 
 function openCalls(requestId: string) {
   void router.push(
-    buildCallsRoute({ tab: "stages", filters: { request_id: requestId } }),
+    buildCallsRoute({ tab: "customer", filters: { request_id: requestId } }),
   );
 }
 
@@ -729,27 +734,18 @@ watch(traceId, () => void load(), { immediate: true });
 </script>
 
 <style scoped>
-.ops-trace {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
 .ops-trace__toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
 }
 .ops-trace__title {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-.ops-trace__title h2 {
-  margin: 0;
-  font-size: 18px;
 }
 .ops-trace__id {
   font-size: 13px;

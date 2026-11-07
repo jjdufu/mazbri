@@ -502,6 +502,7 @@ import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import TableDeleteDropdown from "@/components/table/TableDeleteDropdown.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
+import EmergencySwitchDialog from "./EmergencySwitchDialog.vue";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";

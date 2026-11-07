@@ -439,6 +439,7 @@ export const buildAdaptiveColumns = <T>(
 ): MutableColumn<T>[] => {
   const sampleRows = rows.slice(0, sampleSize);
   const minMap = new Map<string, number>();
+  const headerFloorMap = new Map<string, number>();
   const maxMap = new Map<string, number>();
 
   const computedColumns: MutableColumn<T>[] = baseColumns.map((column) => {
@@ -487,6 +488,13 @@ export const buildAdaptiveColumns = <T>(
 
     const headerWidth =
       measureTextWidth(String(column.label ?? "")) + cellPadding;
+    headerFloorMap.set(
+      columnKey,
+      Math.min(
+        effectiveMin,
+        Math.max(hardMinWidth, Math.ceil(headerWidth)),
+      ),
+    );
     const contentWidth = sampleRows.reduce((maxWidth, row, rowIndex) => {
       const text = resolveColumnText(
         { column, columnKey, row, rowIndex },
@@ -545,6 +553,17 @@ export const buildAdaptiveColumns = <T>(
       (col, key) => maxMap.get(key) ?? defaultMaxWidth,
     );
     totalWidth = sumWidths();
+    if (totalWidth > usableContainer) {
+      distributeDelta(
+        flexible,
+        usableContainer - totalWidth,
+        getColumnWeight,
+        "shrink",
+        (col, key) => headerFloorMap.get(key) ?? hardMinWidth,
+        (col, key) => maxMap.get(key) ?? defaultMaxWidth,
+      );
+      totalWidth = sumWidths();
+    }
   }
 
 
@@ -597,6 +616,21 @@ export const buildAdaptiveColumns = <T>(
   return orderColumnsForLayout(computedColumns);
 };
 
+const resolveUsableTableWidth = (
+  host: HTMLElement | null,
+  fallbackWidth: number,
+): number => {
+  if (host) {
+    const innerEl = host.querySelector<HTMLElement>(
+      ".el-table__inner-wrapper, .el-table, .el-card",
+    );
+    if (innerEl && innerEl.clientWidth > 0) {
+      return innerEl.clientWidth;
+    }
+  }
+  return fallbackWidth > 2 ? fallbackWidth - 2 : fallbackWidth;
+};
+
 export const useAdaptiveTableColumns = <T>(
   options: UseAdaptiveTableColumnsOptions<T>,
 ) => {
@@ -606,13 +640,17 @@ export const useAdaptiveTableColumns = <T>(
     const previousColumns = new Map(
       options.columns.value.map((column) => [getColumnKey(column), column]),
     );
+    const usableWidth = resolveUsableTableWidth(
+      options.containerRef.value,
+      containerWidth.value,
+    );
     const nextColumns = buildAdaptiveColumns(
       toValue(options.baseColumns) ?? [],
       toValue(options.rows) ?? [],
       options.getCellText,
       options.sampleSize ?? DEFAULT_SAMPLE_SIZE,
       options.cellPadding ?? DEFAULT_CELL_PADDING,
-      containerWidth.value,
+      usableWidth,
       options.selectionWidth ?? DEFAULT_SELECTION_WIDTH,
       options.operationsWidth ?? DEFAULT_OPERATIONS_WIDTH,
       options.getColumnWeight,
