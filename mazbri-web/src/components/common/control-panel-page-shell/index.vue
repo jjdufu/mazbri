@@ -135,6 +135,8 @@ const slots = useSlots();
   &__body {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     gap: 12px;
     width: 100%;
     min-width: 0;

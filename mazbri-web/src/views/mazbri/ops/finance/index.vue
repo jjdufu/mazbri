@@ -226,22 +226,25 @@ function namedRankColumns(nameLabel: string): ColumnOption<FinanceRankRow>[] {
     {
       prop: "display_name",
       label: nameLabel,
-      minWidth: 120,
+      minWidth: 84,
       formatter: (row) => rankName(row),
     },
     {
       prop: "revenue",
       label: t("ops.finance.revenue"),
+      minWidth: 72,
       formatter: (row) => moneyCell(row.revenue),
     },
     {
       prop: "cost",
       label: t("ops.finance.cost"),
+      minWidth: 72,
       formatter: (row) => moneyOrDash(row.cost, row.cost_status),
     },
     {
       prop: "margin",
       label: t("ops.finance.margin"),
+      minWidth: 72,
       formatter: (row) => moneyOrDash(row.margin, row.cost_status),
     },
   ];
@@ -251,28 +254,31 @@ const tenantRankColumns = computed<ColumnOption<FinanceRankRow>[]>(() => [
   {
     prop: "display_name",
     label: t("ops.finance.tenantName"),
-    minWidth: 120,
+    minWidth: 72,
     formatter: (row) => rankName(row),
   },
   {
     prop: "tenant_code",
     label: t("ops.finance.tenantCode"),
-    width: 110,
+    minWidth: 68,
     formatter: (row) => row.tenant_code?.trim() || "—",
   },
   {
     prop: "revenue",
     label: t("ops.finance.revenue"),
+    minWidth: 60,
     formatter: (row) => moneyCell(row.revenue),
   },
   {
     prop: "cost",
     label: t("ops.finance.cost"),
+    minWidth: 60,
     formatter: (row) => moneyOrDash(row.cost, row.cost_status),
   },
   {
     prop: "margin",
     label: t("ops.finance.margin"),
+    minWidth: 60,
     formatter: (row) => moneyOrDash(row.margin, row.cost_status),
   },
 ]);

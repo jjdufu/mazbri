@@ -109,10 +109,10 @@
         class="ops-traces__table"
         @row-click="openTrace"
       >
-        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="180">
+        <ElTableColumn :label="t('ops.traces.columns.start')" min-width="160">
           <template #default="{ row }">{{ formatMs(row.start_ms) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ops.traces.columns.root')" min-width="260">
+        <ElTableColumn :label="t('ops.traces.columns.root')" min-width="220">
           <template #default="{ row }">
             <span class="ops-traces__service">{{ row.root_service }}</span>
             {{ row.root_span }}
@@ -150,7 +150,7 @@
             <span v-else>0</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="trace_id" label="trace_id" min-width="280">
+        <ElTableColumn prop="trace_id" label="trace_id" min-width="240">
           <template #default="{ row }">
             <ElLink type="primary" @click.stop="openTrace(row)">{{
               row.trace_id

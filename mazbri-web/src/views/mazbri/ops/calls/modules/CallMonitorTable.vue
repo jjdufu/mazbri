@@ -702,14 +702,14 @@ const buildColumns = (
     {
       prop: "response_time",
       label: $t("operations.monitoring.columns.responseTime"),
-      minWidth: 168,
+      minWidth: 152,
       maxWidth: 196,
       useSlot: true,
     },
     {
       prop: "status_code",
       label: $t("operations.monitoring.columns.statusCode"),
-      minWidth: 76,
+      minWidth: 72,
       maxWidth: 92,
       useSlot: true,
     },
@@ -719,14 +719,14 @@ const buildColumns = (
     columns.push({
       prop: "duration_ms",
       label: $t("operations.monitoring.columns.customerLatency"),
-      minWidth: 84,
+      minWidth: 76,
       maxWidth: 108,
       useSlot: true,
     });
     columns.push({
       prop: "tenant_name",
       label: $t("operations.monitoring.columns.tenantName"),
-      minWidth: 100,
+      minWidth: 96,
       maxWidth: 160,
       useSlot: true,
       showOverflowTooltip: true,
@@ -735,14 +735,14 @@ const buildColumns = (
     columns.push({
       prop: "upstream_service_time_ms",
       label: $t("operations.monitoring.columns.upstreamLatency"),
-      minWidth: 84,
+      minWidth: 76,
       maxWidth: 108,
       useSlot: true,
     });
     columns.push({
       prop: "supplier",
       label: $t("operations.monitoring.columns.supplier"),
-      minWidth: 100,
+      minWidth: 96,
       maxWidth: 160,
       useSlot: true,
       showOverflowTooltip: true,
@@ -756,7 +756,7 @@ const buildColumns = (
         currentMode === "upstream"
           ? $t("operations.monitoring.columns.channelNameUpstream")
           : $t("operations.monitoring.columns.channelName"),
-      minWidth: 110,
+      minWidth: 100,
       maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: false,
@@ -764,7 +764,7 @@ const buildColumns = (
     {
       prop: "serial_no",
       label: $t("operations.monitoring.columns.serialNo"),
-      minWidth: 156,
+      minWidth: 136,
       maxWidth: 196,
       useSlot: true,
       showOverflowTooltip: false,
@@ -772,7 +772,7 @@ const buildColumns = (
     {
       prop: "trace_id",
       label: "trace_id",
-      minWidth: 156,
+      minWidth: 136,
       maxWidth: 196,
       useSlot: true,
       showOverflowTooltip: false,
@@ -783,7 +783,7 @@ const buildColumns = (
     columns.push({
       prop: "request_ip",
       label: $t("operations.monitoring.columns.requestIp"),
-      minWidth: 116,
+      minWidth: 104,
       maxWidth: 144,
       useSlot: true,
       showOverflowTooltip: true,
@@ -791,7 +791,7 @@ const buildColumns = (
     columns.push({
       prop: "response_result",
       label: $t("operations.monitoring.columns.responseResult"),
-      minWidth: 96,
+      minWidth: 88,
       maxWidth: 180,
       useSlot: true,
       showOverflowTooltip: true,
@@ -801,8 +801,8 @@ const buildColumns = (
   columns.push({
     prop: "operations",
     label: $t("common.fields.operations"),
-    minWidth: 72,
-    width: 72,
+    minWidth: 68,
+    width: 68,
     fixed: "right",
     useSlot: true,
   });
