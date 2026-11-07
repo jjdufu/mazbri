@@ -373,6 +373,11 @@ onActivated(() => {
 </script>
 
 <style scoped>
+.certificate-detail-page {
+  padding: var(--ops-page-padding, 16px);
+  box-sizing: border-box;
+}
+
 /* 状态说明为说明侧栏：不拉伸到左列高度，滚动时停在顶栏下方 */
 .certificate-detail-page__legend {
   position: sticky;

@@ -241,6 +241,9 @@ onMounted(loadData);
 
 <style scoped lang="scss">
 .channel-edit-page {
+  padding: var(--ops-page-padding, 16px);
+  box-sizing: border-box;
+
   .channel-edit-form {
     max-width: 720px;
   }

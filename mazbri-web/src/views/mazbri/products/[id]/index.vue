@@ -224,13 +224,6 @@
         stripe
         border
       >
-        <template #actions>
-          <ElTag type="info"
-            >{{ authorizedTenants.length }}
-            {{ $t("product.detail.tenantCountSuffix") }}</ElTag
-          >
-        </template>
-
         <template #status="{ row }">
           <StatusIndicator :type="getStatusType(row.status)">
             {{ getStatusLabel(row.status) }}
@@ -519,6 +512,11 @@ onActivated(() => {
 </script>
 
 <style scoped lang="scss">
+.product-detail-page {
+  padding: var(--ops-page-padding, 16px);
+  box-sizing: border-box;
+}
+
 .product-code-value {
   display: flex;
   align-items: center;

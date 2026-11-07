@@ -1821,7 +1821,7 @@ pub fn default_service_targets() -> Vec<ServiceMetricTarget> {
     .collect()
 }
 fn endpoint_filter(service: Option<&str>, targets: &[ServiceMetricTarget]) -> Result<String> {
-    match service {
+    match service.map(str::trim).filter(|s| !s.is_empty()) {
         Some("all") | None => Ok(String::new()),
         Some(key) => {
             let target = targets
@@ -2379,5 +2379,19 @@ mod tests {
         assert_eq!(t.sample_count, 0);
         assert!(t.qps.is_none() && t.success_rate.is_none() && t.error_rate.is_none());
         assert!(t.error_rate_4xx.is_none() && t.p99_latency_ms.is_none());
+    }
+
+    #[test]
+    fn endpoint_filter_treats_blank_service_as_unfiltered() -> Result<()> {
+        let targets = default_service_targets();
+        assert_eq!(super::endpoint_filter(None, &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some(""), &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some("   "), &targets)?, "");
+        assert_eq!(super::endpoint_filter(Some("all"), &targets)?, "");
+        assert_eq!(
+            super::endpoint_filter(Some("mazbri-gateway"), &targets)?,
+            r#"{service="mazbri-gateway"}"#
+        );
+        Ok(())
     }
 }

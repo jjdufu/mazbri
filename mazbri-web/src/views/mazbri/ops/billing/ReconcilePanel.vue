@@ -60,6 +60,12 @@ onMounted(loadCalendar);
 </script>
 
 <style scoped>
+.ops-billing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  min-width: 0;
+}
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -68,18 +74,22 @@ onMounted(loadCalendar);
 .calendar-cell {
   padding: 8px;
   border-radius: 6px;
+  border: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-light);
   text-align: center;
   font-size: 12px;
 }
 .calendar-cell.is-ok {
-  background: #e8f8ef;
+  background: var(--el-color-success-light-9);
+  border-color: var(--el-color-success-light-7);
 }
 .calendar-cell.is-open {
-  background: #fff7e6;
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-7);
 }
 .calendar-cell.is-error {
-  background: #fdecea;
+  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-7);
 }
 .calendar-cell .status {
   margin-top: 4px;
