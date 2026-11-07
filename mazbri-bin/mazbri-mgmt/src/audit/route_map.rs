@@ -976,7 +976,6 @@ pub static ROUTES: &[RouteAudit] = &[
         R::ConfigCenter,
         None,
     ),
-    read("/config-center/nodes", R::ConfigCenter),
     // ---- callbacks ----
     read("/callbacks/subscriptions", R::Callback),
     write(

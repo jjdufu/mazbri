@@ -56,6 +56,7 @@ import { fetchServicesHealth } from "@/api/monitoring";
 import type { ServiceHealthRow } from "@/types/api/monitoring";
 import type { ColumnOption } from "@/types/component";
 import { buildServiceDetailRoute } from "@/utils/ops/services-link";
+import { formatShortVersion } from "@/utils/ops/components-health";
 
 defineOptions({ name: "OpsServicesHealthPanel" });
 
@@ -78,7 +79,10 @@ const hexagonNodes = computed<HexagonNode[]>(() =>
     id: row.service,
     label: row.name || row.service,
     status: healthStatus(row),
-    badge: row.version ? `v${row.version}` : undefined,
+    badge: formatShortVersion(row.version),
+    tooltipLines: row.version
+      ? [`${row.name || row.service} (${row.service})`, `v${row.version}`]
+      : [`${row.name || row.service} (${row.service})`],
   })),
 );
 

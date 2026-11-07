@@ -192,7 +192,6 @@ pub const RULES: &[RouteRule] = &[
     ),
     rule("GET", "/config-center/export", Roles(ADMIN)),
     rule("POST", "/config-center/import", Roles(ADMIN)),
-    rule("GET", "/config-center/nodes", Roles(ADMIN)),
     rule("GET", "/config-center/service-names", AnyRole),
     rule("GET", "/config-center/services", Roles(ADMIN)),
     rule("POST", "/config-center/validate", Roles(ADMIN)),

@@ -1,7 +1,6 @@
 mod config;
 mod history;
 mod import_export;
-mod nodes;
 mod services;
 mod validation;
 use crate::response::ApiResponse;
@@ -9,7 +8,6 @@ use axum::http::StatusCode;
 pub use config::{create_config, delete_config, get_config, list_configs, update_config};
 pub use history::{get_history, rollback};
 pub use import_export::{export_configs, import_configs};
-pub use nodes::list_nodes;
 use serde::{Deserialize, Serialize};
 pub use services::{list_canonical_service_names, list_services};
 pub use validation::validate_toml_endpoint;
@@ -73,8 +71,6 @@ pub struct HistoryQueryParams {
 }
 #[derive(Debug, Deserialize)]
 pub struct ServiceListParams {}
-#[derive(Debug, Deserialize)]
-pub struct NodeListParams {}
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidateTomlRequest {

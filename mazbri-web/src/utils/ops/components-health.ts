@@ -64,3 +64,16 @@ export function countAbnormal(
 ): number {
   return groupComponents(components).reduce((n, g) => n + g.abnormal, 0);
 }
+
+/**
+ * 提取构建版本号的主版本段（剥离括号内的 git commit SHA），用于六边形等紧凑角标展示。
+ * 例：`"0.3.5 (98ac85f38ca0)"` -> `"v0.3.5"`。
+ */
+export function formatShortVersion(
+  version: string | null | undefined,
+): string | undefined {
+  if (!version) return undefined;
+  const base = version.replace(/\s*\([^)]*\).*$/, "").trim();
+  if (!base) return undefined;
+  return base.startsWith("v") ? base : `v${base}`;
+}

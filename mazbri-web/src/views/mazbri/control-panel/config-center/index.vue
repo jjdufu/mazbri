@@ -3,8 +3,6 @@
     :title="$t('configCenter.page.title')"
     icon="ri:settings-3-line"
   >
-    <NodeStatusCard />
-
     <div class="toolbar">
       <ResourceTableActionBar
         v-model="searchKeyword"
@@ -178,7 +176,6 @@ import ConfigEditDialog from "./modules/ConfigEditDialog.vue";
 import HistoryDrawer from "./modules/HistoryDrawer.vue";
 import ImportDialog from "./modules/ImportDialog.vue";
 import ExportDialog from "./modules/ExportDialog.vue";
-import NodeStatusCard from "./modules/NodeStatusCard.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";

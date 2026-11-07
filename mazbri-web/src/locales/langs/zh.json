@@ -1927,20 +1927,6 @@
       "version": "版本 {version}",
       "noChanges": "两个版本内容相同"
     },
-    "nodeStatus": {
-      "onlineNodes": "在线节点",
-      "totalNodes": "总节点数",
-      "onlineRate": "在线率",
-      "collapseDetails": "收起节点详情",
-      "expandDetails": "点击展开节点详情",
-      "instances": "实例",
-      "time": {
-        "secondsAgo": "{count}秒前",
-        "minutesAgo": "{count}分钟前",
-        "hoursAgo": "{count}小时前",
-        "daysAgo": "{count}天前"
-      }
-    },
     "messages": {
       "selectConfigToDelete": "请先选择要删除的数据",
       "deleteConfirmTitle": "删除确认",
@@ -4266,14 +4252,6 @@
       "sloBudgetSlim": "{name}：剩余 {remaining}",
       "sloBudgetDefaultName": "SLO",
       "sloBudgetLoadFailed": "加载错误预算失败",
-      "infraStrip": {
-        "title": "基础设施状态",
-        "open": "基础设施",
-        "loadFailed": "加载基础设施指标失败",
-        "pipeline": "数据同步延迟",
-        "hostCpu": "主机 CPU"
-      },
-      "noSampleHint": "所选时间窗内无业务流量",
       "sections": {
         "kpi": "态势 KPI",
         "realtime": "实时状态",
@@ -4287,21 +4265,15 @@
       "windowSemantics": "统计时段：{start} – {end}（{label}）",
       "realtimeNow": "实时",
       "realtimeSemantics": "近 {secs} 秒 · 截至 {at}",
-      "realtimeNoSample": "当前无业务流量",
       "components": "组件健康",
       "inventoryHint": "租户共 {total} · 已启用产品 {products}",
-      "billingDeadLetters": "入账异常 {n}",
-      "appsOnlineTitle": "应用在线",
       "openRuntime": "查看全部",
       "trafficQualityOpenCalls": "查看调用日志",
       "securityGov": {
         "topIp": "鉴权失败 Top IP",
         "topKey": "鉴权失败 Top Key",
-        "governance": "限流拒绝",
         "openCalls": "调用日志",
-        "openRuntime": "运行指标",
-        "empty": "窗口内暂无样本",
-        "hint": ""
+        "empty": "窗口内暂无样本"
       }
     },
     "finance": {

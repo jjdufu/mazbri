@@ -4,29 +4,51 @@
       <slot name="empty">—</slot>
     </div>
     <div v-else class="hexagon-grid">
-      <div
+      <ElTooltip
         v-for="node in nodes"
         :key="node.id"
-        class="hexagon-item"
-        :class="[
-          `is-${node.status}`,
-          { 'is-active': node.id === selectedId },
-        ]"
-        :title="node.label"
-        @click="onSelect(node.id)"
+        placement="top"
+        :show-after="150"
+        :disabled="!node.tooltipLines?.length && !node.label"
       >
-        <div class="hexagon-border">
-          <div class="hexagon-inner">
-            <span class="status-dot" :class="{ pulsating: node.status === 'healthy' }" />
-            <span class="service-abbreviation">{{
-              node.shortLabel || shortName(node.label)
-            }}</span>
-            <span v-if="node.badge" class="hexagon-instance-badge">{{
-              node.badge
-            }}</span>
+        <template #content>
+          <div class="hexagon-tooltip">
+            <template v-if="node.tooltipLines?.length">
+              <div
+                v-for="(line, idx) in node.tooltipLines"
+                :key="idx"
+                class="hexagon-tooltip__line"
+              >
+                {{ line }}
+              </div>
+            </template>
+            <div v-else class="hexagon-tooltip__line">{{ node.label }}</div>
+          </div>
+        </template>
+        <div
+          class="hexagon-item"
+          :class="[
+            `is-${node.status}`,
+            { 'is-active': node.id === selectedId },
+          ]"
+          @click="onSelect(node.id)"
+        >
+          <div class="hexagon-border">
+            <div class="hexagon-inner">
+              <span
+                class="status-dot"
+                :class="{ pulsating: node.status === 'healthy' }"
+              />
+              <span class="service-abbreviation">{{
+                node.shortLabel || shortName(node.label)
+              }}</span>
+              <span v-if="node.badge" class="hexagon-instance-badge">{{
+                node.badge
+              }}</span>
+            </div>
           </div>
         </div>
-      </div>
+      </ElTooltip>
     </div>
   </div>
 </template>
@@ -41,8 +63,10 @@ export interface HexagonNode {
   /** 六边形内短名；缺省由 label 推导 */
   shortLabel?: string;
   status: HexagonStatus;
-  /** 角标文案，如 `2 Ins` */
+  /** 角标文案，如 `v0.3.5` */
   badge?: string;
+  /** 悬浮提示多行明细 */
+  tooltipLines?: string[];
 }
 
 defineOptions({ name: "ServiceHexagonGrid" });
@@ -89,30 +113,30 @@ function onSelect(id: string) {
 .hexagon-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px 14px;
+  gap: 10px 8px;
   justify-content: flex-start;
-  padding: 10px 4px;
+  padding: 6px 2px;
 }
 
 .service-hexagon-grid.is-compact .hexagon-grid {
-  gap: 12px 10px;
+  gap: 10px 8px;
   padding: 4px 0;
 }
 
 .hexagon-item {
   position: relative;
-  width: 90px;
-  height: 104px;
+  width: 96px;
+  height: 110px;
   cursor: pointer;
   transition:
     transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
     filter 0.22s ease;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.12));
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
 
   &:hover {
-    transform: translateY(-4px) scale(1.05);
+    transform: translateY(-3px) scale(1.04);
     filter: drop-shadow(
-      0 6px 12px color-mix(in srgb, var(--theme-color) 25%, transparent)
+      0 6px 12px color-mix(in srgb, var(--theme-color) 24%, transparent)
     );
   }
 
@@ -139,16 +163,48 @@ function onSelect(id: string) {
   }
 
   &.is-down .hexagon-border {
-    background: color-mix(in srgb, var(--art-danger, #f56c6c) 55%, var(--art-card-border));
+    background: color-mix(
+      in srgb,
+      var(--art-danger, #f56c6c) 55%,
+      var(--art-card-border)
+    );
   }
   &.is-degraded .hexagon-border {
-    background: color-mix(in srgb, var(--art-warning, #e6a23c) 45%, var(--art-card-border));
+    background: color-mix(
+      in srgb,
+      var(--art-warning, #e6a23c) 45%,
+      var(--art-card-border)
+    );
+  }
+  &.is-unknown .hexagon-border {
+    background: color-mix(
+      in srgb,
+      var(--art-gray-400, #909399) 45%,
+      var(--art-card-border)
+    );
+  }
+
+  &.is-down .hexagon-instance-badge {
+    color: var(--art-danger, #f56c6c);
+    background: color-mix(in srgb, var(--art-danger, #f56c6c) 12%, transparent);
+  }
+  &.is-degraded .hexagon-instance-badge {
+    color: var(--art-warning, #e6a23c);
+    background: color-mix(
+      in srgb,
+      var(--art-warning, #e6a23c) 14%,
+      transparent
+    );
+  }
+  &.is-unknown .hexagon-instance-badge {
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color);
   }
 }
 
 .service-hexagon-grid.is-compact .hexagon-item {
-  width: 76px;
-  height: 88px;
+  width: 92px;
+  height: 106px;
 }
 
 .hexagon-border {
@@ -165,44 +221,59 @@ function onSelect(id: string) {
 .hexagon-inner {
   width: calc(100% - 4px);
   height: calc(100% - 4px);
-  background: color-mix(in srgb, var(--default-box-color) 96%, var(--theme-color) 4%);
+  background: color-mix(
+    in srgb,
+    var(--default-box-color) 96%,
+    var(--theme-color) 4%
+  );
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 6px;
+  justify-content: center;
+  gap: 4px;
+  padding: 20px 6px;
   box-sizing: border-box;
 }
 
 .service-hexagon-grid.is-compact .hexagon-inner {
-  padding: 10px 4px;
+  padding: 18px 5px;
+  gap: 4px;
 }
 
 .service-abbreviation {
   font-weight: 600;
   color: var(--art-gray-900);
   font-size: 12px;
+  line-height: 1.25;
   text-align: center;
-  max-width: 100%;
+  width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.hexagon-instance-badge {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--theme-color);
+  background: color-mix(in srgb, var(--theme-color) 10%, transparent);
+  padding: 1px 6px;
+  border-radius: 8px;
+  max-width: 88%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hexagon-instance-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--theme-color);
-  background: color-mix(in srgb, var(--theme-color) 10%, transparent);
-  padding: 1px 5px;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
 .status-dot {
-  width: 6px;
-  height: 6px;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--art-success);
 
@@ -210,6 +281,14 @@ function onSelect(id: string) {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
     animation: hex-dot-pulse 1.8s infinite;
   }
+}
+
+.hexagon-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @keyframes hex-dot-pulse {

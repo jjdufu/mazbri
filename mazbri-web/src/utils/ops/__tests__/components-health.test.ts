@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ComponentHealth } from "@/types/api/monitoring";
-import { countAbnormal, groupComponents } from "../components-health";
+import {
+  countAbnormal,
+  formatShortVersion,
+  groupComponents,
+} from "../components-health";
 
 function c(key: string, group: ComponentHealth["group"], status: ComponentHealth["status"], name = key): ComponentHealth {
   return {
@@ -39,5 +43,12 @@ describe("components-health", () => {
       countAbnormal([c("a", "app", "yellow"), c("b", "other", "green")]),
       1,
     );
+  });
+
+  it("formatShortVersion strips git commit hash", () => {
+    assert.equal(formatShortVersion("0.3.5 (98ac85f38ca0)"), "v0.3.5");
+    assert.equal(formatShortVersion("v0.3.7"), "v0.3.7");
+    assert.equal(formatShortVersion(null), undefined);
+    assert.equal(formatShortVersion(""), undefined);
   });
 });

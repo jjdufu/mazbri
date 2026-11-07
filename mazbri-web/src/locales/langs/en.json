@@ -1927,20 +1927,6 @@
       "version": "Version {version}",
       "noChanges": "The two versions have identical content"
     },
-    "nodeStatus": {
-      "onlineNodes": "Online Nodes",
-      "totalNodes": "Total Nodes",
-      "onlineRate": "Online Rate",
-      "collapseDetails": "Collapse node details",
-      "expandDetails": "Click to expand node details",
-      "instances": "instances",
-      "time": {
-        "secondsAgo": "{count} seconds ago",
-        "minutesAgo": "{count} minutes ago",
-        "hoursAgo": "{count} hours ago",
-        "daysAgo": "{count} days ago"
-      }
-    },
     "messages": {
       "selectConfigToDelete": "Please select configuration entries to delete",
       "deleteConfirmTitle": "Delete confirmation",
@@ -4261,14 +4247,6 @@
       "sloBudgetSlim": "{name}: {remaining} left",
       "sloBudgetDefaultName": "SLO",
       "sloBudgetLoadFailed": "Failed to load error budget",
-      "infraStrip": {
-        "title": "Infra health",
-        "open": "Infrastructure",
-        "loadFailed": "Failed to load infra strip",
-        "pipeline": "Pipeline freshness",
-        "hostCpu": "Host CPU"
-      },
-      "noSampleHint": "No business traffic in the selected time range",
       "sections": {
         "kpi": "KPI",
         "realtime": "Now",
@@ -4282,21 +4260,15 @@
       "windowSemantics": "Follows time range · {start} – {end} ({label})",
       "realtimeNow": "Now",
       "realtimeSemantics": "Now · last {secs}s · as of {at}",
-      "realtimeNoSample": "No business traffic right now",
       "components": "Component health",
       "inventoryHint": "{total} tenants · {products} enabled products",
-      "billingDeadLetters": "Billing dead letters {n}",
-      "appsOnlineTitle": "Apps online",
       "openRuntime": "View all",
       "trafficQualityOpenCalls": "Open call logs",
       "securityGov": {
         "topIp": "Auth-fail Top IP",
         "topKey": "Auth-fail Top Key",
-        "governance": "Rate-limit rejects",
         "openCalls": "Call logs",
-        "openRuntime": "Runtime metrics",
-        "empty": "No samples in window",
-        "hint": "Rate-limit / cache details live in summaries; ops sidebar follows the new IA — open call logs or runtime metrics."
+        "empty": "No samples in window"
       }
     },
     "finance": {

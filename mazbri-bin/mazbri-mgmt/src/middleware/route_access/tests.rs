@@ -173,7 +173,7 @@ fn previously_unguarded_routes_are_now_restricted() {
         .iter()
         .filter(|rule| rule.path.starts_with("/config-center/"))
         .collect();
-    assert!(config_center.len() >= 12);
+    assert!(config_center.len() >= 11);
     for rule in config_center {
         let expected = if rule.path == "/config-center/service-names" {
             Access::AnyRole
