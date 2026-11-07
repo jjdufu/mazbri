@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/jjdufu/mazbri/compare/v0.3.7...v0.3.8) (2026-11-07)
+
+
+### Features
+
+* **ops,web:** 运维中心与公共外壳规范化重构及真分页治理 ([#65](https://github.com/jjdufu/mazbri/issues/65)) ([2efc5f1](https://github.com/jjdufu/mazbri/commit/2efc5f1880bff97350c7ca6b3956eaf44eb67bd6))
+
 ## [0.3.7](https://github.com/jjdufu/mazbri/compare/v0.3.6...v0.3.7) (2026-11-07)
 
 
