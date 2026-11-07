@@ -1,29 +1,26 @@
+<!--
+  [不可更改] 页面主标题统一由顶部导航栏面包屑（ArtBreadcrumb）展示。
+  严禁在 ControlPanelPageShell 或业务页面内部渲染重复的大标题（h1/h2/.control-panel-page-shell__title），
+  以保证页面展示信息密度。今后开发新页面必须遵守此规则。
+-->
 <template>
   <div class="control-panel-page-shell">
     <section
-      v-if="title || slots.actions"
+      v-if="subtitle || slots.subtitle || slots.titleExtra || slots.actions"
       class="control-panel-page-shell__header"
-      :class="{
-        'is-title-only':
-          !slots.actions && !subtitle && !slots.subtitle && !slots.titleExtra,
-      }"
     >
-      <div class="control-panel-page-shell__copy">
-        <div v-if="title" class="control-panel-page-shell__title-row">
-          <ArtSvgIcon
-            :icon="icon"
-            class="control-panel-page-shell__title-icon"
-          />
-          <div class="control-panel-page-shell__title-wrap">
-            <h1 class="control-panel-page-shell__title">{{ title }}</h1>
-            <span
-              v-if="subtitle || slots.subtitle"
-              class="control-panel-page-shell__subtitle"
-            >
-              <slot name="subtitle">{{ subtitle }}</slot>
-            </span>
-            <slot name="titleExtra" />
-          </div>
+      <div
+        v-if="subtitle || slots.subtitle || slots.titleExtra"
+        class="control-panel-page-shell__copy"
+      >
+        <div class="control-panel-page-shell__title-wrap">
+          <span
+            v-if="subtitle || slots.subtitle"
+            class="control-panel-page-shell__subtitle"
+          >
+            <slot name="subtitle">{{ subtitle }}</slot>
+          </span>
+          <slot name="titleExtra" />
         </div>
       </div>
 
@@ -48,14 +45,15 @@
 <script setup lang="ts">
 defineOptions({ name: "ControlPanelPageShell" });
 interface Props {
+  // [不可更改] title 与 icon 仅保留签名兼容调用方，严禁在模板中渲染页面级大标题。
   title?: string;
-
   subtitle?: string;
-  icon: string;
+  icon?: string;
 }
 withDefaults(defineProps<Props>(), {
   title: "",
   subtitle: "",
+  icon: "",
 });
 const slots = useSlots();
 </script>
@@ -78,20 +76,6 @@ const slots = useSlots();
     padding: 2px 2px 0;
   }
 
-  &__title-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  &__title-icon {
-    color: var(--theme-color);
-    font-size: 16px;
-    flex-shrink: 0;
-    transform: translateY(-1px);
-  }
-
   &__copy {
     min-width: 0;
   }
@@ -102,14 +86,6 @@ const slots = useSlots();
     align-items: baseline;
     gap: 6px 12px;
     min-width: 0;
-  }
-
-  &__title {
-    margin: 0;
-    color: var(--art-gray-900);
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1.35;
   }
 
   &__subtitle {
@@ -125,6 +101,7 @@ const slots = useSlots();
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
+    margin-left: auto;
   }
 
   &__toolbar {
@@ -157,20 +134,6 @@ const slots = useSlots();
   :deep(.control-panel-toolbar-form .el-form-item__label) {
     color: var(--art-gray-700);
     font-weight: 600;
-  }
-
-  // Wide screens show the header breadcrumb (hidden below lg/1024px), so the
-  // page title text + icon is redundant there. Subtitle / titleExtra / actions
-  // stay visible; a header with nothing else in it is dropped entirely.
-  @media (min-width: 1024px) {
-    &__title-icon,
-    &__title {
-      display: none;
-    }
-
-    &__header.is-title-only {
-      display: none;
-    }
   }
 
   @media (max-width: 900px) {
