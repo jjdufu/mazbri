@@ -1,11 +1,11 @@
 <template>
-  <ElDialog
+  <CenteredDialog
     :model-value="view.visible"
     :title="title"
     width="440px"
     append-to-body
     :close-on-click-modal="false"
-    :before-close="onBeforeClose"
+    @update:model-value="onVisibleChange"
   >
     <p class="mfa-step-up-dialog__lead">{{ lead }}</p>
     <p v-if="categoryLabel" class="mfa-step-up-dialog__purpose">
@@ -34,12 +34,13 @@
         {{ t("common.confirm") }}
       </ElButton>
     </template>
-  </ElDialog>
+  </CenteredDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import {
   bindMfaStepUpDialog,
   cancelMfaDialog,
@@ -108,9 +109,10 @@ function onCancel(): void {
   cancelMfaDialog(view.value.sessionId);
 }
 
-function onBeforeClose(done: () => void): void {
-  cancelMfaDialog(view.value.sessionId);
-  done();
+function onVisibleChange(nextVisible: boolean): void {
+  if (!nextVisible) {
+    cancelMfaDialog(view.value.sessionId);
+  }
 }
 </script>
 

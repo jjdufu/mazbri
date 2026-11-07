@@ -18,10 +18,13 @@
         :title="$t('callbacks.tabs.subscriptions')"
         :loading="loading"
         :data="tableData"
-        :show-toolbar="false"
+        :pagination="subscriptionPagination"
         stripe
         border
+        @refresh="getData"
         @selection-change="handleSelectionChange"
+        @pagination:size-change="handleSubscriptionSizeChange"
+        @pagination:current-change="handleSubscriptionCurrentChange"
       >
         <template #actions>
           <ListQueryBar
@@ -85,9 +88,12 @@
         :title="$t('callbacks.tabs.deliveries')"
         :loading="deliveryLoading"
         :data="deliveryData"
-        :show-toolbar="false"
+        :pagination="deliveryPagination"
         stripe
         border
+        @refresh="getDeliveries"
+        @pagination:size-change="handleDeliverySizeChange"
+        @pagination:current-change="handleDeliveryCurrentChange"
       >
         <template #actions>
           <ListQueryBar
@@ -203,11 +209,22 @@ const tabOptions = [
 ];
 const tableData = ref<CallbackSubscription[]>([]);
 const deliveryData = ref<CallbackDeliveryLog[]>([]);
+const subscriptionPagination = reactive({
+  current: 1,
+  size: 20,
+  total: 0,
+});
+const deliveryPagination = reactive({
+  current: 1,
+  size: 20,
+  total: 0,
+});
 const subscriptionSearch = useListQuery({
   catalog: callbackSubscriptionsCatalog,
   searchOnQChange: false,
   encodeMode: "json",
   onChange: () => {
+    subscriptionPagination.current = 1;
     void getData();
   },
 });
@@ -216,6 +233,7 @@ const deliverySearch = useListQuery({
   searchOnQChange: false,
   encodeMode: "json",
   onChange: () => {
+    deliveryPagination.current = 1;
     void getDeliveries();
   },
 });
@@ -375,10 +393,11 @@ const getData = async () => {
         q?: string;
         filters?: string;
       }),
-      page: 1,
-      page_size: 500,
+      page: subscriptionPagination.current,
+      page_size: subscriptionPagination.size,
     });
     tableData.value = res.data ?? [];
+    subscriptionPagination.total = res.total ?? 0;
     clearSelection();
   }).catch((error: unknown) => {
     ElMessage.error(
@@ -396,10 +415,11 @@ const getDeliveries = async () => {
         q?: string;
         filters?: string;
       }),
-      page: 1,
-      page_size: 500,
+      page: deliveryPagination.current,
+      page_size: deliveryPagination.size,
     });
     deliveryData.value = res.data ?? [];
+    deliveryPagination.total = res.total ?? 0;
   }).catch((error: unknown) => {
     ElMessage.error(
       getUserFacingErrorMessage(
@@ -408,6 +428,24 @@ const getDeliveries = async () => {
       ),
     );
   });
+};
+const handleSubscriptionSizeChange = (size: number) => {
+  subscriptionPagination.size = size;
+  subscriptionPagination.current = 1;
+  void getData();
+};
+const handleSubscriptionCurrentChange = (page: number) => {
+  subscriptionPagination.current = page;
+  void getData();
+};
+const handleDeliverySizeChange = (size: number) => {
+  deliveryPagination.size = size;
+  deliveryPagination.current = 1;
+  void getDeliveries();
+};
+const handleDeliveryCurrentChange = (page: number) => {
+  deliveryPagination.current = page;
+  void getDeliveries();
 };
 const parseCallbackImport = (value: string) => value.trim();
 const validateSubscriptionImportRow = (row: Record<string, string>) => {

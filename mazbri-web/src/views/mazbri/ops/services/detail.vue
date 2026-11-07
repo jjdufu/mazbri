@@ -1,17 +1,23 @@
 <template>
-  <div class="ops-service-detail art-full-height">
-    <div class="ops-service-detail__toolbar">
-      <div>
-        <ElButton link type="primary" @click="router.push(buildServicesRoute({ tab: 'health' }))">
-          ← {{ t("ops.services.backToMatrix") }}
-        </ElButton>
-        <h2>{{ title }}</h2>
+  <OpsPage :title="title">
+    <template #actions>
+      <div class="ops-service-detail__header">
+        <div class="ops-service-detail__nav">
+          <ElButton
+            link
+            type="primary"
+            @click="router.push(buildRuntimeRoute({ tab: 'apps' }))"
+          >
+            ← {{ t("ops.services.backToMatrix") }}
+          </ElButton>
+          <ElTag type="info" effect="plain">{{ title }}</ElTag>
+        </div>
+        <div class="ops-service-detail__actions">
+          <TimeRangePicker v-model="timeRange" @change="reload" />
+          <AutoRefresh v-model="refreshInterval" @tick="reload" />
+        </div>
       </div>
-      <div class="ops-service-detail__actions">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </div>
+    </template>
 
     <ElRow :gutter="16">
       <ElCol :xs="24" :sm="6">
@@ -48,8 +54,7 @@
       </ElCol>
     </ElRow>
 
-    <ElCard shadow="never" class="ops-service-detail__section">
-      <template #header>RED</template>
+    <OpsCard title="RED">
       <ElRow :gutter="16">
         <ElCol :xs="24" :lg="8">
           <MultiSeriesChart
@@ -73,10 +78,9 @@
           />
         </ElCol>
       </ElRow>
-    </ElCard>
+    </OpsCard>
 
-    <ElCard shadow="never" class="ops-service-detail__section">
-      <template #header>USE</template>
+    <OpsCard title="USE">
       <ElRow :gutter="16">
         <ElCol v-for="item in useMetrics" :key="item.key" :xs="24" :lg="8">
           <div class="ops-service-detail__metric-title">{{ item.label }}</div>
@@ -87,10 +91,9 @@
           />
         </ElCol>
       </ElRow>
-    </ElCard>
+    </OpsCard>
 
-    <ElCard shadow="never" class="ops-service-detail__section">
-      <template #header>{{ t("ops.services.detail.specific") }}</template>
+    <OpsCard :title="t('ops.services.detail.specific')">
       <ElEmpty
         v-if="!specificMetrics.length"
         :description="t('ops.services.detail.noSpecific')"
@@ -110,17 +113,19 @@
           />
         </ElCol>
       </ElRow>
-    </ElCard>
-  </div>
+    </OpsCard>
+  </OpsPage>
 </template>
 
 <script setup lang="ts">
 import { formatDateTime } from "@/utils/format";
-import { buildServicesRoute } from "@/utils/ops/services-link";
+import { buildRuntimeRoute } from "@/utils/ops/runtime-link";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import OpsPage from "@/components/ops/OpsPage.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
 import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
@@ -217,8 +222,12 @@ const specificMetrics = computed(() =>
     .slice(0, 4),
 );
 
+let reloadSeq = 0;
+
 async function reload() {
-  if (!serviceKey.value) return;
+  const currentService = serviceKey.value.trim();
+  if (!currentService) return;
+  const seq = ++reloadSeq;
   loading.value = true;
   try {
     const [healthRows, catalog, qps, errors, latency] = await Promise.all([
@@ -228,23 +237,24 @@ async function reload() {
         metric: "service_qps",
         start: timeRange.value.start,
         end: timeRange.value.end,
-        service: serviceKey.value,
+        service: currentService,
       }).catch(() => null),
       fetchMetricTimeseries({
         metric: "error_rate",
         start: timeRange.value.start,
         end: timeRange.value.end,
-        service: serviceKey.value,
+        service: currentService,
       }).catch(() => null),
       fetchMetricTimeseries({
         metric: "p95_latency_ms",
         start: timeRange.value.start,
         end: timeRange.value.end,
-        service: serviceKey.value,
+        service: currentService,
       }).catch(() => null),
     ]);
+    if (seq !== reloadSeq || serviceKey.value.trim() !== currentService) return;
     row.value =
-      healthRows.find((item) => item.service === serviceKey.value) || null;
+      healthRows.find((item) => item.service === currentService) || null;
     catalogMetrics.value = catalog.metrics || [];
     qpsSeries.value = qps;
     errorSeries.value = errors;
@@ -257,10 +267,11 @@ async function reload() {
           metric: item.key,
           start: timeRange.value.start,
           end: timeRange.value.end,
-          service: serviceKey.value,
+          service: currentService,
         }).catch(() => null);
       }),
     );
+    if (seq !== reloadSeq || serviceKey.value.trim() !== currentService) return;
     specificSeries.value = next;
 
     const nextUse: Record<string, MetricSeries | null> = {};
@@ -270,17 +281,21 @@ async function reload() {
           metric: item.key,
           start: timeRange.value.start,
           end: timeRange.value.end,
-          service: serviceKey.value,
+          service: currentService,
         }).catch(() => null);
       }),
     );
+    if (seq !== reloadSeq || serviceKey.value.trim() !== currentService) return;
     useSeries.value = nextUse;
   } catch (error) {
+    if (seq !== reloadSeq) return;
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.services.loadFailed"),
     );
   } finally {
-    loading.value = false;
+    if (seq === reloadSeq) {
+      loading.value = false;
+    }
   }
 }
 
@@ -292,32 +307,25 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-service-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-}
-.ops-service-detail__toolbar {
+.ops-service-detail__header {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  width: 100%;
 }
-.ops-service-detail__toolbar h2 {
-  margin: 4px 0 0;
-  font-size: 20px;
-  font-weight: 600;
+.ops-service-detail__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 .ops-service-detail__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-}
-.ops-service-detail__section {
-  margin-top: 4px;
 }
 .ops-service-detail__metric-title {
   margin-bottom: 8px;

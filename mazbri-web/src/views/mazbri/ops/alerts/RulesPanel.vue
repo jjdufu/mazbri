@@ -9,7 +9,7 @@
       }}</ElButton>
     </OpsPanelToolbar>
 
-    <OpsCard :title="t('menus.mazbri.alertRules')" :info="t('ops.alerts.rules.hint')">
+    <OpsCard>
       <ElTable v-loading="loading" :data="rules" row-key="id" size="small">
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.enabled')"
@@ -106,12 +106,16 @@
       </ElTable>
     </OpsCard>
 
-    <ElDialog
+    <EditDialog
       v-model="dialogVisible"
       :title="
         editingId ? t('ops.alerts.rules.edit') : t('ops.alerts.rules.create')
       "
       width="640px"
+      :cancel-text="t('ops.alerts.rules.cancel')"
+      :confirm-text="t('ops.alerts.rules.save')"
+      :saving="saving"
+      @confirm="save"
     >
       <ElForm
         ref="formRef"
@@ -229,15 +233,7 @@
           </div>
         </ElFormItem>
       </ElForm>
-      <template #footer>
-        <ElButton @click="dialogVisible = false">{{
-          t("ops.alerts.rules.cancel")
-        }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="save">
-          {{ t("ops.alerts.rules.save") }}
-        </ElButton>
-      </template>
-    </ElDialog>
+    </EditDialog>
   </div>
 </template>
 
@@ -251,6 +247,7 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import {
