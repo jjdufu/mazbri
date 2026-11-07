@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/jjdufu/mazbri/compare/v0.3.6...v0.3.7) (2026-11-07)
+
+
+### Bug Fixes
+
+* **web:** 精简管理端文案并修正运维页面说明展示 ([d5d276f](https://github.com/jjdufu/mazbri/commit/d5d276f72cfe8e61775bb5947f325392481a2b90))
+
 ## [0.3.6](https://github.com/jjdufu/mazbri/compare/v0.3.5...v0.3.6) (2026-11-06)
 
 
