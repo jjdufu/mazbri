@@ -153,32 +153,6 @@
       </OpsKpiRow>
     </OpsSection>
 
-    <!-- 应用在线：独占整行展示组件健康矩阵；下钻运行指标 -->
-    <OpsSection
-      id="apps-online"
-      :title="t('ops.overview.sections.appsOnline')"
-    >
-      <template #extra>
-        <span class="ops-overview__abnormal" :data-abnormal="abnormalCount">
-          {{
-            abnormalCount > 0
-              ? t("ops.components.abnormalOf", { n: abnormalCount, total: components.length })
-              : t("ops.components.allHealthy", { total: components.length })
-          }}
-        </span>
-        <ElButton
-          link
-          type="primary"
-          @click="router.push(buildRuntimeRoute({ tab: 'apps' }))"
-        >
-          {{ t("ops.overview.openRuntime") }}
-        </ElButton>
-      </template>
-      <OpsCard class="ops-main-panel" data-block="components">
-        <AppsOnlineHexagon :components="components" />
-      </OpsCard>
-    </OpsSection>
-
     <!-- 活跃告警：独占一行 -->
     <OpsSection
       id="active-alerts"
@@ -297,7 +271,6 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import TimeRangePicker, { type TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import AppsOnlineHexagon from "./modules/AppsOnlineHexagon.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsPage from "@/components/ops/OpsPage.vue";
@@ -318,7 +291,6 @@ import type { PlatformInventory } from "@/types/api/analytics";
 import type { MetricOverview, MetricSeries, TrafficKpis } from "@/types/api/monitoring";
 import type { ExemplarRow } from "@/types/api/olap";
 import { formatWallClockHm, formatWallClockMdHm } from "@/utils/format";
-import { countAbnormal } from "@/utils/ops/components-health";
 import {
   canOverviewDrill,
   resolveOverviewDrill,
@@ -327,7 +299,6 @@ import {
 import {
   buildAlertsRoute,
   buildCallsRoute,
-  buildRuntimeRoute,
   buildTraceSearchRoute,
 } from "@/utils/ops/opsRoutes";
 import { defaultTimeRange, resolveRange } from "@/utils/ops/time-range";
@@ -374,8 +345,6 @@ let seq = 0;
 
 const traffic = computed(() => overview.value?.traffic ?? null);
 const realtime = computed(() => overview.value?.realtime ?? null);
-const components = computed(() => overview.value?.components ?? []);
-const abnormalCount = computed(() => countAbnormal(components.value));
 
 const drillRole = computed(() => ({
   isAdmin: isAdmin.value,
@@ -589,14 +558,6 @@ async function reload() {
 .ops-overview__tenant--muted :deep(.ops-stat-card__value) {
   color: var(--el-text-color-regular);
   font-weight: 500;
-}
-.ops-overview__abnormal {
-  margin-right: var(--ops-space-xs, 8px);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.ops-overview__abnormal:not([data-abnormal="0"]) {
-  color: var(--el-color-danger);
 }
 .ops-overview__tags {
   display: flex;
