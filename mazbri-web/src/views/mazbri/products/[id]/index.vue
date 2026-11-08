@@ -144,10 +144,6 @@
             <ElFormItem :label="$t('product.fields.name')" prop="name">
               <ElInput v-model="editForm.name" />
             </ElFormItem>
-
-            <ElFormItem :label="$t('product.fields.enabled')">
-              <ElSwitch v-model="editForm.enabled" />
-            </ElFormItem>
           </div>
 
           <div class="dialog-section mt-4">
@@ -165,12 +161,6 @@
                 controls-position="right"
                 style="width: 100%"
               />
-            </ElFormItem>
-            <ElFormItem
-              :label="$t('product.fields.cbProEnabled')"
-              prop="cb_pro_enabled"
-            >
-              <ElSwitch v-model="editForm.cb_pro_enabled" />
             </ElFormItem>
             <ElFormItem
               v-if="editForm.cb_pro_enabled"
@@ -207,6 +197,15 @@
                 controls-position="right"
                 style="width: 100%"
               />
+            </ElFormItem>
+            <ElFormItem :label="$t('product.fields.enabled')">
+              <ElSwitch v-model="editForm.enabled" />
+            </ElFormItem>
+            <ElFormItem
+              :label="$t('product.fields.cbProEnabled')"
+              prop="cb_pro_enabled"
+            >
+              <ElSwitch v-model="editForm.cb_pro_enabled" />
             </ElFormItem>
           </div>
         </ElForm>

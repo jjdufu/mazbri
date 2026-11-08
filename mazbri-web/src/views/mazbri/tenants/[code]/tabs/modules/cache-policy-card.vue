@@ -18,23 +18,6 @@
     <CommonSettingRow
       mode="inline"
       mobile-stack
-      :label="$t('tenant.cachePolicy.fields.enabled')"
-    >
-      <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
-    </CommonSettingRow>
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
-      :label="$t('tenant.cachePolicy.fields.isolated')"
-    >
-      <ElSwitch
-        v-model="form.tenant_isolated"
-        :disabled="!form.enabled || !canWriteBusiness"
-      />
-    </CommonSettingRow>
-    <CommonSettingRow
-      mode="inline"
-      mobile-stack
       :label="$t('tenant.cachePolicy.fields.ttl')"
     >
       <ElInputNumber
@@ -56,6 +39,17 @@
         class="cache-input-number"
       />
     </CommonSettingRow>
+    <SettingsToggleGrid>
+      <CommonToggleTile :label="$t('tenant.cachePolicy.fields.enabled')">
+        <ElSwitch v-model="form.enabled" :disabled="!canWriteBusiness" />
+      </CommonToggleTile>
+      <CommonToggleTile :label="$t('tenant.cachePolicy.fields.isolated')">
+        <ElSwitch
+          v-model="form.tenant_isolated"
+          :disabled="!form.enabled || !canWriteBusiness"
+        />
+      </CommonToggleTile>
+    </SettingsToggleGrid>
 
     <CommonSettingRow mode="block">
       <template #label>
@@ -163,7 +157,9 @@ import { ElMessage } from "element-plus";
 import type { TenantCacheConfig } from "@/types/api/tenant";
 import { fetchTenantCacheConfig, updateTenantCacheConfig } from "@/api/tenant";
 import SettingsCard from "@/components/common/settings-card/index.vue";
+import SettingsToggleGrid from "@/components/common/settings-toggle-grid/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
+import CommonToggleTile from "@/components/common/toggle-tile/index.vue";
 import { useUserStore } from "@/store/modules/user";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { logger } from "@/utils/sys";

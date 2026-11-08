@@ -30,15 +30,6 @@
         class="setting-input-number"
       />
     </CommonSettingRow>
-    <SettingsToggleGrid>
-      <CommonToggleTile
-        v-for="item in toggles"
-        :key="item.key"
-        :label="$t(item.label)"
-      >
-        <ElSwitch v-model="policyForm[item.key]" />
-      </CommonToggleTile>
-    </SettingsToggleGrid>
     <CommonSettingRow
       mode="inline"
       mobile-stack
@@ -51,6 +42,15 @@
         class="setting-input"
       />
     </CommonSettingRow>
+    <SettingsToggleGrid>
+      <CommonToggleTile
+        v-for="item in toggles"
+        :key="item.key"
+        :label="$t(item.label)"
+      >
+        <ElSwitch v-model="policyForm[item.key]" />
+      </CommonToggleTile>
+    </SettingsToggleGrid>
   </SettingsCard>
 </template>
 

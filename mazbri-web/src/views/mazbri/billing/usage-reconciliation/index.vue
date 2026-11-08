@@ -54,12 +54,6 @@
               <div class="usage-recon-settings__grid">
                 <CommonSettingRow
                   mode="inline"
-                  :label="$t('billing.reconciliation.scheduledEnabled')"
-                >
-                  <ElSwitch v-model="settingsForm.schedule.enabled" />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
                   :label="$t('billing.reconciliation.intervalSecs')"
                 >
                   <ElInputNumber
@@ -67,15 +61,6 @@
                     :min="60"
                     :step="60"
                     class="setting-control setting-input-number"
-                  />
-                </CommonSettingRow>
-
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.usePreviousDay')"
-                >
-                  <ElSwitch
-                    v-model="settingsForm.schedule.use_previous_day"
                   />
                 </CommonSettingRow>
                 <CommonSettingRow
@@ -94,6 +79,36 @@
 
                 <CommonSettingRow
                   mode="inline"
+                  :label="$t('billing.reconciliation.alertWebhook')"
+                >
+                  <ElInput
+                    v-model="settingsForm.alert.webhook_url"
+                    clearable
+                    class="setting-control setting-control--wide"
+                    :placeholder="
+                      $t('billing.reconciliation.alertWebhookPlaceholder')
+                    "
+                    :disabled="!settingsForm.alert.on_flagged"
+                  />
+                </CommonSettingRow>
+                <CommonSettingRow
+                  mode="inline"
+                  class="usage-recon-settings__switch-start"
+                  :label="$t('billing.reconciliation.scheduledEnabled')"
+                >
+                  <ElSwitch v-model="settingsForm.schedule.enabled" />
+                </CommonSettingRow>
+
+                <CommonSettingRow
+                  mode="inline"
+                  :label="$t('billing.reconciliation.usePreviousDay')"
+                >
+                  <ElSwitch
+                    v-model="settingsForm.schedule.use_previous_day"
+                  />
+                </CommonSettingRow>
+                <CommonSettingRow
+                  mode="inline"
                   :label="$t('billing.reconciliation.alertOnFlagged')"
                 >
                   <ElSwitch v-model="settingsForm.alert.on_flagged" />
@@ -107,20 +122,6 @@
                     v-model="
                       settingsForm.warn_on_open_discrepancies_before_bill
                     "
-                  />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.alertWebhook')"
-                >
-                  <ElInput
-                    v-model="settingsForm.alert.webhook_url"
-                    clearable
-                    class="setting-control setting-control--wide"
-                    :placeholder="
-                      $t('billing.reconciliation.alertWebhookPlaceholder')
-                    "
-                    :disabled="!settingsForm.alert.on_flagged"
                   />
                 </CommonSettingRow>
               </div>
@@ -1223,6 +1224,10 @@ onMounted(() => {
   column-gap: 48px;
   row-gap: 14px;
   align-items: center;
+}
+
+.usage-recon-settings__switch-start {
+  grid-column: 1;
 }
 
 

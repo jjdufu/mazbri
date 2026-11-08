@@ -192,12 +192,6 @@
             placeholder="category=upstream"
           />
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.form.notifyEnabled')">
-          <ElSwitch v-model="form.notifyEnabled" />
-          <div class="ops-alerts__hint">
-            {{ t("ops.alerts.rules.form.notifyEnabledHint") }}
-          </div>
-        </ElFormItem>
         <ElFormItem
           :label="t('ops.alerts.rules.form.emails')"
           prop="emailsText"
@@ -224,6 +218,12 @@
           />
           <div class="ops-alerts__hint">
             {{ t("ops.alerts.rules.form.webhooksHint") }}
+          </div>
+        </ElFormItem>
+        <ElFormItem :label="t('ops.alerts.rules.form.notifyEnabled')">
+          <ElSwitch v-model="form.notifyEnabled" />
+          <div class="ops-alerts__hint">
+            {{ t("ops.alerts.rules.form.notifyEnabledHint") }}
           </div>
         </ElFormItem>
         <ElFormItem :label="t('ops.alerts.rules.form.evaluateEnabled')">
