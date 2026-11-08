@@ -195,7 +195,7 @@
                     </button>
                   </span>
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="trace_id">
+                <ElDescriptionsItem :label="$t('ops.traces.columns.traceId')">
                   <span v-if="currentDetail.trace_id" class="compact-id-cell">
                     <ElLink
                       type="primary"
@@ -771,7 +771,7 @@ const buildColumns = (
     },
     {
       prop: "trace_id",
-      label: "trace_id",
+      label: $t("ops.traces.columns.traceId"),
       minWidth: 136,
       maxWidth: 196,
       useSlot: true,

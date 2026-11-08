@@ -138,10 +138,10 @@
             </ElTag>
           </div>
           <ElDescriptions :column="1" size="small" border>
-            <ElDescriptionsItem label="span_id">{{
+            <ElDescriptionsItem :label="t('ops.traces.detail.spanId')">{{
               selected.span_id
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="parent">{{
+            <ElDescriptionsItem :label="t('ops.traces.detail.parentSpan')">{{
               selected.parent_span_id || "—"
             }}</ElDescriptionsItem>
             <ElDescriptionsItem :label="t('ops.traces.columns.duration')">
@@ -152,7 +152,10 @@
                 formatDurationNs(selected.start_ns - (detail?.start_ns ?? 0))
               }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem v-if="selected.status_message" label="status">
+            <ElDescriptionsItem
+              v-if="selected.status_message"
+              :label="t('ops.traces.detail.status')"
+            >
               {{ selected.status_message }}
             </ElDescriptionsItem>
           </ElDescriptions>
@@ -177,7 +180,7 @@
                 class="ops-trace__event"
                 :class="{ 'is-error': isErrorEvent(ev) }"
               >
-                <strong>{{ ev.name || "event" }}</strong>
+                <strong>{{ ev.name || t("ops.traces.detail.event") }}</strong>
                 <span class="ops-trace__muted">{{
                   formatEventTime(ev.time)
                 }}</span>
@@ -275,7 +278,11 @@
               :label="t('ops.calls.stages.columns.source')"
               min-width="150"
             />
-            <ElTableColumn prop="request_id" label="request_id" min-width="280">
+            <ElTableColumn
+              prop="request_id"
+              :label="t('ops.traces.columns.requestId')"
+              min-width="280"
+            >
               <template #default="{ row }">
                 <ElLink type="primary" @click="openCalls(row.request_id)">{{
                   row.request_id
@@ -304,8 +311,8 @@
             />
             <ElTableColumn
               prop="upstream_service_time_ms"
-              label="upstream ms"
-              width="110"
+              :label="t('ops.traces.detail.upstreamDuration')"
+              width="120"
             />
             <ElTableColumn
               prop="error_code"
@@ -330,10 +337,14 @@
           >
             <ElTableColumn
               prop="request_id"
-              label="request_id"
+              :label="t('ops.traces.columns.requestId')"
               min-width="260"
             />
-            <ElTableColumn prop="outbox_status" label="outbox" width="110" />
+            <ElTableColumn
+              prop="outbox_status"
+              :label="t('ops.traces.detail.outbox')"
+              width="110"
+            />
             <ElTableColumn
               prop="retry_count"
               :label="t('ops.traces.billing.retries')"

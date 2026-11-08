@@ -90,7 +90,11 @@
           width="90"
         >
           <template #default="{ row }">
-            <ElTag size="small">{{ row.enabled ? "ON" : "OFF" }}</ElTag>
+            <ElTag size="small" :type="row.enabled ? 'success' : 'info'">{{
+              row.enabled
+                ? t("common.status.enabled")
+                : t("common.status.disabled")
+            }}</ElTag>
           </template>
         </ElTableColumn>
         <ElTableColumn v-if="isAdmin" :label="t('common.actions')" width="100">

@@ -129,13 +129,14 @@
               </ElButton>
             </div>
             <ElCard shadow="never" class="bill-detail-overview-card">
-              <CommonDetailHero
-                :eyebrow="$t('billing.detail.overview')"
-                :title="getBillDisplayName(currentBill)"
-                :subtitle="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
-                :amount="formatMoney(currentBill.total)"
-                :meta="formatDate(currentBill.created_at)"
-              />
+              <template #header>
+                <SurfaceCardHeader
+                  align="start"
+                  :title="getBillDisplayName(currentBill)"
+                  :description="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
+                  :meta="formatMoney(currentBill.total)"
+                />
+              </template>
 
               <ElDescriptions
                 :column="3"
@@ -479,7 +480,6 @@ import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
-import CommonDetailHero from "@/components/common/detail-hero/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";

@@ -47,7 +47,7 @@
       </ElCol>
     </ElRow>
 
-    <OpsCard title="RED">
+    <OpsCard :title="t('ops.services.detail.redTitle')">
       <ElRow :gutter="16">
         <ElCol :xs="24" :lg="8">
           <MultiSeriesChart
@@ -73,7 +73,7 @@
       </ElRow>
     </OpsCard>
 
-    <OpsCard title="USE">
+    <OpsCard :title="t('ops.services.detail.useTitle')">
       <ElRow :gutter="16">
         <ElCol v-for="item in useMetrics" :key="item.key" :xs="24" :lg="8">
           <div class="ops-service-detail__metric-title">{{ item.label }}</div>

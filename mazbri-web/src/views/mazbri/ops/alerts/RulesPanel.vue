@@ -56,7 +56,8 @@
           width="136"
         >
           <template #default="{ row }">
-            {{ row.op }} {{ row.threshold }} · {{ row.for_seconds }}s
+            {{ row.op }} {{ row.threshold }} · {{ row.for_seconds
+            }}{{ t("ops.units.seconds") }}
           </template>
         </ElTableColumn>
         <ElTableColumn
@@ -165,7 +166,7 @@
               :max="86400"
               :step="30"
             />
-            <span>s</span>
+            <span>{{ t("ops.units.seconds") }}</span>
           </div>
         </ElFormItem>
         <ElFormItem

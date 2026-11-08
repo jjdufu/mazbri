@@ -53,8 +53,11 @@
           <span class="summary-label">{{
             $t("rateLimit.gateSummary.enforcement")
           }}</span>
-          <span class="summary-value mono">{{
-            summary.enforcement_model || "local_per_instance"
+          <span class="summary-value">{{
+            (!summary.enforcement_model ||
+            summary.enforcement_model === "local_per_instance")
+              ? $t("rateLimit.gateSummary.enforcementLocal")
+              : summary.enforcement_model
           }}</span>
         </div>
       </div>

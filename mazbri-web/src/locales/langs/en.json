@@ -2979,6 +2979,7 @@
       "windowSpend": "Window spend (finance SSOT)"
     },
     "createDialog": {
+      "title": "Add Tenant",
       "placeholders": {
         "code": "A1B2C3D4",
         "accountId": "my-company",
@@ -3255,6 +3256,7 @@
       "burst": "Burst",
       "overrides": "API overrides",
       "enforcement": "Enforcement model",
+      "enforcementLocal": "Per-instance",
       "toPlan": "Configure plan rate limits",
       "toUpstream": "Configure upstream channel capacity",
       "loadFailed": "Failed to load gate summary"
@@ -3542,7 +3544,12 @@
       "title": "Onboarding succeeded",
       "subtitle": "Platform route_version = {version}",
       "reloadHint": "Hot-reload typically within ~5s.",
-      "goSuppliers": "Back to upstream supply"
+      "goSuppliers": "Back to upstream supply",
+      "supplierId": "Supplier ID",
+      "channelId": "Channel ID",
+      "routeRuleId": "Route Rule ID",
+      "bindingId": "Binding ID",
+      "routeVersion": "Route Version"
     },
     "useAccessWizard": "Use the Access Upstream wizard to create",
     "placeholders": {
@@ -4347,6 +4354,8 @@
         "dbPool": "DB pool usage",
         "version": "Version",
         "lastRestart": "Last restart",
+        "redTitle": "Golden Signals (RED)",
+        "useTitle": "Resource Saturation (USE)",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
       },
@@ -4452,6 +4461,8 @@
       "columns": {
         "time": "Time",
         "tenant": "Tenant",
+        "queueId": "Queue ID",
+        "id": "Record ID",
         "attempt": "Attempts",
         "status": "Status",
         "error": "Error",
@@ -4513,6 +4524,8 @@
         "duration": "Duration",
         "min": "Min",
         "max": "Max",
+        "minDuration": "Min Duration (ms)",
+        "maxDuration": "Max Duration (ms)",
         "errorsOnly": "Errors only"
       },
       "scatter": {
@@ -4522,6 +4535,8 @@
         "error": "With errors"
       },
       "columns": {
+        "traceId": "Trace ID",
+        "requestId": "Request ID",
         "start": "Start",
         "root": "Root span",
         "duration": "Duration",
@@ -4537,10 +4552,14 @@
         "error": "Error",
         "expandAll": "Expand all",
         "collapseAll": "Collapse all",
+        "spanId": "Span ID",
+        "parentSpan": "Parent Span",
+        "status": "Status",
         "offset": "Offset",
         "attributes": "Attributes",
         "resource": "Resource",
         "events": "Events",
+        "event": "Event",
         "links": "Links",
         "linksTo": "Links to",
         "linkedFrom": "Linked from",
@@ -4548,7 +4567,9 @@
         "asyncTitle": "Async billing spans (via span links)",
         "logs": "Call logs",
         "stages": "Stage timings",
-        "billing": "Billing"
+        "billing": "Billing",
+        "upstreamDuration": "Upstream (ms)",
+        "outbox": "Outbox"
       },
       "billing": {
         "retries": "Retries",
@@ -4837,6 +4858,7 @@
       "perSec": "/s",
       "times": "times",
       "seconds": "s",
+      "s": "s",
       "days": "d",
       "ms": "ms",
       "percent": "%"

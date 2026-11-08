@@ -329,7 +329,7 @@ const statCards = computed(() => [
 const failureColumns = computed<ColumnOption<ChargeFailureRow>[]>(() => [
   { prop: "created_at", label: t("ops.billing.columns.time") },
   { prop: "tenant_id", label: t("ops.billing.columns.tenant") },
-  { prop: "queue_id", label: "queue_id" },
+  { prop: "queue_id", label: t("ops.billing.columns.queueId") },
   { prop: "attempt_number", label: t("ops.billing.columns.attempt") },
   { prop: "queue_status", label: t("ops.billing.columns.status") },
   { prop: "error_message", label: t("ops.billing.columns.error") },
@@ -337,7 +337,7 @@ const failureColumns = computed<ColumnOption<ChargeFailureRow>[]>(() => [
 const deadColumns = computed<ColumnOption<DeadLetterRow>[]>(() => [
   { prop: "created_at", label: t("ops.billing.columns.time") },
   { prop: "source", label: t("ops.billing.columns.source") },
-  { prop: "id", label: "id" },
+  { prop: "id", label: t("ops.billing.columns.id") },
   { prop: "tenant_id", label: t("ops.billing.columns.tenant") },
   { prop: "retry_count", label: t("ops.billing.columns.attempt") },
   { prop: "error_message", label: t("ops.billing.columns.error") },
