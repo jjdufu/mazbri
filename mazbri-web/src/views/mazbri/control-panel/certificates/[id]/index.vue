@@ -1,28 +1,15 @@
 <template>
   <div class="certificate-detail-page">
-    <ElPageHeader @back="router.back()">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          $t("certificate.detail.title")
-        }}</span>
-      </template>
-      <template #extra>
-        <ElTag :type="getStatusType(certificate?.status || 'valid')">
-          {{ getStatusLabel(certificate?.status || "valid") }}
-        </ElTag>
-      </template>
-    </ElPageHeader>
-
     <ElAlert
       v-if="authorizationDisabled"
-      class="mt-4"
+      class="mb-4"
       :title="authorizationDisabledReason"
       type="warning"
       :closable="false"
       show-icon
     />
 
-    <ElRow :gutter="20" class="mt-5">
+    <ElRow :gutter="20">
       <ElCol :sm="24" :md="16" :lg="16">
         <ElCard :loading="loading" shadow="never" class="surface-settings-card">
           <template #header>
@@ -245,7 +232,6 @@ import AuthorizationTooltipButton from "@/components/common/authorization-toolti
 import { useLicenseGate } from "@/composables/useLicenseGate";
 import AutoRenewalDialog from "../modules/auto-renewal-dialog.vue";
 defineOptions({ name: "CertificateDetail" });
-const router = useRouter();
 const route = useRoute();
 const loading = ref(false);
 const certificate = ref<FullCertificateResponse | null>(null);

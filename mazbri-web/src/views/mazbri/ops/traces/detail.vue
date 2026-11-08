@@ -3,9 +3,6 @@
     <template #actions>
       <div class="ops-trace__toolbar">
         <div class="ops-trace__title">
-          <ElButton link type="primary" @click="goBack"
-            >← {{ t("ops.traces.detail.back") }}</ElButton
-          >
           <code class="ops-trace__id">{{ traceId }}</code>
         </div>
         <div v-if="detail" class="ops-trace__meta">
@@ -406,7 +403,7 @@ import type {
 } from "@/types/api/call-monitor";
 import { HttpError } from "@/utils/http/error";
 import { buildCallsRoute } from "@/utils/ops/calls-link";
-import { buildTraceRoute, TRACES_PATH } from "@/utils/ops/trace-link";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
 import StageBreakdown from "../calls/modules/StageBreakdown.vue";
 
@@ -621,11 +618,6 @@ function openCalls(requestId: string) {
   void router.push(
     buildCallsRoute({ tab: "customer", filters: { request_id: requestId } }),
   );
-}
-
-function goBack() {
-  if (window.history.state?.back) router.back();
-  else void router.push(TRACES_PATH);
 }
 
 function startHint(): { start?: number; end?: number } {

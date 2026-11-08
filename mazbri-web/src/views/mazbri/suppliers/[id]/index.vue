@@ -1,69 +1,5 @@
 <template>
   <div class="supplier-detail-page">
-    <ElPageHeader @back="handleBack">
-      <template #content>
-        <div class="page-header-content">
-          <span class="text-lg font-medium">{{
-            displayName || $t("supplier.detail.pageTitle")
-          }}</span>
-          <ElTag
-            v-if="!loading"
-            size="small"
-            :type="upstreamType === 'transparent' ? 'primary' : 'info'"
-            effect="plain"
-          >
-            {{ upstreamTypeLabel }}
-          </ElTag>
-          <ElTag v-if="editing" size="small" type="warning" effect="plain">
-            {{ $t("supplier.detail.editingBadge") }}
-          </ElTag>
-        </div>
-      </template>
-      <template #extra>
-
-        <div class="header-extra">
-          <template v-if="editing">
-            <ElButton @click="cancelEdit">{{
-              $t("supplier.form.cancelBack")
-            }}</ElButton>
-            <ElButton type="primary" :loading="submitting" @click="submitForm">
-              {{ $t("supplier.form.saveAndBack") }}
-            </ElButton>
-          </template>
-          <template v-else>
-            <ElTag :type="statusValue === 'active' ? 'success' : 'info'">
-              {{ statusLabel }}
-            </ElTag>
-            <ElButton
-              v-if="upstreamType === 'transparent'"
-              v-roles="ROLES_BIZ"
-              :loading="openingWorkbench"
-              @click="openWorkbenchEdit"
-            >
-              {{ $t("upstreamConnector.editInWorkbench") }}
-            </ElButton>
-            <ElButton
-              v-roles="ROLES_BIZ"
-              type="primary"
-              @click="enterEdit"
-            >
-              {{ $t("common.actions.modify") }}
-            </ElButton>
-            <ElButton
-              v-roles="ROLES_BIZ"
-              type="danger"
-              @click="handleDelete"
-            >
-              <template #icon>
-                <ArtSvgIcon icon="ri:delete-bin-line" />
-              </template>
-              {{ $t("common.actions.delete") }}
-            </ElButton>
-          </template>
-        </div>
-      </template>
-    </ElPageHeader>
-
     <ElForm
       ref="formRef"
       v-loading="loading"
@@ -72,10 +8,67 @@
       class="detail-form"
       @submit.prevent
     >
-
-      <ElCard class="mt-5" shadow="never">
+      <ElCard shadow="never">
         <template #header>
-          <SurfaceCardHeader :title="$t('supplier.detail.basicInfoTitle')" />
+          <SurfaceCardHeader
+            :title="$t('supplier.detail.basicInfoTitle')"
+            stack-on-mobile
+          >
+            <template #actions>
+              <div class="header-extra">
+                <ElTag
+                  v-if="editing"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                >
+                  {{ $t("supplier.detail.editingBadge") }}
+                </ElTag>
+                <template v-if="editing">
+                  <ElButton @click="cancelEdit">{{
+                    $t("supplier.form.cancelBack")
+                  }}</ElButton>
+                  <ElButton
+                    type="primary"
+                    :loading="submitting"
+                    @click="submitForm"
+                  >
+                    {{ $t("supplier.form.saveAndBack") }}
+                  </ElButton>
+                </template>
+                <template v-else>
+                  <ElTag :type="statusValue === 'active' ? 'success' : 'info'">
+                    {{ statusLabel }}
+                  </ElTag>
+                  <ElButton
+                    v-if="upstreamType === 'transparent'"
+                    v-roles="ROLES_BIZ"
+                    :loading="openingWorkbench"
+                    @click="openWorkbenchEdit"
+                  >
+                    {{ $t("upstreamConnector.editInWorkbench") }}
+                  </ElButton>
+                  <ElButton
+                    v-roles="ROLES_BIZ"
+                    type="primary"
+                    @click="enterEdit"
+                  >
+                    {{ $t("common.actions.modify") }}
+                  </ElButton>
+                  <ElButton
+                    v-roles="ROLES_BIZ"
+                    type="danger"
+                    @click="handleDelete"
+                  >
+                    <template #icon>
+                      <ArtSvgIcon icon="ri:delete-bin-line" />
+                    </template>
+                    {{ $t("common.actions.delete") }}
+                  </ElButton>
+                </template>
+              </div>
+            </template>
+          </SurfaceCardHeader>
         </template>
 
         <ElAlert
@@ -532,9 +525,6 @@ const upstreamTypeLabel = computed(() =>
     ? $t("supplier.upstreamOptions.transparent")
     : $t("supplier.upstreamOptions.microservice"),
 );
-const displayName = computed(() =>
-  editing.value ? form.name || supplier.value?.name : supplier.value?.name,
-);
 const statusValue = computed(() =>
   editing.value ? form.status : supplier.value?.status || "",
 );
@@ -589,14 +579,6 @@ const rules = computed<FormRules>(() => {
 
 const goList = () => {
   router.push({ name: "UpstreamSupply", query: { tab: "suppliers" } });
-};
-
-const handleBack = () => {
-  if (editing.value) {
-    cancelEdit();
-    return;
-  }
-  goList();
 };
 
 const loadData = async () => {

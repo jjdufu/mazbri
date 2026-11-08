@@ -1,23 +1,6 @@
 <template>
   <div class="product-detail-page">
-    <ElPageHeader @back="router.back()">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          product?.name || $t("product.detail.pageTitle")
-        }}</span>
-      </template>
-      <template #extra>
-        <ElTag :type="product?.enabled ? 'success' : 'info'">
-          {{
-            product?.enabled
-              ? $t("common.status.enabled")
-              : $t("common.status.disabled")
-          }}
-        </ElTag>
-      </template>
-    </ElPageHeader>
-
-    <ElCard v-loading="loading" class="mt-5" shadow="never">
+    <ElCard v-loading="loading" shadow="never">
       <template #header>
         <SurfaceCardHeader
           :title="$t('product.detail.basicInfoTitle')"

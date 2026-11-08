@@ -1,17 +1,9 @@
 <template>
   <div class="admin-detail-page">
-    <ElPageHeader @back="router.back()">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          admin?.role === 'R_ADMIN' ? $t("userManagement.detail.title") : $t("userManagement.detail.userTitle")
-        }}</span>
-      </template>
-    </ElPageHeader>
-
     <ElCard
       :loading="loading"
       shadow="never"
-      class="mt-5 surface-settings-card"
+      class="surface-settings-card"
     >
       <template #header>
         <SurfaceCardHeader :title="$t('userManagement.detail.basicInfo')">

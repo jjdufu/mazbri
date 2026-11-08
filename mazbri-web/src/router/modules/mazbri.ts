@@ -60,6 +60,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.tenantDetail",
           icon: "ri:building-line",
           isHide: true,
+          activePath: "/operations/tenants",
           keepAlive: true,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },

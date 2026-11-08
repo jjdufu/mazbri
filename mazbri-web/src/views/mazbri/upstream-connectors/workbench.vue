@@ -4,13 +4,11 @@
     v-loading="bootstrapping"
     class="connector-workbench-page"
   >
-    <header class="wb-top">
+    <header
+      v-if="isEditMode || !canWriteWorkbench || saveBadge"
+      class="wb-top"
+    >
       <div class="wb-top__left">
-        <ElButton link class="wb-back" @click="goBack">
-          <ArtSvgIcon icon="ri:arrow-left-s-line" />
-        </ElButton>
-        <ArtSvgIcon icon="ri:plug-line" class="wb-top__icon" />
-        <span class="wb-top__title">{{ $t("upstreamConnector.workbenchTitle") }}</span>
         <ElTag v-if="isEditMode" size="small" type="primary" effect="plain">
           {{ $t("upstreamConnector.modeEditSupplier") }}
         </ElTag>
@@ -900,18 +898,6 @@ const publishResultDesc = computed(() => {
   const r = publishResult.value;
   return `supplier=${r.supplier_id} version=v${r.version_no} route_version=${r.route_version ?? "-"}`;
 });
-
-function goBack() {
-  const sid =
-    (typeof route.query.supplier_id === "string" && route.query.supplier_id) ||
-    draft.value?.linked_supplier_id ||
-    "";
-  if (sid) {
-    void router.push({ name: "SupplierDetail", params: { id: sid } });
-    return;
-  }
-  void router.push({ path: "/operations/upstream-supply", query: { tab: "suppliers" } });
-}
 
 function syncSessionRoute(d: ConnectorDraft) {
   if (d.linked_supplier_id) {

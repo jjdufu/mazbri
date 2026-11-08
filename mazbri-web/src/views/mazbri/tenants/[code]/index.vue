@@ -1,14 +1,5 @@
 <template>
   <TenantDetailShell>
-    <template #header>
-      <ElPageHeader @back="router.back()">
-        <template #content>
-          <span class="tenant-detail-shell__page-title">{{
-            tenant?.name || $t("tenant.detail.pageTitle")
-          }}</span>
-        </template>
-      </ElPageHeader>
-    </template>
     <template #extra>
       <ElTag :type="getStatusType(tenantStatusKey)">
         {{ getStatusLabel(tenantStatusKey) }}
@@ -101,7 +92,6 @@ import { getStatusType, getStatusLabel } from "@/utils/display-labels";
 import { normalizeTenantCode } from "@/utils/tenant-code";
 import { useUserStore } from "@/store/modules/user";
 defineOptions({ name: "TenantDetail" });
-const router = useRouter();
 const route = useRoute();
 const loading = ref(false);
 const tenant = ref<Tenant | null>(null);
