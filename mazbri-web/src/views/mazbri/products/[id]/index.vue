@@ -74,49 +74,37 @@
         <ElDescriptionsItem :label="$t('common.fields.updatedAt')">{{
           formatDate(product?.updated_at || "")
         }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('product.fields.timeoutSecs')">
+          {{ product?.timeout_secs }} {{ $t("ops.units.s") }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('product.fields.cbProEnabled')">
+          <ElTag :type="product?.cb_pro_enabled ? 'warning' : 'info'">
+            {{
+              product?.cb_pro_enabled
+                ? $t("common.status.enabled")
+                : $t("common.status.disabled")
+            }}
+          </ElTag>
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbFailureThreshold')"
+        >
+          {{ product?.cb_failure_threshold }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbSuccessThreshold')"
+        >
+          {{ product?.cb_success_threshold }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbCooldownSecs')"
+        >
+          {{ product?.cb_cooldown_secs }} {{ $t("ops.units.s") }}
+        </ElDescriptionsItem>
       </ElDescriptions>
-
-      <ElCard class="mt-5" shadow="never">
-        <template #header>
-          <SurfaceCardHeader
-            :title="$t('product.detail.advancedInfoTitle')"
-            stack-on-mobile
-          />
-        </template>
-
-        <ElDescriptions class="product-descriptions" :column="2" border>
-          <ElDescriptionsItem :label="$t('product.fields.timeoutSecs')">
-            {{ product?.timeout_secs }}s
-          </ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('product.fields.cbProEnabled')">
-            <ElTag :type="product?.cb_pro_enabled ? 'warning' : 'info'">
-              {{
-                product?.cb_pro_enabled
-                  ? $t("common.status.enabled")
-                  : $t("common.status.disabled")
-              }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbFailureThreshold') || '失败熔断阈值'"
-          >
-            {{ product?.cb_failure_threshold }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbSuccessThreshold') || '成功恢复阈值'"
-          >
-            {{ product?.cb_success_threshold }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbCooldownSecs') || '熔断冷却时间'"
-          >
-            {{ product?.cb_cooldown_secs }}s
-          </ElDescriptionsItem>
-        </ElDescriptions>
-      </ElCard>
 
       <EditDialog
         v-model="editVisible"

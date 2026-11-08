@@ -146,7 +146,7 @@
 
         <ElCard shadow="never" class="mt-5 surface-settings-card">
           <template #header>
-            <span>{{ $t("certificate.detail.sections.files") }}</span>
+            <SurfaceCardHeader :title="$t('certificate.detail.sections.files')" />
           </template>
           <ElTabs>
             <ElTabPane :label="$t('certificate.detail.tabs.certPem')">
@@ -168,7 +168,7 @@
       <ElCol :sm="24" :md="8" :lg="8">
         <ElCard shadow="never" class="surface-settings-card certificate-detail-page__legend">
           <template #header>
-            <span>{{ $t("certificate.detail.sections.statusLegend") }}</span>
+            <SurfaceCardHeader :title="$t('certificate.detail.sections.statusLegend')" />
           </template>
           <CommonStack direction="vertical" fill gap="12px">
             <CommonInlineRow gap="0">

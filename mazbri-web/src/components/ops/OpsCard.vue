@@ -59,7 +59,9 @@ defineProps<{ title?: string; info?: string }>();
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: var(--ops-space-xs, 8px);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
 }
 .ops-card__title-wrap {
   display: inline-flex;
@@ -73,6 +75,7 @@ defineProps<{ title?: string; info?: string }>();
   font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
+  color: var(--el-text-color-primary);
 }
 .ops-card__info-trigger {
   display: inline-flex;

@@ -70,13 +70,13 @@ withDefaults(
   overflow: visible;
 
   :deep(.el-card__header) {
-    padding: 20px 20px 0 !important;
-    border-bottom: none !important;
+    padding: 14px 20px !important;
+    border-bottom: 1px solid var(--el-border-color-lighter) !important;
   }
 
   :deep(.el-card__body) {
     flex: 1;
-    padding: 0 20px 20px !important;
+    padding: 16px 20px 20px !important;
     overflow: visible !important;
   }
 }
@@ -87,11 +87,22 @@ withDefaults(
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 .settings-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  box-sizing: border-box;
+  border-radius: var(--art-form-control-radius, 4px);
+  background: var(--el-color-primary-light-9);
   font-size: 18px;
   color: var(--el-color-primary);
+  flex-shrink: 0;
 }
 
 .settings-card__info-trigger {
@@ -125,19 +136,32 @@ withDefaults(
 .settings-card__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 8px;
-  padding-top: 4px;
+  gap: 12px;
 
   :deep(.common-setting-row--inline) {
     overflow: visible;
+    min-height: 36px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+
+    &:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
   }
 
   :deep(.common-setting-row__label) {
     width: 140px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
+    color: var(--el-text-color-regular);
     white-space: nowrap;
+  }
+
+  :deep(.setting-value) {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--el-text-color-primary);
   }
 
   :deep(.common-setting-row__control) {
