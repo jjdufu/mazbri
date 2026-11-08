@@ -22,6 +22,7 @@ defineOptions({ name: "TenantDetailShell" });
 
 const headerActionsEl = ref<HTMLElement | null>(null);
 provide("opsTabHeaderActionsEl", headerActionsEl);
+provide("resourceTabHeaderActionsEl", headerActionsEl);
 </script>
 
 <style scoped lang="scss">

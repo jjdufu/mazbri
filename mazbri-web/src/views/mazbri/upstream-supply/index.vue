@@ -4,18 +4,21 @@
     icon="ri:building-4-line"
   >
     <div class="upstream-supply-page ops-page-stack">
-      <ElTabs
-        :model-value="activeTab"
-        class="page-header-tabs"
-        @tab-change="handleTabChange"
-      >
-        <ElTabPane
-          v-for="item in tabOptions"
-          :key="item.value"
-          :label="item.label"
-          :name="item.value"
-        />
-      </ElTabs>
+      <div class="page-header-tabs-bar">
+        <ElTabs
+          :model-value="activeTab"
+          class="page-header-tabs"
+          @tab-change="handleTabChange"
+        >
+          <ElTabPane
+            v-for="item in tabOptions"
+            :key="item.value"
+            :label="item.label"
+            :name="item.value"
+          />
+        </ElTabs>
+        <div ref="headerActionsEl" class="page-header-tabs-actions" />
+      </div>
 
       <div v-show="activeTab === 'suppliers'" class="tab-panel">
         <SupplierList ref="supplierListRef" @access="openMicroserviceAccess" />
@@ -33,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { provide, ref } from "vue";
 import { $t } from "@/locales";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
@@ -45,6 +48,9 @@ import UpstreamAccessWizard from "@/views/mazbri/upstreams/UpstreamAccessWizard.
 defineOptions({ name: "UpstreamSupply" });
 
 type UpstreamSupplyTab = "suppliers" | "channels" | "drafts";
+
+const headerActionsEl = ref<HTMLElement | null>(null);
+provide("resourceTabHeaderActionsEl", headerActionsEl);
 
 const supplierListRef = ref<InstanceType<typeof SupplierList> | null>(null);
 const accessVisible = ref(false);
@@ -77,6 +83,23 @@ function onAccessSuccess() {
   flex: 1;
   height: 100%;
   gap: var(--ops-section-gap, 16px);
+
+  .page-header-tabs-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    flex-shrink: 0;
+  }
+
+  .page-header-tabs-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
 
   .page-header-tabs {
     margin-bottom: 0;
