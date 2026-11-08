@@ -8,7 +8,7 @@
   >
     <ElTable
       ref="elTableRef"
-      v-loading="!!loading"
+      v-loading="visualLoading"
       v-bind="{
         ...$attrs,
         ...props,
@@ -63,7 +63,7 @@
       <template v-if="$slots.default" #default><slot /></template>
 
       <template #empty>
-        <div v-if="loading"></div>
+        <div v-if="visualLoading"></div>
         <div v-else class="art-table-empty">{{ emptyText }}</div>
       </template>
     </ElTable>
@@ -153,6 +153,7 @@
 import {
   computed,
   nextTick,
+  onBeforeUnmount,
   ref,
   watch,
 } from "vue";
@@ -191,6 +192,38 @@ const emit = defineEmits<{
   (e: "pagination:size-change", val: number): void;
   (e: "pagination:current-change", val: number): void;
 }>();
+
+const visualLoading = ref(false);
+let visualLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+const VISUAL_LOADING_DELAY_MS = 150;
+
+watch(
+  () => Boolean(props.loading),
+  (isLoading) => {
+    if (visualLoadingTimer != null) {
+      clearTimeout(visualLoadingTimer);
+      visualLoadingTimer = null;
+    }
+    if (!isLoading) {
+      visualLoading.value = false;
+      return;
+    }
+    visualLoadingTimer = setTimeout(() => {
+      visualLoadingTimer = null;
+      if (props.loading) {
+        visualLoading.value = true;
+      }
+    }, VISUAL_LOADING_DELAY_MS);
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  if (visualLoadingTimer != null) {
+    clearTimeout(visualLoadingTimer);
+    visualLoadingTimer = null;
+  }
+});
 
 
 const CELL_COPY_SKIP_SELECTOR = [

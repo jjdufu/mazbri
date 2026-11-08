@@ -107,9 +107,14 @@ function publish(value: TimeRangeValue) {
 }
 
 function onPresetChange() {
-  if (preset.value !== "custom") {
-    customRange.value = null;
+  if (preset.value === "custom") {
+    if (!customRange.value) {
+      const base = lastPublished ?? buildValue("1h");
+      customRange.value = pickerRangeOf(base);
+    }
+    return;
   }
+  customRange.value = null;
   publish(buildValue(preset.value));
 }
 

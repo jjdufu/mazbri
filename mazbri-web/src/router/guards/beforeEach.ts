@@ -81,7 +81,7 @@ async function handleRouteGuard(
   const settingStore = useSettingStore();
   const userStore = useUserStore();
   useWorktabStore().bindNavigator(router);
-  if (settingStore.showNprogress) {
+  if (settingStore.showNprogress && to.path !== from.path) {
     NProgress.start();
   }
   if (!handleLoginStatus(to, userStore, next)) {

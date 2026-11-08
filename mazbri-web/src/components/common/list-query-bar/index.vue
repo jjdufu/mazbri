@@ -120,7 +120,7 @@
               v-if="overflowChipCount > 0"
               placement="bottom-start"
               trigger="hover"
-              :width="280"
+              width="auto"
               :show-after="100"
               popper-class="list-query-bar__overflow-popper"
             >
@@ -1400,20 +1400,32 @@ const clearAllQuery = () => {
 }
 
 .list-query-bar__overflow-popper.el-popper {
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 320px;
   padding: 10px 12px !important;
 }
 
 .list-query-bar__overflow-content {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   gap: 8px;
+  width: max-content;
+  max-width: 296px;
 }
 
 .list-query-bar__overflow-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  width: 100%;
+
+  .el-button {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+  }
 }
 
 .list-query-bar__overflow-title {

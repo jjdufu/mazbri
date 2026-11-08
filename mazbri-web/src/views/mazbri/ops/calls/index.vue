@@ -41,7 +41,7 @@
       </template>
       <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
         <EmptyState
-          v-if="!histogramLoading && (!histogram || histogram.total === 0)"
+          v-if="!histogram || histogram.total === 0"
           :description="t('operations.monitoring.empty.noData')"
         />
         <div
@@ -297,10 +297,26 @@ function renderChart() {
   });
 }
 
+let histogramLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+const HISTOGRAM_LOADING_DELAY_MS = 150;
+
+function clearHistogramLoadingTimer() {
+  if (histogramLoadingTimer != null) {
+    clearTimeout(histogramLoadingTimer);
+    histogramLoadingTimer = null;
+  }
+}
+
 async function loadHistogram() {
   if (!lastQuery || !timeRange.value) return;
   const seq = ++histogramSeq;
-  histogramLoading.value = true;
+  clearHistogramLoadingTimer();
+  histogramLoadingTimer = setTimeout(() => {
+    histogramLoadingTimer = null;
+    if (seq === histogramSeq) {
+      histogramLoading.value = true;
+    }
+  }, HISTOGRAM_LOADING_DELAY_MS);
   try {
     const res = await fetchCallHistogram(activeTab.value, {
       ...lastQuery,
@@ -317,7 +333,10 @@ async function loadHistogram() {
       ElMessage.error(t("ops.calls.histogram.loadFailed"));
     }
   } finally {
-    if (seq === histogramSeq) histogramLoading.value = false;
+    if (seq === histogramSeq) {
+      clearHistogramLoadingTimer();
+      histogramLoading.value = false;
+    }
   }
 }
 
@@ -333,6 +352,7 @@ function openTrace(traceId: string, start?: number) {
 let unbindChartResize: (() => void) | null = null;
 
 onUnmounted(() => {
+  clearHistogramLoadingTimer();
   unbindChartResize?.();
   unbindChartResize = null;
   chart?.dispose();

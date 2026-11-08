@@ -9,8 +9,10 @@ import { useMenuStore } from "@/store/modules/menu";
 import { useUserStore } from "@/store/modules/user";
 export function setupAfterEachGuard(router: Router) {
   const { scrollToTop } = useCommon();
-  router.afterEach((to) => {
-    scrollToTop();
+  router.afterEach((to, from) => {
+    if (to.path !== from.path) {
+      scrollToTop();
+    }
     try {
       if (useUserStore().isLogin) {
         useMenuStore().rememberLastPath(to.path);
@@ -19,7 +21,7 @@ export function setupAfterEachGuard(router: Router) {
       /* pinia may be unavailable during early boot */
     }
     const settingStore = useSettingStore();
-    if (settingStore.showNprogress) {
+    if (settingStore.showNprogress && to.path !== from.path) {
       NProgress.done();
       setTimeout(() => {
         NProgress.remove();
