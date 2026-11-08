@@ -36,7 +36,7 @@
         :key="item.key"
         :label="$t(item.label)"
       >
-        <ElSwitch v-model="policyForm[item.key]" size="small" />
+        <ElSwitch v-model="policyForm[item.key]" />
       </CommonToggleTile>
     </SettingsToggleGrid>
     <CommonSettingRow

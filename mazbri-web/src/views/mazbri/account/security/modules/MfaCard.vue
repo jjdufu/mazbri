@@ -174,7 +174,7 @@
           <code v-for="code in backupCodes" :key="code">{{ code }}</code>
         </div>
         <div>
-          <ElButton size="small" @click="copyText(backupCodes.join('\n'))">
+          <ElButton @click="copyText(backupCodes.join('\n'))">
             {{ $t("accountSecurity.actions.copyAll") }}
           </ElButton>
         </div>

@@ -17,7 +17,7 @@
   --art-dialog-radius: calc(var(--custom-radius) / 1.2 + 2px);
   --art-card-radius: calc(var(--custom-radius) + 4px);
 
-  --el-border-radius-base: var(--art-form-control-radius-sm) !important;
+  --el-border-radius-base: var(--art-form-control-radius) !important;
 
   --el-border-radius-small: var(--art-form-control-radius) !important;
   --el-messagebox-border-radius: var(--art-form-control-radius) !important;
@@ -620,9 +620,7 @@ html.dark .el-card {
   }
 
   .el-input__inner {
-    font-weight: 600;
-
-
+    font-weight: var(--el-font-weight-primary, 400);
     color: var(--el-text-color-primary);
   }
 
@@ -861,7 +859,7 @@ html.dark .el-card {
 
 .el-segmented {
   --el-segmented-padding: 2px !important;
-  --el-segmented-border-radius: var(--art-form-control-radius-sm) !important;
+  --el-segmented-border-radius: var(--art-form-control-radius) !important;
   --el-segmented-bg-color: var(--el-fill-color) !important;
   --el-segmented-item-selected-bg-color: color-mix(
     in srgb,
@@ -873,6 +871,8 @@ html.dark .el-card {
   --el-segmented-item-hover-color: var(--el-text-color-primary) !important;
   --el-segmented-color: var(--el-text-color-secondary) !important;
 
+  height: var(--el-component-custom-height) !important;
+  box-sizing: border-box !important;
   border: 1px solid var(--el-border-color-lighter) !important;
   box-shadow: none !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -881,7 +881,7 @@ html.dark .el-card {
   .el-segmented__group,
   .el-segmented__item-selected,
   .el-segmented__slider {
-    border-radius: var(--art-form-control-radius-sm) !important;
+    border-radius: var(--art-form-control-radius) !important;
   }
 
   .el-segmented__item-selected,
@@ -892,7 +892,7 @@ html.dark .el-card {
   }
 
   .el-segmented__item {
-    border-radius: calc(var(--art-form-control-radius-sm) - 1px) !important;
+    border-radius: calc(var(--art-form-control-radius) - 1px) !important;
     font-weight: 500 !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 
@@ -1001,18 +1001,6 @@ html.dark .el-card {
 .setting-input-number {
   .el-input__inner {
     text-align: center !important;
-  }
-}
-
-.setting-select {
-
-  .el-select__wrapper {
-    justify-content: center !important;
-  }
-  .el-select__placeholder,
-  .el-select__selected-item {
-    text-align: center !important;
-    text-align-last: center !important;
   }
 }
 

@@ -43,9 +43,9 @@
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 
 /**
- * 控制台设置卡片：表头 = 图标 + 标题（+ title-extra，如状态标签）+ 右侧 actions；
- * 正文 = CommonSettingRow 行（标签 140px 居左、控件居右），不再嵌套子卡片或卡内小节标题。
- * 行样式统一由本组件提供，页面/模块不再各自覆写 .common-setting-row__*。
+ * [不可更改] 控制台设置卡片：表头 = 图标 + 标题（+ title-extra，如状态标签）+ 右侧 actions；
+ * 正文 = CommonSettingRow 行（标签 140px 居左、控件居右，所有单行输入/数字步进/下拉控件统一 220px 等宽对齐），
+ * 不再嵌套子卡片或卡内小节标题。行与控件尺寸统一由本组件提供，页面/模块严禁各自覆写不同宽度。
  */
 defineOptions({ name: "SettingsCard" });
 
@@ -156,13 +156,16 @@ withDefaults(
     justify-content: flex-start;
   }
 
+  :deep(.setting-input),
   :deep(.setting-input-number),
-  :deep(.setting-select) {
-    width: 120px !important;
-  }
-
-  :deep(.setting-input) {
-    width: min(100%, 260px) !important;
+  :deep(.setting-select),
+  :deep(.rate-input-number),
+  :deep(.cache-input-number),
+  :deep(.transport-control),
+  :deep(.common-setting-row--inline > .common-setting-row__control > .el-input),
+  :deep(.common-setting-row--inline > .common-setting-row__control > .el-input-number),
+  :deep(.common-setting-row--inline > .common-setting-row__control > .el-select) {
+    width: min(100%, 220px) !important;
   }
 }
 
