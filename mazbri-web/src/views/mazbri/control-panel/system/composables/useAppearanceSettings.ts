@@ -137,7 +137,7 @@ export function useAppearanceSettings() {
     boxBorderMode: false,
     showWorkTab: false,
     showMenuButton: true,
-    showRefreshButton: true,
+    showRefreshButton: false,
     showCrumbs: true,
     showLanguage: true,
     showNprogress: true,
@@ -145,7 +145,7 @@ export function useAppearanceSettings() {
     menuOpenWidth: 200,
     tabStyle: "tab-default",
     pageTransition: "fade",
-    customRadius: "1",
+    customRadius: "0.25",
     darkThemeStyle: "obsidian",
   });
   const readStoreAppearance = (): LocalAppearanceSettings => ({

@@ -2358,8 +2358,7 @@ watch(
     background: var(--wb-accent);
   }
   :deep(.el-tabs__nav-wrap::after) {
-    height: 1px;
-    background: var(--el-border-color-extra-light);
+    display: none;
   }
   :deep(.el-tabs__content) {
     flex: 1;

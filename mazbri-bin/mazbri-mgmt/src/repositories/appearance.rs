@@ -139,10 +139,10 @@ pub async fn reset_settings(pool: &PgPool, updated_by: &str) -> Result<Appearanc
         UPDATE appearance_settings SET
             system_theme_mode = 'light', system_theme_color = '#5D87FF', container_width = '100%', box_border_mode = false,
             menu_open_width = 200, show_work_tab = false,
-            show_menu_button = true, show_fast_enter = true, show_refresh_button = true,
+            show_menu_button = true, show_fast_enter = true, show_refresh_button = false,
             show_crumbs = true, show_language = true, show_nprogress = true,
             watermark_visible = false, tab_style = 'tab-default',
-            page_transition = 'fade', custom_radius = '1', dark_theme_style = 'obsidian',
+            page_transition = 'fade', custom_radius = '0.25', dark_theme_style = 'obsidian',
             updated_at = NOW(), updated_by = $1::uuid
         WHERE id = '00000000-0000-0000-0000-000000000100'
         RETURNING system_theme_mode, system_theme_color, container_width, box_border_mode, menu_open_width,

@@ -44,7 +44,7 @@
   --text-color-primary: var(--el-text-color-primary);
   --text-color-secondary: var(--el-text-color-secondary);
 
-  --custom-radius: 0rem;
+  --custom-radius: 0.25rem;
 }
 
 .dark {

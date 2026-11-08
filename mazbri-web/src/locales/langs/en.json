@@ -4200,8 +4200,10 @@
       }
     },
     "autoRefresh": {
-      "label": "Auto refresh",
+      "label": "Auto refresh interval",
+      "refreshNow": "Refresh now",
       "off": "Off",
+      "tenSeconds": "10s",
       "thirtySeconds": "30s",
       "oneMinute": "1m"
     },

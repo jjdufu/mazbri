@@ -933,22 +933,6 @@ html.dark .el-card {
       display: none !important;
     }
 
-    .el-tabs__nav {
-      position: relative;
-
-      &::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        height: 1px;
-        background-color: var(--el-border-color-light);
-        z-index: 0;
-        pointer-events: none;
-      }
-    }
-
     .el-tabs__active-bar {
       z-index: 1;
       height: 2px;
