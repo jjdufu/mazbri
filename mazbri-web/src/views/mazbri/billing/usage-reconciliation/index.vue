@@ -154,8 +154,6 @@
         :delete-total-count="items.length"
         :delete-selected-count="selectedRows.length"
         :delete-roles="['R_ADMIN', 'R_FINANCE']"
-        :fit="false"
-        table-layout="auto"
         table-class="surface-panel-table usage-recon-table"
         @refresh="loadData"
         @selection-change="handleSelectionChange"
@@ -643,7 +641,7 @@ const { selectedRows, handleSelectionChange, handleDeleteCommand } =
     actionLabel: $t("common.actions.delete"),
   });
 const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
-  { type: "selection", width: 55 },
+  { type: "selection", width: 48 },
   {
     prop: "reconciliation_date",
     label: $t("billing.reconciliation.columns.date"),
@@ -653,43 +651,43 @@ const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
   {
     prop: "billable_call_count",
     label: $t("billing.reconciliation.columns.oltp"),
-    minWidth: 110,
+    minWidth: 90,
     useSlot: true,
   },
   {
     prop: "gateway_call_count",
     label: $t("billing.reconciliation.columns.gateway"),
-    minWidth: 110,
+    minWidth: 90,
     useSlot: true,
   },
   {
     prop: "upstream_preagg_call_count",
     label: $t("billing.reconciliation.columns.olap"),
-    minWidth: 110,
+    minWidth: 96,
     useSlot: true,
   },
   {
     prop: "discrepancy_ratio",
     label: $t("billing.reconciliation.columns.ratio"),
-    minWidth: 110,
+    minWidth: 84,
     useSlot: true,
   },
   {
     prop: "status",
     label: $t("billing.reconciliation.columns.status"),
-    minWidth: 110,
+    minWidth: 84,
     useSlot: true,
   },
   {
     prop: "created_at",
     label: $t("common.fields.createdAt"),
-    minWidth: 112,
+    minWidth: 140,
     useSlot: true,
   },
   {
     prop: "operations",
     label: $t("common.fields.operations"),
-    width: 400,
+    width: 300,
     fixed: "right",
     useSlot: true,
   },

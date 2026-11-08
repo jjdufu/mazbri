@@ -10,10 +10,17 @@
     </OpsPanelToolbar>
 
     <OpsCard>
-      <ElTable v-loading="loading" :data="rules" row-key="id" size="small">
+      <ElTable
+        v-loading="loading"
+        :data="rules"
+        row-key="id"
+        size="small"
+        stripe
+        class="surface-panel-table"
+      >
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.enabled')"
-          width="76"
+          width="68"
         >
           <template #default="{ row }">
             <ElSwitch
@@ -30,10 +37,11 @@
           prop="name"
           :label="t('ops.alerts.rules.columns.name')"
           min-width="120"
+          show-overflow-tooltip
         />
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.severity')"
-          width="84"
+          width="76"
         >
           <template #default="{ row }">
             <ElTag :type="alertSeverityTag(row.severity)" size="small">
@@ -43,7 +51,8 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.expr')"
-          min-width="240"
+          min-width="180"
+          show-overflow-tooltip
         >
           <template #default="{ row }">
             <code class="ops-alerts__expr"
@@ -53,7 +62,7 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.condition')"
-          width="136"
+          width="120"
         >
           <template #default="{ row }">
             {{ row.op }} {{ row.threshold }} · {{ row.for_seconds
@@ -62,7 +71,7 @@
         </ElTableColumn>
         <ElTableColumn
           :label="t('ops.alerts.rules.columns.notify')"
-          width="128"
+          width="120"
         >
           <template #default="{ row }">
             <span v-if="row.notify?.enabled">
@@ -76,7 +85,7 @@
             <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="76">
+        <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="68">
           <template #default="{ row }">
             <ElButton
               v-if="row.active_events"
@@ -92,8 +101,7 @@
         <ElTableColumn
           v-if="isAdmin"
           :label="t('ops.alerts.columns.actions')"
-          width="116"
-          fixed="right"
+          width="140"
         >
           <template #default="{ row }">
             <ElButton link type="primary" @click="openEdit(row)">
@@ -112,7 +120,7 @@
       :title="
         editingId ? t('ops.alerts.rules.edit') : t('ops.alerts.rules.create')
       "
-      width="640px"
+      width="600px"
       :cancel-text="t('ops.alerts.rules.cancel')"
       :confirm-text="t('ops.alerts.rules.save')"
       :saving="saving"
@@ -122,7 +130,7 @@
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="110px"
+        label-width="116px"
       >
         <ElFormItem :label="t('ops.alerts.rules.columns.name')" prop="name">
           <ElInput v-model="form.name" maxlength="128" />
@@ -133,11 +141,24 @@
             <ElRadio value="olap">OLAP</ElRadio>
           </ElRadioGroup>
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.columns.expr')" prop="expr">
+        <ElFormItem prop="expr">
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.columns.expr") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.exprHint')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElInput
             v-model="form.expr"
             type="textarea"
-            :rows="4"
+            :rows="3"
             maxlength="4000"
             :placeholder="
               form.kind === 'olap'
@@ -182,10 +203,20 @@
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem
-          :label="t('ops.alerts.rules.form.labels')"
-          prop="labelsText"
-        >
+        <ElFormItem prop="labelsText">
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.form.labels") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.labelsInvalid')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElInput
             v-model="form.labelsText"
             type="textarea"
@@ -193,45 +224,79 @@
             placeholder="category=upstream"
           />
         </ElFormItem>
-        <ElFormItem
-          :label="t('ops.alerts.rules.form.emails')"
-          prop="emailsText"
-        >
+        <ElFormItem prop="emailsText">
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.form.emails") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.emailsHint')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElInput
             v-model="form.emailsText"
             type="textarea"
             :rows="2"
             placeholder="oncall@example.com"
           />
-          <div class="ops-alerts__hint">
-            {{ t("ops.alerts.rules.form.emailsHint") }}
-          </div>
         </ElFormItem>
-        <ElFormItem
-          :label="t('ops.alerts.rules.form.webhooks')"
-          prop="webhooksText"
-        >
+        <ElFormItem prop="webhooksText">
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.form.webhooks") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.webhooksHint')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElInput
             v-model="form.webhooksText"
             type="textarea"
             :rows="2"
             placeholder="https://hooks.example.com/alert"
           />
-          <div class="ops-alerts__hint">
-            {{ t("ops.alerts.rules.form.webhooksHint") }}
-          </div>
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.form.notifyEnabled')">
+        <ElFormItem>
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.form.notifyEnabled") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.notifyEnabledHint')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElSwitch v-model="form.notifyEnabled" />
-          <div class="ops-alerts__hint">
-            {{ t("ops.alerts.rules.form.notifyEnabledHint") }}
-          </div>
         </ElFormItem>
-        <ElFormItem :label="t('ops.alerts.rules.form.evaluateEnabled')">
+        <ElFormItem>
+          <template #label>
+            <span class="ops-alerts__field-label">
+              {{ t("ops.alerts.rules.form.evaluateEnabled") }}
+              <ElTooltip
+                :content="t('ops.alerts.rules.form.evaluateEnabledHint')"
+                placement="top"
+              >
+                <span class="ops-alerts__label-info" tabindex="-1">
+                  <ArtSvgIcon icon="ri:information-line" />
+                </span>
+              </ElTooltip>
+            </span>
+          </template>
           <ElSwitch v-model="form.enabled" />
-          <div class="ops-alerts__hint">
-            {{ t("ops.alerts.rules.form.evaluateEnabledHint") }}
-          </div>
         </ElFormItem>
       </ElForm>
     </EditDialog>
@@ -284,7 +349,7 @@ const { isAdmin } = useOpsRole();
 const ops: AlertOp[] = [">", ">=", "<", "<=", "==", "!="];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
 const olapPlaceholder =
-  '{"query":{"template":"top_by_dim","params":{"dim":"product_id","metric":"p99","start":0,"end":900}},"value_field":"value"}';
+  '{"query":{"template":"top_by_dim","params":{"dim":"product_id","metric":"p99"}},"value_field":"value"}';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -470,10 +535,24 @@ onMounted(reload);
 </script>
 
 <style scoped>
-.ops-alerts__hint {
-  margin: 0 0 8px;
+.ops-alerts__field-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.ops-alerts__label-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -2px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: help;
+  transition: color 0.15s ease;
+}
+.ops-alerts__label-info:hover {
+  color: var(--el-color-primary);
 }
 .ops-alerts__expr {
   font-size: 12px;

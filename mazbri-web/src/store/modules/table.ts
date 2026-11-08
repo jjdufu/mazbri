@@ -4,7 +4,7 @@ import { TableSizeEnum } from "@/enums/formEnum";
 export const useTableStore = defineStore(
   "tableStore",
   () => {
-    const tableSize = ref(TableSizeEnum.DEFAULT);
+    const tableSize = ref(TableSizeEnum.SMALL);
     const isZebra = ref(false);
     const isBorder = ref(false);
     const isHeaderBackground = ref(false);

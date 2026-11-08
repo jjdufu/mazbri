@@ -536,8 +536,38 @@ watch(
 );
 
 
+const defaultCatalogPlaceholder = computed(() => {
+  if (!props.catalog) {
+    return t("listQueryBar.placeholderQOnly");
+  }
+  const qFields = props.catalog.fields.filter((f) => f.in_q && !f.ui_hidden);
+  if (!qFields.length) {
+    return t("listQueryBar.placeholderQOnly");
+  }
+  const picked: string[] = [];
+  let charBudget = 0;
+  for (const field of qFields) {
+    const label = t(field.label_key).trim();
+    if (!label || picked.includes(label)) continue;
+    const nextBudget = charBudget + (picked.length > 0 ? 3 : 0) + label.length;
+    if (picked.length > 0 && nextBudget > 12) {
+      break;
+    }
+    picked.push(label);
+    charBudget = nextBudget;
+    if (picked.length >= 2) {
+      break;
+    }
+  }
+  return picked.length > 0
+    ? picked.join(" / ")
+    : t("listQueryBar.placeholderQOnly");
+});
+
 const resolvedPlaceholder = computed(() =>
-  hasCommittedChips.value ? "" : (props.placeholder ?? ""),
+  hasCommittedChips.value
+    ? ""
+    : (props.placeholder?.trim() || defaultCatalogPlaceholder.value),
 );
 
 

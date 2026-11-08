@@ -29,8 +29,6 @@
           :delete-total-count="bills.length"
           :delete-selected-count="selectedRows.length"
           :delete-roles="['R_ADMIN', 'R_FINANCE']"
-          :fit="false"
-          table-layout="auto"
           table-class="surface-panel-table bill-list-table"
           @refresh="loadData"
           @selection-change="handleSelectionChange"

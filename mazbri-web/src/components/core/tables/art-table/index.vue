@@ -233,17 +233,23 @@ const CELL_COPY_SKIP_SELECTOR = [
   "textarea",
   "select",
   "label",
+  "svg",
   ".el-button",
   ".el-checkbox",
   ".el-radio",
   ".el-switch",
   ".el-link",
+  ".el-tag",
+  ".el-badge",
+  ".el-icon",
+  ".status-indicator",
   ".el-dropdown",
   ".el-select",
   ".el-input",
   ".el-pagination",
   ".el-table__expand-icon",
   ".table-action-row",
+  "[data-no-cell-copy]",
   "[contenteditable='true']",
 ].join(", ");
 
@@ -252,22 +258,68 @@ let lastCellCopyText = "";
 
 const tableRootRef = ref<HTMLElement | null>(null);
 
-const extractCellCopyText = (td: Element): string => {
-  // 优先查找带有 data-copy-text 属性的元素
-  const copyTarget = td.querySelector("[data-copy-text]");
-  if (copyTarget) {
-    return copyTarget.getAttribute("data-copy-text") ?? "";
-  }
-  // 回退到提取整个 cell 的文本内容
-  const cell = td.querySelector(".cell");
-  const raw = (cell?.textContent ?? td.textContent ?? "")
+const normalizeCopiedText = (raw: string): string =>
+  raw
     .replace(/\u00a0/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
     .trim();
-  return raw;
-};
 
+const extractClickedCellCopyText = (
+  td: HTMLElement,
+  target: EventTarget | null,
+  clientX: number,
+  clientY: number,
+): string => {
+  if (target instanceof Element) {
+    const explicitCopyTarget = target.closest("[data-copy-text]");
+    if (explicitCopyTarget && td.contains(explicitCopyTarget)) {
+      const rect = explicitCopyTarget.getBoundingClientRect();
+      if (
+        clientX >= rect.left - 2 &&
+        clientX <= rect.right + 2 &&
+        clientY >= rect.top - 2 &&
+        clientY <= rect.bottom + 2
+      ) {
+        return (explicitCopyTarget.getAttribute("data-copy-text") ?? "").trim();
+      }
+    }
+  }
+
+  const cell = td.querySelector(".cell") ?? td;
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let node = walker.nextNode();
+  while (node) {
+    const textContent = normalizeCopiedText(node.textContent ?? "");
+    if (textContent && textContent !== "-" && textContent !== "—") {
+      const parentEl = node.parentElement;
+      if (parentEl && !parentEl.closest(CELL_COPY_SKIP_SELECTOR)) {
+        range.selectNodeContents(node);
+        const rects = range.getClientRects();
+        for (let i = 0; i < rects.length; i += 1) {
+          const r = rects[i];
+          if (
+            r.width > 0 &&
+            r.height > 0 &&
+            clientX >= r.left - 2 &&
+            clientX <= r.right + 2 &&
+            clientY >= r.top - 2 &&
+            clientY <= r.bottom + 2
+          ) {
+            const copyTarget = parentEl.closest("[data-copy-text]");
+            if (copyTarget && td.contains(copyTarget)) {
+              return (copyTarget.getAttribute("data-copy-text") ?? "").trim();
+            }
+            return textContent;
+          }
+        }
+      }
+    }
+    node = walker.nextNode();
+  }
+  return "";
+};
 
 const findCopyableCell = (target: EventTarget | null): HTMLElement | null => {
   if (!(target instanceof Element)) return null;
@@ -279,6 +331,9 @@ const findCopyableCell = (target: EventTarget | null): HTMLElement | null => {
   if (target.closest(CELL_COPY_SKIP_SELECTOR)) return null;
   const td = target.closest(".el-table__body td");
   if (!td || !(td instanceof HTMLElement)) return null;
+  if (td === target || target.classList.contains("cell")) {
+    // Allow range hit-test inside .cell only if click coordinates land on text glyphs
+  }
   if (td.querySelector(".el-checkbox, .el-radio, .el-table__expand-icon")) {
     return null;
   }
@@ -288,14 +343,20 @@ const findCopyableCell = (target: EventTarget | null): HTMLElement | null => {
   return td;
 };
 
-
-
 const onTableBodyClick = async (event: MouseEvent) => {
   if (!props.cellCopy) return;
+  const activeSelection = window.getSelection?.()?.toString().trim() ?? "";
+  if (activeSelection.length > 0) return;
+
   const td = findCopyableCell(event.target);
   if (!td) return;
 
-  const text = extractCellCopyText(td);
+  const text = extractClickedCellCopyText(
+    td,
+    event.target,
+    event.clientX,
+    event.clientY,
+  );
   if (!text) return;
 
   const now = Date.now();
@@ -445,7 +506,11 @@ const orderVisibleColumns = (cols: ColumnOption[]): ColumnOption[] => {
   for (const col of cols) {
     const prop = String(col.prop ?? col.slotName ?? col.type ?? "");
     if (col.type === "selection" || prop === "selection") {
-      selection.push(col);
+      selection.push({
+        ...col,
+        width: col.width ? Math.min(Number(col.width) || 48, 48) : 48,
+        align: col.align ?? "center",
+      });
     } else if (prop === "operations" || col.slotName === "operations") {
       operations.push({ ...col, fixed: col.fixed === "left" ? "left" : "right" });
     } else {

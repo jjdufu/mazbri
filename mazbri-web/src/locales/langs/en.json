@@ -480,8 +480,8 @@
         }
       },
       "placeholders": {
-        "customer": "Serial No / tenant / channel / IP / status code",
-        "upstream": "Serial No / supplier / channel / status code"
+        "customer": "Serial No / tenant / IP",
+        "upstream": "Serial No / supplier / channel"
       },
       "empty": {
         "noMatch": "No call records matched the filters",
@@ -4616,7 +4616,8 @@
         "labels": "Labels",
         "value": "Value / threshold",
         "startedAt": "Started",
-        "resolvedAt": "Resolved"
+        "resolvedAt": "Resolved",
+        "actions": "Actions"
       },
       "rules": {
         "create": "New rule",
@@ -4641,19 +4642,20 @@
         "form": {
           "kind": "Source",
           "for": "for",
+          "exprHint": "Enter a PromQL expression or an OLAP JSON query definition.",
           "labels": "Extra labels",
           "labelsInvalid": "One key=value per line",
           "emails": "Email recipients",
-          "emailsHint": "Default channel. One address per line, up to 20; sent by analytics over SMTP on firing and on resolve, requires [alerting.smtp].",
+          "emailsHint": "One email address per line (up to 20); notified on firing and resolution.",
           "emailsInvalid": "Enter addresses in name{'@'}domain form",
-          "webhooks": "Webhooks (optional)",
-          "webhooksHint": "One http(s) URL per line; SSRF-checked on save; JSON is POSTed on firing and on resolve.",
+          "webhooks": "Webhooks",
+          "webhooksHint": "One HTTP(S) URL per line; receives JSON payloads on firing and resolution.",
           "required": "Required",
           "notifyEnabled": "Notify outbound",
-          "notifyEnabledHint": "When off: evaluate and show on Events only. When on: require at least one email or webhook.",
+          "notifyEnabledHint": "Requires at least one email or webhook when enabled; records events only when disabled.",
           "notifyRequired": "Email or webhook required when notify is on",
           "evaluateEnabled": "Evaluation enabled",
-          "evaluateEnabledHint": "Disables evaluation for this rule; independent of notify outbound."
+          "evaluateEnabledHint": "Pauses periodic evaluation of this rule when disabled."
         },
         "notifySummary": "Email {emails} · Webhook {webhooks}",
         "notifyOff": "Off (UI only)"

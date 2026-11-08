@@ -11,9 +11,7 @@
       :empty-text="emptyDescription"
       :pagination="artPagination"
       :fit="true"
-      table-layout="auto"
       stripe
-      border
       @refresh="loadData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handleSizeChange"
@@ -22,6 +20,7 @@
       <template #actions>
         <ResourceTableActionBar
           v-model="searchParams.q"
+          :search-placeholder="$t('supplier.list.searchPlaceholder')"
           :show-import="true"
           :import-label="$t('common.actions.import')"
           :import-roles="[...ROLES_ADMIN]"

@@ -16,7 +16,7 @@
             v-model:q="keyword"
             v-model:filters="listFilters"
             always-expanded
-            :filter-catalog="tracesFilterCatalog"
+            :catalog="tracesFilterCatalog"
             @search="applyFiltersAndSearch"
           />
           <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
@@ -243,7 +243,7 @@ const tracesFilterCatalog = computed<ResourceFilterCatalog>(() => ({
       value_type: "string",
       ops: ["eq"],
       in_q: true,
-      label_key: "ops.traces.columns.requestId",
+      label_key: "listFilters.fields.requestId",
     },
     {
       field: "tenant_code",

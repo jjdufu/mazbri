@@ -14,36 +14,40 @@
       </div>
     </Teleport>
 
+    <div
+      v-else-if="
+        props.showHeader &&
+        !$slots.header &&
+        ($slots.headerLeft ||
+          props.description ||
+          props.meta ||
+          $slots.actions)
+      "
+      class="resource-table-shell__top-bar"
+    >
+      <SurfaceCardHeader
+        :title="''"
+        :description="props.description"
+        :meta="props.meta"
+        :total="null"
+        :align="props.headerAlign"
+        :stack-on-mobile="props.stackHeaderOnMobile"
+      >
+        <template v-if="$slots.headerLeft" #left>
+          <slot name="headerLeft" />
+        </template>
+        <template v-if="$slots.actions" #actions>
+          <slot name="actions" />
+        </template>
+      </SurfaceCardHeader>
+    </div>
+
     <ArtTableCard>
       <template
-        v-if="
-          props.showHeader &&
-          !shouldTeleportActions &&
-          ($slots.header ||
-            $slots.headerLeft ||
-            props.description ||
-            props.meta ||
-            $slots.actions)
-        "
+        v-if="props.showHeader && $slots.header"
         #header
       >
-        <slot name="header">
-          <SurfaceCardHeader
-            :title="''"
-            :description="props.description"
-            :meta="props.meta"
-            :total="null"
-            :align="props.headerAlign"
-            :stack-on-mobile="props.stackHeaderOnMobile"
-          >
-            <template v-if="$slots.headerLeft" #left>
-              <slot name="headerLeft" />
-            </template>
-            <template v-if="$slots.actions" #actions>
-              <slot name="actions" />
-            </template>
-          </SurfaceCardHeader>
-        </slot>
+        <slot name="header" />
       </template>
 
       <slot name="toolbar">
@@ -163,8 +167,8 @@ const props = withDefaults(
     emptyHeight: undefined,
     showTableHeader: true,
     stripe: undefined,
-    border: undefined,
-    size: undefined,
+    border: false,
+    size: "small",
   },
 );
 
@@ -241,6 +245,11 @@ const tableSlots = computed(() =>
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+
+.resource-table-shell__top-bar {
+  flex-shrink: 0;
+  margin-bottom: 4px;
 }
 
 .resource-table-shell__tab-actions {

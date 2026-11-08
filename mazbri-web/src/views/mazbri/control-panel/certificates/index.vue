@@ -11,7 +11,6 @@
       :pagination="artPagination"
       :empty-text="emptyDescription"
       stripe
-      border
       @refresh="loadData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handleSizeChange"
@@ -41,7 +40,7 @@
       </template>
 
       <template #default>
-        <ElTableColumn type="selection" width="55" />
+        <ElTableColumn type="selection" width="48" align="center" />
         <ElTableColumn
           prop="subject"
           :label="$t('certificate.list.columns.subject')"

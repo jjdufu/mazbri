@@ -28,7 +28,6 @@
         :data="tableData"
         :pagination="subscriptionPagination"
         stripe
-        border
         @refresh="getData"
         @selection-change="handleSelectionChange"
         @pagination:size-change="handleSubscriptionSizeChange"
@@ -38,7 +37,7 @@
           <ListQueryBar
             v-model:q="subscriptionQ"
             v-model:filters="subscriptionFilters"
-            :filter-catalog="callbackSubscriptionsCatalog"
+            :catalog="callbackSubscriptionsCatalog"
             @search="subscriptionSearch.handleSearch"
           />
           <ElButton @click="openImport">
@@ -98,7 +97,6 @@
         :data="deliveryData"
         :pagination="deliveryPagination"
         stripe
-        border
         @refresh="getDeliveries"
         @pagination:size-change="handleDeliverySizeChange"
         @pagination:current-change="handleDeliveryCurrentChange"
@@ -107,7 +105,7 @@
           <ListQueryBar
             v-model:q="deliveryQ"
             v-model:filters="deliveryFilters"
-            :filter-catalog="callbackDeliveriesCatalog"
+            :catalog="callbackDeliveriesCatalog"
             @search="deliverySearch.handleSearch"
           />
         </template>

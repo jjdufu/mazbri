@@ -480,8 +480,8 @@
         }
       },
       "placeholders": {
-        "customer": "流水号 / 租户 / 通道 / IP / 返回码",
-        "upstream": "流水号 / 供应商 / 通道 / 返回码"
+        "customer": "流水号 / 租户 / IP",
+        "upstream": "流水号 / 供应商 / 通道"
       },
       "empty": {
         "noMatch": "未找到符合筛选条件的调用记录",
@@ -4621,7 +4621,8 @@
         "labels": "标签",
         "value": "当前值 / 阈值",
         "startedAt": "开始时间",
-        "resolvedAt": "恢复时间"
+        "resolvedAt": "恢复时间",
+        "actions": "操作"
       },
       "rules": {
         "create": "新建规则",
@@ -4646,19 +4647,20 @@
         "form": {
           "kind": "数据源",
           "for": "持续",
+          "exprHint": "PromQL 填指标表达式；OLAP 填 JSON 查询定义。",
           "labels": "附加标签",
           "labelsInvalid": "每行一个 key=value",
           "emails": "邮件收件人",
-          "emailsHint": "默认通知渠道。每行一个地址，最多 20 个；触发与恢复时由 analytics 经 SMTP 发送，需配置 [alerting.smtp]。",
+          "emailsHint": "每行一个邮箱，最多 20 个；触发与恢复时发送邮件通知。",
           "emailsInvalid": "请输入 name{'@'}domain 形式的邮件地址",
-          "webhooks": "Webhook（可选）",
-          "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
+          "webhooks": "Webhook",
+          "webhooksHint": "每行一个 HTTP(S) 地址，触发与恢复时推送 JSON 负载。",
           "required": "必填",
           "notifyEnabled": "通知外发",
-          "notifyEnabledHint": "关闭时仍评估并在事件页可见，但不发邮件/IM；打开时必须配置邮箱或 webhook。",
+          "notifyEnabledHint": "开启后需至少配置邮箱或 Webhook；关闭时仅记录告警事件，不外发通知。",
           "notifyRequired": "打开通知时必须填写邮箱或 webhook",
           "evaluateEnabled": "评估启用",
-          "evaluateEnabledHint": "关闭后停止评估该规则；与通知外发开关相互独立。"
+          "evaluateEnabledHint": "关闭后暂停该规则的周期性评估。"
         },
         "notifySummary": "邮件 {emails} · Webhook {webhooks}",
         "notifyOff": "关闭（仅页面）"
