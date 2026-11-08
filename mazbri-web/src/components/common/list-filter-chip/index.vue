@@ -32,22 +32,18 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   gap: 2px;
-
-
-
-
-
+  height: 22px;
   max-width: 168px;
   min-width: 0;
   flex: 0 1 auto;
-  padding: 2px 4px 2px 10px;
-  border: 1px solid color-mix(in srgb, var(--theme-color) 22%, transparent);
-
+  padding: 0 3px 0 7px;
+  border: 1px solid color-mix(in srgb, var(--theme-color) 24%, transparent);
   border-radius: var(--el-border-radius-base);
   background: color-mix(in srgb, var(--theme-color) 10%, transparent);
   color: var(--art-gray-900);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 20px;
+  box-sizing: border-box;
 }
 
 .list-filter-chip__text {

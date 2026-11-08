@@ -21,11 +21,16 @@
     </div>
 
     <template v-if="tabs.length > 0">
-      <template v-for="tab in tabs" :key="tab.id">
-        <!-- 仅挂载当前激活面板，避免无权限/非激活 Tab 触发请求 -->
-        <div v-if="modelValue === tab.id" class="ops-tab-page__pane">
-          <slot :name="tab.id" :tab="tab" />
-        </div>
+      <div v-if="$slots.default" class="ops-tab-page__pane">
+        <slot />
+      </div>
+      <template v-else>
+        <template v-for="tab in tabs" :key="tab.id">
+          <!-- 仅挂载当前激活面板，避免无权限/非激活 Tab 触发请求 -->
+          <div v-if="modelValue === tab.id" class="ops-tab-page__pane">
+            <slot :name="tab.id" :tab="tab" />
+          </div>
+        </template>
       </template>
     </template>
 
@@ -83,7 +88,6 @@ function onTabUpdate(value: string | number) {
   justify-content: space-between;
   gap: 8px 16px;
   min-width: 0;
-  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .ops-tab-page__tabs {

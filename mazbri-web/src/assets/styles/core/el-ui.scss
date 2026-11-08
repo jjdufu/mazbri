@@ -862,22 +862,35 @@ html.dark .el-card {
 .el-segmented {
   --el-segmented-padding: 2px !important;
   --el-segmented-border-radius: var(--art-form-control-radius-sm) !important;
-  --el-segmented-bg-color: var(--el-fill-color-light) !important;
-  --el-segmented-item-selected-bg-color: var(--el-bg-color-overlay) !important;
+  --el-segmented-bg-color: var(--el-fill-color) !important;
+  --el-segmented-item-selected-bg-color: color-mix(
+    in srgb,
+    var(--el-color-primary) 12%,
+    var(--el-bg-color-overlay)
+  ) !important;
   --el-segmented-item-selected-color: var(--el-color-primary) !important;
   --el-segmented-item-hover-bg-color: transparent !important;
   --el-segmented-item-hover-color: var(--el-text-color-primary) !important;
-  --el-segmented-color: var(--el-text-color-regular) !important;
+  --el-segmented-color: var(--el-text-color-secondary) !important;
 
-  border: none !important;
+  border: 1px solid var(--el-border-color-lighter) !important;
   box-shadow: none !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 
   &,
   .el-segmented__group,
+  .el-segmented__item-selected,
   .el-segmented__slider {
     border-radius: var(--art-form-control-radius-sm) !important;
   }
+
+  .el-segmented__item-selected,
+  .el-segmented__slider {
+    border: 1px solid color-mix(in srgb, var(--el-color-primary) 30%, transparent) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+    box-sizing: border-box !important;
+  }
+
   .el-segmented__item {
     border-radius: calc(var(--art-form-control-radius-sm) - 1px) !important;
     font-weight: 500 !important;
@@ -890,21 +903,55 @@ html.dark .el-card {
 
     &.is-selected {
       font-weight: 600 !important;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
     }
   }
 
   html.dark & {
     --el-segmented-bg-color: rgba(255, 255, 255, 0.06) !important;
-    --el-segmented-item-selected-bg-color: rgba(255, 255, 255, 0.12) !important;
+    --el-segmented-item-selected-bg-color: color-mix(
+      in srgb,
+      var(--el-color-primary) 20%,
+      rgba(255, 255, 255, 0.08)
+    ) !important;
     --el-segmented-item-selected-color: var(--el-color-primary) !important;
     --el-segmented-item-hover-bg-color: transparent !important;
 
-    border: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
     box-shadow: none !important;
 
-    .el-segmented__item.is-selected {
+    .el-segmented__item-selected,
+    .el-segmented__slider {
+      border: 1px solid color-mix(in srgb, var(--el-color-primary) 38%, transparent) !important;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+    }
+  }
+}
+
+.el-tabs--top:not(.el-tabs--card):not(.el-tabs--border-card) {
+  > .el-tabs__header {
+    .el-tabs__nav-wrap::after {
+      display: none !important;
+    }
+
+    .el-tabs__nav {
+      position: relative;
+
+      &::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 1px;
+        background-color: var(--el-border-color-light);
+        z-index: 0;
+        pointer-events: none;
+      }
+    }
+
+    .el-tabs__active-bar {
+      z-index: 1;
+      height: 2px;
     }
   }
 }
@@ -1041,6 +1088,7 @@ html.radius-zero {
   .el-segmented,
   .el-segmented__group,
   .el-segmented__item,
+  .el-segmented__item-selected,
   .el-segmented__slider,
   .el-checkbox__inner,
   .el-radio-button__inner,

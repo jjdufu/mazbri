@@ -192,7 +192,13 @@ const mergedPopperClass = computed(() => {
       ? raw.trim()
       : "";
 
-  const layout = isRangeType() ? " art-date-picker-popper--range-shortcuts" : "";
+  const hasRangeShortcuts =
+    isRangeType() &&
+    Array.isArray(mergedShortcuts.value) &&
+    mergedShortcuts.value.length > 0;
+  const layout = hasRangeShortcuts
+    ? " art-date-picker-popper--range-shortcuts"
+    : "";
 
   const dateOnly = isDateOnlyCallerType.value
     ? " art-date-picker-popper--date-only"

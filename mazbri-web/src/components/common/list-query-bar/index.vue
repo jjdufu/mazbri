@@ -81,6 +81,7 @@
       <div
         class="list-query-bar__panel"
         :class="{
+          'has-chips': hasCommittedChips,
           'is-idle-chips': isIdleChips,
           'is-drafting': isDrafting,
         }"
@@ -91,6 +92,7 @@
           ref="shellRef"
           class="list-query-bar__field"
           :class="{
+            'has-chips': hasCommittedChips,
             'is-idle-chips': isIdleChips,
             'is-drafting': isDrafting,
           }"
@@ -103,24 +105,64 @@
           />
 
           <div
-            v-if="filtersModel.length || qModel.trim()"
+            v-if="primaryChipItem"
             class="list-query-bar__chips"
           >
             <ListFilterChip
-              v-for="(f, index) in filtersModel"
-              :key="`chip-${f.field}-${f.op}-${index}`"
-              :text="chipText(f)"
-              :title="chipText(f)"
+              :key="primaryChipItem.id"
+              class="list-query-bar__inline-chip"
+              :text="primaryChipItem.text"
+              :title="primaryChipItem.title"
               :remove-label="t('listFilters.remove')"
-              @remove="removeFilterAt(index)"
+              @remove="primaryChipItem.onRemove()"
             />
-            <ListFilterChip
-              v-if="qModel.trim()"
-              :text="qChipText"
-              :title="qChipTitle"
-              :remove-label="t('listFilters.remove')"
-              @remove="clearQ"
-            />
+            <ElPopover
+              v-if="overflowChipCount > 0"
+              placement="bottom-start"
+              trigger="hover"
+              :width="280"
+              :show-after="100"
+              popper-class="list-query-bar__overflow-popper"
+            >
+              <template #reference>
+                <span
+                  class="list-query-bar__more-badge"
+                  @mousedown.stop
+                >
+                  +{{ overflowChipCount }}
+                </span>
+              </template>
+              <div class="list-query-bar__overflow-content" @mousedown.stop>
+                <div class="list-query-bar__overflow-header">
+                  <span class="list-query-bar__overflow-title">
+                    {{
+                      t("listQueryBar.hover.activeFilters", {
+                        n: committedChipItems.length,
+                      })
+                    }}
+                  </span>
+                  <ElButton
+                    link
+                    type="primary"
+                    size="small"
+                    @click="clearAllQuery"
+                  >
+                    {{ t("listQueryBar.clearAll") }}
+                  </ElButton>
+                </div>
+                <div class="list-query-bar__overflow-chips">
+                  <ListFilterChip
+                    v-for="item in committedChipItems"
+                    :key="`overflow-${item.id}`"
+                    class="list-query-bar__overflow-chip"
+                    :text="item.text"
+                    :title="item.title"
+                    :remove-label="t('listFilters.remove')"
+                    @remove="item.onRemove()"
+                  />
+                </div>
+              </div>
+            </ElPopover>
           </div>
 
           <ElInput
@@ -601,6 +643,42 @@ const chipText = (f: ListFilter) => {
   });
 };
 
+interface CommittedChipItem {
+  id: string;
+  text: string;
+  title: string;
+  onRemove: () => void;
+}
+
+const committedChipItems = computed<CommittedChipItem[]>(() => {
+  const items: CommittedChipItem[] = filtersModel.value.map((f, index) => {
+    const text = chipText(f);
+    return {
+      id: `chip-${f.field}-${f.op}-${index}`,
+      text,
+      title: text,
+      onRemove: () => removeFilterAt(index),
+    };
+  });
+  if (qModel.value.trim()) {
+    items.push({
+      id: "chip-q",
+      text: qChipText.value,
+      title: qChipTitle.value,
+      onRemove: clearQ,
+    });
+  }
+  return items;
+});
+
+const primaryChipItem = computed<CommittedChipItem | null>(
+  () => committedChipItems.value[0] ?? null,
+);
+
+const overflowChipCount = computed(() =>
+  Math.max(0, committedChipItems.value.length - 1),
+);
+
 const emitSearch = () => {
   emit("change", { q: qModel.value, filters: filtersModel.value });
   emit("search");
@@ -717,6 +795,7 @@ const isEventInsideQueryUi = (target: EventTarget | null): boolean => {
   if (rootRef.value?.contains(target)) return true;
 
   if (target.closest(".list-query-bar__suggest")) return true;
+  if (target.closest(".list-query-bar__overflow-popper")) return true;
   return false;
 };
 
@@ -738,6 +817,7 @@ const onFieldMouseDown = (event: MouseEvent) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest(".list-filter-chip__remove")) return;
+  if (target.closest(".list-query-bar__more-badge")) return;
   if (target.closest(".el-input")) return;
   event.preventDefault();
   inputRef.value?.focus?.();
@@ -961,14 +1041,11 @@ const clearAllQuery = () => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-
-
-
-
+  height: 32px;
 
   &.is-expanded {
     flex: 0 0 auto;
-    align-items: flex-start;
+    align-items: center;
     max-width: 100%;
   }
 }
@@ -1019,7 +1096,7 @@ const clearAllQuery = () => {
   min-width: 14px;
   height: 14px;
   padding: 0 3px;
-  border-radius: 999px;
+  border-radius: var(--el-border-radius-base);
   background: var(--el-color-primary);
   color: #fff;
   font-size: 10px;
@@ -1032,76 +1109,87 @@ const clearAllQuery = () => {
   }
 }
 
-
-
-
-
-
-
-
-
 .list-query-bar__panel {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 4px;
   width: var(--list-query-bar-width, 240px);
   max-width: min(100vw - 48px, var(--list-query-bar-width, 240px));
   min-width: 0;
+  height: 32px;
   box-sizing: border-box;
+  transition: width 0.15s ease;
 
+  &.has-chips {
+    width: max(var(--list-query-bar-width, 240px), 280px);
+    max-width: min(100vw - 48px, max(var(--list-query-bar-width, 240px), 280px));
+  }
 
   &.is-idle-chips {
     width: fit-content;
-  }
-
-  &.is-drafting {
-    width: var(--list-query-bar-width, 240px);
   }
 }
 
 .list-query-bar__field {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  align-content: flex-start;
   gap: 6px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  height: 32px;
   min-height: 32px;
-  padding: 2px 10px;
+  max-height: 32px;
+  padding: 0 8px;
   border: 1px solid var(--el-border-color);
   border-radius: var(--el-border-radius-base);
   background: var(--el-fill-color-blank);
   box-sizing: border-box;
+  overflow: hidden;
   transition: border-color 0.15s ease;
 
   &:focus-within {
     border-color: var(--el-color-primary);
   }
-
-
-
-
-
-  &.is-drafting {
-    .list-query-bar__input {
-      flex: 1 0 100%;
-      flex-basis: 100%;
-      width: 100% !important;
-      min-width: 100% !important;
-      max-width: 100%;
-    }
-  }
 }
 
-
-
-
-
 .list-query-bar__chips {
-  display: contents;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 76px);
+}
+
+.list-query-bar__inline-chip {
+  max-width: 120px;
+}
+
+.list-query-bar__more-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  border-radius: var(--el-border-radius-base);
+  background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  color: var(--el-color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--el-color-primary) 20%, transparent);
+  }
 }
 
 .list-query-bar__prefix-icon {
@@ -1111,17 +1199,12 @@ const clearAllQuery = () => {
 }
 
 .list-query-bar__input {
-
-
-
-
   --el-input-width: auto;
 
-  flex: 1 1 auto;
-  min-width: 4ch !important;
+  flex: 1 1 56px;
+  min-width: 48px !important;
   width: auto !important;
   max-width: 100%;
-
 
   .list-query-bar__field.is-idle-chips & {
     flex: 0 0 auto;
@@ -1132,10 +1215,9 @@ const clearAllQuery = () => {
     max-width: 0.6em !important;
   }
 
-
   &.has-draft {
-    flex: 1 1 auto;
-    min-width: 4ch !important;
+    flex: 1 1 56px;
+    min-width: 48px !important;
     width: auto !important;
     max-width: 100%;
   }
@@ -1144,6 +1226,7 @@ const clearAllQuery = () => {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
+    height: 24px;
     min-height: 24px;
     padding-left: 0 !important;
     padding-right: 4px !important;
@@ -1170,7 +1253,6 @@ const clearAllQuery = () => {
     padding: 0 !important;
   }
 
-
   &:not(.has-draft) {
     :deep(.el-input__suffix) {
       display: none !important;
@@ -1183,16 +1265,29 @@ const clearAllQuery = () => {
 }
 
 .list-query-bar__clear {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
   height: 32px;
-  align-self: flex-start;
+  margin: 0;
+  padding: 0 4px;
+  align-self: center;
 }
 
 .list-query-bar__error {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
   margin: 0;
+  padding: 2px 6px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-light);
   color: var(--el-color-danger);
   font-size: 12px;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .list-query-bar__hover {
@@ -1238,10 +1333,6 @@ const clearAllQuery = () => {
     &.is-idle-chips {
       width: fit-content;
     }
-
-    &.is-drafting {
-      width: min(100%, var(--list-query-bar-width, 240px));
-    }
   }
 }
 </style>
@@ -1250,6 +1341,39 @@ const clearAllQuery = () => {
 <style lang="scss">
 .list-query-bar__hover-popper.el-popper {
   max-width: 340px;
+}
+
+.list-query-bar__overflow-popper.el-popper {
+  padding: 10px 12px !important;
+}
+
+.list-query-bar__overflow-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-query-bar__overflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.list-query-bar__overflow-title {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.list-query-bar__overflow-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.list-query-bar__overflow-chip {
+  max-width: 240px !important;
 }
 
 .list-query-bar__suggest {
