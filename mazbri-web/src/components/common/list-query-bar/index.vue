@@ -123,6 +123,8 @@
               width="auto"
               :show-after="100"
               popper-class="list-query-bar__overflow-popper"
+              @before-enter="measureOverflowContentWidth"
+              @after-enter="measureOverflowContentWidth"
             >
               <template #reference>
                 <span
@@ -132,7 +134,11 @@
                   +{{ overflowChipCount }}
                 </span>
               </template>
-              <div class="list-query-bar__overflow-content" @mousedown.stop>
+              <div
+                class="list-query-bar__overflow-content"
+                :style="overflowContentStyle"
+                @mousedown.stop
+              >
                 <div class="list-query-bar__overflow-header">
                   <span class="list-query-bar__overflow-title">
                     {{
@@ -150,7 +156,10 @@
                     {{ t("listQueryBar.clearAll") }}
                   </ElButton>
                 </div>
-                <div class="list-query-bar__overflow-chips">
+                <div
+                  ref="overflowChipsRef"
+                  class="list-query-bar__overflow-chips"
+                >
                   <ListFilterChip
                     v-for="item in committedChipItems"
                     :key="`overflow-${item.id}`"
@@ -720,6 +729,43 @@ const primaryChipItem = computed<CommittedChipItem | null>(
 
 const overflowChipCount = computed(() =>
   Math.max(0, committedChipItems.value.length - 1),
+);
+
+const overflowChipsRef = ref<HTMLElement | null>(null);
+const overflowContentWidthPx = ref<number | null>(null);
+
+const overflowContentStyle = computed(() =>
+  overflowContentWidthPx.value != null
+    ? { width: `${overflowContentWidthPx.value}px` }
+    : {},
+);
+
+const measureOverflowContentWidth = async () => {
+  overflowContentWidthPx.value = null;
+  await nextTick();
+  const chipsEl = overflowChipsRef.value;
+  if (!chipsEl) return;
+  const chipEls = Array.from(
+    chipsEl.querySelectorAll(".list-filter-chip"),
+  ) as HTMLElement[];
+  if (!chipEls.length) return;
+  const baseLeft = chipsEl.getBoundingClientRect().left;
+  let maxRight = baseLeft;
+  for (const chip of chipEls) {
+    maxRight = Math.max(maxRight, chip.getBoundingClientRect().right);
+  }
+  const exactWidth = Math.ceil(maxRight - baseLeft);
+  if (Number.isFinite(exactWidth) && exactWidth > 0) {
+    overflowContentWidthPx.value = Math.max(140, Math.min(296, exactWidth));
+  }
+};
+
+watch(
+  committedChipItems,
+  () => {
+    void measureOverflowContentWidth();
+  },
+  { deep: true, flush: "post" },
 );
 
 const emitSearch = () => {
