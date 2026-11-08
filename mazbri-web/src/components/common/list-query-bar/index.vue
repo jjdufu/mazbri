@@ -565,39 +565,82 @@ const suggestItems = computed<SuggestItem[]>(() => {
   });
 });
 
-watch(suggestItems, (items) => {
-  if (!items.length) {
-    suggestIndex.value = -1;
-    return;
-  }
-  if (suggestIndex.value < 0 || suggestIndex.value >= items.length) {
-    suggestIndex.value = 0;
-  }
-  nextTick(() => updateSuggestPosition());
-});
-
-watch([expanded, suggestOpen, filtersModel, qModel], () => {
-  if (expanded.value && suggestOpen.value) {
-    nextTick(() => updateSuggestPosition());
-  }
-});
+let suggestRafId: number | null = null;
+let suggestResizeObserver: ResizeObserver | null = null;
+let lastSuggestTop = -1;
+let lastSuggestLeft = -1;
+let lastSuggestWidth = -1;
 
 const updateSuggestPosition = () => {
   const el = shellRef.value;
   if (!el) return;
   const rect = el.getBoundingClientRect();
 
-  const width = Math.max(rect.width, 200);
+  const width = Math.round(Math.max(rect.width, 200));
   const maxLeft = Math.max(8, window.innerWidth - width - 8);
-  const left = Math.min(Math.max(8, rect.left), maxLeft);
+  const left = Math.round(Math.min(Math.max(8, rect.left), maxLeft));
+  const top = Math.round(rect.bottom + 4);
+
+  if (
+    top === lastSuggestTop &&
+    left === lastSuggestLeft &&
+    width === lastSuggestWidth
+  ) {
+    return;
+  }
+  lastSuggestTop = top;
+  lastSuggestLeft = left;
+  lastSuggestWidth = width;
+
   suggestStyle.value = {
     position: "fixed",
-    top: `${Math.round(rect.bottom + 4)}px`,
-    left: `${Math.round(left)}px`,
-    width: `${Math.round(width)}px`,
+    top: `${top}px`,
+    left: `${left}px`,
+    width: `${width}px`,
     zIndex: "4000",
   };
 };
+
+const stopSuggestPositionLoop = () => {
+  if (suggestRafId != null) {
+    cancelAnimationFrame(suggestRafId);
+    suggestRafId = null;
+  }
+};
+
+const startSuggestPositionLoop = () => {
+  stopSuggestPositionLoop();
+  const tick = () => {
+    if (!expanded.value || !suggestOpen.value || !suggestItems.value.length) {
+      suggestRafId = null;
+      return;
+    }
+    updateSuggestPosition();
+    suggestRafId = requestAnimationFrame(tick);
+  };
+  updateSuggestPosition();
+  suggestRafId = requestAnimationFrame(tick);
+};
+
+watch(suggestItems, (items) => {
+  if (!items.length) {
+    suggestIndex.value = -1;
+    stopSuggestPositionLoop();
+    return;
+  }
+  if (suggestIndex.value < 0 || suggestIndex.value >= items.length) {
+    suggestIndex.value = 0;
+  }
+  nextTick(() => startSuggestPositionLoop());
+});
+
+watch([expanded, suggestOpen, filtersModel, qModel], () => {
+  if (expanded.value && suggestOpen.value && suggestItems.value.length) {
+    nextTick(() => startSuggestPositionLoop());
+  } else {
+    stopSuggestPositionLoop();
+  }
+});
 
 const onViewportChange = () => {
   if (expanded.value && suggestOpen.value) {
@@ -828,10 +871,24 @@ onMounted(() => {
   document.addEventListener("touchstart", onDocumentPointerDown, true);
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
+  if (typeof ResizeObserver !== "undefined") {
+    suggestResizeObserver = new ResizeObserver(() => {
+      if (expanded.value && suggestOpen.value) {
+        updateSuggestPosition();
+      }
+    });
+    if (shellRef.value) suggestResizeObserver.observe(shellRef.value);
+    if (rootRef.value?.parentElement) {
+      suggestResizeObserver.observe(rootRef.value.parentElement);
+    }
+  }
 });
 
 onBeforeUnmount(() => {
   clearLiveCommitTimer();
+  stopSuggestPositionLoop();
+  suggestResizeObserver?.disconnect();
+  suggestResizeObserver = null;
   document.removeEventListener("mousedown", onDocumentPointerDown, true);
   document.removeEventListener("touchstart", onDocumentPointerDown, true);
   window.removeEventListener("resize", onViewportChange);
@@ -1119,7 +1176,6 @@ const clearAllQuery = () => {
   min-width: 0;
   height: 32px;
   box-sizing: border-box;
-  transition: width 0.15s ease;
 
   &.has-chips {
     width: max(var(--list-query-bar-width, 240px), 280px);
