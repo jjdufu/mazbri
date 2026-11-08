@@ -66,8 +66,7 @@
                     v-model="settingsForm.schedule.interval_secs"
                     :min="60"
                     :step="60"
-                    controls-position="right"
-                    class="setting-control"
+                    class="setting-control setting-input-number"
                   />
                 </CommonSettingRow>
 
@@ -89,8 +88,7 @@
                     :max="1"
                     :step="0.01"
                     :precision="4"
-                    controls-position="right"
-                    class="setting-control"
+                    class="setting-control setting-input-number"
                   />
                 </CommonSettingRow>
 
@@ -1229,7 +1227,7 @@ onMounted(() => {
 
 
 .setting-control {
-  width: 180px !important;
+  width: 220px !important;
   max-width: 100%;
   box-sizing: border-box;
 }

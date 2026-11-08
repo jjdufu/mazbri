@@ -32,7 +32,6 @@
         <ElButton
           v-for="tpl in planTemplates"
           :key="tpl.id"
-          size="small"
           plain
           @click="applyTemplate(tpl)"
         >
@@ -879,10 +878,6 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.rate-input-number {
-  width: 180px;
-}
-
 .template-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -999,7 +994,7 @@ onMounted(() => {
 }
 
 .ops-input {
-  width: 120px;
+  width: 140px;
 }
 
 .ops-label {
@@ -1046,12 +1041,6 @@ onMounted(() => {
 
   &:hover {
     text-decoration: underline;
-  }
-}
-
-@media (max-width: 768px) {
-  .rate-input-number {
-    width: 160px;
   }
 }
 </style>

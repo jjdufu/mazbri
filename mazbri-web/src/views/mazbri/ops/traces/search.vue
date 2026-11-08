@@ -56,7 +56,7 @@
           <ElInputNumber
             v-model="form.min_duration_ms"
             :min="0"
-            controls-position="right"
+            :controls="false"
             :placeholder="t('ops.traces.form.min')"
             class="ops-traces__num"
           />
@@ -64,7 +64,7 @@
           <ElInputNumber
             v-model="form.max_duration_ms"
             :min="0"
-            controls-position="right"
+            :controls="false"
             :placeholder="t('ops.traces.form.max')"
             class="ops-traces__num"
           />

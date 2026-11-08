@@ -75,12 +75,12 @@
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.channelCode')" min-width="120">
             <template #default="{ row }">
-              <ElInput v-model="row.channel_code" size="small" />
+              <ElInput v-model="row.channel_code" />
             </template>
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.pathPrefix')" min-width="110">
             <template #default="{ row }">
-              <ElInput v-model="row.path_prefix" size="small" />
+              <ElInput v-model="row.path_prefix" />
             </template>
           </ElTableColumn>
         </ElTable>

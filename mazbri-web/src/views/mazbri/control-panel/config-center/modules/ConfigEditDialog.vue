@@ -45,12 +45,11 @@
                     v-if="inputOriginVisible"
                     ref="inputOriginRef"
                     v-model="inputOriginValue"
-                    size="small"
                     class="w-40"
                     @keyup.enter="handleInputOriginConfirm"
                     @blur="handleInputOriginConfirm"
                   />
-                  <ElButton v-else size="small" @click="showInputOrigin">
+                  <ElButton v-else @click="showInputOrigin">
                     + {{ $t("common.actions.add") || "添加" }}
                   </ElButton>
                 </div>

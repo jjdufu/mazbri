@@ -18,7 +18,6 @@
       <ElSelect
         v-model="metric"
         style="width: 140px"
-        size="small"
         @change="onMetricChange"
       >
         <ElOption value="req_count" :label="t('ops.products.metricReq')" />

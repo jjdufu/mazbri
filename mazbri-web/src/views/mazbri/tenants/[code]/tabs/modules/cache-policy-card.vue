@@ -326,10 +326,6 @@ onMounted(loadData);
 </script>
 
 <style scoped lang="scss">
-.cache-input-number {
-  width: 180px;
-}
-
 .table-row-label {
   display: flex;
   align-items: center;
@@ -343,12 +339,6 @@ onMounted(loadData);
   :deep(.el-input__wrapper) {
     box-shadow: none !important;
     background: transparent;
-  }
-}
-
-@media (max-width: 768px) {
-  .cache-input-number {
-    width: 160px;
   }
 }
 </style>

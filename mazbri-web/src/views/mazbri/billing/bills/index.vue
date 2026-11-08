@@ -118,7 +118,6 @@
           <div v-if="currentBill" class="bill-detail-layout">
             <div class="bill-detail-toolbar">
               <ElButton
-                size="large"
                 type="primary"
                 :disabled="!currentBill"
                 @click="handleExportDetail"
@@ -216,7 +215,6 @@
                     <ElButton
                       v-roles="ROLES_BIZ"
                       type="primary"
-                      size="small"
                       @click="openCreateAdjustment"
                     >
                       {{ $t("billing.adjustments.add") }}

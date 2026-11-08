@@ -48,9 +48,8 @@
           {{ $t("configCenter.historyDrawer.compare.title") }}
           <ElSelect
             v-model="compareToVersion"
-            size="small"
             class="ml-2"
-            style="width: 120px"
+            style="width: 132px"
           >
             <ElOption
               v-for="h in comparableVersions"
