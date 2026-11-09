@@ -125,6 +125,8 @@ pub enum RetryReason {
     Transport,
     ConfigCacheMiss,
     Switch,
+    /// bypass 内部重试（认证换票、WS 换新连接），次数来自 `InvokeResponse.internal_retries`。
+    UpstreamInternal,
 }
 
 impl RetryReason {
@@ -134,6 +136,7 @@ impl RetryReason {
             Self::Transport => "transport",
             Self::ConfigCacheMiss => "config_cache_miss",
             Self::Switch => "switch",
+            Self::UpstreamInternal => "upstream_internal",
         }
     }
 }
@@ -142,6 +145,15 @@ pub fn record_retry(mode: &str, reason: RetryReason) {
     GATEWAY_RETRY_TOTAL
         .with_label_values(&[mode, reason.as_str()])
         .inc();
+}
+
+/// 按 bypass 透传的内部重试次数计入 `gateway_retry_total{reason="upstream_internal"}`。
+pub fn record_internal_retries(mode: &str, count: u32) {
+    if count > 0 {
+        GATEWAY_RETRY_TOTAL
+            .with_label_values(&[mode, RetryReason::UpstreamInternal.as_str()])
+            .inc_by(f64::from(count));
+    }
 }
 
 /// 未知/非法契约 ID。

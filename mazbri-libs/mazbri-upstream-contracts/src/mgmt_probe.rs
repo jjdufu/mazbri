@@ -52,6 +52,10 @@ pub struct ProbeInvokeResponse {
     pub biz_error: Option<ProbeBizError>,
     pub payload_json: String,
     pub upstream_meta: Option<ProbeUpstreamMeta>,
+    /// bypass 内部重试次数（认证换票、WS 换新连接）。
+    pub internal_retries: u32,
+    /// 每次内部重试的原因标签。
+    pub retry_reasons: Vec<String>,
 }
 
 /// 业务错误；由 proto [`InvokeBizError`] 转换而来。
@@ -166,6 +170,8 @@ impl From<InvokeResponse> for ProbeInvokeResponse {
             biz_error,
             payload_json,
             upstream_meta,
+            internal_retries,
+            retry_reasons,
         } = r;
         Self {
             success,
@@ -173,6 +179,8 @@ impl From<InvokeResponse> for ProbeInvokeResponse {
             biz_error: biz_error.map(Into::into),
             payload_json,
             upstream_meta: upstream_meta.map(Into::into),
+            internal_retries,
+            retry_reasons,
         }
     }
 }
@@ -220,6 +228,8 @@ mod tests {
                 adapter: "http_json".into(),
                 upstream_wire_ms: 59,
             }),
+            internal_retries: 1,
+            retry_reasons: vec!["auth_rejected:jsonrpc_code".into()],
         }
     }
 
@@ -244,6 +254,8 @@ mod tests {
         let meta = resp.upstream_meta.as_ref().expect("meta");
         assert_eq!(meta.upstream_wire_ms, 59);
         assert_eq!(resp.biz_error.as_ref().expect("biz").code, "E1");
+        assert_eq!(resp.internal_retries, 1);
+        assert_eq!(resp.retry_reasons, vec!["auth_rejected:jsonrpc_code"]);
 
         let text = serde_json::to_string(&resp).unwrap();
         assert!(text.contains("\"upstream_wire_ms\":59"));
@@ -259,6 +271,8 @@ mod tests {
             biz_error: None,
             payload_json: String::new(),
             upstream_meta: None,
+            internal_retries: 0,
+            retry_reasons: Vec::new(),
         });
         let text = serde_json::to_string(&resp).unwrap();
         let back: ProbeInvokeResponse = serde_json::from_str(&text).unwrap();
@@ -271,6 +285,13 @@ mod tests {
         let body = r#"{"success":true,"error":"","biz_error":null,"payload_json":"","upstream_meta":{"status":200,"url":"u","adapter":"a","latency_ms":5}}"#;
         let err = serde_json::from_str::<ProbeInvokeResponse>(body).unwrap_err();
         assert!(err.to_string().contains("latency_ms"), "{err}");
+    }
+
+    #[test]
+    fn missing_retry_fields_are_rejected() {
+        let body = r#"{"success":true,"error":"","biz_error":null,"payload_json":"","upstream_meta":null}"#;
+        let err = serde_json::from_str::<ProbeInvokeResponse>(body).unwrap_err();
+        assert!(err.to_string().contains("internal_retries"), "{err}");
     }
 
     #[test]

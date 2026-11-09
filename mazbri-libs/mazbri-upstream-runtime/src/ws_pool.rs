@@ -191,19 +191,25 @@ impl WsPool {
         handshake_headers: &[(String, String)],
     ) -> Result<WsConnGuard, ExecuteError> {
         let permits = self.acquire_permits(&key)?;
+        let mut discarded = 0usize;
         while let Some(mut stream) = self.take_idle(&key)? {
             if self.inner.cfg.liveness_check_on_checkout
                 && matches!(probe_alive(&mut stream).await, Liveness::Dead)
             {
                 self.inner.stale_discards.fetch_add(1, Ordering::SeqCst);
+                discarded += 1;
                 continue;
             }
             self.inner.reuses.fetch_add(1, Ordering::SeqCst);
-            return Ok(self.guard(key, stream, permits, true));
+            let mut guard = self.guard(key, stream, permits, true);
+            guard.discarded = discarded;
+            return Ok(guard);
         }
         let stream = self.connect(ws_url, handshake_headers).await?;
         self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
-        Ok(self.guard(key, stream, permits, false))
+        let mut guard = self.guard(key, stream, permits, false);
+        guard.discarded = discarded;
+        Ok(guard)
     }
 
     /// 跳过空闲连接直接握手（复用连接回复前断开后的重试专用），仍受全局与每键并发约束。
@@ -270,6 +276,7 @@ impl WsPool {
             _key: permits.per_key,
             broken: false,
             reused,
+            discarded: 0,
         }
     }
 
@@ -373,6 +380,7 @@ pub struct WsConnGuard {
     _key: OwnedSemaphorePermit,
     broken: bool,
     reused: bool,
+    discarded: usize,
 }
 
 impl WsConnGuard {
@@ -394,6 +402,12 @@ impl WsConnGuard {
     #[must_use]
     pub fn reused(&self) -> bool {
         self.reused
+    }
+
+    /// 本次借出过程中因存活检查判死而丢弃的空闲连接数。
+    #[must_use]
+    pub fn stale_discarded(&self) -> usize {
+        self.discarded
     }
 }
 

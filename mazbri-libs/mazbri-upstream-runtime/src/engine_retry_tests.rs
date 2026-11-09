@@ -345,3 +345,131 @@ async fn token_endpoint_failure_is_auth_token_failed() {
     assert_eq!(result.error_code.as_deref(), Some("AUTH_TOKEN_FAILED"));
     assert_eq!(up.api_hits(), 0);
 }
+
+#[derive(Default)]
+struct Recorder(std::sync::Mutex<Vec<crate::observe::RuntimeEvent>>);
+
+impl crate::observe::RuntimeObserver for Recorder {
+    fn on_event(&self, event: crate::observe::RuntimeEvent) {
+        self.0.lock().unwrap().push(event);
+    }
+}
+
+#[derive(Clone, Default)]
+struct LogBuf(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogBuf {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(data);
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn retry_is_reported_in_result_events_and_logs() {
+    use crate::observe::{RetryOutcome, RuntimeEvent};
+    use crate::{AuthRejectTrigger, RetryReason};
+    use mazbri_core::AdapterKind;
+
+    let buf = LogBuf::default();
+    let writer = buf.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let up = Upstream::new(2, true);
+    let base = spawn(up.clone()).await;
+    let mut auth = ticket_auth(&base);
+    auth.invalidation = Some(AuthInvalidationSpec {
+        jsonrpc_codes: vec![-32001],
+        ..AuthInvalidationSpec::default()
+    });
+    let recorder = Arc::new(Recorder::default());
+    let engine = engine(RuntimeOptions::default()).with_observer(recorder.clone());
+    let mut input = input(&base, ADAPTER_JSONRPC, auth);
+    input.mode = ExecuteMode::Business;
+    let result = engine.invoke(input).await;
+    assert!(result.ok);
+    assert_eq!(result.internal_retries, 1);
+    let trigger = AuthRejectTrigger::JsonRpcCode(-32001);
+    assert_eq!(
+        result.retry_reasons,
+        vec![RetryReason::AuthRejected(trigger)]
+    );
+    assert_eq!(
+        result.retry_reasons[0].label(),
+        "auth_rejected:jsonrpc_code"
+    );
+    assert_eq!(result.retry_skipped, None);
+    let names: Vec<&str> = result.stages.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"upstream") && names.contains(&"upstream#retry"),
+        "{names:?}"
+    );
+
+    let events = recorder.0.lock().unwrap().clone();
+    assert_eq!(
+        events,
+        vec![
+            RuntimeEvent::AuthRejected {
+                adapter: AdapterKind::Jsonrpc,
+                trigger
+            },
+            RuntimeEvent::TokenEvict { evicted: true },
+            RuntimeEvent::AuthRetry {
+                adapter: AdapterKind::Jsonrpc,
+                result: RetryOutcome::Ok
+            },
+        ]
+    );
+
+    let logs = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+    assert!(logs.contains("upstream.auth_rejected"), "{logs}");
+    assert!(
+        logs.contains(&format!(
+            "token_fp={}",
+            crate::observe::token_fingerprint("T1")
+        )),
+        "{logs}"
+    );
+    assert!(!logs.contains("T1 ") && !logs.contains("Bearer"), "{logs}");
+}
+
+#[tokio::test]
+async fn skipped_retry_is_reported() {
+    use crate::RetrySkip;
+    let up = Upstream::new(usize::MAX, false);
+    let base = spawn(up.clone()).await;
+    let disabled = engine(RuntimeOptions {
+        auth_retry_enabled: false,
+        ..RuntimeOptions::default()
+    })
+    .invoke(input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base)))
+    .await;
+    assert_eq!(disabled.retry_skipped, Some(RetrySkip::Disabled));
+    assert_eq!(disabled.internal_retries, 0);
+
+    let recorder = Arc::new(Recorder::default());
+    let exhausted = engine(RuntimeOptions {
+        retry_budget_min_per_window: 0,
+        ..RuntimeOptions::default()
+    })
+    .with_observer(recorder.clone())
+    .invoke(input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base)))
+    .await;
+    assert_eq!(exhausted.retry_skipped, Some(RetrySkip::Budget));
+    assert!(
+        recorder
+            .0
+            .lock()
+            .unwrap()
+            .contains(&crate::observe::RuntimeEvent::BudgetExhausted {
+                kind: crate::observe::RetryKind::Auth
+            })
+    );
+}

@@ -331,6 +331,8 @@ mod tests {
             registry: &registry,
             invalidation: &invalidation,
             ws_stale_retry: None,
+            observer: &crate::observe::NoopObserver,
+            retry_log: &crate::observe::RetryLog::default(),
         };
         let out = invoke(&ctx).await.expect("invoke");
         (out, hits)

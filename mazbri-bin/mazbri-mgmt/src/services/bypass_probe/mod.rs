@@ -301,6 +301,8 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
             "status": status,
             "url": url,
             "adapter": adapter,
+            "internal_retries": response.internal_retries,
+            "retry_reasons": response.retry_reasons,
         },
         "error": error_message.clone(),
     }]);
@@ -360,6 +362,8 @@ mod tests {
                 adapter: "http_envelope".into(),
                 upstream_wire_ms,
             }),
+            internal_retries: 0,
+            retry_reasons: Vec::new(),
         });
         serde_json::to_string(&resp).unwrap()
     }

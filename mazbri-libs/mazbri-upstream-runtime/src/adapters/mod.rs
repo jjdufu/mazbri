@@ -42,6 +42,10 @@ pub struct AdapterCtx<'a> {
     pub invalidation: &'a AuthInvalidationSpec,
     /// 复用的 WS 连接回复前断开时换新连接重试所用的预算；`None` 表示不重试。
     pub ws_stale_retry: Option<&'a crate::retry_budget::RetryBudget>,
+    /// 内部事件观测者。
+    pub observer: &'a dyn crate::observe::RuntimeObserver,
+    /// 本次 invoke 的内部重试记录。
+    pub retry_log: &'a crate::observe::RetryLog,
 }
 
 impl AdapterCtx<'_> {
@@ -577,6 +581,8 @@ mod tests {
             registry: &registry,
             invalidation: &invalidation,
             ws_stale_retry: None,
+            observer: &crate::observe::NoopObserver,
+            retry_log: &crate::observe::RetryLog::default(),
         };
         let url = format!("http://{addr}/");
         dispatch_http(

@@ -8,8 +8,10 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::http_call::{append_query, join_url};
-use crate::retry_budget::RetryBudget;
-use crate::types::{AuthRejectTrigger, AuthRejection, BizError, ExecuteError, OutboundResponse};
+use crate::observe::{RetryKind, RetryOutcome, RuntimeEvent, WsStaleStage, warn_budget_exhausted};
+use crate::types::{
+    AuthRejectTrigger, AuthRejection, BizError, ExecuteError, OutboundResponse, RetryReason,
+};
 use crate::ws_pool::{auth_fingerprint, PoolKey};
 
 use super::{AdapterCtx, AdapterOutcome, wrap_by_name};
@@ -96,6 +98,11 @@ async fn exchange(
 ) -> Result<Exchange, ExecuteError> {
     let rid = &ctx.input.request_id;
     let mut guard = ctx.ws_pool.checkout(key.clone(), url, header_pairs).await?;
+    for _ in 0..guard.stale_discarded() {
+        ctx.observer.on_event(RuntimeEvent::WsStale {
+            stage: WsStaleStage::Checkout,
+        });
+    }
     let err = match send_and_wait(&mut guard, rid, text.clone(), ctx.timeout).await {
         Ok(json) => return Ok(Exchange::Reply(json)),
         Err(e) => e,
@@ -108,11 +115,51 @@ async fn exchange(
             err,
             WsWaitError::SendFailed(_) | WsWaitError::ClosedBeforeReply(_)
         );
-    if !(stale && ctx.ws_stale_retry.is_some_and(RetryBudget::try_acquire)) {
+    if !stale {
         return closed_or_error(ctx, err, reused, url);
     }
+    ctx.observer.on_event(RuntimeEvent::WsStale {
+        stage: WsStaleStage::Send,
+    });
+    if let Some(skip) = skip_stale_retry(ctx) {
+        note_stale_retry(ctx, skip);
+        return closed_or_error(ctx, err, reused, url);
+    }
+    ctx.retry_log.push(RetryReason::StaleConnection);
     // 重试路径单独装箱：不让很少走到的第二轮握手与收发撑大每次调用的 future。
-    Box::pin(retry_on_fresh(ctx, key, url, header_pairs, text)).await
+    let result = Box::pin(retry_on_fresh(ctx, key, url, header_pairs, text)).await;
+    let outcome = match &result {
+        Ok(Exchange::Reply(_)) => RetryOutcome::Ok,
+        Ok(Exchange::Rejected(_)) | Err(_) => RetryOutcome::Failed,
+    };
+    note_stale_retry(ctx, outcome);
+    result
+}
+
+/// 复用连接断开后是否跳过换新连接重试（开关关闭或预算耗尽）。
+fn skip_stale_retry(ctx: &AdapterCtx<'_>) -> Option<RetryOutcome> {
+    let Some(budget) = ctx.ws_stale_retry else {
+        return Some(RetryOutcome::SkippedDisabled);
+    };
+    if budget.try_acquire() {
+        return None;
+    }
+    ctx.observer.on_event(RuntimeEvent::BudgetExhausted {
+        kind: RetryKind::WsStale,
+    });
+    warn_budget_exhausted(&ctx.input.channel_id, RetryKind::WsStale);
+    Some(RetryOutcome::SkippedBudget)
+}
+
+fn note_stale_retry(ctx: &AdapterCtx<'_>, result: RetryOutcome) {
+    ctx.observer.on_event(RuntimeEvent::WsStaleRetry { result });
+    tracing::info!(
+        target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+        event = "upstream.ws_stale_retry",
+        channel_id = %ctx.input.channel_id,
+        result = result.label(),
+        "reused ws connection closed before reply"
+    );
 }
 
 async fn retry_on_fresh(
@@ -330,6 +377,7 @@ fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
 mod tests {
     use super::*;
     use crate::auth::AppliedAuth;
+    use crate::retry_budget::RetryBudget;
     use crate::ssrf::SsrfChecker;
     use crate::types::{ExecuteMode, ExecuteOptions, InvokeInput};
     use crate::ws_pool::{WsPool, WsPoolConfig};
@@ -482,6 +530,8 @@ mod tests {
         invalidation: mazbri_core::AuthInvalidationSpec,
         stale_retry: Option<&'a RetryBudget>,
         timeout: Duration,
+        observer: Option<&'a dyn crate::observe::RuntimeObserver>,
+        retry_log: crate::observe::RetryLog,
     }
 
     impl RunOpts<'_> {
@@ -491,6 +541,8 @@ mod tests {
                 invalidation: mazbri_core::AuthInvalidationSpec::default(),
                 stale_retry: None,
                 timeout: Duration::from_secs(3),
+                observer: None,
+                retry_log: crate::observe::RetryLog::default(),
             }
         }
     }
@@ -519,6 +571,8 @@ mod tests {
             registry: &registry,
             invalidation: &opts.invalidation,
             ws_stale_retry: opts.stale_retry,
+            observer: opts.observer.unwrap_or(&crate::observe::NoopObserver),
+            retry_log: &opts.retry_log,
         };
         invoke(&ctx).await
     }
@@ -972,5 +1026,68 @@ mod tests {
             .expect("first request after restart succeeds");
         assert_eq!(pool.stale_discards(), 4);
         assert_eq!(srv.handshakes.load(Ordering::SeqCst), 5);
+    }
+
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<crate::observe::RuntimeEvent>>);
+
+    impl crate::observe::RuntimeObserver for Recorder {
+        fn on_event(&self, event: crate::observe::RuntimeEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_retry_is_recorded() {
+        use crate::observe::{RetryOutcome, RuntimeEvent, WsStaleStage};
+        let budget = generous_budget();
+        let recorder = Recorder::default();
+        let opts = RunOpts {
+            observer: Some(&recorder),
+            ..with_stale_retry(&budget)
+        };
+        let (second, _) = race(&pool(), &opts).await;
+        second.expect("retried");
+        assert_eq!(opts.retry_log.take(), vec![RetryReason::StaleConnection]);
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            vec![
+                RuntimeEvent::WsStale {
+                    stage: WsStaleStage::Send
+                },
+                RuntimeEvent::WsStaleRetry {
+                    result: RetryOutcome::Ok
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn checkout_discard_is_recorded() {
+        use crate::observe::{RuntimeEvent, WsStaleStage};
+        let srv = spawn_script_ws(Script {
+            idle: Idle::Close,
+            ..ALWAYS_REPLY
+        })
+        .await;
+        let pool = pool();
+        let recorder = Recorder::default();
+        let opts = RunOpts {
+            observer: Some(&recorder),
+            ..RunOpts::plain()
+        };
+        run_with(&pool, &srv.base, "r1", &opts)
+            .await
+            .expect("first");
+        settle().await;
+        run_with(&pool, &srv.base, "r2", &opts)
+            .await
+            .expect("second");
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            vec![RuntimeEvent::WsStale {
+                stage: WsStaleStage::Checkout
+            }]
+        );
     }
 }

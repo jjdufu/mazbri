@@ -13,12 +13,16 @@ use crate::adapters::{
 use crate::crypto_pipeline::pipeline_keys_from_credentials;
 use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
+use crate::observe::{
+    NoopObserver, RetryKind, RetryLog, RetryOutcome, RuntimeEvent, RuntimeObserver,
+    token_fingerprint, warn_budget_exhausted,
+};
 use crate::retry_budget::RetryBudget;
 use crate::ssrf::SsrfChecker;
 use crate::token_cache::TokenCache;
 use crate::types::{
     AuthRejectTrigger, AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult,
-    StageResult, StageSummary, UpstreamMeta,
+    RetryReason, RetrySkip, StageResult, StageSummary, UpstreamMeta,
 };
 
 /// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
@@ -140,6 +144,7 @@ pub struct RuntimeEngine {
     options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
     retry_budget: Arc<RetryBudget>,
+    observer: Arc<dyn RuntimeObserver>,
 }
 
 impl RuntimeEngine {
@@ -155,7 +160,15 @@ impl RuntimeEngine {
             retry_budget: Arc::new(options.retry_budget()),
             options,
             ws_pool,
+            observer: Arc::new(NoopObserver),
         }
+    }
+
+    /// 注入内部事件观测者（服务据此记录指标）。
+    #[must_use]
+    pub fn with_observer(mut self, observer: Arc<dyn RuntimeObserver>) -> Self {
+        self.observer = observer;
+        self
     }
 
     /// 注入运行时参数：按新参数重建 WS 池、令牌缓存与重试预算（仅在启动时调用）。
@@ -195,13 +208,21 @@ impl RuntimeEngine {
 
     /// Code-free invoke: tenant JSON + channel egress spec.
     pub async fn invoke(&self, input: InvokeInput) -> InvokeResult {
-        let mut trace = Trace::new(&input);
-        let base_url = match self.preflight(&input, &mut trace).await {
+        let retry_log = RetryLog::default();
+        let mut result = self.invoke_inner(&input, &retry_log).await;
+        result.retry_reasons = retry_log.take();
+        result.internal_retries = u32::try_from(result.retry_reasons.len()).unwrap_or(u32::MAX);
+        result
+    }
+
+    async fn invoke_inner(&self, input: &InvokeInput, retry_log: &RetryLog) -> InvokeResult {
+        let mut trace = Trace::new(input);
+        let base_url = match self.preflight(input, &mut trace).await {
             Ok(url) => url,
             Err(fail) => return trace.fail(fail),
         };
         if matches!(input.mode, ExecuteMode::TransformPreview) {
-            return transform_preview(&input, base_url, trace);
+            return transform_preview(input, base_url, trace);
         }
         let cache_key = input
             .cache_key
@@ -209,34 +230,112 @@ impl RuntimeEngine {
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
         self.retry_budget.record_request();
         let first = self
-            .attempt(&input, &base_url, &cache_key, None, &mut trace)
+            .attempt(input, &base_url, &cache_key, None, &mut trace, retry_log)
             .await;
         let (rejection, mut first_result) = match first {
             AttemptOutcome::AuthRejected(rejection, result) => (rejection, result),
             AttemptOutcome::Done(result) => return *result,
             AttemptOutcome::Failed(fail) => return trace.fail(fail),
         };
-        if !self.options.auth_retry_enabled || !self.retry_budget.try_acquire() {
+        let kind = input.spec.adapter_kind().ok();
+        self.note_rejection(input, kind, &rejection);
+        if let Some(skip) = self.skip_auth_retry(input, kind) {
             // 不重试：原样返回上游的真实结果（例如 401 或 JSON-RPC 错误体）。
+            first_result.retry_skipped = Some(skip);
             return *first_result;
         }
         // 认证被拒说明上游未执行业务，换票后重放是安全的；只重试一次，不递归。
+        retry_log.push(RetryReason::AuthRejected(rejection.trigger));
         trace.stages = std::mem::take(&mut first_result.stages);
-        match self
+        trace.retry_round = true;
+        let second = self
             .attempt(
-                &input,
+                input,
                 &base_url,
                 &cache_key,
                 Some(&rejection.token),
                 &mut trace,
+                retry_log,
             )
-            .await
-        {
+            .await;
+        let (outcome, result) = match second {
             AttemptOutcome::AuthRejected(again, result) => {
-                trace.auth_rejected(again.trigger, *result)
+                self.note_rejection(input, kind, &again);
+                let result = trace.auth_rejected(again.trigger, *result);
+                (RetryOutcome::RejectedAgain, result)
             }
-            AttemptOutcome::Done(result) => *result,
-            AttemptOutcome::Failed(fail) => trace.fail(fail),
+            AttemptOutcome::Done(result) => (RetryOutcome::Ok, *result),
+            AttemptOutcome::Failed(fail) => (RetryOutcome::Failed, trace.fail(fail)),
+        };
+        self.note_auth_retry(input, kind, outcome, None);
+        result
+    }
+
+    /// 认证被拒：记事件，并打一条只含令牌指纹的日志。
+    fn note_rejection(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        rejection: &AuthRejection,
+    ) {
+        if let Some(adapter) = kind {
+            self.observer.on_event(RuntimeEvent::AuthRejected {
+                adapter,
+                trigger: rejection.trigger,
+            });
+        }
+        tracing::info!(
+            target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+            event = "upstream.auth_rejected",
+            channel_id = %input.channel_id,
+            adapter = %input.spec.adapter,
+            trigger = rejection.trigger.label(),
+            token_fp = %token_fingerprint(&rejection.token),
+            "upstream rejected credentials"
+        );
+    }
+
+    /// 判定是否跳过认证重试（开关关闭或预算耗尽），跳过时记事件。
+    fn skip_auth_retry(&self, input: &InvokeInput, kind: Option<AdapterKind>) -> Option<RetrySkip> {
+        let skip = if !self.options.auth_retry_enabled {
+            RetrySkip::Disabled
+        } else if self.retry_budget.try_acquire() {
+            return None;
+        } else {
+            self.observer.on_event(RuntimeEvent::BudgetExhausted {
+                kind: RetryKind::Auth,
+            });
+            warn_budget_exhausted(&input.channel_id, RetryKind::Auth);
+            RetrySkip::Budget
+        };
+        let outcome = match skip {
+            RetrySkip::Disabled => RetryOutcome::SkippedDisabled,
+            RetrySkip::Budget => RetryOutcome::SkippedBudget,
+        };
+        self.note_auth_retry(input, kind, outcome, Some(skip));
+        Some(skip)
+    }
+
+    fn note_auth_retry(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        result: RetryOutcome,
+        skipped: Option<RetrySkip>,
+    ) {
+        if let Some(adapter) = kind {
+            self.observer
+                .on_event(RuntimeEvent::AuthRetry { adapter, result });
+        }
+        if skipped.is_none() {
+            tracing::info!(
+                target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                event = "upstream.auth_retry",
+                channel_id = %input.channel_id,
+                adapter = %input.spec.adapter,
+                result = result.label(),
+                "upstream auth retry finished"
+            );
         }
     }
 
@@ -308,6 +407,7 @@ impl RuntimeEngine {
         cache_key: &str,
         stale_token: Option<&str>,
         trace: &mut Trace,
+        retry_log: &RetryLog,
     ) -> AttemptOutcome {
         let a_start = Instant::now();
         let applied = match apply_auth(crate::auth::AuthApply {
@@ -327,6 +427,9 @@ impl RuntimeEngine {
             Ok(a) => a,
             Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
         };
+        if let Some(evicted) = applied.stale_evicted {
+            self.observer.on_event(RuntimeEvent::TokenEvict { evicted });
+        }
         trace.record(|| auth_stage(input, &applied, a_start));
 
         let kind = match input.spec.adapter_kind() {
@@ -367,6 +470,8 @@ impl RuntimeEngine {
                 .options
                 .ws_stale_retry_enabled
                 .then_some(&*self.retry_budget),
+            observer: &*self.observer,
+            retry_log,
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,
@@ -580,6 +685,8 @@ struct Trace {
     stages: Vec<StageResult>,
     enabled: bool,
     adapter: String,
+    /// 认证重试轮：阶段名加 `#retry` 后缀。
+    retry_round: bool,
 }
 
 impl Trace {
@@ -589,12 +696,17 @@ impl Trace {
             stages: Vec::new(),
             enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
             adapter: input.spec.adapter.clone(),
+            retry_round: false,
         }
     }
 
     fn record(&mut self, stage: impl FnOnce() -> StageResult) {
         if self.enabled {
-            self.stages.push(stage());
+            let mut stage = stage();
+            if self.retry_round {
+                stage.name.push_str("#retry");
+            }
+            self.stages.push(stage);
         }
     }
 
@@ -619,6 +731,9 @@ impl Trace {
             upstream_meta: parts.upstream_meta,
             token: parts.token,
             response: parts.response,
+            internal_retries: 0,
+            retry_reasons: Vec::new(),
+            retry_skipped: None,
         }
     }
 

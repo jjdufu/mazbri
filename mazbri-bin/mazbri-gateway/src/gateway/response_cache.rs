@@ -101,6 +101,7 @@ impl CachedUpstreamResponse {
             content_type: self.content_type,
             body_bytes_len,
             upstream_wire_ms: 0,
+            internal_retries: 0,
         }
     }
 }

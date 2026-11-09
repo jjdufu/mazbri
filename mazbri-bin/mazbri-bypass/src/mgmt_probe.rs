@@ -143,6 +143,8 @@ mod tests {
                     adapter: "http_json".into(),
                     upstream_wire_ms: 42,
                 }),
+                internal_retries: 0,
+                retry_reasons: Vec::new(),
             })
         }
     }

@@ -18,6 +18,7 @@ pub mod num;
 pub mod otlp;
 pub mod panic_policy;
 pub mod pool_types;
+pub mod rate_limited_log;
 pub mod redis;
 pub mod request_context;
 pub mod retry;

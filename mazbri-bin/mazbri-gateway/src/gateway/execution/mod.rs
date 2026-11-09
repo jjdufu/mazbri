@@ -2,7 +2,7 @@ use super::ProxyState;
 use super::metrics::{
     API_PROXY_REQUESTS_TOTAL, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL,
     GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL, RetryReason, TimeoutPhase, classify_proxy_result,
-    record_retry, record_timeout_if_any, record_upstream_timeout,
+    record_internal_retries, record_retry, record_timeout_if_any, record_upstream_timeout,
 };
 use super::response::ProxyError;
 use super::validation::{GatewayRequest, GatewayRequestBody};

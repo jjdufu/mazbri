@@ -22,6 +22,7 @@ mod engine_retry_tests;
 mod funcs;
 mod http_call;
 mod mask;
+pub mod observe;
 mod retry_budget;
 pub mod slots;
 mod ssrf;
@@ -46,6 +47,6 @@ pub use template::{is_identity_response_template, render_body_template, render_r
 pub use token_cache::{CachedToken, TokenCache};
 pub use types::{
     AuthRejectTrigger, AuthRejection, BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError,
-    ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, StageResult,
-    StageSummary, UpstreamMeta,
+    ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, RetryReason,
+    RetrySkip, StageResult, StageSummary, UpstreamMeta,
 };

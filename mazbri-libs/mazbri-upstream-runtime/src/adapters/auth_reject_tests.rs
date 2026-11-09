@@ -267,6 +267,8 @@ async fn invoke_against(
         registry: &registry,
         invalidation: rules,
         ws_stale_retry: None,
+        observer: &crate::observe::NoopObserver,
+        retry_log: &crate::observe::RetryLog::default(),
     };
     invoke_adapter(&ctx, kind).await
 }
