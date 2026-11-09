@@ -13,29 +13,36 @@ pub struct UpdateMfaSettingsInput {
 }
 #[must_use]
 pub fn validate_update_fields(input: &UpdateMfaSettingsInput) -> Option<axum::response::Response> {
-    if let Some(digits) = input.totp_digits
-        && digits != 6
-        && digits != 8
+    if let Some(issuer) = &input.totp_issuer
+        && issuer.trim().is_empty()
     {
         return Some(ApiResponse::err(
             StatusCode::BAD_REQUEST,
-            "TOTP 位数必须是 6 或 8",
+            "发行者名称不能为空",
+        ));
+    }
+    if let Some(digits) = input.totp_digits
+        && digits != 6
+    {
+        return Some(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            "TOTP 位数固定为行业默认 6 位",
         ));
     }
     if let Some(period) = input.totp_period
-        && !(15..=60).contains(&period)
+        && period != 30
     {
         return Some(ApiResponse::err(
             StatusCode::BAD_REQUEST,
-            "TOTP 周期必须在 15-60 秒之间",
+            "TOTP 周期固定为行业默认 30 秒",
         ));
     }
     if let Some(count) = input.backup_codes_count
-        && !(5..=20).contains(&count)
+        && count != 10
     {
         return Some(ApiResponse::err(
             StatusCode::BAD_REQUEST,
-            "备用码数量必须在 5-20 之间",
+            "备用码数量固定为行业默认 10 个",
         ));
     }
     None
@@ -70,10 +77,10 @@ pub async fn update_settings(
     match repo::update_mfa_settings(
         db,
         repo::UpdateMfaSettingsParams {
-            totp_issuer: input.totp_issuer.clone(),
-            totp_digits: input.totp_digits,
-            totp_period: input.totp_period,
-            backup_codes_count: input.backup_codes_count,
+            totp_issuer: input.totp_issuer.as_ref().map(|s| s.trim().to_string()),
+            totp_digits: Some(6),
+            totp_period: Some(30),
+            backup_codes_count: Some(10),
             updated_by,
         },
     )

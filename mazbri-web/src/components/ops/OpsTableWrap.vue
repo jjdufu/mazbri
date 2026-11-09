@@ -12,14 +12,14 @@ defineOptions({ name: "OpsTableWrap" });
 .ops-table-wrap {
   width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
 }
 .ops-table-wrap :deep(.el-table) {
   width: 100%;
 }
 .ops-table-wrap :deep(.el-table .cell) {
-  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ops-table-wrap :deep(.el-table__header .cell) {

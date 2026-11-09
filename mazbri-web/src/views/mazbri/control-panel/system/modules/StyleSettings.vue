@@ -2,20 +2,6 @@
   <CommonSettingRow
     mode="inline"
     mobile-stack
-    :label="$t('systemSettings.style.menuWidth')"
-  >
-    <ElInputNumber
-      :model-value="modelValue.menuOpenWidth"
-      :min="180"
-      :max="320"
-      :step="10"
-      class="setting-input-number"
-      @update:model-value="handleUpdate('menuOpenWidth', $event)"
-    />
-  </CommonSettingRow>
-  <CommonSettingRow
-    mode="inline"
-    mobile-stack
     :label="$t('systemSettings.style.tabStyle')"
   >
     <ElSelect

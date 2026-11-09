@@ -54,29 +54,13 @@
               <div class="usage-recon-settings__grid">
                 <CommonSettingRow
                   mode="inline"
-                  :label="$t('billing.reconciliation.scheduledEnabled')"
-                >
-                  <ElSwitch v-model="settingsForm.schedule.enabled" />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
                   :label="$t('billing.reconciliation.intervalSecs')"
                 >
                   <ElInputNumber
                     v-model="settingsForm.schedule.interval_secs"
                     :min="60"
                     :step="60"
-                    controls-position="right"
-                    class="setting-control"
-                  />
-                </CommonSettingRow>
-
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.usePreviousDay')"
-                >
-                  <ElSwitch
-                    v-model="settingsForm.schedule.use_previous_day"
+                    class="setting-control setting-input-number"
                   />
                 </CommonSettingRow>
                 <CommonSettingRow
@@ -89,11 +73,40 @@
                     :max="1"
                     :step="0.01"
                     :precision="4"
-                    controls-position="right"
-                    class="setting-control"
+                    class="setting-control setting-input-number"
                   />
                 </CommonSettingRow>
 
+                <CommonSettingRow
+                  mode="inline"
+                  :label="$t('billing.reconciliation.alertWebhook')"
+                >
+                  <ElInput
+                    v-model="settingsForm.alert.webhook_url"
+                    clearable
+                    class="setting-control setting-control--wide"
+                    :placeholder="
+                      $t('billing.reconciliation.alertWebhookPlaceholder')
+                    "
+                    :disabled="!settingsForm.alert.on_flagged"
+                  />
+                </CommonSettingRow>
+                <CommonSettingRow
+                  mode="inline"
+                  class="usage-recon-settings__switch-start"
+                  :label="$t('billing.reconciliation.scheduledEnabled')"
+                >
+                  <ElSwitch v-model="settingsForm.schedule.enabled" />
+                </CommonSettingRow>
+
+                <CommonSettingRow
+                  mode="inline"
+                  :label="$t('billing.reconciliation.usePreviousDay')"
+                >
+                  <ElSwitch
+                    v-model="settingsForm.schedule.use_previous_day"
+                  />
+                </CommonSettingRow>
                 <CommonSettingRow
                   mode="inline"
                   :label="$t('billing.reconciliation.alertOnFlagged')"
@@ -109,22 +122,6 @@
                     v-model="
                       settingsForm.warn_on_open_discrepancies_before_bill
                     "
-                  />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.alertWebhook')"
-                >
-                  <ExpandOnFocusInput
-                    v-model="settingsForm.alert.webhook_url"
-                    clearable
-                    :compact-width="180"
-                    :expand-width="420"
-                    class="setting-control"
-                    :placeholder="
-                      $t('billing.reconciliation.alertWebhookPlaceholder')
-                    "
-                    :disabled="!settingsForm.alert.on_flagged"
                   />
                 </CommonSettingRow>
               </div>
@@ -157,8 +154,6 @@
         :delete-total-count="items.length"
         :delete-selected-count="selectedRows.length"
         :delete-roles="['R_ADMIN', 'R_FINANCE']"
-        :fit="false"
-        table-layout="auto"
         table-class="surface-panel-table usage-recon-table"
         @refresh="loadData"
         @selection-change="handleSelectionChange"
@@ -542,7 +537,6 @@ import { useRouter } from "vue-router";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import ExpandOnFocusInput from "@/components/common/expand-on-focus-input/index.vue";
 import TableHeaderDatePickerPopover from "@/components/common/table-header-date-picker-popover/index.vue";
 import DatePicker from "@/components/common/DatePicker.vue";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
@@ -647,7 +641,7 @@ const { selectedRows, handleSelectionChange, handleDeleteCommand } =
     actionLabel: $t("common.actions.delete"),
   });
 const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
-  { type: "selection", width: 55 },
+  { type: "selection", width: 48 },
   {
     prop: "reconciliation_date",
     label: $t("billing.reconciliation.columns.date"),
@@ -657,43 +651,43 @@ const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
   {
     prop: "billable_call_count",
     label: $t("billing.reconciliation.columns.oltp"),
-    minWidth: 110,
+    minWidth: 90,
     useSlot: true,
   },
   {
     prop: "gateway_call_count",
     label: $t("billing.reconciliation.columns.gateway"),
-    minWidth: 110,
+    minWidth: 90,
     useSlot: true,
   },
   {
     prop: "upstream_preagg_call_count",
     label: $t("billing.reconciliation.columns.olap"),
-    minWidth: 110,
+    minWidth: 96,
     useSlot: true,
   },
   {
     prop: "discrepancy_ratio",
     label: $t("billing.reconciliation.columns.ratio"),
-    minWidth: 110,
+    minWidth: 84,
     useSlot: true,
   },
   {
     prop: "status",
     label: $t("billing.reconciliation.columns.status"),
-    minWidth: 110,
+    minWidth: 84,
     useSlot: true,
   },
   {
     prop: "created_at",
     label: $t("common.fields.createdAt"),
-    minWidth: 112,
+    minWidth: 140,
     useSlot: true,
   },
   {
     prop: "operations",
     label: $t("common.fields.operations"),
-    width: 400,
+    width: 300,
     fixed: "right",
     useSlot: true,
   },
@@ -1230,9 +1224,13 @@ onMounted(() => {
   align-items: center;
 }
 
+.usage-recon-settings__switch-start {
+  grid-column: 1;
+}
+
 
 .setting-control {
-  width: 180px !important;
+  width: 220px !important;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -1322,7 +1320,7 @@ onMounted(() => {
 
 .usage-recon-detail__summary {
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
 }
@@ -1400,7 +1398,7 @@ onMounted(() => {
   max-height: 280px;
   overflow: auto;
   background: var(--el-fill-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--art-card-radius);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

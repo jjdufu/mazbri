@@ -75,12 +75,12 @@
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.channelCode')" min-width="120">
             <template #default="{ row }">
-              <ElInput v-model="row.channel_code" size="small" />
+              <ElInput v-model="row.channel_code" />
             </template>
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.pathPrefix')" min-width="110">
             <template #default="{ row }">
-              <ElInput v-model="row.path_prefix" size="small" />
+              <ElInput v-model="row.path_prefix" />
             </template>
           </ElTableColumn>
         </ElTable>
@@ -147,6 +147,15 @@
       </div>
 
       <ElForm label-width="120px">
+        <ElFormItem :label="$t('upstreamConnector.comment')">
+          <ElInput v-model="form.comment" />
+        </ElFormItem>
+        <ElFormItem
+          v-if="showForce && form.force_publish"
+          :label="$t('upstreamConnector.forceReason')"
+        >
+          <ElInput v-model="form.force_reason" type="textarea" />
+        </ElFormItem>
         <ElFormItem :label="$t('upstreamConnector.requireGate')">
           <ElSwitch v-model="form.require_gate" />
         </ElFormItem>
@@ -155,15 +164,6 @@
           :label="$t('upstreamConnector.forcePublish')"
         >
           <ElSwitch v-model="form.force_publish" />
-        </ElFormItem>
-        <ElFormItem
-          v-if="showForce && form.force_publish"
-          :label="$t('upstreamConnector.forceReason')"
-        >
-          <ElInput v-model="form.force_reason" type="textarea" />
-        </ElFormItem>
-        <ElFormItem :label="$t('upstreamConnector.comment')">
-          <ElInput v-model="form.comment" />
         </ElFormItem>
       </ElForm>
       <div class="drawer-footer">

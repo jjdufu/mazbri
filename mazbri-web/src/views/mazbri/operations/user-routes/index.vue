@@ -22,7 +22,7 @@
         <ListQueryBar
           v-model:q="searchForm.q"
           v-model:filters="listFilters"
-          :filter-catalog="routesCatalog"
+          :catalog="routesCatalog"
           @search="handleSearch"
         />
         <ElButton v-roles="ROLES_BIZ" @click="openRouteImport">

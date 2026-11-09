@@ -1,7 +1,7 @@
 <template>
   <EditDialog
     v-model="visible"
-    :title="$t('tenant.actions.addTenant')"
+    :title="$t('tenant.createDialog.title')"
     width="550px"
     :confirm-text="$t('common.confirm')"
     :saving="submitting"

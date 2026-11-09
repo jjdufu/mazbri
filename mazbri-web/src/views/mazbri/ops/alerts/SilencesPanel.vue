@@ -15,10 +15,18 @@
           t("ops.alerts.silences.create")
         }}</ElButton>
       </template>
-      <ElTable v-loading="loading" :data="rows" row-key="id" size="small">
+      <ElTable
+        v-loading="loading"
+        :data="rows"
+        row-key="id"
+        size="small"
+        stripe
+        class="surface-panel-table"
+      >
         <ElTableColumn
           :label="t('ops.alerts.silences.matchers')"
           min-width="200"
+          show-overflow-tooltip
         >
           <template #default="{ row }">{{
             formatAlertMatchers(row.matchers)
@@ -42,8 +50,13 @@
           prop="comment"
           :label="t('ops.alerts.silences.comment')"
           min-width="140"
+          show-overflow-tooltip
         />
-        <ElTableColumn v-if="isAdmin" :label="t('common.actions')" width="100">
+        <ElTableColumn
+          v-if="isAdmin"
+          :label="t('common.fields.operations')"
+          width="100"
+        >
           <template #default="{ row }">
             <ElButton link type="danger" @click="remove(row.id)">{{
               t("common.delete")
@@ -64,18 +77,29 @@
         :data="inhibits"
         row-key="id"
         size="small"
+        stripe
+        class="surface-panel-table"
       >
         <ElTableColumn
           prop="name"
           :label="t('ops.alerts.inhibits.name')"
           min-width="140"
+          show-overflow-tooltip
         />
-        <ElTableColumn :label="t('ops.alerts.inhibits.source')" min-width="160">
+        <ElTableColumn
+          :label="t('ops.alerts.inhibits.source')"
+          min-width="160"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{
             formatAlertMatchers(row.source_matchers)
           }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.inhibits.target')" min-width="160">
+        <ElTableColumn
+          :label="t('ops.alerts.inhibits.target')"
+          min-width="160"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{
             formatAlertMatchers(row.target_matchers)
           }}</template>
@@ -90,10 +114,18 @@
           width="90"
         >
           <template #default="{ row }">
-            <ElTag size="small">{{ row.enabled ? "ON" : "OFF" }}</ElTag>
+            <ElTag size="small" :type="row.enabled ? 'success' : 'info'">{{
+              row.enabled
+                ? t("common.status.enabled")
+                : t("common.status.disabled")
+            }}</ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn v-if="isAdmin" :label="t('common.actions')" width="100">
+        <ElTableColumn
+          v-if="isAdmin"
+          :label="t('common.fields.operations')"
+          width="100"
+        >
           <template #default="{ row }">
             <ElButton link type="danger" @click="removeInhibit(row.id)">{{
               t("common.delete")

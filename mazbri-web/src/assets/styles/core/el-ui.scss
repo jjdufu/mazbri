@@ -17,7 +17,7 @@
   --art-dialog-radius: calc(var(--custom-radius) / 1.2 + 2px);
   --art-card-radius: calc(var(--custom-radius) + 4px);
 
-  --el-border-radius-base: var(--art-form-control-radius-sm) !important;
+  --el-border-radius-base: var(--art-form-control-radius) !important;
 
   --el-border-radius-small: var(--art-form-control-radius) !important;
   --el-messagebox-border-radius: var(--art-form-control-radius) !important;
@@ -547,7 +547,7 @@ html.dark .el-card {
     .el-tree-node {
       .el-tree-node__content {
         height: 36px !important;
-        border-radius: 6px !important;
+        border-radius: var(--art-form-control-radius-sm) !important;
 
         &:hover {
           background-color: var(--art-gray-200) !important;
@@ -563,7 +563,7 @@ html.dark .el-card {
 }
 
 .el-color-picker__color {
-  border-radius: 2px !important;
+  border-radius: var(--art-form-control-radius-sm) !important;
 }
 
 .el-picker-panel {
@@ -620,9 +620,7 @@ html.dark .el-card {
   }
 
   .el-input__inner {
-    font-weight: 600;
-
-
+    font-weight: var(--el-font-weight-primary, 400);
     color: var(--el-text-color-primary);
   }
 
@@ -860,64 +858,84 @@ html.dark .el-card {
 }
 
 .el-segmented {
-
-  --el-segmented-padding: 4px !important;
-
-  --el-segmented-border-radius: var(--art-form-control-radius-sm) !important;
-
-  --el-segmented-bg-color: var(--art-gray-200) !important;
-
-  --el-segmented-item-selected-bg-color: var(--el-color-primary) !important;
-  --el-segmented-item-selected-color: #ffffff !important;
-
-  --el-segmented-item-hover-bg-color: var(--art-hover-color) !important;
+  --el-segmented-padding: 2px !important;
+  --el-segmented-border-radius: var(--art-form-control-radius) !important;
+  --el-segmented-bg-color: var(--el-fill-color) !important;
+  --el-segmented-item-selected-bg-color: color-mix(
+    in srgb,
+    var(--el-color-primary) 12%,
+    var(--el-bg-color-overlay)
+  ) !important;
+  --el-segmented-item-selected-color: var(--el-color-primary) !important;
+  --el-segmented-item-hover-bg-color: transparent !important;
   --el-segmented-item-hover-color: var(--el-text-color-primary) !important;
+  --el-segmented-color: var(--el-text-color-secondary) !important;
 
-  --el-segmented-color: var(--el-text-color-regular) !important;
-
-  border: 1px solid var(--default-border) !important;
-  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.03) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  height: var(--el-component-custom-height) !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--el-border-color-lighter) !important;
+  box-shadow: none !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 
   &,
   .el-segmented__group,
+  .el-segmented__item-selected,
   .el-segmented__slider {
-    border-radius: var(--art-form-control-radius-sm) !important;
+    border-radius: var(--art-form-control-radius) !important;
   }
-  .el-segmented__item {
-    border-radius: calc(var(--art-form-control-radius-sm) - 1px) !important;
+
+  .el-segmented__item-selected,
+  .el-segmented__slider {
+    border: 1px solid color-mix(in srgb, var(--el-color-primary) 30%, transparent) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+    box-sizing: border-box !important;
   }
 
   .el-segmented__item {
+    border-radius: calc(var(--art-form-control-radius) - 1px) !important;
     font-weight: 500 !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 
     &:not(.is-selected):hover {
-      background-color: var(--art-hover-color) !important;
+      color: var(--el-text-color-primary) !important;
+      background-color: transparent !important;
     }
 
     &.is-selected {
       font-weight: 600 !important;
-
-      box-shadow:
-        0 3px 8px rgba(0, 0, 0, 0.12),
-        0 1px 3px rgba(0, 0, 0, 0.04) !important;
     }
   }
 
   html.dark & {
-    --el-segmented-bg-color: var(
-      --art-gray-200
+    --el-segmented-bg-color: rgba(255, 255, 255, 0.06) !important;
+    --el-segmented-item-selected-bg-color: color-mix(
+      in srgb,
+      var(--el-color-primary) 20%,
+      rgba(255, 255, 255, 0.08)
     ) !important;
-    --el-segmented-item-selected-bg-color: var(--el-color-primary) !important;
-    --el-segmented-item-selected-color: #ffffff !important;
-    --el-segmented-item-hover-bg-color: var(--art-hover-color) !important;
+    --el-segmented-item-selected-color: var(--el-color-primary) !important;
+    --el-segmented-item-hover-bg-color: transparent !important;
 
-    border-color: rgba(255, 255, 255, 0.08) !important;
-    box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: none !important;
 
-    .el-segmented__item.is-selected {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+    .el-segmented__item-selected,
+    .el-segmented__slider {
+      border: 1px solid color-mix(in srgb, var(--el-color-primary) 38%, transparent) !important;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+    }
+  }
+}
+
+.el-tabs--top:not(.el-tabs--card):not(.el-tabs--border-card) {
+  > .el-tabs__header {
+    .el-tabs__nav-wrap::after {
+      display: none !important;
+    }
+
+    .el-tabs__active-bar {
+      z-index: 1;
+      height: 2px;
     }
   }
 }
@@ -980,22 +998,9 @@ html.dark .el-card {
   }
 }
 
-.setting-input,
 .setting-input-number {
   .el-input__inner {
     text-align: center !important;
-  }
-}
-
-.setting-select {
-
-  .el-select__wrapper {
-    justify-content: center !important;
-  }
-  .el-select__placeholder,
-  .el-select__selected-item {
-    text-align: center !important;
-    text-align-last: center !important;
   }
 }
 
@@ -1017,24 +1022,29 @@ html.dark .el-card {
   }
 }
 
+.el-pagination {
+  --el-pagination-border-radius: var(--art-form-control-radius-sm);
+}
+
+html.radius-zero,
+html.radius-zero body {
+  --custom-radius: 0px !important;
+  --el-border-radius-base: 0px !important;
+  --el-border-radius-small: 0px !important;
+  --el-pagination-border-radius: 0px !important;
+  --el-messagebox-border-radius: 0px !important;
+  --el-popover-border-radius: 0px !important;
+  --el-card-border-radius: 0px !important;
+  --art-form-control-radius-sm: 0px !important;
+  --art-form-control-radius: 0px !important;
+  --art-compact-radius: 0px !important;
+  --art-surface-radius: 0px !important;
+  --art-popup-radius: 0px !important;
+  --art-dialog-radius: 0px !important;
+  --art-card-radius: 0px !important;
+}
+
 html.radius-zero {
-  :root,
-  html,
-  body {
-    --custom-radius: 0px !important;
-    --el-border-radius-base: 0px !important;
-    --el-border-radius-small: 0px !important;
-    --el-messagebox-border-radius: 0px !important;
-    --el-popover-border-radius: 0px !important;
-    --el-card-border-radius: 0px !important;
-    --art-form-control-radius-sm: 0px !important;
-    --art-form-control-radius: 0px !important;
-    --art-compact-radius: 0px !important;
-    --art-surface-radius: 0px !important;
-    --art-popup-radius: 0px !important;
-    --art-dialog-radius: 0px !important;
-    --art-card-radius: 0px !important;
-  }
 
   .el-button:not(.is-circle),
   .el-input,
@@ -1046,16 +1056,28 @@ html.radius-zero {
   .el-message-box,
   .el-popover,
   .el-tag,
+  .el-alert,
   .el-segmented,
   .el-segmented__group,
   .el-segmented__item,
+  .el-segmented__item-selected,
   .el-segmented__slider,
   .el-checkbox__inner,
   .el-radio-button__inner,
+  .el-color-picker__trigger,
+  .el-color-picker__color,
+  .el-color-picker__color-inner,
+  .el-menu-item,
+  .el-sub-menu__title,
+  .el-pagination button,
+  .el-pager li,
+  .page-content,
+  .art-icon-button:not(.rounded-full),
   .art-card,
   .art-card-sm,
   .art-card-xs,
   .art-table-card,
+  .ops-card,
   .surface-toolbar-card,
   .surface-panel-card,
   .surface-settings-card {

@@ -5,33 +5,8 @@
 -->
 <template>
   <div class="ops-page">
-    <div
-      v-if="subtitle || $slots.subtitle || $slots.actions"
-      class="ops-page__toolbar"
-    >
-      <div v-if="subtitle || $slots.subtitle" class="ops-page__heading">
-        <div class="ops-page__title-row">
-          <ElPopover
-            placement="bottom-start"
-            :width="320"
-            trigger="click"
-          >
-            <div class="ops-page__info-popover">
-              <slot name="subtitle">{{ subtitle }}</slot>
-            </div>
-            <template #reference>
-              <button
-                type="button"
-                class="ops-page__info-trigger"
-                aria-label="页面说明"
-              >
-                <ArtSvgIcon icon="ri:information-line" />
-              </button>
-            </template>
-          </ElPopover>
-        </div>
-      </div>
-      <div v-if="$slots.actions" class="ops-page__actions">
+    <div v-if="$slots.actions" class="ops-page__toolbar">
+      <div class="ops-page__actions">
         <slot name="actions" />
       </div>
     </div>
@@ -41,7 +16,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: "OpsPage" });
-// [不可更改] title 属性仅保留签名避免调用方传参报错，严禁在模板中渲染页面级大标题。
+// [不可更改] title 与 subtitle 属性仅保留签名避免调用方传参报错，严禁在模板中渲染页面级大标题或孤立说明图标。
 defineProps<{ title?: string; subtitle?: string }>();
 </script>
 
@@ -63,45 +38,8 @@ defineProps<{ title?: string; subtitle?: string }>();
   flex-wrap: wrap;
   gap: var(--ops-space-sm, 12px);
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-shrink: 0;
-}
-.ops-page__heading {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-.ops-page__title-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.ops-page__info-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-.ops-page__info-trigger:hover {
-  color: var(--el-color-primary);
-  background: var(--el-fill-color-light);
-}
-.ops-page__info-popover {
-  color: var(--el-text-color-regular);
-  font-size: 12px;
-  line-height: 1.5;
 }
 .ops-page__actions {
   display: flex;

@@ -1,88 +1,29 @@
 <template>
   <OpsPage :title="t('menus.mazbri.opsTraces')">
     <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
-    </template>
-
-    <OpsCard>
-      <ElForm
-        :model="form"
-        inline
-        class="ops-traces__form"
-        @submit.prevent="submitSearch"
-      >
-        <ElFormItem label="trace_id">
-          <ElInput v-model="form.trace_id" clearable class="ops-traces__wide" />
-        </ElFormItem>
-        <ElFormItem label="request_id">
-          <ElInput
-            v-model="form.request_id"
-            clearable
-            class="ops-traces__wide"
-          />
-        </ElFormItem>
-        <ElFormItem :label="t('ops.traces.form.tenant')">
-          <ElInput
-            v-model="form.tenant_code"
-            clearable
-            class="ops-traces__mid"
-          />
-        </ElFormItem>
-        <ElFormItem :label="t('ops.traces.form.product')">
-          <ElInput
-            v-model="form.product_id"
-            clearable
-            class="ops-traces__mid"
-          />
-        </ElFormItem>
-        <ElFormItem :label="t('ops.traces.form.service')">
-          <ElSelect
-            v-model="form.service"
-            clearable
-            filterable
-            allow-create
-            default-first-option
-            class="ops-traces__mid"
+      <div class="ops-traces__toolbar">
+        <div class="ops-traces__toolbar-left">
+          <ElCheckTag
+            :checked="form.errors_only"
+            class="ops-traces__error-tag"
+            @change="toggleErrorsOnly"
           >
-            <ElOption
-              v-for="s in serviceOptions"
-              :key="s"
-              :label="s"
-              :value="s"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="t('ops.traces.form.duration')">
-          <ElInputNumber
-            v-model="form.min_duration_ms"
-            :min="0"
-            controls-position="right"
-            :placeholder="t('ops.traces.form.min')"
-            class="ops-traces__num"
+            {{ t("ops.traces.form.errorsOnly") }}
+          </ElCheckTag>
+        </div>
+        <div class="ops-traces__toolbar-right">
+          <ListQueryBar
+            v-model:q="keyword"
+            v-model:filters="listFilters"
+            always-expanded
+            :catalog="tracesFilterCatalog"
+            @search="applyFiltersAndSearch"
           />
-          <span class="ops-traces__dash">–</span>
-          <ElInputNumber
-            v-model="form.max_duration_ms"
-            :min="0"
-            controls-position="right"
-            :placeholder="t('ops.traces.form.max')"
-            class="ops-traces__num"
-          />
-          <span class="ops-traces__unit">ms</span>
-        </ElFormItem>
-        <ElFormItem>
-          <ElCheckbox v-model="form.errors_only">{{
-            t("ops.traces.form.errorsOnly")
-          }}</ElCheckbox>
-        </ElFormItem>
-        <ElFormItem>
-          <ElButton type="primary" native-type="submit" :loading="loading">
-            {{ t("common.search") }}
-          </ElButton>
-          <ElButton @click="resetForm">{{ t("common.reset") }}</ElButton>
-        </ElFormItem>
-      </ElForm>
-    </OpsCard>
+          <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
+          <AutoRefresh v-model="refreshInterval" @tick="runSearch" />
+        </div>
+      </div>
+    </template>
 
     <OpsCard :title="t('ops.traces.scatter.title')">
       <div class="ops-traces__card-head">
@@ -143,7 +84,11 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
+import AutoRefresh from "@/components/ops/AutoRefresh.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsPage from "@/components/ops/OpsPage.vue";
 import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";
@@ -151,6 +96,7 @@ import { echarts, type EChartsOption } from "@/plugins/echarts";
 import { fetchTraceServices, searchTraces } from "@/api/traces";
 import type { TraceSearchQuery, TraceSummary } from "@/types/api/traces";
 import type { ColumnOption } from "@/types/component";
+import type { ListFilter, ResourceFilterCatalog } from "@/types/list-query";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
@@ -206,6 +152,9 @@ const timeRange = ref<TimeRangeValue>({
   start: Math.floor(Date.now() / 1000) - 3600,
   end: Math.floor(Date.now() / 1000),
 });
+const refreshInterval = ref(0);
+const keyword = ref(form.trace_id || form.request_id || "");
+const listFilters = ref<ListFilter[]>([]);
 const loading = ref(false);
 const searched = ref(false);
 const traces = ref<TraceSummary[]>([]);
@@ -258,7 +207,7 @@ const columns = ref<ColumnOption<TraceSummary>[]>([
   },
   {
     prop: "trace_id",
-    label: "trace_id",
+    label: t("ops.traces.columns.traceId"),
     minWidth: 240,
     useSlot: true,
   },
@@ -277,6 +226,126 @@ const serviceOptions = computed(() => {
   if (form.service) set.add(form.service);
   return [...set].filter(Boolean).sort();
 });
+
+const tracesFilterCatalog = computed<ResourceFilterCatalog>(() => ({
+  resource: "traces",
+  max_filters: 10,
+  fields: [
+    {
+      field: "trace_id",
+      value_type: "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "ops.traces.columns.traceId",
+    },
+    {
+      field: "request_id",
+      value_type: "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "listFilters.fields.requestId",
+    },
+    {
+      field: "tenant_code",
+      value_type: "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "ops.traces.form.tenant",
+    },
+    {
+      field: "product_id",
+      value_type: "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "ops.traces.form.product",
+    },
+    {
+      field: "service",
+      value_type: serviceOptions.value.length > 0 ? "enum" : "string",
+      ops: ["eq"],
+      in_q: true,
+      label_key: "ops.traces.form.service",
+      enum_values: serviceOptions.value,
+    },
+    {
+      field: "min_duration_ms",
+      value_type: "int",
+      ops: ["gte", "eq"],
+      label_key: "ops.traces.form.minDuration",
+    },
+    {
+      field: "max_duration_ms",
+      value_type: "int",
+      ops: ["lte", "eq"],
+      label_key: "ops.traces.form.maxDuration",
+    },
+  ],
+}));
+
+function syncFormFromFilters() {
+  form.trace_id = "";
+  form.request_id = "";
+  form.tenant_code = "";
+  form.product_id = "";
+  form.service = "";
+  form.min_duration_ms = undefined;
+  form.max_duration_ms = undefined;
+
+  const qTrim = keyword.value.trim();
+  if (qTrim) {
+    if (/^[0-9a-fA-F]{32}$/.test(qTrim)) {
+      form.trace_id = qTrim.toLowerCase();
+    } else {
+      form.request_id = qTrim;
+    }
+  }
+
+  for (const f of listFilters.value) {
+    const valStr = String(f.value ?? "").trim();
+    if (!valStr) continue;
+    switch (f.field) {
+      case "trace_id":
+        form.trace_id = valStr.toLowerCase();
+        break;
+      case "request_id":
+        form.request_id = valStr;
+        break;
+      case "tenant_code":
+        form.tenant_code = valStr;
+        break;
+      case "product_id":
+        form.product_id = valStr;
+        break;
+      case "service":
+        form.service = valStr;
+        break;
+      case "min_duration_ms": {
+        const n = Number(valStr);
+        if (Number.isFinite(n) && n >= 0) form.min_duration_ms = n;
+        break;
+      }
+      case "max_duration_ms": {
+        const n = Number(valStr);
+        if (Number.isFinite(n) && n >= 0) form.max_duration_ms = n;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+}
+
+function applyFiltersAndSearch() {
+  syncFormFromFilters();
+  pagination.page = 1;
+  void runSearch();
+}
+
+function toggleErrorsOnly(checked: boolean) {
+  form.errors_only = checked;
+  pagination.page = 1;
+  void runSearch();
+}
 
 async function loadServiceCatalog() {
   const { start, end } = clampedRange(MAX_SEARCH_SECONDS);
@@ -365,11 +434,6 @@ async function runSearch() {
   }
 }
 
-function submitSearch() {
-  pagination.page = 1;
-  void runSearch();
-}
-
 function handleCurrentPageChange(page: number) {
   pagination.page = page;
   void runSearch();
@@ -377,19 +441,6 @@ function handleCurrentPageChange(page: number) {
 
 function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize;
-  pagination.page = 1;
-  void runSearch();
-}
-
-function resetForm() {
-  form.trace_id = "";
-  form.request_id = "";
-  form.tenant_code = "";
-  form.product_id = "";
-  form.service = "";
-  form.min_duration_ms = undefined;
-  form.max_duration_ms = undefined;
-  form.errors_only = false;
   pagination.page = 1;
   void runSearch();
 }
@@ -439,7 +490,7 @@ function buildScatterOption(): EChartsOption {
           item.seriesIndex === 1 ? errorTraces.value : okTraces.value;
         const row = series[item.dataIndex];
         if (!row) return "";
-        return `${row.root_service} · ${row.root_span}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} spans<br/>${row.trace_id}`;
+        return `${row.root_service} · ${row.root_span}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
       },
     },
     legend: { top: 0, right: 0 },
@@ -486,6 +537,33 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.ops-traces__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: 100%;
+}
+.ops-traces__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ops-traces__toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.ops-traces__error-tag {
+  display: inline-flex;
+  align-items: center;
+  height: var(--art-form-control-height, 32px);
+  padding: 0 12px;
+  border-radius: var(--art-form-control-radius, 4px);
+}
 .ops-traces__card-head {
   display: flex;
   gap: 12px;
@@ -495,23 +573,6 @@ onUnmounted(() => {
 .ops-traces__card-head h3 {
   margin: 0 0 8px;
   font-size: 15px;
-}
-.ops-traces__form :deep(.el-form-item) {
-  margin-bottom: 8px;
-}
-.ops-traces__wide {
-  width: 180px;
-}
-.ops-traces__mid {
-  width: 130px;
-}
-.ops-traces__num {
-  width: 88px;
-}
-.ops-traces__dash,
-.ops-traces__unit {
-  margin: 0 6px;
-  color: var(--el-text-color-secondary);
 }
 .ops-traces__muted {
   font-size: 12px;
@@ -530,6 +591,6 @@ onUnmounted(() => {
   margin-right: 6px;
   font-size: 12px;
   background: var(--el-fill-color);
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 </style>

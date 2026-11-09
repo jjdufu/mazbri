@@ -11,7 +11,6 @@
       :pagination="artPagination"
       :empty-text="emptyDescription"
       stripe
-      border
       @refresh="loadData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handlePageSizeChange"
@@ -21,7 +20,7 @@
         <ListQueryBar
           v-model:q="searchForm.q"
           v-model:filters="listFilters"
-          :filter-catalog="auditLogsCatalog"
+          :catalog="auditLogsCatalog"
           @search="handleSearch"
         />
         <TableHeaderDatePickerPopover

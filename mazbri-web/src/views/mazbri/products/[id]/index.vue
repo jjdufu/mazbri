@@ -1,23 +1,6 @@
 <template>
   <div class="product-detail-page">
-    <ElPageHeader @back="router.back()">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          product?.name || $t("product.detail.pageTitle")
-        }}</span>
-      </template>
-      <template #extra>
-        <ElTag :type="product?.enabled ? 'success' : 'info'">
-          {{
-            product?.enabled
-              ? $t("common.status.enabled")
-              : $t("common.status.disabled")
-          }}
-        </ElTag>
-      </template>
-    </ElPageHeader>
-
-    <ElCard v-loading="loading" class="mt-5" shadow="never">
+    <ElCard v-loading="loading" shadow="never">
       <template #header>
         <SurfaceCardHeader
           :title="$t('product.detail.basicInfoTitle')"
@@ -74,49 +57,37 @@
         <ElDescriptionsItem :label="$t('common.fields.updatedAt')">{{
           formatDate(product?.updated_at || "")
         }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('product.fields.timeoutSecs')">
+          {{ product?.timeout_secs }} {{ $t("ops.units.s") }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('product.fields.cbProEnabled')">
+          <ElTag :type="product?.cb_pro_enabled ? 'warning' : 'info'">
+            {{
+              product?.cb_pro_enabled
+                ? $t("common.status.enabled")
+                : $t("common.status.disabled")
+            }}
+          </ElTag>
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbFailureThreshold')"
+        >
+          {{ product?.cb_failure_threshold }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbSuccessThreshold')"
+        >
+          {{ product?.cb_success_threshold }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem
+          v-if="product?.cb_pro_enabled"
+          :label="$t('product.fields.cbCooldownSecs')"
+        >
+          {{ product?.cb_cooldown_secs }} {{ $t("ops.units.s") }}
+        </ElDescriptionsItem>
       </ElDescriptions>
-
-      <ElCard class="mt-5" shadow="never">
-        <template #header>
-          <SurfaceCardHeader
-            :title="$t('product.detail.advancedInfoTitle')"
-            stack-on-mobile
-          />
-        </template>
-
-        <ElDescriptions class="product-descriptions" :column="2" border>
-          <ElDescriptionsItem :label="$t('product.fields.timeoutSecs')">
-            {{ product?.timeout_secs }}s
-          </ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('product.fields.cbProEnabled')">
-            <ElTag :type="product?.cb_pro_enabled ? 'warning' : 'info'">
-              {{
-                product?.cb_pro_enabled
-                  ? $t("common.status.enabled")
-                  : $t("common.status.disabled")
-              }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbFailureThreshold') || '失败熔断阈值'"
-          >
-            {{ product?.cb_failure_threshold }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbSuccessThreshold') || '成功恢复阈值'"
-          >
-            {{ product?.cb_success_threshold }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem
-            v-if="product?.cb_pro_enabled"
-            :label="$t('product.fields.cbCooldownSecs') || '熔断冷却时间'"
-          >
-            {{ product?.cb_cooldown_secs }}s
-          </ElDescriptionsItem>
-        </ElDescriptions>
-      </ElCard>
 
       <EditDialog
         v-model="editVisible"
@@ -144,10 +115,6 @@
             <ElFormItem :label="$t('product.fields.name')" prop="name">
               <ElInput v-model="editForm.name" />
             </ElFormItem>
-
-            <ElFormItem :label="$t('product.fields.enabled')">
-              <ElSwitch v-model="editForm.enabled" />
-            </ElFormItem>
           </div>
 
           <div class="dialog-section mt-4">
@@ -165,12 +132,6 @@
                 controls-position="right"
                 style="width: 100%"
               />
-            </ElFormItem>
-            <ElFormItem
-              :label="$t('product.fields.cbProEnabled')"
-              prop="cb_pro_enabled"
-            >
-              <ElSwitch v-model="editForm.cb_pro_enabled" />
             </ElFormItem>
             <ElFormItem
               v-if="editForm.cb_pro_enabled"
@@ -207,6 +168,15 @@
                 controls-position="right"
                 style="width: 100%"
               />
+            </ElFormItem>
+            <ElFormItem :label="$t('product.fields.enabled')">
+              <ElSwitch v-model="editForm.enabled" />
+            </ElFormItem>
+            <ElFormItem
+              :label="$t('product.fields.cbProEnabled')"
+              prop="cb_pro_enabled"
+            >
+              <ElSwitch v-model="editForm.cb_pro_enabled" />
             </ElFormItem>
           </div>
         </ElForm>

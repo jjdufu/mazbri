@@ -4,18 +4,11 @@
     mobile-stack
     :label="$t('systemSettings.theme.themeMode')"
   >
-    <div class="theme-mode-options">
-      <button
-        v-for="option in themeModeOptions"
-        :key="option.value"
-        type="button"
-        class="theme-mode-option"
-        :class="{ 'is-active': modelValue.systemThemeMode === option.value }"
-        @click="handleThemeModeSelect(option.value)"
-      >
-        {{ option.label }}
-      </button>
-    </div>
+    <ElSegmented
+      :model-value="modelValue.systemThemeMode"
+      :options="themeModeOptions"
+      @change="handleThemeModeSelect"
+    />
   </CommonSettingRow>
   <CommonSettingRow
     mode="inline"
@@ -73,44 +66,6 @@ const handleThemeModeSelect = (mode: SystemThemeEnum) => {
 </script>
 
 <style scoped lang="scss">
-.theme-mode-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 8px;
-  justify-content: flex-end;
-}
-
-.theme-mode-option {
-  min-width: 72px;
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--art-form-control-radius);
-  background: var(--default-box-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  transition:
-    border-color var(--el-transition-duration),
-    background-color var(--el-transition-duration),
-    color var(--el-transition-duration);
-
-  &:hover {
-    border-color: var(--el-color-primary-light-5);
-    color: var(--el-text-color-primary);
-  }
-
-  &.is-active {
-    border-color: var(--el-color-primary);
-    background: color-mix(
-      in srgb,
-      var(--el-color-primary) 8%,
-      var(--default-box-color)
-    );
-    color: var(--el-color-primary);
-  }
-}
-
 .color-picker-wrapper {
   display: flex;
   flex-wrap: wrap;
@@ -118,8 +73,8 @@ const handleThemeModeSelect = (mode: SystemThemeEnum) => {
   justify-content: flex-end;
 
   .color-item {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
@@ -128,7 +83,7 @@ const handleThemeModeSelect = (mode: SystemThemeEnum) => {
     transition: all 0.2s;
     border: 2px solid transparent;
     &:hover {
-      transform: scale(1.1);
+      transform: scale(1.08);
     }
     &.is-active {
       border-color: var(--el-color-primary);
@@ -136,7 +91,7 @@ const handleThemeModeSelect = (mode: SystemThemeEnum) => {
     }
     .check-icon {
       color: white;
-      font-size: 16px;
+      font-size: 15px;
     }
   }
 }

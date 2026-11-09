@@ -1,23 +1,6 @@
 <template>
   <div class="channel-detail-page">
-    <ElPageHeader @back="goBack">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          channel?.name || $t("channels.detail.pageTitle")
-        }}</span>
-      </template>
-      <template #extra>
-        <ElTag :type="channel?.status === 'active' ? 'success' : 'info'">
-          {{
-            channel?.status
-              ? $t(`channels.status.${channel.status}`)
-              : "-"
-          }}
-        </ElTag>
-      </template>
-    </ElPageHeader>
-
-    <ElCard v-loading="loading" class="mt-5" shadow="never">
+    <ElCard v-loading="loading" shadow="never">
       <template #header>
         <SurfaceCardHeader
           :title="$t('channels.detail.basicInfoTitle')"

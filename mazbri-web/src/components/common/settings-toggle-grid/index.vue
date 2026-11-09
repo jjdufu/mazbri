@@ -16,11 +16,11 @@ defineOptions({ name: "SettingsToggleGrid" });
 .settings-toggle-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 24px;
+  gap: 12px 24px;
 
   :deep(.common-toggle-tile) {
-    min-height: 0;
-    padding: 6px 0;
+    min-height: 32px;
+    padding: 0;
     background: transparent;
     border: none;
     border-radius: 0;

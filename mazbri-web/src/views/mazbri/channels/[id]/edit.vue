@@ -1,14 +1,6 @@
 <template>
   <div class="channel-edit-page">
-    <ElPageHeader @back="goBack">
-      <template #content>
-        <span class="text-lg font-medium">{{
-          $t("channels.dialog.editTitle")
-        }}</span>
-      </template>
-    </ElPageHeader>
-
-    <ElCard v-loading="loading" class="mt-5" shadow="never">
+    <ElCard v-loading="loading" shadow="never">
       <ElForm
         ref="formRef"
         :model="form"

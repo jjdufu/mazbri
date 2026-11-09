@@ -1,15 +1,25 @@
 <template>
-  <div class="ops-panel-toolbar">
+  <Teleport v-if="headerActionsEl" :to="headerActionsEl">
+    <slot />
+  </Teleport>
+  <div v-else class="ops-panel-toolbar">
     <slot />
   </div>
 </template>
 
 <script setup lang="ts">
+import { inject, type Ref } from "vue";
+
 /**
  * Tab 面板内局部工具条（筛选 / 刷新 / 新建等）。
- * 样式对齐 OpsPage 的 actions 行，避免每个合并面板各自抄一套 flex。
+ * 若位于 OpsTabPage 内部，自动挂载到与 Tab 同行的右侧操作区，消除多余工具栏行。
  */
 defineOptions({ name: "OpsPanelToolbar" });
+
+const headerActionsEl = inject<Ref<HTMLElement | null> | null>(
+  "opsTabHeaderActionsEl",
+  null,
+);
 </script>
 
 <style scoped>
@@ -18,6 +28,6 @@ defineOptions({ name: "OpsPanelToolbar" });
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
+  justify-content: flex-end;
 }
 </style>

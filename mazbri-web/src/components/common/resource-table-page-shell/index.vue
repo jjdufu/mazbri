@@ -41,6 +41,7 @@
           v-model="searchValue"
           v-model:filters="filtersValue"
           :filter-catalog="props.filterCatalog"
+          :search-placeholder="props.searchPlaceholder"
           :search-panel-width="props.searchPanelWidth"
           :live-commit="props.liveCommit"
           :show-search="props.showSearch"
@@ -162,6 +163,7 @@ const props = withDefaults(
     size?: "large" | "default" | "small";
     showActionBar?: boolean;
     filterCatalog?: ResourceFilterCatalog;
+    searchPlaceholder?: string;
     searchPanelWidth?: number | string;
 
     liveCommit?: boolean;
@@ -214,10 +216,11 @@ const props = withDefaults(
     emptyHeight: undefined,
     showTableHeader: true,
     stripe: undefined,
-    border: undefined,
-    size: undefined,
+    border: false,
+    size: "small",
     showActionBar: true,
     filterCatalog: undefined,
+    searchPlaceholder: undefined,
     searchPanelWidth: 240,
     liveCommit: true,
     showSearch: true,

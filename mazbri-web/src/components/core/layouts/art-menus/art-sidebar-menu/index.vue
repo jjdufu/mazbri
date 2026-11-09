@@ -90,7 +90,7 @@
               opacity: !menuOpen ? 0 : 1,
             }"
           >
-            {{ siteName }}
+            MAZBRI
           </p>
         </div>
 
@@ -155,9 +155,8 @@ const MENU_CLOSE_WIDTH = MenuWidth.CLOSE;
 const route = useRoute();
 const router = useRouter();
 const settingStore = useSettingStore();
-const { getMenuOpenWidth, menuType, dualMenuShowText, menuOpen, getMenuTheme } =
+const { menuType, dualMenuShowText, menuOpen, getMenuTheme } =
   storeToRefs(settingStore);
-const { siteName } = storeToRefs(settingStore);
 
 const defaultOpenedMenus = ref<string[]>([
   "/ops",
@@ -167,7 +166,6 @@ const defaultOpenedMenus = ref<string[]>([
 const isMobileMode = ref(false);
 const showMobileModal = ref(false);
 const { width } = useWindowSize();
-const menuopenwidth = computed(() => getMenuOpenWidth.value);
 const menuclosewidth = computed(() => MENU_CLOSE_WIDTH);
 const isTopLeftMenu = computed(() => menuType.value === MenuTypeEnum.TOP_LEFT);
 const showLeftMenu = computed(
@@ -287,7 +285,8 @@ watch(menuOpen, (isMenuOpen: boolean) => {
 
 .layout-sidebar {
   .el-menu:not(.el-menu--collapse) {
-    width: v-bind(menuopenwidth);
+    width: max-content;
+    min-width: 100%;
   }
 
   .el-menu--collapse {

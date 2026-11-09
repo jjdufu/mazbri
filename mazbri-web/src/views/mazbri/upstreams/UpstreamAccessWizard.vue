@@ -133,11 +133,11 @@
           "
         />
         <ElDescriptions v-if="result" :column="1" border class="mb">
-          <ElDescriptionsItem label="supplier_id">{{ result.supplier_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="channel_id">{{ result.channel_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="route_rule_id">{{ result.route_rule_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="binding_id">{{ result.binding_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="route_version">{{ result.route_version }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.supplierId')">{{ result.supplier_id }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.channelId')">{{ result.channel_id }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeRuleId')">{{ result.route_rule_id }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.bindingId')">{{ result.binding_id }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeVersion')">{{ result.route_version }}</ElDescriptionsItem>
         </ElDescriptions>
         <p class="hint">{{ $t("upstreamOnboarding.done.reloadHint") }}</p>
       </div>
@@ -454,7 +454,7 @@ defineExpose({
   overflow: auto;
   font-size: 12px;
   background: var(--el-fill-color-light);
-  border-radius: 6px;
+  border-radius: var(--art-form-control-radius);
   white-space: pre-wrap;
   word-break: break-all;
 }

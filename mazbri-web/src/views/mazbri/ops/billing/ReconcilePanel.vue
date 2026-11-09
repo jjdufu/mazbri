@@ -2,26 +2,31 @@
   <div class="ops-billing-panel">
     <OpsPanelToolbar>
       <ElSelect v-model="days" style="width: 120px" @change="loadCalendar">
-        <ElOption :value="7" label="7d" />
-        <ElOption :value="30" label="30d" />
-        <ElOption :value="90" label="90d" />
+        <ElOption :value="7" :label="t('ops.timeRange.presets.7d')" />
+        <ElOption :value="30" :label="t('ops.timeRange.presets.30d')" />
+        <ElOption :value="90" :label="`90 ${t('ops.units.days')}`" />
       </ElSelect>
       <AutoRefresh v-model="refreshInterval" @tick="loadCalendar" />
     </OpsPanelToolbar>
 
     <OpsCard :title="t('ops.reconcile.calendar')">
-      <div class="calendar-grid">
+      <div v-if="calendar.length > 0" class="calendar-grid">
         <div
           v-for="d in calendar"
           :key="d.day"
           class="calendar-cell"
           :class="`is-${d.status}`"
-          :title="`${d.day}: open=${d.open_count} resolved=${d.resolved_count} error=${d.error_count}`"
+          :title="`${d.day}: ${t(`billing.reconciliation.statuses.${d.status}`)}`"
         >
           <div class="day">{{ d.day.slice(5) }}</div>
-          <div class="status">{{ d.status }}</div>
+          <div class="status">{{ t(`billing.reconciliation.statuses.${d.status}`) }}</div>
         </div>
       </div>
+      <ElEmpty
+        v-else
+        :image-size="56"
+        :description="t('billing.reconciliation.empty')"
+      />
     </OpsCard>
 
     <UsageReconciliationPanel />
@@ -45,7 +50,7 @@ defineOptions({ name: "OpsBillingReconcilePanel" });
 
 const { t } = useI18n();
 const days = ref(30);
-const refreshInterval = ref(120);
+const refreshInterval = ref(60);
 const calendar = ref<ReconcileCalendarDay[]>([]);
 
 async function loadCalendar() {
@@ -73,7 +78,7 @@ onMounted(loadCalendar);
 }
 .calendar-cell {
   padding: 8px;
-  border-radius: 6px;
+  border-radius: var(--art-form-control-radius);
   border: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-light);
   text-align: center;

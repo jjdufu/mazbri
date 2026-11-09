@@ -7,7 +7,6 @@
     >
       <ElSwitch
         :model-value="getToggleValue(item.key)"
-        size="small"
         @update:model-value="handleToggle(item.key, Boolean($event))"
       />
     </CommonToggleTile>

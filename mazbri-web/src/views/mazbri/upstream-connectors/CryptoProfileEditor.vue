@@ -38,7 +38,6 @@
           <ElButton
             v-for="tpl in CRYPTO_PROFILE_TEMPLATES"
             :key="tpl.id"
-            size="small"
             :disabled="disabled"
             @click="importTemplate(tpl.id)"
           >

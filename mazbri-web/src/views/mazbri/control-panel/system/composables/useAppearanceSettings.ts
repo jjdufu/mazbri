@@ -39,7 +39,7 @@ export interface LocalAppearanceSettings {
   customRadius: string;
   darkThemeStyle: "obsidian" | "graphite" | "oceanic" | "nordic";
 }
-export type AppearanceSaveMode = "server" | "local";
+export type AppearanceSaveMode = "server" | "failed";
 export function useAppearanceSettings() {
   const { t } = useI18n();
   const settingStore = useSettingStore();
@@ -131,13 +131,13 @@ export function useAppearanceSettings() {
     });
   });
   const localAppearanceSettings = reactive<LocalAppearanceSettings>({
-    systemThemeMode: SystemThemeEnum.AUTO,
+    systemThemeMode: SystemThemeEnum.LIGHT,
     systemThemeColor: "#5D87FF",
     containerWidth: ContainerWidthEnum.FULL,
     boxBorderMode: false,
     showWorkTab: false,
     showMenuButton: true,
-    showRefreshButton: true,
+    showRefreshButton: false,
     showCrumbs: true,
     showLanguage: true,
     showNprogress: true,
@@ -145,7 +145,7 @@ export function useAppearanceSettings() {
     menuOpenWidth: 200,
     tabStyle: "tab-default",
     pageTransition: "fade",
-    customRadius: "0",
+    customRadius: "0.25",
     darkThemeStyle: "obsidian",
   });
   const readStoreAppearance = (): LocalAppearanceSettings => ({
@@ -221,9 +221,6 @@ export function useAppearanceSettings() {
     custom_radius: localAppearanceSettings.customRadius,
     dark_theme_style: localAppearanceSettings.darkThemeStyle,
   });
-  const applyAppearanceLocally = () => {
-    applyAppearanceValues({ ...localAppearanceSettings });
-  };
   const saveAppearanceSettings = async (options?: {
     silent?: boolean;
   }): Promise<AppearanceSaveMode> => {
@@ -242,14 +239,8 @@ export function useAppearanceSettings() {
       }
       return "server";
     } catch (error) {
-      logger.error("Server save failed, applying locally");
-      applyAppearanceLocally();
-      // Kept for this session only (existing "saved locally" semantics).
-      appearancePreview.commit();
-      if (!options?.silent) {
-        ElMessage.warning(t("systemSettings.messages.appearanceSavedLocally"));
-      }
-      return "local";
+      logger.error("Failed to save appearance settings:", error);
+      return "failed";
     } finally {
       appearanceSaving.value = false;
     }
@@ -269,12 +260,7 @@ export function useAppearanceSettings() {
         },
       );
       appearanceSaving.value = true;
-      try {
-        await settingStore.resetServerSettings();
-      } catch {
-        localStorage.removeItem("setting");
-        appearancePreview.revert();
-      }
+      await settingStore.resetServerSettings();
       loadAppearanceSettings();
       ElMessage.success(t("systemSettings.messages.appearanceResetSuccess"));
     } catch (error) {

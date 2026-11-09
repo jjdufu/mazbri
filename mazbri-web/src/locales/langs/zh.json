@@ -480,8 +480,8 @@
         }
       },
       "placeholders": {
-        "customer": "流水号 / 租户 / 通道 / IP / 返回码",
-        "upstream": "流水号 / 供应商 / 通道 / 返回码"
+        "customer": "流水号 / 租户 / IP",
+        "upstream": "流水号 / 供应商 / 通道"
       },
       "empty": {
         "noMatch": "未找到符合筛选条件的调用记录",
@@ -879,7 +879,7 @@
       "alertSilences": "告警静默",
       "opsInfra": "基础设施",
       "opsAlerts": "告警中心",
-      "opsBilling": "计费与对账",
+      "opsBilling": "计费对账",
       "opsTraffic": "流量与质量",
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
@@ -909,10 +909,10 @@
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "租户 API 网关根地址。",
       "adminEmail": "管理员邮箱",
-      "adminEmailPlaceholder": "admin@example.com",
+      "adminEmailPlaceholder": "admin{'@'}example.com",
       "sessionTimeout": "管理端会话超时（分钟）",
-      "saveSettings": "保存设置",
-      "resetToDefault": "重置为默认值"
+      "saveSettings": "保存",
+      "resetToDefault": "恢复默认"
     },
     "theme": {
       "title": "主题设置",
@@ -970,7 +970,7 @@
   },
   "securityPolicy": {
     "actions": {
-      "savePolicy": "保存策略"
+      "savePolicy": "保存"
     },
     "sections": {
       "complexity": {
@@ -1007,7 +1007,7 @@
     },
     "placeholders": {
       "issuerName": "Mazbri",
-      "specialChars": "!@#$%^&*()_+-="
+      "specialChars": "!{'@'}#$%^&*()_+-="
     },
     "options": {
       "totpDigits6": "6 位",
@@ -1017,11 +1017,13 @@
     },
     "messages": {
       "savedSuccess": "设置已保存",
-      "specialCharsRequired": "已要求特殊字符时，字符集不能为空。"
+      "specialCharsRequired": "已要求特殊字符时，字符集不能为空。",
+      "issuerRequired": "发行者名称不能为空。"
     },
     "hints": {
-      "specialChars": "开启「要求特殊字符」后，新密码必须至少包含下列字符之一。",
-      "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。"
+      "specialChars": "配置全平台密码长度与字符组合要求；开启特殊字符后，新密码须至少包含所列字符之一。",
+      "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。",
+      "expiration": "密码达到有效期后需强制改密（0 表示永不过期），历史密码检查可防止重复使用近期旧密码。"
     }
   },
   "channels": {
@@ -1030,7 +1032,7 @@
       "searchPlaceholder": "通道 / 供应商"
     },
     "actions": {
-      "add": "新增通道"
+      "add": "新建"
     },
     "fields": {
       "id": "内部 ID",
@@ -1090,7 +1092,7 @@
       "deliveries": "投递任务"
     },
     "actions": {
-      "addSubscription": "新增订阅",
+      "addSubscription": "新建",
       "retry": "重试"
     },
     "columns": {
@@ -1137,11 +1139,11 @@
   "routes": {
     "embeddedTitle": "路由策略",
     "actions": {
-      "createRoute": "新增路由策略",
-      "createProductRoute": "新增产品路由",
+      "createRoute": "新建",
+      "createProductRoute": "新建",
       "bindings": "候选通道",
       "addBinding": "添加候选通道",
-      "addUpstreamBinding": "绑定上游通道",
+      "addUpstreamBinding": "绑定通道",
       "emergencySwitch": "紧急切流",
       "confirmSave": "确认保存",
       "backToEdit": "返回编辑",
@@ -1837,7 +1839,7 @@
     "actions": {
       "import": "导入",
       "export": "导出",
-      "create": "新建配置",
+      "create": "新建",
       "edit": "编辑",
       "history": "历史"
     },
@@ -1849,7 +1851,7 @@
     },
     "importDialog": {
       "title": "导入配置",
-      "confirm": "导入配置",
+      "confirm": "导入",
       "warning": "导入将覆盖同名配置，请确认文件内容正确",
       "uploadText": "拖拽文件到此处，或",
       "clickToUpload": "点击上传",
@@ -1959,7 +1961,7 @@
       },
       "license": {
         "exportRequest": "导出申请",
-        "importLicense": "导入许可证",
+        "importLicense": "导入",
         "exportSuccess": "申请文件已导出",
         "importSuccess": "许可证已导入",
         "sequence": "序号",
@@ -2054,12 +2056,12 @@
         "metadata": "元数据"
       },
       "actions": {
-        "refresh": "刷新状态",
-        "import": "导入文件",
-        "activate": "激活授权",
-        "revoke": "撤销授权",
-        "exportCurrent": "导出当前文件",
-        "renew": "续期授权"
+        "refresh": "刷新",
+        "import": "导入",
+        "activate": "激活",
+        "revoke": "撤销",
+        "exportCurrent": "导出",
+        "renew": "续期"
       },
       "form": {
         "packageFile": "授权文件",
@@ -2167,12 +2169,12 @@
         "latestEventAt": "最近事件时间"
       },
       "actions": {
-        "refresh": "刷新状态",
-        "exportCurrent": "导出当前授权",
-        "disable": "撤销授权",
-        "import": "导入授权",
-        "activate": "激活授权",
-        "renew": "续期授权"
+        "refresh": "刷新",
+        "exportCurrent": "导出",
+        "disable": "撤销",
+        "import": "导入",
+        "activate": "激活",
+        "renew": "续期"
       },
       "form": {
         "packageFile": "授权文件",
@@ -2200,7 +2202,7 @@
     "list": {
       "title": "证书列表",
       "actions": {
-        "issue": "签发证书",
+        "issue": "签发",
         "revoke": "吊销"
       },
       "disabledReasons": {
@@ -2274,7 +2276,7 @@
         "365": "365 天 (1年)",
         "730": "730 天 (2年)"
       },
-      "issueAllUnissued": "一键签发全部未签服务 ({count} 个)",
+      "issueAllUnissued": "全部签发 ({count})",
       "issue": "签发",
       "batchIssueFailed": "{name}: 签发失败",
       "validation": {
@@ -2333,7 +2335,7 @@
     },
     "list": {
       "title": "系统用户列表",
-      "addUser": "新增用户",
+      "addUser": "新建",
       "resetPassword": "重置密码",
       "resetMfa": "重置 MFA",
       "columns": {
@@ -2367,7 +2369,7 @@
         "role": "请选择角色"
       },
       "actions": {
-        "regeneratePassword": "重新生成密码"
+        "regeneratePassword": "随机生成"
       },
       "tips": {
         "passwordGenerated": "已根据密码策略自动生成",
@@ -2412,8 +2414,8 @@
       "editTitle": "编辑管理员基本信息",
       "editUserTitle": "编辑用户基本信息",
       "resetPassword": "重置密码",
-      "deleteAdmin": "删除管理员",
-      "deleteUser": "删除用户",
+      "deleteAdmin": "删除",
+      "deleteUser": "删除",
       "labels": {
         "id": "ID",
         "username": "用户名",
@@ -2453,7 +2455,7 @@
       "searchPlaceholder": "供应商名称 / 编码"
     },
     "actions": {
-      "add": "新增供应商"
+      "add": "新建"
     },
     "fields": {
       "code": "编码",
@@ -2516,7 +2518,7 @@
       "credKey": "键",
       "credValue": "值",
       "requestBodyTpl": "登录请求体模板",
-      "requestBodyTplHint": "支持 {{username}} 等占位符；空则自动组凭证。",
+      "requestBodyTplHint": "支持 {'{{username}}'} 等占位符；空则自动组凭证。",
       "tokenJsonpath": "Token 提取",
       "expiryJsonpath": "有效期提取",
       "injectKey": "注入字段",
@@ -2542,7 +2544,7 @@
       "export": "导出",
       "exportPage": "导出本页",
       "exportSelected": "导出所选 ({count})",
-      "generate": "生成账单",
+      "generate": "生成",
       "markPaid": "标记已付",
       "markOverdue": "标记逾期"
     },
@@ -2568,7 +2570,7 @@
       "statusFilter": "状态筛选",
       "runDatePlaceholder": "对账日期",
       "runDateRequired": "请选择对账日期",
-      "runAudit": "运行对账",
+      "runAudit": "立即对账",
       "runSuccess": "对账完成（状态：{status}）",
       "exportCsv": "导出 CSV",
       "exportEmpty": "无可导出记录",
@@ -2669,7 +2671,7 @@
     "adjustments": {
       "title": "账单调整记录",
       "hint": "记录本账单的金额调整明细，不直接变更账户余额",
-      "add": "添加更正",
+      "add": "添加",
       "addTitle": "添加账单更正",
       "empty": "暂无账单更正",
       "type": "类型",
@@ -2695,7 +2697,7 @@
     },
     "detail": {
       "title": "账单详情",
-      "download": "下载明细",
+      "download": "下载",
       "overview": "账单概览",
       "itemsTitle": "计费明细",
       "itemsCount": "本账单共有 {count} 条明细",
@@ -2873,8 +2875,8 @@
       },
       "actions": {
         "goRootPackage": "前往授权管理",
-        "createKey": "创建密钥",
-        "rotateKey": "轮换密钥",
+        "createKey": "新建",
+        "rotateKey": "轮换",
         "activate": "激活",
         "deprecate": "废弃",
         "disable": "禁用",
@@ -2933,8 +2935,8 @@
       },
       "rechargeDialogTitle": "账户充值",
       "refundDialogTitle": "账户退款",
-      "rechargeConfirm": "确认充值",
-      "refundConfirm": "确认退款",
+      "rechargeConfirm": "确定",
+      "refundConfirm": "确定",
       "currentBalance": "当前余额",
       "rechargeAmount": "充值金额",
       "rechargeAmountPlaceholder": "请输入充值金额",
@@ -2982,6 +2984,7 @@
       "windowSpend": "近期消费"
     },
     "createDialog": {
+      "title": "新增租户",
       "placeholders": {
         "code": "A1B2C3D4",
         "accountId": "my-company",
@@ -3014,8 +3017,8 @@
       "apiKeys": "API 密钥管理"
     },
     "actions": {
-      "addTenant": "新增租户",
-      "addApiKey": "新增 API 密钥",
+      "addTenant": "新建",
+      "addApiKey": "新建",
       "renewApiKey": "续期 API 密钥",
       "disable": "停用",
       "enable": "启用"
@@ -3041,15 +3044,15 @@
     },
     "products": {
       "title": "已开通产品",
-      "manageGlobalAuth": "管理全局授权",
-      "grantProduct": "开通产品",
+      "manageGlobalAuth": "全局授权",
+      "grantProduct": "开通",
       "columns": {
         "productId": "产品编码",
         "name": "产品名称",
         "description": "产品说明",
         "grantedAt": "授权时间",
         "unitPrice": "单价",
-        "cbProFallback": "CBPRO"
+        "cbProFallback": "高级熔断"
       },
       "grantDialog": {
         "title": "开通产品",
@@ -3058,9 +3061,9 @@
         "productPlaceholder": "请选择或搜索要开通的产品",
         "unitPrice": "单价",
         "unitPricePlaceholder": "例如 0.001",
-        "cbProFallback": "CBPRO",
+        "cbProFallback": "高级熔断",
         "cbProEnabledHint": "",
-        "cbProDisabledHint": "产品未开启 CBPRO"
+        "cbProDisabledHint": "产品未开启高级熔断"
       }
     },
     "whitelist": {
@@ -3070,7 +3073,7 @@
       "exportAll": "导出全部",
       "exportSelected": "导出选中 ({count})",
       "import": "导入",
-      "add": "添加 IP",
+      "add": "添加",
       "emptyTitle": "暂无 IP 白名单",
       "emptyHint1": "空白名单：允许所有 IP。",
       "emptyHint2": "添加后仅白名单 IP 可访问。",
@@ -3085,7 +3088,7 @@
       },
       "addDialog": {
         "title": "添加 IP 白名单",
-        "confirm": "确定添加",
+        "confirm": "确定",
         "ipAddresses": "IP 地址",
         "ipAddressesPlaceholder": "每行一个 IP 或网段，例如：\n192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
         "ipAddressesHint": "每行一个 IP 或 CIDR。",
@@ -3110,7 +3113,7 @@
         "morePreview": "还有 {count} 条未显示",
         "back": "返回",
         "next": "下一步",
-        "confirm": "确认导入 ({count} 条)",
+        "confirm": "导入 ({count})",
         "validation": {
           "fileSize": "文件大小不能超过 100KB",
           "invalidCsv": "CSV 文件格式错误或为空"
@@ -3139,9 +3142,9 @@
       "title": "代理响应缓存",
       "apiOverrides": "接口差异配置",
       "warmupList": "数据预热",
-      "addRule": "添加规则",
+      "addRule": "添加",
       "apiPathPlaceholder": "例如: chat.completions",
-      "newWarmupKeyPlaceholder": "+ 新增预热",
+      "newWarmupKeyPlaceholder": "+ 添加",
       "seconds": "秒",
       "fields": {
         "enabled": "启用缓存",
@@ -3182,7 +3185,7 @@
       "capabilityMapLead": "",
       "cacheName": "响应缓存",
       "cacheSummary": "",
-      "cbproName": "CBPRO",
+      "cbproName": "高级熔断",
       "cbproSummary": "",
       "openProductsTab": "已开通产品"
     },
@@ -3216,7 +3219,7 @@
     "apiOverridesEmptyHint": "",
     "apiOverridesEmpty": "暂无覆盖",
     "fineGrainedOverrides": "接口速率覆盖",
-    "addOverride": "添加覆盖",
+    "addOverride": "添加",
     "pathPlaceholder": "例如 /posts 或 product:8000000001",
     "overrideExceedsPlan": "接口覆盖「{path}」的 QPS（{limit}）超过套餐速率（{planQps}），请调低后再保存",
     "overrideInvalidLimit": "接口覆盖「{path}」的上限无效",
@@ -3231,7 +3234,7 @@
     "reason": "原因（可选）",
     "issueDeny": "下发封禁",
     "issueQuota": "下发系数",
-    "issueRefresh": "强制刷新策略",
+    "issueRefresh": "刷新策略",
     "activeCommands": "当前指令",
     "cancelCommand": "撤销",
     "confirmDeny": "确认对该租户下发临时封禁？",
@@ -3258,6 +3261,7 @@
       "burst": "突发",
       "overrides": "接口覆盖条数",
       "enforcement": "控制模式",
+      "enforcementLocal": "单实例限流",
       "toPlan": "配置客户套餐",
       "toUpstream": "配置上游通道容量",
       "loadFailed": "限流概览加载失败"
@@ -3340,7 +3344,7 @@
       "revokeConfirm": "确定要撤销此授权吗？",
       "revokeSuccess": "授权已撤销",
       "actions": {
-        "create": "新建授权",
+        "create": "新建",
         "modify": "修改",
         "revoke": "撤销",
         "batchRevoke": "撤销授权"
@@ -3349,13 +3353,13 @@
     "config": {
       "title": "授权/订阅配置",
       "billingSection": "计费配置",
-      "fallbackSection": "CBPRO",
+      "fallbackSection": "高级熔断",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
-      "cbProFallback": "CBPRO",
+      "cbProFallback": "高级熔断",
       "cbProEnabledHint": "",
-      "cbProDisabledHint": "产品未开启 CBPRO",
+      "cbProDisabledHint": "产品未开启高级熔断",
       "conflictTitle": "配置冲突",
       "cbProRuntimeHint": "",
       "saveSuccess": "已保存"
@@ -3370,9 +3374,9 @@
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
-      "cbProFallback": "CBPRO",
+      "cbProFallback": "高级熔断",
       "cbProEnabledHint": "",
-      "cbProDisabledHint": "产品未开启 CBPRO",
+      "cbProDisabledHint": "产品未开启高级熔断",
       "enterUnitPrice": "请输入单价",
       "success": "授权开通成功"
     },
@@ -3389,13 +3393,13 @@
       "searchPlaceholder": "产品名称或编码"
     },
     "actions": {
-      "add": "新增产品"
+      "add": "新建"
     },
     "columns": {
       "productId": "产品编码",
       "name": "产品名称",
       "timeoutSecs": "超时时间（秒）",
-      "cbProEnabled": "CBPRO",
+      "cbProEnabled": "高级熔断",
       "enabled": "启用状态"
     },
     "fields": {
@@ -3405,7 +3409,7 @@
       "description": "产品说明",
       "timeoutSecs": "超时时间（秒）",
       "upstreamUrl": "默认上游地址",
-      "cbProEnabled": "CBPRO",
+      "cbProEnabled": "高级熔断",
       "cbFailureThreshold": "失败熔断阈值（次）",
       "cbSuccessThreshold": "成功恢复阈值（次）",
       "cbCooldownSecs": "熔断冷却时间（秒）",
@@ -3543,9 +3547,14 @@
     },
     "done": {
       "title": "接入成功",
-      "subtitle": "平台 route_version = {version}",
+      "subtitle": "平台路由版本 = {version}",
       "reloadHint": "约 5 秒内热加载生效。",
-      "goSuppliers": "返回上游供给"
+      "goSuppliers": "返回上游供给",
+      "supplierId": "供应商 ID",
+      "channelId": "通道 ID",
+      "routeRuleId": "路由规则 ID",
+      "bindingId": "绑定 ID",
+      "routeVersion": "路由版本"
     },
     "useAccessWizard": "新建请使用【接入上游】统一向导",
     "placeholders": {
@@ -3723,7 +3732,7 @@
     "authHintBasic": "用户名 / 密码写入 Authorization: Basic。",
     "authHintSign": "此处仅配置 App ID / Secret 等凭证；业务报文签名与加解密算法请在「出站规格 → 业务报文加解密」中配置。",
     "authHintGrpc": "secret 同时写入 metadata 与同名 header。",
-    "authHintBearer": "静态令牌，按注入格式写入（默认 Authorization: Bearer {}）。",
+    "authHintBearer": "静态令牌，按注入格式写入（默认 Authorization: Bearer {'{}'}）。",
     "authHintJwt": "每次请求使用本地密钥实时签发 JWT 并注入。",
     "authHintDigest": "第一次出站无 Digest 头；401 挑战后在同一 HTTP 请求上重放一次。",
     "authHintAws": "对最终 HTTP 调用手写 SigV4。需要 region、service 与 AK/SK。",
@@ -4112,11 +4121,13 @@
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "hint": "敏感操作需要两步验证，验证通过后一段时间内同类操作不用再输；未启用 MFA 的账号不能做这些操作，日常登录和查看不受影响。同一验证码不能重复使用，连续输错会锁定 MFA，锁定期间已打开的提权都会结束。",
-      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作，普通账号不可自助停用或重新生成备用码。",
+      "hint": "敏感操作需两步验证（默认 6 位 / 30 秒），验证通过后窗口期内免重复输入；连续输错将触发临时锁定。",
+      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作。",
+      "specLabel": "验证规格",
+      "specValue": "TOTP 6 位 · 30 秒",
       "changedAt": "变更时间",
       "backupCodesRemaining": "剩余备用码",
-      "forcedHint": "此账号被要求必须绑定 MFA，需超级管理员解除强制后才能关闭。"
+      "forcedHint": "当前账号已开启强制 MFA 保护，需超级管理员解除后才可停用。"
     },
     "setup": {
       "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
@@ -4142,6 +4153,9 @@
     },
     "password": {
       "title": "修改密码",
+      "statusConfigured": "已设置",
+      "lengthLabel": "长度要求",
+      "expiryLabel": "有效期策略",
       "current": "当前密码",
       "new": "新密码",
       "confirm": "确认新密码",
@@ -4149,7 +4163,7 @@
       "newRequired": "请输入新密码",
       "confirmRequired": "请再次输入新密码",
       "mismatch": "两次输入的新密码不一致",
-      "policyHint": "新密码需符合系统密码策略（长度、字符类型、历史密码限制）。",
+      "policyHint": "新密码需符合平台密码复杂度与历史密码限制，修改后当前会话保持有效。",
       "summaryTitle": "当前密码策略",
       "summary": {
         "length": "长度 {min}–{max} 位",
@@ -4165,20 +4179,20 @@
       }
     },
     "actions": {
-      "bind": "绑定 MFA",
+      "bind": "绑定",
       "enable": "启用",
-      "disable": "停用 MFA",
-      "regenerateCodes": "重新生成备用码",
+      "disable": "停用",
+      "regenerateCodes": "重置备用码",
       "copy": "复制",
-      "copyAll": "全部复制",
-      "changePassword": "修改密码"
+      "copyAll": "复制",
+      "changePassword": "修改"
     },
     "messages": {
       "copied": "已复制到剪贴板",
       "copyFailed": "复制失败，请手动复制"
     },
     "platformPolicy": {
-      "description": "以下 TOTP 参数、登录保护与密码策略对全体用户生效，修改后点击右上角「保存策略」。",
+      "description": "以下 TOTP 参数、登录保护与密码策略对全体用户生效，修改后点击右上角「保存」。",
       "sessionHint": "管理端会话时长由系统配置决定，与本页密码策略相互独立。",
       "sessionLink": "打开系统配置"
     }
@@ -4198,8 +4212,10 @@
       }
     },
     "autoRefresh": {
-      "label": "自动刷新",
-      "off": "关闭",
+      "label": "自动刷新周期",
+      "refreshNow": "立即刷新",
+      "off": "关闭自动刷新",
+      "tenSeconds": "10 秒",
       "thirtySeconds": "30 秒",
       "oneMinute": "1 分钟"
     },
@@ -4238,7 +4254,7 @@
       "changeEmpty": "所选时间窗内无变更或审计事件",
       "changeDetailTitle": "变更详情",
       "changeDetail": "详情",
-      "changeCharts": "路由热更新 / 连接器发布速率",
+      "changeCharts": "变更趋势",
       "changeLoadFailed": "加载变更事件失败",
       "charts": {
         "qps": "业务 QPS",
@@ -4343,6 +4359,8 @@
         "dbPool": "DB 连接池使用率",
         "version": "版本",
         "lastRestart": "最近重启",
+        "redTitle": "黄金指标 (RED)",
+        "useTitle": "资源饱和度 (USE)",
         "specific": "服务专有指标",
         "noSpecific": "当前目录暂无该服务专有时序指标"
       },
@@ -4448,6 +4466,8 @@
       "columns": {
         "time": "时间",
         "tenant": "租户",
+        "queueId": "队列 ID",
+        "id": "记录 ID",
         "attempt": "尝试次数",
         "status": "状态",
         "error": "错误",
@@ -4495,10 +4515,10 @@
     },
     "traces": {
       "loadFailed": "链路加载失败",
-      "invalidId": "trace_id 必须是 32 位十六进制",
+      "invalidId": "追踪 ID 必须是 32 位十六进制",
       "empty": "该时间窗内没有匹配的链路",
       "notSearched": "请选择时间范围并检索",
-      "resolved": "由调用日志解析出 {count} 个 trace",
+      "resolved": "由调用日志解析出 {count} 条链路",
       "tabs": {
         "results": "检索结果"
       },
@@ -4509,6 +4529,8 @@
         "duration": "耗时",
         "min": "最小",
         "max": "最大",
+        "minDuration": "最小耗时 (毫秒)",
+        "maxDuration": "最大耗时 (毫秒)",
         "errorsOnly": "仅错误"
       },
       "scatter": {
@@ -4518,10 +4540,12 @@
         "error": "含错误"
       },
       "columns": {
+        "traceId": "追踪 ID",
+        "requestId": "请求流水号",
         "start": "开始时间",
-        "root": "入口 span",
+        "root": "入口操作",
         "duration": "耗时",
-        "spans": "span 数",
+        "spans": "跨度数",
         "services": "服务数",
         "errors": "错误数"
       },
@@ -4533,18 +4557,24 @@
         "error": "错误",
         "expandAll": "全部展开",
         "collapseAll": "全部折叠",
+        "spanId": "跨度 ID",
+        "parentSpan": "父级跨度",
+        "status": "状态",
         "offset": "相对开始",
         "attributes": "属性",
         "resource": "资源",
         "events": "事件",
+        "event": "事件",
         "links": "关联",
         "linksTo": "关联到",
         "linkedFrom": "被关联自",
-        "selectSpan": "点击左侧 span 查看详情",
+        "selectSpan": "点击左侧跨度查看详情",
         "asyncTitle": "关联异步计费链路",
         "logs": "调用日志",
         "stages": "阶段耗时",
-        "billing": "计费流水"
+        "billing": "计费流水",
+        "upstreamDuration": "上游耗时 (ms)",
+        "outbox": "落账状态"
       },
       "billing": {
         "retries": "重试",
@@ -4557,7 +4587,7 @@
         "loadFailed": "计费流水加载失败"
       },
       "fallback": {
-        "title": "未找到该 trace",
+        "title": "未找到该追踪链路",
         "description": "该链路可能已超过保留期或未被采样，下方基于调用日志展示各阶段耗时明细。"
       },
       "sampleTitle": "错误样例",
@@ -4591,7 +4621,8 @@
         "labels": "标签",
         "value": "当前值 / 阈值",
         "startedAt": "开始时间",
-        "resolvedAt": "恢复时间"
+        "resolvedAt": "恢复时间",
+        "actions": "操作"
       },
       "rules": {
         "create": "新建规则",
@@ -4616,19 +4647,20 @@
         "form": {
           "kind": "数据源",
           "for": "持续",
+          "exprHint": "PromQL 填指标表达式；OLAP 填 JSON 查询定义。",
           "labels": "附加标签",
           "labelsInvalid": "每行一个 key=value",
           "emails": "邮件收件人",
-          "emailsHint": "默认通知渠道。每行一个地址，最多 20 个；触发与恢复时由 analytics 经 SMTP 发送，需配置 [alerting.smtp]。",
-          "emailsInvalid": "请输入 name@domain 形式的邮件地址",
-          "webhooks": "Webhook（可选）",
-          "webhooksHint": "每行一个 http(s) 地址；保存前做 SSRF 校验，触发与恢复时 POST JSON。",
+          "emailsHint": "每行一个邮箱，最多 20 个；触发与恢复时发送邮件通知。",
+          "emailsInvalid": "请输入 name{'@'}domain 形式的邮件地址",
+          "webhooks": "Webhook",
+          "webhooksHint": "每行一个 HTTP(S) 地址，触发与恢复时推送 JSON 负载。",
           "required": "必填",
           "notifyEnabled": "通知外发",
-          "notifyEnabledHint": "关闭时仍评估并在事件页可见，但不发邮件/IM；打开时必须配置邮箱或 webhook。",
+          "notifyEnabledHint": "开启后需至少配置邮箱或 Webhook；关闭时仅记录告警事件，不外发通知。",
           "notifyRequired": "打开通知时必须填写邮箱或 webhook",
           "evaluateEnabled": "评估启用",
-          "evaluateEnabledHint": "关闭后停止评估该规则；与通知外发开关相互独立。"
+          "evaluateEnabledHint": "关闭后暂停该规则的周期性评估。"
         },
         "notifySummary": "邮件 {emails} · Webhook {webhooks}",
         "notifyOff": "关闭（仅页面）"
@@ -4833,6 +4865,7 @@
       "perSec": "次/秒",
       "times": "次",
       "seconds": "秒",
+      "s": "秒",
       "days": "天",
       "ms": "ms",
       "percent": "%"

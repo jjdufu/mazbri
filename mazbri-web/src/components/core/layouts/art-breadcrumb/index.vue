@@ -1,5 +1,14 @@
 <template>
-  <nav class="ml-2.5 max-lg:!hidden" aria-label="breadcrumb">
+  <nav class="ml-2.5 flex-c max-lg:!hidden" aria-label="breadcrumb">
+    <button
+      v-if="activeParentPath"
+      type="button"
+      class="mr-1.5 flex-c h-7 w-7 c-p rounded border-none bg-transparent p-0 text-g-600 tad-200 hover:bg-active-color dark:text-g-800"
+      aria-label="Back"
+      @click="handleBack"
+    >
+      <ArtSvgIcon icon="ri:arrow-left-line" class="text-base" />
+    </button>
     <ul class="flex-c h-full">
       <li
         v-for="(item, index) in breadcrumbItems"
@@ -15,7 +24,12 @@
           @click="handleBreadcrumbClick(item, index)"
         >
           <span
-            class="block max-w-46 overflow-hidden text-ellipsis whitespace-nowrap px-1.5 text-sm text-g-600 dark:text-g-800"
+            class="block max-w-46 overflow-hidden text-ellipsis whitespace-nowrap px-1.5 text-sm"
+            :class="
+              isLastItem(index)
+                ? 'font-medium text-g-800 dark:text-g-900'
+                : 'text-g-600 dark:text-g-800'
+            "
             >{{ formatMenuTitle(item.meta?.title as string) }}</span
           >
         </div>
@@ -45,6 +59,14 @@ export interface BreadcrumbItem {
 }
 const route = useRoute();
 const router = useRouter();
+const activeParentPath = computed<string>(() => {
+  const { matched } = route;
+  if (!matched.length) return "";
+  const currentMeta = matched[matched.length - 1]?.meta;
+  return typeof currentMeta?.activePath === "string"
+    ? currentMeta.activePath
+    : "";
+});
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => {
   const { matched } = route;
   const matchedLength = matched.length;
@@ -68,8 +90,26 @@ const breadcrumbItems = computed<BreadcrumbItem[]>(() => {
   ) {
     return [createBreadcrumbItem(currentRoute)];
   }
+  const parentPath = activeParentPath.value;
+  if (parentPath && !items.some((it) => it.path === parentPath)) {
+    const parentRoute = router.getRoutes().find((r) => r.path === parentPath);
+    if (parentRoute?.meta?.title) {
+      items.splice(items.length - 1, 0, {
+        path: parentRoute.path,
+        meta: parentRoute.meta,
+      });
+    }
+  }
   return items;
 });
+function handleBack(): void {
+  const parentPath = activeParentPath.value;
+  if (window.history.state?.back) {
+    router.back();
+  } else if (parentPath) {
+    void router.push(parentPath);
+  }
+}
 const isWrapperContainer = (item: BreadcrumbItem): boolean =>
   item.path === "/outside" && !!item.meta?.isIframe;
 const createBreadcrumbItem = (route: RouteLocationMatched): BreadcrumbItem => ({

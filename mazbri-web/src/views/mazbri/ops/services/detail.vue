@@ -3,13 +3,6 @@
     <template #actions>
       <div class="ops-service-detail__header">
         <div class="ops-service-detail__nav">
-          <ElButton
-            link
-            type="primary"
-            @click="router.push(buildRuntimeRoute({ tab: 'apps' }))"
-          >
-            ← {{ t("ops.services.backToMatrix") }}
-          </ElButton>
           <ElTag type="info" effect="plain">{{ title }}</ElTag>
         </div>
         <div class="ops-service-detail__actions">
@@ -54,7 +47,7 @@
       </ElCol>
     </ElRow>
 
-    <OpsCard title="RED">
+    <OpsCard :title="t('ops.services.detail.redTitle')">
       <ElRow :gutter="16">
         <ElCol :xs="24" :lg="8">
           <MultiSeriesChart
@@ -80,7 +73,7 @@
       </ElRow>
     </OpsCard>
 
-    <OpsCard title="USE">
+    <OpsCard :title="t('ops.services.detail.useTitle')">
       <ElRow :gutter="16">
         <ElCol v-for="item in useMetrics" :key="item.key" :xs="24" :lg="8">
           <div class="ops-service-detail__metric-title">{{ item.label }}</div>
@@ -119,10 +112,9 @@
 
 <script setup lang="ts">
 import { formatDateTime } from "@/utils/format";
-import { buildRuntimeRoute } from "@/utils/ops/runtime-link";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
@@ -147,7 +139,6 @@ defineOptions({ name: "OpsServiceDetail" });
 
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 
 const serviceKey = computed(() => String(route.params.service || ""));
 const loading = ref(false);

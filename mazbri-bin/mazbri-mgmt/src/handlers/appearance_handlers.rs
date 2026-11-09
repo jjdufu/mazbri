@@ -32,6 +32,15 @@ pub async fn update_appearance_settings(
         Ok(()) => {}
         Err(msg) => return ApiResponse::err(StatusCode::BAD_REQUEST, msg),
     }
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return *response;
+    }
     match svc::update_settings(&state.admin_db, &claims.user_id, &claims.sub, &payload).await {
         Ok(settings) => {
             state.audit.log(create_audit_log(
@@ -73,6 +82,15 @@ pub async fn reset_appearance_settings(
 ) -> axum::response::Response {
     if claims.role != "R_ADMIN" {
         return ApiResponse::err(StatusCode::FORBIDDEN, "仅管理员可重置外观设置");
+    }
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return *response;
     }
     match svc::reset_settings(&state.admin_db, &claims.user_id, &claims.sub).await {
         Ok(settings) => {

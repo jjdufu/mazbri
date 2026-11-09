@@ -6,12 +6,14 @@
       size="default"
       @change="onPresetChange"
     />
-    <ElDatePicker
+    <DatePicker
       v-if="preset === 'custom'"
       v-model="customRange"
+      class="ops-time-range-picker__custom"
       type="datetimerange"
       value-format="x"
       :clearable="false"
+      :shortcuts="[]"
       :start-placeholder="t('ops.timeRange.start')"
       :end-placeholder="t('ops.timeRange.end')"
       @change="onCustomChange"
@@ -23,6 +25,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import DatePicker from "@/components/common/DatePicker.vue";
 
 import {
   PRESET_SECONDS,
@@ -104,9 +107,14 @@ function publish(value: TimeRangeValue) {
 }
 
 function onPresetChange() {
-  if (preset.value !== "custom") {
-    customRange.value = null;
+  if (preset.value === "custom") {
+    if (!customRange.value) {
+      const base = lastPublished ?? buildValue("1h");
+      customRange.value = pickerRangeOf(base);
+    }
+    return;
   }
+  customRange.value = null;
   publish(buildValue(preset.value));
 }
 

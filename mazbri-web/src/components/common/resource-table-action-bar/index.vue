@@ -6,6 +6,7 @@
       v-model:q="searchValue"
       v-model:filters="filtersValue"
       :catalog="props.filterCatalog"
+      :placeholder="props.searchPlaceholder"
       :enable-filters="Boolean(props.filterCatalog)"
       :panel-width="props.searchPanelWidth"
       :live-commit="props.liveCommit"
@@ -169,6 +170,7 @@ const props = withDefaults(
   defineProps<{
 
     filterCatalog?: ResourceFilterCatalog;
+    searchPlaceholder?: string;
     searchPanelWidth?: number | string;
 
     liveCommit?: boolean;
@@ -207,6 +209,7 @@ const props = withDefaults(
   }>(),
   {
     filterCatalog: undefined,
+    searchPlaceholder: undefined,
     searchPanelWidth: 240,
     liveCommit: true,
     showSearch: true,

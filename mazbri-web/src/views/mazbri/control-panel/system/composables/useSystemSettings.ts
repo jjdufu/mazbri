@@ -72,7 +72,10 @@ export function useSystemSettings() {
       logger.error("Failed to load system settings:", error);
     });
   };
-  const saveSystemSettings = async (options?: { silent?: boolean }) => {
+  const saveSystemSettings = async (options?: {
+    silent?: boolean;
+  }): Promise<boolean> => {
+    let saved = false;
     await runWithLoading(systemSaving, async () => {
       const payload = {
         site_name: systemForm.site_name || undefined,
@@ -84,13 +87,14 @@ export function useSystemSettings() {
       };
       await updateSystemSettings(payload);
       await settingStore.loadSystemSettings();
+      saved = true;
       if (!options?.silent) {
         ElMessage.success($t("systemSettings.messages.savedSuccess"));
       }
     }).catch((error) => {
       logger.error("Failed to save system settings:", error);
     });
-    return true;
+    return saved;
   };
   const handleSystemSave = async () => {
     await saveSystemSettings();

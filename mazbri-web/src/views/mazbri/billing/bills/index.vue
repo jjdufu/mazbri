@@ -29,8 +29,6 @@
           :delete-total-count="bills.length"
           :delete-selected-count="selectedRows.length"
           :delete-roles="['R_ADMIN', 'R_FINANCE']"
-          :fit="false"
-          table-layout="auto"
           table-class="surface-panel-table bill-list-table"
           @refresh="loadData"
           @selection-change="handleSelectionChange"
@@ -118,7 +116,6 @@
           <div v-if="currentBill" class="bill-detail-layout">
             <div class="bill-detail-toolbar">
               <ElButton
-                size="large"
                 type="primary"
                 :disabled="!currentBill"
                 @click="handleExportDetail"
@@ -130,13 +127,14 @@
               </ElButton>
             </div>
             <ElCard shadow="never" class="bill-detail-overview-card">
-              <CommonDetailHero
-                :eyebrow="$t('billing.detail.overview')"
-                :title="getBillDisplayName(currentBill)"
-                :subtitle="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
-                :amount="formatMoney(currentBill.total)"
-                :meta="formatDate(currentBill.created_at)"
-              />
+              <template #header>
+                <SurfaceCardHeader
+                  align="start"
+                  :title="getBillDisplayName(currentBill)"
+                  :description="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
+                  :meta="formatMoney(currentBill.total)"
+                />
+              </template>
 
               <ElDescriptions
                 :column="3"
@@ -216,7 +214,6 @@
                     <ElButton
                       v-roles="ROLES_BIZ"
                       type="primary"
-                      size="small"
                       @click="openCreateAdjustment"
                     >
                       {{ $t("billing.adjustments.add") }}
@@ -481,7 +478,6 @@ import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
-import CommonDetailHero from "@/components/common/detail-hero/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
@@ -1273,7 +1269,7 @@ watch(
 
 .bill-detail-overview-card,
 .bill-detail-items-card {
-  border-radius: 16px;
+  border-radius: var(--art-card-radius);
 }
 
 .bill-detail-descriptions {

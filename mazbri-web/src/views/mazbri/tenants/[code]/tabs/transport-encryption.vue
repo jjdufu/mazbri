@@ -119,20 +119,6 @@
           <CommonSettingRow
             mode="inline"
             mobile-stack
-            :label="$t('tenant.transportEncryption.fields.signatureCheck')"
-          >
-            <ElSwitch
-              v-model="form.requireSignature"
-              :disabled="
-                !tenantCryptoEnabled ||
-                !canWriteBusiness ||
-                form.encryptionMode === 'none'
-              "
-            />
-          </CommonSettingRow>
-          <CommonSettingRow
-            mode="inline"
-            mobile-stack
             :label="$t('tenant.transportEncryption.fields.nonceTtlSeconds')"
           >
             <ElInputNumber
@@ -156,6 +142,20 @@
               :step="60"
               class="transport-control"
               :disabled="!tenantCryptoEnabled || !canWriteBusiness"
+            />
+          </CommonSettingRow>
+          <CommonSettingRow
+            mode="inline"
+            mobile-stack
+            :label="$t('tenant.transportEncryption.fields.signatureCheck')"
+          >
+            <ElSwitch
+              v-model="form.requireSignature"
+              :disabled="
+                !tenantCryptoEnabled ||
+                !canWriteBusiness ||
+                form.encryptionMode === 'none'
+              "
             />
           </CommonSettingRow>
         </SettingsCard>
@@ -694,7 +694,7 @@ onMounted(loadData);
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-light);
   padding: 8px;
-  border-radius: 6px;
+  border-radius: var(--art-form-control-radius);
   transition: all 0.25s ease;
   flex-shrink: 0;
 }

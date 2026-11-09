@@ -5,9 +5,9 @@
   >
     <template #actions>
       <ElSelect v-model="days" class="finance-days-select" @change="reload">
-        <ElOption :value="7" label="7d" />
-        <ElOption :value="30" label="30d" />
-        <ElOption :value="90" label="90d" />
+        <ElOption :value="7" :label="t('ops.timeRange.presets.7d')" />
+        <ElOption :value="30" :label="t('ops.timeRange.presets.30d')" />
+        <ElOption :value="90" :label="`90 ${t('ops.units.days')}`" />
       </ElSelect>
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </template>
@@ -152,7 +152,7 @@ defineOptions({ name: "FinanceOverview" });
 
 const { t } = useI18n();
 const days = ref(30);
-const refreshInterval = ref(120);
+const refreshInterval = ref(60);
 const loading = ref(false);
 const overview = ref<FinanceOverview | null>(null);
 const ranks = ref<FinanceRanks | null>(null);

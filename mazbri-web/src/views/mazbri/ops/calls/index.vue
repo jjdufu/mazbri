@@ -1,5 +1,10 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.opsCalls')">
+  <OpsTabPage
+    v-model="activeTab"
+    :title="t('menus.mazbri.opsCalls')"
+    :tabs="callTabs"
+    @change="onTabChange"
+  >
     <template #actions>
       <TimeRangePicker
         :model-value="timeRange ?? undefined"
@@ -7,11 +12,6 @@
       />
       <AutoRefresh v-model="refreshInterval" @tick="onRefreshTick" />
     </template>
-
-    <ElTabs v-model="activeTab" class="ops-calls__tabs" @tab-change="onTabChange">
-      <ElTabPane :label="t('ops.calls.tabs.customer')" name="customer" />
-      <ElTabPane :label="t('ops.calls.tabs.upstream')" name="upstream" />
-    </ElTabs>
 
     <OpsCard
       :title="t('ops.calls.histogram.title')"
@@ -41,7 +41,7 @@
       </template>
       <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
         <EmptyState
-          v-if="!histogramLoading && (!histogram || histogram.total === 0)"
+          v-if="!histogram || histogram.total === 0"
           :description="t('operations.monitoring.empty.noData')"
         />
         <div
@@ -68,7 +68,7 @@
         @open-trace="openTrace"
       />
     </div>
-  </OpsPage>
+  </OpsTabPage>
 </template>
 
 <script setup lang="ts">
@@ -82,8 +82,9 @@ import TimeRangePicker, {
 } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import EmptyState from "@/components/common/empty-state/index.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import OpsTabPage from "@/components/ops/OpsTabPage.vue";
+import type { OpsTabDef } from "@/utils/ops/tabs";
 import {
   OPS_CHART_GRID,
   bindOpsChartResize,
@@ -110,6 +111,11 @@ const router = useRouter();
 
 const TABS: CallsTab[] = ["customer", "upstream"];
 const NUMERIC_KEYS = new Set(["status_code", "duration_ms_gte"]);
+
+const callTabs = computed<OpsTabDef[]>(() => [
+  { id: "customer", label: t("ops.calls.tabs.customer") },
+  { id: "upstream", label: t("ops.calls.tabs.upstream") },
+]);
 
 function queryString(key: string): string {
   const raw = route.query[key];
@@ -291,10 +297,26 @@ function renderChart() {
   });
 }
 
+let histogramLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+const HISTOGRAM_LOADING_DELAY_MS = 150;
+
+function clearHistogramLoadingTimer() {
+  if (histogramLoadingTimer != null) {
+    clearTimeout(histogramLoadingTimer);
+    histogramLoadingTimer = null;
+  }
+}
+
 async function loadHistogram() {
   if (!lastQuery || !timeRange.value) return;
   const seq = ++histogramSeq;
-  histogramLoading.value = true;
+  clearHistogramLoadingTimer();
+  histogramLoadingTimer = setTimeout(() => {
+    histogramLoadingTimer = null;
+    if (seq === histogramSeq) {
+      histogramLoading.value = true;
+    }
+  }, HISTOGRAM_LOADING_DELAY_MS);
   try {
     const res = await fetchCallHistogram(activeTab.value, {
       ...lastQuery,
@@ -311,7 +333,10 @@ async function loadHistogram() {
       ElMessage.error(t("ops.calls.histogram.loadFailed"));
     }
   } finally {
-    if (seq === histogramSeq) histogramLoading.value = false;
+    if (seq === histogramSeq) {
+      clearHistogramLoadingTimer();
+      histogramLoading.value = false;
+    }
   }
 }
 
@@ -327,6 +352,7 @@ function openTrace(traceId: string, start?: number) {
 let unbindChartResize: (() => void) | null = null;
 
 onUnmounted(() => {
+  clearHistogramLoadingTimer();
   unbindChartResize?.();
   unbindChartResize = null;
   chart?.dispose();
@@ -334,7 +360,7 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .ops-calls__histogram-extra {
   display: inline-flex;
   align-items: center;

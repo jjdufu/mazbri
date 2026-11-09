@@ -73,16 +73,18 @@
           :data="rows"
           row-key="id"
           size="small"
+          stripe
+          class="surface-panel-table"
           @row-click="selectRow"
         >
-          <ElTableColumn :label="t('ops.alerts.columns.severity')" width="100">
+          <ElTableColumn :label="t('ops.alerts.columns.severity')" width="76">
             <template #default="{ row }">
               <ElTag :type="alertSeverityTag(row.severity)" size="small">
                 {{ alertSeverityText(row.severity) }}
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.status')" width="180">
+          <ElTableColumn :label="t('ops.alerts.columns.status')" min-width="110">
             <template #default="{ row }">
               <ElTag :type="alertStatusTag(row.status)" size="small">
                 {{ alertStatusText(row.status) }}
@@ -108,14 +110,19 @@
           <ElTableColumn
             prop="rule_name"
             :label="t('ops.alerts.columns.rule')"
-            min-width="140"
+            min-width="130"
+            show-overflow-tooltip
           />
-          <ElTableColumn :label="t('ops.alerts.columns.labels')" min-width="200">
+          <ElTableColumn
+            :label="t('ops.alerts.columns.labels')"
+            min-width="160"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">{{
               formatAlertLabels(row.labels)
             }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.traces.traceIds')" min-width="150">
+          <ElTableColumn :label="t('ops.traces.traceIds')" min-width="120">
             <template #default="{ row }">
               <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
                 <ElLink
@@ -130,18 +137,22 @@
               <span v-else>—</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.value')" width="150">
+          <ElTableColumn
+            :label="t('ops.alerts.columns.value')"
+            min-width="110"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               {{ formatAlertValue(row.value) }} {{ row.op }}
               {{ formatAlertValue(row.threshold) }}
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.startedAt')" width="170">
+          <ElTableColumn :label="t('ops.alerts.columns.startedAt')" width="148">
             <template #default="{ row }">{{
               formatAlertTime(row.started_at)
             }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.resolvedAt')" width="170">
+          <ElTableColumn :label="t('ops.alerts.columns.resolvedAt')" width="148">
             <template #default="{ row }">
               {{ row.resolved_at ? formatAlertTime(row.resolved_at) : "—" }}
             </template>

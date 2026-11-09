@@ -412,6 +412,6 @@ onMounted(() => {
   font-family: monospace;
   background-color: var(--fill-color-light);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
 }
 </style>

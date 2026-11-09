@@ -11,7 +11,6 @@
       :pagination="artPagination"
       :empty-text="emptyDescription"
       stripe
-      border
       @refresh="getData"
       @selection-change="handleSelectionChange"
       @pagination:size-change="handleSizeChange"

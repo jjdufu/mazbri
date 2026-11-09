@@ -195,7 +195,7 @@
                     </button>
                   </span>
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="trace_id">
+                <ElDescriptionsItem :label="$t('ops.traces.columns.traceId')">
                   <span v-if="currentDetail.trace_id" class="compact-id-cell">
                     <ElLink
                       type="primary"
@@ -771,7 +771,7 @@ const buildColumns = (
     },
     {
       prop: "trace_id",
-      label: "trace_id",
+      label: $t("ops.traces.columns.traceId"),
       minWidth: 136,
       maxWidth: 196,
       useSlot: true,
@@ -1143,7 +1143,7 @@ onMounted(() => {
   justify-content: center;
   padding: 2px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--art-form-control-radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   font-size: 13px;

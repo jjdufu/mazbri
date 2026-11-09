@@ -301,6 +301,8 @@ pub struct MfaSetupResponse {
 #[serde(deny_unknown_fields)]
 pub struct MfaEnableRequest {
     pub totp_code: String,
+    #[serde(default)]
+    pub totp_issuer: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
