@@ -250,7 +250,6 @@ async fn invoke_against(
         query: Vec::new(),
         metadata: HashMap::new(),
         token: Some(TOKEN.into()),
-        stale_evicted: None,
     };
     let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
     let registry = mazbri_crypto::AlgorithmRegistry::default_registry();

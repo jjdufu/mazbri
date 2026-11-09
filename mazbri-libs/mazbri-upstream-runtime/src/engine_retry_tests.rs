@@ -295,9 +295,9 @@ async fn retry_budget_minimum_covers_low_traffic() {
     assert_eq!(rejected_storm(0.2, 3, 2).await, 2);
 }
 
-/// 一个上游的预算耗尽不影响另一个上游的认证重试（预算按供应商分桶）。
+/// 一个渠道鉴权键的预算耗尽不影响另一个键的认证重试（预算按令牌缓存键分桶）。
 #[tokio::test]
-async fn retry_budget_is_per_supplier() {
+async fn retry_budget_is_per_token_key() {
     use crate::RetrySkip;
     let up = Upstream::new(usize::MAX, false);
     let base = spawn(up.clone()).await;
@@ -355,6 +355,38 @@ async fn concurrent_rejections_share_one_refresh() {
         assert_eq!(status(&result), Some(200));
     }
     assert_eq!(up.token_hits(), 2, "evict once, refresh once");
+}
+
+/// 上游重启后同一渠道的并发被拒只由首个被拒者支付预算：预算只够 1 次也全部恢复。
+#[tokio::test]
+async fn followers_of_refreshed_token_do_not_consume_budget() {
+    let up = Upstream::new(1, false);
+    let base = spawn(up.clone()).await;
+    let engine = engine(RuntimeOptions {
+        retry_budget_ratio: 0.05,
+        retry_budget_min_per_window: 1,
+        retry_budget_window: Duration::from_mins(1),
+        ..RuntimeOptions::default()
+    });
+    assert!(
+        engine
+            .invoke(input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base)))
+            .await
+            .ok
+    );
+    up.valid_from.store(2, Ordering::SeqCst);
+    let mut joins = Vec::new();
+    for _ in 0..16 {
+        let engine = engine.clone();
+        let input = input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base));
+        joins.push(tokio::spawn(async move { engine.invoke(input).await }));
+    }
+    for j in joins {
+        let result = j.await.unwrap();
+        assert!(result.ok, "{:?}", result.error_message);
+        assert_eq!(result.retry_skipped, None);
+    }
+    assert_eq!(up.token_hits(), 2, "one refresh for the whole burst");
 }
 
 #[tokio::test]

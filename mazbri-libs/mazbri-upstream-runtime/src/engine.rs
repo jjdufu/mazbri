@@ -11,7 +11,7 @@ use crate::adapters::{
     AdapterCtx, AdapterOutcome, effective_invalidation, invoke_adapter, merge_request_headers,
 };
 use crate::crypto_pipeline::pipeline_keys_from_credentials;
-use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
+use crate::auth::{AppliedAuth, apply_auth, issued_token_key, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
 use crate::observe::{
     NoopObserver, RetryKind, RetryLog, RetryOutcome, RuntimeEvent, RuntimeObserver,
@@ -19,7 +19,7 @@ use crate::observe::{
 };
 use crate::retry_budget::{RetryBudget, RetryBudgets};
 use crate::ssrf::SsrfChecker;
-use crate::token_cache::TokenCache;
+use crate::token_cache::{StaleEvict, TokenCache};
 use crate::types::{
     AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult, RetryReason, RetrySkip,
     StageResult, StageSummary, UpstreamMeta,
@@ -143,7 +143,7 @@ pub struct RuntimeEngine {
     token_cache: Arc<TokenCache>,
     options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
-    /// 按供应商分桶的重试预算（认证重试与 WS 陈旧连接重试共用同一上游的桶）。
+    /// 按令牌缓存键分桶的重试预算（同一键的认证重试与 WS 陈旧连接重试共用一个桶）。
     retry_budgets: Arc<RetryBudgets>,
     observer: Arc<dyn RuntimeObserver>,
 }
@@ -229,10 +229,10 @@ impl RuntimeEngine {
             .cache_key
             .clone()
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
-        let budget = self.retry_budgets.for_upstream(&input.supplier_id);
+        let budget = self.retry_budgets.for_key(&cache_key);
         budget.record_request();
         let first = self
-            .attempt(input, &base_url, &cache_key, None, &mut trace, retry_log)
+            .attempt(input, &base_url, &cache_key, &mut trace, retry_log)
             .await;
         let (rejection, mut first_result) = match first {
             AttemptOutcome::AuthRejected(rejection, result) => (rejection, result),
@@ -241,7 +241,10 @@ impl RuntimeEngine {
         };
         let kind = input.spec.adapter_kind().ok();
         self.note_rejection(input, kind, &rejection);
-        if let Some(skip) = self.skip_auth_retry(input, kind, &budget) {
+        if let Some(skip) = self
+            .auth_retry_gate(input, kind, &budget, &cache_key, &rejection)
+            .await
+        {
             // 不重试时与「重试后仍被拒」同一口径：UPSTREAM_AUTH_REJECTED（平台侧上游故障，不计费）。
             let message = format!(
                 "upstream rejected credentials, retry skipped (trigger={}, reason={})",
@@ -257,14 +260,7 @@ impl RuntimeEngine {
         trace.stages = std::mem::take(&mut first_result.stages);
         trace.retry_round = true;
         let second = self
-            .attempt(
-                input,
-                &base_url,
-                &cache_key,
-                Some(&rejection.token),
-                &mut trace,
-                retry_log,
-            )
+            .attempt(input, &base_url, &cache_key, &mut trace, retry_log)
             .await;
         let (outcome, result) = match second {
             AttemptOutcome::AuthRejected(again, result) => {
@@ -307,17 +303,43 @@ impl RuntimeEngine {
         );
     }
 
-    /// 判定是否跳过认证重试（开关关闭或预算耗尽），跳过时记事件。
-    fn skip_auth_retry(
+    /// 认证被拒后决定是否重试，并在放行时作废被拒令牌（跳过时记事件）。
+    ///
+    /// 预算只由「这一代令牌的首个被拒者」支付：缓存仍是被拒令牌时申请预算，放行即作废；
+    /// 缓存已被并发请求换新或作废时直接重放，不消耗预算。这样上游重启后同一渠道的并发
+    /// 请求只为一次换票付费，而凭证持续无效时每代令牌仍受预算约束。
+    async fn auth_retry_gate(
         &self,
         input: &InvokeInput,
         kind: Option<AdapterKind>,
         budget: &RetryBudget,
+        cache_key: &str,
+        rejection: &AuthRejection,
     ) -> Option<RetrySkip> {
-        let skip = if !self.options.auth_retry_enabled {
-            RetrySkip::Disabled
-        } else if budget.try_acquire() {
+        let allowed = if self.options.auth_retry_enabled {
+            match issued_token_key(cache_key, &input.spec) {
+                Ok(Some(key)) => {
+                    let decision = self
+                        .token_cache
+                        .evict_if_current_gated(&key, &rejection.token, || budget.try_acquire())
+                        .await;
+                    if decision != StaleEvict::Denied {
+                        self.observer.on_event(RuntimeEvent::TokenEvict {
+                            evicted: decision == StaleEvict::Evicted,
+                        });
+                    }
+                    decision != StaleEvict::Denied
+                }
+                // 静态凭证档不经令牌缓存：每次被拒都按预算重试一次。
+                Ok(None) | Err(_) => budget.try_acquire(),
+            }
+        } else {
+            false
+        };
+        let skip = if allowed {
             return None;
+        } else if !self.options.auth_retry_enabled {
+            RetrySkip::Disabled
         } else {
             self.observer.on_event(RuntimeEvent::BudgetExhausted {
                 kind: RetryKind::Auth,
@@ -416,13 +438,12 @@ impl RuntimeEngine {
         Ok(base_url)
     }
 
-    /// One auth + adapter round. `stale_token` 为上一轮被拒的令牌（重试轮）。
+    /// One auth + adapter round（重试轮前被拒令牌已由 [`Self::auth_retry_gate`] 作废）。
     async fn attempt(
         &self,
         input: &InvokeInput,
         base_url: &str,
         cache_key: &str,
-        stale_token: Option<&str>,
         trace: &mut Trace,
         retry_log: &RetryLog,
     ) -> AttemptOutcome {
@@ -435,7 +456,6 @@ impl RuntimeEngine {
             base_url,
             credentials: &input.credentials,
             cache_key,
-            stale_token,
             token_default_ttl: self.options.token_default_ttl,
             request_id: &input.request_id,
         })
@@ -444,9 +464,6 @@ impl RuntimeEngine {
             Ok(a) => a,
             Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
         };
-        if let Some(evicted) = applied.stale_evicted {
-            self.observer.on_event(RuntimeEvent::TokenEvict { evicted });
-        }
         trace.record(|| auth_stage(input, &applied, a_start));
 
         let kind = match input.spec.adapter_kind() {
@@ -472,7 +489,7 @@ impl RuntimeEngine {
         });
         let registry = AlgorithmRegistry::default_registry();
         let invalidation = effective_invalidation(input);
-        let stale_budget = self.retry_budgets.for_upstream(&input.supplier_id);
+        let stale_budget = self.retry_budgets.for_key(cache_key);
         let ctx = AdapterCtx {
             client: &self.client,
             ssrf: &self.ssrf,

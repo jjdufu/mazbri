@@ -22,8 +22,6 @@ pub struct AppliedAuth {
     pub query: Vec<(String, String)>,
     pub metadata: HashMap<String, String>,
     pub token: Option<String>,
-    /// 本轮带入了被拒令牌时的作废结果：`Some(true)` 已作废，`Some(false)` 缓存已被并发请求换新。
-    pub stale_evicted: Option<bool>,
 }
 
 impl AppliedAuth {
@@ -33,7 +31,6 @@ impl AppliedAuth {
             query: Vec::new(),
             metadata: HashMap::new(),
             token: None,
-            stale_evicted: None,
         }
     }
 
@@ -95,8 +92,6 @@ pub struct AuthApply<'a> {
     pub base_url: &'a str,
     pub credentials: &'a HashMap<String, String>,
     pub cache_key: &'a str,
-    /// 上一轮被上游判定为认证被拒的令牌；有值时先比较后作废再取令牌。
-    pub stale_token: Option<&'a str>,
     /// 换票响应既无配置的过期字段、也无 `expires_in` 时的缓存时长。
     pub token_default_ttl: Duration,
     pub request_id: &'a str,
@@ -198,14 +193,12 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
             applied.place(inject_to, inject_key, &fmt(key));
         }
         AuthProfile::Jwt => {
-            let (token, evicted) = jwt_token(&args, auth).await?;
-            applied.stale_evicted = evicted;
+            let token = jwt_token(&args, auth).await?;
             applied.place(inject_to, inject_key, &fmt(&token));
             applied.token = Some(token);
         }
         AuthProfile::OauthCcForm | AuthProfile::Gettoken => {
-            let (token, evicted) = ticket_token(&args, auth, profile, id, secret).await?;
-            applied.stale_evicted = evicted;
+            let token = ticket_token(&args, auth, profile, id, secret).await?;
             applied.place(inject_to, inject_key, &fmt(&token));
             applied.token = Some(token);
             // 换票档不追加 auth.headers（保持既有行为）。
@@ -219,29 +212,39 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
     Ok(applied)
 }
 
-/// 比较后作废被拒令牌（重试轮才有 `stale_token`），返回作废结果。
-async fn evict_stale(args: &AuthApply<'_>, key: &str) -> Option<bool> {
-    match args.stale_token {
-        Some(failed) => Some(args.token_cache.evict_if_current(key, failed).await),
-        None => None,
+/// 本次请求所用令牌在 [`TokenCache`] 中的键：JWT 用 [`crate::auth_jwt::jwt_cache_key`]，
+/// 换票档用渠道缓存键；静态凭证档（`api_key` / `basic` 等）不经缓存，返回 `None`。
+///
+/// # Errors
+///
+/// 鉴权档或 JWT 参数无效时返回 [`ExecuteError::SpecInvalid`]。
+pub fn issued_token_key(
+    cache_key: &str,
+    spec: &ChannelEgressSpec,
+) -> Result<Option<String>, ExecuteError> {
+    let Some(auth) = spec.auth.as_ref() else {
+        return Ok(None);
+    };
+    let profile = auth
+        .profile_kind()
+        .map_err(|e| ExecuteError::SpecInvalid(e.to_string()))?;
+    match profile {
+        AuthProfile::Jwt => crate::auth_jwt::jwt_cache_key(cache_key, auth.jwt.as_ref()).map(Some),
+        AuthProfile::OauthCcForm | AuthProfile::Gettoken => Ok(Some(cache_key.to_owned())),
+        _ => Ok(None),
     }
 }
 
-async fn jwt_token(
-    args: &AuthApply<'_>,
-    auth: &AuthSpec,
-) -> Result<(String, Option<bool>), ExecuteError> {
+async fn jwt_token(args: &AuthApply<'_>, auth: &AuthSpec) -> Result<String, ExecuteError> {
     let jwt_key = crate::auth_jwt::jwt_cache_key(args.cache_key, auth.jwt.as_ref())?;
-    let evicted = evict_stale(args, &jwt_key).await;
-    let token = crate::auth_jwt::sign_jwt(
+    crate::auth_jwt::sign_jwt(
         args.token_cache,
         &jwt_key,
         auth.jwt.as_ref(),
         args.credentials,
         Utc::now(),
     )
-    .await?;
-    Ok((token, evicted))
+    .await
 }
 
 async fn ticket_token(
@@ -250,10 +253,9 @@ async fn ticket_token(
     profile: AuthProfile,
     id: Option<&str>,
     secret: Option<&str>,
-) -> Result<(String, Option<bool>), ExecuteError> {
+) -> Result<String, ExecuteError> {
     let token_url = resolve_token_url(args.base_url, auth)?;
-    let evicted = evict_stale(args, args.cache_key).await;
-    let token = fetch_token(
+    fetch_token(
         args.token_cache,
         args.cache_key,
         TokenFetch {
@@ -272,8 +274,7 @@ async fn ticket_token(
             },
         },
     )
-    .await?;
-    Ok((token, evicted))
+    .await
 }
 
 fn place_inject(
@@ -753,10 +754,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_auth_evicts_stale_token_once_then_refetches() {
+    async fn gated_eviction_then_refetch() {
         use super::{AuthApply, apply_auth};
         use crate::ssrf::SsrfChecker;
-        use crate::token_cache::TokenCache;
+        use crate::token_cache::{StaleEvict, TokenCache};
         use mazbri_core::{ADAPTER_HTTP_JSON, AUTH_OAUTH_CC_FORM, ChannelEgressSpec};
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -777,7 +778,8 @@ mod tests {
         let ssrf = SsrfChecker::with_allow_private(true);
         let cache = Arc::new(TokenCache::new(Duration::from_secs(30)));
         let creds = HashMap::new();
-        let run = |stale: Option<&'static str>| {
+        let key = super::issued_token_key("s:c:k", &spec).unwrap().unwrap();
+        let run = || {
             let (client, ssrf, cache, spec, creds) = (&client, &ssrf, &cache, &spec, &creds);
             async move {
                 apply_auth(AuthApply {
@@ -788,7 +790,6 @@ mod tests {
                     base_url: "http://127.0.0.1",
                     credentials: creds,
                     cache_key: "s:c:k",
-                    stale_token: stale,
                     token_default_ttl: Duration::from_hours(1),
                     request_id: "rid",
                 })
@@ -796,22 +797,29 @@ mod tests {
                 .unwrap()
             }
         };
-        let first = run(None).await;
-        assert_eq!(first.token.as_deref(), Some("T1"));
-        assert_eq!(first.stale_evicted, None);
-
-        let cached = run(None).await;
-        assert_eq!(cached.token.as_deref(), Some("T1"), "未过期命中缓存");
+        assert_eq!(run().await.token.as_deref(), Some("T1"));
+        assert_eq!(run().await.token.as_deref(), Some("T1"), "未过期命中缓存");
         assert_eq!(hits.load(Ordering::SeqCst), 1);
 
-        let retried = run(Some("T1")).await;
-        assert_eq!(retried.stale_evicted, Some(true), "缓存仍是被拒令牌：作废");
-        assert_eq!(retried.token.as_deref(), Some("T2"));
+        assert_eq!(
+            cache.evict_if_current_gated(&key, "T1", || false).await,
+            StaleEvict::Denied,
+            "预算不放行：保留缓存"
+        );
+        assert_eq!(run().await.token.as_deref(), Some("T1"));
+        assert_eq!(
+            cache.evict_if_current_gated(&key, "T1", || true).await,
+            StaleEvict::Evicted
+        );
+        assert_eq!(run().await.token.as_deref(), Some("T2"));
         assert_eq!(hits.load(Ordering::SeqCst), 2);
-
-        let late = run(Some("T1")).await;
-        assert_eq!(late.stale_evicted, Some(false), "已被换新：不再作废");
-        assert_eq!(late.token.as_deref(), Some("T2"));
+        assert_eq!(
+            cache
+                .evict_if_current_gated(&key, "T1", || panic!("superseded must not consume budget"))
+                .await,
+            StaleEvict::Superseded,
+            "已被换新：不再作废、不消耗预算"
+        );
         assert_eq!(hits.load(Ordering::SeqCst), 2, "不重复换票");
     }
 

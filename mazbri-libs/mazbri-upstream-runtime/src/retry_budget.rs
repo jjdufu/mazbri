@@ -1,8 +1,8 @@
 //! 进程内重试预算：限制「认证被拒重试」「WS 陈旧连接重试」在故障期放大上游流量。
 //!
-//! 预算按上游（供应商）分桶，语义对应 Envoy 按 cluster 的 `retry_budget`：
-//! 一个上游整体失效（例如重启后全部令牌作废）只消耗它自己的额度，
-//! 不会挤占同一时刻其它上游的恢复重试。
+//! 预算按令牌缓存键（供应商 + 渠道 + 鉴权指纹）分桶：一个上游整体失效（例如重启后
+//! 全部令牌作废）时，每个渠道各自为一次换票付费，不会互相挤占恢复额度；凭证持续
+//! 无效时每个键仍受 `ratio` / `min_per_window` 约束。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -114,9 +114,9 @@ impl RetryBudget {
     }
 }
 
-/// 按上游键（供应商 id）懒建的 [`RetryBudget`] 集合，各桶参数相同、计数独立。
+/// 按令牌缓存键懒建的 [`RetryBudget`] 集合，各桶参数相同、计数独立。
 ///
-/// 桶数量等于出现过的供应商数，随配置有界，不做淘汰。
+/// 桶数量等于出现过的渠道鉴权键数，随配置有界，不做淘汰。
 #[derive(Debug)]
 pub struct RetryBudgets {
     ratio: f64,
@@ -136,11 +136,11 @@ impl RetryBudgets {
         }
     }
 
-    /// 取（必要时新建）该上游的预算桶。
+    /// 取（必要时新建）该键的预算桶。
     #[must_use]
-    pub fn for_upstream(&self, upstream: &str) -> Arc<RetryBudget> {
+    pub fn for_key(&self, key: &str) -> Arc<RetryBudget> {
         let mut buckets = self.buckets.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(b) = buckets.get(upstream) {
+        if let Some(b) = buckets.get(key) {
             return b.clone();
         }
         let b = Arc::new(RetryBudget::new(
@@ -148,7 +148,7 @@ impl RetryBudgets {
             self.min_per_window,
             self.window,
         ));
-        buckets.insert(upstream.to_owned(), b.clone());
+        buckets.insert(key.to_owned(), b.clone());
         b
     }
 }
@@ -158,15 +158,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn upstreams_have_independent_budgets() {
+    fn keys_have_independent_budgets() {
         let budgets = RetryBudgets::new(0.2, 3, WINDOW);
-        let a = budgets.for_upstream("supplier-a");
-        let b = budgets.for_upstream("supplier-b");
+        let a = budgets.for_key("supplier-a");
+        let b = budgets.for_key("supplier-b");
         let now = Instant::now();
         assert_eq!(run(&a, now, 3), 3);
         assert_eq!(run(&a, now, 1), 0, "supplier-a exhausted");
         assert_eq!(run(&b, now, 3), 3, "supplier-b keeps its own minimum");
-        assert!(Arc::ptr_eq(&a, &budgets.for_upstream("supplier-a")));
+        assert!(Arc::ptr_eq(&a, &budgets.for_key("supplier-a")));
     }
 
     const WINDOW: Duration = Duration::from_secs(10);

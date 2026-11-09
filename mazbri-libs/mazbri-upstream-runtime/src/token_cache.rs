@@ -73,6 +73,17 @@ pub struct CachedToken {
     pub expires_at: DateTime<Utc>,
 }
 
+/// [`TokenCache::evict_if_current_gated`] 的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaleEvict {
+    /// 缓存仍是被拒令牌，预算放行，已作废。
+    Evicted,
+    /// 缓存仍是被拒令牌，预算不放行，未作废。
+    Denied,
+    /// 缓存已换新或已被并发请求作废。
+    Superseded,
+}
+
 /// 进程内令牌缓存：命中未过期（扣除提前量）的令牌直接返回，否则经 singleflight 换票。
 pub struct TokenCache {
     cache: RwLock<HashMap<String, CachedToken>>,
@@ -141,19 +152,41 @@ impl TokenCache {
         Ok(cached.token)
     }
 
+    /// 认证被拒后的「作废令牌」决策（原子，写锁内完成）：
+    ///
+    /// - 缓存仍是 `failed`：本请求是这一代令牌的首个被拒者，调用 `gate`（重试预算）；
+    ///   通过则作废并返回 [`StaleEvict::Evicted`]，不通过则保留缓存返回 [`StaleEvict::Denied`]
+    ///   （凭证持续无效时不会每个请求都触发换票）；
+    /// - 缓存已被换新或已被别的请求作废：返回 [`StaleEvict::Superseded`]，不消耗预算——
+    ///   同一代令牌只为首个被拒者付一次预算，其余并发请求直接用新令牌重放。
+    pub async fn evict_if_current_gated(
+        &self,
+        cache_key: &str,
+        failed: &str,
+        gate: impl FnOnce() -> bool,
+    ) -> StaleEvict {
+        let mut guard = self.cache.write().await;
+        match guard.get(cache_key) {
+            Some(c) if bool::from(c.token.as_bytes().ct_eq(failed.as_bytes())) => {
+                if gate() {
+                    guard.remove(cache_key);
+                    StaleEvict::Evicted
+                } else {
+                    StaleEvict::Denied
+                }
+            }
+            _ => StaleEvict::Superseded,
+        }
+    }
+
     /// 仅当缓存中的令牌仍是 `failed` 时删除，返回是否删除（常量时间比较）。
     ///
     /// 并发 N 个请求同时被拒时只有第一个真正删除；其余看到的已是新令牌或空，
     /// 直接走 [`Self::get_token`]，不会误删别的请求刚换回来的新令牌。
     pub async fn evict_if_current(&self, cache_key: &str, failed: &str) -> bool {
-        let mut guard = self.cache.write().await;
-        match guard.get(cache_key) {
-            Some(c) if bool::from(c.token.as_bytes().ct_eq(failed.as_bytes())) => {
-                guard.remove(cache_key);
-                true
-            }
-            _ => false,
-        }
+        self.evict_if_current_gated(cache_key, failed, || true)
+            .await
+            == StaleEvict::Evicted
     }
 }
 

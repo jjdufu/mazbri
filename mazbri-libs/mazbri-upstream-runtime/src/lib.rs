@@ -44,7 +44,7 @@ pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};
 pub use slots::{role as slot_role, SlotBags, SlotError};
 pub use ssrf::{SsrfChecker, SsrfConfig, SsrfSafeResolver, is_always_blocked_ip, is_blocked_ip};
 pub use template::{is_identity_response_template, render_body_template, render_response_template};
-pub use token_cache::{CachedToken, TokenCache};
+pub use token_cache::{CachedToken, StaleEvict, TokenCache};
 pub use types::{
     AuthRejectTrigger, AuthRejection, BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError,
     ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, RetryReason,
