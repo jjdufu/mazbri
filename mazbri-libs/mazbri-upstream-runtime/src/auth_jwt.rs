@@ -31,19 +31,20 @@ pub fn jwt_algorithm(spec: Option<&AuthJwtSpec>) -> Result<Algorithm, ExecuteErr
     }
 }
 
-pub async fn sign_jwt(
-    token_cache: &Arc<TokenCache>,
-    cache_key: &str,
-    spec: Option<&AuthJwtSpec>,
-    credentials: &HashMap<String, String>,
-    now: DateTime<Utc>,
-) -> Result<String, ExecuteError> {
+/// 签名参数：算法、有效期（秒）、kid、claims 模板。
+struct JwtParams {
+    algo: Algorithm,
+    ttl: u64,
+    kid: Option<String>,
+    claims_tpl: String,
+}
+
+fn jwt_params(spec: Option<&AuthJwtSpec>) -> Result<JwtParams, ExecuteError> {
     let algo = jwt_algorithm(spec)?;
     let ttl = spec
         .and_then(|s| s.ttl_secs)
         .filter(|n| *n > 0)
         .unwrap_or(300);
-    let encoding_key = encoding_key(algo, credentials)?;
     let kid = spec
         .and_then(|s| s.kid.as_deref().map(str::trim).filter(|s| !s.is_empty()))
         .map(str::to_string);
@@ -53,10 +54,45 @@ pub async fn sign_jwt(
         .filter(|s| !s.is_empty())
         .unwrap_or("{\"sub\":\"mazbri\"}")
         .to_string();
-    let key = format!("{cache_key}:jwt:{algo:?}:{ttl}:{claims_tpl}");
+    Ok(JwtParams {
+        algo,
+        ttl,
+        kid,
+        claims_tpl,
+    })
+}
+
+/// JWT 在令牌缓存中的键（渠道缓存键 + 算法/有效期/claims 模板）。
+///
+/// # Errors
+///
+/// 算法不受支持时返回 [`ExecuteError::SpecInvalid`]。
+pub fn jwt_cache_key(cache_key: &str, spec: Option<&AuthJwtSpec>) -> Result<String, ExecuteError> {
+    let p = jwt_params(spec)?;
+    Ok(format!(
+        "{cache_key}:jwt:{:?}:{}:{}",
+        p.algo, p.ttl, p.claims_tpl
+    ))
+}
+
+/// 以 `jwt_key`（见 [`jwt_cache_key`]）缓存签出的 JWT。
+pub async fn sign_jwt(
+    token_cache: &Arc<TokenCache>,
+    jwt_key: &str,
+    spec: Option<&AuthJwtSpec>,
+    credentials: &HashMap<String, String>,
+    now: DateTime<Utc>,
+) -> Result<String, ExecuteError> {
+    let JwtParams {
+        algo,
+        ttl,
+        kid,
+        claims_tpl,
+    } = jwt_params(spec)?;
+    let encoding_key = encoding_key(algo, credentials)?;
     let now_c = now;
     token_cache
-        .get_token(&key, || async move {
+        .get_token(jwt_key, || async move {
             let token = encode_jwt(algo, &encoding_key, kid.as_deref(), &claims_tpl, ttl, now_c)
                 .map_err(|e| e.to_string())?;
             Ok(CachedToken {

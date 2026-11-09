@@ -137,7 +137,7 @@ impl RuntimeEngine {
         Self {
             client,
             ssrf,
-            token_cache: Arc::new(TokenCache::new()),
+            token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
             options,
             ws_pool,
         }
@@ -147,7 +147,7 @@ impl RuntimeEngine {
     #[must_use]
     pub fn with_options(mut self, options: RuntimeOptions) -> Self {
         self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
-        self.token_cache = Arc::new(TokenCache::new());
+        self.token_cache = Arc::new(TokenCache::new(options.token_refresh_skew));
         self.options = options;
         self
     }
@@ -192,11 +192,11 @@ impl RuntimeEngine {
             .clone()
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
         let first = self
-            .attempt(&input, &base_url, &cache_key, false, &mut trace)
+            .attempt(&input, &base_url, &cache_key, None, &mut trace)
             .await;
         let outcome = match first {
-            AttemptOutcome::RetryUnauthorized => {
-                self.attempt(&input, &base_url, &cache_key, true, &mut trace)
+            AttemptOutcome::RetryUnauthorized(failed) => {
+                self.attempt(&input, &base_url, &cache_key, Some(&failed), &mut trace)
                     .await
             }
             other => other,
@@ -204,7 +204,7 @@ impl RuntimeEngine {
         match outcome {
             AttemptOutcome::Done(result) => *result,
             AttemptOutcome::Failed(fail) => trace.fail(fail),
-            AttemptOutcome::RetryUnauthorized => trace.retries_exhausted(),
+            AttemptOutcome::RetryUnauthorized(_) => trace.retries_exhausted(),
         }
     }
 
@@ -268,13 +268,13 @@ impl RuntimeEngine {
         Ok(base_url)
     }
 
-    /// One auth + adapter round. `evict_first` marks the retry after a 401.
+    /// One auth + adapter round. `stale_token` 为上一轮被拒的令牌（重试轮）。
     async fn attempt(
         &self,
         input: &InvokeInput,
         base_url: &str,
         cache_key: &str,
-        evict_first: bool,
+        stale_token: Option<&str>,
         trace: &mut Trace,
     ) -> AttemptOutcome {
         let a_start = Instant::now();
@@ -286,7 +286,8 @@ impl RuntimeEngine {
             base_url,
             credentials: &input.credentials,
             cache_key,
-            evict_first,
+            stale_token,
+            token_default_ttl: self.options.token_default_ttl,
             request_id: &input.request_id,
         })
         .await
@@ -342,8 +343,11 @@ impl RuntimeEngine {
                 ..ResultParts::ok()
             }));
         }
-        if outcome.response.status == 401 && applied.token.is_some() && !evict_first {
-            return AttemptOutcome::RetryUnauthorized;
+        if outcome.response.status == 401
+            && stale_token.is_none()
+            && let Some(token) = applied.token
+        {
+            return AttemptOutcome::RetryUnauthorized(token);
         }
         trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
         let meta = trace.upstream_meta(&outcome.response);
@@ -497,8 +501,8 @@ impl StageFail {
 enum AttemptOutcome {
     Done(Box<InvokeResult>),
     Failed(StageFail),
-    /// Upstream answered 401 with a cached token: evict and retry once.
-    RetryUnauthorized,
+    /// Upstream answered 401 with a cached token: evict that token and retry once.
+    RetryUnauthorized(String),
 }
 
 impl AttemptOutcome {

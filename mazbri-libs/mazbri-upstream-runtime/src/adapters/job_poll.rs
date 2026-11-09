@@ -225,6 +225,7 @@ mod tests {
             query: vec![],
             metadata: HashMap::new(),
             token: None,
+            stale_evicted: None,
         }
     }
 

@@ -293,6 +293,7 @@ mod tests {
             query,
             metadata: HashMap::new(),
             token: None,
+            stale_evicted: None,
         }
     }
 

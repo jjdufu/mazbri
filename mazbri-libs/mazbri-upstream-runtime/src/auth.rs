@@ -1,11 +1,10 @@
 //! Auth profiles applied before adapter invoke.
-use mazbri_core::num::SaturatingFrom;
-
 use chrono::Utc;
 use reqwest::Method;
 use reqwest::header::{HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mazbri_core::{AdapterKind, AuthInjectSpec, AuthProfile, AuthSpec, ChannelEgressSpec};
 
@@ -23,6 +22,8 @@ pub struct AppliedAuth {
     pub query: Vec<(String, String)>,
     pub metadata: HashMap<String, String>,
     pub token: Option<String>,
+    /// 本轮带入了被拒令牌时的作废结果：`Some(true)` 已作废，`Some(false)` 缓存已被并发请求换新。
+    pub stale_evicted: Option<bool>,
 }
 
 impl AppliedAuth {
@@ -32,6 +33,7 @@ impl AppliedAuth {
             query: Vec::new(),
             metadata: HashMap::new(),
             token: None,
+            stale_evicted: None,
         }
     }
 
@@ -93,7 +95,10 @@ pub struct AuthApply<'a> {
     pub base_url: &'a str,
     pub credentials: &'a HashMap<String, String>,
     pub cache_key: &'a str,
-    pub evict_first: bool,
+    /// 上一轮被上游判定为认证被拒的令牌；有值时先比较后作废再取令牌。
+    pub stale_token: Option<&'a str>,
+    /// 换票响应既无配置的过期字段、也无 `expires_in` 时的缓存时长。
+    pub token_default_ttl: Duration,
     pub request_id: &'a str,
 }
 
@@ -150,27 +155,14 @@ fn resolve_id_secret<'c>(
 }
 
 pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError> {
-    let AuthApply {
-        client,
-        ssrf,
-        token_cache,
-        spec,
-        base_url,
-        credentials,
-        cache_key,
-        evict_first,
-        request_id,
-    } = args;
     let mut applied = AppliedAuth::empty();
-    let Some(auth) = spec.auth.as_ref() else {
+    let Some(auth) = args.spec.auth.as_ref() else {
         return Ok(applied);
     };
     let profile = auth
         .profile_kind()
         .map_err(|e| ExecuteError::SpecInvalid(e.to_string()))?;
-    if evict_first {
-        token_cache.evict_token(cache_key).await;
-    }
+    let credentials = args.credentials;
 
     let inject = auth.inject.clone().unwrap_or_default();
     let (inject_to, inject_key, inject_fmt) = inject_settings(&inject);
@@ -206,38 +198,14 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
             applied.place(inject_to, inject_key, &fmt(key));
         }
         AuthProfile::Jwt => {
-            let token = crate::auth_jwt::sign_jwt(
-                token_cache,
-                cache_key,
-                auth.jwt.as_ref(),
-                credentials,
-                Utc::now(),
-            )
-            .await?;
+            let (token, evicted) = jwt_token(&args, auth).await?;
+            applied.stale_evicted = evicted;
             applied.place(inject_to, inject_key, &fmt(&token));
             applied.token = Some(token);
         }
         AuthProfile::OauthCcForm | AuthProfile::Gettoken => {
-            let token_url = resolve_token_url(base_url, auth)?;
-            if evict_first {
-                token_cache.evict_token(cache_key).await;
-            }
-            let token = fetch_token(
-                token_cache,
-                cache_key,
-                TokenFetch {
-                    client: client.clone(),
-                    ssrf: ssrf.clone(),
-                    auth: auth.clone(),
-                    token_url,
-                    credentials: credentials.clone(),
-                    profile,
-                    id: id.map(str::to_string),
-                    secret: secret.map(str::to_string),
-                    request_id: request_id.to_string(),
-                },
-            )
-            .await?;
+            let (token, evicted) = ticket_token(&args, auth, profile, id, secret).await?;
+            applied.stale_evicted = evicted;
             applied.place(inject_to, inject_key, &fmt(&token));
             applied.token = Some(token);
             // 换票档不追加 auth.headers（保持既有行为）。
@@ -249,6 +217,63 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
         applied.headers.insert(k.clone(), v.clone());
     }
     Ok(applied)
+}
+
+/// 比较后作废被拒令牌（重试轮才有 `stale_token`），返回作废结果。
+async fn evict_stale(args: &AuthApply<'_>, key: &str) -> Option<bool> {
+    match args.stale_token {
+        Some(failed) => Some(args.token_cache.evict_if_current(key, failed).await),
+        None => None,
+    }
+}
+
+async fn jwt_token(
+    args: &AuthApply<'_>,
+    auth: &AuthSpec,
+) -> Result<(String, Option<bool>), ExecuteError> {
+    let jwt_key = crate::auth_jwt::jwt_cache_key(args.cache_key, auth.jwt.as_ref())?;
+    let evicted = evict_stale(args, &jwt_key).await;
+    let token = crate::auth_jwt::sign_jwt(
+        args.token_cache,
+        &jwt_key,
+        auth.jwt.as_ref(),
+        args.credentials,
+        Utc::now(),
+    )
+    .await?;
+    Ok((token, evicted))
+}
+
+async fn ticket_token(
+    args: &AuthApply<'_>,
+    auth: &AuthSpec,
+    profile: AuthProfile,
+    id: Option<&str>,
+    secret: Option<&str>,
+) -> Result<(String, Option<bool>), ExecuteError> {
+    let token_url = resolve_token_url(args.base_url, auth)?;
+    let evicted = evict_stale(args, args.cache_key).await;
+    let token = fetch_token(
+        args.token_cache,
+        args.cache_key,
+        TokenFetch {
+            client: args.client.clone(),
+            ssrf: args.ssrf.clone(),
+            auth: auth.clone(),
+            token_url,
+            credentials: args.credentials.clone(),
+            profile,
+            id: id.map(str::to_string),
+            secret: secret.map(str::to_string),
+            request_id: args.request_id.to_string(),
+            expiry: ExpiryPolicy {
+                default_ttl: args.token_default_ttl,
+                refresh_skew: args.token_cache.refresh_skew(),
+            },
+        },
+    )
+    .await?;
+    Ok((token, evicted))
 }
 
 fn place_inject(
@@ -303,6 +328,52 @@ struct TokenFetch {
     id: Option<String>,
     secret: Option<String>,
     request_id: String,
+    expiry: ExpiryPolicy,
+}
+
+/// 换票响应的过期时间口径（来自运行时配置）。
+#[derive(Debug, Clone, Copy)]
+struct ExpiryPolicy {
+    default_ttl: Duration,
+    refresh_skew: Duration,
+}
+
+impl ExpiryPolicy {
+    /// 取令牌有效秒数：
+    /// 1. 配了 `expiry_jsonpath` 就按它取；取不到算配置错误，记 WARN 并用 `default_ttl`；
+    /// 2. 没配就读 RFC 6749 §5.1 标准字段 `expires_in`；
+    /// 3. 都取不到用 `default_ttl`；
+    /// 4. 结果不大于 `refresh_skew` 时按 `refresh_skew + 1s` 缓存，避免每个请求都去换票。
+    fn ttl(&self, json: &serde_json::Value, expiry_jsonpath: Option<&str>) -> Duration {
+        let configured = expiry_jsonpath.map(str::trim).filter(|s| !s.is_empty());
+        let secs = match configured {
+            Some(path) => {
+                let v = expiry_seconds(json, path);
+                if v.is_none() {
+                    tracing::warn!(
+                        expiry_jsonpath = path,
+                        default_ttl_secs = self.default_ttl.as_secs(),
+                        "token response has no usable expiry at configured expiry_jsonpath; using default ttl"
+                    );
+                }
+                v
+            }
+            None => expiry_seconds(json, "$.expires_in"),
+        };
+        let ttl = secs.map_or(self.default_ttl, Duration::from_secs);
+        if ttl <= self.refresh_skew {
+            self.refresh_skew + Duration::from_secs(1)
+        } else {
+            ttl
+        }
+    }
+}
+
+/// 过期秒数：数字或数字字符串。
+fn expiry_seconds(json: &serde_json::Value, path: &str) -> Option<u64> {
+    let v = extract_by_path(json, path)?;
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
 }
 
 async fn fetch_token(
@@ -316,43 +387,18 @@ async fn fetch_token(
                 return Err(format!("Auth SSRF Violation: {e}"));
             }
             match fetch.profile {
-                AuthProfile::Gettoken => {
-                    fetch_gettoken(
-                        &fetch.client,
-                        &fetch.token_url,
-                        &fetch.auth,
-                        fetch.id.as_deref(),
-                        fetch.secret.as_deref(),
-                        &fetch.request_id,
-                    )
-                    .await
-                }
-                _ => {
-                    fetch_oauth_cc_form(
-                        &fetch.client,
-                        &fetch.token_url,
-                        &fetch.auth,
-                        &fetch.credentials,
-                        fetch.id.as_deref(),
-                        fetch.secret.as_deref(),
-                        &fetch.request_id,
-                    )
-                    .await
-                }
+                AuthProfile::Gettoken => fetch_gettoken(&fetch).await,
+                _ => fetch_oauth_cc_form(&fetch).await,
             }
         })
         .await
         .map_err(ExecuteError::AuthTokenFailed)
 }
 
-async fn fetch_gettoken(
-    client: &reqwest::Client,
-    token_url: &str,
-    auth: &AuthSpec,
-    id: Option<&str>,
-    secret: Option<&str>,
-    request_id: &str,
-) -> Result<CachedToken, String> {
+async fn fetch_gettoken(fetch: &TokenFetch) -> Result<CachedToken, String> {
+    let (client, token_url, auth) = (&fetch.client, fetch.token_url.as_str(), &fetch.auth);
+    let (id, secret) = (fetch.id.as_deref(), fetch.secret.as_deref());
+    let (request_id, expiry) = (fetch.request_id.as_str(), fetch.expiry);
     let mut q = Vec::new();
     if let Some(i) = id {
         q.push(format!("app_id={}", url_encode(i)));
@@ -372,18 +418,17 @@ async fn fetch_gettoken(
         .send()
         .await
         .map_err(|e| format!("Token request failed: {e}"))?;
-    parse_token_response(resp, auth).await
+    parse_token_response(resp, auth, expiry).await
 }
 
-async fn fetch_oauth_cc_form(
-    client: &reqwest::Client,
-    token_url: &str,
-    auth: &AuthSpec,
-    credentials: &HashMap<String, String>,
-    id: Option<&str>,
-    secret: Option<&str>,
-    request_id: &str,
-) -> Result<CachedToken, String> {
+async fn fetch_oauth_cc_form(fetch: &TokenFetch) -> Result<CachedToken, String> {
+    let (client, token_url, auth) = (&fetch.client, fetch.token_url.as_str(), &fetch.auth);
+    let (credentials, id, secret) = (
+        &fetch.credentials,
+        fetch.id.as_deref(),
+        fetch.secret.as_deref(),
+    );
+    let (request_id, expiry) = (fetch.request_id.as_str(), fetch.expiry);
     let method = auth
         .token_method
         .as_deref()
@@ -431,7 +476,7 @@ async fn fetch_oauth_cc_form(
             .send()
             .await
             .map_err(|e| format!("Token request failed: {e}"))?;
-        return parse_token_response(resp, auth).await;
+        return parse_token_response(resp, auth, expiry).await;
     }
     let mut form: Vec<(String, String)> = vec![("grant_type".into(), "client_credentials".into())];
     let basic_in_header = auth
@@ -461,7 +506,7 @@ async fn fetch_oauth_cc_form(
         .send()
         .await
         .map_err(|e| format!("Token request failed: {e}"))?;
-    parse_token_response(resp, auth).await
+    parse_token_response(resp, auth, expiry).await
 }
 
 fn apply_auth_headers(
@@ -491,6 +536,7 @@ fn apply_auth_headers(
 async fn parse_token_response(
     resp: reqwest::Response,
     auth: &AuthSpec,
+    expiry: ExpiryPolicy,
 ) -> Result<CachedToken, String> {
     let status = resp.status();
     if !status.is_success() {
@@ -511,19 +557,8 @@ async fn parse_token_response(
         .as_str()
         .ok_or_else(|| "Token is not a string".to_string())?
         .to_string();
-    let mut expires_in_sec = 3600u64;
-    if let Some(ep) = auth.expiry_jsonpath.as_deref().filter(|s| !s.is_empty())
-        && let Some(expiry_val) = extract_by_path(&json, ep)
-    {
-        if let Some(n) = expiry_val.as_u64() {
-            expires_in_sec = n;
-        } else if let Some(s) = expiry_val.as_str()
-            && let Ok(n) = s.parse::<u64>()
-        {
-            expires_in_sec = n;
-        }
-    }
-    let expires_at = Utc::now() + chrono::Duration::seconds(i64::saturating_from(expires_in_sec));
+    let ttl = expiry.ttl(&json, auth.expiry_jsonpath.as_deref());
+    let expires_at = Utc::now() + chrono::Duration::from_std(ttl).unwrap_or(chrono::Duration::MAX);
     Ok(CachedToken {
         token: t_str,
         expires_at,
@@ -594,7 +629,201 @@ pub fn digest_attempt_from(
 
 #[cfg(test)]
 mod tests {
-    use super::{fetch_gettoken, fetch_oauth_cc_form};
+    use super::{ExpiryPolicy, TokenFetch, fetch_gettoken, fetch_oauth_cc_form};
+    use std::time::Duration;
+
+    fn tf(
+        client: reqwest::Client,
+        token_url: String,
+        auth: AuthSpec,
+        credentials: HashMap<String, String>,
+        request_id: &str,
+    ) -> TokenFetch {
+        TokenFetch {
+            client,
+            ssrf: crate::ssrf::SsrfChecker::with_allow_private(true),
+            auth,
+            token_url,
+            credentials,
+            profile: mazbri_core::AuthProfile::OauthCcForm,
+            id: None,
+            secret: None,
+            request_id: request_id.to_string(),
+            expiry: test_expiry(),
+        }
+    }
+
+    fn test_expiry() -> ExpiryPolicy {
+        ExpiryPolicy {
+            default_ttl: Duration::from_hours(1),
+            refresh_skew: Duration::from_secs(30),
+        }
+    }
+
+    #[test]
+    fn expiry_reads_standard_expires_in_when_path_not_configured() {
+        let json = serde_json::json!({"access_token": "t", "expires_in": 1800});
+        assert_eq!(test_expiry().ttl(&json, None), Duration::from_mins(30));
+        assert_eq!(
+            test_expiry().ttl(&json, Some("  ")),
+            Duration::from_mins(30)
+        );
+        let json = serde_json::json!({"access_token": "t", "expires_in": "1200"});
+        assert_eq!(test_expiry().ttl(&json, None), Duration::from_mins(20));
+    }
+
+    #[test]
+    fn expiry_falls_back_to_default_ttl_without_expires_in() {
+        let json = serde_json::json!({"access_token": "t"});
+        assert_eq!(test_expiry().ttl(&json, None), Duration::from_hours(1));
+    }
+
+    #[test]
+    fn expiry_zero_or_tiny_is_clamped_above_skew() {
+        let json = serde_json::json!({"expires_in": 0});
+        assert_eq!(test_expiry().ttl(&json, None), Duration::from_secs(31));
+        let json = serde_json::json!({"expires_in": 30});
+        assert_eq!(test_expiry().ttl(&json, None), Duration::from_secs(31));
+    }
+
+    #[test]
+    fn expiry_configured_path_missing_warns_and_uses_default() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf::default();
+        let writer = buf.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .finish();
+        let json = serde_json::json!({"access_token": "t", "expires_in": 1800});
+        let ttl = tracing::subscriber::with_default(subscriber, || {
+            test_expiry().ttl(&json, Some("$.data.ttl"))
+        });
+        assert_eq!(
+            ttl,
+            Duration::from_hours(1),
+            "配置路径取不到时不回退到 expires_in"
+        );
+        let logs = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            logs.contains("WARN") && logs.contains("$.data.ttl"),
+            "{logs}"
+        );
+    }
+
+    /// 计数换票服务：第 n 次请求返回令牌 `T{n}`。
+    async fn spawn_counting_token_server(
+        hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                let hits = hits.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let _ = sock.read(&mut buf).await;
+                    let n = hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    let body = format!(r#"{{"access_token":"T{n}","expires_in":3600}}"#);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        format!("http://{addr}/oauth/token")
+    }
+
+    #[tokio::test]
+    async fn apply_auth_evicts_stale_token_once_then_refetches() {
+        use super::{AuthApply, apply_auth};
+        use crate::ssrf::SsrfChecker;
+        use crate::token_cache::TokenCache;
+        use mazbri_core::{ADAPTER_HTTP_JSON, AUTH_OAUTH_CC_FORM, ChannelEgressSpec};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let token_url = spawn_counting_token_server(hits.clone()).await;
+        let spec = ChannelEgressSpec {
+            adapter: ADAPTER_HTTP_JSON.into(),
+            base_url: "http://127.0.0.1".into(),
+            auth: Some(AuthSpec {
+                profile: AUTH_OAUTH_CC_FORM.into(),
+                token_url: Some(token_url),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let client = test_client();
+        let ssrf = SsrfChecker::with_allow_private(true);
+        let cache = Arc::new(TokenCache::new(Duration::from_secs(30)));
+        let creds = HashMap::new();
+        let run = |stale: Option<&'static str>| {
+            let (client, ssrf, cache, spec, creds) = (&client, &ssrf, &cache, &spec, &creds);
+            async move {
+                apply_auth(AuthApply {
+                    client,
+                    ssrf,
+                    token_cache: cache,
+                    spec,
+                    base_url: "http://127.0.0.1",
+                    credentials: creds,
+                    cache_key: "s:c:k",
+                    stale_token: stale,
+                    token_default_ttl: Duration::from_hours(1),
+                    request_id: "rid",
+                })
+                .await
+                .unwrap()
+            }
+        };
+        let first = run(None).await;
+        assert_eq!(first.token.as_deref(), Some("T1"));
+        assert_eq!(first.stale_evicted, None);
+
+        let cached = run(None).await;
+        assert_eq!(cached.token.as_deref(), Some("T1"), "未过期命中缓存");
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+        let retried = run(Some("T1")).await;
+        assert_eq!(retried.stale_evicted, Some(true), "缓存仍是被拒令牌：作废");
+        assert_eq!(retried.token.as_deref(), Some("T2"));
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+
+        let late = run(Some("T1")).await;
+        assert_eq!(late.stale_evicted, Some(false), "已被换新：不再作废");
+        assert_eq!(late.token.as_deref(), Some("T2"));
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "不重复换票");
+    }
+
+    #[test]
+    fn expiry_configured_path_is_used() {
+        let json = serde_json::json!({"data": {"ttl": 900}, "expires_in": 1800});
+        assert_eq!(
+            test_expiry().ttl(&json, Some("$.data.ttl")),
+            Duration::from_mins(15)
+        );
+    }
+
     use crate::token_cache::CachedToken;
     use mazbri_core::AuthSpec;
     use std::collections::HashMap;
@@ -645,7 +874,7 @@ mod tests {
         let client = test_client();
         let auth = AuthSpec::default();
         let raw = capture_token_raw(|url| async move {
-            fetch_gettoken(&client, &url, &auth, None, None, "rid-token").await
+            fetch_gettoken(&tf(client, url, auth, HashMap::new(), "rid-token")).await
         })
         .await;
         assert_eq!(
@@ -660,7 +889,7 @@ mod tests {
         let mut auth = AuthSpec::default();
         auth.headers.insert("X-Request-Id".into(), "kept".into());
         let raw = capture_token_raw(|url| async move {
-            fetch_gettoken(&client, &url, &auth, None, None, "new").await
+            fetch_gettoken(&tf(client, url, auth, HashMap::new(), "new")).await
         })
         .await;
         assert_eq!(
@@ -674,7 +903,7 @@ mod tests {
         let client = test_client();
         let auth = AuthSpec::default();
         let raw = capture_token_raw(|url| async move {
-            fetch_gettoken(&client, &url, &auth, None, None, "").await
+            fetch_gettoken(&tf(client, url, auth, HashMap::new(), "")).await
         })
         .await;
         assert!(header_line(&raw.to_ascii_lowercase(), "x-request-id:").is_none());
@@ -686,7 +915,7 @@ mod tests {
         let auth = AuthSpec::default();
         let creds = HashMap::new();
         let raw = capture_token_raw(|url| async move {
-            fetch_oauth_cc_form(&client, &url, &auth, &creds, None, None, "rid-oauth").await
+            fetch_oauth_cc_form(&tf(client, url, auth, creds, "rid-oauth")).await
         })
         .await;
         assert_eq!(
