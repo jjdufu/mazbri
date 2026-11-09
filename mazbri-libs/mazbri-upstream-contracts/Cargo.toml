@@ -11,8 +11,12 @@ path = "src/lib.rs"
 
 [dependencies]
 prost = { workspace = true }
+serde = { workspace = true }
 tonic = { workspace = true }
 tonic-prost = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [build-dependencies]
 protoc-bin-vendored = "3"

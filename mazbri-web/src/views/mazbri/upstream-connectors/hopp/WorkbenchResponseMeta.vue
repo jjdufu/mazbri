@@ -9,7 +9,7 @@
       <span v-if="errorCode" class="wb-res-meta__err">{{ errorCode }}</span>
     </span>
     <span class="wb-res-meta__item">
-      <span class="wb-res-meta__label">{{ $t("upstreamConnector.response.time") }}:</span>
+      <span class="wb-res-meta__label">{{ timeLabel }}:</span>
       <span class="wb-res-meta__value">{{ timeText }}</span>
     </span>
     <span class="wb-res-meta__item">
@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { $t } from "@/locales";
-import { formatBytes } from "../workbenchHelpers";
+import { BYPASS_MGMT_PROBE_PATH, formatBytes } from "../workbenchHelpers";
 import { statusGroupClass, statusPhrase } from "./statusPhrases";
 
 const props = withDefaults(
@@ -52,6 +52,8 @@ const props = withDefaults(
     latencyMs?: number | null;
     sizeBytes?: number;
     mode?: string;
+    /** 试运行拓扑；bypass 管理探针时耗时为纯上游耗时。 */
+    probePath?: string | null;
     errorCode?: string | null;
     body?: string;
     downloadName?: string;
@@ -61,6 +63,7 @@ const props = withDefaults(
     latencyMs: null,
     sizeBytes: 0,
     mode: "",
+    probePath: null,
     errorCode: "",
     body: "",
     downloadName: "response.txt",
@@ -79,6 +82,12 @@ const statusText = computed(() => {
   const phrase = statusPhrase(props.status);
   return phrase ? `${props.status} • ${phrase}` : String(props.status);
 });
+
+const timeLabel = computed(() =>
+  props.probePath === BYPASS_MGMT_PROBE_PATH
+    ? $t("upstreamConnector.response.upstreamTime")
+    : $t("upstreamConnector.response.time"),
+);
 
 const timeText = computed(() =>
   props.latencyMs == null ? "—" : `${props.latencyMs} ms`,

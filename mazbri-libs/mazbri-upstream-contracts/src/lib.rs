@@ -2,6 +2,11 @@
 //!
 //! Only messages are generated; the gateway client and the bypass server are hand-written
 //! on top of `tonic::client::Grpc` / `tonic::server::Grpc` with `ProstCodec`.
+//!
+//! [`mgmt_probe`] holds the mgmt ↔ bypass isolated probe HTTP JSON contract, derived from
+//! the same proto messages.
+
+pub mod mgmt_probe;
 
 pub mod mazbri {
     pub mod upstream {

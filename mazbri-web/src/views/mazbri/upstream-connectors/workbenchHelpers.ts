@@ -108,6 +108,8 @@ export function parseVSplitState(raw: string | null): VSplitState {
 
 
 export const CODE_FREE_UPSTREAM_TYPE = "transparent";
+/** 后端 `PROBE_PATH_BYPASS_MGMT_PROBE`：经 bypass 管理探针的试运行，耗时为纯上游耗时。 */
+export const BYPASS_MGMT_PROBE_PATH = "bypass_mgmt_probe";
 
 export function isMicroserviceUpstream(d: {
   upstream_type?: string | null;
