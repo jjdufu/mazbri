@@ -13,10 +13,12 @@ use crate::adapters::{
 use crate::crypto_pipeline::pipeline_keys_from_credentials;
 use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
+use crate::retry_budget::RetryBudget;
 use crate::ssrf::SsrfChecker;
 use crate::token_cache::TokenCache;
 use crate::types::{
-    ExecuteError, ExecuteMode, InvokeInput, InvokeResult, StageResult, StageSummary, UpstreamMeta,
+    AuthRejectTrigger, AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult,
+    StageResult, StageSummary, UpstreamMeta,
 };
 
 /// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
@@ -119,6 +121,14 @@ impl RuntimeOptions {
             idle_ttl: self.ws_pool_idle_ttl,
         }
     }
+
+    fn retry_budget(&self) -> RetryBudget {
+        RetryBudget::new(
+            self.retry_budget_ratio,
+            self.retry_budget_min_per_window,
+            self.retry_budget_window,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -128,6 +138,7 @@ pub struct RuntimeEngine {
     token_cache: Arc<TokenCache>,
     options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
+    retry_budget: Arc<RetryBudget>,
 }
 
 impl RuntimeEngine {
@@ -140,16 +151,18 @@ impl RuntimeEngine {
             client,
             ssrf,
             token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
+            retry_budget: Arc::new(options.retry_budget()),
             options,
             ws_pool,
         }
     }
 
-    /// 注入运行时参数：按新参数重建 WS 池与令牌缓存（仅在启动时调用）。
+    /// 注入运行时参数：按新参数重建 WS 池、令牌缓存与重试预算（仅在启动时调用）。
     #[must_use]
     pub fn with_options(mut self, options: RuntimeOptions) -> Self {
         self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         self.token_cache = Arc::new(TokenCache::new(options.token_refresh_skew));
+        self.retry_budget = Arc::new(options.retry_budget());
         self.options = options;
         self
     }
@@ -193,20 +206,36 @@ impl RuntimeEngine {
             .cache_key
             .clone()
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
+        self.retry_budget.record_request();
         let first = self
             .attempt(&input, &base_url, &cache_key, None, &mut trace)
             .await;
-        let outcome = match first {
-            AttemptOutcome::RetryUnauthorized(failed) => {
-                self.attempt(&input, &base_url, &cache_key, Some(&failed), &mut trace)
-                    .await
-            }
-            other => other,
+        let (rejection, mut first_result) = match first {
+            AttemptOutcome::AuthRejected(rejection, result) => (rejection, result),
+            AttemptOutcome::Done(result) => return *result,
+            AttemptOutcome::Failed(fail) => return trace.fail(fail),
         };
-        match outcome {
+        if !self.options.auth_retry_enabled || !self.retry_budget.try_acquire() {
+            // 不重试：原样返回上游的真实结果（例如 401 或 JSON-RPC 错误体）。
+            return *first_result;
+        }
+        // 认证被拒说明上游未执行业务，换票后重放是安全的；只重试一次，不递归。
+        trace.stages = std::mem::take(&mut first_result.stages);
+        match self
+            .attempt(
+                &input,
+                &base_url,
+                &cache_key,
+                Some(&rejection.token),
+                &mut trace,
+            )
+            .await
+        {
+            AttemptOutcome::AuthRejected(again, result) => {
+                trace.auth_rejected(again.trigger, *result)
+            }
             AttemptOutcome::Done(result) => *result,
             AttemptOutcome::Failed(fail) => trace.fail(fail),
-            AttemptOutcome::RetryUnauthorized(_) => trace.retries_exhausted(),
         }
     }
 
@@ -347,12 +376,8 @@ impl RuntimeEngine {
                 ..ResultParts::ok()
             }));
         }
-        if stale_token.is_none()
-            && let Some(rejection) = outcome.auth_rejection
-        {
-            return AttemptOutcome::RetryUnauthorized(rejection.token);
-        }
         trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
+        let rejection = outcome.auth_rejection;
         let meta = trace.upstream_meta(&outcome.response);
         let latency_ms = meta.latency_ms;
         let mut result = trace.result(ResultParts {
@@ -365,7 +390,10 @@ impl RuntimeEngine {
             ..ResultParts::ok()
         });
         result.latency_ms = latency_ms;
-        AttemptOutcome::done(result)
+        match rejection {
+            Some(rejection) => AttemptOutcome::AuthRejected(rejection, Box::new(result)),
+            None => AttemptOutcome::done(result),
+        }
     }
 }
 
@@ -504,8 +532,8 @@ impl StageFail {
 enum AttemptOutcome {
     Done(Box<InvokeResult>),
     Failed(StageFail),
-    /// Upstream answered 401 with a cached token: evict that token and retry once.
-    RetryUnauthorized(String),
+    /// 上游按认证失效规则拒绝了本轮令牌；附带本轮的真实结果，供不重试时原样返回。
+    AuthRejected(AuthRejection, Box<InvokeResult>),
 }
 
 impl AttemptOutcome {
@@ -616,18 +644,20 @@ impl Trace {
         })
     }
 
-    fn retries_exhausted(mut self) -> InvokeResult {
-        let upstream_meta = Some(UpstreamMeta {
-            adapter: self.adapter.clone(),
-            ..Default::default()
-        });
-        self.result(ResultParts {
+    /// 换票重试后仍被拒：保留第二轮的上游元信息与阶段，结果标记为 `UPSTREAM_AUTH_REJECTED`。
+    fn auth_rejected(&self, trigger: AuthRejectTrigger, last: InvokeResult) -> InvokeResult {
+        let err = ExecuteError::UpstreamAuthRejected(format!(
+            "upstream rejected credentials after token refresh (trigger={trigger})"
+        ));
+        InvokeResult {
             ok: false,
-            error_code: Some("AUTH_TOKEN_FAILED".into()),
-            error_message: Some("Outbound request failed after 401 retries".into()),
-            upstream_meta,
-            ..ResultParts::ok()
-        })
+            latency_ms: elapsed_ms(self.start),
+            payload: None,
+            biz_error: None,
+            error_code: Some(err.code().to_string()),
+            error_message: Some(err.to_string()),
+            ..last
+        }
     }
 }
 

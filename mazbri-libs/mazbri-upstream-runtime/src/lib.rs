@@ -17,9 +17,12 @@ mod auth_jwt;
 pub mod canon;
 pub mod crypto_pipeline;
 mod engine;
+#[cfg(test)]
+mod engine_retry_tests;
 mod funcs;
 mod http_call;
 mod mask;
+mod retry_budget;
 pub mod slots;
 mod ssrf;
 mod template;
@@ -35,6 +38,7 @@ pub use crypto_pipeline::{
 };
 pub use engine::{RuntimeEngine, RuntimeOptions, resolve_timeout};
 pub use ws_pool::{WsPool, WsPoolConfig};
+pub use retry_budget::RetryBudget;
 pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};
 pub use slots::{role as slot_role, SlotBags, SlotError};
 pub use ssrf::{SsrfChecker, SsrfConfig, SsrfSafeResolver, is_always_blocked_ip, is_blocked_ip};

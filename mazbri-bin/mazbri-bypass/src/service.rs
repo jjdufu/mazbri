@@ -363,6 +363,8 @@ fn invoke_failure(
         UpstreamMetricsRecorder::record_failure(adapter, "ssrf");
     } else if code == "AUTH_TOKEN_FAILED" {
         UpstreamMetricsRecorder::record_token_fetch("error");
+    } else if code == "UPSTREAM_AUTH_REJECTED" {
+        UpstreamMetricsRecorder::observe_duration(adapter, "auth_rejected", duration);
     } else if err_msg.contains("timeout") || err_msg.contains("Timeout") {
         UpstreamMetricsRecorder::record_timeout(adapter);
         UpstreamMetricsRecorder::observe_duration(adapter, "timeout", duration);
@@ -374,6 +376,8 @@ fn invoke_failure(
         format!("SSRF Violation: {err_msg}")
     } else if code == "AUTH_TOKEN_FAILED" {
         format!("Dynamic Auth Token Retrieval Error: {err_msg}")
+    } else if code == "UPSTREAM_AUTH_REJECTED" {
+        format!("Upstream Auth Rejected: {err_msg}")
     } else if code == "CONFIG_CACHE_MISS" || err_msg.contains("CONFIG_CACHE") {
         err_msg
     } else {
