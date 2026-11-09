@@ -1,7 +1,8 @@
 //! 隔离管理探针口：仅供 mgmt 工作台 business/live 试调。
 //!
 //! - 明文 HTTP（docker 内网），`Authorization: Bearer <mgmt_probe_token>`
-//! - 只暴露 `POST /v1/mgmt-probe/invoke`，复用与 gRPC Execute 同一 `execute_invoke`
+//! - 只暴露 [`MGMT_PROBE_INVOKE_PATH`]，复用与 gRPC Execute 同一 `execute_invoke`
+//! - 请求/响应 JSON 只用 `mazbri_upstream_contracts::mgmt_probe` 共享类型
 //! - 不改配置、不发证、不碰租户 8888 mTLS 数据面
 
 use crate::config::MgmtProbeConfig;
@@ -11,139 +12,38 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
-use mazbri_upstream_contracts::shared::{
-    InvokeBizError, InvokeRequest, InvokeResponse, InvokeUpstreamMeta, TraceContext,
+use mazbri_upstream_contracts::mgmt_probe::{
+    MGMT_PROBE_INVOKE_PATH, ProbeInvokeRequest, ProbeInvokeResponse,
 };
-use serde::{Deserialize, Serialize};
+use mazbri_upstream_contracts::shared::{InvokeRequest, InvokeResponse};
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tracing::info;
 
-const INVOKE_PATH: &str = "/v1/mgmt-probe/invoke";
+/// 探针 handler 背后的 invoke 执行面；生产实现为 [`MazbriBypassServiceImpl`]。
+pub trait ProbeExecutor: Clone + Send + Sync + 'static {
+    fn execute_invoke(&self, req: InvokeRequest) -> impl Future<Output = InvokeResponse> + Send;
+}
+
+impl ProbeExecutor for MazbriBypassServiceImpl {
+    fn execute_invoke(&self, req: InvokeRequest) -> impl Future<Output = InvokeResponse> + Send {
+        MazbriBypassServiceImpl::execute_invoke(self, req)
+    }
+}
 
 #[derive(Clone)]
-struct ProbeState {
-    service: MazbriBypassServiceImpl,
+struct ProbeState<E> {
+    executor: E,
     token: Arc<str>,
 }
 
-/// 与 gRPC `InvokeRequest` 字段对齐的 JSON 体（mgmt 探针专用）。
-#[derive(Debug, Deserialize)]
-pub struct ProbeInvokeJson {
-    #[serde(default)]
-    pub product_id: String,
-    #[serde(default)]
-    pub tenant_id: String,
-    pub channel_id: String,
-    pub request_id: String,
-    #[serde(default)]
-    pub trace: Option<ProbeTraceJson>,
-    #[serde(default)]
-    pub timeout_ms: u64,
-    #[serde(default)]
-    pub payload_json: String,
-    #[serde(default)]
-    pub egress_spec_hash: String,
-    #[serde(default)]
-    pub egress_spec_json: String,
-    #[serde(default)]
-    pub supplier_id: String,
-    #[serde(default)]
-    pub supplier_code: String,
-    #[serde(default)]
-    pub supplier_config_hash: String,
-    #[serde(default)]
-    pub supplier_config_json: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ProbeTraceJson {
-    #[serde(rename = "request_id", default)]
-    pub request: String,
-    #[serde(rename = "trace_id", default)]
-    pub trace: String,
-    #[serde(rename = "span_id", default)]
-    pub span: String,
-    #[serde(rename = "parent_span_id", default)]
-    pub parent_span: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ProbeInvokeResponseJson {
-    pub success: bool,
-    pub error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub biz_error: Option<ProbeBizErrorJson>,
-    pub payload_json: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub upstream_meta: Option<ProbeUpstreamMetaJson>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ProbeBizErrorJson {
-    pub code: String,
-    pub message: String,
-    #[serde(default)]
-    pub details_json: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ProbeUpstreamMetaJson {
-    pub status: u32,
-    pub url: String,
-    pub adapter: String,
-    pub upstream_wire_ms: u64,
-}
-
-impl From<ProbeInvokeJson> for InvokeRequest {
-    fn from(v: ProbeInvokeJson) -> Self {
-        Self {
-            product_id: v.product_id,
-            tenant_id: v.tenant_id,
-            channel_id: v.channel_id,
-            request_id: v.request_id,
-            trace: v.trace.map(|t| TraceContext {
-                request_id: t.request,
-                trace_id: t.trace,
-                span_id: t.span,
-                parent_span_id: t.parent_span,
-            }),
-            timeout_ms: v.timeout_ms,
-            payload_json: v.payload_json,
-            egress_spec_hash: v.egress_spec_hash,
-            egress_spec_json: v.egress_spec_json,
-            supplier_id: v.supplier_id,
-            supplier_code: v.supplier_code,
-            supplier_config_hash: v.supplier_config_hash,
-            supplier_config_json: v.supplier_config_json,
-        }
-    }
-}
-
-impl From<InvokeResponse> for ProbeInvokeResponseJson {
-    fn from(r: InvokeResponse) -> Self {
-        Self {
-            success: r.success,
-            error: r.error,
-            biz_error: r.biz_error.map(|b: InvokeBizError| ProbeBizErrorJson {
-                code: b.code,
-                message: b.message,
-                details_json: b.details_json,
-            }),
-            payload_json: r.payload_json,
-            upstream_meta: r.upstream_meta.map(|m: InvokeUpstreamMeta| ProbeUpstreamMetaJson {
-                status: m.status,
-                url: m.url,
-                adapter: m.adapter,
-                upstream_wire_ms: m.upstream_wire_ms,
-            }),
-        }
-    }
-}
-
 fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
-    let value = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
     value
         .strip_prefix("Bearer ")
         .or_else(|| value.strip_prefix("bearer "))
@@ -160,10 +60,10 @@ fn token_matches(expected: &str, presented: &str) -> bool {
     bool::from(a.ct_eq(b))
 }
 
-async fn invoke_handler(
-    State(state): State<ProbeState>,
+async fn invoke_handler<E: ProbeExecutor>(
+    State(state): State<ProbeState<E>>,
     headers: HeaderMap,
-    Json(body): Json<ProbeInvokeJson>,
+    Json(body): Json<ProbeInvokeRequest>,
 ) -> impl IntoResponse {
     let Some(presented) = extract_bearer(&headers) else {
         return (
@@ -179,8 +79,19 @@ async fn invoke_handler(
         )
             .into_response();
     }
-    let response = state.service.execute_invoke(body.into()).await;
-    (StatusCode::OK, Json(ProbeInvokeResponseJson::from(response))).into_response()
+    let response = state.executor.execute_invoke(body.into()).await;
+    (StatusCode::OK, Json(ProbeInvokeResponse::from(response))).into_response()
+}
+
+/// 探针路由（token 鉴权 + 单一 invoke 路径）。
+fn router<E: ProbeExecutor>(token: &str, executor: E) -> Router {
+    let state = ProbeState {
+        executor,
+        token: Arc::from(token),
+    };
+    Router::new()
+        .route(MGMT_PROBE_INVOKE_PATH, post(invoke_handler::<E>))
+        .with_state(state)
 }
 
 /// 在独立端口启动管理探针 HTTP 服务；与 8888 mTLS gRPC 并行。
@@ -190,20 +101,118 @@ async fn invoke_handler(
 /// 绑定失败或服务异常退出时返回错误。
 pub async fn serve(cfg: &MgmtProbeConfig, service: MazbriBypassServiceImpl) -> anyhow::Result<()> {
     let addr = SocketAddr::new(cfg.host.parse()?, cfg.port);
-    let state = ProbeState {
-        service,
-        token: Arc::from(cfg.mgmt_probe_token.as_str()),
-    };
-    let app = Router::new()
-        .route(INVOKE_PATH, post(invoke_handler))
-        .with_state(state);
+    let app = router(&cfg.mgmt_probe_token, service);
     info!(
         %addr,
-        path = INVOKE_PATH,
+        path = MGMT_PROBE_INVOKE_PATH,
         "mazbri-bypass mgmt probe HTTP listening (token auth, internal only)"
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
         .await
         .map_err(|e| anyhow::anyhow!("mgmt probe server error: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use mazbri_upstream_contracts::mgmt_probe::{ProbeInvokeRequest, ProbeTrace};
+    use mazbri_upstream_contracts::shared::InvokeUpstreamMeta;
+    use tower::ServiceExt;
+
+    const TEST_TOKEN: &str = "unit-test-probe-token";
+
+    #[derive(Clone)]
+    struct FakeExecutor;
+
+    impl ProbeExecutor for FakeExecutor {
+        fn execute_invoke(
+            &self,
+            req: InvokeRequest,
+        ) -> impl Future<Output = InvokeResponse> + Send {
+            std::future::ready(InvokeResponse {
+                success: true,
+                error: String::new(),
+                biz_error: None,
+                payload_json: format!("{{\"channel\":\"{}\"}}", req.channel_id),
+                upstream_meta: Some(InvokeUpstreamMeta {
+                    status: 200,
+                    url: "http://upstream.invalid/x".into(),
+                    adapter: "http_json".into(),
+                    upstream_wire_ms: 42,
+                }),
+            })
+        }
+    }
+
+    fn probe_request() -> ProbeInvokeRequest {
+        ProbeInvokeRequest {
+            product_id: "mgmt-probe".into(),
+            tenant_id: "mgmt-probe".into(),
+            channel_id: "CH-1".into(),
+            request_id: "req-1".into(),
+            trace: ProbeTrace {
+                request_id: "req-1".into(),
+                trace_id: "req-1".into(),
+                span_id: "span-1".into(),
+                parent_span_id: String::new(),
+            },
+            timeout_ms: 1000,
+            payload_json: "{}".into(),
+            egress_spec_hash: String::new(),
+            egress_spec_json: "{}".into(),
+            supplier_id: "s".into(),
+            supplier_code: "S".into(),
+            supplier_config_hash: String::new(),
+            supplier_config_json: "{}".into(),
+        }
+    }
+
+    async fn call(auth: Option<&str>, body: String) -> (StatusCode, Vec<u8>) {
+        let mut builder = Request::post(MGMT_PROBE_INVOKE_PATH)
+            .header(axum::http::header::CONTENT_TYPE, "application/json");
+        if let Some(a) = auth {
+            builder = builder.header(axum::http::header::AUTHORIZATION, a);
+        }
+        let resp = router(TEST_TOKEN, FakeExecutor)
+            .oneshot(builder.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        (status, bytes.to_vec())
+    }
+
+    #[tokio::test]
+    async fn handler_body_decodes_as_shared_contract() {
+        let body = serde_json::to_string(&probe_request()).unwrap();
+        let (status, bytes) = call(Some(&format!("Bearer {TEST_TOKEN}")), body).await;
+        assert_eq!(status, StatusCode::OK);
+        let parsed: ProbeInvokeResponse = serde_json::from_slice(&bytes).unwrap();
+        assert!(parsed.success);
+        assert_eq!(parsed.payload_json, "{\"channel\":\"CH-1\"}");
+        assert_eq!(parsed.upstream_meta.expect("meta").upstream_wire_ms, 42);
+    }
+
+    #[tokio::test]
+    async fn handler_rejects_missing_or_wrong_token() {
+        let body = serde_json::to_string(&probe_request()).unwrap();
+        let (status, _) = call(None, body.clone()).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _) = call(Some("Bearer wrong"), body).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn handler_rejects_request_outside_contract() {
+        let mut value = serde_json::to_value(probe_request()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("unexpected".into(), serde_json::Value::Bool(true));
+        let (status, _) = call(Some(&format!("Bearer {TEST_TOKEN}")), value.to_string()).await;
+        assert!(status.is_client_error(), "{status}");
+    }
 }

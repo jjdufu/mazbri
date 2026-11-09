@@ -205,26 +205,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
 
     let outcome = match bypass.execute_invoke(&invoke_params).await {
         Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
-        Err(e) => ProbeOutcome {
-            ok: false,
-            latency_ms: 0,
-            error_code: Some(if e.contains("BYPASS_PROBE_HTTP") {
-                "BYPASS_UNAVAILABLE".into()
-            } else {
-                "BYPASS_PROBE_HTTP_ERROR".into()
-            }),
-            error_message: Some(e),
-            payload: None,
-            status: None,
-            url: None,
-            adapter: None,
-            biz_error: None,
-            stages: serde_json::json!([{
-                "name": "bypass_mgmt_probe",
-                "ok": false,
-                "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
-            }]),
-        },
+        Err(e) => ProbeOutcome::from_probe_error(&e),
     };
 
     connector_metrics::record_run("live", outcome.ok, outcome.error_code.as_deref());
@@ -236,7 +217,7 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
             supplier_id: Some(supplier_id),
             mode: "live",
             ok: outcome.ok,
-            latency_ms: Some(i32::saturating_from(outcome.latency_ms)),
+            latency_ms: Some(i32::saturating_from(outcome.upstream_wire_ms)),
             stages: &outcome.stages,
             assertions: &serde_json::json!([]),
             error_code: outcome.error_code.as_deref(),

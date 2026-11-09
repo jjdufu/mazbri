@@ -588,23 +588,7 @@ async fn run_draft_via_bypass(
 
     let outcome = match bypass.execute_invoke(&invoke_params).await {
         Ok(resp) => bypass_probe::outcome_from_invoke_response(&resp),
-        Err(e) => ProbeOutcome {
-            ok: false,
-            latency_ms: 0,
-            error_code: Some(classify_transport_err(&e)),
-            error_message: Some(e),
-            payload: None,
-            status: None,
-            url: None,
-            adapter: None,
-            biz_error: None,
-            stages: serde_json::json!([{
-                "name": "bypass_mgmt_probe",
-                "ok": false,
-                "error": "transport",
-                "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
-            }]),
-        },
+        Err(e) => ProbeOutcome::from_probe_error(&e),
     };
 
     let assertion_results = run_bypass_assertions(req, &row.endpoints, &outcome);
@@ -664,7 +648,7 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
             supplier_id: None,
             mode: p.mode,
             ok: p.overall_ok,
-            latency_ms: Some(i32::saturating_from(p.outcome.latency_ms)),
+            latency_ms: Some(i32::saturating_from(p.outcome.upstream_wire_ms)),
             stages: &p.outcome.stages,
             assertions: p.assertions_json,
             error_code: p.error_code,
@@ -699,14 +683,6 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
     });
 
     Ok(run_dto_from_row(run_row, bypass_response_preview(p.outcome)))
-}
-
-fn classify_transport_err(err: &str) -> String {
-    if err.contains("BYPASS_PROBE_HTTP") || err.contains("BYPASS_NOT_READY") {
-        "BYPASS_UNAVAILABLE".into()
-    } else {
-        "BYPASS_TRANSPORT".into()
-    }
 }
 
 fn bypass_response_preview(outcome: &ProbeOutcome) -> Option<serde_json::Value> {
@@ -776,7 +752,7 @@ fn run_bypass_assertions(
         method: "POST".into(),
         path: "/".into(),
     };
-    evaluate_assertions(&parsed, Some(&response), outcome.latency_ms)
+    evaluate_assertions(&parsed, Some(&response), outcome.upstream_wire_ms)
 }
 
 struct PreparedBypassProbe {

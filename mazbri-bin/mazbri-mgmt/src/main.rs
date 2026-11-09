@@ -484,8 +484,7 @@ fn init_bypass_probe_client(
     let client = mazbri_mgmt::services::bypass_probe::BypassProbeClient::new(
         config.bypass_probe_url.clone(),
         config.mgmt_probe_token.clone(),
-    )
-    .map_err(anyhow::Error::msg)?;
+    )?;
     info!(
         bypass_probe_url = %config.bypass_probe_url,
         "bypass mgmt probe HTTP client ready (token auth; no mTLS)"
