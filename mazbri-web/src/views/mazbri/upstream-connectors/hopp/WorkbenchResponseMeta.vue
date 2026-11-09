@@ -16,6 +16,15 @@
       <span class="wb-res-meta__label">{{ $t("upstreamConnector.response.size") }}:</span>
       <span class="wb-res-meta__value">{{ sizeText }}</span>
     </span>
+    <span
+      v-if="retryInfo"
+      class="wb-res-meta__item"
+      :title="`${$t('upstreamConnector.probeRetryReasons')}: ${retryInfo.reasons.join(', ')}`"
+    >
+      <span class="wb-res-meta__label">{{ $t("upstreamConnector.probeInternalRetries") }}:</span>
+      <span class="wb-res-meta__value">{{ retryInfo.count }}</span>
+      <span class="wb-res-meta__err">{{ retryInfo.reasons.join(", ") }}</span>
+    </span>
     <span v-if="mode" class="wb-res-meta__mode">{{ mode }}</span>
     <span class="wb-res-meta__tools">
       <button
@@ -45,6 +54,7 @@ import { ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import { BYPASS_MGMT_PROBE_PATH, formatBytes } from "../workbenchHelpers";
 import { statusGroupClass, statusPhrase } from "./statusPhrases";
+import type { RetryInfo } from "../authInvalidation";
 
 const props = withDefaults(
   defineProps<{
@@ -57,6 +67,8 @@ const props = withDefaults(
     errorCode?: string | null;
     body?: string;
     downloadName?: string;
+    /** 引擎内部重试（认证失效重试 / WS 陈旧连接重试），无重试为 null。 */
+    retryInfo?: RetryInfo | null;
   }>(),
   {
     status: null,
@@ -67,6 +79,7 @@ const props = withDefaults(
     errorCode: "",
     body: "",
     downloadName: "response.txt",
+    retryInfo: null,
   },
 );
 

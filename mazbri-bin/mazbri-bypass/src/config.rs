@@ -1,5 +1,6 @@
 use anyhow::Result;
 use mazbri_core::config::{ServiceConfig, ValidateConfig};
+use mazbri_upstream_runtime::RuntimeOptions;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -113,6 +114,30 @@ pub struct UpstreamConfig {
     pub ws_pool_idle_ttl_secs: u64,
     #[serde(default = "default_grpc_max_concurrency")]
     pub grpc_max_concurrency: u32,
+    /// 换票响应既无配置的过期字段、也无 `expires_in` 时的令牌缓存秒数。
+    #[serde(default = "default_token_default_ttl_secs")]
+    pub token_default_ttl_secs: u64,
+    /// 令牌提前视为过期的余量（秒），必须小于 `token_default_ttl_secs`。
+    #[serde(default = "default_token_refresh_skew_secs")]
+    pub token_refresh_skew_secs: u64,
+    /// 认证被拒后作废令牌、换票并重试一次。
+    #[serde(default = "default_auth_retry_enabled")]
+    pub auth_retry_enabled: bool,
+    /// 复用的 WS 连接在回复前断开时，换新连接重试一次。
+    #[serde(default = "default_ws_stale_retry_enabled")]
+    pub ws_stale_retry_enabled: bool,
+    /// 借出空闲 WS 连接前做非阻塞存活检查。
+    #[serde(default = "default_ws_liveness_check_on_checkout")]
+    pub ws_liveness_check_on_checkout: bool,
+    /// 重试预算：窗口内重试数 / 首次请求数上限，取值 (0, 1]。
+    #[serde(default = "default_retry_budget_ratio")]
+    pub retry_budget_ratio: f64,
+    /// 低流量时窗口内保底允许的重试次数。
+    #[serde(default = "default_retry_budget_min_per_window")]
+    pub retry_budget_min_per_window: u32,
+    /// 重试预算统计窗口（秒）。
+    #[serde(default = "default_retry_budget_window_secs")]
+    pub retry_budget_window_secs: u64,
 }
 
 fn default_timeout_secs() -> u64 {
@@ -151,6 +176,58 @@ fn default_grpc_max_concurrency() -> u32 {
     64
 }
 
+fn default_token_default_ttl_secs() -> u64 {
+    RuntimeOptions::default().token_default_ttl.as_secs()
+}
+
+fn default_token_refresh_skew_secs() -> u64 {
+    RuntimeOptions::default().token_refresh_skew.as_secs()
+}
+
+fn default_auth_retry_enabled() -> bool {
+    RuntimeOptions::default().auth_retry_enabled
+}
+
+fn default_ws_stale_retry_enabled() -> bool {
+    RuntimeOptions::default().ws_stale_retry_enabled
+}
+
+fn default_ws_liveness_check_on_checkout() -> bool {
+    RuntimeOptions::default().ws_liveness_check_on_checkout
+}
+
+fn default_retry_budget_ratio() -> f64 {
+    RuntimeOptions::default().retry_budget_ratio
+}
+
+fn default_retry_budget_min_per_window() -> u32 {
+    RuntimeOptions::default().retry_budget_min_per_window
+}
+
+fn default_retry_budget_window_secs() -> u64 {
+    RuntimeOptions::default().retry_budget_window.as_secs()
+}
+
+impl From<&UpstreamConfig> for RuntimeOptions {
+    fn from(c: &UpstreamConfig) -> Self {
+        Self {
+            ws_handshake_timeout: Duration::from_secs(c.ws_handshake_timeout_secs),
+            ws_max_concurrent: c.ws_max_concurrent,
+            ws_max_concurrent_per_key: c.ws_max_concurrent_per_key,
+            ws_pool_max_idle_per_key: c.ws_pool_max_idle_per_key,
+            ws_pool_idle_ttl: Duration::from_secs(c.ws_pool_idle_ttl_secs),
+            token_default_ttl: Duration::from_secs(c.token_default_ttl_secs),
+            token_refresh_skew: Duration::from_secs(c.token_refresh_skew_secs),
+            auth_retry_enabled: c.auth_retry_enabled,
+            ws_stale_retry_enabled: c.ws_stale_retry_enabled,
+            ws_liveness_check_on_checkout: c.ws_liveness_check_on_checkout,
+            retry_budget_ratio: c.retry_budget_ratio,
+            retry_budget_min_per_window: c.retry_budget_min_per_window,
+            retry_budget_window: Duration::from_secs(c.retry_budget_window_secs),
+        }
+    }
+}
+
 impl UpstreamConfig {
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
@@ -165,25 +242,12 @@ impl UpstreamConfig {
         if self.connect_timeout_secs == 0 {
             anyhow::bail!("connect_timeout_secs must be greater than 0");
         }
-        if self.ws_handshake_timeout_secs == 0 {
-            anyhow::bail!("ws_handshake_timeout_secs must be greater than 0");
-        }
-        if self.ws_max_concurrent == 0 {
-            anyhow::bail!("ws_max_concurrent must be greater than 0");
-        }
-        if self.ws_max_concurrent_per_key == 0 {
-            anyhow::bail!("ws_max_concurrent_per_key must be greater than 0");
-        }
-        if self.ws_pool_max_idle_per_key == 0 {
-            anyhow::bail!("ws_pool_max_idle_per_key must be greater than 0");
-        }
-        if self.ws_pool_idle_ttl_secs == 0 {
-            anyhow::bail!("ws_pool_idle_ttl_secs must be greater than 0");
-        }
         if self.grpc_max_concurrency == 0 {
             anyhow::bail!("grpc_max_concurrency must be greater than 0");
         }
-        Ok(())
+        RuntimeOptions::from(self)
+            .validate()
+            .map_err(|e| anyhow::anyhow!("upstream: {e}"))
     }
 }
 
@@ -230,6 +294,60 @@ password = "p"
 
     fn parse(extra: &str) -> Result<BypassServiceConfig, toml::de::Error> {
         toml::from_str(&format!("{BASE}\n{extra}"))
+    }
+
+    #[test]
+    fn upstream_runtime_keys_default_when_omitted() {
+        let cfg = parse("").expect("parse");
+        let u = &cfg.upstream;
+        assert_eq!(u.token_default_ttl_secs, 3600);
+        assert_eq!(u.token_refresh_skew_secs, 30);
+        assert!(u.auth_retry_enabled);
+        assert!(u.ws_stale_retry_enabled);
+        assert!(u.ws_liveness_check_on_checkout);
+        assert!((u.retry_budget_ratio - 0.2).abs() < f64::EPSILON);
+        assert_eq!(u.retry_budget_min_per_window, 3);
+        assert_eq!(u.retry_budget_window_secs, 10);
+        assert!(u.validate().is_ok());
+    }
+
+    #[test]
+    fn upstream_runtime_options_map_field_by_field() {
+        let cfg = parse(
+            "token_default_ttl_secs = 1800\ntoken_refresh_skew_secs = 20\nauth_retry_enabled = false\nws_stale_retry_enabled = false\nws_liveness_check_on_checkout = false\nretry_budget_ratio = 0.5\nretry_budget_min_per_window = 1\nretry_budget_window_secs = 5\nws_pool_idle_ttl_secs = 45\nws_max_concurrent = 7",
+        )
+        .expect("parse");
+        let o = RuntimeOptions::from(&cfg.upstream);
+        assert_eq!(o.token_default_ttl, Duration::from_mins(30));
+        assert_eq!(o.token_refresh_skew, Duration::from_secs(20));
+        assert!(!o.auth_retry_enabled);
+        assert!(!o.ws_stale_retry_enabled);
+        assert!(!o.ws_liveness_check_on_checkout);
+        assert!((o.retry_budget_ratio - 0.5).abs() < f64::EPSILON);
+        assert_eq!(o.retry_budget_min_per_window, 1);
+        assert_eq!(o.retry_budget_window, Duration::from_secs(5));
+        assert_eq!(o.ws_pool_idle_ttl, Duration::from_secs(45));
+        assert_eq!(o.ws_max_concurrent, 7);
+    }
+
+    #[test]
+    fn upstream_runtime_invalid_values_rejected() {
+        for extra in [
+            "retry_budget_ratio = 0.0",
+            "retry_budget_ratio = 1.5",
+            "token_refresh_skew_secs = 3600",
+            "retry_budget_window_secs = 0",
+            "token_default_ttl_secs = 0",
+            "ws_pool_idle_ttl_secs = 0",
+        ] {
+            let cfg = parse(extra).expect("parse");
+            assert!(cfg.upstream.validate().is_err(), "{extra}");
+        }
+    }
+
+    #[test]
+    fn upstream_unknown_key_rejected() {
+        assert!(parse("auth_retry = true").is_err());
     }
 
     #[test]

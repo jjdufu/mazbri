@@ -15,7 +15,10 @@
 //! - 管理端写入前加密 `auth_flow.credentials`
 //! - bypass 出站前解密
 
-use crate::channel_egress::{AuthAwsSpec, AuthDigestSpec, AuthHawkSpec, AuthJwtSpec, AuthProfile};
+use crate::channel_egress::{
+    AuthAwsSpec, AuthDigestSpec, AuthHawkSpec, AuthInvalidationSpec, AuthJwtSpec, AuthProfile,
+    validate_invalidation_rules,
+};
 use crate::crypto::supplier_secrets::{
     SupplierSecretsError, decrypt_credentials_map, encrypt_credentials_map, supplier_secrets_key,
 };
@@ -97,6 +100,9 @@ pub struct AuthFlowConfig {
     pub aws: Option<AuthAwsSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hawk: Option<AuthHawkSpec>,
+    /// 供应商级认证失效识别规则；渠道 `egress.auth.invalidation` 未声明时整体继承。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalidation: Option<AuthInvalidationSpec>,
 }
 
 impl Default for AuthFlowConfig {
@@ -119,6 +125,7 @@ impl Default for AuthFlowConfig {
             digest: None,
             aws: None,
             hawk: None,
+            invalidation: None,
         }
     }
 }
@@ -323,6 +330,10 @@ impl SupplierConfig {
 }
 
 fn validate_auth_flow(auth: &AuthFlowConfig) -> Result<(), ConfigValidationError> {
+    if let Some(ref inv) = auth.invalidation {
+        validate_invalidation_rules(inv, "config.auth_flow.invalidation")
+            .map_err(ConfigValidationError::new)?;
+    }
     if let Some(ref p) = auth.profile {
         let t = p.trim();
         if !t.is_empty() && t != "none" {
@@ -461,6 +472,68 @@ pub fn mask_config_credentials(mut config: serde_json::Value) -> serde_json::Val
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ticket_flow_json(inv: &serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "upstream_type": "transparent",
+            "auth_flow": {
+                "enabled": true,
+                "profile": "oauth_cc_form",
+                "token_url": "https://idp.example/token",
+                "invalidation": inv,
+            }
+        })
+    }
+
+    #[test]
+    fn auth_flow_invalidation_parses_and_round_trips() {
+        let json = ticket_flow_json(&serde_json::json!({
+            "http_status": [401],
+            "jsonrpc_codes": [-32001],
+            "ws_close_before_reply": true,
+            "body_match": [{"path": "$.code", "equals": ["TOKEN_EXPIRED"]}]
+        }));
+        let cfg = SupplierConfig::parse_and_validate(&json).unwrap();
+        let inv = cfg
+            .auth_flow
+            .as_ref()
+            .unwrap()
+            .invalidation
+            .clone()
+            .unwrap();
+        assert_eq!(inv.jsonrpc_codes, vec![-32001]);
+        assert!(inv.ws_close_before_reply);
+        let back =
+            SupplierConfig::parse_and_validate(&serde_json::to_value(&cfg).unwrap()).unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn auth_flow_invalidation_omitted_is_none() {
+        let json = serde_json::json!({
+            "upstream_type": "transparent",
+            "auth_flow": {"enabled": true, "profile": "oauth_cc_form", "token_url": "https://idp.example/token"}
+        });
+        let cfg = SupplierConfig::parse_and_validate(&json).unwrap();
+        assert!(cfg.auth_flow.unwrap().invalidation.is_none());
+    }
+
+    #[test]
+    fn auth_flow_invalidation_rules_validated() {
+        let bad = [
+            serde_json::json!({"http_status": [200]}),
+            serde_json::json!({"http_status": [401, 401]}),
+            serde_json::json!({"body_match": [{"path": "$.code", "equals": []}]}),
+            serde_json::json!({"body_match": [{"path": "code", "equals": [1]}]}),
+            serde_json::json!({"retry": 1}),
+        ];
+        for inv in bad {
+            assert!(
+                SupplierConfig::parse_and_validate(&ticket_flow_json(&inv)).is_err(),
+                "{inv}"
+            );
+        }
+    }
 
     #[test]
     fn rejects_missing_upstream_type() {

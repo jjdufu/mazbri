@@ -979,10 +979,10 @@ fn emit_gateway_access_log(
             xff: header_str("x-forwarded-for"),
             cache_hit: fetched.from_cache,
             fallback_used: fetched.from_cbpro_fallback,
-            retry_count: route
-                .filter(|_| live_upstream)
-                .map(|r| r.attempt_order.saturating_sub(1))
-                .unwrap_or_default(),
+            retry_count: access_retry_count(
+                route.filter(|_| live_upstream).map(|r| r.attempt_order),
+                fetched.response.internal_retries,
+            ),
         })
         .upstream_meta(AccessUpstreamMetaFields {
             upstream_mode: route
@@ -998,4 +998,33 @@ fn emit_gateway_access_log(
         })
         .build();
     emit_access_log("gateway.access", &event);
+}
+
+/// 访问日志 `retry_count`：渠道切换次数（`attempt_order - 1`）加 bypass 内部重试次数；
+/// 未调用实时上游（缓存 / CBPro）时为 0。
+fn access_retry_count(live_attempt_order: Option<u32>, internal_retries: u32) -> u32 {
+    live_attempt_order.map_or(0, |order| {
+        order.saturating_sub(1).saturating_add(internal_retries)
+    })
+}
+
+#[cfg(test)]
+mod access_retry_count_tests {
+    use super::access_retry_count;
+
+    #[test]
+    fn counts_switches_and_internal_retries() {
+        assert_eq!(access_retry_count(Some(1), 0), 0);
+        assert_eq!(access_retry_count(Some(1), 1), 1, "bypass internal retry");
+        assert_eq!(
+            access_retry_count(Some(2), 1),
+            2,
+            "one switch + one internal retry"
+        );
+        assert_eq!(
+            access_retry_count(None, 3),
+            0,
+            "cache / fallback: no live upstream"
+        );
+    }
 }

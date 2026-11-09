@@ -103,6 +103,10 @@ message InvokeResponse {
   InvokeBizError biz_error = 3;
   string payload_json = 4;
   InvokeUpstreamMeta upstream_meta = 5;
+  // bypass 内部重试次数（认证换票、WS 换新连接），成功与失败路径都填写。
+  uint32 internal_retries = 6;
+  // 每次内部重试的原因标签，例如 `auth_rejected:jsonrpc_code`、`stale_connection`。
+  repeated string retry_reasons = 7;
 }
 
 message HealthRequest {}

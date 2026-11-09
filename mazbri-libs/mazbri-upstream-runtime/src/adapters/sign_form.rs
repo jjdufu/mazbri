@@ -93,6 +93,7 @@ fn outcome_from_json(
             .unwrap_or("sign_form error")
             .to_string();
         return AdapterOutcome {
+            auth_rejection: None,
             payload: Value::Null,
             biz_error: Some(BizError {
                 code: "UPSTREAM_BIZ".into(),
@@ -112,10 +113,11 @@ fn outcome_from_json(
         .unwrap_or(json);
     soft_verify_signed_object(&inner, profile, ctx.pipeline_keys, ctx.registry);
     let payload = match ctx.input.spec.response.as_ref().and_then(|r| r.unwrap.as_deref()) {
-        Some(path) => crate::template::extract_by_path(&inner, path).unwrap_or(inner),
+        Some(path) => mazbri_core::json_path::extract_by_path(&inner, path).unwrap_or(inner),
         None => inner,
     };
     AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error: None,

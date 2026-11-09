@@ -171,6 +171,57 @@ pub struct InvokeResult {
     /// Raw outbound response (workbench assertions / previews).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<OutboundResponse>,
+    /// 本次调用内部发生的重试次数（认证换票、WS 换新连接）。
+    #[serde(default)]
+    pub internal_retries: u32,
+    /// 每次内部重试的原因，顺序与发生顺序一致。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retry_reasons: Vec<RetryReason>,
+    /// 判定为认证被拒但未重试时的原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_skipped: Option<RetrySkip>,
+}
+
+/// 内部重试原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetryReason {
+    AuthRejected(AuthRejectTrigger),
+    StaleConnection,
+}
+
+impl RetryReason {
+    /// 透传给网关 / 指标用的闭集标签，例如 `auth_rejected:jsonrpc_code`。
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::AuthRejected(AuthRejectTrigger::HttpStatus(_)) => "auth_rejected:http_status",
+            Self::AuthRejected(AuthRejectTrigger::JsonRpcCode(_)) => "auth_rejected:jsonrpc_code",
+            Self::AuthRejected(AuthRejectTrigger::BodyMatch) => "auth_rejected:body_match",
+            Self::AuthRejected(AuthRejectTrigger::WsClosedBeforeReply) => "auth_rejected:ws_close",
+            Self::StaleConnection => "stale_connection",
+        }
+    }
+}
+
+/// 认证被拒却未重试的原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrySkip {
+    /// `auth_retry_enabled=false`。
+    Disabled,
+    /// 重试预算耗尽。
+    Budget,
+}
+
+impl RetrySkip {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Budget => "budget",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,6 +268,9 @@ pub enum ExecuteError {
     AdapterFailed(String),
     #[error("ARTIFACT_MISSING: {0}")]
     ArtifactMissing(String),
+    /// 上游按认证失效规则拒绝了凭据（已换票重试仍被拒，或按配置不重试）。
+    #[error("UPSTREAM_AUTH_REJECTED: {0}")]
+    UpstreamAuthRejected(String),
     #[error("{0}")]
     Other(String),
 }
@@ -234,7 +288,58 @@ impl ExecuteError {
             Self::SpecInvalid(_) => "SPEC_INVALID",
             Self::AdapterFailed(_) => "ADAPTER_FAILED",
             Self::ArtifactMissing(_) => "ARTIFACT_MISSING",
+            Self::UpstreamAuthRejected(_) => "UPSTREAM_AUTH_REJECTED",
             Self::Other(_) => "UPSTREAM_ERROR",
         }
+    }
+}
+
+/// 认证被拒的触发信号（来自上游认证失效规则）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthRejectTrigger {
+    HttpStatus(u16),
+    JsonRpcCode(i64),
+    BodyMatch,
+    WsClosedBeforeReply,
+}
+
+impl AuthRejectTrigger {
+    /// 指标 / 日志用的闭集标签。
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::HttpStatus(_) => "http_status",
+            Self::JsonRpcCode(_) => "jsonrpc_code",
+            Self::BodyMatch => "body_match",
+            Self::WsClosedBeforeReply => "ws_close",
+        }
+    }
+}
+
+impl std::fmt::Display for AuthRejectTrigger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HttpStatus(code) => write!(f, "http_status={code}"),
+            Self::JsonRpcCode(code) => write!(f, "jsonrpc_code={code}"),
+            Self::BodyMatch => f.write_str("body_match"),
+            Self::WsClosedBeforeReply => f.write_str("ws_close"),
+        }
+    }
+}
+
+/// 认证被拒的证据：携带本次使用的令牌，供引擎比较后作废。
+#[derive(Clone, PartialEq, Eq)]
+pub struct AuthRejection {
+    pub trigger: AuthRejectTrigger,
+    pub token: String,
+}
+
+impl std::fmt::Debug for AuthRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthRejection")
+            .field("trigger", &self.trigger)
+            .field("token", &"<redacted>")
+            .finish()
     }
 }

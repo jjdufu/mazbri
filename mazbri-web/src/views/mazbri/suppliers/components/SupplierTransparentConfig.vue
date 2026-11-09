@@ -43,6 +43,10 @@ import {
 } from "@/views/mazbri/upstream-connectors/authMatrix";
 import AuthProfileFields from "@/views/mazbri/upstream-connectors/hopp/AuthProfileFields.vue";
 import { $t } from "@/locales";
+import {
+  createEmptyInvalidation,
+  type InvalidationForm,
+} from "@/views/mazbri/upstream-connectors/authInvalidation";
 
 export interface AuthJwtForm {
   algorithm: string;
@@ -84,6 +88,7 @@ export interface AuthFlowForm {
   digest: AuthDigestForm;
   aws: AuthAwsForm;
   hawk: AuthHawkForm;
+  invalidation: InvalidationForm;
 }
 
 export interface SupplierConfigForm {
@@ -119,6 +124,9 @@ if (!config.value.auth_flow.aws) {
 }
 if (!config.value.auth_flow.hawk) {
   config.value.auth_flow.hawk = { algorithm: "sha256", ext: "" };
+}
+if (!config.value.auth_flow.invalidation) {
+  config.value.auth_flow.invalidation = createEmptyInvalidation();
 }
 if (config.value.auth_flow.profile == null) {
   config.value.auth_flow.profile = "";

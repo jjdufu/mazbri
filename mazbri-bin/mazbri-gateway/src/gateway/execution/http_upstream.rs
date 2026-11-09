@@ -326,6 +326,9 @@ async fn invoke_bypass(
             .upstream_http2_pool
             .execute_invoke(contract_id, bypass_addr, request.clone())
             .await;
+        if let Ok(ref response) = response {
+            record_internal_retries(ctx.mode, response.internal_retries);
+        }
         match response {
             Ok(response) if !response.success => {
                 let error = if response.error.is_empty() {
@@ -402,6 +405,7 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
             content_type: Some("application/json".into()),
             body_bytes_len: bytes_len,
             upstream_wire_ms: 0,
+            internal_retries: response.internal_retries,
         };
     }
     let payload = if response.payload_json.is_empty() {
@@ -427,6 +431,7 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
         content_type: Some("application/json".into()),
         body_bytes_len: response.payload_json.len() as u64,
         upstream_wire_ms,
+        internal_retries: response.internal_retries,
     }
 }
 
@@ -466,6 +471,7 @@ async fn execute_plain_request(
                     content_type,
                     body_bytes_len: data.body_bytes_len,
                     upstream_wire_ms: 0,
+                    internal_retries: 0,
                 });
             }
             Err(error) => {
@@ -558,4 +564,33 @@ pub(super) fn is_client_ip_header(header_name: &str) -> bool {
             | "cf-connecting-ip"
             | "fastly-client-ip"
     )
+}
+
+#[cfg(test)]
+mod internal_retries_tests {
+    use super::*;
+
+    #[test]
+    fn bypass_internal_retries_are_carried() {
+        let ok = upstream_proto::InvokeResponse {
+            success: true,
+            payload_json: "{}".into(),
+            internal_retries: 1,
+            retry_reasons: vec!["auth_rejected:jsonrpc_code".into()],
+            ..Default::default()
+        };
+        assert_eq!(invoke_response_to_upstream(&ok).internal_retries, 1);
+
+        let biz = upstream_proto::InvokeResponse {
+            success: true,
+            biz_error: Some(upstream_proto::InvokeBizError {
+                code: "E".into(),
+                message: "m".into(),
+                details_json: String::new(),
+            }),
+            internal_retries: 2,
+            ..Default::default()
+        };
+        assert_eq!(invoke_response_to_upstream(&biz).internal_retries, 2);
+    }
 }

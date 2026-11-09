@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::template::extract_by_path;
 use crate::types::OutboundResponse;
+use mazbri_core::json_path::extract_by_path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

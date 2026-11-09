@@ -8,6 +8,7 @@
       :mode="run.mode"
       :probe-path="run.probe_path"
       :error-code="run.error_code"
+      :retry-info="retryInfo"
       :body="displayBody"
       :download-name="downloadName"
     />
@@ -132,6 +133,7 @@ import {
 import WorkbenchCodeEditor from "./WorkbenchCodeEditor.vue";
 import WorkbenchJsonTree from "./hopp/WorkbenchJsonTree.vue";
 import WorkbenchResponseMeta from "./hopp/WorkbenchResponseMeta.vue";
+import { extractRetryInfo } from "./authInvalidation";
 
 const VIEW_KEY = "mazbri.workbench.res.view";
 
@@ -230,6 +232,8 @@ function stageLabel(name: string) {
   const t = $t(key);
   return t === key ? STAGE_I18N[name] || name : t;
 }
+
+const retryInfo = computed(() => extractRetryInfo(stages.value));
 
 const openStageDetail = computed(() => {
   const s = stages.value.find((x) => x.name === openStage.value);

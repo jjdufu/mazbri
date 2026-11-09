@@ -76,6 +76,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             .unwrap_or("graphql error")
             .to_string();
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: Some(BizError {
                 code: code.into(),
@@ -87,6 +88,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     }
     let payload = json.get("data").cloned().unwrap_or(json);
     Ok(AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error: None,

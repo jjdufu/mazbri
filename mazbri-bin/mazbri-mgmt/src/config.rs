@@ -2,7 +2,9 @@ use crate::analytics_client::AnalyticsClientConfig;
 use anyhow::Result;
 use mazbri_core::config::ValidateConfig;
 use mazbri_core::{CertServiceConfig, Identity, LogRouteConfig, TracingConfig};
+use mazbri_upstream_runtime::RuntimeOptions;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
@@ -63,6 +65,8 @@ pub struct ConnectorProbeConfig {
     pub run_retention_days: u32,
     /// Background cleanup interval in seconds.
     pub cleanup_interval_secs: u64,
+    /// `[connector_probe.runtime]`：试运行引擎参数，字段与 bypass `[upstream]` 同名同义。
+    pub runtime: ProbeRuntimeConfig,
 }
 
 impl Default for ConnectorProbeConfig {
@@ -73,6 +77,69 @@ impl Default for ConnectorProbeConfig {
             default_timeout_ms: 15_000,
             run_retention_days: 14,
             cleanup_interval_secs: 3600,
+            runtime: ProbeRuntimeConfig::default(),
+        }
+    }
+}
+
+/// 连接器试运行引擎参数。WS 限额默认值比 bypass 保守（试跑进程短生命周期、低并发），
+/// 令牌缓存与重试相关默认值与 bypass 一致。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[serde(default)]
+pub struct ProbeRuntimeConfig {
+    pub ws_handshake_timeout_secs: u64,
+    pub ws_max_concurrent: u32,
+    pub ws_max_concurrent_per_key: u32,
+    pub ws_pool_max_idle_per_key: u32,
+    pub ws_pool_idle_ttl_secs: u64,
+    pub token_default_ttl_secs: u64,
+    pub token_refresh_skew_secs: u64,
+    pub auth_retry_enabled: bool,
+    pub ws_stale_retry_enabled: bool,
+    pub ws_liveness_check_on_checkout: bool,
+    pub retry_budget_ratio: f64,
+    pub retry_budget_min_per_window: u32,
+    pub retry_budget_window_secs: u64,
+}
+
+impl Default for ProbeRuntimeConfig {
+    fn default() -> Self {
+        let shared = RuntimeOptions::default();
+        Self {
+            ws_handshake_timeout_secs: 10,
+            ws_max_concurrent: 8,
+            ws_max_concurrent_per_key: 4,
+            ws_pool_max_idle_per_key: 2,
+            ws_pool_idle_ttl_secs: 30,
+            token_default_ttl_secs: shared.token_default_ttl.as_secs(),
+            token_refresh_skew_secs: shared.token_refresh_skew.as_secs(),
+            auth_retry_enabled: shared.auth_retry_enabled,
+            ws_stale_retry_enabled: shared.ws_stale_retry_enabled,
+            ws_liveness_check_on_checkout: shared.ws_liveness_check_on_checkout,
+            retry_budget_ratio: shared.retry_budget_ratio,
+            retry_budget_min_per_window: shared.retry_budget_min_per_window,
+            retry_budget_window_secs: shared.retry_budget_window.as_secs(),
+        }
+    }
+}
+
+impl From<&ProbeRuntimeConfig> for RuntimeOptions {
+    fn from(c: &ProbeRuntimeConfig) -> Self {
+        Self {
+            ws_handshake_timeout: Duration::from_secs(c.ws_handshake_timeout_secs),
+            ws_max_concurrent: c.ws_max_concurrent,
+            ws_max_concurrent_per_key: c.ws_max_concurrent_per_key,
+            ws_pool_max_idle_per_key: c.ws_pool_max_idle_per_key,
+            ws_pool_idle_ttl: Duration::from_secs(c.ws_pool_idle_ttl_secs),
+            token_default_ttl: Duration::from_secs(c.token_default_ttl_secs),
+            token_refresh_skew: Duration::from_secs(c.token_refresh_skew_secs),
+            auth_retry_enabled: c.auth_retry_enabled,
+            ws_stale_retry_enabled: c.ws_stale_retry_enabled,
+            ws_liveness_check_on_checkout: c.ws_liveness_check_on_checkout,
+            retry_budget_ratio: c.retry_budget_ratio,
+            retry_budget_min_per_window: c.retry_budget_min_per_window,
+            retry_budget_window: Duration::from_secs(c.retry_budget_window_secs),
         }
     }
 }
@@ -284,6 +351,9 @@ impl ValidateConfig for MgmtApiConfig {
         if self.connector_probe.default_timeout_ms == 0 {
             anyhow::bail!("connector_probe.default_timeout_ms must be greater than 0");
         }
+        RuntimeOptions::from(&self.connector_probe.runtime)
+            .validate()
+            .map_err(|e| anyhow::anyhow!("connector_probe.runtime: {e}"))?;
         Self::validate_bypass_probe_url(&self.bypass_probe_url)?;
         Self::validate_mgmt_probe_token(&self.mgmt_probe_token)?;
         if !self.billing_reconciliation.loss_ratio_threshold.is_finite()
@@ -451,5 +521,48 @@ port = 9000
         let mut edge = parse("[mfa]\nstep_up_ttl_secs = 60\n").expect("parse");
         edge.analytics.url = "http://127.0.0.1:9".to_string();
         edge.validate().expect("lower bound");
+    }
+}
+
+#[cfg(test)]
+mod connector_probe_runtime_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_section_omitted_uses_conservative_defaults() {
+        let cfg: ConnectorProbeConfig = toml::from_str("max_runs_per_minute = 10").unwrap();
+        assert_eq!(cfg.runtime, ProbeRuntimeConfig::default());
+        let opts = RuntimeOptions::from(&cfg.runtime);
+        assert_eq!(opts.ws_max_concurrent, 8);
+        assert_eq!(opts.ws_max_concurrent_per_key, 4);
+        assert_eq!(opts.ws_pool_max_idle_per_key, 2);
+        assert_eq!(opts.ws_pool_idle_ttl, Duration::from_secs(30));
+        assert_eq!(opts.ws_handshake_timeout, Duration::from_secs(10));
+        assert_eq!(opts.token_default_ttl, Duration::from_secs(3600));
+        assert!(opts.auth_retry_enabled);
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn runtime_section_partial_keys_fill_defaults() {
+        let cfg: ConnectorProbeConfig =
+            toml::from_str("[runtime]\nauth_retry_enabled = false\nws_max_concurrent = 3\n")
+                .unwrap();
+        assert!(!cfg.runtime.auth_retry_enabled);
+        assert_eq!(cfg.runtime.ws_max_concurrent, 3);
+        assert_eq!(cfg.runtime.ws_max_concurrent_per_key, 4);
+        assert_eq!(cfg.runtime.retry_budget_window_secs, 10);
+    }
+
+    #[test]
+    fn runtime_section_unknown_key_rejected() {
+        assert!(toml::from_str::<ConnectorProbeConfig>("[runtime]\nretry = 1\n").is_err());
+    }
+
+    #[test]
+    fn runtime_section_invalid_values_rejected_by_validate() {
+        let cfg: ConnectorProbeConfig =
+            toml::from_str("[runtime]\nretry_budget_ratio = 1.5\n").unwrap();
+        assert!(RuntimeOptions::from(&cfg.runtime).validate().is_err());
     }
 }

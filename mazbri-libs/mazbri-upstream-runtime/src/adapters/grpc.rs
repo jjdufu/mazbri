@@ -99,6 +99,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     if let Some(gs) = grpc_status_header {
         if gs != "0" {
             return Ok(AdapterOutcome {
+                auth_rejection: None,
                 payload: serde_json::Value::Null,
                 biz_error: Some(BizError {
                     code: grpc_code_name(&gs),
@@ -108,12 +109,8 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
                 response: outbound,
             });
         }
-    } else if status == 401 {
-        return Ok(AdapterOutcome {
-            payload: serde_json::Value::Null,
-            biz_error: None,
-            response: outbound,
-        });
+    } else if ctx.is_reject_status(status) {
+        return Ok(AdapterOutcome::raw(outbound));
     } else if !(200..300).contains(&status) {
         return Err(ExecuteError::UpstreamHttp(format!("grpc HTTP {status}")));
     }
@@ -124,6 +121,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let payload = serde_json::to_value(&decoded)
         .map_err(|e| ExecuteError::AdapterFailed(format!("protojson response: {e}")))?;
     Ok(AdapterOutcome {
+        auth_rejection: None,
         payload,
         biz_error: None,
         response: outbound,

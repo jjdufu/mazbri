@@ -7,18 +7,30 @@ use std::time::{Duration, Instant};
 use mazbri_core::AdapterKind;
 use mazbri_crypto::AlgorithmRegistry;
 
-use crate::adapters::{AdapterCtx, AdapterOutcome, invoke_adapter, merge_request_headers};
+use crate::adapters::{
+    AdapterCtx, AdapterOutcome, effective_invalidation, invoke_adapter, merge_request_headers,
+};
 use crate::crypto_pipeline::pipeline_keys_from_credentials;
-use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
+use crate::auth::{AppliedAuth, apply_auth, issued_token_key, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
+use crate::observe::{
+    NoopObserver, RetryKind, RetryLog, RetryOutcome, RuntimeEvent, RuntimeObserver,
+    token_fingerprint, warn_budget_exhausted,
+};
+use crate::retry_budget::{RetryBudget, RetryBudgets};
 use crate::ssrf::SsrfChecker;
-use crate::token_cache::TokenCache;
+use crate::token_cache::{StaleEvict, TokenCache};
 use crate::types::{
-    ExecuteError, ExecuteMode, InvokeInput, InvokeResult, StageResult, StageSummary, UpstreamMeta,
+    AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult, RetryReason, RetrySkip,
+    StageResult, StageSummary, UpstreamMeta,
 };
 
-#[derive(Debug, Clone)]
-pub struct RuntimeLimits {
+/// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
+///
+/// 默认值与 bypass 配置的默认值一致；服务启动时从各自配置构造后经
+/// [`RuntimeEngine::with_options`] 注入。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeOptions {
     pub ws_handshake_timeout: Duration,
     /// 全局 `ws_unary` 并发上限（失败快，不排队）。
     pub ws_max_concurrent: u32,
@@ -28,9 +40,25 @@ pub struct RuntimeLimits {
     pub ws_pool_max_idle_per_key: u32,
     /// 空闲连接 TTL；借出时丢弃过期连接。
     pub ws_pool_idle_ttl: Duration,
+    /// 上游换票响应既没有配置的过期字段、也没有 `expires_in` 时的缓存时长。
+    pub token_default_ttl: Duration,
+    /// 令牌提前视为过期的余量。
+    pub token_refresh_skew: Duration,
+    /// 认证被拒后作废令牌、换票并重试一次。
+    pub auth_retry_enabled: bool,
+    /// 复用的 WS 连接在回复前断开时，换新连接重试一次。
+    pub ws_stale_retry_enabled: bool,
+    /// 借出空闲 WS 连接前做非阻塞存活检查。
+    pub ws_liveness_check_on_checkout: bool,
+    /// 重试预算：窗口内重试数 / 首次请求数的上限。
+    pub retry_budget_ratio: f64,
+    /// 低流量时窗口内保底允许的重试次数。
+    pub retry_budget_min_per_window: u32,
+    /// 重试预算的统计窗口。
+    pub retry_budget_window: Duration,
 }
 
-impl Default for RuntimeLimits {
+impl Default for RuntimeOptions {
     fn default() -> Self {
         Self {
             ws_handshake_timeout: Duration::from_secs(10),
@@ -38,11 +66,56 @@ impl Default for RuntimeLimits {
             ws_max_concurrent_per_key: 8,
             ws_pool_max_idle_per_key: 4,
             ws_pool_idle_ttl: Duration::from_secs(60),
+            token_default_ttl: Duration::from_secs(3600),
+            token_refresh_skew: Duration::from_secs(30),
+            auth_retry_enabled: true,
+            ws_stale_retry_enabled: true,
+            ws_liveness_check_on_checkout: true,
+            retry_budget_ratio: 0.2,
+            retry_budget_min_per_window: 3,
+            retry_budget_window: Duration::from_secs(10),
         }
     }
 }
 
-impl RuntimeLimits {
+impl RuntimeOptions {
+    /// 校验参数取值范围（服务配置加载时调用）。
+    ///
+    /// # Errors
+    ///
+    /// WS 限额或时长为 0、`token_refresh_skew` 不小于 `token_default_ttl`、
+    /// `retry_budget_ratio` 不在 (0, 1] 或预算窗口为 0 时返回错误说明。
+    pub fn validate(&self) -> Result<(), String> {
+        if self.ws_handshake_timeout.is_zero() {
+            return Err("ws_handshake_timeout_secs must be greater than 0".into());
+        }
+        if self.ws_max_concurrent == 0
+            || self.ws_max_concurrent_per_key == 0
+            || self.ws_pool_max_idle_per_key == 0
+        {
+            return Err("ws_max_concurrent / ws_max_concurrent_per_key / ws_pool_max_idle_per_key must be greater than 0".into());
+        }
+        if self.ws_pool_idle_ttl.is_zero() {
+            return Err("ws_pool_idle_ttl_secs must be greater than 0".into());
+        }
+        if self.token_default_ttl.is_zero() {
+            return Err("token_default_ttl_secs must be greater than 0".into());
+        }
+        if self.token_refresh_skew >= self.token_default_ttl {
+            return Err("token_refresh_skew_secs must be less than token_default_ttl_secs".into());
+        }
+        if !(self.retry_budget_ratio > 0.0 && self.retry_budget_ratio <= 1.0) {
+            return Err(format!(
+                "retry_budget_ratio must be in (0, 1], got {}",
+                self.retry_budget_ratio
+            ));
+        }
+        if self.retry_budget_window.is_zero() {
+            return Err("retry_budget_window_secs must be greater than 0".into());
+        }
+        Ok(())
+    }
+
     fn ws_pool_config(&self) -> crate::ws_pool::WsPoolConfig {
         crate::ws_pool::WsPoolConfig {
             handshake_timeout: self.ws_handshake_timeout,
@@ -50,7 +123,16 @@ impl RuntimeLimits {
             max_concurrent_per_key: self.ws_max_concurrent_per_key.max(1),
             max_idle_per_key: self.ws_pool_max_idle_per_key.max(1),
             idle_ttl: self.ws_pool_idle_ttl,
+            liveness_check_on_checkout: self.ws_liveness_check_on_checkout,
         }
+    }
+
+    fn retry_budgets(&self) -> RetryBudgets {
+        RetryBudgets::new(
+            self.retry_budget_ratio,
+            self.retry_budget_min_per_window,
+            self.retry_budget_window,
+        )
     }
 }
 
@@ -59,45 +141,50 @@ pub struct RuntimeEngine {
     client: Arc<reqwest::Client>,
     ssrf: SsrfChecker,
     token_cache: Arc<TokenCache>,
-    limits: RuntimeLimits,
+    options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
+    /// 按令牌缓存键分桶的重试预算（同一键的认证重试与 WS 陈旧连接重试共用一个桶）。
+    retry_budgets: Arc<RetryBudgets>,
+    observer: Arc<dyn RuntimeObserver>,
 }
 
 impl RuntimeEngine {
+    /// 以默认 [`RuntimeOptions`] 构造；服务启动时再经 [`Self::with_options`] 注入配置。
     #[must_use]
     pub fn new(client: Arc<reqwest::Client>, ssrf: SsrfChecker) -> Self {
-        let limits = RuntimeLimits::default();
-        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
+        let options = RuntimeOptions::default();
+        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         Self {
             client,
             ssrf,
-            token_cache: Arc::new(TokenCache::new()),
-            limits,
+            token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
+            retry_budgets: Arc::new(options.retry_budgets()),
+            options,
             ws_pool,
+            observer: Arc::new(NoopObserver),
         }
     }
 
-    pub fn with_token_cache(
-        client: Arc<reqwest::Client>,
-        ssrf: SsrfChecker,
-        token_cache: Arc<TokenCache>,
-    ) -> Self {
-        let limits = RuntimeLimits::default();
-        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
-        Self {
-            client,
-            ssrf,
-            token_cache,
-            limits,
-            ws_pool,
-        }
+    /// 注入内部事件观测者（服务据此记录指标）。
+    #[must_use]
+    pub fn with_observer(mut self, observer: Arc<dyn RuntimeObserver>) -> Self {
+        self.observer = observer;
+        self
+    }
+
+    /// 注入运行时参数：按新参数重建 WS 池、令牌缓存与重试预算（仅在启动时调用）。
+    #[must_use]
+    pub fn with_options(mut self, options: RuntimeOptions) -> Self {
+        self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
+        self.token_cache = Arc::new(TokenCache::new(options.token_refresh_skew));
+        self.retry_budgets = Arc::new(options.retry_budgets());
+        self.options = options;
+        self
     }
 
     #[must_use]
-    pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
-        self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
-        self.limits = limits;
-        self
+    pub fn options(&self) -> &RuntimeOptions {
+        &self.options
     }
 
     #[must_use]
@@ -122,32 +209,172 @@ impl RuntimeEngine {
 
     /// Code-free invoke: tenant JSON + channel egress spec.
     pub async fn invoke(&self, input: InvokeInput) -> InvokeResult {
-        let mut trace = Trace::new(&input);
-        let base_url = match self.preflight(&input, &mut trace).await {
+        let retry_log = RetryLog::default();
+        let mut result = self.invoke_inner(&input, &retry_log).await;
+        result.retry_reasons = retry_log.take();
+        result.internal_retries = u32::try_from(result.retry_reasons.len()).unwrap_or(u32::MAX);
+        result
+    }
+
+    async fn invoke_inner(&self, input: &InvokeInput, retry_log: &RetryLog) -> InvokeResult {
+        let mut trace = Trace::new(input);
+        let base_url = match self.preflight(input, &mut trace).await {
             Ok(url) => url,
             Err(fail) => return trace.fail(fail),
         };
         if matches!(input.mode, ExecuteMode::TransformPreview) {
-            return transform_preview(&input, base_url, trace);
+            return transform_preview(input, base_url, trace);
         }
         let cache_key = input
             .cache_key
             .clone()
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
+        let budget = self.retry_budgets.for_key(&cache_key);
+        budget.record_request();
         let first = self
-            .attempt(&input, &base_url, &cache_key, false, &mut trace)
+            .attempt(input, &base_url, &cache_key, &mut trace, retry_log)
             .await;
-        let outcome = match first {
-            AttemptOutcome::RetryUnauthorized => {
-                self.attempt(&input, &base_url, &cache_key, true, &mut trace)
-                    .await
-            }
-            other => other,
+        let (rejection, mut first_result) = match first {
+            AttemptOutcome::AuthRejected(rejection, result) => (rejection, result),
+            AttemptOutcome::Done(result) => return *result,
+            AttemptOutcome::Failed(fail) => return trace.fail(fail),
         };
-        match outcome {
-            AttemptOutcome::Done(result) => *result,
-            AttemptOutcome::Failed(fail) => trace.fail(fail),
-            AttemptOutcome::RetryUnauthorized => trace.retries_exhausted(),
+        let kind = input.spec.adapter_kind().ok();
+        self.note_rejection(input, kind, &rejection);
+        if let Some(skip) = self
+            .auth_retry_gate(input, kind, &budget, &cache_key, &rejection)
+            .await
+        {
+            // 不重试时与「重试后仍被拒」同一口径：UPSTREAM_AUTH_REJECTED（平台侧上游故障，不计费）。
+            let message = format!(
+                "upstream rejected credentials, retry skipped (trigger={}, reason={})",
+                rejection.trigger,
+                skip.label()
+            );
+            let mut result = trace.auth_rejected(message, *first_result);
+            result.retry_skipped = Some(skip);
+            return result;
+        }
+        // 认证被拒说明上游未执行业务，换票后重放是安全的；只重试一次，不递归。
+        retry_log.push(RetryReason::AuthRejected(rejection.trigger));
+        trace.stages = std::mem::take(&mut first_result.stages);
+        trace.retry_round = true;
+        let second = self
+            .attempt(input, &base_url, &cache_key, &mut trace, retry_log)
+            .await;
+        let (outcome, result) = match second {
+            AttemptOutcome::AuthRejected(again, result) => {
+                self.note_rejection(input, kind, &again);
+                let message = format!(
+                    "upstream rejected credentials after token refresh (trigger={})",
+                    again.trigger
+                );
+                let result = trace.auth_rejected(message, *result);
+                (RetryOutcome::RejectedAgain, result)
+            }
+            AttemptOutcome::Done(result) => (RetryOutcome::Ok, *result),
+            AttemptOutcome::Failed(fail) => (RetryOutcome::Failed, trace.fail(fail)),
+        };
+        self.note_auth_retry(input, kind, outcome, None);
+        result
+    }
+
+    /// 认证被拒：记事件，并打一条只含令牌指纹的日志。
+    fn note_rejection(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        rejection: &AuthRejection,
+    ) {
+        if let Some(adapter) = kind {
+            self.observer.on_event(RuntimeEvent::AuthRejected {
+                adapter,
+                trigger: rejection.trigger,
+            });
+        }
+        tracing::info!(
+            target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+            event = "upstream.auth_rejected",
+            channel_id = %input.channel_id,
+            adapter = %input.spec.adapter,
+            trigger = rejection.trigger.label(),
+            token_fp = %token_fingerprint(&rejection.token),
+            "upstream rejected credentials"
+        );
+    }
+
+    /// 认证被拒后决定是否重试，并在放行时作废被拒令牌（跳过时记事件）。
+    ///
+    /// 预算只由「这一代令牌的首个被拒者」支付：缓存仍是被拒令牌时申请预算，放行即作废；
+    /// 缓存已被并发请求换新或作废时直接重放，不消耗预算。这样上游重启后同一渠道的并发
+    /// 请求只为一次换票付费，而凭证持续无效时每代令牌仍受预算约束。
+    async fn auth_retry_gate(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        budget: &RetryBudget,
+        cache_key: &str,
+        rejection: &AuthRejection,
+    ) -> Option<RetrySkip> {
+        let allowed = if self.options.auth_retry_enabled {
+            match issued_token_key(cache_key, &input.spec) {
+                Ok(Some(key)) => {
+                    let decision = self
+                        .token_cache
+                        .evict_if_current_gated(&key, &rejection.token, || budget.try_acquire())
+                        .await;
+                    if decision != StaleEvict::Denied {
+                        self.observer.on_event(RuntimeEvent::TokenEvict {
+                            evicted: decision == StaleEvict::Evicted,
+                        });
+                    }
+                    decision != StaleEvict::Denied
+                }
+                // 静态凭证档不经令牌缓存：每次被拒都按预算重试一次。
+                Ok(None) | Err(_) => budget.try_acquire(),
+            }
+        } else {
+            false
+        };
+        let skip = if allowed {
+            return None;
+        } else if !self.options.auth_retry_enabled {
+            RetrySkip::Disabled
+        } else {
+            self.observer.on_event(RuntimeEvent::BudgetExhausted {
+                kind: RetryKind::Auth,
+            });
+            warn_budget_exhausted(&input.channel_id, RetryKind::Auth);
+            RetrySkip::Budget
+        };
+        let outcome = match skip {
+            RetrySkip::Disabled => RetryOutcome::SkippedDisabled,
+            RetrySkip::Budget => RetryOutcome::SkippedBudget,
+        };
+        self.note_auth_retry(input, kind, outcome, Some(skip));
+        Some(skip)
+    }
+
+    fn note_auth_retry(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        result: RetryOutcome,
+        skipped: Option<RetrySkip>,
+    ) {
+        if let Some(adapter) = kind {
+            self.observer
+                .on_event(RuntimeEvent::AuthRetry { adapter, result });
+        }
+        if skipped.is_none() {
+            tracing::info!(
+                target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                event = "upstream.auth_retry",
+                channel_id = %input.channel_id,
+                adapter = %input.spec.adapter,
+                result = result.label(),
+                "upstream auth retry finished"
+            );
         }
     }
 
@@ -211,14 +438,14 @@ impl RuntimeEngine {
         Ok(base_url)
     }
 
-    /// One auth + adapter round. `evict_first` marks the retry after a 401.
+    /// One auth + adapter round（重试轮前被拒令牌已由 [`Self::auth_retry_gate`] 作废）。
     async fn attempt(
         &self,
         input: &InvokeInput,
         base_url: &str,
         cache_key: &str,
-        evict_first: bool,
         trace: &mut Trace,
+        retry_log: &RetryLog,
     ) -> AttemptOutcome {
         let a_start = Instant::now();
         let applied = match apply_auth(crate::auth::AuthApply {
@@ -229,7 +456,7 @@ impl RuntimeEngine {
             base_url,
             credentials: &input.credentials,
             cache_key,
-            evict_first,
+            token_default_ttl: self.options.token_default_ttl,
             request_id: &input.request_id,
         })
         .await
@@ -261,6 +488,8 @@ impl RuntimeEngine {
             pipeline_keys_from_credentials(&input.credentials)
         });
         let registry = AlgorithmRegistry::default_registry();
+        let invalidation = effective_invalidation(input);
+        let stale_budget = self.retry_budgets.for_key(cache_key);
         let ctx = AdapterCtx {
             client: &self.client,
             ssrf: &self.ssrf,
@@ -271,6 +500,13 @@ impl RuntimeEngine {
             ws_pool: &self.ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
+            invalidation: &invalidation,
+            ws_stale_retry: self
+                .options
+                .ws_stale_retry_enabled
+                .then_some(&*stale_budget),
+            observer: &*self.observer,
+            retry_log,
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,
@@ -285,10 +521,8 @@ impl RuntimeEngine {
                 ..ResultParts::ok()
             }));
         }
-        if outcome.response.status == 401 && applied.token.is_some() && !evict_first {
-            return AttemptOutcome::RetryUnauthorized;
-        }
         trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
+        let rejection = outcome.auth_rejection;
         let meta = trace.upstream_meta(&outcome.response);
         let latency_ms = meta.latency_ms;
         let mut result = trace.result(ResultParts {
@@ -301,7 +535,10 @@ impl RuntimeEngine {
             ..ResultParts::ok()
         });
         result.latency_ms = latency_ms;
-        AttemptOutcome::done(result)
+        match rejection {
+            Some(rejection) => AttemptOutcome::AuthRejected(rejection, Box::new(result)),
+            None => AttemptOutcome::done(result),
+        }
     }
 }
 
@@ -440,8 +677,8 @@ impl StageFail {
 enum AttemptOutcome {
     Done(Box<InvokeResult>),
     Failed(StageFail),
-    /// Upstream answered 401 with a cached token: evict and retry once.
-    RetryUnauthorized,
+    /// 上游按认证失效规则拒绝了本轮令牌；附带本轮的真实结果，供不重试时原样返回。
+    AuthRejected(AuthRejection, Box<InvokeResult>),
 }
 
 impl AttemptOutcome {
@@ -483,6 +720,8 @@ struct Trace {
     stages: Vec<StageResult>,
     enabled: bool,
     adapter: String,
+    /// 认证重试轮：阶段名加 `#retry` 后缀。
+    retry_round: bool,
 }
 
 impl Trace {
@@ -492,12 +731,17 @@ impl Trace {
             stages: Vec::new(),
             enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
             adapter: input.spec.adapter.clone(),
+            retry_round: false,
         }
     }
 
     fn record(&mut self, stage: impl FnOnce() -> StageResult) {
         if self.enabled {
-            self.stages.push(stage());
+            let mut stage = stage();
+            if self.retry_round {
+                stage.name.push_str("#retry");
+            }
+            self.stages.push(stage);
         }
     }
 
@@ -522,6 +766,9 @@ impl Trace {
             upstream_meta: parts.upstream_meta,
             token: parts.token,
             response: parts.response,
+            internal_retries: 0,
+            retry_reasons: Vec::new(),
+            retry_skipped: None,
         }
     }
 
@@ -552,18 +799,19 @@ impl Trace {
         })
     }
 
-    fn retries_exhausted(mut self) -> InvokeResult {
-        let upstream_meta = Some(UpstreamMeta {
-            adapter: self.adapter.clone(),
-            ..Default::default()
-        });
-        self.result(ResultParts {
+    /// 认证被拒的最终结果（重试后仍被拒，或跳过重试）：保留最后一轮的上游元信息与阶段，
+    /// 结果标记为 `UPSTREAM_AUTH_REJECTED`。
+    fn auth_rejected(&self, message: String, last: InvokeResult) -> InvokeResult {
+        let err = ExecuteError::UpstreamAuthRejected(message);
+        InvokeResult {
             ok: false,
-            error_code: Some("AUTH_TOKEN_FAILED".into()),
-            error_message: Some("Outbound request failed after 401 retries".into()),
-            upstream_meta,
-            ..ResultParts::ok()
-        })
+            latency_ms: elapsed_ms(self.start),
+            payload: None,
+            biz_error: None,
+            error_code: Some(err.code().to_string()),
+            error_message: Some(err.to_string()),
+            ..last
+        }
     }
 }
 
@@ -576,5 +824,49 @@ pub fn resolve_timeout(override_secs: u64, config_total_ms: Option<u64>) -> Dura
         Duration::from_millis(ms.max(1))
     } else {
         Duration::from_secs(15)
+    }
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    #[test]
+    fn default_options_are_valid() {
+        assert!(RuntimeOptions::default().validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_options_rejected() {
+        let cases: [fn(&mut RuntimeOptions); 8] = [
+            |o| o.retry_budget_ratio = 0.0,
+            |o| o.retry_budget_ratio = 1.5,
+            |o| o.retry_budget_ratio = f64::NAN,
+            |o| o.token_refresh_skew = o.token_default_ttl,
+            |o| o.token_default_ttl = Duration::ZERO,
+            |o| o.retry_budget_window = Duration::ZERO,
+            |o| o.ws_max_concurrent = 0,
+            |o| o.ws_pool_idle_ttl = Duration::ZERO,
+        ];
+        for (i, mutate) in cases.iter().enumerate() {
+            let mut o = RuntimeOptions::default();
+            mutate(&mut o);
+            assert!(o.validate().is_err(), "case {i}");
+        }
+    }
+
+    #[test]
+    fn with_options_rebuilds_ws_pool() {
+        let client = Arc::new(reqwest::Client::new());
+        let opts = RuntimeOptions {
+            ws_max_concurrent: 3,
+            ws_pool_idle_ttl: Duration::from_secs(7),
+            ..RuntimeOptions::default()
+        };
+        let engine = RuntimeEngine::new(client, SsrfChecker::with_allow_private(true))
+            .with_options(opts.clone());
+        assert_eq!(engine.options(), &opts);
+        assert_eq!(engine.ws_pool().config().max_concurrent, 3);
+        assert_eq!(engine.ws_pool().config().idle_ttl, Duration::from_secs(7));
     }
 }

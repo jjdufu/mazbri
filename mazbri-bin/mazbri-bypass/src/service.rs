@@ -9,10 +9,11 @@ use mazbri_core::{
     emit_access_log, hash_egress_spec_json, normalize_request_id_uuid, normalize_upstream_host,
     parse_and_validate_egress, response_flags_for_error,
 };
+use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
-    RuntimeLimits, SsrfChecker, TokenCache,
+    RuntimeOptions, SsrfChecker,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -58,8 +59,8 @@ impl MazbriBypassServiceImpl {
         service_name: impl Into<Arc<str>>,
         db: Arc<PgPool>,
     ) -> Self {
-        let token_cache = Arc::new(TokenCache::new());
-        let engine = RuntimeEngine::with_token_cache(client, ssrf_checker, token_cache);
+        let engine = RuntimeEngine::new(client, ssrf_checker)
+            .with_observer(Arc::new(crate::metrics::BypassRuntimeObserver));
         Self {
             engine,
             service_name: service_name.into(),
@@ -79,8 +80,8 @@ impl MazbriBypassServiceImpl {
         }
     }
 
-    pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
-        self.engine = self.engine.with_limits(limits);
+    pub fn with_options(mut self, options: RuntimeOptions) -> Self {
+        self.engine = self.engine.with_options(options);
         self
     }
 
@@ -341,15 +342,46 @@ impl MazbriBypassServiceImpl {
         };
         let duration = start_time.elapsed().as_secs_f64();
         let adapter = spec.adapter.as_str();
+        let retries = InternalRetries::of(&result);
 
-        if let Some(ref code) = result.error_code {
+        let response = if let Some(ref code) = result.error_code {
             let err_msg = result
                 .error_message
                 .clone()
                 .unwrap_or_else(|| "upstream invoke failed".into());
-            return invoke_failure(code, err_msg, adapter, duration);
+            invoke_failure(code, err_msg, adapter, duration)
+        } else {
+            invoke_success(result, &spec.adapter, duration)
+        };
+        retries.attach(response)
+    }
+}
+
+/// 运行时内部重试，成功与失败路径都透传给网关（计入访问日志 `retry_count`）。
+struct InternalRetries {
+    count: u32,
+    reasons: Vec<String>,
+}
+
+impl InternalRetries {
+    fn of(result: &mazbri_upstream_runtime::InvokeResult) -> Self {
+        Self {
+            count: result.internal_retries,
+            reasons: result
+                .retry_reasons
+                .iter()
+                .map(|r| r.label().to_string())
+                .collect(),
         }
-        invoke_success(result, &spec.adapter, duration)
+    }
+
+    fn attach(
+        self,
+        mut response: upstream_proto::InvokeResponse,
+    ) -> upstream_proto::InvokeResponse {
+        response.internal_retries = self.count;
+        response.retry_reasons = self.reasons;
+        response
     }
 }
 
@@ -364,6 +396,8 @@ fn invoke_failure(
         UpstreamMetricsRecorder::record_failure(adapter, "ssrf");
     } else if code == "AUTH_TOKEN_FAILED" {
         UpstreamMetricsRecorder::record_token_fetch("error");
+    } else if code == "UPSTREAM_AUTH_REJECTED" {
+        UpstreamMetricsRecorder::observe_duration(adapter, "auth_rejected", duration);
     } else if err_msg.contains("timeout") || err_msg.contains("Timeout") {
         UpstreamMetricsRecorder::record_timeout(adapter);
         UpstreamMetricsRecorder::observe_duration(adapter, "timeout", duration);
@@ -375,6 +409,8 @@ fn invoke_failure(
         format!("SSRF Violation: {err_msg}")
     } else if code == "AUTH_TOKEN_FAILED" {
         format!("Dynamic Auth Token Retrieval Error: {err_msg}")
+    } else if code == "UPSTREAM_AUTH_REJECTED" {
+        format!("{UPSTREAM_AUTH_REJECTED_PREFIX}{err_msg}")
     } else if code == "CONFIG_CACHE_MISS" || err_msg.contains("CONFIG_CACHE") {
         err_msg
     } else {
@@ -430,6 +466,8 @@ fn invoke_success(
             adapter: meta.adapter,
             upstream_wire_ms: meta.latency_ms,
         }),
+        internal_retries: 0,
+        retry_reasons: Vec::new(),
     }
 }
 
@@ -440,6 +478,8 @@ fn invoke_error(error: String) -> upstream_proto::InvokeResponse {
         biz_error: None,
         payload_json: String::new(),
         upstream_meta: None,
+        internal_retries: 0,
+        retry_reasons: Vec::new(),
     }
 }
 
@@ -604,5 +644,60 @@ mod pipeline_key_tests {
         let dbg = format!("{keys:?}");
         assert!(!dbg.contains("unit-test-secret"));
         assert!(!dbg.contains("00112233445566778899aabbccddeeff"));
+    }
+}
+
+#[cfg(test)]
+mod retry_passthrough_tests {
+    use super::*;
+    use mazbri_upstream_runtime::{AuthRejectTrigger, InvokeResult, RetryReason};
+
+    fn result(ok: bool) -> InvokeResult {
+        InvokeResult {
+            ok,
+            latency_ms: 1,
+            stages: Vec::new(),
+            payload: None,
+            biz_error: None,
+            error_code: (!ok).then(|| "UPSTREAM_AUTH_REJECTED".into()),
+            error_message: None,
+            upstream_meta: None,
+            token: None,
+            response: None,
+            internal_retries: 1,
+            retry_reasons: vec![RetryReason::AuthRejected(AuthRejectTrigger::JsonRpcCode(
+                -32001,
+            ))],
+            retry_skipped: None,
+        }
+    }
+
+    #[test]
+    fn success_path_carries_internal_retries() {
+        let r = result(true);
+        let retries = InternalRetries::of(&r);
+        let resp = retries.attach(invoke_success(r, "jsonrpc", 0.01));
+        assert!(resp.success);
+        assert_eq!(resp.internal_retries, 1);
+        assert_eq!(resp.retry_reasons, vec!["auth_rejected:jsonrpc_code"]);
+    }
+
+    #[test]
+    fn failure_path_carries_internal_retries() {
+        let r = result(false);
+        let resp = InternalRetries::of(&r).attach(invoke_failure(
+            "UPSTREAM_AUTH_REJECTED",
+            "upstream rejected credentials".into(),
+            "jsonrpc",
+            0.01,
+        ));
+        assert!(!resp.success);
+        assert!(
+            resp.error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX),
+            "{}",
+            resp.error
+        );
+        assert_eq!(resp.internal_retries, 1);
+        assert_eq!(resp.retry_reasons, vec!["auth_rejected:jsonrpc_code"]);
     }
 }

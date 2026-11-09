@@ -25,6 +25,7 @@ reqwest = { version = "0.13.2", default-features = false, features = ["json", "g
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+subtle = { workspace = true }
 hex = "0.4"
 thiserror = "2.0"
 tokio = { version = "1.35", features = ["full"] }
@@ -38,6 +39,7 @@ base64 = "0.22"
 hex = "0.4"
 urlencoding = "2.1"
 tokio = { version = "1.35", features = ["full", "test-util", "macros"] }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

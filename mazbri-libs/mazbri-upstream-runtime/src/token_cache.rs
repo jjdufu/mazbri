@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::future::Future;
+use subtle::ConstantTimeEq;
 use tokio::sync::{Mutex, RwLock, watch};
 
 type FlightReceiver<V> = watch::Receiver<Option<Result<V, String>>>;
@@ -72,18 +73,43 @@ pub struct CachedToken {
     pub expires_at: DateTime<Utc>,
 }
 
+/// [`TokenCache::evict_if_current_gated`] 的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaleEvict {
+    /// 缓存仍是被拒令牌，预算放行，已作废。
+    Evicted,
+    /// 缓存仍是被拒令牌，预算不放行，未作废。
+    Denied,
+    /// 缓存已换新或已被并发请求作废。
+    Superseded,
+}
+
+/// 进程内令牌缓存：命中未过期（扣除提前量）的令牌直接返回，否则经 singleflight 换票。
 pub struct TokenCache {
     cache: RwLock<HashMap<String, CachedToken>>,
     flight_group: Group<String, CachedToken>,
+    refresh_skew: chrono::Duration,
 }
 
 impl TokenCache {
+    /// `refresh_skew`：令牌剩余有效期不足该值即视为过期（来自运行时配置）。
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(refresh_skew: std::time::Duration) -> Self {
         Self {
             cache: RwLock::new(HashMap::new()),
             flight_group: Group::new(),
+            refresh_skew: chrono::Duration::from_std(refresh_skew).unwrap_or(chrono::Duration::MAX),
         }
+    }
+
+    /// 提前视为过期的余量。
+    #[must_use]
+    pub fn refresh_skew(&self) -> std::time::Duration {
+        self.refresh_skew.to_std().unwrap_or_default()
+    }
+
+    fn is_fresh(&self, cached: &CachedToken, now: DateTime<Utc>) -> bool {
+        cached.expires_at > now + self.refresh_skew
     }
 
     /// # Errors
@@ -94,12 +120,10 @@ impl TokenCache {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<CachedToken, String>>,
     {
-        let now = Utc::now();
-
         {
             let guard = self.cache.read().await;
             if let Some(cached) = guard.get(cache_key)
-                && cached.expires_at > now + chrono::Duration::seconds(30)
+                && self.is_fresh(cached, Utc::now())
             {
                 return Ok(cached.token.clone());
             }
@@ -111,7 +135,7 @@ impl TokenCache {
                 {
                     let guard = self.cache.read().await;
                     if let Some(cached) = guard.get(cache_key)
-                        && cached.expires_at > Utc::now() + chrono::Duration::seconds(30)
+                        && self.is_fresh(cached, Utc::now())
                     {
                         return Ok(cached.clone());
                     }
@@ -128,14 +152,122 @@ impl TokenCache {
         Ok(cached.token)
     }
 
-    pub async fn evict_token(&self, cache_key: &str) {
+    /// 认证被拒后的「作废令牌」决策（原子，写锁内完成）：
+    ///
+    /// - 缓存仍是 `failed`：本请求是这一代令牌的首个被拒者，调用 `gate`（重试预算）；
+    ///   通过则作废并返回 [`StaleEvict::Evicted`]，不通过则保留缓存返回 [`StaleEvict::Denied`]
+    ///   （凭证持续无效时不会每个请求都触发换票）；
+    /// - 缓存已被换新或已被别的请求作废：返回 [`StaleEvict::Superseded`]，不消耗预算——
+    ///   同一代令牌只为首个被拒者付一次预算，其余并发请求直接用新令牌重放。
+    pub async fn evict_if_current_gated(
+        &self,
+        cache_key: &str,
+        failed: &str,
+        gate: impl FnOnce() -> bool,
+    ) -> StaleEvict {
         let mut guard = self.cache.write().await;
-        guard.remove(cache_key);
+        match guard.get(cache_key) {
+            Some(c) if bool::from(c.token.as_bytes().ct_eq(failed.as_bytes())) => {
+                if gate() {
+                    guard.remove(cache_key);
+                    StaleEvict::Evicted
+                } else {
+                    StaleEvict::Denied
+                }
+            }
+            _ => StaleEvict::Superseded,
+        }
+    }
+
+    /// 仅当缓存中的令牌仍是 `failed` 时删除，返回是否删除（常量时间比较）。
+    ///
+    /// 并发 N 个请求同时被拒时只有第一个真正删除；其余看到的已是新令牌或空，
+    /// 直接走 [`Self::get_token`]，不会误删别的请求刚换回来的新令牌。
+    pub async fn evict_if_current(&self, cache_key: &str, failed: &str) -> bool {
+        self.evict_if_current_gated(cache_key, failed, || true)
+            .await
+            == StaleEvict::Evicted
     }
 }
 
-impl Default for TokenCache {
-    fn default() -> Self {
-        Self::new()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    fn token(t: &str, ttl_secs: i64) -> CachedToken {
+        CachedToken {
+            token: t.into(),
+            expires_at: Utc::now() + chrono::Duration::seconds(ttl_secs),
+        }
+    }
+
+    async fn seed(cache: &TokenCache, key: &str, t: CachedToken) {
+        let want = t.token.clone();
+        let got = cache.get_token(key, || async move { Ok(t) }).await.unwrap();
+        assert_eq!(got, want);
+    }
+
+    #[tokio::test]
+    async fn evict_if_current_only_removes_matching_token() {
+        let cache = TokenCache::new(Duration::from_secs(30));
+        seed(&cache, "k", token("A", 600)).await;
+        assert!(
+            !cache.evict_if_current("k", "B").await,
+            "缓存为 A、传入 B 不删"
+        );
+        assert!(
+            cache.evict_if_current("k", "A").await,
+            "缓存为 A、传入 A 删除"
+        );
+        assert!(!cache.evict_if_current("k", "A").await, "缓存为空不删");
+    }
+
+    #[tokio::test]
+    async fn concurrent_evict_then_get_fetches_once() {
+        let cache = Arc::new(TokenCache::new(Duration::from_secs(30)));
+        seed(&cache, "k", token("A", 600)).await;
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let mut joins = Vec::new();
+        for _ in 0..16 {
+            let cache = cache.clone();
+            let fetches = fetches.clone();
+            joins.push(tokio::spawn(async move {
+                cache.evict_if_current("k", "A").await;
+                cache
+                    .get_token("k", || async move {
+                        fetches.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        Ok(token("B", 600))
+                    })
+                    .await
+                    .unwrap()
+            }));
+        }
+        for j in joins {
+            assert_eq!(j.await.unwrap(), "B");
+        }
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn refresh_skew_from_config_decides_freshness() {
+        let cache = TokenCache::new(Duration::from_secs(30));
+        seed(&cache, "near", token("OLD", 29)).await;
+        let got = cache
+            .get_token("near", || async { Ok(token("NEW", 600)) })
+            .await
+            .unwrap();
+        assert_eq!(got, "NEW", "剩余 29s < skew 30s 触发换票");
+
+        seed(&cache, "far", token("KEEP", 31)).await;
+        let got = cache
+            .get_token("far", || async { Ok(token("NEW", 600)) })
+            .await
+            .unwrap();
+        assert_eq!(got, "KEEP", "剩余 31s > skew 30s 命中缓存");
+        assert_eq!(cache.refresh_skew(), Duration::from_secs(30));
     }
 }
