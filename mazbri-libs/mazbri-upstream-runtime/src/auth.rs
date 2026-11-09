@@ -14,9 +14,9 @@ use crate::http_call::HttpCall;
 
 use crate::funcs::{basic_b64, url_encode};
 use crate::ssrf::SsrfChecker;
-use crate::template::extract_by_path;
 use crate::token_cache::{CachedToken, TokenCache};
 use crate::types::ExecuteError;
+use mazbri_core::json_path::extract_by_path;
 
 pub struct AppliedAuth {
     pub headers: HashMap<String, String>,

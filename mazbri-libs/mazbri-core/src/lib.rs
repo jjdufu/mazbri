@@ -10,6 +10,7 @@ mod distributed_circuit_breaker;
 mod error;
 pub mod http_upstream_config;
 pub mod interaction;
+pub mod json_path;
 pub mod log_writer_metrics;
 pub mod logging;
 pub mod metrics;
@@ -36,11 +37,12 @@ pub use channel_egress::{
     ADAPTER_HTTP_JSON, AUTH_API_KEY, AUTH_AWS_SIGV4, AUTH_BASIC, AUTH_BEARER, AUTH_DIGEST,
     AUTH_GETTOKEN, AUTH_GRPC_METADATA, AUTH_HAWK, AUTH_JWT, AUTH_NONE, AUTH_OAUTH_CC_FORM,
     AUTH_SIGN_FORM, AdapterKind, AuthAwsSpec, AuthDigestSpec, AuthHawkSpec, AuthInjectSpec,
-    AuthJwtSpec, AuthProfile, AuthSpec, BodyEncoding, ChannelEgressError, ChannelEgressSpec,
-    EgressRequestSpec, EgressResponseSpec, WRAP_METHOD_BIZ_CONTENT, hash_egress_spec,
-    hash_egress_spec_json, parse_and_validate_egress, parse_channel_config_egress,
-    profile_is_undeclared, sanitize_auth_spec, sanitize_egress_auth,
+    AuthInvalidationSpec, AuthJwtSpec, AuthProfile, AuthSpec, BodyEncoding, BodyMatchRule,
+    ChannelEgressError, ChannelEgressSpec, EgressRequestSpec, EgressResponseSpec,
+    WRAP_METHOD_BIZ_CONTENT, hash_egress_spec, hash_egress_spec_json, parse_and_validate_egress,
+    parse_channel_config_egress, profile_is_undeclared, sanitize_auth_spec, sanitize_egress_auth,
     upsert_egress_in_channel_config, validate_channel_config_if_egress, validate_egress_spec,
+    validate_invalidation_rules,
 };
 pub use circuit_breaker::{
     CIRCUIT_BREAKER_FAILURES, CIRCUIT_BREAKER_STATE, CIRCUIT_BREAKER_SUCCESS_RATE, CircuitBreaker,

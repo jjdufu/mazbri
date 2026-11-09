@@ -112,7 +112,7 @@ fn outcome_from_json(
         .unwrap_or(json);
     soft_verify_signed_object(&inner, profile, ctx.pipeline_keys, ctx.registry);
     let payload = match ctx.input.spec.response.as_ref().and_then(|r| r.unwrap.as_deref()) {
-        Some(path) => crate::template::extract_by_path(&inner, path).unwrap_or(inner),
+        Some(path) => mazbri_core::json_path::extract_by_path(&inner, path).unwrap_or(inner),
         None => inner,
     };
     AdapterOutcome {

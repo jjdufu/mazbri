@@ -304,6 +304,127 @@ pub struct AuthHawkSpec {
     pub ext: Option<String>,
 }
 
+/// 「认证被拒」识别规则。命中即视为上游未执行业务：作废当前令牌，换票后重试一次。
+///
+/// 规则全部来自配置，代码不内置任何上游私有错误码。渠道 `egress.auth.invalidation`
+/// 未声明时继承供应商 `auth_flow.invalidation`，两者都未声明时取 [`Default`]（仅 HTTP 401）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AuthInvalidationSpec {
+    /// 命中即判定认证被拒的 HTTP 状态码。省略时为 `[401]`（RFC 6750 §3.1）；显式 `[]` 表示不按状态码判定。
+    #[serde(default = "default_invalidation_status")]
+    pub http_status: Vec<u16>,
+    /// JSON-RPC `error.code` 命中集合。JSON-RPC 2.0 没有标准的「未认证」码，必须按上游声明；省略为空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jsonrpc_codes: Vec<i64>,
+    /// 响应体 `JSONPath` 命中规则（任一命中即判定），用于 HTTP 200 + 体内错误码的上游。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_match: Vec<BodyMatchRule>,
+    /// `ws_unary`：新握手的连接在收到任何回复帧前被对端关闭，判定为认证被拒。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ws_close_before_reply: bool,
+}
+
+impl Default for AuthInvalidationSpec {
+    fn default() -> Self {
+        Self {
+            http_status: default_invalidation_status(),
+            jsonrpc_codes: Vec::new(),
+            body_match: Vec::new(),
+            ws_close_before_reply: false,
+        }
+    }
+}
+
+impl AuthInvalidationSpec {
+    /// 按渠道适配器裁掉不适用的字段（供应商级规则下发到具体渠道时使用）。
+    #[must_use]
+    pub fn for_adapter(mut self, adapter: AdapterKind) -> Self {
+        if adapter != AdapterKind::Jsonrpc {
+            self.jsonrpc_codes.clear();
+        }
+        if adapter != AdapterKind::WsUnary {
+            self.ws_close_before_reply = false;
+        }
+        self
+    }
+}
+
+/// 响应体命中规则：`path` 处的取值等于 `equals` 中任一值即命中。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BodyMatchRule {
+    /// 平台 `JSONPath` 子集，例如 `$.code`、`$.error.status`。
+    pub path: String,
+    /// 按 JSON 值比较，字符串与数字不互转。
+    pub equals: Vec<serde_json::Value>,
+}
+
+fn default_invalidation_status() -> Vec<u16> {
+    vec![401]
+}
+
+/// 校验与适配器无关的规则部分（渠道与供应商共用）；`field` 为报错用的字段前缀。
+///
+/// # Errors
+///
+/// 状态码不在 400–599、状态码重复、`body_match.path` 非法或 `equals` 为空时返回错误。
+pub fn validate_invalidation_rules(spec: &AuthInvalidationSpec, field: &str) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for code in &spec.http_status {
+        if !(400..=599).contains(code) {
+            return Err(format!(
+                "{field}.http_status 取值必须在 400..=599 之间，当前为 {code}"
+            ));
+        }
+        if !seen.insert(*code) {
+            return Err(format!("{field}.http_status 存在重复值 {code}"));
+        }
+    }
+    let mut seen_rpc = std::collections::HashSet::new();
+    for code in &spec.jsonrpc_codes {
+        if !seen_rpc.insert(*code) {
+            return Err(format!("{field}.jsonrpc_codes 存在重复值 {code}"));
+        }
+    }
+    for (i, rule) in spec.body_match.iter().enumerate() {
+        crate::json_path::validate_json_path(&rule.path)
+            .map_err(|e| format!("{field}.body_match[{i}].path 非法：{e}"))?;
+        if rule.path.trim() == "$" || rule.path.trim().is_empty() {
+            return Err(format!("{field}.body_match[{i}].path 不能是根路径"));
+        }
+        if rule.equals.is_empty() {
+            return Err(format!("{field}.body_match[{i}].equals 不能为空"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_auth_invalidation(
+    spec: &AuthInvalidationSpec,
+    profile: AuthProfile,
+    adapter: AdapterKind,
+) -> Result<(), ChannelEgressError> {
+    const FIELD: &str = "egress.auth.invalidation";
+    if profile == AuthProfile::None {
+        return Err(ChannelEgressError::new(format!(
+            "{FIELD} 不能用于 profile=none（没有可作废的令牌）"
+        )));
+    }
+    validate_invalidation_rules(spec, FIELD).map_err(ChannelEgressError::new)?;
+    if !spec.jsonrpc_codes.is_empty() && adapter != AdapterKind::Jsonrpc {
+        return Err(ChannelEgressError::new(format!(
+            "{FIELD}.jsonrpc_codes 仅用于 jsonrpc 适配器"
+        )));
+    }
+    if spec.ws_close_before_reply && adapter != AdapterKind::WsUnary {
+        return Err(ChannelEgressError::new(format!(
+            "{FIELD}.ws_close_before_reply 仅用于 ws_unary 适配器"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AuthSpec {
@@ -335,6 +456,9 @@ pub struct AuthSpec {
     pub aws: Option<AuthAwsSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hawk: Option<AuthHawkSpec>,
+    /// 认证失效识别规则；对所有 profile 生效，不随换票字段清除。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalidation: Option<AuthInvalidationSpec>,
 }
 
 fn default_auth_profile() -> String {
@@ -774,6 +898,9 @@ fn validate_egress_request(
 
 fn validate_egress_auth(auth: &AuthSpec, adapter: AdapterKind) -> Result<(), ChannelEgressError> {
     let profile = auth.profile_kind()?;
+    if let Some(ref inv) = auth.invalidation {
+        validate_auth_invalidation(inv, profile, adapter)?;
+    }
     if let Some(ref url) = auth.token_url
         && !url.trim().is_empty()
     {
@@ -1074,6 +1201,218 @@ pub fn upsert_egress_in_channel_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn egress_with_invalidation(
+        adapter: &str,
+        profile: &str,
+        inv: &serde_json::Value,
+    ) -> serde_json::Value {
+        let mut auth = serde_json::json!({
+            "profile": profile,
+            "token_url": "https://idp.example/token",
+            "invalidation": inv,
+        });
+        if profile == "none" {
+            auth.as_object_mut().unwrap().remove("token_url");
+        }
+        serde_json::json!({
+            "adapter": adapter,
+            "base_url": "https://up.example",
+            "operation": "demo.op",
+            "request": {"method": "POST", "path": "/rpc", "body_encoding": "json", "wrap": "none"},
+            "ws": {"path": "/ws"},
+            "auth": auth,
+        })
+    }
+
+    #[test]
+    fn invalidation_omitted_is_none_and_default_is_401() {
+        let v = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "POST", "path": "/", "body_encoding": "json"},
+            "auth": {"profile": "oauth_cc_form", "token_url": "https://idp.example/token"}
+        });
+        let spec = parse_and_validate_egress(&v).unwrap();
+        assert!(spec.auth.as_ref().unwrap().invalidation.is_none());
+        assert_eq!(AuthInvalidationSpec::default().http_status, vec![401]);
+        let parsed: AuthInvalidationSpec = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(parsed, AuthInvalidationSpec::default());
+    }
+
+    #[test]
+    fn invalidation_explicit_empty_status_allowed() {
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"http_status": []}),
+        );
+        let spec = parse_and_validate_egress(&v).unwrap();
+        assert_eq!(
+            spec.auth.unwrap().invalidation.unwrap().http_status,
+            Vec::<u16>::new()
+        );
+    }
+
+    #[test]
+    fn invalidation_status_range_and_duplicates_rejected() {
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"http_status": [200]}),
+        );
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("400..=599")
+        );
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"http_status": [401, 401]}),
+        );
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("重复")
+        );
+    }
+
+    #[test]
+    fn invalidation_jsonrpc_codes_only_for_jsonrpc() {
+        let inv = serde_json::json!({"jsonrpc_codes": [-32001]});
+        let v = egress_with_invalidation("http_json", "oauth_cc_form", &inv);
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("仅用于 jsonrpc")
+        );
+        let v = egress_with_invalidation("jsonrpc", "oauth_cc_form", &inv);
+        let spec = parse_and_validate_egress(&v).unwrap();
+        assert_eq!(
+            spec.auth.unwrap().invalidation.unwrap().jsonrpc_codes,
+            vec![-32001]
+        );
+    }
+
+    #[test]
+    fn invalidation_ws_close_only_for_ws_unary() {
+        let inv = serde_json::json!({"ws_close_before_reply": true});
+        let v = egress_with_invalidation("http_json", "oauth_cc_form", &inv);
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("仅用于 ws_unary")
+        );
+        let mut v = egress_with_invalidation("ws_unary", "oauth_cc_form", &inv);
+        v["request"]["wrap"] = serde_json::json!("method_biz_content");
+        v["request"]["method"] = serde_json::json!("GET");
+        let spec = parse_and_validate_egress(&v).unwrap();
+        assert!(
+            spec.auth
+                .unwrap()
+                .invalidation
+                .unwrap()
+                .ws_close_before_reply
+        );
+    }
+
+    #[test]
+    fn invalidation_body_match_validated() {
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"body_match": [{"path": "$.code", "equals": []}]}),
+        );
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("equals")
+        );
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"body_match": [{"path": "code", "equals": ["X"]}]}),
+        );
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("path")
+        );
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"body_match": [{"path": "$.code", "equals": ["TOKEN_EXPIRED"]}]}),
+        );
+        assert!(parse_and_validate_egress(&v).is_ok());
+    }
+
+    #[test]
+    fn invalidation_unknown_field_rejected() {
+        let v = egress_with_invalidation(
+            "http_json",
+            "oauth_cc_form",
+            &serde_json::json!({"retry": 1}),
+        );
+        assert!(parse_and_validate_egress(&v).is_err());
+    }
+
+    #[test]
+    fn invalidation_rejected_for_profile_none() {
+        let v = egress_with_invalidation("http_json", "none", &serde_json::json!({}));
+        assert!(
+            parse_and_validate_egress(&v)
+                .unwrap_err()
+                .to_string()
+                .contains("profile=none")
+        );
+    }
+
+    #[test]
+    fn invalidation_round_trips_and_survives_sanitize() {
+        let inv = AuthInvalidationSpec {
+            http_status: vec![401, 419],
+            jsonrpc_codes: vec![],
+            body_match: vec![BodyMatchRule {
+                path: "$.code".into(),
+                equals: vec![serde_json::json!("TOKEN_EXPIRED")],
+            }],
+            ws_close_before_reply: false,
+        };
+        let auth = AuthSpec {
+            profile: AUTH_API_KEY.into(),
+            invalidation: Some(inv.clone()),
+            ..Default::default()
+        };
+        let back: AuthSpec = serde_json::from_value(serde_json::to_value(&auth).unwrap()).unwrap();
+        assert_eq!(back, auth);
+        let sanitized = sanitize_auth_spec(auth).unwrap();
+        assert_eq!(sanitized.invalidation, Some(inv));
+    }
+
+    #[test]
+    fn invalidation_for_adapter_drops_inapplicable_fields() {
+        let inv = AuthInvalidationSpec {
+            jsonrpc_codes: vec![-32001],
+            ws_close_before_reply: true,
+            ..Default::default()
+        };
+        let http = inv.clone().for_adapter(AdapterKind::HttpJson);
+        assert_eq!(http.jsonrpc_codes, Vec::<i64>::new());
+        assert!(!http.ws_close_before_reply);
+        let rpc = inv.clone().for_adapter(AdapterKind::Jsonrpc);
+        assert_eq!(rpc.jsonrpc_codes, vec![-32001]);
+        assert!(!rpc.ws_close_before_reply);
+        let ws = inv.for_adapter(AdapterKind::WsUnary);
+        assert_eq!(ws.jsonrpc_codes, Vec::<i64>::new());
+        assert!(ws.ws_close_before_reply);
+    }
 
     #[test]
     fn rejects_unknown_adapter() {

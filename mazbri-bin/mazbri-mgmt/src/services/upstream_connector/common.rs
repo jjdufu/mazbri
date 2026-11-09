@@ -83,6 +83,16 @@ pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &Suppl
         AuthProfile::Hawk if auth.hawk.is_none() => auth.hawk.clone_from(&flow.hawk),
         _ => {}
     }
+    // 认证失效规则按整个对象继承（不逐字段合并），并裁掉与本渠道适配器不适用的字段。
+    if auth.invalidation.is_none()
+        && target != AuthProfile::None
+        && let Some(ref inv) = flow.invalidation
+    {
+        auth.invalidation = Some(match spec.adapter_kind() {
+            Ok(kind) => inv.clone().for_adapter(kind),
+            Err(_) => inv.clone(),
+        });
+    }
     spec.auth = Some(auth);
 }
 
@@ -161,6 +171,76 @@ mod tests {
     use mazbri_core::{
         ADAPTER_HTTP_JSON, AUTH_BASIC, AUTH_NONE, AUTH_OAUTH_CC_FORM, AuthFlowConfig, AuthSpec,
     };
+
+    fn oauth_supplier(
+        invalidation: Option<mazbri_core::AuthInvalidationSpec>,
+        enabled: bool,
+    ) -> SupplierConfig {
+        SupplierConfig {
+            auth_flow: Some(AuthFlowConfig {
+                enabled,
+                profile: Some(AUTH_OAUTH_CC_FORM.into()),
+                token_url: "https://idp.example/token".into(),
+                invalidation,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn jsonrpc_spec(invalidation: Option<mazbri_core::AuthInvalidationSpec>) -> ChannelEgressSpec {
+        ChannelEgressSpec {
+            adapter: mazbri_core::channel_egress::ADAPTER_JSONRPC.to_string(),
+            auth: Some(AuthSpec {
+                profile: AUTH_OAUTH_CC_FORM.to_string(),
+                invalidation,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn merge_inherits_supplier_invalidation_when_channel_omits() {
+        let inv = mazbri_core::AuthInvalidationSpec {
+            jsonrpc_codes: vec![-32001],
+            ws_close_before_reply: true,
+            ..Default::default()
+        };
+        let mut spec = jsonrpc_spec(None);
+        merge_auth_from_supplier(&mut spec, &oauth_supplier(Some(inv), true));
+        let got = spec.auth.unwrap().invalidation.unwrap();
+        assert_eq!(got.jsonrpc_codes, vec![-32001]);
+        assert_eq!(got.http_status, vec![401]);
+        // ws_close_before_reply 不适用于 jsonrpc 渠道，继承时裁掉。
+        assert!(!got.ws_close_before_reply);
+    }
+
+    #[test]
+    fn merge_keeps_channel_invalidation_over_supplier() {
+        let channel_inv = mazbri_core::AuthInvalidationSpec {
+            http_status: vec![419],
+            ..Default::default()
+        };
+        let supplier_inv = mazbri_core::AuthInvalidationSpec {
+            jsonrpc_codes: vec![-32001],
+            ..Default::default()
+        };
+        let mut spec = jsonrpc_spec(Some(channel_inv.clone()));
+        merge_auth_from_supplier(&mut spec, &oauth_supplier(Some(supplier_inv), true));
+        assert_eq!(spec.auth.unwrap().invalidation, Some(channel_inv));
+    }
+
+    #[test]
+    fn merge_skips_invalidation_when_auth_flow_disabled() {
+        let supplier_inv = mazbri_core::AuthInvalidationSpec {
+            jsonrpc_codes: vec![-32001],
+            ..Default::default()
+        };
+        let mut spec = jsonrpc_spec(None);
+        merge_auth_from_supplier(&mut spec, &oauth_supplier(Some(supplier_inv), false));
+        assert!(spec.auth.unwrap().invalidation.is_none());
+    }
 
     #[test]
     fn merge_fills_oauth_from_supplier_auth_flow() {

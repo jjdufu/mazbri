@@ -19,8 +19,8 @@ use std::time::Duration;
 use crate::auth::AppliedAuth;
 use crate::http_call::{HttpCall, auth_only_response, send_http_with_digest};
 use crate::ssrf::SsrfChecker;
-use crate::template::extract_by_path;
 use crate::types::{BizError, ExecuteError, ExecuteMode, InvokeInput, OutboundResponse};
+use mazbri_core::json_path::extract_by_path;
 
 pub struct AdapterCtx<'a> {
     pub client: &'a Client,

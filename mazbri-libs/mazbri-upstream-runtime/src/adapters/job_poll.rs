@@ -13,8 +13,8 @@
 use mazbri_core::channel_egress::JobPollSpec;
 
 use crate::http_call::{HttpCall, append_query, join_url};
-use crate::template::extract_by_path;
 use crate::types::{BodyKind, ExecuteError, ExecuteMode};
+use mazbri_core::json_path::extract_by_path;
 
 use super::{AdapterCtx, AdapterOutcome, parse_json_body, wrap_method_biz};
 
