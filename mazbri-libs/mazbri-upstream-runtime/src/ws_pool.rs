@@ -12,6 +12,11 @@
 //! # 空闲回收
 //! 归还时若空闲数已达 `max_idle_per_key` 则丢弃；借出时丢弃超过 `idle_ttl` 的连接。
 //!
+//! # 借出前存活检查
+//! `liveness_check_on_checkout` 开启时，复用空闲连接前非阻塞地读一次：对端已发 Close、
+//! 已断开或空闲期出现业务帧的连接直接丢弃（计入 `stale_discards`），继续取下一条；
+//! 积压的 Ping 会回 Pong。检查只消费已到达的数据，不等待。
+//!
 //! # Binary 帧
 //! 适配器层对 binary 严格失败（见 `ws_unary`）；本池不解析帧载荷。
 
@@ -19,11 +24,14 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -43,6 +51,8 @@ pub struct WsPoolConfig {
     pub max_idle_per_key: u32,
     /// 空闲超过此时长的连接在借出时丢弃。
     pub idle_ttl: Duration,
+    /// 借出空闲连接前做非阻塞存活检查。
+    pub liveness_check_on_checkout: bool,
 }
 
 impl Default for WsPoolConfig {
@@ -53,6 +63,7 @@ impl Default for WsPoolConfig {
             max_concurrent_per_key: 8,
             max_idle_per_key: 4,
             idle_ttl: Duration::from_secs(60),
+            liveness_check_on_checkout: true,
         }
     }
 }
@@ -116,6 +127,7 @@ struct WsPoolInner {
     handshakes: AtomicUsize,
     reuses: AtomicUsize,
     rejects: AtomicUsize,
+    stale_discards: AtomicUsize,
 }
 
 /// 进程内共享的 `ws_unary` 池（bypass 与 mgmt 试跑同实现）。
@@ -136,6 +148,7 @@ impl WsPool {
                 handshakes: AtomicUsize::new(0),
                 reuses: AtomicUsize::new(0),
                 rejects: AtomicUsize::new(0),
+                stale_discards: AtomicUsize::new(0),
             }),
         }
     }
@@ -160,7 +173,13 @@ impl WsPool {
         self.inner.rejects.load(Ordering::SeqCst)
     }
 
-    /// 借出一条连接：优先空闲复用，否则新建握手。超限立即失败。
+    /// 借出前存活检查判死并丢弃的空闲连接数。
+    #[must_use]
+    pub fn stale_discards(&self) -> usize {
+        self.inner.stale_discards.load(Ordering::SeqCst)
+    }
+
+    /// 借出一条连接：优先空闲复用（按配置先做存活检查），否则新建握手。超限立即失败。
     ///
     /// # Errors
     ///
@@ -171,13 +190,52 @@ impl WsPool {
         ws_url: &str,
         handshake_headers: &[(String, String)],
     ) -> Result<WsConnGuard, ExecuteError> {
-        let global_permit = self.inner.global_sem.clone().try_acquire_owned().map_err(|_| {
-            self.inner.rejects.fetch_add(1, Ordering::SeqCst);
-            ExecuteError::AdapterFailed(format!(
-                "ws concurrency limit exceeded (ws_max_concurrent={})",
-                self.inner.cfg.max_concurrent
-            ))
-        })?;
+        let permits = self.acquire_permits(&key)?;
+        while let Some(mut stream) = self.take_idle(&key)? {
+            if self.inner.cfg.liveness_check_on_checkout
+                && matches!(probe_alive(&mut stream).await, Liveness::Dead)
+            {
+                self.inner.stale_discards.fetch_add(1, Ordering::SeqCst);
+                continue;
+            }
+            self.inner.reuses.fetch_add(1, Ordering::SeqCst);
+            return Ok(self.guard(key, stream, permits, true));
+        }
+        let stream = self.connect(ws_url, handshake_headers).await?;
+        self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
+        Ok(self.guard(key, stream, permits, false))
+    }
+
+    /// 跳过空闲连接直接握手（复用连接回复前断开后的重试专用），仍受全局与每键并发约束。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Self::checkout`]。
+    pub async fn checkout_fresh(
+        &self,
+        key: PoolKey,
+        ws_url: &str,
+        handshake_headers: &[(String, String)],
+    ) -> Result<WsConnGuard, ExecuteError> {
+        let permits = self.acquire_permits(&key)?;
+        let stream = self.connect(ws_url, handshake_headers).await?;
+        self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
+        Ok(self.guard(key, stream, permits, false))
+    }
+
+    fn acquire_permits(&self, key: &PoolKey) -> Result<Permits, ExecuteError> {
+        let global = self
+            .inner
+            .global_sem
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                self.inner.rejects.fetch_add(1, Ordering::SeqCst);
+                ExecuteError::AdapterFailed(format!(
+                    "ws concurrency limit exceeded (ws_max_concurrent={})",
+                    self.inner.cfg.max_concurrent
+                ))
+            })?;
 
         let key_sem = {
             let mut map = self
@@ -193,39 +251,26 @@ impl WsPool {
             slot.sem.clone()
         };
 
-        let Ok(key_permit) = key_sem.try_acquire_owned() else {
+        let Ok(per_key) = key_sem.try_acquire_owned() else {
             self.inner.rejects.fetch_add(1, Ordering::SeqCst);
-            drop(global_permit);
             return Err(ExecuteError::AdapterFailed(format!(
                 "ws per-key concurrency limit exceeded (ws_max_concurrent_per_key={})",
                 self.inner.cfg.max_concurrent_per_key
             )));
         };
+        Ok(Permits { global, per_key })
+    }
 
-        if let Some(stream) = self.take_idle(&key)? {
-            self.inner.reuses.fetch_add(1, Ordering::SeqCst);
-            return Ok(WsConnGuard {
-                stream: Some(stream),
-                pool: self.inner.clone(),
-                key,
-                _global: global_permit,
-                _key: key_permit,
-                broken: false,
-                reused: true,
-            });
-        }
-
-        let stream = self.connect(ws_url, handshake_headers).await?;
-        self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
-        Ok(WsConnGuard {
+    fn guard(&self, key: PoolKey, stream: WsStream, permits: Permits, reused: bool) -> WsConnGuard {
+        WsConnGuard {
             stream: Some(stream),
             pool: self.inner.clone(),
             key,
-            _global: global_permit,
-            _key: key_permit,
+            _global: permits.global,
+            _key: permits.per_key,
             broken: false,
-            reused: false,
-        })
+            reused,
+        }
     }
 
     fn take_idle(&self, key: &PoolKey) -> Result<Option<WsStream>, ExecuteError> {
@@ -289,6 +334,33 @@ impl WsPool {
             stream,
             last_used: Instant::now(),
         });
+    }
+}
+
+struct Permits {
+    global: OwnedSemaphorePermit,
+    per_key: OwnedSemaphorePermit,
+}
+
+enum Liveness {
+    Alive,
+    Dead,
+}
+
+/// 非阻塞读一次：无积压为活；积压的 Ping 回 Pong 后继续读；
+/// Close、EOF、读错误或空闲期出现的业务帧为死。
+async fn probe_alive(ws: &mut WsStream) -> Liveness {
+    loop {
+        match ws.next().now_or_never() {
+            None => return Liveness::Alive,
+            Some(Some(Ok(Message::Ping(payload)))) => {
+                if ws.send(Message::Pong(payload)).await.is_err() {
+                    return Liveness::Dead;
+                }
+            }
+            Some(Some(Ok(Message::Pong(_)))) => {}
+            Some(Some(Ok(_) | Err(_)) | None) => return Liveness::Dead,
+        }
     }
 }
 

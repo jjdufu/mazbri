@@ -266,6 +266,7 @@ async fn invoke_against(
         pipeline_keys: &pipeline_keys,
         registry: &registry,
         invalidation: rules,
+        ws_stale_retry: None,
     };
     invoke_adapter(&ctx, kind).await
 }

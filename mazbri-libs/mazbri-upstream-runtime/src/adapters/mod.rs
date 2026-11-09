@@ -40,6 +40,8 @@ pub struct AdapterCtx<'a> {
     pub registry: &'a mazbri_crypto::AlgorithmRegistry,
     /// 本渠道生效的认证失效规则（渠道 → 供应商 → 默认 401）。
     pub invalidation: &'a AuthInvalidationSpec,
+    /// 复用的 WS 连接回复前断开时换新连接重试所用的预算；`None` 表示不重试。
+    pub ws_stale_retry: Option<&'a crate::retry_budget::RetryBudget>,
 }
 
 impl AdapterCtx<'_> {
@@ -246,7 +248,8 @@ async fn dispatch_adapter(
         AdapterKind::Graphql => graphql::invoke(ctx).await,
         AdapterKind::Grpc => grpc::invoke(ctx).await,
         AdapterKind::SoapXml => soap_xml::invoke(ctx).await,
-        AdapterKind::WsUnary => ws_unary::invoke(ctx).await,
+        // 连接池借还 + 收发重试的状态机较大，装箱避免撑大所有适配器共用的 future。
+        AdapterKind::WsUnary => Box::pin(ws_unary::invoke(ctx)).await,
         AdapterKind::JobPoll => job_poll::invoke(ctx).await,
     }
 }
@@ -573,6 +576,7 @@ mod tests {
             pipeline_keys: &pipeline_keys,
             registry: &registry,
             invalidation: &invalidation,
+            ws_stale_retry: None,
         };
         let url = format!("http://{addr}/");
         dispatch_http(

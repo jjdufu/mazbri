@@ -330,6 +330,7 @@ mod tests {
             pipeline_keys: &pipeline_keys,
             registry: &registry,
             invalidation: &invalidation,
+            ws_stale_retry: None,
         };
         let out = invoke(&ctx).await.expect("invoke");
         (out, hits)

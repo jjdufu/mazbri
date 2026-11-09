@@ -119,6 +119,7 @@ impl RuntimeOptions {
             max_concurrent_per_key: self.ws_max_concurrent_per_key.max(1),
             max_idle_per_key: self.ws_pool_max_idle_per_key.max(1),
             idle_ttl: self.ws_pool_idle_ttl,
+            liveness_check_on_checkout: self.ws_liveness_check_on_checkout,
         }
     }
 
@@ -362,6 +363,10 @@ impl RuntimeEngine {
             pipeline_keys: &pipeline_keys,
             registry: &registry,
             invalidation: &invalidation,
+            ws_stale_retry: self
+                .options
+                .ws_stale_retry_enabled
+                .then_some(&*self.retry_budget),
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,
