@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use mazbri_core::AdapterKind;
 use mazbri_crypto::AlgorithmRegistry;
 
-use crate::adapters::{AdapterCtx, AdapterOutcome, invoke_adapter, merge_request_headers};
+use crate::adapters::{
+    AdapterCtx, AdapterOutcome, effective_invalidation, invoke_adapter, merge_request_headers,
+};
 use crate::crypto_pipeline::pipeline_keys_from_credentials;
 use crate::auth::{AppliedAuth, apply_auth, token_cache_key};
 use crate::mask::{mask_headers, redact_body_preview};
@@ -319,6 +321,7 @@ impl RuntimeEngine {
             pipeline_keys_from_credentials(&input.credentials)
         });
         let registry = AlgorithmRegistry::default_registry();
+        let invalidation = effective_invalidation(input);
         let ctx = AdapterCtx {
             client: &self.client,
             ssrf: &self.ssrf,
@@ -329,6 +332,7 @@ impl RuntimeEngine {
             ws_pool: &self.ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
+            invalidation: &invalidation,
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,
@@ -343,11 +347,10 @@ impl RuntimeEngine {
                 ..ResultParts::ok()
             }));
         }
-        if outcome.response.status == 401
-            && stale_token.is_none()
-            && let Some(token) = applied.token
+        if stale_token.is_none()
+            && let Some(rejection) = outcome.auth_rejection
         {
-            return AttemptOutcome::RetryUnauthorized(token);
+            return AttemptOutcome::RetryUnauthorized(rejection.token);
         }
         trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
         let meta = trace.upstream_meta(&outcome.response);

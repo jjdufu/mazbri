@@ -73,18 +73,15 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     .await?;
 
     let text = String::from_utf8_lossy(&response.body);
-    if response.status == 401 {
-        return Ok(AdapterOutcome {
-            payload: serde_json::Value::Null,
-            biz_error: None,
-            response,
-        });
+    if ctx.is_reject_status(response.status) {
+        return Ok(AdapterOutcome::raw(response));
     }
     if text.contains("Fault") && (response.status >= 400 || text.contains("faultstring")) {
         let code = extract_tag(&text, "faultcode").unwrap_or_else(|| "SOAP_FAULT".into());
         let message = extract_tag(&text, "faultstring").unwrap_or_else(|| "SOAP Fault".into());
         let detail = extract_tag(&text, "detail");
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: Some(BizError {
                 code,
@@ -97,6 +94,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let payload = xml_body_to_json(&text, operation, &field_map);
     Ok(AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error: None,

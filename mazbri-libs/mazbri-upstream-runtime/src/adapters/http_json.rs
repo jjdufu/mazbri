@@ -77,12 +77,8 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         },
     )
     .await?;
-    if response.status == 401 {
-        return Ok(AdapterOutcome {
-            payload: serde_json::Value::Null,
-            biz_error: None,
-            response,
-        });
+    if ctx.is_reject_status(response.status) {
+        return Ok(AdapterOutcome::raw(response));
     }
     let body_for_parse = if let Some(profile) = spec.crypto.as_ref() {
         maybe_open_json_body(
@@ -100,6 +96,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     });
     let (payload, biz_error) = apply_ok_and_unwrap(&json, spec)?;
     Ok(AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error,

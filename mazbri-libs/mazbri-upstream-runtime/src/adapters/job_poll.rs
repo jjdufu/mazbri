@@ -119,8 +119,9 @@ async fn invoke_submit(
         },
     )
     .await?;
-    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) || submit.status == 401 {
+    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) || ctx.is_reject_status(submit.status) {
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: None,
             response: submit,
@@ -133,6 +134,7 @@ async fn invoke_submit(
     let job_id = job_id_from_value(&job_id_val)?;
     // 立即返回；终态由租户侧轮询 / 回调 / 产品查询 API 完成——不在此 sleep。
     Ok(AdapterOutcome {
+        auth_rejection: None,
         payload: serde_json::json!({ JOB_ID_FIELD: job_id }),
         biz_error: None,
         response: submit,
@@ -180,8 +182,9 @@ async fn invoke_query(
         },
     )
     .await?;
-    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) || last.status == 401 {
+    if matches!(ctx.input.mode, ExecuteMode::AuthOnly) || ctx.is_reject_status(last.status) {
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: None,
             response: last,
@@ -189,6 +192,7 @@ async fn invoke_query(
     }
     if last.status == 404 {
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: Some(crate::types::BizError {
                 code: "NOT_FOUND".into(),
@@ -200,6 +204,7 @@ async fn invoke_query(
     }
     let json = parse_json_body(&last.body)?;
     Ok(AdapterOutcome {
+        auth_rejection: None,
         payload: json,
         biz_error: None,
         response: last,
@@ -313,6 +318,7 @@ mod tests {
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
         let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
         let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
+        let invalidation = mazbri_core::AuthInvalidationSpec::default();
         let ctx = AdapterCtx {
             client: &client,
             ssrf: &ssrf,
@@ -323,6 +329,7 @@ mod tests {
             ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
+            invalidation: &invalidation,
         };
         let out = invoke(&ctx).await.expect("invoke");
         (out, hits)

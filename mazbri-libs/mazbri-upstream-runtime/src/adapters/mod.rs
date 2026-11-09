@@ -11,7 +11,7 @@ mod sign_form;
 mod soap_xml;
 mod ws_unary;
 
-use mazbri_core::{AdapterKind, ChannelEgressSpec, WRAP_METHOD_BIZ_CONTENT};
+use mazbri_core::{AdapterKind, AuthInvalidationSpec, ChannelEgressSpec, WRAP_METHOD_BIZ_CONTENT};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -19,7 +19,10 @@ use std::time::Duration;
 use crate::auth::AppliedAuth;
 use crate::http_call::{HttpCall, auth_only_response, send_http_with_digest};
 use crate::ssrf::SsrfChecker;
-use crate::types::{BizError, ExecuteError, ExecuteMode, InvokeInput, OutboundResponse};
+use crate::types::{
+    AuthRejectTrigger, AuthRejection, BizError, ExecuteError, ExecuteMode, InvokeInput,
+    OutboundResponse,
+};
 use mazbri_core::json_path::extract_by_path;
 
 pub struct AdapterCtx<'a> {
@@ -35,12 +38,110 @@ pub struct AdapterCtx<'a> {
     pub pipeline_keys: &'a crate::crypto_pipeline::PipelineKeys,
     /// 算法注册表（与 Profile 校验 / pipeline 共用）。
     pub registry: &'a mazbri_crypto::AlgorithmRegistry,
+    /// 本渠道生效的认证失效规则（渠道 → 供应商 → 默认 401）。
+    pub invalidation: &'a AuthInvalidationSpec,
+}
+
+impl AdapterCtx<'_> {
+    /// 状态码命中认证失效规则：适配器不解析响应体，原样返回交给统一检测。
+    pub(crate) fn is_reject_status(&self, status: u16) -> bool {
+        self.invalidation.http_status.contains(&status)
+    }
 }
 
 pub struct AdapterOutcome {
     pub response: OutboundResponse,
     pub payload: serde_json::Value,
     pub biz_error: Option<BizError>,
+    /// 按认证失效规则判定的「认证被拒」；由 [`invoke_adapter`] 统一填写（WS 回复前关闭由适配器填写）。
+    pub auth_rejection: Option<AuthRejection>,
+}
+
+impl AdapterOutcome {
+    /// 命中失效状态码时的原样结果：不解析响应体，交给统一检测判定。
+    pub(crate) fn raw(response: OutboundResponse) -> Self {
+        Self {
+            response,
+            payload: serde_json::Value::Null,
+            biz_error: None,
+            auth_rejection: None,
+        }
+    }
+}
+
+/// 本渠道生效的认证失效规则：渠道 `egress.auth.invalidation` 优先；未声明时取供应商
+/// `auth_flow.invalidation`（启用时，按适配器裁剪）；都没有时为默认规则（仅 HTTP 401）。
+#[must_use]
+pub fn effective_invalidation(input: &InvokeInput) -> AuthInvalidationSpec {
+    if let Some(inv) = input
+        .spec
+        .auth
+        .as_ref()
+        .and_then(|a| a.invalidation.clone())
+    {
+        return inv;
+    }
+    let supplier = input
+        .config
+        .as_ref()
+        .and_then(|c| c.auth_flow.as_ref())
+        .filter(|f| f.enabled)
+        .and_then(|f| f.invalidation.clone());
+    match (supplier, input.spec.adapter_kind()) {
+        (Some(inv), Ok(kind)) => inv.for_adapter(kind),
+        (Some(inv), Err(_)) => inv,
+        (None, _) => AuthInvalidationSpec::default(),
+    }
+}
+
+/// 按规则判定认证被拒。只有带令牌（换票 / JWT）的请求才判定：静态凭据被拒时换票也解决不了。
+pub(crate) fn detect_auth_rejection(
+    rules: &AuthInvalidationSpec,
+    kind: AdapterKind,
+    outcome: &AdapterOutcome,
+    token: Option<&str>,
+) -> Option<AuthRejection> {
+    let token = token?;
+    let hit = |trigger| {
+        Some(AuthRejection {
+            trigger,
+            token: token.to_string(),
+        })
+    };
+    let status = outcome.response.status;
+    if rules.http_status.contains(&status) {
+        return hit(AuthRejectTrigger::HttpStatus(status));
+    }
+    if kind == AdapterKind::Grpc
+        && rules.http_status.contains(&401)
+        && outcome
+            .biz_error
+            .as_ref()
+            .is_some_and(|b| b.code == "UNAUTHORIZED")
+    {
+        return hit(AuthRejectTrigger::HttpStatus(401));
+    }
+    if kind == AdapterKind::Jsonrpc
+        && let Some(code) = outcome
+            .biz_error
+            .as_ref()
+            .and_then(|b| b.details.as_ref())
+            .and_then(|d| d.get("code"))
+            .and_then(serde_json::Value::as_i64)
+        && rules.jsonrpc_codes.contains(&code)
+    {
+        return hit(AuthRejectTrigger::JsonRpcCode(code));
+    }
+    if !rules.body_match.is_empty()
+        && let Ok(json) = serde_json::from_slice::<serde_json::Value>(&outcome.response.body)
+        && rules
+            .body_match
+            .iter()
+            .any(|r| extract_by_path(&json, &r.path).is_some_and(|v| r.equals.contains(&v)))
+    {
+        return hit(AuthRejectTrigger::BodyMatch);
+    }
+    None
 }
 
 /// Auth headers first; spec `request.headers` fill missing keys (`or_insert`).
@@ -122,6 +223,18 @@ pub async fn dispatch_http(
 }
 
 pub async fn invoke_adapter(
+    ctx: &AdapterCtx<'_>,
+    kind: AdapterKind,
+) -> Result<AdapterOutcome, ExecuteError> {
+    let mut outcome = dispatch_adapter(ctx, kind).await?;
+    if outcome.auth_rejection.is_none() {
+        outcome.auth_rejection =
+            detect_auth_rejection(ctx.invalidation, kind, &outcome, ctx.auth.token.as_deref());
+    }
+    Ok(outcome)
+}
+
+async fn dispatch_adapter(
     ctx: &AdapterCtx<'_>,
     kind: AdapterKind,
 ) -> Result<AdapterOutcome, ExecuteError> {
@@ -275,6 +388,9 @@ pub fn snake_to_camel(s: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod auth_reject_tests;
 
 #[cfg(test)]
 mod tests {
@@ -445,6 +561,7 @@ mod tests {
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
         let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
         let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
+        let invalidation = mazbri_core::AuthInvalidationSpec::default();
         let ctx = AdapterCtx {
             client: &client,
             ssrf: &ssrf,
@@ -455,6 +572,7 @@ mod tests {
             ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
+            invalidation: &invalidation,
         };
         let url = format!("http://{addr}/");
         dispatch_http(

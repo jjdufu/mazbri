@@ -41,6 +41,7 @@ pub use ssrf::{SsrfChecker, SsrfConfig, SsrfSafeResolver, is_always_blocked_ip, 
 pub use template::{is_identity_response_template, render_body_template, render_response_template};
 pub use token_cache::{CachedToken, TokenCache};
 pub use types::{
-    BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError, ExecuteMode, ExecuteOptions,
-    InvokeInput, InvokeResult, OutboundResponse, StageResult, StageSummary, UpstreamMeta,
+    AuthRejectTrigger, AuthRejection, BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError,
+    ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, StageResult,
+    StageSummary, UpstreamMeta,
 };

@@ -93,6 +93,7 @@ fn outcome_from_json(
             .unwrap_or("sign_form error")
             .to_string();
         return AdapterOutcome {
+            auth_rejection: None,
             payload: Value::Null,
             biz_error: Some(BizError {
                 code: "UPSTREAM_BIZ".into(),
@@ -116,6 +117,7 @@ fn outcome_from_json(
         None => inner,
     };
     AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error: None,

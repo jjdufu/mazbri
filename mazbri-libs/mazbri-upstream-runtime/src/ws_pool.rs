@@ -211,6 +211,7 @@ impl WsPool {
                 _global: global_permit,
                 _key: key_permit,
                 broken: false,
+                reused: true,
             });
         }
 
@@ -223,6 +224,7 @@ impl WsPool {
             _global: global_permit,
             _key: key_permit,
             broken: false,
+            reused: false,
         })
     }
 
@@ -298,6 +300,7 @@ pub struct WsConnGuard {
     _global: OwnedSemaphorePermit,
     _key: OwnedSemaphorePermit,
     broken: bool,
+    reused: bool,
 }
 
 impl WsConnGuard {
@@ -313,6 +316,12 @@ impl WsConnGuard {
     /// 标记坏连：Drop 时不归还池。
     pub fn mark_broken(&mut self) {
         self.broken = true;
+    }
+
+    /// 是否为从空闲池复用的连接（`false` 表示本次新握手）。
+    #[must_use]
+    pub fn reused(&self) -> bool {
+        self.reused
     }
 }
 

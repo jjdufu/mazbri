@@ -34,18 +34,15 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         },
     )
     .await?;
-    if response.status == 401 {
-        return Ok(AdapterOutcome {
-            payload: serde_json::Value::Null,
-            biz_error: None,
-            response,
-        });
+    if ctx.is_reject_status(response.status) {
+        return Ok(AdapterOutcome::raw(response));
     }
     let json = parse_json_body(&response.body)?;
     if let Some(err) = json.get("error")
         && !err.is_null()
     {
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: Some(map_jsonrpc_error(err)),
             response,
@@ -56,6 +53,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     Ok(AdapterOutcome {
+        auth_rejection: None,
         response,
         payload,
         biz_error: None,

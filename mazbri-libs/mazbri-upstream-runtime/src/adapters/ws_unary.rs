@@ -8,7 +8,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::http_call::{append_query, join_url};
-use crate::types::{BizError, ExecuteError, OutboundResponse};
+use crate::types::{AuthRejectTrigger, AuthRejection, BizError, ExecuteError, OutboundResponse};
 use crate::ws_pool::{auth_fingerprint, PoolKey};
 
 use super::{AdapterCtx, AdapterOutcome, wrap_by_name};
@@ -49,7 +49,23 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         Ok(v) => v,
         Err(e) => {
             guard.mark_broken();
-            return Err(e);
+            if matches!(e, WsWaitError::ClosedBeforeReply(_))
+                && !guard.reused()
+                && ctx.invalidation.ws_close_before_reply
+                && let Some(token) = ctx.auth.token.as_deref()
+            {
+                // 新握手的连接未回任何帧即被关闭：按规则判定为认证被拒，交给引擎换票重试。
+                return Ok(AdapterOutcome {
+                    auth_rejection: Some(AuthRejection {
+                        trigger: AuthRejectTrigger::WsClosedBeforeReply,
+                        token: token.to_string(),
+                    }),
+                    payload: serde_json::Value::Null,
+                    biz_error: None,
+                    response: closed_response(&url),
+                });
+            }
+            return Err(e.into());
         }
     };
 
@@ -64,6 +80,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             .unwrap_or("ws business error")
             .to_string();
         return Ok(AdapterOutcome {
+            auth_rejection: None,
             payload: serde_json::Value::Null,
             biz_error: Some(BizError {
                 code: "UPSTREAM_BIZ".into(),
@@ -75,10 +92,32 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     }
     let payload = json.get("data").cloned().unwrap_or(json.clone());
     Ok(AdapterOutcome {
+        auth_rejection: None,
         payload,
         biz_error: None,
         response: synthetic_response(&url, &json),
     })
+}
+
+/// 发送并等待回复的失败分类（决定是否属于「回复前被关闭」）。
+#[derive(Debug)]
+enum WsWaitError {
+    /// 写帧失败。
+    SendFailed(String),
+    /// 收到 Close / EOF / 连接被重置，且此前未收到任何业务帧。
+    ClosedBeforeReply(String),
+    /// 其余错误（超时、帧解析失败、已收到过帧后断开等），一律不重试。
+    Other(ExecuteError),
+}
+
+impl From<WsWaitError> for ExecuteError {
+    fn from(e: WsWaitError) -> Self {
+        match e {
+            WsWaitError::SendFailed(m) => ExecuteError::UpstreamTransport(format!("ws send: {m}")),
+            WsWaitError::ClosedBeforeReply(m) => ExecuteError::UpstreamTransport(m),
+            WsWaitError::Other(e) => e,
+        }
+    }
 }
 
 async fn send_and_wait(
@@ -86,54 +125,89 @@ async fn send_and_wait(
     request_id: &str,
     text: String,
     wait_timeout: std::time::Duration,
-) -> Result<serde_json::Value, ExecuteError> {
+) -> Result<serde_json::Value, WsWaitError> {
     {
-        let ws = guard.stream()?;
+        let ws = guard.stream().map_err(WsWaitError::Other)?;
         ws.send(Message::Text(text.into()))
             .await
-            .map_err(|e| ExecuteError::UpstreamTransport(format!("ws send: {e}")))?;
+            .map_err(|e| WsWaitError::SendFailed(e.to_string()))?;
     }
 
+    let mut frames_received = 0usize;
+    let closed = |frames: usize, msg: String| {
+        if frames == 0 {
+            WsWaitError::ClosedBeforeReply(msg)
+        } else {
+            WsWaitError::Other(ExecuteError::UpstreamTransport(msg))
+        }
+    };
     tokio::time::timeout(wait_timeout, async {
         loop {
             let next = {
-                let ws = guard.stream()?;
+                let ws = guard.stream().map_err(WsWaitError::Other)?;
                 ws.next().await
             };
             match next {
                 Some(Ok(Message::Text(t))) => {
-                    let v: serde_json::Value = serde_json::from_str(&t)
-                        .map_err(|e| ExecuteError::AdapterFailed(format!("ws frame json: {e}")))?;
+                    frames_received += 1;
+                    let v: serde_json::Value = serde_json::from_str(&t).map_err(|e| {
+                        WsWaitError::Other(ExecuteError::AdapterFailed(format!(
+                            "ws frame json: {e}"
+                        )))
+                    })?;
                     let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
                     if id == request_id || id.is_empty() {
                         return Ok(v);
                     }
                 }
                 Some(Ok(Message::Binary(_))) => {
-                    return Err(ExecuteError::AdapterFailed(
+                    return Err(WsWaitError::Other(ExecuteError::AdapterFailed(
                         "binary ws frame not supported".into(),
-                    ));
+                    )));
                 }
                 Some(Ok(Message::Close(_))) | None => {
-                    return Err(ExecuteError::UpstreamTransport(
-                        "ws closed before reply".into(),
-                    ));
+                    return Err(closed(frames_received, "ws closed before reply".into()));
                 }
                 Some(Ok(Message::Ping(p))) => {
-                    let ws = guard.stream()?;
-                    ws.send(Message::Pong(p))
-                        .await
-                        .map_err(|e| ExecuteError::UpstreamTransport(format!("ws pong: {e}")))?;
+                    let ws = guard.stream().map_err(WsWaitError::Other)?;
+                    ws.send(Message::Pong(p)).await.map_err(|e| {
+                        WsWaitError::Other(ExecuteError::UpstreamTransport(format!("ws pong: {e}")))
+                    })?;
                 }
                 Some(Ok(_)) => {}
+                Some(Err(e)) if is_disconnect(&e) => {
+                    return Err(closed(
+                        frames_received,
+                        format!("ws closed before reply: {e}"),
+                    ));
+                }
                 Some(Err(e)) => {
-                    return Err(ExecuteError::UpstreamTransport(format!("ws: {e}")));
+                    return Err(WsWaitError::Other(ExecuteError::UpstreamTransport(
+                        format!("ws: {e}"),
+                    )));
                 }
             }
         }
     })
     .await
-    .map_err(|_| ExecuteError::UpstreamTransport("ws wait exceeded timeout_ms".into()))?
+    .map_err(|_| {
+        WsWaitError::Other(ExecuteError::UpstreamTransport(
+            "ws wait exceeded timeout_ms".into(),
+        ))
+    })?
+}
+
+/// 对端断开类错误（关闭、重置、IO 中断），区别于协议/解析错误。
+fn is_disconnect(e: &tokio_tungstenite::tungstenite::Error) -> bool {
+    use tokio_tungstenite::tungstenite::Error as WsErr;
+    use tokio_tungstenite::tungstenite::error::ProtocolError;
+    matches!(
+        e,
+        WsErr::ConnectionClosed
+            | WsErr::AlreadyClosed
+            | WsErr::Io(_)
+            | WsErr::Protocol(ProtocolError::ResetWithoutClosingHandshake)
+    )
 }
 
 fn ws_path(ctx: &AdapterCtx<'_>) -> String {
@@ -165,6 +239,18 @@ async fn ws_url(ctx: &AdapterCtx<'_>, path: &str) -> Result<String, ExecuteError
         return Err(ExecuteError::SsrfBlocked(e));
     }
     Ok(url)
+}
+
+/// 回复前被关闭时的占位响应：没有 HTTP 状态（0）、没有响应体。
+fn closed_response(url: &str) -> OutboundResponse {
+    OutboundResponse {
+        status: 0,
+        headers: std::collections::HashMap::default(),
+        body: Vec::new(),
+        final_url: url.to_string(),
+        method: "WS".into(),
+        path: url.to_string(),
+    }
 }
 
 fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
@@ -325,11 +411,21 @@ mod tests {
         base: &str,
         request_id: &str,
     ) -> Result<AdapterOutcome, ExecuteError> {
+        let invalidation = mazbri_core::AuthInvalidationSpec::default();
+        run_with(pool, base, request_id, &auth_empty(), &invalidation).await
+    }
+
+    async fn run_with(
+        pool: &WsPool,
+        base: &str,
+        request_id: &str,
+        auth: &AppliedAuth,
+        invalidation: &mazbri_core::AuthInvalidationSpec,
+    ) -> Result<AdapterOutcome, ExecuteError> {
         let mut input = invoke_input(request_id, base_spec("/ws"));
         input.spec.base_url = base.to_string();
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let ssrf = SsrfChecker::with_allow_private(true);
-        let auth = auth_empty();
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
         let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
         let ctx = AdapterCtx {
@@ -337,11 +433,12 @@ mod tests {
             ssrf: &ssrf,
             input: &input,
             base_url: base,
-            auth: &auth,
+            auth,
             timeout: Duration::from_secs(3),
             ws_pool: pool,
             pipeline_keys: &pipeline_keys,
             registry: &registry,
+            invalidation,
         };
         invoke(&ctx).await
     }
@@ -418,5 +515,150 @@ mod tests {
         assert!(ok >= 1, "at least some should run");
         assert!(limited >= 1, "excess must fail fast; ok={ok} limited={limited}");
         assert!(pool.rejects() >= 1);
+    }
+
+    /// 脚本化服务端：每条连接先正常回复 `replies` 次；之后收到请求时，
+    /// 可先回一帧 `id` 不匹配的业务帧（`stray_frame`），再关闭（`graceful` 发 Close，否则直接断 TCP）。
+    #[derive(Clone, Copy)]
+    struct CloseScript {
+        replies: usize,
+        stray_frame: bool,
+        graceful: bool,
+    }
+
+    async fn spawn_closing_ws(script: CloseScript) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((sock, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let Ok(mut ws) = accept_async(sock).await else {
+                        return;
+                    };
+                    let mut served = 0usize;
+                    while let Some(Ok(msg)) = ws.next().await {
+                        let Message::Text(t) = msg else { continue };
+                        let v: serde_json::Value = serde_json::from_str(&t).unwrap_or_default();
+                        if served < script.replies {
+                            served += 1;
+                            let id = v.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                            let reply = serde_json::json!({"id": id, "code": 0, "data": {}});
+                            let _ = ws.send(Message::Text(reply.to_string().into())).await;
+                            continue;
+                        }
+                        if script.stray_frame {
+                            let stray = serde_json::json!({"id": "someone-else", "code": 0});
+                            let _ = ws.send(Message::Text(stray.to_string().into())).await;
+                        }
+                        if script.graceful {
+                            let _ = ws.close(None).await;
+                        }
+                        return;
+                    }
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn auth_token() -> AppliedAuth {
+        AppliedAuth {
+            token: Some("tok-ws".into()),
+            ..auth_empty()
+        }
+    }
+
+    fn close_rule(on: bool) -> mazbri_core::AuthInvalidationSpec {
+        mazbri_core::AuthInvalidationSpec {
+            ws_close_before_reply: on,
+            ..mazbri_core::AuthInvalidationSpec::default()
+        }
+    }
+
+    fn pool() -> WsPool {
+        WsPool::new(WsPoolConfig {
+            handshake_timeout: Duration::from_secs(2),
+            max_concurrent: 8,
+            max_concurrent_per_key: 4,
+            max_idle_per_key: 2,
+            idle_ttl: Duration::from_secs(30),
+        })
+    }
+
+    const CLOSE_NOW: CloseScript = CloseScript {
+        replies: 0,
+        stray_frame: false,
+        graceful: true,
+    };
+
+    #[tokio::test]
+    async fn fresh_conn_closed_before_reply_is_auth_rejection_when_enabled() {
+        for graceful in [true, false] {
+            let base = spawn_closing_ws(CloseScript {
+                graceful,
+                ..CLOSE_NOW
+            })
+            .await;
+            let out = run_with(&pool(), &base, "r1", &auth_token(), &close_rule(true))
+                .await
+                .expect("closed-before-reply must surface as auth rejection");
+            let rejection = out.auth_rejection.expect("rejection");
+            assert_eq!(rejection.trigger, AuthRejectTrigger::WsClosedBeforeReply);
+            assert_eq!(rejection.token, "tok-ws");
+            assert_eq!(out.response.status, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn closed_before_reply_is_transport_error_when_rule_off_or_no_token() {
+        let base = spawn_closing_ws(CLOSE_NOW).await;
+        let err = run_with(&pool(), &base, "r1", &auth_token(), &close_rule(false))
+            .await
+            .err()
+            .expect("rule off");
+        assert_eq!(err.code(), "UPSTREAM_TRANSPORT");
+
+        let err = run_with(&pool(), &base, "r2", &auth_empty(), &close_rule(true))
+            .await
+            .err()
+            .expect("no token");
+        assert_eq!(err.code(), "UPSTREAM_TRANSPORT");
+    }
+
+    #[tokio::test]
+    async fn close_after_stray_frame_is_not_auth_rejection() {
+        let base = spawn_closing_ws(CloseScript {
+            stray_frame: true,
+            ..CLOSE_NOW
+        })
+        .await;
+        let err = run_with(&pool(), &base, "r1", &auth_token(), &close_rule(true))
+            .await
+            .err()
+            .expect("frame was received, so close is plain transport");
+        assert_eq!(err.code(), "UPSTREAM_TRANSPORT");
+    }
+
+    #[tokio::test]
+    async fn reused_conn_closed_before_reply_is_transport_error() {
+        let base = spawn_closing_ws(CloseScript {
+            replies: 1,
+            ..CLOSE_NOW
+        })
+        .await;
+        let pool = pool();
+        let first = run_with(&pool, &base, "r1", &auth_token(), &close_rule(true))
+            .await
+            .expect("first reply");
+        assert!(first.auth_rejection.is_none());
+        let err = run_with(&pool, &base, "r2", &auth_token(), &close_rule(true))
+            .await
+            .err()
+            .expect("reused connection close is not an auth signal");
+        assert_eq!(err.code(), "UPSTREAM_TRANSPORT");
+        assert_eq!(pool.reuses(), 1);
     }
 }
