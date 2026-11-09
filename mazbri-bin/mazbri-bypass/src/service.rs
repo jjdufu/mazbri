@@ -12,7 +12,7 @@ use mazbri_core::{
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
-    RuntimeLimits, SsrfChecker, TokenCache,
+    RuntimeOptions, SsrfChecker,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -58,8 +58,7 @@ impl MazbriBypassServiceImpl {
         service_name: impl Into<Arc<str>>,
         db: Arc<PgPool>,
     ) -> Self {
-        let token_cache = Arc::new(TokenCache::new());
-        let engine = RuntimeEngine::with_token_cache(client, ssrf_checker, token_cache);
+        let engine = RuntimeEngine::new(client, ssrf_checker);
         Self {
             engine,
             service_name: service_name.into(),
@@ -79,8 +78,8 @@ impl MazbriBypassServiceImpl {
         }
     }
 
-    pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
-        self.engine = self.engine.with_limits(limits);
+    pub fn with_options(mut self, options: RuntimeOptions) -> Self {
+        self.engine = self.engine.with_options(options);
         self
     }
 

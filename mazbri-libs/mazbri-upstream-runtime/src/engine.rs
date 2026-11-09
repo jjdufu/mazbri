@@ -17,8 +17,12 @@ use crate::types::{
     ExecuteError, ExecuteMode, InvokeInput, InvokeResult, StageResult, StageSummary, UpstreamMeta,
 };
 
-#[derive(Debug, Clone)]
-pub struct RuntimeLimits {
+/// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
+///
+/// 默认值与 bypass 配置的默认值一致；服务启动时从各自配置构造后经
+/// [`RuntimeEngine::with_options`] 注入。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeOptions {
     pub ws_handshake_timeout: Duration,
     /// 全局 `ws_unary` 并发上限（失败快，不排队）。
     pub ws_max_concurrent: u32,
@@ -28,9 +32,25 @@ pub struct RuntimeLimits {
     pub ws_pool_max_idle_per_key: u32,
     /// 空闲连接 TTL；借出时丢弃过期连接。
     pub ws_pool_idle_ttl: Duration,
+    /// 上游换票响应既没有配置的过期字段、也没有 `expires_in` 时的缓存时长。
+    pub token_default_ttl: Duration,
+    /// 令牌提前视为过期的余量。
+    pub token_refresh_skew: Duration,
+    /// 认证被拒后作废令牌、换票并重试一次。
+    pub auth_retry_enabled: bool,
+    /// 复用的 WS 连接在回复前断开时，换新连接重试一次。
+    pub ws_stale_retry_enabled: bool,
+    /// 借出空闲 WS 连接前做非阻塞存活检查。
+    pub ws_liveness_check_on_checkout: bool,
+    /// 重试预算：窗口内重试数 / 首次请求数的上限。
+    pub retry_budget_ratio: f64,
+    /// 低流量时窗口内保底允许的重试次数。
+    pub retry_budget_min_per_window: u32,
+    /// 重试预算的统计窗口。
+    pub retry_budget_window: Duration,
 }
 
-impl Default for RuntimeLimits {
+impl Default for RuntimeOptions {
     fn default() -> Self {
         Self {
             ws_handshake_timeout: Duration::from_secs(10),
@@ -38,11 +58,56 @@ impl Default for RuntimeLimits {
             ws_max_concurrent_per_key: 8,
             ws_pool_max_idle_per_key: 4,
             ws_pool_idle_ttl: Duration::from_secs(60),
+            token_default_ttl: Duration::from_secs(3600),
+            token_refresh_skew: Duration::from_secs(30),
+            auth_retry_enabled: true,
+            ws_stale_retry_enabled: true,
+            ws_liveness_check_on_checkout: true,
+            retry_budget_ratio: 0.2,
+            retry_budget_min_per_window: 3,
+            retry_budget_window: Duration::from_secs(10),
         }
     }
 }
 
-impl RuntimeLimits {
+impl RuntimeOptions {
+    /// 校验参数取值范围（服务配置加载时调用）。
+    ///
+    /// # Errors
+    ///
+    /// WS 限额或时长为 0、`token_refresh_skew` 不小于 `token_default_ttl`、
+    /// `retry_budget_ratio` 不在 (0, 1] 或预算窗口为 0 时返回错误说明。
+    pub fn validate(&self) -> Result<(), String> {
+        if self.ws_handshake_timeout.is_zero() {
+            return Err("ws_handshake_timeout_secs must be greater than 0".into());
+        }
+        if self.ws_max_concurrent == 0
+            || self.ws_max_concurrent_per_key == 0
+            || self.ws_pool_max_idle_per_key == 0
+        {
+            return Err("ws_max_concurrent / ws_max_concurrent_per_key / ws_pool_max_idle_per_key must be greater than 0".into());
+        }
+        if self.ws_pool_idle_ttl.is_zero() {
+            return Err("ws_pool_idle_ttl_secs must be greater than 0".into());
+        }
+        if self.token_default_ttl.is_zero() {
+            return Err("token_default_ttl_secs must be greater than 0".into());
+        }
+        if self.token_refresh_skew >= self.token_default_ttl {
+            return Err("token_refresh_skew_secs must be less than token_default_ttl_secs".into());
+        }
+        if !(self.retry_budget_ratio > 0.0 && self.retry_budget_ratio <= 1.0) {
+            return Err(format!(
+                "retry_budget_ratio must be in (0, 1], got {}",
+                self.retry_budget_ratio
+            ));
+        }
+        if self.retry_budget_window.is_zero() {
+            return Err("retry_budget_window_secs must be greater than 0".into());
+        }
+        Ok(())
+    }
+
     fn ws_pool_config(&self) -> crate::ws_pool::WsPoolConfig {
         crate::ws_pool::WsPoolConfig {
             handshake_timeout: self.ws_handshake_timeout,
@@ -59,45 +124,37 @@ pub struct RuntimeEngine {
     client: Arc<reqwest::Client>,
     ssrf: SsrfChecker,
     token_cache: Arc<TokenCache>,
-    limits: RuntimeLimits,
+    options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
 }
 
 impl RuntimeEngine {
+    /// 以默认 [`RuntimeOptions`] 构造；服务启动时再经 [`Self::with_options`] 注入配置。
     #[must_use]
     pub fn new(client: Arc<reqwest::Client>, ssrf: SsrfChecker) -> Self {
-        let limits = RuntimeLimits::default();
-        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
+        let options = RuntimeOptions::default();
+        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         Self {
             client,
             ssrf,
             token_cache: Arc::new(TokenCache::new()),
-            limits,
+            options,
             ws_pool,
         }
     }
 
-    pub fn with_token_cache(
-        client: Arc<reqwest::Client>,
-        ssrf: SsrfChecker,
-        token_cache: Arc<TokenCache>,
-    ) -> Self {
-        let limits = RuntimeLimits::default();
-        let ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
-        Self {
-            client,
-            ssrf,
-            token_cache,
-            limits,
-            ws_pool,
-        }
+    /// 注入运行时参数：按新参数重建 WS 池与令牌缓存（仅在启动时调用）。
+    #[must_use]
+    pub fn with_options(mut self, options: RuntimeOptions) -> Self {
+        self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
+        self.token_cache = Arc::new(TokenCache::new());
+        self.options = options;
+        self
     }
 
     #[must_use]
-    pub fn with_limits(mut self, limits: RuntimeLimits) -> Self {
-        self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(limits.ws_pool_config()));
-        self.limits = limits;
-        self
+    pub fn options(&self) -> &RuntimeOptions {
+        &self.options
     }
 
     #[must_use]
@@ -576,5 +633,49 @@ pub fn resolve_timeout(override_secs: u64, config_total_ms: Option<u64>) -> Dura
         Duration::from_millis(ms.max(1))
     } else {
         Duration::from_secs(15)
+    }
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    #[test]
+    fn default_options_are_valid() {
+        assert!(RuntimeOptions::default().validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_options_rejected() {
+        let cases: [fn(&mut RuntimeOptions); 8] = [
+            |o| o.retry_budget_ratio = 0.0,
+            |o| o.retry_budget_ratio = 1.5,
+            |o| o.retry_budget_ratio = f64::NAN,
+            |o| o.token_refresh_skew = o.token_default_ttl,
+            |o| o.token_default_ttl = Duration::ZERO,
+            |o| o.retry_budget_window = Duration::ZERO,
+            |o| o.ws_max_concurrent = 0,
+            |o| o.ws_pool_idle_ttl = Duration::ZERO,
+        ];
+        for (i, mutate) in cases.iter().enumerate() {
+            let mut o = RuntimeOptions::default();
+            mutate(&mut o);
+            assert!(o.validate().is_err(), "case {i}");
+        }
+    }
+
+    #[test]
+    fn with_options_rebuilds_ws_pool() {
+        let client = Arc::new(reqwest::Client::new());
+        let opts = RuntimeOptions {
+            ws_max_concurrent: 3,
+            ws_pool_idle_ttl: Duration::from_secs(7),
+            ..RuntimeOptions::default()
+        };
+        let engine = RuntimeEngine::new(client, SsrfChecker::with_allow_private(true))
+            .with_options(opts.clone());
+        assert_eq!(engine.options(), &opts);
+        assert_eq!(engine.ws_pool().config().max_concurrent, 3);
+        assert_eq!(engine.ws_pool().config().idle_ttl, Duration::from_secs(7));
     }
 }

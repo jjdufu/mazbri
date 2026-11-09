@@ -51,17 +51,9 @@ async fn main() -> Result<()> {
             runtime.service_name.as_str().to_owned(),
             db,
         )
-        .with_limits(mazbri_upstream_runtime::RuntimeLimits {
-            ws_handshake_timeout: std::time::Duration::from_secs(
-                runtime.ctx.config.upstream.ws_handshake_timeout_secs,
-            ),
-            ws_max_concurrent: runtime.ctx.config.upstream.ws_max_concurrent,
-            ws_max_concurrent_per_key: runtime.ctx.config.upstream.ws_max_concurrent_per_key,
-            ws_pool_max_idle_per_key: runtime.ctx.config.upstream.ws_pool_max_idle_per_key,
-            ws_pool_idle_ttl: std::time::Duration::from_secs(
-                runtime.ctx.config.upstream.ws_pool_idle_ttl_secs,
-            ),
-        });
+        .with_options(mazbri_upstream_runtime::RuntimeOptions::from(
+            &runtime.ctx.config.upstream,
+        ));
 
         let addr = runtime.ctx.config.server.socket_addr()?;
         let grpc_service = service.clone();

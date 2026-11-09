@@ -136,7 +136,10 @@ pub(crate) const DEFAULT_RUN_LIMIT: i64 = 50;
 /// `ssrf` 由 mgmt `[ssrf]` 配置生成（启动时构建一次，存于 `AppState::connector_runtime`），
 /// 同时用于连接期 DNS 过滤与 `validate_public_http_url` 预检。
 #[must_use]
-pub fn build_connector_runtime(ssrf: SsrfChecker) -> RuntimeEngine {
+pub fn build_connector_runtime(
+    ssrf: SsrfChecker,
+    options: mazbri_upstream_runtime::RuntimeOptions,
+) -> RuntimeEngine {
     let client = ssrf
         .configure_http_client(
             reqwest::Client::builder()
@@ -153,16 +156,8 @@ pub fn build_connector_runtime(ssrf: SsrfChecker) -> RuntimeEngine {
             // Default client lacks SSRF DNS filter — still blocked by preflight validate_url.
             reqwest::Client::new()
         });
-    // 试跑与 bypass 同池实现；进程短生命周期，用更小的保守上限。
-    RuntimeEngine::new(Arc::new(client), ssrf).with_limits(
-        mazbri_upstream_runtime::RuntimeLimits {
-            ws_handshake_timeout: Duration::from_secs(10),
-            ws_max_concurrent: 8,
-            ws_max_concurrent_per_key: 4,
-            ws_pool_max_idle_per_key: 2,
-            ws_pool_idle_ttl: Duration::from_secs(30),
-        },
-    )
+    // 试跑与 bypass 同一套运行时实现；参数来自 `[connector_probe.runtime]`。
+    RuntimeEngine::new(Arc::new(client), ssrf).with_options(options)
 }
 
 #[cfg(test)]

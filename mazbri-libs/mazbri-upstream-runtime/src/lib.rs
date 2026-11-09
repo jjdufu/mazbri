@@ -33,7 +33,7 @@ pub use crypto_pipeline::{
     parts_from_json_object, pipeline_keys_from_credentials, seal_request, PipelineContext,
     PipelineError, PipelineKeys, RequestParts,
 };
-pub use engine::{RuntimeEngine, RuntimeLimits, resolve_timeout};
+pub use engine::{RuntimeEngine, RuntimeOptions, resolve_timeout};
 pub use ws_pool::{WsPool, WsPoolConfig};
 pub use mask::{mask_headers, mask_secret, mask_string_map, redact_body_preview};
 pub use slots::{role as slot_role, SlotBags, SlotError};

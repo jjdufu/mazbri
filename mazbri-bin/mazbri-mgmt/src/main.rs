@@ -474,6 +474,7 @@ fn init_connector_runtime(
     config.ssrf.log_startup("mazbri-mgmt");
     Arc::new(mazbri_mgmt::services::upstream_connector::build_connector_runtime(
         config.ssrf.checker(),
+        mazbri_upstream_runtime::RuntimeOptions::from(&config.connector_probe.runtime),
     ))
 }
 
