@@ -388,6 +388,15 @@
         />
       </div>
     </div>
+
+    <AuthInvalidationFields
+      v-if="group === 'ticket' || group === 'jwt'"
+      :model-value="flow.invalidation"
+      :adapter="adapter"
+      :source="invalidationSource"
+      :disabled="disabled"
+      @update:model-value="flow.invalidation = $event"
+    />
   </div>
 </template>
 
@@ -399,6 +408,8 @@ import JsonPathHelper from "@/views/mazbri/suppliers/components/JsonPathHelper.v
 import WorkbenchKvRows from "../WorkbenchKvRows.vue";
 import WorkbenchGhostField from "./WorkbenchGhostField.vue";
 import AuthInjectFields from "./AuthInjectFields.vue";
+import AuthInvalidationFields from "./AuthInvalidationFields.vue";
+import { createEmptyInvalidation, type InvalidationSource } from "../authInvalidation";
 import {
   type AuthPickerId,
   type KvRow,
@@ -416,6 +427,7 @@ const props = withDefaults(
     picker: AuthPickerId;
     flow: AuthFlowForm;
     adapter?: string;
+    invalidationSource?: InvalidationSource | "";
     env?: Record<string, string>;
     seedJson?: string;
     appendTo?: HTMLElement | string;
@@ -423,6 +435,7 @@ const props = withDefaults(
   }>(),
   {
     adapter: "",
+    invalidationSource: "",
     env: () => ({}),
     seedJson: "",
     appendTo: undefined,
@@ -441,6 +454,9 @@ if (!props.flow.aws) {
 }
 if (!props.flow.hawk) {
   props.flow.hawk = { algorithm: "sha256", ext: "" };
+}
+if (!props.flow.invalidation) {
+  props.flow.invalidation = createEmptyInvalidation();
 }
 if (!Array.isArray(props.flow.credentials)) {
   props.flow.credentials = [];

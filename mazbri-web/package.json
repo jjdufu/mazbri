@@ -12,7 +12,7 @@
     "build": "vite build && vue-tsc --noEmit",
     "build:fast": "vite build",
     "serve": "vite preview",
-    "test": "node --import tsx --test src/utils/http/*.test.ts src/utils/__tests__/*.test.ts src/utils/list-query/__tests__/*.test.ts src/utils/ops/__tests__/*.test.ts",
+    "test": "node --import tsx --test src/utils/http/*.test.ts src/utils/__tests__/*.test.ts src/utils/list-query/__tests__/*.test.ts src/utils/ops/__tests__/*.test.ts src/views/mazbri/upstream-connectors/__tests__/*.test.ts",
     "lint": "eslint",
     "fix": "eslint --fix",
     "lint:prettier": "prettier --write \"**/*.{js,cjs,ts,json,tsx,css,less,scss,vue,html,md}\"",

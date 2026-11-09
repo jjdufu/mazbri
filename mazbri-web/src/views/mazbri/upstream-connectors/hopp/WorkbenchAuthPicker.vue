@@ -61,6 +61,7 @@
       :picker="picker"
       :flow="flow"
       :adapter="adapter"
+      :invalidation-source="invalidationSource"
       :env="env"
       :seed-json="seedJson"
       :append-to="appendTo"
@@ -79,6 +80,7 @@ import {
   sessionProfileLabel,
   visibleAuthPickers,
 } from "../authMatrix";
+import type { InvalidationSource } from "../authInvalidation";
 import AuthProfileFields from "./AuthProfileFields.vue";
 import WorkbenchHoppSelect from "./WorkbenchHoppSelect.vue";
 
@@ -87,6 +89,7 @@ const props = withDefaults(
     profile: string;
     flow: AuthFlowForm;
     adapter?: string;
+    invalidationSource?: InvalidationSource | "";
     env?: Record<string, string>;
     seedJson?: string;
     appendTo?: HTMLElement | string;
@@ -94,6 +97,7 @@ const props = withDefaults(
   }>(),
   {
     adapter: "",
+    invalidationSource: "",
     env: () => ({}),
     seedJson: "",
     appendTo: undefined,

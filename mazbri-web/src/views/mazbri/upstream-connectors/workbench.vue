@@ -259,6 +259,7 @@
                         :profile="String(activeEp.auth?.profile || 'none')"
                         :flow="configForm.auth_flow"
                         :adapter="String(activeEp.adapter || 'http_json')"
+                        :invalidation-source="activeInvalidationSource"
                         :env="envMap"
                         :seed-json="authSeedJson"
                         :append-to="pageMount"
@@ -560,6 +561,7 @@ import {
   type KvRow,
   type ParsedImport,
 } from "./workbenchHelpers";
+import { invalidationFromApi, invalidationSource } from "./authInvalidation";
 import CryptoProfileEditor from "./CryptoProfileEditor.vue";
 import {
   parseCryptoProfile,
@@ -718,6 +720,14 @@ const xfPipeOpen = computed({
 
 const activeEp = computed(() => endpoints.value[activeEpIdx.value] || null);
 
+/** 当前接口生效的认证失效规则来源：渠道 egress.auth.invalidation > 供应商 auth_flow.invalidation > 默认。 */
+const activeInvalidationSource = computed(() =>
+  invalidationSource(
+    (activeEp.value?.auth as Record<string, unknown> | null | undefined) ?? null,
+    configForm.value.auth_flow,
+  ),
+);
+
 const activeAssertions = computed<AssertionSpec[]>({
   get: () => activeEp.value?.assertions || [],
   set: (v) => {
@@ -839,6 +849,7 @@ function apiConfigToForm(cfg: Record<string, unknown>): SupplierConfigForm {
       digest: { ...createEmptyAuthFlow().digest, ...((auth.digest as object) || {}) },
       aws: { ...createEmptyAuthFlow().aws, ...((auth.aws as object) || {}) },
       hawk: { ...createEmptyAuthFlow().hawk, ...((auth.hawk as object) || {}) },
+      invalidation: invalidationFromApi(auth.invalidation),
     },
   };
 }

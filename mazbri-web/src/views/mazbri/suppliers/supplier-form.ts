@@ -4,6 +4,11 @@ import type {
   SupplierConfigForm,
 } from "./components/SupplierTransparentConfig.vue";
 import { stripUrlScheme } from "@/utils/sensitive";
+import {
+  createEmptyInvalidation,
+  invalidationFromApi,
+  invalidationToApi,
+} from "@/views/mazbri/upstream-connectors/authInvalidation";
 
 export type UpstreamType = "microservice" | "transparent";
 
@@ -35,6 +40,7 @@ export function createEmptyAuthFlow(): AuthFlowForm {
     digest: { algorithm: "MD5", realm: "" },
     aws: { region: "", service: "" },
     hawk: { algorithm: "sha256", ext: "" },
+    invalidation: createEmptyInvalidation(),
   };
 }
 
@@ -136,6 +142,9 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
           ...createEmptyAuthFlow().hawk,
           ...(((supplier.config?.auth_flow as { hawk?: Record<string, unknown> } | undefined)?.hawk) || {}),
         } as AuthFlowForm["hawk"],
+        invalidation: invalidationFromApi(
+          (supplier.config?.auth_flow as { invalidation?: unknown } | undefined)?.invalidation,
+        ),
       },
     },
   };
@@ -161,6 +170,8 @@ export function serializeAuthFlow(
   };
   if (profile && profile !== "none") out.profile = profile;
   if (flow.token_path?.trim()) out.token_path = flow.token_path.trim();
+  const invalidation = invalidationToApi(flow.invalidation);
+  if (invalidation) out.invalidation = invalidation;
   if (profile === "jwt" && flow.jwt) {
     out.jwt = {
       algorithm: flow.jwt.algorithm || "HS256",

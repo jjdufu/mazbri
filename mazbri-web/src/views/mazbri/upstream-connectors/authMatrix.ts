@@ -270,6 +270,10 @@ export function sanitizeAuthSpec(spec: AuthSpecDraft | null | undefined): AuthSp
     default:
       return { ...spec, profile };
   }
+  // 渠道级认证失效规则与 profile 无关，原样保留，由后端按适配器校验。
+  if (spec.invalidation && typeof spec.invalidation === "object") {
+    out.invalidation = spec.invalidation;
+  }
   return out;
 }
 
