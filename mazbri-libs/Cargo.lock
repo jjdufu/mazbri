@@ -2582,6 +2582,8 @@ version = "0.1.0"
 dependencies = [
  "prost 0.14.4",
  "protoc-bin-vendored",
+ "serde",
+ "serde_json",
  "tonic 0.14.9",
  "tonic-prost",
  "tonic-prost-build",
