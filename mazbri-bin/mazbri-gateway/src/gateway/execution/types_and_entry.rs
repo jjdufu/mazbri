@@ -252,6 +252,7 @@ fn classify_attempt_error(e: &ProxyError) -> &'static str {
         ProxyError::ServiceUnavailable(_) => "overload",
         ProxyError::TooManyRequests { .. } => "ratelimit",
         ProxyError::Forbidden(_) => "authz",
+        ProxyError::UpstreamAuthRejected(_) => "upstream_auth",
         ProxyError::BadGateway(_)
             if err_s.contains("contract") || err_s.contains("contract_id") =>
         {

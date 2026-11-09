@@ -214,6 +214,16 @@ pub enum RetrySkip {
     Budget,
 }
 
+impl RetrySkip {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Budget => "budget",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StageSummary {
     pub method: Option<String>,

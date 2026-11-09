@@ -35,8 +35,14 @@ pub enum ProxyError {
     },
     GatewayTimeout(String),
     BadGateway(String),
+    /// 上游按认证失效规则拒绝了凭据（bypass 已按配置换票重试）：502，不计费，计入熔断，
+    /// 按 `switch_on_bad_gateway` 切换渠道；访问日志 `error_class=upstream_auth`。
+    UpstreamAuthRejected(String),
     InternalError(String),
 }
+
+/// [`ProxyError::UpstreamAuthRejected`] 的业务错误码。
+pub const UPSTREAM_AUTH_REJECTED_CODE: &str = "E5021";
 impl std::fmt::Display for ProxyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -54,7 +60,9 @@ impl std::fmt::Display for ProxyError {
                 "Idempotency store unavailable; retry the request with the same idempotency key later"
             ),
             ProxyError::GatewayTimeout(msg) => write!(f, "Gateway Timeout: {msg}"),
-            ProxyError::BadGateway(msg) => write!(f, "Bad Gateway: {msg}"),
+            ProxyError::BadGateway(msg) | ProxyError::UpstreamAuthRejected(msg) => {
+                write!(f, "Bad Gateway: {msg}")
+            }
             ProxyError::InternalError(msg) => write!(f, "Internal Error: {msg}"),
         }
     }
@@ -73,6 +81,7 @@ impl ProxyError {
             ProxyError::IdempotencyUnavailable { .. } => "IDEMPOTENCY_UNAVAILABLE",
             ProxyError::GatewayTimeout(_) => "E5040",
             ProxyError::BadGateway(_) => "E5020",
+            ProxyError::UpstreamAuthRejected(_) => UPSTREAM_AUTH_REJECTED_CODE,
             ProxyError::InternalError(_) => "E5000",
         }
     }
@@ -82,6 +91,7 @@ impl ProxyError {
             self,
             ProxyError::InternalError(_)
                 | ProxyError::BadGateway(_)
+                | ProxyError::UpstreamAuthRejected(_)
                 | ProxyError::GatewayTimeout(_)
         )
     }
@@ -89,7 +99,9 @@ impl ProxyError {
     pub fn sanitized_message(&self) -> String {
         match self {
             ProxyError::InternalError(_) => "Internal Server Error".to_string(),
-            ProxyError::BadGateway(_) => "Upstream service unavailable".to_string(),
+            ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
+                "Upstream service unavailable".to_string()
+            }
             // 对外稳定文案；内部细节仅写日志
             ProxyError::GatewayTimeout(_) => {
                 "Gateway Timeout: upstream or channel wait exceeded limit".to_string()
@@ -183,7 +195,9 @@ impl IntoResponse for ProxyError {
                 (StatusCode::SERVICE_UNAVAILABLE, Some(*retry_after_secs))
             }
             ProxyError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, None),
-            ProxyError::BadGateway(_) => (StatusCode::BAD_GATEWAY, None),
+            ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
+                (StatusCode::BAD_GATEWAY, None)
+            }
             ProxyError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, None),
         };
         let request_id = Uuid::new_v4().to_string();

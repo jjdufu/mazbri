@@ -7,6 +7,7 @@ use super::{
     execute_http_upstream_request, get_or_create_breaker, info, persist_interaction_event,
     proxy_body_to_json_value, record_upstream_timeout, warn,
 };
+use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use tracing::Instrument;
 
 pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
@@ -27,7 +28,9 @@ pub(super) fn spawn_persist_event_best_effort(state: &ProxyState, event: &Intera
 pub(super) fn should_switch(error: &ProxyError, condition: &SwitchCondition) -> bool {
     match error {
         ProxyError::GatewayTimeout(_) => condition.switch_on_timeout,
-        ProxyError::BadGateway(_) => condition.switch_on_bad_gateway,
+        ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
+            condition.switch_on_bad_gateway
+        }
         ProxyError::InternalError(_) => condition.switch_on_internal_error,
         _ => false,
     }
@@ -170,6 +173,10 @@ async fn run_channel_attempt(
                     "[{}] upstream HTTP/2 request failed for product [{}]: {}",
                     request_id, product_id, error
                 );
+                if error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX) {
+                    record_proxy_metric(&product_id, &method, "502", &mode, "upstream_auth");
+                    return Err(ProxyError::UpstreamAuthRejected(error));
+                }
                 let result_label = if error.contains("contract") || error.contains("contract_id") {
                     "config"
                 } else {
@@ -291,4 +298,50 @@ pub(super) async fn store_fallback_snapshot(
             response: Some(&observation_payload),
         }),
     );
+}
+
+#[cfg(test)]
+mod upstream_auth_rejected_tests {
+    use super::*;
+    use crate::gateway::metrics::classify_error_class;
+    use crate::gateway::post_response::billing_code_for_status;
+    use crate::gateway::response::UPSTREAM_AUTH_REJECTED_CODE;
+    use axum::response::IntoResponse;
+
+    fn rejected() -> ProxyError {
+        ProxyError::UpstreamAuthRejected(format!(
+            "{UPSTREAM_AUTH_REJECTED_PREFIX}UPSTREAM_AUTH_REJECTED: upstream rejected credentials"
+        ))
+    }
+
+    #[test]
+    fn auth_rejected_is_unbilled_bad_gateway() {
+        let err = rejected();
+        assert_eq!(err.error_code(), UPSTREAM_AUTH_REJECTED_CODE);
+        assert!(
+            err.should_sanitize(),
+            "internal detail never reaches tenants"
+        );
+        let status = err.into_response().status();
+        assert_eq!(status.as_u16(), 502);
+        let billing = billing_code_for_status(status.as_u16());
+        assert_eq!(billing, mazbri_rpc::BillingCode::UPSTREAM_ERROR);
+        assert!(!billing.default_billable());
+        assert_eq!(
+            classify_error_class(502, false, UPSTREAM_AUTH_REJECTED_CODE),
+            "upstream_auth"
+        );
+        assert_eq!(classify_error_class(502, false, "E5020"), "upstream_error");
+    }
+
+    #[test]
+    fn auth_rejected_switches_like_bad_gateway() {
+        let on = SwitchCondition {
+            switch_on_bad_gateway: true,
+            ..SwitchCondition::default()
+        };
+        let off = SwitchCondition::default();
+        assert!(should_switch(&rejected(), &on));
+        assert!(!should_switch(&rejected(), &off));
+    }
 }

@@ -21,8 +21,8 @@ use crate::retry_budget::RetryBudget;
 use crate::ssrf::SsrfChecker;
 use crate::token_cache::TokenCache;
 use crate::types::{
-    AuthRejectTrigger, AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult,
-    RetryReason, RetrySkip, StageResult, StageSummary, UpstreamMeta,
+    AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult, RetryReason, RetrySkip,
+    StageResult, StageSummary, UpstreamMeta,
 };
 
 /// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
@@ -240,9 +240,15 @@ impl RuntimeEngine {
         let kind = input.spec.adapter_kind().ok();
         self.note_rejection(input, kind, &rejection);
         if let Some(skip) = self.skip_auth_retry(input, kind) {
-            // 不重试：原样返回上游的真实结果（例如 401 或 JSON-RPC 错误体）。
-            first_result.retry_skipped = Some(skip);
-            return *first_result;
+            // 不重试时与「重试后仍被拒」同一口径：UPSTREAM_AUTH_REJECTED（平台侧上游故障，不计费）。
+            let message = format!(
+                "upstream rejected credentials, retry skipped (trigger={}, reason={})",
+                rejection.trigger,
+                skip.label()
+            );
+            let mut result = trace.auth_rejected(message, *first_result);
+            result.retry_skipped = Some(skip);
+            return result;
         }
         // 认证被拒说明上游未执行业务，换票后重放是安全的；只重试一次，不递归。
         retry_log.push(RetryReason::AuthRejected(rejection.trigger));
@@ -261,7 +267,11 @@ impl RuntimeEngine {
         let (outcome, result) = match second {
             AttemptOutcome::AuthRejected(again, result) => {
                 self.note_rejection(input, kind, &again);
-                let result = trace.auth_rejected(again.trigger, *result);
+                let message = format!(
+                    "upstream rejected credentials after token refresh (trigger={})",
+                    again.trigger
+                );
+                let result = trace.auth_rejected(message, *result);
                 (RetryOutcome::RejectedAgain, result)
             }
             AttemptOutcome::Done(result) => (RetryOutcome::Ok, *result),
@@ -764,11 +774,10 @@ impl Trace {
         })
     }
 
-    /// 换票重试后仍被拒：保留第二轮的上游元信息与阶段，结果标记为 `UPSTREAM_AUTH_REJECTED`。
-    fn auth_rejected(&self, trigger: AuthRejectTrigger, last: InvokeResult) -> InvokeResult {
-        let err = ExecuteError::UpstreamAuthRejected(format!(
-            "upstream rejected credentials after token refresh (trigger={trigger})"
-        ));
+    /// 认证被拒的最终结果（重试后仍被拒，或跳过重试）：保留最后一轮的上游元信息与阶段，
+    /// 结果标记为 `UPSTREAM_AUTH_REJECTED`。
+    fn auth_rejected(&self, message: String, last: InvokeResult) -> InvokeResult {
+        let err = ExecuteError::UpstreamAuthRejected(message);
         InvokeResult {
             ok: false,
             latency_ms: elapsed_ms(self.start),

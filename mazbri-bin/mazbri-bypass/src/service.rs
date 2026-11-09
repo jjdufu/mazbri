@@ -9,6 +9,7 @@ use mazbri_core::{
     emit_access_log, hash_egress_spec_json, normalize_request_id_uuid, normalize_upstream_host,
     parse_and_validate_egress, response_flags_for_error,
 };
+use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
@@ -409,7 +410,7 @@ fn invoke_failure(
     } else if code == "AUTH_TOKEN_FAILED" {
         format!("Dynamic Auth Token Retrieval Error: {err_msg}")
     } else if code == "UPSTREAM_AUTH_REJECTED" {
-        format!("Upstream Auth Rejected: {err_msg}")
+        format!("{UPSTREAM_AUTH_REJECTED_PREFIX}{err_msg}")
     } else if code == "CONFIG_CACHE_MISS" || err_msg.contains("CONFIG_CACHE") {
         err_msg
     } else {
@@ -692,7 +693,7 @@ mod retry_passthrough_tests {
         ));
         assert!(!resp.success);
         assert!(
-            resp.error.starts_with("Upstream Auth Rejected: "),
+            resp.error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX),
             "{}",
             resp.error
         );

@@ -322,7 +322,9 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
 }
 
 fn classify_bypass_error(error: &str) -> String {
-    if error.contains("SSRF") {
+    if error.starts_with(mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX) {
+        "UPSTREAM_AUTH_REJECTED".into()
+    } else if error.contains("SSRF") {
         "SSRF_BLOCKED".into()
     } else if error.contains("AUTH_TOKEN") || error.contains("Dynamic Auth") {
         "AUTH_TOKEN_FAILED".into()
@@ -395,6 +397,15 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         format!("http://{addr}")
+    }
+
+    #[test]
+    fn auth_rejected_error_is_classified() {
+        let error = format!(
+            "{}UPSTREAM_AUTH_REJECTED: upstream rejected credentials after token refresh (trigger=jsonrpc_code=-32001)",
+            mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX
+        );
+        assert_eq!(classify_bypass_error(&error), "UPSTREAM_AUTH_REJECTED");
     }
 
     #[test]

@@ -222,6 +222,9 @@ pub static GATEWAY_OVERLOAD_REJECT_TOTAL: LazyLock<IntCounter> = LazyLock::new(|
 #[must_use]
 pub fn classify_proxy_result(status: u16, error_hint: Option<&str>) -> &'static str {
     if let Some(hint) = error_hint {
+        if hint == super::response::UPSTREAM_AUTH_REJECTED_CODE {
+            return "upstream_auth";
+        }
         let h = hint.to_ascii_lowercase();
         if h.contains("timeout") {
             return "timeout";

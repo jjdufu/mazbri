@@ -244,7 +244,7 @@ async fn jsonrpc_code_rule_triggers_refresh() {
 }
 
 #[tokio::test]
-async fn retry_disabled_returns_original_rejection() {
+async fn retry_disabled_still_reports_auth_rejected() {
     let up = Upstream::new(usize::MAX, false);
     let base = spawn(up.clone()).await;
     let options = RuntimeOptions {
@@ -254,7 +254,16 @@ async fn retry_disabled_returns_original_rejection() {
     let result = engine(options)
         .invoke(input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base)))
         .await;
-    assert_eq!(result.error_code, None, "original upstream result is kept");
+    assert_eq!(
+        result.error_code.as_deref(),
+        Some("UPSTREAM_AUTH_REJECTED"),
+        "same outcome as rejected-after-retry"
+    );
+    let msg = result.error_message.clone().unwrap_or_default();
+    assert!(
+        msg.contains("retry skipped (trigger=http_status=401, reason=disabled)"),
+        "{msg}"
+    );
     assert_eq!(status(&result), Some(401));
     assert_eq!(up.api_hits(), 1);
 }
@@ -463,6 +472,10 @@ async fn skipped_retry_is_reported() {
     .invoke(input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base)))
     .await;
     assert_eq!(exhausted.retry_skipped, Some(RetrySkip::Budget));
+    assert_eq!(
+        exhausted.error_code.as_deref(),
+        Some("UPSTREAM_AUTH_REJECTED")
+    );
     assert!(
         recorder
             .0

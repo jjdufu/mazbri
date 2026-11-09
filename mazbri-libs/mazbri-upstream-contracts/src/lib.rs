@@ -20,6 +20,10 @@ pub mod mazbri {
 
 pub use mazbri::upstream::shared::v1 as shared;
 
+/// `InvokeResponse.error` 前缀：上游按认证失效规则拒绝了凭据（bypass 已按配置换票重试）。
+/// 网关据此返回 502（不计费、计入熔断、按 `switch_on_bad_gateway` 切换渠道）。
+pub const UPSTREAM_AUTH_REJECTED_PREFIX: &str = "Upstream Auth Rejected: ";
+
 /// gRPC service name of the bypass HTTP proxy.
 pub const BYPASS_SERVICE_NAME: &str = "mazbri.upstream.bypass.http_proxy.v1.BypassHttpProxyService";
 /// Unary method: `InvokeRequest` → `InvokeResponse`.
