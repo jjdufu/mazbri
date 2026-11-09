@@ -3603,6 +3603,7 @@
     "response": {
       "status": "Status",
       "time": "Time",
+      "upstreamTime": "Upstream time",
       "size": "Size"
     },
     "jsonTree": "JSON tree",

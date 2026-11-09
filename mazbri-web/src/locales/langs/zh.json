@@ -3608,6 +3608,7 @@
     "response": {
       "status": "Status",
       "time": "Time",
+      "upstreamTime": "上游耗时",
       "size": "Size"
     },
     "jsonTree": "JSON 树",

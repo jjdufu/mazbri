@@ -6,6 +6,7 @@
       :latency-ms="run.latency_ms"
       :size-bytes="bodyBytes"
       :mode="run.mode"
+      :probe-path="run.probe_path"
       :error-code="run.error_code"
       :body="displayBody"
       :download-name="downloadName"
