@@ -17,7 +17,7 @@ use crate::observe::{
     NoopObserver, RetryKind, RetryLog, RetryOutcome, RuntimeEvent, RuntimeObserver,
     token_fingerprint, warn_budget_exhausted,
 };
-use crate::retry_budget::RetryBudget;
+use crate::retry_budget::{RetryBudget, RetryBudgets};
 use crate::ssrf::SsrfChecker;
 use crate::token_cache::TokenCache;
 use crate::types::{
@@ -127,8 +127,8 @@ impl RuntimeOptions {
         }
     }
 
-    fn retry_budget(&self) -> RetryBudget {
-        RetryBudget::new(
+    fn retry_budgets(&self) -> RetryBudgets {
+        RetryBudgets::new(
             self.retry_budget_ratio,
             self.retry_budget_min_per_window,
             self.retry_budget_window,
@@ -143,7 +143,8 @@ pub struct RuntimeEngine {
     token_cache: Arc<TokenCache>,
     options: RuntimeOptions,
     ws_pool: Arc<crate::ws_pool::WsPool>,
-    retry_budget: Arc<RetryBudget>,
+    /// 按供应商分桶的重试预算（认证重试与 WS 陈旧连接重试共用同一上游的桶）。
+    retry_budgets: Arc<RetryBudgets>,
     observer: Arc<dyn RuntimeObserver>,
 }
 
@@ -157,7 +158,7 @@ impl RuntimeEngine {
             client,
             ssrf,
             token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
-            retry_budget: Arc::new(options.retry_budget()),
+            retry_budgets: Arc::new(options.retry_budgets()),
             options,
             ws_pool,
             observer: Arc::new(NoopObserver),
@@ -176,7 +177,7 @@ impl RuntimeEngine {
     pub fn with_options(mut self, options: RuntimeOptions) -> Self {
         self.ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         self.token_cache = Arc::new(TokenCache::new(options.token_refresh_skew));
-        self.retry_budget = Arc::new(options.retry_budget());
+        self.retry_budgets = Arc::new(options.retry_budgets());
         self.options = options;
         self
     }
@@ -228,7 +229,8 @@ impl RuntimeEngine {
             .cache_key
             .clone()
             .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
-        self.retry_budget.record_request();
+        let budget = self.retry_budgets.for_upstream(&input.supplier_id);
+        budget.record_request();
         let first = self
             .attempt(input, &base_url, &cache_key, None, &mut trace, retry_log)
             .await;
@@ -239,7 +241,7 @@ impl RuntimeEngine {
         };
         let kind = input.spec.adapter_kind().ok();
         self.note_rejection(input, kind, &rejection);
-        if let Some(skip) = self.skip_auth_retry(input, kind) {
+        if let Some(skip) = self.skip_auth_retry(input, kind, &budget) {
             // 不重试时与「重试后仍被拒」同一口径：UPSTREAM_AUTH_REJECTED（平台侧上游故障，不计费）。
             let message = format!(
                 "upstream rejected credentials, retry skipped (trigger={}, reason={})",
@@ -306,10 +308,15 @@ impl RuntimeEngine {
     }
 
     /// 判定是否跳过认证重试（开关关闭或预算耗尽），跳过时记事件。
-    fn skip_auth_retry(&self, input: &InvokeInput, kind: Option<AdapterKind>) -> Option<RetrySkip> {
+    fn skip_auth_retry(
+        &self,
+        input: &InvokeInput,
+        kind: Option<AdapterKind>,
+        budget: &RetryBudget,
+    ) -> Option<RetrySkip> {
         let skip = if !self.options.auth_retry_enabled {
             RetrySkip::Disabled
-        } else if self.retry_budget.try_acquire() {
+        } else if budget.try_acquire() {
             return None;
         } else {
             self.observer.on_event(RuntimeEvent::BudgetExhausted {
@@ -465,6 +472,7 @@ impl RuntimeEngine {
         });
         let registry = AlgorithmRegistry::default_registry();
         let invalidation = effective_invalidation(input);
+        let stale_budget = self.retry_budgets.for_upstream(&input.supplier_id);
         let ctx = AdapterCtx {
             client: &self.client,
             ssrf: &self.ssrf,
@@ -479,7 +487,7 @@ impl RuntimeEngine {
             ws_stale_retry: self
                 .options
                 .ws_stale_retry_enabled
-                .then_some(&*self.retry_budget),
+                .then_some(&*stale_budget),
             observer: &*self.observer,
             retry_log,
         };

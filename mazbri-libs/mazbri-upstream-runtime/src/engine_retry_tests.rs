@@ -295,6 +295,38 @@ async fn retry_budget_minimum_covers_low_traffic() {
     assert_eq!(rejected_storm(0.2, 3, 2).await, 2);
 }
 
+/// 一个上游的预算耗尽不影响另一个上游的认证重试（预算按供应商分桶）。
+#[tokio::test]
+async fn retry_budget_is_per_supplier() {
+    use crate::RetrySkip;
+    let up = Upstream::new(usize::MAX, false);
+    let base = spawn(up.clone()).await;
+    let engine = engine(RuntimeOptions {
+        retry_budget_ratio: 0.2,
+        retry_budget_min_per_window: 1,
+        retry_budget_window: Duration::from_mins(1),
+        ..RuntimeOptions::default()
+    });
+    let for_supplier = |id: &str| {
+        let mut i = input(&base, ADAPTER_HTTP_JSON, ticket_auth(&base));
+        i.supplier_id = id.into();
+        i
+    };
+    let a1 = engine.invoke(for_supplier("a")).await;
+    let a2 = engine.invoke(for_supplier("a")).await;
+    let b1 = engine.invoke(for_supplier("b")).await;
+    assert_eq!(
+        a1.internal_retries, 1,
+        "supplier a: first retry within minimum"
+    );
+    assert_eq!(
+        a2.retry_skipped,
+        Some(RetrySkip::Budget),
+        "supplier a exhausted"
+    );
+    assert_eq!(b1.internal_retries, 1, "supplier b has its own budget");
+}
+
 #[tokio::test]
 async fn concurrent_rejections_share_one_refresh() {
     let up = Upstream::new(1, false);

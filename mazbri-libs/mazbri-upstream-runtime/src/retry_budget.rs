@@ -1,6 +1,11 @@
 //! 进程内重试预算：限制「认证被拒重试」「WS 陈旧连接重试」在故障期放大上游流量。
+//!
+//! 预算按上游（供应商）分桶，语义对应 Envoy 按 cluster 的 `retry_budget`：
+//! 一个上游整体失效（例如重启后全部令牌作废）只消耗它自己的额度，
+//! 不会挤占同一时刻其它上游的恢复重试。
 
-use std::sync::{Mutex, PoisonError};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 /// 滑动窗口重试预算：窗口内重试数 ≤ max(`min_per_window`, `ratio` × 首次请求数)。
@@ -109,9 +114,60 @@ impl RetryBudget {
     }
 }
 
+/// 按上游键（供应商 id）懒建的 [`RetryBudget`] 集合，各桶参数相同、计数独立。
+///
+/// 桶数量等于出现过的供应商数，随配置有界，不做淘汰。
+#[derive(Debug)]
+pub struct RetryBudgets {
+    ratio: f64,
+    min_per_window: u32,
+    window: Duration,
+    buckets: Mutex<HashMap<String, Arc<RetryBudget>>>,
+}
+
+impl RetryBudgets {
+    #[must_use]
+    pub fn new(ratio: f64, min_per_window: u32, window: Duration) -> Self {
+        Self {
+            ratio,
+            min_per_window,
+            window,
+            buckets: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// 取（必要时新建）该上游的预算桶。
+    #[must_use]
+    pub fn for_upstream(&self, upstream: &str) -> Arc<RetryBudget> {
+        let mut buckets = self.buckets.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(b) = buckets.get(upstream) {
+            return b.clone();
+        }
+        let b = Arc::new(RetryBudget::new(
+            self.ratio,
+            self.min_per_window,
+            self.window,
+        ));
+        buckets.insert(upstream.to_owned(), b.clone());
+        b
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upstreams_have_independent_budgets() {
+        let budgets = RetryBudgets::new(0.2, 3, WINDOW);
+        let a = budgets.for_upstream("supplier-a");
+        let b = budgets.for_upstream("supplier-b");
+        let now = Instant::now();
+        assert_eq!(run(&a, now, 3), 3);
+        assert_eq!(run(&a, now, 1), 0, "supplier-a exhausted");
+        assert_eq!(run(&b, now, 3), 3, "supplier-b keeps its own minimum");
+        assert!(Arc::ptr_eq(&a, &budgets.for_upstream("supplier-a")));
+    }
 
     const WINDOW: Duration = Duration::from_secs(10);
 

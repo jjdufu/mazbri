@@ -15,7 +15,7 @@
 约束：
 
 - 每个请求最多一次认证重试；重试后仍被拒绝即返回 `UPSTREAM_AUTH_REJECTED`，不会循环换票。
-- 认证重试受**重试预算**（`retry_budget_*`）约束，预算耗尽时跳过重试并返回错误，避免上游整体失效时放大流量。
+- 认证重试与 WS 陈旧连接重试受**重试预算**（`retry_budget_*`）约束，预算耗尽时跳过重试并返回错误，避免上游整体失效时放大流量。预算**按供应商分桶**（对应 Envoy 按 cluster 的 retry budget）：一个上游重启只消耗它自己的额度，不影响其它上游同时恢复。
 - 令牌缓存有效期优先取供应商配置的 `expiry_jsonpath`；未配置时读取换票响应的 `expires_in`；两者都没有时使用 `token_default_ttl_secs`。配置了 `expiry_jsonpath` 但响应中缺失该字段时**不会**回退到 `expires_in`。缓存在到期前 `token_refresh_skew_secs` 视为过期。
 
 ## 2. 认证失效判定规则
@@ -142,6 +142,7 @@ proto `InvokeResponse` 新增 `internal_retries`（6）与 `retry_reasons`（7�
 ## 6. 已知限制
 
 - 每个请求最多一次内部重试；不在单请求内做多轮换票。
+- 网关渠道开启 `switch_on_bad_gateway` 且候选渠道全部失败时，租户看到的是通用的 502 / `E5020`（「All available channels exhausted」），`E5021` 只出现在不切换渠道的场景；访问日志 `error_class` 与网关日志仍能看到 `UPSTREAM_AUTH_REJECTED`。
 - 非幂等请求同样会被重试：认证失效与回复前断线通常意味着上游未处理请求，但无法绝对保证。
 - 失败路径（bypass 返回失败）的交互事件与失败访问日志不含 `internal_retries`；`upstream.auth_rejected` 日志不含是否已作废字段。
 - `ws_close_before_reply` 只对新建连接生效；复用连接被关闭一律按陈旧连接处理。
