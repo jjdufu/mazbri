@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/jjdufu/mazbri/compare/v0.3.9...v0.3.10) (2026-11-09)
+
+
+### Bug Fixes
+
+* **bypass,mgmt:** 管理探针改用共享契约并修复试运行误报 BYPASS_UNAVAILABLE ([#69](https://github.com/jjdufu/mazbri/issues/69)) ([5d756a6](https://github.com/jjdufu/mazbri/commit/5d756a6270ec2982ef1cfe56def85e0e17990407))
+
 ## [0.3.9](https://github.com/jjdufu/mazbri/compare/v0.3.8...v0.3.9) (2026-11-09)
 
 
