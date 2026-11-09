@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.9](https://github.com/jjdufu/mazbri/compare/v0.3.8...v0.3.9) (2026-11-09)
+
+
+### Bug Fixes
+
+* **mgmt,web:** 统一全站布局与表格工具栏规范、搜索筛选及 MFA 账户安全体验 ([#67](https://github.com/jjdufu/mazbri/issues/67)) ([0cc205e](https://github.com/jjdufu/mazbri/commit/0cc205ecc3c1ce636b16e8457bd2993f18a2172e))
+
 ## [0.3.8](https://github.com/jjdufu/mazbri/compare/v0.3.7...v0.3.8) (2026-11-07)
 
 
