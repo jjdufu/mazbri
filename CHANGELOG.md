@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/jjdufu/mazbri/compare/v0.3.10...v0.4.0) (2026-11-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runtime,bypass,gateway,mgmt,web:** proto InvokeResponse / ProbeInvokeResponse 新增字段，gateway、bypass、mgmt 须同批发布与回滚；认证失效最终失败由透传上游 4xx 改为 502/E5021 且不计费；RuntimeLimits 更名为 RuntimeOptions；auth_flow / egress.auth 新增 invalidation 字段，前后端须同版本；部署需新增 bypass [upstream] 与 mgmt-bootstrap [connector_probe.runtime] 配置键。
+
+### Features
+
+* **runtime,bypass,gateway,mgmt,web:** 上游认证失效自动换票重试一次与 WS 陈旧连接自愈，认证被拒统一 502/E5021 不计费 ([#71](https://github.com/jjdufu/mazbri/issues/71)) ([4f26c70](https://github.com/jjdufu/mazbri/commit/4f26c70a116780df99bb4726aaa64d0892d6355d))
+
 ## [0.3.10](https://github.com/jjdufu/mazbri/compare/v0.3.9...v0.3.10) (2026-11-09)
 
 
