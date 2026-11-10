@@ -9,6 +9,7 @@ import "@utils/sys/console.ts";
 import { setupGlobDirectives } from "./directives";
 import { setupErrorHandle } from "./utils/sys/error-handle";
 import { registerOfflineIconCollections } from "./utils/ui/iconify-loader";
+import { installMessageGuard } from "./utils/ui/message-guard";
 import { ElForm } from "element-plus";
 
 const isInsideDialog = (inst: any): boolean => {
@@ -54,6 +55,7 @@ formProps.requireAsteriskPosition.default = function () {
 
 document.addEventListener("touchstart", function () {}, { passive: false });
 registerOfflineIconCollections();
+installMessageGuard();
 const app = createApp(App);
 initStore(app);
 initRouter(app);

@@ -5,6 +5,7 @@ import { logger } from "@/utils/sys";
 import { isProblemDetails } from "@/composables/error-normalization";
 import { extractErrorCode } from "@/types/error";
 import { resolveFallbackKeyForErrorCode } from "@/utils/error-message-policy";
+import { showErrorToast } from "@/utils/ui/message-guard";
 
 export interface ErrorResponse {
   code: number;
@@ -29,6 +30,8 @@ interface HttpErrorOptions {
   method?: string;
   rawMessage?: string;
   handledBySessionBoundary?: boolean;
+  /** 无响应（断网、超时、连接失败） */
+  networkError?: boolean;
 }
 
 interface BackendHttpErrorOptions extends HttpErrorOptions {
@@ -44,6 +47,7 @@ export class HttpError extends Error {
   public readonly method?: string;
   public readonly rawMessage?: string;
   public readonly handledBySessionBoundary: boolean;
+  public readonly networkError: boolean;
 
   constructor(message: string, code: number, options?: HttpErrorOptions) {
     super(message);
@@ -55,6 +59,7 @@ export class HttpError extends Error {
     this.method = options?.method;
     this.rawMessage = options?.rawMessage;
     this.handledBySessionBoundary = options?.handledBySessionBoundary ?? false;
+    this.networkError = options?.networkError ?? false;
   }
 
   public toLogData(): ErrorLogData {
@@ -135,6 +140,7 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
     throw createSafeHttpError($t("httpMsg.networkError"), ApiStatus.error, {
       url: requestConfig?.url,
       method: requestConfig?.method?.toUpperCase(),
+      networkError: true,
     });
   }
 
@@ -195,7 +201,7 @@ export function showError(error: HttpError, showMessage: boolean = true): void {
       typeof error.message === "string" && error.message.trim()
         ? error.message
         : $t("httpMsg.requestFailed");
-    ElMessage.error(message);
+    showErrorToast(message, error.networkError ? "network" : "error");
   }
   logger.error("[HTTP Error]", error.toLogData());
 }

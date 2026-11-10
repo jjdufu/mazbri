@@ -61,6 +61,8 @@
     "gatewayTimeout": "网关超时，请稍后重试",
     "requestCancelled": "请求已取消",
     "networkError": "网络连接异常，请检查网络连接",
+    "offline": "网络已断开，请检查网络连接",
+    "online": "网络已恢复",
     "requestFailed": "请求失败",
     "requestConfigError": "请求配置错误"
   },

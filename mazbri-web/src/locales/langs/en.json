@@ -61,6 +61,8 @@
     "gatewayTimeout": "Gateway timeout, please try again later",
     "requestCancelled": "Request cancelled",
     "networkError": "Network connection error, please check your connection",
+    "offline": "Network disconnected, please check your connection",
+    "online": "Network connection restored",
     "requestFailed": "Request failed",
     "requestConfigError": "Request configuration error"
   },
