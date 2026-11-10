@@ -37,9 +37,6 @@ pub struct AlertingConfig {
     /// 单次 webhook 请求超时（秒）。
     #[serde(default = "default_webhook_timeout")]
     pub webhook_timeout_secs: u64,
-    /// 控制台对外访问地址，用于通知中的事件链接。
-    #[serde(default)]
-    pub console_base_url: Option<String>,
     /// 告警表所在的 `mazbri_admin` 库连接。
     pub database: mazbri_core::DatabaseConfig,
     /// 邮件通知的 SMTP 服务器；未配置时规则中的邮件收件人不会收到通知。
@@ -60,19 +57,13 @@ const fn default_webhook_timeout() -> u64 {
 impl AlertingConfig {
     /// # Errors
     ///
-    /// 周期或超时超出允许范围、控制台地址非 http(s) 时返回错误。
+    /// 周期或超时超出允许范围时返回错误。
     pub fn validate(&self) -> Result<(), String> {
         if !(5..=3600).contains(&self.interval_secs) {
             return Err("alerting.interval_secs 必须在 5..=3600 之间".to_string());
         }
         if !(1..=60).contains(&self.webhook_timeout_secs) {
             return Err("alerting.webhook_timeout_secs 必须在 1..=60 之间".to_string());
-        }
-        if let Some(url) = &self.console_base_url
-            && !url.starts_with("http://")
-            && !url.starts_with("https://")
-        {
-            return Err("alerting.console_base_url 必须以 http:// 或 https:// 开头".to_string());
         }
         if let Some(smtp) = &self.smtp {
             smtp.validate()?;
@@ -260,7 +251,6 @@ impl Evaluator {
                     labels: fire.labels,
                     started_at: fire.started_at,
                     resolved_at: None,
-                    console_url: self.notifier.console_url(fire.event_id),
                 },
             );
         }
@@ -391,7 +381,6 @@ impl Evaluator {
                 labels: resolved.labels.clone(),
                 started_at: resolved.started_at,
                 resolved_at: Some(resolved.resolved_at),
-                console_url: self.notifier.console_url(resolved.id),
             },
         );
     }
@@ -456,7 +445,6 @@ pub fn spawn(
     let notifier = Notifier::new(
         Duration::from_secs(config.webhook_timeout_secs),
         config.smtp.as_ref(),
-        config.console_base_url.clone(),
     )
     .map_err(anyhow::Error::msg)?;
     let evaluator = Evaluator::new(AlertStore::new(pool), greptimedb, clickhouse, notifier);
