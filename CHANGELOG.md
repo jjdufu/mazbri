@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/jjdufu/mazbri/compare/v0.5.0...v0.5.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **web:** 复制失败不再弹手动复制框，改为一条错误提示 ([#75](https://github.com/jjdufu/mazbri/issues/75)) ([1734515](https://github.com/jjdufu/mazbri/commit/1734515f1fd776689ac4c57ef3d8562f95e541b1))
+
 ## [0.5.0](https://github.com/jjdufu/mazbri/compare/v0.4.0...v0.5.0) (2026-11-11)
 
 
