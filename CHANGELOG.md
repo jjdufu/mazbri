@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/jjdufu/mazbri/compare/v0.4.0...v0.5.0) (2026-11-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **analytics,web:** AlertingConfig 拒绝未知键，旧渲染配置若仍含 console_base_url 会导致 analytics 启动失败，发版后须重新渲染配置。webhook 接收方若依赖 payload 里的 console_url 字段需同步调整。
+
+### Code Refactoring
+
+* **analytics,web:** 告警通知去掉管理台链接，管理端断网提示去重并统一按钮复制 ([94db019](https://github.com/jjdufu/mazbri/commit/94db0199fca918f99ba1347aaf7943f69577d463))
+
 ## [0.4.0](https://github.com/jjdufu/mazbri/compare/v0.3.10...v0.4.0) (2026-11-09)
 
 
