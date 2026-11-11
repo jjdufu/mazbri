@@ -238,7 +238,7 @@
       "createSuccess": "创建成功",
       "deleteSuccess": "删除成功",
       "exportSuccess": "导出成功",
-      "copyFailed": "复制失败",
+      "copyFailed": "复制失败，请手动选中复制",
       "copiedToClipboard": "已复制到剪贴板",
       "renewSuccess": "续期成功",
       "revokeSuccess": "吊销成功",
@@ -251,8 +251,7 @@
       "enabled": "已启用",
       "disabled": "已禁用",
       "autoRenewEnabled": "已启用自动续期",
-      "autoRenewDisabled": "已禁用自动续期",
-      "copyManualHint": "复制失败，请手动选中下面的内容复制"
+      "autoRenewDisabled": "已禁用自动续期"
     },
     "table": {
       "fetchFailed": "获取表格数据失败"

@@ -238,7 +238,7 @@
       "createSuccess": "Created successfully",
       "deleteSuccess": "Deleted successfully",
       "exportSuccess": "Exported successfully",
-      "copyFailed": "Copy failed",
+      "copyFailed": "Copy failed. Please select the text and copy it manually.",
       "copiedToClipboard": "Copied to clipboard",
       "renewSuccess": "Renewed successfully",
       "revokeSuccess": "Revoked successfully",
@@ -251,8 +251,7 @@
       "enabled": "Enabled",
       "disabled": "Disabled",
       "autoRenewEnabled": "Auto renewal enabled",
-      "autoRenewDisabled": "Auto renewal disabled",
-      "copyManualHint": "Copy failed. Select the text below and copy it manually."
+      "autoRenewDisabled": "Auto renewal disabled"
     },
     "table": {
       "fetchFailed": "Failed to fetch table data"
