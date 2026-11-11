@@ -69,7 +69,12 @@
         {{ formatFailureReason(row.failure_reason) }}
       </template>
       <template #ip_address="{ row }">
-        {{ formatIpAddress(row.ip_address) }}
+        <CopyableText
+          v-if="row.ip_address?.trim()"
+          :value="row.ip_address"
+          :label="$t('auditLogs.detail.fields.ipAddress')"
+        />
+        <span v-else>{{ formatIpAddress(row.ip_address) }}</span>
       </template>
       <template #details="{ row }">
         <CommonInlineRow gap="8px">
@@ -104,23 +109,34 @@
             formatResourceType(currentLog?.resource_type || "")
           }}</ElDescriptionsItem
         >
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.resourceId')">{{
-          currentLog?.resource_id || "-"
-        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.resourceId')">
+          <CopyableText
+            :value="currentLog?.resource_id"
+            :label="$t('auditLogs.detail.fields.resourceId')"
+          />
+        </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.status')">
           <ElTag :type="statusTagType(currentLog?.status || '')">
             {{ $t(statusLabelKey(currentLog?.status || "")) }}
           </ElTag>
         </ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">{{
-          formatIpAddress(currentLog?.ip_address)
-        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">
+          <CopyableText
+            v-if="currentLog?.ip_address?.trim()"
+            :value="currentLog.ip_address"
+            :label="$t('auditLogs.detail.fields.ipAddress')"
+          />
+          <span v-else>{{ formatIpAddress(currentLog?.ip_address) }}</span>
+        </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.service')">{{
           formatService(currentLog?.service)
         }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">{{
-          currentLog?.request_id || "-"
-        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">
+          <CopyableText
+            :value="currentLog?.request_id"
+            :label="$t('auditLogs.detail.fields.requestId')"
+          />
+        </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.method')">{{
           currentLog?.method || "-"
         }}</ElDescriptionsItem>
@@ -235,6 +251,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
 import type { ListFilter } from "@/types/list-query";
 import { auditLogsCatalog } from "@/list-catalog/common-resources";

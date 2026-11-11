@@ -252,7 +252,7 @@
       "disabled": "已禁用",
       "autoRenewEnabled": "已启用自动续期",
       "autoRenewDisabled": "已禁用自动续期",
-      "copySuccess": "已复制到剪贴板"
+      "copyManualHint": "复制失败，请手动选中下面的内容复制"
     },
     "table": {
       "fetchFailed": "获取表格数据失败"
@@ -367,8 +367,7 @@
       "critical": "严重",
       "warning": "警告",
       "info": "提示"
-    },
-    "copyId": "复制 ID"
+    }
   },
   "config": {
     "globalComponents": {
@@ -493,6 +492,11 @@
       "messages": {
         "noExport": "没有可导出的调用记录",
         "exportFailed": "导出调用记录失败"
+      },
+      "channel": {
+        "unrouted": "未路由",
+        "unroutedProduct": "未路由 · 产品 {product}",
+        "unroutedTip": "未路由：请求在路由到通道前被拒绝，错误码 {code}"
       }
     }
   },
@@ -569,9 +573,6 @@
     },
     "actions": {
       "resetConfig": "重置配置",
-      "copyConfig": "复制配置",
-      "copySuccess": "配置已复制到剪贴板。",
-      "copyFailed": "复制失败，请重试",
       "resetFailed": "重置失败，请刷新页面后重试"
     }
   },
@@ -696,9 +697,6 @@
       "copied": "已复制",
       "getQrCode": "获取二维码",
       "gettingQrCode": "正在获取二维码...",
-      "secretCopied": "密钥已复制到剪贴板",
-      "backupCodesCopied": "备用码已复制到剪贴板",
-      "copyFailed": "复制失败，请手动复制",
       "btnText": "启用 MFA",
       "backToLogin": "返回登录"
     }
@@ -4212,10 +4210,6 @@
       "copyAll": "复制",
       "changePassword": "修改"
     },
-    "messages": {
-      "copied": "已复制到剪贴板",
-      "copyFailed": "复制失败，请手动复制"
-    },
     "platformPolicy": {
       "description": "以下 TOTP 参数、登录保护与密码策略对全体用户生效，修改后点击右上角「保存」。",
       "sessionHint": "管理端会话时长由系统配置决定，与本页密码策略相互独立。",
@@ -4343,7 +4337,6 @@
       "displayName": "名称",
       "productName": "产品名称",
       "supplierName": "供应商名称",
-      "copyKey": "复制 ID",
       "unnamed": "未命名",
       "daysUnit": "天",
       "statusActive": "正常",

@@ -3,6 +3,7 @@ import hljs from "highlight.js";
 import DOMPurify from "dompurify";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys/logger";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { ErrorCodes } from "@/constants/error-codes";
 function highlightCode(block: HTMLElement) {
   hljs.highlightElement(block);
@@ -22,10 +23,12 @@ function addCopyButton(block: HTMLElement) {
   copyButton.innerHTML = DOMPurify.sanitize(
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M7 6V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3v3c0 .552-.45 1-1.007 1H4.007A1 1 0 0 1 3 21l.003-14c0-.552.45-1 1.006-1zM5.002 8L5 20h10V8zM9 6h8v10h2V4H9z"/></svg>',
   );
+  copyButton.setAttribute("role", "button");
+  copyButton.setAttribute("aria-label", $t("common.actions.copy"));
   copyButton.onclick = () => {
     const codeContent = block.innerText.replace(/^\d+\s+/gm, "");
-    navigator.clipboard.writeText(codeContent).then(() => {
-      ElMessage.success($t("common.feedback.copiedToClipboard"));
+    copyWithFeedback(codeContent).catch((error: unknown) => {
+      logger.error("[v-highlight] copy failed", error);
     });
   };
   const preElement = block.parentElement;

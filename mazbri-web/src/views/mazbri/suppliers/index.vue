@@ -60,8 +60,18 @@
         </ResourceTableActionBar>
       </template>
 
+      <template #supplier_code="{ row }">
+        <CopyableText
+          :value="row.supplier_code"
+          :label="$t('supplier.fields.code')"
+        />
+      </template>
       <template #upstream_url="{ row }">
-        {{ formatUrlDisplay(row.upstream_url) }}
+        <CopyableText
+          :value="row.upstream_url"
+          :label="$t('supplier.fields.accessAddress')"
+          :display="formatUrlDisplay(row.upstream_url)"
+        />
       </template>
       <template #upstream_type="{ row }">
         <ElTag
@@ -116,6 +126,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createSupplier,
@@ -178,7 +189,12 @@ const pagination = reactive({
 const columns = ref<ColumnOption<Supplier>[]>([]);
 const supplierColumns: ColumnOption<Supplier>[] = [
   { type: "selection", width: 55 },
-  { prop: "supplier_code", label: $t("supplier.fields.code"), minWidth: 112 },
+  {
+    prop: "supplier_code",
+    label: $t("supplier.fields.code"),
+    minWidth: 112,
+    useSlot: true,
+  },
   { prop: "name", label: $t("supplier.fields.name"), minWidth: 120 },
   {
     prop: "upstream_type",

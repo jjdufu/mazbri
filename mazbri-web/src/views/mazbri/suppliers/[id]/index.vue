@@ -142,13 +142,16 @@
                 @blur="handleUrlBlur"
               />
             </ElFormItem>
-            <span v-else>
-              {{
-                upstreamType === "transparent"
-                  ? supplier?.upstream_url || "-"
-                  : formatUrlDisplay(supplier?.upstream_url || "")
-              }}
-            </span>
+            <CopyableText
+              v-else
+              :value="supplier?.upstream_url"
+              :display="
+                upstreamType === 'transparent'
+                  ? supplier?.upstream_url || ''
+                  : formatUrlDisplay(supplier?.upstream_url || '')
+              "
+              :label="$t('supplier.fields.accessAddress')"
+            />
           </ElDescriptionsItem>
 
           <ElDescriptionsItem
@@ -255,7 +258,11 @@
                   placeholder="https://api.upstream.com/get/token"
                   :disabled="!form.config.auth_flow.enabled"
                 />
-                <span v-else>{{ authFlow?.token_url || "-" }}</span>
+                <CopyableText
+                  v-else
+                  :value="authFlow?.token_url"
+                  label="token_url"
+                />
               </ElDescriptionsItem>
 
 
@@ -458,6 +465,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import {
   ElMessage,
   ElMessageBox,

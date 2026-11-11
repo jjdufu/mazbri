@@ -70,15 +70,18 @@
         <span v-else>0</span>
       </template>
       <template #trace_id="{ row }">
-        <ElLink type="primary" @click.stop="openTrace(row)">{{
-          row.trace_id
-        }}</ElLink>
+        <CopyableText
+          :value="row.trace_id"
+          :link="traceRouteOf(row)"
+          :label="t('ops.traces.columns.traceId')"
+        />
       </template>
     </ResourceTableShell>
   </OpsPage>
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { formatDateTime } from "@/utils/format";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -445,10 +448,10 @@ function handlePageSizeChange(pageSize: number) {
   void runSearch();
 }
 
-function openTrace(row: TraceSummary) {
-  void router.push(
-    buildTraceRoute(row.trace_id, { start: Math.floor(row.start_ms / 1000) }),
-  );
+function traceRouteOf(row: TraceSummary) {
+  return buildTraceRoute(row.trace_id, {
+    start: Math.floor(row.start_ms / 1000),
+  });
 }
 
 function renderScatter() {
@@ -462,7 +465,7 @@ function renderScatter() {
       const series =
         params.seriesIndex === 1 ? errorTraces.value : okTraces.value;
       const row = series[idx];
-      if (row) openTrace(row);
+      if (row) void router.push(traceRouteOf(row));
     });
   }
   scatter.setOption(buildScatterOption(), true);

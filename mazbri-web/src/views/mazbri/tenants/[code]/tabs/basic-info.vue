@@ -15,12 +15,18 @@
       </template>
 
       <ElDescriptions :column="2" border>
-        <ElDescriptionsItem :label="$t('tenant.fields.code')">{{
-          tenant?.tenant_code
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('tenant.fields.accountId')">{{
-          tenant?.tenant_id
-        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('tenant.fields.code')">
+          <CopyableText
+            :value="tenant?.tenant_code"
+            :label="$t('tenant.fields.code')"
+          />
+        </ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('tenant.fields.accountId')">
+          <CopyableText
+            :value="tenant?.tenant_id"
+            :label="$t('tenant.fields.accountId')"
+          />
+        </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.name')">{{
           tenant?.name
         }}</ElDescriptionsItem>
@@ -92,6 +98,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
 import { $t } from "@/locales";

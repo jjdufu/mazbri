@@ -16,9 +16,12 @@
       </template>
 
       <ElDescriptions :column="2" border>
-        <ElDescriptionsItem :label="$t('userManagement.detail.labels.id')">{{
-          admin?.id
-        }}</ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('userManagement.detail.labels.id')">
+          <CopyableText
+            :value="admin?.id"
+            :label="$t('userManagement.detail.labels.id')"
+          />
+        </ElDescriptionsItem>
         <ElDescriptionsItem
           :label="$t('userManagement.detail.labels.username')"
           >{{ admin?.username }}</ElDescriptionsItem
@@ -173,6 +176,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";

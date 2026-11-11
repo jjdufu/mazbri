@@ -133,10 +133,30 @@
           "
         />
         <ElDescriptions v-if="result" :column="1" border class="mb">
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.supplierId')">{{ result.supplier_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.channelId')">{{ result.channel_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeRuleId')">{{ result.route_rule_id }}</ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.bindingId')">{{ result.binding_id }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.supplierId')">
+            <CopyableText
+              :value="result.supplier_id"
+              :label="$t('upstreamOnboarding.done.supplierId')"
+            />
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.channelId')">
+            <CopyableText
+              :value="result.channel_id"
+              :label="$t('upstreamOnboarding.done.channelId')"
+            />
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeRuleId')">
+            <CopyableText
+              :value="result.route_rule_id"
+              :label="$t('upstreamOnboarding.done.routeRuleId')"
+            />
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.bindingId')">
+            <CopyableText
+              :value="result.binding_id"
+              :label="$t('upstreamOnboarding.done.bindingId')"
+            />
+          </ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeVersion')">{{ result.route_version }}</ElDescriptionsItem>
         </ElDescriptions>
         <p class="hint">{{ $t("upstreamOnboarding.done.reloadHint") }}</p>
@@ -175,6 +195,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import { $t } from "@/locales";

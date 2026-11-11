@@ -41,6 +41,7 @@ declare module 'vue' {
     ChannelConfigDialog: typeof import('./../../components/common/channel-config-dialog/index.vue')['default']
     ComponentHealthList: typeof import('./../../components/ops/ComponentHealthList.vue')['default']
     ControlPanelPageShell: typeof import('./../../components/common/control-panel-page-shell/index.vue')['default']
+    CopyableText: typeof import('./../../components/common/copyable-text/index.vue')['default']
     CryptoSuiteSelect: typeof import('./../../components/crypto/CryptoSuiteSelect.vue')['default']
     DatePicker: typeof import('./../../components/common/DatePicker.vue')['default']
     DetailHero: typeof import('./../../components/common/detail-hero/index.vue')['default']

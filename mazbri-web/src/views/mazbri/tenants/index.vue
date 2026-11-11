@@ -40,6 +40,19 @@
       @primary="handleCreate"
       @delete="(type: 'all' | 'selected') => handleDeleteCommand(type, tableData)"
     >
+      <template #tenant_code="{ row }">
+        <CopyableText
+          :value="row.tenant_code"
+          :label="$t('tenant.fields.code')"
+        />
+      </template>
+      <template #tenant_id="{ row }">
+        <CopyableText
+          :value="row.tenant_id"
+          :label="$t('tenant.fields.accountId')"
+          compact
+        />
+      </template>
       <template #status="{ row }">
         <StatusIndicator :type="getStatusType(tenantStatusKey(row))">
           {{ getStatusLabel(tenantStatusKey(row)) }}
@@ -103,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
@@ -164,8 +178,8 @@ const importVisible = ref(false);
 const columns = ref<ColumnOption<Tenant>[]>([]);
 const tenantColumns: ColumnOption<Tenant>[] = [
   { type: "selection", width: 55 },
-  { prop: "tenant_code", label: $t("tenant.fields.code"), width: 120 },
-  { prop: "tenant_id", label: $t("tenant.fields.accountId"), width: 150 },
+  { prop: "tenant_code", label: $t("tenant.fields.code"), width: 120, useSlot: true },
+  { prop: "tenant_id", label: $t("tenant.fields.accountId"), width: 150, useSlot: true },
   { prop: "name", label: $t("common.fields.name"), minWidth: 100 },
   {
     prop: "contact_person",

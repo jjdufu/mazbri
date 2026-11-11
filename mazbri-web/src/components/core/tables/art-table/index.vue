@@ -1,10 +1,8 @@
 <template>
   <div
-    ref="tableRootRef"
     class="art-table"
-    :class="{ 'is-empty': isEmpty, 'art-table--cell-copy': cellCopy }"
+    :class="{ 'is-empty': isEmpty }"
     :style="containerStyle"
-    @click="onTableBodyClick"
   >
     <ElTable
       ref="elTableRef"
@@ -75,7 +73,6 @@
       :class="mergedPaginationOptions?.align"
     >
       <div class="pagination-bar">
-
         <ElPagination
           v-bind="mergedPaginationOptions"
           class="pagination-sizes"
@@ -88,7 +85,11 @@
           @current-change="onCurrentChange"
         />
 
-        <div class="pagination-nav" role="navigation" :aria-label="t('common.pagination.nav')">
+        <div
+          class="pagination-nav"
+          role="navigation"
+          :aria-label="t('common.pagination.nav')"
+        >
           <button
             type="button"
             class="pagination-nav-btn"
@@ -99,10 +100,6 @@
           >
             <ElIcon><ArrowLeft /></ElIcon>
           </button>
-
-
-
-
 
           <div class="pagination-jump">
             <input
@@ -150,22 +147,14 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  watch,
-} from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
 import { ArrowLeft, ArrowRight } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
 import { useTableStore } from "@/store/modules/table";
 import type { ColumnOption } from "@/types/component";
 import { getColumnVisibility } from "@/hooks/core/useTableColumns";
 import { resolveSafePageCount } from "@/utils/table/paginationLimits";
-import { copyTextToClipboard } from "@/utils/clipboard";
 import type { ArtTableProps, PaginationOptions } from "./types";
 import {
   SIZES_LAYOUT,
@@ -184,8 +173,6 @@ const props = withDefaults(defineProps<ArtTableProps>(), {
   size: undefined,
   emptyHeight: "100%",
   showTableHeader: true,
-
-  cellCopy: true,
 });
 const { t } = useI18n();
 const emit = defineEmits<{
@@ -225,157 +212,6 @@ onBeforeUnmount(() => {
   }
 });
 
-
-const CELL_COPY_SKIP_SELECTOR = [
-  "button",
-  "a",
-  "input",
-  "textarea",
-  "select",
-  "label",
-  "svg",
-  ".el-button",
-  ".el-checkbox",
-  ".el-radio",
-  ".el-switch",
-  ".el-link",
-  ".el-tag",
-  ".el-badge",
-  ".el-icon",
-  ".status-indicator",
-  ".el-dropdown",
-  ".el-select",
-  ".el-input",
-  ".el-pagination",
-  ".el-table__expand-icon",
-  ".table-action-row",
-  "[data-no-cell-copy]",
-  "[contenteditable='true']",
-].join(", ");
-
-let lastCellCopyAt = 0;
-let lastCellCopyText = "";
-
-const tableRootRef = ref<HTMLElement | null>(null);
-
-const normalizeCopiedText = (raw: string): string =>
-  raw
-    .replace(/\u00a0/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
-
-const extractClickedCellCopyText = (
-  td: HTMLElement,
-  target: EventTarget | null,
-  clientX: number,
-  clientY: number,
-): string => {
-  if (target instanceof Element) {
-    const explicitCopyTarget = target.closest("[data-copy-text]");
-    if (explicitCopyTarget && td.contains(explicitCopyTarget)) {
-      const rect = explicitCopyTarget.getBoundingClientRect();
-      if (
-        clientX >= rect.left - 2 &&
-        clientX <= rect.right + 2 &&
-        clientY >= rect.top - 2 &&
-        clientY <= rect.bottom + 2
-      ) {
-        return (explicitCopyTarget.getAttribute("data-copy-text") ?? "").trim();
-      }
-    }
-  }
-
-  const cell = td.querySelector(".cell") ?? td;
-  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
-  const range = document.createRange();
-  let node = walker.nextNode();
-  while (node) {
-    const textContent = normalizeCopiedText(node.textContent ?? "");
-    if (textContent && textContent !== "-" && textContent !== "—") {
-      const parentEl = node.parentElement;
-      if (parentEl && !parentEl.closest(CELL_COPY_SKIP_SELECTOR)) {
-        range.selectNodeContents(node);
-        const rects = range.getClientRects();
-        for (let i = 0; i < rects.length; i += 1) {
-          const r = rects[i];
-          if (
-            r.width > 0 &&
-            r.height > 0 &&
-            clientX >= r.left - 2 &&
-            clientX <= r.right + 2 &&
-            clientY >= r.top - 2 &&
-            clientY <= r.bottom + 2
-          ) {
-            const copyTarget = parentEl.closest("[data-copy-text]");
-            if (copyTarget && td.contains(copyTarget)) {
-              return (copyTarget.getAttribute("data-copy-text") ?? "").trim();
-            }
-            return textContent;
-          }
-        }
-      }
-    }
-    node = walker.nextNode();
-  }
-  return "";
-};
-
-const findCopyableCell = (target: EventTarget | null): HTMLElement | null => {
-  if (!(target instanceof Element)) return null;
-  if (
-    target.closest(".pagination, .el-table__header-wrapper, .el-loading-mask")
-  ) {
-    return null;
-  }
-  if (target.closest(CELL_COPY_SKIP_SELECTOR)) return null;
-  const td = target.closest(".el-table__body td");
-  if (!td || !(td instanceof HTMLElement)) return null;
-  if (td === target || target.classList.contains("cell")) {
-    // Allow range hit-test inside .cell only if click coordinates land on text glyphs
-  }
-  if (td.querySelector(".el-checkbox, .el-radio, .el-table__expand-icon")) {
-    return null;
-  }
-  if (td.querySelector(".el-button, .el-dropdown, .table-action-row, .el-link")) {
-    return null;
-  }
-  return td;
-};
-
-const onTableBodyClick = async (event: MouseEvent) => {
-  if (!props.cellCopy) return;
-  const activeSelection = window.getSelection?.()?.toString().trim() ?? "";
-  if (activeSelection.length > 0) return;
-
-  const td = findCopyableCell(event.target);
-  if (!td) return;
-
-  const text = extractClickedCellCopyText(
-    td,
-    event.target,
-    event.clientX,
-    event.clientY,
-  );
-  if (!text) return;
-
-  const now = Date.now();
-  if (text === lastCellCopyText && now - lastCellCopyAt < 500) {
-    return;
-  }
-
-  const ok = await copyTextToClipboard(text);
-  if (!ok) {
-    ElMessage.error(t("common.feedback.copyFailed"));
-    return;
-  }
-  lastCellCopyAt = now;
-  lastCellCopyText = text;
-  ElMessage.success({
-    message: t("common.feedback.copiedToClipboard"),
-    duration: 1200,
-  });
-};
 const tableStore = useTableStore();
 const { isBorder, isZebra, tableSize, isFullScreen, isHeaderBackground } =
   storeToRefs(tableStore);
@@ -393,7 +229,6 @@ const {
 const defaultPaginationOptions = computed(() =>
   createDefaultPaginationOptions(),
 );
-
 
 const normalizeLayout = (raw: string | undefined): string => {
   if (!raw?.trim()) {
@@ -436,7 +271,11 @@ const syncJumpFromProps = () => {
 };
 watch(
   () =>
-    [props.pagination?.current, props.pagination?.size, safePageCount.value] as const,
+    [
+      props.pagination?.current,
+      props.pagination?.size,
+      safePageCount.value,
+    ] as const,
   () => {
     syncJumpFromProps();
   },
@@ -512,7 +351,10 @@ const orderVisibleColumns = (cols: ColumnOption[]): ColumnOption[] => {
         align: col.align ?? "center",
       });
     } else if (prop === "operations" || col.slotName === "operations") {
-      operations.push({ ...col, fixed: col.fixed === "left" ? "left" : "right" });
+      operations.push({
+        ...col,
+        fixed: col.fixed === "left" ? "left" : "right",
+      });
     } else {
       middle.push(col);
     }

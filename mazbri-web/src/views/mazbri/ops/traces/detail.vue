@@ -3,7 +3,11 @@
     <template #actions>
       <div class="ops-trace__toolbar">
         <div class="ops-trace__title">
-          <code class="ops-trace__id">{{ traceId }}</code>
+          <CopyableText
+            class="ops-trace__id"
+            :value="traceId"
+            :label="t('ops.traces.columns.traceId')"
+          />
         </div>
         <div v-if="detail" class="ops-trace__meta">
           <span
@@ -138,12 +142,18 @@
             </ElTag>
           </div>
           <ElDescriptions :column="1" size="small" border>
-            <ElDescriptionsItem :label="t('ops.traces.detail.spanId')">{{
-              selected.span_id
-            }}</ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('ops.traces.detail.parentSpan')">{{
-              selected.parent_span_id || "—"
-            }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('ops.traces.detail.spanId')">
+              <CopyableText
+                :value="selected.span_id"
+                :label="t('ops.traces.detail.spanId')"
+              />
+            </ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('ops.traces.detail.parentSpan')">
+              <CopyableText
+                :value="selected.parent_span_id"
+                :label="t('ops.traces.detail.parentSpan')"
+              />
+            </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('ops.traces.columns.duration')">
               {{ formatDurationNs(selected.duration_ns) }}
             </ElDescriptionsItem>
@@ -284,9 +294,11 @@
               min-width="280"
             >
               <template #default="{ row }">
-                <ElLink type="primary" @click="openCalls(row.request_id)">{{
-                  row.request_id
-                }}</ElLink>
+                <CopyableText
+                  :value="row.request_id"
+                  :link="callsRouteOf(row.request_id)"
+                  :label="t('ops.traces.columns.requestId')"
+                />
               </template>
             </ElTableColumn>
             <ElTableColumn
@@ -298,7 +310,14 @@
               prop="channel_code"
               :label="t('ops.calls.stages.columns.channel')"
               min-width="130"
-            />
+            >
+              <template #default="{ row }">
+                <CopyableText
+                  :value="row.channel_code"
+                  :label="t('ops.calls.stages.columns.channel')"
+                />
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               prop="status_code"
               :label="t('ops.calls.stages.columns.status')"
@@ -339,7 +358,14 @@
               prop="request_id"
               :label="t('ops.traces.columns.requestId')"
               min-width="260"
-            />
+            >
+              <template #default="{ row }">
+                <CopyableText
+                  :value="row.request_id"
+                  :label="t('ops.traces.columns.requestId')"
+                />
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               prop="outbox_status"
               :label="t('ops.traces.detail.outbox')"
@@ -354,7 +380,14 @@
               prop="product_id"
               :label="t('ops.traces.form.product')"
               min-width="120"
-            />
+            >
+              <template #default="{ row }">
+                <CopyableText
+                  :value="row.product_id"
+                  :label="t('ops.traces.form.product')"
+                />
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               prop="billable_units"
               :label="t('ops.traces.billing.units')"
@@ -391,6 +424,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { formatDateTime } from "@/utils/format";
 import { computed, defineComponent, h, ref, watch, type PropType } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -625,10 +659,11 @@ function openLinked(target: string, spanId: string) {
   void router.push(buildTraceRoute(target, { span: spanId }));
 }
 
-function openCalls(requestId: string) {
-  void router.push(
-    buildCallsRoute({ tab: "customer", filters: { request_id: requestId } }),
-  );
+function callsRouteOf(requestId: string) {
+  return buildCallsRoute({
+    tab: "customer",
+    filters: { request_id: requestId },
+  });
 }
 
 function startHint(): { start?: number; end?: number } {

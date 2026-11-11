@@ -1,5 +1,8 @@
 <template>
-  <div class="call-monitor-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div
+    class="call-monitor-page"
+    style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+  >
     <ResourceTableShell
       v-model:columns="columns"
       :title="title"
@@ -41,61 +44,18 @@
           :items="exportItems"
           :label="$t('operations.monitoring.actions.export')"
           @command="
-            (command) =>
-              handleExportCommand(command as 'page' | 'filtered')
+            (command) => handleExportCommand(command as 'page' | 'filtered')
           "
         />
         <ElButton @click="resetSearch">{{ $t("common.reset") }}</ElButton>
       </template>
 
       <template #serial_no="{ row }">
-        <span v-if="row.serial_no" class="compact-id-cell">
-          <ElTooltip
-            :content="row.serial_no"
-            placement="top"
-            :show-after="200"
-          >
-            <span class="serial-no-cell">{{
-              formatCompactId(row.serial_no)
-            }}</span>
-          </ElTooltip>
-          <button
-            type="button"
-            class="compact-id-copy"
-            :title="$t('common.actions.copy')"
-            @click.stop="copyIdText(row.serial_no)"
-          >
-            <ArtSvgIcon icon="ri:file-copy-line" />
-          </button>
-        </span>
-        <span v-else>-</span>
-      </template>
-
-      <template #trace_id="{ row }">
-        <span v-if="row.trace_id" class="compact-id-cell">
-          <ElTooltip
-            :content="row.trace_id"
-            placement="top"
-            :show-after="200"
-          >
-            <ElLink
-              type="primary"
-              class="trace-id-cell"
-              @click="openTraceFor(row)"
-            >
-              {{ formatCompactId(row.trace_id) }}
-            </ElLink>
-          </ElTooltip>
-          <button
-            type="button"
-            class="compact-id-copy"
-            :title="$t('common.actions.copy')"
-            @click.stop="copyIdText(row.trace_id)"
-          >
-            <ArtSvgIcon icon="ri:file-copy-line" />
-          </button>
-        </span>
-        <span v-else>-</span>
+        <CopyableText
+          :value="row.serial_no"
+          compact
+          :label="$t('operations.monitoring.columns.serialNo')"
+        />
       </template>
       <template #tenant_name="{ row }">
         {{ row.tenant_name || row.tenant_id || "-" }}
@@ -105,23 +65,30 @@
       </template>
       <template #channel_name="{ row }">
         <ElTooltip
-          :content="channelNameHoverContent(row)"
+          :content="channelTooltip(row)"
           placement="top"
-          :disabled="!channelNameHoverContent(row)"
+          :disabled="!channelTooltip(row)"
           :show-after="0"
           :hide-after="0"
           :enterable="false"
           transition="call-monitor-tooltip-instant"
           popper-class="call-monitor-channel-tooltip"
         >
-          <span class="channel-name-cell">{{ formatChannelName(row) }}</span>
+          <span
+            class="channel-name-cell"
+            :class="{ 'is-unrouted': isUnrouted(row) }"
+            >{{ channelText(row) }}</span
+          >
         </ElTooltip>
       </template>
       <template #response_time="{ row }">
         {{ formatTimestampWithMillis(row.response_time) }}
       </template>
       <template #request_ip="{ row }">
-        {{ row.request_ip || row.client_ip || "-" }}
+        <CopyableText
+          :value="row.request_ip || row.client_ip"
+          :label="$t('operations.monitoring.columns.requestIp')"
+        />
       </template>
       <template #duration_ms="{ row }"> {{ row.duration_ms }} ms </template>
       <template #upstream_service_time_ms="{ row }">
@@ -182,38 +149,17 @@
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.serialNo')"
                 >
-                  <span class="compact-id-cell">
-                    <span class="serial-no-cell">{{ currentDetail.serial_no }}</span>
-                    <button
-                      v-if="currentDetail.serial_no"
-                      type="button"
-                      class="compact-id-copy"
-                      :title="$t('common.actions.copy')"
-                      @click="copyIdText(currentDetail.serial_no)"
-                    >
-                      <ArtSvgIcon icon="ri:file-copy-line" />
-                    </button>
-                  </span>
+                  <CopyableText
+                    :value="currentDetail.serial_no"
+                    :label="$t('operations.monitoring.detail.labels.serialNo')"
+                  />
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('ops.traces.columns.traceId')">
-                  <span v-if="currentDetail.trace_id" class="compact-id-cell">
-                    <ElLink
-                      type="primary"
-                      class="trace-id-cell"
-                      @click="openTraceFor(currentDetail)"
-                    >
-                      {{ currentDetail.trace_id }}
-                    </ElLink>
-                    <button
-                      type="button"
-                      class="compact-id-copy"
-                      :title="$t('common.actions.copy')"
-                      @click="copyIdText(currentDetail.trace_id)"
-                    >
-                      <ArtSvgIcon icon="ri:file-copy-line" />
-                    </button>
-                  </span>
-                  <span v-else>-</span>
+                  <CopyableText
+                    :value="currentDetail.trace_id"
+                    :link="traceRouteFor(currentDetail)"
+                    :label="$t('ops.traces.columns.traceId')"
+                  />
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.party')"
@@ -231,7 +177,11 @@
                 <ElDescriptionsItem
                   :label="$t('operations.monitoring.detail.labels.channelName')"
                 >
-                  {{ formatChannelName(currentDetail) }}
+                  <span
+                    :class="{ 'is-unrouted': isUnrouted(currentDetail) }"
+                    :title="channelTooltip(currentDetail) || undefined"
+                    >{{ channelText(currentDetail) }}</span
+                  >
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
                   :label="
@@ -269,9 +219,10 @@
                   v-if="props.mode === 'customer'"
                   :label="$t('operations.monitoring.detail.labels.requestIp')"
                 >
-                  {{
-                    currentDetail.request_ip || currentDetail.client_ip || "-"
-                  }}
+                  <CopyableText
+                    :value="currentDetail.request_ip || currentDetail.client_ip"
+                    :label="$t('operations.monitoring.detail.labels.requestIp')"
+                  />
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
                   v-if="props.mode === 'customer'"
@@ -286,9 +237,7 @@
 
             <ElCard shadow="never" class="detail-card">
               <template #header>
-                <SurfaceCardHeader
-                  :title="$t('ops.calls.stages.breakdown')"
-                />
+                <SurfaceCardHeader :title="$t('ops.calls.stages.breakdown')" />
               </template>
               <StageBreakdown
                 :request-id="currentDetail.serial_no"
@@ -310,7 +259,13 @@
                   :key="item.key"
                   :label="item.key"
                 >
+                  <CopyableText
+                    v-if="item.copyable"
+                    :value="item.full"
+                    :label="item.key"
+                  />
                   <ElTooltip
+                    v-else
                     :disabled="!item.truncated"
                     :content="item.full"
                     placement="top-start"
@@ -336,7 +291,9 @@
 
 <script setup lang="ts">
 import { timestampFiltersToUnix } from "@/utils/ops/call-filters";
-import { unixSecondsOf } from "@/utils/ops/trace-link";
+import { buildTraceRoute, unixSecondsOf } from "@/utils/ops/trace-link";
+import { resolveCallChannel } from "@/utils/ops/call-channel";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
@@ -380,7 +337,6 @@ import {
 } from "@/utils/list-query/request-id";
 
 const TIME_ZONE = "Asia/Shanghai";
-
 
 export interface CallTimeRange {
   /** Unix seconds. */
@@ -483,6 +439,23 @@ watch(
   },
 );
 
+/** 原始字段里按复制规范带复制按钮的标识类字段。 */
+const DETAIL_COPYABLE_KEYS = new Set([
+  "request_id",
+  "trace_id",
+  "span_id",
+  "parent_span_id",
+  "tenant_id",
+  "tenant_code",
+  "product_id",
+  "supplier_id",
+  "supplier_code",
+  "channel_id",
+  "channel_code",
+  "client_ip",
+  "xff",
+]);
+
 const DETAIL_EXPORT_EXCLUDED_KEYS = new Set([
   "service",
   "instance_id",
@@ -504,29 +477,29 @@ const onManualRefresh = () => {
 const emit = defineEmits<{
   /** Current filter params without paging; drives the histogram. */
   queryChange: [query: CallHistogramQuery];
-  /** `start` is the row's Unix-second timestamp hint for the trace query window. */
-  openTrace: [traceId: string, start?: number];
+  /**
+   * `start` is the row's Unix-second timestamp hint for the trace query window;
+   * `requestId` lets the trace page fall back to the stage waterfall once the trace expired.
+   */
+  openTrace: [traceId: string, start?: number, requestId?: string];
 }>();
+
+function traceRouteFor(row: CallMonitorItem) {
+  if (!row.trace_id) return null;
+  return buildTraceRoute(row.trace_id, {
+    start: unixSecondsOf(row.timestamp ?? row.response_time),
+    requestId: row.serial_no || undefined,
+  });
+}
 
 function openTraceFor(row: CallMonitorItem) {
   if (!row.trace_id) return;
-  emit("openTrace", row.trace_id, unixSecondsOf(row.timestamp ?? row.response_time));
-}
-
-function formatCompactId(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= 16) return trimmed;
-  return `${trimmed.slice(0, 8)}…${trimmed.slice(-6)}`;
-}
-
-async function copyIdText(value: string) {
-  if (!value) return;
-  try {
-    await navigator.clipboard.writeText(value);
-    ElMessage.success($t("common.messages.copySuccess"));
-  } catch {
-    ElMessage.error($t("common.messages.copyFailed"));
-  }
+  emit(
+    "openTrace",
+    row.trace_id,
+    unixSecondsOf(row.timestamp ?? row.response_time),
+    row.serial_no || undefined,
+  );
 }
 
 defineExpose({ refresh: onManualRefresh });
@@ -541,11 +514,6 @@ const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour12: false,
   timeZone: TIME_ZONE,
 });
-
-
-
-
-
 
 const formatTimestampWithMillis = (value: string | number | null) => {
   if (!value) return "-";
@@ -579,35 +547,31 @@ const getCallMonitorResponseResult = (
   return value.trim() || "-";
 };
 
-
-const formatChannelName = (row: CallMonitorItem | null | undefined) => {
-  if (!row) return "-";
-  const detail = (row.detail || {}) as Record<string, unknown>;
-  const cacheHit = detail.cache_hit === true;
-  const fallbackUsed = detail.fallback_used === true;
-  const raw = String(row.channel_name || row.channel_code || "").trim();
-  if (!raw) {
-    return cacheHit || fallbackUsed ? "CB" : "-";
-  }
-  if (raw.startsWith("CB:") || raw.startsWith("CB/") || raw === "CB") {
-    return raw;
-  }
-  if (cacheHit || fallbackUsed) {
-    return `CB:${raw}`;
-  }
-  return raw;
+const channelText = (row: CallMonitorItem | null | undefined): string => {
+  const view = resolveCallChannel(row);
+  if (view.kind === "channel") return view.text;
+  return view.productId
+    ? $t("operations.monitoring.channel.unroutedProduct", {
+        product: view.productId,
+      })
+    : $t("operations.monitoring.channel.unrouted");
 };
 
+const isUnrouted = (row: CallMonitorItem | null | undefined): boolean =>
+  resolveCallChannel(row).kind === "unrouted";
 
-const channelNameHoverContent = (row: CallMonitorItem | null | undefined) => {
-  if (!row) return "";
-  const channel = formatChannelName(row);
-  if (channel === "-") return "";
-
-  if (props.mode !== "upstream") return channel;
-
-  const channelLine = `${$t("operations.monitoring.columns.channelName")}: ${channel}`;
-  const supplier = String(row.supplier || row.supplier_name || "").trim();
+const channelTooltip = (row: CallMonitorItem | null | undefined): string => {
+  const view = resolveCallChannel(row);
+  if (view.kind === "unrouted") {
+    return view.errorCode
+      ? $t("operations.monitoring.channel.unroutedTip", {
+          code: view.errorCode,
+        })
+      : "";
+  }
+  if (props.mode !== "upstream") return view.text;
+  const channelLine = `${$t("operations.monitoring.columns.channelName")}: ${view.text}`;
+  const supplier = String(row?.supplier || row?.supplier_name || "").trim();
   if (!supplier) return channelLine;
   return `${channelLine}\n${$t("operations.monitoring.columns.supplier")}: ${supplier}`;
 };
@@ -647,6 +611,10 @@ const detailEntries = computed(() => {
   const payload = buildDetailPayload(currentDetail.value?.detail);
   return Object.entries(payload).map(([key, value]) => ({
     key,
+    copyable:
+      DETAIL_COPYABLE_KEYS.has(key) &&
+      typeof value === "string" &&
+      value !== "",
     ...formatDetailEntryValue(value),
   }));
 });
@@ -696,7 +664,13 @@ const buildColumns = (
         h(StageBreakdown, {
           requestId: row.serial_no,
           traceId: row.trace_id,
-          onOpenTrace: (traceId: string) => emit("openTrace", traceId),
+          onOpenTrace: (traceId: string) =>
+            emit(
+              "openTrace",
+              traceId,
+              unixSecondsOf(row.timestamp ?? row.response_time),
+              row.serial_no || undefined,
+            ),
         }),
     },
     {
@@ -769,14 +743,6 @@ const buildColumns = (
       useSlot: true,
       showOverflowTooltip: false,
     },
-    {
-      prop: "trace_id",
-      label: $t("ops.traces.columns.traceId"),
-      minWidth: 136,
-      maxWidth: 196,
-      useSlot: true,
-      showOverflowTooltip: false,
-    },
   );
 
   if (currentMode === "customer") {
@@ -819,11 +785,9 @@ const applyResponseMeta = (response: CallMonitorResponse) => {
   const total = response.total || 0;
   pagination.total = total;
   pagination.total_pages =
-    response.total_pages ||
-    resolveSafePageCount(total, pagination.page_size);
+    response.total_pages || resolveSafePageCount(total, pagination.page_size);
   lastQueryMode.value = response.query_mode || "latest";
-  lastUniverseSize.value =
-    response.universe_size || CALL_MONITOR_UNIVERSE_SIZE;
+  lastUniverseSize.value = response.universe_size || CALL_MONITOR_UNIVERSE_SIZE;
 };
 
 const loadData = async (opts?: { silent?: boolean }) => {
@@ -834,8 +798,7 @@ const loadData = async (opts?: { silent?: boolean }) => {
     const rows = response.data || [];
     const total = response.total || 0;
     const totalPages =
-      response.total_pages ||
-      resolveSafePageCount(total, pagination.page_size);
+      response.total_pages || resolveSafePageCount(total, pagination.page_size);
     const safePage = clampPageToSafeRange(
       requestedPage,
       total,
@@ -884,8 +847,6 @@ const buildQuery = (
   page = pagination.page,
   pageSize = pagination.page_size,
 ): CallMonitorQuery => {
-
-
   const selectiveSerial =
     parseRequestIdLookup(q.value) ?? requestIdFromFilters(filters.value);
 
@@ -895,7 +856,6 @@ const buildQuery = (
       page_size: pageSize,
       serial_no: selectiveSerial,
     }) as CallMonitorQuery;
-
 
     delete params.q;
 
@@ -915,8 +875,6 @@ const buildQuery = (
     delete params.end_time;
     return params;
   }
-
-
 
   const timeWindowParams =
     props.timeRange && !hasTimestampFilter(filters.value)
@@ -982,9 +940,7 @@ const downloadDetailJson = () => {
     "application/json;charset=utf-8;",
   );
 };
-const handleExportCommand = async (
-  command: "page" | "filtered",
-) => {
+const handleExportCommand = async (command: "page" | "filtered") => {
   if (exporting.value) return;
   if (command === "page") {
     await exportLogsArchive(tableData.value, "page");
@@ -1114,53 +1070,6 @@ onMounted(() => {
   max-width: 100%;
 }
 
-.serial-no-cell {
-  display: inline-block;
-  max-width: 100%;
-  white-space: nowrap;
-  font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-}
-
-.trace-id-cell {
-  font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
-}
-
-.compact-id-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  white-space: nowrap;
-}
-
-.compact-id-copy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  border-radius: var(--art-form-control-radius-sm);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  opacity: 0.65;
-  transition:
-    opacity 0.15s ease,
-    color 0.15s ease,
-    background-color 0.15s ease;
-
-  &:hover {
-    opacity: 1;
-    color: var(--el-color-primary);
-    background: var(--el-fill-color-light);
-  }
-}
-
 .channel-name-cell {
   display: inline-block;
   max-width: 100%;
@@ -1171,14 +1080,10 @@ onMounted(() => {
   cursor: default;
 }
 
-
-:deep(.el-table .cell) {
-  .serial-no-cell {
-    white-space: nowrap;
-  }
+.is-unrouted {
+  color: var(--el-text-color-placeholder);
 }
 </style>
-
 
 <style>
 .call-monitor-channel-tooltip {
@@ -1186,7 +1091,6 @@ onMounted(() => {
   white-space: pre-line;
   line-height: 1.45;
 }
-
 
 .call-monitor-tooltip-instant-enter-active,
 .call-monitor-tooltip-instant-leave-active {

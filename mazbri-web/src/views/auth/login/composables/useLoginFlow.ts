@@ -56,32 +56,6 @@ function resolveLoginErrorCode(status: number): ErrorCode {
 function resolveLoginSeverity(errorCode: ErrorCode): "warn" | "error" {
   return WARN_LOGIN_ERROR_CODES.has(errorCode) ? "warn" : "error";
 }
-export function copyToClipboard(text: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard
-          .writeText(text)
-          .then(() => resolve(true))
-          .catch(() => resolve(false));
-        return;
-      }
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      textarea.style.top = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const success = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      resolve(success);
-    } catch {
-      resolve(false);
-    }
-  });
-}
 export function useLoginFlow() {
   const { t } = useI18n();
   const router = useRouter();
@@ -369,6 +343,5 @@ export function useLoginFlow() {
     handleChangePassword,
     handleBackToLogin,
     completeLogin,
-    copyToClipboard,
   };
 }

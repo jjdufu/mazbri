@@ -33,7 +33,10 @@
           {{ channel?.id || "-" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.channelCode')">
-          {{ channel?.channel_code || "-" }}
+          <CopyableText
+            :value="channel?.channel_code"
+            :label="$t('channels.fields.channelCode')"
+          />
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.name')">
           {{ channel?.name || "-" }}
@@ -74,6 +77,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
