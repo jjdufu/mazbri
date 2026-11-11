@@ -512,7 +512,7 @@ import {
 import { fetchSupplierById } from "@/api/supplier";
 import { useUserStore } from "@/store/modules/user";
 import { canWriteUpstreamConnector } from "@/utils/ops/roles";
-import { copyTextToClipboard } from "@/utils/clipboard";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { isHttpError } from "@/utils/http/error";
 import {
   AUTH_PROFILES,
@@ -1776,9 +1776,7 @@ async function copyCurl() {
     query: req.query,
     body: req.body,
   });
-  const ok = await copyTextToClipboard(text);
-  if (ok) ElMessage.success($t("common.feedback.copySuccess"));
-  else ElMessage.error($t("common.feedback.copyFailed"));
+  await copyWithFeedback(text);
 }
 
 async function bootstrap() {

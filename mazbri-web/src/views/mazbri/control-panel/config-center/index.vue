@@ -56,7 +56,7 @@
           min-width="250"
         >
           <template #default="{ row }">
-            <div class="service-name-cell" :data-copy-text="row.service_name">
+            <div class="service-name-cell">
               <ArtSvgIcon
                 icon="ri:server-line"
                 class="service-icon text-theme"

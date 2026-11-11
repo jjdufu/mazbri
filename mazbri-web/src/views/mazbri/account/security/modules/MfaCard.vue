@@ -207,7 +207,7 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
-import { copyTextToClipboard } from "@/utils/clipboard";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import {
   formatExpiryUtc8,
   readSessionExpiresIn,
@@ -335,12 +335,7 @@ async function handleIssuerSave(): Promise<void> {
 }
 
 async function copyText(text: string): Promise<void> {
-  const ok = await copyTextToClipboard(text);
-  if (ok) {
-    ElMessage.success($t("accountSecurity.messages.copied"));
-  } else {
-    ElMessage.error($t("accountSecurity.messages.copyFailed"));
-  }
+  await copyWithFeedback(text);
 }
 
 async function handleStartSetup(): Promise<void> {

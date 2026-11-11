@@ -1,5 +1,10 @@
 <template>
-  <ElConfigProvider size="default" :locale="locales[language]" :z-index="3000">
+  <ElConfigProvider
+    size="default"
+    :locale="locales[language]"
+    :z-index="3000"
+    :message="messageConfig"
+  >
     <RouterView></RouterView>
   </ElConfigProvider>
 </template>
@@ -25,6 +30,8 @@ const locales = {
   zh: zh,
   en: en,
 };
+// 全局消息：相同文案合并显示，同时最多 3 条，避免叠满页面
+const messageConfig = { max: 3, grouping: true };
 const initializeSettings = async () => {
   if (userStore.isLogin) {
     try {

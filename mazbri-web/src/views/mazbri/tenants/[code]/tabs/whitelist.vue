@@ -49,7 +49,11 @@
       </template>
 
       <template #ip_address="{ row }">
-        <code class="ip-code">{{ formatIpWithCidr(row) }}</code>
+        <CopyableText
+          class="ip-code"
+          :value="formatIpWithCidr(row)"
+          :label="$t('tenant.whitelist.columns.ipAddress')"
+        />
       </template>
       <template #cidr="{ row }">
         <ElTag :type="getCidrTagType(row.cidr)" size="small">
@@ -166,6 +170,7 @@
   </TenantTabShell>
 </template>
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import EmptyState from "@/components/common/empty-state/index.vue";
 import type { FormInstance, FormRules } from "element-plus";

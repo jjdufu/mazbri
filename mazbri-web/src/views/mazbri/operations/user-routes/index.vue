@@ -159,6 +159,13 @@
         <template #channel_name="{ row }">
           {{ channelName(row.channel_id) }}
         </template>
+        <template #channel_id="{ row }">
+          <CopyableText
+            :value="row.channel_id"
+            :label="$t('routes.bindingColumns.channelId')"
+            compact
+          />
+        </template>
         <template #switch_condition="{ row }">
           {{ switchConditionSummary(row.switch_condition) }}
         </template>
@@ -483,6 +490,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import type { ListFilter } from "@/types/list-query";
 import { routesCatalog } from "@/list-catalog/common-resources";
 import { h, ref } from "vue";
@@ -820,9 +828,9 @@ const bindingColumns = ref<ColumnOption<RouteBinding>[]>([
   },
   {
     prop: "channel_id",
+    useSlot: true,
     label: $t("routes.bindingColumns.channelId"),
     minWidth: 140,
-    showOverflowTooltip: true,
   },
   {
     prop: "switch_condition",

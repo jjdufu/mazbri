@@ -61,6 +61,8 @@
     "gatewayTimeout": "Gateway timeout, please try again later",
     "requestCancelled": "Request cancelled",
     "networkError": "Network connection error, please check your connection",
+    "offline": "Network disconnected, please check your connection",
+    "online": "Network connection restored",
     "requestFailed": "Request failed",
     "requestConfigError": "Request configuration error"
   },
@@ -250,7 +252,7 @@
       "disabled": "Disabled",
       "autoRenewEnabled": "Auto renewal enabled",
       "autoRenewDisabled": "Auto renewal disabled",
-      "copySuccess": "Copied to clipboard"
+      "copyManualHint": "Copy failed. Select the text below and copy it manually."
     },
     "table": {
       "fetchFailed": "Failed to fetch table data"
@@ -365,8 +367,7 @@
       "critical": "Critical",
       "warning": "Warning",
       "info": "Info"
-    },
-    "copyId": "Copy ID"
+    }
   },
   "config": {
     "globalComponents": {
@@ -491,6 +492,11 @@
       "messages": {
         "noExport": "No call records available for export",
         "exportFailed": "Failed to export call records"
+      },
+      "channel": {
+        "unrouted": "Unrouted",
+        "unroutedProduct": "Unrouted · product {product}",
+        "unroutedTip": "Unrouted: rejected before reaching a channel, error code {code}"
       }
     }
   },
@@ -567,9 +573,6 @@
     },
     "actions": {
       "resetConfig": "Reset Config",
-      "copyConfig": "Copy Config",
-      "copySuccess": "Configuration copied to clipboard.",
-      "copyFailed": "Copy failed, please try again",
       "resetFailed": "Reset failed, please refresh the page and try again"
     }
   },
@@ -694,9 +697,6 @@
       "copied": "Copied",
       "getQrCode": "Get QR Code",
       "gettingQrCode": "Getting QR code...",
-      "secretCopied": "Secret copied to clipboard",
-      "backupCodesCopied": "Backup codes copied to clipboard",
-      "copyFailed": "Copy failed, please copy manually",
       "btnText": "Enable MFA",
       "backToLogin": "Back to login"
     }
@@ -4205,10 +4205,6 @@
       "copyAll": "Copy all",
       "changePassword": "Change password"
     },
-    "messages": {
-      "copied": "Copied to clipboard",
-      "copyFailed": "Copy failed, please copy manually"
-    },
     "platformPolicy": {
       "description": "The TOTP, login protection and password policies below apply to all users. Click \"Save Policy\" at the top right to apply changes.",
       "sessionHint": "Admin session lifetime is controlled by system settings, independent of the password policy on this page.",
@@ -4336,7 +4332,6 @@
       "displayName": "Name",
       "productName": "Product name",
       "supplierName": "Supplier name",
-      "copyKey": "Copy ID",
       "unnamed": "Unnamed",
       "daysUnit": "days",
       "statusActive": "Active",

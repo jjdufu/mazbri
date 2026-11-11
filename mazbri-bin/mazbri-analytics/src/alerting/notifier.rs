@@ -122,18 +122,13 @@ impl Mailer {
 pub struct Notifier {
     client: reqwest::Client,
     mailer: Option<Mailer>,
-    console_base_url: Option<String>,
 }
 
 impl Notifier {
     /// # Errors
     ///
     /// HTTP 客户端或 SMTP 传输构建失败时返回错误。
-    pub fn new(
-        webhook_timeout: Duration,
-        smtp: Option<&SmtpConfig>,
-        console_base_url: Option<String>,
-    ) -> Result<Self, String> {
+    pub fn new(webhook_timeout: Duration, smtp: Option<&SmtpConfig>) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(webhook_timeout)
             .redirect(reqwest::redirect::Policy::none())
@@ -142,19 +137,7 @@ impl Notifier {
         Ok(Self {
             client,
             mailer: smtp.map(Mailer::new).transpose()?,
-            console_base_url: console_base_url.map(|u| u.trim_end_matches('/').to_string()),
         })
-    }
-
-    /// 控制台告警事件深链（与前端 `/ops/alerts?tab=events` 对齐，禁止散落旧叶子 path）。
-    const OPS_ALERT_EVENT_HASH: &str = "/#/ops/alerts?tab=events&event_id=";
-
-    /// 控制台事件详情链接（SPA 为 hash 路由）。
-    #[must_use]
-    pub fn console_url(&self, event_id: uuid::Uuid) -> Option<String> {
-        self.console_base_url
-            .as_ref()
-            .map(|base| format!("{base}{path}{event_id}", path = Self::OPS_ALERT_EVENT_HASH))
     }
 
     /// 异步发送到规则配置的全部渠道；失败只记日志，不影响评估循环。
@@ -274,9 +257,6 @@ pub fn email_body(notification: &AlertNotification) -> String {
         let _ = writeln!(body, "恢复时间：{}", resolved_at.to_rfc3339());
     }
     let _ = writeln!(body, "事件 ID：{}", notification.event_id);
-    if let Some(url) = &notification.console_url {
-        let _ = writeln!(body, "控制台：{url}");
-    }
     body
 }
 
@@ -300,7 +280,6 @@ mod tests {
             started_at: Utc.with_ymd_and_hms(2026, 10, 31, 10, 0, 0).unwrap(),
             resolved_at: (status == "resolved")
                 .then(|| Utc.with_ymd_and_hms(2026, 10, 31, 10, 5, 0).unwrap()),
-            console_url: Some("http://console/#/ops/alerts?tab=events&event_id=x".to_string()),
         }
     }
 
@@ -317,23 +296,6 @@ mod tests {
     }
 
     #[test]
-    fn console_url_uses_merged_alerts_path() {
-        let notifier = Notifier::new(
-            std::time::Duration::from_secs(1),
-            None,
-            Some("http://console".into()),
-        )
-        .expect("notifier");
-        let url = notifier
-            .console_url(uuid::Uuid::nil())
-            .expect("url");
-        assert_eq!(
-            url,
-            "http://console/#/ops/alerts?tab=events&event_id=00000000-0000-0000-0000-000000000000"
-        );
-    }
-
-    #[test]
     fn subject_and_body_describe_firing_and_resolved() {
         let firing = notification("firing");
         assert_eq!(
@@ -343,7 +305,7 @@ mod tests {
         let body = email_body(&firing);
         assert!(body.contains("当前值：1 >= 1"));
         assert!(body.contains("标签：service=mazbri-cbpro"));
-        assert!(body.contains("控制台：http://console/"));
+        assert!(!body.contains("控制台"));
         assert!(!body.contains("恢复时间"));
 
         let resolved = notification("resolved");

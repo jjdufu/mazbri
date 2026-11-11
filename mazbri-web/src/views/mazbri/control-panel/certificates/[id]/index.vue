@@ -83,9 +83,12 @@
           </template>
 
           <ElDescriptions :column="2" border>
-            <ElDescriptionsItem :label="$t('certificate.detail.fields.id')">{{
-              certificate?.id
-            }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="$t('certificate.detail.fields.id')">
+              <CopyableText
+                :value="certificate?.id"
+                :label="$t('certificate.detail.fields.id')"
+              />
+            </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('certificate.detail.fields.subject')"
               >{{ certificate?.subject }}</ElDescriptionsItem
@@ -210,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import type {

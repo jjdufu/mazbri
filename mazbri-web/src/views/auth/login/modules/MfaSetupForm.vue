@@ -138,11 +138,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
 import { Key } from "@element-plus/icons-vue";
 import QrcodeVue from "qrcode.vue";
 import type { MfaSetupResponse } from "@/types/api";
-import { copyToClipboard } from "../composables/useLoginFlow";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 interface MfaSetupFormData extends MfaSetupResponse {
   totp_code: string;
 }
@@ -162,35 +161,20 @@ const { t } = useI18n();
 const qrLevel = ref<"L" | "M" | "Q" | "H">("M");
 const copiedSecret = ref(false);
 const copiedBackup = ref(false);
+const flashCopied = (flag: typeof copiedSecret) => {
+  flag.value = true;
+  setTimeout(() => {
+    flag.value = false;
+  }, 1000);
+};
 const copySecret = async () => {
   if (!props.setupData.secret) return;
-  const success = await copyToClipboard(props.setupData.secret);
-  if (success) {
-    copiedSecret.value = true;
-    ElMessage.success(t("login.mfaSetup.secretCopied"));
-    setTimeout(() => {
-      copiedSecret.value = false;
-    }, 2000);
-  } else {
-    ElMessage.error(t("login.mfaSetup.copyFailed"));
-  }
+  if (await copyWithFeedback(props.setupData.secret)) flashCopied(copiedSecret);
 };
 const copyBackupCodes = async () => {
-  if (
-    !props.setupData.backup_codes ||
-    props.setupData.backup_codes.length === 0
-  )
-    return;
-  const codesText = props.setupData.backup_codes.join(" ");
-  const success = await copyToClipboard(codesText);
-  if (success) {
-    copiedBackup.value = true;
-    ElMessage.success(t("login.mfaSetup.backupCodesCopied"));
-    setTimeout(() => {
-      copiedBackup.value = false;
-    }, 2000);
-  } else {
-    ElMessage.error(t("login.mfaSetup.copyFailed"));
+  if (!props.setupData.backup_codes?.length) return;
+  if (await copyWithFeedback(props.setupData.backup_codes.join(" "))) {
+    flashCopied(copiedBackup);
   }
 };
 const handleGetQr = () => {

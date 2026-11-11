@@ -41,6 +41,12 @@
         />
       </template>
 
+      <template #tenant_code="{ row }">
+        <CopyableText
+          :value="row.tenant_code"
+          :label="$t('authorization.list.tenantCode')"
+        />
+      </template>
       <template #unit_price="{ row }">
         {{ row.unit_price }} {{ $t("common.currencies.cny") }}
       </template>
@@ -97,6 +103,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref, watch } from "vue";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
@@ -140,6 +147,7 @@ const authorizationColumns: ColumnOption<AuthorizationDetail>[] = [
   { type: "selection", width: 50, align: "center" },
   {
     prop: "tenant_code",
+    useSlot: true,
     label: $t("authorization.list.tenantCode"),
     width: 120,
   },

@@ -7,9 +7,6 @@ export interface PaginationOptions {
   pageSizes?: number[];
   align?: "left" | "center" | "right";
 
-
-
-
   layout?: string;
   background?: boolean;
   hideOnSinglePage?: boolean;
@@ -25,10 +22,5 @@ export interface ArtTableProps extends TableProps<DefaultRow> {
   emptyHeight?: string;
   emptyText?: string;
   showTableHeader?: boolean;
-
-
-
-
-  cellCopy?: boolean;
 }
 export type { ColumnOption } from "@/types/component";

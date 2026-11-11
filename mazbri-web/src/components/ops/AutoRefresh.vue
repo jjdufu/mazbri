@@ -124,10 +124,23 @@ function clearSpinTimer() {
   }
 }
 
+function onTimerTick() {
+  // 断网时跳过本轮，避免每个周期都制造一批必然失败的请求
+  if (navigator.onLine === false) return;
+  emit("tick");
+}
+
+function onOnline() {
+  if (interval.value > 0) {
+    emit("tick");
+    arm();
+  }
+}
+
 function arm() {
   clearTimer();
   if (interval.value > 0) {
-    timer = setInterval(() => emit("tick"), interval.value * 1000);
+    timer = setInterval(onTimerTick, interval.value * 1000);
   }
 }
 
@@ -166,8 +179,12 @@ watch(
   },
 );
 
-onMounted(arm);
+onMounted(() => {
+  arm();
+  window.addEventListener("online", onOnline);
+});
 onBeforeUnmount(() => {
+  window.removeEventListener("online", onOnline);
   clearTimer();
   clearSpinTimer();
 });

@@ -35,13 +35,13 @@
 </template>
 
 <script setup lang="ts">
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { Codemirror } from "vue-codemirror";
 import { StreamLanguage } from "@codemirror/language";
 import { json as jsonMode, javascript } from "@codemirror/legacy-modes/mode/javascript";
 import { xml as xmlMode } from "@codemirror/legacy-modes/mode/xml";
 import { drawSelection, EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { ElMessage } from "element-plus";
 import { $t } from "@/locales";
 import { prettyJson } from "./workbenchHelpers";
 
@@ -136,12 +136,7 @@ function format() {
 }
 
 async function copy() {
-  try {
-    await navigator.clipboard.writeText(local.value || "");
-    ElMessage.success($t("common.feedback.copySuccess"));
-  } catch {
-    ElMessage.error($t("common.feedback.copyFailed"));
-  }
+  await copyWithFeedback(local.value || "");
 }
 </script>
 

@@ -72,6 +72,12 @@
         </ResourceTableActionBar>
       </template>
 
+      <template #channel_code="{ row }">
+        <CopyableText
+          :value="row.channel_code"
+          :label="$t('channels.fields.channelCode')"
+        />
+      </template>
       <template #supplier="{ row }">
         {{ row.supplier_name }} ({{ row.supplier_code }})
       </template>
@@ -177,6 +183,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import {
@@ -257,6 +264,7 @@ const channelColumns: ColumnOption<Channel>[] = [
   { type: "selection", width: 55 },
   {
     prop: "channel_code",
+    useSlot: true,
     label: $t("channels.fields.channelCode"),
     minWidth: 100,
   },

@@ -65,6 +65,31 @@
           />
         </template>
 
+        <template #tenant_code="{ row }">
+          <CopyableText
+            :value="row.tenant_code"
+            :label="$t('callbacks.columns.tenantCode')"
+          />
+        </template>
+        <template #tenant_id="{ row }">
+          <CopyableText
+            :value="row.tenant_id"
+            :label="$t('callbacks.columns.tenantAccount')"
+            compact
+          />
+        </template>
+        <template #product_code="{ row }">
+          <CopyableText
+            :value="row.product_code"
+            :label="$t('callbacks.columns.productCode')"
+          />
+        </template>
+        <template #callback_url="{ row }">
+          <CopyableText
+            :value="row.callback_url"
+            :label="$t('callbacks.columns.callbackUrl')"
+          />
+        </template>
         <template #is_active="{ row }">
           <StatusIndicator :type="row.is_active ? 'success' : 'info'">
             {{
@@ -110,6 +135,19 @@
           />
         </template>
 
+        <template #event_id="{ row }">
+          <CopyableText
+            :value="row.event_id"
+            :label="$t('callbacks.columns.eventId')"
+            compact
+          />
+        </template>
+        <template #callback_url="{ row }">
+          <CopyableText
+            :value="row.callback_url"
+            :label="$t('callbacks.columns.callbackUrl')"
+          />
+        </template>
         <template #status="{ row }">
           <StatusIndicator :type="deliveryStatusType(row.status)">
             {{ deliveryStatusLabel(row.status) }}
@@ -151,6 +189,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { callbackSubscriptionsCatalog, callbackDeliveriesCatalog } from "@/list-catalog/callbacks";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import { computed, onMounted, provide, reactive, ref, watch } from "vue";
@@ -253,26 +292,27 @@ const subscriptionColumns = ref<ColumnOption<CallbackSubscription>[]>([
   { type: "selection", width: 55 },
   {
     prop: "tenant_code",
+    useSlot: true,
     label: $t("callbacks.columns.tenantCode"),
     width: 120,
   },
   {
     prop: "tenant_id",
+    useSlot: true,
     label: $t("callbacks.columns.tenantAccount"),
     width: 150,
-    showOverflowTooltip: true,
   },
   {
     prop: "product_code",
+    useSlot: true,
     label: $t("callbacks.columns.productCode"),
     width: 150,
-    showOverflowTooltip: true,
   },
   {
     prop: "callback_url",
+    useSlot: true,
     label: $t("callbacks.columns.callbackUrl"),
     minWidth: 150,
-    showOverflowTooltip: true,
   },
   {
     prop: "is_active",
@@ -291,15 +331,15 @@ const subscriptionColumns = ref<ColumnOption<CallbackSubscription>[]>([
 const deliveryColumns = ref<ColumnOption<CallbackDeliveryLog>[]>([
   {
     prop: "event_id",
+    useSlot: true,
     label: $t("callbacks.columns.eventId"),
     width: 180,
-    showOverflowTooltip: true,
   },
   {
     prop: "callback_url",
+    useSlot: true,
     label: $t("callbacks.columns.callbackUrl"),
     minWidth: 140,
-    showOverflowTooltip: true,
   },
   {
     prop: "status",

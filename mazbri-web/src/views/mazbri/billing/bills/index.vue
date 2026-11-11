@@ -45,9 +45,10 @@
             </div>
           </template>
           <template #tenant_code="{ row }">
-            <div class="tenant-code-cell">
-              <span class="tenant-code-text">{{ row.tenant_code }}</span>
-            </div>
+            <CopyableText
+              :value="row.tenant_code"
+              :label="$t('billing.columns.tenantCode')"
+            />
           </template>
           <template #bill_kind="{ row }">
             <ElTag :type="row.bill_kind === 'upstream' ? 'warning' : 'success'">
@@ -445,6 +446,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
 import type { ListFilter } from "@/types/list-query";
 import { billsCatalog } from "@/list-catalog/common-resources";
@@ -1243,17 +1245,6 @@ watch(
 
 .tenant-name-text {
   font-weight: 600;
-}
-
-.tenant-code-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tenant-code-text {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 
 .bill-detail-layout {

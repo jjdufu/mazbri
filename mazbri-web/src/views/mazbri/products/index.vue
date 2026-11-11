@@ -39,6 +39,12 @@
         />
       </template>
 
+      <template #product_id="{ row }">
+        <CopyableText
+          :value="row.product_id"
+          :label="$t('product.columns.productId')"
+        />
+      </template>
       <template #enabled="{ row }">
         <StatusIndicator :type="row.enabled ? 'success' : 'info'">
           {{
@@ -91,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { $t } from "@/locales";
@@ -150,7 +157,12 @@ const importProducts = ref<Product[]>([]);
 const columns = ref<ColumnOption<Product>[]>([]);
 const productColumns: ColumnOption<Product>[] = [
   { type: "selection", width: 55 },
-  { prop: "product_id", label: $t("product.columns.productId"), width: 180 },
+  {
+    prop: "product_id",
+    label: $t("product.columns.productId"),
+    width: 180,
+    useSlot: true,
+  },
   { prop: "name", label: $t("product.columns.name"), minWidth: 100 },
   {
     prop: "enabled",

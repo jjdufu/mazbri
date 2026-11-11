@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from "element-plus";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { $t } from "@/locales";
 import { BYPASS_MGMT_PROBE_PATH, formatBytes } from "../workbenchHelpers";
 import { statusGroupClass, statusPhrase } from "./statusPhrases";
@@ -109,12 +109,7 @@ const timeText = computed(() =>
 const sizeText = computed(() => formatBytes(props.sizeBytes ?? 0));
 
 async function copy() {
-  try {
-    await navigator.clipboard.writeText(props.body || "");
-    ElMessage.success($t("common.feedback.copySuccess"));
-  } catch {
-    ElMessage.error($t("common.feedback.copyFailed"));
-  }
+  await copyWithFeedback(props.body || "");
 }
 
 function download() {

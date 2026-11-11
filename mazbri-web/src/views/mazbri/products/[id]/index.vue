@@ -194,6 +194,19 @@
         stripe
         border
       >
+        <template #tenant_id="{ row }">
+          <CopyableText
+            :value="row.tenant_id"
+            :label="$t('product.detail.tenantColumns.tenantId')"
+            compact
+          />
+        </template>
+        <template #tenant_code="{ row }">
+          <CopyableText
+            :value="row.tenant_code"
+            :label="$t('product.detail.tenantColumns.tenantCode')"
+          />
+        </template>
         <template #status="{ row }">
           <StatusIndicator :type="getStatusType(row.status)">
             {{ getStatusLabel(row.status) }}
@@ -228,6 +241,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessageBox, ElMessage } from "element-plus";
 import UserRouteGovernance from "@/views/mazbri/operations/user-routes/index.vue";
@@ -274,11 +288,13 @@ const authorizedTenantColumns = ref<ColumnOption<AuthorizedTenantRow>[]>([
   },
   {
     prop: "tenant_id",
+    useSlot: true,
     label: $t("product.detail.tenantColumns.tenantId"),
     minWidth: 100,
   },
   {
     prop: "tenant_code",
+    useSlot: true,
     label: $t("product.detail.tenantColumns.tenantCode"),
     minWidth: 100,
   },

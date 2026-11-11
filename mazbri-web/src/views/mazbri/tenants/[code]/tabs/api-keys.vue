@@ -162,6 +162,7 @@
   </TenantTabShell>
 </template>
 <script setup lang="ts">
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -362,24 +363,7 @@ const copyKey = async (text: string) => {
     ElMessage.error($t("tenant.messages.apiKeyMissing"));
     return;
   }
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      ElMessage.success($t("common.feedback.copiedToClipboard"));
-      return;
-    }
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-    ElMessage.success($t("common.feedback.copiedToClipboard"));
-  } catch {
-    ElMessage.error($t("common.feedback.copyFailed"));
-  }
+  await copyWithFeedback(text);
 };
 const handleCopyCreatedKey = () => {
   copyKey(createdKeyVal.value);

@@ -345,8 +345,8 @@ function onQueryChange(query: CallHistogramQuery) {
   void loadHistogram();
 }
 
-function openTrace(traceId: string, start?: number) {
-  void router.push(buildTraceRoute(traceId, { start }));
+function openTrace(traceId: string, start?: number, requestId?: string) {
+  void router.push(buildTraceRoute(traceId, { start, requestId }));
 }
 
 let unbindChartResize: (() => void) | null = null;

@@ -125,14 +125,14 @@
           <ElTableColumn :label="t('ops.traces.traceIds')" min-width="120">
             <template #default="{ row }">
               <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
-                <ElLink
+                <CopyableText
                   v-for="tid in row.trace_ids"
                   :key="tid"
-                  type="primary"
-                  @click="openTrace(row, tid)"
-                >
-                  {{ tid.slice(0, 12) }}…
-                </ElLink>
+                  :value="tid"
+                  compact
+                  :link="traceRouteOf(row, tid)"
+                  :label="t('ops.traces.columns.traceId')"
+                />
               </div>
               <span v-else>—</span>
             </template>
@@ -194,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -262,15 +263,13 @@ const filters = reactive<{
 const selected = ref<AlertEvent | null>(null);
 const relatedChanges = ref<ChangeEvent[]>([]);
 
-function openTrace(row: AlertEvent, traceId: string) {
+function traceRouteOf(row: AlertEvent, traceId: string) {
   const started = Date.parse(row.started_at);
-  void router.push(
-    buildTraceRoute(traceId, {
-      start: Number.isFinite(started)
-        ? Math.floor(started / 1000) - 300
-        : undefined,
-    }),
-  );
+  return buildTraceRoute(traceId, {
+    start: Number.isFinite(started)
+      ? Math.floor(started / 1000) - 300
+      : undefined,
+  });
 }
 
 async function reload() {

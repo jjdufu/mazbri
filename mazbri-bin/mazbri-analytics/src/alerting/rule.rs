@@ -213,7 +213,6 @@ pub struct AlertNotification {
     pub labels: BTreeMap<String, String>,
     pub started_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
-    pub console_url: Option<String>,
 }
 
 #[cfg(test)]
