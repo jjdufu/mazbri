@@ -5,8 +5,10 @@ import {
   type InjectionKey,
   type Ref,
 } from "vue";
+import { useRoute } from "vue-router";
 import {
   defaultTimeRange,
+  rangeFromQuery,
   type TimeRangeValue,
 } from "@/utils/ops/time-range";
 
@@ -29,7 +31,10 @@ export function provideOpsSharedRange(
   initialPreset: Parameters<typeof defaultTimeRange>[0] = "6h",
   initialRefreshSeconds = 60,
 ): OpsSharedRange {
-  const timeRange = ref<TimeRangeValue>(defaultTimeRange(initialPreset));
+  const route = useRoute();
+  const timeRange = ref<TimeRangeValue>(
+    rangeFromQuery(route.query) ?? defaultTimeRange(initialPreset),
+  );
   const refreshInterval = ref(initialRefreshSeconds);
   const reloadTick = ref(0);
   function bumpReload() {

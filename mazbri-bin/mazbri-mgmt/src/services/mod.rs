@@ -42,4 +42,3 @@ pub use mfa_settings_cache::{MfaSettings, MfaSettingsCache};
 pub use password_policy::{PasswordPolicy, PasswordPolicyCache};
 pub mod ops_anomalies;
 pub mod ops_slo;
-pub mod user_preferences;

@@ -5,11 +5,7 @@ import type {
   AuditLogListQuery,
   AuditLogDetail,
 } from "@/types/api/audit";
-import type {
-  SystemSettings,
-  UpdateSystemSettingsRequest,
-  PasswordPolicy,
-} from "@/types/api/settings";
+import type { PasswordPolicy } from "@/types/api/settings";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 const BASE_PATH = `${API_BASE_PATH}${API_PATHS.AUDIT_LOGS}`;
 const SETTINGS_PATH = `${API_BASE_PATH}${API_PATHS.SETTINGS}`;
@@ -28,17 +24,6 @@ export function exportAuditLogs(params?: AuditLogListQuery) {
   return request.get<string>({
     url: `${BASE_PATH}/export`,
     params,
-  });
-}
-export function fetchSystemSettings() {
-  return request.get<SystemSettings>({
-    url: `${SETTINGS_PATH}/system`,
-  });
-}
-export function updateSystemSettings(data: UpdateSystemSettingsRequest) {
-  return request.put<SystemSettings>({
-    url: `${SETTINGS_PATH}/system`,
-    params: data,
   });
 }
 export function fetchPasswordPolicy() {

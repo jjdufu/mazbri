@@ -529,6 +529,7 @@ let unbindScatterResize: (() => void) | null = null;
 
 onMounted(() => {
   void loadServiceCatalog();
+  void runSearch();
 });
 
 onUnmounted(() => {

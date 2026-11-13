@@ -357,10 +357,12 @@ const handleRevoke = async () => {
     }
   }
 };
-onMounted(() => {
-  loadData();
+watch(certId, (id, prev) => {
+  if (id && id !== prev) {
+    loadData();
+  }
 });
-onActivated(() => {
+onMounted(() => {
   loadData();
 });
 </script>

@@ -6,10 +6,7 @@
     @change="onTabChange"
   >
     <template #actions>
-      <TimeRangePicker
-        :model-value="timeRange ?? undefined"
-        @change="onRangeChange"
-      />
+      <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
       <AutoRefresh v-model="refreshInterval" @tick="onRefreshTick" />
     </template>
 
@@ -97,6 +94,7 @@ import type {
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
 import { CALLS_FILTER_KEYS, type CallsTab } from "@/utils/ops/calls-link";
+import { defaultTimeRange, rangeFromQuery } from "@/utils/ops/time-range";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
 import CallMonitorTable, {
@@ -150,7 +148,9 @@ function filtersFromRoute(): ListFilter[] {
 
 const activeTab = ref<CallsTab>(initialTab());
 const seedFilters = filtersFromRoute();
-const timeRange = ref<TimeRangeValue | null>(null);
+const timeRange = ref<TimeRangeValue>(
+  rangeFromQuery(route.query) ?? defaultTimeRange("1h"),
+);
 const previousRange = ref<TimeRangeValue | null>(null);
 const refreshInterval = ref(0);
 const tableRef = ref<InstanceType<typeof CallMonitorTable> | null>(null);

@@ -230,8 +230,6 @@ pub const RULES: &[RouteRule] = &[
     rule("PUT", "/settings/system", Roles(ADMIN)),
     rule("GET", "/settings/user", SelfService),
     rule("PUT", "/settings/user", SelfService),
-    rule("GET", "/admin/preferences", SelfService),
-    rule("PUT", "/admin/preferences", SelfService),
     rule("GET", "/stats/calls/customer", AnyRole),
     rule("GET", "/stats/calls/customer/histogram", AnyRole),
     rule("GET", "/stats/calls/stages", AnyRole),

@@ -32,9 +32,7 @@ const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
 
 /// 允许 `SelfService` 的路由：只能作用于调用者本人。
 fn is_self_service_path(path: &str) -> bool {
-    path.starts_with("/auth/")
-        || path == "/settings/user"
-        || path == "/admin/preferences"
+    path.starts_with("/auth/") || path == "/settings/user"
 }
 
 #[test]

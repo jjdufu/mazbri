@@ -1,50 +1,41 @@
 <template>
   <div class="layout-lock-screen">
-    <div
-      v-if="showDevToolsWarning"
-      class="fixed top-0 left-0 z-[999999] flex-cc w-full h-full text-white bg-gradient-to-br from-[#1e1e1e] to-black animate-fade-in"
-    >
-      <div class="p-5 text-center select-none">
-        <div class="mb-7.5 text-5xl">🔒</div>
-        <h1 class="m-0 mb-5 text-3xl font-semibold text-danger">
-          {{ t("lockScreen.devToolsWarningTitle") }}
-        </h1>
-        <p class="max-w-125 m-0 text-lg leading-relaxed text-white">
-          {{ t("lockScreen.devToolsWarningDesc") }}
-        </p>
-        <div class="mt-7.5 text-sm text-gray-400">
-          {{ t("lockScreen.securityLockActivated") }}
-        </div>
-      </div>
-    </div>
-
     <div v-if="!isLock">
-      <ElDialog
+      <CenteredDialog
         v-model="visible"
-        :width="370"
-        :show-close="true"
+        width="380px"
+        :title="t('lockScreen.lock.btnText')"
         @open="handleDialogOpen"
       >
         <div class="flex-c flex-col">
-          <div class="mt-7.5 mb-3.5 text-base font-medium">
+          <div class="mb-4 text-base font-medium">
             {{ userInfo.userName }}
           </div>
           <ElForm
             ref="formRef"
             :model="formData"
             :rules="rules"
-            class="w-[90%]"
+            class="w-full"
             @submit.prevent="handleLock"
           >
+            <input
+              type="text"
+              name="username"
+              :value="userInfo.userName"
+              autocomplete="username"
+              class="hidden"
+              readonly
+            />
             <ElFormItem prop="password">
               <ElInput
                 ref="lockInputRef"
                 v-model="formData.password"
+                name="lock_password"
                 type="password"
                 :placeholder="$t('lockScreen.lock.inputPlaceholder')"
                 :show-password="true"
                 autocomplete="new-password"
-                class="w-full mt-9"
+                class="w-full"
                 @keyup.enter="handleLock"
               >
                 <template #suffix>
@@ -57,14 +48,14 @@
             <ElButton
               v-ripple
               type="primary"
-              class="w-full mt-0.5"
+              class="w-full mt-1"
               @click="handleLock"
             >
               {{ $t("lockScreen.lock.btnText") }}
             </ElButton>
           </ElForm>
         </div>
-      </ElDialog>
+      </CenteredDialog>
     </div>
 
     <div v-else class="unlock-content">
@@ -79,10 +70,19 @@
           class="w-full !px-2.5"
           @submit.prevent="handleUnlock"
         >
+          <input
+            type="text"
+            name="username"
+            :value="userInfo.userName"
+            autocomplete="username"
+            class="hidden"
+            readonly
+          />
           <ElFormItem prop="password">
             <ElInput
               ref="unlockInputRef"
               v-model="unlockForm.password"
+              name="unlock_password"
               type="password"
               :placeholder="$t('lockScreen.unlock.inputPlaceholder')"
               :show-password="true"
@@ -124,6 +124,7 @@
 import { Lock, Unlock } from "@element-plus/icons-vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { useI18n } from "vue-i18n";
+import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import { ErrorCodes } from "@/constants/error-codes";
 import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
@@ -131,11 +132,10 @@ import { logger, mittBus } from "@/utils/sys";
 import { globalUiTriggers } from "@/utils/sys/global-ui";
 const { t } = useI18n();
 const userStore = useUserStore();
-const { info: userInfo, lockPassword, isLock } = storeToRefs(userStore);
+const { info: userInfo, isLock } = storeToRefs(userStore);
 const visible = ref<boolean>(false);
 const lockInputRef = ref<any>(null);
 const unlockInputRef = ref<any>(null);
-const showDevToolsWarning = ref<boolean>(false);
 const formRef = ref<FormInstance>();
 const unlockFormRef = ref<FormInstance>();
 const formData = reactive({
@@ -153,130 +153,6 @@ const rules = computed<FormRules>(() => ({
     },
   ],
 }));
-const isMobile = () => {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent,
-  );
-};
-const disableDevTools = () => {
-  const handleContextMenu = (e: Event) => {
-    if (isLock.value) {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  };
-  document.addEventListener("contextmenu", handleContextMenu, true);
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (!isLock.value) return;
-    if (e.key === "F12") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.shiftKey) {
-      const key = e.key.toLowerCase();
-      if (["i", "j", "c", "k"].includes(key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      }
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "u") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "a") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "p") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "f") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.altKey && e.key === "Tab") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key === "Tab") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "w") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if ((e.ctrlKey && e.key.toLowerCase() === "r") || e.key === "F5") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "r") {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  };
-  document.addEventListener("keydown", handleKeyDown, true);
-  const handleSelectStart = (e: Event) => {
-    if (isLock.value) {
-      e.preventDefault();
-      return false;
-    }
-  };
-  document.addEventListener("selectstart", handleSelectStart, true);
-  const handleDragStart = (e: Event) => {
-    if (isLock.value) {
-      e.preventDefault();
-      return false;
-    }
-  };
-  document.addEventListener("dragstart", handleDragStart, true);
-  let devtools = { open: false };
-  const threshold = 160;
-  let devToolsInterval: ReturnType<typeof setInterval> | null = null;
-  const checkDevTools = () => {
-    if (!isLock.value || isMobile()) return;
-    const isDevToolsOpen =
-      window.outerHeight - window.innerHeight > threshold ||
-      window.outerWidth - window.innerWidth > threshold;
-    if (isDevToolsOpen && !devtools.open) {
-      devtools.open = true;
-      showDevToolsWarning.value = true;
-    } else if (!isDevToolsOpen && devtools.open) {
-      devtools.open = false;
-      showDevToolsWarning.value = false;
-    }
-  };
-  if (!isMobile()) {
-    devToolsInterval = setInterval(checkDevTools, 500);
-  }
-  return () => {
-    document.removeEventListener("contextmenu", handleContextMenu, true);
-    document.removeEventListener("keydown", handleKeyDown, true);
-    document.removeEventListener("selectstart", handleSelectStart, true);
-    document.removeEventListener("dragstart", handleDragStart, true);
-    if (devToolsInterval) {
-      clearInterval(devToolsInterval);
-    }
-  };
-};
 const verifyPassword = async (inputPassword: string): Promise<boolean> => {
   return await userStore.isLockPasswordMatch(inputPassword);
 };
@@ -352,7 +228,6 @@ const handleUnlock = async () => {
       await userStore.setLockPassword("");
       unlockForm.password = "";
       visible.value = false;
-      showDevToolsWarning.value = false;
     } catch (error) {
       logger.error("Unlock store update failed", {
         service: "mazbri-mgmt-web",
@@ -388,10 +263,8 @@ watch(isLock, (newValue) => {
     }, 100);
   } else {
     document.body.style.overflow = "auto";
-    showDevToolsWarning.value = false;
   }
 });
-let cleanupDevTools: (() => void) | null = null;
 onMounted(() => {
   mittBus.on("openLockScreen", openLockScreen);
   document.addEventListener("keydown", handleKeydown);
@@ -401,7 +274,6 @@ onMounted(() => {
       unlockInputRef.value?.input?.focus();
     }, 100);
   }
-  cleanupDevTools = disableDevTools();
 });
 watch(
   () => globalUiTriggers.lockScreen.value,
@@ -410,20 +282,13 @@ watch(
   },
 );
 onUnmounted(() => {
+  mittBus.off("openLockScreen", openLockScreen);
   document.removeEventListener("keydown", handleKeydown);
   document.body.style.overflow = "auto";
-  if (cleanupDevTools) {
-    cleanupDevTools();
-    cleanupDevTools = null;
-  }
 });
 </script>
 
 <style lang="scss" scoped>
-.layout-lock-screen :deep(.el-dialog) {
-  border-radius: 10px;
-}
-
 .unlock-content {
   position: fixed;
   inset: 0;
@@ -432,7 +297,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: #fff;
+  color: var(--el-text-color-primary);
+  background-color: var(--el-bg-color);
   background-image: url("@imgs/lock/bg_light.webp");
   background-size: cover;
   transition: transform 0.3s ease-in-out;
@@ -442,22 +308,6 @@ onUnmounted(() => {
   .unlock-content {
     background-image: url("@imgs/lock/bg_dark.webp");
   }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.3s ease-in-out;
 }
 
 @keyframes shake {

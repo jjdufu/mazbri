@@ -58,26 +58,24 @@ export const useUserStore = defineStore(
       isLock.value = status;
     };
     async function sha256(message: string): Promise<string> {
-      const msgBuffer = new TextEncoder().encode(message);
       const subtleCrypto =
         typeof globalThis.crypto !== "undefined"
           ? globalThis.crypto.subtle
           : undefined;
-
-
-      if (!subtleCrypto) {
-        throw new Error(
-          "Web Crypto API (crypto.subtle) is required for lock-screen password hashing. Use HTTPS or localhost.",
-        );
+      if (subtleCrypto) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await subtleCrypto.digest("SHA-256", msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
       }
-      const hashBuffer = await subtleCrypto.digest("SHA-256", msgBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      const CryptoJS = await import("crypto-js");
+      return CryptoJS.SHA256(message).toString();
     }
     const setLockPassword = async (password: string) => {
-      lockPassword.value = await sha256(password);
+      lockPassword.value = password ? await sha256(password) : "";
     };
     const isLockPasswordMatch = async (input: string): Promise<boolean> => {
+      if (!lockPassword.value) return false;
       return (await sha256(input)) === lockPassword.value;
     };
 

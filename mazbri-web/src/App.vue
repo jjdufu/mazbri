@@ -21,7 +21,6 @@ import { checkStorageCompatibility } from "./utils/storage";
 import { initializeTheme } from "./hooks/core/useTheme";
 import { logger } from "./utils/sys/logger";
 import { ErrorCodes } from "./constants/error-codes";
-const router = useRouter();
 const userStore = useUserStore();
 const mfaStepUpStore = useMfaStepUpStore();
 const settingStore = useSettingStore();
@@ -68,8 +67,5 @@ onMounted(async () => {
   toggleTransition(false);
   systemUpgrade();
   await initializeSettings();
-});
-router.afterEach(() => {
-  settingStore.applyToDom();
 });
 </script>

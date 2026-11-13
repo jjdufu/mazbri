@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import AppConfig from "@/config";
-import { SystemThemeEnum } from "@/enums/appEnum";
 import { useCeremony } from "@/hooks/core/useCeremony";
 import type {
   AppearanceSettings,
@@ -20,6 +19,10 @@ import { useDisplayStore } from "./display";
  * store state) so it is never persisted to localStorage.
  */
 export const appearanceServerRevision = ref(0);
+const serverLoadedFlag = ref(false);
+const serverLoadingFlag = ref(false);
+let loadInflight: Promise<void> | null = null;
+
 export const useSettingStore = defineStore(
   "settingStore",
   () => {
@@ -30,8 +33,8 @@ export const useSettingStore = defineStore(
     const siteUrl = ref(AppConfig.systemInfo.siteUrl || "");
 
     const tenantGatewayUrl = ref("");
-    const serverLoaded = computed(() => false);
-    const serverLoading = computed(() => false);
+    const serverLoaded = computed(() => serverLoadedFlag.value);
+    const serverLoading = computed(() => serverLoadingFlag.value);
     const systemThemeType = computed({
       get: () => themeStore.systemThemeType,
       set: (value) => {
@@ -177,14 +180,6 @@ export const useSettingStore = defineStore(
       }
     };
     const applyServerSettings = (settings: AppearanceSettings) => {
-      const systemThemeMode =
-        settings.system_theme_mode || SystemThemeEnum.AUTO;
-      themeStore.systemThemeMode = systemThemeMode;
-      if (systemThemeMode !== SystemThemeEnum.AUTO) {
-        themeStore.systemThemeType = systemThemeMode;
-      }
-      themeStore.systemThemeColor = settings.system_theme_color;
-      themeStore.darkThemeStyle = settings.dark_theme_style || "obsidian";
       layoutStore.boxBorderMode = settings.box_border_mode;
       layoutStore.menuOpenWidth = settings.menu_open_width;
       displayStore.showWorkTab = settings.show_work_tab;
@@ -208,11 +203,23 @@ export const useSettingStore = defineStore(
       layoutStore.applyLayoutToDom();
       displayStore.applyRadiusToDom();
     };
-    const loadFromServer = async () => {
-      await Promise.allSettled([
-        loadAppearanceSettings(),
-        loadSystemSettings(),
-      ]);
+    const loadFromServer = async (force = false) => {
+      if (!force && serverLoadedFlag.value) return;
+      if (!force && loadInflight) return loadInflight;
+      serverLoadingFlag.value = true;
+      loadInflight = (async () => {
+        const results = await Promise.allSettled([
+          loadAppearanceSettings(),
+          loadSystemSettings(force),
+        ]);
+        if (results.some((r) => r.status === "fulfilled")) {
+          serverLoadedFlag.value = true;
+        }
+      })().finally(() => {
+        serverLoadingFlag.value = false;
+        loadInflight = null;
+      });
+      return loadInflight;
     };
     const loadAppearanceSettings = async () => {
       try {
@@ -225,9 +232,9 @@ export const useSettingStore = defineStore(
         throw error;
       }
     };
-    const loadSystemSettings = async () => {
+    const loadSystemSettings = async (force = false) => {
       try {
-        const settings = await fetchSystemSettings();
+        const settings = await fetchSystemSettings(force);
         applySystemSettings(settings);
         return settings;
       } catch (error) {

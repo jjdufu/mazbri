@@ -342,10 +342,12 @@ const handleDelete = async () => {
     }
   }
 };
-onMounted(() => {
-  loadData();
+watch(adminId, (id, prev) => {
+  if (id && id !== prev) {
+    loadData();
+  }
 });
-onActivated(() => {
+onMounted(() => {
   loadData();
 });
 </script>

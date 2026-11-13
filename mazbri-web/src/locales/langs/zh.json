@@ -702,9 +702,6 @@
   },
   "lockScreen": {
     "pwdError": "密码错误",
-    "securityLockActivated": "安全锁定已激活",
-    "devToolsWarningTitle": "系统已锁定",
-    "devToolsWarningDesc": "请关闭开发者工具后继续。",
     "initFailed": "锁屏初始化失败，请重试",
     "lock": {
       "inputPlaceholder": "请输入锁屏密码",

@@ -164,12 +164,12 @@ export function useLoginFlow() {
     userStore.setLoginStatus(true);
     userStore.setUserInfo(response.user);
     try {
-      await useMfaStepUpStore().refresh();
+      await useMfaStepUpStore().refresh(true);
     } catch {
       // 登录完成只同步提权状态，不开窗。失败不阻断进入系统。
     }
     try {
-      await settingStore.loadFromServer();
+      await settingStore.loadFromServer(true);
     } catch (error) {
       logger.warn(
         "[Login] Failed to load appearance settings; falling back to local config",

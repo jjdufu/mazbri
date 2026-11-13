@@ -167,9 +167,6 @@ watch(tenantCode, (code, prev) => {
 onMounted(() => {
   loadData();
 });
-onActivated(() => {
-  loadData();
-});
 </script>
 
 <style scoped lang="scss">

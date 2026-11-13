@@ -1,10 +1,9 @@
 <template>
-  <Teleport v-if="headerActionsEl" :to="headerActionsEl">
-    <slot />
+  <Teleport :to="headerActionsEl || 'body'" :disabled="!headerActionsEl">
+    <div class="ops-panel-toolbar">
+      <slot />
+    </div>
   </Teleport>
-  <div v-else class="ops-panel-toolbar">
-    <slot />
-  </div>
 </template>
 
 <script setup lang="ts">

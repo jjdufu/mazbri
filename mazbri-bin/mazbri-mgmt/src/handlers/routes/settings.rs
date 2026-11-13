@@ -1,7 +1,6 @@
 use super::super::state::AppState;
 use super::super::{
     admin, appearance_handlers, audit_handlers, mfa_settings_handlers, password_policy_handlers,
-    user_preferences_handlers,
 };
 use axum::{
     Router,
@@ -10,10 +9,6 @@ use axum::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/admin/preferences",
-            get(user_preferences_handlers::get_preferences).put(user_preferences_handlers::put_preferences),
-        )
         .route(
             "/settings/system",
             get(admin::get_system_settings).put(admin::update_system_settings),

@@ -702,9 +702,6 @@
   },
   "lockScreen": {
     "pwdError": "Password error",
-    "securityLockActivated": "Security lock activated",
-    "devToolsWarningTitle": "System Locked",
-    "devToolsWarningDesc": "Close developer tools to continue.",
     "initFailed": "Failed to initialize screen lock, please try again",
     "lock": {
       "inputPlaceholder": "Please input lock screen password",

@@ -492,7 +492,12 @@ const handleDelete = async () => {
 const handleViewTenant = (tenantCode: string) => {
   router.push({ name: "TenantDetail", params: { code: tenantCode } });
 };
-onActivated(() => {
+watch(productCode, (code, prev) => {
+  if (code && code !== prev) {
+    loadData();
+  }
+});
+onMounted(() => {
   loadData();
 });
 </script>

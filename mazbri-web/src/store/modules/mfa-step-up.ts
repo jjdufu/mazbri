@@ -20,6 +20,7 @@ import { logger } from "@/utils/sys";
 const CHANNEL_NAME = "mazbri-mfa-step-up";
 const STORAGE_KEY = "mazbri-mfa-step-up";
 const POLL_MS = 60_000;
+const REFRESH_TTL_MS = 10_000;
 
 interface CategoryWindow {
   active: boolean;
@@ -56,6 +57,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
 
   let epoch = 0;
   let refreshInflight: Promise<void> | null = null;
+  let lastFetchedAt = 0;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let expiryTimer: ReturnType<typeof setTimeout> | null = null;
   let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -176,19 +178,24 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
   }
 
   async function isLoggedIn(): Promise<boolean> {
+    // Keep dynamic import here because user.ts statically imports mfa-step-up.ts.
     const { useUserStore } = await import("@/store/modules/user");
     return useUserStore().isLogin;
   }
 
-  async function refresh(): Promise<void> {
-    if (!(await isLoggedIn())) return;
-    if (refreshInflight) return refreshInflight;
+  function refresh(force = false): Promise<void> {
+    if (!force && refreshInflight) return refreshInflight;
+    if (!force && loaded.value && Date.now() - lastFetchedAt < REFRESH_TTL_MS) {
+      return Promise.resolve();
+    }
     const ticket = epoch;
     refreshInflight = (async () => {
+      if (!(await isLoggedIn())) return;
       const { getMfaStepUp } = await import("@/api/auth");
       const data = await getMfaStepUp();
       if (ticket !== epoch) return;
       applySnapshot(data);
+      lastFetchedAt = Date.now();
     })()
       .catch((error: unknown) => {
         logger.warn("[MFA] Failed to refresh step-up status", {
@@ -211,7 +218,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
     expiryRefreshPending = true;
     clearTimers();
     try {
-      await refresh();
+      await refresh(true);
     } catch {
       const now = Date.now();
       const next = { ...windows.value };
@@ -284,6 +291,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
 
   function reset(): void {
     epoch += 1;
+    lastFetchedAt = 0;
     clearTimers();
     mfaEnabled.value = false;
     mfaRequired.value = false;
@@ -296,7 +304,7 @@ export const useMfaStepUpStore = defineStore("mfaStepUpStore", () => {
 
   function onRemoteChanged(raw: unknown): void {
     if (!parseBroadcast(raw)) return;
-    void refresh().catch(() => undefined);
+    void refresh(true).catch(() => undefined);
   }
 
   function onStorage(event: StorageEvent): void {

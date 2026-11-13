@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onActivated, onMounted, watch } from "vue";
+import { nextTick, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
@@ -76,10 +76,6 @@ function scrollToPlatformPolicy(): void {
 onMounted(() => {
   loadPolicyIfAdmin();
   scrollToPlatformPolicy();
-});
-
-onActivated(() => {
-  loadPolicyIfAdmin();
 });
 
 watch(isAdmin, (admin, wasAdmin) => {

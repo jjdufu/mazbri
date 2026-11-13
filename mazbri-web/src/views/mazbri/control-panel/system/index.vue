@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onActivated } from "vue";
+import { computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
@@ -137,11 +137,6 @@ const handleSaveAll = async () => {
 };
 
 onMounted(() => {
-  loadSystemData();
-  loadAppearanceSettings();
-});
-
-onActivated(() => {
   loadSystemData();
   loadAppearanceSettings();
 });

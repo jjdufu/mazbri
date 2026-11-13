@@ -91,19 +91,32 @@ function buildValue(nextPreset: TimeRangePreset): TimeRangeValue {
 /** Last range this picker published; route changes equal to it are our own echo. */
 let lastPublished: TimeRangeValue | null = null;
 
+function syncQueryParams(value: TimeRangeValue) {
+  if (!props.syncQuery) return;
+  const nextPreset = value.preset;
+  const nextStart = String(value.start);
+  const nextEnd = String(value.end);
+  if (
+    route.query.tr_preset === nextPreset &&
+    route.query.tr_start === nextStart &&
+    route.query.tr_end === nextEnd
+  ) {
+    return;
+  }
+  const query = {
+    ...route.query,
+    tr_preset: nextPreset,
+    tr_start: nextStart,
+    tr_end: nextEnd,
+  };
+  void router.replace({ query });
+}
+
 function publish(value: TimeRangeValue) {
   lastPublished = { ...value };
   emit("update:modelValue", value);
   emit("change", value);
-  if (props.syncQuery) {
-    const query = {
-      ...route.query,
-      tr_preset: value.preset,
-      tr_start: String(value.start),
-      tr_end: String(value.end),
-    };
-    void router.replace({ query });
-  }
+  syncQueryParams(value);
 }
 
 function onPresetChange() {
@@ -125,27 +138,39 @@ function onCustomChange() {
 }
 
 /** Apply a range from the route query; true when the query carried a valid range. */
-function applyQueryRange(): boolean {
+function applyQueryRange(emitChange = true): boolean {
   const fromQuery = rangeFromQuery(route.query);
   if (!fromQuery) return false;
   preset.value = fromQuery.preset;
   customRange.value =
     fromQuery.preset === "custom" ? pickerRangeOf(fromQuery) : null;
-  publish(fromQuery);
+  if (emitChange) {
+    publish(fromQuery);
+  } else {
+    lastPublished = { ...fromQuery };
+    if (!sameRange(fromQuery, props.modelValue ?? null)) {
+      emit("update:modelValue", fromQuery);
+    }
+  }
   return true;
 }
 
 function hydrateFromQuery() {
-  if (applyQueryRange()) return;
+  if (applyQueryRange(false)) return;
   if (props.modelValue) {
     preset.value = props.modelValue.preset;
-    if (props.modelValue.preset === "custom") {
-      customRange.value = pickerRangeOf(props.modelValue);
-    }
-    publish(props.modelValue);
+    customRange.value =
+      props.modelValue.preset === "custom"
+        ? pickerRangeOf(props.modelValue)
+        : null;
+    lastPublished = { ...props.modelValue };
+    syncQueryParams(props.modelValue);
     return;
   }
-  publish(buildValue(preset.value));
+  const initial = buildValue(preset.value);
+  lastPublished = { ...initial };
+  emit("update:modelValue", initial);
+  syncQueryParams(initial);
 }
 
 onMounted(hydrateFromQuery);

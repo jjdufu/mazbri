@@ -140,7 +140,7 @@ const { menuOpen, menuType, isDark, tabStyle } = storeToRefs(settingStore);
 const { siteName } = storeToRefs(settingStore);
 const { language } = storeToRefs(userStore);
 const { menuList } = storeToRefs(menuStore);
-const { switchThemeStylesAndPersist } = useTheme();
+const { switchThemeStyles } = useTheme();
 const isLeftMenu = computed(() => menuType.value === MenuTypeEnum.LEFT);
 const isDualMenu = computed(() => menuType.value === MenuTypeEnum.DUAL_MENU);
 const isTopMenu = computed(() => menuType.value === MenuTypeEnum.TOP);
@@ -166,11 +166,11 @@ const handleThemeToggle = (): void => {
       : SystemThemeEnum.DARK;
   if (document.startViewTransition) {
     document.startViewTransition(() => {
-      void switchThemeStylesAndPersist(nextTheme);
+      switchThemeStyles(nextTheme);
     });
     return;
   }
-  void switchThemeStylesAndPersist(nextTheme);
+  switchThemeStyles(nextTheme);
 };
 const reload = (time: number = 0): void => {
   setTimeout(() => {

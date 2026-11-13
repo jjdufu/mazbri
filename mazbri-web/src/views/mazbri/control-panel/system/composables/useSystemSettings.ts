@@ -1,7 +1,7 @@
 import { ref, reactive } from "vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage } from "element-plus";
-import { fetchSystemSettings, updateSystemSettings } from "@/api/audit";
+import { fetchSystemSettings, updateSystemSettings } from "@/api/settings";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
 import type { UpdateSystemSettingsRequest } from "@/types/api/settings";
