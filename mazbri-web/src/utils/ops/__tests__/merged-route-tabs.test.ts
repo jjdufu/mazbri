@@ -33,8 +33,8 @@ test("VIEWER on alerts only sees events", () => {
   assert.equal(result.fellBack, true);
 });
 
-test("VIEWER cannot see billing/flow/infra parents' tabs", () => {
-  for (const domain of ["billing", "flow", "infra"] as const) {
+test("VIEWER cannot see flow/infra parents' tabs", () => {
+  for (const domain of ["flow", "infra"] as const) {
     const result = resolveOpsTab({
       role: "R_VIEWER",
       tabs: [...getMergedRouteTabs(domain)],
@@ -102,20 +102,20 @@ test("services health ALL (topology removed)", () => {
   assert.equal(result.activeTab, "health");
 });
 
-test("runtime apps ALL; infra tabs ADMIN-only", () => {
+test("runtime apps ALL; pipeline BIZ; middleware/hosts ADMIN-only", () => {
   const tabs = [...getMergedRouteTabs("runtime")];
   assert.deepEqual(
     tabs.map((tab) => tab.id),
     ["apps", "middleware", "pipeline", "hosts"],
   );
   assert.deepEqual(tabs[0]?.roles, ROLES_ALL);
-  for (const tab of tabs.slice(1)) {
-    assert.deepEqual(tab.roles, ROLES_ADMIN);
-  }
+  assert.deepEqual(tabs[1]?.roles, ROLES_ADMIN);
+  assert.deepEqual(tabs[2]?.roles, ROLES_BIZ);
+  assert.deepEqual(tabs[3]?.roles, ROLES_ADMIN);
   const viewer = resolveOpsTab({
     role: "R_VIEWER",
     tabs,
-    queryTab: "hosts",
+    queryTab: "pipeline",
     preferredDefault: MERGED_DEFAULT_TAB.runtime,
   });
   assert.deepEqual(
@@ -123,6 +123,18 @@ test("runtime apps ALL; infra tabs ADMIN-only", () => {
     ["apps"],
   );
   assert.equal(viewer.activeTab, "apps");
+
+  const finance = resolveOpsTab({
+    role: "R_FINANCE",
+    tabs,
+    queryTab: "pipeline",
+    preferredDefault: MERGED_DEFAULT_TAB.runtime,
+  });
+  assert.deepEqual(
+    finance.visibleTabs.map((tab) => tab.id),
+    ["apps", "pipeline"],
+  );
+  assert.equal(finance.activeTab, "pipeline");
 });
 
 test("flow cache is ADMIN; ratelimit is BIZ; FINANCE falls back from cache", () => {

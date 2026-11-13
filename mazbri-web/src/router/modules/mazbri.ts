@@ -206,17 +206,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-      {
-        path: "billing",
-        name: "OpsBilling",
-        component: "/mazbri/ops/billing/index",
-        meta: {
-          title: "menus.mazbri.opsBilling",
-          icon: "ri:bill-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
       // 旧书签临时 redirect（非业务双实现）；侧栏不可见
       {
         path: "services",

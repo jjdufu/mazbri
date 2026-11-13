@@ -2,20 +2,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BILLING_PATH, buildBillingRoute } from "../billing-link";
 
-test("buildBillingRoute defaults to bare path", () => {
+test("BILLING_PATH points to consolidated /operations/bills", () => {
+  assert.equal(BILLING_PATH, "/operations/bills");
   assert.deepEqual(buildBillingRoute(), { path: BILLING_PATH, query: {} });
 });
 
-test("buildBillingRoute with health tab", () => {
-  assert.deepEqual(buildBillingRoute({ tab: "health" }), {
-    path: BILLING_PATH,
-    query: { tab: "health" },
+test("buildBillingRoute with overview / bills / reconcile tabs", () => {
+  assert.deepEqual(buildBillingRoute({ tab: "overview" }), {
+    path: "/operations/bills",
+    query: { tab: "overview" },
   });
-});
-
-test("buildBillingRoute with reconcile tab", () => {
+  assert.deepEqual(buildBillingRoute({ tab: "bills" }), {
+    path: "/operations/bills",
+    query: { tab: "bills" },
+  });
   assert.deepEqual(buildBillingRoute({ tab: "reconcile" }), {
-    path: BILLING_PATH,
+    path: "/operations/bills",
     query: { tab: "reconcile" },
   });
 });

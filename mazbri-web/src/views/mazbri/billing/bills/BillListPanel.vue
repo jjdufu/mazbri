@@ -1,41 +1,51 @@
 <template>
   <div class="bill-list-panel">
     <div ref="pageRef" class="bill-ops-page">
-      <ResourceTablePageShell
-          v-model:columns="columns"
-          v-model="searchKeyword"
-          v-model:filters="listFilters"
-          :filter-catalog="billsCatalog"
-          :title="$t('billing.list.title')"
-          :loading="loading"
-          :data="bills"
-          :empty-text="emptyDescription"
-          :pagination="artPagination"
-          :show-import="false"
-          :show-export="true"
-          :export-items="exportItems"
-          :export-disabled="bills.length === 0 || exporting"
-          :export-loading="exporting"
-          :export-label="$t('billing.actions.export')"
-          :show-primary="true"
-          :primary-label="$t('billing.actions.generate')"
-          primary-icon="ri:calendar-event-line"
-          :primary-disabled="false"
-          :primary-roles="['R_ADMIN', 'R_FINANCE']"
-          :show-delete="true"
-          :delete-total-count="bills.length"
-          :delete-selected-count="selectedRows.length"
-          :delete-roles="['R_ADMIN', 'R_FINANCE']"
-          table-class="surface-panel-table bill-list-table"
-          @refresh="loadData"
-          @selection-change="handleSelectionChange"
-          @pagination:size-change="handlePageSizeChange"
-          @pagination:current-change="handleCurrentPageChange"
-          @search="handleSearch"
-          @export="(command: 'page' | 'selected') => handleExportCommand(command)"
-          @primary="handleOpenGenerateDialog"
-          @delete="(type: 'all' | 'selected') => handleDeleteCommand(type, bills)"
-        >
+      <ResourceTableShell
+        v-model:columns="columns"
+        :title="$t('billing.list.title')"
+        :show-header="props.active"
+        :loading="loading"
+        :data="bills"
+        :empty-text="emptyDescription"
+        :pagination="artPagination"
+        table-class="surface-panel-table bill-list-table"
+        @refresh="loadData"
+        @selection-change="handleSelectionChange"
+        @pagination:size-change="handlePageSizeChange"
+        @pagination:current-change="handleCurrentPageChange"
+      >
+        <template #actions>
+          <ResourceTableActionBar
+            v-model="searchKeyword"
+            v-model:filters="listFilters"
+            :filter-catalog="billsCatalog"
+            :show-import="false"
+            :show-export="true"
+            :export-items="exportItems"
+            :export-disabled="bills.length === 0 || exporting"
+            :export-loading="exporting"
+            :export-label="$t('billing.actions.export')"
+            :show-primary="canWriteBusiness"
+            :primary-label="$t('billing.actions.generate')"
+            primary-icon="ri:calendar-event-line"
+            :primary-disabled="false"
+            :primary-roles="[...ROLES_BIZ]"
+            :show-delete="canWriteBusiness"
+            :delete-total-count="bills.length"
+            :delete-selected-count="selectedRows.length"
+            :delete-roles="[...ROLES_BIZ]"
+            @search="handleSearch"
+            @export="
+              (command: string) =>
+                handleExportCommand(command as 'page' | 'selected')
+            "
+            @primary="handleOpenGenerateDialog"
+            @delete="
+              (type: 'all' | 'selected') => handleDeleteCommand(type, bills)
+            "
+          />
+        </template>
           <template #tenant_name="{ row }">
             <div class="tenant-name-cell">
               <span class="tenant-name-text">{{ row.tenant_name }}</span>
@@ -74,7 +84,7 @@
                 $t("common.actions.details")
               }}</ElButton>
               <ElButton
-                v-if="canMarkPaid(row.status)"
+                v-if="canWriteBusiness && canMarkPaid(row.status)"
                 v-roles="ROLES_BIZ"
                 link
                 type="success"
@@ -83,7 +93,7 @@
                 {{ $t("billing.actions.markPaid") }}
               </ElButton>
               <ElButton
-                v-if="canMarkOverdue(row.status)"
+                v-if="canWriteBusiness && canMarkOverdue(row.status)"
                 v-roles="ROLES_BIZ"
                 link
                 type="warning"
@@ -92,6 +102,7 @@
                 {{ $t("billing.actions.markOverdue") }}
               </ElButton>
               <ElButton
+                v-if="canWriteBusiness"
                 v-roles="ROLES_BIZ"
                 link
                 type="danger"
@@ -101,7 +112,7 @@
               </ElButton>
             </TableActionRow>
           </template>
-        </ResourceTablePageShell>
+      </ResourceTableShell>
     </div>
 
     <AdaptiveDrawer v-model="detailVisible" size="960px" destroy-on-close>
@@ -210,6 +221,7 @@
                 >
                   <template #actions>
                     <ElButton
+                      v-if="canWriteBusiness"
                       v-roles="ROLES_BIZ"
                       type="primary"
                       @click="openCreateAdjustment"
@@ -248,7 +260,7 @@
                 </template>
                 <template #operations="{ row }">
                   <ElButton
-                    v-if="row.status === 'posted'"
+                    v-if="canWriteBusiness && row.status === 'posted'"
                     v-roles="ROLES_BIZ"
                     link
                     type="danger"
@@ -273,9 +285,21 @@
       :saving="adjustmentSaving"
       @confirm="handleCreateBillAdjustment"
     >
-      <ElForm label-position="top" @submit.prevent>
-        <ElFormItem :label="$t('billing.adjustments.type')">
-          <ElSelect v-model="adjustmentForm.adjustment_type" style="width: 100%">
+      <ElForm
+        ref="adjustmentFormRef"
+        :model="adjustmentForm"
+        :rules="adjustmentRules"
+        label-position="top"
+        @submit.prevent
+      >
+        <ElFormItem
+          :label="$t('billing.adjustments.type')"
+          prop="adjustment_type"
+        >
+          <ElSelect
+            v-model="adjustmentForm.adjustment_type"
+            style="width: 100%"
+          >
             <ElOption
               :label="$t('billing.adjustments.types.credit')"
               value="credit"
@@ -294,13 +318,17 @@
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem :label="$t('billing.adjustments.amount')">
-          <ElInput
+        <ElFormItem :label="$t('billing.adjustments.amount')" prop="amount">
+          <ElInputNumber
             v-model="adjustmentForm.amount"
+            :min="0.0001"
+            :precision="4"
+            :step="0.01"
             :placeholder="$t('billing.adjustments.amountPlaceholder')"
+            style="width: 100%"
           />
         </ElFormItem>
-        <ElFormItem :label="$t('billing.adjustments.reason')">
+        <ElFormItem :label="$t('billing.adjustments.reason')" prop="reason">
           <ElInput
             v-model="adjustmentForm.reason"
             type="textarea"
@@ -352,6 +380,9 @@
             :placeholder="$t('billing.generateDialog.tenantPlaceholder')"
             style="width: 100%"
             filterable
+            remote
+            reserve-keyword
+            :remote-method="loadTenants"
             :loading="tenantsLoading"
           >
             <ElOption
@@ -393,6 +424,9 @@
               "
               style="width: 100%"
               filterable
+              remote
+              reserve-keyword
+              :remote-method="loadChannels"
               :loading="channelsLoading"
             >
               <ElOption
@@ -410,6 +444,9 @@
               "
               style="width: 100%"
               filterable
+              remote
+              reserve-keyword
+              :remote-method="loadSuppliers"
               :loading="suppliersLoading"
             >
               <ElOption
@@ -475,7 +512,9 @@ import { fetchChannels, type Channel } from "@/api/route-management";
 import { fetchSuppliers, type Supplier } from "@/api/supplier";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
-import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
+import { useUserStore } from "@/store/modules/user";
+import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
+import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
@@ -484,7 +523,6 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { formatDate, formatMoney, formatBytes } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
@@ -497,6 +535,16 @@ import {
   statusTagType,
 } from "./statusHelpers";
 defineOptions({ name: "BillListPanel" });
+const props = withDefaults(
+  defineProps<{
+    active?: boolean;
+  }>(),
+  {
+    active: true,
+  },
+);
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 const pageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const bills = ref<Bill[]>([]);
@@ -511,11 +559,52 @@ const billAdjustments = ref<BillAdjustment[]>([]);
 const adjustmentsLoading = ref(false);
 const adjustmentDialogVisible = ref(false);
 const adjustmentSaving = ref(false);
-const adjustmentForm = reactive({
+const adjustmentFormRef = ref<FormInstance>();
+const adjustmentForm = reactive<{
+  adjustment_type: string;
+  amount: number | undefined;
+  reason: string;
+}>({
   adjustment_type: "credit",
-  amount: "",
+  amount: undefined,
   reason: "",
 });
+const adjustmentRules: FormRules = {
+  adjustment_type: [
+    {
+      required: true,
+      message: $t("billing.adjustments.required"),
+      trigger: "change",
+    },
+  ],
+  amount: [
+    {
+      required: true,
+      validator: (_rule, value: unknown, callback) => {
+        const num = typeof value === "number" ? value : Number(value);
+        if (!Number.isFinite(num) || num < 0.0001) {
+          callback(new Error($t("billing.adjustments.amountPlaceholder")));
+          return;
+        }
+        callback();
+      },
+      trigger: ["blur", "change"],
+    },
+  ],
+  reason: [
+    {
+      required: true,
+      validator: (_rule, value: unknown, callback) => {
+        if (!String(value ?? "").trim()) {
+          callback(new Error($t("billing.adjustments.reasonPlaceholder")));
+          return;
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+};
 const adjustmentColumns = ref<ColumnOption<BillAdjustment>[]>([
   {
     prop: "adjustment_type",
@@ -921,21 +1010,24 @@ const loadData = async () => {
     logger.error("Failed to load bills:", error);
   });
 };
-const loadTenants = async () => {
+const REMOTE_SELECT_LIMIT = 50;
+const loadTenants = async (keyword = "") => {
   if (generateForm.bill_kind !== "customer") {
     return;
   }
   await runWithLoading(tenantsLoading, async () => {
-    tenants.value = await fetchAllPages(async (page, pageSize) => {
-      const response = await fetchTenantList({ page, page_size: pageSize });
-      return { items: response.tenants, total: response.pagination.total };
+    const response = await fetchTenantList({
+      page: 1,
+      page_size: REMOTE_SELECT_LIMIT,
+      q: keyword.trim() || undefined,
     });
+    tenants.value = response.tenants ?? [];
   }).catch((error) => {
     logger.error("Failed to load tenants for bill generation:", error);
     ElMessage.error($t("billing.messages.loadTenantsFailed"));
   });
 };
-const loadChannels = async () => {
+const loadChannels = async (keyword = "") => {
   if (
     generateForm.bill_kind !== "upstream" ||
     generateForm.upstream_scope_type !== "channel"
@@ -943,16 +1035,18 @@ const loadChannels = async () => {
     return;
   }
   await runWithLoading(channelsLoading, async () => {
-    channels.value = await fetchAllPages(async (page, pageSize) => {
-      const response = await fetchChannels({ page, page_size: pageSize });
-      return { items: response.channels, total: response.pagination.total };
+    const response = await fetchChannels({
+      page: 1,
+      page_size: REMOTE_SELECT_LIMIT,
+      q: keyword.trim() || undefined,
     });
+    channels.value = response.channels ?? [];
   }).catch((error) => {
     logger.error("Failed to load channels for bill generation:", error);
     ElMessage.error($t("billing.messages.loadChannelsFailed"));
   });
 };
-const loadSuppliers = async () => {
+const loadSuppliers = async (keyword = "") => {
   if (
     generateForm.bill_kind !== "upstream" ||
     generateForm.upstream_scope_type !== "supplier"
@@ -960,10 +1054,12 @@ const loadSuppliers = async () => {
     return;
   }
   await runWithLoading(suppliersLoading, async () => {
-    suppliers.value = await fetchAllPages(async (page, pageSize) => {
-      const response = await fetchSuppliers({ page, page_size: pageSize });
-      return { items: response.suppliers, total: response.pagination.total };
+    const response = await fetchSuppliers({
+      page: 1,
+      page_size: REMOTE_SELECT_LIMIT,
+      q: keyword.trim() || undefined,
     });
+    suppliers.value = response.suppliers ?? [];
   }).catch((error) => {
     logger.error("Failed to load suppliers for bill generation:", error);
     ElMessage.error($t("billing.messages.loadSuppliersFailed"));
@@ -997,6 +1093,7 @@ const loadBillAdjustments = async (billId: string) => {
 };
 
 const handleView = async (row: Bill) => {
+  if (!row?.id) return;
   detailVisible.value = true;
   currentBill.value = row;
   billItems.value = [];
@@ -1014,22 +1111,27 @@ const handleView = async (row: Bill) => {
 
 const openCreateAdjustment = () => {
   adjustmentForm.adjustment_type = "credit";
-  adjustmentForm.amount = "";
+  adjustmentForm.amount = undefined;
   adjustmentForm.reason = "";
+  adjustmentFormRef.value?.clearValidate();
   adjustmentDialogVisible.value = true;
 };
 
 const handleCreateBillAdjustment = async () => {
   if (!currentBill.value) return;
-  if (!adjustmentForm.amount.trim() || !adjustmentForm.reason.trim()) {
-    ElMessage.warning($t("billing.adjustments.required"));
+  const valid = await adjustmentFormRef.value?.validate().catch(() => false);
+  if (
+    !valid ||
+    adjustmentForm.amount === undefined ||
+    !Number.isFinite(adjustmentForm.amount)
+  ) {
     return;
   }
   adjustmentSaving.value = true;
   try {
     await createBillAdjustment(currentBill.value.id, {
       adjustment_type: adjustmentForm.adjustment_type,
-      amount: adjustmentForm.amount.trim(),
+      amount: adjustmentForm.amount.toFixed(4),
       reason: adjustmentForm.reason.trim(),
     });
     adjustmentDialogVisible.value = false;
@@ -1145,6 +1247,7 @@ const handleGenerateBill = async () => {
   });
 };
 const handleDeleteRow = async (row: Bill) => {
+  if (!row?.id) return;
   try {
     await ElMessageBox.confirm(
       $t("billing.deleteConfirm.one", { name: getBillDisplayName(row) }),

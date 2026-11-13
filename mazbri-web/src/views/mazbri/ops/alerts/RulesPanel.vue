@@ -101,9 +101,17 @@
         <ElTableColumn
           v-if="isAdmin"
           :label="t('ops.alerts.columns.actions')"
-          width="140"
+          width="180"
         >
           <template #default="{ row }">
+            <ElButton
+              v-if="drillRouteOf(row)"
+              link
+              type="primary"
+              @click="goDrill(row)"
+            >
+              {{ t("ops.alerts.drillDown") }}
+            </ElButton>
             <ElButton link type="primary" @click="openEdit(row)">
               {{ t("ops.alerts.rules.edit") }}
             </ElButton>
@@ -338,13 +346,16 @@ import {
   parseAlertLabelsText,
   parseAlertListText,
 } from "@/utils/ops/alerts-format";
-import { buildAlertsRoute } from "@/utils/ops/alerts-link";
+import {
+  buildAlertsRoute,
+  resolveAlertDrillRoute,
+} from "@/utils/ops/alerts-link";
 
 defineOptions({ name: "OpsAlertRulesPanel" });
 
 const { t } = useI18n();
 const router = useRouter();
-const { isAdmin } = useOpsRole();
+const { isAdmin, isBiz, isViewer } = useOpsRole();
 
 const ops: AlertOp[] = [">", ">=", "<", "<=", "==", "!="];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
@@ -439,6 +450,20 @@ const formRules: FormRules<RuleForm> = {
 
 function goEvents() {
   void router.push(buildAlertsRoute({ tab: "events" }));
+}
+
+function drillRouteOf(rule: AlertRule) {
+  return resolveAlertDrillRoute(
+    { labels: rule.labels, expr: rule.expr },
+    { isAdmin: isAdmin.value, isBiz: isBiz.value, isViewer: isViewer.value },
+  );
+}
+
+function goDrill(rule: AlertRule) {
+  const target = drillRouteOf(rule);
+  if (target) {
+    void router.push(target);
+  }
 }
 
 async function reload() {

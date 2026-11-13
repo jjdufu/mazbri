@@ -181,6 +181,12 @@ const forwardedAttrs = computed(() => {
   for (const key of ATTR_STRIP) {
     delete rest[key];
   }
+  if (
+    isDateOnlyCallerType.value &&
+    !Object.prototype.hasOwnProperty.call(attrs, "format")
+  ) {
+    rest.format = "YYYY-MM-DD";
+  }
   return rest;
 });
 
@@ -259,28 +265,36 @@ function rangeEndingNow(ms: number): [Date, Date] {
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 
-const defaultRangeShortcuts = computed<DatePickerShortcut[]>(() => [
-  {
-    text: t("common.datePicker.shortcuts.last1Hour"),
-    value: () => rangeEndingNow(1 * HOUR),
-  },
-  {
-    text: t("common.datePicker.shortcuts.last6Hours"),
-    value: () => rangeEndingNow(6 * HOUR),
-  },
-  {
-    text: t("common.datePicker.shortcuts.last24Hours"),
-    value: () => rangeEndingNow(24 * HOUR),
-  },
-  {
-    text: t("common.datePicker.shortcuts.last7Days"),
-    value: () => rangeEndingNow(7 * DAY),
-  },
-  {
-    text: t("common.datePicker.shortcuts.last30Days"),
-    value: () => rangeEndingNow(30 * DAY),
-  },
-]);
+const defaultRangeShortcuts = computed<DatePickerShortcut[]>(() => {
+  const dayShortcuts: DatePickerShortcut[] = [
+    {
+      text: t("common.datePicker.shortcuts.last24Hours"),
+      value: () => rangeEndingNow(24 * HOUR),
+    },
+    {
+      text: t("common.datePicker.shortcuts.last7Days"),
+      value: () => rangeEndingNow(7 * DAY),
+    },
+    {
+      text: t("common.datePicker.shortcuts.last30Days"),
+      value: () => rangeEndingNow(30 * DAY),
+    },
+  ];
+  if (isDateOnlyCallerType.value) {
+    return dayShortcuts;
+  }
+  return [
+    {
+      text: t("common.datePicker.shortcuts.last1Hour"),
+      value: () => rangeEndingNow(1 * HOUR),
+    },
+    {
+      text: t("common.datePicker.shortcuts.last6Hours"),
+      value: () => rangeEndingNow(6 * HOUR),
+    },
+    ...dayShortcuts,
+  ];
+});
 
 
 

@@ -16,7 +16,7 @@ test("opsRoutes re-exports merged IA parent paths", () => {
   assert.equal(DASHBOARD_PATH, "/dashboard");
   assert.equal(RUNTIME_PATH, "/ops/runtime");
   assert.equal(ALERTS_PATH, "/ops/alerts");
-  assert.equal(BILLING_PATH, "/ops/billing");
+  assert.equal(BILLING_PATH, "/operations/bills");
   assert.equal(TRACES_PATH, "/ops/traces");
 });
 

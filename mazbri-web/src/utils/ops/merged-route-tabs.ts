@@ -6,7 +6,6 @@ export type MergedOpsDomain =
   | "runtime"
   | "infra"
   | "alerts"
-  | "billing"
   | "traffic"
   | "upstream"
   | "flow"
@@ -25,11 +24,6 @@ const ALERTS_TABS = [
   { id: "rules", roles: ROLES_ADMIN },
   { id: "silences", roles: ROLES_ADMIN },
 ] as const satisfies readonly TabSeed<"events" | "rules" | "silences">[];
-
-const BILLING_TABS = [
-  { id: "health", roles: ROLES_BIZ },
-  { id: "reconcile", roles: ROLES_BIZ },
-] as const satisfies readonly TabSeed<"health" | "reconcile">[];
 
 const TRAFFIC_TABS = [
   { id: "red", roles: ROLES_ALL },
@@ -54,7 +48,7 @@ const SERVICES_TABS = [
 const RUNTIME_TABS = [
   { id: "apps", roles: ROLES_ALL },
   { id: "middleware", roles: ROLES_ADMIN },
-  { id: "pipeline", roles: ROLES_ADMIN },
+  { id: "pipeline", roles: ROLES_BIZ },
   { id: "hosts", roles: ROLES_ADMIN },
 ] as const satisfies readonly TabSeed<
   "apps" | "middleware" | "pipeline" | "hosts"
@@ -64,7 +58,6 @@ const DOMAIN_TABS = {
   runtime: RUNTIME_TABS,
   infra: INFRA_TABS,
   alerts: ALERTS_TABS,
-  billing: BILLING_TABS,
   traffic: TRAFFIC_TABS,
   upstream: UPSTREAM_TABS,
   flow: FLOW_TABS,
@@ -81,7 +74,6 @@ export const MERGED_DEFAULT_TAB: {
   runtime: "apps",
   infra: "pipeline",
   alerts: "events",
-  billing: "health",
   traffic: "red",
   upstream: "sla",
   flow: "ratelimit",

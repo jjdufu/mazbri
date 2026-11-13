@@ -54,9 +54,22 @@ export interface DeadLetterRow {
   created_at: string | null;
 }
 
+export type FailureQueueKind = "failures" | "dead_letters";
+
+export interface BillingFailuresQuery {
+  range: OpsRange;
+  limit?: number;
+  offset?: number;
+  failed_offset?: number;
+  dlq_offset?: number;
+  queue?: FailureQueueKind;
+}
+
 export interface BillingFailures {
   limit: number;
   offset: number;
+  failed_offset?: number;
+  dlq_offset?: number;
   failures_total: number;
   dead_letters_total: number;
   failures: ChargeFailureRow[];

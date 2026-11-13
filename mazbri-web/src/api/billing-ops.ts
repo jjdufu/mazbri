@@ -2,6 +2,7 @@ import request from "@/utils/http";
 import { API_BASE_PATH } from "@/config/api";
 import type {
   BillingFailures,
+  BillingFailuresQuery,
   BillingFunnelPg,
   OpsRange,
   SupplierCostRow,
@@ -27,13 +28,17 @@ export async function fetchBillingFunnel(range: OpsRange) {
 }
 
 export async function fetchBillingFailures(
-  range: OpsRange,
+  paramsOrRange: BillingFailuresQuery | OpsRange,
   limit = 50,
   offset = 0,
 ) {
+  const params: BillingFailuresQuery =
+    typeof paramsOrRange === "string"
+      ? { range: paramsOrRange, limit, offset }
+      : paramsOrRange;
   return request.get<BillingFailures>({
     url: `${BASE_PATH}/failures`,
-    params: { range, limit, offset },
+    params,
     showErrorMessage: false,
   });
 }

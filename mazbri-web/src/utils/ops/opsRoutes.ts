@@ -4,8 +4,18 @@
  * 禁止在 views/router 再写 `/ops/...` 魔法字符串。
  */
 
-export { ALERTS_PATH, buildAlertsRoute, stripAlertEventIdQuery } from "./alerts-link";
-export type { AlertsLinkOptions, AlertsTabId } from "./alerts-link";
+export {
+  ALERTS_PATH,
+  buildAlertsRoute,
+  resolveAlertDrillRoute,
+  stripAlertEventIdQuery,
+} from "./alerts-link";
+export type {
+  AlertDrillInput,
+  AlertDrillRole,
+  AlertsLinkOptions,
+  AlertsTabId,
+} from "./alerts-link";
 
 export { BILLING_PATH, buildBillingRoute } from "./billing-link";
 export type { BillingLinkOptions, BillingTabId } from "./billing-link";

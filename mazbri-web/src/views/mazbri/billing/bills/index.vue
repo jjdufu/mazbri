@@ -32,7 +32,14 @@
         v-show="activeTab === 'bills'"
         class="tab-panel"
       >
-        <BillListPanel />
+        <BillListPanel :active="activeTab === 'bills'" />
+      </div>
+      <div
+        v-if="isBiz && visited.has('reconcile')"
+        v-show="activeTab === 'reconcile'"
+        class="tab-panel"
+      >
+        <UsageReconciliationPanel :active="activeTab === 'reconcile'" />
       </div>
     </div>
   </ControlPanelPageShell>
@@ -40,30 +47,38 @@
 
 <script setup lang="ts">
 import { computed, provide, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { $t } from "@/locales";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
+import UsageReconciliationPanel from "@/views/mazbri/billing/usage-reconciliation/index.vue";
 import FinanceOverviewPanel from "./FinanceOverviewPanel.vue";
 import BillListPanel from "./BillListPanel.vue";
 
 defineOptions({ name: "BillList" });
 
-type BillsHubTab = "overview" | "bills";
+type BillsHubTab = "overview" | "bills" | "reconcile";
 
+const { locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const { isBiz } = useOpsRole();
 
 const tabActionsEl = ref<HTMLElement | null>(null);
 provide("billsTabActionsEl", tabActionsEl);
+provide("resourceTabHeaderActionsEl", tabActionsEl);
 
 const tabOptions = computed(() => {
+  void locale.value;
   const items: Array<{ label: string; value: BillsHubTab }> = [];
   if (isBiz.value) {
     items.push({ label: $t("ops.finance.tabOverview"), value: "overview" });
   }
   items.push({ label: $t("ops.finance.tabBills"), value: "bills" });
+  if (isBiz.value) {
+    items.push({ label: $t("ops.finance.tabReconcile"), value: "reconcile" });
+  }
   return items;
 });
 
@@ -76,6 +91,9 @@ function resolveTab(): BillsHubTab {
   }
   if (raw === "overview" && isBiz.value) {
     return "overview";
+  }
+  if (raw === "reconcile" && isBiz.value) {
+    return "reconcile";
   }
   return isBiz.value ? "overview" : "bills";
 }
@@ -95,7 +113,12 @@ watch(
 );
 
 async function handleTabChange(value: unknown) {
-  const next = value === "overview" && isBiz.value ? "overview" : "bills";
+  let next: BillsHubTab = "bills";
+  if (value === "overview" && isBiz.value) {
+    next = "overview";
+  } else if (value === "reconcile" && isBiz.value) {
+    next = "reconcile";
+  }
   visited.add(next);
   activeTab.value = next;
   await router.replace({

@@ -157,6 +157,19 @@
               {{ row.resolved_at ? formatAlertTime(row.resolved_at) : "—" }}
             </template>
           </ElTableColumn>
+          <ElTableColumn :label="t('ops.alerts.columns.actions')" width="92">
+            <template #default="{ row }">
+              <ElButton
+                v-if="drillRouteOf(row)"
+                link
+                type="primary"
+                @click.stop="goDrill(row)"
+              >
+                {{ t("ops.alerts.drillDown") }}
+              </ElButton>
+              <span v-else>—</span>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </OpsTableWrap>
       <div v-if="selected" class="ops-alerts__related">
@@ -220,12 +233,17 @@ import {
   resolveAlertI18nLabel,
 } from "@/utils/ops/alerts-format";
 import { getSeverityLabel, getStatusLabel } from "@/utils/display-labels";
-import { stripAlertEventIdQuery } from "@/utils/ops/alerts-link";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
+import {
+  resolveAlertDrillRoute,
+  stripAlertEventIdQuery,
+} from "@/utils/ops/alerts-link";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 
 defineOptions({ name: "OpsAlertEventsPanel" });
 
 const { t, te } = useI18n();
+const { isAdmin, isBiz, isViewer } = useOpsRole();
 
 function alertStatusText(status: string): string {
   const labeled = resolveAlertI18nLabel("ops.alerts.status", status, t, te);
@@ -270,6 +288,20 @@ function traceRouteOf(row: AlertEvent, traceId: string) {
       ? Math.floor(started / 1000) - 300
       : undefined,
   });
+}
+
+function drillRouteOf(row: AlertEvent) {
+  return resolveAlertDrillRoute(
+    { labels: row.labels },
+    { isAdmin: isAdmin.value, isBiz: isBiz.value, isViewer: isViewer.value },
+  );
+}
+
+function goDrill(row: AlertEvent) {
+  const target = drillRouteOf(row);
+  if (target) {
+    void router.push(target);
+  }
 }
 
 async function reload() {
