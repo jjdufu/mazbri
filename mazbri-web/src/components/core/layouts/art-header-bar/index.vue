@@ -121,6 +121,7 @@ import { triggerLockScreen } from "@/utils/sys/global-ui";
 import { useCommon } from "@/hooks/core/useCommon";
 import { useHeaderBar } from "@/hooks/core/useHeaderBar";
 import { useTheme } from "@/hooks/core/useTheme";
+import { DASHBOARD_PATH } from "@/utils/ops/opsRoutes";
 import ArtUserMenu from "./widget/ArtUserMenu.vue";
 defineOptions({ name: "ArtHeaderBar" });
 const router = useRouter();
@@ -151,10 +152,9 @@ onMounted(() => {
 const visibleMenu = (): void => {
   settingStore.setMenuOpen(!menuOpen.value);
 };
-const { homePath } = useCommon();
 const { refresh } = useCommon();
 const toHome = (): void => {
-  router.push(homePath.value);
+  router.push(DASHBOARD_PATH);
 };
 const handleThemeToggle = (): void => {
   const currentTheme = document.documentElement.classList.contains("dark")

@@ -100,6 +100,7 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("GET", "/stats/calls/stages", Access::AnyRole),
     // overview / 大盘读 AnyRole（字段裁剪在 handler，不靠放宽本表）
     ("GET", "/stats/metrics/overview", Access::AnyRole),
+    ("GET", "/stats/ops/products/zero-calls", Access::AnyRole),
 ];
 
 /// 跑一遍 IA 基线；任何「放宽」都会让本断言失败。

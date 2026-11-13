@@ -18,19 +18,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
     },
   },
   {
-    path: "/finance/overview",
-    name: "FinanceOverview",
-    component: "/mazbri/ops/finance/index",
-    meta: {
-      title: "menus.mazbri.financeOverview",
-      icon: "ri:line-chart-line",
-      order: 2,
-      isHide: true,
-      keepAlive: false,
-      roles: ["R_ADMIN", "R_FINANCE"],
-    },
-  },
-  {
     path: "/operations",
     name: "OpsManagement",
     component: "",
@@ -182,7 +169,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
         name: "BillList",
         component: "/mazbri/billing/bills/index",
         meta: {
-          title: "menus.mazbri.billList",
+          title: "menus.mazbri.billsAndReconciliation",
           icon: "ri:file-list-3-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],

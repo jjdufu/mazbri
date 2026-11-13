@@ -275,6 +275,59 @@ impl AnalyticsHttpClient {
             .await
     }
 
+    /// 按整点小时（UTC）分桶获取左闭右开 `[start_time, end_time)` 的上游调用统计。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AnalyticsError`]。
+    pub async fn fetch_upstream_hourly_usage(
+        &self,
+        start_time: &str,
+        end_time: &str,
+        supplier_id: Option<&str>,
+        channel_id: Option<&str>,
+    ) -> AnalyticsResult<serde_json::Value> {
+        let mut params = vec![
+            ("start_time", start_time.to_string()),
+            ("end_time", end_time.to_string()),
+        ];
+        if let Some(si) = supplier_id {
+            params.push(("supplier_id", si.to_string()));
+        }
+        if let Some(ci) = channel_id {
+            params.push(("channel_id", ci.to_string()));
+        }
+        self.get_json("/api/v1/analytics/upstream-billing/hourly", &params)
+            .await
+    }
+
+    /// 获取窗口 `[start, end)`（Unix 秒）内全量有调用去重 `product_id` 列表。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AnalyticsError`]。
+    pub async fn fetch_active_product_ids(
+        &self,
+        start: i64,
+        end: i64,
+    ) -> AnalyticsResult<Vec<String>> {
+        let params = [("start", start.to_string()), ("end", end.to_string())];
+        let val = self
+            .get_json("/api/v1/olap/active-products", &params)
+            .await?;
+        Ok(val
+            .get("product_ids")
+            .and_then(serde_json::Value::as_array)
+            .map_or_else(Vec::new, |arr| {
+                arr.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            }))
+    }
+
     /// 转发 OLAP 模板查询。
     ///
     /// # Errors

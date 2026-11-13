@@ -30,12 +30,23 @@
           </div>
           <div class="balance-meta">
             {{
+              $t("tenant.account.creditLimitMeta", {
+                amount: formatBalance(account?.credit_limit || "0"),
+              })
+            }}
+            ·
+            {{
+              $t("tenant.account.availableBalanceMeta", {
+                amount: formatBalance(account?.available_balance || "0"),
+              })
+            }}
+          </div>
+          <div class="balance-meta">
+            {{
               account?.status === "active"
                 ? $t("tenant.account.status.active")
                 : $t("tenant.account.status.frozen")
             }}
-            ·
-            {{ account?.currency || "CNY" }}
           </div>
           <div v-if="spend" class="balance-meta spend-meta">
             {{ $t("tenant.account.windowSpend") }}

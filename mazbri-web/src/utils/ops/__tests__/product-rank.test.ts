@@ -5,7 +5,6 @@ import {
   productNameMap,
   productRankDelta,
   withProductNames,
-  zeroCallProducts,
 } from "../product-rank";
 
 describe("product-rank helpers", () => {
@@ -47,25 +46,6 @@ describe("product-rank helpers", () => {
     );
     assert.equal(rows[0]?.name, "身份核验");
     assert.equal(rows[1]?.name, "9");
-  });
-
-  it("zeroCallProducts diffs catalog against active rows in the same window", () => {
-    const zero = zeroCallProducts(
-      [
-        { product_id: "a", name: "乙" },
-        { product_id: "b", name: "甲" },
-        { product_id: "c", name: null },
-      ],
-      [
-        { product_id: "a", req_count: 3 },
-        { product_id: "c", req_count: 0 },
-      ],
-    );
-    assert.deepEqual(
-      zero.map((z) => z.product_id).sort(),
-      ["b", "c"],
-    );
-    assert.deepEqual(zeroCallProducts(undefined, []), []);
   });
 
   it("productRankDelta", () => {

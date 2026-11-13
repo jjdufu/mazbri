@@ -182,6 +182,94 @@ impl ClickHouseClient {
                 AnalyticsError::ClickHouse(format!("ClickHouse upstream summary query error: {e}"))
             })
     }
+
+    /// 查询窗口 `[start_unix, end_unix)` 内全量有调用去重 `product_id` 列表。
+    ///
+    /// # Errors
+    ///
+    /// `ClickHouse` 查询失败时返回错误。
+    pub async fn fetch_active_product_ids(
+        &self,
+        start_unix: i64,
+        end_unix: i64,
+    ) -> Result<Vec<String>> {
+        let sql = super::queries::build_active_products_sql();
+        let started = std::time::Instant::now();
+        let result = self
+            .inner
+            .query(sql)
+            .bind(start_unix.to_string())
+            .bind(end_unix.to_string())
+            .fetch_all::<super::types::ActiveProductIdRow>()
+            .await
+            .map_err(|e| {
+                AnalyticsError::ClickHouse(format!("ClickHouse active products query error: {e}"))
+            });
+        mazbri_core::metrics::observe_dep("ch", "query", started, result.is_ok());
+        record_query_span(
+            "clickhouse.query",
+            "clickhouse",
+            sql,
+            started,
+            result.as_ref().err(),
+        );
+        result.map(|rows| rows.into_iter().map(|r| r.product_id).collect())
+    }
+
+    /// 按整点小时（UTC）分桶查询左闭右开时间窗 `[start_unix, end_unix)` 的上游旁路调用汇总。
+    ///
+    /// # Errors
+    ///
+    /// 参数校验或 `ClickHouse` 查询失败时返回错误。
+    pub async fn fetch_upstream_hourly_usage(
+        &self,
+        start_unix: i64,
+        end_unix: i64,
+        supplier_id: Option<&str>,
+        channel_id: Option<&str>,
+    ) -> Result<Vec<super::types::UpstreamHourlyBucketEntry>> {
+        let mut conditions = vec![
+            "timestamp >= toDateTime(toInt64(?), 'UTC')".to_string(),
+            "timestamp < toDateTime(toInt64(?), 'UTC')".to_string(),
+        ];
+        if let Some(si) = supplier_id
+            && !si.trim().is_empty()
+        {
+            let validated = crate::greptimedb::validate_uuid_param(si.trim())?;
+            conditions.push(format!("supplier_id = '{validated}'"));
+        }
+        if let Some(ci) = channel_id
+            && !ci.trim().is_empty()
+        {
+            let validated = crate::greptimedb::validate_uuid_param(ci.trim())?;
+            conditions.push(format!("channel_id = '{validated}'"));
+        }
+        let sql = super::queries::build_upstream_hourly_usage_sql(&conditions);
+        let started = std::time::Instant::now();
+        let result = self
+            .inner
+            .query(&sql)
+            .bind(start_unix.to_string())
+            .bind(end_unix.to_string())
+            .fetch_all::<super::types::UpstreamHourlyBucketWireRow>()
+            .await
+            .map_err(|e| {
+                AnalyticsError::ClickHouse(format!("ClickHouse upstream hourly query error: {e}"))
+            });
+        mazbri_core::metrics::observe_dep("ch", "query", started, result.is_ok());
+        record_query_span(
+            "clickhouse.query",
+            "clickhouse",
+            &sql,
+            started,
+            result.as_ref().err(),
+        );
+        result.map(|rows| {
+            rows.into_iter()
+                .map(super::types::UpstreamHourlyBucketEntry::from)
+                .collect()
+        })
+    }
 }
 
 /// 补记一次分析库查询的客户端 span（`db.operation`、`db.sql.table`，不记录 SQL 文本）。

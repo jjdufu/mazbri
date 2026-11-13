@@ -63,6 +63,10 @@ fn metrics_and_ops_routes() -> Router<AppState> {
             "/stats/ops/products/names",
             get(ops_anomalies_handlers::list_product_names),
         )
+        .route(
+            "/stats/ops/products/zero-calls",
+            get(ops_anomalies_handlers::list_zero_call_products),
+        )
 }
 
 fn calls_and_traces_routes() -> Router<AppState> {

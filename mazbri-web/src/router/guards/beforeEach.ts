@@ -264,14 +264,27 @@ async function fetchUserInfo(): Promise<void> {
   userStore.setUserInfo(data);
   userStore.checkAndClearWorktabs();
 }
-export function resetRouterState(delay: number): void {
-  setTimeout(() => {
-    routeInitState.getRouteRegistry()?.unregister();
-    IframeRouteManager.getInstance().clear();
-    const menuStore = useMenuStore();
-    menuStore.removeAllDynamicRoutes();
-    menuStore.setMenuList([]);
-    routeInitState.reset();
+let pendingResetTimer: ReturnType<typeof setTimeout> | null = null;
+function clearRouterStateNow(): void {
+  routeInitState.getRouteRegistry()?.unregister();
+  IframeRouteManager.getInstance().clear();
+  const menuStore = useMenuStore();
+  menuStore.removeAllDynamicRoutes();
+  menuStore.setMenuList([]);
+  routeInitState.reset();
+}
+export function resetRouterState(delay = 0): void {
+  if (pendingResetTimer !== null) {
+    clearTimeout(pendingResetTimer);
+    pendingResetTimer = null;
+  }
+  if (delay <= 0) {
+    clearRouterStateNow();
+    return;
+  }
+  pendingResetTimer = setTimeout(() => {
+    pendingResetTimer = null;
+    clearRouterStateNow();
   }, delay);
 }
 function handleRootPathRedirect(

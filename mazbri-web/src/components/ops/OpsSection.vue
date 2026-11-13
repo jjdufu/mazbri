@@ -38,7 +38,7 @@ defineProps<{
 .ops-section__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: var(--ops-space-xs, 8px);
 }
 .ops-section__title {

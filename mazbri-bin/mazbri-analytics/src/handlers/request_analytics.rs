@@ -176,3 +176,72 @@ pub async fn get_upstream_billing_summary(
         }
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpstreamHourlyQuery {
+    pub start_time: String,
+    pub end_time: String,
+    pub supplier_id: Option<String>,
+    pub channel_id: Option<String>,
+}
+
+/// `GET /api/v1/analytics/upstream-billing/hourly`：左闭右开 `[start_time, end_time)` 按整点小时（UTC）分桶聚合上游调用。
+pub async fn get_upstream_hourly_billing(
+    State(state): State<AppState>,
+    Query(req): Query<UpstreamHourlyQuery>,
+) -> Response {
+    let Some(start_time) = parse_time_string(&req.start_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_start_time".to_string(),
+                message: "start_time 格式无效".to_string(),
+            }),
+        )
+            .into_response();
+    };
+    let Some(end_time) = parse_time_string(&req.end_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_end_time".to_string(),
+                message: "end_time 格式无效".to_string(),
+            }),
+        )
+            .into_response();
+    };
+    if start_time >= end_time {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_time_range".to_string(),
+                message: "start_time 必须小于 end_time".to_string(),
+            }),
+        )
+            .into_response();
+    }
+    match state
+        .clickhouse_client
+        .fetch_upstream_hourly_usage(
+            start_time.timestamp(),
+            end_time.timestamp(),
+            req.supplier_id.as_deref(),
+            req.channel_id.as_deref(),
+        )
+        .await
+    {
+        Ok(rows) => (StatusCode::OK, Json(rows)).into_response(),
+        Err(e) => {
+            error!("Upstream hourly usage query failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(HandlerError {
+                    error: "query_failed".to_string(),
+                    message: "Query upstream hourly usage failed".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}

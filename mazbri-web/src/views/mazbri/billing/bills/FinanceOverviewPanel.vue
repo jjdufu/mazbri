@@ -1,16 +1,22 @@
 <template>
-  <OpsPage
-    :title="t('menus.mazbri.financeOverview')"
-    :subtitle="windowHint"
-  >
-    <template #actions>
-      <ElSelect v-model="days" class="finance-days-select" @change="reload">
-        <ElOption :value="7" :label="t('ops.timeRange.presets.7d')" />
-        <ElOption :value="30" :label="t('ops.timeRange.presets.30d')" />
-        <ElOption :value="90" :label="`90 ${t('ops.units.days')}`" />
-      </ElSelect>
-      <AutoRefresh v-model="refreshInterval" @tick="reload" />
-    </template>
+  <div class="finance-overview-panel ops-page-stack">
+    <Teleport
+      v-if="props.active"
+      :to="tabActionsEl || 'body'"
+      :disabled="!tabActionsEl"
+    >
+      <div
+        class="finance-overview__toolbar"
+        :class="{ 'finance-overview__toolbar--inline': !tabActionsEl }"
+      >
+        <ElSelect v-model="days" class="finance-days-select" @change="reload">
+          <ElOption :value="7" :label="t('ops.timeRange.presets.7d')" />
+          <ElOption :value="30" :label="t('ops.timeRange.presets.30d')" />
+          <ElOption :value="90" :label="`90 ${t('ops.units.days')}`" />
+        </ElSelect>
+        <AutoRefresh v-model="refreshInterval" @tick="onAutoRefreshTick" />
+      </div>
+    </Teleport>
 
     <ElAlert
       v-if="costUnavailable"
@@ -36,7 +42,7 @@
         <StatCard
           :label="t('ops.finance.cost')"
           :value="costUnavailable ? null : num(overview?.cost_total)"
-          :hint="windowHint"
+          :hint="costHint"
           :loading="loading"
           :digits="2"
         />
@@ -44,8 +50,8 @@
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.margin')"
-          :value="num(overview?.margin_total)"
-          :hint="windowHint"
+          :value="costUnavailable ? null : num(overview?.margin_total)"
+          :hint="costHint"
           :loading="loading"
           :digits="2"
         />
@@ -53,9 +59,9 @@
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.marginRate')"
-          :value="overview?.margin_rate ?? null"
+          :value="costUnavailable ? null : (overview?.margin_rate ?? null)"
           unit="%"
-          :hint="windowHint"
+          :hint="costHint"
           :loading="loading"
           :digits="1"
         />
@@ -89,6 +95,7 @@
             :data="ranks?.by_tenant ?? []"
             :loading="loading"
             :columns="tenantRankColumns"
+            empty-height="160px"
             stripe
           />
         </OpsCard>
@@ -98,7 +105,8 @@
           <ArtTable
             :data="ranks?.by_product ?? []"
             :loading="loading"
-            :columns="namedRankColumns(t('ops.finance.productName'))"
+            :columns="productRankColumns"
+            empty-height="160px"
             stripe
           />
         </OpsCard>
@@ -108,7 +116,8 @@
           <ArtTable
             :data="ranks?.by_supplier ?? []"
             :loading="loading"
-            :columns="namedRankColumns(t('ops.finance.supplierName'))"
+            :columns="supplierRankColumns"
+            empty-height="160px"
             stripe
           />
         </OpsCard>
@@ -120,20 +129,34 @@
         :data="balances"
         :loading="loading"
         :columns="balanceColumns"
+        empty-height="160px"
         stripe
-      />
+      >
+        <template #available_balance-header>
+          <span class="balance-header-with-tip">
+            <span>{{ t("ops.finance.available") }}</span>
+            <ElTooltip
+              :content="t('ops.finance.availableTooltip')"
+              placement="top"
+            >
+              <span class="balance-header-tip-icon" tabindex="0">
+                <ArtSvgIcon icon="ri:question-line" />
+              </span>
+            </ElTooltip>
+          </span>
+        </template>
+      </ArtTable>
     </OpsCard>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import {
@@ -149,7 +172,21 @@ import type { ColumnOption } from "@/types/component";
 import { getStatusLabel } from "@/utils/display-labels";
 import { formatDays, formatMoney } from "@/utils/format";
 
-defineOptions({ name: "FinanceOverview" });
+defineOptions({ name: "FinanceOverviewPanel" });
+
+const props = withDefaults(
+  defineProps<{
+    active?: boolean;
+  }>(),
+  {
+    active: true,
+  },
+);
+
+const tabActionsEl = inject<Ref<HTMLElement | null> | null>(
+  "billsTabActionsEl",
+  null,
+);
 
 const { t } = useI18n();
 const days = ref(30);
@@ -184,18 +221,28 @@ function moneyOrDash(
   value: string | null | undefined,
   costStatus: string,
 ): string {
-  if (costStatus !== "ok") return "—";
+  if (costStatus === "unavailable") return "—";
   return moneyCell(value);
 }
 
 const costUnavailable = computed(
-  () => overview.value != null && overview.value.cost_status !== "ok",
+  () => overview.value != null && overview.value.cost_status === "unavailable",
+);
+
+const costPartial = computed(
+  () => overview.value?.cost_status === "partial",
 );
 
 const windowHint = computed(
   () =>
     overview.value?.window?.label ??
     t("ops.finance.windowFallback", { days: days.value }),
+);
+
+const costHint = computed(() =>
+  costPartial.value
+    ? `${windowHint.value} · ${t("ops.finance.partialBadge")}`
+    : windowHint.value,
 );
 
 const dayLabels = computed(() => overview.value?.days.map((d) => d.day) ?? []);
@@ -222,65 +269,54 @@ const trendSeries = computed(() => {
   return series;
 });
 
-function namedRankColumns(nameLabel: string): ColumnOption<FinanceRankRow>[] {
-  return [
-    {
-      prop: "display_name",
-      label: nameLabel,
-      minWidth: 84,
-      formatter: (row) => rankName(row),
-    },
-    {
-      prop: "revenue",
-      label: t("ops.finance.revenue"),
-      minWidth: 72,
-      formatter: (row) => moneyCell(row.revenue),
-    },
-    {
-      prop: "cost",
-      label: t("ops.finance.cost"),
-      minWidth: 72,
-      formatter: (row) => moneyOrDash(row.cost, row.cost_status),
-    },
-    {
-      prop: "margin",
-      label: t("ops.finance.margin"),
-      minWidth: 72,
-      formatter: (row) => moneyOrDash(row.margin, row.cost_status),
-    },
-  ];
-}
+const productRankColumns = computed<ColumnOption<FinanceRankRow>[]>(() => [
+  {
+    prop: "display_name",
+    label: t("ops.finance.productName"),
+    minWidth: 160,
+    formatter: (row) => rankName(row),
+  },
+  {
+    prop: "revenue",
+    label: t("ops.finance.revenue"),
+    width: 108,
+    formatter: (row) => moneyCell(row.revenue),
+  },
+]);
+
+const supplierRankColumns = computed<ColumnOption<FinanceRankRow>[]>(() => [
+  {
+    prop: "display_name",
+    label: t("ops.finance.supplierName"),
+    minWidth: 160,
+    formatter: (row) => rankName(row),
+  },
+  {
+    prop: "cost",
+    label: t("ops.finance.cost"),
+    width: 108,
+    formatter: (row) => moneyOrDash(row.cost, row.cost_status),
+  },
+]);
 
 const tenantRankColumns = computed<ColumnOption<FinanceRankRow>[]>(() => [
   {
     prop: "display_name",
     label: t("ops.finance.tenantName"),
-    minWidth: 72,
+    minWidth: 120,
     formatter: (row) => rankName(row),
   },
   {
     prop: "tenant_code",
     label: t("ops.finance.tenantCode"),
-    minWidth: 68,
+    width: 104,
     formatter: (row) => row.tenant_code?.trim() || "—",
   },
   {
     prop: "revenue",
     label: t("ops.finance.revenue"),
-    minWidth: 60,
+    width: 96,
     formatter: (row) => moneyCell(row.revenue),
-  },
-  {
-    prop: "cost",
-    label: t("ops.finance.cost"),
-    minWidth: 60,
-    formatter: (row) => moneyOrDash(row.cost, row.cost_status),
-  },
-  {
-    prop: "margin",
-    label: t("ops.finance.margin"),
-    minWidth: 60,
-    formatter: (row) => moneyOrDash(row.margin, row.cost_status),
   },
 ]);
 
@@ -299,33 +335,50 @@ const balanceColumns = computed<ColumnOption<BalanceRow>[]>(() => [
   {
     prop: "tenant_code",
     label: t("ops.finance.tenantCode"),
-    width: 110,
+    minWidth: 108,
     formatter: (row) => row.tenant_code?.trim() || "—",
+  },
+  {
+    prop: "balance",
+    label: t("ops.finance.cashBalance"),
+    minWidth: 132,
+    formatter: (row) => moneyCell(row.balance),
+  },
+  {
+    prop: "credit_limit",
+    label: t("ops.finance.creditLimit"),
+    minWidth: 108,
+    formatter: (row) => moneyCell(row.credit_limit),
   },
   {
     prop: "available_balance",
     label: t("ops.finance.available"),
+    minWidth: 132,
+    useHeaderSlot: true,
     formatter: (row) => moneyCell(row.available_balance),
   },
   {
     prop: "recent_recharge",
     label: t("ops.finance.recharge"),
+    minWidth: 116,
     formatter: (row) => moneyCell(row.recent_recharge),
   },
   {
     prop: "avg_daily_spend",
     label: t("ops.finance.avgSpend"),
+    minWidth: 116,
     formatter: (row) => moneyCell(row.avg_daily_spend),
   },
   {
     prop: "days_remaining",
     label: t("ops.finance.daysLeft"),
+    minWidth: 96,
     formatter: (row) => daysCell(row.days_remaining),
   },
   {
     prop: "status",
     label: t("ops.finance.status"),
-    width: 100,
+    width: 96,
     formatter: (row) => getStatusLabel(row.status),
   },
 ]);
@@ -348,11 +401,51 @@ async function reload() {
   }
 }
 
-onMounted(reload);
+function onAutoRefreshTick() {
+  if (!props.active) return;
+  void reload();
+}
+
+onMounted(() => {
+  void reload();
+});
 </script>
 
-<style scoped>
-.finance-cost-alert {
-  margin-bottom: 16px;
+<style scoped lang="scss">
+.finance-overview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.finance-overview__toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.finance-overview__toolbar--inline {
+  align-self: flex-end;
+}
+
+.finance-days-select {
+  width: 120px;
+  --el-select-width: 120px;
+  flex-shrink: 0;
+}
+
+.balance-header-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.balance-header-tip-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  cursor: help;
 }
 </style>

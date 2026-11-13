@@ -556,13 +556,13 @@ async fn main() -> Result<()> {
             config.billing_reconciliation.clone(),
         ),
     );
-    spawn_reconciliation_supervisor(
-        dbs.billing.clone(),
-        analytics_client.clone(),
-        billing_reconciliation_settings.clone(),
-        audit.clone(),
+    spawn_billing_background_jobs(
+        &dbs.billing,
+        &db,
+        &analytics_client,
+        &billing_reconciliation_settings,
+        &audit,
     );
-    mazbri_mgmt::services::finance_ops::spawn_mv_refresh(dbs.billing.clone());
     let app_state = handlers::AppState {
         config: config.clone(),
         cert_service,
@@ -593,6 +593,27 @@ async fn main() -> Result<()> {
         .shutdown(Duration::from_secs(config.audit.shutdown_drain_secs))
         .await;
     served
+}
+
+fn spawn_billing_background_jobs(
+    billing_db: &PgArc,
+    platform_db: &PgArc,
+    analytics_client: &Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
+    reconcile_settings: &Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
+    audit: &audit::AuditService,
+) {
+    spawn_reconciliation_supervisor(
+        Arc::clone(billing_db),
+        Arc::clone(analytics_client),
+        Arc::clone(reconcile_settings),
+        audit.clone(),
+    );
+    mazbri_mgmt::services::finance_ops::spawn_mv_refresh(Arc::clone(billing_db));
+    mazbri_mgmt::services::billing::spawn_upstream_cost_settlement_sync(
+        Arc::clone(billing_db),
+        Arc::clone(platform_db),
+        Arc::clone(analytics_client),
+    );
 }
 fn build_mgmt_cors_layer() -> CorsLayer {
     // 带 --dev 时放行本地 Vite 端口；不带时 CORS 为空名单。

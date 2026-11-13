@@ -322,9 +322,44 @@ pub fn build_upstream_usage_summary_sql(extra_conditions: &[String]) -> String {
     )
 }
 
+/// 窗口 `[start, end)`（Unix 秒，UTC）内全量有调用去重 `product_id` 集合（无 `TopN` `LIMIT` 截断）。
+#[must_use]
+pub const fn build_active_products_sql() -> &'static str {
+    "SELECT DISTINCT toString(product_id) AS product_id \
+     FROM request_logs \
+     WHERE event_target = 'gateway' AND product_id != '' \
+       AND timestamp >= toDateTime(toInt64(?), 'UTC') \
+       AND timestamp < toDateTime(toInt64(?), 'UTC')"
+}
+
+/// 按整点小时（UTC）分桶的上游用量聚合 SQL，时间条件由调用方按左闭右开 `[from, to)` 传入。
+#[must_use]
+pub fn build_upstream_hourly_usage_sql(extra_conditions: &[String]) -> String {
+    let mut conditions = vec!["event_target = 'bypass'".to_string()];
+    conditions.extend(extra_conditions.iter().cloned());
+    let where_clause = conditions.join(" AND ");
+    format!(
+        "SELECT \
+            toUnixTimestamp(toStartOfHour(timestamp, 'UTC')) AS window_start_unix, \
+            supplier_id, supplier_code, channel_id, channel_code, \
+            toUInt64(count()) AS total_calls, \
+            toUInt64({SQL_COUNT_SUCCESSES}) AS success_calls, \
+            toUInt64({SQL_COUNT_FAILURES}) AS failed_calls, \
+            toUInt64(sum(request_bytes + response_bytes)) AS total_payload_bytes, \
+            toUInt64(sum(duration_ms)) AS total_latency_ms \
+         FROM request_logs FINAL \
+         WHERE {where_clause} \
+         GROUP BY window_start_unix, supplier_id, supplier_code, channel_id, channel_code \
+         ORDER BY window_start_unix ASC"
+    )
+}
+
 #[cfg(test)]
 mod upstream_usage_sql_tests {
-    use super::build_upstream_usage_summary_sql;
+    use super::{
+        build_active_products_sql, build_upstream_hourly_usage_sql,
+        build_upstream_usage_summary_sql,
+    };
 
     fn squash(s: &str) -> String {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -363,6 +398,34 @@ mod upstream_usage_sql_tests {
             "WHERE event_target = 'bypass' AND timestamp >= parseDateTimeBestEffortOrNull(?) \
              AND timestamp <= parseDateTimeBestEffortOrNull(?) AND supplier_id = 's1' GROUP BY"
         ));
+    }
+
+    #[test]
+    fn hourly_usage_groups_by_utc_hour_and_deduplicates_bypass() {
+        let conds = vec![
+            "timestamp >= toDateTime(toInt64(?), 'UTC')".to_string(),
+            "timestamp < toDateTime(toInt64(?), 'UTC')".to_string(),
+        ];
+        let sql = squash(&build_upstream_hourly_usage_sql(&conds));
+        assert!(sql.contains(
+            "toUnixTimestamp(toStartOfHour(timestamp, 'UTC')) AS window_start_unix"
+        ));
+        assert!(sql.contains(
+            "FROM request_logs FINAL WHERE event_target = 'bypass' \
+             AND timestamp >= toDateTime(toInt64(?), 'UTC') \
+             AND timestamp < toDateTime(toInt64(?), 'UTC') \
+             GROUP BY window_start_unix, supplier_id, supplier_code, channel_id, channel_code"
+        ));
+    }
+
+    #[test]
+    fn active_products_sql_has_no_topn_limit_and_uses_half_open_window() {
+        let sql = squash(build_active_products_sql());
+        assert!(sql.contains("SELECT DISTINCT toString(product_id) AS product_id FROM request_logs"));
+        assert!(sql.contains("event_target = 'gateway'"));
+        assert!(sql.contains("timestamp >= toDateTime(toInt64(?), 'UTC')"));
+        assert!(sql.contains("timestamp < toDateTime(toInt64(?), 'UTC')"));
+        assert!(!sql.to_uppercase().contains("LIMIT"));
     }
 }
 

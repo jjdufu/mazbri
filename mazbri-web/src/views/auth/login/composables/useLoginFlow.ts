@@ -5,6 +5,7 @@ import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { useSettingStore } from "@/store/modules/setting";
+import { resetRouterState } from "@/router/guards/beforeEach";
 import { classifySubmittedCode } from "@/utils/http/mfa-step-up-state";
 import {
   login,
@@ -163,6 +164,8 @@ export function useLoginFlow() {
     );
     userStore.setLoginStatus(true);
     userStore.setUserInfo(response.user);
+    userStore.checkAndClearWorktabs();
+    resetRouterState(0);
     try {
       await useMfaStepUpStore().refresh(true);
     } catch {

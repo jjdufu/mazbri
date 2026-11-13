@@ -19,7 +19,7 @@ export function initRouter(app: App<Element>): void {
 /** Role priority for the landing page: R_ADMIN > R_FINANCE > R_VIEWER. */
 const HOME_ROLE_PATHS: Array<{ role: string; path: string }> = [
   { role: "R_ADMIN", path: "/dashboard" },
-  { role: "R_FINANCE", path: "/finance/overview" },
+  { role: "R_FINANCE", path: "/operations/bills" },
   { role: "R_VIEWER", path: "/dashboard" },
 ];
 

@@ -1,12 +1,5 @@
 <template>
   <OpsPage :title="t('menus.mazbri.opsOverview')" :subtitle="windowSemantics">
-    <template #actions>
-      <div class="ops-overview__filter" data-role="global-filter">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </template>
-
     <ElAlert
       v-if="isViewer"
       type="info"
@@ -15,11 +8,28 @@
       :title="t('ops.overview.viewerSlim')"
     />
 
-    <!-- KPI：跟随时间窗（窗口汇总） -->
+    <!-- KPI：跟随时间窗（窗口汇总），顶栏时间选择器与首行分区标题同轴对齐 -->
     <OpsSection
       id="kpi"
       :title="t('ops.overview.sections.kpi')"
+      :semantics="windowSemantics"
     >
+      <template #extra>
+        <div class="ops-overview__filter" data-role="global-filter">
+          <RoleGate gate="biz">
+            <ElButton
+              link
+              type="primary"
+              class="ops-overview__finance-shortcut"
+              @click="router.push({ path: '/operations/bills', query: { tab: 'overview' } })"
+            >
+              {{ t("ops.overview.financeShortcut") }}
+            </ElButton>
+          </RoleGate>
+          <TimeRangePicker v-model="timeRange" @change="reload" />
+          <AutoRefresh v-model="refreshInterval" @tick="reload" />
+        </div>
+      </template>
       <OpsKpiRow>
         <ElCol v-bind="KPI_COL">
           <StatCard

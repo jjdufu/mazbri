@@ -529,6 +529,7 @@ fn ops_stats_and_alerts_follow_role_matrix() {
         ("GET", "/stats/metrics/services/health"),
         ("POST", "/stats/olap/query"),
         ("GET", "/stats/ops/products/names"),
+        ("GET", "/stats/ops/products/zero-calls"),
         ("GET", "/stats/ops/slos/status"),
         ("GET", "/alerts/events"),
         ("GET", "/alerts/summary"),
