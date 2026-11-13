@@ -7,9 +7,11 @@ import {
   type ComputedRef,
 } from "vue";
 import type { ElTable } from "element-plus";
+import { storeToRefs } from "pinia";
 import { useDebounceFn, useResizeObserver, useWindowSize } from "@vueuse/core";
 import { useTableHeight } from "@/hooks/core/useTableHeight";
 import { useCommon } from "@/hooks/core/useCommon";
+import { useTableStore } from "@/store/modules/table";
 import type { ColumnOption, PaginationConfig, ArtTableProps } from "./types";
 export interface UseTableComposableReturn {
   width: Ref<number>;
@@ -67,12 +69,21 @@ export const useTableComposable = (
   useResizeObserver(tableHeaderRef, (entries) => {
     debouncedTableHeaderResize(Array.from(entries));
   });
+  const { isFullScreen } = storeToRefs(useTableStore());
   const PAGINATION_SPACING = computed(() => (props.showTableHeader ? 6 : 15));
+  const fixedHeight = computed(
+    () =>
+      isFullScreen.value ||
+      (props.height !== undefined &&
+        props.height !== "" &&
+        props.height !== "auto"),
+  );
   const { containerHeight } = useTableHeight({
     showTableHeader: computed(() => props.showTableHeader ?? false),
     paginationHeight,
     tableHeaderHeight,
     paginationSpacing: PAGINATION_SPACING,
+    fixedHeight,
   });
   const cleanColumnProps = (col: ColumnOption): Record<string, unknown> => {
     const columnProps: Record<string, unknown> = { ...col };

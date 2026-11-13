@@ -75,7 +75,7 @@
           <template #default="{ row }">
             <div class="updated-by-cell">
               <ArtSvgIcon icon="ri:user-line" class="user-icon text-g-500" />
-              <span>{{ row.updated_by || "-" }}</span>
+              <span>{{ row.updated_by || "—" }}</span>
             </div>
           </template>
         </ElTableColumn>
@@ -315,20 +315,6 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.art-table-card {
-  flex: none;
-
-  :deep(.el-card__body) {
-    height: auto;
-    overflow: visible;
-  }
-
-  :deep(.art-table) {
-    height: auto !important;
-    min-height: 0 !important;
-  }
-}
-
 .tab-segmented {
   :deep(.el-segmented) {
     height: 40px;

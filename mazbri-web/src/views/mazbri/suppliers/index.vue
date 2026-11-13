@@ -1,9 +1,5 @@
 <template>
-  <div
-    ref="pageRef"
-    class="supplier-page"
-    style="display: flex; flex-direction: column; flex: 1; min-height: 0"
-  >
+  <div ref="pageRef" class="supplier-page">
     <ResourceTableShell
       v-model:columns="columns"
       :title="$t('supplier.list.title')"
@@ -225,9 +221,9 @@ const supplierColumns: ColumnOption<Supplier>[] = [
 const getSupplierCellText = (columnKey: string, row: Supplier) => {
   switch (columnKey) {
     case "supplier_code":
-      return row.supplier_code || "-";
+      return row.supplier_code || "—";
     case "name":
-      return row.name || "-";
+      return row.name || "—";
     case "upstream_type":
       return resolveUpstreamType(row) === "transparent"
         ? $t("supplier.upstreamOptions.transparent")
@@ -235,11 +231,11 @@ const getSupplierCellText = (columnKey: string, row: Supplier) => {
     case "upstream_url":
       return formatUrlDisplay(row.upstream_url);
     case "status":
-      return row.status || "-";
+      return row.status || "—";
     case "operations":
       return `${$t("common.actions.details")} ${$t("common.actions.delete")}`;
     default:
-      return row.name || "-";
+      return row.name || "—";
   }
 };
 const getSupplierColumnWeight = (columnKey: string) => {

@@ -91,20 +91,23 @@
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('certificate.detail.fields.subject')"
-              >{{ certificate?.subject }}</ElDescriptionsItem
+              >{{ certificate?.subject || "—" }}</ElDescriptionsItem
             >
             <ElDescriptionsItem
               :label="$t('certificate.detail.fields.dnsNames')"
               :span="2"
             >
-              <ElTag
-                v-for="(name, idx) in certificate?.dns_names"
-                :key="idx"
-                size="small"
-                class="mr-1"
-              >
-                {{ name }}
-              </ElTag>
+              <template v-if="certificate?.dns_names?.length">
+                <ElTag
+                  v-for="(name, idx) in certificate.dns_names"
+                  :key="idx"
+                  size="small"
+                  class="mr-1"
+                >
+                  {{ name }}
+                </ElTag>
+              </template>
+              <span v-else>—</span>
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('certificate.detail.fields.issuedAt')"

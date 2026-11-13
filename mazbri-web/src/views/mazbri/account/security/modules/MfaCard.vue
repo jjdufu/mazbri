@@ -240,8 +240,8 @@ const backupCodesRemaining = computed(
 );
 const changedAtText = computed(() => {
   const changedAt = status.value?.changed_at;
-  if (!changedAt) return "-";
-  return formatExpiryUtc8(changedAt) || "-";
+  if (!changedAt) return "—";
+  return formatExpiryUtc8(changedAt) || "—";
 });
 const setupDigits = computed(() => 6);
 

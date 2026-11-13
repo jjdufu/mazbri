@@ -6,7 +6,6 @@ use tracing::info;
 pub struct AppearanceSettings {
     pub system_theme_mode: String,
     pub system_theme_color: String,
-    pub container_width: String,
     pub box_border_mode: bool,
     pub menu_open_width: i32,
     #[serde(flatten)]
@@ -26,7 +25,6 @@ pub struct AppearanceSettings {
 pub struct UpdateAppearanceRequest {
     pub system_theme_mode: Option<String>,
     pub system_theme_color: Option<String>,
-    pub container_width: Option<String>,
     pub box_border_mode: Option<bool>,
     pub menu_open_width: Option<i32>,
     pub show_work_tab: Option<bool>,
@@ -46,7 +44,6 @@ fn row_to_settings(row: &repo::AppearanceRow) -> AppearanceSettings {
     AppearanceSettings {
         system_theme_mode: row.system_theme_mode.clone(),
         system_theme_color: row.system_theme_color.clone(),
-        container_width: row.container_width.clone(),
         box_border_mode: row.box_border_mode,
         menu_open_width: row.menu_open_width,
         navigation: row.navigation,
@@ -73,11 +70,6 @@ pub fn validate_update(payload: &UpdateAppearanceRequest) -> Result<(), String> 
         && (!color.starts_with('#') || color.len() != 7)
     {
         return Err("无效的主题颜色格式（必须是 #RRGGBB）".to_string());
-    }
-    if let Some(width) = &payload.container_width
-        && !["100%", "1200px"].contains(&width.as_str())
-    {
-        return Err("无效的容器宽度".to_string());
     }
     if let Some(width) = payload.menu_open_width
         && !(180..=320).contains(&width)
@@ -118,7 +110,6 @@ pub async fn update_settings(
         repo::UpdateAppearanceParams {
             system_theme_mode: &payload.system_theme_mode,
             system_theme_color: &payload.system_theme_color,
-            container_width: &payload.container_width,
             box_border_mode: &payload.box_border_mode,
             menu_open_width: &payload.menu_open_width,
             show_work_tab: &payload.show_work_tab,
@@ -167,4 +158,29 @@ pub async fn reset_settings(
             tracing::error!("Failed to reset appearance settings: {}", e);
             "重置外观设置失败".to_string()
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UpdateAppearanceRequest, validate_update};
+
+    #[test]
+    fn reject_removed_container_width_field() {
+        let parsed = serde_json::from_value::<UpdateAppearanceRequest>(
+            serde_json::json!({ "container_width": "1200px" }),
+        );
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn validate_update_accepts_valid_payload() {
+        let parsed: UpdateAppearanceRequest = serde_json::from_value(serde_json::json!({
+            "system_theme_mode": "light",
+            "system_theme_color": "#5D87FF",
+            "menu_open_width": 200,
+            "dark_theme_style": "obsidian"
+        }))
+        .expect("valid payload");
+        assert!(validate_update(&parsed).is_ok());
+    }
 }

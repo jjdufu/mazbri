@@ -907,7 +907,7 @@ function flushKvToActive() {
 const publishResultDesc = computed(() => {
   if (!publishResult.value) return "";
   const r = publishResult.value;
-  return `supplier=${r.supplier_id} version=v${r.version_no} route_version=${r.route_version ?? "-"}`;
+  return `supplier=${r.supplier_id} version=v${r.version_no} route_version=${r.route_version ?? "—"}`;
 });
 
 function syncSessionRoute(d: ConnectorDraft) {

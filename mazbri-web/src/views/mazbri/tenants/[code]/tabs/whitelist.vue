@@ -61,7 +61,7 @@
         </ElTag>
       </template>
       <template #description="{ row }">
-        {{ row.description || "-" }}
+        {{ row.description || "—" }}
       </template>
       <template #is_active="{ row }">
         <StatusIndicator :type="row.is_active ? 'success' : 'info'">

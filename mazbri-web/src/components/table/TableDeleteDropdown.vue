@@ -1,6 +1,14 @@
 <template>
-  <ElDropdown trigger="click" :disabled="disabled" @command="handleCommand">
-    <ElButton :type="buttonType" :disabled="disabled">
+  <ElDropdown
+    trigger="click"
+    :disabled="isTriggerDisabled"
+    @command="handleCommand"
+  >
+    <ElButton
+      :type="buttonType"
+      :plain="selectedCount === 0"
+      :disabled="isTriggerDisabled"
+    >
       <template #icon><ArtSvgIcon :icon="icon" /></template>
       {{ resolvedLabel }} <ArtSvgIcon icon="ri:arrow-down-s-line" />
     </ElButton>
@@ -41,6 +49,9 @@ const { t } = useI18n();
 const emit = defineEmits<{
   command: [type: "all" | "selected"];
 }>();
+const isTriggerDisabled = computed(
+  () => props.disabled || (props.totalCount <= 0 && props.selectedCount <= 0),
+);
 const resolvedLabel = computed(
   () => props.label ?? t("common.tableDeleteDropdown.label"),
 );

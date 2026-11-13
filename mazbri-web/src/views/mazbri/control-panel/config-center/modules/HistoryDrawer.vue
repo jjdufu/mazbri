@@ -16,6 +16,7 @@
           :data="historyData"
           :columns="historyColumns"
           :pagination="artPagination"
+          :max-height="260"
           stripe
           border
           highlight-current-row

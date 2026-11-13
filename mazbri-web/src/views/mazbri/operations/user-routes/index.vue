@@ -1,8 +1,5 @@
 <template>
-  <div
-    class="route-config-page"
-    :class="{ 'route-config-page--embedded': embedded }"
-  >
+  <div class="route-config-page">
     <ResourceTableShell
       v-model:columns="columns"
       :title="
@@ -916,18 +913,18 @@ const routeImportExistingData = computed<Record<string, unknown>[]>(() =>
   }),
 );
 const currentRuleTitle = computed(() => {
-  if (!currentRule.value) return "-";
+  if (!currentRule.value) return "—";
   return `${routeTenantName(currentRule.value)} / ${routeProductName(currentRule.value)}`;
 });
 const channelName = (channelId: string) => {
   const channel = channelMap.value.get(channelId);
   return channel
     ? `${channel.supplier_name} / ${channel.name} (${channel.channel_code})`
-    : channelId || "-";
+    : channelId || "—";
 };
 const productName = (productId: string) => {
   const product = productMap.value.get(productId);
-  return product ? `${product.name} (${product.product_id})` : productId || "-";
+  return product ? `${product.name} (${product.product_id})` : productId || "—";
 };
 const tenantName = (tenantId?: string | null) => {
   if (!tenantId) return $t("routes.labels.defaultRoute");
@@ -942,7 +939,7 @@ const routeProductName = (row: RouteRule) => {
   const productCodeValue = getString(routeConfig.product_code, row.product_id);
   return productNameValue
     ? `${productNameValue} (${productCodeValue})`
-    : row.product_id || "-";
+    : row.product_id || "—";
 };
 const routeTenantName = (row: RouteRule) => {
   if (!row.tenant_id) return $t("routes.labels.defaultRoute");
@@ -1591,12 +1588,6 @@ watch(
 <style scoped lang="scss">
 .route-config-page {
   padding: 0;
-}
-
-.route-config-page--embedded {
-  :deep(.art-table-card) {
-    margin-bottom: 0;
-  }
 }
 
 .metadata-tags {

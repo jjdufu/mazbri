@@ -7,7 +7,7 @@ import {
 
 interface Appearance {
   systemThemeColor: string;
-  containerWidth: string;
+  boxBorderMode: boolean;
   showWorkTab: boolean;
   menuOpenWidth: number;
   tabStyle: string;
@@ -15,7 +15,7 @@ interface Appearance {
 
 const server: Appearance = {
   systemThemeColor: "#5D87FF",
-  containerWidth: "100%",
+  boxBorderMode: false,
   showWorkTab: false,
   menuOpenWidth: 200,
   tabStyle: "tab-default",
@@ -40,11 +40,11 @@ async function main() {
   });
 
   // 1. Every field previews immediately (after the watcher flush).
-  local.containerWidth = "1200px";
+  local.boxBorderMode = true;
   local.showWorkTab = true;
   local.systemThemeColor = "#FF0000";
   await nextTick();
-  assert.equal(store.containerWidth, "1200px");
+  assert.equal(store.boxBorderMode, true);
   assert.equal(store.showWorkTab, true);
   assert.equal(store.systemThemeColor, "#FF0000");
   assert.equal(applyCount, 1, "batched into a single apply");
@@ -90,9 +90,9 @@ async function main() {
   // 6. Stopping the watcher stops previews.
   active = true;
   preview.stop();
-  local.containerWidth = "1200px";
+  local.boxBorderMode = true;
   await nextTick();
-  assert.equal(store.containerWidth, "100%");
+  assert.equal(store.boxBorderMode, false);
 
   console.log("appearancePreview tests passed");
 }

@@ -1,7 +1,7 @@
 import { computed, type Ref } from "vue";
 import type { LicenseStatus } from "@/types/api/authorizations";
 import { $t } from "@/locales";
-import { formatDateTime } from "@/utils/format";
+import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { getStatusLabel, getStatusType, type TagType } from "@/utils/display-labels";
 
 type SummaryRow = {
@@ -16,7 +16,7 @@ export function useAuthorizationManagementSummary(options: {
 }) {
   function formatSecondsToExpiry(value: number | null | undefined): string {
     if (value == null) {
-      return "-";
+      return EMPTY_PLACEHOLDER;
     }
     const days = Math.ceil(Math.abs(Math.round(value)) / 86400);
     return value < 0
@@ -48,11 +48,11 @@ export function useAuthorizationManagementSummary(options: {
       },
       {
         label: $t("certificate.authorizationManagement.license.keyVersion"),
-        value: summary.keyVersion || "-",
+        value: summary.keyVersion || EMPTY_PLACEHOLDER,
       },
       {
         label: $t("certificate.authorizationManagement.license.customerId"),
-        value: summary.customerId || "-",
+        value: summary.customerId || EMPTY_PLACEHOLDER,
       },
       {
         label: $t("certificate.authorizationManagement.license.expiresAt"),

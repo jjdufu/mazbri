@@ -205,7 +205,7 @@ const emptyDescription = computed(() =>
 const getProductCellText = (columnKey: string, row: Product) => {
   switch (columnKey) {
     case "product_id":
-      return row.product_id || "-";
+      return row.product_id || "—";
     case "enabled":
       return row.enabled
         ? $t("common.status.enabled")
@@ -215,7 +215,7 @@ const getProductCellText = (columnKey: string, row: Product) => {
     case "operations":
       return $t("common.actions.details");
     default:
-      return row.name || "-";
+      return row.name || "—";
   }
 };
 const getProductColumnWeight = (columnKey: string) => {

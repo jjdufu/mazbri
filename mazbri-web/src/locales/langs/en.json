@@ -467,7 +467,7 @@
         "title": "Call Log Detail",
         "summaryTitle": "Call Summary",
         "rawTitle": "Raw Details",
-        "empty": "-",
+        "empty": "—",
         "labels": {
           "serialNo": "Serial No",
           "party": "Tenant / Supplier",
@@ -528,13 +528,6 @@
       "list": [
         "Border",
         "Shadow"
-      ]
-    },
-    "container": {
-      "title": "Container Width",
-      "list": [
-        "Full",
-        "Boxed"
       ]
     },
     "basics": {
@@ -927,7 +920,6 @@
     },
     "layout": {
       "title": "Layout Settings",
-      "containerWidth": "Container Width",
       "boxStyle": "Box Style"
     },
     "display": {
@@ -2866,6 +2858,11 @@
         "none": "Off",
         "request": "Request Encryption",
         "full": "Bidirectional Encryption"
+      },
+      "modesDesc": {
+        "none": "No payload encryption; messages are transmitted in plaintext",
+        "request": "Encrypts inbound client requests only",
+        "full": "Encrypts both inbound requests and outbound responses"
       },
       "actions": {
         "goRootPackage": "Go to authorization management",

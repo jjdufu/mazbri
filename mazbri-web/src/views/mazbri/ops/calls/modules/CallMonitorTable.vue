@@ -58,10 +58,10 @@
         />
       </template>
       <template #tenant_name="{ row }">
-        {{ row.tenant_name || row.tenant_id || "-" }}
+        {{ row.tenant_name || row.tenant_id || "—" }}
       </template>
       <template #supplier="{ row }">
-        {{ row.supplier || row.supplier_name || "-" }}
+        {{ row.supplier || row.supplier_name || "—" }}
       </template>
       <template #channel_name="{ row }">
         <ElTooltip
@@ -96,7 +96,7 @@
       </template>
       <template #status_code="{ row }">
         <ElTag :type="statusTagType(row.status_code)">
-          {{ row.status_code || "-" }}
+          {{ row.status_code || "—" }}
         </ElTag>
       </template>
       <template #response_result="{ row }">
@@ -119,7 +119,7 @@
       <template #header>
         <CommonDrawerHeader
           :title="$t('operations.monitoring.detail.title')"
-          :subtitle="currentDetail?.serial_no || '-'"
+          :subtitle="currentDetail?.serial_no || '—'"
         />
       </template>
 
@@ -534,7 +534,7 @@ const formatTimestampWithMillis = (value: string | number | null) => {
 const getCallMonitorResponseResult = (
   row: CallMonitorItem | null | undefined,
 ) => {
-  if (!row) return "-";
+  if (!row) return "—";
   const detail = (row.detail || {}) as Record<string, unknown>;
   const fromDetail = (key: string) =>
     typeof detail[key] === "string" ? (detail[key] as string) : "";
@@ -544,7 +544,7 @@ const getCallMonitorResponseResult = (
     fromDetail("response_result") ||
     fromDetail("response_flags") ||
     "";
-  return value.trim() || "-";
+  return value.trim() || "—";
 };
 
 const channelText = (row: CallMonitorItem | null | undefined): string => {

@@ -13,7 +13,7 @@ import {
   useSettingStore,
   appearanceServerRevision,
 } from "@/store/modules/setting";
-import { ContainerWidthEnum, SystemThemeEnum } from "@/enums/appEnum";
+import { SystemThemeEnum } from "@/enums/appEnum";
 import { headerBarConfig } from "@/config/modules/headerBar";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { logger } from "@/utils/sys";
@@ -24,7 +24,6 @@ import { createAppearancePreview } from "./appearancePreview";
 export interface LocalAppearanceSettings {
   systemThemeMode: SystemThemeEnum;
   systemThemeColor: string;
-  containerWidth: "100%" | "1200px";
   boxBorderMode: boolean;
   showWorkTab: boolean;
   showMenuButton: boolean;
@@ -54,18 +53,6 @@ export function useAppearanceSettings() {
   const appearanceLoading = ref(false);
   const appearanceSaving = ref(false);
   const boxStyleOptionsWithIcon = computed(() => boxStyleOptions.value);
-  const containerWidthOptions = computed(() => [
-    {
-      value: ContainerWidthEnum.FULL,
-      label: t("setting.container.list.0"),
-      icon: "icon-park-outline:auto-width",
-    },
-    {
-      value: ContainerWidthEnum.BOXED,
-      label: t("setting.container.list.1"),
-      icon: "ri:align-right",
-    },
-  ]);
   const compactDisplayLabel = (label: string) =>
     label.replace(
       /^(?:\u5f00\u542f|\u663e\u793a|\u542f\u7528|Show |Display |Enable )/,
@@ -133,7 +120,6 @@ export function useAppearanceSettings() {
   const localAppearanceSettings = reactive<LocalAppearanceSettings>({
     systemThemeMode: SystemThemeEnum.LIGHT,
     systemThemeColor: "#5D87FF",
-    containerWidth: ContainerWidthEnum.FULL,
     boxBorderMode: false,
     showWorkTab: false,
     showMenuButton: true,
@@ -151,7 +137,6 @@ export function useAppearanceSettings() {
   const readStoreAppearance = (): LocalAppearanceSettings => ({
     systemThemeMode: settingStore.systemThemeMode,
     systemThemeColor: settingStore.systemThemeColor,
-    containerWidth: settingStore.containerWidth,
     boxBorderMode: settingStore.boxBorderMode,
     showWorkTab: settingStore.showWorkTab,
     showMenuButton: settingStore.showMenuButton,
@@ -186,7 +171,6 @@ export function useAppearanceSettings() {
     settingStore.tabStyle = values.tabStyle;
     settingStore.pageTransition = values.pageTransition;
     settingStore.setCustomRadius(values.customRadius);
-    settingStore.setContainerWidth(values.containerWidth as ContainerWidthEnum);
     const boxMode = values.boxBorderMode ? "border-mode" : "shadow-mode";
     document.documentElement.setAttribute("data-box-mode", boxMode);
     settingStore.applyToDom();
@@ -206,7 +190,6 @@ export function useAppearanceSettings() {
   const buildAppearanceRequest = (): UpdateAppearanceRequest => ({
     system_theme_mode: localAppearanceSettings.systemThemeMode,
     system_theme_color: localAppearanceSettings.systemThemeColor,
-    container_width: localAppearanceSettings.containerWidth,
     box_border_mode: localAppearanceSettings.boxBorderMode,
     show_work_tab: localAppearanceSettings.showWorkTab,
     show_menu_button: localAppearanceSettings.showMenuButton,
@@ -328,7 +311,6 @@ export function useAppearanceSettings() {
     pageTransitionOptions,
     customRadiusOptions,
     boxStyleOptionsWithIcon,
-    containerWidthOptions,
     displaySettings,
     localAppearanceSettings,
     appearanceLoading,

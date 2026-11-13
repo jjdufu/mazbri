@@ -28,16 +28,16 @@
           />
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.name')">{{
-          tenant?.name
+          tenant?.name || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactPerson')">{{
-          tenant?.contact_person || "-"
+          tenant?.contact_person || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactPhone')">{{
-          tenant?.contact_phone || "-"
+          tenant?.contact_phone || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactEmail')">{{
-          tenant?.contact_email || "-"
+          tenant?.contact_email || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.status')">
           <ElSwitch

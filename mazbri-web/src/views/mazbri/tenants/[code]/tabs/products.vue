@@ -39,7 +39,7 @@
       </template>
 
       <template #description="{ row }">
-        {{ row.description || "-" }}
+        {{ row.description || "—" }}
       </template>
       <template #granted_at="{ row }">
         {{ formatDate(row.granted_at) }}
@@ -58,7 +58,7 @@
               : $t("common.status.disabled")
           }}
         </ElTag>
-        <span v-else>-</span>
+        <span v-else>—</span>
       </template>
       <template #operations="{ row }">
         <TableActionRow>

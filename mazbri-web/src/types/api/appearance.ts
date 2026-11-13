@@ -3,7 +3,6 @@ import type { SystemThemeEnum } from "@/enums/appEnum";
 export interface AppearanceSettings {
   system_theme_mode: SystemThemeEnum;
   system_theme_color: string;
-  container_width: "100%" | "1200px";
   box_border_mode: boolean;
   menu_open_width: number;
   show_work_tab: boolean;
@@ -23,7 +22,6 @@ export interface AppearanceSettings {
 export interface UpdateAppearanceRequest {
   system_theme_mode?: SystemThemeEnum;
   system_theme_color?: string;
-  container_width?: "100%" | "1200px";
   box_border_mode?: boolean;
   menu_open_width?: number;
   show_work_tab?: boolean;

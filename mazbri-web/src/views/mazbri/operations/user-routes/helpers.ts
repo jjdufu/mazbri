@@ -59,7 +59,7 @@ export function routeStatusLabel(value?: string) {
   if (value === "active") return $t("routes.status.active");
   if (value === "inactive") return $t("routes.status.inactive");
   if (value === "suspended") return $t("routes.status.suspended");
-  return value || "-";
+  return value || "—";
 }
 
 export function routeStatusType(value?: string) {
@@ -72,7 +72,7 @@ export function channelStatusLabel(value?: string) {
   if (value === "active") return $t("routes.status.active");
   if (value === "inactive") return $t("routes.status.inactive");
   if (value === "suspended") return $t("routes.status.suspended");
-  return value || "-";
+  return value || "—";
 }
 
 export function failureTypeLabel(value: string) {

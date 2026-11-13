@@ -66,8 +66,7 @@ import { useWorktabStore } from "@/store/modules/worktab";
 defineOptions({ name: "ArtPageContent" });
 const route = useRoute();
 const { containerMinHeight } = useAutoLayoutHeight();
-const { pageTransition, containerWidth, refresh } =
-  storeToRefs(useSettingStore());
+const { pageTransition, refresh } = storeToRefs(useSettingStore());
 const { keepAliveExclude } = storeToRefs(useWorktabStore());
 const isRefresh = shallowRef(true);
 const isOpenRouteInfo = import.meta.env.VITE_OPEN_ROUTE_INFO;
@@ -106,7 +105,7 @@ const containerStyle = computed(
           background: "var(--default-bg-color)",
         }
       : {
-          maxWidth: containerWidth.value,
+          width: "100%",
         },
 );
 const contentStyle = computed(

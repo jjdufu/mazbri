@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import AppConfig from "@/config";
-import { ContainerWidthEnum, SystemThemeEnum } from "@/enums/appEnum";
+import { SystemThemeEnum } from "@/enums/appEnum";
 import { useCeremony } from "@/hooks/core/useCeremony";
 import type {
   AppearanceSettings,
@@ -73,12 +73,6 @@ export const useSettingStore = defineStore(
     });
     const menuOpen = computed(() => layoutStore.menuOpen);
     const dualMenuShowText = computed(() => layoutStore.dualMenuShowText);
-    const containerWidth = computed({
-      get: () => layoutStore.containerWidth,
-      set: (value) => {
-        layoutStore.containerWidth = value;
-      },
-    });
     const boxBorderMode = computed({
       get: () => layoutStore.boxBorderMode,
       set: (value) => {
@@ -191,8 +185,6 @@ export const useSettingStore = defineStore(
       }
       themeStore.systemThemeColor = settings.system_theme_color;
       themeStore.darkThemeStyle = settings.dark_theme_style || "obsidian";
-      layoutStore.containerWidth =
-        settings.container_width as ContainerWidthEnum;
       layoutStore.boxBorderMode = settings.box_border_mode;
       layoutStore.menuOpenWidth = settings.menu_open_width;
       displayStore.showWorkTab = settings.show_work_tab;
@@ -272,7 +264,6 @@ export const useSettingStore = defineStore(
       menuOpenWidth,
       menuOpen,
       dualMenuShowText,
-      containerWidth,
       boxBorderMode,
       getMenuOpenWidth,
       showMenuButton,
@@ -310,7 +301,6 @@ export const useSettingStore = defineStore(
       setMenuOpenWidth: layoutStore.setMenuOpenWidth,
       setMenuOpen: layoutStore.setMenuOpen,
       setDualMenuShowText: layoutStore.setDualMenuShowText,
-      setContainerWidth: layoutStore.setContainerWidth,
       setBorderMode: layoutStore.setBorderMode,
       setButton: displayStore.setButton,
       setFastEnter: displayStore.setFastEnter,

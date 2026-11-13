@@ -3,7 +3,7 @@
     :title="$t('menus.mazbri.callbackList')"
     icon="ri:webhook-line"
   >
-    <div class="callback-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+    <div class="callback-list-page">
       <div class="page-header-tabs-bar">
         <ElTabs
           :model-value="activeTab"
@@ -20,7 +20,7 @@
         <div ref="headerActionsEl" class="page-header-tabs-actions" />
       </div>
 
-    <div v-show="activeTab === 'subscriptions'" class="tab-panel" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+    <div v-show="activeTab === 'subscriptions'" class="tab-panel">
       <ResourceTableShell
         v-model:columns="subscriptionColumns"
         :title="$t('callbacks.tabs.subscriptions')"
@@ -114,7 +114,7 @@
       </ResourceTableShell>
     </div>
 
-    <div v-show="activeTab === 'deliveries'" class="tab-panel" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+    <div v-show="activeTab === 'deliveries'" class="tab-panel">
       <ResourceTableShell
         v-model:columns="deliveryColumns"
         :title="$t('callbacks.tabs.deliveries')"
@@ -621,7 +621,7 @@ const deliveryStatusLabel = (status: string) => {
   if (status === "failed") return $t("callbacks.status.failed");
   if (status === "abandoned") return $t("callbacks.status.abandoned");
   if (status === "retrying") return $t("callbacks.status.retrying");
-  return status || "-";
+  return status || "—";
 };
 onMounted(() => {
   getData();

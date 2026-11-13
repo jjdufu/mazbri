@@ -21,7 +21,3 @@ export enum LanguageEnum {
   ZH = "zh",
   EN = "en",
 }
-export enum ContainerWidthEnum {
-  FULL = "100%",
-  BOXED = "1200px",
-}

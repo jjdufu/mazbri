@@ -233,7 +233,7 @@
         >
           <span class="mode">{{ r.mode }}</span>
           <span class="ep">{{ r.endpoint_key || "—" }}</span>
-          <span class="ms">{{ r.latency_ms ?? "-" }}ms</span>
+          <span class="ms">{{ r.latency_ms ?? "—" }}ms</span>
         </button>
       </div>
     </div>

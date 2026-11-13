@@ -95,10 +95,10 @@
           formatDate(currentLog?.timestamp || "")
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorName')">{{
-          currentLog ? formatActorName(currentLog) : "-"
+          currentLog ? formatActorName(currentLog) : EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorRole')">{{
-          currentLog?.actor_role || "-"
+          currentLog?.actor_role || EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.action')">{{
           formatAction(currentLog?.action || "")
@@ -138,16 +138,16 @@
           />
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.method')">{{
-          currentLog?.method || "-"
+          currentLog?.method || EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.path')">{{
-          currentLog?.path || "-"
+          currentLog?.path || EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.statusCode')">{{
-          currentLog?.status_code ?? "-"
+          currentLog?.status_code ?? EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('auditLogs.detail.fields.durationMs')">{{
-          currentLog?.duration_ms ?? "-"
+          currentLog?.duration_ms ?? EMPTY_PLACEHOLDER
         }}</ElDescriptionsItem>
         <ElDescriptionsItem
           :label="$t('auditLogs.detail.fields.failureReason')"
@@ -158,7 +158,7 @@
         <ElDescriptionsItem
           :label="$t('auditLogs.detail.fields.userAgent')"
           :span="2"
-          >{{ currentLog?.user_agent || "-" }}</ElDescriptionsItem
+          >{{ currentLog?.user_agent || EMPTY_PLACEHOLDER }}</ElDescriptionsItem
         >
         <ElDescriptionsItem
           v-if="currentLog?.request_summary"
@@ -288,7 +288,7 @@ import {
   exportAuditLogs,
 } from "@/api/audit";
 import { logger } from "@/utils/sys";
-import { formatDateTime as formatDate } from "@/utils/format";
+import { EMPTY_PLACEHOLDER, formatDateTime as formatDate } from "@/utils/format";
 import { downloadCsv } from "@/utils/csv";
 import { stripUrlScheme } from "@/utils/sensitive";
 import { $t } from "@/locales";
@@ -573,7 +573,8 @@ const formatDetailLabel = (key: string) => {
 };
 const SENSITIVE_DETAIL_KEYS = new Set(["endpoint_url", "upstream_url"]);
 const formatDetailValue = (value: unknown): string => {
-  if (value === null || value === undefined || value === "") return "-";
+  if (value === null || value === undefined || value === "")
+    return EMPTY_PLACEHOLDER;
   if (typeof value === "boolean")
     return value ? $t("auditLogs.values.yes") : $t("auditLogs.values.no");
   if (typeof value === "number") return String(value);
@@ -603,7 +604,7 @@ const formatDetailValue = (value: unknown): string => {
           : formatDetailValue(item);
       return `${formatDetailLabel(key)}：${value}`;
     });
-  return summary.length ? summary.join("；") : "-";
+  return summary.length ? summary.join("；") : EMPTY_PLACEHOLDER;
 };
 const formatRouteConfig = (config: Record<string, unknown>) => {
   const lines = [
@@ -673,10 +674,10 @@ const formatActorName = (log: AuditLog) => {
   if (log.actor_name) return log.actor_name;
   return log.actor_type === "anonymous"
     ? $t("auditLogs.values.anonymous")
-    : "-";
+    : EMPTY_PLACEHOLDER;
 };
 const formatFailureReason = (reason?: string | null) => {
-  if (!reason) return "-";
+  if (!reason) return EMPTY_PLACEHOLDER;
   return FAILURE_REASON_LABELS[reason]
     ? $t(FAILURE_REASON_LABELS[reason])
     : reason.replaceAll("_", " ");
@@ -815,21 +816,23 @@ const handleExport = async (command: string) => {
         const record: AuditLogCsvRow = {
           timestamp: formatDate(row.timestamp),
           actor_name: formatActorName(row),
-          actor_role: row.actor_role || "-",
+          actor_role: row.actor_role || EMPTY_PLACEHOLDER,
           action: formatAction(row.action),
           resource_type: formatResourceType(row.resource_type),
           status: $t(statusLabelKey(row.status)),
           failure_reason: formatFailureReason(row.failure_reason),
           ip_address: formatIpAddress(row.ip_address),
-          request_id: row.request_id || "-",
-          route: [row.method, row.path].filter(Boolean).join(" ") || "-",
+          request_id: row.request_id || EMPTY_PLACEHOLDER,
+          route:
+            [row.method, row.path].filter(Boolean).join(" ") ||
+            EMPTY_PLACEHOLDER,
           status_code:
             row.status_code === null || row.status_code === undefined
-              ? "-"
+              ? EMPTY_PLACEHOLDER
               : String(row.status_code),
           duration_ms:
             row.duration_ms === null || row.duration_ms === undefined
-              ? "-"
+              ? EMPTY_PLACEHOLDER
               : String(row.duration_ms),
           service: formatService(row.service),
           details: formatDetailValue(row.details),

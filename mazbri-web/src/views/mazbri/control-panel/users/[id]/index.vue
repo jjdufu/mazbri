@@ -79,7 +79,7 @@
         <ElDescriptionsItem
           :label="$t('userManagement.detail.labels.lastLogin')"
         >
-          {{ admin?.last_login_at ? formatDate(admin.last_login_at) : "-" }}
+          {{ admin?.last_login_at ? formatDate(admin.last_login_at) : "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.createdAt')">{{
           formatDate(admin?.created_at || "")

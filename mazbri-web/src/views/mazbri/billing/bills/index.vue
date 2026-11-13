@@ -3,7 +3,7 @@
     :title="$t('menus.mazbri.billList')"
     icon="ri:file-list-3-line"
   >
-    <div ref="pageRef" class="bill-ops-page ops-page-fill">
+    <div ref="pageRef" class="bill-ops-page">
       <ResourceTablePageShell
           v-model:columns="columns"
           v-model="searchKeyword"
@@ -132,7 +132,7 @@
                 <SurfaceCardHeader
                   align="start"
                   :title="getBillDisplayName(currentBill)"
-                  :description="`${currentBill.tenant_code || currentBill.party_code || '-'} · ${currentBill.tenant_id || currentBill.party_id || '-'}`"
+                  :description="`${currentBill.tenant_code || currentBill.party_code || '—'} · ${currentBill.tenant_id || currentBill.party_id || '—'}`"
                   :meta="formatMoney(currentBill.total)"
                 />
               </template>
@@ -801,14 +801,14 @@ const getBillKindLabel = (kind?: string | null) => {
     customer: $t("billing.billKinds.customer"),
     upstream: $t("billing.billKinds.upstream"),
   };
-  return labels[kind || "customer"] || kind || "-";
+  return labels[kind || "customer"] || kind || "—";
 };
 const getBillCellText = (columnKey: string, bill: Bill) => {
   switch (columnKey) {
     case "tenant_name":
-      return bill.tenant_name || bill.party_name || "-";
+      return bill.tenant_name || bill.party_name || "—";
     case "tenant_code":
-      return bill.tenant_code || bill.party_code || "-";
+      return bill.tenant_code || bill.party_code || "—";
     case "bill_kind":
       return getBillKindLabel(bill.bill_kind);
     case "period_start":
@@ -841,13 +841,13 @@ const getBillColumnWeight = (columnKey: string) => {
   }
 };
 const getBillDisplayName = (bill: Bill | null) => {
-  if (!bill) return "-";
+  if (!bill) return "—";
   if (bill.bill_kind === "upstream") {
     return (
       bill.party_name || bill.tenant_name || $t("billing.billKinds.upstream")
     );
   }
-  return bill.tenant_name || bill.party_name || "-";
+  return bill.tenant_name || bill.party_name || "—";
 };
 useAdaptiveTableColumns({
   columns,

@@ -431,7 +431,7 @@ function alertLabels(labels: Record<string, string>) {
 }
 
 function fmt(n: number | null | undefined) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "N/A";
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n);
 }
 

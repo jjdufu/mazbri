@@ -128,7 +128,7 @@
           :title="$t('upstreamOnboarding.done.title')"
           :sub-title="
             $t('upstreamOnboarding.done.subtitle', {
-              version: result?.route_version ?? '-',
+              version: result?.route_version ?? '—',
             })
           "
         />

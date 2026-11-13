@@ -1,5 +1,5 @@
 <template>
-  <div ref="pageRef" class="channel-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div ref="pageRef" class="channel-page">
     <ResourceTableShell
       v-model:columns="columns"
       :title="$t('channels.page.title')"
@@ -339,21 +339,21 @@ const channelImportExistingData = computed(() =>
 const getChannelCellText = (columnKey: string, row: Channel) => {
   switch (columnKey) {
     case "channel_code":
-      return row.channel_code || "-";
+      return row.channel_code || "—";
     case "name":
-      return row.name || "-";
+      return row.name || "—";
     case "supplier":
-      return `${row.supplier_name || "-"} (${row.supplier_code || "-"})`;
+      return `${row.supplier_name || "—"} (${row.supplier_code || "—"})`;
     case "path_prefix":
-      return row.path_prefix || "-";
+      return row.path_prefix || "—";
     case "qps_limit":
-      return String(row.qps_limit ?? "-");
+      return String(row.qps_limit ?? "—");
     case "status":
       return $t(`channels.status.${row.status}`);
     case "operations":
       return `${$t("common.actions.details")} ${$t("common.actions.delete")}`;
     default:
-      return row.name || row.channel_code || "-";
+      return row.name || row.channel_code || "—";
   }
 };
 const getChannelColumnWeight = (columnKey: string) => {

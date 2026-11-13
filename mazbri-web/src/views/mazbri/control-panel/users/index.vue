@@ -66,7 +66,7 @@
         }}</ElTag>
       </template>
       <template #last_login_at="{ row }">
-        {{ row.last_login_at ? formatDate(row.last_login_at) : "-" }}
+        {{ row.last_login_at ? formatDate(row.last_login_at) : EMPTY_PLACEHOLDER }}
       </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
@@ -115,6 +115,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
 import type {
@@ -154,7 +155,10 @@ import {
   getStatusType,
   getStatusLabel,
 } from "@/utils/display-labels";
-import { formatDateTime as formatDate } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatDateTime as formatDate,
+} from "@/utils/format";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 defineOptions({ name: "UserList" });
 type ExportCommand = "page" | "selected";
@@ -178,6 +182,7 @@ interface AdminExportRow extends Record<string, unknown> {
   created_at: string;
 }
 const router = useRouter();
+const { t, locale } = useI18n();
 const settingStore = useSettingStore();
 const isDarkMode = computed(() => settingStore.isDark);
 const getUserStatus = (row: AdminUser): AdminStatus => {
@@ -227,69 +232,88 @@ watch(
   },
   { deep: true },
 );
-const columns = ref<ColumnOption<AdminUser>[]>([
-  { type: "selection", width: 48 },
-  {
-    prop: "username",
-    label: $t("userManagement.list.columns.username"),
-    minWidth: 88,
-  },
-  {
-    prop: "display_name",
-    label: $t("userManagement.list.columns.displayName"),
-    minWidth: 88,
-  },
-  {
-    prop: "email",
-    label: $t("userManagement.list.columns.email"),
-    minWidth: 110,
-  },
-  {
-    prop: "role",
-    label: $t("userManagement.list.columns.role"),
-    minWidth: 88,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("userManagement.list.columns.status"),
-    minWidth: 80,
-    useSlot: true,
-  },
-  {
-    prop: "mfa_enabled",
-    label: $t("userManagement.list.columns.mfa"),
-    minWidth: 68,
-    align: "center",
-    useSlot: true,
-  },
-  {
-    prop: "mfa_required",
-    label: $t("userManagement.list.columns.mfaRequired"),
-    minWidth: 84,
-    align: "center",
-    useSlot: true,
-  },
-  {
-    prop: "last_login_at",
-    label: $t("userManagement.list.columns.lastLogin"),
-    minWidth: 148,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("userManagement.list.columns.createdAt"),
-    minWidth: 148,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 116,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+const buildUserColumns = (): ColumnOption<AdminUser>[] => {
+  const isEn = String(locale.value).startsWith("en");
+  return [
+    { type: "selection", width: 48 },
+    {
+      prop: "username",
+      label: t("userManagement.list.columns.username"),
+      minWidth: 108,
+    },
+    {
+      prop: "display_name",
+      label: t("userManagement.list.columns.displayName"),
+      minWidth: 112,
+    },
+    {
+      prop: "email",
+      label: t("userManagement.list.columns.email"),
+      minWidth: 132,
+    },
+    {
+      prop: "role",
+      label: t("userManagement.list.columns.role"),
+      minWidth: isEn ? 168 : 140,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: t("userManagement.list.columns.status"),
+      minWidth: 80,
+      useSlot: true,
+    },
+    {
+      prop: "mfa_enabled",
+      label: t("userManagement.list.columns.mfa"),
+      minWidth: 68,
+      align: "center",
+      useSlot: true,
+    },
+    {
+      prop: "mfa_required",
+      label: t("userManagement.list.columns.mfaRequired"),
+      minWidth: isEn ? 104 : 84,
+      align: "center",
+      useSlot: true,
+    },
+    {
+      prop: "last_login_at",
+      label: t("userManagement.list.columns.lastLogin"),
+      minWidth: 180,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("userManagement.list.columns.createdAt"),
+      minWidth: 180,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: isEn ? 172 : 148,
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+};
+const columns = ref<ColumnOption<AdminUser>[]>(buildUserColumns());
+watch(locale, () => {
+  const prev = new Map(
+    columns.value.map((col) => [String(col.prop ?? col.type ?? ""), col]),
+  );
+  columns.value = buildUserColumns().map((col) => {
+    const existing = prev.get(String(col.prop ?? col.type ?? ""));
+    return existing
+      ? {
+          ...col,
+          visible: existing.visible ?? col.visible,
+          checked: existing.checked ?? col.checked,
+        }
+      : col;
+  });
+});
 const adminImportColumns: ColumnConfig[] = [
   {
     key: "username",

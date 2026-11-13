@@ -3,7 +3,7 @@
     :title="$t('menus.mazbri.tenantList')"
     icon="ri:building-line"
   >
-    <div ref="pageRef" class="tenant-list-page ops-page-fill">
+    <div ref="pageRef" class="tenant-list-page">
       <ResourceTablePageShell
       v-model="searchKeyword"
       v-model:filters="listFilters"
@@ -103,7 +103,6 @@
       :columns="tenantImportColumns"
       :format-hint="tenantImportFormatHint"
       unique-key="tenant_code"
-      :existing-data="tenantImportExistingData"
       :validator="validateTenantImportRow"
       :transformer="transformTenantImportRow"
       :on-import="handleTenantImport"
@@ -141,12 +140,15 @@ import {
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
+import { useI18n } from "vue-i18n";
 import { useTable } from "@/hooks/core/useTable";
 import { logger } from "@/utils/sys";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import { getStatusType, getStatusLabel } from "@/utils/display-labels";
-import { formatDateTime as formatDate } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatDateTime as formatDate,
+} from "@/utils/format";
 import { tenantsCatalog } from "@/list-catalog/tenants";
 import type { ListFilter } from "@/types/list-query";
 import { watch } from "vue";
@@ -172,50 +174,66 @@ interface TenantExportRow extends Record<string, unknown> {
   created_at: string;
 }
 const router = useRouter();
+const { t, locale } = useI18n();
 const pageRef = ref<HTMLElement | null>(null);
 const createVisible = ref(false);
 const importVisible = ref(false);
 const columns = ref<ColumnOption<Tenant>[]>([]);
-const tenantColumns: ColumnOption<Tenant>[] = [
-  { type: "selection", width: 55 },
-  { prop: "tenant_code", label: $t("tenant.fields.code"), width: 120, useSlot: true },
-  { prop: "tenant_id", label: $t("tenant.fields.accountId"), width: 150, useSlot: true },
-  { prop: "name", label: $t("common.fields.name"), minWidth: 100 },
-  {
-    prop: "contact_person",
-    label: $t("tenant.fields.contactPerson"),
-    width: 120,
-  },
-  {
-    prop: "contact_phone",
-    label: $t("tenant.fields.contactPhone"),
-    width: 130,
-  },
-  {
-    prop: "contact_email",
-    label: $t("tenant.fields.contactEmail"),
-    minWidth: 120,
-  },
-  {
-    prop: "status",
-    label: $t("common.fields.status"),
-    width: 100,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("common.fields.createdAt"),
-    width: 180,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 150,
-    fixed: "right",
-    useSlot: true,
-  },
-];
+const tenantColumns = computed<ColumnOption<Tenant>[]>(() => {
+  const isEn = String(locale.value).startsWith("en");
+  return [
+    { type: "selection", width: 55 },
+    {
+      prop: "tenant_code",
+      label: t("tenant.fields.code"),
+      width: 120,
+      useSlot: true,
+    },
+    {
+      prop: "tenant_id",
+      label: t("tenant.fields.accountId"),
+      width: 150,
+      useSlot: true,
+    },
+    { prop: "name", label: t("common.fields.name"), minWidth: 100 },
+    {
+      prop: "contact_person",
+      label: t("tenant.fields.contactPerson"),
+      width: 120,
+    },
+    {
+      prop: "contact_phone",
+      label: t("tenant.fields.contactPhone"),
+      width: 130,
+    },
+    {
+      prop: "contact_email",
+      label: t("tenant.fields.contactEmail"),
+      minWidth: 120,
+    },
+    {
+      prop: "status",
+      label: t("common.fields.status"),
+      width: 100,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("common.fields.createdAt"),
+      width: 180,
+      minWidth: 180,
+      maxWidth: 188,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: isEn ? 256 : 212,
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+});
 const tenantImportColumns: ColumnConfig[] = [
   { key: "tenant_code", label: $t("tenant.fields.code"), required: true },
   { key: "tenant_id", label: $t("tenant.fields.accountId"), required: true },
@@ -303,25 +321,27 @@ const emptyDescription = computed(() =>
 const getTenantCellText = (columnKey: string, row: Tenant) => {
   switch (columnKey) {
     case "tenant_code":
-      return row.tenant_code || "-";
+      return row.tenant_code || EMPTY_PLACEHOLDER;
     case "tenant_id":
-      return row.tenant_id || "-";
+      return row.tenant_id || EMPTY_PLACEHOLDER;
     case "name":
-      return row.name || "-";
+      return row.name || EMPTY_PLACEHOLDER;
     case "contact_person":
-      return row.contact_person || "-";
+      return row.contact_person || EMPTY_PLACEHOLDER;
     case "contact_phone":
-      return row.contact_phone || "-";
+      return row.contact_phone || EMPTY_PLACEHOLDER;
     case "contact_email":
-      return row.contact_email || "-";
+      return row.contact_email || EMPTY_PLACEHOLDER;
     case "status":
       return getStatusLabel(tenantStatusKey(row));
     case "created_at":
       return formatDate(row.created_at);
     case "operations":
-      return `${$t("common.actions.details")} ${$t("common.actions.delete")}`;
+      return `${t("common.actions.details")} ${
+        row.enabled ? t("tenant.actions.disable") : t("tenant.actions.enable")
+      } ${t("common.actions.delete")}`;
     default:
-      return row.name || row.tenant_code || "-";
+      return row.name || row.tenant_code || EMPTY_PLACEHOLDER;
   }
 };
 const getTenantColumnWeight = (columnKey: string) => {
@@ -355,12 +375,6 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getTenantCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getTenantColumnWeight(columnKey),
 });
-const tenantImportRows = ref<Tenant[]>([]);
-const tenantImportExistingData = computed(() =>
-  tenantImportRows.value.map((row) => ({
-    tenant_code: row.tenant_code,
-  })),
-);
 const tenantImportFormatHint = computed(() =>
   [
     $t("feedback.import.csvFormatHint"),
@@ -463,18 +477,7 @@ const transformTenantImportRow = (
   contact_phone: row.contact_phone.trim(),
   contact_email: row.contact_email.trim(),
 });
-const loadTenantImportRows = async () => {
-  try {
-    tenantImportRows.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchTenantList({ page, page_size: pageSize });
-      return { items: res.tenants, total: res.pagination.total };
-    });
-  } catch {
-    tenantImportRows.value = tableData.value;
-  }
-};
-const openImport = async () => {
-  await loadTenantImportRows();
+const openImport = () => {
   importVisible.value = true;
 };
 const handleExportCommand = (command: string) => {

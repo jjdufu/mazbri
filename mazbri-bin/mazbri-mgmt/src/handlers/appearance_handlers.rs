@@ -54,7 +54,6 @@ pub async fn update_appearance_settings(
                     { "scope" : "appearance_settings", "changes" : {
                     "system_theme_mode" : payload.system_theme_mode,
                     "system_theme_color" : payload.system_theme_color,
-                    "container_width" : payload.container_width,
                     "box_border_mode" : payload.box_border_mode,
                     "menu_open_width" : payload.menu_open_width, "show_work_tab"
                     : payload.show_work_tab, "show_menu_button" : payload

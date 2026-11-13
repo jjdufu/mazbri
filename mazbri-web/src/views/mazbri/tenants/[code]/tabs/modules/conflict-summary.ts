@@ -6,6 +6,7 @@ import type {
   UpdateTenantRateLimitConfigRequest,
 } from "@/types/api/tenant";
 import { $t } from "@/locales";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 type ConflictField = {
   labelKey: string;
   attempted: unknown;
@@ -15,8 +16,8 @@ function stringifyValue(value: unknown): string {
   if (typeof value === "boolean") {
     return value ? $t("common.status.enabled") : $t("common.status.disabled");
   }
-  if (value == null) return "-";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "-";
+  if (value == null) return EMPTY_PLACEHOLDER;
+  if (Array.isArray(value)) return value.length ? value.join(", ") : EMPTY_PLACEHOLDER;
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
@@ -35,12 +36,12 @@ function buildConflictSummary(
   if (changedFields.length === 0) {
     return [
       $t("common.conflict.updatedByOthers", { scopeLabel }),
-      $t("common.conflict.latestUpdatedAt", { updatedAt: updatedAt ?? "-" }),
+      $t("common.conflict.latestUpdatedAt", { updatedAt: updatedAt ?? EMPTY_PLACEHOLDER }),
     ].join("\n");
   }
   return [
     $t("common.conflict.recheckLatest", { scopeLabel }),
-    $t("common.conflict.latestUpdatedAt", { updatedAt: updatedAt ?? "-" }),
+    $t("common.conflict.latestUpdatedAt", { updatedAt: updatedAt ?? EMPTY_PLACEHOLDER }),
     "",
     ...changedFields.flatMap((field) => [
       $t(field.labelKey),

@@ -51,7 +51,6 @@
         >
           <LayoutSettings
             :model-value="localAppearanceSettings"
-            :container-width-options="containerWidthOptions"
             :box-style-options="boxStyleOptionsWithIcon"
             @update:model-value="handleAppearanceModelUpdate"
           />
@@ -105,7 +104,6 @@ const {
   pageTransitionOptions,
   customRadiusOptions,
   boxStyleOptionsWithIcon,
-  containerWidthOptions,
   displaySettings,
   localAppearanceSettings,
   appearanceLoading,

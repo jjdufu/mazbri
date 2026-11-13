@@ -271,7 +271,7 @@
             </ElTag>
           </ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('billing.reconciliation.note')">
-            {{ currentRow.resolution_note || "-" }}
+            {{ currentRow.resolution_note || "—" }}
           </ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('common.fields.createdAt')">
             {{ formatDate(currentRow.created_at) }}
@@ -710,13 +710,13 @@ const resolveRow = ref<ReconciliationDiscrepancy | null>(null);
 
 const formatRatio = (value: string | number | null | undefined) => {
   const n = Number(value ?? 0);
-  if (Number.isNaN(n)) return String(value ?? "-");
+  if (Number.isNaN(n)) return String(value ?? "—");
   return `${(n * 100).toFixed(2)}%`;
 };
 
 const formatCount = (value: string | number | null | undefined) => {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return String(value ?? "-");
+  if (!Number.isFinite(n)) return String(value ?? "—");
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(n);
 };
 
@@ -789,7 +789,7 @@ const detailView = computed<DetailView | null>(() => {
   const upstreamCalls = row.upstream_preagg_call_count;
   const comparisonLabel = sourceLabel("request_logs_gateway");
   const errorText =
-    row.status === "error" ? (asString(details.error) ?? "-") : null;
+    row.status === "error" ? (asString(details.error) ?? "—") : null;
   const thresholdRaw = asString(details.loss_ratio_threshold);
   const threshold =
     thresholdRaw != null && Number.isFinite(Number(thresholdRaw))

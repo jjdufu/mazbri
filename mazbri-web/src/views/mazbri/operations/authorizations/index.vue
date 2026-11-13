@@ -360,13 +360,13 @@ const getAuthorizationCellText = (
 ) => {
   switch (columnKey) {
     case "tenant_code":
-      return row.tenant_code || "-";
+      return row.tenant_code || "—";
     case "tenant_name":
-      return row.tenant_name || "-";
+      return row.tenant_name || "—";
     case "product_code":
-      return row.product_code || "-";
+      return row.product_code || "—";
     case "product_name":
-      return row.product_name || "-";
+      return row.product_name || "—";
     case "unit_price":
       return `${row.unit_price} ${$t("common.currencies.cny")}`;
     case "created_at":
@@ -374,7 +374,7 @@ const getAuthorizationCellText = (
     case "operations":
       return `${$t("authorization.list.actions.modify")} ${$t("authorization.list.actions.revoke")}`;
     default:
-      return row.tenant_name || row.product_name || "-";
+      return row.tenant_name || row.product_name || "—";
   }
 };
 const getAuthorizationColumnWeight = (columnKey: string) => {

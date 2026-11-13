@@ -158,13 +158,13 @@
         </span>
       </template>
       <template #description="{ row }">
-        {{ row.description || "-" }}
+        {{ row.description || "—" }}
       </template>
       <template #payment_method="{ row }">
         {{ getPaymentMethodLabel(row.payment_method) }}
       </template>
       <template #operator_name="{ row }">
-        {{ row.operator_name || "-" }}
+        {{ row.operator_name || "—" }}
       </template>
       <template #created_at="{ row }">
         {{ formatDateTime(row.created_at) }}

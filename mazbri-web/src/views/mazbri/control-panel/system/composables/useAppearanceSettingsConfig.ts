@@ -1,7 +1,6 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import AppConfig from "@/config";
-import { ContainerWidthEnum } from "@/enums/appEnum";
 import { headerBarConfig } from "@/config/modules/headerBar";
 export function useAppearanceSettingsConfig() {
   const { t } = useI18n();
@@ -48,18 +47,6 @@ export function useAppearanceSettingsConfig() {
     { value: "0.75", label: "0.75" },
     { value: "1", label: "1" },
   ];
-  const containerWidthOptions = computed(() => [
-    {
-      value: ContainerWidthEnum.FULL,
-      label: t("setting.container.list[0]"),
-      icon: "icon-park-outline:auto-width",
-    },
-    {
-      value: ContainerWidthEnum.BOXED,
-      label: t("setting.container.list[1]"),
-      icon: "ri:align-right",
-    },
-  ]);
   const boxStyleOptions = computed(() => [
     {
       value: "border-mode",
@@ -190,7 +177,6 @@ export function useAppearanceSettingsConfig() {
     tabStyleOptions,
     pageTransitionOptions,
     customRadiusOptions,
-    containerWidthOptions,
     boxStyleOptions,
     configOptions,
     basicSettingsConfig,

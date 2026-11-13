@@ -2,6 +2,12 @@
 export const DISPLAY_TIME_ZONE = "Asia/Shanghai";
 
 const EMPTY = "—";
+export const EMPTY_PLACEHOLDER = EMPTY;
+
+export function formatEmpty(val: unknown): string {
+  if (val === null || val === undefined || val === "") return EMPTY_PLACEHOLDER;
+  return String(val);
+}
 
 function toValidDate(date: string | Date | null | undefined): Date | null {
   if (date == null || date === "") return null;

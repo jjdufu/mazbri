@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
+  EMPTY_PLACEHOLDER,
   formatDate,
   formatDateTime,
   formatDays,
+  formatEmpty,
   formatMoney,
 } from "../format";
 
@@ -36,5 +38,14 @@ describe("format display helpers (step12)", () => {
   test("formatDateTime accepts unix seconds", () => {
     // 2024-11-03T00:00:00Z
     assert.equal(formatDateTime(1730592000), "2024-11-03 08:00:00");
+  });
+
+  test("formatEmpty standardizes empty values to em dash", () => {
+    assert.equal(EMPTY_PLACEHOLDER, "—");
+    assert.equal(formatEmpty(null), "—");
+    assert.equal(formatEmpty(undefined), "—");
+    assert.equal(formatEmpty(""), "—");
+    assert.equal(formatEmpty(0), "0");
+    assert.equal(formatEmpty("ok"), "ok");
   });
 });

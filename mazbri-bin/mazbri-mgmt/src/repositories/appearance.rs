@@ -19,7 +19,6 @@ pub struct HeaderBarToggles {
 pub struct AppearanceRow {
     pub system_theme_mode: String,
     pub system_theme_color: String,
-    pub container_width: String,
     pub box_border_mode: bool,
     pub menu_open_width: i32,
     #[serde(flatten)]
@@ -45,7 +44,7 @@ pub async fn fetch_settings(pool: &PgPool) -> Result<AppearanceRow, sqlx::Error>
         AppearanceRow,
     >(
             r"
-        SELECT system_theme_mode, system_theme_color, container_width, box_border_mode, menu_open_width,
+        SELECT system_theme_mode, system_theme_color, box_border_mode, menu_open_width,
             show_work_tab, show_menu_button, show_fast_enter, show_refresh_button,
             show_crumbs, show_language, show_nprogress, watermark_visible,
             tab_style, page_transition, custom_radius, dark_theme_style, updated_at
@@ -58,7 +57,6 @@ pub async fn fetch_settings(pool: &PgPool) -> Result<AppearanceRow, sqlx::Error>
 pub struct UpdateAppearanceParams<'a> {
     pub system_theme_mode: &'a Option<String>,
     pub system_theme_color: &'a Option<String>,
-    pub container_width: &'a Option<String>,
     pub box_border_mode: &'a Option<bool>,
     pub menu_open_width: &'a Option<i32>,
     pub show_work_tab: &'a Option<bool>,
@@ -90,17 +88,17 @@ pub async fn update_settings(
             r"
         UPDATE appearance_settings SET
             system_theme_mode = COALESCE($1, system_theme_mode), system_theme_color = COALESCE($2, system_theme_color),
-            container_width = COALESCE($3, container_width), box_border_mode = COALESCE($4, box_border_mode),
-            menu_open_width = COALESCE($5, menu_open_width), show_work_tab = COALESCE($6, show_work_tab),
-            show_menu_button = COALESCE($7, show_menu_button), show_fast_enter = COALESCE($8, show_fast_enter),
-            show_refresh_button = COALESCE($9, show_refresh_button), show_crumbs = COALESCE($10, show_crumbs),
-            show_language = COALESCE($11, show_language), show_nprogress = COALESCE($12, show_nprogress),
-            watermark_visible = COALESCE($13, watermark_visible), tab_style = COALESCE($14, tab_style),
-            page_transition = COALESCE($15, page_transition), custom_radius = COALESCE($16, custom_radius),
-            dark_theme_style = COALESCE($17, dark_theme_style),
-            updated_at = NOW(), updated_by = $18::uuid
+            container_width = '100%', box_border_mode = COALESCE($3, box_border_mode),
+            menu_open_width = COALESCE($4, menu_open_width), show_work_tab = COALESCE($5, show_work_tab),
+            show_menu_button = COALESCE($6, show_menu_button), show_fast_enter = COALESCE($7, show_fast_enter),
+            show_refresh_button = COALESCE($8, show_refresh_button), show_crumbs = COALESCE($9, show_crumbs),
+            show_language = COALESCE($10, show_language), show_nprogress = COALESCE($11, show_nprogress),
+            watermark_visible = COALESCE($12, watermark_visible), tab_style = COALESCE($13, tab_style),
+            page_transition = COALESCE($14, page_transition), custom_radius = COALESCE($15, custom_radius),
+            dark_theme_style = COALESCE($16, dark_theme_style),
+            updated_at = NOW(), updated_by = $17::uuid
         WHERE id = '00000000-0000-0000-0000-000000000100'
-        RETURNING system_theme_mode, system_theme_color, container_width, box_border_mode, menu_open_width,
+        RETURNING system_theme_mode, system_theme_color, box_border_mode, menu_open_width,
             show_work_tab, show_menu_button, show_fast_enter, show_refresh_button,
             show_crumbs, show_language, show_nprogress, watermark_visible,
             tab_style, page_transition, custom_radius, dark_theme_style, updated_at
@@ -108,7 +106,6 @@ pub async fn update_settings(
         )
         .bind(params.system_theme_mode)
         .bind(params.system_theme_color)
-        .bind(params.container_width)
         .bind(params.box_border_mode)
         .bind(params.menu_open_width)
         .bind(params.show_work_tab)
@@ -145,7 +142,7 @@ pub async fn reset_settings(pool: &PgPool, updated_by: &str) -> Result<Appearanc
             page_transition = 'fade', custom_radius = '0.25', dark_theme_style = 'obsidian',
             updated_at = NOW(), updated_by = $1::uuid
         WHERE id = '00000000-0000-0000-0000-000000000100'
-        RETURNING system_theme_mode, system_theme_color, container_width, box_border_mode, menu_open_width,
+        RETURNING system_theme_mode, system_theme_color, box_border_mode, menu_open_width,
             show_work_tab, show_menu_button, show_fast_enter, show_refresh_button,
             show_crumbs, show_language, show_nprogress, watermark_visible,
             tab_style, page_transition, custom_radius, dark_theme_style, updated_at

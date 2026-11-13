@@ -1,3 +1,5 @@
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
+
 const HTTPS_SCHEME = "https://";
 const SENSITIVE_URL_KEYS = new Set(["endpoint_url", "upstream_url"]);
 function stripScheme(value: string): string {
@@ -14,11 +16,11 @@ export function normalizeUpstreamUrlInput(value: string): string {
     : `${HTTPS_SCHEME}${trimmed}`;
 }
 export function formatUrlDisplay(value: string | null | undefined): string {
-  if (!value) return "-";
+  if (!value) return EMPTY_PLACEHOLDER;
   const trimmed = value.trim();
-  if (!trimmed) return "-";
+  if (!trimmed) return EMPTY_PLACEHOLDER;
   const withoutScheme = stripScheme(trimmed);
-  return withoutScheme || "-";
+  return withoutScheme || EMPTY_PLACEHOLDER;
 }
 export function sanitizeSensitiveValue<T>(value: T): T {
   if (Array.isArray(value)) {

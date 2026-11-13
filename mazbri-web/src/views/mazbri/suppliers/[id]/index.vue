@@ -82,7 +82,7 @@
 
         <ElDescriptions class="detail-descriptions" :column="2" border>
           <ElDescriptionsItem :label="$t('supplier.fields.id')">
-            {{ supplier?.id || "-" }}
+            {{ supplier?.id || "—" }}
           </ElDescriptionsItem>
 
           <ElDescriptionsItem :label="$t('supplier.fields.upstreamType')">
@@ -106,7 +106,7 @@
                 :placeholder="$t('supplier.form.codePlaceholder')"
               />
             </ElFormItem>
-            <span v-else>{{ supplier?.supplier_code || "-" }}</span>
+            <span v-else>{{ supplier?.supplier_code || "—" }}</span>
           </ElDescriptionsItem>
 
           <ElDescriptionsItem :label="$t('supplier.fields.name')">
@@ -116,7 +116,7 @@
                 :placeholder="$t('supplier.form.namePlaceholder')"
               />
             </ElFormItem>
-            <span v-else>{{ supplier?.name || "-" }}</span>
+            <span v-else>{{ supplier?.name || "—" }}</span>
           </ElDescriptionsItem>
 
           <ElDescriptionsItem
@@ -164,7 +164,7 @@
                 :placeholder="$t('supplier.placeholders.contractId')"
               />
             </ElFormItem>
-            <span v-else>{{ contractId || "-" }}</span>
+            <span v-else>{{ contractId || "—" }}</span>
           </ElDescriptionsItem>
 
           <ElDescriptionsItem :label="$t('supplier.fields.status')">
@@ -279,7 +279,7 @@
                   <ElOption label="POST" value="POST" />
                   <ElOption label="GET" value="GET" />
                 </ElSelect>
-                <span v-else>{{ authFlow?.method || "-" }}</span>
+                <span v-else>{{ authFlow?.method || "—" }}</span>
               </ElDescriptionsItem>
 
 
@@ -381,7 +381,7 @@
                   :disabled="!form.config.auth_flow.enabled"
                 />
                 <pre v-else class="mono-block">{{
-                  authFlow?.request_body_tpl || "-"
+                  authFlow?.request_body_tpl || "—"
                 }}</pre>
               </ElDescriptionsItem>
 
@@ -392,7 +392,7 @@
                   placeholder="$.token"
                   :disabled="!form.config.auth_flow.enabled"
                 />
-                <span v-else>{{ authFlow?.token_jsonpath || "-" }}</span>
+                <span v-else>{{ authFlow?.token_jsonpath || "—" }}</span>
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('supplier.config.expiryJsonpath')">
                 <ElInput
@@ -401,7 +401,7 @@
                   placeholder="$.expires_in"
                   :disabled="!form.config.auth_flow.enabled"
                 />
-                <span v-else>{{ authFlow?.expiry_jsonpath || "-" }}</span>
+                <span v-else>{{ authFlow?.expiry_jsonpath || "—" }}</span>
               </ElDescriptionsItem>
 
               <ElDescriptionsItem :label="$t('supplier.config.injectKey')">
@@ -427,8 +427,8 @@
                   />
                 </div>
                 <span v-else>
-                  {{ authFlow?.inject_to || "-" }} /
-                  {{ authFlow?.inject_key || "-" }}
+                  {{ authFlow?.inject_to || "—" }} /
+                  {{ authFlow?.inject_key || "—" }}
                 </span>
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('supplier.config.injectFormat')">
@@ -438,7 +438,7 @@
                   placeholder="Bearer {}"
                   :disabled="!form.config.auth_flow.enabled"
                 />
-                <span v-else>{{ authFlow?.inject_value_format || "-" }}</span>
+                <span v-else>{{ authFlow?.inject_value_format || "—" }}</span>
               </ElDescriptionsItem>
             </ElDescriptions>
 
@@ -541,7 +541,7 @@ const statusLabel = computed(() => {
   if (s === "active") return $t("common.status.active");
   if (s === "inactive") return $t("common.status.disabled");
   if (s === "suspended") return $t("common.status.suspended");
-  return s || "-";
+  return s || "—";
 });
 const contractId = computed(
   () =>

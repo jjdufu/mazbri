@@ -30,7 +30,7 @@
 
       <ElDescriptions :column="2" border>
         <ElDescriptionsItem :label="$t('channels.fields.id')">
-          {{ channel?.id || "-" }}
+          {{ channel?.id || "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.channelCode')">
           <CopyableText
@@ -39,29 +39,29 @@
           />
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.name')">
-          {{ channel?.name || "-" }}
+          {{ channel?.name || "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.supplier')">
           <template v-if="channel">
             {{ channel.supplier_name }} ({{ channel.supplier_code }})
           </template>
-          <template v-else>-</template>
+          <template v-else>—</template>
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.pathPrefix')">
-          {{ channel?.path_prefix || "-" }}
+          {{ channel?.path_prefix || "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.costPrice')">
-          {{ channel?.cost_price || "-" }}
+          {{ channel?.cost_price || "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('channels.fields.qpsLimit')">
-          {{ channel?.qps_limit ?? "-" }}
+          {{ channel?.qps_limit ?? "—" }}
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.status')">
           <ElTag :type="channel?.status === 'active' ? 'success' : 'info'">
             {{
               channel?.status
                 ? $t(`channels.status.${channel.status}`)
-                : "-"
+                : "—"
             }}
           </ElTag>
         </ElDescriptionsItem>

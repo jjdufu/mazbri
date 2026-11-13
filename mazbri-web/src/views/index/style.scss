@@ -30,8 +30,7 @@
 
       :deep(.layout-content) {
         box-sizing: border-box;
-        width: calc(100% - 24px);
-        margin: auto;
+        width: 100%;
 
         .page-content {
           position: relative;
@@ -71,24 +70,6 @@
       height: auto;
       overflow-x: hidden;
       overflow-y: auto;
-
-      #app-content {
-        :deep(.layout-content) {
-          width: calc(100% - 24px);
-        }
-      }
-    }
-  }
-}
-
-@media only screen and (width <= 640px) {
-  .app-layout {
-    #app-main {
-      #app-content {
-        :deep(.layout-content) {
-          width: calc(100% - 24px);
-        }
-      }
     }
   }
 }

@@ -467,7 +467,7 @@
         "title": "采集日志详情",
         "summaryTitle": "调用概要",
         "rawTitle": "原始详情",
-        "empty": "-",
+        "empty": "—",
         "labels": {
           "serialNo": "流水号",
           "party": "租户 / 供应商",
@@ -528,13 +528,6 @@
       "list": [
         "边框",
         "阴影"
-      ]
-    },
-    "container": {
-      "title": "容器宽度",
-      "list": [
-        "铺满",
-        "定宽"
       ]
     },
     "basics": {
@@ -927,7 +920,6 @@
     },
     "layout": {
       "title": "布局设置",
-      "containerWidth": "容器宽度",
       "boxStyle": "盒子样式"
     },
     "display": {
