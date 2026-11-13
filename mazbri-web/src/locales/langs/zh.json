@@ -827,13 +827,6 @@
       "advancedRouteConfig": "路由策略",
       "userRouteGovernance": "路由策略",
       "callbackList": "回调订阅",
-      "callbackFields": {
-        "url": "回调 URL",
-        "secret": "签名密钥",
-        "tenantId": "租户 ID",
-        "productId": "产品 ID",
-        "addTitle": "新建回调订阅"
-      },
       "auditLogs": "审计日志",
       "settings": "系统设置",
       "systemSettings": "系统配置",
@@ -1019,7 +1012,8 @@
       "searchPlaceholder": "通道 / 供应商"
     },
     "actions": {
-      "add": "新建"
+      "add": "新建",
+      "edit": "编辑"
     },
     "fields": {
       "id": "内部 ID",
@@ -1028,15 +1022,19 @@
       "name": "通道名称",
       "pathPrefix": "路径前缀",
       "costPrice": "成本价",
-      "qpsLimit": "上游通道容量 QPS",
-      "qpsLimitHint": "0 = 不限"
+      "qpsLimit": "通道容量上限",
+      "qpsLimitHint": "填 0 表示不限制通道 QPS",
+      "qpsUnit": "QPS",
+      "qpsUnlimited": "不限",
+      "costPriceHint": "最多支持 12 位整数与 6 位小数（如 0.000050）"
     },
     "placeholders": {
       "supplier": "请选择供应商",
       "channelCode": "ACME-DEFAULT",
       "name": "供应商 A - 上海线路",
       "pathPrefix": "/",
-      "costPrice": "0.001000"
+      "costPrice": "0.001000",
+      "supplierRemote": "搜索供应商名称或编码"
     },
     "dialog": {
       "createTitle": "新增通道",
@@ -1049,7 +1047,21 @@
     "detail": {
       "pageTitle": "通道详情",
       "basicInfoTitle": "基本信息",
-      "loadFailed": "加载通道失败"
+      "loadFailed": "加载通道失败",
+      "supplierSectionTitle": "关联供应商",
+      "healthSectionTitle": "容量与健康策略摘要",
+      "routesSectionTitle": "关联路由规则",
+      "routesEmpty": "暂未绑定路由规则",
+      "viewSupplier": "查看供应商",
+      "egressMode": "出站模式",
+      "egressDefault": "标准上游通道",
+      "egressConfigured": "自定义出站策略",
+      "routeProduct": "绑定产品",
+      "routeTenant": "作用租户",
+      "routeGlobal": "全局默认",
+      "routePriority": "优先级",
+      "routeOrder": "通道顺位",
+      "routeTimeout": "超时 / 重试"
     },
     "status": {
       "active": "启用",
@@ -1066,7 +1078,9 @@
       "channelCodePattern": "须以大写字母开头，仅含大写字母、数字和连字符。",
       "channelCodeDuplicate": "通道编码已存在",
       "nameRequired": "请输入通道名称",
-      "pathPrefixRequired": "请输入路径前缀"
+      "pathPrefixRequired": "请输入路径前缀",
+      "costPriceRequired": "请输入成本价",
+      "costPricePattern": "请输入合法金额（最多 12 位整数与 6 位小数）"
     },
     "messages": {
       "createSupplierFirst": "请先创建供应商后再新增通道",
@@ -1080,7 +1094,8 @@
     },
     "actions": {
       "addSubscription": "新建",
-      "retry": "重试"
+      "retry": "重试",
+      "generateSecret": "随机生成"
     },
     "columns": {
       "tenantCode": "租户编码",
@@ -1097,14 +1112,15 @@
       "productCode": "产品编码"
     },
     "placeholders": {
-      "tenantCode": "例如: T0000001",
-      "productCode": "例如: 8000000001",
+      "tenantCode": "搜索租户名称或编码（如 JM5K26T6）",
+      "productCode": "选择该租户已授权的产品",
+      "selectTenantFirst": "请先选择租户",
       "callbackUrl": "https://...",
-      "secretKey": "签名密钥 (Sign secret)"
+      "secretKey": "输入或随机生成 32 位签名密钥"
     },
     "validation": {
-      "tenantCodeRequired": "请输入租户编码",
-      "productCodeRequired": "请输入产品编码",
+      "tenantCodeRequired": "请选择关联租户",
+      "productCodeRequired": "请选择已授权产品",
       "callbackUrlRequired": "请输入回调 URL",
       "secretKeyRequired": "请输入签名密钥"
     },
@@ -1120,7 +1136,15 @@
       "deleteConfirm": "确定删除该订阅吗？",
       "retrySuccess": "已重新排队",
       "retryFailed": "重试失败",
-      "createFailed": "创建失败"
+      "createFailed": "创建失败",
+      "noAuthorizedProducts": "当前租户暂无已授权产品"
+    },
+    "fields": {
+      "addTitle": "新建回调订阅",
+      "tenant": "关联租户",
+      "product": "授权产品",
+      "url": "回调地址",
+      "secret": "签名密钥"
     }
   },
   "routes": {
@@ -2516,6 +2540,11 @@
       "injectLocation": "注入位置",
       "injectPreviewTip": "<DYNAMIC_TOKEN> 仅为示例，网关将自动注入并维护真实令牌。",
       "authHeaders": "令牌获取请求头"
+    },
+    "status": {
+      "active": "启用",
+      "inactive": "禁用",
+      "suspended": "挂起"
     }
   },
   "billing": {
@@ -3548,7 +3577,18 @@
     },
     "confirm": {
       "dryRunOk": "预检通过（未写库）",
-      "needDryRun": "请先执行预检 dry-run"
+      "needDryRun": "请先执行预检 dry-run",
+      "summaryTitle": "变更预览摘要",
+      "warningsTitle": "预检提示",
+      "targetProduct": "目标产品",
+      "upstreamType": "对接模式",
+      "plannedActions": "拟执行变更",
+      "actionInsertSuppliers": "新建供应商",
+      "actionInsertChannels": "新建上游通道",
+      "actionInsertRouteRules": "新建路由规则",
+      "actionInsertRouteBindings": "绑定路由与通道",
+      "actionGrantTenantProducts": "开通租户产品授权",
+      "actionSkipAuthorization": "跳过租户授权"
     },
     "actions": {
       "dryRun": "预检 dry-run",
@@ -3570,7 +3610,8 @@
       "name": "例如 ACME Partner",
       "channelName": "例如 ACME 默认通道",
       "upstreamUrl": "host:port",
-      "contractId": "填写 gateway 已登记的契约 ID"
+      "contractId": "填写 gateway 已登记的契约 ID",
+      "productSelect": "搜索产品名称或 10 位产品编码"
     }
   },
   "upstreamConnector": {
