@@ -125,14 +125,28 @@
           <ElTableColumn :label="t('ops.traces.traceIds')" min-width="120">
             <template #default="{ row }">
               <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
-                <CopyableText
-                  v-for="tid in row.trace_ids"
-                  :key="tid"
-                  :value="tid"
-                  compact
-                  :link="traceRouteOf(row, tid)"
-                  :label="t('ops.traces.columns.traceId')"
-                />
+                <template v-for="tid in row.trace_ids" :key="tid">
+                  <ElTooltip
+                    v-if="isAdmin && isTraceExpired(row.started_at)"
+                    :content="t('ops.traces.expiredTooltip')"
+                    placement="top"
+                  >
+                    <span class="ops-alerts__expired-trace">
+                      <CopyableText
+                        :value="tid"
+                        compact
+                        :label="t('ops.traces.columns.traceId')"
+                      />
+                    </span>
+                  </ElTooltip>
+                  <CopyableText
+                    v-else
+                    :value="tid"
+                    compact
+                    :link="traceRouteOf(row, tid)"
+                    :label="t('ops.traces.columns.traceId')"
+                  />
+                </template>
               </div>
               <span v-else>—</span>
             </template>
@@ -235,10 +249,15 @@ import {
 import { getSeverityLabel, getStatusLabel } from "@/utils/display-labels";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import {
+  computeAlertDrillWindow,
   resolveAlertDrillRoute,
   stripAlertEventIdQuery,
 } from "@/utils/ops/alerts-link";
-import { buildTraceRoute } from "@/utils/ops/trace-link";
+import {
+  buildTraceRoute,
+  canDrillToTrace,
+  isTraceExpired,
+} from "@/utils/ops/trace-link";
 
 defineOptions({ name: "OpsAlertEventsPanel" });
 
@@ -282,17 +301,21 @@ const selected = ref<AlertEvent | null>(null);
 const relatedChanges = ref<ChangeEvent[]>([]);
 
 function traceRouteOf(row: AlertEvent, traceId: string) {
-  const started = Date.parse(row.started_at);
+  if (!canDrillToTrace(row.started_at, isAdmin.value)) return null;
+  const win = computeAlertDrillWindow(row.started_at, row.resolved_at);
   return buildTraceRoute(traceId, {
-    start: Number.isFinite(started)
-      ? Math.floor(started / 1000) - 300
-      : undefined,
+    start: win?.start,
+    end: win?.end,
   });
 }
 
 function drillRouteOf(row: AlertEvent) {
   return resolveAlertDrillRoute(
-    { labels: row.labels },
+    {
+      labels: row.labels,
+      startedAt: row.started_at,
+      resolvedAt: row.resolved_at,
+    },
     { isAdmin: isAdmin.value, isBiz: isBiz.value, isViewer: isViewer.value },
   );
 }
@@ -369,6 +392,11 @@ onMounted(reload);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+}
+.ops-alerts__expired-trace {
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-text-color-placeholder);
 }
 .ops-alerts__flag {
   margin-left: 4px;

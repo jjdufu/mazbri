@@ -474,6 +474,8 @@
           "channelName": "Channel Name",
           "responseTime": "Response Time",
           "latency": "Latency",
+          "internalLatency": "Internal Processing",
+          "postResponseLatency": "Post-response",
           "statusCode": "Status Code",
           "requestIp": "Request IP",
           "responseResult": "Response Result"
@@ -858,7 +860,7 @@
       "alertSilences": "Alert silences",
       "opsInfra": "Infrastructure",
       "opsAlerts": "Alert Center",
-      "opsTraffic": "Traffic & Quality",
+      "opsTraffic": "Calls & Traces",
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
       "opsServices": "Services Overview",
@@ -4558,7 +4560,8 @@
     "calls": {
       "tabs": {
         "customer": "Customer calls",
-        "upstream": "Upstream calls"
+        "upstream": "Upstream calls",
+        "traces": "Distributed traces"
       },
       "histogram": {
         "title": "Call distribution",
@@ -4574,6 +4577,8 @@
         "inputRequired": "Enter an ID to search",
         "loadFailed": "Failed to load stages",
         "empty": "No stage records",
+        "gatewaySummary": "Gateway total latency",
+        "unsampledHint": "Sub-stages were not sampled for this request; gateway summary shown above",
         "openTrace": "Show all calls in this trace",
         "breakdown": "Stage timings",
         "columns": {
@@ -4605,14 +4610,17 @@
         "max": "Max",
         "minDuration": "Min Duration (ms)",
         "maxDuration": "Max Duration (ms)",
-        "errorsOnly": "Errors only"
+        "errorsOnly": "Errors only",
+        "includeInternal": "Show internal & control-plane traces"
       },
       "scatter": {
         "title": "Duration distribution",
         "summary": "{count} traces, click a point to open it",
+        "currentPageSubtitle": "Current page trace duration distribution",
         "ok": "OK",
         "error": "With errors"
       },
+      "expiredTooltip": "Trace details have exceeded the 7-day retention period; copy the Trace ID to search archived logs",
       "columns": {
         "traceId": "Trace ID",
         "requestId": "Request ID",

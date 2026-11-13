@@ -72,6 +72,8 @@ pub struct TraceSearchFilter {
     pub min_duration_ms: Option<u64>,
     pub max_duration_ms: Option<u64>,
     pub errors_only: bool,
+    /// 默认排除管理后台自巡检与 `mazbri-cert` 内部同步/探针根链路。
+    pub exclude_internal: bool,
     /// 页码（从 1 开始）。
     pub page: u32,
     /// 每页条数。
@@ -215,7 +217,49 @@ pub fn build_services_sql(start: i64, end: i64) -> String {
 const DURATION_EXPR: &str =
     "(CAST(max(timestamp_end) AS BIGINT) - CAST(min(timestamp) AS BIGINT))";
 
-fn search_where_and_having(f: &TraceSearchFilter) -> (String, String) {
+/// Greptime 懒加载列：HTTP 入口中间件写入的请求路径。
+const PATH_ATTR: &str = "span_attributes.path";
+
+/// 检查 trace 表是否已有 `span_attributes.path`（OTLP 懒加列，兼容空表冷启动）。
+#[must_use]
+pub fn build_path_column_check_sql() -> String {
+    format!(
+        "SELECT column_name FROM information_schema.columns \
+         WHERE table_name = '{TRACE_TABLE}' \
+           AND column_name = '{PATH_ATTR}' LIMIT 1"
+    )
+}
+
+fn internal_root_exclusion_sql(start: i64, end: i64, has_path_attr: bool) -> String {
+    let win = time_window("timestamp", start, end);
+    let root_cond = "(parent_span_id IS NULL OR parent_span_id = '')";
+    if has_path_attr {
+        format!(
+            "trace_id NOT IN (\
+             SELECT trace_id FROM {TRACE_TABLE} \
+             WHERE {win} AND trace_id IS NOT NULL AND {root_cond} \
+               AND (\
+                 service_name IN ('mazbri-mgmt', 'mazbri-cert') \
+                 OR \"{PATH_ATTR}\" LIKE '/api/v1/mgmt/%' \
+                 OR \"{PATH_ATTR}\" IN ('/health', '/ready', '/metrics', '/nodes/heartbeat')\
+               )\
+             )"
+        )
+    } else {
+        format!(
+            "trace_id NOT IN (\
+             SELECT trace_id FROM {TRACE_TABLE} \
+             WHERE {win} AND trace_id IS NOT NULL AND {root_cond} \
+               AND service_name IN ('mazbri-mgmt', 'mazbri-cert')\
+             )"
+        )
+    }
+}
+
+fn search_where_and_having_with_columns(
+    f: &TraceSearchFilter,
+    has_path_attr: bool,
+) -> (String, String) {
     let mut conds = vec![time_window("timestamp", f.start, f.end)];
     if let Some(ids) = &f.trace_ids {
         conds.push(format!("trace_id IN ({})", quoted_list(ids)));
@@ -225,6 +269,9 @@ fn search_where_and_having(f: &TraceSearchFilter) -> (String, String) {
             "trace_id IN (SELECT trace_id FROM {TRACE_TABLE} WHERE {} AND service_name = '{service}')",
             time_window("timestamp", f.start, f.end)
         ));
+    }
+    if f.exclude_internal {
+        conds.push(internal_root_exclusion_sql(f.start, f.end, has_path_attr));
     }
     let mut having = Vec::new();
     if let Some(min) = f.min_duration_ms {
@@ -255,7 +302,12 @@ fn search_where_and_having(f: &TraceSearchFilter) -> (String, String) {
 /// 检索匹配的 trace 总数 SQL。
 #[must_use]
 pub fn build_search_count_sql(f: &TraceSearchFilter) -> String {
-    let (conds, having) = search_where_and_having(f);
+    build_search_count_sql_with_columns(f, true)
+}
+
+#[must_use]
+pub fn build_search_count_sql_with_columns(f: &TraceSearchFilter, has_path_attr: bool) -> String {
+    let (conds, having) = search_where_and_having_with_columns(f, has_path_attr);
     format!(
         "SELECT count(*) AS total FROM \
          (SELECT trace_id FROM {TRACE_TABLE} WHERE {conds} GROUP BY trace_id{having}) \
@@ -266,7 +318,12 @@ pub fn build_search_count_sql(f: &TraceSearchFilter) -> String {
 /// 检索聚合分页 SQL：每个 trace 一行，按开始时间（或耗时）倒序分页。
 #[must_use]
 pub fn build_search_sql(f: &TraceSearchFilter) -> String {
-    let (conds, having) = search_where_and_having(f);
+    build_search_sql_with_columns(f, true)
+}
+
+#[must_use]
+pub fn build_search_sql_with_columns(f: &TraceSearchFilter, has_path_attr: bool) -> String {
+    let (conds, having) = search_where_and_having_with_columns(f, has_path_attr);
     let order = if f.min_duration_ms.is_some() {
         "duration_ns DESC"
     } else {
@@ -779,8 +836,22 @@ impl GreptimeDBClient {
                 traces: Vec::new(),
             });
         }
-        let count_sql = build_search_count_sql(filter);
-        let search_sql = build_search_sql(filter);
+        let has_path_attr = if filter.exclude_internal {
+            let cols = self
+                .with_query_timeout(
+                    "trace path column",
+                    self.execute_trace_query_rows(
+                        &build_path_column_check_sql(),
+                        "trace path column",
+                    ),
+                )
+                .await?;
+            !cols.is_empty()
+        } else {
+            false
+        };
+        let count_sql = build_search_count_sql_with_columns(filter, has_path_attr);
+        let search_sql = build_search_sql_with_columns(filter, has_path_attr);
         let (count_rows, rows) = tokio::try_join!(
             self.with_query_timeout(
                 "trace search count",
@@ -1232,6 +1303,7 @@ mod tests {
             min_duration_ms: Some(1_500),
             max_duration_ms: None,
             errors_only: true,
+            exclude_internal: false,
             page: 3,
             page_size: 9_999,
         };
@@ -1240,12 +1312,39 @@ mod tests {
         assert!(sql.contains("service_name = 'mazbri-bypass'"));
         assert!(sql.contains(">= 1500000000"));
         assert!(sql.contains("> 0"));
+        assert!(!sql.contains("trace_id NOT IN"));
         assert!(sql.contains("ORDER BY duration_ns DESC LIMIT 100 OFFSET 200"));
 
         let count_sql = build_search_count_sql(&filter);
         assert!(count_sql.contains("SELECT count(*) AS total FROM"));
         assert!(count_sql.contains("GROUP BY trace_id HAVING"));
         assert!(count_sql.contains("AS matched_traces"));
+    }
+
+    #[test]
+    fn search_sql_excludes_internal_roots_and_handles_missing_path_column() {
+        let check_sql = build_path_column_check_sql();
+        assert!(check_sql.contains("information_schema.columns"));
+        assert!(check_sql.contains(PATH_ATTR));
+
+        let filter = TraceSearchFilter {
+            start: 100,
+            end: 200,
+            exclude_internal: true,
+            page: 1,
+            page_size: 20,
+            ..TraceSearchFilter::default()
+        };
+        let sql_with_path = build_search_sql_with_columns(&filter, true);
+        assert!(sql_with_path.contains("trace_id NOT IN ("));
+        assert!(sql_with_path.contains("(parent_span_id IS NULL OR parent_span_id = '')"));
+        assert!(sql_with_path.contains("service_name IN ('mazbri-mgmt', 'mazbri-cert')"));
+        assert!(sql_with_path.contains("\"span_attributes.path\" LIKE '/api/v1/mgmt/%'"));
+        assert!(sql_with_path.contains("/nodes/heartbeat"));
+
+        let sql_cold_start = build_search_sql_with_columns(&filter, false);
+        assert!(sql_cold_start.contains("service_name IN ('mazbri-mgmt', 'mazbri-cert')"));
+        assert!(!sql_cold_start.contains("span_attributes.path"));
     }
 
     #[test]

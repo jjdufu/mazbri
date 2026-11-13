@@ -120,22 +120,23 @@
         <CommonDrawerHeader
           :title="$t('operations.monitoring.detail.title')"
           :subtitle="currentDetail?.serial_no || '—'"
-        />
+          align="center"
+        >
+          <template #actions>
+            <ElButton
+              v-if="currentDetail"
+              type="primary"
+              plain
+              @click="downloadDetailJson"
+            >
+              <template #icon><ArtSvgIcon icon="ri:download-line" /></template>
+              {{ $t("operations.monitoring.actions.downloadJson") }}
+            </ElButton>
+          </template>
+        </CommonDrawerHeader>
       </template>
 
       <div v-if="currentDetail" class="detail-drawer-body">
-        <div class="detail-toolbar">
-          <ElButton
-            v-if="currentDetail"
-            type="primary"
-            plain
-            @click="downloadDetailJson"
-          >
-            <template #icon><ArtSvgIcon icon="ri:download-line" /></template>
-            {{ $t("operations.monitoring.actions.downloadJson") }}
-          </ElButton>
-        </div>
-
         <ElRow :gutter="16">
           <ElCol :xs="24" :lg="24">
             <ElCard shadow="never" class="detail-card">
@@ -155,7 +156,24 @@
                   />
                 </ElDescriptionsItem>
                 <ElDescriptionsItem :label="$t('ops.traces.columns.traceId')">
+                  <ElTooltip
+                    v-if="
+                      isAdmin &&
+                      currentDetail.trace_id &&
+                      isRowTraceExpired(currentDetail)
+                    "
+                    :content="$t('ops.traces.expiredTooltip')"
+                    placement="top"
+                  >
+                    <span class="is-expired-trace">
+                      <CopyableText
+                        :value="currentDetail.trace_id"
+                        :label="$t('ops.traces.columns.traceId')"
+                      />
+                    </span>
+                  </ElTooltip>
                   <CopyableText
+                    v-else
                     :value="currentDetail.trace_id"
                     :link="traceRouteFor(currentDetail)"
                     :label="$t('ops.traces.columns.traceId')"
@@ -202,10 +220,20 @@
                 >
                   {{ currentDetail.upstream_service_time_ms }} ms
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="内部处理耗时">
+                <ElDescriptionsItem
+                  :label="
+                    $t('operations.monitoring.detail.labels.internalLatency')
+                  "
+                >
                   {{ currentDetail.internal_ms }} ms
                 </ElDescriptionsItem>
-                <ElDescriptionsItem label="后置耗时">
+                <ElDescriptionsItem
+                  :label="
+                    $t(
+                      'operations.monitoring.detail.labels.postResponseLatency',
+                    )
+                  "
+                >
                   {{ currentDetail.post_response_ms }} ms
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
@@ -242,6 +270,14 @@
               <StageBreakdown
                 :request-id="currentDetail.serial_no"
                 :trace-id="currentDetail.trace_id"
+                :timestamp="
+                  currentDetail.timestamp ?? currentDetail.response_time
+                "
+                :total-duration-ms="
+                  props.mode === 'customer'
+                    ? currentDetail.duration_ms
+                    : undefined
+                "
                 @open-trace="() => currentDetail && openTraceFor(currentDetail)"
               />
             </ElCard>
@@ -290,8 +326,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed, h, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { timestampFiltersToUnix } from "@/utils/ops/call-filters";
-import { buildTraceRoute, unixSecondsOf } from "@/utils/ops/trace-link";
+import {
+  buildTraceRoute,
+  canDrillToTrace,
+  isTraceExpired,
+  unixSecondsOf,
+} from "@/utils/ops/trace-link";
 import { resolveCallChannel } from "@/utils/ops/call-channel";
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
@@ -299,10 +342,10 @@ import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
-import { h } from "vue";
 import StageBreakdown from "./StageBreakdown.vue";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
+import { useOpsRole } from "@/composables/ops/useOpsRole";
 import { useListQuery } from "@/composables/useListQuery";
 import {
   CALL_MONITOR_UNIVERSE_SIZE,
@@ -366,6 +409,8 @@ const props = withDefaults(
   }>(),
   { timeRange: null, seedFilters: () => [] },
 );
+
+const { isAdmin } = useOpsRole();
 const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
 const detailVisible = ref(false);
@@ -428,14 +473,15 @@ const toggleQuickFilter = (qf: QuickFilterDef) => {
     filters.value = [...next, ...qf.filters];
   }
   pagination.page = 1;
-  loadData();
+  void loadData();
 };
 
 watch(
-  () => props.timeRange,
-  () => {
+  () => [props.timeRange?.start, props.timeRange?.end],
+  ([nextStart, nextEnd], [prevStart, prevEnd]) => {
+    if (nextStart === prevStart && nextEnd === prevEnd) return;
     pagination.page = 1;
-    loadData();
+    void loadData();
   },
 );
 
@@ -467,11 +513,11 @@ const DETAIL_EXPORT_EXCLUDED_KEYS = new Set([
 
 const onQueryBarSearch = () => {
   pagination.page = 1;
-  loadData();
+  void loadData();
 };
 
 const onManualRefresh = () => {
-  loadData();
+  void loadData();
 };
 
 const emit = defineEmits<{
@@ -484,20 +530,30 @@ const emit = defineEmits<{
   openTrace: [traceId: string, start?: number, requestId?: string];
 }>();
 
+function rowTimestampOf(row: CallMonitorItem) {
+  return row.timestamp ?? row.response_time;
+}
+
+function isRowTraceExpired(row: CallMonitorItem): boolean {
+  return isTraceExpired(rowTimestampOf(row));
+}
+
 function traceRouteFor(row: CallMonitorItem) {
-  if (!row.trace_id) return null;
+  const ts = rowTimestampOf(row);
+  if (!row.trace_id || !canDrillToTrace(ts, isAdmin.value)) return null;
   return buildTraceRoute(row.trace_id, {
-    start: unixSecondsOf(row.timestamp ?? row.response_time),
+    start: unixSecondsOf(ts),
     requestId: row.serial_no || undefined,
   });
 }
 
 function openTraceFor(row: CallMonitorItem) {
-  if (!row.trace_id) return;
+  const ts = rowTimestampOf(row);
+  if (!row.trace_id || !canDrillToTrace(ts, isAdmin.value)) return;
   emit(
     "openTrace",
     row.trace_id,
-    unixSecondsOf(row.timestamp ?? row.response_time),
+    unixSecondsOf(ts),
     row.serial_no || undefined,
   );
 }
@@ -656,7 +712,7 @@ const exportItems = computed(() => [
 const buildColumns = (
   currentMode: "customer" | "upstream",
 ): ColumnOption<CallMonitorItem>[] => {
-  const columns: ColumnOption<CallMonitorItem>[] = [
+  const cols: ColumnOption<CallMonitorItem>[] = [
     {
       type: "expand",
       width: 36,
@@ -664,13 +720,19 @@ const buildColumns = (
         h(StageBreakdown, {
           requestId: row.serial_no,
           traceId: row.trace_id,
-          onOpenTrace: (traceId: string) =>
+          timestamp: rowTimestampOf(row),
+          totalDurationMs:
+            currentMode === "customer" ? row.duration_ms : undefined,
+          onOpenTrace: (traceId: string) => {
+            const ts = rowTimestampOf(row);
+            if (!canDrillToTrace(ts, isAdmin.value)) return;
             emit(
               "openTrace",
               traceId,
-              unixSecondsOf(row.timestamp ?? row.response_time),
+              unixSecondsOf(ts),
               row.serial_no || undefined,
-            ),
+            );
+          },
         }),
     },
     {
@@ -690,14 +752,14 @@ const buildColumns = (
   ];
 
   if (currentMode === "customer") {
-    columns.push({
+    cols.push({
       prop: "duration_ms",
       label: $t("operations.monitoring.columns.customerLatency"),
       minWidth: 76,
       maxWidth: 108,
       useSlot: true,
     });
-    columns.push({
+    cols.push({
       prop: "tenant_name",
       label: $t("operations.monitoring.columns.tenantName"),
       minWidth: 96,
@@ -706,14 +768,14 @@ const buildColumns = (
       showOverflowTooltip: true,
     });
   } else {
-    columns.push({
+    cols.push({
       prop: "upstream_service_time_ms",
       label: $t("operations.monitoring.columns.upstreamLatency"),
       minWidth: 76,
       maxWidth: 108,
       useSlot: true,
     });
-    columns.push({
+    cols.push({
       prop: "supplier",
       label: $t("operations.monitoring.columns.supplier"),
       minWidth: 96,
@@ -723,7 +785,7 @@ const buildColumns = (
     });
   }
 
-  columns.push(
+  cols.push(
     {
       prop: "channel_name",
       label:
@@ -746,7 +808,7 @@ const buildColumns = (
   );
 
   if (currentMode === "customer") {
-    columns.push({
+    cols.push({
       prop: "request_ip",
       label: $t("operations.monitoring.columns.requestIp"),
       minWidth: 104,
@@ -754,7 +816,7 @@ const buildColumns = (
       useSlot: true,
       showOverflowTooltip: true,
     });
-    columns.push({
+    cols.push({
       prop: "response_result",
       label: $t("operations.monitoring.columns.responseResult"),
       minWidth: 88,
@@ -764,7 +826,7 @@ const buildColumns = (
     });
   }
 
-  columns.push({
+  cols.push({
     prop: "operations",
     label: $t("common.fields.operations"),
     minWidth: 68,
@@ -772,7 +834,7 @@ const buildColumns = (
     fixed: "right",
     useSlot: true,
   });
-  return columns;
+  return cols;
 };
 const columns = ref<ColumnOption<CallMonitorItem>[]>(buildColumns(props.mode));
 watch(
@@ -858,7 +920,6 @@ const buildQuery = (
     }) as CallMonitorQuery;
 
     delete params.q;
-
     delete params.start_time;
     delete params.end_time;
     return params;
@@ -905,14 +966,13 @@ const resetSearch = () => {
   filters.value = [];
   pagination.page = 1;
   lastQueryMode.value = "latest";
-  loadData();
+  void loadData();
 };
 const handlePageSizeChange = (size: number) => {
   pagination.page_size = size;
   pagination.page = 1;
-
   pagination.total_pages = 0;
-  loadData();
+  void loadData();
 };
 const handleCurrentPageChange = (page: number) => {
   pagination.page = clampPageToSafeRange(
@@ -921,7 +981,7 @@ const handleCurrentPageChange = (page: number) => {
     pagination.page_size,
     pagination.total_pages || undefined,
   );
-  loadData();
+  void loadData();
 };
 const showDetail = (row: CallMonitorItem) => {
   currentDetail.value = row;
@@ -1029,7 +1089,7 @@ const statusTagType = (statusCode: number) => {
   return "info";
 };
 onMounted(() => {
-  loadData();
+  void loadData();
 });
 </script>
 
@@ -1047,12 +1107,6 @@ onMounted(() => {
 
 .call-monitor-quick-tag {
   user-select: none;
-}
-
-.detail-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
 }
 
 .detail-card {
@@ -1081,6 +1135,13 @@ onMounted(() => {
 }
 
 .is-unrouted {
+  color: var(--el-text-color-placeholder);
+}
+
+.is-expired-trace {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
   color: var(--el-text-color-placeholder);
 }
 </style>

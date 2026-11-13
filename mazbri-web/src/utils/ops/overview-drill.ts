@@ -1,4 +1,4 @@
-import { CALLS_PATH, RUNTIME_PATH } from "./opsRoutes";
+import { RUNTIME_PATH, TRAFFIC_PATH } from "./opsRoutes";
 
 /** Dashboard StatCard 下钻 id（与历史编号对齐，仅内部使用）。 */
 export type OverviewDrillId = "2.1" | "2.2" | "2.4" | "3.2" | "4.1" | "6.1";
@@ -15,21 +15,21 @@ export interface OverviewDrillRole {
 }
 
 /**
- * 展示类子页已撤出侧栏：流量/错误 → 调用日志；熔断 → 运行指标；限流 → 调用日志；
+ * 展示类子页已撤出侧栏：流量/错误 → 调用与链路；熔断 → 运行指标；限流 → 调用与链路；
  * 计费管道监控 → 运行指标（数据与控制面管道 /ops/runtime?tab=pipeline）。
  */
 const BASE_TARGETS: Record<OverviewDrillId, OverviewDrillTarget> = {
-  "2.1": { path: CALLS_PATH },
-  "2.2": { path: CALLS_PATH },
-  "2.4": { path: CALLS_PATH },
+  "2.1": { path: TRAFFIC_PATH },
+  "2.2": { path: TRAFFIC_PATH },
+  "2.4": { path: TRAFFIC_PATH },
   "3.2": { path: RUNTIME_PATH, query: { tab: "apps" } },
-  "4.1": { path: CALLS_PATH },
+  "4.1": { path: TRAFFIC_PATH },
   "6.1": { path: RUNTIME_PATH, query: { tab: "pipeline" } },
 };
 
 /**
  * 按角色解析 Dashboard 下钻目标。
- * - 观察者：时延/错误仍可进调用日志；禁止熔断/限流/计费。
+ * - 观察者：时延/错误仍可进调用与链路；禁止熔断/限流/计费。
  * - 管理员(FINANCE)：限流/计费可点，熔断不可点。
  * - 超管：全部可点。
  * 返回 null 表示本角色不可下钻（UI 不应绑定点击）。

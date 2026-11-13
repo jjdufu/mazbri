@@ -115,7 +115,10 @@
             ></span>
             <span
               class="ops-trace__dur"
-              :style="{ left: `${Math.min(row.left + row.width, 88)}%` }"
+              :class="{
+                'is-inside-bar': row.durPlacement.mode === 'inside-bar',
+              }"
+              :style="row.durPlacement.style"
               >{{ formatDurationNs(row.span.duration_ns) }}</span
             >
           </div>
@@ -344,7 +347,11 @@
           </ElTable>
         </ElTabPane>
         <ElTabPane :label="t('ops.traces.detail.stages')" name="stages">
-          <StageBreakdown :stages="stages" />
+          <StageBreakdown
+            :stages="stages"
+            :calls="calls"
+            :total-duration-ms="detail?.duration_ms"
+          />
         </ElTabPane>
         <ElTabPane :label="t('ops.traces.detail.billing')" name="billing">
           <div v-if="billingError" class="ops-trace__muted">
@@ -451,10 +458,13 @@ import type {
   CallStageEntry,
 } from "@/types/api/call-monitor";
 import { HttpError } from "@/utils/http/error";
-import { buildCallsRoute } from "@/utils/ops/calls-link";
-import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { buildCallsRoute, buildTraceRoute } from "@/utils/ops/opsRoutes";
 import { logger } from "@/utils/sys";
-import StageBreakdown from "../calls/modules/StageBreakdown.vue";
+import StageBreakdown from "../traffic/modules/StageBreakdown.vue";
+import {
+  resolveWaterfallDurPlacement,
+  type WaterfallDurPlacement,
+} from "./waterfall-layout";
 
 defineOptions({ name: "OpsTraceDetail" });
 
@@ -541,6 +551,7 @@ interface WaterfallRow {
   span: TraceSpan;
   left: number;
   width: number;
+  durPlacement: WaterfallDurPlacement;
 }
 
 const visibleRows = computed<WaterfallRow[]>(() => {
@@ -556,10 +567,13 @@ const visibleRows = computed<WaterfallRow[]>(() => {
     }
     const left = ((span.start_ns - d.start_ns) / total) * 100;
     const width = Math.max(0.3, (span.duration_ns / total) * 100);
+    const safeLeft = Math.max(0, left);
+    const safeWidth = Math.min(width, 100 - safeLeft);
     rows.push({
       span,
-      left: Math.max(0, left),
-      width: Math.min(width, 100 - Math.max(0, left)),
+      left: safeLeft,
+      width: safeWidth,
+      durPlacement: resolveWaterfallDurPlacement(safeLeft, safeWidth),
     });
     if (collapsed.value.has(span.span_id)) hideBelow = span.depth;
   }
@@ -660,7 +674,14 @@ function openLinked(target: string, spanId: string) {
     selectSpan(spanId);
     return;
   }
-  void router.push(buildTraceRoute(target, { span: spanId }));
+  const hint = startHint();
+  void router.push(
+    buildTraceRoute(target, {
+      span: spanId,
+      start: hint.start,
+      end: hint.end,
+    }),
+  );
 }
 
 function callsRouteOf(requestId: string) {
@@ -671,9 +692,15 @@ function callsRouteOf(requestId: string) {
 }
 
 function startHint(): { start?: number; end?: number } {
-  const raw = Number(route.query.start);
-  if (!Number.isFinite(raw) || raw <= 0) return {};
-  return { start: Math.floor(raw) - 300, end: Math.floor(raw) + 3 * 3600 };
+  const rawStart = Number(route.query.start);
+  const rawEnd = Number(route.query.end);
+  if (!Number.isFinite(rawStart) || rawStart <= 0) return {};
+  const start = Math.max(1, Math.floor(rawStart) - 900);
+  const end =
+    Number.isFinite(rawEnd) && rawEnd > start
+      ? Math.floor(rawEnd)
+      : Math.floor(rawStart) + 3 * 3600;
+  return { start, end };
 }
 
 /**
@@ -882,7 +909,7 @@ watch(traceId, () => void load(), { immediate: true });
 .ops-trace__axis,
 .ops-trace__row {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: clamp(220px, 34%, 340px) minmax(0, 1fr);
   align-items: center;
 }
 .ops-trace__axis-track {
@@ -894,13 +921,17 @@ watch(traceId, () => void load(), { immediate: true });
 }
 .ops-trace__axis-track span {
   position: absolute;
+  white-space: nowrap;
   transform: translateX(-50%);
 }
 .ops-trace__axis-track span:first-child {
   transform: none;
 }
 .ops-trace__axis-track span:last-child {
-  transform: translateX(-100%);
+  right: 0;
+  left: auto !important;
+  text-align: right;
+  transform: none;
 }
 .ops-trace__row {
   min-height: 24px;
@@ -952,6 +983,7 @@ watch(traceId, () => void load(), { immediate: true });
 .ops-trace__track {
   position: relative;
   height: 22px;
+  overflow: hidden;
   background: var(--el-fill-color-light);
   border-radius: 2px;
 }
@@ -978,6 +1010,11 @@ watch(traceId, () => void load(), { immediate: true });
   white-space: nowrap;
   background: var(--el-bg-color);
   border-radius: 2px;
+}
+.ops-trace__dur.is-inside-bar {
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.32);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
 }
 .ops-trace__event {
   padding: 6px 8px;

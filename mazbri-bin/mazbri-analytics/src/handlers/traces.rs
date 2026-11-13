@@ -23,7 +23,7 @@ const DEFAULT_WINDOW_SECS: i64 = 3_600;
 /// 依赖图最大窗口（秒）。
 const MAX_DEPENDENCY_WINDOW_SECS: i64 = 86_400;
 /// CH 解析 `trace_id` 时最多取的请求行数。
-const MAX_RESOLVED_REQUESTS: u32 = 200;
+const MAX_RESOLVED_REQUESTS: u32 = 5_000;
 /// 详情查询窗口超出 trace 开始时间的余量（秒）。
 const DETAIL_SLACK_SECS: i64 = 60;
 
@@ -109,6 +109,8 @@ pub struct TraceSearchQuery {
     #[serde(default)]
     pub errors_only: bool,
     #[serde(default)]
+    pub include_internal: bool,
+    #[serde(default)]
     pub page: Option<u32>,
     #[serde(default)]
     pub page_size: Option<u32>,
@@ -175,6 +177,7 @@ fn parse_search(
                 ..RequestLogQueryRequest::default()
             }
         });
+    let has_exact_trace_id = trace_ids.is_some();
     let filter = TraceSearchFilter {
         start,
         end,
@@ -183,6 +186,7 @@ fn parse_search(
         min_duration_ms: q.min_duration_ms,
         max_duration_ms: q.max_duration_ms,
         errors_only: q.errors_only,
+        exclude_internal: !q.include_internal && !has_exact_trace_id,
         page: q.page.unwrap_or(1).max(1),
         page_size: q
             .page_size
@@ -208,7 +212,9 @@ pub async fn search_traces(
     if let Some(req) = lookup {
         let start = DateTime::<Utc>::from_timestamp(filter.start, 0);
         let end = DateTime::<Utc>::from_timestamp(filter.end, 0);
-        let params = build_query_params(&req, Vec::new(), (start, end, None, None));
+        let mut params = build_query_params(&req, Vec::new(), (start, end, None, None));
+        params.limit = MAX_RESOLVED_REQUESTS as usize;
+        params.offset = 0;
         let logs = match state.clickhouse_client.query_request_logs(&params).await {
             Ok(result) => result.logs,
             Err(e) => return failed("按 request_logs 解析 trace_id 失败", &e),
@@ -321,7 +327,7 @@ pub async fn list_trace_services(
         q.start,
         q.end,
         DEFAULT_WINDOW_SECS,
-        MAX_DEPENDENCY_WINDOW_SECS,
+        TRACE_RETENTION_SECS,
     ) {
         Ok(w) => w,
         Err(e) => return bad_request(e),
@@ -365,7 +371,22 @@ mod tests {
         assert_eq!(f.end - f.start, DEFAULT_WINDOW_SECS);
         assert_eq!(f.page, 1);
         assert_eq!(f.page_size, DEFAULT_SEARCH_PAGE_SIZE);
+        assert!(f.exclude_internal);
         assert!(lookup.is_none());
+
+        let (with_internal, _) = parse_search(&TraceSearchQuery {
+            include_internal: true,
+            ..TraceSearchQuery::default()
+        })
+        .expect("include_internal ok");
+        assert!(!with_internal.exclude_internal);
+
+        let (exact_trace, _) = parse_search(&TraceSearchQuery {
+            trace_id: Some("d0b16eed09b058a517ebce9be1abc0ae".into()),
+            ..TraceSearchQuery::default()
+        })
+        .expect("exact trace ok");
+        assert!(!exact_trace.exclude_internal);
     }
 
     #[test]
@@ -378,6 +399,7 @@ mod tests {
         assert!(f.trace_ids.is_none());
         let req = lookup.expect("needs CH lookup");
         assert_eq!(req.event_target, Some(EventTarget::Gateway));
+        assert_eq!(req.page_size, 5_000);
         assert!(req.start_time.is_some());
     }
 

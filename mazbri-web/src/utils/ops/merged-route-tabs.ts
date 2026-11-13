@@ -2,22 +2,9 @@ import { ROLES_ADMIN, ROLES_ALL, ROLES_BIZ } from "./roles";
 import type { OpsTabDef } from "./tabs";
 
 /** 合并父路由的 Tab 定义（无 label；页面侧用 i18n 注入）。 */
-export type MergedOpsDomain =
-  | "runtime"
-  | "infra"
-  | "alerts"
-  | "traffic"
-  | "upstream"
-  | "flow"
-  | "services";
+export type MergedOpsDomain = "runtime" | "alerts" | "traffic";
 
 type TabSeed<T extends string> = Omit<OpsTabDef<T>, "label"> & { id: T };
-
-const INFRA_TABS = [
-  { id: "pipeline", roles: ROLES_ADMIN },
-  { id: "middleware", roles: ROLES_ADMIN },
-  { id: "hosts", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<"pipeline" | "middleware" | "hosts">[];
 
 const ALERTS_TABS = [
   { id: "events", roles: ROLES_ALL },
@@ -26,24 +13,10 @@ const ALERTS_TABS = [
 ] as const satisfies readonly TabSeed<"events" | "rules" | "silences">[];
 
 const TRAFFIC_TABS = [
-  { id: "red", roles: ROLES_ALL },
-  { id: "latency", roles: ROLES_BIZ },
-  { id: "errors", roles: ROLES_BIZ },
-] as const satisfies readonly TabSeed<"red" | "latency" | "errors">[];
-
-const UPSTREAM_TABS = [
-  { id: "sla", roles: ROLES_ALL },
-  { id: "breaker", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<"sla" | "breaker">[];
-
-const FLOW_TABS = [
-  { id: "ratelimit", roles: ROLES_BIZ },
-  { id: "cache", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<"ratelimit" | "cache">[];
-
-const SERVICES_TABS = [
-  { id: "health", roles: ROLES_ALL },
-] as const satisfies readonly TabSeed<"health">[];
+  { id: "customer", roles: ROLES_ALL },
+  { id: "upstream", roles: ROLES_ALL },
+  { id: "traces", roles: ROLES_ADMIN },
+] as const satisfies readonly TabSeed<"customer" | "upstream" | "traces">[];
 
 const RUNTIME_TABS = [
   { id: "apps", roles: ROLES_ALL },
@@ -56,12 +29,8 @@ const RUNTIME_TABS = [
 
 const DOMAIN_TABS = {
   runtime: RUNTIME_TABS,
-  infra: INFRA_TABS,
   alerts: ALERTS_TABS,
   traffic: TRAFFIC_TABS,
-  upstream: UPSTREAM_TABS,
-  flow: FLOW_TABS,
-  services: SERVICES_TABS,
 } as const;
 
 export type MergedTabId<D extends MergedOpsDomain> =
@@ -72,12 +41,8 @@ export const MERGED_DEFAULT_TAB: {
   readonly [D in MergedOpsDomain]: MergedTabId<D>;
 } = {
   runtime: "apps",
-  infra: "pipeline",
   alerts: "events",
-  traffic: "red",
-  upstream: "sla",
-  flow: "ratelimit",
-  services: "health",
+  traffic: "customer",
 };
 
 /**

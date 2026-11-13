@@ -1,7 +1,7 @@
 import type { AppRouteRecord } from "@/types/router";
 import {
   RUNTIME_PATH,
-  TRACES_PATH,
+  TRAFFIC_PATH,
 } from "@/utils/ops/opsRoutes";
 export const mazbriRoutes: AppRouteRecord[] = [
   {
@@ -150,25 +150,14 @@ export const mazbriRoutes: AppRouteRecord[] = [
     },
     children: [
       {
-        path: "calls",
-        name: "OpsCalls",
-        component: "/mazbri/ops/calls/index",
+        path: "traffic",
+        name: "OpsTraffic",
+        component: "/mazbri/ops/traffic/index",
         meta: {
-          title: "menus.mazbri.opsCalls",
-          icon: "ri:search-eye-line",
+          title: "menus.mazbri.opsTraffic",
+          icon: "ri:route-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "traces",
-        name: "OpsTraces",
-        component: "/mazbri/ops/traces/search",
-        meta: {
-          title: "menus.mazbri.opsTraces",
-          icon: "ri:node-tree",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
         },
       },
       {
@@ -179,7 +168,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.opsTraceDetail",
           icon: "ri:node-tree",
           isHide: true,
-          activePath: TRACES_PATH,
+          activePath: TRAFFIC_PATH,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },

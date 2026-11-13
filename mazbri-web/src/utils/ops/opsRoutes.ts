@@ -20,7 +20,8 @@ export type {
 export { BILLING_PATH, buildBillingRoute } from "./billing-link";
 export type { BillingLinkOptions, BillingTabId } from "./billing-link";
 
-export { CALLS_PATH, buildCallsRoute } from "./calls-link";
+export { TRAFFIC_PATH, buildCallsRoute } from "./calls-link";
+export type { CallsFilterKey, CallsLinkOptions, CallsTab } from "./calls-link";
 
 export {
   RUNTIME_PATH,
@@ -31,9 +32,14 @@ export type { RuntimeLinkOptions, RuntimeTabId } from "./runtime-link";
 export { buildServiceDetailRoute } from "./services-link";
 
 export {
-  TRACES_PATH,
+  TRACE_DETAIL_BASE_PATH,
+  TRACE_RETENTION_MS,
   buildTraceRoute,
   buildTraceSearchRoute,
+  canDrillToTrace,
+  isTraceExpired,
+  timestampMsOf,
+  unixSecondsOf,
 } from "./trace-link";
 
 /** 运维总览（Dashboard）。 */

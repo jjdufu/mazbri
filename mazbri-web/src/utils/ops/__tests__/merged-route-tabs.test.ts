@@ -7,17 +7,6 @@ import {
 } from "../merged-route-tabs";
 import { ROLES_ADMIN, ROLES_ALL, ROLES_BIZ } from "../roles";
 
-test("infra tabs are ADMIN-only", () => {
-  const tabs = [...getMergedRouteTabs("infra")];
-  assert.deepEqual(
-    tabs.map((tab) => tab.id),
-    ["pipeline", "middleware", "hosts"],
-  );
-  for (const tab of tabs) {
-    assert.deepEqual(tab.roles, ROLES_ADMIN);
-  }
-});
-
 test("VIEWER on alerts only sees events", () => {
   const result = resolveOpsTab({
     role: "R_VIEWER",
@@ -33,73 +22,52 @@ test("VIEWER on alerts only sees events", () => {
   assert.equal(result.fellBack, true);
 });
 
-test("VIEWER cannot see flow/infra parents' tabs", () => {
-  for (const domain of ["flow", "infra"] as const) {
-    const result = resolveOpsTab({
-      role: "R_VIEWER",
-      tabs: [...getMergedRouteTabs(domain)],
-      preferredDefault: MERGED_DEFAULT_TAB[domain],
-    });
-    assert.equal(result.visibleTabs.length, 0, domain);
-    assert.equal(result.activeTab, undefined, domain);
-  }
-});
+test("traffic customer/upstream ALL; traces ADMIN-only", () => {
+  const tabs = [...getMergedRouteTabs("traffic")];
+  assert.deepEqual(
+    tabs.map((tab) => tab.id),
+    ["customer", "upstream", "traces"],
+  );
+  assert.deepEqual(tabs[0]?.roles, ROLES_ALL);
+  assert.deepEqual(tabs[1]?.roles, ROLES_ALL);
+  assert.deepEqual(tabs[2]?.roles, ROLES_ADMIN);
 
-test("traffic VIEWER only red; FINANCE gets latency/errors", () => {
   const viewer = resolveOpsTab({
     role: "R_VIEWER",
-    tabs: [...getMergedRouteTabs("traffic")],
-    queryTab: "latency",
+    tabs,
+    queryTab: "traces",
     preferredDefault: MERGED_DEFAULT_TAB.traffic,
   });
   assert.deepEqual(
     viewer.visibleTabs.map((tab) => tab.id),
-    ["red"],
+    ["customer", "upstream"],
   );
-  assert.equal(viewer.activeTab, "red");
+  assert.equal(viewer.activeTab, "customer");
+  assert.equal(viewer.fellBack, true);
 
   const finance = resolveOpsTab({
     role: "R_FINANCE",
-    tabs: [...getMergedRouteTabs("traffic")],
-    queryTab: "errors",
+    tabs,
+    queryTab: "upstream",
+    preferredDefault: MERGED_DEFAULT_TAB.traffic,
   });
   assert.deepEqual(
     finance.visibleTabs.map((tab) => tab.id),
-    ["red", "latency", "errors"],
+    ["customer", "upstream"],
   );
-  assert.equal(finance.activeTab, "errors");
-  assert.deepEqual(getMergedRouteTabs("traffic")[0]?.roles, ROLES_ALL);
-  assert.deepEqual(getMergedRouteTabs("traffic")[1]?.roles, ROLES_BIZ);
-});
+  assert.equal(finance.activeTab, "upstream");
 
-test("upstream breaker is ADMIN; sla is ALL", () => {
-  const tabs = getMergedRouteTabs("upstream");
-  assert.deepEqual(tabs[0]?.roles, ROLES_ALL);
-  assert.deepEqual(tabs[1]?.roles, ROLES_ADMIN);
-  const viewer = resolveOpsTab({
-    role: "R_VIEWER",
-    tabs: [...tabs],
-    queryTab: "breaker",
-    preferredDefault: MERGED_DEFAULT_TAB.upstream,
+  const admin = resolveOpsTab({
+    role: "R_ADMIN",
+    tabs,
+    queryTab: "traces",
+    preferredDefault: MERGED_DEFAULT_TAB.traffic,
   });
   assert.deepEqual(
-    viewer.visibleTabs.map((tab) => tab.id),
-    ["sla"],
+    admin.visibleTabs.map((tab) => tab.id),
+    ["customer", "upstream", "traces"],
   );
-});
-
-test("services health ALL (topology removed)", () => {
-  const result = resolveOpsTab({
-    role: "R_VIEWER",
-    tabs: [...getMergedRouteTabs("services")],
-    queryTab: "health",
-    preferredDefault: MERGED_DEFAULT_TAB.services,
-  });
-  assert.deepEqual(
-    result.visibleTabs.map((tab) => tab.id),
-    ["health"],
-  );
-  assert.equal(result.activeTab, "health");
+  assert.equal(admin.activeTab, "traces");
 });
 
 test("runtime apps ALL; pipeline BIZ; middleware/hosts ADMIN-only", () => {
@@ -135,34 +103,4 @@ test("runtime apps ALL; pipeline BIZ; middleware/hosts ADMIN-only", () => {
     ["apps", "pipeline"],
   );
   assert.equal(finance.activeTab, "pipeline");
-});
-
-test("flow cache is ADMIN; ratelimit is BIZ; FINANCE falls back from cache", () => {
-  const tabs = getMergedRouteTabs("flow");
-  assert.deepEqual(tabs[0]?.roles, ROLES_BIZ);
-  assert.deepEqual(tabs[1]?.roles, ROLES_ADMIN);
-  const finance = resolveOpsTab({
-    role: "R_FINANCE",
-    tabs: [...tabs],
-    queryTab: "cache",
-    preferredDefault: MERGED_DEFAULT_TAB.flow,
-  });
-  assert.deepEqual(
-    finance.visibleTabs.map((tab) => tab.id),
-    ["ratelimit"],
-  );
-  assert.equal(finance.activeTab, "ratelimit");
-  assert.equal(finance.fellBack, true);
-
-  const admin = resolveOpsTab({
-    role: "R_ADMIN",
-    tabs: [...tabs],
-    queryTab: "cache",
-    preferredDefault: MERGED_DEFAULT_TAB.flow,
-  });
-  assert.deepEqual(
-    admin.visibleTabs.map((tab) => tab.id),
-    ["ratelimit", "cache"],
-  );
-  assert.equal(admin.activeTab, "cache");
 });

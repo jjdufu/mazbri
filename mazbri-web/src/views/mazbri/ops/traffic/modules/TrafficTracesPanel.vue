@@ -1,39 +1,15 @@
 <template>
-  <OpsPage :title="t('menus.mazbri.opsTraces')">
-    <template #actions>
-      <div class="ops-traces__toolbar">
-        <div class="ops-traces__toolbar-left">
-          <ElCheckTag
-            :checked="form.errors_only"
-            class="ops-traces__error-tag"
-            @change="toggleErrorsOnly"
-          >
-            {{ t("ops.traces.form.errorsOnly") }}
-          </ElCheckTag>
-        </div>
-        <div class="ops-traces__toolbar-right">
-          <ListQueryBar
-            v-model:q="keyword"
-            v-model:filters="listFilters"
-            always-expanded
-            :catalog="tracesFilterCatalog"
-            @search="applyFiltersAndSearch"
-          />
-          <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
-          <AutoRefresh v-model="refreshInterval" @tick="runSearch" />
-        </div>
-      </div>
-    </template>
-
+  <div class="traffic-traces-panel">
     <OpsCard :title="t('ops.traces.scatter.title')">
-      <div class="ops-traces__card-head">
+      <template #extra>
         <span class="ops-traces__muted">
-          {{ t("ops.traces.scatter.summary", { count: pagination.total }) }}
+          {{ t("ops.traces.scatter.summary", { count: pagination.total }) }} ·
+          {{ t("ops.traces.scatter.currentPageSubtitle") }}
           <template v-if="resolvedFromLogs !== null">
             · {{ t("ops.traces.resolved", { count: resolvedFromLogs }) }}
           </template>
         </span>
-      </div>
+      </template>
       <EmptyState
         v-if="searched && !loading && traces.length === 0"
         compact
@@ -52,7 +28,7 @@
       :loading="loading"
       :data="traces"
       :pagination="artPagination"
-      :show-header="false"
+      :show-total="false"
       :show-toolbar="false"
       :empty-text="emptyText"
       size="small"
@@ -61,6 +37,35 @@
       @pagination:size-change="handlePageSizeChange"
       @pagination:current-change="handleCurrentPageChange"
     >
+      <template #headerLeft>
+        <div class="ops-traces__quick-filters">
+          <ElCheckTag
+            :checked="form.errors_only"
+            class="ops-traces__error-tag"
+            @change="toggleErrorsOnly"
+          >
+            {{ t("ops.traces.form.errorsOnly") }}
+          </ElCheckTag>
+          <ElCheckbox
+            v-model="form.include_internal"
+            class="ops-traces__internal-check"
+            @change="onIncludeInternalChange"
+          >
+            {{ t("ops.traces.form.includeInternal") }}
+          </ElCheckbox>
+        </div>
+      </template>
+      <template #actions>
+        <ListQueryBar
+          v-model:q="keyword"
+          v-model:filters="listFilters"
+          always-expanded
+          :catalog="tracesFilterCatalog"
+          @search="applyFiltersAndSearch"
+        />
+        <ElButton @click="resetFilters">{{ t("common.reset") }}</ElButton>
+      </template>
+
       <template #start_ms="{ row }">{{ formatMs(row.start_ms) }}</template>
       <template #root_span="{ row }">
         <span class="ops-traces__service">{{ row.root_service }}</span>
@@ -83,13 +88,10 @@
         />
       </template>
     </ResourceTableShell>
-  </OpsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
-import CopyableText from "@/components/common/copyable-text/index.vue";
-import EmptyState from "@/components/common/empty-state/index.vue";
-import { formatDateTime } from "@/utils/format";
 import {
   computed,
   nextTick,
@@ -102,19 +104,17 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import CopyableText from "@/components/common/copyable-text/index.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsPage from "@/components/ops/OpsPage.vue";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import { fetchTraceServices, searchTraces } from "@/api/traces";
 import type { TraceSearchQuery, TraceSummary } from "@/types/api/traces";
 import type { ColumnOption } from "@/types/component";
 import type { ListFilter, ResourceFilterCatalog } from "@/types/list-query";
+import { formatDateTime } from "@/utils/format";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
@@ -122,15 +122,17 @@ import {
   getOpsChartThemeTokens,
   useOpsChartTheme,
 } from "@/composables/ops/useOpsChartHost";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { logger } from "@/utils/sys";
 
-defineOptions({ name: "OpsTraces" });
+defineOptions({ name: "TrafficTracesPanel" });
 
 const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-/** Search window cap enforced by analytics. */
+/** Search window cap enforced by analytics (7 days). */
 const MAX_SEARCH_SECONDS = 7 * 86400;
 
 interface SearchForm {
@@ -142,11 +144,13 @@ interface SearchForm {
   min_duration_ms: number | undefined;
   max_duration_ms: number | undefined;
   errors_only: boolean;
+  include_internal: boolean;
 }
 
 function queryString(key: string): string {
-  const v = route.query[key];
-  return typeof v === "string" ? v : "";
+  const raw = route.query[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return typeof v === "string" ? v.trim() : "";
 }
 
 function queryNumber(key: string): number | undefined {
@@ -165,16 +169,42 @@ const form = reactive<SearchForm>({
   min_duration_ms: queryNumber("min_duration_ms"),
   max_duration_ms: queryNumber("max_duration_ms"),
   errors_only: queryString("errors_only") === "true",
+  include_internal: queryString("include_internal") === "true",
 });
 
-const timeRange = ref<TimeRangeValue>({
-  preset: "1h",
-  start: Math.floor(Date.now() / 1000) - 3600,
-  end: Math.floor(Date.now() / 1000),
-});
-const refreshInterval = ref(0);
+function buildInitialListFilters(): ListFilter[] {
+  const seeded: ListFilter[] = [];
+  if (form.trace_id && form.request_id) {
+    seeded.push({ field: "request_id", op: "eq", value: form.request_id });
+  }
+  if (form.tenant_code) {
+    seeded.push({ field: "tenant_code", op: "eq", value: form.tenant_code });
+  }
+  if (form.product_id) {
+    seeded.push({ field: "product_id", op: "eq", value: form.product_id });
+  }
+  if (form.service) {
+    seeded.push({ field: "service", op: "eq", value: form.service });
+  }
+  if (form.min_duration_ms !== undefined) {
+    seeded.push({
+      field: "min_duration_ms",
+      op: "gte",
+      value: form.min_duration_ms,
+    });
+  }
+  if (form.max_duration_ms !== undefined) {
+    seeded.push({
+      field: "max_duration_ms",
+      op: "lte",
+      value: form.max_duration_ms,
+    });
+  }
+  return seeded;
+}
+
 const keyword = ref(form.trace_id || form.request_id || "");
-const listFilters = ref<ListFilter[]>([]);
+const listFilters = ref<ListFilter[]>(buildInitialListFilters());
 const loading = ref(false);
 const searched = ref(false);
 const traces = ref<TraceSummary[]>([]);
@@ -237,6 +267,7 @@ const scatterRef = ref<HTMLDivElement>();
 let scatter: echarts.ECharts | null = null;
 
 const catalogServices = ref<string[]>([]);
+let lastCatalogRangeKey = "";
 
 const serviceOptions = computed(() => {
   const set = new Set<string>(catalogServices.value);
@@ -361,20 +392,39 @@ function applyFiltersAndSearch() {
   void runSearch();
 }
 
+function resetFilters() {
+  keyword.value = "";
+  listFilters.value = [];
+  form.errors_only = false;
+  form.include_internal = false;
+  syncFormFromFilters();
+  pagination.page = 1;
+  void runSearch();
+}
+
 function toggleErrorsOnly(checked: boolean) {
   form.errors_only = checked;
   pagination.page = 1;
   void runSearch();
 }
 
+function onIncludeInternalChange() {
+  pagination.page = 1;
+  void runSearch();
+}
+
 async function loadServiceCatalog() {
   const { start, end } = clampedRange(MAX_SEARCH_SECONDS);
+  const rangeKey = `${start}:${end}`;
+  if (rangeKey === lastCatalogRangeKey) return;
+  lastCatalogRangeKey = rangeKey;
   try {
     const rows = await fetchTraceServices({ start, end });
     catalogServices.value = (rows ?? [])
       .map((r) => r.service_name)
       .filter((s) => s && !s.includes(":"));
   } catch (error) {
+    lastCatalogRangeKey = "";
     logger.error("Failed to load trace services:", error);
   }
 }
@@ -410,24 +460,34 @@ function buildQuery(): TraceSearchQuery {
     q.max_duration_ms = form.max_duration_ms;
   }
   if (form.errors_only) q.errors_only = true;
+  if (form.include_internal) q.include_internal = true;
   return q;
 }
 
 function syncRoute() {
-  const query: Record<string, string | undefined> = {
-    ...(route.query as Record<string, string>),
-  };
-  for (const key of TRACE_SEARCH_KEYS) query[key] = undefined;
+  const current = route.query as Record<string, string | undefined>;
+  const next: Record<string, string | undefined> = { ...current };
   const values: Record<string, string | number | boolean | undefined> = {
     ...form,
   };
+  let changed = false;
   for (const key of TRACE_SEARCH_KEYS) {
     const v = values[key];
-    if (v === undefined || v === null || v === "" || v === false) continue;
-    query[key] = String(v);
+    const desired =
+      v === undefined || v === null || v === "" || v === false
+        ? undefined
+        : String(v);
+    if (current[key] !== desired) {
+      changed = true;
+    }
+    if (desired === undefined) {
+      delete next[key];
+    } else {
+      next[key] = desired;
+    }
   }
-  query.tab = undefined;
-  void router.replace({ query });
+  if (!changed) return;
+  void router.replace({ query: next });
 }
 
 let searchSeq = 0;
@@ -504,12 +564,13 @@ const errorTraces = computed(() =>
 
 function buildScatterOption(): EChartsOption {
   const tokens = getOpsChartThemeTokens(isDark.value);
+  const { start, end } = clampedRange(MAX_SEARCH_SECONDS);
   const toPoint = (r: TraceSummary) => [
     r.start_ms,
     Number(r.duration_ms.toFixed(2)),
   ];
   return {
-    grid: { ...OPS_CHART_GRID, top: 48 },
+    grid: { ...OPS_CHART_GRID, top: 36 },
     tooltip: {
       trigger: "item",
       backgroundColor: tokens.tooltipBg,
@@ -536,6 +597,8 @@ function buildScatterOption(): EChartsOption {
     },
     xAxis: {
       type: "time",
+      min: start * 1000,
+      max: end * 1000,
       axisLine: { lineStyle: { color: tokens.axisLineColor } },
       axisTick: { lineStyle: { color: tokens.axisLineColor } },
       splitLine: { show: false },
@@ -573,12 +636,19 @@ function buildScatterOption(): EChartsOption {
   };
 }
 
-function onRangeChange(value: TimeRangeValue) {
-  timeRange.value = value;
-  pagination.page = 1;
-  void loadServiceCatalog();
+watch(
+  () => [timeRange.value.start, timeRange.value.end],
+  ([nextStart, nextEnd], [prevStart, prevEnd]) => {
+    if (nextStart === prevStart && nextEnd === prevEnd) return;
+    pagination.page = 1;
+    void loadServiceCatalog();
+    void runSearch();
+  },
+);
+
+watch(reloadTick, () => {
   void runSearch();
-}
+});
 
 let unbindScatterResize: (() => void) | null = null;
 
@@ -596,25 +666,17 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ops-traces__toolbar {
+.traffic-traces-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  min-width: 0;
+}
+.ops-traces__quick-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  width: 100%;
-}
-.ops-traces__toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.ops-traces__toolbar-right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+  gap: 12px;
 }
 .ops-traces__error-tag {
   display: inline-flex;
@@ -622,27 +684,19 @@ onUnmounted(() => {
   height: var(--art-form-control-height, 32px);
   padding: 0 12px;
   border-radius: var(--art-form-control-radius, 4px);
+  user-select: none;
 }
-.ops-traces__card-head {
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.ops-traces__card-head h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
+.ops-traces__internal-check {
+  height: var(--art-form-control-height, 32px);
+  margin-right: 0;
 }
 .ops-traces__muted {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 .ops-traces__scatter {
-  height: 240px;
+  height: 220px;
   overflow: hidden;
-}
-.ops-traces__table :deep(.el-table__row) {
-  cursor: pointer;
 }
 .ops-traces__service {
   display: inline-block;

@@ -303,6 +303,7 @@ import {
   type OverviewDrillId,
 } from "@/utils/ops/overview-drill";
 import {
+  TRAFFIC_PATH,
   buildAlertsRoute,
   buildCallsRoute,
   buildTraceSearchRoute,
@@ -459,7 +460,7 @@ function drill(id: OverviewDrillId) {
     query.tr_start = String(w.start);
     query.tr_end = String(w.end);
   }
-  if (target.path === "/ops/calls" && !query.tab) {
+  if (target.path === TRAFFIC_PATH && !query.tab) {
     query.tab = "customer";
   }
   drilldown({ path: target.path, query });

@@ -9,6 +9,7 @@ export interface TraceSearchQuery {
   min_duration_ms?: number;
   max_duration_ms?: number;
   errors_only?: boolean;
+  include_internal?: boolean;
   page?: number;
   page_size?: number;
 }

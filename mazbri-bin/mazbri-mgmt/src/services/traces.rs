@@ -35,6 +35,8 @@ pub struct TraceSearchParams {
     #[serde(default)]
     pub errors_only: Option<bool>,
     #[serde(default)]
+    pub include_internal: Option<bool>,
+    #[serde(default)]
     pub page: Option<u32>,
     #[serde(default)]
     pub page_size: Option<u32>,
@@ -72,6 +74,11 @@ fn search_params(p: &TraceSearchParams) -> Vec<(&'static str, String)> {
     push(&mut out, "min_duration_ms", p.min_duration_ms);
     push(&mut out, "max_duration_ms", p.max_duration_ms);
     push(&mut out, "errors_only", p.errors_only.filter(|v| *v));
+    push(
+        &mut out,
+        "include_internal",
+        p.include_internal.filter(|v| *v),
+    );
     push(&mut out, "page", p.page);
     push(&mut out, "page_size", p.page_size);
     out
@@ -227,6 +234,7 @@ mod tests {
             request_id: Some("  ".into()),
             service: Some("mazbri-gateway".into()),
             errors_only: Some(false),
+            include_internal: Some(false),
             min_duration_ms: Some(1500),
             page: Some(2),
             page_size: Some(20),
@@ -240,6 +248,14 @@ mod tests {
                 ("page", "2".to_string()),
                 ("page_size", "20".to_string()),
             ]
+        );
+        let with_internal = TraceSearchParams {
+            include_internal: Some(true),
+            ..TraceSearchParams::default()
+        };
+        assert_eq!(
+            search_params(&with_internal),
+            vec![("include_internal", "true".to_string())]
         );
     }
 

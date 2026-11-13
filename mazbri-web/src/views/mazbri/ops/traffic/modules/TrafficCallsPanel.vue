@@ -1,15 +1,5 @@
 <template>
-  <OpsTabPage
-    v-model="activeTab"
-    :title="t('menus.mazbri.opsCalls')"
-    :tabs="callTabs"
-    @change="onTabChange"
-  >
-    <template #actions>
-      <TimeRangePicker v-model="timeRange" @change="onRangeChange" />
-      <AutoRefresh v-model="refreshInterval" @tick="onRefreshTick" />
-    </template>
-
+  <div class="traffic-calls-panel">
     <OpsCard
       :title="t('ops.calls.histogram.title')"
       :info="t('ops.calls.histogram.brushHint')"
@@ -52,14 +42,14 @@
         ></div>
       </div>
     </OpsCard>
+
     <div class="ops-calls__table">
       <CallMonitorTable
         v-if="timeRange"
         ref="tableRef"
-        :key="activeTab"
-        :mode="activeTab"
+        :mode="props.mode"
         :title="
-          activeTab === 'upstream'
+          props.mode === 'upstream'
             ? $t('operations.monitoring.upstreamTitle')
             : $t('operations.monitoring.customerTitle')
         "
@@ -69,7 +59,7 @@
         @open-trace="openTrace"
       />
     </div>
-  </OpsTabPage>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -77,60 +67,49 @@ import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import AutoRefresh from "@/components/ops/AutoRefresh.vue";
-import TimeRangePicker, {
-  type TimeRangeValue,
-} from "@/components/ops/TimeRangePicker.vue";
+import type { TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import EmptyState from "@/components/common/empty-state/index.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
-import OpsTabPage from "@/components/ops/OpsTabPage.vue";
-import type { OpsTabDef } from "@/utils/ops/tabs";
 import {
   OPS_CHART_GRID,
   bindOpsChartResize,
   getOpsChartThemeTokens,
   useOpsChartTheme,
 } from "@/composables/ops/useOpsChartHost";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { fetchCallHistogram } from "@/api/call-monitor";
 import type {
   CallHistogramQuery,
   CallHistogramResponse,
+  CallMonitorMode,
 } from "@/types/api/call-monitor";
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
 import { formatIntervalHuman } from "@/utils/format";
-import { CALLS_FILTER_KEYS, type CallsTab } from "@/utils/ops/calls-link";
-import { defaultTimeRange, rangeFromQuery } from "@/utils/ops/time-range";
+import { CALLS_FILTER_KEYS } from "@/utils/ops/calls-link";
+import { sameRange } from "@/utils/ops/time-range";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
-import CallMonitorTable, {
-  type CallTimeRange,
-} from "./modules/CallMonitorTable.vue";
+import CallMonitorTable, { type CallTimeRange } from "./CallMonitorTable.vue";
 
-defineOptions({ name: "OpsCalls" });
+defineOptions({ name: "TrafficCallsPanel" });
+
+const props = defineProps<{
+  mode: CallMonitorMode;
+}>();
 
 const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const { timeRange, reloadTick } = useOpsSharedRange();
 
-const TABS: CallsTab[] = ["customer", "upstream"];
 const NUMERIC_KEYS = new Set(["status_code", "duration_ms_gte"]);
-
-const callTabs = computed<OpsTabDef[]>(() => [
-  { id: "customer", label: t("ops.calls.tabs.customer") },
-  { id: "upstream", label: t("ops.calls.tabs.upstream") },
-]);
 
 function queryString(key: string): string {
   const raw = route.query[key];
   const value = Array.isArray(raw) ? raw[0] : raw;
   return typeof value === "string" ? value.trim() : "";
-}
-
-function initialTab(): CallsTab {
-  const raw = queryString("tab");
-  return (TABS as string[]).includes(raw) ? (raw as CallsTab) : "customer";
 }
 
 function filtersFromRoute(): ListFilter[] {
@@ -153,13 +132,9 @@ function filtersFromRoute(): ListFilter[] {
   return out;
 }
 
-const activeTab = ref<CallsTab>(initialTab());
 const seedFilters = filtersFromRoute();
-const timeRange = ref<TimeRangeValue>(
-  rangeFromQuery(route.query) ?? defaultTimeRange("1h"),
-);
 const previousRange = ref<TimeRangeValue | null>(null);
-const refreshInterval = ref(0);
+let lastBrushTarget: TimeRangeValue | null = null;
 const tableRef = ref<InstanceType<typeof CallMonitorTable> | null>(null);
 
 const tableRange = computed<CallTimeRange | null>(() =>
@@ -168,15 +143,26 @@ const tableRange = computed<CallTimeRange | null>(() =>
     : null,
 );
 
-function onRangeChange(value: TimeRangeValue) {
-  previousRange.value = null;
-  timeRange.value = value;
-}
+watch(
+  () => timeRange.value,
+  (next) => {
+    if (lastBrushTarget && sameRange(next, lastBrushTarget)) {
+      return;
+    }
+    lastBrushTarget = null;
+    previousRange.value = null;
+  },
+);
+
+watch(reloadTick, () => {
+  tableRef.value?.refresh();
+});
 
 function restorePreviousRange() {
   if (!previousRange.value) return;
   const prev = previousRange.value;
   previousRange.value = null;
+  lastBrushTarget = null;
   timeRange.value = prev;
   void router.replace({
     query: {
@@ -186,14 +172,6 @@ function restorePreviousRange() {
       tr_end: String(prev.end),
     },
   });
-}
-
-function onRefreshTick() {
-  tableRef.value?.refresh();
-}
-
-function onTabChange(name: string | number) {
-  void router.replace({ query: { ...route.query, tab: String(name) } });
 }
 
 /* ---------- histogram ---------- */
@@ -210,7 +188,9 @@ function bucketLabel(ts: number, bucketSeconds: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   if (bucketSeconds >= 86400) return `${d.getMonth() + 1}-${pad(d.getDate())}`;
-  if (bucketSeconds >= 3600) return `${d.getMonth() + 1}-${pad(d.getDate())} ${hm}`;
+  if (bucketSeconds >= 3600) {
+    return `${d.getMonth() + 1}-${pad(d.getDate())} ${hm}`;
+  }
   return bucketSeconds < 60 ? `${hm}:${pad(d.getSeconds())}` : hm;
 }
 
@@ -219,7 +199,9 @@ watch(locale, () => renderChart());
 
 function buildOption(data: CallHistogramResponse): EChartsOption {
   const tokens = getOpsChartThemeTokens(isDark.value);
-  const labels = data.buckets.map((b) => bucketLabel(b.ts, data.bucket_seconds));
+  const labels = data.buckets.map((b) =>
+    bucketLabel(b.ts, data.bucket_seconds),
+  );
   return {
     tooltip: {
       trigger: "axis",
@@ -307,6 +289,7 @@ function onBrushEnd(params: unknown) {
     previousRange.value = { ...timeRange.value };
   }
   const value: TimeRangeValue = { preset: "custom", start, end };
+  lastBrushTarget = { ...value };
   timeRange.value = value;
   void router.replace({
     query: {
@@ -362,7 +345,7 @@ async function loadHistogram() {
     }
   }, HISTOGRAM_LOADING_DELAY_MS);
   try {
-    const res = await fetchCallHistogram(activeTab.value, {
+    const res = await fetchCallHistogram(props.mode, {
       ...lastQuery,
       start_time: timeRange.value.start,
       end_time: timeRange.value.end,
@@ -405,6 +388,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
+.traffic-calls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  min-width: 0;
+}
 .ops-calls__histogram-extra {
   display: inline-flex;
   align-items: center;

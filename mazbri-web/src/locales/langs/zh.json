@@ -474,6 +474,8 @@
           "channelName": "通道名称",
           "responseTime": "响应时间",
           "latency": "时延",
+          "internalLatency": "内部处理耗时",
+          "postResponseLatency": "后置耗时",
           "statusCode": "返回码",
           "requestIp": "请求 IP",
           "responseResult": "响应结果"
@@ -858,7 +860,7 @@
       "alertSilences": "告警静默",
       "opsInfra": "基础设施",
       "opsAlerts": "告警中心",
-      "opsTraffic": "流量与质量",
+      "opsTraffic": "调用与链路",
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
       "opsServices": "服务概览",
@@ -4558,7 +4560,8 @@
     "calls": {
       "tabs": {
         "customer": "客户调用",
-        "upstream": "上游调用"
+        "upstream": "上游调用",
+        "traces": "分布式链路"
       },
       "histogram": {
         "title": "调用时间分布",
@@ -4574,6 +4577,8 @@
         "inputRequired": "请输入要检索的 ID",
         "loadFailed": "加载阶段耗时失败",
         "empty": "暂无阶段记录",
+        "gatewaySummary": "网关总耗时",
+        "unsampledHint": "常规请求未命中子阶段采样，以上展示网关总耗时",
         "openTrace": "查看同 trace 全部调用",
         "breakdown": "阶段耗时",
         "columns": {
@@ -4605,14 +4610,17 @@
         "max": "最大",
         "minDuration": "最小耗时 (毫秒)",
         "maxDuration": "最大耗时 (毫秒)",
-        "errorsOnly": "仅错误"
+        "errorsOnly": "仅错误",
+        "includeInternal": "显示系统内部与管控链路"
       },
       "scatter": {
         "title": "耗时分布",
         "summary": "共 {count} 条，点击散点查看详情",
+        "currentPageSubtitle": "当前页链路耗时分布",
         "ok": "正常",
         "error": "含错误"
       },
+      "expiredTooltip": "链路明细已超过 7 天保留期，可复制 Trace ID 检索归档日志",
       "columns": {
         "traceId": "追踪 ID",
         "requestId": "请求流水号",

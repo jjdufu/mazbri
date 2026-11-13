@@ -10,8 +10,16 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{Instrument, debug, error, info_span, warn};
 
-/// HTTP 入口：以入站 `traceparent` 为父节点创建 `request` span，并把本段链路 ID
-/// 写回请求头（供下游处理函数读取）与响应头（`traceparent`）。
+/// 是否为高频探针或节点心跳路径：保留本地 `INFO` 日志诊断上下文，但由 OTLP 导出层前置拦截。
+fn is_probe_or_heartbeat_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/health" | "/ready" | "/metrics" | "/nodes/heartbeat"
+    )
+}
+
+/// HTTP 入口：以入站 `traceparent` 为父节点创建 `request`（或探针专用 `probe_request`）span，
+/// 并把本段链路 ID 写回请求头（供下游处理函数读取）与响应头（`traceparent`）。
 pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
     let request_id = request_id_from_headers(req.headers());
     let remote_parent = remote_parent_from_headers(req.headers());
@@ -19,16 +27,30 @@ pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
         || Arc::from(""),
         |parent| parent.span_id().to_string().into(),
     );
-    let span = info_span!(
-        "request",
-        otel.kind = "server",
-        request_id = %request_id,
-        trace_id = tracing::field::Empty,
-        span_id = tracing::field::Empty,
-        parent_span_id = %parent_span_id,
-        method = %req.method(),
-        path = %req.uri().path()
-    );
+    let path = req.uri().path();
+    let span = if is_probe_or_heartbeat_path(path) {
+        info_span!(
+            "probe_request",
+            otel.kind = "server",
+            request_id = %request_id,
+            trace_id = tracing::field::Empty,
+            span_id = tracing::field::Empty,
+            parent_span_id = %parent_span_id,
+            method = %req.method(),
+            path = %path
+        )
+    } else {
+        info_span!(
+            "request",
+            otel.kind = "server",
+            request_id = %request_id,
+            trace_id = tracing::field::Empty,
+            span_id = tracing::field::Empty,
+            parent_span_id = %parent_span_id,
+            method = %req.method(),
+            path = %path
+        )
+    };
     if let Some(parent) = remote_parent {
         set_remote_parent(&span, parent);
     }
@@ -149,5 +171,16 @@ mod probe_log_tests {
             "/v1/x",
             StatusCode::SERVICE_UNAVAILABLE
         ));
+    }
+
+    #[test]
+    fn probe_or_heartbeat_paths_match_only_noisy_endpoints() {
+        assert!(is_probe_or_heartbeat_path("/health"));
+        assert!(is_probe_or_heartbeat_path("/ready"));
+        assert!(is_probe_or_heartbeat_path("/metrics"));
+        assert!(is_probe_or_heartbeat_path("/nodes/heartbeat"));
+        assert!(!is_probe_or_heartbeat_path("/nodes/register"));
+        assert!(!is_probe_or_heartbeat_path("/nodes"));
+        assert!(!is_probe_or_heartbeat_path("/v1/query"));
     }
 }

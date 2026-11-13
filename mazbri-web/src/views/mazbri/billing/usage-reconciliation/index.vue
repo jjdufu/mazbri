@@ -609,7 +609,7 @@ import { logger } from "@/utils/sys";
 import { formatMoney, formatDate } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { buildCallsRoute } from "@/utils/ops/calls-link";
+import { buildCallsRoute } from "@/utils/ops/opsRoutes";
 import {
   hoursToSeconds,
   percentToRatio,
