@@ -9,9 +9,8 @@
       stripe
       border
     >
-      <template #actions>
+      <template v-if="canWriteBusiness && apiKeyActions.create" #actions>
         <ElButton
-          v-if="apiKeyActions.create"
           v-roles="ROLES_BIZ"
           type="primary"
           @click="handleCreate"
@@ -44,9 +43,19 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
+            v-if="apiKeyActions.rotate !== false"
             v-roles="ROLES_BIZ"
             link
-            type="success"
+            type="primary"
+            :loading="rotatingPrefix === row.key_prefix"
+            @click="handleRotate(row)"
+          >
+            {{ $t("tenant.actions.rotateApiKey") }}
+          </ElButton>
+          <ElButton
+            v-roles="ROLES_BIZ"
+            link
+            type="primary"
             @click="handleRenew(row)"
           >
             {{ $t("common.actions.renew") }}
@@ -56,9 +65,9 @@
             v-roles="ROLES_BIZ"
             link
             type="danger"
-            @click="handleDelete(row)"
+            @click="handleRevoke(row)"
           >
-            {{ $t("common.actions.delete") }}
+            {{ $t("tenant.actions.revokeApiKey") }}
           </ElButton>
         </TableActionRow>
       </template>
@@ -129,17 +138,21 @@
 
     <CenteredDialog
       v-model="createdKeyVisible"
-      :title="$t('tenant.apiKey.createTitle')"
-      width="550px"
+      :title="
+        secretDialogMode === 'rotate'
+          ? $t('tenant.apiKey.rotateTitle')
+          : $t('tenant.apiKey.createTitle')
+      "
+      width="560px"
       destroy-on-close
     >
       <ElAlert
         type="warning"
         show-icon
         :closable="false"
-        title="密钥仅展示一次，请立即保存。"
+        :title="$t('tenant.apiKey.secretWarning')"
       />
-      <div class="mt-4 font-semibold">API Key:</div>
+      <div class="mt-4 font-semibold">{{ $t("tenant.apiKey.secretLabel") }}</div>
       <ElInput
         class="mt-2"
         type="textarea"
@@ -151,8 +164,11 @@
         <ElButton type="primary" @click="handleCopyCreatedKey">{{
           $t("common.actions.copy")
         }}</ElButton>
-        <ElButton type="success" @click="handleDownloadCreatedKey">
-          下载
+        <ElButton @click="handleDownloadCreatedKey('txt')">
+          {{ $t("tenant.apiKey.downloadTxt") }}
+        </ElButton>
+        <ElButton @click="handleDownloadCreatedKey('json')">
+          {{ $t("tenant.apiKey.downloadJson") }}
         </ElButton>
         <ElButton @click="createdKeyVisible = false">{{
           $t("common.actions.close")
@@ -169,13 +185,18 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import type {
   ApiKey,
   CreateApiKeyRequest,
-  CreateApiKeyResponse,
   UpdateApiKeyRequest,
 } from "@/types/api/api-key";
-import { fetchTenantApiKeys, createApiKey, deleteApiKey } from "@/api/tenant";
+import {
+  fetchTenantApiKeys,
+  createApiKey,
+  rotateApiKey,
+  deleteApiKey,
+} from "@/api/tenant";
 import { updateApiKey as updateApiKeyApi } from "@/api/api-key";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
+import { useUserStore } from "@/store/modules/user";
 import EditDialog from "@/components/common/EditDialog.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
@@ -188,17 +209,23 @@ defineOptions({ name: "ApiKeysTab" });
 const props = defineProps<{
   tenantCode: string;
 }>();
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 const loading = ref(false);
 const creating = ref(false);
 const renewing = ref(false);
+const rotatingPrefix = ref<string | null>(null);
+const secretDialogMode = ref<"create" | "rotate">("create");
 const createdKeyVal = ref("");
 const createdKeyVisible = ref(false);
 const apiKeys = ref<ApiKey[]>([]);
 const apiKeyActions = ref<{
   create: boolean;
+  rotate?: boolean;
   delete: boolean;
 }>({
   create: false,
+  rotate: false,
   delete: false,
 });
 const createVisible = ref(false);
@@ -226,7 +253,7 @@ const apiKeyColumns = ref<ColumnOption<ApiKey>[]>([
   {
     prop: "operations",
     label: $t("common.fields.operations"),
-    width: 150,
+    width: 190,
     fixed: "right",
     useSlot: true,
   },
@@ -288,6 +315,7 @@ const handleSubmitCreate = async () => {
     const res = await createApiKey(props.tenantCode, data);
     ElMessage.success($t("tenant.messages.apiKeyCreated"));
     createVisible.value = false;
+    secretDialogMode.value = "create";
     createdKeyVal.value = res.api_key;
     createdKeyVisible.value = true;
     loadData();
@@ -338,10 +366,39 @@ const handleSubmitRenew = async () => {
     renewing.value = false;
   }
 };
-const handleDelete = async (row: ApiKey) => {
+const handleRotate = async (row: ApiKey) => {
   try {
     await ElMessageBox.confirm(
-      $t("tenant.messages.deleteApiKeyConfirm"),
+      $t("tenant.messages.rotateApiKeyConfirm"),
+      $t("common.tips"),
+      {
+        confirmButtonText: $t("common.confirm"),
+        cancelButtonText: $t("common.cancel"),
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+  rotatingPrefix.value = row.key_prefix;
+  try {
+    const res = await rotateApiKey(props.tenantCode, row.key_prefix);
+    ElMessage.success($t("tenant.messages.apiKeyRotated"));
+    secretDialogMode.value = "rotate";
+    createdKeyVal.value = res.api_key;
+    createdKeyVisible.value = true;
+    await loadData();
+  } catch (error) {
+    logger.error("Failed to rotate API key:", error);
+  } finally {
+    rotatingPrefix.value = null;
+  }
+};
+
+const handleRevoke = async (row: ApiKey) => {
+  try {
+    await ElMessageBox.confirm(
+      $t("tenant.messages.revokeApiKeyConfirm"),
       $t("common.tips"),
       {
         confirmButtonText: $t("common.confirm"),
@@ -350,11 +407,11 @@ const handleDelete = async (row: ApiKey) => {
       },
     );
     await deleteApiKey(props.tenantCode, row.key_prefix);
-    ElMessage.success($t("common.feedback.deleteSuccess"));
+    ElMessage.success($t("tenant.messages.apiKeyRevoked"));
     loadData();
   } catch (error) {
     if (error !== "cancel") {
-      logger.error("Failed to delete API key:", error);
+      logger.error("Failed to revoke API key:", error);
     }
   }
 };
@@ -368,22 +425,40 @@ const copyKey = async (text: string) => {
 const handleCopyCreatedKey = () => {
   copyKey(createdKeyVal.value);
 };
-const handleDownloadCreatedKey = () => {
+const handleDownloadCreatedKey = (format: "txt" | "json") => {
   try {
-    const text = `Tenant Code: ${props.tenantCode}\nAPI Key: ${createdKeyVal.value}\n\n请妥善保管此密钥。`;
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    if (!createdKeyVal.value) {
+      ElMessage.error($t("tenant.messages.apiKeyMissing"));
+      return;
+    }
+    const isJson = format === "json";
+    const content = isJson
+      ? `${JSON.stringify(
+          {
+            tenant_code: props.tenantCode,
+            api_key: createdKeyVal.value,
+            note: $t("tenant.apiKey.downloadNote"),
+          },
+          null,
+          2,
+        )}\n`
+      : `Tenant Code: ${props.tenantCode}\nAPI Key: ${createdKeyVal.value}\n\n${$t("tenant.apiKey.downloadNote")}\n`;
+    const mime = isJson
+      ? "application/json;charset=utf-8"
+      : "text/plain;charset=utf-8";
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `api_key_${props.tenantCode}.txt`;
+    link.download = `api_key_${props.tenantCode}.${format}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    ElMessage.success("密钥已下载");
+    ElMessage.success($t("tenant.messages.apiKeyDownloaded"));
   } catch (error) {
     logger.error("Failed to download API key:", error);
-    ElMessage.error("下载失败");
+    ElMessage.error($t("tenant.messages.apiKeyDownloadFailed"));
   }
 };
 onMounted(() => {

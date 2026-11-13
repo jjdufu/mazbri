@@ -544,6 +544,7 @@ mod tests {
                 (api_keys, "create_api_key"),
                 (api_keys, "revoke_api_key"),
                 (api_keys, "update_api_key"),
+                (api_keys, "rotate_api_key"),
                 (crypto, "update_crypto_profile"),
                 (crypto, "create_crypto_key"),
                 (crypto, "rotate_crypto_key"),
@@ -556,6 +557,18 @@ mod tests {
             ],
             "Category::Key",
         );
+        for handler_name in ["revoke_api_key", "update_api_key", "rotate_api_key"] {
+            let src = handler_source(api_keys, handler_name);
+            let role_pos = src.find("can_manage_tenants(").expect("role guard");
+            let precheck_pos = src
+                .find("precheck_tenant_api_key(")
+                .expect("tenant ownership precheck");
+            let mfa_pos = src.find("require_category(").expect("mfa guard");
+            assert!(
+                role_pos < precheck_pos && precheck_pos < mfa_pos,
+                "{handler_name} must check role and tenant ownership before MFA step-up"
+            );
+        }
         let export = handler_source(crypto, "export_crypto_data");
         assert!(export.contains("is_migration_export") && export.contains("Category::Key"));
     }

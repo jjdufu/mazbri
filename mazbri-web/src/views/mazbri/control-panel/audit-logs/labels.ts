@@ -22,6 +22,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "apikey.create": "auditLogs.explicitActions.apiKeyCreate",
   "apikey.update": "auditLogs.explicitActions.apiKeyUpdate",
   "apikey.revoke": "auditLogs.explicitActions.apiKeyRevoke",
+  "apikey.rotate": "auditLogs.explicitActions.apiKeyRotate",
   "user.login": "auditLogs.explicitActions.userLogin",
   "user.logout": "auditLogs.explicitActions.userLogout",
   "user.update": "auditLogs.explicitActions.userUpdate",

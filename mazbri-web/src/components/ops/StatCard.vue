@@ -18,9 +18,9 @@
         unit
       }}</span>
     </div>
-    <span v-if="hint" class="ops-stat-card__hint" :title="hint">{{
-      hint
-    }}</span>
+    <template v-if="hint" #footer>
+      <span class="ops-stat-card__hint" :title="hint">{{ hint }}</span>
+    </template>
   </MetricSummaryCard>
 </template>
 
@@ -114,9 +114,10 @@ function onCardClick(event: MouseEvent) {
 }
 .ops-stat-card__hint {
   display: block;
-  margin-top: 4px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -18,50 +18,6 @@ impl ProductService {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn list_tenant_products(&self, tenant_id: Uuid) -> Result<Vec<TenantProductDetail>> {
-        let rows = sqlx::query(
-            r"
-            SELECT
-                tp.id,
-                tp.product_id,
-                p.product_id AS product_code,
-                p.name AS product_name,
-                p.description,
-                p.timeout_secs,
-                tp.enabled,
-                p.cb_pro_enabled,
-                p.cb_failure_threshold,
-                p.cb_success_threshold,
-                p.cb_cooldown_secs,
-                tp.custom_config,
-                COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price,
-                COALESCE(tp.custom_config->>'currency', 'CNY') AS currency,
-                COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback,
-                tp.created_at,
-                COALESCE(tp.updated_at, tp.created_at) AS updated_at
-            FROM tenant_products tp
-            JOIN products p ON tp.product_id = p.id
-                        WHERE tp.tenant_id = $1 AND tp.enabled = true AND p.enabled = true
-            ORDER BY tp.created_at DESC
-            ",
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.db)
-        .await?;
-        let enabled = self.cache_enabled_lookup.is_enabled(tenant_id).await;
-        let products = rows
-            .iter()
-            .map(|row| {
-                let mut detail = tenant_product_detail_from_row(row);
-                detail.response_cache.enabled = enabled;
-                detail
-            })
-            .collect();
-        Ok(products)
-    }
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_tenant_product_config(
         &self,
         tenant_id: Uuid,

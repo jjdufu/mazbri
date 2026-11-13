@@ -58,6 +58,7 @@
         </div>
 
         <CommonActionPanel
+          v-if="accountActions.recharge || accountActions.refund"
           surface
           align="start"
           :title="$t('tenant.account.quickActionsTitle')"

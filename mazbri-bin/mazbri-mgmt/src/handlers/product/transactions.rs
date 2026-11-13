@@ -21,6 +21,7 @@ pub async fn list_tenant_products(
     service::list_tenant_products(
         &state.product_service,
         tenant_id,
+        &code,
         &params,
         is_business_admin(&claims),
     )

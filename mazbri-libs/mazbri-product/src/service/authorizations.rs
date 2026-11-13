@@ -1,7 +1,20 @@
 use super::{
-    AuthorizationDetail, Postgres, ProductService, QueryBuilder, Result, Row,
-    authorization_detail_from_row,
+    AuthorizationDetail, Postgres, ProductService, QueryBuilder, Result, Row, TenantProductDetail,
+    Uuid, authorization_detail_from_row, tenant_product_detail_from_row,
 };
+
+fn escape_ilike_pattern(raw: &str) -> String {
+    let mut escaped = String::with_capacity(raw.len() + 2);
+    escaped.push('%');
+    for ch in raw.chars() {
+        if matches!(ch, '%' | '_' | '\\') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped.push('%');
+    escaped
+}
 
 impl ProductService {
     /// # Errors
@@ -115,5 +128,87 @@ impl ProductService {
         let rows = list_builder.build().fetch_all(&self.db).await?;
         let authorizations = rows.iter().map(authorization_detail_from_row).collect();
         Ok((authorizations, total))
+    }
+
+    /// 按租户分页查询已开通产品详情（SQL 真 `COUNT(*) + LIMIT/OFFSET`，支持按产品名或编码模糊检索）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn list_tenant_products_page(
+        &self,
+        tenant_id: Uuid,
+        search: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<TenantProductDetail>, i64)> {
+        const BASE_FROM: &str = "\
+            FROM tenant_products tp \
+            JOIN products p ON tp.product_id = p.id \
+            WHERE tp.tenant_id = ";
+        let pattern = search
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(escape_ilike_pattern);
+
+        let mut count_builder: QueryBuilder<'_, Postgres> =
+            QueryBuilder::new(format!("SELECT COUNT(*) {BASE_FROM}"));
+        count_builder.push_bind(tenant_id);
+        count_builder.push(" AND tp.enabled = true AND p.enabled = true");
+        if let Some(ref pat) = pattern {
+            count_builder.push(" AND (p.name ILIKE ");
+            count_builder.push_bind(pat.clone());
+            count_builder.push(" ESCAPE '\\' OR p.product_id ILIKE ");
+            count_builder.push_bind(pat.clone());
+            count_builder.push(" ESCAPE '\\')");
+        }
+        let total: i64 = count_builder.build().fetch_one(&self.db).await?.get(0);
+
+        let mut list_builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(format!(
+            "SELECT \
+                tp.id, \
+                tp.product_id, \
+                p.product_id AS product_code, \
+                p.name AS product_name, \
+                p.description, \
+                p.timeout_secs, \
+                tp.enabled, \
+                p.cb_pro_enabled, \
+                p.cb_failure_threshold, \
+                p.cb_success_threshold, \
+                p.cb_cooldown_secs, \
+                tp.custom_config, \
+                COALESCE((tp.custom_config->>'unit_price')::TEXT, '0.001') AS unit_price, \
+                COALESCE(tp.custom_config->>'currency', 'CNY') AS currency, \
+                COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback, \
+                tp.created_at, \
+                COALESCE(tp.updated_at, tp.created_at) AS updated_at \
+             {BASE_FROM}"
+        ));
+        list_builder.push_bind(tenant_id);
+        list_builder.push(" AND tp.enabled = true AND p.enabled = true");
+        if let Some(ref pat) = pattern {
+            list_builder.push(" AND (p.name ILIKE ");
+            list_builder.push_bind(pat.clone());
+            list_builder.push(" ESCAPE '\\' OR p.product_id ILIKE ");
+            list_builder.push_bind(pat.clone());
+            list_builder.push(" ESCAPE '\\')");
+        }
+        list_builder.push(" ORDER BY tp.created_at DESC, tp.id ASC LIMIT ");
+        list_builder.push_bind(limit);
+        list_builder.push(" OFFSET ");
+        list_builder.push_bind(offset);
+
+        let rows = list_builder.build().fetch_all(&self.db).await?;
+        let cache_enabled = self.cache_enabled_lookup.is_enabled(tenant_id).await;
+        let products = rows
+            .iter()
+            .map(|row| {
+                let mut detail = tenant_product_detail_from_row(row);
+                detail.response_cache.enabled = cache_enabled;
+                detail
+            })
+            .collect();
+        Ok((products, total))
     }
 }

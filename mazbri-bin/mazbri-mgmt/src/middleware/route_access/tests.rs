@@ -158,6 +158,7 @@ fn previously_unguarded_routes_are_now_restricted() {
         ("POST", "/tenants/{code}/api-keys"),
         ("PUT", "/tenants/{code}/api-keys/{key_prefix}"),
         ("DELETE", "/tenants/{code}/api-keys/{key_prefix}"),
+        ("POST", "/tenants/{code}/api-keys/{key_prefix}/rotate"),
         ("POST", "/tenants/{code}/whitelist"),
         ("DELETE", "/tenants/{code}/whitelist/{ip}"),
     ] {

@@ -89,6 +89,7 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("apikey.create", "创建 API 密钥"),
     ("apikey.update", "更新 API 密钥"),
     ("apikey.revoke", "撤销 API 密钥"),
+    ("apikey.rotate", "轮换 API 密钥"),
     ("user.login", "登录"),
     ("user.logout", "登出"),
     ("user.update", "更新用户"),

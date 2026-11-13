@@ -101,6 +101,11 @@ export function summarizeRateLimitConflict(
     ],
   );
 }
+const formatCacheSizeMb = (bytes: number | undefined | null): number | null =>
+  typeof bytes === "number" && Number.isFinite(bytes)
+    ? Math.max(1, Math.round(bytes / 1048576))
+    : null;
+
 export function summarizeCacheConflict(
   attempted: UpdateTenantCacheConfigRequest,
   latest: TenantCacheConfig,
@@ -112,9 +117,9 @@ export function summarizeCacheConflict(
       latest: latest.default_ttl,
     },
     {
-      labelKey: "common.conflict.cacheMaxCacheSizeBytes",
-      attempted: attempted.max_cache_size,
-      latest: latest.max_cache_size,
+      labelKey: "common.conflict.cacheMaxCacheSizeMb",
+      attempted: formatCacheSizeMb(attempted.max_cache_size),
+      latest: formatCacheSizeMb(latest.max_cache_size),
     },
     {
       labelKey: "common.conflict.cacheTenantIsolated",

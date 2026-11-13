@@ -33,10 +33,13 @@ pub async fn serve(
     };
     if let Some(platform) = platform {
         let whitelist = service.ip_whitelist();
+        let validator = service.api_key_validator();
+        let platform_pool = (*platform.pool).clone();
+        let platform_db_cfg = platform.database;
         mazbri_core::config_watch::spawn_config_watch(
-            (*platform.pool).clone(),
-            platform.database,
-            config_watch,
+            platform_pool.clone(),
+            platform_db_cfg.clone(),
+            config_watch.clone(),
             mazbri_core::config_watch::AUTH_WHITELIST_VERSION_KEY,
             "auth-whitelist",
             move || {
@@ -47,6 +50,28 @@ pub async fn serve(
             },
         );
         info!("IP whitelist config watch started");
+        if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
+            &platform_pool,
+            mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+        )
+        .await
+        {
+            tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
+        }
+        mazbri_core::config_watch::spawn_config_watch(
+            platform_pool,
+            platform_db_cfg,
+            config_watch,
+            mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+            "auth-api-key",
+            move || {
+                let validator = validator.clone();
+                async move {
+                    validator.invalidate_all_validation_cache();
+                }
+            },
+        );
+        info!("API key validation cache config watch started");
     }
 
     mazbri_service::run_tarpc_server!(

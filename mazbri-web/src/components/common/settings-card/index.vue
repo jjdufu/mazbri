@@ -75,7 +75,6 @@ withDefaults(
   }
 
   :deep(.el-card__body) {
-    flex: 1;
     padding: 16px 20px 20px !important;
     overflow: visible !important;
   }

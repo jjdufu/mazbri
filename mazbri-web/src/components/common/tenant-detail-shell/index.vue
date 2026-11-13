@@ -1,11 +1,13 @@
 <template>
   <div class="tenant-detail-shell">
-    <div v-if="$slots.tabs || $slots.extra" class="tenant-detail-shell__bar">
-      <div v-if="$slots.tabs" class="tenant-detail-shell__tabs">
-        <slot name="tabs" />
+    <div class="tenant-detail-shell__header">
+      <div v-if="$slots.identity" class="tenant-detail-shell__identity">
+        <slot name="identity" />
       </div>
-      <div ref="headerActionsEl" class="tenant-detail-shell__extra">
-        <slot name="extra" />
+      <div v-if="$slots.tabs" class="tenant-detail-shell__bar">
+        <div class="tenant-detail-shell__tabs">
+          <slot name="tabs" />
+        </div>
       </div>
     </div>
 
@@ -16,13 +18,13 @@
 </template>
 
 <script setup lang="ts">
-import { provide, ref } from "vue";
-
+/**
+ * [不可更改] 租户详情统一页壳：
+ * 1. 顶部采用紧凑双层头部：第一行常驻展示租户身份条（名称 + 编码复制 + 状态徽标），第二行纯净承载业务 Tab；
+ * 2. 严禁渲染与顶部面包屑同名的“租户详情”重复大标题；
+ * 3. 严禁通过 provide("opsTabHeaderActionsEl" / "resourceTabHeaderActionsEl") 将子表按钮跨层 Teleport 塞入 Tab 导航条。
+ */
 defineOptions({ name: "TenantDetailShell" });
-
-const headerActionsEl = ref<HTMLElement | null>(null);
-provide("opsTabHeaderActionsEl", headerActionsEl);
-provide("resourceTabHeaderActionsEl", headerActionsEl);
 </script>
 
 <style scoped lang="scss">
@@ -35,21 +37,28 @@ provide("resourceTabHeaderActionsEl", headerActionsEl);
   box-sizing: border-box;
 }
 
-.tenant-detail-shell__bar {
+.tenant-detail-shell__header {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--ops-space-sm, 12px);
-  align-items: center;
-  justify-content: space-between;
-  min-height: 36px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
-.tenant-detail-shell__extra {
+.tenant-detail-shell__identity {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--ops-header-actions-gap, 8px);
+  flex-wrap: nowrap;
+  gap: 10px;
   align-items: center;
-  margin-left: auto;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 28px;
+}
+
+.tenant-detail-shell__bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
 }
 
 .tenant-detail-shell__tabs {

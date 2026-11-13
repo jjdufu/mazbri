@@ -3,6 +3,7 @@
     v-loading="loading"
     icon="ri:speed-line"
     :title="$t('rateLimit.title')"
+    :info="$t('rateLimit.clusterNote')"
   >
     <template #actions>
       <ElButton
@@ -80,7 +81,7 @@
         <ElInputNumber
           v-model="form.client_ip_qps"
           :min="1"
-          :max="form.max_concurrent"
+          :max="form.max_concurrent > 0 ? form.max_concurrent : undefined"
           :step="10"
           :disabled="!form.enabled || !canWriteBusiness"
           class="rate-input-number"
@@ -95,7 +96,7 @@
         <ElInputNumber
           v-model="form.client_ip_burst"
           :min="1"
-          :max="form.burst_size"
+          :max="form.burst_size > 0 ? form.burst_size : undefined"
           :step="10"
           :disabled="!form.enabled || !canWriteBusiness"
           class="rate-input-number"
@@ -177,7 +178,7 @@
               <ElInputNumber
                 v-model="row.qps"
                 :min="1"
-                :max="form.max_concurrent"
+                :max="form.max_concurrent > 0 ? form.max_concurrent : undefined"
                 :disabled="!form.enabled || !canWriteBusiness"
                 class="w-full"
               />
@@ -186,7 +187,7 @@
               <ElInputNumber
                 v-model="row.burst"
                 :min="1"
-                :max="form.burst_size"
+                :max="form.burst_size > 0 ? form.burst_size : undefined"
                 :disabled="!form.enabled || !canWriteBusiness"
                 class="w-full"
               />
@@ -214,7 +215,7 @@
       </div>
     </div>
 
-    <div class="collapsible-section">
+    <div v-if="canWriteBusiness" class="collapsible-section">
       <button
         type="button"
         class="collapse-trigger"
@@ -688,6 +689,10 @@ const loadConfig = async () => {
 };
 
 const loadCommands = async () => {
+  if (!canWriteBusiness.value) {
+    commands.value = [];
+    return;
+  }
   commandsLoading.value = true;
   try {
     const res = await fetchTenantRateLimitCommands(props.tenantCode, 50);

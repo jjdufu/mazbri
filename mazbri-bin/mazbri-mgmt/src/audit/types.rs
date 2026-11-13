@@ -30,6 +30,7 @@ audit_actions! {
     ApiKeyCreate => "apikey.create",
     ApiKeyRevoke => "apikey.revoke",
     ApiKeyUpdate => "apikey.update",
+    ApiKeyRotate => "apikey.rotate",
     UserLogin => "user.login",
     UserLogout => "user.logout",
     UserUpdate => "user.update",

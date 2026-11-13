@@ -1,7 +1,20 @@
 <template>
   <TenantDetailShell>
-    <template #extra>
-      <ElTag :type="getStatusType(tenantStatusKey)">
+    <template #identity>
+      <span class="tenant-identity__name" :title="tenant?.name || tenantCode">
+        {{ tenant?.name || tenantCode || "—" }}
+      </span>
+      <span v-if="tenantCode" class="tenant-identity__code">
+        <CopyableText
+          :value="tenantCode"
+          :label="$t('tenant.fields.code')"
+        />
+      </span>
+      <ElTag
+        :type="getStatusType(tenantStatusKey)"
+        size="small"
+        class="tenant-identity__status"
+      >
         {{ getStatusLabel(tenantStatusKey) }}
       </ElTag>
     </template>
@@ -78,6 +91,7 @@ import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import type { Tenant } from "@/types/api/tenant";
 import { fetchTenantById } from "@/api/tenant";
 import TenantDetailShell from "@/components/common/tenant-detail-shell/index.vue";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import BasicInfoTab from "./tabs/basic-info.vue";
 import ApiKeysTab from "./tabs/api-keys.vue";
 import WhitelistTab from "./tabs/whitelist.vue";
@@ -170,9 +184,29 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.tenant-detail-shell__page-title {
-  font-size: 18px;
+.tenant-identity__name {
+  font-size: 15px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 22px;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.tenant-identity__code {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--art-form-control-radius-sm, 4px);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  line-height: 20px;
+}
+
+.tenant-identity__status {
+  flex-shrink: 0;
 }
 </style>

@@ -11,8 +11,8 @@
 
 <script setup lang="ts">
 /**
- * 控制台设置页的双列卡片栅格（系统配置 / 账号安全 / 租户设置类 tab 共用）。
- * 两列等宽；每列最后一张卡片拉伸填满，保证左右两列底部平齐；≤1100px 时单列。
+ * [不可更改] 控制台设置页的双列卡片栅格（系统配置 / 账号安全 / 租户设置类 tab 共用）。
+ * 两列等宽、顶部对齐（align-items: flex-start），严禁等高拉伸导致展开单侧折叠面板时另一侧出现大面积空白；≤1100px 时单列。
  */
 defineOptions({ name: "SettingsCardGrid" });
 </script>
@@ -22,7 +22,7 @@ defineOptions({ name: "SettingsCardGrid" });
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .settings-card-grid__col {
@@ -30,11 +30,6 @@ defineOptions({ name: "SettingsCardGrid" });
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-  height: 100%;
-
-  > :deep(:last-child) {
-    flex: 1;
-  }
 }
 
 @media (max-width: 1100px) {

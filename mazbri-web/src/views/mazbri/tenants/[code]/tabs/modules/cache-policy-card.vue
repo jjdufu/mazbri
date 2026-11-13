@@ -32,12 +32,28 @@
       mobile-stack
       :label="$t('tenant.cachePolicy.fields.maxSize')"
     >
-      <ElInputNumber
-        v-model="form.max_cache_size"
-        :min="0"
-        :disabled="!canWriteBusiness"
-        class="cache-input-number"
-      />
+      <div class="cache-size-control">
+        <ElInputNumber
+          v-model="cacheSizeMb"
+          :min="1"
+          :max="2047"
+          :precision="0"
+          :step="64"
+          :disabled="!canWriteBusiness"
+          class="cache-input-number"
+        />
+        <div v-if="canWriteBusiness" class="cache-size-presets">
+          <ElButton
+            v-for="presetMb in CACHE_SIZE_PRESETS_MB"
+            :key="presetMb"
+            plain
+            :type="cacheSizeMb === presetMb ? 'primary' : undefined"
+            @click="cacheSizeMb = presetMb"
+          >
+            {{ presetMb }} MB
+          </ElButton>
+        </div>
+      </div>
     </CommonSettingRow>
     <SettingsToggleGrid>
       <CommonToggleTile :label="$t('tenant.cachePolicy.fields.enabled')">
@@ -222,11 +238,26 @@ const overrideColumns = ref<
   },
 ]);
 
+const BYTES_PER_MB = 1048576;
+const MAX_CACHE_SIZE_BYTES = 2147483647;
+const CACHE_SIZE_PRESETS_MB = [128, 512, 1024] as const;
+
+const bytesToMb = (bytes: number): number =>
+  Math.min(2047, Math.max(1, Math.round(bytes / BYTES_PER_MB)));
+
+const mbToBytes = (mb: number): number =>
+  Math.min(
+    MAX_CACHE_SIZE_BYTES,
+    Math.max(1, Math.round(Number.isFinite(mb) ? mb : 100)) * BYTES_PER_MB,
+  );
+
+const cacheSizeMb = ref(100);
+
 const form = reactive<TenantCacheConfig>({
   tenant_id: "",
   enabled: true,
   default_ttl: 300,
-  max_cache_size: 104857600,
+  max_cache_size: 100 * BYTES_PER_MB,
   tenant_isolated: true,
   api_ttl: {},
   warmup_enabled: false,
@@ -263,8 +294,10 @@ const loadData = async () => {
     if (res) {
       if (res.default_ttl !== undefined && res.default_ttl !== null)
         form.default_ttl = res.default_ttl;
-      if (res.max_cache_size !== undefined && res.max_cache_size !== null)
+      if (res.max_cache_size !== undefined && res.max_cache_size !== null) {
         form.max_cache_size = res.max_cache_size;
+        cacheSizeMb.value = bytesToMb(res.max_cache_size);
+      }
       if (res.tenant_isolated !== undefined && res.tenant_isolated !== null)
         form.tenant_isolated = res.tenant_isolated;
       if (res.warmup_enabled !== undefined && res.warmup_enabled !== null)
@@ -304,6 +337,7 @@ const handleSave = async () => {
       .filter(Boolean);
     const warmup_enabled = warmup_keys.length > 0;
 
+    form.max_cache_size = mbToBytes(cacheSizeMb.value);
     form.warmup_enabled = warmup_enabled;
     form.warmup_keys = warmup_keys;
 
@@ -322,6 +356,21 @@ onMounted(loadData);
 </script>
 
 <style scoped lang="scss">
+.cache-size-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.cache-size-presets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .table-row-label {
   display: flex;
   align-items: center;

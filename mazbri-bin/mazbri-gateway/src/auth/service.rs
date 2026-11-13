@@ -335,6 +335,27 @@ impl AuthService {
     pub fn get_db(&self) -> &PgPool {
         &self.db
     }
+    pub fn spawn_api_key_cache_watch(
+        &self,
+        db: PgPool,
+        listen_database: mazbri_core::DatabaseConfig,
+        config_watch: mazbri_core::config_watch::ConfigWatchConfig,
+    ) {
+        let token_cache = Arc::clone(&self.token_cache);
+        mazbri_core::config_watch::spawn_config_watch(
+            db,
+            listen_database,
+            config_watch,
+            mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+            "gateway-api-key",
+            move || {
+                let token_cache = Arc::clone(&token_cache);
+                async move {
+                    token_cache.clear();
+                }
+            },
+        );
+    }
     pub fn cache_token_response(&self, api_key: String, response: TokenResponse, ttl_secs: usize) {
         let ttl_secs = ttl_secs.min(usize::saturating_from(TOKEN_RESPONSE_CACHE_TTL_SECS)) as u64;
         self.token_cache.insert(

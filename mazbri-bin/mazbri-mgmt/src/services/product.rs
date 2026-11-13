@@ -531,12 +531,23 @@ pub async fn list_product_tenants(
 pub async fn list_tenant_products(
     product_service: &mazbri_product::ProductService,
     tenant_id: uuid::Uuid,
+    tenant_code: &str,
     params: &ListParams,
     can_write: bool,
 ) -> axum::response::Response {
-    match product_service.list_tenant_products(tenant_id).await {
-        Ok(products) => {
-            let all_json: Vec<serde_json::Value> = products
+    let page_size = params.capped_page_size();
+    let offset = params.offset();
+    match product_service
+        .list_tenant_products_page(
+            tenant_id,
+            params.q.as_deref(),
+            i64::from(page_size),
+            i64::from(offset),
+        )
+        .await
+    {
+        Ok((products, total)) => {
+            let page_json: Vec<serde_json::Value> = products
                 .iter()
                 .map(|p| {
                     serde_json::json!(
@@ -547,17 +558,15 @@ pub async fn list_tenant_products(
                     )
                 })
                 .collect();
-            let total = all_json.len() as u64;
-            let page_size = params.capped_page_size() as usize;
-            let offset = params.offset() as usize;
-            let page: Vec<_> = all_json.into_iter().skip(offset).take(page_size).collect();
-            let total_pages = mazbri_core::num::f64_to_u64(
-                (mazbri_core::num::u64_to_f64(total) / mazbri_core::num::usize_to_f64(page_size))
-                    .ceil(),
-            );
+            let total_u64 = u64::try_from(total.max(0)).unwrap_or(0);
+            let total_pages = if total_u64 == 0 {
+                0
+            } else {
+                total_u64.div_ceil(u64::from(page_size))
+            };
             crate::response::ApiResponse::ok(serde_json::json!(
-                { "products" : page, "pagination" : { "page" : params.page,
-                "page_size" : page_size, "total" : total, "total_pages" :
+                { "tenant_code" : tenant_code, "products" : page_json, "pagination" : { "page" : params.page.max(1),
+                "page_size" : page_size, "total" : total_u64, "total_pages" :
                 total_pages, }, "actions" : { "grant" : can_write, "revoke" : can_write } }
             ))
             .into_response()

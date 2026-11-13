@@ -594,6 +594,13 @@ pub static ROUTES: &[RouteAudit] = &[
         R::ApiKey,
         Some("key_prefix"),
     ),
+    secure(
+        "POST",
+        "/tenants/{code}/api-keys/{key_prefix}/rotate",
+        A::ApiKeyRotate,
+        R::ApiKey,
+        Some("key_prefix"),
+    ),
     read("/tenants/{code}/whitelist", R::Tenant),
     secure(
         "POST",

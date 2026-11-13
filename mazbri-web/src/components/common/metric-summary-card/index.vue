@@ -1,23 +1,29 @@
 <template>
   <ElCard v-loading="loading" shadow="hover" class="metric-summary-card">
-    <div class="metric-summary-card__content">
-      <div
-        class="metric-summary-card__icon"
-        :style="{ backgroundColor: iconBackground }"
-      >
-        <ArtSvgIcon
-          :icon="icon"
-          class="text-xl"
-          :style="{ color: iconColor }"
-        />
+    <div class="metric-summary-card__body">
+      <div class="metric-summary-card__content">
+        <div
+          v-if="icon"
+          class="metric-summary-card__icon"
+          :style="{ backgroundColor: iconBackground }"
+        >
+          <ArtSvgIcon
+            :icon="icon"
+            class="text-xl"
+            :style="{ color: iconColor }"
+          />
+        </div>
+        <div class="metric-summary-card__info">
+          <span class="metric-summary-card__label" :title="label">{{
+            label
+          }}</span>
+          <slot>
+            <span class="metric-summary-card__value">{{ value }}</span>
+          </slot>
+        </div>
       </div>
-      <div class="metric-summary-card__info">
-        <span class="metric-summary-card__label" :title="label">{{
-          label
-        }}</span>
-        <slot>
-          <span class="metric-summary-card__value">{{ value }}</span>
-        </slot>
+      <div v-if="$slots.footer" class="metric-summary-card__footer">
+        <slot name="footer" />
       </div>
     </div>
   </ElCard>
@@ -52,12 +58,24 @@ withDefaults(
   }
 }
 
+.metric-summary-card__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+}
+
 .metric-summary-card__content {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  height: 100%;
+}
+
+.metric-summary-card__footer {
+  min-width: 0;
 }
 
 .metric-summary-card__icon {

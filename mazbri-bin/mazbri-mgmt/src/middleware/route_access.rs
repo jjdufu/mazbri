@@ -280,6 +280,11 @@ pub const RULES: &[RouteRule] = &[
         Roles(BIZ),
     ),
     rule("PUT", "/tenants/{code}/api-keys/{key_prefix}", Roles(BIZ)),
+    rule(
+        "POST",
+        "/tenants/{code}/api-keys/{key_prefix}/rotate",
+        Roles(BIZ),
+    ),
     rule("GET", "/tenants/{code}/config/cache", AnyRole),
     rule("PUT", "/tenants/{code}/config/cache", Roles(BIZ)),
     rule("DELETE", "/tenants/{code}/config/ratelimit", Roles(BIZ)),

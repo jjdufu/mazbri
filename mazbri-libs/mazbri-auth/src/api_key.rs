@@ -393,27 +393,48 @@ impl ApiKeyValidator {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn revoke_api_key(&self, prefix: &str) -> AuthResult<()> {
+    pub async fn revoke_api_key(&self, tenant_id: Uuid, prefix: &str) -> AuthResult<()> {
         let mut tx = self.db.begin().await?;
-        let result = sqlx::query(
-                "UPDATE auth_credentials SET is_active = false WHERE credential_type = 'api_key' AND credential_id = $1",
-            )
-            .bind(prefix)
-            .execute(&mut *tx)
-            .await?;
-        if result.rows_affected() == 0 {
+        let key_result = sqlx::query(
+            r"
+            UPDATE api_keys ak
+            SET is_active = false, is_revoked = true, revoked_at = NOW()
+            FROM auth_credentials ac
+            WHERE ak.credential_id = ac.id
+              AND ac.tenant_id = $1
+              AND ac.credential_type = 'api_key'
+              AND ak.prefix = $2
+              AND ak.is_revoked = false
+            ",
+        )
+        .bind(tenant_id)
+        .bind(prefix)
+        .execute(&mut *tx)
+        .await?;
+        if key_result.rows_affected() == 0 {
             tx.rollback().await?;
             return Err(AuthError::ApiKeyNotFound(prefix.to_string()));
         }
         sqlx::query(
-                "UPDATE api_keys SET is_active = false, is_revoked = true, revoked_at = NOW() WHERE prefix = $1",
-            )
-            .bind(prefix)
-            .execute(&mut *tx)
-            .await?;
+            r"
+            UPDATE auth_credentials
+            SET is_active = false
+            WHERE tenant_id = $1
+              AND credential_type = 'api_key'
+              AND credential_id = $2
+            ",
+        )
+        .bind(tenant_id)
+        .bind(prefix)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         self.invalidate_validation_cache(prefix);
         Ok(())
+    }
+
+    pub fn invalidate_all_validation_cache(&self) {
+        self.validation_cache.clear();
     }
 
     pub async fn shutdown(&self) {

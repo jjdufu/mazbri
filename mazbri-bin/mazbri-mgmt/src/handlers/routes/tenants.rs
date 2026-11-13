@@ -35,6 +35,10 @@ pub fn routes() -> Router<AppState> {
             put(api_key_handlers::update_api_key).delete(api_key_handlers::revoke_api_key),
         )
         .route(
+            "/tenants/{code}/api-keys/{key_prefix}/rotate",
+            post(api_key_handlers::rotate_api_key),
+        )
+        .route(
             "/tenants/{code}/whitelist",
             get(whitelist_handlers::get_whitelist).post(whitelist_handlers::add_to_whitelist),
         )

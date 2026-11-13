@@ -72,6 +72,7 @@ export type AuditAction =
   | "apikey.create"
   | "apikey.update"
   | "apikey.revoke"
+  | "apikey.rotate"
   | "user.login"
   | "user.logout"
   | "user.update"

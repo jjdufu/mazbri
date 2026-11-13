@@ -203,7 +203,7 @@ pub fn validate_cache_config(config: &UpdateCacheConfigRequest) -> Result<(), St
 /// Product contract: enforcement is local per gateway instance (not cluster-strict).
 pub const RATE_LIMIT_ENFORCEMENT_MODEL: &str = "local_per_instance";
 /// Human-readable multi-replica semantics for UI/API consumers.
-pub const RATE_LIMIT_CLUSTER_NOTE: &str = "Limits apply per gateway instance. Aggregate capacity scales approximately with replica count.";
+pub const RATE_LIMIT_CLUSTER_NOTE: &str = "限流配额按单个网关实例独立生效，集群总容量随网关副本数近似线性扩展";
 
 /// GET response for customer usage-plan rate limits.
 /// Product names: plan QPS (`max_concurrent`), burst, abuse knobs, optional API overrides.
