@@ -493,6 +493,15 @@ fn init_bypass_probe_client(
     Ok(Arc::new(client))
 }
 
+fn load_cert_service_cfg(config: &MgmtApiConfig) -> Result<Arc<handlers::CertServiceClientCfg>> {
+    let cfg = Arc::new(handlers::CertServiceClientCfg {
+        url: config.cert_service.base().to_owned(),
+        token: get_cert_service_token()?,
+    });
+    info!("从环境变量加载 cert_service token");
+    Ok(cfg)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-mgmt");
@@ -500,18 +509,17 @@ async fn main() -> Result<()> {
     let config = load_mgmt_config()?;
     let service_name = config.service_name.as_str().to_owned();
     let log_routes = build_log_routes(&config.log_routes)?;
-    let cert_service = Arc::new(handlers::CertServiceClientCfg {
-        url: config.cert_service.base().to_owned(),
-        token: get_cert_service_token()?,
-    });
-    info!("从环境变量加载 cert_service token");
-    let admin_state = start_simple_admin_server(&service_name, &config.admin)?;
+    let cert_service = load_cert_service_cfg(&config)?;
+    let admin_handle = start_simple_admin_server(&service_name, &config.admin)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     info!("Mazbri Management API V2 starting...");
     info!("Configuration: {:?}", config.server);
     validate_security_config();
     init_metrics_and_audit(&config)?;
     let db = create_pool(&config.database, Some(config_dir)).await?;
+    if let Some(ref handle) = admin_handle {
+        handle.set_db_pool(Arc::clone(&db));
+    }
     info!("Connected to database");
     seed_config_watch_versions(&db).await;
     let redis = connect_redis(&config).await?;
@@ -519,8 +527,8 @@ async fn main() -> Result<()> {
     let product_service = build_product_service(&db, &redis, &dbs.cache);
     spawn_product_detail_watch(&db, &config, &product_service);
     let auth_state = create_auth_state(&dbs.admin, &redis).await?;
-    if let Some(ref state) = admin_state {
-        state.set_ready(true);
+    if let Some(ref handle) = admin_handle {
+        handle.set_ready(true);
         set_rpc_ready(&service_name, true);
         info!("Service marked as ready");
     }

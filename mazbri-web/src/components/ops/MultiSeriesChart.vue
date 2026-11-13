@@ -111,7 +111,9 @@ function buildOption(data: MetricSeries | null): EChartsOption {
     ? win.end - win.start
     : spanOfPoints(seriesList.flatMap((s) => s.points || []));
   const rawUnit = props.unit ?? data?.unit ?? "";
-  const unit = localizeUnit(rawUnit, t);
+  const isBinaryUpMetric =
+    data?.metric === "pg_up" || data?.metric === "redis_up";
+  const unit = isBinaryUpMetric ? "" : localizeUnit(rawUnit, t);
   const uType = resolvedUnitType.value;
   const allValues = seriesList.flatMap((s) =>
     (s.points || []).map((p) => Math.abs(p.value)),
@@ -119,6 +121,20 @@ function buildOption(data: MetricSeries | null): EChartsOption {
   const maxAbs = allValues.length > 0 ? Math.max(...allValues) : 0;
   const yAxisName =
     uType === "cores" && maxAbs > 0 && maxAbs < 0.1 ? "mCPU" : unit;
+  const formatBinaryState = (v: number, forAxis: boolean) => {
+    const rounded = Math.round(v);
+    if (rounded === 1) {
+      return forAxis
+        ? `1 (${t("ops.infra.onlineLabel")})`
+        : `1 · ${t("ops.infra.onlineLabel")}`;
+    }
+    if (rounded === 0) {
+      return forAxis
+        ? `0 (${t("ops.infra.offlineLabel")})`
+        : `0 · ${t("ops.infra.offlineLabel")}`;
+    }
+    return String(rounded);
+  };
 
   return {
     tooltip: {
@@ -134,7 +150,9 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       },
       valueFormatter: (v: unknown) =>
         typeof v === "number"
-          ? formatOpsMetricValue(v, uType, unit, locale.value, false)
+          ? isBinaryUpMetric
+            ? formatBinaryState(v, false)
+            : formatOpsMetricValue(v, uType, unit, locale.value, false)
           : String(v ?? "—"),
     },
     legend: {
@@ -176,6 +194,7 @@ function buildOption(data: MetricSeries | null): EChartsOption {
       },
       // 单点/稀点禁止 scale 夸张放大；固定从 0 起；离散计数强制整数刻度。
       min: 0,
+      ...(isBinaryUpMetric ? { max: 1, minInterval: 1 } : {}),
       scale: false,
       ...(uType === "count" ? { minInterval: 1 } : {}),
       axisLine: { show: false },
@@ -185,7 +204,9 @@ function buildOption(data: MetricSeries | null): EChartsOption {
         color: tokens.textColor,
         hideOverlap: true,
         formatter: (v: number) =>
-          formatOpsMetricValue(v, uType, unit, locale.value, true),
+          isBinaryUpMetric
+            ? formatBinaryState(v, true)
+            : formatOpsMetricValue(v, uType, unit, locale.value, true),
       },
     },
     series: seriesList.map((s, i) => {

@@ -10,17 +10,21 @@
     </template>
 
     <template #apps>
-      <HealthPanel />
+      <HealthPanel mode="apps" />
     </template>
     <template #middleware>
-      <InfraMetricsPanel
-        tab="middleware"
-        note-key="ops.infra.middlewareNote"
-      />
+      <div class="ops-runtime__stack">
+        <HealthPanel mode="infra" />
+        <InfraMetricsPanel
+          tab="middleware"
+          note-key="ops.infra.middlewareNote"
+        />
+      </div>
     </template>
     <template #pipeline>
-      <div class="ops-runtime__pipeline-stack">
+      <div class="ops-runtime__stack">
         <BillingPipelinePanel v-if="isBiz" />
+        <ControlPlanePipelinePanel v-if="isBiz" />
         <InfraMetricsPanel
           v-if="isAdmin"
           tab="pipeline"
@@ -45,6 +49,7 @@ import { useOpsRole } from "@/composables/ops/useOpsRole";
 import HealthPanel from "@/views/mazbri/ops/services/HealthPanel.vue";
 import InfraMetricsPanel from "@/views/mazbri/ops/infra/InfraMetricsPanel.vue";
 import BillingPipelinePanel from "./modules/BillingPipelinePanel.vue";
+import ControlPlanePipelinePanel from "./modules/ControlPlanePipelinePanel.vue";
 
 defineOptions({ name: "OpsRuntime" });
 
@@ -65,7 +70,7 @@ const { timeRange, refreshInterval, bumpReload } = provideOpsSharedRange(
 </script>
 
 <style scoped>
-.ops-runtime__pipeline-stack {
+.ops-runtime__stack {
   display: flex;
   flex-direction: column;
   gap: var(--ops-section-gap, 16px);

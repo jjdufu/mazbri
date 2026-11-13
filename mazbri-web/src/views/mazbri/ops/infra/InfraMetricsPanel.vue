@@ -4,6 +4,7 @@
     :series="series"
     :loading="loading"
     :note="noteText"
+    :window="chartWindow"
   />
 </template>
 
@@ -30,6 +31,10 @@ const { timeRange, reloadTick } = useOpsSharedRange();
 
 const charts = computed(() => getInfraCharts(props.tab));
 const noteText = computed(() => t(props.noteKey));
+const chartWindow = computed(() => ({
+  start: timeRange.value.start,
+  end: timeRange.value.end,
+}));
 
 const { loading, series } = useMetricTimeseriesPanel({
   charts,

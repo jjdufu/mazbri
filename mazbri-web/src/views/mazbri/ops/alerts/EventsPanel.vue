@@ -68,125 +68,88 @@
 
     <OpsCard>
       <OpsTableWrap>
-        <ElTable
-          v-loading="loading"
+        <ArtTable
+          :loading="loading"
           :data="rows"
+          :columns="columns"
+          :pagination="pagination"
+          :empty-text="t('ops.alerts.empty')"
           row-key="id"
           size="small"
           stripe
           class="surface-panel-table"
           @row-click="selectRow"
+          @pagination:size-change="onPageSizeChange"
+          @pagination:current-change="onCurrentPageChange"
         >
-          <ElTableColumn :label="t('ops.alerts.columns.severity')" width="76">
-            <template #default="{ row }">
-              <ElTag :type="alertSeverityTag(row.severity)" size="small">
-                {{ alertSeverityText(row.severity) }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.status')" min-width="110">
-            <template #default="{ row }">
-              <ElTag :type="alertStatusTag(row.status)" size="small">
-                {{ alertStatusText(row.status) }}
-              </ElTag>
-              <ElTag
-                v-if="row.silenced"
-                type="info"
-                size="small"
-                class="ops-alerts__flag"
-              >
-                {{ t("ops.alerts.silenced") }}
-              </ElTag>
-              <ElTag
-                v-if="row.inhibited"
-                type="warning"
-                size="small"
-                class="ops-alerts__flag"
-              >
-                {{ t("ops.alerts.inhibited") }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn
-            prop="rule_name"
-            :label="t('ops.alerts.columns.rule')"
-            min-width="130"
-            show-overflow-tooltip
-          />
-          <ElTableColumn
-            :label="t('ops.alerts.columns.labels')"
-            min-width="160"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">{{
-              formatAlertLabels(row.labels)
-            }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.traces.traceIds')" min-width="120">
-            <template #default="{ row }">
-              <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
-                <template v-for="tid in row.trace_ids" :key="tid">
-                  <ElTooltip
-                    v-if="isAdmin && isTraceExpired(row.started_at)"
-                    :content="t('ops.traces.expiredTooltip')"
-                    placement="top"
-                  >
-                    <span class="ops-alerts__expired-trace">
-                      <CopyableText
-                        :value="tid"
-                        compact
-                        :label="t('ops.traces.columns.traceId')"
-                      />
-                    </span>
-                  </ElTooltip>
-                  <CopyableText
-                    v-else
-                    :value="tid"
-                    compact
-                    :link="traceRouteOf(row, tid)"
-                    :label="t('ops.traces.columns.traceId')"
-                  />
-                </template>
-              </div>
-              <span v-else>—</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn
-            :label="t('ops.alerts.columns.value')"
-            min-width="110"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">
-              {{ formatAlertValue(row.value) }} {{ row.op }}
-              {{ formatAlertValue(row.threshold) }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.startedAt')" width="148">
-            <template #default="{ row }">{{
-              formatAlertTime(row.started_at)
-            }}</template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.resolvedAt')" width="148">
-            <template #default="{ row }">
-              {{ row.resolved_at ? formatAlertTime(row.resolved_at) : "—" }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn :label="t('ops.alerts.columns.actions')" width="92">
-            <template #default="{ row }">
-              <ElButton
-                v-if="drillRouteOf(row)"
-                link
-                type="primary"
-                @click.stop="goDrill(row)"
-              >
-                {{ t("ops.alerts.drillDown") }}
-              </ElButton>
-              <span v-else>—</span>
-            </template>
-          </ElTableColumn>
-        </ElTable>
+          <template #severity="{ row }">
+            <ElTag :type="alertSeverityTag(row.severity)" size="small">
+              {{ alertSeverityText(row.severity) }}
+            </ElTag>
+          </template>
+          <template #status="{ row }">
+            <ElTag :type="alertStatusTag(row.status)" size="small">
+              {{ alertStatusText(row.status) }}
+            </ElTag>
+            <ElTag
+              v-if="row.silenced"
+              type="info"
+              size="small"
+              class="ops-alerts__flag"
+            >
+              {{ t("ops.alerts.silenced") }}
+            </ElTag>
+            <ElTag
+              v-if="row.inhibited"
+              type="warning"
+              size="small"
+              class="ops-alerts__flag"
+            >
+              {{ t("ops.alerts.inhibited") }}
+            </ElTag>
+          </template>
+          <template #trace_ids="{ row }">
+            <div v-if="row.trace_ids?.length" class="ops-alerts__traces">
+              <template v-for="tid in row.trace_ids" :key="tid">
+                <ElTooltip
+                  v-if="isAdmin && isTraceExpired(row.started_at)"
+                  :content="t('ops.traces.expiredTooltip')"
+                  placement="top"
+                >
+                  <span class="ops-alerts__expired-trace">
+                    <CopyableText
+                      :value="tid"
+                      compact
+                      :label="t('ops.traces.columns.traceId')"
+                    />
+                  </span>
+                </ElTooltip>
+                <CopyableText
+                  v-else
+                  :value="tid"
+                  compact
+                  :link="traceRouteOf(row, tid)"
+                  :label="t('ops.traces.columns.traceId')"
+                />
+              </template>
+            </div>
+            <span v-else>—</span>
+          </template>
+          <template #actions="{ row }">
+            <ElButton
+              v-if="drillRouteOf(row)"
+              link
+              type="primary"
+              @click.stop="goDrill(row)"
+            >
+              {{ t("ops.alerts.drillDown") }}
+            </ElButton>
+            <span v-else>—</span>
+          </template>
+        </ArtTable>
       </OpsTableWrap>
-      <div v-if="selected" class="ops-alerts__related">
+
+      <div v-if="isBiz && selected" class="ops-alerts__related">
         <h3>{{ t("ops.alerts.relatedChanges") }} · {{ selected.rule_name }}</h3>
         <ElEmpty
           v-if="!relatedChanges.length"
@@ -205,26 +168,15 @@
           </ElTimelineItem>
         </ElTimeline>
       </div>
-      <div class="ops-alerts__pager">
-        <ElPagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :total="total"
-          :page-sizes="[20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="reload"
-          @size-change="search"
-        />
-      </div>
     </OpsCard>
   </div>
 </template>
 
 <script setup lang="ts">
-import CopyableText from "@/components/common/copyable-text/index.vue";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import AutoRefresh from "@/components/ops/AutoRefresh.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
@@ -237,6 +189,7 @@ import type {
   AlertSeverity,
   AlertStatus,
 } from "@/types/api/alerts";
+import type { ColumnOption, PaginationConfig } from "@/types/component";
 import {
   alertSeverityTag,
   alertStatusTag,
@@ -300,6 +253,73 @@ const filters = reactive<{
 const selected = ref<AlertEvent | null>(null);
 const relatedChanges = ref<ChangeEvent[]>([]);
 
+const pagination = computed<PaginationConfig>(() => ({
+  current: page.value,
+  size: pageSize.value,
+  total: total.value,
+}));
+
+const columns = computed<ColumnOption<AlertEvent>[]>(() => [
+  {
+    prop: "severity",
+    label: t("ops.alerts.columns.severity"),
+    width: 84,
+    useSlot: true,
+  },
+  {
+    prop: "status",
+    label: t("ops.alerts.columns.status"),
+    minWidth: 115,
+    useSlot: true,
+  },
+  {
+    prop: "rule_name",
+    label: t("ops.alerts.columns.rule"),
+    minWidth: 130,
+    showOverflowTooltip: true,
+  },
+  {
+    prop: "labels",
+    label: t("ops.alerts.columns.labels"),
+    minWidth: 160,
+    showOverflowTooltip: true,
+    formatter: (row) => formatAlertLabels(row.labels),
+  },
+  {
+    prop: "trace_ids",
+    label: t("ops.traces.traceIds"),
+    minWidth: 120,
+    useSlot: true,
+  },
+  {
+    prop: "value",
+    label: t("ops.alerts.columns.value"),
+    minWidth: 115,
+    showOverflowTooltip: true,
+    formatter: (row) =>
+      `${formatAlertValue(row.value)} ${row.op} ${formatAlertValue(row.threshold)}`,
+  },
+  {
+    prop: "started_at",
+    label: t("ops.alerts.columns.startedAt"),
+    width: 152,
+    formatter: (row) => formatAlertTime(row.started_at),
+  },
+  {
+    prop: "resolved_at",
+    label: t("ops.alerts.columns.resolvedAt"),
+    width: 152,
+    formatter: (row) =>
+      row.resolved_at ? formatAlertTime(row.resolved_at) : "—",
+  },
+  {
+    prop: "actions",
+    label: t("ops.alerts.columns.actions"),
+    width: 92,
+    useSlot: true,
+  },
+]);
+
 function traceRouteOf(row: AlertEvent, traceId: string) {
   if (!canDrillToTrace(row.started_at, isAdmin.value)) return null;
   const win = computeAlertDrillWindow(row.started_at, row.resolved_at);
@@ -349,6 +369,17 @@ function search() {
   void reload();
 }
 
+function onPageSizeChange(nextSize: number) {
+  pageSize.value = nextSize;
+  page.value = 1;
+  void reload();
+}
+
+function onCurrentPageChange(nextPage: number) {
+  page.value = nextPage;
+  void reload();
+}
+
 function clearEventFilter() {
   filters.event_id = "";
   void router.replace({ query: stripAlertEventIdQuery(route.query) });
@@ -356,6 +387,7 @@ function clearEventFilter() {
 }
 
 async function selectRow(row: AlertEvent) {
+  if (!isBiz.value) return;
   selected.value = row;
   relatedChanges.value = [];
   const started = Date.parse(row.started_at);
@@ -374,6 +406,11 @@ onMounted(reload);
 </script>
 
 <style scoped>
+.ops-alerts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-sm, 12px);
+}
 .ops-alerts__timeline-title {
   margin-right: 8px;
   font-weight: 600;
@@ -382,11 +419,6 @@ onMounted(reload);
   margin-left: 8px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.ops-alerts__pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
 }
 .ops-alerts__traces {
   display: flex;

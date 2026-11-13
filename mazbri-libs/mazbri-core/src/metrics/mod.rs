@@ -23,7 +23,8 @@ pub use defaults::{
 pub use health::{
     BoxedConfigCenterCheck, BoxedReadyCheck, CONFIG_CENTER_CONNECTED, CertExpiryInfoProvider,
     DB_POOL_ACTIVE_CONNECTIONS, DB_POOL_IDLE_CONNECTIONS, DbPoolInfo, HealthMetricsUpdater,
-    RPC_HEALTH_CHECK, RPC_READY, TLS_CERT_EXPIRY_TIMESTAMP, register_health_metrics, set_rpc_ready,
+    LateDbPool, RPC_HEALTH_CHECK, RPC_READY, TLS_CERT_EXPIRY_TIMESTAMP, record_db_pool_metrics,
+    register_health_metrics, set_rpc_ready,
 };
 pub use otlp::{
     OTLP_SPANS_DROPPED_TOTAL, SpanDropReason, record_spans_dropped, register_otlp_metrics,

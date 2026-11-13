@@ -1076,7 +1076,7 @@ fn container_group_by(detail: bool) -> &'static str {
         CONTAINER_BY
     }
 }
-const FS_FILTER: &str = r#"filesystem=~"ext4|xfs|overlay""#;
+const FS_FILTER: &str = r#"filesystem=~"ext4|xfs|overlay",mountpoint!~"/etc/(hosts|hostname|resolv\\.conf)|/(proc|sys|dev|run)($|/.*)""#;
 
 /// 单侧容器序列（docker 或 k8s identity 过滤）。
 fn container_side(metric: &str, filter: &str, selectors_suffix: &str) -> String {
@@ -1198,9 +1198,9 @@ const INFRA_CATALOG: &[(&str, &str, &str, &str)] = &[
         "line",
     ),
     // 9.2 中间件
-    ("pg_up", "PostgreSQL 可达", "bool", "line"),
+    ("pg_up", "PostgreSQL 在线状态", "", "line"),
     ("pg_connections", "PostgreSQL 连接数（按 datname）", "conn", "line"),
-    ("pg_max_connections", "PostgreSQL max_connections", "conn", "line"),
+    ("pg_max_connections", "PostgreSQL 最大连接上限", "conn", "line"),
     ("pg_tps", "PostgreSQL TPS（commit+rollback）", "tps", "line"),
     ("pg_cache_hit_ratio", "PostgreSQL 缓存命中率", "%", "line"),
     ("pg_deadlocks", "PostgreSQL 死锁速率", "ops/s", "line"),
@@ -1211,7 +1211,7 @@ const INFRA_CATALOG: &[(&str, &str, &str, &str)] = &[
         "line",
     ),
     ("pg_database_size_mb", "PostgreSQL 库大小", "MB", "line"),
-    ("redis_up", "Redis 可达", "bool", "line"),
+    ("redis_up", "Redis 在线状态", "", "line"),
     ("redis_memory_mb", "Redis 已用内存", "MB", "line"),
     ("redis_hit_ratio", "Redis 命中率", "%", "line"),
     ("redis_commands", "Redis 命令速率", "ops/s", "line"),
@@ -2176,6 +2176,23 @@ mod tests {
         assert!(q.contains("billing_charge_lag_seconds_bucket"));
         let q = build_metric_query("pipeline_freshness_seconds", None, &t, 60)?;
         assert!(q.contains("by (store, table)"));
+        Ok(())
+    }
+
+    #[test]
+    fn filesystem_query_filters_virtual_mounts() -> Result<()> {
+        let t = default_service_targets();
+        let q = build_metric_query("host_filesystem_usage_ratio", None, &t, 60)?;
+        assert!(q.contains(r#"filesystem=~"ext4|xfs|overlay""#), "{q}");
+        assert!(
+            q.contains(r#"mountpoint!~"/etc/(hosts|hostname|resolv\\.conf)|/(proc|sys|dev|run)($|/.*)""#),
+            "{q}"
+        );
+        let catalog = metric_catalog();
+        for key in ["pg_up", "redis_up"] {
+            let item = catalog.iter().find(|m| m.key == key).expect(key);
+            assert_eq!(item.unit, "", "{key} must not expose raw bool unit");
+        }
         Ok(())
     }
 

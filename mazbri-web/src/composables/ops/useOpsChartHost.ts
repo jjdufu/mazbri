@@ -88,6 +88,7 @@ export function inferOpsChartUnitType(
   if (u === "%") return "percent";
   if (u === "ms") return "durationMs";
   if (u === "s") return "durationSec";
+  if (m === "pg_up" || m === "redis_up") return "count";
   if (u && DISCRETE_COUNT_UNITS.has(u)) return "count";
   return "raw";
 }

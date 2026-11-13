@@ -195,19 +195,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
-      // 旧书签临时 redirect（非业务双实现）；侧栏不可见
-      {
-        path: "services",
-        name: "OpsServicesRedirect",
-        redirect: { path: "/ops/runtime", query: { tab: "apps" } },
-        meta: {
-          title: "menus.mazbri.opsRuntime",
-          icon: "ri:heart-pulse-line",
-          isHide: true,
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
       {
         path: "services/:service",
         name: "OpsServiceDetail",
@@ -217,18 +204,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:heart-pulse-line",
           isHide: true,
           activePath: RUNTIME_PATH,
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
-        path: "infra",
-        name: "OpsInfraRedirect",
-        redirect: { path: "/ops/runtime", query: { tab: "middleware" } },
-        meta: {
-          title: "menus.mazbri.opsRuntime",
-          icon: "ri:server-line",
-          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
