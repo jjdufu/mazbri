@@ -4496,7 +4496,7 @@
         "title": "调用时间分布",
         "calls": "成功",
         "errors": "错误",
-        "summary": "共 {total} 次 · 错误 {errors} 次 · 统计间隔 {bucket}s",
+        "summary": "共 {total} 次 · 错误 {errors} 次 · 统计间隔 {bucket}",
         "brushHint": "在图表上横向拖拽框选可缩窄时间范围",
         "resetZoom": "还原时间窗",
         "loadFailed": "加载调用分布失败"
@@ -4870,6 +4870,7 @@
     "units": {
       "perSec": "次/秒",
       "times": "次",
+      "cores": "核",
       "seconds": "秒",
       "s": "秒",
       "days": "天",

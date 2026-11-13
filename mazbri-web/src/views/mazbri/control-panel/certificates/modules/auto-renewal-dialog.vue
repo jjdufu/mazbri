@@ -18,11 +18,13 @@
       label-width="120px"
     >
       <ElFormItem :label="$t('certificate.autoRenewalDialog.fields.subject')">
-        <span class="text-gray-600">{{ certificateSubject }}</span>
+        <span class="text-[var(--el-text-color-regular)]">{{
+          certificateSubject
+        }}</span>
       </ElFormItem>
 
       <ElFormItem :label="$t('certificate.autoRenewalDialog.fields.expiresAt')">
-        <span :class="{ 'text-red-500': isExpiringSoon }">
+        <span :class="{ 'text-danger': isExpiringSoon }">
           {{ formatDate(certificateExpiresAt) }}
         </span>
       </ElFormItem>
@@ -98,7 +100,9 @@
           v-if="nextRenewalAt"
           :label="$t('certificate.autoRenewalDialog.fields.nextRenewalAt')"
         >
-          <span class="text-gray-600">{{ formatDate(nextRenewalAt) }}</span>
+          <span class="text-[var(--el-text-color-regular)]">{{
+            formatDate(nextRenewalAt)
+          }}</span>
         </ElFormItem>
       </template>
     </ElForm>

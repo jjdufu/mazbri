@@ -24,6 +24,7 @@
             :categories="funnelCategories"
             :series="funnelSeries"
             :loading="loading"
+            unit-type="count"
             height="240px"
           />
           <ArtTable

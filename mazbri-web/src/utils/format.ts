@@ -122,9 +122,50 @@ export function formatDays(days?: number | string | null): string {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+  if (!Number.isFinite(bytes) || bytes === 0) return "0 B";
+  const sign = bytes < 0 ? "-" : "";
+  const abs = Math.abs(bytes);
+  if (abs < 1024) {
+    return `${sign}${parseFloat(abs.toFixed(2))} B`;
+  }
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  const i = Math.min(
+    sizes.length - 1,
+    Math.max(0, Math.floor(Math.log(abs) / Math.log(k))),
+  );
+  return `${sign}${parseFloat((abs / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * 将统计步长/秒数格式化为可读双语时长（如 `60 -> "1 分钟" / "1m"`, `10800 -> "3 小时" / "3h"`）。
+ */
+export function formatIntervalHuman(seconds: number, locale = "zh"): string {
+  const isEn = locale.toLowerCase().startsWith("en");
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return isEn ? "0s" : "0 秒";
+  }
+  const total = Math.round(seconds);
+  if (total < 60) {
+    return isEn ? `${total}s` : `${total} 秒`;
+  }
+  if (total < 3600) {
+    const mins = total / 60;
+    const text = Number.isInteger(mins)
+      ? String(mins)
+      : parseFloat(mins.toFixed(1)).toString();
+    return isEn ? `${text}m` : `${text} 分钟`;
+  }
+  if (total < 86400) {
+    const hours = total / 3600;
+    const text = Number.isInteger(hours)
+      ? String(hours)
+      : parseFloat(hours.toFixed(1)).toString();
+    return isEn ? `${text}h` : `${text} 小时`;
+  }
+  const days = total / 86400;
+  const text = Number.isInteger(days)
+    ? String(days)
+    : parseFloat(days.toFixed(1)).toString();
+  return isEn ? `${text}d` : `${text} 天`;
 }

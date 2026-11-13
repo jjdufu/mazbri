@@ -87,8 +87,9 @@
     </OpsCard>
 
     <OpsCard :title="t('ops.services.detail.specific')">
-      <ElEmpty
+      <EmptyState
         v-if="!specificMetrics.length"
+        compact
         :description="t('ops.services.detail.noSpecific')"
       />
       <ElRow v-else :gutter="16">
@@ -118,6 +119,7 @@ import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import TimeRangePicker, {
   type TimeRangeValue,
 } from "@/components/ops/TimeRangePicker.vue";

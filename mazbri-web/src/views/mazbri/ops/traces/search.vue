@@ -34,7 +34,13 @@
           </template>
         </span>
       </div>
+      <EmptyState
+        v-if="searched && !loading && traces.length === 0"
+        compact
+        :description="emptyText"
+      />
       <div
+        v-show="!searched || loading || traces.length > 0"
         ref="scatterRef"
         v-loading="loading"
         class="ops-traces__scatter"
@@ -82,8 +88,17 @@
 
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { formatDateTime } from "@/utils/format";
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
@@ -104,12 +119,14 @@ import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
   bindOpsChartResize,
+  getOpsChartThemeTokens,
+  useOpsChartTheme,
 } from "@/composables/ops/useOpsChartHost";
 import { logger } from "@/utils/sys";
 
 defineOptions({ name: "OpsTraces" });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -454,7 +471,14 @@ function traceRouteOf(row: TraceSummary) {
   });
 }
 
+const { isDark } = useOpsChartTheme(() => renderScatter());
+watch(locale, () => renderScatter());
+
 function renderScatter() {
+  if (searched.value && !loading.value && traces.value.length === 0) {
+    scatter?.clear();
+    return;
+  }
   if (!scatterRef.value) return;
   if (!scatter) {
     scatter = echarts.init(scatterRef.value);
@@ -468,7 +492,7 @@ function renderScatter() {
       if (row) void router.push(traceRouteOf(row));
     });
   }
-  scatter.setOption(buildScatterOption(), true);
+  scatter.setOption(buildScatterOption(), { notMerge: true });
 }
 
 const okTraces = computed(() =>
@@ -479,6 +503,7 @@ const errorTraces = computed(() =>
 );
 
 function buildScatterOption(): EChartsOption {
+  const tokens = getOpsChartThemeTokens(isDark.value);
   const toPoint = (r: TraceSummary) => [
     r.start_ms,
     Number(r.duration_ms.toFixed(2)),
@@ -487,6 +512,9 @@ function buildScatterOption(): EChartsOption {
     grid: { ...OPS_CHART_GRID, top: 48 },
     tooltip: {
       trigger: "item",
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.titleColor },
       formatter: (p) => {
         const item = Array.isArray(p) ? p[0] : p;
         const series =
@@ -496,13 +524,39 @@ function buildScatterOption(): EChartsOption {
         return `${row.root_service} · ${row.root_span}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
       },
     },
-    legend: { top: 0, right: 0 },
-    xAxis: { type: "time" },
-    yAxis: { type: "value", name: "ms", scale: true },
+    legend: {
+      top: 0,
+      right: 0,
+      left: 84,
+      icon: "circle",
+      itemWidth: 8,
+      itemHeight: 8,
+      padding: [2, 0, 2, 0],
+      textStyle: { color: tokens.textColor, fontSize: 12 },
+    },
+    xAxis: {
+      type: "time",
+      axisLine: { lineStyle: { color: tokens.axisLineColor } },
+      axisTick: { lineStyle: { color: tokens.axisLineColor } },
+      splitLine: { show: false },
+      axisLabel: { color: tokens.textColor, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value",
+      name: "ms",
+      nameGap: 12,
+      nameTextStyle: { color: tokens.textColor, align: "left" },
+      scale: true,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: tokens.splitLineColor } },
+      axisLabel: { color: tokens.textColor, hideOverlap: true },
+    },
     series: [
       {
         name: t("ops.traces.scatter.ok"),
         type: "scatter",
+        symbol: "circle",
         symbolSize: 8,
         itemStyle: { color: "#409eff" },
         data: okTraces.value.map(toPoint),
@@ -510,6 +564,7 @@ function buildScatterOption(): EChartsOption {
       {
         name: t("ops.traces.scatter.error"),
         type: "scatter",
+        symbol: "circle",
         symbolSize: 10,
         itemStyle: { color: "#f56c6c" },
         data: errorTraces.value.map(toPoint),

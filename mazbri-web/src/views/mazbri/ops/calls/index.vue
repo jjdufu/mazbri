@@ -30,7 +30,10 @@
               t("ops.calls.histogram.summary", {
                 total: histogram?.total ?? 0,
                 errors: histogram?.errors ?? 0,
-                bucket: histogram?.bucket_seconds ?? 0,
+                bucket: formatIntervalHuman(
+                  histogram?.bucket_seconds ?? 0,
+                  locale,
+                ),
               })
             }}
           </span>
@@ -39,6 +42,7 @@
       <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
         <EmptyState
           v-if="!histogram || histogram.total === 0"
+          compact
           :description="t('operations.monitoring.empty.noData')"
         />
         <div
@@ -69,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
@@ -85,6 +89,8 @@ import type { OpsTabDef } from "@/utils/ops/tabs";
 import {
   OPS_CHART_GRID,
   bindOpsChartResize,
+  getOpsChartThemeTokens,
+  useOpsChartTheme,
 } from "@/composables/ops/useOpsChartHost";
 import { fetchCallHistogram } from "@/api/call-monitor";
 import type {
@@ -93,6 +99,7 @@ import type {
 } from "@/types/api/call-monitor";
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
+import { formatIntervalHuman } from "@/utils/format";
 import { CALLS_FILTER_KEYS, type CallsTab } from "@/utils/ops/calls-link";
 import { defaultTimeRange, rangeFromQuery } from "@/utils/ops/time-range";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
@@ -103,7 +110,7 @@ import CallMonitorTable, {
 
 defineOptions({ name: "OpsCalls" });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -207,11 +214,31 @@ function bucketLabel(ts: number, bucketSeconds: number): string {
   return bucketSeconds < 60 ? `${hm}:${pad(d.getSeconds())}` : hm;
 }
 
+const { isDark } = useOpsChartTheme(() => renderChart());
+watch(locale, () => renderChart());
+
 function buildOption(data: CallHistogramResponse): EChartsOption {
+  const tokens = getOpsChartThemeTokens(isDark.value);
   const labels = data.buckets.map((b) => bucketLabel(b.ts, data.bucket_seconds));
   return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    legend: { data: [t("ops.calls.histogram.calls"), t("ops.calls.histogram.errors")] },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.titleColor },
+    },
+    legend: {
+      data: [t("ops.calls.histogram.calls"), t("ops.calls.histogram.errors")],
+      top: 0,
+      right: 0,
+      left: 84,
+      icon: "roundRect",
+      itemWidth: 10,
+      itemHeight: 8,
+      padding: [2, 0, 2, 0],
+      textStyle: { color: tokens.textColor, fontSize: 12 },
+    },
     grid: { ...OPS_CHART_GRID },
     toolbox: { show: false },
     brush: {
@@ -220,8 +247,25 @@ function buildOption(data: CallHistogramResponse): EChartsOption {
       brushMode: "single",
       throttleType: "debounce",
     },
-    xAxis: { type: "category", data: labels },
-    yAxis: { type: "value", minInterval: 1 },
+    xAxis: {
+      type: "category",
+      data: labels,
+      axisLine: { lineStyle: { color: tokens.axisLineColor } },
+      axisTick: { lineStyle: { color: tokens.axisLineColor } },
+      axisLabel: { color: tokens.textColor, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value",
+      minInterval: 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: tokens.splitLineColor } },
+      axisLabel: {
+        color: tokens.textColor,
+        hideOverlap: true,
+        formatter: (v: number) => Math.round(v).toLocaleString(),
+      },
+    },
     series: [
       {
         name: t("ops.calls.histogram.calls"),
@@ -288,7 +332,7 @@ function renderChart() {
     unbindChartResize?.();
     unbindChartResize = bindOpsChartResize(chartRef.value, () => chart);
   }
-  chart.setOption(buildOption(histogram.value), true);
+  chart.setOption(buildOption(histogram.value), { notMerge: true });
   chart.resize();
   chart.dispatchAction({
     type: "takeGlobalCursor",

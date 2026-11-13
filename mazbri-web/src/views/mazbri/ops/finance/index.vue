@@ -77,6 +77,7 @@
         :categories="dayLabels"
         :series="trendSeries"
         :loading="loading"
+        unit-type="amount"
         height="280px"
       />
     </OpsCard>

@@ -4496,7 +4496,7 @@
         "title": "Call distribution",
         "calls": "OK",
         "errors": "Errors",
-        "summary": "{total} calls · {errors} errors · bucket {bucket}s",
+        "summary": "{total} calls · {errors} errors · bucket {bucket}",
         "brushHint": "Brush horizontally on the chart to narrow the time range",
         "resetZoom": "Reset zoom",
         "loadFailed": "Failed to load call distribution"
@@ -4870,6 +4870,7 @@
     "units": {
       "perSec": "/s",
       "times": "times",
+      "cores": "cores",
       "seconds": "s",
       "s": "s",
       "days": "d",
