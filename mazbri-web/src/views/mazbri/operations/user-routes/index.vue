@@ -92,7 +92,7 @@
           >
             {{ $t("routes.labels.configured") }}
           </ElTag>
-          <span v-if="!hasMetadata(row.metadata)">-</span>
+          <span v-if="!hasMetadata(row.metadata)">—</span>
         </div>
       </template>
       <template #created_at="{ row }">
@@ -497,7 +497,9 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
+import { useUserStore } from "@/store/modules/user";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
@@ -763,87 +765,108 @@ const bindingRules: FormRules<BindingFormState> = {
     },
   ],
 };
-const columns = ref<ColumnOption<RouteRule>[]>([
-  {
-    type: "selection",
-    width: 55,
-    selectable: (row: RouteRule) => !isExampleRoute(row),
+const { t, locale } = useI18n();
+const userStore = useUserStore();
+const buildRouteColumns = (): ColumnOption<RouteRule>[] => {
+  const cols: ColumnOption<RouteRule>[] = [
+    {
+      type: "selection",
+      width: 55,
+      selectable: (row: RouteRule) => !isExampleRoute(row),
+    },
+    {
+      prop: "tenant_id",
+      label: t("routes.columns.tenant"),
+      minWidth: 120,
+      useSlot: true,
+      showOverflowTooltip: true,
+    },
+  ];
+  if (!props.lockProduct) {
+    cols.push({
+      prop: "product_id",
+      label: t("routes.columns.product"),
+      minWidth: 140,
+      useSlot: true,
+      showOverflowTooltip: true,
+    });
+  }
+  cols.push(
+    { prop: "priority", label: t("routes.columns.priority"), width: 90 },
+    {
+      prop: "status",
+      label: t("routes.columns.status"),
+      width: 100,
+      useSlot: true,
+    },
+    {
+      prop: "metadata",
+      label: t("routes.columns.metadata"),
+      width: 190,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("common.fields.createdAt"),
+      width: 180,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: userStore.canWriteBusiness ? 220 : 120,
+      fixed: "right",
+      useSlot: true,
+    },
+  );
+  return cols;
+};
+const columns = ref<ColumnOption<RouteRule>[]>(buildRouteColumns());
+watch(
+  [() => props.lockProduct, locale, () => userStore.canWriteBusiness],
+  () => {
+    columns.value = buildRouteColumns();
   },
-  {
-    prop: "tenant_id",
-    label: $t("routes.columns.tenant"),
-    minWidth: 120,
-    useSlot: true,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: "product_id",
-    label: $t("routes.columns.product"),
-    minWidth: 140,
-    useSlot: true,
-    showOverflowTooltip: true,
-  },
-  { prop: "priority", label: $t("routes.columns.priority"), width: 90 },
-  {
-    prop: "status",
-    label: $t("routes.columns.status"),
-    width: 100,
-    useSlot: true,
-  },
-  {
-    prop: "metadata",
-    label: $t("routes.columns.metadata"),
-    width: 190,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("common.fields.createdAt"),
-    width: 180,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 220,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
-const bindingColumns = ref<ColumnOption<RouteBinding>[]>([
-  {
-    prop: "channel_order",
-    label: $t("routes.bindingColumns.order"),
-    width: 80,
-    useSlot: true,
-  },
-  {
-    prop: "channel_name",
-    label: $t("routes.bindingColumns.channel"),
-    minWidth: 140,
-    useSlot: true,
-  },
-  {
-    prop: "channel_id",
-    useSlot: true,
-    label: $t("routes.bindingColumns.channelId"),
-    minWidth: 140,
-  },
-  {
-    prop: "switch_condition",
-    label: $t("routes.bindingColumns.switchCondition"),
-    minWidth: 140,
-    useSlot: true,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 230,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+);
+const bindingColumns = computed<ColumnOption<RouteBinding>[]>(() => {
+  const cols: ColumnOption<RouteBinding>[] = [
+    {
+      prop: "channel_order",
+      label: t("routes.bindingColumns.order"),
+      width: 80,
+      useSlot: true,
+    },
+    {
+      prop: "channel_name",
+      label: t("routes.bindingColumns.channel"),
+      minWidth: 140,
+      useSlot: true,
+    },
+    {
+      prop: "channel_id",
+      useSlot: true,
+      label: t("routes.bindingColumns.channelId"),
+      minWidth: 140,
+    },
+    {
+      prop: "switch_condition",
+      label: t("routes.bindingColumns.switchCondition"),
+      minWidth: 140,
+      useSlot: true,
+      showOverflowTooltip: true,
+    },
+  ];
+  if (userStore.canWriteBusiness) {
+    cols.push({
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: 230,
+      fixed: "right",
+      useSlot: true,
+    });
+  }
+  return cols;
+});
 const productMap = computed(() => {
   return new Map(productRows.value.map((product) => [product.id, product]));
 });
@@ -984,6 +1007,11 @@ const getReferenceData = async () => {
   }
 };
 const getData = async () => {
+  if (props.lockProduct && !props.initialProductId) {
+    tableData.value = [];
+    pagination.total = 0;
+    return;
+  }
   loading.value = true;
   try {
     const [routes] = await Promise.all([
@@ -1571,16 +1599,27 @@ const handleRouteImport = async (items: Record<string, unknown>[]) => {
   );
 };
 onMounted(() => {
-  getData();
+  if (props.lockProduct && !props.initialProductId) {
+    return;
+  }
+  void getData();
 });
 watch(
   () => props.initialProductId,
-  (nextProductId) => {
+  (nextProductId, prevProductId) => {
     if (props.lockProduct) {
       routeForm.product_id = nextProductId || "";
+      if (!nextProductId) {
+        tableData.value = [];
+        pagination.total = 0;
+        return;
+      }
+    }
+    if (nextProductId === prevProductId) {
+      return;
     }
     pagination.current = 1;
-    getData();
+    void getData();
   },
 );
 </script>

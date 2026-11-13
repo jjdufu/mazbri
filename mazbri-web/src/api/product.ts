@@ -5,13 +5,13 @@ import type {
   ProductListQuery,
   CreateProductRequest,
   UpdateProductRequest,
+  ProductTenantListQuery,
   ProductTenantListResponse,
   ProductIdReservation,
   AuthorizationListQuery,
   AuthorizationListResponse,
 } from "@/types/api/product";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
-import { normalizeUpstreamUrlInput } from "@/utils";
 const BASE_PATH = `${API_BASE_PATH}${API_PATHS.PRODUCTS}`;
 const AUTH_BASE_PATH = `${API_BASE_PATH}${API_PATHS.AUTHORIZATIONS}`;
 export function fetchProductList(params?: ProductListQuery) {
@@ -63,9 +63,15 @@ export function deleteProduct(id: string) {
     showSuccessMessage: true,
   });
 }
-export function fetchProductTenants(id: string) {
+export function fetchProductTenants(
+  id: string,
+  params?: ProductTenantListQuery,
+  signal?: AbortSignal,
+) {
   return request.get<ProductTenantListResponse>({
     url: `${BASE_PATH}/${id}/tenants`,
+    params,
+    signal,
   });
 }
 export function fetchAuthorizations(params?: AuthorizationListQuery) {

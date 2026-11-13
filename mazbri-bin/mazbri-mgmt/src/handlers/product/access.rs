@@ -139,12 +139,50 @@ pub async fn get_tenant_product_config(
     };
     service::get_tenant_product_config(&state.product_service, tenant_id, &product_id).await
 }
+const PRODUCT_TENANTS_MAX_PAGE_SIZE: u32 = 100;
+
+const fn default_product_tenants_page() -> u32 {
+    1
+}
+
+const fn default_product_tenants_page_size() -> u32 {
+    10
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProductTenantsQuery {
+    #[serde(default = "default_product_tenants_page")]
+    pub page: u32,
+    #[serde(default = "default_product_tenants_page_size")]
+    pub page_size: u32,
+    #[serde(default)]
+    pub q: Option<String>,
+}
+
+impl ProductTenantsQuery {
+    #[must_use]
+    pub const fn normalized_page(&self) -> u32 {
+        if self.page == 0 { 1 } else { self.page }
+    }
+
+    #[must_use]
+    pub fn capped_page_size(&self) -> u32 {
+        self.page_size.clamp(1, PRODUCT_TENANTS_MAX_PAGE_SIZE)
+    }
+
+    #[must_use]
+    pub fn offset(&self) -> u32 {
+        (self.normalized_page() - 1) * self.capped_page_size()
+    }
+}
+
 pub async fn list_product_tenants(
     State(state): State<AppState>,
     Path(product_id): Path<String>,
-    Query(params): Query<ListParams>,
+    Query(params): Query<ProductTenantsQuery>,
 ) -> axum::response::Response {
-    service::list_product_tenants(&state.db, &state.product_service, &product_id, &params).await
+    service::list_product_tenants(&state.product_service, &product_id, &params).await
 }
 pub async fn list_authorizations(
     State(state): State<AppState>,
@@ -155,7 +193,7 @@ pub async fn list_authorizations(
 
 #[cfg(test)]
 mod deny_unknown_tests {
-    use super::UpdateTenantProductConfigRequest;
+    use super::{ProductTenantsQuery, UpdateTenantProductConfigRequest};
     use serde_json::json;
 
     #[test]
@@ -175,5 +213,29 @@ mod deny_unknown_tests {
         }))
         .expect_err("legacy flat body must be rejected");
         assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn product_tenants_query_defaults_and_clamps_page_size() {
+        let defaults: ProductTenantsQuery = serde_json::from_value(json!({})).expect("defaults");
+        assert_eq!(defaults.normalized_page(), 1);
+        assert_eq!(defaults.capped_page_size(), 10);
+        assert_eq!(defaults.offset(), 0);
+        assert!(defaults.q.is_none());
+
+        let oversized: ProductTenantsQuery = serde_json::from_value(json!({
+            "page": 3,
+            "page_size": 500,
+            "q": "JM5K26T6"
+        }))
+        .expect("oversized parses");
+        assert_eq!(oversized.normalized_page(), 3);
+        assert_eq!(oversized.capped_page_size(), 100);
+        assert_eq!(oversized.offset(), 200);
+        assert_eq!(oversized.q.as_deref(), Some("JM5K26T6"));
+
+        let unknown = serde_json::from_value::<ProductTenantsQuery>(json!({ "limit": 10 }))
+            .expect_err("unknown field must be rejected");
+        assert!(unknown.to_string().contains("unknown field"));
     }
 }

@@ -65,13 +65,28 @@ export interface RevokeProductRequest {
   tenant_id: string;
 }
 export interface ProductTenantAccess {
+  id: string;
+  tenant_uuid: string;
   tenant_code: string;
   tenant_id: string;
+  tenant_name: string;
+  tenant_enabled: boolean;
   enabled: boolean;
   created_at: ISODateString;
 }
+export interface ProductTenantListQuery {
+  page?: number;
+  page_size?: number;
+  q?: string;
+}
 export interface ProductTenantListResponse {
   tenants: ProductTenantAccess[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
 }
 export interface AuthorizationDetail {
   id: string;

@@ -71,8 +71,8 @@ pub struct TransactionListResponse {
     pub pagination: TransactionListPagination,
 }
 pub use access::{
-    get_tenant_product_config, grant_tenant_access, list_authorizations, list_product_tenants,
-    revoke_tenant_access, update_tenant_product_config,
+    ProductTenantsQuery, get_tenant_product_config, grant_tenant_access, list_authorizations,
+    list_product_tenants, revoke_tenant_access, update_tenant_product_config,
 };
 pub use account::{get_tenant_account, recharge_tenant_account, refund_tenant_account};
 pub use crud::{

@@ -3361,6 +3361,8 @@
       "product": "产品",
       "selectTenant": "请选择租户",
       "selectProduct": "请选择产品",
+      "searchTenantPlaceholder": "搜索租户名称或编码",
+      "searchProductPlaceholder": "搜索产品名称或编码",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
       "unitPricePlaceholder": "例如 0.001",
@@ -3397,16 +3399,21 @@
       "internalId": "内部ID",
       "name": "产品名称",
       "description": "产品说明",
+      "timeout": "超时时间",
       "timeoutSecs": "超时时间（秒）",
       "upstreamUrl": "默认上游地址",
       "cbProEnabled": "高级熔断",
       "cbFailureThreshold": "失败熔断阈值（次）",
+      "cbFailureThresholdLabel": "失败熔断阈值",
       "cbSuccessThreshold": "成功恢复阈值（次）",
+      "cbSuccessThresholdLabel": "成功恢复阈值",
       "cbCooldownSecs": "熔断冷却时间（秒）",
+      "cbCooldownLabel": "熔断冷却时间",
       "enabled": "启用状态"
     },
     "createDialog": {
       "title": "新增产品",
+      "autoAssignedBadge": "系统自动分配",
       "sections": {
         "basic": "基础信息",
         "advanced": "高级设置"
@@ -3432,15 +3439,24 @@
     "detail": {
       "pageTitle": "产品详情",
       "basicInfoTitle": "基本信息",
-      "advancedInfoTitle": "运行时信息",
-      "editTitle": "编辑产品基本信息",
+      "advancedInfoTitle": "限流与熔断设置",
+      "editTitle": "编辑产品配置",
       "quickActionsTitle": "快捷操作",
       "authorizationHint": "",
       "authorizedTenantsTitle": "已开通租户",
       "tenantCountSuffix": "个租户",
       "noAuthorizedTenants": "暂无已开通租户",
+      "noMatchingTenants": "未找到匹配的已授权租户",
+      "searchTenantsPlaceholder": "搜索租户名称、编码或标识",
+      "addAuthorization": "新增授权",
+      "billingModePayPerCall": "按量计费",
       "lockedHint": "创建后不可改",
       "lockedAlert": "产品编码创建后不可修改。",
+      "tabs": {
+        "info": "产品信息与限流",
+        "routes": "路由规则",
+        "tenants": "已授权租户"
+      },
       "tenantColumns": {
         "name": "租户名称",
         "tenantId": "租户标识",
@@ -3449,7 +3465,10 @@
       },
       "validation": {
         "nameRequired": "请输入产品名称",
-        "nameLength": "名称长度在 2 到 100 个字符"
+        "nameLength": "名称长度在 2 到 100 个字符",
+        "cbFailureThresholdRequired": "请输入失败熔断阈值",
+        "cbSuccessThresholdRequired": "请输入成功恢复阈值",
+        "cbCooldownSecsRequired": "请输入熔断冷却时间"
       }
     },
     "empty": {

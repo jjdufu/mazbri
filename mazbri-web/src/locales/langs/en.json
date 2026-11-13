@@ -3361,6 +3361,8 @@
       "product": "Product",
       "selectTenant": "Please select a tenant",
       "selectProduct": "Please select a product",
+      "searchTenantPlaceholder": "Search tenant name or code",
+      "searchProductPlaceholder": "Search product name or code",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
@@ -3397,16 +3399,21 @@
       "internalId": "Internal ID",
       "name": "Product Name",
       "description": "Product Description",
+      "timeout": "Runtime Timeout",
       "timeoutSecs": "Runtime Timeout (s)",
       "upstreamUrl": "Default Upstream URL",
       "cbProEnabled": "CBPRO",
       "cbFailureThreshold": "CB Failure Threshold (times)",
+      "cbFailureThresholdLabel": "Failure Threshold",
       "cbSuccessThreshold": "CB Recovery Threshold (times)",
+      "cbSuccessThresholdLabel": "Recovery Threshold",
       "cbCooldownSecs": "CB Cooldown Duration (s)",
+      "cbCooldownLabel": "Cooldown Duration",
       "enabled": "Enabled Status"
     },
     "createDialog": {
       "title": "Add Product",
+      "autoAssignedBadge": "Auto-assigned",
       "sections": {
         "basic": "Basic Info",
         "advanced": "Advanced Settings"
@@ -3432,15 +3439,24 @@
     "detail": {
       "pageTitle": "Product Detail",
       "basicInfoTitle": "Basic Information",
-      "advancedInfoTitle": "Runtime Info",
-      "editTitle": "Edit Product Basic Information",
+      "advancedInfoTitle": "Rate Limit & Circuit Breaker",
+      "editTitle": "Edit Product Configuration",
       "quickActionsTitle": "Quick Actions",
       "authorizationHint": "",
       "authorizedTenantsTitle": "Authorized Tenants",
       "tenantCountSuffix": "tenants",
       "noAuthorizedTenants": "No authorized tenants yet",
+      "noMatchingTenants": "No matching authorized tenants found",
+      "searchTenantsPlaceholder": "Search tenant name, code, or identifier",
+      "addAuthorization": "Add Authorization",
+      "billingModePayPerCall": "Pay-per-call",
       "lockedHint": "Locked after create",
       "lockedAlert": "Product code cannot be changed after creation.",
+      "tabs": {
+        "info": "Product Info & Rate Limit",
+        "routes": "Routing Rules",
+        "tenants": "Authorized Tenants"
+      },
       "tenantColumns": {
         "name": "Tenant Name",
         "tenantId": "Tenant Identifier",
@@ -3449,7 +3465,10 @@
       },
       "validation": {
         "nameRequired": "Please enter a product name",
-        "nameLength": "Name must be between 2 and 100 characters"
+        "nameLength": "Name must be between 2 and 100 characters",
+        "cbFailureThresholdRequired": "Please enter the failure threshold",
+        "cbSuccessThresholdRequired": "Please enter the recovery threshold",
+        "cbCooldownSecsRequired": "Please enter the cooldown duration"
       }
     },
     "empty": {

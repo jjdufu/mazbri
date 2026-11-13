@@ -15,12 +15,21 @@ impl ProductService {
     ) -> Result<TenantProduct> {
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let product_uuid: Uuid =
-            sqlx::query_scalar("SELECT id FROM products WHERE product_id = $1")
+        let product_meta: Option<(Uuid, bool)> =
+            sqlx::query_as("SELECT id, cb_pro_enabled FROM products WHERE product_id = $1")
                 .bind(product_id)
-                .fetch_one(&self.db)
+                .fetch_optional(&self.db)
                 .await?;
-        let config = config.cloned().unwrap_or_default();
+        let Some((product_uuid, cb_pro_enabled)) = product_meta else {
+            return Err(anyhow::anyhow!("Product not found: {product_id}"));
+        };
+        let mut config = config.cloned().unwrap_or_default();
+        if config.unit_price.trim().is_empty() {
+            config.unit_price = TenantProductConfig::default().unit_price;
+        }
+        if !cb_pro_enabled {
+            config.cb_pro_fallback = false;
+        }
         config.validate().map_err(anyhow::Error::msg)?;
         let custom_config = serde_json::to_value(&config).with_context(|| {
             format!(

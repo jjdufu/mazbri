@@ -1,8 +1,12 @@
 <template>
-  <div ref="pageRef" class="authorization-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div
+    ref="pageRef"
+    class="authorization-list-page"
+    style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+  >
     <ResourceTableShell
       v-model:columns="columns"
-      :title="$t('authorization.list.title')"
+      :title="t('authorization.list.title')"
       :loading="loading"
       :data="tableData"
       :empty-text="emptyDescription"
@@ -20,18 +24,18 @@
           v-model:filters="listFilters"
           :filter-catalog="authorizationsCatalog"
           :show-import="true"
-          :import-label="$t('common.actions.import')"
+          :import-label="t('common.actions.import')"
           :import-roles="['R_ADMIN', 'R_FINANCE']"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
           :export-roles="['R_ADMIN', 'R_FINANCE']"
           :show-primary="true"
-          :primary-label="$t('authorization.list.actions.create')"
+          :primary-label="t('authorization.list.actions.create')"
           :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-label="$t('common.actions.delete')"
+          :delete-label="t('common.actions.delete')"
           :delete-roles="['R_ADMIN', 'R_FINANCE']"
           @search="handleSearch"
           @import="openImport"
@@ -44,11 +48,11 @@
       <template #tenant_code="{ row }">
         <CopyableText
           :value="row.tenant_code"
-          :label="$t('authorization.list.tenantCode')"
+          :label="t('authorization.list.tenantCode')"
         />
       </template>
       <template #unit_price="{ row }">
-        {{ row.unit_price }} {{ $t("common.currencies.cny") }}
+        {{ row.unit_price }} {{ t("common.currencies.cny") }}
       </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
@@ -56,21 +60,22 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton
+            v-if="userStore.canWriteBusiness"
             v-roles="ROLES_BIZ"
             link
             type="primary"
             @click="handleConfigure(row)"
           >
-            {{ $t("authorization.list.actions.modify") }}
+            {{ t("authorization.list.actions.modify") }}
           </ElButton>
           <ElPopconfirm
-            v-roles="ROLES_BIZ"
-            :title="$t('authorization.list.revokeConfirm')"
+            v-if="userStore.canWriteBusiness"
+            :title="t('authorization.list.revokeConfirm')"
             @confirm="handleRevoke(row)"
           >
             <template #reference>
-              <ElButton type="danger" link>{{
-                $t("authorization.list.actions.revoke")
+              <ElButton v-roles="ROLES_BIZ" type="danger" link>{{
+                t("authorization.list.actions.revoke")
               }}</ElButton>
             </template>
           </ElPopconfirm>
@@ -81,11 +86,10 @@
     <CreateAuthorizationDialog v-model="createVisible" @success="getData" />
     <ImportDialog
       v-model="importVisible"
-      :title="$t('common.actions.import')"
+      :title="t('common.actions.import')"
       :columns="authorizationImportColumns"
       :format-hint="authorizationImportFormatHint"
       unique-key="unique_key"
-      :existing-data="authorizationImportExistingData"
       :validator="validateAuthorizationImportRow"
       :transformer="transformAuthorizationImportRow"
       :on-import="handleAuthorizationImport"
@@ -105,18 +109,22 @@
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref, watch } from "vue";
-import { $t } from "@/locales";
+import { useI18n } from "vue-i18n";
 import { ROLES_BIZ } from "@/utils/ops/roles";
-import { fetchAuthorizations, fetchProductList } from "@/api/product";
+import { fetchAuthorizations } from "@/api/product";
 import { authorizationsCatalog } from "@/list-catalog/common-resources";
 import type { ListFilter } from "@/types/list-query";
-import { grantProduct, revokeProduct, fetchTenantList } from "@/api/tenant";
-import type {
-  AuthorizationDetail,
-  AuthorizationListResponse,
+import {
+  grantProduct,
+  revokeProduct,
+  createDefaultCBProPolicyConfig,
+} from "@/api/tenant";
+import {
+  PRODUCT_ID_PATTERN,
+  type AuthorizationDetail,
+  type AuthorizationListResponse,
 } from "@/types/api/product";
-import type { Product } from "@/types/api/product";
-import type { Tenant, TenantProduct } from "@/types/api/tenant";
+import type { TenantProduct } from "@/types/api/tenant";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
@@ -127,71 +135,88 @@ import {
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { useTable } from "@/hooks/core/useTable";
+import { useUserStore } from "@/store/modules/user";
 import CreateAuthorizationDialog from "./modules/CreateAuthorizationDialog.vue";
 import ChannelConfigDrawer from "@/components/common/channel-config-dialog/index.vue";
 import { ElMessage } from "element-plus";
 import { logger } from "@/utils/sys";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import type { ColumnOption } from "@/types/component";
-import { formatDateTime as formatDate } from "@/utils/format";
-import { createDefaultCBProPolicyConfig } from "@/api/tenant";
+import { EMPTY_PLACEHOLDER, formatDateTime as formatDate } from "@/utils/format";
+
 defineOptions({ name: "AuthorizationList" });
+
+const { t } = useI18n();
+const userStore = useUserStore();
 const pageRef = ref<HTMLElement | null>(null);
 const createVisible = ref(false);
 const configDrawerVisible = ref(false);
 const selectedAuthorization = ref<AuthorizationDetail | null>(null);
 const selectedProduct = ref<TenantProduct | null>(null);
 const columns = ref<ColumnOption<AuthorizationDetail>[]>([]);
-const authorizationColumns: ColumnOption<AuthorizationDetail>[] = [
-  { type: "selection", width: 50, align: "center" },
-  {
-    prop: "tenant_code",
-    useSlot: true,
-    label: $t("authorization.list.tenantCode"),
-    width: 120,
+
+const authorizationColumns = computed<ColumnOption<AuthorizationDetail>[]>(
+  () => {
+    const cols: ColumnOption<AuthorizationDetail>[] = [];
+    if (userStore.canWriteBusiness) {
+      cols.push({ type: "selection", width: 50, align: "center" });
+    }
+    cols.push(
+      {
+        prop: "tenant_code",
+        useSlot: true,
+        label: t("authorization.list.tenantCode"),
+        width: 120,
+      },
+      {
+        prop: "tenant_name",
+        label: t("authorization.list.tenantName"),
+        minWidth: 180,
+        maxWidth: 280,
+        showOverflowTooltip: true,
+      },
+      {
+        prop: "product_code",
+        label: t("authorization.list.productCode"),
+        width: 120,
+      },
+      {
+        prop: "product_name",
+        label: t("authorization.list.productName"),
+        minWidth: 180,
+        maxWidth: 280,
+        showOverflowTooltip: true,
+      },
+      {
+        prop: "unit_price",
+        label: t("authorization.list.unitPrice"),
+        width: 100,
+        useSlot: true,
+      },
+      {
+        prop: "created_at",
+        label: t("authorization.list.createdAt"),
+        width: 170,
+        useSlot: true,
+      },
+    );
+    if (userStore.canWriteBusiness) {
+      cols.push({
+        prop: "operations",
+        label: t("common.fields.operations"),
+        width: 160,
+        fixed: "right",
+        useSlot: true,
+      });
+    }
+    return cols;
   },
-  {
-    prop: "tenant_name",
-    label: $t("authorization.list.tenantName"),
-    minWidth: 100,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: "product_code",
-    label: $t("authorization.list.productCode"),
-    width: 120,
-  },
-  {
-    prop: "product_name",
-    label: $t("authorization.list.productName"),
-    minWidth: 100,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: "unit_price",
-    label: $t("authorization.list.unitPrice"),
-    width: 100,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("authorization.list.createdAt"),
-    width: 170,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 160,
-    fixed: "right",
-    useSlot: true,
-  },
-];
+);
+
 const table = useTable({
   core: {
     apiFn: fetchAuthorizations,
-    apiParams: { q: "" },
+    apiParams: { q: "", page: 1, page_size: 10 },
     immediate: true,
     paginationKey: { current: "page", size: "page_size" },
   },
@@ -202,6 +227,7 @@ const table = useTable({
     }),
   },
 });
+
 const {
   data: tableData,
   loading,
@@ -210,6 +236,7 @@ const {
   handleSizeChange,
   handleCurrentChange,
 } = table;
+
 const searchParams = table.searchParams!;
 const listFilters = ref<ListFilter[]>([]);
 watch(
@@ -221,19 +248,22 @@ watch(
   },
   { deep: true },
 );
+
 const searchKeyword = computed<string>({
   get: () => searchParams.q ?? "",
   set: (value) => {
     searchParams.q = value;
   },
 });
+
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<AuthorizationDetail>({
     deleteApi: (auth) => revokeProduct(auth.tenant_code, auth.product_code),
     getItemName: (auth) => `${auth.tenant_name} - ${auth.product_name}`,
     onDeleteSuccess: getData,
-    actionLabel: $t("authorization.list.actions.batchRevoke"),
+    actionLabel: t("authorization.list.actions.batchRevoke"),
   });
+
 interface AuthorizationImportRow extends Record<string, unknown> {
   unique_key: string;
   tenant_code: string;
@@ -241,6 +271,7 @@ interface AuthorizationImportRow extends Record<string, unknown> {
   unit_price: string;
   cb_pro_fallback: boolean;
 }
+
 interface AuthorizationExportRow extends Record<string, unknown> {
   tenant_code: string;
   tenant_name: string;
@@ -251,61 +282,59 @@ interface AuthorizationExportRow extends Record<string, unknown> {
   enabled: boolean;
   created_at: string;
 }
+
 const importVisible = ref(false);
-const importTenants = ref<Tenant[]>([]);
-const importProducts = ref<Product[]>([]);
-const authorizationImportColumns: ColumnConfig[] = [
+
+const authorizationImportColumns = computed<ColumnConfig[]>(() => [
   {
     key: "tenant_code",
-    label: $t("authorization.list.tenantCode"),
+    label: t("authorization.list.tenantCode"),
     required: true,
   },
   {
     key: "product_code",
-    label: $t("authorization.list.productCode"),
+    label: t("authorization.list.productCode"),
     required: true,
   },
   {
     key: "unit_price",
-    label: $t("authorization.list.unitPrice"),
+    label: t("authorization.list.unitPrice"),
     required: false,
   },
   {
     key: "cb_pro_fallback",
-    label: $t("authorization.config.cbProFallback"),
+    label: t("authorization.config.cbProFallback"),
     required: false,
   },
-];
-const authorizationImportExistingData = computed(() =>
-  tableData.value.map((auth) => ({
-    unique_key: `${auth.tenant_code}/${auth.product_code}`,
-  })),
-);
+]);
+
 const authorizationImportFormatHint = computed(() =>
   [
-    $t("feedback.import.csvFormatHint"),
-    $t("feedback.import.requiredColumns", {
-      columns: authorizationImportColumns
+    t("feedback.import.csvFormatHint"),
+    t("feedback.import.requiredColumns", {
+      columns: authorizationImportColumns.value
         .filter((column) => column.required)
         .map((column) => column.key)
         .join(", "),
     }),
   ].join("\n"),
 );
+
 const exportItems = computed(() => [
   {
     command: "page",
-    label: $t("common.actions.exportPage"),
+    label: t("common.actions.exportPage"),
     disabled: tableData.value.length === 0,
   },
   {
     command: "selected",
-    label: $t("common.actions.exportSelected", {
+    label: t("common.actions.exportSelected", {
       count: selectedRows.value.length,
     }),
     disabled: selectedRows.value.length === 0,
   },
 ]);
+
 const parseBoolean = (value?: string) => {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) {
@@ -319,6 +348,7 @@ const parseBoolean = (value?: string) => {
   }
   return undefined;
 };
+
 const parseUnitPrice = (value?: string) => {
   if (!value?.trim()) {
     return "0.001";
@@ -326,57 +356,41 @@ const parseUnitPrice = (value?: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? value.trim() : "";
 };
-const loadImportOptions = async () => {
-  try {
-    const [tenants, products] = await Promise.all([
-      fetchAllPages(async (page, pageSize) => {
-        const res = await fetchTenantList({ page, page_size: pageSize });
-        return { items: res.tenants, total: res.pagination.total };
-      }),
-      fetchAllPages(async (page, pageSize) => {
-        const res = await fetchProductList({ page, page_size: pageSize });
-        return { items: res.products, total: res.pagination.total };
-      }),
-    ]);
-    importTenants.value = tenants;
-    importProducts.value = products;
-  } catch (error) {
-    logger.error("Failed to load authorization import options:", error);
-    importTenants.value = [];
-    importProducts.value = [];
-  }
-};
+
 const hasActiveSearch = computed(
   () => Boolean(searchParams.q?.trim()) || listFilters.value.length > 0,
 );
+
 const emptyDescription = computed(() =>
   hasActiveSearch.value
-    ? $t("common.feedback.noMatchingData")
-    : $t("common.feedback.noData"),
+    ? t("common.feedback.noMatchingData")
+    : t("common.feedback.noData"),
 );
+
 const getAuthorizationCellText = (
   columnKey: string,
   row: AuthorizationDetail,
 ) => {
   switch (columnKey) {
     case "tenant_code":
-      return row.tenant_code || "—";
+      return row.tenant_code || EMPTY_PLACEHOLDER;
     case "tenant_name":
-      return row.tenant_name || "—";
+      return row.tenant_name || EMPTY_PLACEHOLDER;
     case "product_code":
-      return row.product_code || "—";
+      return row.product_code || EMPTY_PLACEHOLDER;
     case "product_name":
-      return row.product_name || "—";
+      return row.product_name || EMPTY_PLACEHOLDER;
     case "unit_price":
-      return `${row.unit_price} ${$t("common.currencies.cny")}`;
+      return `${row.unit_price} ${t("common.currencies.cny")}`;
     case "created_at":
       return formatDate(row.created_at);
     case "operations":
-      return `${$t("authorization.list.actions.modify")} ${$t("authorization.list.actions.revoke")}`;
+      return `${t("authorization.list.actions.modify")} ${t("authorization.list.actions.revoke")}`;
     default:
-      return row.tenant_name || row.product_name || "—";
+      return row.tenant_name || row.product_name || EMPTY_PLACEHOLDER;
   }
 };
+
 const getAuthorizationColumnWeight = (columnKey: string) => {
   switch (columnKey) {
     case "tenant_code":
@@ -393,6 +407,7 @@ const getAuthorizationColumnWeight = (columnKey: string) => {
       return 1;
   }
 };
+
 useAdaptiveTableColumns({
   columns,
   containerRef: pageRef,
@@ -403,6 +418,7 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getAuthorizationCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getAuthorizationColumnWeight(columnKey),
 });
+
 const buildTenantProductFromAuthorization = (
   auth: AuthorizationDetail,
 ): TenantProduct => ({
@@ -419,64 +435,58 @@ const buildTenantProductFromAuthorization = (
   granted_at: auth.created_at,
   updated_at: auth.updated_at,
 });
+
 const handleConfigure = (row: AuthorizationDetail) => {
   selectedAuthorization.value = row;
   selectedProduct.value = buildTenantProductFromAuthorization(row);
   configDrawerVisible.value = true;
 };
+
 const handleRevoke = async (row: AuthorizationDetail) => {
   try {
     await revokeProduct(row.tenant_code, row.product_code);
-    ElMessage.success($t("authorization.list.revokeSuccess"));
+    ElMessage.success(t("authorization.list.revokeSuccess"));
     getData();
   } catch (error) {
     logger.error("Failed to revoke authorization:", error);
   }
 };
+
 const validateAuthorizationImportRow = (row: Record<string, string>) => {
-  if (!row.tenant_code?.trim()) {
+  const tenantCode = row.tenant_code?.trim();
+  if (!tenantCode) {
     return {
       valid: false,
-      reason: $t("authorization.grantDialog.selectTenant"),
+      reason: t("authorization.grantDialog.selectTenant"),
     };
   }
-  if (!row.product_code?.trim()) {
+  const productCode = row.product_code?.trim();
+  if (!productCode) {
     return {
       valid: false,
-      reason: $t("authorization.grantDialog.selectProduct"),
+      reason: t("authorization.grantDialog.selectProduct"),
     };
   }
-  const tenantExists = importTenants.value.some(
-    (tenant) => tenant.tenant_code === row.tenant_code.trim(),
-  );
-  if (!tenantExists) {
+  if (!PRODUCT_ID_PATTERN.test(productCode)) {
     return {
       valid: false,
-      reason: `${$t("authorization.list.tenantCode")}: ${row.tenant_code}`,
-    };
-  }
-  const productExists = importProducts.value.some(
-    (product) => product.product_id === row.product_code.trim(),
-  );
-  if (!productExists) {
-    return {
-      valid: false,
-      reason: `${$t("authorization.list.productCode")}: ${row.product_code}`,
+      reason: t("product.createDialog.validation.productIdPattern"),
     };
   }
   const unitPrice = parseUnitPrice(row.unit_price);
   if (!unitPrice) {
-    return { valid: false, reason: $t("authorization.list.unitPrice") };
+    return { valid: false, reason: t("authorization.list.unitPrice") };
   }
   const fallback = row.cb_pro_fallback?.trim();
   if (fallback && parseBoolean(fallback) === undefined) {
     return {
       valid: false,
-      reason: `${$t("authorization.config.cbProFallback")}: ${fallback}`,
+      reason: `${t("authorization.config.cbProFallback")}: ${fallback}`,
     };
   }
   return { valid: true };
 };
+
 const transformAuthorizationImportRow = (
   row: Record<string, string>,
 ): AuthorizationImportRow => ({
@@ -486,6 +496,7 @@ const transformAuthorizationImportRow = (
   unit_price: parseUnitPrice(row.unit_price) || "0.001",
   cb_pro_fallback: parseBoolean(row.cb_pro_fallback) ?? false,
 });
+
 const handleExportCommand = (command: string) => {
   const exportCommand = command as "page" | "selected";
   if (exportCommand !== "page" && exportCommand !== "selected") {
@@ -505,40 +516,36 @@ const handleExportCommand = (command: string) => {
   exportResourceCsv(
     csvRows,
     [
-      { key: "tenant_code", label: $t("authorization.list.tenantCode") },
-      { key: "tenant_name", label: $t("authorization.list.tenantName") },
-      { key: "product_code", label: $t("authorization.list.productCode") },
-      { key: "product_name", label: $t("authorization.list.productName") },
-      { key: "unit_price", label: $t("authorization.list.unitPrice") },
+      { key: "tenant_code", label: t("authorization.list.tenantCode") },
+      { key: "tenant_name", label: t("authorization.list.tenantName") },
+      { key: "product_code", label: t("authorization.list.productCode") },
+      { key: "product_name", label: t("authorization.list.productName") },
+      { key: "unit_price", label: t("authorization.list.unitPrice") },
       {
         key: "cb_pro_fallback",
-        label: $t("authorization.config.cbProFallback"),
+        label: t("authorization.config.cbProFallback"),
       },
-      { key: "enabled", label: $t("common.fields.status") },
-      { key: "created_at", label: $t("authorization.list.createdAt") },
+      { key: "enabled", label: t("common.fields.status") },
+      { key: "created_at", label: t("authorization.list.createdAt") },
     ],
     `authorizations-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
-const openImport = async () => {
-  await loadImportOptions();
+
+const openImport = () => {
   importVisible.value = true;
 };
+
 const handleAuthorizationImport = async (items: Record<string, unknown>[]) => {
   await runResourceCsvImport<AuthorizationImportRow>(
     items,
     async (row) => {
-      const product = importProducts.value.find(
-        (candidate) => candidate.product_id === row.product_code,
-      );
       await grantProduct(
         row.tenant_code,
         row.product_code,
         {
           unit_price: row.unit_price,
-          cb_pro_fallback: product?.cb_pro_enabled
-            ? row.cb_pro_fallback
-            : false,
+          cb_pro_fallback: row.cb_pro_fallback,
         },
         {
           showSuccessMessage: false,
@@ -552,6 +559,7 @@ const handleAuthorizationImport = async (items: Record<string, unknown>[]) => {
     },
   );
 };
+
 const handleSearch = () => {
   if (pagination.current === 1) {
     getData();
@@ -559,7 +567,6 @@ const handleSearch = () => {
   }
   void handleCurrentChange(1);
 };
-
 </script>
 
 <style scoped lang="scss">
