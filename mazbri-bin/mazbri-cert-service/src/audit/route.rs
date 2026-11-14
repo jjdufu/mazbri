@@ -205,6 +205,7 @@ mod tests {
         for (method, path) in [
             (Method::GET, "/configs/mazbri-gateway"),
             (Method::GET, "/certificates"),
+            (Method::GET, "/certificates/subjects"),
             (Method::GET, "/certificates/1"),
             (Method::POST, "/nodes/register"),
             (Method::POST, "/nodes/heartbeat"),

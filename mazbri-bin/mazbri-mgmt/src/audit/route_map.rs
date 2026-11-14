@@ -966,6 +966,7 @@ pub static ROUTES: &[RouteAudit] = &[
     ),
     // ---- certificates (proxy to cert service) ----
     read("/certificates", R::Certificate),
+    read("/certificates/subjects", R::Certificate),
     read("/certificates/{id}", R::Certificate),
     sensitive(
         "/certificates/{id}/full",

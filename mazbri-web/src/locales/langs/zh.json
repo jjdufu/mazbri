@@ -818,7 +818,6 @@
       "upstreamChannelList": "通道列表",
       "certificates": "证书管理",
       "certificateList": "证书列表",
-      "certificateDetail": "证书详情",
       "billsAndReconciliation": "账单与对账",
       "usageReconciliation": "用量对账",
       "analytics": "分析统计",
@@ -2176,6 +2175,10 @@
     },
     "list": {
       "title": "证书列表",
+      "sameAsSubject": "同主体",
+      "copyFingerprint": "复制完整 SHA-256 指纹",
+      "remainingDays": "剩余 {count} 天",
+      "expiredDaysAgo": "已过期 {count} 天",
       "actions": {
         "issue": "签发",
         "revoke": "吊销"
@@ -2184,59 +2187,67 @@
         "revoked": "证书已吊销"
       },
       "columns": {
-        "subject": "主体",
-        "dnsNames": "DNS 名称",
-        "expiresAt": "过期时间",
+        "subject": "服务 / 主体",
+        "dnsNames": "SAN 域名扩展",
+        "fingerprint": "证书指纹",
+        "expiresAt": "有效期至",
         "status": "状态"
       }
     },
     "detail": {
       "title": "证书详情",
       "sections": {
-        "info": "证书信息",
-        "files": "证书文件",
-        "statusLegend": "状态说明"
+        "info": "证书元数据",
+        "files": "证书 PEM 内容"
       },
       "disabledReasons": {
         "notLoaded": "证书信息未加载",
         "revoked": "证书已吊销"
       },
       "actions": {
-        "download": "下载",
-        "renew": "续期",
-        "autoRenewal": "自动续期",
-        "revoke": "吊销"
+        "download": "下载证书",
+        "downloadPublicCert": "下载公钥证书 (cert.pem)",
+        "downloadFullBundle": "下载完整证书包 (含私钥 · 需 MFA)",
+        "copyFingerprint": "复制完整指纹",
+        "renew": "续期签发",
+        "revoke": "吊销证书"
       },
       "fields": {
-        "id": "ID",
-        "subject": "主体",
-        "dnsNames": "DNS 名称",
+        "id": "证书 ID",
+        "subject": "服务 / 主体",
+        "dnsNames": "SAN 域名扩展",
+        "fingerprint": "SHA-256 指纹",
+        "renewalCount": "续期次数",
         "issuedAt": "生效时间",
-        "expiresAt": "过期时间",
+        "expiresAt": "有效期至",
+        "revokedAt": "吊销时间",
         "status": "状态"
       },
-      "tabs": {
-        "certPem": "证书 (cert.pem)",
-        "keyPem": "私钥 (key.pem)",
-        "caPem": "CA 证书 (ca.pem)"
+      "autoRenewal": {
+        "title": "自动续期策略",
+        "subtitle": "在证书临近到期前自动签发替换证书并刷新有效期",
+        "enabledTag": "已开启",
+        "disabledTag": "未开启",
+        "thresholdDays": "提前续期阈值（天）",
+        "validityDays": "续签有效期",
+        "nextRenewalAt": "下次计划续期时间",
+        "saveAction": "保存策略"
       },
-      "statusLegend": {
-        "valid": {
-          "label": "有效",
-          "description": "证书在有效期内"
-        },
-        "expiringSoon": {
-          "label": "即将过期",
-          "description": "证书将在 30 天内过期"
-        },
-        "expired": {
-          "label": "已过期",
-          "description": "证书已超过有效期"
-        },
-        "revoked": {
-          "label": "已吊销",
-          "description": "证书已被吊销，无法恢复"
-        }
+      "tabs": {
+        "certPem": "公钥证书 (cert.pem)",
+        "caPem": "CA 根证书 (ca.pem)",
+        "keyPem": "私钥 (key.pem)"
+      },
+      "pem": {
+        "publicCertHint": "X.509 叶子公钥证书（公开非敏感材料）",
+        "caCertHint": "平台信任链 CA 根证书（公开非敏感材料）"
+      },
+      "privateKeyGuard": {
+        "title": "私钥已受安全保护",
+        "description": "私钥属于高敏凭据，查看或复制需验证管理员 MFA，且操作将记入安全审计日志。",
+        "unlockAction": "解锁查看私钥",
+        "lockAction": "锁定隐藏",
+        "unlockedHint": "私钥已在当前抽屉临时解锁，关闭抽屉后将自动清空内存"
       }
     },
     "issueDialog": {

@@ -818,7 +818,6 @@
       "upstreamChannelList": "Channels",
       "certificates": "Certificate Management",
       "certificateList": "Certificate List",
-      "certificateDetail": "Certificate Detail",
       "billsAndReconciliation": "Bills & Reconciliation",
       "usageReconciliation": "Usage Reconciliation",
       "analytics": "Analytics",
@@ -2176,6 +2175,10 @@
     },
     "list": {
       "title": "Certificate List",
+      "sameAsSubject": "Same as Subject",
+      "copyFingerprint": "Copy full SHA-256 fingerprint",
+      "remainingDays": "{count} days left",
+      "expiredDaysAgo": "Expired {count} days ago",
       "actions": {
         "issue": "Issue Certificate",
         "revoke": "Revoke"
@@ -2184,18 +2187,18 @@
         "revoked": "Certificate has been revoked"
       },
       "columns": {
-        "subject": "Subject",
-        "dnsNames": "DNS Names",
-        "expiresAt": "Expires At",
+        "subject": "Service / Subject",
+        "dnsNames": "SAN Extensions",
+        "fingerprint": "Fingerprint",
+        "expiresAt": "Valid Until",
         "status": "Status"
       }
     },
     "detail": {
       "title": "Certificate Detail",
       "sections": {
-        "info": "Certificate Info",
-        "files": "Certificate Files",
-        "statusLegend": "Status Legend"
+        "info": "Certificate Metadata",
+        "files": "Certificate PEM"
       },
       "disabledReasons": {
         "notLoaded": "Certificate information has not been loaded",
@@ -2203,40 +2206,48 @@
       },
       "actions": {
         "download": "Download",
-        "renew": "Renew",
-        "autoRenewal": "Auto Renewal",
-        "revoke": "Revoke"
+        "downloadPublicCert": "Download Public Certificate (cert.pem)",
+        "downloadFullBundle": "Download Full Bundle (with Private Key · MFA)",
+        "copyFingerprint": "Copy full fingerprint",
+        "renew": "Renew Certificate",
+        "revoke": "Revoke Certificate"
       },
       "fields": {
-        "id": "ID",
-        "subject": "Subject",
-        "dnsNames": "DNS Names",
+        "id": "Certificate ID",
+        "subject": "Service / Subject",
+        "dnsNames": "SAN Extensions",
+        "fingerprint": "SHA-256 Fingerprint",
+        "renewalCount": "Renewal Count",
         "issuedAt": "Issued At",
-        "expiresAt": "Expires At",
+        "expiresAt": "Valid Until",
+        "revokedAt": "Revoked At",
         "status": "Status"
       },
-      "tabs": {
-        "certPem": "Certificate (cert.pem)",
-        "keyPem": "Private Key (key.pem)",
-        "caPem": "CA Certificate (ca.pem)"
+      "autoRenewal": {
+        "title": "Auto-Renewal Policy",
+        "subtitle": "Automatically issue a replacement certificate before expiration",
+        "enabledTag": "Enabled",
+        "disabledTag": "Disabled",
+        "thresholdDays": "Renewal Threshold (days)",
+        "validityDays": "Renewal Validity",
+        "nextRenewalAt": "Next Scheduled Renewal",
+        "saveAction": "Save Policy"
       },
-      "statusLegend": {
-        "valid": {
-          "label": "Valid",
-          "description": "The certificate is within its validity period"
-        },
-        "expiringSoon": {
-          "label": "Expiring Soon",
-          "description": "The certificate will expire within 30 days"
-        },
-        "expired": {
-          "label": "Expired",
-          "description": "The certificate has passed its validity period"
-        },
-        "revoked": {
-          "label": "Revoked",
-          "description": "The certificate has been revoked and cannot be restored"
-        }
+      "tabs": {
+        "certPem": "Public Cert (cert.pem)",
+        "caPem": "CA Root (ca.pem)",
+        "keyPem": "Private Key (key.pem)"
+      },
+      "pem": {
+        "publicCertHint": "X.509 leaf public certificate (non-sensitive)",
+        "caCertHint": "Platform CA root certificate (non-sensitive)"
+      },
+      "privateKeyGuard": {
+        "title": "Private Key Protected",
+        "description": "Private keys are high-sensitivity credentials. Viewing or copying requires administrator MFA verification and is recorded in audit logs.",
+        "unlockAction": "Unlock Private Key",
+        "lockAction": "Lock & Hide",
+        "unlockedHint": "Private key temporarily unlocked; cleared from memory when closing the drawer"
       }
     },
     "issueDialog": {

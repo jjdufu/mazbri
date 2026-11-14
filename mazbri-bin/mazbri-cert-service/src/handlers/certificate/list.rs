@@ -1,6 +1,9 @@
 use super::common::CertificateState;
 use crate::db::repository::CertListFilter;
-use crate::db::{CertificateStatus, CertificateSummary, FullCertificateResponse};
+use crate::db::{
+    CertificateRecord, CertificateStatus, FullCertificateResponse,
+    PublicCertificateDetailResponse,
+};
 use crate::error::CertError;
 use axum::{
     Json,
@@ -101,25 +104,40 @@ pub async fn list_certificates(
         (Err(e), _) | (_, Err(e)) => e.into_response(),
     }
 }
+#[must_use]
+pub fn build_public_certificate_detail(
+    record: CertificateRecord,
+) -> PublicCertificateDetailResponse {
+    let status = calculate_certificate_status(&record.revoked, &record.expires_at);
+    let fingerprint = record.fingerprint.as_deref().map(hex::encode);
+    PublicCertificateDetailResponse {
+        id: record.id,
+        subject: record.subject,
+        issued_at: record.issued_at,
+        expires_at: record.expires_at,
+        revoked: record.revoked,
+        revoked_at: record.revoked_at,
+        renewal_count: record.renewal_count,
+        dns_names: record.dns_names,
+        fingerprint,
+        status: status.as_str().to_string(),
+        cert_pem: record.cert_pem,
+    }
+}
+
 pub async fn get_certificate(
     State(state): State<CertificateState>,
     Path(id): Path<uuid::Uuid>,
 ) -> Response {
     match state.repo.get_by_id(id).await {
-        Ok(record) => {
-            let summary = CertificateSummary {
-                id: record.id,
-                subject: record.subject,
-                issued_at: record.issued_at,
-                expires_at: record.expires_at,
-                revoked: record.revoked,
-                revoked_at: record.revoked_at,
-                renewal_count: record.renewal_count,
-                dns_names: record.dns_names,
-                fingerprint: record.fingerprint,
-            };
-            (StatusCode::OK, Json(summary)).into_response()
-        }
+        Ok(record) => (StatusCode::OK, Json(build_public_certificate_detail(record))).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+pub async fn list_certificate_subjects(State(state): State<CertificateState>) -> Response {
+    match state.repo.list_active_subjects().await {
+        Ok(subjects) => (StatusCode::OK, Json(subjects)).into_response(),
         Err(e) => e.into_response(),
     }
 }
@@ -218,5 +236,88 @@ pub fn calculate_certificate_status(
         CertificateStatus::ExpiringSoon
     } else {
         CertificateStatus::Valid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{CertificateSummary, CertificateSummaryRow};
+    use uuid::Uuid;
+
+    fn sample_record(revoked: bool) -> CertificateRecord {
+        let now = Utc::now();
+        CertificateRecord {
+            id: Uuid::nil(),
+            subject: "mazbri-gateway".to_string(),
+            issued_at: now - Duration::days(5),
+            expires_at: now + Duration::days(360),
+            revoked,
+            revoked_at: revoked.then_some(now),
+            cert_pem: "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----".to_string(),
+            key_pem: "encrypted-private-key-material-must-never-leak".to_string(),
+            dns_names: vec!["mazbri-gateway".to_string(), "gateway.internal".to_string()],
+            created_by_ip: None,
+            renewal_count: 2,
+            fingerprint: Some(vec![0x55; 32]),
+            created_at: now - Duration::days(5),
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn public_certificate_detail_exposes_status_cert_pem_hex_fingerprint_and_never_key_pem() {
+        let detail = build_public_certificate_detail(sample_record(false));
+        let json = serde_json::to_value(&detail).expect("serialize public detail");
+        let raw = serde_json::to_string(&detail).expect("serialize raw string");
+
+        assert_eq!(json["status"], "valid");
+        assert_eq!(
+            json["cert_pem"],
+            "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+        );
+        let fp = json["fingerprint"].as_str().expect("hex string fingerprint");
+        assert_eq!(fp.len(), 64);
+        assert!(fp.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_eq!(fp, "55".repeat(32));
+        assert!(
+            json.get("key_pem").is_none(),
+            "public certificate detail must never contain key_pem"
+        );
+        assert!(!raw.contains("encrypted-private-key-material-must-never-leak"));
+    }
+
+    #[test]
+    fn summary_row_serializes_bytea_fingerprint_as_lowercase_hex_string() {
+        let now = Utc::now();
+        let summary = CertificateSummary::from(CertificateSummaryRow {
+            id: Uuid::nil(),
+            subject: "mazbri-auth".to_string(),
+            issued_at: now,
+            expires_at: now + Duration::days(90),
+            revoked: false,
+            revoked_at: None,
+            renewal_count: 0,
+            dns_names: vec!["mazbri-auth".to_string()],
+            fingerprint: Some((0_u8..32_u8).collect()),
+        });
+        let json = serde_json::to_value(&summary).expect("serialize summary");
+        let fp = json["fingerprint"].as_str().expect("hex string");
+        assert_eq!(fp.len(), 64);
+        assert_eq!(
+            fp,
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        );
+    }
+
+    #[test]
+    fn active_subjects_repository_sql_filters_out_revoked_certificates() {
+        let repo_src = include_str!("../../db/repository.rs");
+        assert!(
+            repo_src.contains(
+                "SELECT DISTINCT subject FROM certificates WHERE revoked = FALSE ORDER BY subject"
+            ),
+            "list_active_subjects must filter revoked = FALSE and deduplicate ordered subjects"
+        );
     }
 }

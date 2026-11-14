@@ -20,7 +20,7 @@
             :disabled="isSubjectIssued(name)"
           >
             <span
-              :class="{ 'line-through text-gray-400': isSubjectIssued(name) }"
+              :class="{ 'issued-subject-option': isSubjectIssued(name) }"
             >
               {{ name }}
             </span>
@@ -246,19 +246,25 @@ const resetForm = () => {
   form.validity_days = 365;
   formRef.value?.resetFields();
 };
-watch(visible, (val) => {
-  if (val) {
-    void loadServices();
-  } else {
-    resetForm();
-  }
-});
-onMounted(() => {
-  void loadServices();
-});
+watch(
+  visible,
+  (val) => {
+    if (val) {
+      void loadServices();
+    } else {
+      resetForm();
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped lang="scss">
+.issued-subject-option {
+  text-decoration: line-through;
+  color: var(--el-text-color-placeholder);
+}
+
 .dialog-footer {
   display: flex;
   justify-content: space-between;

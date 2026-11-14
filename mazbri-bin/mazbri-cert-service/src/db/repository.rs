@@ -1,4 +1,7 @@
-use super::models::{AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary};
+use super::models::{
+    AutoRenewalConfig, CaStorageRecord, CertificateRecord, CertificateSummary,
+    CertificateSummaryRow,
+};
 use crate::error::{CertError, CertResult};
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Deserialize;
@@ -179,10 +182,23 @@ impl CertificateRepository {
         builder.push(" OFFSET ");
         builder.push_bind(offset);
         let records = builder
-            .build_query_as::<CertificateSummary>()
+            .build_query_as::<CertificateSummaryRow>()
             .fetch_all(&*self.db)
             .await?;
-        Ok(records)
+        Ok(records.into_iter().map(CertificateSummary::from).collect())
+    }
+    /// 返回所有未吊销证书的去重主体名称列表（按字母升序）。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn list_active_subjects(&self) -> CertResult<Vec<String>> {
+        let subjects = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT subject FROM certificates WHERE revoked = FALSE ORDER BY subject",
+        )
+        .fetch_all(&*self.db)
+        .await?;
+        Ok(subjects)
     }
     /// # Errors
     ///
@@ -193,14 +209,14 @@ impl CertificateRepository {
     ) -> CertResult<Option<CertificateSummary>> {
         let record = sqlx::query_as::<
             _,
-            CertificateSummary,
+            CertificateSummaryRow,
         >(
                 "SELECT id, subject, issued_at, expires_at, revoked, revoked_at, renewal_count, dns_names, fingerprint FROM certificates WHERE fingerprint = $1",
             )
             .bind(fingerprint)
             .fetch_optional(&*self.db)
             .await?;
-        Ok(record)
+        Ok(record.map(CertificateSummary::from))
     }
     /// # Errors
     ///

@@ -6,6 +6,29 @@ use super::{
     lookup_certificate, parse_json_body, proxy_request, require_license_issuance,
 };
 
+pub async fn list_certificate_subjects_proxy(
+    State(state): State<AppState>,
+    claims: axum::Extension<AdminClaims>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    request: Request,
+) -> impl IntoResponse {
+    if !can_manage_certificates(&claims) {
+        return forbidden(FORBIDDEN_CERT);
+    }
+    if let Err(error) = require_license_issuance(&state).await {
+        return error.into_response();
+    }
+    let config = get_cert_proxy_config(&state);
+    proxy_request(
+        &state.cert_http_client,
+        &config,
+        request,
+        "/certificates/subjects",
+        Method::GET,
+        Some(addr),
+    )
+    .await
+}
 pub async fn get_certificate_proxy(
     State(state): State<AppState>,
     claims: axum::Extension<AdminClaims>,

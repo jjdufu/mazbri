@@ -159,6 +159,7 @@ pub const RULES: &[RouteRule] = &[
     rule("POST", "/certificates/issue", Roles(ADMIN)),
     rule("POST", "/certificates/renew/{id}", Roles(ADMIN)),
     rule("POST", "/certificates/revoke/{id}", Roles(ADMIN)),
+    rule("GET", "/certificates/subjects", Roles(ADMIN)),
     rule("GET", "/certificates/{id}", Roles(ADMIN)),
     rule("GET", "/certificates/{id}/auto-renewal", Roles(ADMIN)),
     rule("PUT", "/certificates/{id}/auto-renewal", Roles(ADMIN)),

@@ -186,6 +186,10 @@ fn cert_routes(state: &AppState) -> Router<AppState> {
             get(handlers::certificate::list_certificates),
         )
         .route(
+            "/certificates/subjects",
+            get(handlers::certificate::list_certificate_subjects),
+        )
+        .route(
             "/certificates/by-subject/{subject}",
             get(handlers::certificate::get_certificate_by_subject),
         )
