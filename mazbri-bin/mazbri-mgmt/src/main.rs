@@ -521,7 +521,6 @@ async fn main() -> Result<()> {
         handle.set_db_pool(Arc::clone(&db));
     }
     info!("Connected to database");
-    seed_config_watch_versions(&db).await;
     let redis = connect_redis(&config).await?;
     let dbs = connect_mgmt_databases(&config, config_dir).await?;
     let product_service = build_product_service(&db, &redis, &dbs.cache);
@@ -625,16 +624,6 @@ fn spawn_billing_background_jobs(
     );
 }
 
-async fn seed_config_watch_versions(platform_db: &PgArc) {
-    if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
-        platform_db,
-        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
-    )
-    .await
-    {
-        tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
-    }
-}
 fn build_mgmt_cors_layer() -> CorsLayer {
     // 带 --dev 时放行本地 Vite 端口；不带时 CORS 为空名单。
     if !mazbri_core::is_dev_flag() {

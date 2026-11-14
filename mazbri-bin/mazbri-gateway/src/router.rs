@@ -269,14 +269,6 @@ async fn init_auth(
         config.services.auth.clone(),
         db.clone(),
     );
-    if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
-        db,
-        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
-    )
-    .await
-    {
-        tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
-    }
     service.spawn_api_key_cache_watch(
         db.clone(),
         config.database.clone(),
