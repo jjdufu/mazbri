@@ -112,6 +112,7 @@ pub struct AlertEvent {
     pub value: f64,
     pub threshold: f64,
     pub op: String,
+    pub for_seconds: i32,
     pub started_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
     pub trace_ids: Vec<String>,
@@ -296,7 +297,7 @@ const RULE_COLUMNS: &str = "r.id, r.name, r.kind, r.expr, r.threshold, r.op, r.f
      (SELECT count(*) FROM alert_events e WHERE e.rule_id = r.id AND e.status = 'firing') AS active_events";
 
 const EVENT_COLUMNS: &str = "e.id, e.rule_id, r.name AS rule_name, e.fingerprint, e.status, e.severity, e.labels, \
-     e.value, r.threshold, r.op, e.started_at, e.resolved_at, \
+     e.value, r.threshold, r.op, r.for_seconds, e.started_at, e.resolved_at, \
      e.trace_ids, e.silenced, e.inhibited, e.updated_at";
 
 fn rule_from_row(row: &PgRow) -> Result<AlertRule, sqlx::Error> {
@@ -330,6 +331,7 @@ fn event_from_row(row: &PgRow) -> Result<AlertEvent, sqlx::Error> {
         value: row.try_get("value")?,
         threshold: row.try_get("threshold")?,
         op: row.try_get("op")?,
+        for_seconds: row.try_get("for_seconds")?,
         started_at: row.try_get("started_at")?,
         resolved_at: row.try_get("resolved_at")?,
         trace_ids: row.try_get("trace_ids")?,

@@ -545,6 +545,9 @@ export const DETAIL_LABELS: Record<string, string> = {
   rollback_version: "auditLogs.detailLabels.rollbackVersion",
   retry_after_secs: "auditLogs.detailLabels.retryAfterSecs",
   setup_path: "auditLogs.detailLabels.setupPath",
+  before_hash: "auditLogs.detailLabels.beforeHash",
+  after_hash: "auditLogs.detailLabels.afterHash",
+  watermark_visible: "auditLogs.detailLabels.watermarkVisible",
 };
 
 /** MFA 提权分类 → i18n key。 */

@@ -158,7 +158,6 @@
         <template #left>
           <div class="wb-pane">
             <WorkbenchEndpointList
-              v-model:session-name="draft.name"
               :endpoints="endpoints"
               :active-index="activeEpIdx"
               :gate="gate"
@@ -170,7 +169,6 @@
               @select="activeEpIdx = $event"
               @toggle-gate="toggleGate"
               @action="onEpAction"
-              @session-action="onSessionAction"
               @reorder="onEpReorder($event.from, $event.to)"
               @select-run="lastRun = $event"
             />
@@ -646,8 +644,8 @@ import { watchDebounced } from "@vueuse/core";
 import { saveAs } from "file-saver";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
-import { type SupplierConfigForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
 import {
+  type SupplierConfigForm,
   createEmptyAuthFlow,
   serializeAuthFlow,
   resolveUpstreamType,
@@ -665,16 +663,16 @@ import {
   importCurl,
   importOpenApi,
   importPostman,
-  listDrafts,
   listRuns,
   liveRun,
+  previewDraftFromSupplier,
   publishDraft,
   runDraft,
   transformPreview,
   updateDraft,
   uploadArtifact,
 } from "@/api/upstream-connectors";
-import { fetchSupplierById } from "@/api/supplier";
+import { fetchSupplierById, type Supplier } from "@/api/supplier";
 import { useUserStore } from "@/store/modules/user";
 import { canWriteUpstreamConnector } from "@/utils/ops/roles";
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
@@ -1132,17 +1130,12 @@ async function syncSessionRoute(d: ConnectorDraft) {
   });
 }
 
-async function loadReadOnlySupplierDraft(supplierId: string) {
-  const res = await listDrafts({ page: 1, page_size: 100 });
-  const matched = (res.drafts || []).find(
-    (item) => item.linked_supplier_id === supplierId && item.status !== "archived",
-  );
-  if (matched) {
-    const full = await getDraft(matched.id);
-    await openSession(full);
-    return;
-  }
-  draft.value = null;
+async function loadReadOnlySupplierDraft(
+  supplierId: string,
+  prefetchedSupplier?: Supplier,
+) {
+  const d = await previewDraftFromSupplier(supplierId);
+  await openSession(d, prefetchedSupplier);
 }
 
 function markDirty() {
@@ -1161,7 +1154,10 @@ function leaveForMicroservice(supplierId?: string | null) {
   void router.replace({ path: "/operations/upstream-supply", query: { tab: "suppliers" } });
 }
 
-async function openSession(d: ConnectorDraft): Promise<boolean> {
+async function openSession(
+  d: ConnectorDraft,
+  prefetchedSupplier?: Supplier,
+): Promise<boolean> {
   if (isMicroserviceUpstream(d) && d.linked_supplier_id) {
     draft.value = null;
     leaveForMicroservice(d.linked_supplier_id);
@@ -1187,7 +1183,10 @@ async function openSession(d: ConnectorDraft): Promise<boolean> {
   activeEpIdx.value = 0;
   if (d.linked_supplier_id) {
     try {
-      const sup = await fetchSupplierById(d.linked_supplier_id);
+      const sup =
+        prefetchedSupplier?.id === d.linked_supplier_id
+          ? prefetchedSupplier
+          : await fetchSupplierById(d.linked_supplier_id);
       publishForm.value.supplier_code = sup.supplier_code;
       publishForm.value.supplier_name = sup.name;
       if (draft.value) draft.value.name = sup.name;
@@ -2002,12 +2001,6 @@ function onSendCommand(cmd: string) {
   else if (cmd === "live") void doLiveRun();
 }
 
-function onSessionAction(cmd: string) {
-  if (!canWriteWorkbench.value) return;
-  if (cmd === "import") showImport.value = true;
-  else if (cmd === "export") void doExport();
-}
-
 function composedUrl() {
   return composeRequestUrl(
     draft.value?.upstream_url || "",
@@ -2081,11 +2074,11 @@ async function bootstrap() {
         return;
       }
       if (!canWriteWorkbench.value) {
-        await loadReadOnlySupplierDraft(supplierId);
+        await loadReadOnlySupplierDraft(supplierId, sup);
         return;
       }
       const d = await draftFromSupplier(supplierId);
-      await openSession(d);
+      await openSession(d, sup);
       return;
     }
     if (sessionId) {
@@ -2356,11 +2349,11 @@ watch(
           return;
         }
         if (!canWriteWorkbench.value) {
-          await loadReadOnlySupplierDraft(supplierId);
+          await loadReadOnlySupplierDraft(supplierId, sup);
           return;
         }
         const d = await draftFromSupplier(supplierId);
-        await openSession(d);
+        await openSession(d, sup);
       } catch (e) {
         ElMessage.error((e as Error)?.message || $t("upstreamConnector.bootstrapFailed"));
       } finally {
@@ -2697,11 +2690,6 @@ watch(
   :deep(.el-tab-pane) {
     height: 100%;
   }
-}
-.req-actions {
-  display: flex;
-  gap: 8px;
-  margin: 10px 0;
 }
 @media (max-width: 1100px) {
   .connector-workbench-page {

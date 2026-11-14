@@ -711,8 +711,12 @@ async fn non_admin_gets_forbidden_not_mfa_and_unchanged_put_skips_history() {
         drop(app);
         handle.shutdown(Duration::from_millis(50)).await;
     }
+}
 
-    let (audit, _store, handle) = build_audit();
+#[tokio::test]
+async fn unchanged_put_skips_history_and_changed_put_records_digests() {
+    let mock = MockCertServer::start().await;
+    let (audit, store, handle) = build_audit();
     let state = TestRouterState {
         cert_cfg: Arc::new(CertServiceClientCfg {
             url: mock.url.clone(),
@@ -749,13 +753,12 @@ async fn non_admin_gets_forbidden_not_mfa_and_unchanged_put_skips_history() {
         .map_or(0, Vec::len);
     assert_eq!(hist_len_before, 1);
 
+    let updated_toml = "[cors]\nallowed_origins = [\"https://console.example.com\"]\n";
     let (status, _) = send_json(
         &app,
         "PUT",
         "/api/v1/mgmt/config-center/configs/mazbri-gateway",
-        Some(
-            json!({ "content": "[cors]\nallowed_origins = [\"https://console.example.com\"]\n" }),
-        ),
+        Some(json!({ "content": updated_toml })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -768,6 +771,95 @@ async fn non_admin_gets_forbidden_not_mfa_and_unchanged_put_skips_history() {
         .get("mazbri-gateway")
         .map_or(0, Vec::len);
     assert_eq!(hist_len_after, 2);
+
     drop(app);
-    handle.shutdown(Duration::from_millis(50)).await;
+    handle.shutdown(Duration::from_secs(1)).await;
+    let records: Vec<AuditRecord> = store.rows();
+    let update_rec = records
+        .iter()
+        .rfind(|r| r.action == "config_center.update")
+        .expect("missing config_center.update audit");
+    let details = update_rec.details.as_ref().expect("update details");
+    assert_eq!(
+        details["before_hash"].as_str(),
+        Some(super::sha256_hex(unchanged_toml).as_str())
+    );
+    assert_eq!(
+        details["after_hash"].as_str(),
+        Some(super::sha256_hex(updated_toml).as_str())
+    );
+}
+
+#[tokio::test]
+async fn custom_extension_config_lifecycle_and_delete_digest_audit() {
+    let mock = MockCertServer::start().await;
+    let (audit, store, handle) = build_audit();
+    let state = TestRouterState {
+        cert_cfg: Arc::new(CertServiceClientCfg {
+            url: mock.url.clone(),
+            token: "test-token".to_string(),
+        }),
+        http: reqwest::Client::new(),
+        audit,
+        mfa_verified: Arc::new(AtomicBool::new(true)),
+        mfa_calls: Arc::new(AtomicUsize::new(0)),
+        role: "R_ADMIN".to_string(),
+        user_id: uuid::Uuid::new_v4(),
+    };
+    let app = build_test_router(state);
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/v1/mgmt/config-center/configs",
+        Some(json!({
+            "service_name": "ext-custom-worker",
+            "content": "port = 9100\n",
+            "updated_by": "admin"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/v1/mgmt/config-center/configs",
+        Some(json!({
+            "service_name": "mazbri-cert-service",
+            "content": "port = 9101\n",
+            "updated_by": "admin"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send_json(
+        &app,
+        "DELETE",
+        "/api/v1/mgmt/config-center/configs/ext-custom-worker",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    drop(app);
+    handle.shutdown(Duration::from_secs(1)).await;
+    let records: Vec<AuditRecord> = store.rows();
+    let create_rec = records
+        .iter()
+        .find(|r| r.action == "config_center.create")
+        .expect("missing config_center.create audit");
+    assert_eq!(
+        create_rec.details.as_ref().and_then(|d| d["after_hash"].as_str()),
+        Some(super::sha256_hex("port = 9100\n").as_str())
+    );
+    let delete_rec = records
+        .iter()
+        .find(|r| r.action == "config_center.delete")
+        .expect("missing config_center.delete audit");
+    assert_eq!(
+        delete_rec.details.as_ref().and_then(|d| d["before_hash"].as_str()),
+        Some(super::sha256_hex("port = 9100\n").as_str())
+    );
 }

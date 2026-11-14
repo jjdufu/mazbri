@@ -21,6 +21,7 @@
       <template v-if="!isEdit">
         <ServiceNameSelector
           v-model="form.service_name"
+          allow-custom
           :existing-names="existingNames"
           @change="handleServiceChange"
         />

@@ -600,6 +600,7 @@ import {
   fetchReconcileCalendar,
   type ReconcileCalendarDay,
 } from "@/api/billing-ops";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { useUserStore } from "@/store/modules/user";
@@ -628,6 +629,7 @@ const props = withDefaults(
   },
 );
 
+const { locale } = useI18n();
 const router = useRouter();
 const userStore = useUserStore();
 const canWriteBusiness = computed(() => userStore.canWriteBusiness);
@@ -770,7 +772,7 @@ const { selectedRows, handleSelectionChange, handleDeleteCommand } =
       $t("billing.reconciliation.deleteConfirm.selected", { count }),
     actionLabel: $t("common.actions.delete"),
   });
-const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
+const buildReconciliationColumns = (): ColumnOption<ReconciliationDiscrepancy>[] => [
   { type: "selection", width: 48 },
   {
     prop: "reconciliation_date",
@@ -821,7 +823,25 @@ const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
     fixed: "right",
     useSlot: true,
   },
-]);
+];
+const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>(
+  buildReconciliationColumns(),
+);
+watch(locale, () => {
+  const prev = new Map(
+    columns.value.map((col) => [String(col.prop ?? col.type ?? ""), col]),
+  );
+  columns.value = buildReconciliationColumns().map((col) => {
+    const existing = prev.get(String(col.prop ?? col.type ?? ""));
+    return existing
+      ? {
+          ...col,
+          visible: existing.visible ?? col.visible,
+          checked: existing.checked ?? col.checked,
+        }
+      : col;
+  });
+});
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
   size: pagination.page_size,

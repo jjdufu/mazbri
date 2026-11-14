@@ -2,8 +2,8 @@ mod helpers;
 use crate::audit::{AuditAction, AuditLogRequest, AuditResourceType, AuditService};
 use crate::error::ApiError;
 use crate::handlers::types::{
-    AdminListParams, CreateAdminRequest, ForcePasswordResetRequest, ResetPasswordRequest,
-    SetAdminStatusRequest, UpdateAdminRequest,
+    AdminListParams, CreateAdminRequest, ResetPasswordRequest, SetAdminStatusRequest,
+    UpdateAdminRequest,
 };
 use crate::middleware::auth::{AdminClaims, can_manage_admins};
 use crate::repositories::admin_management as repo;
@@ -544,97 +544,6 @@ pub async fn reset_password(
         ..Default::default()
     });
     Ok(serde_json::json!({ "message" : "密码已重置" }))
-}
-/// # Errors
-///
-/// 无权限或目标不存在/受保护时返回错误。
-pub async fn precheck_force_password_reset(
-    pool: &PgPool,
-    claims: &AdminClaims,
-    id: uuid::Uuid,
-) -> Result<(), ApiError> {
-    if !can_manage_admins(claims) {
-        return Err(ApiError::Forbidden);
-    }
-    let admin = repo::find_edit_state(pool, id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check admin: {}", e);
-            ApiError::internal("检查管理员失败".to_string())
-        })?
-        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    helpers::ensure_not_super_admin_target(&admin.role)
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn force_password_reset(
-    pool: &PgPool,
-    audit: &AuditService,
-    claims: &AdminClaims,
-    id: uuid::Uuid,
-    req: &ForcePasswordResetRequest,
-    client_ip: Option<String>,
-) -> Result<serde_json::Value, ApiError> {
-    if !can_manage_admins(claims) {
-        return Err(ApiError::Forbidden);
-    }
-    let admin = repo::find_edit_state(pool, id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check admin: {}", e);
-            ApiError::internal("检查管理员失败".to_string())
-        })?
-        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
-    helpers::ensure_not_super_admin_target(&admin.role)?;
-    let bumped = auth_epoch_should_bump(
-        &admin.role,
-        admin.mfa_required,
-        admin.force_password_reset,
-        None,
-        None,
-        Some(req.force_password_reset),
-    );
-    repo::update_force_password_reset(pool, id, req.force_password_reset)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to update force_password_reset: {}", e);
-            ApiError::internal("更新强制重置密码标志失败".to_string())
-        })?;
-    info!(
-        "Force password reset {} for admin: {} by {}",
-        if req.force_password_reset {
-            "enabled"
-        } else {
-            "disabled"
-        },
-        admin.username,
-        claims.sub
-    );
-    let audit_user_id = helpers::extract_audit_user_id(claims)?;
-    audit.log(AuditLogRequest {
-        user_id: Some(audit_user_id),
-        action: AuditAction::AdminForcePasswordReset,
-        resource_type: AuditResourceType::Admin,
-        resource_id: Some(id.to_string()),
-        details: Some({
-            let mut details = serde_json::json!({
-                "username": admin.username,
-                "force_password_reset": req.force_password_reset,
-            });
-            if bumped && let Some(obj) = details.as_object_mut() {
-                obj.insert("auth_epoch_bumped".to_string(), serde_json::json!(true));
-            }
-            details
-        }),
-        ip_address: client_ip,
-        ..Default::default()
-    });
-    Ok(serde_json::json!(
-        { "message" : if req.force_password_reset { "已启用强制重置密码" } else {
-        "已禁用强制重置密码" } }
-    ))
 }
 /// # Errors
 ///

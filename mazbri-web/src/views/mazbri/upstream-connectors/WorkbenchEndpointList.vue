@@ -240,11 +240,10 @@ const props = withDefaults(
     gate: { ok: number; total: number };
     runs?: ConnectorRun[];
     activeRunId?: string | null;
-    sessionName?: string;
     /** 观察者只读：隐藏导入导出、增删改与拖拽。 */
     readOnly?: boolean;
   }>(),
-  { runs: () => [], activeRunId: null, sessionName: "", readOnly: false },
+  { runs: () => [], activeRunId: null, readOnly: false },
 );
 
 const emit = defineEmits<{
@@ -252,8 +251,6 @@ const emit = defineEmits<{
   select: [number];
   "toggle-gate": [number];
   action: [{ cmd: string; index: number }];
-  "update:sessionName": [string];
-  "session-action": [string];
   reorder: [{ from: number; to: number }];
   "select-run": [ConnectorRun];
 }>();
@@ -367,55 +364,6 @@ watch(
   height: 100%;
   min-height: 0;
   padding: 10px 10px 8px;
-}
-.wb-eps__session {
-  flex-shrink: 0;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--el-border-color-extra-light);
-}
-.wb-eps__session-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.wb-eps__session-more {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  &:hover {
-    background: var(--el-fill-color-light);
-    color: var(--el-text-color-primary);
-  }
-}
-.wb-eps__session-name {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  border: none;
-  background: transparent;
-  padding: 4px 2px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  cursor: text;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.wb-eps__session-input {
-  flex: 1;
-  min-width: 0;
 }
 .wb-eps__head {
   display: flex;

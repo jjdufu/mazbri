@@ -76,7 +76,6 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     // 计费运维 BIZ
     ("GET", "/billing/ops/failures", Access::Roles(BIZ)),
     ("GET", "/billing/ops/funnel", Access::Roles(BIZ)),
-    ("GET", "/billing/ops/supplier-costs", Access::Roles(BIZ)),
     ("GET", "/billing/ops/finance/overview", Access::Roles(BIZ)),
     // 异常 / 变更 BIZ
     ("GET", "/stats/ops/anomalies", Access::Roles(BIZ)),

@@ -125,8 +125,24 @@ pub async fn rollback(
     );
     let user_id = auth::extract_user_id(claims)?;
     let resource_id = service_name.to_string();
+    let encoded_name = urlencoding::encode(service_name);
+    let get_path = format!("/configs/{encoded_name}");
+    let before_hash = match cert_service_request(
+        ctx,
+        reqwest::Method::GET,
+        &get_path,
+        None,
+        client_ip.clone(),
+        request_id,
+        trace_id,
+    )
+    .await
+    {
+        Ok(r) if r.status().is_success() => r.text().await.ok().map(|s| super::sha256_hex(&s)),
+        _ => None,
+    };
     let updated_by = format!("{} (rollback from v{})", claims.sub, version);
-    let path = format!("/configs/{}/rollback", urlencoding::encode(service_name));
+    let path = format!("/configs/{encoded_name}/rollback");
     let body = serde_json::json!({ "version" : version, "updated_by" : updated_by, });
     let resp = cert_service_request(
         ctx,
@@ -168,13 +184,27 @@ pub async fn rollback(
         "Rolled back config: {} to version {}",
         service_name, version
     );
+    let after_hash = config
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            config
+                .get("content")
+                .and_then(serde_json::Value::as_str)
+                .map(super::sha256_hex)
+        });
     ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterRollback,
         resource_id,
-        Some(serde_json::json!(
-            { "service_name" : service_name, "rollback_version" : version, }
-        )),
+        Some(serde_json::json!({
+            "service_name": service_name,
+            "rollback_version": version,
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+        })),
         client_ip,
     ));
     Ok(config)

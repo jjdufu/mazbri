@@ -1086,17 +1086,6 @@ fn change_audit_log(
     }
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn get_next_channel_code(_pool: &PgPool) -> Result<serde_json::Value, ApiError> {
-    use rand::RngExt;
-    let num: u32 = rand::rng().random_range(1000..=9999);
-    Ok(serde_json::json!({
-        "channel_code": format!("CH-{}", num)
-    }))
-}
-
 fn is_unique_violation_code(code: Option<&str>) -> bool {
     code == Some("23505")
 }

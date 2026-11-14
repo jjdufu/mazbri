@@ -97,7 +97,7 @@ const extensions = computed(() => {
       width: "100%",
       border: "none",
       outline: "none",
-      fontSize: "13px",
+      fontSize: "12px",
       backgroundColor: "transparent",
     },
     "&.cm-focused": { outline: "none" },

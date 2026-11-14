@@ -1,7 +1,7 @@
 use super::{
     ConfigCenterCtx, cert_service_request, dependency_internal_error, ensure_service_name,
     ensure_toml, is_core_protected_config, log_config_center_error, not_found_error, query,
-    validation_error,
+    sha256_hex, validation_error,
 };
 use crate::audit::{AuditAction, config_center_audit};
 use crate::error::ApiError;
@@ -99,11 +99,19 @@ pub async fn create_config(
         )
     })?;
     info!("Created config: {}", payload.service_name);
+    let after_hash = entry
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| sha256_hex(&payload.content), str::to_string);
     ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterCreate,
         resource_id,
-        Some(serde_json::json!({ "service_name" : payload.service_name, })),
+        Some(serde_json::json!({
+            "service_name": payload.service_name,
+            "after_hash": after_hash,
+        })),
         client_ip,
     ));
     Ok(entry)
@@ -153,6 +161,7 @@ pub async fn update_config(
             trace_id,
         ));
     }
+    let mut before_hash: Option<String> = None;
     if current_resp.status().is_success() {
         let existing_content = current_resp.text().await.map_err(|e| {
             dependency_internal_error(
@@ -169,6 +178,7 @@ pub async fn update_config(
             );
             return query::get_config(ctx, service_name, client_ip, request_id, trace_id).await;
         }
+        before_hash = Some(sha256_hex(&existing_content));
     }
     let updated_by = payload.updated_by.as_deref().unwrap_or(&claims.sub);
     let user_id = auth::extract_user_id(claims)?;
@@ -208,11 +218,20 @@ pub async fn update_config(
         )
     })?;
     info!("Upserted config: {}", service_name);
+    let after_hash = entry
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| sha256_hex(&payload.content), str::to_string);
     ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterUpdate,
         resource_id,
-        Some(serde_json::json!({ "service_name" : service_name, })),
+        Some(serde_json::json!({
+            "service_name": service_name,
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+        })),
         client_ip,
     ));
     Ok(entry)
@@ -321,6 +340,20 @@ pub async fn delete_config(
     let user_id = auth::extract_user_id(claims)?;
     let resource_id = service_name.to_string();
     let path = format!("/configs/{}", urlencoding::encode(service_name));
+    let before_hash = match cert_service_request(
+        ctx,
+        reqwest::Method::GET,
+        &path,
+        None,
+        client_ip.clone(),
+        request_id,
+        trace_id,
+    )
+    .await
+    {
+        Ok(r) if r.status().is_success() => r.text().await.ok().map(|s| sha256_hex(&s)),
+        _ => None,
+    };
     let resp = cert_service_request(
         ctx,
         reqwest::Method::DELETE,
@@ -365,7 +398,10 @@ pub async fn delete_config(
         user_id,
         AuditAction::ConfigCenterDelete,
         resource_id,
-        Some(serde_json::json!({ "service_name" : service_name, })),
+        Some(serde_json::json!({
+            "service_name": service_name,
+            "before_hash": before_hash,
+        })),
         client_ip,
     ));
     Ok(serde_json::json!({ "message" : "Config deleted successfully" }))

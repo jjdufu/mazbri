@@ -82,7 +82,7 @@ pub use pool_types::{DEFAULT_REQUEST_TIMEOUT_MS, PooledClient};
 pub use retry::{DEFAULT_RETRY_CONFIG, IsTransient, RetryConfig, retry_rpc};
 pub use service_identity::{
     CANONICAL_SERVICES, GLOBAL_CONFIG_NAME, ServiceIdentityError, ServiceName,
-    validate_config_target,
+    validate_config_entry_name, validate_config_target,
 };
 pub use sqlx;
 pub use supplier_config::{

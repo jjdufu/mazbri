@@ -17,6 +17,7 @@ import {
   autoChannelsFromEndpoints,
   detectResponseBodyKind,
   ensureEndpointAdapterFields,
+  isPersistedDraftId,
   listMissingAdapterFields,
   parseHSplitState,
   parseSplitLayoutState,
@@ -275,5 +276,10 @@ console.log("workbenchHelpers HSplit/VSplit persist parse ok");
   assert.ok(miss.includes("job_poll.job_id_jsonpath"), String(miss));
   assert.ok(!miss.includes("job_poll.status_jsonpath"), String(miss));
 }
+
+assert.equal(isPersistedDraftId(null), false);
+assert.equal(isPersistedDraftId("local-new"), false);
+assert.equal(isPersistedDraftId("00000000-0000-0000-0000-000000000000"), false);
+assert.equal(isPersistedDraftId("5ef59d80-f105-4b37-9ff8-f4f6947f28eb"), true);
 
 console.log("workbenchHelpers adapter required fields ok");

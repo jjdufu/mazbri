@@ -477,7 +477,6 @@ mod tests {
                 (crud, "create_admin"),
                 (crud, "delete_admin"),
                 (crud, "update_admin"),
-                (password, "force_password_reset"),
                 (password, "reset_admin_password"),
                 (status, "set_admin_status"),
                 (admin_mfa, "reset_admin_mfa"),
@@ -499,11 +498,6 @@ mod tests {
         for (src_file, fn_name, precheck_name) in [
             (crud, "create_admin", "precheck_create_admin"),
             (crud, "delete_admin", "precheck_delete_admin"),
-            (
-                password,
-                "force_password_reset",
-                "precheck_force_password_reset",
-            ),
             (status, "set_admin_status", "precheck_set_status"),
             (admin_mfa, "reset_admin_mfa", "precheck_mfa_reset"),
         ] {

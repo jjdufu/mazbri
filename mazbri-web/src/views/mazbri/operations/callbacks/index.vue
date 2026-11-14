@@ -737,8 +737,6 @@ const deliveryStatusLabel = (status: string) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  height: 100%;
 
   .page-header-tabs-bar {
     display: flex;
@@ -775,7 +773,6 @@ const deliveryStatusLabel = (status: string) => {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    flex: 1;
     min-height: 0;
   }
 

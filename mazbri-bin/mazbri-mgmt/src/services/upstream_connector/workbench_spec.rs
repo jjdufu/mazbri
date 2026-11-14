@@ -493,6 +493,9 @@ fn strip_inject_key(spec: &mut ChannelEgressSpec, supplier: Option<&SupplierConf
     let flow = supplier
         .and_then(|c| c.auth_flow.as_ref())
         .filter(|f| f.enabled);
+    if spec.auth.is_none() && flow.is_none() {
+        return;
+    }
     let inject_key = spec
         .auth
         .as_ref()
@@ -1399,5 +1402,31 @@ mod tests {
         let auth = built.spec.auth.expect("auth");
         assert_eq!(auth.profile, "basic");
         assert!(auth.token_url.is_none());
+    }
+
+    #[test]
+    fn custom_authorization_header_preserved_when_http_auth_disabled() {
+        let ep = serde_json::json!({
+            "method": "GET",
+            "path": "/custom-auth",
+            "body_encoding": "json",
+            "headers": {
+                "Authorization": "CustomScheme tok-123",
+                "X-Trace": "t1"
+            }
+        });
+        let built = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
+            .expect("build without auth");
+        assert!(built.spec.auth.is_none());
+        assert_eq!(
+            built
+                .spec
+                .request
+                .headers
+                .as_ref()
+                .and_then(|h| h.get("Authorization"))
+                .map(String::as_str),
+            Some("CustomScheme tok-123")
+        );
     }
 }

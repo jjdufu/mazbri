@@ -23,10 +23,6 @@ pub fn routes() -> Router<AppState> {
                 .post(route_management_handlers::create_channel),
         )
         .route(
-            "/channels/next-code",
-            get(route_management_handlers::get_next_channel_code),
-        )
-        .route(
             "/channels/{id}",
             get(route_management_handlers::get_channel)
                 .put(route_management_handlers::update_channel)

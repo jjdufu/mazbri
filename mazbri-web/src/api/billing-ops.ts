@@ -5,7 +5,6 @@ import type {
   BillingFailuresQuery,
   BillingFunnelPg,
   OpsRange,
-  SupplierCostRow,
 } from "@/types/api/billing-ops";
 
 const BASE_PATH = `${API_BASE_PATH}/billing/ops`;
@@ -39,14 +38,6 @@ export async function fetchBillingFailures(
   return request.get<BillingFailures>({
     url: `${BASE_PATH}/failures`,
     params,
-    showErrorMessage: false,
-  });
-}
-
-export async function fetchSupplierCosts(range: OpsRange) {
-  return request.get<SupplierCostRow[]>({
-    url: `${BASE_PATH}/supplier-costs`,
-    params: { range },
     showErrorMessage: false,
   });
 }

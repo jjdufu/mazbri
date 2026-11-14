@@ -322,7 +322,11 @@ const columns = computed<ColumnOption<AlertEvent>[]>(() => [
 
 function traceRouteOf(row: AlertEvent, traceId: string) {
   if (!canDrillToTrace(row.started_at, isAdmin.value)) return null;
-  const win = computeAlertDrillWindow(row.started_at, row.resolved_at);
+  const win = computeAlertDrillWindow(
+    row.started_at,
+    row.resolved_at,
+    row.for_seconds,
+  );
   return buildTraceRoute(traceId, {
     start: win?.start,
     end: win?.end,
@@ -335,6 +339,7 @@ function drillRouteOf(row: AlertEvent) {
       labels: row.labels,
       startedAt: row.started_at,
       resolvedAt: row.resolved_at,
+      forSeconds: row.for_seconds,
     },
     { isAdmin: isAdmin.value, isBiz: isBiz.value, isViewer: isViewer.value },
   );

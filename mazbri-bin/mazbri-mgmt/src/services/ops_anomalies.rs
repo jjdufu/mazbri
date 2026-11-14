@@ -63,7 +63,7 @@ pub async fn list_anomalies(
         .collect())
 }
 
-/// 平台已启用产品（id + 名称），供 `TopN` 显示名与零调用差集。
+/// 平台已启用产品（id + 名称），供 `TopN` 显示名展示。
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductName {
     pub product_id: String,

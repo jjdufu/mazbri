@@ -412,7 +412,7 @@
 
 <script setup lang="ts">
 import { $t } from "@/locales";
-import type { AuthFlowForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
+import type { AuthFlowForm } from "@/views/mazbri/suppliers/supplier-form";
 import JsonTemplateEditor from "@/views/mazbri/suppliers/components/JsonTemplateEditor.vue";
 import JsonPathHelper from "@/views/mazbri/suppliers/components/JsonPathHelper.vue";
 import WorkbenchKvRows from "../WorkbenchKvRows.vue";

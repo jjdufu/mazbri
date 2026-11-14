@@ -120,7 +120,7 @@ fn ensure_service_name(
     request_id: &str,
     trace_id: &str,
 ) -> Result<(), ApiError> {
-    mazbri_core::validate_config_target(service_name).map_err(|e| {
+    mazbri_core::validate_config_entry_name(service_name).map_err(|e| {
         validation_error(
             "config_center_service_validation_failed",
             e.to_string(),
@@ -128,6 +128,13 @@ fn ensure_service_name(
             trace_id,
         )
     })
+}
+
+pub(super) fn sha256_hex(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 pub(super) async fn cert_service_request(
     ctx: ConfigCenterCtx<'_>,

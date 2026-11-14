@@ -174,12 +174,13 @@ fn previously_unguarded_routes_are_now_restricted() {
         .collect();
     assert!(config_center.len() >= 11);
     for rule in config_center {
-        let expected = if rule.path == "/config-center/service-names" {
-            Access::AnyRole
-        } else {
-            Access::Roles(ADMIN)
-        };
-        assert_eq!(rule.access, expected, "{} {}", rule.method, rule.path);
+        assert_eq!(
+            rule.access,
+            Access::Roles(ADMIN),
+            "{} {}",
+            rule.method,
+            rule.path
+        );
     }
     assert_eq!(access_of("GET", "/settings/user"), Access::SelfService);
     assert_eq!(access_of("PUT", "/settings/user"), Access::SelfService);
@@ -280,8 +281,7 @@ fn system_routes_stay_super_admin_only() {
     for rule in RULES {
         let system = rule.path.starts_with("/admins")
             || rule.path.starts_with("/certificates")
-            || (rule.path.starts_with("/config-center/")
-                && rule.path != "/config-center/service-names")
+            || rule.path.starts_with("/config-center/")
             || (rule.path.starts_with("/settings/")
                 && rule.path != "/settings/user"
                 && rule.method != "GET");
@@ -701,6 +701,7 @@ fn upstream_connector_writes_allow_biz_and_deny_viewer() {
     }
     for (method, path) in [
         ("GET", "/upstream-connectors/drafts"),
+        ("GET", "/upstream-connectors/drafts/from-supplier/{supplier_id}"),
         ("GET", "/upstream-connectors/drafts/{id}"),
         ("GET", "/upstream-connectors/drafts/{id}/runs"),
         ("GET", "/upstream-connectors/runs/{run_id}"),

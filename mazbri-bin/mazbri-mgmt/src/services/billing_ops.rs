@@ -1,34 +1,17 @@
-//! 计费链路对账与明细（6.1）、供应商成本（3.1）的有界只读查询。
+//! 计费链路对账与明细（6.1）的有界只读查询。
 //! 积压、年龄、失败与入账延迟趋势由 billing 自身指标提供，不在此计算。
 //!
 //! 漏斗契约（step07）：每段 `{ key, name, count, ratio_from_prev?, failed }`，
 //! 顶层带 `mode`（`sync_pass_through` | `async_funnel`）与 `window`；
 //! 禁止无 `mode` 的误导 100% 平线「漏斗转化」。
 
+pub use crate::handlers::types::{FailureQueueKind, OpsRange};
 use crate::repositories::billing_ops as repo;
 use crate::services::billing::BillingError;
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::PgPool;
 use tracing::error;
-
-/// 查询时间窗（相对当前时刻），与 OLAP 模板的 `range` 取值一致。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-pub enum OpsRange {
-    #[serde(rename = "15m")]
-    M15,
-    #[default]
-    #[serde(rename = "1h")]
-    H1,
-    #[serde(rename = "6h")]
-    H6,
-    #[serde(rename = "24h")]
-    H24,
-    #[serde(rename = "7d")]
-    D7,
-    #[serde(rename = "30d")]
-    D30,
-}
 
 impl OpsRange {
     #[must_use]
@@ -95,13 +78,6 @@ pub struct BillingFunnelPg {
     pub outbox_by_status: Vec<repo::StatusCount>,
     pub queue_by_status: Vec<repo::StatusCount>,
     pub charge_failures: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FailureQueueKind {
-    Failures,
-    DeadLetters,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -359,18 +335,6 @@ pub async fn billing_failures(
             })
         }
     }
-}
-
-/// # Errors
-///
-/// 数据库查询失败时返回 [`BillingError::Database`]。
-pub async fn supplier_costs(
-    pool: &PgPool,
-    range: OpsRange,
-) -> Result<Vec<repo::SupplierCostRow>, BillingError> {
-    repo::supplier_costs(pool, range.since(Utc::now()))
-        .await
-        .map_err(db_err("upstream_hourly_settlements"))
 }
 
 #[cfg(test)]

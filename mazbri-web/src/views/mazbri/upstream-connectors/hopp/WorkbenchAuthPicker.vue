@@ -65,7 +65,7 @@
 
 <script setup lang="ts">
 import { $t } from "@/locales";
-import type { AuthFlowForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
+import type { AuthFlowForm } from "@/views/mazbri/suppliers/supplier-form";
 import {
   type AuthPickerId,
   authProfileFromPicker,

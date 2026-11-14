@@ -157,12 +157,6 @@ export function fetchChannelById(id: string) {
     url: `${API_BASE_PATH}/channels/${id}`,
   });
 }
-export async function fetchNextChannelCode() {
-  return request.get<{ channel_code: string }>({
-    url: `${API_BASE_PATH}/channels/next-code`,
-    showErrorMessage: false,
-  });
-}
 export interface CreateChannelRequest {
   supplier_id: string;
   channel_code: string;

@@ -23,7 +23,7 @@
             <button
               type="button"
               class="cpe-info-trigger"
-              aria-label="说明"
+              :aria-label="$t('upstreamConnector.cryptoAuthBoundaryHint')"
             >
               <ArtSvgIcon icon="ri:information-line" />
             </button>

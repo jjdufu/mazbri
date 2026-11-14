@@ -53,7 +53,7 @@ fn validate_toml_schema(content: &str, request_context: &RequestContext) -> Opti
 }
 
 fn validate_target_service(service: &str, request_context: &RequestContext) -> Option<Response> {
-    if let Err(e) = mazbri_core::validate_config_target(service) {
+    if let Err(e) = mazbri_core::validate_config_entry_name(service) {
         let message = e.to_string();
         log_config_error(
             "config_upsert_service_validation_failed",

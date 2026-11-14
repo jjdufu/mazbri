@@ -25,16 +25,14 @@
 
 ```vue
 <ControlPanelPageShell :title="…" icon="…">
-  <div class="ops-page-fill">
-    <ResourceTablePageShell
-      v-model="search"
-      v-model:filters="filters"
-      v-model:columns="columns"
-      :data="…"
-      :pagination="…"
-      … <!-- 搜索/导入导出/主按钮/删除经 props，勿再手拼 ActionBar -->
-    />
-  </div>
+  <ResourceTablePageShell
+    v-model="search"
+    v-model:filters="filters"
+    v-model:columns="columns"
+    :data="…"
+    :pagination="…"
+    … <!-- 搜索/导入导出/主按钮/删除经 props，勿再手拼 ActionBar -->
+  />
 </ControlPanelPageShell>
 ```
 

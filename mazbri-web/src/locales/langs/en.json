@@ -1726,7 +1726,10 @@
       "errors": "Error Count",
       "rollbackVersion": "Rollback Version",
       "retryAfterSecs": "Retry After",
-      "setupPath": "MFA Setup Path"
+      "setupPath": "MFA Setup Path",
+      "beforeHash": "Before Digest",
+      "afterHash": "After Digest",
+      "watermarkVisible": "Global Security Watermark"
     },
     "mfaCategories": {
       "certificate": "Certificate & Root Auth",
@@ -2366,15 +2369,6 @@
       }
     },
     "autoRenewalDialog": {
-      "title": "Auto Renewal Configuration",
-      "fields": {
-        "subject": "Certificate Subject",
-        "expiresAt": "Expires At",
-        "enabled": "Enable Auto Renewal",
-        "thresholdDays": "Renewal Threshold Days (days)",
-        "validityDays": "Renewal Validity (days)",
-        "nextRenewalAt": "Next Renewal Time"
-      },
       "hints": {
         "thresholdDays": "Automatically renew the certificate a few days before it expires",
         "validityDays": "Validity period of the renewed certificate"

@@ -1023,7 +1023,7 @@ watch(traceId, () => void load(), { immediate: true });
   border-radius: var(--art-form-control-radius-sm);
 }
 .ops-trace__event.is-error {
-  border-left: 3px solid #f56c6c;
+  border-left: 3px solid var(--el-color-danger);
 }
 .ops-trace__link {
   display: flex;

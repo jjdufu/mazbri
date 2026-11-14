@@ -51,6 +51,7 @@ export interface AlertEvent {
   value: number;
   threshold: number;
   op: AlertOp;
+  for_seconds?: number;
   started_at: string;
   resolved_at: string | null;
   trace_ids: string[];

@@ -54,7 +54,7 @@ pub async fn list_anomalies(
     }
 }
 
-/// `GET /stats/ops/products/names`：已启用产品的 id → 名称（TopN 显示名、零调用差集）。
+/// `GET /stats/ops/products/names`：已启用产品的 id → 名称（供 `TopN` 显示名展示）。
 pub async fn list_product_names(State(state): State<AppState>) -> axum::response::Response {
     match svc::list_platform_products(&state.db).await {
         Ok(rows) => ApiResponse::ok(rows).into_response(),

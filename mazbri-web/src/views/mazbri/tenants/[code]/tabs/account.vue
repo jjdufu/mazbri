@@ -385,7 +385,11 @@ import ResourceTableShell from "@/components/common/resource-table-shell/index.v
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { formatMoney, formatDateTime } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatMoney,
+  formatDateTime,
+} from "@/utils/format";
 defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
@@ -573,7 +577,7 @@ const getAmountClass = (type: string) => {
   return type === "charge" || type === "refund" ? "negative" : "positive";
 };
 const getPaymentMethodLabel = (method?: string) => {
-  if (!method) return "-";
+  if (!method) return EMPTY_PLACEHOLDER;
   const labels: Record<string, string> = {
     manual: $t("tenant.account.paymentMethods.manual"),
     bank_transfer: $t("tenant.account.paymentMethods.bankTransfer"),

@@ -186,10 +186,10 @@
                     props.mode === "upstream"
                       ? currentDetail.supplier ||
                         currentDetail.supplier_name ||
-                        "-"
+                        EMPTY_PLACEHOLDER
                       : currentDetail.tenant_name ||
                         currentDetail.tenant_id ||
-                        "-"
+                        EMPTY_PLACEHOLDER
                   }}
                 </ElDescriptionsItem>
                 <ElDescriptionsItem
@@ -357,6 +357,7 @@ import {
 } from "@/api/call-monitor";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { logger } from "@/utils/sys";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 import { formatUrlDisplay, sanitizeSensitiveValue } from "@/utils/sensitive";
 import type {
   CallHistogramQuery,
@@ -572,7 +573,7 @@ const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
 });
 
 const formatTimestampWithMillis = (value: string | number | null) => {
-  if (!value) return "-";
+  if (!value) return EMPTY_PLACEHOLDER;
   const raw = String(value);
   const date =
     typeof value === "number"
@@ -1048,7 +1049,7 @@ const exportLogsArchive = async (
   }
 };
 const formatDetailValue = (value: unknown) => {
-  if (value === null || value === undefined) return "-";
+  if (value === null || value === undefined) return EMPTY_PLACEHOLDER;
   if (typeof value === "string") {
     return formatUrlDisplay(value);
   }

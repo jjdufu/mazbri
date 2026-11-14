@@ -314,7 +314,7 @@ const buildUserColumns = (): ColumnOption<AdminUser>[] => {
     {
       prop: "operations",
       label: t("common.fields.operations"),
-      width: isEn ? 156 : 132,
+      width: isEn ? 156 : 148,
       fixed: "right",
       useSlot: true,
     },

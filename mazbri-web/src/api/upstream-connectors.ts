@@ -381,6 +381,12 @@ export function draftFromSupplier(
   });
 }
 
+export function previewDraftFromSupplier(supplierId: string) {
+  return request.get<ConnectorDraft>({
+    url: `${BASE}/drafts/from-supplier/${supplierId}`,
+  });
+}
+
 export function exportPostman(id: string) {
   return request.get<unknown>({
     url: `${BASE}/drafts/${id}/export/postman`,

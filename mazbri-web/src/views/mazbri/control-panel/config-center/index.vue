@@ -154,6 +154,7 @@ const {
   pagination,
   existingServiceNames,
   formatDate,
+  loadAllExistingNames,
   loadCoreProtectedNames,
   isCoreProtectedService,
   handleDeleteRow,
@@ -187,13 +188,16 @@ const {
   currentConfig,
   onSuccess: async (kind: ConfigCenterDialogSuccess) => {
     if (kind === "edit") {
-      await refresh.refresh({
-        resetSearch: true,
-        resetPage: true,
-      });
+      await Promise.all([
+        loadAllExistingNames(),
+        refresh.refresh({
+          resetSearch: true,
+          resetPage: true,
+        }),
+      ]);
     }
     if (kind === "rollback" || kind === "import") {
-      await refresh.refresh();
+      await Promise.all([loadAllExistingNames(), refresh.refresh()]);
     }
   },
 });
@@ -230,13 +234,16 @@ const handleDelete = async (row: ConfigSummary) => {
   await handleDeleteRow(
     row,
     (item) => deleteConfig(item.service_name),
-    () => refresh.refresh(),
+    async () => {
+      await Promise.all([loadAllExistingNames(), refresh.refresh()]);
+    },
   );
 };
 
 onMounted(() => {
   void loadLicenseStatus();
   void loadCoreProtectedNames();
+  void loadAllExistingNames();
   void refresh.initialize();
 });
 </script>

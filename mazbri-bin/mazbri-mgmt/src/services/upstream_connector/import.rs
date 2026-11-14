@@ -2,8 +2,8 @@ use super::{
     ApiError, Arc, CreateDraftRequest, CurlImportRequest, Decimal, DraftDto, Duration, ExecuteMode,
     ExecuteOptions, HashMap, InvokeInput, OpenApiImportRequest, PgPool, PostmanImportRequest, Row,
     RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec, config_json_for_draft,
-    create_draft, endpoint_by_id, get_draft, parse_workbench_env, repo, with_gate,
-    workbench_endpoint_key,
+    create_draft, endpoint_by_id, get_draft, mask_config_credentials, parse_workbench_env, repo,
+    with_gate, workbench_endpoint_key,
 };
 use mazbri_core::{
     ADAPTER_HTTP_JSON, BodyEncoding, ChannelEgressSpec, parse_channel_config_egress,
@@ -819,6 +819,69 @@ async fn build_supplier_endpoints_value(
         }
     }
     Ok(serde_json::Value::Array(endpoints))
+}
+
+/// 只读反开供应商视图：若已有活跃草稿则返回该草稿，否则在内存构造脱敏只读快照（零落库写入，供观察者 `R_VIEWER` 使用）。
+///
+/// # Errors
+///
+/// 供应商不存在或底层数据库查询失败时返回错误。
+pub async fn preview_draft_from_supplier(
+    pool: &PgPool,
+    supplier_id: Uuid,
+) -> Result<DraftDto, ApiError> {
+    let row = sqlx::query(
+        r"
+        SELECT supplier_code, name, upstream_url, config, created_at, updated_at
+        FROM suppliers WHERE id = $1
+        ",
+    )
+    .bind(supplier_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
+    .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
+
+    if let Some(existing) = repo::find_active_draft_for_supplier(pool, supplier_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("find active draft: {e}")))?
+    {
+        return with_gate(pool, existing).await;
+    }
+
+    let code: String = row.get("supplier_code");
+    let name: String = row.get("name");
+    let upstream_url: String = row.get("upstream_url");
+    let raw_config: serde_json::Value = row.get("config");
+    let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
+    let updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
+    let normalized = normalize_supplier_config_for_workbench(raw_config);
+    let upstream_type = normalized
+        .get("upstream_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("transparent")
+        .to_string();
+    let config = mask_config_credentials(normalized);
+    let endpoints = build_supplier_endpoints_value(pool, supplier_id).await?;
+
+    Ok(DraftDto {
+        id: Uuid::nil(),
+        draft_code: format!("readonly-{code}"),
+        name,
+        description: Some(format!("只读查看供应商 {code}")),
+        upstream_type,
+        upstream_url,
+        config,
+        endpoints,
+        workbench_env: serde_json::json!([]),
+        status: "readonly".into(),
+        source: "supplier".into(),
+        linked_supplier_id: Some(supplier_id),
+        created_by: None,
+        created_at,
+        updated_at,
+        gate: Vec::new(),
+    })
 }
 
 /// # Errors

@@ -2,6 +2,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
+import { fetchServiceList } from "@/api/config-center";
 import { fetchCanonicalServiceNames } from "@/api/service-names";
 import type { ConfigListQuery, ConfigSummary } from "@/types/api/config-center";
 import type { ColumnOption } from "@/types/component";
@@ -72,9 +73,24 @@ export function useConfigCenterPage() {
     total: 0,
   });
 
+  const allExistingNames = ref<string[]>([]);
   const existingServiceNames = computed(() =>
-    tableData.value.map((item) => item.service_name),
+    Array.from(
+      new Set([
+        ...allExistingNames.value,
+        ...tableData.value.map((item) => item.service_name),
+      ]),
+    ),
   );
+
+  const loadAllExistingNames = async () => {
+    try {
+      const data = await fetchServiceList();
+      allExistingNames.value = data.services ?? [];
+    } catch (error) {
+      logger.error("Failed to load existing config service names:", error);
+    }
+  };
 
   const loadCoreProtectedNames = async () => {
     try {
@@ -131,6 +147,7 @@ export function useConfigCenterPage() {
     pagination,
     existingServiceNames,
     formatDate,
+    loadAllExistingNames,
     loadCoreProtectedNames,
     isCoreProtectedService,
     handleDeleteRow,

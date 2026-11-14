@@ -268,7 +268,7 @@
                   >
                     {{ $t("billing.adjustments.void") }}
                   </ElButton>
-                  <span v-else>-</span>
+                  <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
                 </template>
               </ArtTable>
             </ElCard>
@@ -482,6 +482,7 @@
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 import type { ListFilter } from "@/types/list-query";
 import { billsCatalog } from "@/list-catalog/common-resources";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -523,7 +524,12 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
 import { logger } from "@/utils/sys";
-import { formatDate, formatMoney, formatBytes } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatDate,
+  formatMoney,
+  formatBytes,
+} from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
@@ -543,6 +549,7 @@ const props = withDefaults(
     active: true,
   },
 );
+const { locale } = useI18n();
 const userStore = useUserStore();
 const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 const pageRef = ref<HTMLElement | null>(null);
@@ -605,43 +612,46 @@ const adjustmentRules: FormRules = {
     },
   ],
 };
-const adjustmentColumns = ref<ColumnOption<BillAdjustment>[]>([
-  {
-    prop: "adjustment_type",
-    label: $t("billing.adjustments.type"),
-    minWidth: 100,
-  },
-  {
-    prop: "amount",
-    label: $t("billing.adjustments.amount"),
-    minWidth: 110,
-    useSlot: true,
-  },
-  {
-    prop: "reason",
-    label: $t("billing.adjustments.reason"),
-    minWidth: 112,
-  },
-  {
-    prop: "status",
-    label: $t("billing.adjustments.status"),
-    width: 90,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("common.fields.createdAt"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 90,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+const adjustmentColumns = computed<ColumnOption<BillAdjustment>[]>(() => {
+  void locale.value;
+  return [
+    {
+      prop: "adjustment_type",
+      label: $t("billing.adjustments.type"),
+      minWidth: 100,
+    },
+    {
+      prop: "amount",
+      label: $t("billing.adjustments.amount"),
+      minWidth: 110,
+      useSlot: true,
+    },
+    {
+      prop: "reason",
+      label: $t("billing.adjustments.reason"),
+      minWidth: 112,
+    },
+    {
+      prop: "status",
+      label: $t("billing.adjustments.status"),
+      width: 90,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: $t("common.fields.createdAt"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: $t("common.fields.operations"),
+      width: 90,
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+});
 const generateDialogVisible = ref(false);
 const generateFormRef = ref<FormInstance>();
 const tenantsLoading = ref(false);
@@ -650,58 +660,61 @@ const suppliersLoading = ref(false);
 const generating = ref(false);
 const exporting = ref(false);
 const columns = ref<ColumnOption<Bill>[]>([]);
-const billColumns: ColumnOption<Bill>[] = [
-  { type: "selection", width: 55 },
-  {
-    prop: "tenant_name",
-    label: $t("billing.columns.tenantName"),
-    minWidth: 150,
-    useSlot: true,
-  },
-  {
-    prop: "tenant_code",
-    label: $t("billing.columns.tenantCode"),
-    minWidth: 120,
-    useSlot: true,
-  },
-  {
-    prop: "bill_kind",
-    label: $t("billing.columns.billKind"),
-    minWidth: 96,
-    useSlot: true,
-  },
-  {
-    prop: "period_start",
-    label: $t("billing.columns.periodStart"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "period_end",
-    label: $t("billing.columns.periodEnd"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "total",
-    label: $t("billing.columns.total"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("billing.columns.status"),
-    minWidth: 110,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 220,
-    fixed: "right",
-    useSlot: true,
-  },
-];
+const billColumns = computed<ColumnOption<Bill>[]>(() => {
+  void locale.value;
+  return [
+    { type: "selection", width: 55 },
+    {
+      prop: "tenant_name",
+      label: $t("billing.columns.tenantName"),
+      minWidth: 150,
+      useSlot: true,
+    },
+    {
+      prop: "tenant_code",
+      label: $t("billing.columns.tenantCode"),
+      minWidth: 120,
+      useSlot: true,
+    },
+    {
+      prop: "bill_kind",
+      label: $t("billing.columns.billKind"),
+      minWidth: 96,
+      useSlot: true,
+    },
+    {
+      prop: "period_start",
+      label: $t("billing.columns.periodStart"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "period_end",
+      label: $t("billing.columns.periodEnd"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "total",
+      label: $t("billing.columns.total"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: $t("billing.columns.status"),
+      minWidth: 110,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: $t("common.fields.operations"),
+      width: 220,
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+});
 const handleUpdateStatus = async (
   row: Bill,
   status: "paid" | "overdue" | "processing" | "cancelled",
@@ -726,31 +739,34 @@ const handleUpdateStatus = async (
     }
   }
 };
-const billItemColumns = ref<ColumnOption<BillLineItem>[]>([
-  {
-    prop: "description",
-    label: $t("billing.itemColumns.description"),
-    minWidth: 140,
-  },
-  { prop: "quantity", label: $t("billing.itemColumns.quantity"), width: 100 },
-  {
-    prop: "total_units",
-    label: $t("billing.itemColumns.totalUnits"),
-    width: 100,
-  },
-  {
-    prop: "unit_price",
-    label: $t("billing.itemColumns.unitPrice"),
-    width: 120,
-    useSlot: true,
-  },
-  {
-    prop: "total",
-    label: $t("billing.itemColumns.total"),
-    width: 120,
-    useSlot: true,
-  },
-]);
+const billItemColumns = computed<ColumnOption<BillLineItem>[]>(() => {
+  void locale.value;
+  return [
+    {
+      prop: "description",
+      label: $t("billing.itemColumns.description"),
+      minWidth: 140,
+    },
+    { prop: "quantity", label: $t("billing.itemColumns.quantity"), width: 100 },
+    {
+      prop: "total_units",
+      label: $t("billing.itemColumns.totalUnits"),
+      width: 100,
+    },
+    {
+      prop: "unit_price",
+      label: $t("billing.itemColumns.unitPrice"),
+      width: 120,
+      useSlot: true,
+    },
+    {
+      prop: "total",
+      label: $t("billing.itemColumns.total"),
+      width: 120,
+      useSlot: true,
+    },
+  ];
+});
 const searchForm = reactive<BillListQuery>({
   q: "",
 });

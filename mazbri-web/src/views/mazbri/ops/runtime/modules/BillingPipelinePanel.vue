@@ -32,6 +32,7 @@
           <MultiSeriesChart
             :series="series.billing_outbox_pending"
             :loading="loading"
+            :window="chartWindow"
             height="180px"
           />
         </OpsCard>
@@ -39,6 +40,7 @@
           <MultiSeriesChart
             :series="series.billing_oldest_pending_age"
             :loading="loading"
+            :window="chartWindow"
             height="180px"
           />
         </OpsCard>
@@ -57,6 +59,7 @@
           <MultiSeriesChart
             :series="chart.data"
             :loading="loading"
+            :window="chartWindow"
             height="220px"
           />
         </OpsCard>
@@ -145,6 +148,11 @@ type ChartMetric = (typeof CHART_METRICS)[number];
 const { t } = useI18n();
 const { resolveStep } = useStep();
 const { timeRange, reloadTick } = useOpsSharedRange();
+
+const chartWindow = computed(() => ({
+  start: timeRange.value.start,
+  end: timeRange.value.end,
+}));
 
 const loading = ref(false);
 const failuresLoading = ref(false);

@@ -102,7 +102,7 @@
 <script setup lang="ts">
 import FilePicker from "@/components/common/file-picker/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
-import { useAuthorizationManagementPage } from "@/composables/useAuthorizationManagementPage";
+import { useAuthorizationManagementPage } from "@/composables/authorization-management/page";
 
 defineOptions({ name: "PlatformLicenseTab" });
 

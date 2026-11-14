@@ -41,14 +41,6 @@ pub struct DeadLetterRow {
     pub created_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct SupplierCostRow {
-    pub supplier_code: String,
-    pub channel_code: String,
-    pub total_calls: i64,
-    pub settlement_amount: Decimal,
-}
-
 /// # Errors
 ///
 /// 数据库查询失败时返回错误。
@@ -163,27 +155,6 @@ pub async fn recent_dead_letters(
     .bind(since)
     .bind(page.limit)
     .bind(page.offset)
-    .fetch_all(pool)
-    .await
-}
-
-/// 供应商 × 渠道结算成本（`upstream_hourly_settlements`，按 `window_start` 唯一键前缀过滤）。
-///
-/// # Errors
-///
-/// 数据库查询失败时返回错误。
-pub async fn supplier_costs(
-    pool: &PgPool,
-    since: DateTime<Utc>,
-) -> Result<Vec<SupplierCostRow>, sqlx::Error> {
-    sqlx::query_as::<_, SupplierCostRow>(
-        "SELECT supplier_code::text AS supplier_code, channel_code::text AS channel_code, \
-         COALESCE(sum(total_calls), 0)::bigint AS total_calls, \
-         COALESCE(sum(settlement_amount), 0) AS settlement_amount \
-         FROM upstream_hourly_settlements WHERE window_start >= $1 \
-         GROUP BY supplier_code, channel_code ORDER BY supplier_code, channel_code",
-    )
-    .bind(since)
     .fetch_all(pool)
     .await
 }

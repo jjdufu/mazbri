@@ -19,10 +19,6 @@ pub fn routes() -> Router<AppState> {
             get(billing_ops_handlers::get_billing_failures),
         )
         .route(
-            "/billing/ops/supplier-costs",
-            get(billing_ops_handlers::get_supplier_costs),
-        )
-        .route(
             "/billing/ops/finance/overview",
             get(finance_ops_handlers::get_finance_overview),
         )

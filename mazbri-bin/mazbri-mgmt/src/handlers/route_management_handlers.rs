@@ -331,13 +331,3 @@ pub async fn delete_route_binding(
     .await?;
     Ok(ApiResponse::ok(data))
 }
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn get_next_channel_code(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, ApiError> {
-    let data = svc::get_next_channel_code(&state.db)?;
-    Ok(ApiResponse::ok(data))
-}

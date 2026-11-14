@@ -727,9 +727,10 @@ export function genSessionCode() {
 
 const PERSISTED_DRAFT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 export function isPersistedDraftId(id?: string | null): boolean {
-  return Boolean(id && PERSISTED_DRAFT_ID.test(id));
+  return Boolean(id && id !== NIL_UUID && PERSISTED_DRAFT_ID.test(id));
 }
 
 export function methodTone(method?: string): string {

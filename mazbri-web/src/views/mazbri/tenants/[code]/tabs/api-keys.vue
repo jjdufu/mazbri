@@ -95,7 +95,7 @@
             :step="30"
           />
           <CommonInlineHint class="ml-2" size="sm">
-            {{ $t("common.units.days") }}（{{ $t("common.defaults.oneYear") }}）
+            {{ $t("common.units.days") }} ({{ $t("common.defaults.oneYear") }})
           </CommonInlineHint>
         </ElFormItem>
 

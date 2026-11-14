@@ -1726,7 +1726,10 @@
       "errors": "错误数量",
       "rollbackVersion": "回滚版本",
       "retryAfterSecs": "锁定剩余时长",
-      "setupPath": "引导绑定路径"
+      "setupPath": "引导绑定路径",
+      "beforeHash": "变更前摘要",
+      "afterHash": "变更后摘要",
+      "watermarkVisible": "全局防泄密水印"
     },
     "mfaCategories": {
       "certificate": "证书与根授权",
@@ -2366,15 +2369,6 @@
       }
     },
     "autoRenewalDialog": {
-      "title": "自动续期配置",
-      "fields": {
-        "subject": "证书主体",
-        "expiresAt": "过期时间",
-        "enabled": "启用自动续期",
-        "thresholdDays": "提前续期天数（天）",
-        "validityDays": "续期有效期（天）",
-        "nextRenewalAt": "下次续期时间"
-      },
       "hints": {
         "thresholdDays": "证书过期前几天自动续期",
         "validityDays": "续期后证书的有效期"

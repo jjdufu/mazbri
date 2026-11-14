@@ -1,14 +1,60 @@
 import type { Supplier } from "@/api/supplier";
-import type {
-  AuthFlowForm,
-  SupplierConfigForm,
-} from "./components/SupplierTransparentConfig.vue";
 import { stripUrlScheme } from "@/utils/sensitive";
 import {
   createEmptyInvalidation,
   invalidationFromApi,
   invalidationToApi,
+  type InvalidationForm,
 } from "@/views/mazbri/upstream-connectors/authInvalidation";
+
+export interface AuthJwtForm {
+  algorithm: string;
+  ttl_secs: number;
+  claims_tpl: string;
+  kid: string;
+}
+
+export interface AuthDigestForm {
+  algorithm: string;
+  realm: string;
+}
+
+export interface AuthAwsForm {
+  region: string;
+  service: string;
+}
+
+export interface AuthHawkForm {
+  algorithm: string;
+  ext: string;
+}
+
+export interface AuthFlowForm {
+  enabled: boolean;
+  profile: string;
+  token_url: string;
+  token_path: string;
+  method: string;
+  headers: { key: string; value: string }[];
+  request_body_tpl: string;
+  credentials: { key: string; value: string }[];
+  token_jsonpath: string;
+  expiry_jsonpath: string;
+  inject_to: string;
+  inject_key: string;
+  inject_value_format: string;
+  jwt: AuthJwtForm;
+  digest: AuthDigestForm;
+  aws: AuthAwsForm;
+  hawk: AuthHawkForm;
+  invalidation: InvalidationForm;
+}
+
+export interface SupplierConfigForm {
+  upstream_type: string;
+  contract_id?: string;
+  auth_flow: AuthFlowForm;
+}
 
 export type UpstreamType = "microservice" | "transparent";
 

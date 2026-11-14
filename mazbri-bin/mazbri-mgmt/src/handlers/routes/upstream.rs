@@ -53,7 +53,8 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/upstream-connectors/drafts/from-supplier/{supplier_id}",
-            post(upstream_connector_handlers::draft_from_supplier),
+            get(upstream_connector_handlers::preview_draft_from_supplier)
+                .post(upstream_connector_handlers::draft_from_supplier),
         )
         .route(
             "/upstream-connectors/drafts/{id}/export/postman",

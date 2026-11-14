@@ -57,6 +57,7 @@ import {
   VSPLIT_COLLAPSED_HEIGHT,
   VSPLIT_DEFAULT_BOTTOM,
   parseSplitLayoutState,
+  parseVSplitState,
   type SplitDirection,
 } from "./workbenchHelpers";
 
@@ -152,13 +153,33 @@ function onWinResize() {
 onMounted(() => {
   try {
     const raw = localStorage.getItem(SPLIT_LAYOUT_STORAGE_KEY);
-    const st = parseSplitLayoutState(raw);
-    direction.value = st.direction;
-    ratio.value = st.ratio;
-    bottomH.value = Math.max(st.bottom, props.minBottom);
-    rightW.value = Math.max(st.right, props.minRight);
-    collapsed.value = st.collapsed;
-    hasExplicitSize.value = Boolean(raw);
+    if (raw) {
+      const st = parseSplitLayoutState(raw);
+      direction.value = st.direction;
+      ratio.value = st.ratio;
+      bottomH.value = Math.max(st.bottom, props.minBottom);
+      rightW.value = Math.max(st.right, props.minRight);
+      collapsed.value = st.collapsed;
+      hasExplicitSize.value = true;
+    } else {
+      const legacy = localStorage.getItem("mazbri:wb:vsplit");
+      if (legacy) {
+        const v = parseVSplitState(legacy);
+        bottomH.value = Math.max(v.bottom, props.minBottom);
+        collapsed.value = v.collapsed;
+        hasExplicitSize.value = true;
+        localStorage.removeItem("mazbri:wb:vsplit");
+        persist();
+      } else {
+        const st = parseSplitLayoutState(null);
+        direction.value = st.direction;
+        ratio.value = st.ratio;
+        bottomH.value = Math.max(st.bottom, props.minBottom);
+        rightW.value = Math.max(st.right, props.minRight);
+        collapsed.value = st.collapsed;
+        hasExplicitSize.value = false;
+      }
+    }
   } catch {
     void 0;
   }
