@@ -10,6 +10,7 @@
       :class="inputClass"
       :value="modelValue"
       :placeholder="placeholder"
+      :aria-label="ariaLabel || placeholder || 'input'"
       :disabled="disabled"
       :spellcheck="false"
       autocomplete="off"
@@ -83,6 +84,7 @@ const props = withDefaults(
     modelValue: string;
     options: HoppAutoCompleteOption[];
     placeholder?: string;
+    ariaLabel?: string;
     disabled?: boolean;
     inputClass?: string | string[] | Record<string, boolean>;
     appendTo?: string | HTMLElement;
@@ -90,6 +92,7 @@ const props = withDefaults(
   }>(),
   {
     placeholder: "",
+    ariaLabel: "",
     disabled: false,
     inputClass: undefined,
     appendTo: undefined,
@@ -292,8 +295,8 @@ defineExpose({
 .hopp-ac-host.is-open {
   position: relative;
   z-index: 3101;
-  background: #ffffff;
-  border-bottom-color: #d1d5db !important;
+  background: var(--el-bg-color-overlay);
+  border-bottom-color: var(--el-border-color) !important;
 }
 .hopp-ac__input {
   width: 100%;
@@ -317,8 +320,8 @@ defineExpose({
 
 <style lang="scss">
 .hopp-ac-popper {
-  --hopp-ac-bg: #ffffff;
-  --hopp-ac-border: #d1d5db;
+  --hopp-ac-bg: var(--el-bg-color-overlay);
+  --hopp-ac-border: var(--el-border-color);
   position: fixed;
   z-index: 3100;
   box-sizing: border-box;
@@ -331,21 +334,10 @@ defineExpose({
   border-top: none;
   border-radius: 0 0 var(--art-form-control-radius, 4px)
     var(--art-form-control-radius, 4px);
-  box-shadow: 0 4px 10px rgb(0 0 0 / 8%);
+  box-shadow: var(--el-box-shadow-light);
   outline: none;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-}
-
-html.dark .hopp-ac-popper {
-  --hopp-ac-bg: #1b1b1b;
-  --hopp-ac-border: #3f3f46;
-  box-shadow: 0 6px 12px rgb(0 0 0 / 35%);
-}
-
-html.dark .hopp-ac-host.is-open {
-  background: #1b1b1b;
-  border-bottom-color: #3f3f46 !important;
 }
 
 html.radius-zero .hopp-ac-popper,

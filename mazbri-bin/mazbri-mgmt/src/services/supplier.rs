@@ -229,7 +229,7 @@ pub async fn create_supplier(
         config_val,
     )
     .await
-    .map_err(|e| ApiError::internal(format!("创建供应商失败: {e}")))?;
+    .map_err(|e| map_supplier_write_db_error("创建供应商失败", &e))?;
 
     let mut new_value = serde_json::to_value(&row).unwrap_or_default();
     if let Some(cfg) = new_value.get("config").cloned() {
@@ -342,7 +342,7 @@ pub async fn update_supplier(
         },
     )
     .await
-    .map_err(|e| ApiError::internal(format!("更新供应商失败: {e}")))?
+    .map_err(|e| map_supplier_write_db_error("更新供应商失败", &e))?
     .ok_or_else(|| ApiError::not_found("supplier".to_string(), supplier_id.to_string()))?;
 
     let mut old_value = serde_json::to_value(old).unwrap_or_default();
@@ -460,4 +460,13 @@ fn change_audit_log(
         new_value,
         ..Default::default()
     }
+}
+
+fn map_supplier_write_db_error(context: &str, err: &sqlx::Error) -> ApiError {
+    if let sqlx::Error::Database(db_err) = err
+        && db_err.code().as_deref() == Some("23505")
+    {
+        return ApiError::validation("供应商编码已存在".to_string());
+    }
+    ApiError::internal(format!("{context}: {err}"))
 }

@@ -1,0 +1,421 @@
+<template>
+  <div class="traffic-calls-panel">
+    <OpsCard
+      :title="t('ops.calls.histogram.title')"
+      :info="t('ops.calls.histogram.brushHint')"
+    >
+      <template #extra>
+        <div class="ops-calls__histogram-extra">
+          <ElButton
+            v-if="previousRange"
+            link
+            type="primary"
+            size="small"
+            @click="restorePreviousRange"
+          >
+            {{ t("ops.calls.histogram.resetZoom") }}
+          </ElButton>
+          <span class="ops-calls__summary">
+            {{
+              t("ops.calls.histogram.summary", {
+                total: histogram?.total ?? 0,
+                errors: histogram?.errors ?? 0,
+                bucket: formatIntervalHuman(
+                  histogram?.bucket_seconds ?? 0,
+                  locale,
+                ),
+              })
+            }}
+          </span>
+        </div>
+      </template>
+      <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
+        <EmptyState
+          v-if="!histogram || histogram.total === 0"
+          compact
+          :description="t('operations.monitoring.empty.noData')"
+        />
+        <div
+          v-show="histogram && histogram.total > 0"
+          ref="chartRef"
+          class="ops-calls__chart"
+        ></div>
+      </div>
+    </OpsCard>
+
+    <div class="ops-calls__table">
+      <CallMonitorTable
+        v-if="timeRange"
+        ref="tableRef"
+        :mode="props.mode"
+        :title="
+          props.mode === 'upstream'
+            ? $t('operations.monitoring.upstreamTitle')
+            : $t('operations.monitoring.customerTitle')
+        "
+        :time-range="tableRange"
+        :seed-filters="seedFilters"
+        @query-change="onQueryChange"
+        @open-trace="openTrace"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
+import type { TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
+import { echarts, type EChartsOption } from "@/plugins/echarts";
+import EmptyState from "@/components/common/empty-state/index.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import {
+  OPS_CHART_GRID,
+  bindOpsChartResize,
+  getOpsChartThemeTokens,
+  useOpsChartTheme,
+} from "@/composables/ops/useOpsChartHost";
+import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
+import { fetchCallHistogram } from "@/api/call-monitor";
+import type {
+  CallHistogramQuery,
+  CallHistogramResponse,
+  CallMonitorMode,
+} from "@/types/api/call-monitor";
+import type { ListFilter } from "@/types/list-query";
+import { $t } from "@/locales";
+import { formatIntervalHuman } from "@/utils/format";
+import { CALLS_FILTER_KEYS } from "@/utils/ops/calls-link";
+import { sameRange } from "@/utils/ops/time-range";
+import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { logger } from "@/utils/sys";
+import CallMonitorTable, { type CallTimeRange } from "./CallMonitorTable.vue";
+
+defineOptions({ name: "TrafficCallsPanel" });
+
+const props = defineProps<{
+  mode: CallMonitorMode;
+}>();
+
+const { t, locale } = useI18n();
+const route = useRoute();
+const router = useRouter();
+const { timeRange, reloadTick } = useOpsSharedRange();
+
+const NUMERIC_KEYS = new Set(["status_code", "duration_ms_gte"]);
+
+function queryString(key: string): string {
+  const raw = route.query[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function filtersFromRoute(): ListFilter[] {
+  const out: ListFilter[] = [];
+  for (const key of CALLS_FILTER_KEYS) {
+    const value = queryString(key);
+    if (!value) continue;
+    if (NUMERIC_KEYS.has(key)) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) continue;
+      if (key === "duration_ms_gte") {
+        out.push({ field: "duration_ms", op: "gte", value: n });
+      } else {
+        out.push({ field: key, op: "eq", value: n });
+      }
+      continue;
+    }
+    out.push({ field: key, op: "eq", value });
+  }
+  return out;
+}
+
+const seedFilters = filtersFromRoute();
+const previousRange = ref<TimeRangeValue | null>(null);
+let lastBrushTarget: TimeRangeValue | null = null;
+const tableRef = ref<InstanceType<typeof CallMonitorTable> | null>(null);
+
+const tableRange = computed<CallTimeRange | null>(() =>
+  timeRange.value
+    ? { start: timeRange.value.start, end: timeRange.value.end }
+    : null,
+);
+
+watch(
+  () => timeRange.value,
+  (next) => {
+    if (lastBrushTarget && sameRange(next, lastBrushTarget)) {
+      return;
+    }
+    lastBrushTarget = null;
+    previousRange.value = null;
+  },
+);
+
+watch(reloadTick, () => {
+  tableRef.value?.refresh();
+});
+
+function restorePreviousRange() {
+  if (!previousRange.value) return;
+  const prev = previousRange.value;
+  previousRange.value = null;
+  lastBrushTarget = null;
+  timeRange.value = prev;
+  void router.replace({
+    query: {
+      ...route.query,
+      tr_preset: prev.preset,
+      tr_start: String(prev.start),
+      tr_end: String(prev.end),
+    },
+  });
+}
+
+/* ---------- histogram ---------- */
+
+const chartRef = ref<HTMLElement | null>(null);
+const histogram = ref<CallHistogramResponse | null>(null);
+const histogramLoading = ref(false);
+let chart: echarts.ECharts | null = null;
+let lastQuery: CallHistogramQuery | null = null;
+let histogramSeq = 0;
+
+function bucketLabel(ts: number, bucketSeconds: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (bucketSeconds >= 86400) return `${d.getMonth() + 1}-${pad(d.getDate())}`;
+  if (bucketSeconds >= 3600) {
+    return `${d.getMonth() + 1}-${pad(d.getDate())} ${hm}`;
+  }
+  return bucketSeconds < 60 ? `${hm}:${pad(d.getSeconds())}` : hm;
+}
+
+const { isDark } = useOpsChartTheme(() => renderChart());
+watch(locale, () => renderChart());
+
+function buildOption(data: CallHistogramResponse): EChartsOption {
+  const tokens = getOpsChartThemeTokens(isDark.value);
+  const labels = data.buckets.map((b) =>
+    bucketLabel(b.ts, data.bucket_seconds),
+  );
+  return {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.titleColor },
+    },
+    legend: {
+      data: [t("ops.calls.histogram.calls"), t("ops.calls.histogram.errors")],
+      top: 0,
+      right: 0,
+      left: 84,
+      icon: "roundRect",
+      itemWidth: 10,
+      itemHeight: 8,
+      padding: [2, 0, 2, 0],
+      textStyle: { color: tokens.textColor, fontSize: 12 },
+    },
+    grid: { ...OPS_CHART_GRID },
+    toolbox: { show: false },
+    brush: {
+      toolbox: ["lineX"],
+      xAxisIndex: 0,
+      brushMode: "single",
+      throttleType: "debounce",
+    },
+    xAxis: {
+      type: "category",
+      data: labels,
+      axisLine: { lineStyle: { color: tokens.axisLineColor } },
+      axisTick: { lineStyle: { color: tokens.axisLineColor } },
+      axisLabel: { color: tokens.textColor, hideOverlap: true },
+    },
+    yAxis: {
+      type: "value",
+      minInterval: 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: tokens.splitLineColor } },
+      axisLabel: {
+        color: tokens.textColor,
+        hideOverlap: true,
+        formatter: (v: number) => Math.round(v).toLocaleString(),
+      },
+    },
+    series: [
+      {
+        name: t("ops.calls.histogram.calls"),
+        type: "bar",
+        stack: "calls",
+        data: data.buckets.map((b) => b.calls - b.errors),
+        itemStyle: { color: "#409eff" },
+      },
+      {
+        name: t("ops.calls.histogram.errors"),
+        type: "bar",
+        stack: "calls",
+        data: data.buckets.map((b) => b.errors),
+        itemStyle: { color: "#f56c6c" },
+      },
+    ],
+  };
+}
+
+interface BrushArea {
+  coordRange?: [number, number];
+}
+
+function onBrushEnd(params: unknown) {
+  const data = histogram.value;
+  if (!data || data.buckets.length === 0) return;
+  const areas = (params as { areas?: BrushArea[] }).areas ?? [];
+  const range = areas[0]?.coordRange;
+  if (!range) return;
+  const lo = Math.max(0, Math.min(range[0], range[1]));
+  const hi = Math.min(data.buckets.length - 1, Math.max(range[0], range[1]));
+  const first = data.buckets[lo];
+  const last = data.buckets[hi];
+  if (!first || !last) return;
+  const start = first.ts;
+  const end = Math.min(last.ts + data.bucket_seconds, data.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+  if (timeRange.value) {
+    previousRange.value = { ...timeRange.value };
+  }
+  const value: TimeRangeValue = { preset: "custom", start, end };
+  lastBrushTarget = { ...value };
+  timeRange.value = value;
+  void router.replace({
+    query: {
+      ...route.query,
+      tr_preset: "custom",
+      tr_start: String(start),
+      tr_end: String(end),
+    },
+  });
+}
+
+function renderChart() {
+  if (!chartRef.value || !histogram.value || histogram.value.total === 0) {
+    unbindChartResize?.();
+    unbindChartResize = null;
+    chart?.dispose();
+    chart = null;
+    return;
+  }
+  if (!chart) {
+    chart = echarts.init(chartRef.value);
+    chart.on("brushEnd", onBrushEnd);
+    unbindChartResize?.();
+    unbindChartResize = bindOpsChartResize(chartRef.value, () => chart);
+  }
+  chart.setOption(buildOption(histogram.value), { notMerge: true });
+  chart.resize();
+  chart.dispatchAction({
+    type: "takeGlobalCursor",
+    key: "brush",
+    brushOption: { brushType: "lineX", brushMode: "single" },
+  });
+}
+
+let histogramLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+const HISTOGRAM_LOADING_DELAY_MS = 150;
+
+function clearHistogramLoadingTimer() {
+  if (histogramLoadingTimer != null) {
+    clearTimeout(histogramLoadingTimer);
+    histogramLoadingTimer = null;
+  }
+}
+
+async function loadHistogram() {
+  if (!lastQuery || !timeRange.value) return;
+  const seq = ++histogramSeq;
+  clearHistogramLoadingTimer();
+  histogramLoadingTimer = setTimeout(() => {
+    histogramLoadingTimer = null;
+    if (seq === histogramSeq) {
+      histogramLoading.value = true;
+    }
+  }, HISTOGRAM_LOADING_DELAY_MS);
+  try {
+    const res = await fetchCallHistogram(props.mode, {
+      ...lastQuery,
+      start_time: timeRange.value.start,
+      end_time: timeRange.value.end,
+    });
+    if (seq !== histogramSeq) return;
+    histogram.value = res;
+    await nextTick();
+    renderChart();
+  } catch (error) {
+    logger.error("Failed to load call histogram:", error);
+    if (seq === histogramSeq) {
+      ElMessage.error(t("ops.calls.histogram.loadFailed"));
+    }
+  } finally {
+    if (seq === histogramSeq) {
+      clearHistogramLoadingTimer();
+      histogramLoading.value = false;
+    }
+  }
+}
+
+function onQueryChange(query: CallHistogramQuery) {
+  lastQuery = query;
+  void loadHistogram();
+}
+
+function openTrace(traceId: string, start?: number, requestId?: string) {
+  void router.push(buildTraceRoute(traceId, { start, requestId }));
+}
+
+let unbindChartResize: (() => void) | null = null;
+
+onUnmounted(() => {
+  clearHistogramLoadingTimer();
+  unbindChartResize?.();
+  unbindChartResize = null;
+  chart?.dispose();
+  chart = null;
+});
+</script>
+
+<style scoped lang="scss">
+.traffic-calls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-section-gap, 16px);
+  min-width: 0;
+}
+.ops-calls__histogram-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.ops-calls__summary {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.ops-calls__chart-wrap {
+  width: 100%;
+  min-height: 180px;
+}
+.ops-calls__chart {
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+}
+.ops-calls__table {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+</style>

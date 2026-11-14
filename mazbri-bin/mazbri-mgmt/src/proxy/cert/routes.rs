@@ -2,13 +2,14 @@ use super::{
     AppState, Router, configure_auto_renewal_proxy, export_license_request_proxy, get,
     get_auto_renewal_config_proxy, get_ca_certificate_proxy, get_certificate_proxy,
     get_full_certificate_proxy, get_license_status_proxy, import_license_proxy,
-    issue_certificate_proxy, list_certificates_proxy, renew_certificate_proxy,
-    revoke_certificate_proxy,
+    issue_certificate_proxy, list_certificate_subjects_proxy, list_certificates_proxy,
+    renew_certificate_proxy, revoke_certificate_proxy,
 };
 
 pub fn create_cert_proxy_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_certificates_proxy))
+        .route("/subjects", get(list_certificate_subjects_proxy))
         .route("/{id}", get(get_certificate_proxy))
         .route("/{id}/full", get(get_full_certificate_proxy))
         .route("/{id}/auto-renewal", get(get_auto_renewal_config_proxy))

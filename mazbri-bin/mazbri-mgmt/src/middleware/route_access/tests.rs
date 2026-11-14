@@ -32,9 +32,7 @@ const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
 
 /// 允许 `SelfService` 的路由：只能作用于调用者本人。
 fn is_self_service_path(path: &str) -> bool {
-    path.starts_with("/auth/")
-        || path == "/settings/user"
-        || path == "/admin/preferences"
+    path.starts_with("/auth/") || path == "/settings/user"
 }
 
 #[test]
@@ -160,6 +158,7 @@ fn previously_unguarded_routes_are_now_restricted() {
         ("POST", "/tenants/{code}/api-keys"),
         ("PUT", "/tenants/{code}/api-keys/{key_prefix}"),
         ("DELETE", "/tenants/{code}/api-keys/{key_prefix}"),
+        ("POST", "/tenants/{code}/api-keys/{key_prefix}/rotate"),
         ("POST", "/tenants/{code}/whitelist"),
         ("DELETE", "/tenants/{code}/whitelist/{ip}"),
     ] {
@@ -175,23 +174,24 @@ fn previously_unguarded_routes_are_now_restricted() {
         .collect();
     assert!(config_center.len() >= 11);
     for rule in config_center {
-        let expected = if rule.path == "/config-center/service-names" {
-            Access::AnyRole
-        } else {
-            Access::Roles(ADMIN)
-        };
-        assert_eq!(rule.access, expected, "{} {}", rule.method, rule.path);
+        assert_eq!(
+            rule.access,
+            Access::Roles(ADMIN),
+            "{} {}",
+            rule.method,
+            rule.path
+        );
     }
     assert_eq!(access_of("GET", "/settings/user"), Access::SelfService);
     assert_eq!(access_of("PUT", "/settings/user"), Access::SelfService);
-    // 自助停用 / 重发备用码已取消：仅超管可操作（他人解绑走 /admins/{id}/reset-mfa）。
+    // 自助停用仅超管可操作（他人解绑走 /admins/{id}/reset-mfa）；本人重发备用码开放给全部角色（内部校验本人 TOTP）。
     assert_eq!(
         access_of("POST", "/auth/mfa/disable"),
         Access::Roles(ADMIN)
     );
     assert_eq!(
         access_of("POST", "/auth/mfa/regenerate-codes"),
-        Access::Roles(ADMIN)
+        Access::SelfService
     );
     assert_eq!(access_of("POST", "/auth/mfa/setup"), Access::SelfService);
     assert_eq!(access_of("POST", "/auth/mfa/enable"), Access::SelfService);
@@ -210,11 +210,11 @@ fn table_mirrors_existing_handler_checks() {
         ("DELETE", "/tenants/{code}", BIZ),
         ("POST", "/tenants/{code}/ratelimit/commands", BIZ),
         ("GET", "/tenants/{code}/ratelimit/commands", BIZ),
-        ("POST", "/upstream-connectors/drafts/{id}/publish", ADMIN),
+        ("POST", "/upstream-connectors/drafts/{id}/publish", BIZ),
         (
             "POST",
             "/upstream-connectors/suppliers/{supplier_id}/rollback",
-            ADMIN,
+            BIZ,
         ),
         ("GET", "/certificates/{id}/full", ADMIN),
         ("PUT", "/settings/mfa", ADMIN),
@@ -281,8 +281,7 @@ fn system_routes_stay_super_admin_only() {
     for rule in RULES {
         let system = rule.path.starts_with("/admins")
             || rule.path.starts_with("/certificates")
-            || (rule.path.starts_with("/config-center/")
-                && rule.path != "/config-center/service-names")
+            || rule.path.starts_with("/config-center/")
             || (rule.path.starts_with("/settings/")
                 && rule.path != "/settings/user"
                 && rule.method != "GET");
@@ -531,6 +530,7 @@ fn ops_stats_and_alerts_follow_role_matrix() {
         ("GET", "/stats/metrics/services/health"),
         ("POST", "/stats/olap/query"),
         ("GET", "/stats/ops/products/names"),
+        ("GET", "/stats/ops/products/zero-calls"),
         ("GET", "/stats/ops/slos/status"),
         ("GET", "/alerts/events"),
         ("GET", "/alerts/summary"),
@@ -659,8 +659,8 @@ fn viewer_is_denied_on_biz_write_routes() {
 }
 
 #[test]
-fn upstream_connector_writes_are_super_admin_only() {
-    // 免代码工作台：财务 / 观察者只读；写 / 发布 / 导入导出 / 试跑仅 R_ADMIN。
+fn upstream_connector_writes_allow_biz_and_deny_viewer() {
+    // 免代码工作台：R_ADMIN 与 R_FINANCE 可编辑草稿与发布；观察者 R_VIEWER 只读。
     for (method, path) in [
         ("POST", "/upstream-connectors/drafts"),
         ("PATCH", "/upstream-connectors/drafts/{id}"),
@@ -680,27 +680,28 @@ fn upstream_connector_writes_are_super_admin_only() {
     ] {
         assert_eq!(
             access_of(method, path),
-            Access::Roles(ADMIN),
-            "{method} {path} must be ADMIN-only"
+            Access::Roles(BIZ),
+            "{method} {path} must be BIZ write"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_FINANCE")),
-            Err(Denial::Role(ADMIN)),
-            "FINANCE must be denied for {method} {path}"
+            decide(Some(Access::Roles(BIZ)), Some("R_FINANCE")),
+            Ok(()),
+            "FINANCE must be allowed for {method} {path}"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_VIEWER")),
-            Err(Denial::Role(ADMIN)),
+            decide(Some(Access::Roles(BIZ)), Some("R_VIEWER")),
+            Err(Denial::Role(BIZ)),
             "VIEWER must be denied for {method} {path}"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_ADMIN")),
+            decide(Some(Access::Roles(BIZ)), Some("R_ADMIN")),
             Ok(()),
             "ADMIN must be allowed for {method} {path}"
         );
     }
     for (method, path) in [
         ("GET", "/upstream-connectors/drafts"),
+        ("GET", "/upstream-connectors/drafts/from-supplier/{supplier_id}"),
         ("GET", "/upstream-connectors/drafts/{id}"),
         ("GET", "/upstream-connectors/drafts/{id}/runs"),
         ("GET", "/upstream-connectors/runs/{run_id}"),

@@ -1,9 +1,6 @@
 <template>
   <div class="crypto-suite-select" :class="{ disabled }">
     <div class="field-block">
-      <div class="field-label">
-        {{ $t("tenant.transportEncryption.fields.suite") }}
-      </div>
       <ElSelect
         :model-value="modelValue.suite ?? undefined"
         clearable

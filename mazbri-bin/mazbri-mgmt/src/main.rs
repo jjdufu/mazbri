@@ -493,6 +493,15 @@ fn init_bypass_probe_client(
     Ok(Arc::new(client))
 }
 
+fn load_cert_service_cfg(config: &MgmtApiConfig) -> Result<Arc<handlers::CertServiceClientCfg>> {
+    let cfg = Arc::new(handlers::CertServiceClientCfg {
+        url: config.cert_service.base().to_owned(),
+        token: get_cert_service_token()?,
+    });
+    info!("从环境变量加载 cert_service token");
+    Ok(cfg)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-mgmt");
@@ -500,26 +509,26 @@ async fn main() -> Result<()> {
     let config = load_mgmt_config()?;
     let service_name = config.service_name.as_str().to_owned();
     let log_routes = build_log_routes(&config.log_routes)?;
-    let cert_service = Arc::new(handlers::CertServiceClientCfg {
-        url: config.cert_service.base().to_owned(),
-        token: get_cert_service_token()?,
-    });
-    info!("从环境变量加载 cert_service token");
-    let admin_state = start_simple_admin_server(&service_name, &config.admin)?;
+    let cert_service = load_cert_service_cfg(&config)?;
+    let admin_handle = start_simple_admin_server(&service_name, &config.admin)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     info!("Mazbri Management API V2 starting...");
     info!("Configuration: {:?}", config.server);
     validate_security_config();
     init_metrics_and_audit(&config)?;
     let db = create_pool(&config.database, Some(config_dir)).await?;
+    if let Some(ref handle) = admin_handle {
+        handle.set_db_pool(Arc::clone(&db));
+    }
     info!("Connected to database");
+    seed_config_watch_versions(&db).await;
     let redis = connect_redis(&config).await?;
     let dbs = connect_mgmt_databases(&config, config_dir).await?;
     let product_service = build_product_service(&db, &redis, &dbs.cache);
     spawn_product_detail_watch(&db, &config, &product_service);
     let auth_state = create_auth_state(&dbs.admin, &redis).await?;
-    if let Some(ref state) = admin_state {
-        state.set_ready(true);
+    if let Some(ref handle) = admin_handle {
+        handle.set_ready(true);
         set_rpc_ready(&service_name, true);
         info!("Service marked as ready");
     }
@@ -556,13 +565,13 @@ async fn main() -> Result<()> {
             config.billing_reconciliation.clone(),
         ),
     );
-    spawn_reconciliation_supervisor(
-        dbs.billing.clone(),
-        analytics_client.clone(),
-        billing_reconciliation_settings.clone(),
-        audit.clone(),
+    spawn_billing_background_jobs(
+        &dbs.billing,
+        &db,
+        &analytics_client,
+        &billing_reconciliation_settings,
+        &audit,
     );
-    mazbri_mgmt::services::finance_ops::spawn_mv_refresh(dbs.billing.clone());
     let app_state = handlers::AppState {
         config: config.clone(),
         cert_service,
@@ -593,6 +602,38 @@ async fn main() -> Result<()> {
         .shutdown(Duration::from_secs(config.audit.shutdown_drain_secs))
         .await;
     served
+}
+
+fn spawn_billing_background_jobs(
+    billing_db: &PgArc,
+    platform_db: &PgArc,
+    analytics_client: &Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
+    reconcile_settings: &Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
+    audit: &audit::AuditService,
+) {
+    spawn_reconciliation_supervisor(
+        Arc::clone(billing_db),
+        Arc::clone(analytics_client),
+        Arc::clone(reconcile_settings),
+        audit.clone(),
+    );
+    mazbri_mgmt::services::finance_ops::spawn_mv_refresh(Arc::clone(billing_db));
+    mazbri_mgmt::services::billing::spawn_upstream_cost_settlement_sync(
+        Arc::clone(billing_db),
+        Arc::clone(platform_db),
+        Arc::clone(analytics_client),
+    );
+}
+
+async fn seed_config_watch_versions(platform_db: &PgArc) {
+    if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
+        platform_db,
+        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+    )
+    .await
+    {
+        tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
+    }
 }
 fn build_mgmt_cors_layer() -> CorsLayer {
     // 带 --dev 时放行本地 Vite 端口；不带时 CORS 为空名单。

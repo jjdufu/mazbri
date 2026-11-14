@@ -186,6 +186,10 @@ fn cert_routes(state: &AppState) -> Router<AppState> {
             get(handlers::certificate::list_certificates),
         )
         .route(
+            "/certificates/subjects",
+            get(handlers::certificate::list_certificate_subjects),
+        )
+        .route(
             "/certificates/by-subject/{subject}",
             get(handlers::certificate::get_certificate_by_subject),
         )
@@ -218,6 +222,7 @@ fn config_routes(state: &AppState) -> Router<AppState> {
         middleware::from_fn_with_state(state.auth_state.clone(), crate::auth::auth_middleware);
     let config_state = ConfigState {
         repo: state.config_repo.clone(),
+        node_repo: state.node_repo.clone(),
     };
     let license_write_layer = middleware::from_fn_with_state(
         state.base_authorization.clone(),
@@ -228,10 +233,6 @@ fn config_routes(state: &AppState) -> Router<AppState> {
         .route(
             "/configs/{service}",
             delete(handlers::config::delete_config),
-        )
-        .route(
-            "/configs/batch/delete",
-            post(handlers::config::batch_delete_configs),
         )
         .route(
             "/configs/batch/update",

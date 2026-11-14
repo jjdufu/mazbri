@@ -31,9 +31,35 @@ export interface ProductName {
   name: string | null;
 }
 
-/** 已启用产品 id → 名称（TopN 显示名、零调用差集）。 */
+/** 已启用产品 id → 名称（TopN 显示名）。 */
 export function listProductNames() {
   return request.get<ProductName[]>({ url: `${BASE}/products/names` });
+}
+
+export interface ZeroCallProductItem {
+  product_id: string;
+  name: string | null;
+}
+
+export interface ZeroCallProductsPage {
+  items: ZeroCallProductItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** 服务端分页获取窗口 `[start, end)` 内零调用已启用产品。 */
+export function listZeroCallProducts(params: {
+  start: number;
+  end: number;
+  page?: number;
+  page_size?: number;
+  q?: string;
+}) {
+  return request.get<ZeroCallProductsPage>({
+    url: `${BASE}/products/zero-calls`,
+    params,
+  });
 }
 
 export interface SloDefinition {

@@ -43,7 +43,19 @@ pub struct CertificateResponse {
     #[serde(default)]
     pub dns_names: Vec<String>,
 }
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, FromRow)]
+pub struct CertificateSummaryRow {
+    pub id: Uuid,
+    pub subject: String,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked: bool,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub renewal_count: i32,
+    pub dns_names: Vec<String>,
+    pub fingerprint: Option<Vec<u8>>,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct CertificateSummary {
     pub id: Uuid,
     pub subject: String,
@@ -55,7 +67,38 @@ pub struct CertificateSummary {
     #[serde(default)]
     pub dns_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fingerprint: Option<Vec<u8>>,
+    pub fingerprint: Option<String>,
+}
+impl From<CertificateSummaryRow> for CertificateSummary {
+    fn from(row: CertificateSummaryRow) -> Self {
+        Self {
+            id: row.id,
+            subject: row.subject,
+            issued_at: row.issued_at,
+            expires_at: row.expires_at,
+            revoked: row.revoked,
+            revoked_at: row.revoked_at,
+            renewal_count: row.renewal_count,
+            dns_names: row.dns_names,
+            fingerprint: row.fingerprint.as_deref().map(hex::encode),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicCertificateDetailResponse {
+    pub id: Uuid,
+    pub subject: String,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked: bool,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub renewal_count: i32,
+    #[serde(default)]
+    pub dns_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+    pub status: String,
+    pub cert_pem: String,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

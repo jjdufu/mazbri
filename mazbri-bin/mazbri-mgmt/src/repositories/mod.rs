@@ -2,7 +2,6 @@ pub mod admin;
 pub mod admin_management;
 pub mod analytics;
 pub mod api_key;
-pub mod appearance;
 pub mod billing;
 pub mod billing_ops;
 pub mod config;

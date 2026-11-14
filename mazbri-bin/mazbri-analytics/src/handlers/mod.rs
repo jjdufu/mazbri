@@ -20,9 +20,11 @@ pub use slo::get_slo_status;
 pub use metrics::{
     get_metric_timeseries, get_metrics_catalog, get_metrics_overview, get_services_health,
 };
-pub use olap::olap_query;
+pub use olap::{get_active_products, olap_query};
 pub use request::query_request_logs;
-pub use request_analytics::{aggregate_request_logs, get_upstream_billing_summary};
+pub use request_analytics::{
+    aggregate_request_logs, get_upstream_billing_summary, get_upstream_hourly_billing,
+};
 pub use time::parse_time_string;
 pub use topology::get_topology;
 pub use traces::{get_trace, list_trace_services, search_traces, trace_dependencies};

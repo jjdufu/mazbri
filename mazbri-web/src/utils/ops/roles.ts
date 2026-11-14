@@ -43,11 +43,11 @@ export function isViewerRole(role: RoleLike): boolean {
 }
 
 /**
- * 上游免代码工作台写权限：仅 `R_ADMIN`。
- * `R_FINANCE` / `R_VIEWER` 只能只读打开；不沿用全局 `isBizRole`。
+ * 上游免代码工作台写权限：与后端 `BIZ` 一致（`R_ADMIN` + `R_FINANCE`）。
+ * `R_VIEWER` 仅只读浏览。
  */
 export function canWriteUpstreamConnector(role: RoleLike): boolean {
-  return isAdminRole(role);
+  return isBizRole(role);
 }
 
 /**

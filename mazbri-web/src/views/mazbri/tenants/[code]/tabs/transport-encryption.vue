@@ -311,6 +311,7 @@ import type {
 } from "@/types/api/tenant";
 import { logger } from "@/utils/sys";
 import { getStatusLabel } from "@/utils/display-labels";
+import { formatDateTime } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
 import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
 import SettingsCard from "@/components/common/settings-card/index.vue";
@@ -421,7 +422,8 @@ const keyColumns = ref<ColumnOption[]>([
   {
     prop: "created_at",
     label: $t("tenant.transportEncryption.table.createdAt"),
-    minWidth: 120,
+    minWidth: 172,
+    formatter: (row: TenantCryptoKey) => formatDateTime(row.created_at),
   },
   {
     prop: "operations",
@@ -516,7 +518,7 @@ const loadData = async () => {
 };
 
 const goToRootPackagePage = () => {
-  router.push({ path: "/control-panel/authorizations" });
+  router.push({ path: "/control-panel/system", query: { tab: "license" } });
 };
 
 const showSecret = (key: TenantCryptoKeyCreateResponse) => {

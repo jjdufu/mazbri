@@ -99,6 +99,8 @@ pub enum ServiceIdentityError {
     Empty,
     #[error("服务名 \"{0}\" 不在规范服务列表中（允许：{1}）")]
     NotCanonical(String, String),
+    #[error("自定义扩展配置服务名 \"{0}\" 格式不合法（须为 2~64 位小写字母、数字与单连字符，以小写字母开头且不能使用 mazbri- 保留前缀）")]
+    InvalidCustomConfigName(String),
 }
 
 impl FromStr for ServiceName {
@@ -121,7 +123,7 @@ impl FromStr for ServiceName {
     }
 }
 
-/// 配置中心目标名校验：规范服务名或 `global`。
+/// 配置中心核心目标名校验：规范服务名或 `global`。
 ///
 /// # Errors
 ///
@@ -131,6 +133,43 @@ pub fn validate_config_target(name: &str) -> Result<(), ServiceIdentityError> {
         return Ok(());
     }
     name.parse::<ServiceName>().map(|_| ())
+}
+
+/// 配置中心条目名校验：允许核心目标（`global` 与 11 个规范微服务）或符合标识符规范的自定义扩展服务名，
+/// 但拒绝非规范的 `mazbri-*` 保留前缀历史别名（如 `mazbri-cert-service`、`mazbri-mgmt-api`）。
+///
+/// # Errors
+///
+/// 当名称为空、命中非规范 `mazbri-*` 前缀或不符合自定义服务名格式时返回错误。
+pub fn validate_config_entry_name(name: &str) -> Result<(), ServiceIdentityError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(ServiceIdentityError::Empty);
+    }
+    if validate_config_target(trimmed).is_ok() {
+        return Ok(());
+    }
+    if trimmed.starts_with(PREFIX) {
+        return Err(ServiceIdentityError::NotCanonical(
+            trimmed.to_owned(),
+            ServiceName::all_names().join(", "),
+        ));
+    }
+    let bytes = trimmed.as_bytes();
+    let valid_custom = (2..=64).contains(&bytes.len())
+        && bytes[0].is_ascii_lowercase()
+        && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+        && !trimmed.contains("--");
+    if valid_custom {
+        Ok(())
+    } else {
+        Err(ServiceIdentityError::InvalidCustomConfigName(
+            trimmed.to_owned(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -198,5 +237,19 @@ mod tests {
         assert!(validate_config_target("global").is_ok());
         assert!(validate_config_target("mazbri-auth").is_ok());
         assert!(validate_config_target("foo").is_err());
+    }
+
+    #[test]
+    fn config_entry_name_allows_custom_extensions_and_rejects_reserved_typos() {
+        assert!(validate_config_entry_name("global").is_ok());
+        assert!(validate_config_entry_name("mazbri-gateway").is_ok());
+        assert!(validate_config_entry_name("custom-ext-svc").is_ok());
+        assert!(validate_config_entry_name("ext01").is_ok());
+        assert!(validate_config_entry_name("mazbri-cert-service").is_err());
+        assert!(validate_config_entry_name("mazbri-mgmt-api").is_err());
+        assert!(validate_config_entry_name("Bad_Upper").is_err());
+        assert!(validate_config_entry_name("a").is_err());
+        assert!(validate_config_entry_name("bad--dash").is_err());
+        assert!(validate_config_entry_name("bad-").is_err());
     }
 }

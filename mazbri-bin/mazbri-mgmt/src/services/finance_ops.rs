@@ -2,7 +2,7 @@
 //!
 //! - `revenue` / `tenant_spend`：同源自 `usage_records.billable_amount`（经 `mv_daily_revenue_cost`）
 //! - `cost`：来自 `upstream_hourly_settlements`；`has_cost=false` 表示未接入，禁止按 0 成本算满毛利
-//! - `cost_status`：`ok` | `unavailable` | `partial`；非 `ok` 时 `margin*` 为 null
+//! - `cost_status`：`ok` | `unavailable` | `partial`；`unavailable` 时 `margin*` 为 null，`partial` 照常返回已核算毛利并由前端附徽标提示
 
 use crate::services::billing::BillingError;
 use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
@@ -176,10 +176,10 @@ fn day_cost_status(has_cost: bool) -> &'static str {
     }
 }
 
-/// 仅 `cost_status=ok` 且收入非 0 时返回毛利率（百分比）。
+/// `cost_status` 为 `ok` 或 `partial` 且收入非 0 时返回已核算毛利率（百分比）；`unavailable` 返回 `None`。
 #[must_use]
 pub fn margin_rate_pct(cost_status: &str, revenue: Decimal, cost: Decimal) -> Option<f64> {
-    if cost_status != COST_STATUS_OK || revenue.is_zero() {
+    if !matches!(cost_status, COST_STATUS_OK | COST_STATUS_PARTIAL) || revenue.is_zero() {
         return None;
     }
     let pct = (revenue - cost) * Decimal::from(100) / revenue;
@@ -187,7 +187,7 @@ pub fn margin_rate_pct(cost_status: &str, revenue: Decimal, cost: Decimal) -> Op
 }
 
 fn margin_amount(cost_status: &str, revenue: Decimal, cost: Decimal) -> Option<String> {
-    if cost_status != COST_STATUS_OK {
+    if !matches!(cost_status, COST_STATUS_OK | COST_STATUS_PARTIAL) {
         return None;
     }
     Some(dec(revenue - cost))
@@ -360,7 +360,9 @@ pub async fn finance_overview(pool: &PgPool, days: i64) -> Result<FinanceOvervie
         let cost: Decimal = row.get("cost");
         let has_cost: bool = row.get("has_cost");
         let status = day_cost_status(has_cost);
-        day_flags.push(has_cost);
+        if !revenue.is_zero() || has_cost {
+            day_flags.push(has_cost);
+        }
         rev_total += revenue;
         cost_total += cost;
         if has_cost && cost > revenue {
@@ -404,7 +406,7 @@ async fn rank_query(
          FROM mv_daily_revenue_cost \
          WHERE day >= $1 AND day <= $2 {filter_sql} \
          GROUP BY 1 HAVING {dim_sql} IS NOT NULL AND {dim_sql}::text <> '' \
-         ORDER BY SUM(revenue) DESC NULLS LAST LIMIT $3"
+         ORDER BY SUM(revenue) DESC, SUM(cost) DESC NULLS LAST LIMIT $3"
     );
     let rows = sqlx::query(&sql)
         .bind(since)
@@ -752,10 +754,15 @@ mod tests {
 
     #[test]
     fn margin_rate_never_fakes_100_when_cost_unavailable() {
-        // 旧逻辑：cost=0 仍算 100%；现要求 unavailable → None
+        // unavailable → None；partial → 返回已核算毛利额与毛利率（前端附“部分核算”徽标）
         assert!(margin_rate_pct(COST_STATUS_UNAVAILABLE, d("100"), d("0")).is_none());
         assert!(margin_amount(COST_STATUS_UNAVAILABLE, d("100"), d("0")).is_none());
-        assert!(margin_rate_pct(COST_STATUS_PARTIAL, d("100"), d("10")).is_none());
+        let partial_rate = margin_rate_pct(COST_STATUS_PARTIAL, d("100"), d("10")).unwrap();
+        assert!((partial_rate - 90.0).abs() < 1e-9);
+        assert_eq!(
+            margin_amount(COST_STATUS_PARTIAL, d("100"), d("10")).as_deref(),
+            Some("90")
+        );
     }
 
     #[test]

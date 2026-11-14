@@ -3,148 +3,98 @@
     :title="$t('systemSettings.page.title')"
     icon="ri:settings-4-line"
   >
-    <template #actions>
-      <ElButton :disabled="saveLoading" @click="handleAppearanceReset">
-        <template #icon><ArtSvgIcon icon="ri:restart-line" /></template>
-        {{ $t("systemSettings.form.resetToDefault") }}
-      </ElButton>
-      <ElButton type="primary" :loading="saveLoading" @click="handleSaveAll">
-        <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
-        {{ $t("systemSettings.form.saveSettings") }}
-      </ElButton>
-    </template>
+    <ElTabs
+      :model-value="activeTab"
+      class="platform-settings-tabs"
+      @tab-change="handleTabChange"
+    >
+      <ElTabPane
+        name="basic"
+        :label="$t('systemSettings.tabs.basic')"
+        lazy
+      >
+        <BasicSettings
+          :model-value="systemForm"
+          :loading="loading"
+          :saving="systemSaving"
+          @update:model-value="handleSystemFormUpdate"
+          @save="handleSystemSave"
+        />
+      </ElTabPane>
 
-    <SettingsCardGrid v-loading="pageLoading">
-      <template #left>
-        <SettingsCard
-          icon="ri:settings-3-line"
-          :title="$t('systemSettings.sections.basic')"
-        >
-          <BasicSettings v-model="systemForm" />
-        </SettingsCard>
-        <SettingsCard
-          icon="ri:eye-line"
-          :title="$t('systemSettings.display.title')"
-        >
-          <DisplaySettings
-            :model-value="localAppearanceSettings"
-            :display-settings="displaySettings"
-            @update:model-value="handleAppearanceModelUpdate"
-          />
-        </SettingsCard>
-      </template>
+      <ElTabPane
+        name="security"
+        :label="$t('systemSettings.tabs.security')"
+        lazy
+      >
+        <SecurityPolicyTab />
+      </ElTabPane>
 
-      <template #right>
-        <SettingsCard
-          icon="ri:palette-line"
-          :title="$t('systemSettings.theme.title')"
-        >
-          <ThemeSettings
-            :model-value="localAppearanceSettings"
-            :main-colors="configOptions.mainColors"
-            @update:model-value="handleAppearanceModelUpdate"
-          />
-        </SettingsCard>
-        <SettingsCard
-          icon="ri:layout-grid-line"
-          :title="$t('systemSettings.layout.title')"
-        >
-          <LayoutSettings
-            :model-value="localAppearanceSettings"
-            :container-width-options="containerWidthOptions"
-            :box-style-options="boxStyleOptionsWithIcon"
-            @update:model-value="handleAppearanceModelUpdate"
-          />
-        </SettingsCard>
-        <SettingsCard
-          icon="ri:magic-line"
-          :title="$t('systemSettings.style.title')"
-        >
-          <StyleSettings
-            :model-value="localAppearanceSettings"
-            :tab-style-options="tabStyleOptions"
-            :page-transition-options="pageTransitionOptions"
-            :custom-radius-options="customRadiusOptions"
-            @update:model-value="handleAppearanceModelUpdate"
-          />
-        </SettingsCard>
-      </template>
-    </SettingsCardGrid>
+      <ElTabPane
+        name="license"
+        :label="$t('systemSettings.tabs.license')"
+        lazy
+      >
+        <PlatformLicenseTab />
+      </ElTabPane>
+    </ElTabs>
   </ControlPanelPageShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onActivated } from "vue";
-import { ElMessage } from "element-plus";
-import { useI18n } from "vue-i18n";
+import { onMounted, watch } from "vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
-import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
-import SettingsCard from "@/components/common/settings-card/index.vue";
+import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import BasicSettings from "./modules/BasicSettings.vue";
-import ThemeSettings from "./modules/ThemeSettings.vue";
-import LayoutSettings from "./modules/LayoutSettings.vue";
-import DisplaySettings from "./modules/DisplaySettings.vue";
-import StyleSettings from "./modules/StyleSettings.vue";
-import { useSystemSettings } from "./composables/useSystemSettings";
-import { useAppearanceSettings } from "./composables/useAppearanceSettings";
+import SecurityPolicyTab from "./modules/SecurityPolicyTab.vue";
+import PlatformLicenseTab from "./modules/PlatformLicenseTab.vue";
+import {
+  useSystemSettings,
+  type BasicSystemFormState,
+} from "./composables/useSystemSettings";
 
-defineOptions({ name: "SystemSettings" });
+defineOptions({ name: "PlatformSettingsPage" });
 
-const { t } = useI18n();
+type PlatformTab = "basic" | "security" | "license";
+
+const { activeTab, handleTabChange } = useTabRouteSync<PlatformTab>({
+  defaultValue: "basic",
+  allowedValues: ["basic", "security", "license"],
+});
+
 const {
   loading,
   systemSaving,
   systemForm,
   loadSystemData,
-  saveSystemSettings,
+  handleSystemSave,
 } = useSystemSettings();
 
-const {
-  configOptions,
-  tabStyleOptions,
-  pageTransitionOptions,
-  customRadiusOptions,
-  boxStyleOptionsWithIcon,
-  containerWidthOptions,
-  displaySettings,
-  localAppearanceSettings,
-  appearanceLoading,
-  appearanceSaving,
-  loadAppearanceSettings,
-  saveAppearanceSettings,
-  handleAppearanceReset,
-} = useAppearanceSettings();
+let basicLoaded = false;
 
-const handleAppearanceModelUpdate = (
-  value: Partial<typeof localAppearanceSettings>,
-) => {
-  Object.assign(localAppearanceSettings, value);
+const ensureBasicLoaded = () => {
+  if (basicLoaded || activeTab.value !== "basic") return;
+  basicLoaded = true;
+  void loadSystemData();
 };
 
-const pageLoading = computed(() => loading.value || appearanceLoading.value);
-const saveLoading = computed(
-  () => systemSaving.value || appearanceSaving.value,
-);
-
-const handleSaveAll = async () => {
-  const systemSaved = await saveSystemSettings({ silent: true });
-  if (!systemSaved) {
-    return;
-  }
-  const appearanceResult = await saveAppearanceSettings({ silent: true });
-  if (appearanceResult !== "server") {
-    return;
-  }
-  ElMessage.success(t("systemSettings.messages.savedSuccess"));
+const handleSystemFormUpdate = (nextValue: BasicSystemFormState) => {
+  Object.assign(systemForm, nextValue);
 };
 
 onMounted(() => {
-  loadSystemData();
-  loadAppearanceSettings();
+  ensureBasicLoaded();
 });
 
-onActivated(() => {
-  loadSystemData();
-  loadAppearanceSettings();
+watch(activeTab, () => {
+  ensureBasicLoaded();
 });
 </script>
+
+<style scoped lang="scss">
+.platform-settings-tabs {
+  :deep(.el-tabs__header) {
+    margin-bottom: 14px;
+  }
+}
+</style>

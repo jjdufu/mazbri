@@ -70,6 +70,8 @@
           :delete-label="props.deleteLabel"
           :delete-icon="props.deleteIcon"
           :delete-button-type="props.deleteButtonType"
+          :delete-disabled="props.deleteDisabled"
+          :delete-disabled-reason="props.deleteDisabledReason"
           :delete-roles="props.deleteRoles"
           @search="emit('search')"
           @import="emit('import')"
@@ -193,6 +195,8 @@ const props = withDefaults(
     deleteLabel?: string;
     deleteIcon?: string;
     deleteButtonType?: "primary" | "success" | "warning" | "danger" | "info";
+    deleteDisabled?: boolean;
+    deleteDisabledReason?: string;
     deleteRoles?: string[];
   }>(),
   {
@@ -249,6 +253,8 @@ const props = withDefaults(
     deleteLabel: undefined,
     deleteIcon: "ri:delete-bin-line",
     deleteButtonType: "danger",
+    deleteDisabled: false,
+    deleteDisabledReason: undefined,
     deleteRoles: undefined,
   },
 );

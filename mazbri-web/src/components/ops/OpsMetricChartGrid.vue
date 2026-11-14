@@ -14,6 +14,7 @@
           <MultiSeriesChart
             :series="series[chart.metric]"
             :loading="loading"
+            :window="window"
             height="220px"
           />
         </OpsCard>
@@ -44,11 +45,13 @@ const props = withDefaults(
     note?: string;
     /** title 字段是否为 i18n key */
     titleIsKey?: boolean;
+    window?: { start: number; end: number } | null;
   }>(),
   {
     loading: false,
     note: undefined,
     titleIsKey: true,
+    window: null,
   },
 );
 

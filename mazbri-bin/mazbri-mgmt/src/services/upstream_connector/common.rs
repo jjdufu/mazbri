@@ -24,6 +24,13 @@ pub(crate) fn endpoint_by_id<'a>(
 /// Fill missing `egress.auth` fields from supplier `auth_flow` (credentials stay on supplier).
 /// Inherit copies `auth_flow.profile` only. Never infers from `token_url` / method.
 pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &SupplierConfig) {
+    if spec
+        .auth
+        .as_ref()
+        .is_some_and(|a| a.profile.trim() == mazbri_core::AUTH_SKIP)
+    {
+        return;
+    }
     let Some(flow) = cfg.auth_flow.as_ref().filter(|f| f.enabled) else {
         return;
     };
@@ -86,6 +93,7 @@ pub(crate) fn merge_auth_from_supplier(spec: &mut ChannelEgressSpec, cfg: &Suppl
     // 认证失效规则按整个对象继承（不逐字段合并），并裁掉与本渠道适配器不适用的字段。
     if auth.invalidation.is_none()
         && target != AuthProfile::None
+        && target != AuthProfile::Skip
         && let Some(ref inv) = flow.invalidation
     {
         auth.invalidation = Some(match spec.adapter_kind() {
@@ -107,16 +115,6 @@ fn copy_if_empty(slot: &mut Option<String>, src: Option<&str>) {
     {
         *slot = Some(v.to_string());
     }
-}
-
-pub(crate) fn inherit_requires_session_profile(
-    cfg: Option<&SupplierConfig>,
-    ep_profile_raw: Option<&str>,
-) -> bool {
-    let Some(flow) = cfg.and_then(|c| c.auth_flow.as_ref()).filter(|f| f.enabled) else {
-        return false;
-    };
-    profile_is_undeclared(ep_profile_raw) && profile_is_undeclared(flow.profile.as_deref())
 }
 
 pub(crate) fn channel_config_with_egress(

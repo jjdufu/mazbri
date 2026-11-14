@@ -193,7 +193,7 @@ where
         Ok(())
     }
 }
-struct PgPoolInfoBridge(Arc<PgPool>);
+pub struct PgPoolInfoBridge(pub Arc<PgPool>);
 impl DbPoolInfo for PgPoolInfoBridge {
     fn pool_size(&self) -> u32 {
         self.0.size()

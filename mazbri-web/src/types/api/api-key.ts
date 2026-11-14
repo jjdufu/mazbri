@@ -16,6 +16,7 @@ export interface ApiKeyListResponse {
   total: number;
   actions?: {
     create: boolean;
+    rotate?: boolean;
     delete: boolean;
   };
 }
@@ -27,6 +28,11 @@ export interface CreateApiKeyRequest {
 }
 export interface CreateApiKeyResponse {
   api_key: string;
+  key_info: ApiKey;
+}
+export interface RotateApiKeyResponse {
+  api_key: string;
+  previous_key_prefix: string;
   key_info: ApiKey;
 }
 export interface UpdateApiKeyRequest {

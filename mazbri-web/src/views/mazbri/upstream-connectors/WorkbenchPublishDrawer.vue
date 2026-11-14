@@ -35,10 +35,16 @@
           />
         </ElFormItem>
         <ElFormItem :label="$t('upstreamConnector.fields.supplierCode')" required>
-          <ElInput v-model="form.supplier_code" />
+          <ElInput
+            v-model="form.supplier_code"
+            :aria-label="$t('upstreamConnector.fields.supplierCode')"
+          />
         </ElFormItem>
         <ElFormItem :label="$t('upstreamConnector.fields.name')" required>
-          <ElInput v-model="form.supplier_name" />
+          <ElInput
+            v-model="form.supplier_name"
+            :aria-label="$t('upstreamConnector.fields.name')"
+          />
         </ElFormItem>
         <ElFormItem
           v-if="form.mode === 'full_onboarding'"
@@ -52,6 +58,7 @@
             :remote-method="searchProducts"
             :loading="productLoading"
             class="control-full"
+            :aria-label="$t('upstreamConnector.fields.product')"
             :placeholder="$t('upstreamConnector.productPlaceholder')"
           >
             <ElOption
@@ -75,12 +82,18 @@
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.channelCode')" min-width="120">
             <template #default="{ row }">
-              <ElInput v-model="row.channel_code" />
+              <ElInput
+                v-model="row.channel_code"
+                :aria-label="$t('upstreamConnector.fields.channelCode')"
+              />
             </template>
           </ElTableColumn>
           <ElTableColumn :label="$t('upstreamConnector.fields.pathPrefix')" min-width="110">
             <template #default="{ row }">
-              <ElInput v-model="row.path_prefix" />
+              <ElInput
+                v-model="row.path_prefix"
+                :aria-label="$t('upstreamConnector.fields.pathPrefix')"
+              />
             </template>
           </ElTableColumn>
         </ElTable>
@@ -148,22 +161,35 @@
 
       <ElForm label-width="120px">
         <ElFormItem :label="$t('upstreamConnector.comment')">
-          <ElInput v-model="form.comment" />
+          <ElInput
+            v-model="form.comment"
+            :aria-label="$t('upstreamConnector.comment')"
+          />
         </ElFormItem>
         <ElFormItem
           v-if="showForce && form.force_publish"
           :label="$t('upstreamConnector.forceReason')"
         >
-          <ElInput v-model="form.force_reason" type="textarea" />
+          <ElInput
+            v-model="form.force_reason"
+            type="textarea"
+            :aria-label="$t('upstreamConnector.forceReason')"
+          />
         </ElFormItem>
         <ElFormItem :label="$t('upstreamConnector.requireGate')">
-          <ElSwitch v-model="form.require_gate" />
+          <ElSwitch
+            v-model="form.require_gate"
+            :aria-label="$t('upstreamConnector.requireGate')"
+          />
         </ElFormItem>
         <ElFormItem
           v-if="showForce"
           :label="$t('upstreamConnector.forcePublish')"
         >
-          <ElSwitch v-model="form.force_publish" />
+          <ElSwitch
+            v-model="form.force_publish"
+            :aria-label="$t('upstreamConnector.forcePublish')"
+          />
         </ElFormItem>
       </ElForm>
       <div class="drawer-footer">

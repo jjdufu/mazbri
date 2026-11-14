@@ -4,9 +4,7 @@ import { AppRouteRecord } from "@/types/router";
 import { getFirstMenuPath } from "@/utils";
 import { resolveHomePath } from "@/router";
 import { RoutePermissionValidator } from "@/router/core";
-import { RoutesAlias } from "@/router/routesAlias";
 import { useUserStore } from "@/store/modules/user";
-import { putPreferences } from "@/api/preferences";
 
 export const useMenuStore = defineStore("menuStore", () => {
   const homePath = ref(resolveHomePath([]));
@@ -22,15 +20,6 @@ export const useMenuStore = defineStore("menuStore", () => {
         RoutePermissionValidator.hasPermission(path, list),
       ) || getFirstMenuPath(list),
     );
-  };
-
-  const rememberLastPath = (path: string) => {
-    const userStore = useUserStore();
-    if (!path || !userStore.isLogin) return;
-    if (path.startsWith("/auth/") || path === RoutesAlias.Login) return;
-    if (path.startsWith("/exception/")) return;
-    // 个人 UI 偏好：不进安全审计；失败静默（API 已 showErrorMessage:false）。
-    void putPreferences({ last_path: path }).catch(() => undefined);
   };
 
   const getHomePath = () => homePath.value;
@@ -54,7 +43,6 @@ export const useMenuStore = defineStore("menuStore", () => {
     setMenuList,
     getHomePath,
     setHomePath,
-    rememberLastPath,
     addRemoveRouteFns,
     removeAllDynamicRoutes,
     clearRemoveRouteFns,

@@ -2,19 +2,26 @@
   <EditDialog
     v-model="visible"
     :title="dialogTitle"
-    width="800px"
+    width="820px"
     dialog-class="config-edit-dialog"
     :confirm-text="$t('common.actions.save')"
     :saving="saving"
-    :confirm-disabled="authorizationDisabled"
+    :confirm-disabled="authorizationDisabled || loadingDetail"
     :confirm-disabled-reason="authorizationDisabledReason"
     @confirm="handleSave"
     @closed="handleClosed"
   >
-    <ElForm ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <ElForm
+      ref="formRef"
+      v-loading="loadingDetail"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+    >
       <template v-if="!isEdit">
         <ServiceNameSelector
           v-model="form.service_name"
+          allow-custom
           :existing-names="existingNames"
           @change="handleServiceChange"
         />
@@ -27,10 +34,39 @@
       </template>
 
       <template v-if="form.service_name === 'mazbri-gateway'">
-        <ElTabs v-model="activeTab" class="gateway-config-tabs">
-          <ElTabPane label="可视化配置" name="visual">
+        <ElTabs
+          v-model="activeTab"
+          class="gateway-config-tabs"
+          @tab-change="handleTabChange"
+        >
+          <ElTabPane
+            :label="$t('configCenter.editDialog.tabs.toml')"
+            name="toml"
+            lazy
+          >
+            <ElFormItem
+              :label="$t('configCenter.editDialog.fields.content')"
+              prop="content"
+              class="toml-editor-item"
+            >
+              <TomlEditor
+                ref="tomlEditorRef"
+                :content="form.content"
+                :validation-error="validationError"
+                @change="handleContentChange"
+              />
+            </ElFormItem>
+          </ElTabPane>
+
+          <ElTabPane
+            :label="$t('configCenter.editDialog.tabs.cors')"
+            name="visual"
+            lazy
+          >
             <div class="visual-config-container">
-              <ElFormItem label="允许跨域域名">
+              <ElFormItem
+                :label="$t('configCenter.editDialog.cors.allowedOrigins')"
+              >
                 <div class="origins-tag-container">
                   <ElTag
                     v-for="tag in gatewayCors.allowed_origins"
@@ -45,44 +81,36 @@
                     v-if="inputOriginVisible"
                     ref="inputOriginRef"
                     v-model="inputOriginValue"
-                    class="w-40"
+                    class="origin-input"
                     @keyup.enter="handleInputOriginConfirm"
                     @blur="handleInputOriginConfirm"
                   />
                   <ElButton v-else @click="showInputOrigin">
-                    + {{ $t("common.actions.add") || "添加" }}
+                    + {{ $t("common.actions.add") }}
                   </ElButton>
                 </div>
                 <div class="form-tip">
-                  开发环境可填写 *，生产环境必须配置具体的受信任域名（如 https://mgmt.jkcredit.com）
+                  {{ $t("configCenter.editDialog.cors.allowedOriginsTip") }}
                 </div>
               </ElFormItem>
-              <ElFormItem label="允许携带凭证">
+
+              <ElFormItem
+                :label="$t('configCenter.editDialog.cors.allowCredentials')"
+              >
                 <ElSwitch v-model="gatewayCors.allow_credentials" />
               </ElFormItem>
             </div>
           </ElTabPane>
-          <ElTabPane label="完整 TOML 源码" name="toml">
-            <ElFormItem
-              :label="$t('configCenter.editDialog.fields.content')"
-              prop="content"
-              class="toml-editor-item"
-            >
-              <TomlEditor
-                :content="form.content"
-                :validation-error="validationError"
-                @change="handleContentChange"
-              />
-            </ElFormItem>
-          </ElTabPane>
         </ElTabs>
       </template>
+
       <template v-else>
         <ElFormItem
           :label="$t('configCenter.editDialog.fields.content')"
           prop="content"
         >
           <TomlEditor
+            ref="tomlEditorRef"
             :content="form.content"
             :validation-error="validationError"
             @change="handleContentChange"
@@ -92,50 +120,69 @@
     </ElForm>
   </EditDialog>
 </template>
+
 <script setup lang="ts">
-import { ElInput, ElMessage } from "element-plus";
+import { computed, nextTick, reactive, ref, watch } from "vue";
+import { ElInput, ElMessage, type TabPaneName } from "element-plus";
 import type { FormInstance, FormRules } from "element-plus";
 import { $t } from "@/locales";
 import type {
-  ConfigEntry,
+  ConfigSummary,
   CreateConfigRequest,
 } from "@/types/api/config-center";
-import { createConfig, updateConfig, validateToml } from "@/api/config-center";
+import {
+  createConfig,
+  fetchConfig,
+  updateConfig,
+  validateToml,
+} from "@/api/config-center";
 import EditDialog from "@/components/common/EditDialog.vue";
 import TomlEditor from "./TomlEditor.vue";
 import ServiceNameSelector from "./ServiceNameSelector.vue";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
+import { parseGatewayCors, serializeGatewayCors } from "../helpers";
+
 const props = defineProps<{
   modelValue: boolean;
-  config: ConfigEntry | null;
+  config: ConfigSummary | null;
   existingNames?: string[];
   authorizationDisabled?: boolean;
   authorizationDisabledReason?: string;
 }>();
+
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   success: [];
 }>();
+
 const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit("update:modelValue", value),
 });
+
 const formRef = ref<FormInstance>();
+const tomlEditorRef = ref<InstanceType<typeof TomlEditor> | null>(null);
+const loadingDetail = ref(false);
 const saving = ref(false);
 const validationError = ref<string | null>(null);
+let loadSeq = 0;
+
 const isEdit = computed(() => !!props.config);
-const dialogTitle = computed(() => {
-  return isEdit.value
+const dialogTitle = computed(() =>
+  isEdit.value
     ? $t("configCenter.editDialog.actions.edit")
-    : $t("configCenter.editDialog.actions.create");
-});
+    : $t("configCenter.editDialog.actions.create"),
+);
+
 const form = reactive<CreateConfigRequest>({
   service_name: "",
   content: "",
   updated_by: "admin",
 });
-const rules: FormRules = {
+
+const rules = computed<FormRules>(() => ({
   service_name: [
     {
       required: true,
@@ -150,68 +197,16 @@ const rules: FormRules = {
       trigger: "blur",
     },
   ],
-};
+}));
+
 const authorizationDisabled = computed(
   () => props.authorizationDisabled ?? false,
 );
 const authorizationDisabledReason = computed(
-  () =>
-    props.authorizationDisabledReason ?? getLicenseDisabledReason(),
+  () => props.authorizationDisabledReason ?? getLicenseDisabledReason(),
 );
-function parseGatewayCors(tomlContent: string) {
-  const corsSectionRegex = /\[cors\][\s\S]*?(?=\n\s*\[[a-zA-Z_]|$)/;
-  const match = tomlContent.match(corsSectionRegex);
-  if (!match) {
-    return {
-      allowed_origins: [] as string[],
-      allow_credentials: true,
-    };
-  }
-  const corsSection = match[0];
 
-  let allowed_origins: string[] = [];
-  const originsMatch = corsSection.match(/allowed_origins\s*=\s*\[([^\]]*)\]/);
-  if (originsMatch) {
-    const rawOrigins = originsMatch[1];
-    allowed_origins = rawOrigins
-      .split(",")
-      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-      .filter((s) => s.length > 0);
-  }
-
-  let allow_credentials = true;
-  const credentialsMatch = corsSection.match(/allow_credentials\s*=\s*(true|false)/);
-  if (credentialsMatch) {
-    allow_credentials = credentialsMatch[1] === "true";
-  }
-
-  return { allowed_origins, allow_credentials };
-}
-
-function serializeGatewayCors(
-  tomlContent: string,
-  allowedOrigins: string[],
-  allowCredentials: boolean,
-): string {
-  const corsSectionRegex = /\[cors\][\s\S]*?(?=\n\s*\[[a-zA-Z_]|$)/;
-  const match = tomlContent.match(corsSectionRegex);
-
-  const formattedOrigins = `allowed_origins = [${allowedOrigins.map((s) => `"${s}"`).join(", ")}]`;
-  const formattedCredentials = `allow_credentials = ${allowCredentials}`;
-  const newCorsSection = `[cors]\n${formattedOrigins}\n${formattedCredentials}\n\n`;
-
-  if (match) {
-    return tomlContent.replace(match[0], newCorsSection);
-  } else {
-    const trimmed = tomlContent.trim();
-    if (trimmed.length === 0) {
-      return newCorsSection;
-    }
-    return `${trimmed}\n\n${newCorsSection}`;
-  }
-}
-
-const activeTab = ref("visual");
+const activeTab = ref<"toml" | "visual">("toml");
 const gatewayCors = reactive({
   allowed_origins: [] as string[],
   allow_credentials: true,
@@ -221,22 +216,22 @@ const inputOriginValue = ref("");
 const inputOriginRef = ref<InstanceType<typeof ElInput> | null>(null);
 
 const handleRemoveOrigin = (tag: string) => {
-  gatewayCors.allowed_origins = gatewayCors.allowed_origins.filter((o) => o !== tag);
+  gatewayCors.allowed_origins = gatewayCors.allowed_origins.filter(
+    (o) => o !== tag,
+  );
 };
 
 const showInputOrigin = () => {
   inputOriginVisible.value = true;
-  nextTick(() => {
+  void nextTick(() => {
     inputOriginRef.value?.focus();
   });
 };
 
 const handleInputOriginConfirm = () => {
   const value = inputOriginValue.value.trim();
-  if (value) {
-    if (!gatewayCors.allowed_origins.includes(value)) {
-      gatewayCors.allowed_origins.push(value);
-    }
+  if (value && !gatewayCors.allowed_origins.includes(value)) {
+    gatewayCors.allowed_origins.push(value);
   }
   inputOriginVisible.value = false;
   inputOriginValue.value = "";
@@ -263,41 +258,94 @@ watch(
   { deep: true },
 );
 
-watch(activeTab, (newTab) => {
-  if (form.service_name === "mazbri-gateway") {
-    if (newTab === "visual") {
-      const parsed = parseGatewayCors(form.content);
+const handleTabChange = (newTab: TabPaneName) => {
+  if (form.service_name !== "mazbri-gateway") {
+    return;
+  }
+  if (newTab === "visual") {
+    const parsed = parseGatewayCors(form.content);
+    gatewayCors.allowed_origins = parsed.allowed_origins;
+    gatewayCors.allow_credentials = parsed.allow_credentials;
+    return;
+  }
+  syncToContent();
+  void nextTick(() => {
+    tomlEditorRef.value?.requestMeasure();
+  });
+};
+
+const loadConfigDetail = async (serviceName: string) => {
+  const seq = ++loadSeq;
+  loadingDetail.value = true;
+  try {
+    const detail = await fetchConfig(serviceName);
+    if (seq !== loadSeq || !visible.value) {
+      return;
+    }
+    form.service_name = detail.service_name;
+    form.content = detail.content;
+    if (detail.service_name === "mazbri-gateway") {
+      const parsed = parseGatewayCors(detail.content);
       gatewayCors.allowed_origins = parsed.allowed_origins;
       gatewayCors.allow_credentials = parsed.allow_credentials;
-    } else {
-      syncToContent();
+    }
+    await nextTick();
+    tomlEditorRef.value?.requestMeasure();
+  } catch (error: unknown) {
+    if (seq !== loadSeq) {
+      return;
+    }
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to load config detail:", error);
+    }
+    visible.value = false;
+  } finally {
+    if (seq === loadSeq) {
+      loadingDetail.value = false;
     }
   }
-});
+};
 
 watch(
-  () => props.config,
-  (newConfig) => {
-    if (newConfig) {
-      form.service_name = newConfig.service_name;
-      form.content = newConfig.content;
-      if (newConfig.service_name === "mazbri-gateway") {
-        const parsed = parseGatewayCors(newConfig.content);
-        gatewayCors.allowed_origins = parsed.allowed_origins;
-        gatewayCors.allow_credentials = parsed.allow_credentials;
-      }
+  () => [props.modelValue, props.config] as const,
+  ([isOpen, targetConfig]) => {
+    if (!isOpen) {
+      loadSeq++;
+      loadingDetail.value = false;
+      return;
+    }
+    activeTab.value = "toml";
+    validationError.value = null;
+    if (targetConfig) {
+      form.service_name = targetConfig.service_name;
+      form.content = "";
+      gatewayCors.allowed_origins = [];
+      gatewayCors.allow_credentials = true;
+      void loadConfigDetail(targetConfig.service_name);
     } else {
+      loadingDetail.value = false;
       form.service_name = "";
       form.content = "";
       gatewayCors.allowed_origins = [];
       gatewayCors.allow_credentials = true;
+      void nextTick(() => {
+        tomlEditorRef.value?.requestMeasure();
+      });
     }
   },
   { immediate: true },
 );
 
 const handleServiceChange = (value: string) => {
-  void value;
+  activeTab.value = "toml";
+  if (value === "mazbri-gateway") {
+    const parsed = parseGatewayCors(form.content);
+    gatewayCors.allowed_origins = parsed.allowed_origins;
+    gatewayCors.allow_credentials = parsed.allow_credentials;
+  }
+  void nextTick(() => {
+    tomlEditorRef.value?.requestMeasure();
+  });
 };
 
 const handleContentChange = (content: string) => {
@@ -305,7 +353,10 @@ const handleContentChange = (content: string) => {
   validationError.value = null;
   if (form.service_name === "mazbri-gateway") {
     const parsed = parseGatewayCors(content);
-    if (JSON.stringify(gatewayCors.allowed_origins) !== JSON.stringify(parsed.allowed_origins)) {
+    if (
+      JSON.stringify(gatewayCors.allowed_origins) !==
+      JSON.stringify(parsed.allowed_origins)
+    ) {
       gatewayCors.allowed_origins = parsed.allowed_origins;
     }
     if (gatewayCors.allow_credentials !== parsed.allow_credentials) {
@@ -313,10 +364,17 @@ const handleContentChange = (content: string) => {
     }
   }
 };
+
 const handleSave = async () => {
   if (authorizationDisabled.value) {
     ElMessage.warning(authorizationDisabledReason.value);
     return;
+  }
+  if (loadingDetail.value) {
+    return;
+  }
+  if (form.service_name === "mazbri-gateway" && activeTab.value === "visual") {
+    syncToContent();
   }
   await formRef.value?.validate();
   saving.value = true;
@@ -329,11 +387,13 @@ const handleSave = async () => {
         "configCenter.editDialog.validation.tomlError",
         { line, column, message },
       );
-      saving.value = false;
+      if (form.service_name === "mazbri-gateway") {
+        activeTab.value = "toml";
+      }
       return;
     }
-    if (isEdit.value) {
-      await updateConfig(props.config!.service_name, {
+    if (isEdit.value && props.config) {
+      await updateConfig(props.config.service_name, {
         content: form.content,
         updated_by: "admin",
       });
@@ -344,14 +404,21 @@ const handleSave = async () => {
     visible.value = false;
     emit("success");
   } catch (error: unknown) {
-    logger.error("Failed to save config:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to save config:", error);
+    }
   } finally {
     saving.value = false;
   }
 };
+
 const handleClosed = () => {
+  loadSeq++;
+  loadingDetail.value = false;
   formRef.value?.resetFields();
   validationError.value = null;
+  inputOriginVisible.value = false;
+  inputOriginValue.value = "";
 };
 </script>
 
@@ -359,74 +426,32 @@ const handleClosed = () => {
 .gateway-config-tabs {
   width: 100%;
 }
+
 .visual-config-container {
-  padding: 16px 0;
+  padding: 12px 0 4px;
 }
+
 .origins-tag-container {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  width: 100%;
 }
+
 .form-tip {
+  width: 100%;
   margin-top: 6px;
-  color: var(--art-gray-500, #909399);
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.w-40 {
-  width: 160px;
+
+.origin-input {
+  width: 220px;
 }
+
 .toml-editor-item {
-  margin-top: 16px;
-}
-:deep(.el-form-item__content) {
-  flex: 1;
-}
-
-:deep(.config-edit-dialog) {
-  overflow: hidden;
-}
-
-:deep(.config-edit-dialog .el-dialog__header) {
-  margin-right: 0;
-  padding: 20px 24px 14px;
-  border-bottom: 1px solid var(--art-card-border);
-  background: var(--default-box-color);
-}
-
-:deep(.config-edit-dialog .el-dialog__title) {
-  color: var(--art-gray-900);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-:deep(.config-edit-dialog .el-dialog__headerbtn) {
-  top: 18px;
-  right: 18px;
-}
-
-:deep(.config-edit-dialog .el-dialog__body) {
-  padding: 24px 24px 20px;
-  background: var(--default-box-color);
-}
-
-:deep(.config-edit-dialog .el-dialog__footer) {
-  padding: 16px 24px 20px;
-  border-top: 1px solid var(--art-card-border);
-  background: var(--default-box-color);
-}
-
-:deep(.config-edit-dialog .el-form-item) {
-  margin-bottom: 22px;
-}
-
-:deep(.config-edit-dialog .el-form-item:last-child) {
-  margin-bottom: 0;
-}
-
-:deep(.config-edit-dialog .el-form-item__label) {
-  color: var(--art-gray-800);
-  font-weight: 600;
+  margin-top: 8px;
 }
 </style>

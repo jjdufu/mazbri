@@ -1,13 +1,17 @@
 import type { ISODateString } from "./common";
-export interface ConfigEntry {
+export interface ConfigSummary {
   id: string;
   service_name: string;
-  content: string;
-  content_hash: string | null;
+  version?: number;
+  description?: string | null;
   is_sensitive?: boolean;
   updated_by: string;
   created_at: ISODateString;
   updated_at: ISODateString;
+}
+export interface ConfigEntry extends ConfigSummary {
+  content: string;
+  content_hash?: string | null;
 }
 export interface ConfigHistory {
   id: string;
@@ -28,7 +32,7 @@ export interface ConfigListQuery {
   page_size?: number;
 }
 export interface ConfigListResponse {
-  configs: ConfigEntry[];
+  configs: ConfigSummary[];
   total: number;
   page: number;
   page_size: number;

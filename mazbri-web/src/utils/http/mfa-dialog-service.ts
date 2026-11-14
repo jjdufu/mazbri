@@ -9,9 +9,9 @@ import {
   type ExclusiveMfaCode,
   type MfaCategory,
 } from "./mfa-step-up-state";
-import { ACCOUNT_SECURITY_PATH, resolveMfaSetupPath } from "./mfa-setup-path";
+import { MFA_SETUP_PATH, resolveMfaSetupPath } from "./mfa-setup-path";
 
-export { ACCOUNT_SECURITY_PATH };
+export { MFA_SETUP_PATH };
 
 export class MfaStepUpCancelledError extends Error {
   readonly cancelled = true;
@@ -274,7 +274,15 @@ export async function promptSetup(setupPath: unknown): Promise<void> {
         closeOnClickModal: false,
       },
     );
-    await router.push(resolveMfaSetupPath(setupPath));
+    const resolved = resolveMfaSetupPath(setupPath);
+    if (resolved === MFA_SETUP_PATH) {
+      const { usePersonalSecurityStore } = await import(
+        "@/store/modules/personal-security"
+      );
+      usePersonalSecurityStore().openDrawer("mfa");
+    } else {
+      await router.push(resolved);
+    }
   } catch {
     // 用户取消：保持在当前页面。
   } finally {

@@ -197,6 +197,8 @@ async fn enforce_matrix_and_matched_path_distinguishes_search() {
         ),
         ("POST", "/issue", gateway.as_str(), true),
         ("POST", "/issue", MASTER, false),
+        ("GET", "/certificates/subjects", gateway.as_str(), true),
+        ("GET", "/certificates/subjects", MASTER, false),
         (
             "POST",
             "/revoke/00000000-0000-0000-0000-000000000001",
@@ -229,6 +231,13 @@ async fn enforce_matrix_and_matched_path_distinguishes_search() {
             &bearer[..8.min(bearer.len())]
         );
     }
+    let (subjects_status, subjects_body) =
+        call(&app, request("GET", "/certificates/subjects", Some(MASTER), b"")).await;
+    assert_ne!(
+        subjects_status,
+        StatusCode::BAD_REQUEST,
+        "subjects route must not collide with /certificates/{{id}} UUID extractor: {subjects_body}"
+    );
 }
 
 #[tokio::test]
@@ -546,4 +555,15 @@ fn authorization_paths_do_not_rewrite_tokens() {
         assert!(!text.contains("update_config"), "{rel}");
         assert!(!text.contains("static_tokens"), "{rel}");
     }
+}
+
+#[tokio::test]
+async fn batch_delete_endpoint_is_retired() {
+    let app = build_app(ScopeMode::Enforce, ActorMode::Lenient);
+    let (status, _) = call(
+        &app,
+        request("POST", "/configs/batch/delete", Some(MASTER), b"{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

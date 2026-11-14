@@ -157,6 +157,9 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
     let profile = auth
         .profile_kind()
         .map_err(|e| ExecuteError::SpecInvalid(e.to_string()))?;
+    if profile == AuthProfile::Skip {
+        return Ok(applied);
+    }
     let credentials = args.credentials;
 
     let inject = auth.inject.clone().unwrap_or_default();
@@ -167,6 +170,7 @@ pub async fn apply_auth(args: AuthApply<'_>) -> Result<AppliedAuth, ExecuteError
     match profile {
         // SignForm: per-request MAC/签名由 sign_form 适配器经 crypto_pipeline 完成。
         AuthProfile::None
+        | AuthProfile::Skip
         | AuthProfile::SignForm
         | AuthProfile::Digest
         | AuthProfile::AwsSigV4

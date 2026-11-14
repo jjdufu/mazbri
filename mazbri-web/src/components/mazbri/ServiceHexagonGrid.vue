@@ -9,6 +9,9 @@
         :key="node.id"
         placement="top"
         :show-after="150"
+        :enterable="false"
+        popper-class="hexagon-tooltip-popper"
+        :popper-options="tooltipPopperOptions"
         :disabled="!node.tooltipLines?.length && !node.label"
       >
         <template #content>
@@ -87,6 +90,31 @@ const emit = defineEmits<{
   select: [id: string];
   "update:selectedId": [id: string | null];
 }>();
+
+const TOOLTIP_SAFE_PADDING = {
+  top: 152,
+  right: 16,
+  bottom: 16,
+  left: 16,
+};
+
+const tooltipPopperOptions = {
+  modifiers: [
+    {
+      name: "flip",
+      options: {
+        fallbackPlacements: ["bottom", "left", "right"],
+        padding: TOOLTIP_SAFE_PADDING,
+      },
+    },
+    {
+      name: "preventOverflow",
+      options: {
+        padding: TOOLTIP_SAFE_PADDING,
+      },
+    },
+  ],
+};
 
 function shortName(name: string): string {
   return name
@@ -310,5 +338,11 @@ function onSelect(id: string) {
   .hexagon-grid {
     justify-content: center;
   }
+}
+</style>
+
+<style>
+.hexagon-tooltip-popper {
+  pointer-events: none;
 }
 </style>

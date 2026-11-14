@@ -21,6 +21,13 @@ pub struct ApiKeyListRow {
     pub is_active: bool,
 }
 
+#[derive(Debug)]
+pub struct LockedApiKeyForRotate {
+    pub credential_id: uuid::Uuid,
+    pub scopes: Vec<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 pub use super::tenant_helpers::tenant_exists;
 /// # Errors
 ///
@@ -48,13 +55,71 @@ pub async fn count_active_api_keys(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn active_tenant_api_key_exists(
+    auth_pool: &PgPool,
+    tenant_id: uuid::Uuid,
+    prefix: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r"
+        SELECT EXISTS(
+            SELECT 1
+            FROM api_keys ak
+            JOIN auth_credentials ac ON ak.credential_id = ac.id
+            WHERE ac.tenant_id = $1
+              AND ac.credential_type = 'api_key'
+              AND ak.prefix = $2
+              AND ak.is_revoked = false
+        )
+        ",
+    )
+    .bind(tenant_id)
+    .bind(prefix)
+    .fetch_one(auth_pool)
+    .await
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn lock_active_tenant_api_key(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    prefix: &str,
+) -> Result<Option<LockedApiKeyForRotate>, sqlx::Error> {
+    let row = sqlx::query(
+        r"
+        SELECT ak.credential_id, ak.scopes, ak.expires_at
+        FROM api_keys ak
+        JOIN auth_credentials ac ON ak.credential_id = ac.id
+        WHERE ac.tenant_id = $1
+          AND ac.credential_type = 'api_key'
+          AND ak.prefix = $2
+          AND ak.is_revoked = false
+        FOR UPDATE OF ak, ac
+        ",
+    )
+    .bind(tenant_id)
+    .bind(prefix)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row.map(|r| LockedApiKeyForRotate {
+        credential_id: r.get("credential_id"),
+        scopes: r.get("scopes"),
+        expires_at: r.get("expires_at"),
+    }))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn insert_credential(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     credential_id: uuid::Uuid,
     tenant_id: uuid::Uuid,
     prefix: &str,
     secret_hash: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Option<DateTime<Utc>>,
     metadata_json: serde_json::Value,
 ) -> Result<uuid::Uuid, sqlx::Error> {
     let row = sqlx::query(
@@ -80,7 +145,7 @@ pub struct InsertApiKeyParams<'a> {
     pub prefix: &'a str,
     pub key_hash: &'a str,
     pub scopes: &'a [String],
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
     pub key_suffix: &'a str,
 }
 
@@ -154,16 +219,23 @@ pub async fn list_api_keys(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn revoke_api_key_by_prefix(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
     prefix: &str,
 ) -> Result<Option<uuid::Uuid>, sqlx::Error> {
     let row = sqlx::query(
         r"
-        UPDATE api_keys
+        UPDATE api_keys ak
         SET is_active = false, is_revoked = true, revoked_at = NOW()
-        WHERE prefix = $1
-        RETURNING id
+        FROM auth_credentials ac
+        WHERE ak.credential_id = ac.id
+          AND ac.tenant_id = $1
+          AND ac.credential_type = 'api_key'
+          AND ak.prefix = $2
+          AND ak.is_revoked = false
+        RETURNING ak.id
     ",
     )
+    .bind(tenant_id)
     .bind(prefix)
     .fetch_optional(&mut **tx)
     .await?;
@@ -174,16 +246,20 @@ pub async fn revoke_api_key_by_prefix(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn deactivate_credential_by_prefix(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
     prefix: &str,
 ) -> Result<Option<uuid::Uuid>, sqlx::Error> {
     let row = sqlx::query(
         r"
         UPDATE auth_credentials
         SET is_active = false
-        WHERE credential_type = 'api_key' AND credential_id = $1
+        WHERE tenant_id = $1
+          AND credential_type = 'api_key'
+          AND credential_id = $2
         RETURNING id
     ",
     )
+    .bind(tenant_id)
     .bind(prefix)
     .fetch_optional(&mut **tx)
     .await?;
@@ -194,29 +270,49 @@ pub async fn deactivate_credential_by_prefix(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_api_key_expiration(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
     prefix: &str,
-) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
-    sqlx::query_scalar("SELECT expires_at FROM api_keys WHERE prefix = $1")
-        .bind(prefix)
-        .fetch_optional(&mut **tx)
-        .await
+) -> Result<Option<Option<DateTime<Utc>>>, sqlx::Error> {
+    let row = sqlx::query(
+        r"
+        SELECT ak.expires_at
+        FROM api_keys ak
+        JOIN auth_credentials ac ON ak.credential_id = ac.id
+        WHERE ac.tenant_id = $1
+          AND ac.credential_type = 'api_key'
+          AND ak.prefix = $2
+          AND ak.is_revoked = false
+        ",
+    )
+    .bind(tenant_id)
+    .bind(prefix)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row.map(|r| r.get("expires_at")))
 }
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_api_key_expiration(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
     prefix: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<Option<ApiKeyRow>, sqlx::Error> {
     sqlx::query_as::<_, ApiKeyRow>(
         r"
-        UPDATE api_keys
-        SET expires_at = $2
-        WHERE prefix = $1
-        RETURNING id, prefix, scopes, is_revoked, created_at, expires_at
+        UPDATE api_keys ak
+        SET expires_at = $3
+        FROM auth_credentials ac
+        WHERE ak.credential_id = ac.id
+          AND ac.tenant_id = $1
+          AND ac.credential_type = 'api_key'
+          AND ak.prefix = $2
+          AND ak.is_revoked = false
+        RETURNING ak.id, ak.prefix, ak.scopes, ak.is_revoked, ak.created_at, ak.expires_at
     ",
     )
+    .bind(tenant_id)
     .bind(prefix)
     .bind(expires_at)
     .fetch_optional(&mut **tx)
@@ -227,15 +323,19 @@ pub async fn update_api_key_expiration(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_credential_expiration(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
     prefix: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     let query = r"
         UPDATE auth_credentials
-        SET expires_at = $2
-        WHERE credential_type = 'api_key' AND credential_id = $1
+        SET expires_at = $3
+        WHERE tenant_id = $1
+          AND credential_type = 'api_key'
+          AND credential_id = $2
     ";
     sqlx::query(query)
+        .bind(tenant_id)
         .bind(prefix)
         .bind(expires_at)
         .execute(&mut **tx)

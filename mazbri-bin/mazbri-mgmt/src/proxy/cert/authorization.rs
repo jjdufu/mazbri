@@ -115,6 +115,9 @@ pub async fn import_license_proxy(
         Ok(response) => {
             let status = StatusCode::from_u16(response.status().as_u16())
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            if status.is_success() {
+                crate::services::root_package::invalidate_root_material_cache().await;
+            }
             let body = response.text().await.unwrap_or_default();
             Ok((status, [(header::CONTENT_TYPE, "application/json")], body).into_response())
         }

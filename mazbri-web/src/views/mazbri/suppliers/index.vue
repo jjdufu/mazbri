@@ -1,9 +1,5 @@
 <template>
-  <div
-    ref="pageRef"
-    class="supplier-page"
-    style="display: flex; flex-direction: column; flex: 1; min-height: 0"
-  >
+  <div ref="pageRef" class="supplier-page">
     <ResourceTableShell
       v-model:columns="columns"
       :title="$t('supplier.list.title')"
@@ -23,18 +19,18 @@
           v-model="searchParams.q"
           v-model:filters="listFilters"
           :filter-catalog="suppliersCatalog"
-          :show-import="true"
+          :show-import="canWriteBusiness"
           :import-label="$t('common.actions.import')"
           :import-roles="[...ROLES_BIZ]"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :show-primary="true"
+          :show-primary="canWriteBusiness"
           :primary-label="$t('upstreamConnector.codeFreeAccess')"
           :primary-icon="'ri:plug-line'"
           :primary-button-type="'primary'"
           :primary-roles="[...ROLES_BIZ]"
-          :show-delete="true"
+          :show-delete="canWriteBusiness"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
           :delete-roles="[...ROLES_BIZ]"
@@ -44,11 +40,12 @@
           @primary="openCodeFreeAccess"
           @delete="(type) => handleDeleteCommand(type, tableData)"
         >
-
           <template #before-delete>
             <ElButton
+              v-if="canWriteBusiness"
               v-roles="ROLES_BIZ"
-              type="success"
+              type="primary"
+              plain
               @click="emit('access')"
             >
               <template #icon>
@@ -77,7 +74,9 @@
         <ElTag
           size="small"
           effect="plain"
-          :type="resolveUpstreamType(row) === 'transparent' ? 'primary' : 'info'"
+          :type="
+            resolveUpstreamType(row) === 'transparent' ? 'primary' : 'info'
+          "
         >
           {{
             resolveUpstreamType(row) === "transparent"
@@ -87,9 +86,9 @@
         </ElTag>
       </template>
       <template #status="{ row }">
-        <StatusIndicator :type="row.status === 'active' ? 'success' : 'info'">
-          {{ row.status }}
-        </StatusIndicator>
+        <ElTag :type="supplierStatusTagType(row.status)" effect="light">
+          {{ supplierStatusLabel(row.status) }}
+        </ElTag>
       </template>
       <template #operations="{ row }">
         <TableActionRow>
@@ -97,6 +96,7 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
+            v-if="canWriteBusiness"
             v-roles="ROLES_BIZ"
             link
             type="danger"
@@ -126,8 +126,10 @@
 </template>
 
 <script setup lang="ts">
-import CopyableText from "@/components/common/copyable-text/index.vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import {
   createSupplier,
   deleteSupplier,
@@ -135,45 +137,51 @@ import {
   updateSupplier,
   type Supplier,
 } from "@/api/supplier";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
-import { ROLES_BIZ } from "@/utils/ops/roles";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
-import StatusIndicator from "@/components/common/StatusIndicator.vue";
-import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
+import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import {
   exportResourceCsv,
   runResourceCsvImport,
+  type ColumnConfig,
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
-import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import { suppliersCatalog } from "@/list-catalog/common-resources";
-import type { ListFilter } from "@/types/list-query";
-import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { $t } from "@/locales";
+import { useUserStore } from "@/store/modules/user";
+import type { ColumnOption, PaginationConfig } from "@/types/component";
+import type { ListFilter } from "@/types/list-query";
+import { ROLES_BIZ } from "@/utils/ops/roles";
 import { formatUrlDisplay, stripUrlScheme } from "@/utils/sensitive";
 import { resolveUpstreamType } from "@/views/mazbri/suppliers/supplier-form";
-import { ref, reactive, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
 
 defineOptions({ name: "SupplierList" });
+
 const emit = defineEmits<{ access: [] }>();
 const router = useRouter();
+const { locale } = useI18n();
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
+
 type ExportCommand = "page" | "selected";
+
 interface SupplierImportRow extends Record<string, unknown> {
   supplier_code: string;
   name: string;
   upstream_url: string;
   status: string;
 }
+
 interface SupplierExportRow extends Record<string, unknown> {
   supplier_code: string;
   name: string;
   upstream_url: string;
   status: string;
 }
+
 const allowedStatuses = new Set(["active", "inactive", "suspended"]);
 const pageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
@@ -187,47 +195,74 @@ const pagination = reactive({
   total: 0,
 });
 const columns = ref<ColumnOption<Supplier>[]>([]);
-const supplierColumns: ColumnOption<Supplier>[] = [
-  { type: "selection", width: 55 },
-  {
-    prop: "supplier_code",
-    label: $t("supplier.fields.code"),
-    minWidth: 112,
-    useSlot: true,
-  },
-  { prop: "name", label: $t("supplier.fields.name"), minWidth: 120 },
-  {
-    prop: "upstream_type",
-    label: $t("supplier.fields.upstreamType"),
-    width: 110,
-    useSlot: true,
-  },
-  {
-    prop: "upstream_url",
-    label: $t("supplier.fields.accessAddress"),
-    minWidth: 140,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("supplier.fields.status"),
-    width: 110,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 170,
-    fixed: "right",
-    useSlot: true,
-  },
-];
+
+const supplierStatusTagType = (status: string) => {
+  if (status === "active") return "success";
+  if (status === "suspended") return "warning";
+  return "info";
+};
+
+const supplierStatusLabel = (status: string) => {
+  if (status === "active") return $t("common.status.enabled");
+  if (status === "suspended") return $t("supplier.status.suspended");
+  return $t("common.status.disabled");
+};
+
+const supplierColumns = computed<ColumnOption<Supplier>[]>(() => {
+  void locale.value;
+  const cols: ColumnOption<Supplier>[] = [];
+  if (canWriteBusiness.value) {
+    cols.push({ type: "selection", width: 55 });
+  }
+  cols.push(
+    {
+      prop: "supplier_code",
+      label: $t("supplier.fields.code"),
+      minWidth: 112,
+      useSlot: true,
+    },
+    {
+      prop: "name",
+      label: $t("supplier.fields.name"),
+      minWidth: 120,
+      maxWidth: 280,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: "upstream_type",
+      label: $t("supplier.fields.upstreamType"),
+      width: 116,
+      useSlot: true,
+    },
+    {
+      prop: "upstream_url",
+      label: $t("supplier.fields.accessAddress"),
+      minWidth: 140,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: $t("supplier.fields.status"),
+      width: 110,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: $t("common.fields.operations"),
+      width: canWriteBusiness.value ? 150 : 96,
+      fixed: "right",
+      useSlot: true,
+    },
+  );
+  return cols;
+});
+
 const getSupplierCellText = (columnKey: string, row: Supplier) => {
   switch (columnKey) {
     case "supplier_code":
-      return row.supplier_code || "-";
+      return row.supplier_code || "—";
     case "name":
-      return row.name || "-";
+      return row.name || "—";
     case "upstream_type":
       return resolveUpstreamType(row) === "transparent"
         ? $t("supplier.upstreamOptions.transparent")
@@ -235,19 +270,22 @@ const getSupplierCellText = (columnKey: string, row: Supplier) => {
     case "upstream_url":
       return formatUrlDisplay(row.upstream_url);
     case "status":
-      return row.status || "-";
+      return supplierStatusLabel(row.status);
     case "operations":
-      return `${$t("common.actions.details")} ${$t("common.actions.delete")}`;
+      return canWriteBusiness.value
+        ? `${$t("common.actions.details")} ${$t("common.actions.delete")}`
+        : $t("common.actions.details");
     default:
-      return row.name || "-";
+      return row.name || "—";
   }
 };
+
 const getSupplierColumnWeight = (columnKey: string) => {
   switch (columnKey) {
     case "supplier_code":
       return 1.1;
     case "name":
-      return 1.1;
+      return 1.2;
     case "upstream_type":
       return 0.7;
     case "upstream_url":
@@ -258,6 +296,7 @@ const getSupplierColumnWeight = (columnKey: string) => {
       return 1;
   }
 };
+
 useAdaptiveTableColumns({
   columns,
   containerRef: pageRef,
@@ -266,53 +305,67 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getSupplierCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getSupplierColumnWeight(columnKey),
 });
-const supplierImportColumns: ColumnConfig[] = [
-  { key: "supplier_code", label: $t("supplier.fields.code"), required: true },
-  { key: "name", label: $t("supplier.fields.name"), required: true },
-  {
-    key: "upstream_url",
-    label: $t("supplier.fields.accessAddress"),
-    required: true,
-  },
-  { key: "status", label: $t("supplier.fields.status"), required: false },
-];
-const supplierExportColumns: { key: keyof SupplierExportRow; label: string }[] =
-  [
+
+const supplierImportColumns = computed<ColumnConfig[]>(() => {
+  void locale.value;
+  return [
+    { key: "supplier_code", label: $t("supplier.fields.code"), required: true },
+    { key: "name", label: $t("supplier.fields.name"), required: true },
+    {
+      key: "upstream_url",
+      label: $t("supplier.fields.accessAddress"),
+      required: true,
+    },
+    { key: "status", label: $t("supplier.fields.status"), required: false },
+  ];
+});
+
+const supplierExportColumns = computed<
+  { key: keyof SupplierExportRow; label: string }[]
+>(() => {
+  void locale.value;
+  return [
     { key: "supplier_code", label: $t("supplier.fields.code") },
     { key: "name", label: $t("supplier.fields.name") },
     { key: "upstream_url", label: $t("supplier.fields.accessAddress") },
     { key: "status", label: $t("supplier.fields.status") },
   ];
-const supplierImportRows = ref<Supplier[]>([]);
+});
+
 const supplierImportExistingData = computed(() =>
-  supplierImportRows.value.map((row) => ({
+  tableData.value.map((row) => ({
     supplier_code: row.supplier_code,
   })),
 );
+
 const supplierImportFormatHint = computed(() =>
   [
     $t("feedback.import.csvFormatHint"),
     $t("feedback.import.requiredColumns", {
-      columns: supplierImportColumns
+      columns: supplierImportColumns.value
         .filter((column) => column.required)
         .map((column) => column.key)
         .join(", "),
     }),
   ].join("\n"),
 );
+
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.current,
   size: pagination.size,
   total: pagination.total,
 }));
+
 const hasActiveSearch = computed(
   () => Boolean(searchParams.q.trim()) || listFilters.value.length > 0,
 );
+
 const emptyDescription = computed(() =>
   hasActiveSearch.value
     ? $t("supplier.empty.noMatch")
     : $t("supplier.empty.noData"),
 );
+
 const {
   selectedRows,
   handleSelectionChange,
@@ -327,6 +380,7 @@ const {
     void loadData();
   },
 });
+
 const exportItems = computed(() => [
   {
     command: "page",
@@ -346,6 +400,7 @@ const normalizeStatus = (status?: string) => {
   const value = status?.trim().toLowerCase();
   return value && allowedStatuses.has(value) ? value : "active";
 };
+
 const validateSupplierImportRow = (row: Record<string, string>) => {
   if (!row.supplier_code?.trim()) {
     return { valid: false, reason: $t("supplier.validation.codeRequired") };
@@ -368,6 +423,7 @@ const validateSupplierImportRow = (row: Record<string, string>) => {
   }
   return { valid: true };
 };
+
 const transformSupplierImportRow = (
   row: Record<string, string>,
 ): SupplierImportRow => ({
@@ -376,16 +432,7 @@ const transformSupplierImportRow = (
   upstream_url: stripUrlScheme(row.upstream_url.trim()),
   status: normalizeStatus(row.status),
 });
-const loadSupplierImportRows = async () => {
-  try {
-    supplierImportRows.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchSuppliers({ page, page_size: pageSize });
-      return { items: res.suppliers, total: res.pagination.total };
-    });
-  } catch {
-    supplierImportRows.value = tableData.value;
-  }
-};
+
 const loadData = async () => {
   await runWithLoading(loading, async () => {
     const res = await fetchSuppliers({
@@ -401,21 +448,24 @@ const loadData = async () => {
     clearSelection();
   });
 };
+
 const handleSizeChange = (size: number) => {
   pagination.size = size;
   pagination.current = 1;
   clearSelection();
-  loadData();
+  void loadData();
 };
+
 const handleCurrentChange = (page: number) => {
   pagination.current = page;
   clearSelection();
-  loadData();
+  void loadData();
 };
+
 const handleSearch = () => {
   pagination.current = 1;
   clearSelection();
-  loadData();
+  void loadData();
 };
 
 const handleExportCommand = (command: string) => {
@@ -428,22 +478,21 @@ const handleExportCommand = (command: string) => {
     supplier_code: row.supplier_code,
     name: row.name,
     upstream_url: stripUrlScheme(row.upstream_url),
-    status: row.status,
+    status: supplierStatusLabel(row.status),
   }));
   exportResourceCsv(
     csvRows,
-    supplierExportColumns,
+    supplierExportColumns.value,
     `suppliers-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
 
 const handleView = (row: Supplier) => {
-  router.push({ name: "SupplierDetail", params: { id: row.id } });
+  void router.push({ name: "SupplierDetail", params: { id: row.id } });
 };
 
-
 const openCodeFreeAccess = () => {
-  router.push({ name: "UpstreamConnectorWorkbench" });
+  void router.push({ name: "UpstreamConnectorWorkbench" });
 };
 
 const handleDelete = async (row: Supplier) => {
@@ -454,8 +503,9 @@ const handleDelete = async (row: Supplier) => {
   );
   await deleteSupplier(row.id);
   ElMessage.success($t("common.feedback.deleteSuccess"));
-  loadData();
+  void loadData();
 };
+
 const handleSupplierImport = async (items: Record<string, unknown>[]) => {
   await runResourceCsvImport<SupplierImportRow>(items, async (row) => {
     const created = await createSupplier({
@@ -469,11 +519,15 @@ const handleSupplierImport = async (items: Record<string, unknown>[]) => {
     }
   });
 };
-const openImport = async () => {
-  await loadSupplierImportRows();
+
+const openImport = () => {
   importVisible.value = true;
 };
-onMounted(loadData);
+
+onMounted(() => {
+  void loadData();
+});
+
 defineExpose({ loadData });
 </script>
 

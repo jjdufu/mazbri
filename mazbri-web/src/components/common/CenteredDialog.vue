@@ -66,63 +66,37 @@ const visible = defineModel<boolean>({ required: true });
 </script>
 
 <style scoped lang="scss">
+/* [不可更改] 居中弹窗统一绑定 Element Plus 语义变量，严禁硬编码亮/暗色 Hex 或添加标题左竖条与关闭按钮旋转 */
 .centered-dialog {
   :deep(.el-dialog) {
     max-width: calc(100vw - 32px);
     border-radius: var(--art-dialog-radius);
     overflow: hidden;
-    box-shadow:
-      0 24px 64px -16px rgba(15, 23, 42, 0.12),
-      0 0 1px rgba(15, 23, 42, 0.1);
-    border: 1px solid rgba(241, 245, 249, 0.8);
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(20px);
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-
-    .dark & {
-      background: rgba(23, 23, 26, 0.95);
-      border-color: rgba(255, 255, 255, 0.06);
-      box-shadow:
-        0 24px 64px -16px rgba(0, 0, 0, 0.6),
-        0 0 1px rgba(255, 255, 255, 0.15);
-    }
+    box-shadow: var(--el-box-shadow-dark);
+    border: 1px solid var(--el-border-color-lighter);
+    background: var(--el-bg-color-overlay);
+    transition:
+      border-color 0.2s ease,
+      background-color 0.2s ease;
   }
 
   :deep(.el-dialog__header) {
     margin-right: 0;
     padding: 20px 24px 16px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--el-border-color-lighter);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #fafbfd;
-
-    .dark & {
-      background: #18181c;
-      border-color: #232326;
-    }
+    background: var(--el-bg-color-overlay);
 
     .el-dialog__title {
       font-size: 16px;
       font-weight: 600;
-      color: #1e293b;
+      color: var(--el-text-color-primary);
       letter-spacing: 0.01em;
       display: inline-flex;
       align-items: center;
       gap: 8px;
-
-      &::before {
-        content: "";
-        display: inline-block;
-        width: 3px;
-        height: 14px;
-        background-color: var(--el-color-primary);
-        border-radius: var(--art-form-control-radius-sm);
-      }
-
-      .dark & {
-        color: #f1f5f9;
-      }
     }
 
     .el-dialog__headerbtn {
@@ -134,30 +108,21 @@ const visible = defineModel<boolean>({ required: true });
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s ease;
+      transition: background-color 0.2s ease;
       margin: 0;
 
       &:hover {
-        background: #f1f5f9;
-
-        .dark & {
-          background: #2b2b30;
-        }
+        background: var(--el-fill-color-light);
 
         .el-dialog__close {
-          color: #475569;
-          transform: rotate(90deg);
-
-          .dark & {
-            color: #f1f5f9;
-          }
+          color: var(--el-text-color-primary);
         }
       }
 
       .el-dialog__close {
         font-size: 16px;
-        color: #94a3b8;
-        transition: all 0.3s ease;
+        color: var(--el-text-color-secondary);
+        transition: color 0.2s ease;
       }
     }
   }
@@ -169,13 +134,8 @@ const visible = defineModel<boolean>({ required: true });
 
   :deep(.el-dialog__footer) {
     padding: 16px 28px 20px;
-    border-top: 1px solid #f1f5f9;
-    background: #fafbfd;
-
-    .dark & {
-      background: #18181c;
-      border-color: #232326;
-    }
+    border-top: 1px solid var(--el-border-color-lighter);
+    background: var(--el-bg-color-overlay);
   }
 }
 

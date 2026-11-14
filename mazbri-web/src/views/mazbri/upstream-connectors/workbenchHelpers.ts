@@ -58,17 +58,29 @@ export {
   authFieldGroup,
   authPickerFromState,
   authProfileFromPicker,
+  isSessionHttpAuthActive,
   sanitizeAuthSpec,
   visibleAuthPickers,
 } from "./authMatrix";
 export type { AuthFieldGroup, AuthPickerId, AuthProfileId } from "./authMatrix";
 export const WRAP_OPTIONS = ["method_biz_content", "none"] as const;
 export const HSPLIT_DEFAULT_LEFT = 240;
-export const VSPLIT_DEFAULT_BOTTOM = 280;
+export const VSPLIT_DEFAULT_BOTTOM = 260;
 export const VSPLIT_COLLAPSED_HEIGHT = 0;
+export const SPLIT_LAYOUT_STORAGE_KEY = "mazbri:wb:split-layout";
+export const SPLIT_DEFAULT_RATIO = 0.38;
+export const SPLIT_DEFAULT_RIGHT = 420;
 
+export type SplitDirection = "horizontal" | "vertical";
 export type HSplitState = { left: number; collapsed: boolean };
 export type VSplitState = { bottom: number; collapsed: boolean };
+export type SplitLayoutState = {
+  direction: SplitDirection;
+  ratio: number;
+  bottom: number;
+  right: number;
+  collapsed: boolean;
+};
 
 function finiteNonNeg(n: unknown, fallback: number): number {
   return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -97,12 +109,38 @@ export function parseHSplitState(raw: string | null): HSplitState {
 
 
 export function parseVSplitState(raw: string | null): VSplitState {
-  if (!raw) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: true };
+  if (!raw) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: false };
   const p = asPersistObject(raw);
-  if (!p) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: true };
+  if (!p) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: false };
   return {
     bottom: finiteNonNeg(p.bottom, VSPLIT_DEFAULT_BOTTOM),
-    collapsed: p.collapsed !== false,
+    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
+  };
+}
+
+export function parseSplitLayoutState(raw: string | null): SplitLayoutState {
+  const defaults: SplitLayoutState = {
+    direction: "horizontal",
+    ratio: SPLIT_DEFAULT_RATIO,
+    bottom: VSPLIT_DEFAULT_BOTTOM,
+    right: SPLIT_DEFAULT_RIGHT,
+    collapsed: false,
+  };
+  if (!raw) return defaults;
+  const p = asPersistObject(raw);
+  if (!p) return defaults;
+  const direction: SplitDirection =
+    p.direction === "vertical" ? "vertical" : "horizontal";
+  const rawRatio = typeof p.ratio === "number" && Number.isFinite(p.ratio)
+    ? p.ratio
+    : SPLIT_DEFAULT_RATIO;
+  const ratio = Math.min(0.7, Math.max(0.2, rawRatio));
+  return {
+    direction,
+    ratio,
+    bottom: finiteNonNeg(p.bottom, VSPLIT_DEFAULT_BOTTOM),
+    right: finiteNonNeg(p.right, SPLIT_DEFAULT_RIGHT),
+    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
   };
 }
 
@@ -651,15 +689,23 @@ export type ResponseBodyKind = "json" | "xml" | "raw";
 export function detectResponseBodyKind(
   body: string,
   adapter?: string,
+  contentType?: string,
 ): ResponseBodyKind {
+  const ct = (contentType || "").toLowerCase();
+  if (ct.includes("xml") || ct.includes("html")) return "xml";
   if ((adapter || "") === "soap_xml") return "xml";
   const t = (body || "").trim();
   if (!t) return "raw";
-  try {
-    JSON.parse(t);
-    return "json";
-  } catch {
-    void 0;
+  const looksLikeJsonContainer =
+    (t.startsWith("{") && t.endsWith("}")) ||
+    (t.startsWith("[") && t.endsWith("]"));
+  if (ct.includes("json") || looksLikeJsonContainer) {
+    try {
+      JSON.parse(t);
+      return "json";
+    } catch {
+      void 0;
+    }
   }
   if (t.startsWith("<")) return "xml";
   return "raw";
@@ -681,9 +727,10 @@ export function genSessionCode() {
 
 const PERSISTED_DRAFT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 export function isPersistedDraftId(id?: string | null): boolean {
-  return Boolean(id && PERSISTED_DRAFT_ID.test(id));
+  return Boolean(id && id !== NIL_UUID && PERSISTED_DRAFT_ID.test(id));
 }
 
 export function methodTone(method?: string): string {
@@ -1444,6 +1491,7 @@ export type ChannelDraft = {
   channel_code: string;
   name: string;
   path_prefix: string;
+  cost_price?: string;
   qps_limit: number;
 };
 
@@ -1469,7 +1517,11 @@ export function autoChannelsFromEndpoints(
       channel_code: code,
       name,
       path_prefix: (ep.path_prefix || path || "/").trim() || "/",
-      qps_limit: 0,
+      ...(ep.cost_price ? { cost_price: ep.cost_price } : {}),
+      qps_limit:
+        typeof ep.qps_limit === "number" && Number.isFinite(ep.qps_limit)
+          ? ep.qps_limit
+          : 0,
     };
   });
 }

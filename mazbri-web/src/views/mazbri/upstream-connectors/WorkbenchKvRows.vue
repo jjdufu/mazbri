@@ -35,7 +35,7 @@
         <button
           type="button"
           class="wb-kv__icon"
-          :disabled="!canClear"
+          :disabled="!canClear || disabled"
           :title="clearTitle || $t('upstreamConnector.clearKv')"
           @click="clear"
         >
@@ -45,6 +45,7 @@
           type="button"
           class="wb-kv__icon"
           :class="{ 'is-on': bulkOpen }"
+          :disabled="disabled"
           :title="$t('upstreamConnector.kvBulk')"
           @click="toggleBulk"
         >
@@ -53,6 +54,7 @@
         <button
           type="button"
           class="wb-kv__icon"
+          :disabled="disabled"
           :title="addTitle || title"
           @click="add"
         >
@@ -64,6 +66,8 @@
       v-if="!folded && bulkOpen"
       v-model="bulkText"
       class="wb-kv__bulk"
+      :aria-label="$t('upstreamConnector.kvBulk')"
+      :disabled="disabled"
       :placeholder="$t('upstreamConnector.kvBulkHint')"
       @blur="applyBulk"
     />
@@ -77,6 +81,7 @@
       ghost-class="wb-kv__ghost"
       chosen-class="wb-kv__chosen"
       drag-class="wb-kv__drag"
+      :disabled="disabled"
       :custom-update="keepSortableDom"
       :on-move="onKvMove"
       @end="onSortEnd"
@@ -105,6 +110,8 @@
           :model-value="row.key"
           :options="COMMON_HEADERS"
           :placeholder="keyPh"
+          :aria-label="`${title} ${keyPh}`"
+          :disabled="disabled"
           :append-to="appendTo"
           @update:model-value="patchRow(idx, { key: $event })"
         />
@@ -113,6 +120,8 @@
           class="wb-kv__cell"
           :value="row.key"
           :placeholder="keyPh"
+          :aria-label="`${title} ${keyPh}`"
+          :disabled="disabled"
           spellcheck="false"
           autocomplete="off"
           @input="patchRow(idx, { key: ($event.target as HTMLInputElement).value })"
@@ -122,6 +131,8 @@
             :model-value="row.value"
             :env="env"
             :placeholder="valuePh"
+            :aria-label="`${title} ${valuePh}`"
+            :disabled="disabled"
             :secret="secretValues"
             @update:model-value="patchRow(idx, { value: $event })"
           />
@@ -129,6 +140,8 @@
             class="wb-kv__cell"
             :value="row.desc"
             :placeholder="descPh"
+            :aria-label="`${title} ${descPh}`"
+            :disabled="disabled"
             spellcheck="false"
             autocomplete="off"
             @input="patchRow(idx, { desc: ($event.target as HTMLInputElement).value })"
@@ -138,6 +151,7 @@
           type="button"
           class="wb-kv__enable"
           :class="{ 'is-off': row.enabled === false }"
+          :disabled="disabled"
           :title="
             row.enabled === false
               ? $t('upstreamConnector.kvEnable')
@@ -150,6 +164,7 @@
         <button
           type="button"
           class="wb-kv__del"
+          :disabled="disabled"
           :title="$t('common.actions.delete')"
           @click="remove(idx)"
         >
@@ -210,6 +225,7 @@ const props = withDefaults(
     secretValues?: boolean;
     emptyCompact?: boolean;
     foldable?: boolean;
+    disabled?: boolean;
     appendTo?: string | HTMLElement;
   }>(),
   {
@@ -224,6 +240,7 @@ const props = withDefaults(
     secretValues: false,
     emptyCompact: false,
     foldable: false,
+    disabled: false,
     appendTo: undefined,
   },
 );

@@ -21,13 +21,21 @@
       </div>
 
       <div v-show="activeTab === 'suppliers'" class="tab-panel">
-        <SupplierList ref="supplierListRef" @access="openMicroserviceAccess" />
+        <SupplierList
+          v-if="loadedTabs.suppliers"
+          ref="supplierListRef"
+          @access="openMicroserviceAccess"
+        />
       </div>
       <div v-show="activeTab === 'channels'" class="tab-panel">
-        <UpstreamChannelList :active-tab="activeTab" />
+        <UpstreamChannelList
+          v-if="loadedTabs.channels"
+          ref="channelListRef"
+          :active-tab="activeTab"
+        />
       </div>
       <div v-show="activeTab === 'drafts'" class="tab-panel">
-        <ConnectorDraftList />
+        <ConnectorDraftList v-if="loadedTabs.drafts" />
       </div>
     </div>
 
@@ -36,7 +44,8 @@
 </template>
 
 <script setup lang="ts">
-import { provide, ref } from "vue";
+import { computed, provide, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
@@ -49,10 +58,14 @@ defineOptions({ name: "UpstreamSupply" });
 
 type UpstreamSupplyTab = "suppliers" | "channels" | "drafts";
 
+const { locale } = useI18n();
 const headerActionsEl = ref<HTMLElement | null>(null);
 provide("resourceTabHeaderActionsEl", headerActionsEl);
 
 const supplierListRef = ref<InstanceType<typeof SupplierList> | null>(null);
+const channelListRef = ref<InstanceType<typeof UpstreamChannelList> | null>(
+  null,
+);
 const accessVisible = ref(false);
 
 const { activeTab, handleTabChange } = useTabRouteSync<UpstreamSupplyTab>({
@@ -60,18 +73,39 @@ const { activeTab, handleTabChange } = useTabRouteSync<UpstreamSupplyTab>({
   allowedValues: ["suppliers", "channels", "drafts"],
 });
 
-const tabOptions = [
-  { label: $t("menus.mazbri.supplierList"), value: "suppliers" },
-  { label: $t("menus.mazbri.upstreamChannelList"), value: "channels" },
-  { label: $t("upstreamConnector.draftsTitle"), value: "drafts" },
-];
+const loadedTabs = reactive<Record<UpstreamSupplyTab, boolean>>({
+  suppliers: false,
+  channels: false,
+  drafts: false,
+});
+
+watch(
+  activeTab,
+  (tab) => {
+    loadedTabs[tab] = true;
+  },
+  { immediate: true },
+);
+
+const tabOptions = computed(() => {
+  void locale.value;
+  return [
+    { label: $t("menus.mazbri.supplierList"), value: "suppliers" },
+    { label: $t("menus.mazbri.upstreamChannelList"), value: "channels" },
+    { label: $t("upstreamConnector.draftsTitle"), value: "drafts" },
+  ];
+});
 
 function openMicroserviceAccess() {
   accessVisible.value = true;
 }
 
 function onAccessSuccess() {
-  void (supplierListRef.value as { loadData?: () => void } | null)?.loadData?.();
+  void supplierListRef.value?.loadData();
+  if (loadedTabs.channels) {
+    void channelListRef.value?.loadData();
+    void channelListRef.value?.checkHasActiveSupplier();
+  }
 }
 </script>
 

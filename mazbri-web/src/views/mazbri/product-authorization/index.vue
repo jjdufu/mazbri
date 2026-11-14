@@ -1,9 +1,12 @@
 <template>
   <ControlPanelPageShell
-    :title="$t('menus.mazbri.productAuthorization')"
+    :title="t('menus.mazbri.productAuthorization')"
     icon="ri:shield-user-line"
   >
-    <div class="product-authorization-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+    <div
+      class="product-authorization-page"
+      style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+    >
       <div class="page-header-tabs-bar">
         <ElTabs
           :model-value="activeTab"
@@ -20,10 +23,18 @@
         <div ref="headerActionsEl" class="page-header-tabs-actions" />
       </div>
 
-      <div v-show="activeTab === 'products'" class="tab-panel">
+      <div
+        v-if="isTabLoaded('products')"
+        v-show="activeTab === 'products'"
+        class="tab-panel"
+      >
         <ProductList />
       </div>
-      <div v-show="activeTab === 'authorizations'" class="tab-panel">
+      <div
+        v-if="isTabLoaded('authorizations')"
+        v-show="activeTab === 'authorizations'"
+        class="tab-panel"
+      >
         <AuthorizationList />
       </div>
     </div>
@@ -31,8 +42,8 @@
 </template>
 
 <script setup lang="ts">
-import { provide, ref } from "vue";
-import { $t } from "@/locales";
+import { computed, provide, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import AuthorizationList from "@/views/mazbri/operations/authorizations/index.vue";
@@ -42,13 +53,14 @@ defineOptions({ name: "ProductGovernance" });
 
 type ProductAuthorizationTab = "products" | "authorizations";
 
+const { t } = useI18n();
 const headerActionsEl = ref<HTMLElement | null>(null);
 provide("resourceTabHeaderActionsEl", headerActionsEl);
 
-const tabOptions = [
-  { label: $t("menus.mazbri.productList"), value: "products" },
-  { label: $t("menus.mazbri.authorizationList"), value: "authorizations" },
-];
+const tabOptions = computed(() => [
+  { label: t("menus.mazbri.productList"), value: "products" },
+  { label: t("menus.mazbri.authorizationList"), value: "authorizations" },
+]);
 
 const { activeTab, handleTabChange } = useTabRouteSync<ProductAuthorizationTab>(
   {
@@ -56,6 +68,16 @@ const { activeTab, handleTabChange } = useTabRouteSync<ProductAuthorizationTab>(
     allowedValues: ["products", "authorizations"],
   },
 );
+
+const loadedTabs = ref<Set<ProductAuthorizationTab>>(new Set([activeTab.value]));
+watch(
+  activeTab,
+  (tab) => {
+    loadedTabs.value.add(tab);
+  },
+  { immediate: true },
+);
+const isTabLoaded = (tab: ProductAuthorizationTab) => loadedTabs.value.has(tab);
 </script>
 
 <style scoped lang="scss">

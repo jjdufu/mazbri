@@ -4,14 +4,14 @@ use chrono::{DateTime, Utc};
 use prometheus::{GaugeVec, IntGaugeVec, Opts};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::time::{Duration, interval};
 pub trait DbPoolInfo: Send + Sync {
     fn pool_size(&self) -> u32;
     fn num_idle(&self) -> u32;
     fn is_healthy(&self) -> bool;
 }
+pub type LateDbPool = Arc<OnceLock<Arc<dyn DbPoolInfo>>>;
 pub trait CertExpiryInfoProvider: Send + Sync {
     fn cert_expiry(&self) -> Option<DateTime<Utc>>;
     fn is_cert_valid(&self) -> bool;
@@ -80,9 +80,25 @@ pub fn register_health_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(RPC_READY.clone()))?;
     Ok(())
 }
+/// 立即写入 `mazbri_db_pool_active_connections` 与 `mazbri_db_pool_idle_connections`。
+///
+/// 注意：`DbPoolInfo::pool_size()` 返回总连接数（活跃 + 空闲），
+/// 因此真实活跃连接数必须按 `pool_size().saturating_sub(num_idle())` 计算。
+pub fn record_db_pool_metrics(service: &str, pool: &dyn DbPoolInfo) {
+    let idle = pool.num_idle();
+    let active = pool.pool_size().saturating_sub(idle);
+    DB_POOL_ACTIVE_CONNECTIONS
+        .with_label_values(&[service])
+        .set(i64::from(active));
+    DB_POOL_IDLE_CONNECTIONS
+        .with_label_values(&[service])
+        .set(i64::from(idle));
+}
+
 pub struct HealthMetricsUpdater {
     service_name: String,
     db_pool: Option<Arc<dyn DbPoolInfo>>,
+    late_db_pool: Option<LateDbPool>,
     cert_handle: Option<Arc<dyn CertExpiryInfoProvider>>,
     config_center_connected: Option<BoxedConfigCenterCheck>,
     /// 若提供则作为就绪判定（应与 `/ready` 相同）；否则用依赖健康（db∧cert）作为就绪。
@@ -98,10 +114,16 @@ impl HealthMetricsUpdater {
         Self {
             service_name: service_name.into(),
             db_pool,
+            late_db_pool: None,
             cert_handle,
             config_center_connected,
             ready_check: None,
         }
+    }
+    #[must_use]
+    pub fn with_late_db_pool(mut self, slot: LateDbPool) -> Self {
+        self.late_db_pool = Some(slot);
+        self
     }
     #[must_use]
     pub fn with_ready_check(mut self, check: impl Fn() -> bool + Send + Sync + 'static) -> Self {
@@ -110,15 +132,12 @@ impl HealthMetricsUpdater {
     }
     pub async fn update(&self) {
         let name: &str = &self.service_name;
-        let db_healthy = if let Some(ref pool) = self.db_pool {
-            let active = pool.pool_size();
-            let idle = pool.num_idle();
-            DB_POOL_ACTIVE_CONNECTIONS
-                .with_label_values(&[name])
-                .set(i64::from(active));
-            DB_POOL_IDLE_CONNECTIONS
-                .with_label_values(&[name])
-                .set(i64::from(idle));
+        let effective_pool = self
+            .db_pool
+            .as_ref()
+            .or_else(|| self.late_db_pool.as_ref().and_then(|slot| slot.get()));
+        let db_healthy = if let Some(pool) = effective_pool {
+            record_db_pool_metrics(name, pool.as_ref());
             pool.is_healthy()
         } else {
             // 未接入数据库的服务不以连接池判定健康，与未配置证书一致。
@@ -236,7 +255,78 @@ mod tests {
         assert_eq!(run("health-test-pool-ok", Some(ok), None).await, (1, 0));
         assert_eq!(run("health-test-pool-bad", Some(bad), None).await, (0, 1));
         let active = DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&["health-test-pool-ok"]);
-        assert_eq!(active.get(), 4);
+        let idle = DB_POOL_IDLE_CONNECTIONS.with_label_values(&["health-test-pool-ok"]);
+        assert_eq!(active.get(), 2);
+        assert_eq!(idle.get(), 2);
+    }
+
+    struct IdlePool;
+    impl DbPoolInfo for IdlePool {
+        fn pool_size(&self) -> u32 {
+            5
+        }
+        fn num_idle(&self) -> u32 {
+            5
+        }
+        fn is_healthy(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn idle_pool_reports_zero_active_connections() {
+        let pool: Arc<dyn DbPoolInfo> = Arc::new(IdlePool);
+        assert_eq!(run("health-test-idle-pool", Some(pool), None).await, (1, 0));
+        assert_eq!(
+            DB_POOL_ACTIVE_CONNECTIONS
+                .with_label_values(&["health-test-idle-pool"])
+                .get(),
+            0
+        );
+        assert_eq!(
+            DB_POOL_IDLE_CONNECTIONS
+                .with_label_values(&["health-test-idle-pool"])
+                .get(),
+            5
+        );
+    }
+
+    #[tokio::test]
+    async fn late_db_pool_updates_metrics_and_health_after_set() {
+        let slot: LateDbPool = Arc::new(OnceLock::new());
+        let updater = HealthMetricsUpdater::new("health-test-late-pool", None, None, None)
+            .with_late_db_pool(Arc::clone(&slot));
+
+        updater.update().await;
+        assert_eq!(health("health-test-late-pool"), (1, 0));
+        assert_eq!(
+            DB_POOL_ACTIVE_CONNECTIONS
+                .with_label_values(&["health-test-late-pool"])
+                .get(),
+            0
+        );
+        assert_eq!(
+            DB_POOL_IDLE_CONNECTIONS
+                .with_label_values(&["health-test-late-pool"])
+                .get(),
+            0
+        );
+
+        let _ = slot.set(Arc::new(FixedPool(false)));
+        updater.update().await;
+        assert_eq!(health("health-test-late-pool"), (0, 1));
+        assert_eq!(
+            DB_POOL_ACTIVE_CONNECTIONS
+                .with_label_values(&["health-test-late-pool"])
+                .get(),
+            2
+        );
+        assert_eq!(
+            DB_POOL_IDLE_CONNECTIONS
+                .with_label_values(&["health-test-late-pool"])
+                .get(),
+            2
+        );
     }
 
     #[tokio::test]

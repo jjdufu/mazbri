@@ -1,34 +1,17 @@
-//! 计费链路对账与明细（6.1）、供应商成本（3.1）的有界只读查询。
+//! 计费链路对账与明细（6.1）的有界只读查询。
 //! 积压、年龄、失败与入账延迟趋势由 billing 自身指标提供，不在此计算。
 //!
 //! 漏斗契约（step07）：每段 `{ key, name, count, ratio_from_prev?, failed }`，
 //! 顶层带 `mode`（`sync_pass_through` | `async_funnel`）与 `window`；
 //! 禁止无 `mode` 的误导 100% 平线「漏斗转化」。
 
+pub use crate::handlers::types::{FailureQueueKind, OpsRange};
 use crate::repositories::billing_ops as repo;
 use crate::services::billing::BillingError;
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::PgPool;
 use tracing::error;
-
-/// 查询时间窗（相对当前时刻），与 OLAP 模板的 `range` 取值一致。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-pub enum OpsRange {
-    #[serde(rename = "15m")]
-    M15,
-    #[default]
-    #[serde(rename = "1h")]
-    H1,
-    #[serde(rename = "6h")]
-    H6,
-    #[serde(rename = "24h")]
-    H24,
-    #[serde(rename = "7d")]
-    D7,
-    #[serde(rename = "30d")]
-    D30,
-}
 
 impl OpsRange {
     #[must_use]
@@ -97,10 +80,21 @@ pub struct BillingFunnelPg {
     pub charge_failures: i64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct BillingFailuresParams {
+    pub range: OpsRange,
+    pub limit: u32,
+    pub failed_offset: u32,
+    pub dlq_offset: u32,
+    pub queue: Option<FailureQueueKind>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BillingFailures {
     pub limit: i64,
     pub offset: i64,
+    pub failed_offset: i64,
+    pub dlq_offset: i64,
     /// 时间窗内失败记录总数（分页用）。
     pub failures_total: i64,
     /// 时间窗内死信总数（分页用）。
@@ -245,57 +239,102 @@ pub async fn billing_funnel_pg(
 /// 数据库查询失败时返回 [`BillingError::Database`]。
 pub async fn billing_failures(
     pool: &PgPool,
-    range: OpsRange,
-    limit: u32,
-    offset: u32,
+    params: BillingFailuresParams,
 ) -> Result<BillingFailures, BillingError> {
-    let since = range.since(Utc::now());
-    let page = repo::Page {
-        limit: i64::from(limit.clamp(1, 200)),
-        offset: i64::from(offset),
+    let since = params.range.since(Utc::now());
+    let limit = i64::from(params.limit.clamp(1, 200));
+    let failed_page = repo::Page {
+        limit,
+        offset: i64::from(params.failed_offset),
     };
-    let (failures_total, dead_letters_total, failures, dead_letters) = tokio::try_join!(
-        async {
-            repo::charge_failure_count(pool, since)
-                .await
-                .map_err(db_err("charge_failures"))
-        },
-        async {
-            repo::dead_letter_count(pool, since)
-                .await
-                .map_err(db_err("dead_letters"))
-        },
-        async {
-            repo::recent_charge_failures(pool, since, page)
-                .await
-                .map_err(db_err("charge_failures"))
-        },
-        async {
-            repo::recent_dead_letters(pool, since, page)
-                .await
-                .map_err(db_err("dead_letters"))
-        },
-    )?;
-    Ok(BillingFailures {
-        limit: page.limit,
-        offset: page.offset,
-        failures_total,
-        dead_letters_total,
-        failures,
-        dead_letters,
-    })
-}
-
-/// # Errors
-///
-/// 数据库查询失败时返回 [`BillingError::Database`]。
-pub async fn supplier_costs(
-    pool: &PgPool,
-    range: OpsRange,
-) -> Result<Vec<repo::SupplierCostRow>, BillingError> {
-    repo::supplier_costs(pool, range.since(Utc::now()))
-        .await
-        .map_err(db_err("upstream_hourly_settlements"))
+    let dlq_page = repo::Page {
+        limit,
+        offset: i64::from(params.dlq_offset),
+    };
+    match params.queue {
+        Some(FailureQueueKind::Failures) => {
+            let (failures_total, failures) = tokio::try_join!(
+                async {
+                    repo::charge_failure_count(pool, since)
+                        .await
+                        .map_err(db_err("charge_failures"))
+                },
+                async {
+                    repo::recent_charge_failures(pool, since, failed_page)
+                        .await
+                        .map_err(db_err("charge_failures"))
+                },
+            )?;
+            Ok(BillingFailures {
+                limit,
+                offset: failed_page.offset,
+                failed_offset: failed_page.offset,
+                dlq_offset: dlq_page.offset,
+                failures_total,
+                dead_letters_total: 0,
+                failures,
+                dead_letters: Vec::new(),
+            })
+        }
+        Some(FailureQueueKind::DeadLetters) => {
+            let (dead_letters_total, dead_letters) = tokio::try_join!(
+                async {
+                    repo::dead_letter_count(pool, since)
+                        .await
+                        .map_err(db_err("dead_letters"))
+                },
+                async {
+                    repo::recent_dead_letters(pool, since, dlq_page)
+                        .await
+                        .map_err(db_err("dead_letters"))
+                },
+            )?;
+            Ok(BillingFailures {
+                limit,
+                offset: dlq_page.offset,
+                failed_offset: failed_page.offset,
+                dlq_offset: dlq_page.offset,
+                failures_total: 0,
+                dead_letters_total,
+                failures: Vec::new(),
+                dead_letters,
+            })
+        }
+        None => {
+            let (failures_total, dead_letters_total, failures, dead_letters) = tokio::try_join!(
+                async {
+                    repo::charge_failure_count(pool, since)
+                        .await
+                        .map_err(db_err("charge_failures"))
+                },
+                async {
+                    repo::dead_letter_count(pool, since)
+                        .await
+                        .map_err(db_err("dead_letters"))
+                },
+                async {
+                    repo::recent_charge_failures(pool, since, failed_page)
+                        .await
+                        .map_err(db_err("charge_failures"))
+                },
+                async {
+                    repo::recent_dead_letters(pool, since, dlq_page)
+                        .await
+                        .map_err(db_err("dead_letters"))
+                },
+            )?;
+            Ok(BillingFailures {
+                limit,
+                offset: failed_page.offset,
+                failed_offset: failed_page.offset,
+                dlq_offset: dlq_page.offset,
+                failures_total,
+                dead_letters_total,
+                failures,
+                dead_letters,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -364,5 +403,18 @@ mod tests {
         ];
         assert_eq!(failed_statuses(&rows), 3);
         assert_eq!(total(&rows), 13);
+    }
+
+    #[test]
+    fn failure_queue_kind_parses_snake_case() {
+        assert_eq!(
+            serde_json::from_str::<FailureQueueKind>("\"failures\"").ok(),
+            Some(FailureQueueKind::Failures)
+        );
+        assert_eq!(
+            serde_json::from_str::<FailureQueueKind>("\"dead_letters\"").ok(),
+            Some(FailureQueueKind::DeadLetters)
+        );
+        assert!(serde_json::from_str::<FailureQueueKind>("\"unknown\"").is_err());
     }
 }

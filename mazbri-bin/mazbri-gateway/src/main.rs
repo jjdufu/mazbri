@@ -65,7 +65,8 @@ async fn main() -> Result<()> {
     );
     let config = GatewayConfig::load_from_config_center(&bootstrap).await?;
     config.validate()?;
-    let admin_state = start_simple_admin_server(&service_name, &config.admin)?;
+    let admin_handle = start_simple_admin_server(&service_name, &config.admin)?;
+    let admin_state = admin_handle.as_ref().map(|h| h.state().clone());
     let _log_guard = init_tracing_with_routes(&bootstrap.tracing, &service_name, &log_routes)?;
     info!("Mazbri API Gateway starting...");
     info!("Configuration loaded from config center");
@@ -90,6 +91,9 @@ async fn main() -> Result<()> {
     let tls_ca_cert = cert.ca_cert_pem.clone();
     info!("mTLS initialized successfully");
     let db = create_pool(&config.database, None).await?;
+    if let Some(ref handle) = admin_handle {
+        handle.set_db_pool(Arc::clone(&db));
+    }
     info!("Connected to database");
     let jwt_manager = JwtKeyManager::new(Arc::clone(&db), "mazbri-gateway-v1");
     let jwt_secret = jwt_manager

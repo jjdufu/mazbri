@@ -5,5 +5,4 @@ export { useTableColumns } from "./core/useTableColumns";
 export { useTheme } from "./core/useTheme";
 export { useCeremony } from "./core/useCeremony";
 export { useHeaderBar } from "./core/useHeaderBar";
-export { useChart, useChartComponent, useChartOps } from "./core/useChart";
 export { useLayoutHeight, useAutoLayoutHeight } from "./core/useLayoutHeight";

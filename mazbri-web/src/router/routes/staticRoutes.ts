@@ -1,15 +1,11 @@
 import { AppRouteRecordRaw } from "@/utils/router";
+
 export const staticRoutes: AppRouteRecordRaw[] = [
   {
     path: "/auth/login",
     name: "Login",
     component: () => import("@views/auth/login/index.vue"),
     meta: { title: "menus.login.title", isHideTab: true },
-  },
-  // Short aliases that are not real pages; keep their query (e.g. tr_start/tr_end).
-  {
-    path: "/login",
-    redirect: (to) => ({ path: "/auth/login", query: to.query }),
   },
   {
     path: "/403",
@@ -28,19 +24,5 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     name: "Exception500",
     component: () => import("@views/exception/500/index.vue"),
     meta: { title: "500", isHideTab: true },
-  },
-  {
-    path: "/outside",
-    component: () => import("@views/index/index.vue"),
-    name: "Outside",
-    meta: { title: "menus.outside.title" },
-    children: [
-      {
-        path: "/outside/iframe/:path",
-        name: "Iframe",
-        component: () => import("@/views/outside/Iframe.vue"),
-        meta: { title: "iframe" },
-      },
-    ],
   },
 ];

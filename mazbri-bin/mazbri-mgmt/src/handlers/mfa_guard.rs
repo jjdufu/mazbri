@@ -13,8 +13,8 @@ use axum::{
 };
 use chrono::Utc;
 
-/// 未启用 MFA 时前端引导用户前往的自助绑定页面。
-pub const MFA_SETUP_PATH: &str = "/account/security";
+/// 未启用 MFA 时前端引导用户前往的自助绑定入口。
+pub const MFA_SETUP_PATH: &str = "/?setupMfa=1";
 
 /// 只证明当前会话的这一类窗口有效，不消费窗口。
 #[derive(Debug, Clone, Copy)]
@@ -127,7 +127,7 @@ fn unavailable() -> Response {
 }
 
 fn not_enabled() -> Response {
-    let message = "此操作需要 MFA 二次验证，请先在「账号安全」页面绑定并启用 MFA";
+    let message = "此操作需要 MFA 二次验证，请先在「个人账号与安全」中绑定并启用 MFA";
     json_error(
         StatusCode::FORBIDDEN,
         "MFA_NOT_ENABLED",
@@ -477,7 +477,6 @@ mod tests {
                 (crud, "create_admin"),
                 (crud, "delete_admin"),
                 (crud, "update_admin"),
-                (password, "force_password_reset"),
                 (password, "reset_admin_password"),
                 (status, "set_admin_status"),
                 (admin_mfa, "reset_admin_mfa"),
@@ -496,6 +495,20 @@ mod tests {
             .expect("password precheck");
         let reset_mfa = reset_password.find("require_category(").expect("reset mfa");
         assert!(precheck < reset_mfa);
+        for (src_file, fn_name, precheck_name) in [
+            (crud, "create_admin", "precheck_create_admin"),
+            (crud, "delete_admin", "precheck_delete_admin"),
+            (status, "set_admin_status", "precheck_set_status"),
+            (admin_mfa, "reset_admin_mfa", "precheck_mfa_reset"),
+        ] {
+            let src = handler_source(src_file, fn_name);
+            let pre_pos = src.find(precheck_name).expect("admin precheck");
+            let mfa_pos = src.find("require_category(").expect("admin mfa");
+            assert!(
+                pre_pos < mfa_pos,
+                "{fn_name} must run {precheck_name} before MFA step-up"
+            );
+        }
     }
 
     #[test]
@@ -514,13 +527,13 @@ mod tests {
             .find("require_category(")
             .expect("disable category");
         assert!(disable_role < disable_mfa);
-        let backup_role = backup_codes
-            .find("仅超级管理员可重新生成备用码")
-            .expect("backup role");
+        let backup_precheck = backup_codes
+            .find("is_mfa_enabled")
+            .expect("backup precheck");
         let backup_mfa = backup_codes
             .find("require_category(")
             .expect("backup category");
-        assert!(backup_role < backup_mfa);
+        assert!(backup_precheck < backup_mfa);
         let settings_update = handler_source(mfa_settings, "update_mfa_settings");
         assert!(
             settings_update.contains("require_category(")
@@ -544,6 +557,7 @@ mod tests {
                 (api_keys, "create_api_key"),
                 (api_keys, "revoke_api_key"),
                 (api_keys, "update_api_key"),
+                (api_keys, "rotate_api_key"),
                 (crypto, "update_crypto_profile"),
                 (crypto, "create_crypto_key"),
                 (crypto, "rotate_crypto_key"),
@@ -556,6 +570,18 @@ mod tests {
             ],
             "Category::Key",
         );
+        for handler_name in ["revoke_api_key", "update_api_key", "rotate_api_key"] {
+            let src = handler_source(api_keys, handler_name);
+            let role_pos = src.find("can_manage_tenants(").expect("role guard");
+            let precheck_pos = src
+                .find("precheck_tenant_api_key(")
+                .expect("tenant ownership precheck");
+            let mfa_pos = src.find("require_category(").expect("mfa guard");
+            assert!(
+                role_pos < precheck_pos && precheck_pos < mfa_pos,
+                "{handler_name} must check role and tenant ownership before MFA step-up"
+            );
+        }
         let export = handler_source(crypto, "export_crypto_data");
         assert!(export.contains("is_migration_export") && export.contains("Category::Key"));
     }
@@ -591,22 +617,21 @@ mod tests {
         let cc_history = include_str!("config_center/history.rs");
         let cc_import = include_str!("config_center/import_export.rs");
         let settings = include_str!("admin/settings.rs");
-        let appearance = include_str!("appearance_handlers.rs");
         let password_policy = include_str!("password_policy_handlers.rs");
         let tenants = include_str!("tenant_handlers.rs");
         let ratelimit = include_str!("ratelimit_command_handlers.rs");
         let upstream = include_str!("upstream_connector_handlers.rs");
         assert_category(
             &[
+                (cc_config, "get_config"),
                 (cc_config, "create_config"),
                 (cc_config, "update_config"),
                 (cc_config, "delete_config"),
+                (cc_history, "get_history"),
                 (cc_history, "rollback"),
                 (cc_import, "import_configs"),
                 (cc_import, "export_configs"),
                 (settings, "update_system_settings"),
-                (appearance, "update_appearance_settings"),
-                (appearance, "reset_appearance_settings"),
                 (password_policy, "update_password_policy"),
                 (upstream, "rollback"),
                 (ratelimit, "create_control_command"),
@@ -614,6 +639,25 @@ mod tests {
             ],
             "Category::Platform",
         );
+        assert!(!handler_source(cc_config, "list_configs").contains("require_category("));
+        for (src_file, fn_name, precheck_name) in [
+            (cc_config, "get_config", "precheck_config_exists"),
+            (cc_config, "create_config", "precheck_create_config"),
+            (cc_config, "update_config", "precheck_update_config"),
+            (cc_config, "delete_config", "precheck_delete_config"),
+            (cc_history, "get_history", "precheck_config_exists"),
+            (cc_history, "rollback", "precheck_rollback"),
+            (cc_import, "import_configs", "precheck_import_configs"),
+        ] {
+            let src = handler_source(src_file, fn_name);
+            let role_pos = src.find("require_config_admin").expect("config admin");
+            let pre_pos = src.find(precheck_name).expect("config precheck");
+            let mfa_pos = src.find("require_category(").expect("config mfa");
+            assert!(
+                role_pos < pre_pos && pre_pos < mfa_pos,
+                "{fn_name} must check admin role and {precheck_name} before MFA step-up"
+            );
+        }
         let publish = handler_source(upstream, "publish_draft");
         assert!(publish.contains("force_publish") && publish.contains("Category::Platform"));
         let export_configs = handler_source(cc_import, "export_configs");

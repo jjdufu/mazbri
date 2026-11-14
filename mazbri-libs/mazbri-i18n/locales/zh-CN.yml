@@ -133,15 +133,6 @@ zh-CN:
       totp_period: "TOTP 周期必须在 15-60 秒之间"
       backup_codes_count: "备用码数量必须在 5-20 之间"
       failed_update: "更新 MFA 设置失败"
-    appearance:
-      failed_get: "获取外观设置失败"
-      only_admin_modify: "仅管理员可修改外观设置"
-      invalid_color: "无效的主题颜色格式（必须是 #RRGGBB）"
-      invalid_container: "无效的容器宽度"
-      menu_width_range: "菜单宽度必须在 180-320 之间"
-      failed_update: "更新外观设置失败"
-      only_admin_reset: "仅管理员可重置外观设置"
-      failed_reset: "重置外观设置失败"
   error:
     tls_required: "需要 TLS 配置"
     config_required: "配置项是必需的"

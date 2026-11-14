@@ -262,13 +262,32 @@ async fn init_auth(
         });
     let jwt_keyring = crate::auth::JwtHs256Keyring::new(config.auth.jwt_kid.clone(), jwt_secret)
         .with_extra_keys(extra_jwt_keys);
-    let auth_service = Arc::new(RwLock::new(AuthService::new(
+    let service = AuthService::new(
         jwt_keyring.clone(),
         config.auth.token_expiration_secs,
         tarpc_pool,
         config.services.auth.clone(),
         db.clone(),
-    )));
+    );
+    if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
+        db,
+        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+    )
+    .await
+    {
+        tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
+    }
+    service.spawn_api_key_cache_watch(
+        db.clone(),
+        config.database.clone(),
+        config.config_watch.clone(),
+    );
+    tracing::info!(
+        interval_secs = config.config_watch.interval_secs,
+        listen_notify = config.config_watch.listen_notify,
+        "API key token cache config watch started"
+    );
+    let auth_service = Arc::new(RwLock::new(service));
     let auth_state = AuthState::new(jwt_keyring);
     (auth_state, auth_service)
 }

@@ -5,6 +5,7 @@
         <ElSwitch
           :model-value="enabled"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoEnable')"
           @update:model-value="onEnabledChange"
         />
         <span class="switch-text ml-2">{{
@@ -22,7 +23,7 @@
             <button
               type="button"
               class="cpe-info-trigger"
-              aria-label="说明"
+              :aria-label="$t('upstreamConnector.cryptoAuthBoundaryHint')"
             >
               <ArtSvgIcon icon="ri:information-line" />
             </button>
@@ -51,6 +52,7 @@
         <ElSelect
           :model-value="local.order"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoOrder')"
           filterable
           @update:model-value="onOrderChange"
         >
@@ -71,6 +73,7 @@
         <ElSelect
           :model-value="local.sign?.alg"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoSignAlg')"
           filterable
           clearable
           :placeholder="$t('upstreamConnector.cryptoSelectAlg')"
@@ -83,6 +86,15 @@
             :value="alg.id"
           />
         </ElSelect>
+        <div class="cpe-bound-slot" :class="{ unbound: !boundSignSlot }">
+          {{
+            boundSignSlot
+              ? $t("upstreamConnector.cryptoBoundKeySlot", { slot: boundSignSlot })
+              : $t("upstreamConnector.cryptoUnboundKeySlot", {
+                  slot: local.sign?.key_slot || "crypto_mac_key",
+                })
+          }}
+        </div>
       </div>
 
       <div v-if="needsCrypt" class="field-block">
@@ -93,6 +105,7 @@
         <ElSelect
           :model-value="local.crypt?.alg"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoCryptAlg')"
           filterable
           clearable
           :placeholder="$t('upstreamConnector.cryptoSelectAlg')"
@@ -105,6 +118,15 @@
             :value="alg.id"
           />
         </ElSelect>
+        <div class="cpe-bound-slot" :class="{ unbound: !boundCryptSlot }">
+          {{
+            boundCryptSlot
+              ? $t("upstreamConnector.cryptoBoundKeySlot", { slot: boundCryptSlot })
+              : $t("upstreamConnector.cryptoUnboundKeySlot", {
+                  slot: local.crypt?.key_slot || "crypto_data_key",
+                })
+          }}
+        </div>
       </div>
 
       <div class="field-block">
@@ -112,6 +134,7 @@
         <ElSelect
           :model-value="local.canon"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoCanon')"
           @update:model-value="patch({ canon: $event })"
         >
           <ElOption
@@ -129,6 +152,7 @@
           <ElSelect
             :model-value="wireEncodingToKind(local.encodings.payload)"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoEncPayload')"
             @update:model-value="onEncodingChange('payload', $event)"
           >
             <ElOption
@@ -144,6 +168,7 @@
           <ElSelect
             :model-value="wireEncodingToKind(local.encodings.signature)"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoEncSignature')"
             @update:model-value="onEncodingChange('signature', $event)"
           >
             <ElOption
@@ -159,6 +184,7 @@
           <ElSelect
             :model-value="wireEncodingToKind(local.encodings.iv)"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoEncIv')"
             @update:model-value="onEncodingChange('iv', $event)"
           >
             <ElOption
@@ -177,6 +203,7 @@
           <ElSelect
             :model-value="local.iv"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoIvSource')"
             @update:model-value="patch({ iv: $event })"
           >
             <ElOption
@@ -192,6 +219,7 @@
           <ElSelect
             :model-value="local.scope"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoScope')"
             @update:model-value="onScopeChange"
           >
             <ElOption
@@ -209,6 +237,7 @@
         <ElInput
           :model-value="(local.crypt?.fields || []).join(', ')"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.cryptoCryptFields')"
           :placeholder="$t('upstreamConnector.cryptoFieldsPlaceholder')"
           @update:model-value="onCryptFieldsChange"
         />
@@ -232,12 +261,14 @@
           <ElInput
             :model-value="slot.role"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoSlotRole')"
             :placeholder="$t('upstreamConnector.cryptoSlotRole')"
             @update:model-value="updateSlot(idx, { role: String($event) })"
           />
           <ElSelect
             :model-value="slot.location"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoSlots')"
             @update:model-value="updateSlot(idx, { location: $event })"
           >
             <ElOption
@@ -250,6 +281,7 @@
           <ElInput
             :model-value="slot.name"
             :disabled="disabled"
+            :aria-label="$t('upstreamConnector.cryptoSlotName')"
             :placeholder="$t('upstreamConnector.cryptoSlotName')"
             @update:model-value="updateSlot(idx, { name: String($event) })"
           />
@@ -275,6 +307,7 @@
             <ElSelect
               :model-value="local.response_crypt?.alg"
               :disabled="disabled"
+              :aria-label="$t('upstreamConnector.cryptoResponseCrypt')"
               clearable
               filterable
               :placeholder="$t('upstreamConnector.cryptoSelectAlgOptional')"
@@ -296,6 +329,7 @@
             <ElInput
               :model-value="(local.response_crypt?.fields || []).join(', ')"
               :disabled="disabled"
+              :aria-label="$t('upstreamConnector.cryptoResponseFields')"
               :placeholder="$t('upstreamConnector.cryptoFieldsPlaceholder')"
               @update:model-value="onResponseFieldsChange"
             />
@@ -308,6 +342,7 @@
           <ElSwitch
             :model-value="local.allow_insecure"
             :disabled="disabled || !canToggleInsecure"
+            :aria-label="$t('upstreamConnector.cryptoAllowInsecure')"
             @update:model-value="onAllowInsecureChange"
           />
           <span class="switch-text ml-2">{{
@@ -380,10 +415,12 @@ const props = withDefaults(
     modelValue: Record<string, unknown> | null | undefined;
     disabled?: boolean;
     canToggleInsecure?: boolean;
+    credentialKeys?: string[];
   }>(),
   {
     disabled: false,
     canToggleInsecure: false,
+    credentialKeys: () => [],
   },
 );
 
@@ -430,6 +467,28 @@ const cryptOptions = computed(() =>
 );
 
 const issues = computed(() => validateCryptoProfileClient(local.value));
+
+const credKeySet = computed(
+  () => new Set((props.credentialKeys || []).map((k) => k.trim()).filter(Boolean)),
+);
+
+const boundSignSlot = computed(() => {
+  const explicit = local.value?.sign?.key_slot?.trim();
+  if (explicit && credKeySet.value.has(explicit)) return explicit;
+  for (const candidate of ["crypto_mac_key", "mac_key", "client_secret", "app_secret", "secret"]) {
+    if (credKeySet.value.has(candidate)) return candidate;
+  }
+  return "";
+});
+
+const boundCryptSlot = computed(() => {
+  const explicit = local.value?.crypt?.key_slot?.trim();
+  if (explicit && credKeySet.value.has(explicit)) return explicit;
+  for (const candidate of ["crypto_data_key", "data_key"]) {
+    if (credKeySet.value.has(candidate)) return candidate;
+  }
+  return "";
+});
 
 function emitSerialized(profile: UpstreamCryptoProfileDraft | null) {
   emit("update:modelValue", serializeCryptoProfile(profile));
@@ -744,5 +803,13 @@ function algOptionLabel(alg: CryptoAlgorithmMeta): string {
 
 .switch-text {
   font-size: 13px;
+}
+
+.cpe-bound-slot {
+  font-size: 12px;
+  color: var(--el-color-success);
+  &.unbound {
+    color: var(--el-text-color-secondary);
+  }
 }
 </style>

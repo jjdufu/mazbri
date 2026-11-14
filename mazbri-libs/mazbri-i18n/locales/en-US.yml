@@ -133,15 +133,6 @@ en-US:
       totp_period: "TOTP period must be between 15-60 seconds"
       backup_codes_count: "Backup codes count must be between 5-20"
       failed_update: "Failed to update MFA settings"
-    appearance:
-      failed_get: "Failed to get appearance settings"
-      only_admin_modify: "Only administrator can modify appearance settings"
-      invalid_color: "Invalid theme color format (must be #RRGGBB)"
-      invalid_container: "Invalid container width"
-      menu_width_range: "Menu width must be between 180-320"
-      failed_update: "Failed to update appearance settings"
-      only_admin_reset: "Only administrator can reset appearance settings"
-      failed_reset: "Failed to reset appearance settings"
   error:
     tls_required: "TLS configuration is required"
     config_required: "Configuration item is required"

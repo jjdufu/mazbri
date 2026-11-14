@@ -55,9 +55,40 @@
 
 ## 四、交付、验证与 Git 提交要求
 
-1. **Release 编译与容器热替换**
-   - 前端 `pnpm build` 后，后端执行 `cargo build --release` 编译受影响的服务（如 `mazbri-mgmt`、`mazbri-analytics`），并将二进制热替换进对应的 Docker 容器（`docker cp` ➔ `docker exec -u 0 ... mv /usr/local/bin/...` ➔ `docker restart`）。
-2. **MCP 浏览器实测验证**
-   - 使用 `chrome-devtools` MCP（或其他内置工具）实际访问后台页面、点击 Tab/按钮/弹窗，核验 DOM 排版、样式对齐、接口响应与控制台无报错。
-3. **本地详尽中文 Commit**
-   - 每次阶段性重构或修复完成后，使用结构清晰、内容详尽的中文 Commit Message 在本地提交代码。
+1. **Release 编译与容器原子热替换（防 `Text file busy` 与层回退）**
+   - 前端 `pnpm build` 后，后端执行 `cargo build --release` 编译受影响的服务，并通过容器 `/tmp` 中转原子热替换进运行中的 `mazbri-max` Docker 容器：
+     ```bash
+     docker cp target/release/<pkg_bin> <container>:/tmp/<target_bin>
+     docker exec -u 0 <container> sh -c 'chmod 755 /tmp/<target_bin> && mv -f /tmp/<target_bin> /usr/local/bin/<target_bin>'
+     docker restart <container>
+     ```
+   - **严禁执行 `docker compose up -d` 重建容器**（会丢弃可写层并将已热替换二进制回退至镜像原版）；注意 `cert`、`auth`、`billing`、`cache`、`ratelimit`、`cbpro`、`cbpro-ext` 容器内 `/usr/local/bin/` 二进制均带 **`-service` 后缀**（如 `mazbri-cert-service`）。
+2. **MCP `9223` 浏览器实测验证与“有问题必先修好再复测”红线**
+   - 使用 `chrome-devtools` MCP（`127.0.0.1:9223`，访问 `http://192.168.50.50:8085`）实际访问后台页面、点击 Tab/按钮/弹窗，在双分辨率（`1440×900` / `1280×800`）、亮/暗双主题与三角色（`R_ADMIN` / `R_FINANCE` / `R_VIEWER`）下核验 DOM 排版、样式对齐、接口响应与控制台无报错。
+   - **闭环红线**：一旦实测或静态门禁发现任何缺陷（切边、错位、多余并发请求、未翻译词条、控制台报错或权限异常），**必须当场修复源码 ➔ 重新编译与热替换 ➔ 重新连 MCP `9223` 复测**，循环往复直至 100% 确认零问题，严禁带病提交。
+3. **本地详尽中文 Commit（仅本地提交）**
+   - 每次阶段性重构或修复经实测确认零问题后，使用结构清晰、内容详尽的中文 Commit Message 在 `/workspace/rust-proj/mazbri` 本地执行 `git commit`（未获用户明确指令前禁止 `git push`，严禁手动修改 `VERSION`、`.release-please-manifest.json`、`CHANGELOG.md`）。
+
+---
+
+## 五、管理后台 16 步重构专项执行铁律（跨会话断点续跑协议，`[不可更改]`）
+
+当执行管理后台 UI/UX 重构与架构收敛方案（真源目录：`/workspace/rust-proj/docs/mazbri-admin-refactor-steps/`，总览索引 `00-overview-and-index.md` + `01`～`16` 单步详单）时，无论中途暂停多少次或重开多少个新会话，均必须无条件遵守以下协议：
+
+1. **跨会话零失忆断点自动定位（新会话启动必做第 1 步）**
+   - 接手任务时第一时间执行：
+     ```bash
+     git -C /workspace/rust-proj/mazbri log --oneline origin/main..HEAD
+     git -C /workspace/rust-proj/mazbri status -s
+     ```
+   - 根据已提交 Commit 标题中的 `[Step XX/16]` 锚点识别最新已完成闭环的步骤；若工作树存在未提交改动，先对照该半途步骤文档补完“编译门禁 ➔ 容器热替换 ➔ MCP `9223` 实测清零 ➔ 本地中文 Commit”；若工作树干净，紧接着读取并执行下一步 `Step (XX+1)/16`。
+2. **严格按 `01 ➔ 16` 单步串行闭环，严禁跳步或混步提交**
+   - 严格遵循 `01` 至 `16` 编号顺序一步一闭环（每步完整走完：`读取当步文档` ➔ `前后端实现与中英双语对齐` ➔ `pnpm build + 全仓 *.test.ts + 双仓 release clippy + 全量 cargo test + ts-rs 零漂移` ➔ `对应容器热替换` ➔ `MCP 9223 实测与缺陷清零` ➔ `本地中文 Commit`），绝不跳步、乱序抽取或攒多步才做验证提交。
+3. **单步特殊跨容器热替换与运行库免清库必守项**
+   - 默认改 `web`/`mgmt` 的步骤（`01/02/03/06/07/08/11/12`）热替换 `mazbri-mazbri-mgmt-1`（`mazbri-mgmt`）；涉及多服务的步骤必须按 `00-overview-and-index.md` 第四节矩阵完整替换（其中 **Step 04** 换 `analytics + mgmt` 并先组 2-Tab 过渡壳；**Step 05** 换 `mgmt + auth + gateway` 且递增 `'auth_api_key_version'` 须用 `INSERT ... ON CONFLICT (key) DO UPDATE` 幂等自举；**Step 09** 换 `analytics + mgmt + cert + gateway`；**Step 10** 完整替换全部 **10 个**直连 PG 业务容器以根除 `50.0%` 假负载；**Step 11** 删 `/account/security` 时同步把 `mfa-required-hint` 跳转改为唤起 `PersonalSecurityDrawer`；**Step 13/14/15** 换 `cert + mgmt`，先重启 `cert-1` 健康后再重启 `mgmt-1`；**Step 16** 必须同步替换 `mgmt + bypass + gateway` 三容器以支持 `AuthProfile::Skip`）。
+4. **单步 Commit 统一命名与详尽正文格式**
+   - 标题格式：`fix(<scope>): [Step XX/16] <精准中文摘要>` 或 `feat(<scope>): [Step XX/16] <精准中文摘要>`（兼容 `mz-rt-pr` 发版流与 Release Please）；
+   - 正文必须分点详述：① 本步解决的根因与前后端具体改动；② 静态检查与全量测试通过结果；③ 热替换重启的容器列表与 MCP `9223` 实测核验结论。
+5. **标准 7 批次（“做第 N 批”）口令映射与边界守卫**
+   - **第 1 批**：`Step 01 ➔ 02 ➔ 03`（全局基座止血）｜**第 2 批**：`Step 04 ➔ 05`（总览财务与租户 8-Tab）｜**第 3 批**：`Step 06 ➔ 07 ➔ 08`（产品、上游供给与账单对账收官）｜**第 4 批**：`Step 09 ➔ 10`（调用链路与运行指标监控收官）｜**第 5 批**：`Step 11 ➔ 12 ➔ 13`（个人安全/平台设置、用户、证书按需 MFA 与删 `fetchAllPages.ts`）｜**第 6 批**：`Step 14 ➔ 15`（审计降噪与配置中心加固）｜**第 7 批**：`Step 16`（免代码工作台与反开专场）。
+   - 当用户下达 **“做第 N 批”**（或 **“继续做下一批”**）时：先查 `git log` 确认前置批次已全部提交（严禁跨批跳做；若本批已完成部分步骤则从剩余步骤续跑），在本批内严格**一步一热替换验证、一步一 `[Step XX/16]` 本地 Commit** 串行执行，**完成本批最后一步 Commit 后立即停下汇报**，不自动越界进入下一批。

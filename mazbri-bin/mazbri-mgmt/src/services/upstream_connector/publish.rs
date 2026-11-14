@@ -79,7 +79,7 @@ pub async fn publish_draft(
         publish_channels(&mut tx, supplier_id, &req, &ctx).await?;
 
     let (route_rule_id, binding_ids) = if req.mode == "full_onboarding" {
-        let (rid, bids) = publish_route(&mut tx, id, &req, &channel_ids).await?;
+        let (rid, bids) = publish_route(&mut tx, id, supplier_id, &req, &channel_ids).await?;
         (Some(rid), bids)
     } else {
         (None, Vec::new())
@@ -200,13 +200,24 @@ pub(super) fn auto_channels_from_endpoints(endpoints: &serde_json::Value) -> Vec
                 .and_then(|v| v.as_str())
                 .unwrap_or(path.as_str())
                 .to_string();
+            let cost_price = ep.get("cost_price").and_then(|v| {
+                v.as_str()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| v.as_f64().map(|n| n.to_string()))
+            });
+            let qps_limit = ep
+                .get("qps_limit")
+                .and_then(serde_json::Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok())
+                .or(Some(0));
             PublishChannel {
                 endpoint_id: if id.is_empty() { None } else { Some(id) },
                 channel_code: code,
                 name,
                 path_prefix,
-                cost_price: None,
-                qps_limit: Some(0),
+                cost_price,
+                qps_limit,
             }
         })
         .collect()
@@ -377,27 +388,28 @@ async fn publish_channel(
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
     }
-    let channel_config = channel_config_with_egress(&serde_json::json!({}), &egress)?;
+    let existing_ch: Option<(Uuid, Uuid, serde_json::Value)> = sqlx::query_as(
+        "SELECT id, supplier_id, config FROM channels WHERE channel_code = $1",
+    )
+    .bind(channel_code)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("lookup channel: {e}")))?;
 
-    let existing_ch: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM channels WHERE channel_code = $1")
-            .bind(channel_code)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| ApiError::internal(format!("lookup channel: {e}")))?;
+    let (existing_id, channel_config) =
+        prepare_channel_upsert_config(supplier_id, channel_code, existing_ch, &egress)?;
 
-    let cid = if let Some(id) = existing_ch {
+    let cid = if let Some(id) = existing_id {
         sqlx::query(
             r"
             UPDATE channels SET
-                supplier_id = $2, name = $3, path_prefix = $4,
-                cost_price = $5, qps_limit = $6, config = $7,
+                name = $2, path_prefix = $3,
+                cost_price = $4, qps_limit = $5, config = $6,
                 status = 'active', updated_at = NOW()
             WHERE id = $1
             ",
         )
         .bind(id)
-        .bind(supplier_id)
         .bind(&ch.name)
         .bind(path_prefix)
         .bind(cost)
@@ -438,10 +450,11 @@ async fn publish_channel(
     Ok((cid, snapshot))
 }
 
-/// `full_onboarding` 模式：创建路由规则、渠道绑定与租户授权。
+/// `full_onboarding` 模式：创建或原地更新路由规则、渠道绑定与租户授权。
 async fn publish_route(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     draft_id: Uuid,
+    supplier_id: Uuid,
     req: &PublishRequest,
     channel_ids: &[Uuid],
 ) -> Result<(Uuid, Vec<Uuid>), ApiError> {
@@ -449,60 +462,61 @@ async fn publish_route(
         .route
         .as_ref()
         .ok_or_else(|| ApiError::validation("full_onboarding 需要 route 字段"))?;
-    let (product_uuid, product_external_id) =
-        resolve_route_product(tx, route, req.options.fail_if_route_exists).await?;
-    let mut binding_ids = Vec::new();
     if channel_ids.is_empty() {
         return Err(ApiError::validation("full_onboarding 需要至少一个 channel"));
     }
+    let (product_uuid, product_external_id, existing_own_rule) = resolve_route_product(
+        tx,
+        route,
+        supplier_id,
+        draft_id,
+        req.options.fail_if_route_exists,
+    )
+    .await?;
 
     let metadata = serde_json::json!({
         "source": "upstream_connector",
         "product_external_id": product_external_id,
         "draft_id": draft_id,
     });
-    let rid: Uuid = sqlx::query_scalar(
-        r"
-        INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
-        VALUES ($1,$2,$3,'active',$4) RETURNING id
-        ",
-    )
-    .bind(route.tenant_id)
-    .bind(product_uuid)
-    .bind(route.priority)
-    .bind(&metadata)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|e| ApiError::internal(format!("insert route_rule: {e}")))?;
-
-    let switch_condition = serde_json::json!({
-        "max_retries": 1,
-        "timeout_ms": 3000,
-        "switch_on_timeout": true,
-        "switch_on_bad_gateway": true,
-        "switch_on_internal_error": false,
-        "switch_on_status_codes": []
-    });
-
-    for (i, cid) in channel_ids.iter().enumerate() {
-        let bid: Uuid = sqlx::query_scalar(
+    let rid: Uuid = if let Some(existing_rid) = existing_own_rule {
+        sqlx::query(
             r"
-            INSERT INTO route_channel_bindings
-                (route_rule_id, channel_id, channel_order, switch_condition, version_tag, weight)
-            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id
+            UPDATE route_rules
+            SET priority = $2, status = 'active', metadata = $3, updated_at = NOW()
+            WHERE id = $1
             ",
         )
-        .bind(rid)
-        .bind(cid)
-        .bind(i32::saturating_from(i + 1))
-        .bind(&switch_condition)
-        .bind(&route.version_tag)
-        .bind(route.weight)
+        .bind(existing_rid)
+        .bind(route.priority)
+        .bind(&metadata)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| ApiError::internal(format!("update route_rule: {e}")))?;
+
+        sqlx::query("DELETE FROM route_channel_bindings WHERE route_rule_id = $1")
+            .bind(existing_rid)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| ApiError::internal(format!("clear route bindings: {e}")))?;
+        existing_rid
+    } else {
+        sqlx::query_scalar(
+            r"
+            INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
+            VALUES ($1,$2,$3,'active',$4) RETURNING id
+            ",
+        )
+        .bind(route.tenant_id)
+        .bind(product_uuid)
+        .bind(route.priority)
+        .bind(&metadata)
         .fetch_one(&mut **tx)
         .await
-        .map_err(|e| ApiError::internal(format!("insert binding: {e}")))?;
-        binding_ids.push(bid);
-    }
+        .map_err(|e| ApiError::internal(format!("insert route_rule: {e}")))?
+    };
+
+    let binding_ids = insert_route_bindings(tx, rid, channel_ids, route).await?;
 
     if let Some(ref auth) = req.authorization
         && auth.enabled
@@ -524,6 +538,43 @@ async fn publish_route(
         }
     }
     Ok((rid, binding_ids))
+}
+
+async fn insert_route_bindings(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    rid: Uuid,
+    channel_ids: &[Uuid],
+    route: &super::PublishRoute,
+) -> Result<Vec<Uuid>, ApiError> {
+    let switch_condition = serde_json::json!({
+        "max_retries": 1,
+        "timeout_ms": 3000,
+        "switch_on_timeout": true,
+        "switch_on_bad_gateway": true,
+        "switch_on_internal_error": false,
+        "switch_on_status_codes": []
+    });
+    let mut binding_ids = Vec::with_capacity(channel_ids.len());
+    for (i, cid) in channel_ids.iter().enumerate() {
+        let bid: Uuid = sqlx::query_scalar(
+            r"
+            INSERT INTO route_channel_bindings
+                (route_rule_id, channel_id, channel_order, switch_condition, version_tag, weight)
+            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id
+            ",
+        )
+        .bind(rid)
+        .bind(cid)
+        .bind(i32::saturating_from(i + 1))
+        .bind(&switch_condition)
+        .bind(&route.version_tag)
+        .bind(route.weight)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| ApiError::internal(format!("insert binding: {e}")))?;
+        binding_ids.push(bid);
+    }
+    Ok(binding_ids)
 }
 
 async fn record_publish_version(
@@ -582,12 +633,14 @@ async fn record_publish_version(
     Ok((version_id, version_no))
 }
 
-/// 查询并校验路由目标产品（必须启用；可选冲突检查）。
+/// 查询并校验路由目标产品，定位当前供应商已绑定的存量规则，并拦截同优先级其他规则冲突。
 async fn resolve_route_product(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     route: &super::PublishRoute,
+    supplier_id: Uuid,
+    draft_id: Uuid,
     fail_if_route_exists: bool,
-) -> Result<(Uuid, String), ApiError> {
+) -> Result<(Uuid, String, Option<Uuid>), ApiError> {
     let product_external_id = route.product_ref.product_id.trim().to_string();
     let product_row = sqlx::query("SELECT id, enabled FROM products WHERE product_id = $1 LIMIT 1")
         .bind(&product_external_id)
@@ -603,35 +656,122 @@ async fn resolve_route_product(
         )));
     }
 
-    if fail_if_route_exists {
-        let exists: bool = match route.tenant_id {
-            Some(tid) => {
-                sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM route_rules WHERE product_id=$1 AND tenant_id=$2 AND status='active')",
-                )
-                .bind(product_uuid)
-                .bind(tid)
-                .fetch_one(&mut **tx)
-                .await
-            }
-            None => {
-                sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM route_rules WHERE product_id=$1 AND tenant_id IS NULL AND status='active')",
-                )
-                .bind(product_uuid)
-                .fetch_one(&mut **tx)
-                .await
-            }
-        }
-        .map_err(|e| ApiError::internal(format!("route conflict: {e}")))?;
-        if exists {
-            return Err(ApiError::validation(
-                "ROUTE_CONFLICT: 同 tenant/product 已存在 active 路由",
+    let existing_own_rule: Option<Uuid> = sqlx::query_scalar(
+        r"
+        SELECT rr.id
+        FROM route_rules rr
+        WHERE rr.product_id = $1
+          AND rr.tenant_id IS NOT DISTINCT FROM $2
+          AND (
+            rr.metadata->>'draft_id' = $3
+            OR EXISTS (
+              SELECT 1
+              FROM route_channel_bindings rcb
+              JOIN channels c ON c.id = rcb.channel_id
+              WHERE rcb.route_rule_id = rr.id AND c.supplier_id = $4
+            )
+          )
+        ORDER BY rr.updated_at DESC
+        LIMIT 1
+        ",
+    )
+    .bind(product_uuid)
+    .bind(route.tenant_id)
+    .bind(draft_id.to_string())
+    .bind(supplier_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("lookup own route_rule: {e}")))?;
+
+    let priority_occupied: bool = sqlx::query_scalar(
+        r"
+        SELECT EXISTS(
+            SELECT 1 FROM route_rules
+            WHERE product_id = $1
+              AND tenant_id IS NOT DISTINCT FROM $2
+              AND priority = $3
+              AND ($4::uuid IS NULL OR id <> $4)
+        )
+        ",
+    )
+    .bind(product_uuid)
+    .bind(route.tenant_id)
+    .bind(route.priority)
+    .bind(existing_own_rule)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("route priority check: {e}")))?;
+    let active_other_exists: bool = if existing_own_rule.is_none() && fail_if_route_exists {
+        sqlx::query_scalar(
+            r"
+            SELECT EXISTS(
+                SELECT 1 FROM route_rules
+                WHERE product_id = $1
+                  AND tenant_id IS NOT DISTINCT FROM $2
+                  AND status = 'active'
+            )
+            ",
+        )
+        .bind(product_uuid)
+        .bind(route.tenant_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| ApiError::internal(format!("route conflict: {e}")))?
+    } else {
+        false
+    };
+
+    let target_rule = decide_route_upsert_plan(
+        &product_external_id,
+        route.priority,
+        existing_own_rule,
+        priority_occupied,
+        active_other_exists,
+        fail_if_route_exists,
+    )?;
+
+    Ok((product_uuid, product_external_id, target_rule))
+}
+
+pub(crate) fn prepare_channel_upsert_config(
+    supplier_id: Uuid,
+    channel_code: &str,
+    existing: Option<(Uuid, Uuid, serde_json::Value)>,
+    egress: &mazbri_core::ChannelEgressSpec,
+) -> Result<(Option<Uuid>, serde_json::Value), ApiError> {
+    if let Some((id, existing_supplier_id, existing_config)) = existing {
+        if existing_supplier_id != supplier_id {
+            return Err(ApiError::ChannelCodeOwnedByOtherSupplier(
+                channel_code.to_string(),
             ));
         }
+        let merged = channel_config_with_egress(&existing_config, egress)?;
+        Ok((Some(id), merged))
+    } else {
+        let fresh = channel_config_with_egress(&serde_json::json!({}), egress)?;
+        Ok((None, fresh))
     }
+}
 
-    Ok((product_uuid, product_external_id))
+pub(crate) fn decide_route_upsert_plan(
+    product_external_id: &str,
+    priority: i32,
+    existing_own_rule: Option<Uuid>,
+    priority_occupied_by_other: bool,
+    active_other_exists: bool,
+    fail_if_route_exists: bool,
+) -> Result<Option<Uuid>, ApiError> {
+    if priority_occupied_by_other {
+        return Err(ApiError::RouteConflict(format!(
+            "产品 {product_external_id} 在优先级 {priority} 下已存在其他路由规则，请调整优先级后重试"
+        )));
+    }
+    if existing_own_rule.is_none() && fail_if_route_exists && active_other_exists {
+        return Err(ApiError::RouteConflict(format!(
+            "产品 {product_external_id} 已存在其他活跃路由规则，请调整路由策略或关闭冲突拦截"
+        )));
+    }
+    Ok(existing_own_rule)
 }
 
 /// 发布前已校验的草稿与展开后的配置。
@@ -788,4 +928,75 @@ async fn current_route_version(pool: &PgPool) -> i64 {
         .fetch_one(pool)
         .await
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use mazbri_core::{ADAPTER_HTTP_JSON, ChannelEgressSpec, EgressRequestSpec, ErrorResponse};
+
+    fn sample_egress() -> ChannelEgressSpec {
+        ChannelEgressSpec {
+            adapter: ADAPTER_HTTP_JSON.into(),
+            base_url: "https://partner.example.com".into(),
+            request: EgressRequestSpec {
+                method: "POST".into(),
+                path: "/sm4".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cross_supplier_channel_code_conflict_returns_409() {
+        let supplier_a = Uuid::new_v4();
+        let supplier_b = Uuid::new_v4();
+        let ch_id = Uuid::new_v4();
+        let err = prepare_channel_upsert_config(
+            supplier_a,
+            "CH-SHARED",
+            Some((ch_id, supplier_b, serde_json::json!({}))),
+            &sample_egress(),
+        )
+        .expect_err("must reject cross-supplier channel takeover");
+        assert_eq!(err.status_code(), StatusCode::CONFLICT);
+        assert_eq!(err.error_code(), "CHANNEL_CODE_OWNED_BY_OTHER_SUPPLIER");
+    }
+
+    #[test]
+    fn same_supplier_republish_preserves_channel_extension_keys_and_updates_own_route() {
+        let supplier_a = Uuid::new_v4();
+        let ch_id = Uuid::new_v4();
+        let existing_cfg = serde_json::json!({
+            "sla_tier": "platinum",
+            "egress": {
+                "adapter": "http_json",
+                "base_url": "https://old.example.com",
+                "request": { "method": "GET", "path": "/old", "body_encoding": "json" }
+            }
+        });
+        let (target_ch, merged_cfg) = prepare_channel_upsert_config(
+            supplier_a,
+            "CH-OWN",
+            Some((ch_id, supplier_a, existing_cfg)),
+            &sample_egress(),
+        )
+        .expect("same supplier must update in-place");
+        assert_eq!(target_ch, Some(ch_id));
+        assert_eq!(merged_cfg["sla_tier"], "platinum");
+        assert_eq!(merged_cfg["egress"]["request"]["path"], "/sm4");
+
+        let own_rule_id = Uuid::new_v4();
+        let chosen = decide_route_upsert_plan("PROD-001", 100, Some(own_rule_id), false, true, true)
+            .expect("own route must update in-place without conflict");
+        assert_eq!(chosen, Some(own_rule_id));
+
+        let prio_err =
+            decide_route_upsert_plan("PROD-001", 100, Some(own_rule_id), true, true, true)
+                .expect_err("priority occupied by another rule must return 409");
+        assert_eq!(prio_err.status_code(), StatusCode::CONFLICT);
+        assert_eq!(prio_err.error_code(), "ROUTE_CONFLICT");
+    }
 }

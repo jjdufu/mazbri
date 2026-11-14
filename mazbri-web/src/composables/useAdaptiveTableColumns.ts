@@ -1,6 +1,7 @@
 import { useElementSize } from "@vueuse/core";
 import { toValue, watch, type MaybeRefOrGetter, type Ref } from "vue";
 import type { ColumnOption } from "@/types/component";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 
 export interface AdaptiveTableColumnTextContext<T> {
   column: ColumnOption<T>;
@@ -93,7 +94,7 @@ const measureTextWidth = (() => {
 })();
 
 const normalizeDisplayValue = (value: unknown): string => {
-  if (value == null || value === "") return "-";
+  if (value == null || value === "") return EMPTY_PLACEHOLDER;
   if (typeof value === "string") return value;
   if (
     typeof value === "number" ||
@@ -197,6 +198,13 @@ const orderColumnsForLayout = <T>(columns: MutableColumn<T>[]) => {
 
 
 
+const isDateTimeColumnKey = (key: string) =>
+  key.includes("time") ||
+  key.includes("created") ||
+  key.includes("updated") ||
+  key.endsWith("_at") ||
+  key === "at";
+
 const defaultMaxForKey = (columnKey: string, fallback: number): number => {
   const key = columnKey.toLowerCase();
   if (
@@ -226,13 +234,8 @@ const defaultMaxForKey = (columnKey: string, fallback: number): number => {
   ) {
     return 100;
   }
-  if (
-    key.includes("time") ||
-    key.includes("created") ||
-    key.includes("updated") ||
-    key.includes("at")
-  ) {
-    return 150;
+  if (isDateTimeColumnKey(key)) {
+    return 188;
   }
   if (key.includes("ip")) {
     return 136;
@@ -257,8 +260,8 @@ const softMinCapForKey = (columnKey: string, softMinCap: number): number => {
   ) {
     return Math.max(softMinCap, 320);
   }
-  if (key.includes("time") || key.includes("created") || key.includes("updated")) {
-    return Math.min(softMinCap, 140);
+  if (isDateTimeColumnKey(key)) {
+    return Math.max(softMinCap, 172);
   }
   if (
     key.includes("duration") ||
@@ -490,10 +493,12 @@ export const buildAdaptiveColumns = <T>(
       measureTextWidth(String(column.label ?? "")) + cellPadding;
     headerFloorMap.set(
       columnKey,
-      Math.min(
-        effectiveMin,
-        Math.max(hardMinWidth, Math.ceil(headerWidth)),
-      ),
+      isDateTimeColumnKey(columnKey.toLowerCase())
+        ? Math.max(effectiveMin, 172)
+        : Math.min(
+            effectiveMin,
+            Math.max(hardMinWidth, Math.ceil(headerWidth)),
+          ),
     );
     const contentWidth = sampleRows.reduce((maxWidth, row, rowIndex) => {
       const text = resolveColumnText(
@@ -577,6 +582,7 @@ export const buildAdaptiveColumns = <T>(
     const isBadResidualFiller = (key: string) => {
       const k = key.toLowerCase();
       return (
+        isDateTimeColumnKey(k) ||
         k.includes("serial") ||
         k.includes("request_id") ||
         k.includes("uuid") ||

@@ -26,7 +26,8 @@
         <label class="wb-hopp-check">
           <input
             type="checkbox"
-            :checked="flow.enabled"
+            :checked="sessionHttpActive"
+            :aria-label="$t('upstreamConnector.authEnabled')"
             @change="onEnabledChange"
           />
           {{ $t("upstreamConnector.authEnabled") }}
@@ -50,13 +51,6 @@
       </div>
     </div>
 
-    <p
-      v-if="flow.enabled && !sessionProfileLabel(flow.profile)"
-      class="wb-auth__warn"
-    >
-      {{ $t("upstreamConnector.authInheritHint") }}
-    </p>
-
     <AuthProfileFields
       :picker="picker"
       :flow="flow"
@@ -71,12 +65,13 @@
 
 <script setup lang="ts">
 import { $t } from "@/locales";
-import type { AuthFlowForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
+import type { AuthFlowForm } from "@/views/mazbri/suppliers/supplier-form";
 import {
   type AuthPickerId,
   authProfileFromPicker,
   authPickerFromState,
   applyPickerDefaults,
+  isSessionHttpAuthActive,
   sessionProfileLabel,
   visibleAuthPickers,
 } from "../authMatrix";
@@ -110,14 +105,20 @@ const emit = defineEmits<{
   run: [];
 }>();
 
+const sessionHttpActive = computed(() =>
+  isSessionHttpAuthActive(props.flow.enabled, props.flow.profile),
+);
+
 const picker = computed(() =>
-  authPickerFromState(props.profile, props.flow.enabled),
+  authPickerFromState(props.profile, props.flow.enabled, props.flow.profile),
 );
 
 const pickerLabel = (id: AuthPickerId): string => {
   switch (id) {
     case "inherit":
       return $t("upstreamConnector.authInherit");
+    case "skip":
+      return $t("upstreamConnector.authSkip");
     case "none":
       return $t("upstreamConnector.authNone");
     case "api_key":
@@ -148,20 +149,21 @@ const pickerLabel = (id: AuthPickerId): string => {
 };
 
 const pickerOptions = computed(() =>
-  visibleAuthPickers(props.flow.enabled).map((id) => ({
+  visibleAuthPickers(props.flow.enabled, props.flow.profile).map((id) => ({
     label: pickerLabel(id),
     value: id,
   })),
 );
 
 const sessionLabel = computed(() => {
+  if (!sessionHttpActive.value) return $t("upstreamConnector.authSessionUnset");
   const p = sessionProfileLabel(props.flow.profile);
   return p ? pickerLabel(p as AuthPickerId) : $t("upstreamConnector.authSessionUnset");
 });
 
 const canSetSession = computed(() => {
   const id = picker.value;
-  return id !== "inherit" && id !== "none";
+  return id !== "inherit" && id !== "none" && id !== "skip";
 });
 
 function onPick(value: string) {
@@ -171,17 +173,25 @@ function onPick(value: string) {
 }
 
 function onEnabledChange(ev: Event) {
-  props.flow.enabled = (ev.target as HTMLInputElement).checked;
+  const checked = (ev.target as HTMLInputElement).checked;
+  props.flow.enabled = checked;
+  if (checked && !sessionProfileLabel(props.flow.profile)) {
+    const fallback: AuthPickerId = canSetSession.value ? picker.value : "bearer";
+    props.flow.profile = fallback;
+    applyPickerDefaults(fallback, props.flow);
+  }
 }
 
 function clearProfile() {
-  emit("update:profile", "none");
+  emit("update:profile", sessionHttpActive.value ? "skip" : "none");
 }
 
 function setSessionDefault() {
   const id = picker.value;
-  if (id === "inherit" || id === "none") return;
+  if (id === "inherit" || id === "none" || id === "skip") return;
+  props.flow.enabled = true;
   props.flow.profile = id;
+  applyPickerDefaults(id, props.flow);
 }
 </script>
 

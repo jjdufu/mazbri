@@ -2,12 +2,12 @@ use super::{AppState, HandlerError};
 use axum::{
     Json,
     body::Bytes,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use mazbri_analytics::clickhouse::olap::{OlapQuery, OlapRows};
-use serde::Serialize;
+use mazbri_analytics::clickhouse::olap::{OlapQuery, OlapRows, QueryWindow};
+use serde::{Deserialize, Serialize};
 use tracing::{error, warn};
 
 #[derive(Debug, Serialize)]
@@ -55,6 +55,51 @@ pub async fn olap_query(State(state): State<AppState>, body: Bytes) -> Response 
                 Json(HandlerError {
                     error: "query_failed".to_string(),
                     message: "查询失败".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActiveProductsQuery {
+    pub start: i64,
+    pub end: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActiveProductsResponse {
+    pub product_ids: Vec<String>,
+}
+
+/// `GET /api/v1/olap/active-products?start&end`：返回窗口内全量有调用去重 `product_id` 集合。
+pub async fn get_active_products(
+    State(state): State<AppState>,
+    Query(query): Query<ActiveProductsQuery>,
+) -> Response {
+    let window = match QueryWindow::try_new(query.start, query.end) {
+        Ok(window) => window,
+        Err(e) => return bad_request("invalid_window", e.to_string()),
+    };
+    match state
+        .clickhouse_client
+        .fetch_active_product_ids(window.start, window.end)
+        .await
+    {
+        Ok(product_ids) => (
+            StatusCode::OK,
+            Json(ActiveProductsResponse { product_ids }),
+        )
+            .into_response(),
+        Err(e) => {
+            error!(error = %e, "查询活跃产品集合失败");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(HandlerError {
+                    error: "query_failed".to_string(),
+                    message: "查询活跃产品集合失败".to_string(),
                 }),
             )
                 .into_response()

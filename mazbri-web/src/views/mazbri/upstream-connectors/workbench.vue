@@ -4,13 +4,39 @@
     v-loading="bootstrapping"
     class="connector-workbench-page"
   >
-    <header
-      v-if="isEditMode || !canWriteWorkbench || saveBadge"
-      class="wb-top"
-    >
+    <header class="wb-top">
       <div class="wb-top__left">
-        <ElTag v-if="isEditMode" size="small" type="primary" effect="plain">
-          {{ $t("upstreamConnector.modeEditSupplier") }}
+        <ElButton
+          size="default"
+          text
+          class="wb-top__back"
+          :aria-label="$t('upstreamConnector.backToSupply')"
+          @click="goBack"
+        >
+          <ArtSvgIcon icon="ri:arrow-left-line" class="mr-1" />
+          {{ $t("upstreamConnector.backToSupply") }}
+        </ElButton>
+        <input
+          v-if="draft"
+          v-model="draft.name"
+          type="text"
+          class="wb-top__name-input"
+          :readonly="!canWriteWorkbench"
+          :aria-label="$t('upstreamConnector.fields.name')"
+          :placeholder="$t('upstreamConnector.untitledName')"
+        />
+        <ElTag
+          size="small"
+          :type="isSupplierLinked ? 'warning' : 'info'"
+          effect="plain"
+        >
+          {{
+            isSupplierLinked
+              ? $t("upstreamConnector.modeEditSupplierCode", {
+                  code: publishForm.supplier_code || "—",
+                })
+              : $t("upstreamConnector.modeNewDraft")
+          }}
         </ElTag>
         <ElTag
           v-if="!canWriteWorkbench"
@@ -28,6 +54,90 @@
         >
           {{ saveBadge.text }}
         </ElTag>
+      </div>
+
+      <div v-if="draft" class="wb-top__right">
+        <ElButton size="default" @click="envDrawerVisible = true">
+          <svg
+            class="mr-1"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"
+            />
+          </svg>
+          {{ $t("upstreamConnector.envDrawerBtn", { n: envCount }) }}
+        </ElButton>
+        <template v-if="canWriteWorkbench">
+          <HoppMenu placement="bottom-end" :append-to="pageMount">
+            <template #trigger>
+              <ElButton size="default">
+                {{ $t("upstreamConnector.importExport") }}
+                <ArtSvgIcon icon="ri:arrow-down-s-line" class="ml-1" />
+              </ElButton>
+            </template>
+            <button
+              type="button"
+              class="hopp-menu-item"
+              @click="showImport = true"
+            >
+              {{ $t("upstreamConnector.import") }}
+            </button>
+            <button
+              type="button"
+              class="hopp-menu-item"
+              @click="doExport()"
+            >
+              {{ $t("upstreamConnector.exportPostman") }}
+            </button>
+            <button
+              v-if="draft.linked_supplier_id"
+              type="button"
+              class="hopp-menu-item is-divided"
+              @click="resyncFromLiveSupplier()"
+            >
+              {{ $t("upstreamConnector.resyncFromLive") }}
+            </button>
+          </HoppMenu>
+          <ElButton
+            size="default"
+            :loading="saving"
+            title="Ctrl/⌘+S"
+            @click="saveDraftExplicit()"
+          >
+            <ArtSvgIcon icon="ri:save-line" class="mr-1" />
+            {{ $t("upstreamConnector.saveDraft") }}
+          </ElButton>
+          <span
+            class="wb-top__gate-pill"
+            :class="{ 'is-ready': gate.total > 0 && gate.ok === gate.total }"
+            :title="$t('upstreamConnector.gateChecklist')"
+          >
+            {{ $t("upstreamConnector.gateShort") }} {{ gate.ok }}/{{ gate.total }}
+          </span>
+          <ElButton
+            type="primary"
+            size="default"
+            :loading="publishing"
+            :title="
+              canPublish
+                ? $t('upstreamConnector.publish')
+                : $t('upstreamConnector.publishNeedRun')
+            "
+            @click="openPublish()"
+          >
+            <ArtSvgIcon icon="ri:upload-cloud-2-line" class="mr-1" />
+            {{ $t("upstreamConnector.publish") }}
+          </ElButton>
+        </template>
       </div>
     </header>
 
@@ -48,7 +158,6 @@
         <template #left>
           <div class="wb-pane">
             <WorkbenchEndpointList
-              v-model:session-name="draft.name"
               :endpoints="endpoints"
               :active-index="activeEpIdx"
               :gate="gate"
@@ -60,7 +169,6 @@
               @select="activeEpIdx = $event"
               @toggle-gate="toggleGate"
               @action="onEpAction"
-              @session-action="onSessionAction"
               @reorder="onEpReorder($event.from, $event.to)"
               @select-run="lastRun = $event"
             />
@@ -69,15 +177,20 @@
 
         <template #center>
           <div class="wb-main">
-            <WorkbenchVSplit ref="vsplitRef">
+            <WorkbenchSplitLayout
+              ref="vsplitRef"
+              v-model:direction="splitDirection"
+              :min-bottom="220"
+              :min-right="360"
+            >
               <template #top>
-                <div
-                  v-if="activeEp"
-                  class="wb-request"
-                  :inert="!canWriteWorkbench || undefined"
-                >
+                <div v-if="activeEp" class="wb-request">
                   <div class="wb-runbar">
-                    <div class="wb-urlbar" :class="{ 'is-error': urlMissing }">
+                    <div
+                      class="wb-urlbar"
+                      :class="{ 'is-error': urlMissing }"
+                      :inert="!canWriteWorkbench || undefined"
+                    >
                       <div class="wb-urlbar__method">
                         <WorkbenchMethodSelect
                           :model-value="activeEp.method || 'GET'"
@@ -98,42 +211,102 @@
                         @curl="applyCurlPaste"
                       />
                     </div>
-                    <button
-                      type="button"
-                      class="wb-env-chip"
-                      @click="reqTab = 'variables'"
-                    >
-                      {{ $t("upstreamConnector.envChip", { n: envCount }) }}
-                    </button>
                     <WorkbenchAdapterChip
                       :adapter="activeEp.adapter || 'http_json'"
                       :encoding="resolvedBodyEncoding(activeEp)"
+                      :append-to="pageMount"
+                      :disabled="!canWriteWorkbench"
+                      @select="onAdapterQuickSelect"
                       @edit="reqTab = 'transform'"
                     />
+                    <button
+                      type="button"
+                      class="wb-split-dir-btn"
+                      :disabled="vsplitRef?.canSideBySide === false"
+                      :title="splitToggleTitle"
+                      :aria-label="splitToggleTitle"
+                      @click="vsplitRef?.toggleDirection()"
+                    >
+                      <svg
+                        v-if="
+                          (vsplitRef?.effectiveDirection || splitDirection) ===
+                          'vertical'
+                        "
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="3" y1="12" x2="21" y2="12" />
+                      </svg>
+                      <svg
+                        v-else
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="12" y1="3" x2="12" y2="21" />
+                      </svg>
+                    </button>
                     <div v-if="canWriteWorkbench" class="wb-runbar__actions">
                       <div class="hopp-btn hopp-btn--primary">
-                        <button
-                          type="button"
-                          class="hopp-btn__main"
-                          :title="$t('upstreamConnector.sendHotkey')"
-                          @click="onSendClick"
+                        <ElTooltip
+                          :content="$t('upstreamConnector.sendProbeTooltip')"
+                          placement="bottom"
+                          :show-after="300"
                         >
-                          <ArtSvgIcon v-if="running" icon="ri:close-line" />
-                          {{
-                            running
-                              ? $t("upstreamConnector.sendCancel")
-                              : $t("upstreamConnector.send")
-                          }}
-                        </button>
+                          <button
+                            type="button"
+                            class="hopp-btn__main"
+                            :aria-label="
+                              running
+                                ? $t('upstreamConnector.sendCancel')
+                                : $t('upstreamConnector.runBusiness')
+                            "
+                            @click="onSendClick"
+                          >
+                            <ArtSvgIcon v-if="running" icon="ri:close-line" />
+                            {{
+                              running
+                                ? $t("upstreamConnector.sendCancel")
+                                : $t("upstreamConnector.send")
+                            }}
+                          </button>
+                        </ElTooltip>
                         <HoppMenu
                           placement="bottom-end"
                           :append-to="pageMount"
                         >
                           <template #trigger>
-                            <button type="button" class="hopp-btn__caret">
+                            <button
+                              type="button"
+                              class="hopp-btn__caret"
+                              :aria-label="$t('upstreamConnector.sessionActions')"
+                            >
                               <span class="hopp-menu-caret" />
                             </button>
                           </template>
+                          <button
+                            v-if="draft.linked_supplier_id"
+                            type="button"
+                            class="hopp-menu-item"
+                            @click="onSendCommand('live')"
+                          >
+                            {{ $t("upstreamConnector.liveRun") }}
+                          </button>
                           <button
                             type="button"
                             class="hopp-menu-item"
@@ -155,37 +328,10 @@
                           >
                             {{ $t("upstreamConnector.copyCurl") }}
                           </button>
-                          <button
-                            v-if="draft.linked_supplier_id"
-                            type="button"
-                            class="hopp-menu-item"
-                            @click="onSendCommand('live')"
-                          >
-                            {{ $t("upstreamConnector.liveRun") }}
-                          </button>
                         </HoppMenu>
-                      </div>
-                      <div class="hopp-btn hopp-btn--ghost">
-                        <button
-                          type="button"
-                          class="hopp-btn__main"
-                          :disabled="publishing || !canPublish"
-                          :title="
-                            canPublish
-                              ? $t('upstreamConnector.publish')
-                              : $t('upstreamConnector.publishNeedRun')
-                          "
-                          @click="openPublish()"
-                        >
-                          <ArtSvgIcon icon="ri:upload-cloud-2-line" />
-                          {{ $t("upstreamConnector.publish") }}
-                        </button>
                       </div>
                     </div>
                   </div>
-                  <p class="wb-probe-hint text-xs opacity-70 mb-1">
-                    {{ $t("upstreamConnector.probeViaBypass") }}
-                  </p>
                   <p v-if="unresolved.length" class="wb-unresolved">
                     {{
                       $t("upstreamConnector.unresolvedVars", {
@@ -204,13 +350,15 @@
                           :active="reqTab === 'params'"
                         />
                       </template>
-                      <WorkbenchKvRows
-                        v-model="queryRows"
-                        :title="$t('upstreamConnector.queryList')"
-                        :add-title="$t('upstreamConnector.addQuery')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                        :env="envMap"
-                      />
+                      <div :inert="!canWriteWorkbench || undefined">
+                        <WorkbenchKvRows
+                          v-model="queryRows"
+                          :title="$t('upstreamConnector.queryList')"
+                          :add-title="$t('upstreamConnector.addQuery')"
+                          :clear-title="$t('upstreamConnector.clearKv')"
+                          :env="envMap"
+                        />
+                      </div>
                     </ElTabPane>
                     <ElTabPane name="body">
                       <template #label>
@@ -220,14 +368,16 @@
                           :active="reqTab === 'body'"
                         />
                       </template>
-                      <WorkbenchBodyPane
-                        v-model:gql-var-rows="gqlVarRows"
-                        :endpoint="activeEp"
-                        :env="envMap"
-                        :uploading-artifact="uploadingArtifact"
-                        :append-to="pageMount"
-                        @pick-artifact="artifactInput?.click()"
-                      />
+                      <div :inert="!canWriteWorkbench || undefined">
+                        <WorkbenchBodyPane
+                          v-model:gql-var-rows="gqlVarRows"
+                          :endpoint="activeEp"
+                          :env="envMap"
+                          :uploading-artifact="uploadingArtifact"
+                          :append-to="pageMount"
+                          @pick-artifact="artifactInput?.click()"
+                        />
+                      </div>
                     </ElTabPane>
                     <ElTabPane name="headers">
                       <template #label>
@@ -237,15 +387,17 @@
                           :active="reqTab === 'headers'"
                         />
                       </template>
-                      <WorkbenchKvRows
-                        v-model="headerRows"
-                        variant="headers"
-                        :title="$t('upstreamConnector.headersList')"
-                        :add-title="$t('upstreamConnector.addHeader')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                        :env="envMap"
-                        :append-to="pageMount"
-                      />
+                      <div :inert="!canWriteWorkbench || undefined">
+                        <WorkbenchKvRows
+                          v-model="headerRows"
+                          variant="headers"
+                          :title="$t('upstreamConnector.headersList')"
+                          :add-title="$t('upstreamConnector.addHeader')"
+                          :clear-title="$t('upstreamConnector.clearKv')"
+                          :env="envMap"
+                          :append-to="pageMount"
+                        />
+                      </div>
                     </ElTabPane>
                     <ElTabPane name="auth">
                       <template #label>
@@ -255,18 +407,20 @@
                           :active="reqTab === 'auth'"
                         />
                       </template>
-                      <WorkbenchAuthPicker
-                        :profile="String(activeEp.auth?.profile || 'none')"
-                        :flow="configForm.auth_flow"
-                        :adapter="String(activeEp.adapter || 'http_json')"
-                        :invalidation-source="activeInvalidationSource"
-                        :env="envMap"
-                        :seed-json="authSeedJson"
-                        :append-to="pageMount"
-                        :running="running"
-                        @update:profile="setEpAuthProfile"
-                        @run="doRun('auth_only')"
-                      />
+                      <div :inert="!canWriteWorkbench || undefined">
+                        <WorkbenchAuthPicker
+                          :profile="String(activeEp.auth?.profile || 'none')"
+                          :flow="configForm.auth_flow"
+                          :adapter="String(activeEp.adapter || 'http_json')"
+                          :invalidation-source="activeInvalidationSource"
+                          :env="envMap"
+                          :seed-json="authSeedJson"
+                          :append-to="pageMount"
+                          :running="running"
+                          @update:profile="setEpAuthProfile"
+                          @run="doRun('auth_only')"
+                        />
+                      </div>
                     </ElTabPane>
                     <ElTabPane name="transform">
                       <template #label>
@@ -277,6 +431,7 @@
                         />
                       </template>
                       <div class="wb-sheet">
+                        <div :inert="!canWriteWorkbench || undefined">
                         <WorkbenchGhostField
                           :label="$t('upstreamConnector.adapter')"
                           kind="select"
@@ -341,7 +496,9 @@
                           <div class="wb-sheet-row__control">
                             <CryptoProfileEditor
                               :model-value="activeEp.crypto"
+                              :disabled="!canWriteWorkbench"
                               :can-toggle-insecure="isSuperAdmin"
+                              :credential-keys="sessionCredentialKeys"
                               @update:model-value="onCryptoProfileChange"
                             />
                           </div>
@@ -355,6 +512,7 @@
                         :clear-title="$t('upstreamConnector.clearKv')"
                         :env="envMap"
                       />
+                        </div>
                       <button
                         type="button"
                         class="wb-sheet-row is-toggle is-head"
@@ -391,25 +549,12 @@
                           :active="reqTab === 'assert'"
                         />
                       </template>
-                      <WorkbenchAssertEditor
-                        v-model="activeAssertions"
-                        :append-to="pageMount"
-                      />
-                    </ElTabPane>
-                    <ElTabPane name="variables">
-                      <template #label>
-                        <WorkbenchTabLabel
-                          :label="$t('upstreamConnector.envVars')"
-                          :count="envCount"
-                          :active="reqTab === 'variables'"
+                      <div :inert="!canWriteWorkbench || undefined">
+                        <WorkbenchAssertEditor
+                          v-model="activeAssertions"
+                          :append-to="pageMount"
                         />
-                      </template>
-                      <WorkbenchKvRows
-                        v-model="envRows"
-                        :title="$t('upstreamConnector.envVars')"
-                        :add-title="$t('upstreamConnector.addEnv')"
-                        :clear-title="$t('upstreamConnector.clearKv')"
-                      />
+                      </div>
                     </ElTabPane>
                   </ElTabs>
                   </div>
@@ -418,6 +563,7 @@
                     type="file"
                     accept=".pb,.fds,.bin,.protobuf"
                     hidden
+                    :aria-label="$t('upstreamConnector.artifactUpload')"
                     @change="onArtifactFile"
                   />
                 </div>
@@ -437,11 +583,27 @@
                   @open-shortcuts="showShortcuts = true"
                 />
               </template>
-            </WorkbenchVSplit>
+            </WorkbenchSplitLayout>
           </div>
         </template>
       </WorkbenchSplit>
     </template>
+
+    <AdaptiveDrawer
+      v-model="envDrawerVisible"
+      :title="$t('upstreamConnector.envVars')"
+      size="520px"
+    >
+      <p class="wb-env-drawer__hint">{{ $t("upstreamConnector.envVarsHint") }}</p>
+      <div :inert="!canWriteWorkbench || undefined">
+        <WorkbenchKvRows
+          v-model="envRows"
+          :title="$t('upstreamConnector.envVars')"
+          :add-title="$t('upstreamConnector.addEnv')"
+          :clear-title="$t('upstreamConnector.clearKv')"
+        />
+      </div>
+    </AdaptiveDrawer>
 
     <WorkbenchImportDialog
       v-model="showImport"
@@ -482,8 +644,8 @@ import { watchDebounced } from "@vueuse/core";
 import { saveAs } from "file-saver";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
-import { type SupplierConfigForm } from "@/views/mazbri/suppliers/components/SupplierTransparentConfig.vue";
 import {
+  type SupplierConfigForm,
   createEmptyAuthFlow,
   serializeAuthFlow,
   resolveUpstreamType,
@@ -503,13 +665,14 @@ import {
   importPostman,
   listRuns,
   liveRun,
+  previewDraftFromSupplier,
   publishDraft,
   runDraft,
   transformPreview,
   updateDraft,
   uploadArtifact,
 } from "@/api/upstream-connectors";
-import { fetchSupplierById } from "@/api/supplier";
+import { fetchSupplierById, type Supplier } from "@/api/supplier";
 import { useUserStore } from "@/store/modules/user";
 import { canWriteUpstreamConnector } from "@/utils/ops/roles";
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
@@ -560,15 +723,18 @@ import {
   type ChannelDraft,
   type KvRow,
   type ParsedImport,
+  type SplitDirection,
 } from "./workbenchHelpers";
+import { isSessionHttpAuthActive } from "./authMatrix";
 import { invalidationFromApi, invalidationSource } from "./authInvalidation";
+import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import CryptoProfileEditor from "./CryptoProfileEditor.vue";
 import {
   parseCryptoProfile,
   validateCryptoProfileClient,
 } from "./cryptoProfileHelpers";
 import WorkbenchSplit from "./WorkbenchSplit.vue";
-import WorkbenchVSplit from "./WorkbenchVSplit.vue";
+import WorkbenchSplitLayout from "./WorkbenchSplitLayout.vue";
 import WorkbenchEndpointList from "./WorkbenchEndpointList.vue";
 import WorkbenchKvRows from "./WorkbenchKvRows.vue";
 import WorkbenchAssertEditor from "./WorkbenchAssertEditor.vue";
@@ -640,6 +806,8 @@ const publishing = ref(false);
 
 const showImport = ref(false);
 const showPublish = ref(false);
+const envDrawerVisible = ref(false);
+const splitDirection = ref<SplitDirection>("horizontal");
 const importTab = ref("curl");
 const importMode = ref("merge");
 const importCurlText = ref("");
@@ -649,6 +817,10 @@ const isEditMode = computed(
   () =>
     typeof route.query.supplier_id === "string" &&
     route.query.supplier_id.length > 0,
+);
+
+const isSupplierLinked = computed(() =>
+  Boolean(draft.value?.linked_supplier_id || isEditMode.value),
 );
 
 const saveBadge = computed(() => {
@@ -742,12 +914,18 @@ const configForm = ref<SupplierConfigForm>({
 
 const userStore = useUserStore();
 const isSuperAdmin = computed(() => userStore.isAdmin);
-/** 工作台写权限：仅 R_ADMIN；财务 / Viewer 只读。 */
+/** 工作台写权限：业务管理角色（R_ADMIN / R_FINANCE）；观察者（R_VIEWER）只读。 */
 const canWriteWorkbench = computed(() =>
   canWriteUpstreamConnector(userStore.info?.role),
 );
-/** 强制发布仅业务超管（R_ADMIN），与 canWriteWorkbench 同界。 */
+/** 强制发布与工作台写权限同界（R_ADMIN / R_FINANCE）。 */
 const canForcePublish = computed(() => canWriteWorkbench.value);
+
+const sessionCredentialKeys = computed(() =>
+  configForm.value.auth_flow.credentials
+    .map((item) => item.key.trim())
+    .filter(Boolean),
+);
 
 const gate = computed(() =>
   gateViewFromServer(endpoints.value, draft.value?.gate),
@@ -756,7 +934,10 @@ const gate = computed(() =>
 const leftoverTokens = computed(() =>
   leftoverTokenHeaderNames({
     endpoints: endpoints.value,
-    authEnabled: configForm.value.auth_flow.enabled,
+    authEnabled: isSessionHttpAuthActive(
+      configForm.value.auth_flow.enabled,
+      configForm.value.auth_flow.profile,
+    ),
     injectTo: configForm.value.auth_flow.inject_to,
     injectKey: configForm.value.auth_flow.inject_key,
   }),
@@ -773,7 +954,14 @@ const bodyFilled = computed(() =>
   activeEp.value ? adapterBodyFilled(activeEp.value) : false,
 );
 const authFilled = computed(() => {
-  if (configForm.value.auth_flow.enabled) return true;
+  if (
+    isSessionHttpAuthActive(
+      configForm.value.auth_flow.enabled,
+      configForm.value.auth_flow.profile,
+    )
+  ) {
+    return true;
+  }
   const profile = String(activeEp.value?.auth?.profile || "none");
   return (AUTH_PROFILES as readonly string[]).includes(profile) && profile !== "none";
 });
@@ -828,12 +1016,14 @@ function apiConfigToForm(cfg: Record<string, unknown>): SupplierConfigForm {
     key,
     value: String(value ?? ""),
   }));
+  const rawProfile = String(auth.profile || "");
+  const httpActive = isSessionHttpAuthActive(Boolean(auth.enabled), rawProfile);
   return {
     upstream_type: CODE_FREE_UPSTREAM_TYPE,
     auth_flow: {
       ...createEmptyAuthFlow(),
-      enabled: Boolean(auth.enabled),
-      profile: String(auth.profile || ""),
+      enabled: httpActive,
+      profile: rawProfile,
       token_url: String(auth.token_url || ""),
       token_path: String(auth.token_path || ""),
       method: String(auth.method || "POST"),
@@ -859,11 +1049,18 @@ function formToApiConfig(form: SupplierConfigForm): Record<string, unknown> {
   form.auth_flow.credentials.forEach((item) => {
     if (item.key.trim()) credsMap[item.key.trim()] = item.value;
   });
+  const hasCreds = Object.keys(credsMap).length > 0;
+  const httpActive = isSessionHttpAuthActive(
+    form.auth_flow.enabled,
+    form.auth_flow.profile,
+  );
   const payload: Record<string, unknown> = {
     upstream_type: CODE_FREE_UPSTREAM_TYPE,
-    auth_flow: form.auth_flow.enabled
+    auth_flow: httpActive
       ? serializeAuthFlow(form.auth_flow, credsMap)
-      : null,
+      : hasCreds
+        ? { enabled: false, profile: "none", credentials: credsMap }
+        : null,
   };
   const timeouts = (draft.value?.config as { timeouts?: unknown })?.timeouts;
   if (timeouts) payload.timeouts = timeouts;
@@ -907,25 +1104,38 @@ function flushKvToActive() {
 const publishResultDesc = computed(() => {
   if (!publishResult.value) return "";
   const r = publishResult.value;
-  return `supplier=${r.supplier_id} version=v${r.version_no} route_version=${r.route_version ?? "-"}`;
+  return `supplier=${r.supplier_id} version=v${r.version_no} route_version=${r.route_version ?? "—"}`;
 });
 
-function syncSessionRoute(d: ConnectorDraft) {
+async function syncSessionRoute(d: ConnectorDraft) {
   if (d.linked_supplier_id) {
-    void router.replace({
+    if (route.query.supplier_id === d.linked_supplier_id && !route.query.session) {
+      return;
+    }
+    await router.replace({
       path: WORKBENCH_PATH,
       query: { supplier_id: d.linked_supplier_id },
     });
     return;
   }
   if (!isPersistedDraftId(d.id)) {
-    void router.replace({ path: WORKBENCH_PATH });
+    if (!route.query.session && !route.query.supplier_id) return;
+    await router.replace({ path: WORKBENCH_PATH });
     return;
   }
-  void router.replace({
+  if (route.query.session === d.id && !route.query.supplier_id) return;
+  await router.replace({
     path: WORKBENCH_PATH,
     query: { session: d.id },
   });
+}
+
+async function loadReadOnlySupplierDraft(
+  supplierId: string,
+  prefetchedSupplier?: Supplier,
+) {
+  const d = await previewDraftFromSupplier(supplierId);
+  await openSession(d, prefetchedSupplier);
 }
 
 function markDirty() {
@@ -944,7 +1154,10 @@ function leaveForMicroservice(supplierId?: string | null) {
   void router.replace({ path: "/operations/upstream-supply", query: { tab: "suppliers" } });
 }
 
-async function openSession(d: ConnectorDraft): Promise<boolean> {
+async function openSession(
+  d: ConnectorDraft,
+  prefetchedSupplier?: Supplier,
+): Promise<boolean> {
   if (isMicroserviceUpstream(d) && d.linked_supplier_id) {
     draft.value = null;
     leaveForMicroservice(d.linked_supplier_id);
@@ -970,7 +1183,10 @@ async function openSession(d: ConnectorDraft): Promise<boolean> {
   activeEpIdx.value = 0;
   if (d.linked_supplier_id) {
     try {
-      const sup = await fetchSupplierById(d.linked_supplier_id);
+      const sup =
+        prefetchedSupplier?.id === d.linked_supplier_id
+          ? prefetchedSupplier
+          : await fetchSupplierById(d.linked_supplier_id);
       publishForm.value.supplier_code = sup.supplier_code;
       publishForm.value.supplier_name = sup.name;
       if (draft.value) draft.value.name = sup.name;
@@ -1009,7 +1225,7 @@ async function openSession(d: ConnectorDraft): Promise<boolean> {
     runs.value = [];
     lastRun.value = null;
   }
-  syncSessionRoute(d);
+  await syncSessionRoute(d);
   await nextTick();
   dirty.value = coerced;
   if (coerced) editGen.value += 1;
@@ -1255,7 +1471,7 @@ async function saveDraft(opts?: {
     saveError.value = false;
     lastSavedAt.value = new Date();
     await nextTick();
-    if (!opts?.skipRouteSync) syncSessionRoute(draft.value);
+    if (!opts?.skipRouteSync) await syncSessionRoute(draft.value);
     if (!opts?.silent) ElMessage.success($t("common.feedback.saveSuccess"));
   } catch (err) {
     saveError.value = true;
@@ -1316,7 +1532,76 @@ function isRunCancelled(err: unknown): boolean {
   return isHttpError(err) && err.message === $t("httpMsg.requestCancelled");
 }
 
-const vsplitRef = ref<{ expand: () => void } | null>(null);
+const vsplitRef = ref<{
+  expand: () => void;
+  toggle: () => void;
+  toggleDirection: () => void;
+  canSideBySide?: boolean;
+  effectiveDirection?: SplitDirection;
+} | null>(null);
+
+const splitToggleTitle = computed(() =>
+  (vsplitRef.value?.effectiveDirection || splitDirection.value) === "vertical"
+    ? $t("upstreamConnector.splitTopBottom")
+    : $t("upstreamConnector.splitSideBySide"),
+);
+
+function onAdapterQuickSelect(next: string) {
+  if (!canWriteWorkbench.value || !activeEp.value) return;
+  activeEp.value.adapter = next;
+  ensureEndpointAdapterFields(activeEp.value);
+  syncKvFromActive();
+}
+
+async function saveDraftExplicit() {
+  if (!canWriteWorkbench.value || !draft.value) return;
+  try {
+    await saveDraft({ silent: false });
+  } catch {
+    void 0;
+  }
+}
+
+async function resyncFromLiveSupplier() {
+  if (!canWriteWorkbench.value || !draft.value?.linked_supplier_id) return;
+  try {
+    await ElMessageBox.confirm(
+      $t("upstreamConnector.resyncFromLiveConfirm"),
+      $t("upstreamConnector.resyncFromLive"),
+      { type: "warning" },
+    );
+  } catch {
+    return;
+  }
+  bootstrapping.value = true;
+  try {
+    const d = await draftFromSupplier(draft.value.linked_supplier_id, {
+      force_resync: true,
+    });
+    await openSession(d);
+    ElMessage.success($t("upstreamConnector.resyncOk"));
+  } catch (e) {
+    ElMessage.error(
+      isHttpError(e) ? e.message : $t("upstreamConnector.bootstrapFailed"),
+    );
+  } finally {
+    bootstrapping.value = false;
+  }
+}
+
+function goBack() {
+  if (draft.value?.linked_supplier_id) {
+    void router.push({
+      name: "SupplierDetail",
+      params: { id: draft.value.linked_supplier_id },
+    });
+    return;
+  }
+  void router.push({
+    path: "/operations/upstream-supply",
+    query: { tab: "suppliers" },
+  });
+}
 
 function beginRun(): AbortSignal {
   vsplitRef.value?.expand();
@@ -1662,6 +1947,7 @@ async function doPublish() {
               channel_code: c.channel_code,
               name: c.name,
               path_prefix: c.path_prefix,
+              cost_price: c.cost_price,
               qps_limit: c.qps_limit,
             })),
       route:
@@ -1687,7 +1973,7 @@ async function doPublish() {
     ElMessage.success($t("upstreamConnector.publishOk"));
     if (r.supplier_id && draft.value) {
       draft.value.linked_supplier_id = r.supplier_id;
-      syncSessionRoute(draft.value);
+      await syncSessionRoute(draft.value);
     }
   } finally {
     publishing.value = false;
@@ -1713,12 +1999,6 @@ function onSendCommand(cmd: string) {
   else if (cmd === "transform") void doTransformPreview();
   else if (cmd === "curl") void copyCurl();
   else if (cmd === "live") void doLiveRun();
-}
-
-function onSessionAction(cmd: string) {
-  if (!canWriteWorkbench.value) return;
-  if (cmd === "import") showImport.value = true;
-  else if (cmd === "export") void doExport();
 }
 
 function composedUrl() {
@@ -1793,13 +2073,21 @@ async function bootstrap() {
         leaveForMicroservice(supplierId);
         return;
       }
+      if (!canWriteWorkbench.value) {
+        await loadReadOnlySupplierDraft(supplierId, sup);
+        return;
+      }
       const d = await draftFromSupplier(supplierId);
-      await openSession(d);
+      await openSession(d, sup);
       return;
     }
     if (sessionId) {
       const d = await getDraft(sessionId);
       await openSession(d);
+      return;
+    }
+    if (!canWriteWorkbench.value) {
+      draft.value = null;
       return;
     }
     await createBlankSession();
@@ -1922,11 +2210,15 @@ function onCommand(id: string) {
     return;
   }
   if (id === "save") {
-    void saveDraft({ silent: true });
+    void saveDraftExplicit();
     return;
   }
   if (id === "publish") {
     void openPublish();
+    return;
+  }
+  if (id === "tab:variables") {
+    envDrawerVisible.value = true;
     return;
   }
   if (id.startsWith("tab:")) {
@@ -1963,7 +2255,7 @@ function onHotkey(e: KeyboardEvent) {
     onSendClick();
   } else if (e.key.toLowerCase() === "s") {
     e.preventDefault();
-    void saveDraft({ silent: true });
+    void saveDraftExplicit();
   } else if (e.key.toLowerCase() === "k") {
     e.preventDefault();
     showCommands.value = !showCommands.value;
@@ -2048,6 +2340,7 @@ watch(
     const [prevSid, prevSession] = prev || [undefined, undefined];
     if (supplierId === prevSid && sessionId === prevSession) return;
     if (supplierId && typeof supplierId === "string") {
+      if (draft.value?.linked_supplier_id === supplierId) return;
       bootstrapping.value = true;
       try {
         const sup = await fetchSupplierById(supplierId);
@@ -2055,8 +2348,12 @@ watch(
           leaveForMicroservice(supplierId);
           return;
         }
+        if (!canWriteWorkbench.value) {
+          await loadReadOnlySupplierDraft(supplierId, sup);
+          return;
+        }
         const d = await draftFromSupplier(supplierId);
-        await openSession(d);
+        await openSession(d, sup);
       } catch (e) {
         ElMessage.error((e as Error)?.message || $t("upstreamConnector.bootstrapFailed"));
       } finally {
@@ -2109,33 +2406,79 @@ watch(
 .wb-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 4px 0 10px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  margin-bottom: 6px;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 .wb-top__left {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
 }
-.wb-save-status {
-  font-size: var(--wb-fs-body);
+.wb-top__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+.wb-top__back {
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.wb-top__name-input {
+  min-width: 120px;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--wb-radius, 4px);
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  &:hover:not(:read-only) {
+    border-color: var(--el-border-color-lighter);
+    background: var(--el-fill-color-light);
+  }
+  &:focus:not(:read-only) {
+    border-color: var(--el-color-primary);
+    background: var(--el-fill-color-blank);
+  }
+}
+.wb-top__gate-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
-  white-space: nowrap;
-}
-.wb-top__icon {
-  font-size: 18px;
-  color: var(--el-color-primary);
-}
-.wb-top__title {
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  &.is-ready {
+    border-color: color-mix(in srgb, var(--el-color-success) 40%, transparent);
+    background: color-mix(in srgb, var(--el-color-success) 12%, var(--el-bg-color));
+    color: var(--el-color-success);
+  }
 }
-.wb-back {
-  padding: 4px;
+.wb-env-drawer__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 .wb-empty {
   flex: 1;
@@ -2198,20 +2541,27 @@ watch(
     box-shadow: inset 0 0 0 1px var(--wb-danger, var(--el-color-danger));
   }
 }
-.wb-env-chip {
-  flex: 0 0 auto;
+.wb-split-dir-btn {
+  flex: 0 0 32px;
+  width: 32px;
   height: var(--wb-urlbar-h, 32px);
-  padding: 0 10px;
+  padding: 0;
   border: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
   border-radius: var(--wb-radius, 4px);
   background: var(--wb-surface-input, var(--el-fill-color-light));
   color: var(--wb-text-muted, var(--el-text-color-secondary));
-  font-size: var(--wb-fs-body, 13px);
-  font-weight: 600;
+  font-size: 15px;
   cursor: pointer;
-  white-space: nowrap;
-  &:hover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  &:hover:not(:disabled) {
     color: var(--wb-text, var(--el-text-color-primary));
+    border-color: var(--el-border-color);
+  }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 }
 .wb-urlbar__method {
@@ -2233,7 +2583,6 @@ watch(
   flex-shrink: 0;
   :deep(.el-tooltip__trigger) {
     display: inline-flex;
-    width: 28px;
     height: 100%;
   }
 }
@@ -2251,23 +2600,6 @@ watch(
   .hopp-btn__main:hover,
   .hopp-btn__caret:hover {
     background: color-mix(in srgb, var(--wb-accent) 86%, #000);
-  }
-}
-.hopp-btn--ghost {
-  background: transparent;
-  color: var(--wb-text);
-  border: 1px solid var(--wb-divider);
-  .hopp-btn__main,
-  .hopp-btn__caret {
-    background: var(--wb-surface);
-    color: var(--wb-text);
-  }
-  .hopp-btn__caret {
-    border-left: 1px solid var(--el-border-color-lighter);
-  }
-  .hopp-btn__main:hover,
-  .hopp-btn__caret:hover {
-    background: var(--el-fill-color-blank);
   }
 }
 .hopp-btn__main,
@@ -2295,12 +2627,9 @@ watch(
 .hopp-btn__main:only-child {
   border-radius: 4px;
 }
-.hopp-btn--ghost .hopp-btn__main:disabled {
-  opacity: 0.42;
-  color: var(--el-text-color-disabled);
-}
 .hopp-btn__caret {
-  width: 100%;
+  width: 28px;
+  flex: 0 0 28px;
   font-size: 16px;
   color: inherit;
 }
@@ -2334,9 +2663,6 @@ watch(
     display: flex;
     width: 100%;
   }
-  :deep(.el-tabs__item#tab-variables) {
-    margin-left: auto;
-  }
   :deep(.el-tabs__item) {
     height: var(--wb-tab-h);
     padding: 0 14px;
@@ -2365,15 +2691,15 @@ watch(
     height: 100%;
   }
 }
-.req-actions {
-  display: flex;
-  gap: 8px;
-  margin: 10px 0;
-}
 @media (max-width: 1100px) {
   .connector-workbench-page {
     height: auto;
     min-height: var(--art-full-height, calc(100vh - 48px));
+  }
+  .wb-top {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 4px;
   }
   .wb-runbar {
     flex-wrap: wrap;
@@ -2383,7 +2709,6 @@ watch(
     flex: 1 1 100%;
     min-width: 100%;
   }
-  .wb-env-chip,
   :deep(.wb-adapter-chip) {
     flex: 0 1 auto;
   }

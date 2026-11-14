@@ -103,19 +103,22 @@
             }}</span>
           </div>
           <div class="ops-trace__track">
-            <div
+            <span
               class="ops-trace__bar"
               :style="{
                 left: `${row.left}%`,
                 width: `${row.width}%`,
                 background: row.span.error
-                  ? '#f56c6c'
+                  ? 'var(--el-color-danger)'
                   : serviceColor(row.span.service_name),
               }"
-            ></div>
+            ></span>
             <span
               class="ops-trace__dur"
-              :style="{ left: `${Math.min(row.left + row.width, 88)}%` }"
+              :class="{
+                'is-inside-bar': row.durPlacement.mode === 'inside-bar',
+              }"
+              :style="row.durPlacement.style"
               >{{ formatDurationNs(row.span.duration_ns) }}</span
             >
           </div>
@@ -126,13 +129,13 @@
         <template v-if="selected">
           <h3>{{ selected.span_name }}</h3>
           <div class="ops-trace__panel-meta">
-            <ElTag
-              size="small"
-              :color="serviceColor(selected.service_name)"
-              effect="dark"
-            >
-              {{ selected.service_name }}
-            </ElTag>
+            <span class="ops-trace__service-tag">
+              <i
+                class="ops-trace__dot"
+                :style="{ background: serviceColor(selected.service_name) }"
+              ></i>
+              <span>{{ selected.service_name }}</span>
+            </span>
             <ElTag size="small" type="info">{{ selected.span_kind }}</ElTag>
             <ElTag v-if="selected.error" size="small" type="danger">{{
               selected.status_code
@@ -183,7 +186,7 @@
               :label="`${t('ops.traces.detail.events')} (${spanEvents.length})`"
               name="events"
             >
-              <ElEmpty v-if="!spanEvents.length" :image-size="40" />
+              <EmptyState v-if="!spanEvents.length" compact :image-size="40" />
               <div
                 v-for="(ev, i) in spanEvents"
                 :key="i"
@@ -201,8 +204,9 @@
               :label="`${t('ops.traces.detail.links')} (${spanLinks.length + spanLinkedFrom.length})`"
               name="links"
             >
-              <ElEmpty
+              <EmptyState
                 v-if="!spanLinks.length && !spanLinkedFrom.length"
+                compact
                 :image-size="40"
               />
               <div
@@ -238,10 +242,11 @@
             </ElTabPane>
           </ElTabs>
         </template>
-        <ElEmpty
+        <EmptyState
           v-else
+          compact
           :description="t('ops.traces.detail.selectSpan')"
-          :image-size="60"
+          :image-size="56"
         />
       </div>
     </div>
@@ -255,12 +260,13 @@
         :key="`${link.trace_id}-${link.span_id}`"
         class="ops-trace__link"
       >
-        <ElTag
-          size="small"
-          :color="serviceColor(link.service_name)"
-          effect="dark"
-          >{{ link.service_name }}</ElTag
-        >
+        <span class="ops-trace__service-tag">
+          <i
+            class="ops-trace__dot"
+            :style="{ background: serviceColor(link.service_name) }"
+          ></i>
+          <span>{{ link.service_name }}</span>
+        </span>
         <ElLink type="primary" @click="openLinked(link.trace_id, link.span_id)">
           {{ link.span_name }} · {{ link.trace_id }}
         </ElLink>
@@ -341,7 +347,11 @@
           </ElTable>
         </ElTabPane>
         <ElTabPane :label="t('ops.traces.detail.stages')" name="stages">
-          <StageBreakdown :stages="stages" />
+          <StageBreakdown
+            :stages="stages"
+            :calls="calls"
+            :total-duration-ms="detail?.duration_ms"
+          />
         </ElTabPane>
         <ElTabPane :label="t('ops.traces.detail.billing')" name="billing">
           <div v-if="billingError" class="ops-trace__muted">
@@ -425,6 +435,7 @@
 
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { formatDateTime } from "@/utils/format";
 import { computed, defineComponent, h, ref, watch, type PropType } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -447,10 +458,13 @@ import type {
   CallStageEntry,
 } from "@/types/api/call-monitor";
 import { HttpError } from "@/utils/http/error";
-import { buildCallsRoute } from "@/utils/ops/calls-link";
-import { buildTraceRoute } from "@/utils/ops/trace-link";
+import { buildCallsRoute, buildTraceRoute } from "@/utils/ops/opsRoutes";
 import { logger } from "@/utils/sys";
-import StageBreakdown from "../calls/modules/StageBreakdown.vue";
+import StageBreakdown from "../traffic/modules/StageBreakdown.vue";
+import {
+  resolveWaterfallDurPlacement,
+  type WaterfallDurPlacement,
+} from "./waterfall-layout";
 
 defineOptions({ name: "OpsTraceDetail" });
 
@@ -490,7 +504,7 @@ const PALETTE = [
   "#9b59b6",
   "#16a085",
   "#d35400",
-  "#2c3e50",
+  "#0ea5e9",
   "#c0392b",
   "#7f8c8d",
   "#1abc9c",
@@ -537,6 +551,7 @@ interface WaterfallRow {
   span: TraceSpan;
   left: number;
   width: number;
+  durPlacement: WaterfallDurPlacement;
 }
 
 const visibleRows = computed<WaterfallRow[]>(() => {
@@ -552,10 +567,13 @@ const visibleRows = computed<WaterfallRow[]>(() => {
     }
     const left = ((span.start_ns - d.start_ns) / total) * 100;
     const width = Math.max(0.3, (span.duration_ns / total) * 100);
+    const safeLeft = Math.max(0, left);
+    const safeWidth = Math.min(width, 100 - safeLeft);
     rows.push({
       span,
-      left: Math.max(0, left),
-      width: Math.min(width, 100 - Math.max(0, left)),
+      left: safeLeft,
+      width: safeWidth,
+      durPlacement: resolveWaterfallDurPlacement(safeLeft, safeWidth),
     });
     if (collapsed.value.has(span.span_id)) hideBelow = span.depth;
   }
@@ -656,7 +674,14 @@ function openLinked(target: string, spanId: string) {
     selectSpan(spanId);
     return;
   }
-  void router.push(buildTraceRoute(target, { span: spanId }));
+  const hint = startHint();
+  void router.push(
+    buildTraceRoute(target, {
+      span: spanId,
+      start: hint.start,
+      end: hint.end,
+    }),
+  );
 }
 
 function callsRouteOf(requestId: string) {
@@ -667,9 +692,15 @@ function callsRouteOf(requestId: string) {
 }
 
 function startHint(): { start?: number; end?: number } {
-  const raw = Number(route.query.start);
-  if (!Number.isFinite(raw) || raw <= 0) return {};
-  return { start: Math.floor(raw) - 300, end: Math.floor(raw) + 3 * 3600 };
+  const rawStart = Number(route.query.start);
+  const rawEnd = Number(route.query.end);
+  if (!Number.isFinite(rawStart) || rawStart <= 0) return {};
+  const start = Math.max(1, Math.floor(rawStart) - 900);
+  const end =
+    Number.isFinite(rawEnd) && rawEnd > start
+      ? Math.floor(rawEnd)
+      : Math.floor(rawStart) + 3 * 3600;
+  return { start, end };
 }
 
 /**
@@ -820,17 +851,33 @@ watch(traceId, () => void load(), { immediate: true });
 .ops-trace__card h3 {
   margin: 0 0 8px;
   font-size: 15px;
+  color: var(--el-text-color-primary);
   word-break: break-all;
 }
 .ops-trace__panel h4 {
   margin: 12px 0 4px;
   font-size: 13px;
+  color: var(--el-text-color-primary);
 }
 .ops-trace__panel-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
   margin-bottom: 8px;
+}
+.ops-trace__service-tag {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--art-form-control-radius-sm);
 }
 .ops-trace__legend {
   display: flex;
@@ -839,6 +886,7 @@ watch(traceId, () => void load(), { immediate: true });
   align-items: center;
   margin-bottom: 8px;
   font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 .ops-trace__legend-item {
   display: inline-flex;
@@ -853,33 +901,37 @@ watch(traceId, () => void load(), { immediate: true });
 }
 .ops-trace__legend-item i.is-critical {
   background: transparent;
-  border: 2px solid #e6a23c;
+  border: 2px solid var(--el-color-warning);
 }
 .ops-trace__legend-item i.is-error {
-  background: #f56c6c;
+  background: var(--el-color-danger);
 }
 .ops-trace__axis,
 .ops-trace__row {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: clamp(220px, 34%, 340px) minmax(0, 1fr);
   align-items: center;
 }
 .ops-trace__axis-track {
   position: relative;
   height: 18px;
   font-size: 11px;
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-regular);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .ops-trace__axis-track span {
   position: absolute;
+  white-space: nowrap;
   transform: translateX(-50%);
 }
 .ops-trace__axis-track span:first-child {
   transform: none;
 }
 .ops-trace__axis-track span:last-child {
-  transform: translateX(-100%);
+  right: 0;
+  left: auto !important;
+  text-align: right;
+  transform: none;
 }
 .ops-trace__row {
   min-height: 24px;
@@ -891,13 +943,13 @@ watch(traceId, () => void load(), { immediate: true });
   background: var(--el-fill-color-light);
 }
 .ops-trace__row.is-critical {
-  border-left-color: #e6a23c;
+  border-left-color: var(--el-color-warning);
 }
 .ops-trace__row.is-selected {
   background: var(--el-color-primary-light-9);
 }
 .ops-trace__row.is-error .ops-trace__name {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .ops-trace__label {
   display: flex;
@@ -908,7 +960,7 @@ watch(traceId, () => void load(), { immediate: true });
 }
 .ops-trace__toggle {
   width: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-regular);
   text-align: center;
 }
 .ops-trace__toggle.is-leaf {
@@ -921,34 +973,48 @@ watch(traceId, () => void load(), { immediate: true });
   border-radius: 50%;
 }
 .ops-trace__svc {
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-regular);
 }
 .ops-trace__name {
   overflow: hidden;
+  color: var(--el-text-color-primary);
   text-overflow: ellipsis;
 }
 .ops-trace__track {
   position: relative;
-  height: 24px;
+  height: 22px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  border-radius: 2px;
 }
 .ops-trace__bar {
   position: absolute;
-  top: 6px;
+  top: 5px;
+  display: block;
   height: 12px;
   border-radius: 2px;
   opacity: 0.85;
 }
 .ops-trace__row.is-critical .ops-trace__bar {
-  outline: 2px solid #e6a23c;
+  outline: 2px solid var(--el-color-warning);
   opacity: 1;
 }
 .ops-trace__dur {
   position: absolute;
-  top: 4px;
-  padding-left: 4px;
+  top: 3px;
+  z-index: 1;
+  padding: 0 4px;
   font-size: 11px;
-  color: var(--el-text-color-secondary);
+  line-height: 16px;
+  color: var(--el-text-color-primary);
   white-space: nowrap;
+  background: var(--el-bg-color);
+  border-radius: 2px;
+}
+.ops-trace__dur.is-inside-bar {
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.32);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
 }
 .ops-trace__event {
   padding: 6px 8px;
@@ -957,7 +1023,7 @@ watch(traceId, () => void load(), { immediate: true });
   border-radius: var(--art-form-control-radius-sm);
 }
 .ops-trace__event.is-error {
-  border-left: 3px solid #f56c6c;
+  border-left: 3px solid var(--el-color-danger);
 }
 .ops-trace__link {
   display: flex;

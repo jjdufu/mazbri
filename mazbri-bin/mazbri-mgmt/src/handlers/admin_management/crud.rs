@@ -31,6 +31,8 @@ pub async fn create_admin(
     headers: axum::http::HeaderMap,
     Json(req): Json<CreateAdminRequest>,
 ) -> Result<Response, ApiError> {
+    svc::precheck_create_admin(&state.admin_db, &state.password_policy_cache, &claims, &req)
+        .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -107,6 +109,7 @@ pub async fn delete_admin(
     headers: axum::http::HeaderMap,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Response, ApiError> {
+    svc::precheck_delete_admin(&state.admin_db, &claims, id).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,

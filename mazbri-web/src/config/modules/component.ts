@@ -33,6 +33,14 @@ export const globalComponentsConfig: GlobalComponentConfig[] = [
     ),
     enabled: true,
   },
+  {
+    name: $t("config.globalComponents.personalSecurityDrawer"),
+    key: "personal-security-drawer",
+    component: defineAsyncComponent(
+      () => import("@/components/common/personal-security-drawer/index.vue"),
+    ),
+    enabled: true,
+  },
 ];
 export interface GlobalComponentConfig {
   name: string;

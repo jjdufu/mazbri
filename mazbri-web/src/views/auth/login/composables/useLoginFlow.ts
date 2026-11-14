@@ -5,6 +5,7 @@ import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
 import { useSettingStore } from "@/store/modules/setting";
+import { resetRouterState } from "@/router/guards/beforeEach";
 import { classifySubmittedCode } from "@/utils/http/mfa-step-up-state";
 import {
   login,
@@ -163,16 +164,18 @@ export function useLoginFlow() {
     );
     userStore.setLoginStatus(true);
     userStore.setUserInfo(response.user);
+    userStore.checkAndClearWorktabs();
+    resetRouterState(0);
     try {
-      await useMfaStepUpStore().refresh();
+      await useMfaStepUpStore().refresh(true);
     } catch {
       // 登录完成只同步提权状态，不开窗。失败不阻断进入系统。
     }
     try {
-      await settingStore.loadFromServer();
+      await settingStore.loadFromServer(true);
     } catch (error) {
       logger.warn(
-        "[Login] Failed to load appearance settings; falling back to local config",
+        "[Login] Failed to load system settings; falling back to local config",
         {
           service: "mazbri-mgmt-web",
           event: "login_settings_load_fallback",

@@ -109,6 +109,9 @@ const EXPORTED_NAME_PREFIXES: &[&str] = &[
 /// unknown dependency spans) is dropped at the source.
 #[must_use]
 pub fn should_export_otlp_span(meta: &tracing::Metadata<'_>) -> bool {
+    if meta.name() == "probe_request" {
+        return false;
+    }
     // Level ordering: ERROR < WARN < INFO < DEBUG < TRACE
     if *meta.level() > Level::INFO {
         return false;
@@ -408,6 +411,14 @@ mod tests {
             request_id = "r1"
         );
         assert!(should_export_otlp_span(req.metadata().expect("meta")));
+
+        let probe_req = info_span!(
+            target: "mazbri_service::middleware",
+            "probe_request",
+            request_id = "r2",
+            path = "/nodes/heartbeat"
+        );
+        assert!(!should_export_otlp_span(probe_req.metadata().expect("meta")));
 
         let rpc = info_span!(target: "tarpc::client", "CacheService.get");
         assert!(should_export_otlp_span(rpc.metadata().expect("meta")));

@@ -41,6 +41,7 @@ import type {
   ApiKeyListResponse,
   CreateApiKeyRequest,
   CreateApiKeyResponse,
+  RotateApiKeyResponse,
 } from "@/types/api/api-key";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 import { requireTenantCode } from "@/utils/tenant-code";
@@ -448,7 +449,18 @@ export function createApiKey(
   return request.post<CreateApiKeyResponse>({
     url: `${BASE_PATH}/${tenantCode}/api-keys`,
     params: data,
-    showSuccessMessage: true,
+    showSuccessMessage: false,
+    signal,
+  });
+}
+export function rotateApiKey(
+  tenantCode: string,
+  keyPrefix: string,
+  signal?: AbortSignal,
+) {
+  return request.post<RotateApiKeyResponse>({
+    url: `${BASE_PATH}/${tenantCode}/api-keys/${keyPrefix}/rotate`,
+    showSuccessMessage: false,
     signal,
   });
 }
@@ -459,7 +471,7 @@ export function deleteApiKey(
 ) {
   return request.del<void>({
     url: `${BASE_PATH}/${tenantCode}/api-keys/${keyId}`,
-    showSuccessMessage: true,
+    showSuccessMessage: false,
     signal,
   });
 }

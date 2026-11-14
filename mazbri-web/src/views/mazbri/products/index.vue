@@ -1,8 +1,12 @@
 <template>
-  <div ref="pageRef" class="product-list-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div
+    ref="pageRef"
+    class="product-list-page"
+    style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+  >
     <ResourceTableShell
       v-model:columns="columns"
-      :title="$t('product.list.title')"
+      :title="t('product.list.title')"
       :data="tableData"
       :loading="loading"
       :empty-text="emptyDescription"
@@ -20,12 +24,12 @@
           v-model:filters="listFilters"
           :filter-catalog="productsCatalog"
           :show-import="true"
-          :import-label="$t('common.actions.import')"
+          :import-label="t('common.actions.import')"
           :import-roles="['R_ADMIN', 'R_FINANCE']"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
           :show-primary="true"
-          :primary-label="$t('product.actions.add')"
+          :primary-label="t('product.actions.add')"
           :primary-roles="['R_ADMIN', 'R_FINANCE']"
           :show-delete="true"
           :delete-total-count="tableData.length"
@@ -42,15 +46,15 @@
       <template #product_id="{ row }">
         <CopyableText
           :value="row.product_id"
-          :label="$t('product.columns.productId')"
+          :label="t('product.columns.productId')"
         />
       </template>
       <template #enabled="{ row }">
         <StatusIndicator :type="row.enabled ? 'success' : 'info'">
           {{
             row.enabled
-              ? $t("common.status.enabled")
-              : $t("common.status.disabled")
+              ? t("common.status.enabled")
+              : t("common.status.disabled")
           }}
         </StatusIndicator>
       </template>
@@ -60,14 +64,15 @@
       <template #operations="{ row }">
         <TableActionRow>
           <ElButton link type="primary" @click="handleView(row)">{{
-            $t("common.actions.details")
+            t("common.actions.details")
           }}</ElButton>
           <ElButton
+            v-if="userStore.canWriteBusiness"
             v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
-            >{{ $t("common.actions.delete") }}</ElButton
+            >{{ t("common.actions.delete") }}</ElButton
           >
         </TableActionRow>
       </template>
@@ -81,11 +86,10 @@
 
     <ImportDialog
       v-model="importVisible"
-      :title="$t('common.actions.import')"
+      :title="t('common.actions.import')"
       :columns="productImportColumns"
       :format-hint="productImportFormatHint"
       unique-key="name"
-      :existing-data="productImportExistingData"
       :validator="validateProductImportRow"
       :transformer="transformProductImportRow"
       :on-import="handleProductImport"
@@ -100,7 +104,7 @@
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
-import { $t } from "@/locales";
+import { useI18n } from "vue-i18n";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
   Product,
@@ -128,24 +132,31 @@ import {
   runResourceCsvImport,
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
+import { useUserStore } from "@/store/modules/user";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import { logger } from "@/utils/sys";
-import { formatDateTime as formatDate } from "@/utils/format";
+import { EMPTY_PLACEHOLDER, formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
+
 defineOptions({ name: "ProductList" });
+
 type ExportCommand = "page" | "selected";
+
 interface ProductImportRow extends Record<string, unknown> {
   name: string;
   enabled?: string;
 }
+
 interface ProductExportRow extends Record<string, unknown> {
   product_id: string;
   name: string;
   enabled: boolean;
   created_at: string;
 }
+
 const router = useRouter();
+const { t } = useI18n();
+const userStore = useUserStore();
 const pageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const tableData = ref<Product[]>([]);
@@ -153,71 +164,83 @@ const createVisible = ref(false);
 const importVisible = ref(false);
 const activeReservation = ref<ProductIdReservation | null>(null);
 const reservationConsumed = ref(false);
-const importProducts = ref<Product[]>([]);
 const columns = ref<ColumnOption<Product>[]>([]);
-const productColumns: ColumnOption<Product>[] = [
+
+const productColumns = computed<ColumnOption<Product>[]>(() => [
   { type: "selection", width: 55 },
   {
     prop: "product_id",
-    label: $t("product.columns.productId"),
+    label: t("product.columns.productId"),
     width: 180,
     useSlot: true,
   },
-  { prop: "name", label: $t("product.columns.name"), minWidth: 100 },
+  {
+    prop: "name",
+    label: t("product.columns.name"),
+    minWidth: 220,
+    maxWidth: 320,
+    showOverflowTooltip: true,
+  },
   {
     prop: "enabled",
-    label: $t("product.columns.enabled"),
+    label: t("product.columns.enabled"),
     width: 100,
     useSlot: true,
   },
   {
     prop: "created_at",
-    label: $t("common.fields.createdAt"),
+    label: t("common.fields.createdAt"),
     width: 180,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 200,
+    label: t("common.fields.operations"),
+    width: userStore.canWriteBusiness ? 180 : 100,
     fixed: "right",
     useSlot: true,
   },
-];
+]);
+
 const searchForm = reactive<ProductListQuery>({
   q: "",
 });
 const listFilters = ref<ListFilter[]>([]);
+
 const searchKeyword = computed<string>({
   get: () => searchForm.q ?? "",
   set: (value) => {
     searchForm.q = value;
   },
 });
+
 const hasActiveSearch = computed(
   () => Boolean(searchForm.q?.trim()) || listFilters.value.length > 0,
 );
+
 const emptyDescription = computed(() =>
   hasActiveSearch.value
-    ? $t("product.empty.filtered")
-    : $t("product.empty.default"),
+    ? t("product.empty.filtered")
+    : t("product.empty.default"),
 );
+
 const getProductCellText = (columnKey: string, row: Product) => {
   switch (columnKey) {
     case "product_id":
-      return row.product_id || "-";
+      return row.product_id || EMPTY_PLACEHOLDER;
     case "enabled":
       return row.enabled
-        ? $t("common.status.enabled")
-        : $t("common.status.disabled");
+        ? t("common.status.enabled")
+        : t("common.status.disabled");
     case "created_at":
       return formatDate(row.created_at);
     case "operations":
-      return $t("common.actions.details");
+      return `${t("common.actions.details")} ${t("common.actions.delete")}`;
     default:
-      return row.name || "-";
+      return row.name || EMPTY_PLACEHOLDER;
   }
 };
+
 const getProductColumnWeight = (columnKey: string) => {
   switch (columnKey) {
     case "product_id":
@@ -232,6 +255,7 @@ const getProductColumnWeight = (columnKey: string) => {
       return 1;
   }
 };
+
 useAdaptiveTableColumns({
   columns,
   containerRef: pageRef,
@@ -240,62 +264,67 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getProductCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getProductColumnWeight(columnKey),
 });
+
 const pagination = reactive({
   page: 1,
   page_size: 10,
   total: 0,
 });
+
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
   size: pagination.page_size,
   total: pagination.total,
 }));
+
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<Product>({
     deleteApi: (row) => deleteProduct(row.product_id),
     getItemName: (row) => row.name,
     onDeleteSuccess: () => loadData(),
   });
-const productImportColumns: ColumnConfig[] = [
-  { key: "name", label: $t("product.fields.name"), required: true },
-  { key: "enabled", label: $t("product.fields.enabled"), required: false },
-];
-const productExportColumns: { key: keyof ProductExportRow; label: string }[] = [
-  { key: "product_id", label: $t("product.fields.productId") },
-  { key: "name", label: $t("product.fields.name") },
-  { key: "enabled", label: $t("product.fields.enabled") },
-  { key: "created_at", label: $t("common.fields.createdAt") },
-];
-const productImportExistingData = computed(() =>
-  importProducts.value.map((product) => ({
-    name: product.name,
-  })),
-);
+
+const productImportColumns = computed<ColumnConfig[]>(() => [
+  { key: "name", label: t("product.fields.name"), required: true },
+  { key: "enabled", label: t("product.fields.enabled"), required: false },
+]);
+
+const productExportColumns = computed<
+  { key: keyof ProductExportRow; label: string }[]
+>(() => [
+  { key: "product_id", label: t("product.fields.productId") },
+  { key: "name", label: t("product.fields.name") },
+  { key: "enabled", label: t("product.fields.enabled") },
+  { key: "created_at", label: t("common.fields.createdAt") },
+]);
+
 const productImportFormatHint = computed(() =>
   [
-    $t("feedback.import.csvFormatHint"),
-    $t("feedback.import.requiredColumns", {
-      columns: productImportColumns
+    t("feedback.import.csvFormatHint"),
+    t("feedback.import.requiredColumns", {
+      columns: productImportColumns.value
         .filter((column) => column.required)
         .map((column) => column.key)
         .join(", "),
     }),
   ].join("\n"),
 );
+
 const exportItems = computed(() => [
   {
     command: "page",
-    label: $t("common.actions.exportPage"),
+    label: t("common.actions.exportPage"),
     disabled: tableData.value.length === 0,
   },
   {
     command: "selected",
-    label: $t("common.actions.exportSelected", {
+    label: t("common.actions.exportSelected", {
       count: selectedRows.value.length,
     }),
     disabled: selectedRows.value.length === 0,
   },
 ]);
+
 const parseBoolean = (value?: string) => {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) {
@@ -309,6 +338,7 @@ const parseBoolean = (value?: string) => {
   }
   return undefined;
 };
+
 const loadData = async () => {
   await runWithLoading(loading, async () => {
     const res = await fetchProductList({
@@ -325,26 +355,18 @@ const loadData = async () => {
     logger.error("Failed to load product list:", error);
   });
 };
-const loadImportProducts = async () => {
-  try {
-    importProducts.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchProductList({ page, page_size: pageSize });
-      return { items: res.products, total: res.pagination.total };
-    });
-  } catch (error) {
-    logger.error("Failed to load import product list:", error);
-    importProducts.value = tableData.value;
-  }
-};
+
 const handlePageSizeChange = (size: number) => {
   pagination.page_size = size;
   pagination.page = 1;
   loadData();
 };
+
 const handleCurrentPageChange = (page: number) => {
   pagination.page = page;
   loadData();
 };
+
 const handleSearch = () => {
   pagination.page = 1;
   loadData();
@@ -359,6 +381,7 @@ const handleCreate = async () => {
     logger.error("Failed to reserve product_id:", error);
   }
 };
+
 const releaseActiveReservation = async () => {
   const reservation = activeReservation.value;
   if (!reservation) return;
@@ -371,27 +394,30 @@ const releaseActiveReservation = async () => {
     reservationConsumed.value = false;
   }
 };
+
 const handleCreateSuccess = async () => {
   reservationConsumed.value = true;
   activeReservation.value = null;
   await loadData();
 };
+
 const handleView = (row: Product) => {
   router.push({ name: "ProductDetail", params: { id: row.product_id } });
 };
+
 const handleDelete = async (row: Product) => {
   try {
     await ElMessageBox.confirm(
-      $t("product.messages.deleteProductConfirm", { name: row.name }),
-      $t("common.tips"),
+      t("product.messages.deleteProductConfirm", { name: row.name }),
+      t("common.tips"),
       {
-        confirmButtonText: $t("common.confirm"),
-        cancelButtonText: $t("common.cancel"),
+        confirmButtonText: t("common.confirm"),
+        cancelButtonText: t("common.cancel"),
         type: "warning",
       },
     );
     await deleteProduct(row.product_id);
-    ElMessage.success($t("common.feedback.deleteSuccess"));
+    ElMessage.success(t("common.feedback.deleteSuccess"));
     loadData();
   } catch (error) {
     if (error !== "cancel") {
@@ -399,32 +425,35 @@ const handleDelete = async (row: Product) => {
     }
   }
 };
+
 const validateProductImportRow = (row: Record<string, string>) => {
   if (!row.name?.trim()) {
     return {
       valid: false,
-      reason: $t("product.createDialog.validation.nameRequired"),
+      reason: t("product.createDialog.validation.nameRequired"),
     };
   }
   const trimmedName = row.name.trim();
   if (trimmedName.length < 2 || trimmedName.length > 100) {
     return {
       valid: false,
-      reason: $t("product.createDialog.validation.nameLength"),
+      reason: t("product.createDialog.validation.nameLength"),
     };
   }
   return { valid: true };
 };
+
 const transformProductImportRow = (
   row: Record<string, string>,
 ): ProductImportRow => ({
   name: row.name.trim(),
   enabled: row.enabled?.trim() || "",
 });
-const openImport = async () => {
-  await loadImportProducts();
+
+const openImport = () => {
   importVisible.value = true;
 };
+
 const handleExportCommand = (command: string) => {
   const exportCommand = command as ExportCommand;
   if (exportCommand !== "page" && exportCommand !== "selected") {
@@ -439,10 +468,11 @@ const handleExportCommand = (command: string) => {
   }));
   exportResourceCsv(
     csvRows,
-    productExportColumns,
+    productExportColumns.value,
     `products-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
+
 const handleProductImport = async (items: Record<string, unknown>[]) => {
   await runResourceCsvImport<ProductImportRow>(
     items,
@@ -471,14 +501,17 @@ const handleProductImport = async (items: Record<string, unknown>[]) => {
     },
   );
 };
+
 onMounted(() => {
   loadData();
 });
+
 watch(createVisible, async (visible) => {
   if (!visible && !reservationConsumed.value) {
     await releaseActiveReservation();
   }
 });
+
 onBeforeUnmount(async () => {
   if (!reservationConsumed.value) {
     await releaseActiveReservation();

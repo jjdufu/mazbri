@@ -1,262 +1,310 @@
 <template>
-  <div
-    ref="pageRef"
-    class="usage-recon-page"
-  >
-      <div
-        v-roles="ROLES_BIZ"
-        v-loading="settingsLoading"
-        class="usage-recon-settings"
-      >
-        <div class="usage-recon-settings__header">
+  <div ref="pageRef" class="usage-recon-page">
+    <div
+      v-if="pagination.total === 0"
+      class="usage-recon-compact-bar"
+    >
+      <div class="usage-recon-compact-bar__summary">
+        <ArtSvgIcon
+          icon="ri:calendar-check-line"
+          class="usage-recon-compact-bar__icon"
+        />
+        <span class="usage-recon-compact-bar__title">
+          {{ $t("ops.reconcile.calendar") }}
+        </span>
+        <span class="usage-recon-compact-bar__meta">
+          {{ settingsSummaryLine }}
+        </span>
+      </div>
+      <div class="usage-recon-compact-bar__actions">
+        <ElSelect
+          v-model="calendarDays"
+          class="usage-recon-days-select"
+          @change="loadCalendar"
+        >
+          <ElOption :value="7" :label="$t('ops.timeRange.presets.7d')" />
+          <ElOption :value="30" :label="$t('ops.timeRange.presets.30d')" />
+          <ElOption :value="90" :label="`90 ${$t('ops.units.days')}`" />
+        </ElSelect>
+      </div>
+    </div>
+
+    <OpsCard v-else :title="$t('ops.reconcile.calendar')">
+      <template #extra>
+        <div class="usage-recon-card-header-right">
+          <span class="usage-recon-compact-bar__meta">
+            {{ settingsSummaryLine }}
+          </span>
+          <ElSelect
+            v-model="calendarDays"
+            class="usage-recon-days-select"
+            @change="loadCalendar"
+          >
+            <ElOption :value="7" :label="$t('ops.timeRange.presets.7d')" />
+            <ElOption :value="30" :label="$t('ops.timeRange.presets.30d')" />
+            <ElOption :value="90" :label="`90 ${$t('ops.units.days')}`" />
+          </ElSelect>
+        </div>
+      </template>
+
+      <div v-if="calendar.length > 0" class="calendar-grid">
+        <div
+          v-for="d in calendar"
+          :key="d.day"
+          class="calendar-cell"
+          :class="`is-${d.status}`"
+          :title="`${d.day}: ${statusLabel(d.status)}`"
+        >
+          <div class="day">{{ d.day.slice(5) }}</div>
+          <div class="status">{{ statusLabel(d.status) }}</div>
+        </div>
+      </div>
+      <div v-else class="usage-recon-calendar-note">
+        {{ $t("ops.reconcile.noCalendarRecords") }}
+      </div>
+    </OpsCard>
+
+    <ResourceTableShell
+      v-model:columns="columns"
+      :title="$t('billing.reconciliation.listTitle')"
+      :show-header="props.active"
+      :loading="loading"
+      :data="items"
+      :empty-text="emptyDescription"
+      :pagination="artPagination"
+      table-class="surface-panel-table usage-recon-table"
+      @refresh="reloadAll"
+      @selection-change="handleSelectionChange"
+      @pagination:size-change="handlePageSizeChange"
+      @pagination:current-change="handleCurrentPageChange"
+    >
+      <template #actions>
+        <ResourceTableActionBar
+          v-model="searchKeyword"
+          v-model:filters="listFilters"
+          :filter-catalog="reconciliationCatalog"
+          :show-import="false"
+          :show-export="true"
+          :export-items="exportItems"
+          :export-disabled="items.length === 0 || exporting"
+          :export-loading="exporting"
+          :export-label="$t('billing.actions.export')"
+          :show-primary="canWriteBusiness"
+          :primary-label="$t('billing.reconciliation.runAudit')"
+          primary-icon="ri:play-circle-line"
+          :primary-roles="[...ROLES_BIZ]"
+          :show-delete="canWriteBusiness"
+          :delete-total-count="items.length"
+          :delete-selected-count="selectedRows.length"
+          :delete-roles="[...ROLES_BIZ]"
+          @search="handleSearch"
+          @export="
+            (command: string) =>
+              handleExportCommand(command as 'page' | 'selected')
+          "
+          @primary="openRunDialog"
+          @delete="
+            (type: 'all' | 'selected') => handleDeleteCommand(type, items)
+          "
+        >
+          <template #after-search>
+            <TableHeaderDatePickerPopover
+              v-model="filterRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              :start-placeholder="$t('billing.reconciliation.from')"
+              :end-placeholder="$t('billing.reconciliation.to')"
+              @change="handleFilterChange"
+            />
+          </template>
+          <template #before-delete>
+            <ElButton
+              v-if="canWriteBusiness"
+              v-roles="ROLES_BIZ"
+              :loading="settingsLoading"
+              @click="openPolicyDialog"
+            >
+              <template #icon>
+                <ArtSvgIcon icon="ri:settings-3-line" />
+              </template>
+              {{ $t("billing.reconciliation.policySettings") }}
+            </ElButton>
+          </template>
+        </ResourceTableActionBar>
+      </template>
+
+      <template #empty>
+        <EmptyState compact :description="emptyDescription" />
+      </template>
+
+      <template #reconciliation_date="{ row }">
+        {{ row.reconciliation_date }}
+      </template>
+      <template #billable_call_count="{ row }">
+        {{ formatCount(row.billable_call_count) }}
+      </template>
+      <template #gateway_call_count="{ row }">
+        {{ formatCount(row.gateway_call_count) }}
+      </template>
+      <template #upstream_preagg_call_count="{ row }">
+        {{ formatCount(row.upstream_preagg_call_count) }}
+      </template>
+      <template #discrepancy_ratio="{ row }">
+        {{ formatRatio(row.discrepancy_ratio) }}
+      </template>
+      <template #status="{ row }">
+        <ElTag :type="statusTagType(row.status)" size="small">
+          {{ statusLabel(row.status) }}
+        </ElTag>
+      </template>
+      <template #created_at="{ row }">
+        {{ formatDate(row.created_at) }}
+      </template>
+      <template #operations="{ row }">
+        <TableActionRow>
+          <ElButton link type="primary" @click="openDetail(row)">
+            {{ $t("common.actions.details") }}
+          </ElButton>
           <ElButton
             link
             type="primary"
-            class="usage-recon-settings__toggle-btn"
-            @click="settingsExpanded = !settingsExpanded"
+            @click="openCallMonitor(row, 'customer')"
           >
-            <ArtSvgIcon
-              :icon="
-                settingsExpanded ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'
-              "
-              class="usage-recon-settings__toggle-icon"
-            />
-            <ArtSvgIcon
-              icon="ri:settings-3-line"
-              class="usage-recon-settings__toggle-gear"
-            />
-            {{ $t("billing.reconciliation.settingsTitle") }}
-            <span class="usage-recon-settings__toggle-meta">
-              {{ settingsSummaryLine }}
-            </span>
+            {{ $t("billing.reconciliation.viewCustomerCalls") }}
           </ElButton>
           <ElButton
-            v-if="settingsExpanded"
+            link
             type="primary"
-            :loading="settingsSaving"
-            @click="handleSaveSettings"
+            @click="openCallMonitor(row, 'upstream')"
           >
-            {{ $t("common.save") }}
+            {{ $t("billing.reconciliation.viewUpstreamCalls") }}
           </ElButton>
-        </div>
-
-        <Transition name="usage-recon-fade">
-          <ElCard
-            v-if="settingsExpanded"
-            shadow="never"
-            class="usage-recon-settings__panel"
+          <ElButton
+            v-if="canWriteBusiness && canAcknowledge(row.status)"
+            v-roles="ROLES_BIZ"
+            link
+            type="warning"
+            @click="openResolve(row, 'acknowledged')"
           >
-            <div class="usage-recon-settings__body">
+            {{ $t("billing.reconciliation.acknowledge") }}
+          </ElButton>
+          <ElButton
+            v-if="canWriteBusiness && canResolve(row.status)"
+            v-roles="ROLES_BIZ"
+            link
+            type="success"
+            @click="openResolve(row, 'resolved')"
+          >
+            {{ $t("billing.reconciliation.resolve") }}
+          </ElButton>
+          <ElButton
+            v-if="canWriteBusiness"
+            v-roles="ROLES_BIZ"
+            link
+            type="danger"
+            @click="handleDeleteRow(row)"
+          >
+            {{ $t("common.actions.delete") }}
+          </ElButton>
+        </TableActionRow>
+      </template>
+    </ResourceTableShell>
 
-
-
-
-              <div class="usage-recon-settings__grid">
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.intervalSecs')"
-                >
-                  <ElInputNumber
-                    v-model="settingsForm.schedule.interval_secs"
-                    :min="60"
-                    :step="60"
-                    class="setting-control setting-input-number"
-                  />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.lossRatioThreshold')"
-                >
-                  <ElInputNumber
-                    v-model="settingsForm.loss_ratio_threshold"
-                    :min="0"
-                    :max="1"
-                    :step="0.01"
-                    :precision="4"
-                    class="setting-control setting-input-number"
-                  />
-                </CommonSettingRow>
-
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.alertWebhook')"
-                >
-                  <ElInput
-                    v-model="settingsForm.alert.webhook_url"
-                    clearable
-                    class="setting-control setting-control--wide"
-                    :placeholder="
-                      $t('billing.reconciliation.alertWebhookPlaceholder')
-                    "
-                    :disabled="!settingsForm.alert.on_flagged"
-                  />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
-                  class="usage-recon-settings__switch-start"
-                  :label="$t('billing.reconciliation.scheduledEnabled')"
-                >
-                  <ElSwitch v-model="settingsForm.schedule.enabled" />
-                </CommonSettingRow>
-
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.usePreviousDay')"
-                >
-                  <ElSwitch
-                    v-model="settingsForm.schedule.use_previous_day"
-                  />
-                </CommonSettingRow>
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.alertOnFlagged')"
-                >
-                  <ElSwitch v-model="settingsForm.alert.on_flagged" />
-                </CommonSettingRow>
-
-                <CommonSettingRow
-                  mode="inline"
-                  :label="$t('billing.reconciliation.warnBeforeBill')"
-                >
-                  <ElSwitch
-                    v-model="
-                      settingsForm.warn_on_open_discrepancies_before_bill
-                    "
-                  />
-                </CommonSettingRow>
-              </div>
-            </div>
-          </ElCard>
-        </Transition>
-      </div>
-
-      <ResourceTablePageShell
-        v-model:columns="columns"
-        v-model="searchKeyword"
-        v-model:filters="listFilters"
-        :filter-catalog="reconciliationCatalog"
-        :title="$t('billing.reconciliation.listTitle')"
-        :loading="loading"
-        :data="items"
-        :empty-text="emptyDescription"
-        :pagination="artPagination"
-        :show-import="false"
-        :show-export="true"
-        :export-items="exportItems"
-        :export-disabled="items.length === 0 || exporting"
-        :export-loading="exporting"
-        :export-label="$t('billing.actions.export')"
-        :show-primary="true"
-        :primary-label="$t('billing.reconciliation.runAudit')"
-        primary-icon="ri:play-circle-line"
-        :primary-roles="['R_ADMIN', 'R_FINANCE']"
-        :show-delete="true"
-        :delete-total-count="items.length"
-        :delete-selected-count="selectedRows.length"
-        :delete-roles="['R_ADMIN', 'R_FINANCE']"
-        table-class="surface-panel-table usage-recon-table"
-        @refresh="loadData"
-        @selection-change="handleSelectionChange"
-        @pagination:size-change="handlePageSizeChange"
-        @pagination:current-change="handleCurrentPageChange"
-        @search="handleSearch"
-        @export="
-          (command: 'page' | 'selected') => handleExportCommand(command)
-        "
-        @primary="openRunDialog"
-        @delete="
-          (type: 'all' | 'selected') => handleDeleteCommand(type, items)
-        "
+    <EditDialog
+      v-model="policyDialogVisible"
+      :title="$t('billing.reconciliation.policySettings')"
+      width="540px"
+      :confirm-text="$t('common.save')"
+      :saving="settingsSaving"
+      @confirm="handleSaveSettings"
+    >
+      <ElForm
+        ref="policyFormRef"
+        :model="policyForm"
+        :rules="policyRules"
+        label-width="140px"
+        @submit.prevent
       >
-        <template #after-search>
-          <TableHeaderDatePickerPopover
-            v-model="filterRange"
-            type="daterange"
-            value-format="YYYY-MM-DD"
-            :start-placeholder="$t('billing.reconciliation.from')"
-            :end-placeholder="$t('billing.reconciliation.to')"
-            @change="handleFilterChange"
+        <ElFormItem
+          :label="$t('billing.reconciliation.scheduledEnabled')"
+          prop="enabled"
+        >
+          <ElSwitch v-model="policyForm.enabled" />
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.intervalHours')"
+          prop="intervalHours"
+        >
+          <div class="policy-inline-control">
+            <ElInputNumber
+              v-model="policyForm.intervalHours"
+              :min="0.5"
+              :max="720"
+              :step="1"
+              class="policy-number-input"
+            />
+            <span class="policy-unit">{{ $t("ops.units.hours") }}</span>
+          </div>
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.lossRatioThreshold')"
+          prop="thresholdPercent"
+        >
+          <div class="policy-inline-control">
+            <ElInputNumber
+              v-model="policyForm.thresholdPercent"
+              :min="0"
+              :max="100"
+              :step="0.5"
+              :precision="2"
+              class="policy-number-input"
+            />
+            <span class="policy-unit">%</span>
+          </div>
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.usePreviousDay')"
+          prop="usePreviousDay"
+        >
+          <ElSwitch v-model="policyForm.usePreviousDay" />
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.includeAmount')"
+          prop="includeAmount"
+        >
+          <ElSwitch v-model="policyForm.includeAmount" />
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.warnBeforeBill')"
+          prop="warnBeforeBill"
+        >
+          <ElSwitch v-model="policyForm.warnBeforeBill" />
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.alertOnFlagged')"
+          prop="alertOnFlagged"
+        >
+          <ElSwitch v-model="policyForm.alertOnFlagged" />
+        </ElFormItem>
+        <ElFormItem
+          :label="$t('billing.reconciliation.alertWebhook')"
+          prop="webhookUrl"
+        >
+          <ElInput
+            v-model="policyForm.webhookUrl"
+            clearable
+            :disabled="!policyForm.alertOnFlagged"
+            :placeholder="$t('billing.reconciliation.alertWebhookPlaceholder')"
           />
-        </template>
-
-        <template #reconciliation_date="{ row }">
-          {{ row.reconciliation_date }}
-        </template>
-        <template #billable_call_count="{ row }">
-          {{ formatCount(row.billable_call_count) }}
-        </template>
-        <template #gateway_call_count="{ row }">
-          {{ formatCount(row.gateway_call_count) }}
-        </template>
-        <template #upstream_preagg_call_count="{ row }">
-          {{ formatCount(row.upstream_preagg_call_count) }}
-        </template>
-        <template #discrepancy_ratio="{ row }">
-          {{ formatRatio(row.discrepancy_ratio) }}
-        </template>
-        <template #status="{ row }">
-          <ElTag :type="statusTagType(row.status)" size="small">
-            {{ statusLabel(row.status) }}
-          </ElTag>
-        </template>
-        <template #created_at="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-        <template #operations="{ row }">
-          <TableActionRow>
-            <ElButton link type="primary" @click="openDetail(row)">
-              {{ $t("common.actions.details") }}
-            </ElButton>
-            <ElButton
-              link
-              type="primary"
-              @click="openCallMonitor(row, 'customer')"
-            >
-              {{ $t("billing.reconciliation.viewCustomerCalls") }}
-            </ElButton>
-            <ElButton
-              link
-              type="primary"
-              @click="openCallMonitor(row, 'upstream')"
-            >
-              {{ $t("billing.reconciliation.viewUpstreamCalls") }}
-            </ElButton>
-            <ElButton
-              v-if="canAcknowledge(row.status)"
-              v-roles="ROLES_BIZ"
-              link
-              type="warning"
-              @click="openResolve(row, 'acknowledged')"
-            >
-              {{ $t("billing.reconciliation.acknowledge") }}
-            </ElButton>
-            <ElButton
-              v-if="canResolve(row.status)"
-              v-roles="ROLES_BIZ"
-              link
-              type="success"
-              @click="openResolve(row, 'resolved')"
-            >
-              {{ $t("billing.reconciliation.resolve") }}
-            </ElButton>
-            <ElButton
-              v-roles="ROLES_BIZ"
-              link
-              type="danger"
-              @click="handleDeleteRow(row)"
-            >
-              {{ $t("common.actions.delete") }}
-            </ElButton>
-          </TableActionRow>
-        </template>
-      </ResourceTablePageShell>
+        </ElFormItem>
+      </ElForm>
+    </EditDialog>
 
     <AdaptiveDrawer v-model="detailVisible" size="680px" destroy-on-close>
       <template #header>
         <CommonDrawerHeader :title="$t('billing.reconciliation.detailTitle')" />
       </template>
       <div v-if="currentRow" class="usage-recon-detail">
-
         <ElDescriptions :column="1" border size="small">
           <ElDescriptionsItem :label="$t('billing.reconciliation.columns.date')">
             {{ currentRow.reconciliation_date }}
@@ -271,7 +319,7 @@
             </ElTag>
           </ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('billing.reconciliation.note')">
-            {{ currentRow.resolution_note || "-" }}
+            {{ currentRow.resolution_note || "—" }}
           </ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('common.fields.createdAt')">
             {{ formatDate(currentRow.created_at) }}
@@ -283,7 +331,6 @@
             {{ formatDate(currentRow.resolved_at) }}
           </ElDescriptionsItem>
         </ElDescriptions>
-
 
         <ElAlert
           v-if="detailView?.errorText"
@@ -333,7 +380,9 @@
                 }}
               </ElTag>
             </div>
-            <div class="usage-recon-detail__summary-item usage-recon-detail__summary-item--full">
+            <div
+              class="usage-recon-detail__summary-item usage-recon-detail__summary-item--full"
+            >
               <span class="usage-recon-detail__summary-label">
                 {{ $t("billing.reconciliation.detail.primaryCompare") }}
               </span>
@@ -347,7 +396,9 @@
                 }}
               </span>
             </div>
-            <div class="usage-recon-detail__summary-item usage-recon-detail__summary-item--full">
+            <div
+              class="usage-recon-detail__summary-item usage-recon-detail__summary-item--full"
+            >
               <span class="usage-recon-detail__summary-label">
                 {{ $t("billing.reconciliation.detail.callDiff") }}
               </span>
@@ -363,7 +414,6 @@
             </div>
           </div>
         </section>
-
 
         <section v-if="detailView" class="usage-recon-detail__section">
           <h4 class="usage-recon-detail__section-title">
@@ -408,11 +458,7 @@
           </ElTable>
         </section>
 
-
-        <section
-          v-if="detailView?.amount"
-          class="usage-recon-detail__section"
-        >
+        <section v-if="detailView?.amount" class="usage-recon-detail__section">
           <h4 class="usage-recon-detail__section-title">
             {{ $t("billing.reconciliation.detail.amountTitle") }}
           </h4>
@@ -447,7 +493,6 @@
           </ElDescriptions>
         </section>
 
-
         <ElCollapse
           v-if="detailView"
           v-model="detailCollapseNames"
@@ -458,10 +503,7 @@
             :title="$t('billing.reconciliation.detail.methodologyTitle')"
           >
             <ul class="usage-recon-detail__methodology">
-              <li
-                v-for="(line, idx) in detailView.methodologyLines"
-                :key="idx"
-              >
+              <li v-for="(line, idx) in detailView.methodologyLines" :key="idx">
                 {{ line }}
               </li>
             </ul>
@@ -529,14 +571,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import type { ListFilter } from "@/types/list-query";
 import { reconciliationCatalog } from "@/list-catalog/common-resources";
 import { ElMessage, ElMessageBox } from "element-plus";
+import type { FormInstance, FormRules } from "element-plus";
 import { useRouter } from "vue-router";
-import ResourceTablePageShell from "@/components/common/resource-table-page-shell/index.vue";
+import OpsCard from "@/components/ops/OpsCard.vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
+import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
+import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
-import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import TableHeaderDatePickerPopover from "@/components/common/table-header-date-picker-popover/index.vue";
 import DatePicker from "@/components/common/DatePicker.vue";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
@@ -551,19 +596,43 @@ import {
   type ReconciliationDiscrepancy,
   type ReconciliationSettings,
 } from "@/api/billing";
+import {
+  fetchReconcileCalendar,
+  type ReconcileCalendarDay,
+} from "@/api/billing-ops";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
+import { useUserStore } from "@/store/modules/user";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
 import { formatMoney, formatDate } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { buildCallsRoute } from "@/utils/ops/calls-link";
+import { buildCallsRoute } from "@/utils/ops/opsRoutes";
+import {
+  hoursToSeconds,
+  percentToRatio,
+  ratioToPercent,
+  secondsToHours,
+} from "./reconcilePolicyHelpers";
 
 defineOptions({ name: "UsageReconciliation" });
 
+const props = withDefaults(
+  defineProps<{
+    active?: boolean;
+  }>(),
+  {
+    active: true,
+  },
+);
+
+const { locale } = useI18n();
 const router = useRouter();
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 const pageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const runLoading = ref(false);
@@ -571,7 +640,11 @@ const exporting = ref(false);
 const settingsLoading = ref(false);
 const settingsSaving = ref(false);
 
-const settingsExpanded = ref(false);
+const calendarDays = ref(30);
+const calendar = ref<ReconcileCalendarDay[]>([]);
+
+const policyDialogVisible = ref(false);
+const policyFormRef = ref<FormInstance>();
 const settingsForm = reactive<ReconciliationSettings>({
   schedule: { enabled: false, interval_secs: 86400, use_previous_day: true },
   alert: { on_flagged: false, webhook_url: "" },
@@ -582,8 +655,67 @@ const settingsForm = reactive<ReconciliationSettings>({
   warn_on_open_discrepancies_before_bill: true,
   last_scheduled_run_at: null,
 });
-const items = ref<ReconciliationDiscrepancy[]>([]);
 
+const policyForm = reactive({
+  enabled: false,
+  intervalHours: 24,
+  thresholdPercent: 5,
+  usePreviousDay: true,
+  includeAmount: true,
+  warnBeforeBill: true,
+  alertOnFlagged: false,
+  webhookUrl: "",
+});
+
+const policyRules: FormRules = {
+  intervalHours: [
+    {
+      required: true,
+      validator: (_rule, value: unknown, callback) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0.5) {
+          callback(new Error($t("billing.reconciliation.intervalHoursInvalid")));
+          return;
+        }
+        callback();
+      },
+      trigger: ["blur", "change"],
+    },
+  ],
+  thresholdPercent: [
+    {
+      required: true,
+      validator: (_rule, value: unknown, callback) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0 || n > 100) {
+          callback(new Error($t("billing.reconciliation.thresholdInvalid")));
+          return;
+        }
+        callback();
+      },
+      trigger: ["blur", "change"],
+    },
+  ],
+  webhookUrl: [
+    {
+      validator: (_rule, value: unknown, callback) => {
+        if (!policyForm.alertOnFlagged) {
+          callback();
+          return;
+        }
+        const trimmed = String(value ?? "").trim();
+        if (!trimmed || !/^https?:\/\/\S+$/i.test(trimmed)) {
+          callback(new Error($t("billing.reconciliation.alertWebhookRequired")));
+          return;
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+};
+
+const items = ref<ReconciliationDiscrepancy[]>([]);
 const filterRange = ref<[string, string] | null>(null);
 
 const searchForm = reactive({
@@ -632,7 +764,7 @@ const { selectedRows, handleSelectionChange, handleDeleteCommand } =
       `${row.reconciliation_date} · ${statusLabel(row.status)}`,
     getItemId: (row) => row.id,
     onDeleteSuccess: () => {
-      void loadData();
+      void reloadAll();
     },
     allDeleteConfirmMsg: (count) =>
       $t("billing.reconciliation.deleteConfirm.all", { count }),
@@ -640,7 +772,7 @@ const { selectedRows, handleSelectionChange, handleDeleteCommand } =
       $t("billing.reconciliation.deleteConfirm.selected", { count }),
     actionLabel: $t("common.actions.delete"),
   });
-const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
+const buildReconciliationColumns = (): ColumnOption<ReconciliationDiscrepancy>[] => [
   { type: "selection", width: 48 },
   {
     prop: "reconciliation_date",
@@ -691,7 +823,25 @@ const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>([
     fixed: "right",
     useSlot: true,
   },
-]);
+];
+const columns = ref<ColumnOption<ReconciliationDiscrepancy>[]>(
+  buildReconciliationColumns(),
+);
+watch(locale, () => {
+  const prev = new Map(
+    columns.value.map((col) => [String(col.prop ?? col.type ?? ""), col]),
+  );
+  columns.value = buildReconciliationColumns().map((col) => {
+    const existing = prev.get(String(col.prop ?? col.type ?? ""));
+    return existing
+      ? {
+          ...col,
+          visible: existing.visible ?? col.visible,
+          checked: existing.checked ?? col.checked,
+        }
+      : col;
+  });
+});
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
   size: pagination.page_size,
@@ -710,13 +860,13 @@ const resolveRow = ref<ReconciliationDiscrepancy | null>(null);
 
 const formatRatio = (value: string | number | null | undefined) => {
   const n = Number(value ?? 0);
-  if (Number.isNaN(n)) return String(value ?? "-");
+  if (Number.isNaN(n)) return String(value ?? "—");
   return `${(n * 100).toFixed(2)}%`;
 };
 
 const formatCount = (value: string | number | null | undefined) => {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return String(value ?? "-");
+  if (!Number.isFinite(n)) return String(value ?? "—");
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(n);
 };
 
@@ -727,21 +877,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return null;
 };
 
-const asNumber = (value: unknown, fallback = 0): number => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const n = Number(value);
-    if (Number.isFinite(n)) return n;
-  }
-  return fallback;
-};
-
 const asString = (value: unknown): string | null => {
   if (typeof value === "string" && value.trim() !== "") return value;
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return null;
 };
-
 
 const sourceLabel = (code: string | null | undefined) => {
   if (!code) return $t("billing.reconciliation.detail.sources.unknown");
@@ -789,7 +929,7 @@ const detailView = computed<DetailView | null>(() => {
   const upstreamCalls = row.upstream_preagg_call_count;
   const comparisonLabel = sourceLabel("request_logs_gateway");
   const errorText =
-    row.status === "error" ? (asString(details.error) ?? "-") : null;
+    row.status === "error" ? (asString(details.error) ?? "—") : null;
   const thresholdRaw = asString(details.loss_ratio_threshold);
   const threshold =
     thresholdRaw != null && Number.isFinite(Number(thresholdRaw))
@@ -844,8 +984,7 @@ const detailView = computed<DetailView | null>(() => {
   let amount: DetailAmountView | null = null;
   const amountObj = asRecord(details.amount_recon);
   if (amountObj) {
-    const usageBillable =
-      asString(amountObj.usage_billable_amount) ?? "0";
+    const usageBillable = asString(amountObj.usage_billable_amount) ?? "0";
     const billItemsTotal = asString(amountObj.bill_items_total) ?? "0";
     const diff = asString(amountObj.amount_diff) ?? "0";
     const diffN = Math.abs(Number(diff));
@@ -881,18 +1020,18 @@ const detailView = computed<DetailView | null>(() => {
   };
 });
 
-
 const settingsSummaryLine = computed(() => {
   const scheduled = settingsForm.schedule.enabled
     ? $t("billing.reconciliation.summaryScheduledOn")
     : $t("billing.reconciliation.summaryScheduledOff");
+  const intervalText = `${secondsToHours(settingsForm.schedule.interval_secs)} ${$t("ops.units.hours")}`;
   const threshold = $t("billing.reconciliation.summaryThreshold", {
     value: formatRatio(settingsForm.loss_ratio_threshold),
   });
   const last = settingsForm.last_scheduled_run_at
     ? formatDate(settingsForm.last_scheduled_run_at)
     : $t("billing.reconciliation.neverRun");
-  return `${scheduled} · ${threshold} · ${last}`;
+  return `${scheduled} (${intervalText}) · ${threshold} · ${last}`;
 });
 
 const statusLabel = (status: string) => {
@@ -927,6 +1066,16 @@ const canResolve = (status: string) =>
   status === "error" ||
   status === "acknowledged";
 
+const loadCalendar = async () => {
+  if (!canWriteBusiness.value) return;
+  try {
+    calendar.value = (await fetchReconcileCalendar(calendarDays.value)) ?? [];
+  } catch (error) {
+    logger.error("Failed to load reconcile calendar:", error);
+    ElMessage.error($t("ops.reconcile.loadFailed"));
+  }
+};
+
 const loadData = async () => {
   await runWithLoading(loading, async () => {
     const range = Array.isArray(filterRange.value) ? filterRange.value : null;
@@ -947,11 +1096,14 @@ const loadData = async () => {
   });
 };
 
+const reloadAll = async () => {
+  await Promise.all([loadData(), loadCalendar()]);
+};
+
 const handleSearch = () => {
   pagination.page = 1;
   void loadData();
 };
-
 
 const handleFilterChange = () => {
   pagination.page = 1;
@@ -967,6 +1119,26 @@ const handlePageSizeChange = (size: number) => {
 const handleCurrentPageChange = (page: number) => {
   pagination.page = page;
   void loadData();
+};
+
+const syncPolicyFormFromSettings = () => {
+  policyForm.enabled = settingsForm.schedule.enabled;
+  policyForm.intervalHours = secondsToHours(settingsForm.schedule.interval_secs);
+  policyForm.thresholdPercent = ratioToPercent(
+    settingsForm.loss_ratio_threshold,
+  );
+  policyForm.usePreviousDay = settingsForm.schedule.use_previous_day;
+  policyForm.includeAmount = settingsForm.sources.include_amount_recon;
+  policyForm.warnBeforeBill =
+    settingsForm.warn_on_open_discrepancies_before_bill;
+  policyForm.alertOnFlagged = settingsForm.alert.on_flagged;
+  policyForm.webhookUrl = settingsForm.alert.webhook_url ?? "";
+};
+
+const openPolicyDialog = () => {
+  syncPolicyFormFromSettings();
+  policyFormRef.value?.clearValidate();
+  policyDialogVisible.value = true;
 };
 
 const openRunDialog = () => {
@@ -992,7 +1164,7 @@ const handleRunAudit = async () => {
       }),
     );
     runDialogVisible.value = false;
-    await loadData();
+    await reloadAll();
   }).catch((error) => {
     logger.error("Failed to run reconciliation audit:", error);
   });
@@ -1044,6 +1216,7 @@ const handleExportCommand = (command: "page" | "selected") => {
 };
 
 const handleDeleteRow = async (row: ReconciliationDiscrepancy) => {
+  if (!row?.id) return;
   try {
     await ElMessageBox.confirm(
       $t("billing.reconciliation.deleteConfirm.one", {
@@ -1058,7 +1231,7 @@ const handleDeleteRow = async (row: ReconciliationDiscrepancy) => {
     );
     await deleteReconciliationDiscrepancy(row.id);
     selectedRows.value = [];
-    await loadData();
+    await reloadAll();
   } catch (error) {
     if (error !== "cancel") {
       logger.error("Failed to delete reconciliation discrepancy:", error);
@@ -1067,6 +1240,7 @@ const handleDeleteRow = async (row: ReconciliationDiscrepancy) => {
 };
 
 const openDetail = (row: ReconciliationDiscrepancy) => {
+  if (!row?.id) return;
   currentRow.value = row;
   detailCollapseNames.value = [];
   detailVisible.value = true;
@@ -1091,14 +1265,13 @@ const handleSubmitResolve = async () => {
       resolution_note: resolveNote.value.trim() || undefined,
     });
     resolveVisible.value = false;
-    await loadData();
+    await reloadAll();
   } catch (error) {
     logger.error("Failed to update reconciliation discrepancy:", error);
   } finally {
     resolveLoading.value = false;
   }
 };
-
 
 const openCallMonitor = (
   row: ReconciliationDiscrepancy,
@@ -1122,6 +1295,7 @@ const loadSettings = async () => {
   try {
     const res = await fetchReconciliationSettings();
     Object.assign(settingsForm, res);
+    syncPolicyFormFromSettings();
   } catch (error) {
     logger.error("Failed to load reconciliation settings:", error);
   } finally {
@@ -1130,10 +1304,33 @@ const loadSettings = async () => {
 };
 
 const handleSaveSettings = async () => {
+  const valid = await policyFormRef.value?.validate().catch(() => false);
+  if (!valid) return;
   settingsSaving.value = true;
   try {
-    const saved = await updateReconciliationSettings({ ...settingsForm });
+    const payload: ReconciliationSettings = {
+      ...settingsForm,
+      schedule: {
+        ...settingsForm.schedule,
+        enabled: policyForm.enabled,
+        interval_secs: hoursToSeconds(policyForm.intervalHours),
+        use_previous_day: policyForm.usePreviousDay,
+      },
+      alert: {
+        on_flagged: policyForm.alertOnFlagged,
+        webhook_url: policyForm.webhookUrl.trim(),
+      },
+      sources: {
+        ...settingsForm.sources,
+        include_amount_recon: policyForm.includeAmount,
+      },
+      loss_ratio_threshold: percentToRatio(policyForm.thresholdPercent),
+      warn_on_open_discrepancies_before_bill: policyForm.warnBeforeBill,
+    };
+    const saved = await updateReconciliationSettings(payload);
     Object.assign(settingsForm, saved);
+    syncPolicyFormFromSettings();
+    policyDialogVisible.value = false;
     ElMessage.success($t("billing.reconciliation.settingsSaved"));
   } catch (error) {
     logger.error("Failed to save reconciliation settings:", error);
@@ -1148,7 +1345,7 @@ onMounted(() => {
     runDate.value = d.toISOString().slice(0, 10);
   }
   void loadSettings();
-  void loadData();
+  void reloadAll();
 });
 </script>
 
@@ -1162,146 +1359,116 @@ onMounted(() => {
   min-height: 0;
 }
 
-.usage-recon-settings {
-  flex-shrink: 0;
-}
-
-.usage-recon-settings__header {
+.usage-recon-compact-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 2px 2px 0;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border-radius: var(--art-card-radius);
+  border: 1px solid var(--art-card-border, var(--el-border-color-lighter));
+  background: var(--el-bg-color);
 }
 
-.usage-recon-settings__toggle-btn {
-  padding: 0;
+.usage-recon-compact-bar__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.usage-recon-compact-bar__icon {
+  color: var(--el-color-primary);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.usage-recon-compact-bar__title {
   font-size: 13px;
   font-weight: 600;
-  max-width: 100%;
-  height: auto;
-  white-space: normal;
-  text-align: left;
+  color: var(--el-text-color-primary);
 }
 
-.usage-recon-settings__toggle-icon {
-  margin-right: 2px;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.usage-recon-settings__toggle-gear {
-  margin-right: 4px;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.usage-recon-settings__toggle-meta {
-  margin-left: 8px;
+.usage-recon-compact-bar__meta {
+  font-size: 12px;
   color: var(--el-text-color-secondary);
-  font-weight: 500;
+}
+
+.usage-recon-compact-bar__actions,
+.usage-recon-card-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.usage-recon-days-select {
+  width: 112px;
+  --el-select-width: 112px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.calendar-cell {
+  padding: 8px;
+  border-radius: var(--art-form-control-radius);
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
+  text-align: center;
   font-size: 12px;
 }
 
-.usage-recon-settings__panel {
-  margin-top: 10px;
-  border: 1px solid var(--art-card-border, var(--el-border-color-lighter));
+.calendar-cell.is-ok {
+  background: var(--el-color-success-light-9);
+  border-color: var(--el-color-success-light-7);
 }
 
-.usage-recon-settings__body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.calendar-cell.is-open,
+.calendar-cell.is-flagged,
+.calendar-cell.is-acknowledged {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-7);
 }
 
+.calendar-cell.is-error {
+  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-7);
+}
 
-.usage-recon-settings__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 48px;
-  row-gap: 14px;
+.calendar-cell .day {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.calendar-cell .status {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+}
+
+.usage-recon-calendar-note {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.policy-inline-control {
+  display: inline-flex;
   align-items: center;
+  gap: 8px;
 }
 
-.usage-recon-settings__switch-start {
-  grid-column: 1;
+.policy-number-input {
+  width: 160px;
 }
 
-
-.setting-control {
-  width: 220px !important;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-:deep(.common-setting-row) {
-  min-width: 0;
-  min-height: 36px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-:deep(.common-setting-row--inline) {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  overflow: visible;
-  min-width: 0;
-}
-
-:deep(.common-setting-row__label) {
-  flex: 0 0 168px;
-  width: 168px;
-  max-width: 168px;
-  font-weight: 500;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-:deep(.common-setting-row__control) {
-  flex: 1 1 auto;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  min-width: 180px;
-  margin-left: auto;
-  overflow: visible;
-  position: relative;
-}
-
-
-:deep(.common-setting-row__control .el-switch) {
-  flex-shrink: 0;
-}
-
-.usage-recon-fade-enter-active,
-.usage-recon-fade-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-}
-
-.usage-recon-fade-enter-from,
-.usage-recon-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-@media (max-width: 900px) {
-  .usage-recon-settings__grid {
-    grid-template-columns: 1fr;
-    column-gap: 0;
-    row-gap: 12px;
-  }
-
-  :deep(.common-setting-row__label) {
-    flex-basis: 148px;
-    width: 148px;
-    max-width: 148px;
-  }
+.policy-unit {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 
 .usage-recon-detail {
@@ -1398,16 +1565,8 @@ onMounted(() => {
   max-height: 280px;
   overflow: auto;
   background: var(--el-fill-color-lighter);
-  border-radius: var(--art-card-radius);
+  border-radius: var(--art-form-control-radius);
   font-size: 12px;
   line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-@media (max-width: 520px) {
-  .usage-recon-detail__summary-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

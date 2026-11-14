@@ -1,8 +1,5 @@
 use anyhow::Result;
 use chrono::Utc;
-use mazbri_admin::readiness::{CheckStatus, ReadinessResult};
-use mazbri_admin::{AdminServerBuilder, AdminState};
-use mazbri_core::metrics::{HealthMetricsUpdater, register_health_metrics, set_rpc_ready};
 use mazbri_cert_service::auth::AuthState;
 use mazbri_cert_service::base_authorization;
 use mazbri_cert_service::config::CertAppConfig;
@@ -17,6 +14,8 @@ use mazbri_core::ServiceName;
 use mazbri_core::config::{build_log_routes, load_toml};
 use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
 use mazbri_core::init_tracing_with_routes;
+use mazbri_core::metrics::set_rpc_ready;
+use mazbri_service::start_simple_admin_server;
 use parking_lot::Mutex;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -33,54 +32,6 @@ async fn sync_authorization_expiry(
         tracing::warn!("Failed to sync commercial license runtime: {}", error);
     }
     let _ = root_material_cache;
-}
-
-fn start_admin_server(
-    config: &CertAppConfig,
-    service_name: &str,
-) -> Result<Option<Arc<AdminState>>> {
-    let admin_state = if config.admin.enabled {
-        let state = Arc::new(AdminState::new(
-            service_name.to_owned(),
-            Arc::new(mazbri_core::REGISTRY.clone()),
-        ));
-        let state_for_check = state.clone();
-        let server = AdminServerBuilder::new(service_name, config.admin.port)
-            .registry(Arc::new(mazbri_core::REGISTRY.clone()))
-            .readiness_check(move || {
-                let ready = state_for_check.is_ready();
-                async move {
-                    if ready {
-                        ReadinessResult::healthy(vec![])
-                    } else {
-                        ReadinessResult {
-                            status: CheckStatus::Failed,
-                            checks: vec![],
-                        }
-                    }
-                }
-            })
-            .build()?;
-        let _handle = server.spawn();
-        info!("Admin server started on port {}", config.admin.port);
-        if let Err(e) = register_health_metrics() {
-            tracing::debug!(
-                "Health metrics already registered or registration failed: {}",
-                e
-            );
-        }
-        let state_for_ready = state.clone();
-        let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None)
-            .with_ready_check(move || state_for_ready.is_ready());
-        drop(updater.spawn());
-        set_rpc_ready(service_name, state.is_ready());
-        info!("Health metrics updater started for {}", service_name);
-        Some(state)
-    } else {
-        info!("Admin server disabled");
-        None
-    };
-    Ok(admin_state)
 }
 
 fn spawn_inventory_metrics(repo: Arc<CertificateRepository>) {
@@ -156,13 +107,7 @@ async fn serve_until_shutdown(
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    mazbri_core::metrics::init_service_metrics("mazbri-cert");
-    if let Some(code) = mazbri_cert_service::tool::maybe_run() {
-        std::process::exit(code);
-    }
-    let config_dir = Path::new(".");
+fn load_cert_config() -> Result<CertAppConfig> {
     let bootstrap_path = mazbri_core::config::resolve_bootstrap_path_mandatory()?;
     let mut config: CertAppConfig = load_toml(&bootstrap_path)?;
     if config.service_name.name() != ServiceName::Cert {
@@ -172,11 +117,22 @@ async fn main() -> Result<()> {
             config.service_name.as_str()
         );
     }
+    config.cert.key_password = None;
+    Ok(config)
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    mazbri_core::metrics::init_service_metrics("mazbri-cert");
+    if let Some(code) = mazbri_cert_service::tool::maybe_run() {
+        std::process::exit(code);
+    }
+    let config_dir = Path::new(".");
+    let config = load_cert_config()?;
     let service_name = config.service_name.as_str().to_owned();
     let log_routes = build_log_routes(&config.log_routes)?;
-    config.cert.key_password = None;
     let tokens = Arc::new(TokenTable::from_env()?);
-    let admin_state = start_admin_server(&config, &service_name)?;
+    let admin_handle = start_simple_admin_server(&service_name, &config.admin)?;
     let _log_guard = init_tracing_with_routes(&config.tracing, &service_name, &log_routes)?;
     if !config.auth.static_tokens.is_empty() {
         tracing::warn!("[auth].static_tokens 已废弃，忽略");
@@ -188,12 +144,15 @@ async fn main() -> Result<()> {
     info!("Mazbri 证书服务启动中...");
     info!(host = % config.server.host, port = % config.server.port, "服务器配置");
     let db = mazbri_core::create_pool(&config.database, Some(config_dir)).await?;
+    if let Some(ref handle) = admin_handle {
+        handle.set_db_pool(Arc::clone(&db));
+    }
     info!("已连接数据库");
     let repo = Arc::new(CertificateRepository::new(db.clone()));
     update_certificate_inventory_metrics(&repo).await;
     spawn_inventory_metrics(repo.clone());
-    if let Some(ref state) = admin_state {
-        state.set_ready(true);
+    if let Some(ref handle) = admin_handle {
+        handle.set_ready(true);
         set_rpc_ready(&service_name, true);
         info!("Service marked as ready for authorization import");
     }

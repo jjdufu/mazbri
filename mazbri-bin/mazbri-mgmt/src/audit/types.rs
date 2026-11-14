@@ -30,6 +30,7 @@ audit_actions! {
     ApiKeyCreate => "apikey.create",
     ApiKeyRevoke => "apikey.revoke",
     ApiKeyUpdate => "apikey.update",
+    ApiKeyRotate => "apikey.rotate",
     UserLogin => "user.login",
     UserLogout => "user.logout",
     UserUpdate => "user.update",
@@ -73,6 +74,8 @@ audit_actions! {
     SettingsUpdate => "settings.update",
     PasswordPolicyUpdate => "password_policy.update",
     ConfigCenterCreate => "config_center.create",
+    ConfigCenterView => "config_center.view",
+    ConfigCenterViewHistory => "config_center.view_history",
     ConfigCenterUpdate => "config_center.update",
     ConfigCenterDelete => "config_center.delete",
     ConfigCenterRollback => "config_center.rollback",
@@ -250,6 +253,9 @@ pub struct AuditLogQuery {
     pub status: Option<String>,
     /// 写入服务（`mgmt` / `cert` / `ratelimit`）。
     pub service: Option<String>,
+    /// 是否回显审计日志自查阅记录（`audit.list` / `audit.view`），默认 `false`。
+    #[serde(default)]
+    pub include_self_audit: Option<bool>,
     #[serde(default = "default_page")]
     pub page: u32,
     #[serde(default = "default_limit")]

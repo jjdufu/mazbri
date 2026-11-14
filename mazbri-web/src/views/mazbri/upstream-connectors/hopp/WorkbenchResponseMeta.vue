@@ -25,7 +25,7 @@
       <span class="wb-res-meta__value">{{ retryInfo.count }}</span>
       <span class="wb-res-meta__err">{{ retryInfo.reasons.join(", ") }}</span>
     </span>
-    <span v-if="mode" class="wb-res-meta__mode">{{ mode }}</span>
+    <span v-if="mode" class="wb-res-meta__mode">{{ modeBadgeText }}</span>
     <span class="wb-res-meta__tools">
       <button
         type="button"
@@ -108,6 +108,16 @@ const timeText = computed(() =>
 
 const sizeText = computed(() => formatBytes(props.sizeBytes ?? 0));
 
+const modeBadgeText = computed(() => {
+  if (!props.mode) return "";
+  if (props.mode === "live" && props.probePath === BYPASS_MGMT_PROBE_PATH) {
+    return $t("upstreamConnector.modeBadge.business");
+  }
+  const key = `upstreamConnector.modeBadge.${props.mode}`;
+  const t = $t(key);
+  return t === key ? props.mode : t;
+});
+
 async function copy() {
   await copyWithFeedback(props.body || "");
 }
@@ -128,12 +138,12 @@ function download() {
   display: flex;
   align-items: center;
   gap: 16px;
-  font-size: 10px;
+  font-size: var(--el-font-size-extra-small, 12px);
   font-weight: 600;
-  padding: 16px;
+  padding: 10px 16px;
   white-space: nowrap;
   overflow-x: auto;
-  color: var(--wb-status-other, #64748b);
+  color: var(--wb-status-other, var(--el-text-color-secondary));
   flex-shrink: 0;
   &.is-1xx {
     color: var(--wb-status-1xx);
@@ -172,7 +182,7 @@ function download() {
 }
 .wb-res-meta__mode {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--el-font-size-extra-small, 12px);
   font-weight: 600;
   padding: 2px 8px;
   border: 1px solid var(--wb-divider, var(--el-border-color));

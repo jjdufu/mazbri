@@ -89,6 +89,7 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("apikey.create", "创建 API 密钥"),
     ("apikey.update", "更新 API 密钥"),
     ("apikey.revoke", "撤销 API 密钥"),
+    ("apikey.rotate", "轮换 API 密钥"),
     ("user.login", "登录"),
     ("user.logout", "登出"),
     ("user.update", "更新用户"),
@@ -128,6 +129,8 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("settings.update", "更新系统设置"),
     ("password_policy.update", "更新密码策略"),
     ("config_center.create", "创建配置"),
+    ("config_center.view", "查看配置详情"),
+    ("config_center.view_history", "查看配置历史"),
     ("config_center.update", "更新配置"),
     ("config_center.delete", "删除配置"),
     ("config_center.rollback", "回滚配置"),
@@ -718,6 +721,30 @@ pub fn config_center_audit(
     )
 }
 
+fn explicitly_filters_self_audit_action(
+    query: &AuditLogQuery,
+    filters: &[crate::list_query::ValidatedFilter],
+) -> bool {
+    let is_self_action = |s: &str| matches!(s, "audit.list" | "audit.view");
+    if query.action.as_deref().is_some_and(is_self_action) {
+        return true;
+    }
+    filters.iter().any(|f| {
+        f.field == "action"
+            && match (&f.op, f.value.as_ref()) {
+                (
+                    crate::list_query::FilterOp::Eq,
+                    Some(crate::list_query::FilterValue::String(s)),
+                ) => is_self_action(s),
+                (
+                    crate::list_query::FilterOp::In,
+                    Some(crate::list_query::FilterValue::StringArray(arr)),
+                ) => arr.iter().any(|s| is_self_action(s)),
+                _ => false,
+            }
+    })
+}
+
 /// list / count / export 共用的完整 WHERE 条件：显式字段 + `q` + `filters`。
 fn push_audit_where(
     builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
@@ -730,6 +757,11 @@ fn push_audit_where(
     .map_err(|e| sqlx::Error::Protocol(e.message))?;
     let keyword = query.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
     push_audit_conditions(builder, query, keyword);
+    if !query.include_self_audit.unwrap_or(false)
+        && !explicitly_filters_self_audit_action(query, &filters)
+    {
+        builder.push(" AND action NOT IN ('audit.list', 'audit.view')");
+    }
     crate::list_query::apply_pg_filters(builder, &filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))
 }
@@ -864,6 +896,49 @@ mod where_tests {
         assert!(
             sql.contains("NOT LIKE") && sql.contains("/admin/preferences"),
             "缺少偏好路径排除: {sql}"
+        );
+        assert!(
+            sql.contains("AND action NOT IN ('audit.list', 'audit.view')"),
+            "默认查询应排除审计自查阅记录避免翻页偏移: {sql}"
+        );
+    }
+
+    #[test]
+    fn include_self_audit_or_explicit_self_action_retains_self_audit_rows() {
+        let with_toggle = where_sql(
+            &AuditLogQuery {
+                include_self_audit: Some(true),
+                ..AuditLogQuery::default()
+            },
+            "SELECT 1 WHERE 1=1",
+        );
+        assert!(
+            !with_toggle.contains("NOT IN ('audit.list', 'audit.view')"),
+            "开启 include_self_audit 时不应过滤自审计记录: {with_toggle}"
+        );
+
+        let explicit_action = where_sql(
+            &AuditLogQuery {
+                action: Some("audit.list".into()),
+                ..AuditLogQuery::default()
+            },
+            "SELECT 1 WHERE 1=1",
+        );
+        assert!(
+            !explicit_action.contains("NOT IN ('audit.list', 'audit.view')"),
+            "显式筛选 audit.list 时不应过滤自审计记录: {explicit_action}"
+        );
+
+        let explicit_filter = where_sql(
+            &AuditLogQuery {
+                filters: Some(r#"[{"field":"action","op":"eq","value":"audit.view"}]"#.into()),
+                ..AuditLogQuery::default()
+            },
+            "SELECT 1 WHERE 1=1",
+        );
+        assert!(
+            !explicit_filter.contains("NOT IN ('audit.list', 'audit.view')"),
+            "结构化筛选 audit.view 时不应过滤自审计记录: {explicit_filter}"
         );
     }
 

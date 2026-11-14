@@ -110,22 +110,10 @@ const fn read(path: &'static str, resource_type: R) -> RouteAudit {
 /// 以 POST 承载查询体的只读接口白名单（不产生写审计）。
 pub const POST_READS: &[&str] = &["/stats/olap/query"];
 
-/// 以 PUT 更新个人 UI 偏好等非安全事件的接口白名单（成功不落安全审计库；
-/// 401/403 仍按 Read 语义落库。个人 UI 偏好不属于安全审计范围）。
-pub const PUT_READS: &[&str] = &["/admin/preferences"];
-
 /// 以 POST 承载查询条件的只读接口（不产生写审计），路径须登记在 [`POST_READS`]。
 const fn read_post(path: &'static str, resource_type: R) -> RouteAudit {
     RouteAudit {
         method: "POST",
-        ..read(path, resource_type)
-    }
-}
-
-/// 个人偏好等 PUT：登记覆盖率，但不按 Write 落库（见 [`PUT_READS`]）。
-const fn read_put(path: &'static str, resource_type: R) -> RouteAudit {
-    RouteAudit {
-        method: "PUT",
         ..read(path, resource_type)
     }
 }
@@ -242,7 +230,6 @@ pub static ROUTES: &[RouteAudit] = &[
     ),
     read("/channels", R::Channel),
     write("POST", "/channels", A::ChannelCreate, R::Channel, None),
-    read("/channels/next-code", R::Channel),
     read("/channels/{id}", R::Channel),
     write("PUT", "/channels/{id}", A::ChannelUpdate, R::Channel, ID),
     write("DELETE", "/channels/{id}", A::ChannelDelete, R::Channel, ID),
@@ -397,6 +384,10 @@ pub static ROUTES: &[RouteAudit] = &[
         A::ConnectorImport,
         R::Connector,
         None,
+    ),
+    read(
+        "/upstream-connectors/drafts/from-supplier/{supplier_id}",
+        R::Connector,
     ),
     write(
         "POST",
@@ -606,6 +597,13 @@ pub static ROUTES: &[RouteAudit] = &[
         R::ApiKey,
         Some("key_prefix"),
     ),
+    secure(
+        "POST",
+        "/tenants/{code}/api-keys/{key_prefix}/rotate",
+        A::ApiKeyRotate,
+        R::ApiKey,
+        Some("key_prefix"),
+    ),
     read("/tenants/{code}/whitelist", R::Tenant),
     secure(
         "POST",
@@ -675,9 +673,7 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/stats/ops/slos", R::System),
     read("/stats/ops/slos/status", R::System),
     read("/stats/ops/products/names", R::System),
-    // 个人 UI 偏好（last_path 等）：读/写均不进安全审计库；禁止伪装成 appearance.update。
-    read("/admin/preferences", R::User),
-    read_put("/admin/preferences", R::User),
+    read("/stats/ops/products/zero-calls", R::System),
     read("/stats/calls/customer", R::System),
     read("/stats/calls/upstream", R::System),
     read("/stats/calls/customer/histogram", R::System),
@@ -703,21 +699,6 @@ pub static ROUTES: &[RouteAudit] = &[
         "/settings/user",
         A::UserSettingsUpdate,
         R::User,
-        None,
-    ),
-    read("/settings/appearance", R::System),
-    secure(
-        "PUT",
-        "/settings/appearance",
-        A::AppearanceUpdate,
-        R::System,
-        None,
-    ),
-    secure(
-        "POST",
-        "/settings/appearance/reset",
-        A::AppearanceReset,
-        R::System,
         None,
     ),
     read("/settings/password-policy", R::System),
@@ -750,7 +731,6 @@ pub static ROUTES: &[RouteAudit] = &[
     read("/billing/bills", R::Billing),
     read("/billing/ops/funnel", R::Billing),
     read("/billing/ops/failures", R::Billing),
-    read("/billing/ops/supplier-costs", R::Billing),
     read("/billing/ops/finance/overview", R::Billing),
     read("/billing/ops/finance/ranks", R::Billing),
     read("/billing/ops/finance/balances", R::Billing),
@@ -858,13 +838,6 @@ pub static ROUTES: &[RouteAudit] = &[
         ID,
     ),
     secure(
-        "PUT",
-        "/admins/{id}/force-password-reset",
-        A::AdminForcePasswordReset,
-        R::Admin,
-        ID,
-    ),
-    secure(
         "POST",
         "/admins/{id}/reset-mfa",
         A::AdminMfaReset,
@@ -906,33 +879,42 @@ pub static ROUTES: &[RouteAudit] = &[
     secure("DELETE", "/alerts/inhibits/{id}", A::AlertInhibitDelete, R::Alert, None),
     // ---- config center ----
     read("/config-center/configs", R::ConfigCenter),
-    write(
+    secure(
         "POST",
         "/config-center/configs",
         A::ConfigCenterCreate,
         R::ConfigCenter,
         None,
     ),
-    read("/config-center/configs/{service_name}", R::ConfigCenter),
-    write(
+    sensitive(
+        "/config-center/configs/{service_name}",
+        A::ConfigCenterView,
+        R::ConfigCenter,
+        SERVICE,
+        true,
+    ),
+    secure(
         "PUT",
         "/config-center/configs/{service_name}",
         A::ConfigCenterUpdate,
         R::ConfigCenter,
         SERVICE,
     ),
-    write(
+    secure(
         "DELETE",
         "/config-center/configs/{service_name}",
         A::ConfigCenterDelete,
         R::ConfigCenter,
         SERVICE,
     ),
-    read(
+    sensitive(
         "/config-center/configs/{service_name}/history",
+        A::ConfigCenterViewHistory,
         R::ConfigCenter,
+        SERVICE,
+        true,
     ),
-    write(
+    secure(
         "POST",
         "/config-center/configs/{service_name}/rollback/{version}",
         A::ConfigCenterRollback,
@@ -948,7 +930,7 @@ pub static ROUTES: &[RouteAudit] = &[
         None,
         true,
     ),
-    write(
+    secure(
         "POST",
         "/config-center/import",
         A::ConfigCenterImport,
@@ -988,6 +970,7 @@ pub static ROUTES: &[RouteAudit] = &[
     ),
     // ---- certificates (proxy to cert service) ----
     read("/certificates", R::Certificate),
+    read("/certificates/subjects", R::Certificate),
     read("/certificates/{id}", R::Certificate),
     sensitive(
         "/certificates/{id}/full",
@@ -1167,7 +1150,7 @@ pub(crate) mod route_sources {
 #[cfg(test)]
 mod tests {
     use super::route_sources::source_routes;
-    use super::{POST_READS, PUT_READS, ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
+    use super::{POST_READS, ROUTES, RouteKind, fallback_action, fallback_resource_type, lookup};
     use std::collections::BTreeSet;
 
     #[test]
@@ -1199,8 +1182,7 @@ mod tests {
                 RouteKind::Read => {
                     assert!(
                         route.method == "GET"
-                            || (route.method == "POST" && POST_READS.contains(&route.path))
-                            || (route.method == "PUT" && PUT_READS.contains(&route.path)),
+                            || (route.method == "POST" && POST_READS.contains(&route.path)),
                         "{} {}",
                         route.method,
                         route.path
@@ -1236,6 +1218,8 @@ mod tests {
             "/tenants/{code}/api-keys",
             "/tenants/{code}/crypto",
             "/tenants/{code}/request-keys",
+            "/config-center/configs/{service_name}",
+            "/config-center/configs/{service_name}/history",
             "/config-center/export",
             "/tenant-crypto/export",
             "/upstream-connectors/drafts/{id}/export/postman",
@@ -1258,20 +1242,17 @@ mod tests {
     }
 
     #[test]
-    fn personal_preferences_put_is_read_kind_not_write_audit() {
-        assert!(PUT_READS.contains(&"/admin/preferences"));
-        let route = lookup("PUT", "/admin/preferences").expect("preferences PUT mapped");
-        assert_eq!(route.kind, RouteKind::Read);
-        assert!(route.action.is_none());
-        // /settings/user 仍是写审计（语言/邮箱等显式资料变更）
+    fn user_settings_put_remains_write_audit_and_legacy_routes_retired() {
         let user_settings = lookup("PUT", "/settings/user").expect("settings/user mapped");
         assert_eq!(user_settings.kind, RouteKind::Write);
         assert_eq!(
             user_settings.action.map(|a| a.as_str()),
             Some("user.settings_update")
         );
-        // 全局外观仍保留写审计，禁止把偏好伪装成 appearance.update
-        let appearance = lookup("PUT", "/settings/appearance").expect("appearance mapped");
-        assert_eq!(appearance.kind, RouteKind::Write);
+        assert!(lookup("GET", "/settings/appearance").is_none());
+        assert!(lookup("PUT", "/settings/appearance").is_none());
+        assert!(lookup("POST", "/settings/appearance/reset").is_none());
+        assert!(lookup("PUT", "/admin/preferences").is_none());
+        assert!(lookup("GET", "/admin/preferences").is_none());
     }
 }

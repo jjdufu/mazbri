@@ -14,7 +14,7 @@ export const getStatusLabel = (status?: string) => {
     overdue: $t("billing.status.overdue"),
     cancelled: $t("billing.status.cancelled"),
   };
-  return map[key] ?? status ?? "-";
+  return map[key] ?? status ?? "—";
 };
 export const statusTagType = (
   status?: string,

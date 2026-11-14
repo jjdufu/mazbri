@@ -1,7 +1,6 @@
 import request from "@/utils/http";
 import type {
   ConfigEntry,
-  ConfigHistory,
   ConfigListQuery,
   ConfigListResponse,
   CreateConfigRequest,
@@ -59,14 +58,6 @@ export function rollbackConfig(data: RollbackRequest) {
   return request.post<ConfigEntry>({
     url: `${BASE_PATH}/configs/${data.service_name}/rollback/${data.version}`,
     showSuccessMessage: true,
-  });
-}
-export function fetchConfigHistoryVersion(params: {
-  service_name: string;
-  version_number: number;
-}) {
-  return request.get<ConfigHistory>({
-    url: `${BASE_PATH}/configs/${params.service_name}/history/${params.version_number}`,
   });
 }
 export function fetchServiceList() {

@@ -76,7 +76,6 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     // 计费运维 BIZ
     ("GET", "/billing/ops/failures", Access::Roles(BIZ)),
     ("GET", "/billing/ops/funnel", Access::Roles(BIZ)),
-    ("GET", "/billing/ops/supplier-costs", Access::Roles(BIZ)),
     ("GET", "/billing/ops/finance/overview", Access::Roles(BIZ)),
     // 异常 / 变更 BIZ
     ("GET", "/stats/ops/anomalies", Access::Roles(BIZ)),
@@ -84,11 +83,14 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     // 容量 / 压测 / SLO 列表 ADMIN；SLO 状态 AnyRole
     ("GET", "/stats/ops/slos", Access::Roles(ADMIN)),
     ("GET", "/stats/ops/slos/status", Access::AnyRole),
-    // 平台策略：读 AnyRole，写 ADMIN（账号安全页嵌入后仍不放宽写）
+    // 平台设置与安全策略：读 AnyRole，写 ADMIN；个人备用恢复码重置 SelfService
+    ("GET", "/settings/system", Access::AnyRole),
+    ("PUT", "/settings/system", Access::Roles(ADMIN)),
     ("GET", "/settings/mfa", Access::AnyRole),
     ("PUT", "/settings/mfa", Access::Roles(ADMIN)),
     ("GET", "/settings/password-policy", Access::AnyRole),
     ("PUT", "/settings/password-policy", Access::Roles(ADMIN)),
+    ("POST", "/auth/mfa/regenerate-codes", Access::SelfService),
     // Trace ADMIN；调用检索 AnyRole（观察者只读开放，写仍无对应路由）
     ("GET", "/stats/traces/search", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/dependencies", Access::Roles(ADMIN)),
@@ -100,6 +102,7 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("GET", "/stats/calls/stages", Access::AnyRole),
     // overview / 大盘读 AnyRole（字段裁剪在 handler，不靠放宽本表）
     ("GET", "/stats/metrics/overview", Access::AnyRole),
+    ("GET", "/stats/ops/products/zero-calls", Access::AnyRole),
 ];
 
 /// 跑一遍 IA 基线；任何「放宽」都会让本断言失败。

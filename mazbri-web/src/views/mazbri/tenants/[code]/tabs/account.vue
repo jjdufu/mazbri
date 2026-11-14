@@ -30,12 +30,23 @@
           </div>
           <div class="balance-meta">
             {{
+              $t("tenant.account.creditLimitMeta", {
+                amount: formatBalance(account?.credit_limit || "0"),
+              })
+            }}
+            ·
+            {{
+              $t("tenant.account.availableBalanceMeta", {
+                amount: formatBalance(account?.available_balance || "0"),
+              })
+            }}
+          </div>
+          <div class="balance-meta">
+            {{
               account?.status === "active"
                 ? $t("tenant.account.status.active")
                 : $t("tenant.account.status.frozen")
             }}
-            ·
-            {{ account?.currency || "CNY" }}
           </div>
           <div v-if="spend" class="balance-meta spend-meta">
             {{ $t("tenant.account.windowSpend") }}
@@ -47,6 +58,7 @@
         </div>
 
         <CommonActionPanel
+          v-if="accountActions.recharge || accountActions.refund"
           surface
           align="start"
           :title="$t('tenant.account.quickActionsTitle')"
@@ -158,13 +170,13 @@
         </span>
       </template>
       <template #description="{ row }">
-        {{ row.description || "-" }}
+        {{ row.description || "—" }}
       </template>
       <template #payment_method="{ row }">
         {{ getPaymentMethodLabel(row.payment_method) }}
       </template>
       <template #operator_name="{ row }">
-        {{ row.operator_name || "-" }}
+        {{ row.operator_name || "—" }}
       </template>
       <template #created_at="{ row }">
         {{ formatDateTime(row.created_at) }}
@@ -373,7 +385,11 @@ import ResourceTableShell from "@/components/common/resource-table-shell/index.v
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { formatMoney, formatDateTime } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatMoney,
+  formatDateTime,
+} from "@/utils/format";
 defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
@@ -561,7 +577,7 @@ const getAmountClass = (type: string) => {
   return type === "charge" || type === "refund" ? "negative" : "positive";
 };
 const getPaymentMethodLabel = (method?: string) => {
-  if (!method) return "-";
+  if (!method) return EMPTY_PLACEHOLDER;
   const labels: Record<string, string> = {
     manual: $t("tenant.account.paymentMethods.manual"),
     bank_transfer: $t("tenant.account.paymentMethods.bankTransfer"),

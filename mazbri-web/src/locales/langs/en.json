@@ -185,7 +185,7 @@
       "unavailable": "The step-up dialog is unavailable. Refresh the page and try again.",
       "inputErrorMessage": "Enter a numeric code of the expected length, or an 8-character backup code",
       "notEnabledTitle": "MFA Required",
-      "notEnabledMessage": "This operation requires MFA verification, but MFA is not enabled for your account. Bind and enable MFA on the Account Security page first.",
+      "notEnabledMessage": "This operation requires MFA verification, but MFA is not enabled for your account. Bind and enable MFA in Personal Account & Security first.",
       "goToSetup": "Set up MFA",
       "categories": {
         "certificate": "Certificates",
@@ -303,7 +303,7 @@
       "rateLimitApiOverride": "Per-API overrides",
       "cacheScope": "Global Cache Policy",
       "cacheDefaultTtlSecs": "Default TTL (seconds)",
-      "cacheMaxCacheSizeBytes": "Max Cache Size (bytes)",
+      "cacheMaxCacheSizeMb": "Max Cache Size (MB)",
       "cacheTenantIsolated": "Tenant Isolation",
       "cacheWarmupEnabled": "Warmup Enabled",
       "cacheApiTtlOverride": "API TTL Override",
@@ -355,7 +355,7 @@
     },
     "save": "Save",
     "saveSuccess": "Saved",
-    "accountSecurity": "Account Security",
+    "accountSecurity": "Personal Account & Security",
     "refresh": "Refresh",
     "delete": "Delete",
     "edit": "Edit",
@@ -373,7 +373,8 @@
       "screenLock": "Screen Lock",
       "fireworksEffect": "Fireworks Effect",
       "watermarkEffect": "Watermark Effect",
-      "mfaStepUpDialog": "MFA step-up"
+      "mfaStepUpDialog": "MFA step-up",
+      "personalSecurityDrawer": "Personal Account & Security"
     },
     "headerBar": {
       "menuButton": "Toggle the left menu expand/collapse button",
@@ -467,13 +468,15 @@
         "title": "Call Log Detail",
         "summaryTitle": "Call Summary",
         "rawTitle": "Raw Details",
-        "empty": "-",
+        "empty": "—",
         "labels": {
           "serialNo": "Serial No",
           "party": "Tenant / Supplier",
           "channelName": "Channel Name",
           "responseTime": "Response Time",
           "latency": "Latency",
+          "internalLatency": "Internal Processing",
+          "postResponseLatency": "Post-response",
           "statusCode": "Status Code",
           "requestIp": "Request IP",
           "responseResult": "Response Result"
@@ -528,13 +531,6 @@
       "list": [
         "Border",
         "Shadow"
-      ]
-    },
-    "container": {
-      "title": "Container Width",
-      "list": [
-        "Full",
-        "Boxed"
       ]
     },
     "basics": {
@@ -709,9 +705,6 @@
   },
   "lockScreen": {
     "pwdError": "Password error",
-    "securityLockActivated": "Security lock activated",
-    "devToolsWarningTitle": "System Locked",
-    "devToolsWarningDesc": "Close developer tools to continue.",
     "initFailed": "Failed to initialize screen lock, please try again",
     "lock": {
       "inputPlaceholder": "Please input lock screen password",
@@ -807,7 +800,6 @@
       "title": "Mazbri Management",
       "users": "User Management",
       "userManagement": "User Management",
-      "userDetail": "User Detail",
       "tenants": "Tenant Management",
       "opsManagement": "Operations Center",
       "opsMonitoring": "Ops Monitoring",
@@ -826,9 +818,7 @@
       "upstreamChannelList": "Channels",
       "certificates": "Certificate Management",
       "certificateList": "Certificate List",
-      "certificateDetail": "Certificate Detail",
-      "authorizationManagement": "Authorization Management",
-      "billList": "Bills",
+      "billsAndReconciliation": "Bills & Reconciliation",
       "usageReconciliation": "Usage Reconciliation",
       "analytics": "Analytics",
       "analyticsOverview": "Overview",
@@ -837,24 +827,13 @@
       "advancedRouteConfig": "Route Strategy",
       "userRouteGovernance": "Route Strategy",
       "callbackList": "Callbacks",
-      "callbackFields": {
-        "url": "Callback URL",
-        "secret": "Signature Secret",
-        "tenantId": "Tenant ID",
-        "productId": "Product ID",
-        "addTitle": "New Callback Subscription"
-      },
       "auditLogs": "Audit Logs",
       "settings": "Settings",
-      "systemSettings": "System Settings",
-      "appearanceSettings": "Appearance Settings",
+      "platformSettings": "Platform Settings",
       "controlPanel": "Control Panel",
       "configCenter": "Config Center",
       "connectorWorkbench": "Code-free Access",
-      "account": "My Account",
-      "accountSecurity": "Account Security",
       "opsOverview": "Ops Overview",
-      "financeOverview": "Finance Overview",
       "serviceHealth": "Service Health",
       "serviceDetail": "Service Detail",
       "trafficRed": "Gateway RED",
@@ -862,127 +841,85 @@
       "trafficErrors": "Error analysis",
       "upstreamSla": "Supplier SLA",
       "upstreamBreaker": "Breaker & Retry",
-      "billingHealth": "Billing Pipeline",
       "opsCalls": "Call Logs",
       "alertEvents": "Alert events",
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
       "opsTraceDetail": "Trace detail",
-      "infraPipeline": "Data pipeline",
-      "infraMiddleware": "Middleware",
-      "infraHosts": "Hosts & containers",
+      "infraPipeline": "Data & Control Pipeline",
+      "infraMiddleware": "Infra & Middleware",
+      "infraHosts": "Hosts & Containers",
       "flowRatelimit": "Rate Limit",
       "flowCache": "Cache",
-      "billingReconcile": "Reconciliation",
       "securityEvents": "Auth & Security",
       "alertSilences": "Alert silences",
       "opsInfra": "Infrastructure",
       "opsAlerts": "Alert Center",
-      "opsBilling": "Billing & Reconcile",
-      "opsTraffic": "Traffic & Quality",
+      "opsTraffic": "Calls & Traces",
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
       "opsServices": "Services Overview",
       "opsRuntime": "Runtime Metrics",
-      "runtimeApps": "App Components"
+      "runtimeApps": "App Topology & Nodes"
     }
   },
   "systemSettings": {
     "page": {
-      "title": "System Settings",
-      "heading": "System and Appearance Settings"
+      "title": "Platform Settings",
+      "heading": "Platform Settings"
     },
     "sections": {
-      "basic": "Basic Settings"
+      "basic": "Site & Gateway Endpoints",
+      "basicInfo": "Configure console display name, site URL, and tenant API gateway base URL.",
+      "runtimeSecurity": "Session, Upload & Global Security",
+      "runtimeSecurityInfo": "Configure admin session timeout, max upload size, global audit logging, and anti-leak watermark."
     },
     "tabs": {
-      "system": "System Settings",
-      "appearance": "Appearance Settings"
+      "basic": "Basic Settings",
+      "security": "Security Policy",
+      "license": "Platform License"
     },
     "form": {
       "siteName": "Site Name",
       "siteNamePlaceholder": "Enter site name",
-      "siteUrl": "Site URL",
-      "siteUrlPlaceholder": "https://example.com",
-      "adminEmail": "Admin Email",
-      "adminEmailPlaceholder": "admin{'@'}example.com",
-      "sessionTimeout": "Admin session timeout (min, sets access JWT expiry)",
-      "saveSettings": "Save Settings",
-      "resetToDefault": "Reset to Default",
+      "siteUrl": "Admin Console URL",
+      "siteUrlPlaceholder": "https://admin.example.com",
       "tenantGatewayUrl": "Tenant Gateway URL",
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
-      "tenantGatewayUrlHint": "Tenant API gateway base URL (not the admin console)."
-    },
-    "theme": {
-      "title": "Theme Settings",
-      "themeMode": "Theme Mode",
-      "followSystem": "Follow System",
-      "followSystemHint": "(Auto adapts to system light/dark theme)",
-      "systemThemeColor": "System Theme Color",
-      "darkThemeStyle": "Dark Theme Style",
-      "darkThemeObsidian": "Obsidian Minimalist",
-      "darkThemeGraphite": "Graphite Steel",
-      "darkThemeOceanic": "Oceanic Abyss",
-      "darkThemeNordic": "Nordic Pine"
-    },
-    "layout": {
-      "title": "Layout Settings",
-      "containerWidth": "Container Width",
-      "boxStyle": "Box Style"
-    },
-    "display": {
-      "title": "Display Settings",
-      "showBreadcrumb": "Show Breadcrumb",
-      "showProgressBar": "Show Progress Bar",
-      "watermark": "Global Watermark",
-      "weakMode": "Color Weakness Mode",
-      "multiTab": "Show Work Tab",
-      "accordion": "Sidebar Accordion",
-      "collapseSidebar": "Show Sidebar Button",
-      "fastEnter": "Show Fast Enter",
-      "reloadPage": "Show Reload Button",
-      "language": "Show Language"
-    },
-    "style": {
-      "title": "Style Settings",
-      "menuWidth": "Menu Width (px)",
-      "tabStyle": "Tab",
-      "pageTransition": "Transition",
-      "customRadius": "Border Radius (rem)"
+      "tenantGatewayUrlHint": "Tenant API gateway base URL (not the admin console).",
+      "sessionTimeout": "Admin Session Timeout (min)",
+      "maxUploadSize": "Max Upload Size (MB)",
+      "enableAuditLog": "Enable Global Audit Log",
+      "watermarkVisible": "Enable Global Anti-Leak Watermark",
+      "saveBasicSettings": "Save Basic Settings"
     },
     "validation": {
       "siteNameRequired": "Please enter site name",
       "siteUrlRequired": "Please enter site URL",
-      "siteUrlInvalid": "Please enter a valid URL",
-      "adminEmailRequired": "Please enter admin email",
-      "adminEmailInvalid": "Please enter a valid email",
+      "siteUrlInvalid": "Please enter a valid URL starting with http:// or https://",
       "tenantGatewayUrlInvalid": "Tenant gateway URL must start with http:// or https://"
     },
     "messages": {
-      "savedSuccess": "Settings saved successfully",
-      "appearanceSaved": "Appearance settings saved",
-      "appearanceSavedLocally": "Saved locally (server sync failed)",
-      "resetConfirmTitle": "Confirm reset",
-      "resetConfirmMessage": "Reset all appearance settings to defaults?",
-      "appearanceResetSuccess": "Appearance settings reset to defaults"
+      "savedSuccess": "Basic settings saved"
     }
   },
   "securityPolicy": {
     "actions": {
-      "savePolicy": "Save Policy"
+      "savePolicy": "Save Security Policy"
     },
     "sections": {
       "complexity": {
         "title": "Password Complexity"
       },
       "expiration": {
-        "title": "Expiration and Reuse"
+        "title": "Expiration & Reuse"
       },
       "loginProtection": {
-        "title": "Login Protection"
+        "title": "Login Brute-Force Protection"
       },
       "totp": {
         "title": "TOTP Parameters",
+        "globalTitle": "Global MFA Configuration",
         "digitsPeriodWarning": "Changing the number of digits or the period makes already enrolled authenticators stop matching immediately. Confirm a backup code still works, or be ready to bind again, before saving."
       }
     },
@@ -1014,15 +951,20 @@
       "totpPeriod30": "30 seconds",
       "totpPeriod60": "60 seconds"
     },
+    "units": {
+      "digits": "digits",
+      "backupCodes": "backup codes"
+    },
     "messages": {
-      "savedSuccess": "Settings saved",
+      "savedSuccess": "Security policy saved",
       "specialCharsRequired": "Special character set cannot be empty when special characters are required.",
       "issuerRequired": "Issuer name cannot be empty."
     },
     "hints": {
       "specialChars": "Configure password length and character requirements; when special characters are required, new passwords must contain at least one listed character.",
       "lockThreshold": "Accounts are automatically locked after reaching the failed login threshold.",
-      "expiration": "Passwords expire after the configured validity period (0 disables expiration); history check prevents reusing recent passwords."
+      "expiration": "Passwords expire after the configured validity period (0 disables expiration); history check prevents reusing recent passwords.",
+      "totpIssuer": "Configure the global authenticator issuer name displayed during personal TOTP enrollment."
     }
   },
   "channels": {
@@ -1031,7 +973,8 @@
       "searchPlaceholder": "Channel / Supplier"
     },
     "actions": {
-      "add": "Add Channel"
+      "add": "Add Channel",
+      "edit": "Edit"
     },
     "fields": {
       "id": "Internal ID",
@@ -1040,15 +983,19 @@
       "name": "Channel Name",
       "pathPrefix": "Path Prefix",
       "costPrice": "Cost Price",
-      "qpsLimit": "Upstream channel capacity (QPS)",
-      "qpsLimitHint": "0 = unlimited"
+      "qpsLimit": "Channel Capacity",
+      "qpsLimitHint": "Enter 0 for unlimited channel QPS",
+      "qpsUnit": "QPS",
+      "qpsUnlimited": "Unlimited",
+      "costPriceHint": "Up to 12 integer and 6 decimal places (e.g. 0.000050)"
     },
     "placeholders": {
       "supplier": "Please select a supplier",
       "channelCode": "ACME-DEFAULT",
       "name": "Supplier A - Shanghai Line",
       "pathPrefix": "/",
-      "costPrice": "0.001000"
+      "costPrice": "0.001000",
+      "supplierRemote": "Search supplier name or code"
     },
     "dialog": {
       "createTitle": "Add Channel",
@@ -1061,7 +1008,21 @@
     "detail": {
       "pageTitle": "Channel Detail",
       "basicInfoTitle": "Basic Information",
-      "loadFailed": "Failed to load channel"
+      "loadFailed": "Failed to load channel",
+      "supplierSectionTitle": "Linked Supplier",
+      "healthSectionTitle": "Capacity & Health Summary",
+      "routesSectionTitle": "Bound Route Rules",
+      "routesEmpty": "No route rules bound",
+      "viewSupplier": "View Supplier",
+      "egressMode": "Egress Mode",
+      "egressDefault": "Standard Upstream Channel",
+      "egressConfigured": "Custom Egress Policy",
+      "routeProduct": "Product",
+      "routeTenant": "Target Tenant",
+      "routeGlobal": "Global Default",
+      "routePriority": "Priority",
+      "routeOrder": "Order",
+      "routeTimeout": "Timeout / Retries"
     },
     "status": {
       "active": "Active",
@@ -1078,7 +1039,9 @@
       "channelCodePattern": "Must start with an uppercase letter; only A–Z, digits, and hyphens.",
       "channelCodeDuplicate": "Channel code already exists",
       "nameRequired": "Please enter a channel name",
-      "pathPrefixRequired": "Please enter a path prefix"
+      "pathPrefixRequired": "Please enter a path prefix",
+      "costPriceRequired": "Please enter a cost price",
+      "costPricePattern": "Enter a valid amount (up to 12 integer and 6 decimal places)"
     },
     "messages": {
       "createSupplierFirst": "Please create a supplier before adding a channel",
@@ -1092,7 +1055,8 @@
     },
     "actions": {
       "addSubscription": "Add Subscription",
-      "retry": "Retry"
+      "retry": "Retry",
+      "generateSecret": "Generate"
     },
     "columns": {
       "tenantCode": "Tenant Code",
@@ -1109,14 +1073,15 @@
       "productCode": "Product Code"
     },
     "placeholders": {
-      "tenantCode": "e.g. T0000001",
-      "productCode": "e.g. 8000000001",
+      "tenantCode": "Search tenant name or code (e.g. JM5K26T6)",
+      "productCode": "Select an authorized product",
+      "selectTenantFirst": "Please select a tenant first",
       "callbackUrl": "https://...",
-      "secretKey": "Signing secret (Sign secret)"
+      "secretKey": "Enter or generate a 32-char signing secret"
     },
     "validation": {
-      "tenantCodeRequired": "Please enter a tenant code",
-      "productCodeRequired": "Please enter a product code",
+      "tenantCodeRequired": "Please select a tenant",
+      "productCodeRequired": "Please select an authorized product",
       "callbackUrlRequired": "Please enter a callback URL",
       "secretKeyRequired": "Please enter a signing secret"
     },
@@ -1132,7 +1097,15 @@
       "deleteConfirm": "Are you sure you want to delete this subscription?",
       "retrySuccess": "Requeued successfully",
       "retryFailed": "Retry failed",
-      "createFailed": "Creation failed"
+      "createFailed": "Creation failed",
+      "noAuthorizedProducts": "No authorized products for this tenant"
+    },
+    "fields": {
+      "addTitle": "New Callback Subscription",
+      "tenant": "Tenant",
+      "product": "Authorized Product",
+      "url": "Callback URL",
+      "secret": "Signature Secret"
     }
   },
   "routes": {
@@ -1350,7 +1323,16 @@
       "status": "Status",
       "actionPlaceholder": "All action types",
       "resourceTypePlaceholder": "All resource types",
-      "statusPlaceholder": "All statuses"
+      "statusPlaceholder": "All statuses",
+      "includeSelfAudit": "Show audit read logs"
+    },
+    "chain": {
+      "expandTooltip": "{flow} ({count} cross-service linked logs, click to expand mirror rows)",
+      "collapseTooltip": "{flow} (click to collapse mirror rows)",
+      "mirrorPrefix": "↳ Mirror",
+      "detailTitle": "Cross-Service Linked Records",
+      "switchToService": "Switch",
+      "currentRecord": "Current"
     },
     "columns": {
       "timestamp": "Time",
@@ -1389,6 +1371,7 @@
       "apiKeyCreate": "Create API Key",
       "apiKeyUpdate": "Update API Key",
       "apiKeyRevoke": "Revoke API Key",
+      "apiKeyRotate": "Rotate API Key",
       "userLogin": "Login",
       "userLogout": "Logout",
       "userUpdate": "Update User",
@@ -1424,6 +1407,8 @@
       "configCenterRollback": "Rollback Config",
       "configCenterExport": "Export Config",
       "configCenterImport": "Import Config",
+      "configCenterView": "View Config Details",
+      "configCenterViewHistory": "View Config History",
       "appearanceUpdate": "Update Appearance Settings",
       "appearanceReset": "Reset Appearance Settings",
       "mfaSettingsUpdate": "Update MFA Settings",
@@ -1678,7 +1663,85 @@
       "authorizationType": "Authorization Type",
       "activateNow": "Activate Now",
       "deliveryLogId": "Delivery Log ID",
-      "tenantGatewayUrl": "Tenant Gateway URL"
+      "tenantGatewayUrl": "Tenant Gateway URL",
+      "category": "Step-up Category",
+      "mfa": "MFA Scope",
+      "stepUpOpenedAt": "Step-up Opened At",
+      "stepUpExpiresAt": "Step-up Expires At",
+      "stepUpMethod": "Step-up Method",
+      "ttlSecs": "Validity Duration",
+      "sid": "Session ID",
+      "method": "Method",
+      "openedAt": "Opened At",
+      "remainingSecs": "Remaining Duration",
+      "contentType": "Content Type",
+      "contentLength": "Content Length",
+      "bodyKeys": "Body Fields",
+      "bodyType": "Body Structure",
+      "items": "Item Count",
+      "errorCode": "Error Code",
+      "loginStage": "Login Stage",
+      "stage": "Stage",
+      "requiredRoles": "Required Roles",
+      "refreshIdentityUpdated": "Identity Refresh Changes",
+      "roleChanged": "Role Changed",
+      "usernameChanged": "Username Changed",
+      "additionalEvents": "Additional Events",
+      "serviceName": "Service Name",
+      "version": "Version",
+      "targetVersion": "Target Version",
+      "isSensitive": "Sensitive Config",
+      "subject": "Certificate Subject",
+      "certType": "Certificate Type",
+      "fingerprint": "Fingerprint",
+      "dnsNames": "DNS Names",
+      "displayName": "Display Name",
+      "role": "Role",
+      "isActive": "Active Status",
+      "mfaRequired": "MFA Required",
+      "forcePasswordReset": "Force Password Reset",
+      "keyPrefix": "Key Prefix",
+      "value": "Value",
+      "actorIssuer": "Actor Issuer",
+      "actorMode": "Actor Mode",
+      "actorVerification": "Actor Verification",
+      "authEpochBumped": "Auth Epoch Bumped",
+      "caller": "Internal Caller",
+      "callerGeneration": "Caller Token Generation",
+      "changeSummary": "Change Summary",
+      "contactEmail": "Contact Email",
+      "contactPerson": "Contact Person",
+      "contactPhone": "Contact Phone",
+      "mfaVerified": "MFA Verified",
+      "peerIp": "Peer IP",
+      "released": "Released",
+      "routeVersion": "Route Version",
+      "supplierId": "Supplier ID",
+      "tokenExpirationSecs": "Token Expiration",
+      "upstreamType": "Upstream Type",
+      "usedBackupCode": "Used Backup Code",
+      "configCount": "Config Count",
+      "imported": "Imported Count",
+      "skipped": "Skipped Count",
+      "errors": "Error Count",
+      "rollbackVersion": "Rollback Version",
+      "retryAfterSecs": "Retry After",
+      "setupPath": "MFA Setup Path",
+      "beforeHash": "Before Digest",
+      "afterHash": "After Digest",
+      "watermarkVisible": "Global Security Watermark"
+    },
+    "mfaCategories": {
+      "certificate": "Certificate & Root Auth",
+      "platform": "Platform & Config",
+      "admin": "Admin Accounts",
+      "key": "Tenant Keys",
+      "finance": "Finance & Billing",
+      "security": "Security Settings"
+    },
+    "mfaMethods": {
+      "totp": "TOTP",
+      "backup_code": "Backup Code"
     },
     "values": {
       "yes": "Yes",
@@ -1740,7 +1803,9 @@
       "changesTitle": "Changes",
       "changesField": "Field",
       "changesBefore": "Before",
-      "changesAfter": "After"
+      "changesAfter": "After",
+      "rawJsonTitle": "Raw JSON",
+      "copyRawJson": "Copy JSON"
     },
     "failureReasons": {
       "missingToken": "Missing token",
@@ -1839,8 +1904,8 @@
       "import": "Import",
       "export": "Export",
       "create": "Create Config",
-      "edit": "Edit",
-      "history": "History"
+      "edit": "Edit Config",
+      "history": "Version History"
     },
     "columns": {
       "serviceName": "Service Name",
@@ -1883,6 +1948,15 @@
         "create": "Create Config",
         "edit": "Edit Config"
       },
+      "tabs": {
+        "toml": "TOML Source",
+        "cors": "CORS Quick Setup"
+      },
+      "cors": {
+        "allowedOrigins": "Allowed Origins",
+        "allowedOriginsTip": "Wildcard * is allowed in development; production must specify trusted origins (e.g., https://console.example.com)",
+        "allowCredentials": "Allow Credentials"
+      },
       "fields": {
         "serviceName": "Service Name",
         "content": "Config Content"
@@ -1904,10 +1978,12 @@
     "historyDrawer": {
       "title": "Version History",
       "actions": {
-        "rollback": "Rollback"
+        "rollback": "Rollback",
+        "rollbackToSelected": "Roll Back to This Version"
       },
       "compare": {
-        "title": "Version Comparison",
+        "title": "Compare Against",
+        "currentActive": "Current Active",
         "versionLabel": "Version {version}"
       },
       "columns": {
@@ -1915,7 +1991,8 @@
         "updatedBy": "Updated By",
         "createdAt": "Time"
       },
-      "empty": "Select a version to view details",
+      "initialVersionNotice": "Current initial active version (historical snapshots will be recorded automatically after updates)",
+      "activeConfigTitle": "Current Active Config",
       "confirmTitle": "Confirm Rollback",
       "confirmMessage": "Are you sure you want to roll back to version {version}?",
       "messages": {
@@ -1924,15 +2001,11 @@
     },
     "diffViewer": {
       "version": "Version {version}",
+      "currentActive": "Current Active Config",
       "noChanges": "The two versions have identical content"
     },
     "messages": {
-      "selectConfigToDelete": "Please select configuration entries to delete",
-      "deleteConfirmTitle": "Delete confirmation",
-      "confirmDelete": "Confirm delete",
-      "deleteManyConfirm": "Delete {count} configuration entries?",
-      "deleteManySuccess": "Successfully deleted {count} configuration entries",
-      "deleteManyFailed": "Batch delete failed",
+      "coreProtectedDeleteTip": "Core platform configurations are protected and cannot be deleted. Please edit or roll back instead.",
       "deleteServiceConfigConfirm": "Delete config for service “{serviceName}”?"
     }
   },
@@ -1946,8 +2019,8 @@
         "subtitle": "Import a license or export a request."
       },
       "sections": {
-        "import": "License",
-        "detail": "Authorization Details",
+        "import": "License Import & Request Export",
+        "detail": "Current License Details",
         "emptyDetail": "No authorization file has been imported yet. Use the form on the left first."
       },
       "status": {
@@ -1959,8 +2032,10 @@
         "unconfigured": "Not imported"
       },
       "license": {
-        "exportRequest": "Export request",
-        "importLicense": "Import license",
+        "exportRequest": "Export Request",
+        "importLicense": "Import & Activate",
+        "pasteLabel": "Or Paste License Text (Optional)",
+        "pastePlaceholder": "Paste the .jws license token issued by the platform",
         "exportSuccess": "Request file exported",
         "importSuccess": "License imported",
         "sequence": "Sequence",
@@ -1975,7 +2050,7 @@
         "remaining": "Remaining",
         "expiredByDays": "Expired {count} days ago",
         "expiresInDays": "{count} days left",
-        "selectFile": "Select a license file",
+        "selectFile": "Please select a .jws license file or paste license text",
         "disabled": {
           "expired": "The license has expired. New issuance has stopped.",
           "pending": "The license is not yet effective.",
@@ -1985,9 +2060,8 @@
       },
       "filePicker": {
         "title": "Click or drag to select a license file",
-        "hint": "Accepts .jws and text files.",
+        "hint": "Supports importing platform-issued .jws license files or pasting license text",
         "selectedHint": "A file is selected. Click or drag to choose another one.",
-        "sizeHint": "Larger files take longer to import and validate.",
         "selectedSize": "File size: {size}",
         "invalidType": "Please select a .jws or text license file",
         "selected": "Selected",
@@ -2200,6 +2274,10 @@
     },
     "list": {
       "title": "Certificate List",
+      "sameAsSubject": "Same as Subject",
+      "copyFingerprint": "Copy full SHA-256 fingerprint",
+      "remainingDays": "{count} days left",
+      "expiredDaysAgo": "Expired {count} days ago",
       "actions": {
         "issue": "Issue Certificate",
         "revoke": "Revoke"
@@ -2208,18 +2286,18 @@
         "revoked": "Certificate has been revoked"
       },
       "columns": {
-        "subject": "Subject",
-        "dnsNames": "DNS Names",
-        "expiresAt": "Expires At",
+        "subject": "Service / Subject",
+        "dnsNames": "SAN Extensions",
+        "fingerprint": "Fingerprint",
+        "expiresAt": "Valid Until",
         "status": "Status"
       }
     },
     "detail": {
       "title": "Certificate Detail",
       "sections": {
-        "info": "Certificate Info",
-        "files": "Certificate Files",
-        "statusLegend": "Status Legend"
+        "info": "Certificate Metadata",
+        "files": "Certificate PEM"
       },
       "disabledReasons": {
         "notLoaded": "Certificate information has not been loaded",
@@ -2227,40 +2305,48 @@
       },
       "actions": {
         "download": "Download",
-        "renew": "Renew",
-        "autoRenewal": "Auto Renewal",
-        "revoke": "Revoke"
+        "downloadPublicCert": "Download Public Certificate (cert.pem)",
+        "downloadFullBundle": "Download Full Bundle (with Private Key · MFA)",
+        "copyFingerprint": "Copy full fingerprint",
+        "renew": "Renew Certificate",
+        "revoke": "Revoke Certificate"
       },
       "fields": {
-        "id": "ID",
-        "subject": "Subject",
-        "dnsNames": "DNS Names",
+        "id": "Certificate ID",
+        "subject": "Service / Subject",
+        "dnsNames": "SAN Extensions",
+        "fingerprint": "SHA-256 Fingerprint",
+        "renewalCount": "Renewal Count",
         "issuedAt": "Issued At",
-        "expiresAt": "Expires At",
+        "expiresAt": "Valid Until",
+        "revokedAt": "Revoked At",
         "status": "Status"
       },
-      "tabs": {
-        "certPem": "Certificate (cert.pem)",
-        "keyPem": "Private Key (key.pem)",
-        "caPem": "CA Certificate (ca.pem)"
+      "autoRenewal": {
+        "title": "Auto-Renewal Policy",
+        "subtitle": "Automatically issue a replacement certificate before expiration",
+        "enabledTag": "Enabled",
+        "disabledTag": "Disabled",
+        "thresholdDays": "Renewal Threshold (days)",
+        "validityDays": "Renewal Validity",
+        "nextRenewalAt": "Next Scheduled Renewal",
+        "saveAction": "Save Policy"
       },
-      "statusLegend": {
-        "valid": {
-          "label": "Valid",
-          "description": "The certificate is within its validity period"
-        },
-        "expiringSoon": {
-          "label": "Expiring Soon",
-          "description": "The certificate will expire within 30 days"
-        },
-        "expired": {
-          "label": "Expired",
-          "description": "The certificate has passed its validity period"
-        },
-        "revoked": {
-          "label": "Revoked",
-          "description": "The certificate has been revoked and cannot be restored"
-        }
+      "tabs": {
+        "certPem": "Public Cert (cert.pem)",
+        "caPem": "CA Root (ca.pem)",
+        "keyPem": "Private Key (key.pem)"
+      },
+      "pem": {
+        "publicCertHint": "X.509 leaf public certificate (non-sensitive)",
+        "caCertHint": "Platform CA root certificate (non-sensitive)"
+      },
+      "privateKeyGuard": {
+        "title": "Private Key Protected",
+        "description": "Private keys are high-sensitivity credentials. Viewing or copying requires administrator MFA verification and is recorded in audit logs.",
+        "unlockAction": "Unlock Private Key",
+        "lockAction": "Lock & Hide",
+        "unlockedHint": "Private key temporarily unlocked; cleared from memory when closing the drawer"
       }
     },
     "issueDialog": {
@@ -2283,15 +2369,6 @@
       }
     },
     "autoRenewalDialog": {
-      "title": "Auto Renewal Configuration",
-      "fields": {
-        "subject": "Certificate Subject",
-        "expiresAt": "Expires At",
-        "enabled": "Enable Auto Renewal",
-        "thresholdDays": "Renewal Threshold Days (days)",
-        "validityDays": "Renewal Validity (days)",
-        "nextRenewalAt": "Next Renewal Time"
-      },
       "hints": {
         "thresholdDays": "Automatically renew the certificate a few days before it expires",
         "validityDays": "Validity period of the renewed certificate"
@@ -2332,6 +2409,21 @@
     "page": {
       "title": "User Management"
     },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "mfaBound": "Bound",
+      "mfaUnbound": "Unbound",
+      "policyOn": "Enabled",
+      "policyOff": "Disabled"
+    },
+    "passwordValidation": {
+      "lengthRange": "Password length must be between {min} and {max} characters",
+      "requireUppercase": "Password must contain at least one uppercase letter",
+      "requireLowercase": "Password must contain at least one lowercase letter",
+      "requireDigit": "Password must contain at least one digit",
+      "requireSpecial": "Password must contain a special character ({chars})"
+    },
     "list": {
       "title": "System User List",
       "addUser": "Add User",
@@ -2368,7 +2460,8 @@
         "role": "Please select a role"
       },
       "actions": {
-        "regeneratePassword": "Regenerate Password"
+        "regeneratePassword": "Generate strong password matching policy",
+        "copyPassword": "Copy password"
       },
       "tips": {
         "passwordGenerated": "Generated automatically based on the password policy",
@@ -2393,12 +2486,19 @@
     },
     "resetPasswordDialog": {
       "title": "Reset Password",
-      "alert": "Reset password for administrator {username}",
+      "alert": "Resetting login password for {username}",
       "fields": {
         "newPassword": "New Password"
       },
       "placeholders": {
         "newPassword": "Please enter a new password"
+      },
+      "actions": {
+        "regeneratePassword": "Generate strong password matching policy",
+        "copyPassword": "Copy password"
+      },
+      "tips": {
+        "passwordGenerated": "Generated based on the platform password policy; copy and share securely"
       },
       "forceReset": "Require the user to change the password on next login",
       "validation": {
@@ -2409,24 +2509,45 @@
     "detail": {
       "title": "Administrator Details",
       "userTitle": "User Details",
-      "basicInfo": "Basic Info",
-      "editTitle": "Edit Administrator Info",
-      "editUserTitle": "Edit User Info",
-      "resetPassword": "Reset Password",
+      "basicInfo": "Account Attributes",
+      "securitySection": "Security & Controls",
+      "editAction": "Edit Profile",
+      "editTitle": "Edit Administrator Profile",
+      "editUserTitle": "Edit User Profile",
+      "resetPassword": "Reset Login Password",
+      "resetMfa": "Reset Two-Factor MFA",
       "deleteAdmin": "Delete Administrator",
       "deleteUser": "Delete User",
+      "controls": {
+        "statusTitle": "Account Active Status",
+        "statusHint": "Deactivating immediately revokes active sessions and blocks sign-in",
+        "statusProtectedHint": "Super administrators and your own signed-in account cannot be deactivated here",
+        "passwordTitle": "Login Password Control",
+        "passwordHint": "Reset password and atomically update the force-change-on-login flag",
+        "passwordProtectedHint": "Manage super administrator password via Personal Account & Security in the top bar",
+        "mfaTitle": "Two-Factor Authentication (MFA) Control",
+        "mfaHint": "Unbind a lost authenticator device so the user re-enrolls on next sign-in",
+        "mfaUnboundHint": "This user has not bound an MFA authenticator yet",
+        "mfaProtectedHint": "Manage super administrator MFA via Personal Account & Security in the top bar",
+        "dangerTitle": "Delete Account",
+        "dangerHint": "Permanently remove this admin user account; this action cannot be undone"
+      },
       "labels": {
-        "id": "ID",
+        "id": "User ID",
         "username": "Username",
+        "displayName": "Display Name",
         "email": "Email",
         "role": "Role",
-        "status": "Status",
-        "mfaStatus": "MFA Status",
-        "forcePasswordReset": "Force Password Reset",
-        "lastLogin": "Last Login",
+        "status": "Account Status",
+        "mfaStatus": "MFA Binding",
+        "forcePasswordReset": "Force Reset on Next Login",
+        "passwordChangedAt": "Password Changed At",
+        "lastLogin": "Last Login At",
         "mfaRequired": "Require MFA"
       },
       "validation": {
+        "displayNameRequired": "Please enter a display name",
+        "displayNameLength": "Display name cannot exceed 100 characters",
         "emailRequired": "Please enter an email",
         "emailInvalid": "Please enter a valid email address",
         "roleRequired": "Please select a role"
@@ -2442,8 +2563,8 @@
     "messages": {
       "resetMfaTitle": "Reset MFA",
       "resetMfaConfirm": "Reset MFA for “{username}”? Re-binding will be required.",
-      "deleteSystemAdminBlocked": "The system administrator account cannot be deleted",
-      "systemAdminDeleteBlocked": "The system administrator account cannot be deleted",
+      "deleteSystemAdminBlocked": "Super administrator accounts cannot be deleted",
+      "systemAdminDeleteBlocked": "Super administrator accounts cannot be deleted",
       "deleteUserConfirm": "Are you sure you want to delete user \"{username}\"?",
       "deleteAdminConfirm": "Are you sure you want to delete administrator \"{username}\"?"
     }
@@ -2527,6 +2648,11 @@
       "injectLocation": "Inject to",
       "injectPreviewTip": "<DYNAMIC_TOKEN> is a sample; the gateway injects and maintains the real token.",
       "authHeaders": "Token request headers"
+    },
+    "status": {
+      "active": "Enabled",
+      "inactive": "Disabled",
+      "suspended": "Suspended"
     }
   },
   "billing": {
@@ -2561,7 +2687,7 @@
     "reconciliation": {
       "guide": "Usage consistency: compare billing usage (OLTP) with analytics aggregates (OLAP). Two-sided check, not full three-way settlement.",
       "listTitle": "Discrepancy ledger",
-      "empty": "No reconciliation rows yet. Pick a date and run an audit.",
+      "empty": "No reconciliation records in this period. Click 'Run Audit' at the top right to start verification.",
       "emptyNoMatch": "No matching reconciliation rows",
       "searchPlaceholder": "Date / status / scope / note / ID",
       "from": "From",
@@ -2580,24 +2706,21 @@
         "all": "Delete all {count} rows on this page? This cannot be undone.",
         "selected": "Delete the selected {count} rows? This cannot be undone."
       },
-      "settingsTitle": "Runtime settings",
-      "settingsHint": "Schedule, threshold and alerts hot-reload — no bootstrap edit or restart",
+      "policySettings": "Reconcile Policy",
       "settingsSaved": "Reconciliation settings saved",
-      "expandSettings": "Click to expand settings",
-      "collapseSettings": "Click to collapse settings",
-      "sectionSchedule": "Schedule",
-      "sectionThreshold": "Threshold & alerts",
-      "sectionScope": "Audit scope",
       "summaryScheduledOn": "Schedule on",
       "summaryScheduledOff": "Schedule off",
       "summaryThreshold": "Threshold {value}",
       "scheduledEnabled": "Enable scheduled audit",
-      "intervalSecs": "Interval (seconds)",
+      "intervalHours": "Schedule Interval",
+      "intervalHoursInvalid": "Interval must be at least 0.5 hours",
       "usePreviousDay": "Audit previous day",
       "lossRatioThreshold": "Loss ratio threshold",
+      "thresholdInvalid": "Threshold must be between 0% and 100%",
       "alertOnFlagged": "Webhook on flagged",
       "alertWebhook": "Webhook URL",
       "alertWebhookPlaceholder": "https://hooks.example.com/...",
+      "alertWebhookRequired": "Enter a valid HTTP(S) URL when webhook alert is enabled",
       "includeAmount": "Include amount recon",
       "warnBeforeBill": "Warn open diffs before bill",
       "lastRunAt": "Last scheduled run",
@@ -2628,7 +2751,7 @@
         "sourceCol": "Source",
         "countCol": "Calls",
         "roleCol": "Role",
-        "sourceBilling": "Billable usage (usage_records)",
+        "sourceBilling": "Billable usage ledger",
         "sourceUpstream": "Upstream bypass pre-aggregate",
         "roleBilling": "Billing side",
         "rolePrimary": "Primary",
@@ -2640,9 +2763,9 @@
         "amountMatch": "Match",
         "methodologyTitle": "Data methodology",
         "rawSnapshotTitle": "Raw snapshot (for debugging)",
-        "methodBilling": "Billable usage: usage_records for the day (charge basis).",
-        "methodGateway": "Gateway customer calls: mazbri-gateway access logs only, aligned with customer-facing traffic.",
-        "methodUpstream": "Upstream bypass on-read count: bypass-side request_logs (deduplicated); reference, not primary.",
+        "methodBilling": "Billable usage: settled billable call entries for the day, used as the billing basis.",
+        "methodGateway": "Gateway customer calls: gateway ingress access logs only, aligned with customer-facing traffic.",
+        "methodUpstream": "Upstream bypass real-time count: deduplicated bypass call logs; reference only, not primary.",
         "methodPrimary": "Primary comparison side this run: {peerLabel}.",
         "sources": {
           "unknown": "Unknown source",
@@ -2867,6 +2990,11 @@
         "request": "Request Encryption",
         "full": "Bidirectional Encryption"
       },
+      "modesDesc": {
+        "none": "No payload encryption; messages are transmitted in plaintext",
+        "request": "Encrypts inbound client requests only",
+        "full": "Encrypts both inbound requests and outbound responses"
+      },
       "actions": {
         "goRootPackage": "Go to authorization management",
         "createKey": "Create Key",
@@ -2900,7 +3028,9 @@
     "account": {
       "overviewTitle": "Account Overview",
       "overviewSubtitle": "Balance, status, and quick actions",
-      "balanceLabel": "Account Balance",
+      "balanceLabel": "Cash Balance",
+      "creditLimitMeta": "Credit Limit {amount}",
+      "availableBalanceMeta": "Available {amount}",
       "status": {
         "active": "Active",
         "frozen": "Frozen"
@@ -3013,6 +3143,8 @@
     "actions": {
       "addTenant": "Add Tenant",
       "addApiKey": "Add API Key",
+      "rotateApiKey": "Rotate",
+      "revokeApiKey": "Revoke",
       "renewApiKey": "Renew API Key",
       "disable": "Disable",
       "enable": "Enable"
@@ -3031,6 +3163,12 @@
       "currentExpiry": "Current Expiry",
       "renewDays": "Renew Days",
       "createTitle": "Add API Key",
+      "rotateTitle": "API Key Rotated",
+      "secretWarning": "This secret key is shown only once and cannot be viewed again after closing. Copy or download it immediately.",
+      "secretLabel": "API Key",
+      "downloadTxt": "Download .txt",
+      "downloadJson": "Download .json",
+      "downloadNote": "Keep this API key secure and never commit it to version control.",
       "validation": {
         "renewDaysRequired": "Please enter renewal days",
         "renewDaysRange": "Renewal days must be between 1 and 3650"
@@ -3134,9 +3272,14 @@
     },
     "messages": {
       "apiKeyCreated": "API key created successfully",
-      "apiKeyExists": "This tenant already has an API key. Delete the existing key first.",
+      "apiKeyExists": "This tenant already has an active API key. Use Rotate to replace it.",
       "apiKeyRenewed": "API key renewed successfully",
-      "deleteApiKeyConfirm": "Are you sure you want to delete this API key?",
+      "apiKeyRotated": "API key rotated successfully",
+      "apiKeyRevoked": "API key revoked",
+      "apiKeyDownloaded": "API key file downloaded",
+      "apiKeyDownloadFailed": "Failed to download API key",
+      "rotateApiKeyConfirm": "Rotate this API key? A new key will be issued atomically while the current key is immediately revoked for new token exchanges (previously issued short-lived Bearer JWTs expire naturally per their remaining TTL).",
+      "revokeApiKeyConfirm": "Revoke this API key? Once revoked, it can immediately no longer be exchanged for new access tokens (previously issued short-lived Bearer JWTs expire naturally per their remaining TTL). This action cannot be undone.",
       "apiKeyMissing": "API key does not exist",
       "selectProductToGrant": "Please select a product to grant",
       "revokeProductConfirm": "Are you sure you want to revoke access to product \"{name}\"?",
@@ -3155,12 +3298,12 @@
       "warmupList": "Data Preload (Warmup)",
       "addRule": "Add Rule",
       "apiPathPlaceholder": "e.g. chat.completions",
-      "newWarmupKeyPlaceholder": "+ New Warmup Key",
+      "newWarmupKeyPlaceholder": "Add",
       "seconds": "s",
       "fields": {
         "enabled": "Enable cache",
         "ttl": "Default TTL (s)",
-        "maxSize": "Cache size limit (bytes)",
+        "maxSize": "Cache size limit (MB)",
         "isolated": "Tenant isolation",
         "apiPath": "API Path",
         "overrideTtl": "Custom TTL",
@@ -3246,20 +3389,7 @@
       "standard": "Standard (100 QPS)",
       "premium": "Premium (1000 QPS)"
     },
-    "gateSummary": {
-      "title": "Gate summary",
-      "enabled": "Plan limits",
-      "on": "Enabled",
-      "off": "Disabled",
-      "planQps": "Plan QPS",
-      "burst": "Burst",
-      "overrides": "API overrides",
-      "enforcement": "Enforcement model",
-      "enforcementLocal": "Per-instance",
-      "toPlan": "Configure plan rate limits",
-      "toUpstream": "Configure upstream channel capacity",
-      "loadFailed": "Failed to load gate summary"
-    },
+    "clusterNote": "Rate limit quotas apply independently per gateway instance; aggregate cluster capacity scales approximately linearly with replica count",
     "reasons": {
       "title": "429 reason → config entry",
       "hint": "",
@@ -3365,6 +3495,8 @@
       "product": "Product",
       "selectTenant": "Please select a tenant",
       "selectProduct": "Please select a product",
+      "searchTenantPlaceholder": "Search tenant name or code",
+      "searchProductPlaceholder": "Search product name or code",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
       "unitPricePlaceholder": "e.g. 0.001",
@@ -3401,16 +3533,21 @@
       "internalId": "Internal ID",
       "name": "Product Name",
       "description": "Product Description",
+      "timeout": "Runtime Timeout",
       "timeoutSecs": "Runtime Timeout (s)",
       "upstreamUrl": "Default Upstream URL",
       "cbProEnabled": "CBPRO",
       "cbFailureThreshold": "CB Failure Threshold (times)",
+      "cbFailureThresholdLabel": "Failure Threshold",
       "cbSuccessThreshold": "CB Recovery Threshold (times)",
+      "cbSuccessThresholdLabel": "Recovery Threshold",
       "cbCooldownSecs": "CB Cooldown Duration (s)",
+      "cbCooldownLabel": "Cooldown Duration",
       "enabled": "Enabled Status"
     },
     "createDialog": {
       "title": "Add Product",
+      "autoAssignedBadge": "Auto-assigned",
       "sections": {
         "basic": "Basic Info",
         "advanced": "Advanced Settings"
@@ -3436,15 +3573,24 @@
     "detail": {
       "pageTitle": "Product Detail",
       "basicInfoTitle": "Basic Information",
-      "advancedInfoTitle": "Runtime Info",
-      "editTitle": "Edit Product Basic Information",
+      "advancedInfoTitle": "Rate Limit & Circuit Breaker",
+      "editTitle": "Edit Product Configuration",
       "quickActionsTitle": "Quick Actions",
       "authorizationHint": "",
       "authorizedTenantsTitle": "Authorized Tenants",
       "tenantCountSuffix": "tenants",
       "noAuthorizedTenants": "No authorized tenants yet",
+      "noMatchingTenants": "No matching authorized tenants found",
+      "searchTenantsPlaceholder": "Search tenant name, code, or identifier",
+      "addAuthorization": "Add Authorization",
+      "billingModePayPerCall": "Pay-per-call",
       "lockedHint": "Locked after create",
       "lockedAlert": "Product code cannot be changed after creation.",
+      "tabs": {
+        "info": "Product Info & Rate Limit",
+        "routes": "Routing Rules",
+        "tenants": "Authorized Tenants"
+      },
       "tenantColumns": {
         "name": "Tenant Name",
         "tenantId": "Tenant Identifier",
@@ -3453,7 +3599,10 @@
       },
       "validation": {
         "nameRequired": "Please enter a product name",
-        "nameLength": "Name must be between 2 and 100 characters"
+        "nameLength": "Name must be between 2 and 100 characters",
+        "cbFailureThresholdRequired": "Please enter the failure threshold",
+        "cbSuccessThresholdRequired": "Please enter the recovery threshold",
+        "cbCooldownSecsRequired": "Please enter the cooldown duration"
       }
     },
     "empty": {
@@ -3533,7 +3682,18 @@
     },
     "confirm": {
       "dryRunOk": "Dry-run passed (no writes)",
-      "needDryRun": "Run dry-run first"
+      "needDryRun": "Run dry-run first",
+      "summaryTitle": "Change Preview Summary",
+      "warningsTitle": "Precheck Warnings",
+      "targetProduct": "Target Product",
+      "upstreamType": "Upstream Mode",
+      "plannedActions": "Planned Actions",
+      "actionInsertSuppliers": "Create supplier",
+      "actionInsertChannels": "Create channel",
+      "actionInsertRouteRules": "Create route rule",
+      "actionInsertRouteBindings": "Bind route & channel",
+      "actionGrantTenantProducts": "Grant tenant product access",
+      "actionSkipAuthorization": "Skip tenant authorization"
     },
     "actions": {
       "dryRun": "Dry-run",
@@ -3555,7 +3715,8 @@
       "name": "e.g. ACME Partner",
       "channelName": "e.g. ACME default channel",
       "upstreamUrl": "host:port",
-      "contractId": "A contract_id registered in the gateway"
+      "contractId": "A contract_id registered in the gateway",
+      "productSelect": "Search product name or 10-digit code"
     }
   },
   "upstreamConnector": {
@@ -3605,14 +3766,15 @@
       "upstreamTime": "Upstream time",
       "size": "Size"
     },
+    "responseBodyTab": "Response Body",
     "jsonTree": "JSON tree",
     "rawBody": "Raw",
     "jsonTooLarge": "Too large — switch to raw",
     "downloadBody": "Download response",
-    "runBusiness": "Business Run",
-    "runAuth": "Auth-only Run",
+    "runBusiness": "Send (Mgmt probe)",
+    "runAuth": "Test auth ticket only",
     "runProbe": "Connectivity probe",
-    "transformPreview": "Transform Preview",
+    "transformPreview": "Payload transform preview",
     "bodyPlaceholder": "Request body (JSON)",
     "headersTab": "Headers",
     "headersList": "Header list",
@@ -3645,8 +3807,13 @@
     "authType": "Type",
     "authEnabled": "Enabled",
     "authClear": "Clear",
-    "authInherit": "Inherit auth_flow",
-    "authNone": "None",
+    "authInherit": "Inherit session default",
+    "authNone": "No HTTP Auth",
+    "authSkip": "No HTTP Auth (skip session default)",
+    "authInheritDesc": "This endpoint inherits the session default HTTP auth ({profile}).",
+    "authSkipEmpty": "This endpoint explicitly skips session default HTTP auth.",
+    "authVaultSection": "Session shared credentials & key vault",
+    "authVaultOnlyTag": "Key vault only ({n} keys)",
     "authApiKey": "API Key",
     "authOauthCc": "OAuth2 client_credentials",
     "authGettoken": "gettoken",
@@ -3876,12 +4043,18 @@
     "stepGate": "Gate {ok}/{total}",
     "stepPublish": "Publish",
     "stage": {
-      "validate": "validate",
-      "ssrf": "SSRF",
-      "auth": "auth",
-      "request_transform": "request transform",
-      "upstream": "upstream",
-      "response_transform": "response transform"
+      "validate": "Validate",
+      "ssrf": "SSRF check",
+      "auth": "Auth",
+      "request_transform": "Request transform",
+      "crypto_encrypt": "Request sign/encrypt",
+      "upstream": "Upstream",
+      "crypto_decrypt": "Response verify/decrypt",
+      "response_transform": "Response transform",
+      "assertions": "Response assertions",
+      "bypass_mgmt_probe": "Mgmt probe direct",
+      "validate_contract": "Contract check",
+      "tcp_connect": "TCP connect"
     },
     "gate": "Gate",
     "gateOnHint": "Included in gate — click to exclude",
@@ -3905,7 +4078,7 @@
     "publishFieldsRequired": "Supplier code and name are required to publish",
     "bootstrapFailed": "Failed to open access session",
     "transparentOnly": "Code-free access is HTTP transparent only. Use Microservice Access on the supplier list.",
-    "liveRun": "Live run (via bypass)",
+    "liveRun": "Live channel test (via gateway)",
     "versions": "Versions",
     "versionDiff": "Version diff",
     "rollback": "Rollback",
@@ -3995,7 +4168,33 @@
       "encryptThenSignAesCbc": "Encrypt-then-sign · AES-CBC + HMAC"
     },
     "viewDraft": "View",
-    "readOnlyHint": "Read-only (finance / viewer cannot edit, import/export, or publish)"
+    "readOnlyHint": "Read-only mode",
+    "cryptoBoundKeySlot": "Bound to session key slot {slot}",
+    "cryptoUnboundKeySlot": "Configure {slot} under Auth → Session shared credentials & key vault",
+    "resyncFromLive": "Resync from live config",
+    "resyncFromLiveConfirm": "Resync from live supplier and channels? Unsaved draft edits will be overwritten.",
+    "resyncOk": "Synced latest config from live",
+    "modeNewDraft": "New draft",
+    "modeEditSupplierCode": "Edit supplier · {code}",
+    "importExport": "Import / Export",
+    "exportPostman": "Export Postman Collection",
+    "envDrawerBtn": "Env vars ({n})",
+    "envUndefined": "Undefined variable",
+    "sendProbeTooltip": "Sends via management probe directly to upstream (no gateway billing) · Ctrl+Enter",
+    "splitSideBySide": "Switch to side-by-side split",
+    "splitTopBottom": "Switch to top-bottom split",
+    "gatewayPrefixLabel": "Gateway prefix",
+    "pathPrefixTooltip": "Gateway route matching prefix for tenant requests, distinct from the upstream path in the URL bar",
+    "backToSupply": "Back",
+    "modeBadge": {
+      "business": "Mgmt probe",
+      "live": "Live channel",
+      "auth_only": "Auth only",
+      "transform_preview": "Transform preview",
+      "probe": "Probe",
+      "probe_connectivity": "Probe",
+      "probe_contract": "Contract probe"
+    }
   },
   "listQueryBar": {
     "tooltip": "Search & filters",
@@ -4126,25 +4325,31 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "MFA is enabled. Sensitive actions need a valid verification for their category. See two-factor authentication on the Account Security page.",
+    "enabled": "Sensitive actions require administrator two-factor authentication (MFA) confirmation",
     "notEnabled": "This operation requires MFA, which is not enabled for your account.",
     "goToSetup": "Set up MFA"
   },
   "accountSecurity": {
+    "drawer": {
+      "title": "Personal Account & Security",
+      "subtitle": "Manage two-factor authentication and password for your account",
+      "subtitleWithUser": "Signed in as {username} · Manage your 2FA and password"
+    },
     "page": {
-      "title": "Account Security"
+      "title": "Personal Account & Security"
     },
     "mfa": {
       "title": "Two-Factor Authentication (MFA)",
       "statusEnabled": "Enabled",
       "statusDisabled": "Not enabled",
-      "hint": "Sensitive actions require 2FA (6 digits / 30s). Verified categories remain unlocked for a short window; repeated failures temporarily lock MFA.",
-      "userHint": "Only a superadmin can disable or reset MFA via User Management.",
+      "hint": "Sensitive actions require 2FA. Verified categories remain unlocked for a short window; repeated failures temporarily lock MFA.",
+      "userHint": "Contact a superadmin via User Management to disable or reset two-factor authentication.",
       "specLabel": "Specification",
       "specValue": "TOTP 6 digits · 30s",
+      "specDigitsValue": "TOTP {digits} digits · 30s",
       "changedAt": "Changed at",
       "backupCodesRemaining": "Backup codes left",
-      "forcedHint": "MFA is mandatory for this account and can only be lifted by a superadmin."
+      "forcedHint": "Mandatory two-factor authentication is enabled for this account; contact a superadmin to reset."
     },
     "setup": {
       "stepInstall": "Install an authenticator app such as Google Authenticator or Microsoft Authenticator.",
@@ -4202,7 +4407,8 @@
       "regenerateCodes": "Regenerate backup codes",
       "copy": "Copy",
       "copyAll": "Copy all",
-      "changePassword": "Change password"
+      "changePassword": "Change password",
+      "confirmChangePassword": "Update Password"
     },
     "platformPolicy": {
       "description": "The TOTP, login protection and password policies below apply to all users. Click \"Save Policy\" at the top right to apply changes.",
@@ -4295,6 +4501,7 @@
       "inventoryHint": "{total} tenants · {products} enabled products",
       "openRuntime": "View all",
       "trafficQualityOpenCalls": "Open call logs",
+      "financeShortcut": "Finance Overview ↗",
       "securityGov": {
         "topIp": "Auth-fail Top IP",
         "topKey": "Auth-fail Top Key",
@@ -4304,10 +4511,14 @@
     },
     "finance": {
       "placeholder": "Finance overview",
+      "tabOverview": "Finance Overview",
+      "tabBills": "Bills",
+      "tabReconcile": "Usage Reconciliation",
       "revenue": "Revenue",
       "cost": "Cost",
       "margin": "Margin",
       "marginRate": "Margin rate",
+      "partialBadge": "Partial",
       "invertedWarn": "Days with cost > revenue",
       "trend": "Revenue / cost / margin trend",
       "rankTenant": "By tenant",
@@ -4316,7 +4527,10 @@
       "balances": "Balances & runway",
       "key": "ID",
       "tenantId": "Tenant ID",
-      "available": "Available",
+      "cashBalance": "Cash balance",
+      "creditLimit": "Credit limit",
+      "available": "Available credit",
+      "availableTooltip": "Available credit = Cash balance + Credit limit",
       "recharge": "Recharge (30d)",
       "avgSpend": "Avg daily spend (7d)",
       "daysLeft": "Days left",
@@ -4372,13 +4586,25 @@
         "version": "Version",
         "lastRestart": "Last restart",
         "redTitle": "Golden Signals (RED)",
+        "redQps": "Request Rate (QPS)",
+        "redErrors": "Error Rate (%)",
+        "redLatencyP95": "P95 Latency (ms)",
+        "noTraffic": "No traffic in selected window",
         "useTitle": "Resource Saturation (USE)",
         "specific": "Service-specific metrics",
         "noSpecific": "No service-specific catalog metrics yet"
       },
-      "hexagonTitle": "App & infrastructure components",
+      "hexagonTitle": "Microservice Health Topology",
+      "appHexagonTitle": "Microservice Health Topology",
+      "infraHexagonTitle": "Infrastructure & Observability Components",
+      "overviewTableTitle": "Instance Health Summary",
       "detailTitle": "{name} · node details",
-      "openDetail": "Open service detail",
+      "openDetail": "View Service Detail",
+      "openTraces": "View Recent Traces",
+      "clearSelection": "Collapse Details",
+      "notApplicable": "N/A",
+      "unreported": "Unreported",
+      "switchService": "Switch Service",
       "openMiddleware": "View middleware metrics",
       "openPipeline": "View pipeline metrics",
       "openHosts": "View host & container metrics",
@@ -4470,11 +4696,16 @@
       "precheck": "Balance precheck",
       "failures": "Charge failures",
       "deadLetters": "Dead letters",
-      "backlog": "Current backlog",
-      "oldestAgeNow": "Oldest pending age",
-      "deadLettersNow": "Current dead letters",
-      "lagP99": "Charge lag P99",
-      "failureCount": "Charge failures",
+      "backlog": "Pending Backlog",
+      "throughputNow": "Charge Throughput",
+      "deadLettersNow": "Dead-Letter Alerts",
+      "lagP99": "End-to-End Lag P99",
+      "failureCount": "Retrying Failures",
+      "stages": {
+        "outbox": "Gateway Usage Collection Queue",
+        "queue": "Real-Time Charge Pending Queue",
+        "ledger": "Ledger Settlement Entries"
+      },
       "columns": {
         "time": "Time",
         "tenant": "Tenant",
@@ -4489,20 +4720,20 @@
       "pipelineHealth": "Billing pipeline health",
       "noBacklog": "No backlog: stage counts match with no failures (pass-through)",
       "asyncFunnelHint": "Drops or failures present — interpret as a conversion funnel",
-      "stageName": "Name",
-      "ratioFromPrev": "Conversion vs previous",
+      "ratioFromPrev": "Stage Conversion",
       "stageFailed": "Failed"
     },
     "calls": {
       "tabs": {
         "customer": "Customer calls",
-        "upstream": "Upstream calls"
+        "upstream": "Upstream calls",
+        "traces": "Distributed traces"
       },
       "histogram": {
         "title": "Call distribution",
         "calls": "OK",
         "errors": "Errors",
-        "summary": "{total} calls · {errors} errors · bucket {bucket}s",
+        "summary": "{total} calls · {errors} errors · bucket {bucket}",
         "brushHint": "Brush horizontally on the chart to narrow the time range",
         "resetZoom": "Reset zoom",
         "loadFailed": "Failed to load call distribution"
@@ -4512,6 +4743,8 @@
         "inputRequired": "Enter an ID to search",
         "loadFailed": "Failed to load stages",
         "empty": "No stage records",
+        "gatewaySummary": "Gateway total latency",
+        "unsampledHint": "Sub-stages were not sampled for this request; gateway summary shown above",
         "openTrace": "Show all calls in this trace",
         "breakdown": "Stage timings",
         "columns": {
@@ -4543,14 +4776,17 @@
         "max": "Max",
         "minDuration": "Min Duration (ms)",
         "maxDuration": "Max Duration (ms)",
-        "errorsOnly": "Errors only"
+        "errorsOnly": "Errors only",
+        "includeInternal": "Show internal & control-plane traces"
       },
       "scatter": {
         "title": "Duration distribution",
         "summary": "{count} traces, click a point to open it",
+        "currentPageSubtitle": "Current page trace duration distribution",
         "ok": "OK",
         "error": "With errors"
       },
+      "expiredTooltip": "Trace details have exceeded the 7-day retention period; copy the Trace ID to search archived logs",
       "columns": {
         "traceId": "Trace ID",
         "requestId": "Request ID",
@@ -4610,6 +4846,7 @@
     },
     "alerts": {
       "timeline": "Event timeline",
+      "drillDown": "Troubleshoot",
       "empty": "No alert events",
       "resolvedAt": "resolved at",
       "filters": {
@@ -4702,8 +4939,12 @@
     },
     "infra": {
       "pipelineNote": "Vector / Redpanda / ClickHouse / GreptimeDB throughput, errors, buffers, and end-to-end freshness. Idle envs may show near-empty write series.",
-      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB runtime. When Redis/PG is down, the up series drops to 0.",
+      "middlewareNote": "PostgreSQL / Redis / ClickHouse / Redpanda / GreptimeDB runtime metrics (online status: 0=Offline / 1=Online).",
       "hostsNote": "Host USE (CPU/memory/disk/network) and per-container resources. Names prefer compose service / k8s labels, else short id. Restarts are start_time changes (cAdvisor has no RestartCount).",
+      "controlPlaneTitle": "Control-Plane Reload & Publish Trends",
+      "controlPlaneNote": "Gateway route reloads and connector publish rates with vertical markers for configuration and route write changes.",
+      "onlineLabel": "Online",
+      "offlineLabel": "Offline",
       "charts": {
         "pipelineFreshness": "Pipeline freshness",
         "vectorReceived": "Vector received",
@@ -4711,49 +4952,49 @@
         "vectorErrors": "Vector errors",
         "vectorBuffer": "Vector buffer usage",
         "redpandaBytes": "Redpanda topic bytes",
-        "redpandaLag": "Consumer lag",
-        "chInsert": "CH inserted rows",
-        "chKafkaErrors": "CH Kafka errors",
-        "chParts": "CH parts",
-        "chMerges": "CH merges",
-        "chQuery": "CH query time",
-        "gtWrite": "Greptime writes",
-        "gtQuery": "Greptime PromQL P99",
-        "pgUp": "PG up",
-        "pgConn": "PG connections",
-        "pgMaxConn": "PG max_connections",
-        "pgTps": "PG TPS",
-        "pgCache": "PG cache hit ratio",
-        "pgDeadlocks": "PG deadlocks",
-        "pgSlow": "PG statement time rate",
-        "pgSize": "PG database size",
-        "redisUp": "Redis up",
-        "redisMem": "Redis memory",
-        "redisHit": "Redis hit ratio",
-        "redisCmds": "Redis commands",
-        "redisConn": "Redis clients",
-        "redisEvict": "Redis evictions",
-        "redisKeys": "Redis keys",
-        "chDisk": "CH disk usage",
-        "rpParts": "Redpanda partitions",
-        "rpUnder": "Under-replicated",
-        "rpDisk": "Redpanda disk free",
-        "gtMem": "Greptime memory",
+        "redpandaLag": "Redpanda consumer lag",
+        "chInsert": "ClickHouse inserted rows",
+        "chKafkaErrors": "ClickHouse Kafka errors",
+        "chParts": "ClickHouse active parts",
+        "chMerges": "ClickHouse active merges",
+        "chQuery": "ClickHouse query time",
+        "gtWrite": "GreptimeDB writes",
+        "gtQuery": "GreptimeDB PromQL P99",
+        "pgUp": "PostgreSQL Online Status",
+        "pgConn": "PostgreSQL Connections",
+        "pgMaxConn": "PostgreSQL Max Connections",
+        "pgTps": "PostgreSQL TPS",
+        "pgCache": "PostgreSQL Cache Hit Ratio",
+        "pgDeadlocks": "PostgreSQL Deadlocks",
+        "pgSlow": "PostgreSQL Statement Time Rate",
+        "pgSize": "PostgreSQL Database Size",
+        "redisUp": "Redis Online Status",
+        "redisMem": "Redis Memory",
+        "redisHit": "Redis Hit Ratio",
+        "redisCmds": "Redis Commands",
+        "redisConn": "Redis Clients",
+        "redisEvict": "Redis Evictions",
+        "redisKeys": "Redis Keys",
+        "chDisk": "ClickHouse Disk Usage",
+        "rpParts": "Redpanda Partitions",
+        "rpUnder": "Redpanda Under-Replicated Partitions",
+        "rpDisk": "Redpanda Disk Free",
+        "gtMem": "GreptimeDB Memory",
         "hostCpu": "Host CPU",
-        "hostLoad": "Host load1",
-        "hostMem": "Host memory",
-        "hostFs": "Host filesystem (ext4/xfs/overlay)",
-        "hostDiskRead": "Host disk read",
-        "hostDiskWrite": "Host disk write",
-        "hostNetRx": "Host net RX",
-        "hostNetTx": "Host net TX",
+        "hostLoad": "Host 1m Load",
+        "hostMem": "Host Memory",
+        "hostFs": "Host Disk Usage",
+        "hostDiskRead": "Host Disk Read",
+        "hostDiskWrite": "Host Disk Write",
+        "hostNetRx": "Host Net RX",
+        "hostNetTx": "Host Net TX",
         "ctrCpu": "Container CPU",
-        "ctrMem": "Container memory",
-        "ctrRestarts": "Container restarts (start_time changes)",
+        "ctrMem": "Container Memory",
+        "ctrRestarts": "Container Restarts",
         "ctrOom": "Container OOM",
-        "ctrFs": "Container filesystem",
-        "ctrNetRx": "Container net RX",
-        "ctrNetTx": "Container net TX"
+        "ctrFs": "Container Filesystem",
+        "ctrNetRx": "Container Net RX",
+        "ctrNetTx": "Container Net TX"
       }
     },
     "flow": {
@@ -4779,7 +5020,8 @@
     },
     "reconcile": {
       "calendar": "Reconcile calendar",
-      "loadFailed": "Failed to load reconcile calendar"
+      "loadFailed": "Failed to load reconcile calendar",
+      "noCalendarRecords": "No calendar summary records in selected window"
     },
     "assets": {
       "certActive": "Active certificates",
@@ -4832,6 +5074,10 @@
       "colCost": "Cost (CNY)",
       "colName": "Name",
       "colId": "Product ID",
+      "segmentActive": "Active Top N",
+      "segmentZero": "Zero-call ({n})",
+      "zeroSearchPlaceholder": "Search product name / ID",
+      "zeroEmpty": "No zero-call products in the selected range",
       "rankEmpty": "No product calls in the selected range",
       "basisNote": "Basis: call-log rollups (per minute up to 24h, hourly beyond); error rate counts 5xx only; P95 is a call-log quantile and may differ slightly from the KPI above (gateway histogram); previous window is the adjacent window of equal length."
     },
@@ -4869,15 +5115,16 @@
     "layout": {
       "windowSubtitle": "Window: {label}",
       "instantSubtitle": "Instant KPIs use a ~60s lookback; window aggregates are named in the subtitle",
-      "billingSubtitle": "Funnel and queues follow the selected window; sync pass-through has no backlog semantics",
       "alertsSubtitle": "Events / rules / silences share one shell; writes stay role-gated",
       "trafficSubtitle": "RED / latency / errors share the page time range and refresh"
     },
     "units": {
       "perSec": "/s",
       "times": "times",
+      "cores": "cores",
       "seconds": "s",
       "s": "s",
+      "hours": "h",
       "days": "d",
       "ms": "ms",
       "percent": "%"

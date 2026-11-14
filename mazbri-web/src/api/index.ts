@@ -8,7 +8,6 @@ export * from "./analytics";
 export * from "./monitoring";
 export * from "./call-monitor";
 export * from "./config-center";
-export * from "./appearance";
 export * from "./system-manage";
 export {
   fetchTenantList,

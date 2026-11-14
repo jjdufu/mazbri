@@ -13,7 +13,16 @@
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
     >
-      <template #actions>
+      <template #headerLeft>
+        <ListQueryBar
+          v-model:q="searchKeyword"
+          :enable-filters="false"
+          @search="handleSearch"
+          @change="handleSearch"
+        />
+      </template>
+
+      <template v-if="canWriteBusiness" #actions>
         <ElButton
           v-roles="ROLES_BIZ"
           link
@@ -39,7 +48,7 @@
       </template>
 
       <template #description="{ row }">
-        {{ row.description || "-" }}
+        {{ row.description || "—" }}
       </template>
       <template #granted_at="{ row }">
         {{ formatDate(row.granted_at) }}
@@ -58,7 +67,7 @@
               : $t("common.status.disabled")
           }}
         </ElTag>
-        <span v-else>-</span>
+        <span v-else>—</span>
       </template>
       <template #operations="{ row }">
         <TableActionRow>
@@ -98,11 +107,15 @@
             :placeholder="$t('tenant.products.grantDialog.productPlaceholder')"
             style="width: 100%"
             filterable
+            remote
+            reserve-keyword
+            :remote-method="searchCatalogProducts"
+            :loading="catalogLoading"
           >
             <ElOption
               v-for="product in availableProducts"
               :key="product.id"
-              :label="product.name"
+              :label="`${product.name} (${product.product_id})`"
               :value="product.product_id"
             />
           </ElSelect>
@@ -152,9 +165,10 @@ import {
 import { fetchProductList } from "@/api/product";
 import EditDialog from "@/components/common/EditDialog.vue";
 import ChannelConfigDrawer from "@/components/common/channel-config-dialog/index.vue";
+import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import { useTable } from "@/hooks/core/useTable";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
+import { useUserStore } from "@/store/modules/user";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
@@ -164,6 +178,10 @@ const props = defineProps<{
   tenantCode: string;
 }>();
 const router = useRouter();
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
+const searchKeyword = ref("");
+const catalogLoading = ref(false);
 const granting = ref(false);
 const productActions = ref<{
   grant: boolean;
@@ -237,20 +255,22 @@ const emptyProductListResponse = (): TenantProductListResponse => ({
 });
 const table = useTable({
   core: {
-    apiFn: async (params: { page?: number; page_size?: number }) => {
+    apiFn: async (params: { page?: number; page_size?: number; q?: string }) => {
       const code = resolvedTenantCode.value;
       if (!isValidTenantCode(code)) {
         productActions.value = { grant: false, revoke: false };
         return emptyProductListResponse();
       }
+      const keyword = (params.q ?? searchKeyword.value).trim();
       const res = await fetchTenantProducts(code, {
         page: params.page,
         page_size: params.page_size,
+        q: keyword || undefined,
       });
       productActions.value = res.actions ?? { grant: false, revoke: false };
       return res;
     },
-    apiParams: {},
+    apiParams: { q: undefined },
     immediate: false,
     paginationKey: { current: "page", size: "page_size" },
   },
@@ -265,6 +285,7 @@ const {
   data: products,
   loading,
   pagination,
+  searchParams,
   getData,
   handleSizeChange,
   handleCurrentChange,
@@ -279,32 +300,32 @@ watch(selectedGrantProduct, (product) => {
     grantForm.cb_pro_fallback = false;
   }
 });
-const loadAvailableProducts = async () => {
+const handleSearch = () => {
+  searchParams.q = searchKeyword.value.trim() || undefined;
+  getData();
+};
+const searchCatalogProducts = async (query = "") => {
   const code = resolvedTenantCode.value;
   if (!isValidTenantCode(code)) {
     availableProducts.value = [];
     return;
   }
+  catalogLoading.value = true;
   try {
-    const [catalog, granted] = await Promise.all([
-      fetchAllPages(async (page, pageSize) => {
-        const res = await fetchProductList({ page, page_size: pageSize });
-        return { items: res.products, total: res.pagination.total };
-      }),
-      fetchAllPages(async (page, pageSize) => {
-        const res = await fetchTenantProducts(code, {
-          page,
-          page_size: pageSize,
-        });
-        return { items: res.products, total: res.pagination.total };
-      }),
-    ]);
-    const grantedIds = new Set(granted.map((item) => item.product_id));
-    availableProducts.value = catalog.filter(
+    const keyword = query.trim();
+    const res = await fetchProductList({
+      page: 1,
+      page_size: 50,
+      q: keyword || undefined,
+    });
+    const grantedIds = new Set(products.value.map((item) => item.product_id));
+    availableProducts.value = res.products.filter(
       (product) => !grantedIds.has(product.product_id),
     );
   } catch (error) {
-    logger.error("Failed to load products:", error);
+    logger.error("Failed to search catalog products:", error);
+  } finally {
+    catalogLoading.value = false;
   }
 };
 const handleGrant = () => {
@@ -313,7 +334,7 @@ const handleGrant = () => {
     return;
   }
   resetGrantForm();
-  loadAvailableProducts();
+  searchCatalogProducts();
   grantVisible.value = true;
 };
 const handleConfigure = (row: TenantProduct) => {

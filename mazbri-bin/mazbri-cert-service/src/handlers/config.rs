@@ -1,6 +1,6 @@
 use crate::config_center::models::{
-    BatchDeleteRequest, BatchUpdateRequest, ConfigCategoryRequest, ConfigSearchQuery,
-    ConfigTagsRequest, UpdateConfigRequest,
+    BatchUpdateRequest, ConfigCategoryRequest, ConfigSearchQuery, ConfigTagsRequest,
+    UpdateConfigRequest,
 };
 use axum::{
     Json,
@@ -39,13 +39,6 @@ pub async fn list_configs(
     headers: HeaderMap,
 ) -> Response {
     split::read::list_configs(state, query, headers).await
-}
-pub async fn batch_delete_configs(
-    state: State<ConfigState>,
-    headers: HeaderMap,
-    req: Json<BatchDeleteRequest>,
-) -> Response {
-    split::batch::batch_delete_configs(state, headers, req).await
 }
 pub async fn batch_update_configs(
     state: State<ConfigState>,

@@ -4,6 +4,7 @@ interface TableHeightOptions {
   paginationHeight: Ref<number>;
   tableHeaderHeight: Ref<number>;
   paginationSpacing: Ref<number>;
+  fixedHeight?: Ref<boolean>;
 }
 class TableHeightCalculator {
   private static readonly TABLE_HEADER_SPACING = 12;
@@ -12,6 +13,9 @@ class TableHeightCalculator {
     height: string;
     minHeight?: string;
   } {
+    if (!this.options.fixedHeight?.value) {
+      return { height: "auto" };
+    }
     const offset = this.calculateOffset();
     if (offset === 0) {
       return { height: "100%" };

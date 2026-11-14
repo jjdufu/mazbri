@@ -69,17 +69,10 @@ export function useTheme() {
       setSystemTheme(theme);
     }
   };
-  const switchThemeStylesAndPersist = async (theme: SystemThemeEnum) => {
-    switchThemeStyles(theme);
-    await settingStore.updateServerSettings({
-      system_theme_mode: theme,
-    });
-  };
   return {
     setSystemTheme,
     setSystemAutoTheme,
     switchThemeStyles,
-    switchThemeStylesAndPersist,
     prefersDark,
   };
 }

@@ -63,9 +63,9 @@ test("filterByRoles keeps items without roles and drops unauthorized ones", () =
   );
 });
 
-test("canWriteUpstreamConnector is super-admin only", () => {
+test("canWriteUpstreamConnector mirrors BIZ roles (R_ADMIN and R_FINANCE)", () => {
   assert.equal(canWriteUpstreamConnector("R_ADMIN"), true);
-  assert.equal(canWriteUpstreamConnector("R_FINANCE"), false);
+  assert.equal(canWriteUpstreamConnector("R_FINANCE"), true);
   assert.equal(canWriteUpstreamConnector("R_VIEWER"), false);
   assert.equal(canWriteUpstreamConnector(undefined), false);
 });

@@ -1,7 +1,7 @@
 <template>
   <div
     class="art-table"
-    :class="{ 'is-empty': isEmpty }"
+    :class="{ 'is-empty': isEmpty, 'is-fullscreen': isFullScreen }"
     :style="containerStyle"
   >
     <ElTable
@@ -171,7 +171,7 @@ const props = withDefaults(defineProps<ArtTableProps>(), {
   stripe: undefined,
   border: undefined,
   size: undefined,
-  emptyHeight: "100%",
+  emptyHeight: undefined,
   showTableHeader: true,
 });
 const { t } = useI18n();
@@ -372,19 +372,46 @@ const border = computed(() => props.border ?? isBorder.value);
 const stripe = computed(() => props.stripe ?? isZebra.value);
 const size = computed(() => props.size ?? tableSize.value);
 const isEmpty = computed(() => props.data?.length === 0);
+const hasExplicitHeight = computed(
+  () =>
+    isFullScreen.value ||
+    (props.height !== undefined &&
+      props.height !== "" &&
+      props.height !== "auto") ||
+    (props.maxHeight !== undefined &&
+      props.maxHeight !== "" &&
+      props.maxHeight !== "auto"),
+);
 const containerStyle = computed(() => {
-  if (isEmpty.value && props.emptyHeight === "auto" && !props.loading) {
+  if (!hasExplicitHeight.value) {
     return {
       height: "auto",
-      minHeight: "unset",
     };
   }
-  return containerHeight.value;
+  if (isFullScreen.value) {
+    return containerHeight.value;
+  }
+  return {
+    height: "100%",
+  };
 });
 const height = computed(() => {
   if (isFullScreen.value) return "100%";
-  if (isEmpty.value && !props.loading) return props.emptyHeight;
-  if (props.height) return props.height;
+  if (
+    isEmpty.value &&
+    !props.loading &&
+    props.emptyHeight &&
+    props.emptyHeight !== "auto"
+  ) {
+    return props.emptyHeight;
+  }
+  if (
+    props.height !== undefined &&
+    props.height !== "" &&
+    props.height !== "auto"
+  ) {
+    return props.height;
+  }
   return undefined;
 });
 const headerCellStyle = computed(() => ({

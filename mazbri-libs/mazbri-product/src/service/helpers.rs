@@ -50,6 +50,7 @@ pub(crate) fn authorization_detail_from_row(row: &PgRow) -> AuthorizationDetail 
         product_code: row.get("product_code"),
         product_name: row.get("product_name"),
         enabled: row.get("enabled"),
+        cb_pro_enabled: row.get("cb_pro_enabled"),
         unit_price: row.get("unit_price"),
         currency: row.get("currency"),
         cb_pro_fallback: row.get("cb_pro_fallback"),

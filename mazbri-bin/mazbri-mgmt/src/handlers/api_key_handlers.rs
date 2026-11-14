@@ -82,6 +82,11 @@ pub async fn revoke_api_key(
     headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
+    // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
+    svc::precheck_tenant_api_key(&state.db, &state.auth_db, &code, &key_prefix).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -90,10 +95,6 @@ pub async fn revoke_api_key(
     .await
     {
         return Ok(*response);
-    }
-    // API 密钥可直接调用网关，签发 / 查看 / 吊销都属于租户敏感操作，与租户管理权限一致。
-    if !can_manage_tenants(&claims) {
-        return Err(ApiError::Forbidden);
     }
     let user_id = extract_user_id(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -115,7 +116,9 @@ pub async fn revoke_api_key(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_api_key(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
     Path((code, key_prefix)): Path<(String, String)>,
     Json(payload): Json<UpdateApiKeyRequest>,
 ) -> Result<axum::response::Response, ApiError> {
@@ -124,6 +127,7 @@ pub async fn update_api_key(
         return Err(ApiError::Forbidden);
     }
     payload.validate().map_err(ApiError::validation)?;
+    svc::precheck_tenant_api_key(&state.db, &state.auth_db, &code, &key_prefix).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -133,6 +137,57 @@ pub async fn update_api_key(
     {
         return Ok(*response);
     }
-    let data = svc::update_api_key(&state.db, &state.auth_db, &code, &key_prefix, &payload).await?;
+    let user_id = extract_user_id(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let data = svc::update_api_key(svc::UpdateApiKeyParams {
+        db: &state.db,
+        auth_db: &state.auth_db,
+        audit: &state.audit,
+        id_or_code: &code,
+        key_prefix: &key_prefix,
+        payload: &payload,
+        user_id,
+        client_ip,
+    })
+    .await?;
+    Ok(ApiResponse::ok(data).into_response())
+}
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn rotate_api_key(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Path((code, key_prefix)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    // 轮换 API 密钥会立即吊销旧密钥并签发明文新密钥，与租户管理权限一致。
+    if !can_manage_tenants(&claims) {
+        return Err(ApiError::Forbidden);
+    }
+    svc::precheck_tenant_api_key(&state.db, &state.auth_db, &code, &key_prefix).await?;
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Key,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
+    let user_id = extract_user_id(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let data = svc::rotate_api_key(svc::RotateApiKeyParams {
+        db: &state.db,
+        auth_db: &state.auth_db,
+        audit: &state.audit,
+        id_or_code: &code,
+        key_prefix: &key_prefix,
+        user_id,
+        username: &claims.sub,
+        client_ip,
+    })
+    .await?;
     Ok(ApiResponse::ok(data).into_response())
 }

@@ -63,7 +63,7 @@ pub async fn list_anomalies(
         .collect())
 }
 
-/// 平台已启用产品（id + 名称），供 `TopN` 显示名与零调用差集。
+/// 平台已启用产品（id + 名称），供 `TopN` 显示名展示。
 #[derive(Debug, Clone, Serialize)]
 pub struct ProductName {
     pub product_id: String,
@@ -86,4 +86,110 @@ pub async fn list_platform_products(pool: &PgPool) -> Result<Vec<ProductName>, s
             name: r.get("name"),
         })
         .collect())
+}
+
+/// 零调用产品分页项。
+#[derive(Debug, Clone, Serialize)]
+pub struct ZeroCallProductItem {
+    pub product_id: String,
+    pub name: Option<String>,
+}
+
+/// 零调用产品服务端分页响应。
+#[derive(Debug, Clone, Serialize)]
+pub struct ZeroCallProductsPage {
+    pub items: Vec<ZeroCallProductItem>,
+    pub total: i64,
+    pub page: u32,
+    pub page_size: u32,
+}
+
+#[must_use]
+pub fn escape_ilike_pattern(raw: Option<&str>) -> Option<String> {
+    let trimmed = raw?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let escaped = trimmed
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    Some(format!("%{escaped}%"))
+}
+
+/// 平台已启用且不在 `active_product_ids` 中的零调用产品（真 SQL 分页 + 搜索）。
+///
+/// # Errors
+///
+/// DB 查询失败时返回错误。
+pub async fn list_zero_call_products_page(
+    pool: &PgPool,
+    active_product_ids: &[String],
+    page: u32,
+    page_size: u32,
+    q: Option<&str>,
+) -> Result<ZeroCallProductsPage, sqlx::Error> {
+    let page = page.max(1);
+    let page_size = page_size.clamp(1, 100);
+    let offset = i64::from(page - 1) * i64::from(page_size);
+    let limit = i64::from(page_size);
+    let like_pattern = escape_ilike_pattern(q);
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::BIGINT \
+         FROM products \
+         WHERE enabled = TRUE \
+           AND NOT (product_id = ANY($1)) \
+           AND ($2::text IS NULL OR product_id ILIKE $2 ESCAPE '\\' OR COALESCE(name, '') ILIKE $2 ESCAPE '\\')",
+    )
+    .bind(active_product_ids)
+    .bind(like_pattern.as_deref())
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query(
+        "SELECT product_id, name \
+         FROM products \
+         WHERE enabled = TRUE \
+           AND NOT (product_id = ANY($1)) \
+           AND ($2::text IS NULL OR product_id ILIKE $2 ESCAPE '\\' OR COALESCE(name, '') ILIKE $2 ESCAPE '\\') \
+         ORDER BY COALESCE(NULLIF(BTRIM(name), ''), product_id) ASC, product_id ASC \
+         LIMIT $3 OFFSET $4",
+    )
+    .bind(active_product_ids)
+    .bind(like_pattern.as_deref())
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let items = rows
+        .into_iter()
+        .map(|r| ZeroCallProductItem {
+            product_id: r.get("product_id"),
+            name: r.get("name"),
+        })
+        .collect();
+
+    Ok(ZeroCallProductsPage {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_ilike_pattern;
+
+    #[test]
+    fn escape_ilike_handles_empty_and_wildcards() {
+        assert_eq!(escape_ilike_pattern(None), None);
+        assert_eq!(escape_ilike_pattern(Some("   ")), None);
+        assert_eq!(
+            escape_ilike_pattern(Some(" 50%_test\\a ")),
+            Some("%50\\%\\_test\\\\a%".to_string())
+        );
+    }
 }

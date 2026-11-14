@@ -4,4 +4,14 @@ export type AdminUser = { id: string, username: string, role: string, created_at
 
 export type LoginResponse = { user: AdminUser | null, token: string | null, expires_in: bigint | null, refresh_token: string | null, mfa_required: boolean, mfa_setup_required: boolean, temp_token: string | null, };
 
+export type ResetPasswordRequest = { new_password: string, force_password_reset?: boolean, };
+
+export type SetAdminStatusRequest = { is_active: boolean, };
+
+export type UpdateAdminRequest = { display_name?: string, email?: string, role?: string, 
+/**
+ * 仅超级管理员可为其他非超管用户设置/清除。
+ */
+mfa_required?: boolean, force_password_reset?: boolean, };
+
 export type UpdateApiKeyRequest = { expires_days: bigint | null, };

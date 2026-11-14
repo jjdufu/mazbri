@@ -1,14 +1,60 @@
 import type { Supplier } from "@/api/supplier";
-import type {
-  AuthFlowForm,
-  SupplierConfigForm,
-} from "./components/SupplierTransparentConfig.vue";
 import { stripUrlScheme } from "@/utils/sensitive";
 import {
   createEmptyInvalidation,
   invalidationFromApi,
   invalidationToApi,
+  type InvalidationForm,
 } from "@/views/mazbri/upstream-connectors/authInvalidation";
+
+export interface AuthJwtForm {
+  algorithm: string;
+  ttl_secs: number;
+  claims_tpl: string;
+  kid: string;
+}
+
+export interface AuthDigestForm {
+  algorithm: string;
+  realm: string;
+}
+
+export interface AuthAwsForm {
+  region: string;
+  service: string;
+}
+
+export interface AuthHawkForm {
+  algorithm: string;
+  ext: string;
+}
+
+export interface AuthFlowForm {
+  enabled: boolean;
+  profile: string;
+  token_url: string;
+  token_path: string;
+  method: string;
+  headers: { key: string; value: string }[];
+  request_body_tpl: string;
+  credentials: { key: string; value: string }[];
+  token_jsonpath: string;
+  expiry_jsonpath: string;
+  inject_to: string;
+  inject_key: string;
+  inject_value_format: string;
+  jwt: AuthJwtForm;
+  digest: AuthDigestForm;
+  aws: AuthAwsForm;
+  hawk: AuthHawkForm;
+  invalidation: InvalidationForm;
+}
+
+export interface SupplierConfigForm {
+  upstream_type: string;
+  contract_id?: string;
+  auth_flow: AuthFlowForm;
+}
 
 export type UpstreamType = "microservice" | "transparent";
 
@@ -90,6 +136,12 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
     });
   }
 
+  const rawProfile = String(supplier.config?.auth_flow?.profile || "");
+  const rawTokenUrl = String(supplier.config?.auth_flow?.token_url || "");
+  const activeHttpAuth =
+    Boolean(supplier.config?.auth_flow?.enabled) &&
+    Boolean((rawProfile && rawProfile !== "none" && rawProfile !== "skip") || rawTokenUrl.trim());
+
   return {
     supplier_code: supplier.supplier_code,
     name: supplier.name,
@@ -106,9 +158,9 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
         "",
       auth_flow: {
         ...createEmptyAuthFlow(),
-        enabled: supplier.config?.auth_flow?.enabled || false,
-        profile: String(supplier.config?.auth_flow?.profile || ""),
-        token_url: supplier.config?.auth_flow?.token_url || "",
+        enabled: activeHttpAuth,
+        profile: rawProfile === "none" ? "" : rawProfile,
+        token_url: rawTokenUrl,
         token_path: String(
           (supplier.config?.auth_flow as { token_path?: string } | undefined)?.token_path || "",
         ),
@@ -206,11 +258,14 @@ export function buildSupplierUpdatePayload(form: SupplierFormModel) {
     }
   });
 
+  const hasCreds = Object.keys(credsMap).length > 0;
   const configPayload: Record<string, unknown> = {
     upstream_type: form.upstream_type,
     auth_flow: form.config.auth_flow.enabled
       ? serializeAuthFlow(form.config.auth_flow, credsMap)
-      : null,
+      : hasCreds
+        ? { enabled: false, profile: "none", credentials: credsMap }
+        : null,
   };
   if (form.upstream_type === "microservice") {
     configPayload.contract_id = (form.config.contract_id || "").trim();

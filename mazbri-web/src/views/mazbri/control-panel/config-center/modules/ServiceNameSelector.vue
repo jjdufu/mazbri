@@ -8,6 +8,8 @@
       :model-value="modelValue"
       :placeholder="$t('configCenter.serviceNameSelector.placeholder')"
       :disabled="disabled"
+      :allow-create="allowCustom"
+      :default-first-option="allowCustom"
       filterable
       class="w-full"
       @update:model-value="onSelect"
@@ -38,9 +40,15 @@ const props = withDefaults(
     modelValue: string;
     disabled?: boolean;
     includeGlobal?: boolean;
+    allowCustom?: boolean;
     existingNames?: string[];
   }>(),
-  { disabled: false, includeGlobal: true, existingNames: () => [] },
+  {
+    disabled: false,
+    includeGlobal: true,
+    allowCustom: false,
+    existingNames: () => [],
+  },
 );
 const emit = defineEmits<{
   "update:modelValue": [value: string];

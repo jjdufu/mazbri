@@ -1,10 +1,9 @@
 use super::{
-    MAX_EXTRACTED_FILE_SIZE, MAX_TOTAL_EXTRACTED_SIZE, cert_service_request,
+    ConfigCenterCtx, MAX_EXTRACTED_FILE_SIZE, MAX_TOTAL_EXTRACTED_SIZE, cert_service_request,
     dependency_internal_error, log_config_center_error, validate_zip_entry, validation_error,
 };
 use crate::audit::{AuditAction, config_center_audit};
 use crate::error::ApiError;
-use crate::handlers::AppState;
 use crate::handlers::config_center::{ExportParams, ImportParams};
 use crate::middleware::auth;
 use axum::body::Body;
@@ -13,7 +12,7 @@ use std::io::{Cursor, Write};
 use tracing::info;
 use zip::{ZipWriter, write::FileOptions};
 pub async fn export_configs(
-    state: &AppState,
+    ctx: ConfigCenterCtx<'_>,
     claims: &auth::AdminClaims,
     client_ip: Option<String>,
     _params: &ExportParams,
@@ -23,7 +22,7 @@ pub async fn export_configs(
     info!("Exporting configs");
     let user_id = auth::extract_user_id(claims)?;
     let resp = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::GET,
         "/configs",
         None,
@@ -76,7 +75,7 @@ pub async fn export_configs(
     })?;
     let filename = "configs.zip";
     info!("Exported {} configs", config_count);
-    state.audit.log(config_center_audit(
+    ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterExport,
         None::<String>,
@@ -100,8 +99,8 @@ pub async fn export_configs(
             )
         })
 }
-/// ZIP 中提取出的待导入条目。
-struct ExtractedImport {
+/// ZIP 中预检提取出的待导入条目。
+pub struct PreparedImport {
     /// `(service_name, toml_content)`
     files: Vec<(String, String)>,
     errors: Vec<String>,
@@ -113,7 +112,7 @@ fn extract_import_files<R: std::io::Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     request_id: &str,
     trace_id: &str,
-) -> Result<ExtractedImport, ApiError> {
+) -> Result<PreparedImport, ApiError> {
     let mut files_to_import: Vec<(String, String)> = Vec::new();
     let mut extraction_errors: Vec<String> = Vec::new();
     let mut total_extracted_size: u64 = 0;
@@ -185,7 +184,7 @@ fn extract_import_files<R: std::io::Read + std::io::Seek>(
         };
         files_to_import.push((service_name.to_string(), content));
     }
-    Ok(ExtractedImport {
+    Ok(PreparedImport {
         files: files_to_import,
         errors: extraction_errors,
         total_bytes: total_extracted_size,
@@ -194,7 +193,7 @@ fn extract_import_files<R: std::io::Read + std::io::Seek>(
 
 /// 把单个配置写入 cert 配置中心；失败时返回面向用户的错误描述。
 async fn upsert_import_file(
-    state: &AppState,
+    ctx: ConfigCenterCtx<'_>,
     claims: &auth::AdminClaims,
     client_ip: Option<String>,
     svc_name: &str,
@@ -204,7 +203,7 @@ async fn upsert_import_file(
 ) -> Result<(), String> {
     let url_path = format!("/configs/{}", urlencoding::encode(svc_name));
     let upsert_res = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::PUT,
         &url_path,
         Some(serde_json::json!(
@@ -248,17 +247,11 @@ async fn upsert_import_file(
     }
 }
 
-pub async fn import_configs(
-    state: &AppState,
-    claims: &auth::AdminClaims,
-    client_ip: Option<String>,
-    _params: &ImportParams,
+pub async fn precheck_import_configs(
     body: Body,
     request_id: &str,
     trace_id: &str,
-) -> Result<serde_json::Value, ApiError> {
-    info!("Importing configs (by {})", claims.sub);
-    let user_id = auth::extract_user_id(claims)?;
+) -> Result<PreparedImport, ApiError> {
     let bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
         .await
         .map_err(|e| {
@@ -292,14 +285,27 @@ pub async fn import_configs(
             trace_id,
         )
     })?;
-    let extracted = extract_import_files(&mut archive, request_id, trace_id)?;
-    let total_extracted_size = extracted.total_bytes;
+    extract_import_files(&mut archive, request_id, trace_id)
+}
+
+pub async fn import_configs(
+    ctx: ConfigCenterCtx<'_>,
+    claims: &auth::AdminClaims,
+    client_ip: Option<String>,
+    _params: &ImportParams,
+    prepared: PreparedImport,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<serde_json::Value, ApiError> {
+    info!("Importing configs (by {})", claims.sub);
+    let user_id = auth::extract_user_id(claims)?;
+    let total_extracted_size = prepared.total_bytes;
     let mut imported = 0u32;
     let mut skipped = 0u32;
-    let mut errors = extracted.errors;
-    for (svc_name, content) in extracted.files {
+    let mut errors = prepared.errors;
+    for (svc_name, content) in prepared.files {
         match upsert_import_file(
-            state,
+            ctx,
             claims,
             client_ip.clone(),
             &svc_name,
@@ -322,7 +328,7 @@ pub async fn import_configs(
         skipped,
         errors.len()
     );
-    state.audit.log(config_center_audit(
+    ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterImport,
         None::<String>,

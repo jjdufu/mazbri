@@ -40,33 +40,53 @@
       </template>
 
       <template #role="{ row }">
-        <ElTag :type="getRoleType(row.role)">
+        <ElTag :type="getRoleType(row.role)" effect="light" size="small">
           {{ getRoleLabel(row.role) }}
         </ElTag>
       </template>
       <template #status="{ row }">
-        <StatusIndicator :type="getStatusType(getUserStatus(row))">
-          {{ getStatusLabel(getUserStatus(row)) }}
-        </StatusIndicator>
+        <ElTag
+          :type="row.is_active !== false ? 'success' : 'danger'"
+          effect="light"
+          size="small"
+        >
+          {{
+            row.is_active !== false
+              ? $t("userManagement.status.active")
+              : $t("userManagement.status.inactive")
+          }}
+        </ElTag>
       </template>
       <template #mfa_enabled="{ row }">
-        <ElTag v-if="row.mfa_enabled" type="success" size="small">{{
-          $t("common.status.enabled")
-        }}</ElTag>
-        <ElTag v-else type="info" size="small">{{
-          $t("common.status.disabled")
-        }}</ElTag>
+        <ElTag
+          :type="row.mfa_enabled ? 'success' : 'info'"
+          :effect="row.mfa_enabled ? 'light' : 'plain'"
+          size="small"
+        >
+          {{
+            row.mfa_enabled
+              ? $t("userManagement.status.mfaBound")
+              : $t("userManagement.status.mfaUnbound")
+          }}
+        </ElTag>
       </template>
       <template #mfa_required="{ row }">
-        <ElTag v-if="row.mfa_required" type="warning" size="small">{{
-          $t("common.status.enabled")
-        }}</ElTag>
-        <ElTag v-else type="info" size="small">{{
-          $t("common.status.disabled")
-        }}</ElTag>
+        <ElTag
+          :type="row.mfa_required ? 'warning' : 'info'"
+          :effect="row.mfa_required ? 'light' : 'plain'"
+          size="small"
+        >
+          {{
+            row.mfa_required
+              ? $t("userManagement.status.policyOn")
+              : $t("userManagement.status.policyOff")
+          }}
+        </ElTag>
       </template>
       <template #last_login_at="{ row }">
-        {{ row.last_login_at ? formatDate(row.last_login_at) : "-" }}
+        {{
+          row.last_login_at ? formatDate(row.last_login_at) : EMPTY_PLACEHOLDER
+        }}
       </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
@@ -77,7 +97,7 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
-            v-if="row.role !== 'R_ADMIN'"
+            v-if="row.role !== 'R_ADMIN' && row.id !== currentUserId"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -88,7 +108,11 @@
       </template>
     </ResourceTableShell>
 
-    <CreateDialog v-model="createVisible" @success="getData" />
+    <CreateDialog
+      v-if="createVisible"
+      v-model="createVisible"
+      @success="getData"
+    />
 
     <ImportDialog
       v-model="importVisible"
@@ -105,16 +129,19 @@
       @success="getData"
     />
 
-    <ResetPasswordDialog
-      v-model="resetPasswordVisible"
-      :admin="currentAdmin"
-      @success="getData"
+    <UserDetailDrawer
+      v-model="detailVisible"
+      :admin-id="selectedAdmin?.id ?? null"
+      :initial-admin="selectedAdmin"
+      @changed="getData"
+      @deleted="getData"
     />
   </ControlPanelPageShell>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
 import type {
@@ -125,39 +152,33 @@ import type {
 } from "@/types/api/admin";
 import type { ListFilter } from "@/types/list-query";
 import { usersCatalog } from "@/list-catalog/common-resources";
-import {
-  createAdmin,
-  fetchAdminList,
-  deleteAdmin,
-  resetAdminMfa,
-} from "@/api/admin";
+import { createAdmin, fetchAdminList, deleteAdmin } from "@/api/admin";
 import CreateDialog from "./modules/create-dialog.vue";
-import ResetPasswordDialog from "./modules/reset-password-dialog.vue";
+import UserDetailDrawer from "./modules/UserDetailDrawer.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
-import StatusIndicator from "@/components/common/StatusIndicator.vue";
-import { useSettingStore } from "@/store/modules/setting";
 import {
   exportResourceCsv,
   runResourceCsvImport,
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { useTable } from "@/hooks/core/useTable";
+import { useUserStore } from "@/store/modules/user";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
 import { logger } from "@/utils/sys";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
+import { getRoleType, getRoleLabel } from "@/utils/display-labels";
 import {
-  getRoleType,
-  getRoleLabel,
-  getStatusType,
-  getStatusLabel,
-} from "@/utils/display-labels";
-import { formatDateTime as formatDate } from "@/utils/format";
+  EMPTY_PLACEHOLDER,
+  formatDateTime as formatDate,
+} from "@/utils/format";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
+
 defineOptions({ name: "UserList" });
+
 type ExportCommand = "page" | "selected";
+
 interface AdminImportRow extends Record<string, unknown> {
   username: string;
   display_name: string;
@@ -166,6 +187,7 @@ interface AdminImportRow extends Record<string, unknown> {
   role: AdminRole;
   force_password_reset: boolean;
 }
+
 interface AdminExportRow extends Record<string, unknown> {
   username: string;
   display_name: string;
@@ -177,19 +199,19 @@ interface AdminExportRow extends Record<string, unknown> {
   force_password_reset: boolean;
   created_at: string;
 }
-const router = useRouter();
-const settingStore = useSettingStore();
-const isDarkMode = computed(() => settingStore.isDark);
-const getUserStatus = (row: AdminUser): AdminStatus => {
-  if (row.status) {
-    return row.status;
-  }
-  return row.is_active !== false ? "active" : "inactive";
-};
+
+const { t, locale } = useI18n();
+const userStore = useUserStore();
+const currentUserId = computed(() => String(userStore.getUserInfo.id ?? ""));
+
+const getUserStatus = (row: AdminUser): AdminStatus =>
+  row.is_active !== false ? "active" : "inactive";
+
 const createVisible = ref(false);
 const importVisible = ref(false);
-const resetPasswordVisible = ref(false);
-const currentAdmin = ref<AdminUser | null>(null);
+const detailVisible = ref(false);
+const selectedAdmin = ref<AdminUser | null>(null);
+
 const table = useTable({
   core: {
     apiFn: fetchAdminList,
@@ -204,6 +226,7 @@ const table = useTable({
     }),
   },
 });
+
 const {
   data: tableData,
   loading,
@@ -212,11 +235,13 @@ const {
   handleSizeChange,
   handleCurrentChange,
 } = table;
+
 const searchParams = table.searchParams as {
   q: string;
   role?: AdminRole;
   status?: AdminStatus;
 };
+
 const listFilters = ref<ListFilter[]>([]);
 watch(
   listFilters,
@@ -227,69 +252,92 @@ watch(
   },
   { deep: true },
 );
-const columns = ref<ColumnOption<AdminUser>[]>([
-  { type: "selection", width: 48 },
-  {
-    prop: "username",
-    label: $t("userManagement.list.columns.username"),
-    minWidth: 88,
-  },
-  {
-    prop: "display_name",
-    label: $t("userManagement.list.columns.displayName"),
-    minWidth: 88,
-  },
-  {
-    prop: "email",
-    label: $t("userManagement.list.columns.email"),
-    minWidth: 110,
-  },
-  {
-    prop: "role",
-    label: $t("userManagement.list.columns.role"),
-    minWidth: 88,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("userManagement.list.columns.status"),
-    minWidth: 80,
-    useSlot: true,
-  },
-  {
-    prop: "mfa_enabled",
-    label: $t("userManagement.list.columns.mfa"),
-    minWidth: 68,
-    align: "center",
-    useSlot: true,
-  },
-  {
-    prop: "mfa_required",
-    label: $t("userManagement.list.columns.mfaRequired"),
-    minWidth: 84,
-    align: "center",
-    useSlot: true,
-  },
-  {
-    prop: "last_login_at",
-    label: $t("userManagement.list.columns.lastLogin"),
-    minWidth: 148,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: $t("userManagement.list.columns.createdAt"),
-    minWidth: 148,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 116,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+
+const buildUserColumns = (): ColumnOption<AdminUser>[] => {
+  const isEn = String(locale.value).startsWith("en");
+  return [
+    { type: "selection", width: 48 },
+    {
+      prop: "username",
+      label: t("userManagement.list.columns.username"),
+      minWidth: 108,
+    },
+    {
+      prop: "display_name",
+      label: t("userManagement.list.columns.displayName"),
+      minWidth: 112,
+    },
+    {
+      prop: "email",
+      label: t("userManagement.list.columns.email"),
+      minWidth: 132,
+    },
+    {
+      prop: "role",
+      label: t("userManagement.list.columns.role"),
+      minWidth: isEn ? 168 : 140,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: t("userManagement.list.columns.status"),
+      minWidth: 84,
+      align: "center",
+      useSlot: true,
+    },
+    {
+      prop: "mfa_enabled",
+      label: t("userManagement.list.columns.mfa"),
+      minWidth: isEn ? 88 : 80,
+      align: "center",
+      useSlot: true,
+    },
+    {
+      prop: "mfa_required",
+      label: t("userManagement.list.columns.mfaRequired"),
+      minWidth: isEn ? 104 : 88,
+      align: "center",
+      useSlot: true,
+    },
+    {
+      prop: "last_login_at",
+      label: t("userManagement.list.columns.lastLogin"),
+      minWidth: 180,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("userManagement.list.columns.createdAt"),
+      minWidth: 180,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: isEn ? 156 : 148,
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+};
+
+const columns = ref<ColumnOption<AdminUser>[]>(buildUserColumns());
+watch(locale, () => {
+  const prev = new Map(
+    columns.value.map((col) => [String(col.prop ?? col.type ?? ""), col]),
+  );
+  columns.value = buildUserColumns().map((col) => {
+    const existing = prev.get(String(col.prop ?? col.type ?? ""));
+    return existing
+      ? {
+          ...col,
+          visible: existing.visible ?? col.visible,
+          checked: existing.checked ?? col.checked,
+        }
+      : col;
+  });
+});
+
 const adminImportColumns: ColumnConfig[] = [
   {
     key: "username",
@@ -322,6 +370,7 @@ const adminImportColumns: ColumnConfig[] = [
     required: false,
   },
 ];
+
 const adminExportColumns: { key: keyof AdminExportRow; label: string }[] = [
   { key: "username", label: $t("userManagement.list.columns.username") },
   { key: "display_name", label: $t("userManagement.list.columns.displayName") },
@@ -329,19 +378,23 @@ const adminExportColumns: { key: keyof AdminExportRow; label: string }[] = [
   { key: "role", label: $t("userManagement.list.columns.role") },
   { key: "status", label: $t("userManagement.list.columns.status") },
   { key: "mfa_enabled", label: $t("userManagement.list.columns.mfa") },
-  { key: "mfa_required", label: $t("userManagement.list.columns.mfaRequired") },
+  {
+    key: "mfa_required",
+    label: $t("userManagement.list.columns.mfaRequired"),
+  },
   {
     key: "force_password_reset",
     label: $t("userManagement.createDialog.fields.firstLogin"),
   },
   { key: "created_at", label: $t("userManagement.list.columns.createdAt") },
 ];
-const adminImportRows = ref<AdminUser[]>([]);
+
 const adminImportExistingData = computed(() =>
-  adminImportRows.value.map((row) => ({
+  tableData.value.map((row) => ({
     username: row.username,
   })),
 );
+
 const adminImportFormatHint = computed(() =>
   [
     $t("feedback.import.csvFormatHint"),
@@ -353,6 +406,7 @@ const adminImportFormatHint = computed(() =>
     }),
   ].join("\n"),
 );
+
 const hasActiveSearch = computed(
   () => Boolean(searchParams.q?.trim()) || listFilters.value.length > 0,
 );
@@ -361,22 +415,25 @@ const emptyDescription = computed(() =>
     ? $t("common.feedback.noMatchingData")
     : $t("common.feedback.noData"),
 );
+
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.current,
   size: pagination.size,
   total: pagination.total,
 }));
+
 const { selectedRows, handleSelectionChange, handleDeleteCommand } =
   useTableSelection<AdminUser>({
     deleteApi: async (row) => {
       if (row.role === "R_ADMIN") {
-        throw new Error("无法删除管理员用户");
+        throw new Error($t("userManagement.messages.deleteSystemAdminBlocked"));
       }
       await deleteAdmin(row.id);
     },
     getItemName: (row) => row.username,
     onDeleteSuccess: () => getData(),
   });
+
 const exportItems = computed(() => [
   {
     command: "page",
@@ -391,6 +448,7 @@ const exportItems = computed(() => [
     disabled: selectedRows.value.length === 0,
   },
 ]);
+
 const handleSearch = () => {
   if (pagination.current === 1) {
     getData();
@@ -399,14 +457,13 @@ const handleSearch = () => {
   void handleCurrentChange(1);
 };
 
-const normalizeRole = (value?: string) => {
+const normalizeRole = (value?: string): AdminRole | undefined => {
   const normalized = value?.trim().toUpperCase();
-  return normalized === "R_ADMIN" ||
-    normalized === "R_VIEWER" ||
-    normalized === "R_FINANCE"
+  return normalized === "R_FINANCE" || normalized === "R_VIEWER"
     ? normalized
     : undefined;
 };
+
 const normalizeForcePasswordReset = (value?: string) => {
   if (!value?.trim()) {
     return true;
@@ -419,6 +476,7 @@ const normalizeForcePasswordReset = (value?: string) => {
     normalized === "y"
   );
 };
+
 const validateAdminImportRow = (row: Record<string, string>) => {
   if (!row.username?.trim()) {
     return {
@@ -446,6 +504,7 @@ const validateAdminImportRow = (row: Record<string, string>) => {
   }
   return { valid: true };
 };
+
 const transformAdminImportRow = (
   row: Record<string, string>,
 ): AdminImportRow => ({
@@ -456,20 +515,11 @@ const transformAdminImportRow = (
   role: normalizeRole(row.role) as AdminRole,
   force_password_reset: normalizeForcePasswordReset(row.force_password_reset),
 });
-const loadAdminImportRows = async () => {
-  try {
-    adminImportRows.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchAdminList({ page, page_size: pageSize });
-      return { items: res.items, total: res.total };
-    });
-  } catch {
-    adminImportRows.value = tableData.value;
-  }
-};
-const openImport = async () => {
-  await loadAdminImportRows();
+
+const openImport = () => {
   importVisible.value = true;
 };
+
 const handleExportCommand = (command: string) => {
   const exportCommand = command as ExportCommand;
   const rows =
@@ -491,6 +541,7 @@ const handleExportCommand = (command: string) => {
     `users-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
+
 const handleUserImport = async (items: Record<string, unknown>[]) => {
   await runResourceCsvImport<AdminImportRow>(
     items,
@@ -514,40 +565,20 @@ const handleUserImport = async (items: Record<string, unknown>[]) => {
     },
   );
 };
+
 const handleCreate = () => {
   createVisible.value = true;
 };
+
 const handleView = (row: AdminUser) => {
-  router.push(`/control-panel/user/${row.id}`);
+  selectedAdmin.value = row;
+  detailVisible.value = true;
 };
-const handleResetPassword = (row: AdminUser) => {
-  currentAdmin.value = row;
-  resetPasswordVisible.value = true;
-};
-const handleResetMfa = async (row: AdminUser) => {
-  try {
-    await ElMessageBox.confirm(
-      $t("userManagement.messages.resetMfaConfirm", { username: row.username }),
-      $t("userManagement.messages.resetMfaTitle"),
-      {
-        confirmButtonText: $t("common.confirm"),
-        cancelButtonText: $t("common.cancel"),
-        type: "warning",
-      },
-    );
-    await resetAdminMfa(row.id);
-    ElMessage.success($t("common.feedback.mfaReset"));
-    getData();
-  } catch (error) {
-    if (error !== "cancel") {
-      logger.error("Failed to reset MFA");
-    }
-  }
-};
+
 const handleDelete = async (row: AdminUser) => {
   if (row.role === "R_ADMIN") {
-    ElMessageBox.alert(
-      "无法删除管理员用户",
+    void ElMessageBox.alert(
+      $t("userManagement.messages.deleteSystemAdminBlocked"),
       $t("common.error"),
       { type: "error" },
     );
@@ -570,7 +601,7 @@ const handleDelete = async (row: AdminUser) => {
     getData();
   } catch (error) {
     if (error !== "cancel") {
-      logger.error("Failed to delete user");
+      logger.error("Failed to delete user:", error);
     }
   }
 };

@@ -43,11 +43,12 @@
       <ArtSvgIcon :icon="copied ? 'ri:check-line' : 'ri:file-copy-line'" />
     </button>
   </span>
-  <span v-else class="copyable-text__empty">-</span>
+  <span v-else class="copyable-text__empty">{{ EMPTY_PLACEHOLDER }}</span>
 </template>
 
 <script setup lang="ts">
 import type { RouteLocationRaw } from "vue-router";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { abbreviateId } from "./abbreviate";
 

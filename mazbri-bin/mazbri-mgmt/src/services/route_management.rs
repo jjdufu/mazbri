@@ -190,12 +190,17 @@ fn validate_channel_values(
             ));
         }
     }
-    if let Some(price) = cost_price
-        && price < Decimal::ZERO
-    {
-        return Err(ApiError::validation(
-            "Cost price must be greater than or equal to 0".to_string(),
-        ));
+    if let Some(price) = cost_price {
+        if price < Decimal::ZERO {
+            return Err(ApiError::validation(
+                "Cost price must be greater than or equal to 0".to_string(),
+            ));
+        }
+        if price.scale() > 6 || price >= Decimal::from(1_000_000_000_000_i64) {
+            return Err(ApiError::validation(
+                "成本价最多支持 12 位整数与 6 位小数".to_string(),
+            ));
+        }
     }
     if let Some(limit) = qps_limit
         && limit < 0
@@ -425,7 +430,7 @@ pub async fn create_channel(
         },
     )
     .await
-    .map_err(|e| ApiError::internal(format!("创建通道失败: {e}")))?;
+    .map_err(|e| map_channel_write_db_error("创建通道失败", &e))?;
     let value = serde_json::to_value(&row).unwrap_or_default();
     audit.log(change_audit_log(
         user_id,
@@ -447,7 +452,17 @@ pub async fn get_channel(pool: &PgPool, id: &str) -> Result<serde_json::Value, A
         .await
         .map_err(|e| ApiError::internal(format!("获取通道失败: {e}")))?
         .ok_or_else(|| ApiError::not_found("channel".to_string(), id.to_string()))?;
-    Ok(serde_json::to_value(row).unwrap_or_default())
+    let routes = repo::list_routes_for_channel(pool, id)
+        .await
+        .map_err(|e| ApiError::internal(format!("获取通道关联路由失败: {e}")))?;
+    let mut value = serde_json::to_value(row).unwrap_or_default();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "routes".to_string(),
+            serde_json::to_value(routes).unwrap_or_default(),
+        );
+    }
+    Ok(value)
 }
 /// # Errors
 ///
@@ -484,7 +499,7 @@ pub async fn update_channel(
         },
     )
     .await
-    .map_err(|e| ApiError::internal(format!("更新通道失败: {e}")))?
+    .map_err(|e| map_channel_write_db_error("更新通道失败", &e))?
     .ok_or_else(|| ApiError::not_found("channel".to_string(), id.to_string()))?;
     let old_value = serde_json::to_value(old).unwrap_or_default();
     let new_value = serde_json::to_value(&row).unwrap_or_default();
@@ -1071,13 +1086,59 @@ fn change_audit_log(
     }
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn get_next_channel_code(_pool: &PgPool) -> Result<serde_json::Value, ApiError> {
-    use rand::RngExt;
-    let num: u32 = rand::rng().random_range(1000..=9999);
-    Ok(serde_json::json!({
-        "channel_code": format!("CH-{}", num)
-    }))
+fn is_unique_violation_code(code: Option<&str>) -> bool {
+    code == Some("23505")
+}
+
+fn map_channel_write_db_error(context: &str, err: &sqlx::Error) -> ApiError {
+    if let sqlx::Error::Database(db_err) = err
+        && is_unique_violation_code(db_err.code().as_deref())
+    {
+        return ApiError::validation("通道编码已存在".to_string());
+    }
+    ApiError::internal(format!("{context}: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn channel_cost_price_accepts_micro_price_and_rejects_overflow() {
+        let valid_micro = CreateChannelRequest {
+            supplier_id: uuid::Uuid::nil(),
+            channel_code: "CH-MICRO-1".to_string(),
+            name: "微单价通道".to_string(),
+            path_prefix: "/v1".to_string(),
+            cost_price: Decimal::from_str("0.000050").expect("valid decimal"),
+            qps_limit: 0,
+            config: serde_json::json!({}),
+        };
+        assert!(valid_micro.validate().is_ok());
+
+        let too_many_decimals = CreateChannelRequest {
+            cost_price: Decimal::from_str("0.0000501").expect("valid decimal"),
+            ..valid_micro
+        };
+        assert!(too_many_decimals.validate().is_err());
+
+        let integer_overflow = CreateChannelRequest {
+            supplier_id: uuid::Uuid::nil(),
+            channel_code: "CH-MICRO-2".to_string(),
+            name: "超长单价".to_string(),
+            path_prefix: "/v1".to_string(),
+            cost_price: Decimal::from_str("1000000000000.00").expect("valid decimal"),
+            qps_limit: 0,
+            config: serde_json::json!({}),
+        };
+        assert!(integer_overflow.validate().is_err());
+    }
+
+    #[test]
+    fn unique_violation_code_matches_postgres_23505() {
+        assert!(is_unique_violation_code(Some("23505")));
+        assert!(!is_unique_violation_code(Some("23503")));
+        assert!(!is_unique_violation_code(None));
+    }
 }

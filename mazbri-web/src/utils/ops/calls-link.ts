@@ -2,7 +2,7 @@ import type { RouteLocationRaw } from "vue-router";
 
 export type CallsTab = "customer" | "upstream";
 
-/** Route query keys the calls page turns into list filters. */
+/** Route query keys the calls panel turns into list filters. */
 export const CALLS_FILTER_KEYS = [
   "request_id",
   "trace_id",
@@ -25,7 +25,8 @@ export interface CallsLinkOptions {
   filters?: Partial<Record<CallsFilterKey, string | number>>;
 }
 
-export const CALLS_PATH = "/ops/calls";
+/** 调用与链路合一父路由（/ops/traffic）。 */
+export const TRAFFIC_PATH = "/ops/traffic";
 
 export function buildCallsRoute(options: CallsLinkOptions): RouteLocationRaw {
   const query: Record<string, string> = { tab: options.tab };
@@ -38,5 +39,5 @@ export function buildCallsRoute(options: CallsLinkOptions): RouteLocationRaw {
     if (value === undefined || value === "") continue;
     query[key] = String(value);
   }
-  return { path: CALLS_PATH, query };
+  return { path: TRAFFIC_PATH, query };
 }

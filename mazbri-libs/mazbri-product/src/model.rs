@@ -356,11 +356,14 @@ pub struct TenantProductDetail {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductTenantAccess {
     pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub product_id: Uuid,
+    pub tenant_uuid: Uuid,
+    pub tenant_code: String,
+    pub tenant_id: String,
+    pub tenant_name: String,
+    pub tenant_enabled: bool,
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -381,6 +384,8 @@ pub struct AuthorizationDetail {
     pub product_code: String,
     pub product_name: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub cb_pro_enabled: bool,
     pub unit_price: String,
     pub currency: String,
     pub cb_pro_fallback: bool,

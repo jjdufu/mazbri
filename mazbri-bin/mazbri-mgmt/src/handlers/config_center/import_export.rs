@@ -48,6 +48,10 @@ pub async fn import_configs(
     Query(params): Query<ImportParams>,
     body: Body,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let (request_id, trace_id) = request_ids(&headers);
+    let prepared = service::precheck_import_configs(body, &request_id, &trace_id).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -57,16 +61,13 @@ pub async fn import_configs(
     {
         return Ok(*response);
     }
-    super::require_config_admin(&claims)?;
-    let client_ip = extract_client_ip(&headers, Some(addr));
-    let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
         service::import_configs(
             &state,
             &claims,
             client_ip,
             &params,
-            body,
+            prepared,
             &request_id,
             &trace_id,
         )

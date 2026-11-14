@@ -3,7 +3,6 @@ import {
   SystemThemeEnum,
   MenuThemeEnum,
   MenuTypeEnum,
-  ContainerWidthEnum,
 } from "@/enums/appEnum";
 export const SETTING_DEFAULT_CONFIG = {
   menuType: MenuTypeEnum.LEFT,
@@ -27,11 +26,10 @@ export const SETTING_DEFAULT_CONFIG = {
   refresh: false,
   holidayFireworksLoaded: false,
   boxBorderMode: false,
-  pageTransition: "fade",
+  pageTransition: "",
   tabStyle: "tab-default",
   customRadius: "0.25",
   darkThemeStyle: "obsidian",
-  containerWidth: ContainerWidthEnum.FULL,
   festivalDate: "",
 };
 export function getSettingDefaults() {

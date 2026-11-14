@@ -28,24 +28,22 @@
           />
         </ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.name')">{{
-          tenant?.name
+          tenant?.name || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactPerson')">{{
-          tenant?.contact_person || "-"
+          tenant?.contact_person || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactPhone')">{{
-          tenant?.contact_phone || "-"
+          tenant?.contact_phone || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('tenant.fields.contactEmail')">{{
-          tenant?.contact_email || "-"
+          tenant?.contact_email || "—"
         }}</ElDescriptionsItem>
         <ElDescriptionsItem :label="$t('common.fields.status')">
           <ElSwitch
             :model-value="tenant?.enabled ?? false"
             :loading="statusLoading"
             :disabled="!userStore.canWriteBusiness"
-            :active-text="$t('tenant.detail.status.active')"
-            :inactive-text="$t('tenant.detail.status.suspended')"
             @change="handleStatusChange"
           />
         </ElDescriptionsItem>
@@ -88,12 +86,6 @@
         </ElForm>
       </EditDialog>
     </ElCard>
-
-
-    <GateSummaryCard
-      v-if="tenant?.tenant_code"
-      :tenant-code="tenant.tenant_code"
-    />
   </TenantTabShell>
 </template>
 
@@ -110,7 +102,6 @@ import type {
 import { updateTenant, setTenantEnabled } from "@/api/tenant";
 import EditDialog from "@/components/common/EditDialog.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
-import GateSummaryCard from "./modules/gate-summary-card.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useUserStore } from "@/store/modules/user";
 import { logger } from "@/utils/sys";

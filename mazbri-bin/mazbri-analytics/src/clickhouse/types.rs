@@ -177,6 +177,59 @@ pub struct UpstreamHourlyUsageRow {
     pub total_latency_ms: u64,
 }
 
+/// 窗口内活跃产品去重 ID 行。
+#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
+pub struct ActiveProductIdRow {
+    pub product_id: String,
+}
+
+/// 按整点小时（UTC）分桶的上游旁路用量 `RowBinary` 行。
+#[derive(Debug, Clone, clickhouse::Row, Deserialize)]
+pub struct UpstreamHourlyBucketWireRow {
+    pub window_start_unix: u32,
+    pub supplier_id: String,
+    pub supplier_code: String,
+    pub channel_id: String,
+    pub channel_code: String,
+    pub total_calls: u64,
+    pub success_calls: u64,
+    pub failed_calls: u64,
+    pub total_payload_bytes: u64,
+    pub total_latency_ms: u64,
+}
+
+/// 对外序列化的按整点小时分桶上游用量记录。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UpstreamHourlyBucketEntry {
+    pub window_start: DateTime<Utc>,
+    pub supplier_id: String,
+    pub supplier_code: String,
+    pub channel_id: String,
+    pub channel_code: String,
+    pub total_calls: u64,
+    pub success_calls: u64,
+    pub failed_calls: u64,
+    pub total_payload_bytes: u64,
+    pub total_latency_ms: u64,
+}
+
+impl From<UpstreamHourlyBucketWireRow> for UpstreamHourlyBucketEntry {
+    fn from(row: UpstreamHourlyBucketWireRow) -> Self {
+        Self {
+            window_start: datetime_secs_to_utc(row.window_start_unix),
+            supplier_id: row.supplier_id,
+            supplier_code: row.supplier_code,
+            channel_id: row.channel_id,
+            channel_code: row.channel_code,
+            total_calls: row.total_calls,
+            success_calls: row.success_calls,
+            failed_calls: row.failed_calls,
+            total_payload_bytes: row.total_payload_bytes,
+            total_latency_ms: row.total_latency_ms,
+        }
+    }
+}
+
 /// 调用直方图桶。
 #[derive(Debug, Clone, clickhouse::Row, Deserialize)]
 pub struct CallHistogramRow {

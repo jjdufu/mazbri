@@ -1,39 +1,91 @@
 <template>
-  <button
-    type="button"
-    class="wb-adapter-chip"
-    :class="{
-      'wb-adapter-chip--risk': isJobPoll,
-      'wb-adapter-chip--pool': isWsUnary,
-    }"
-    :title="chipTitle"
-    :aria-label="chipAriaLabel"
-    @click="emit('edit')"
+  <HoppMenu
+    v-model:visible="menuOpen"
+    :append-to="appendTo"
+    placement="bottom-end"
   >
-    <span class="wb-adapter-chip__text">{{ displayName }}</span>
-    <span v-if="isJobPoll" class="wb-adapter-chip__risk">{{
-      $t("upstreamConnector.jobPollRiskTag")
-    }}</span>
-    <span v-else-if="isWsUnary" class="wb-adapter-chip__pool">{{
-      $t("upstreamConnector.wsUnaryPoolTag")
-    }}</span>
-  </button>
+    <template #trigger>
+      <button
+        type="button"
+        class="wb-adapter-chip"
+        :class="{
+          'wb-adapter-chip--risk': isJobPoll,
+          'wb-adapter-chip--pool': isWsUnary,
+        }"
+        :title="chipTitle"
+        :aria-label="chipAriaLabel"
+        :aria-expanded="menuOpen"
+      >
+        <span class="wb-adapter-chip__text">{{ displayName }}</span>
+        <span v-if="isJobPoll" class="wb-adapter-chip__risk">{{
+          $t("upstreamConnector.jobPollRiskTag")
+        }}</span>
+        <span v-else-if="isWsUnary" class="wb-adapter-chip__pool">{{
+          $t("upstreamConnector.wsUnaryPoolTag")
+        }}</span>
+        <span class="hopp-menu-caret" aria-hidden="true" />
+      </button>
+    </template>
+    <button
+      v-for="item in EGRESS_ADAPTERS"
+      :key="item"
+      type="button"
+      class="hopp-menu-item"
+      :class="{ 'is-current': item === adapterCode }"
+      :disabled="disabled"
+      @click="onPickAdapter(item)"
+    >
+      {{ adapterLabel(item) }}
+    </button>
+    <div class="hopp-menu-divider" />
+    <button
+      type="button"
+      class="hopp-menu-item"
+      @click="onOpenSpec"
+    >
+      {{ $t("upstreamConnector.adapterChipHint") }}
+    </button>
+  </HoppMenu>
 </template>
 
 <script setup lang="ts">
+import HoppMenu from "@/components/common/hopp-menu/index.vue";
 import { $t } from "@/locales";
+import { EGRESS_ADAPTERS } from "../workbenchHelpers";
 
 const props = withDefaults(
   defineProps<{
     adapter?: string;
     encoding?: string;
+    appendTo?: HTMLElement | string;
+    disabled?: boolean;
   }>(),
-  { adapter: "http_json", encoding: "" },
+  { adapter: "http_json", encoding: "", appendTo: undefined, disabled: false },
 );
 
 const emit = defineEmits<{
   edit: [];
+  select: [string];
 }>();
+
+const menuOpen = ref(false);
+
+function adapterLabel(a: string): string {
+  const key = `upstreamConnector.adapterNames.${a}`;
+  const t = $t(key);
+  return t === key ? a : t;
+}
+
+function onPickAdapter(next: string) {
+  menuOpen.value = false;
+  if (props.disabled) return;
+  emit("select", next);
+}
+
+function onOpenSpec() {
+  menuOpen.value = false;
+  emit("edit");
+}
 
 const isJobPoll = computed(() => (props.adapter || "http_json") === "job_poll");
 const isWsUnary = computed(() => (props.adapter || "http_json") === "ws_unary");

@@ -3,72 +3,92 @@
     <template #title>
       <span class="product-topn__title">
         {{ t("ops.overview.productTop") }}
-        <ElTag
-          v-if="zeroRows.length > 0"
-          size="small"
-          type="info"
-          effect="plain"
-          class="product-topn__badge"
-        >
-          {{ t("ops.overview.productZeroBadge", { n: zeroRows.length }) }}
-        </ElTag>
       </span>
     </template>
     <template #extra>
-      <ElSelect
-        v-model="metric"
-        style="width: 140px"
-        @change="onMetricChange"
-      >
-        <ElOption value="req_count" :label="t('ops.products.metricReq')" />
-        <ElOption value="error_rate" :label="t('ops.products.metricErr')" />
-        <ElOption value="p95" :label="t('ops.products.metricP95')" />
-        <ElOption value="cost" :label="t('ops.products.metricCost')" />
-      </ElSelect>
+      <div class="product-topn__toolbar">
+        <ElSegmented
+          v-model="viewMode"
+          :options="segmentOptions"
+          @change="onModeChange"
+        />
+        <ElSelect
+          v-if="viewMode === 'active'"
+          v-model="metric"
+          class="product-topn__metric-select"
+          @change="onMetricChange"
+        >
+          <ElOption value="req_count" :label="t('ops.products.metricReq')" />
+          <ElOption value="error_rate" :label="t('ops.products.metricErr')" />
+          <ElOption value="p95" :label="t('ops.products.metricP95')" />
+          <ElOption value="cost" :label="t('ops.products.metricCost')" />
+        </ElSelect>
+        <ElInput
+          v-else
+          v-model="zeroQuery"
+          clearable
+          class="product-topn__zero-search"
+          :placeholder="t('ops.products.zeroSearchPlaceholder')"
+          @clear="onZeroSearch"
+          @keyup.enter="onZeroSearch"
+        >
+          <template #prefix>
+            <ArtSvgIcon icon="ri:search-line" />
+          </template>
+        </ElInput>
+      </div>
     </template>
 
-    <EmptyState
-      v-if="loaded && !loading && rows.length === 0"
-      compact
-      :image-size="56"
-      :description="t('ops.products.rankEmpty')"
-    />
-    <OpsTableWrap v-else>
-      <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
-    </OpsTableWrap>
-
-    <div v-if="zeroRows.length > 0" class="product-topn__zero">
-      <ElButton link type="primary" @click="zeroOpen = !zeroOpen">
-        {{
-          zeroOpen
-            ? t("ops.overview.productZeroCollapse")
-            : t("ops.overview.productZeroExpand")
-        }}
-      </ElButton>
-      <OpsTableWrap v-if="zeroOpen" class="product-topn__zero-table">
-        <ArtTable :data="zeroRows" :columns="zeroColumns" stripe />
+    <template v-if="viewMode === 'active'">
+      <EmptyState
+        v-if="loaded && !loading && rows.length === 0"
+        compact
+        :image-size="56"
+        :description="t('ops.products.rankEmpty')"
+      />
+      <OpsTableWrap v-else>
+        <ArtTable :data="rows" :loading="loading" :columns="columns" stripe />
       </OpsTableWrap>
-    </div>
+    </template>
+
+    <template v-else>
+      <EmptyState
+        v-if="zeroLoaded && !zeroLoading && zeroRows.length === 0"
+        compact
+        :image-size="56"
+        :description="t('ops.products.zeroEmpty')"
+      />
+      <OpsTableWrap v-else>
+        <ArtTable
+          :data="zeroRows"
+          :loading="zeroLoading"
+          :columns="zeroColumns"
+          :pagination="zeroPagination"
+          stripe
+          @pagination:current-change="onZeroPageChange"
+          @pagination:size-change="onZeroSizeChange"
+        />
+      </OpsTableWrap>
+    </template>
   </OpsCard>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import EmptyState from "@/components/common/empty-state/index.vue";
 import { postOlapQuery } from "@/api/olap";
-import { listProductNames } from "@/api/opsReliability";
-import type { ColumnOption } from "@/types/component";
+import { listProductNames, listZeroCallProducts } from "@/api/opsReliability";
+import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { formatMoney } from "@/utils/format";
 import {
   normalizeProductRankRows,
   productNameMap,
   productRankDelta,
   withProductNames,
-  zeroCallProducts,
   type NamedProductRankRow,
   type ProductRankMetric,
   type ProductRankRow,
@@ -77,22 +97,47 @@ import {
 
 defineOptions({ name: "OpsOverviewProductTopN" });
 
+type ViewMode = "active" | "zero";
+
 const TOP = 10;
-/** 零调用差集需要窗口内全部活跃产品（OLAP 单次上限）。 */
-const ALL_ACTIVE = 1000;
 
 const { t } = useI18n();
+const viewMode = ref<ViewMode>("active");
 const metric = ref<ProductRankMetric>("req_count");
 const loading = ref(false);
-/** 首次成功/失败返回前不显示空态，避免切换时闪「暂无数据」。 */
 const loaded = ref(false);
 const rows = ref<NamedProductRankRow[]>([]);
+
+const zeroLoading = ref(false);
+const zeroLoaded = ref(false);
 const zeroRows = ref<ZeroCallProductRow[]>([]);
-const zeroOpen = ref(false);
+const zeroTotal = ref(0);
+const zeroBadgeCount = ref(0);
+const zeroQuery = ref("");
+const zeroPager = reactive({
+  page: 1,
+  pageSize: 10,
+});
+
 let lastWindow: { start: number; end: number } | null = null;
 let seq = 0;
+let zeroSeq = 0;
 
 const nf = new Intl.NumberFormat("zh-CN");
+
+const segmentOptions = computed(() => [
+  { label: t("ops.products.segmentActive"), value: "active" },
+  {
+    label: t("ops.products.segmentZero", { n: zeroBadgeCount.value }),
+    value: "zero",
+  },
+]);
+
+const zeroPagination = computed<PaginationConfig>(() => ({
+  current: zeroPager.page,
+  size: zeroPager.pageSize,
+  total: zeroTotal.value,
+}));
 
 function pct(v: number): string {
   return `${(v * 100).toFixed(2)}%`;
@@ -146,41 +191,77 @@ const columns = computed<ColumnOption<NamedProductRankRow>[]>(() => [
 ]);
 
 const zeroColumns = computed<ColumnOption<ZeroCallProductRow>[]>(() => [
-  { prop: "name", label: t("ops.products.colName") },
-  { prop: "product_id", label: t("ops.products.colId"), width: 160 },
+  {
+    prop: "name",
+    label: t("ops.products.colName"),
+    minWidth: 200,
+    formatter: (r) => r.name || "—",
+  },
+  {
+    prop: "product_id",
+    label: t("ops.products.colId"),
+    minWidth: 160,
+    formatter: (r) => r.product_id || "—",
+  },
 ]);
 
-async function load(window: { start: number; end: number }) {
+async function loadZeroPage(
+  window: { start: number; end: number },
+  updateBadge = false,
+) {
+  const mine = ++zeroSeq;
+  zeroLoading.value = true;
+  try {
+    const q = zeroQuery.value.trim();
+    const res = await listZeroCallProducts({
+      start: window.start,
+      end: window.end,
+      page: zeroPager.page,
+      page_size: zeroPager.pageSize,
+      ...(q ? { q } : {}),
+    });
+    if (mine !== zeroSeq) return;
+    zeroRows.value = (res.items ?? []).map((item) => ({
+      product_id: item.product_id,
+      name: item.name?.trim() || item.product_id,
+    }));
+    zeroTotal.value = res.total ?? 0;
+    if (updateBadge && !q) {
+      zeroBadgeCount.value = res.total ?? 0;
+    }
+  } catch (error) {
+    if (mine !== zeroSeq) return;
+    zeroRows.value = [];
+    zeroTotal.value = 0;
+    ElMessage.error(
+      error instanceof Error ? error.message : t("ops.overview.productTopLoadFailed"),
+    );
+  } finally {
+    if (mine === zeroSeq) {
+      zeroLoading.value = false;
+      zeroLoaded.value = true;
+    }
+  }
+}
+
+async function loadActive(window: { start: number; end: number }) {
   const mine = ++seq;
-  lastWindow = window;
   loading.value = true;
   try {
-    const needAll = metric.value === "req_count";
-    const [rankRes, allRes, catalog] = await Promise.all([
+    const [rankRes, catalog] = await Promise.all([
       postOlapQuery<ProductRankRow>({
         template: "product_rank",
-        params: { ...window, metric: metric.value, limit: needAll ? ALL_ACTIVE : TOP },
+        params: { ...window, metric: metric.value, limit: TOP },
       }),
-      needAll
-        ? Promise.resolve(null)
-        : postOlapQuery<ProductRankRow>({
-            template: "product_rank",
-            params: { ...window, metric: "req_count", limit: ALL_ACTIVE },
-          }),
       listProductNames(),
     ]);
     if (mine !== seq) return;
     const ranked = normalizeProductRankRows(rankRes.rows);
-    const active = allRes ? normalizeProductRankRows(allRes.rows) : ranked;
     const names = productNameMap(catalog);
     rows.value = withProductNames(ranked.slice(0, TOP), names);
-    zeroRows.value = zeroCallProducts(catalog, active);
-    if (zeroRows.value.length === 0) zeroOpen.value = false;
   } catch (error) {
     if (mine !== seq) return;
     rows.value = [];
-    zeroRows.value = [];
-    zeroOpen.value = false;
     ElMessage.error(
       error instanceof Error ? error.message : t("ops.overview.productTopLoadFailed"),
     );
@@ -192,8 +273,36 @@ async function load(window: { start: number; end: number }) {
   }
 }
 
+async function load(window: { start: number; end: number }) {
+  lastWindow = window;
+  zeroPager.page = 1;
+  await Promise.all([loadActive(window), loadZeroPage(window, true)]);
+}
+
+function onModeChange() {
+  if (viewMode.value === "zero" && lastWindow) {
+    void loadZeroPage(lastWindow, false);
+  }
+}
+
 function onMetricChange() {
-  if (lastWindow) void load(lastWindow);
+  if (lastWindow) void loadActive(lastWindow);
+}
+
+function onZeroSearch() {
+  zeroPager.page = 1;
+  if (lastWindow) void loadZeroPage(lastWindow, false);
+}
+
+function onZeroPageChange(page: number) {
+  zeroPager.page = page;
+  if (lastWindow) void loadZeroPage(lastWindow, false);
+}
+
+function onZeroSizeChange(size: number) {
+  zeroPager.pageSize = size;
+  zeroPager.page = 1;
+  if (lastWindow) void loadZeroPage(lastWindow, false);
 }
 
 /** 由总览按全局时间窗驱动；窗口由父组件在每次刷新时解析好传入。 */
@@ -204,25 +313,33 @@ function reload(window: { start: number; end: number }) {
 defineExpose({ reload });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .product-topn__title {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
-.product-topn__badge {
-  font-weight: 500;
+
+.product-topn__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
-.product-topn__note {
-  margin: 6px 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
+
+.product-topn__metric-select {
+  width: 140px;
+  flex-shrink: 0;
 }
-.product-topn__zero {
-  margin-top: 8px;
-}
-.product-topn__zero-table {
-  margin-top: 8px;
+
+.product-topn__zero-search {
+  width: 180px;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+
+  &:focus-within {
+    width: 260px;
+  }
 }
 </style>

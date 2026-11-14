@@ -21,6 +21,7 @@ pub async fn set_admin_status(
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<SetAdminStatusRequest>,
 ) -> Result<Response, ApiError> {
+    svc::precheck_set_status(&state.admin_db, &claims, id, &req).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,

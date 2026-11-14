@@ -69,22 +69,6 @@ export function withProductNames(
   }));
 }
 
-/** 名录中在当前窗口内没有任何调用的产品（与 TopN 同一时间窗）。 */
-export function zeroCallProducts(
-  catalog: readonly ProductCatalogEntry[] | null | undefined,
-  activeRows: readonly Pick<ProductRankRow, "product_id" | "req_count">[],
-): ZeroCallProductRow[] {
-  const active = new Set(
-    activeRows.filter((r) => r.req_count > 0).map((r) => r.product_id.trim()),
-  );
-  const names = productNameMap(catalog);
-  const out: ZeroCallProductRow[] = [];
-  for (const [id, name] of names) {
-    if (!active.has(id)) out.push({ product_id: id, name });
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
-}
-
 /**
  * 环比：当前窗相对上一窗的变化（-0.2 = 下降 20%）。
  * 上一窗为 0 时返回 null（显示「新增」而非 0 / ∞）。

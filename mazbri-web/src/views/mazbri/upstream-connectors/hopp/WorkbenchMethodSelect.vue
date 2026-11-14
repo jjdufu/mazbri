@@ -8,6 +8,7 @@
       ref="inputEl"
       class="wb-method__input"
       :value="customDraft"
+      :aria-label="$t('supplier.config.method')"
       maxlength="16"
       spellcheck="false"
       autocomplete="off"
@@ -54,6 +55,7 @@
 
 <script setup lang="ts">
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
+import { $t } from "@/locales";
 import {
   HTTP_METHOD_PRESETS,
   HTTP_METHODS,

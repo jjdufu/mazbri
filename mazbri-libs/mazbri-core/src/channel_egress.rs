@@ -24,6 +24,7 @@ pub const ADAPTER_WS_UNARY: &str = "ws_unary";
 pub const ADAPTER_JOB_POLL: &str = "job_poll";
 
 pub const AUTH_NONE: &str = "none";
+pub const AUTH_SKIP: &str = "skip";
 pub const AUTH_API_KEY: &str = "api_key";
 pub const AUTH_OAUTH_CC_FORM: &str = "oauth_cc_form";
 pub const AUTH_GETTOKEN: &str = "gettoken";
@@ -53,6 +54,7 @@ const KNOWN_ADAPTERS: &[&str] = &[
 
 const KNOWN_AUTH: &[&str] = &[
     AUTH_NONE,
+    AUTH_SKIP,
     AUTH_API_KEY,
     AUTH_OAUTH_CC_FORM,
     AUTH_GETTOKEN,
@@ -146,6 +148,7 @@ impl AdapterKind {
 #[serde(rename_all = "snake_case")]
 pub enum AuthProfile {
     None,
+    Skip,
     ApiKey,
     OauthCcForm,
     Gettoken,
@@ -166,6 +169,7 @@ impl AuthProfile {
     pub fn parse(s: &str) -> Result<Self, ChannelEgressError> {
         match s.trim() {
             AUTH_NONE | "" => Ok(Self::None),
+            AUTH_SKIP => Ok(Self::Skip),
             AUTH_API_KEY => Ok(Self::ApiKey),
             AUTH_OAUTH_CC_FORM => Ok(Self::OauthCcForm),
             AUTH_GETTOKEN => Ok(Self::Gettoken),
@@ -188,6 +192,7 @@ impl AuthProfile {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => AUTH_NONE,
+            Self::Skip => AUTH_SKIP,
             Self::ApiKey => AUTH_API_KEY,
             Self::OauthCcForm => AUTH_OAUTH_CC_FORM,
             Self::Gettoken => AUTH_GETTOKEN,
@@ -209,7 +214,7 @@ impl AuthProfile {
 
     #[must_use]
     pub fn is_none(self) -> bool {
-        matches!(self, Self::None)
+        matches!(self, Self::None | Self::Skip)
     }
 
     #[must_use]
@@ -500,6 +505,14 @@ pub fn sanitize_auth_spec(mut spec: AuthSpec) -> Option<AuthSpec> {
     spec.profile = profile.as_str().to_string();
     match profile {
         AuthProfile::None => None,
+        AuthProfile::Skip | AuthProfile::SignForm => {
+            clear_ticket_fields(&mut spec);
+            spec.headers.clear();
+            spec.inject = None;
+            spec.credential_keys = None;
+            clear_nested_specs(&mut spec);
+            Some(spec)
+        }
         AuthProfile::Basic => {
             clear_ticket_fields(&mut spec);
             spec.inject = None;
@@ -518,14 +531,6 @@ pub fn sanitize_auth_spec(mut spec: AuthSpec) -> Option<AuthSpec> {
             spec.digest = None;
             spec.aws = None;
             spec.hawk = None;
-            Some(spec)
-        }
-        AuthProfile::SignForm => {
-            clear_ticket_fields(&mut spec);
-            spec.headers.clear();
-            spec.inject = None;
-            spec.credential_keys = None;
-            clear_nested_specs(&mut spec);
             Some(spec)
         }
         AuthProfile::GrpcMetadata => {
@@ -1885,5 +1890,31 @@ mod tests {
             "sign_form": {"sign_type": "hmac-sm3"}
         });
         parse_and_validate_egress(&v).unwrap();
+    }
+
+    #[test]
+    fn auth_skip_preserves_explicit_profile_while_none_stays_undeclared() {
+        assert!(profile_is_undeclared(None));
+        assert!(profile_is_undeclared(Some("")));
+        assert!(profile_is_undeclared(Some(AUTH_NONE)));
+        assert!(!profile_is_undeclared(Some(AUTH_SKIP)));
+
+        let skipped = sanitize_auth_spec(AuthSpec {
+            profile: AUTH_SKIP.into(),
+            token_url: Some("https://idp.example/token".into()),
+            ..Default::default()
+        })
+        .expect("skip auth spec must be retained");
+        assert_eq!(skipped.profile, AUTH_SKIP);
+        assert!(skipped.token_url.is_none());
+
+        let inv = AuthInvalidationSpec {
+            http_status: vec![401],
+            ..Default::default()
+        };
+        assert!(validate_auth_invalidation(&inv, AuthProfile::Skip, AdapterKind::HttpJson).is_ok());
+        assert!(
+            validate_auth_invalidation(&inv, AuthProfile::None, AdapterKind::HttpJson).is_err()
+        );
     }
 }

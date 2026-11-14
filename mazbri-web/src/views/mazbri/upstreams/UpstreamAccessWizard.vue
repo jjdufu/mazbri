@@ -2,11 +2,10 @@
   <CenteredDialog
     v-model="visible"
     :title="$t('upstreamOnboarding.mode.microservice')"
-    width="560px"
+    width="600px"
     :destroy-on-close="true"
     :close-on-click-modal="false"
     dialog-class="upstream-access-dialog"
-    @closed="handleClosed"
   >
     <ElSteps :active="step" finish-status="success" align-center class="steps">
       <ElStep :title="$t('upstreamOnboarding.steps.basic')" />
@@ -16,18 +15,26 @@
     </ElSteps>
 
     <div class="wizard-body">
-
       <div v-show="step === 0" class="panel">
-        <p class="hint">{{ $t("upstreamOnboarding.mode.microserviceHint") }}</p>
+        <p class="hint">
+          {{ $t("upstreamOnboarding.mode.microserviceHint") }}
+        </p>
         <ElForm
           ref="basicFormRef"
           :model="form"
           :rules="basicRules"
-          label-width="100px"
+          label-width="124px"
           class="wizard-form"
         >
-          <ElFormItem :label="$t('upstreamOnboarding.fields.supplierCode')" prop="supplier_code">
-            <ElInput v-model="form.supplier_code" placeholder="PARTNER-ACME" class="control-full" />
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.supplierCode')"
+            prop="supplier_code"
+          >
+            <ElInput
+              v-model="form.supplier_code"
+              placeholder="PARTNER-ACME"
+              class="control-full"
+            />
           </ElFormItem>
           <ElFormItem :label="$t('upstreamOnboarding.fields.name')" prop="name">
             <ElInput
@@ -36,7 +43,10 @@
               :placeholder="$t('upstreamOnboarding.placeholders.name')"
             />
           </ElFormItem>
-          <ElFormItem :label="$t('upstreamOnboarding.fields.upstreamUrl')" prop="upstream_url">
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.upstreamUrl')"
+            prop="upstream_url"
+          >
             <ElInput
               v-model="form.upstream_url"
               class="control-full"
@@ -44,7 +54,10 @@
               @blur="handleUrlBlur"
             />
           </ElFormItem>
-          <ElFormItem :label="$t('upstreamOnboarding.fields.contractId')" prop="contract_id">
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.contractId')"
+            prop="contract_id"
+          >
             <ElInput
               v-model="form.contract_id"
               class="control-full"
@@ -62,10 +75,20 @@
               controls-position="right"
             />
           </ElFormItem>
-          <ElFormItem :label="$t('upstreamOnboarding.fields.channelCode')" prop="channel_code">
-            <ElInput v-model="form.channel_code" placeholder="ACME-DEFAULT" class="control-full" />
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.channelCode')"
+            prop="channel_code"
+          >
+            <ElInput
+              v-model="form.channel_code"
+              placeholder="ACME-DEFAULT"
+              class="control-full"
+            />
           </ElFormItem>
-          <ElFormItem :label="$t('upstreamOnboarding.fields.channelName')" prop="channel_name">
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.channelName')"
+            prop="channel_name"
+          >
             <ElInput
               v-model="form.channel_name"
               class="control-full"
@@ -73,16 +96,39 @@
             />
           </ElFormItem>
           <ElFormItem :label="$t('upstreamOnboarding.fields.pathPrefix')">
-            <ElInput v-model="form.path_prefix" placeholder="/" class="control-full" />
+            <ElInput
+              v-model="form.path_prefix"
+              placeholder="/"
+              class="control-full"
+            />
           </ElFormItem>
         </ElForm>
       </div>
 
-
       <div v-show="step === 1" class="panel">
-        <ElForm :model="form" label-width="100px" class="wizard-form">
-          <ElFormItem :label="$t('upstreamOnboarding.fields.productId')" required>
-            <ElInput v-model="form.product_id" placeholder="8012345678" class="control-full" />
+        <ElForm :model="form" label-width="124px" class="wizard-form">
+          <ElFormItem
+            :label="$t('upstreamOnboarding.fields.productId')"
+            required
+          >
+            <ElSelect
+              v-model="form.product_id"
+              filterable
+              remote
+              reserve-keyword
+              :remote-method="searchProducts"
+              :loading="productLoading"
+              :placeholder="$t('upstreamOnboarding.placeholders.productSelect')"
+              class="control-full"
+              @focus="ensureProductsLoaded"
+            >
+              <ElOption
+                v-for="item in productOptions"
+                :key="item.id"
+                :label="`${item.name} (${item.product_id})`"
+                :value="item.product_id"
+              />
+            </ElSelect>
           </ElFormItem>
           <ElFormItem :label="$t('upstreamOnboarding.fields.weight')">
             <ElInputNumber
@@ -107,20 +153,87 @@
         </ElForm>
       </div>
 
-
       <div v-show="step === 2" class="panel">
-        <ElAlert
-          v-if="dryRunResult"
-          :type="dryRunResult.warnings?.length ? 'warning' : 'success'"
-          :title="$t('upstreamOnboarding.confirm.dryRunOk')"
-          show-icon
-          :closable="false"
-          class="mb"
+        <template v-if="dryRunResult?.plan">
+          <ElAlert
+            :type="dryRunResult.warnings?.length ? 'warning' : 'success'"
+            :title="$t('upstreamOnboarding.confirm.dryRunOk')"
+            show-icon
+            :closable="false"
+            class="mb"
+          />
+          <ElAlert
+            v-if="dryRunResult.warnings?.length"
+            type="warning"
+            :title="$t('upstreamOnboarding.confirm.warningsTitle')"
+            :closable="false"
+            class="mb"
+          >
+            <ul class="warning-list">
+              <li v-for="(warn, idx) in dryRunResult.warnings" :key="idx">
+                {{ warn }}
+              </li>
+            </ul>
+          </ElAlert>
+          <ElDescriptions
+            :title="$t('upstreamOnboarding.confirm.summaryTitle')"
+            :column="1"
+            border
+          >
+            <ElDescriptionsItem
+              :label="$t('upstreamOnboarding.fields.supplierCode')"
+            >
+              {{ form.name.trim() }} ({{ dryRunResult.plan.supplier_code }})
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('upstreamOnboarding.confirm.upstreamType')"
+            >
+              {{
+                dryRunResult.plan.upstream_type === "microservice"
+                  ? $t("supplier.upstreamOptions.microservice")
+                  : $t("supplier.upstreamOptions.transparent")
+              }}
+              · {{ dryRunResult.plan.upstream_url }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('upstreamOnboarding.fields.channelCode')"
+            >
+              {{ (form.channel_name || form.name).trim() }} ({{
+                dryRunResult.plan.channel_code
+              }}) · {{ form.path_prefix.trim() || "/" }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('upstreamOnboarding.confirm.targetProduct')"
+            >
+              {{ selectedProductSummary }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="`${$t('upstreamOnboarding.fields.priority')} / ${$t('upstreamOnboarding.fields.weight')}`"
+            >
+              {{ form.priority }} / {{ form.weight }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('upstreamOnboarding.confirm.plannedActions')"
+            >
+              <div class="action-tags">
+                <ElTag
+                  v-for="action in dryRunResult.plan.actions"
+                  :key="action"
+                  size="small"
+                  effect="light"
+                  :type="action.startsWith('skip') ? 'info' : 'primary'"
+                >
+                  {{ formatPlanAction(action) }}
+                </ElTag>
+              </div>
+            </ElDescriptionsItem>
+          </ElDescriptions>
+        </template>
+        <ElEmpty
+          v-else
+          :description="$t('upstreamOnboarding.confirm.needDryRun')"
         />
-        <pre v-if="dryRunResult?.plan" class="plan">{{ formatPlan(dryRunResult.plan) }}</pre>
-        <ElEmpty v-else :description="$t('upstreamOnboarding.confirm.needDryRun')" />
       </div>
-
 
       <div v-show="step === 3" class="panel success-panel">
         <ElResult
@@ -128,12 +241,14 @@
           :title="$t('upstreamOnboarding.done.title')"
           :sub-title="
             $t('upstreamOnboarding.done.subtitle', {
-              version: result?.route_version ?? '-',
+              version: result?.route_version ?? '—',
             })
           "
         />
         <ElDescriptions v-if="result" :column="1" border class="mb">
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.supplierId')">
+          <ElDescriptionsItem
+            :label="$t('upstreamOnboarding.done.supplierId')"
+          >
             <CopyableText
               :value="result.supplier_id"
               :label="$t('upstreamOnboarding.done.supplierId')"
@@ -145,7 +260,9 @@
               :label="$t('upstreamOnboarding.done.channelId')"
             />
           </ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeRuleId')">
+          <ElDescriptionsItem
+            :label="$t('upstreamOnboarding.done.routeRuleId')"
+          >
             <CopyableText
               :value="result.route_rule_id"
               :label="$t('upstreamOnboarding.done.routeRuleId')"
@@ -157,7 +274,11 @@
               :label="$t('upstreamOnboarding.done.bindingId')"
             />
           </ElDescriptionsItem>
-          <ElDescriptionsItem :label="$t('upstreamOnboarding.done.routeVersion')">{{ result.route_version }}</ElDescriptionsItem>
+          <ElDescriptionsItem
+            :label="$t('upstreamOnboarding.done.routeVersion')"
+          >
+            {{ result.route_version }}
+          </ElDescriptionsItem>
         </ElDescriptions>
         <p class="hint">{{ $t("upstreamOnboarding.done.reloadHint") }}</p>
       </div>
@@ -195,19 +316,20 @@
 </template>
 
 <script setup lang="ts">
-import CopyableText from "@/components/common/copyable-text/index.vue";
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
-import { $t } from "@/locales";
-import CenteredDialog from "@/components/common/CenteredDialog.vue";
+import { fetchProductList } from "@/api/product";
 import {
   createOnboarding,
   dryRunOnboarding,
   type OnboardingRequest,
   type OnboardingResult,
 } from "@/api/upstream-onboarding";
+import CenteredDialog from "@/components/common/CenteredDialog.vue";
+import CopyableText from "@/components/common/copyable-text/index.vue";
+import { $t } from "@/locales";
+import type { Product } from "@/types/api/product";
 import { stripUrlScheme } from "@/utils/sensitive";
-
 
 defineOptions({ name: "UpstreamAccessWizard" });
 
@@ -216,6 +338,8 @@ const emit = defineEmits<{ success: [] }>();
 
 const step = ref(0);
 const submitting = ref(false);
+const productLoading = ref(false);
+const productOptions = ref<Product[]>([]);
 const dryRunResult = ref<OnboardingResult | null>(null);
 const result = ref<OnboardingResult | null>(null);
 const basicFormRef = ref<FormInstance>();
@@ -287,6 +411,59 @@ const basicRules = computed<FormRules>(() => ({
   ],
 }));
 
+const selectedProductSummary = computed(() => {
+  const externalId =
+    dryRunResult.value?.plan?.product_external_id || form.product_id.trim();
+  const matched = productOptions.value.find(
+    (item) => item.product_id === externalId,
+  );
+  if (matched) {
+    return `${matched.name} (${matched.product_id})`;
+  }
+  return externalId || "—";
+});
+
+async function searchProducts(keyword = "") {
+  productLoading.value = true;
+  try {
+    const res = await fetchProductList({
+      page: 1,
+      page_size: 20,
+      q: keyword.trim() || undefined,
+    });
+    productOptions.value = (res.products ?? []).filter((item) => item.enabled);
+  } catch {
+    productOptions.value = [];
+  } finally {
+    productLoading.value = false;
+  }
+}
+
+function ensureProductsLoaded() {
+  if (productOptions.value.length === 0 && !productLoading.value) {
+    void searchProducts("");
+  }
+}
+
+function formatPlanAction(action: string): string {
+  switch (action) {
+    case "insert suppliers":
+      return $t("upstreamOnboarding.confirm.actionInsertSuppliers");
+    case "insert channels":
+      return $t("upstreamOnboarding.confirm.actionInsertChannels");
+    case "insert route_rules":
+      return $t("upstreamOnboarding.confirm.actionInsertRouteRules");
+    case "insert route_channel_bindings":
+      return $t("upstreamOnboarding.confirm.actionInsertRouteBindings");
+    case "grant tenant_products":
+      return $t("upstreamOnboarding.confirm.actionGrantTenantProducts");
+    case "skip authorization":
+      return $t("upstreamOnboarding.confirm.actionSkipAuthorization");
+    default:
+      return action;
+  }
+}
+
 watch(visible, (open) => {
   if (open) {
     resetAll();
@@ -297,6 +474,7 @@ function resetAll() {
   step.value = 0;
   dryRunResult.value = null;
   result.value = null;
+  productOptions.value = [];
   form.supplier_code = "";
   form.name = "";
   form.upstream_url = "";
@@ -358,6 +536,7 @@ async function nextStep() {
       ElMessage.error($t("upstreamOnboarding.validation.channelCodePattern"));
       return;
     }
+    ensureProductsLoaded();
   }
   if (step.value === 1 && !form.product_id.trim()) {
     ElMessage.error($t("upstreamOnboarding.validation.productRequired"));
@@ -388,16 +567,6 @@ async function submit() {
     emit("success");
   } finally {
     submitting.value = false;
-  }
-}
-
-function formatPlan(plan: NonNullable<OnboardingResult["plan"]>) {
-  return JSON.stringify(plan, null, 2);
-}
-
-function handleClosed() {
-  if (result.value) {
-    emit("success");
   }
 }
 
@@ -468,16 +637,16 @@ defineExpose({
   }
 }
 
-.plan {
-  margin: 0;
-  padding: 12px;
-  max-height: 240px;
-  overflow: auto;
+.action-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.warning-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
   font-size: 12px;
-  background: var(--el-fill-color-light);
-  border-radius: var(--art-form-control-radius);
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
 .mb {

@@ -1,38 +1,46 @@
-import type { ConfigEntry } from "@/types/api/config-center";
-import { ref } from "vue";
-import type { Ref } from "vue";
+import type { ConfigSummary } from "@/types/api/config-center";
+import { ref, type Ref } from "vue";
+
 export type ConfigCenterDialogSuccess =
   | "edit"
   | "rollback"
   | "import"
   | "export";
+
 interface DialogOptions {
-  currentConfig: Ref<ConfigEntry | null>;
+  currentConfig: Ref<ConfigSummary | null>;
   onSuccess: (kind: ConfigCenterDialogSuccess) => Promise<void> | void;
 }
+
 export function useConfigCenterDialogs(options: DialogOptions) {
   const editVisible = ref(false);
   const historyVisible = ref(false);
   const importVisible = ref(false);
   const exportVisible = ref(false);
+
   const handleCreate = () => {
     options.currentConfig.value = null;
     editVisible.value = true;
   };
-  const handleEdit = (row: ConfigEntry) => {
+
+  const handleEdit = (row: ConfigSummary) => {
     options.currentConfig.value = row;
     editVisible.value = true;
   };
-  const handleHistory = (row: ConfigEntry) => {
+
+  const handleHistory = (row: ConfigSummary) => {
     options.currentConfig.value = row;
     historyVisible.value = true;
   };
+
   const handleImport = () => {
     importVisible.value = true;
   };
+
   const handleExport = () => {
     exportVisible.value = true;
   };
+
   const handleDialogSuccess = async (kind: ConfigCenterDialogSuccess) => {
     if (kind === "edit") editVisible.value = false;
     if (kind === "rollback") historyVisible.value = false;
@@ -40,6 +48,7 @@ export function useConfigCenterDialogs(options: DialogOptions) {
     if (kind === "export") exportVisible.value = false;
     await options.onSuccess(kind);
   };
+
   return {
     editVisible,
     historyVisible,

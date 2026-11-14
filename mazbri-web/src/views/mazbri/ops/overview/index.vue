@@ -1,12 +1,5 @@
 <template>
   <OpsPage :title="t('menus.mazbri.opsOverview')" :subtitle="windowSemantics">
-    <template #actions>
-      <div class="ops-overview__filter" data-role="global-filter">
-        <TimeRangePicker v-model="timeRange" @change="reload" />
-        <AutoRefresh v-model="refreshInterval" @tick="reload" />
-      </div>
-    </template>
-
     <ElAlert
       v-if="isViewer"
       type="info"
@@ -15,11 +8,28 @@
       :title="t('ops.overview.viewerSlim')"
     />
 
-    <!-- KPI：跟随时间窗（窗口汇总） -->
+    <!-- KPI：跟随时间窗（窗口汇总），顶栏时间选择器与首行分区标题同轴对齐 -->
     <OpsSection
       id="kpi"
       :title="t('ops.overview.sections.kpi')"
+      :semantics="windowSemantics"
     >
+      <template #extra>
+        <div class="ops-overview__filter" data-role="global-filter">
+          <RoleGate gate="biz">
+            <ElButton
+              link
+              type="primary"
+              class="ops-overview__finance-shortcut"
+              @click="router.push({ path: '/operations/bills', query: { tab: 'overview' } })"
+            >
+              {{ t("ops.overview.financeShortcut") }}
+            </ElButton>
+          </RoleGate>
+          <TimeRangePicker v-model="timeRange" @change="reload" />
+          <AutoRefresh v-model="refreshInterval" @tick="reload" />
+        </div>
+      </template>
       <OpsKpiRow>
         <ElCol v-bind="KPI_COL">
           <StatCard
@@ -261,7 +271,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
@@ -293,6 +303,7 @@ import {
   type OverviewDrillId,
 } from "@/utils/ops/overview-drill";
 import {
+  TRAFFIC_PATH,
   buildAlertsRoute,
   buildCallsRoute,
   buildTraceSearchRoute,
@@ -431,7 +442,7 @@ function alertLabels(labels: Record<string, string>) {
 }
 
 function fmt(n: number | null | undefined) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "N/A";
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n);
 }
 
@@ -449,7 +460,7 @@ function drill(id: OverviewDrillId) {
     query.tr_start = String(w.start);
     query.tr_end = String(w.end);
   }
-  if (target.path === "/ops/calls" && !query.tab) {
+  if (target.path === TRAFFIC_PATH && !query.tab) {
     query.tab = "customer";
   }
   drilldown({ path: target.path, query });
@@ -536,6 +547,10 @@ async function reload() {
     if (mine === seq) loading.value = false;
   }
 }
+
+onMounted(() => {
+  void reload();
+});
 </script>
 
 <style scoped>

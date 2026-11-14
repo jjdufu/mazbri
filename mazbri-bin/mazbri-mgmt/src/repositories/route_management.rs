@@ -33,6 +33,22 @@ pub struct ChannelWithSupplierRow {
     pub updated_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ChannelBoundRouteRow {
+    pub binding_id: uuid::Uuid,
+    pub route_rule_id: uuid::Uuid,
+    pub product_uuid: uuid::Uuid,
+    pub product_code: Option<String>,
+    pub product_name: Option<String>,
+    pub tenant_id: Option<uuid::Uuid>,
+    pub tenant_code: Option<String>,
+    pub tenant_name: Option<String>,
+    pub priority: i32,
+    pub channel_order: i32,
+    pub status: String,
+    pub switch_condition: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct RouteRuleRow {
     pub id: uuid::Uuid,
     pub tenant_id: Option<uuid::Uuid>,
@@ -298,6 +314,39 @@ pub async fn count_route_bindings_for_channel(
         .bind(id)
         .fetch_one(pool)
         .await
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn list_routes_for_channel(
+    pool: &PgPool,
+    channel_id: uuid::Uuid,
+) -> Result<Vec<ChannelBoundRouteRow>, sqlx::Error> {
+    sqlx::query_as::<_, ChannelBoundRouteRow>(
+        "SELECT rcb.id AS binding_id,
+                rr.id AS route_rule_id,
+                rr.product_id AS product_uuid,
+                p.product_id AS product_code,
+                p.name AS product_name,
+                rr.tenant_id,
+                t.tenant_code,
+                t.name AS tenant_name,
+                rr.priority,
+                rcb.channel_order,
+                rr.status,
+                rcb.switch_condition,
+                rcb.created_at
+           FROM route_channel_bindings rcb
+           JOIN route_rules rr ON rr.id = rcb.route_rule_id
+           LEFT JOIN products p ON p.id = rr.product_id
+           LEFT JOIN tenants t ON t.id = rr.tenant_id
+          WHERE rcb.channel_id = $1
+          ORDER BY rr.priority ASC, rcb.channel_order ASC, rcb.created_at DESC",
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await
 }
 fn push_route_rule_scope(
     builder: &mut QueryBuilder<'_, sqlx::Postgres>,

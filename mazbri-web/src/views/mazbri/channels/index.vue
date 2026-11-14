@@ -1,5 +1,5 @@
 <template>
-  <div ref="pageRef" class="channel-page" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+  <div ref="pageRef" class="channel-page">
     <ResourceTableShell
       v-model:columns="columns"
       :title="$t('channels.page.title')"
@@ -19,18 +19,20 @@
           v-model="searchParams.q"
           v-model:filters="listFilters"
           :filter-catalog="channelsCatalog"
-          :show-import="true"
+          :show-import="canWriteBusiness"
           :import-label="$t('common.actions.import')"
           :import-roles="[...ROLES_BIZ]"
           :import-disabled="!canCreateChannel"
+          :import-disabled-reason="$t('channels.messages.createSupplierFirst')"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :show-primary="true"
+          :show-primary="canWriteBusiness"
           :primary-label="$t('channels.actions.add')"
           :primary-roles="[...ROLES_BIZ]"
           :primary-disabled="!canCreateChannel"
-          :show-delete="true"
+          :primary-disabled-reason="$t('channels.messages.createSupplierFirst')"
+          :show-delete="canWriteBusiness"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
           :delete-roles="[...ROLES_BIZ]"
@@ -39,37 +41,7 @@
           @export="handleExportCommand"
           @primary="openCreate"
           @delete="(type) => handleDeleteCommand(type, tableData)"
-        >
-          <template #import="{ click, disabled, icon, label }">
-            <ElTooltip
-              :disabled="canCreateChannel"
-              :content="$t('channels.messages.createSupplierFirst')"
-              placement="top"
-            >
-              <span class="channel-action-trigger">
-                <ElButton :disabled="disabled" @click="click">
-                  <template #icon><ArtSvgIcon :icon="icon" /></template>
-                  {{ label }}
-                </ElButton>
-              </span>
-            </ElTooltip>
-          </template>
-
-          <template #primary="{ click, disabled, icon, label, type }">
-            <ElTooltip
-              :disabled="canCreateChannel"
-              :content="$t('channels.messages.createSupplierFirst')"
-              placement="top"
-            >
-              <span class="channel-action-trigger">
-                <ElButton :disabled="disabled" :type="type" @click="click">
-                  <template #icon><ArtSvgIcon :icon="icon" /></template>
-                  {{ label }}
-                </ElButton>
-              </span>
-            </ElTooltip>
-          </template>
-        </ResourceTableActionBar>
+        />
       </template>
 
       <template #channel_code="{ row }">
@@ -84,6 +56,20 @@
       <template #path_prefix="{ row }">
         {{ row.path_prefix }}
       </template>
+      <template #cost_price="{ row }">
+        {{ formatCostPrice(row.cost_price) }}
+      </template>
+      <template #qps_limit="{ row }">
+        <ElTag
+          v-if="row.qps_limit === 0"
+          type="info"
+          effect="plain"
+          size="small"
+        >
+          {{ $t("channels.fields.qpsUnlimited") }}
+        </ElTag>
+        <span v-else>{{ row.qps_limit }}</span>
+      </template>
       <template #status="{ row }">
         <StatusIndicator :type="row.status === 'active' ? 'success' : 'info'">
           {{ $t(`channels.status.${row.status}`) }}
@@ -95,6 +81,16 @@
             $t("common.actions.details")
           }}</ElButton>
           <ElButton
+            v-if="canWriteBusiness"
+            v-roles="ROLES_BIZ"
+            link
+            type="primary"
+            @click="openEdit(row)"
+          >{{
+            $t("channels.actions.edit")
+          }}</ElButton>
+          <ElButton
+            v-if="canWriteBusiness"
             v-roles="ROLES_BIZ"
             link
             type="danger"
@@ -106,64 +102,18 @@
       </template>
     </ResourceTableShell>
 
+    <ChannelFormDialog
+      v-model="formVisible"
+      :channel="editingChannel"
+      @success="handleFormSuccess"
+    />
 
-    <EditDialog
-      v-model="dialogVisible"
-      :title="$t('channels.dialog.createTitle')"
-      width="680px"
-      :saving="submitting"
-      @confirm="submitForm"
-    >
-      <ElForm ref="formRef" :model="form" :rules="rules" label-width="120px">
-        <ElFormItem :label="$t('channels.fields.supplier')" prop="supplier_id">
-          <ElSelect
-            v-model="form.supplier_id"
-            filterable
-            :placeholder="$t('channels.placeholders.supplier')"
-          >
-            <ElOption
-              v-for="supplier in suppliers"
-              :key="supplier.id"
-              :label="`${supplier.name} (${supplier.supplier_code})`"
-              :value="supplier.id"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem
-          :label="$t('channels.fields.channelCode')"
-          prop="channel_code"
-        >
-          <ElInput
-            v-model="form.channel_code"
-            :placeholder="$t('channels.placeholders.channelCode')"
-          />
-        </ElFormItem>
-        <ElFormItem :label="$t('channels.fields.name')" prop="name">
-          <ElInput
-            v-model="form.name"
-            :placeholder="$t('channels.placeholders.name')"
-          />
-        </ElFormItem>
-        <ElFormItem
-          :label="$t('channels.fields.pathPrefix')"
-          prop="path_prefix"
-        >
-          <ElInput
-            v-model="form.path_prefix"
-            :placeholder="$t('channels.placeholders.pathPrefix')"
-          />
-        </ElFormItem>
-        <ElFormItem :label="$t('channels.fields.costPrice')">
-          <ElInput
-            v-model="form.cost_price"
-            :placeholder="$t('channels.placeholders.costPrice')"
-          />
-        </ElFormItem>
-        <ElFormItem :label="$t('channels.fields.qpsLimit')">
-          <ElInputNumber v-model="form.qps_limit" :min="0" />
-        </ElFormItem>
-      </ElForm>
-    </EditDialog>
+    <ChannelDetailDrawer
+      ref="detailDrawerRef"
+      v-model="detailVisible"
+      :channel-id="activeChannelId"
+      @edit="openEdit"
+    />
 
     <ImportDialog
       v-model="importVisible"
@@ -183,16 +133,9 @@
 </template>
 
 <script setup lang="ts">
-import CopyableText from "@/components/common/copyable-text/index.vue";
-import { ROLES_BIZ } from "@/utils/ops/roles";
-import { fetchAllPages } from "@/utils/table/fetchAllPages";
-import {
-  ElMessage,
-  ElMessageBox,
-  type FormInstance,
-  type FormRules,
-} from "element-plus";
-import { $t } from "@/locales";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   createChannel,
   deleteChannel,
@@ -201,38 +144,45 @@ import {
   type Channel,
 } from "@/api/route-management";
 import { fetchSuppliers, type Supplier } from "@/api/supplier";
-import EditDialog from "@/components/common/EditDialog.vue";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
-import StatusIndicator from "@/components/common/StatusIndicator.vue";
-import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
-import { channelsCatalog } from "@/list-catalog/common-resources";
-import type { ListFilter } from "@/types/list-query";
+import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import {
   exportResourceCsv,
   runResourceCsvImport,
+  type ColumnConfig,
 } from "@/composables/useResourceCsvImportExport";
 import { useTableSelection } from "@/composables/useTableSelection";
-import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
+import { channelsCatalog } from "@/list-catalog/common-resources";
+import { $t } from "@/locales";
+import { useUserStore } from "@/store/modules/user";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
-import { useRouter } from "vue-router";
+import type { ListFilter } from "@/types/list-query";
+import { ROLES_BIZ } from "@/utils/ops/roles";
+import {
+  formatCostPrice,
+  isValidCostPrice,
+  normalizeCostPriceInput,
+} from "./costPrice";
+import ChannelDetailDrawer from "./modules/ChannelDetailDrawer.vue";
+import ChannelFormDialog from "./modules/ChannelFormDialog.vue";
+
 defineOptions({ name: "UpstreamChannelList" });
-const router = useRouter();
+
 const props = defineProps<{
   activeTab?: string;
 }>();
 
-watch(
-  () => props.activeTab,
-  (val) => {
-    if (val === "channels") {
-      void loadSuppliers();
-    }
-  },
-);
+const { locale } = useI18n();
+const userStore = useUserStore();
+const canWriteBusiness = computed(() => userStore.canWriteBusiness);
+
 type ExportCommand = "page" | "selected";
+
 interface ChannelImportRow extends Record<string, unknown> {
   unique_key: string;
   supplier_code: string;
@@ -243,15 +193,30 @@ interface ChannelImportRow extends Record<string, unknown> {
   qps_limit: number;
   status: string;
 }
+
+interface ChannelExportRow extends Record<string, unknown> {
+  supplier_code: string;
+  channel_code: string;
+  name: string;
+  path_prefix: string;
+  cost_price: string;
+  qps_limit: number;
+  status: string;
+}
+
 const allowedStatuses = new Set(["active", "inactive", "suspended"]);
 const pageRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
-const submitting = ref(false);
-const dialogVisible = ref(false);
+const formVisible = ref(false);
+const editingChannel = ref<Channel | null>(null);
+const detailVisible = ref(false);
+const activeChannelId = ref("");
+const detailDrawerRef = ref<InstanceType<typeof ChannelDetailDrawer> | null>(
+  null,
+);
 const importVisible = ref(false);
+const hasActiveSupplier = ref(false);
 const tableData = ref<Channel[]>([]);
-const suppliers = ref<Supplier[]>([]);
-const formRef = ref<FormInstance>();
 const searchParams = reactive({ q: "" });
 const listFilters = ref<ListFilter[]>([]);
 const pagination = reactive({
@@ -260,102 +225,98 @@ const pagination = reactive({
   total: 0,
 });
 const columns = ref<ColumnOption<Channel>[]>([]);
-const channelColumns: ColumnOption<Channel>[] = [
-  { type: "selection", width: 55 },
-  {
-    prop: "channel_code",
-    useSlot: true,
-    label: $t("channels.fields.channelCode"),
-    minWidth: 100,
-  },
-  { prop: "name", label: $t("channels.fields.name"), minWidth: 120 },
-  {
-    prop: "supplier",
-    label: $t("channels.fields.supplier"),
-    minWidth: 120,
-    useSlot: true,
-  },
-  {
-    prop: "path_prefix",
-    label: $t("channels.fields.pathPrefix"),
-    minWidth: 120,
-    useSlot: true,
-  },
-  { prop: "qps_limit", label: $t("channels.fields.qpsLimit"), width: 90 },
-  {
-    prop: "status",
-    label: $t("common.fields.status"),
-    width: 110,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 170,
-    fixed: "right",
-    useSlot: true,
-  },
-];
-const channelImportColumns: ColumnConfig[] = [
-  {
-    key: "supplier_code",
-    label: $t("channels.fields.supplier"),
-    required: true,
-  },
-  {
-    key: "channel_code",
-    label: $t("channels.fields.channelCode"),
-    required: true,
-  },
-  { key: "name", label: $t("channels.fields.name"), required: true },
-  {
-    key: "path_prefix",
-    label: $t("channels.fields.pathPrefix"),
-    required: true,
-  },
-  {
-    key: "cost_price",
-    label: $t("channels.fields.costPrice"),
-    required: false,
-  },
-  { key: "qps_limit", label: $t("channels.fields.qpsLimit"), required: false },
-  { key: "status", label: $t("common.fields.status"), required: false },
-];
-const channelExportColumns: { key: keyof ChannelExportRow; label: string }[] = [
-  { key: "supplier_code", label: $t("channels.fields.supplier") },
-  { key: "channel_code", label: $t("channels.fields.channelCode") },
-  { key: "name", label: $t("channels.fields.name") },
-  { key: "path_prefix", label: $t("channels.fields.pathPrefix") },
-  { key: "cost_price", label: $t("channels.fields.costPrice") },
-  { key: "qps_limit", label: $t("channels.fields.qpsLimit") },
-  { key: "status", label: $t("common.fields.status") },
-];
-const channelImportRows = ref<Channel[]>([]);
-const channelImportExistingData = computed(() =>
-  channelImportRows.value.map((row) => ({
-    unique_key: `${row.supplier_code}:${row.channel_code}`,
-  })),
-);
+
+const channelColumns = computed<ColumnOption<Channel>[]>(() => {
+  void locale.value;
+  const cols: ColumnOption<Channel>[] = [];
+  if (canWriteBusiness.value) {
+    cols.push({ type: "selection", width: 55 });
+  }
+  cols.push(
+    {
+      prop: "channel_code",
+      useSlot: true,
+      label: $t("channels.fields.channelCode"),
+      minWidth: 112,
+    },
+    {
+      prop: "name",
+      label: $t("channels.fields.name"),
+      minWidth: 120,
+      maxWidth: 280,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: "supplier",
+      label: $t("channels.fields.supplier"),
+      minWidth: 132,
+      maxWidth: 280,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "path_prefix",
+      label: $t("channels.fields.pathPrefix"),
+      minWidth: 110,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "cost_price",
+      label: $t("channels.fields.costPrice"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "qps_limit",
+      label: $t("channels.fields.qpsLimit"),
+      minWidth: 116,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: $t("common.fields.status"),
+      width: 104,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: $t("common.fields.operations"),
+      width: canWriteBusiness.value ? 176 : 96,
+      fixed: "right",
+      useSlot: true,
+    },
+  );
+  return cols;
+});
+
 const getChannelCellText = (columnKey: string, row: Channel) => {
   switch (columnKey) {
     case "channel_code":
-      return row.channel_code || "-";
+      return row.channel_code || "—";
     case "name":
-      return row.name || "-";
+      return row.name || "—";
     case "supplier":
-      return `${row.supplier_name || "-"} (${row.supplier_code || "-"})`;
+      return `${row.supplier_name || "—"} (${row.supplier_code || "—"})`;
     case "path_prefix":
-      return row.path_prefix || "-";
+      return row.path_prefix || "—";
+    case "cost_price":
+      return formatCostPrice(row.cost_price);
     case "qps_limit":
-      return String(row.qps_limit ?? "-");
+      return row.qps_limit === 0
+        ? $t("channels.fields.qpsUnlimited")
+        : String(row.qps_limit ?? "—");
     case "status":
       return $t(`channels.status.${row.status}`);
     case "operations":
-      return `${$t("common.actions.details")} ${$t("common.actions.delete")}`;
+      return canWriteBusiness.value
+        ? `${$t("common.actions.details")} ${$t("channels.actions.edit")} ${$t("common.actions.delete")}`
+        : $t("common.actions.details");
     default:
-      return row.name || row.channel_code || "-";
+      return row.name || row.channel_code || "—";
   }
 };
+
 const getChannelColumnWeight = (columnKey: string) => {
   switch (columnKey) {
     case "channel_code":
@@ -363,17 +324,20 @@ const getChannelColumnWeight = (columnKey: string) => {
     case "name":
       return 1.4;
     case "supplier":
-      return 2;
-    case "path_prefix":
       return 1.8;
+    case "path_prefix":
+      return 1.5;
+    case "cost_price":
+      return 0.9;
     case "qps_limit":
-      return 0.8;
+      return 0.9;
     case "status":
       return 0.8;
     default:
       return 1;
   }
 };
+
 useAdaptiveTableColumns({
   columns,
   containerRef: pageRef,
@@ -382,90 +346,91 @@ useAdaptiveTableColumns({
   getCellText: ({ columnKey, row }) => getChannelCellText(columnKey, row),
   getColumnWeight: ({ columnKey }) => getChannelColumnWeight(columnKey),
 });
+
+const channelImportColumns = computed<ColumnConfig[]>(() => {
+  void locale.value;
+  return [
+    {
+      key: "supplier_code",
+      label: $t("channels.fields.supplier"),
+      required: true,
+    },
+    {
+      key: "channel_code",
+      label: $t("channels.fields.channelCode"),
+      required: true,
+    },
+    { key: "name", label: $t("channels.fields.name"), required: true },
+    {
+      key: "path_prefix",
+      label: $t("channels.fields.pathPrefix"),
+      required: true,
+    },
+    {
+      key: "cost_price",
+      label: $t("channels.fields.costPrice"),
+      required: false,
+    },
+    {
+      key: "qps_limit",
+      label: $t("channels.fields.qpsLimit"),
+      required: false,
+    },
+    { key: "status", label: $t("common.fields.status"), required: false },
+  ];
+});
+
+const channelExportColumns = computed<
+  { key: keyof ChannelExportRow; label: string }[]
+>(() => {
+  void locale.value;
+  return [
+    { key: "supplier_code", label: $t("channels.fields.supplier") },
+    { key: "channel_code", label: $t("channels.fields.channelCode") },
+    { key: "name", label: $t("channels.fields.name") },
+    { key: "path_prefix", label: $t("channels.fields.pathPrefix") },
+    { key: "cost_price", label: $t("channels.fields.costPrice") },
+    { key: "qps_limit", label: $t("channels.fields.qpsLimit") },
+    { key: "status", label: $t("common.fields.status") },
+  ];
+});
+
+const channelImportExistingData = computed(() =>
+  tableData.value.map((row) => ({
+    unique_key: `${row.supplier_code}:${row.channel_code}`,
+  })),
+);
+
 const channelImportFormatHint = computed(() =>
   [
     $t("feedback.import.csvFormatHint"),
     $t("feedback.import.requiredColumns", {
-      columns: channelImportColumns
+      columns: channelImportColumns.value
         .filter((column) => column.required)
         .map((column) => column.key)
         .join(", "),
     }),
   ].join("\n"),
 );
-const form = reactive({
-  supplier_id: "",
-  channel_code: "",
-  name: "",
-  path_prefix: "",
-  cost_price: "0",
-  qps_limit: 0,
-  status: "active",
-});
-const rules: FormRules = {
-  supplier_id: [
-    {
-      required: true,
-      message: $t("channels.validation.supplierRequired"),
-      trigger: "change",
-    },
-  ],
-  channel_code: [
-    {
-      required: true,
-      message: $t("channels.validation.channelCodeRequired"),
-      trigger: "blur",
-    },
-    {
-      pattern: /^[A-Z][A-Z0-9-]*$/,
-      message: $t("channels.validation.channelCodePattern"),
-      trigger: "blur",
-    },
-    {
-      validator: (
-        _rule: unknown,
-        value: unknown,
-        callback: (error?: Error) => void,
-      ) => {
-        const exists = tableData.value.some((c) => c.channel_code === value);
-        if (exists) {
-          callback(new Error($t("channels.validation.channelCodeDuplicate")));
-        } else {
-          callback();
-        }
-      },
-      trigger: "blur",
-    },
-  ],
-  name: [
-    {
-      required: true,
-      message: $t("channels.validation.nameRequired"),
-      trigger: "blur",
-    },
-  ],
-  path_prefix: [
-    {
-      required: true,
-      message: $t("channels.validation.pathPrefixRequired"),
-      trigger: "blur",
-    },
-  ],
-};
+
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.current,
   size: pagination.size,
   total: pagination.total,
 }));
-const canCreateChannel = computed(() => suppliers.value.length > 0);
+
+const canCreateChannel = computed(() => hasActiveSupplier.value);
+
 const hasActiveSearch = computed(
   () => Boolean(searchParams.q.trim()) || listFilters.value.length > 0,
 );
+
 const emptyDescription = computed(() =>
   hasActiveSearch.value
     ? $t("channels.empty.filtered")
     : $t("channels.empty.default"),
 );
+
 const {
   selectedRows,
   handleSelectionChange,
@@ -480,15 +445,7 @@ const {
     void loadData();
   },
 });
-interface ChannelExportRow extends Record<string, unknown> {
-  supplier_code: string;
-  channel_code: string;
-  name: string;
-  path_prefix: string;
-  cost_price: string;
-  qps_limit: number;
-  status: string;
-}
+
 const exportItems = computed(() => [
   {
     command: "page",
@@ -503,37 +460,35 @@ const exportItems = computed(() => [
     disabled: selectedRows.value.length === 0,
   },
 ]);
-const resetForm = () => {
-  Object.assign(form, {
-    supplier_id: "",
-    channel_code: "",
-    name: "",
-    path_prefix: "",
-    cost_price: "0",
-    qps_limit: 0,
-    status: "active",
-  });
-  formRef.value?.clearValidate();
-};
+
 const normalizeStatus = (status?: string) => {
   const value = status?.trim().toLowerCase();
   return value && allowedStatuses.has(value) ? value : "active";
 };
+
 const normalizeNumber = (value?: string) => {
   if (!value?.trim()) {
     return 0;
   }
   const num = Number(value);
-  return Number.isFinite(num) ? num : NaN;
+  return Number.isInteger(num) && num >= 0 ? num : NaN;
 };
+
 const validateChannelImportRow = (row: Record<string, string>) => {
   if (!row.supplier_code?.trim()) {
     return { valid: false, reason: $t("channels.validation.supplierRequired") };
   }
-  if (!row.channel_code?.trim()) {
+  const code = row.channel_code?.trim() ?? "";
+  if (!code) {
     return {
       valid: false,
       reason: $t("channels.validation.channelCodeRequired"),
+    };
+  }
+  if (!/^[A-Z][A-Z0-9-]*$/.test(code)) {
+    return {
+      valid: false,
+      reason: $t("channels.validation.channelCodePattern"),
     };
   }
   if (!row.name?.trim()) {
@@ -543,6 +498,13 @@ const validateChannelImportRow = (row: Record<string, string>) => {
     return {
       valid: false,
       reason: $t("channels.validation.pathPrefixRequired"),
+    };
+  }
+  const rawPrice = row.cost_price?.trim();
+  if (rawPrice && !isValidCostPrice(rawPrice)) {
+    return {
+      valid: false,
+      reason: $t("channels.validation.costPricePattern"),
     };
   }
   const rawStatus = row.status?.trim();
@@ -559,58 +521,43 @@ const validateChannelImportRow = (row: Record<string, string>) => {
       reason: `${$t("channels.fields.qpsLimit")}: ${row.qps_limit}`,
     };
   }
-  const supplier = suppliers.value.find(
-    (item) => item.supplier_code === row.supplier_code.trim(),
-  );
-  if (!supplier) {
-    return {
-      valid: false,
-      reason: `${$t("channels.fields.supplier")}: ${row.supplier_code}`,
-    };
-  }
   return { valid: true };
 };
+
 const transformChannelImportRow = (
   row: Record<string, string>,
 ): ChannelImportRow => {
   const supplierCode = row.supplier_code.trim();
+  const rawPrice = row.cost_price?.trim();
   return {
     unique_key: `${supplierCode}:${row.channel_code.trim()}`,
     supplier_code: supplierCode,
     channel_code: row.channel_code.trim(),
     name: row.name.trim(),
     path_prefix: row.path_prefix.trim(),
-    cost_price: row.cost_price?.trim() || "0",
+    cost_price: rawPrice ? normalizeCostPriceInput(rawPrice) : "0.00",
     qps_limit: normalizeNumber(row.qps_limit) || 0,
     status: normalizeStatus(row.status),
   };
 };
-const resolveSupplier = (supplierCode: string) =>
-  suppliers.value.find((item) => item.supplier_code === supplierCode);
-const loadSuppliers = async () => {
+
+const checkHasActiveSupplier = async () => {
+  if (!canWriteBusiness.value) {
+    hasActiveSupplier.value = false;
+    return;
+  }
   try {
-    suppliers.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchSuppliers({
-        status: "active",
-        page,
-        page_size: pageSize,
-      });
-      return { items: res.suppliers, total: res.pagination.total };
+    const res = await fetchSuppliers({
+      status: "active",
+      page: 1,
+      page_size: 1,
     });
+    hasActiveSupplier.value = (res.pagination?.total ?? 0) > 0;
   } catch {
-    suppliers.value = [];
+    hasActiveSupplier.value = false;
   }
 };
-const loadChannelImportRows = async () => {
-  try {
-    channelImportRows.value = await fetchAllPages(async (page, pageSize) => {
-      const res = await fetchChannels({ page, page_size: pageSize });
-      return { items: res.channels, total: res.pagination.total };
-    });
-  } catch {
-    channelImportRows.value = tableData.value;
-  }
-};
+
 const loadData = async () => {
   await runWithLoading(loading, async () => {
     const res = await fetchChannels({
@@ -626,21 +573,24 @@ const loadData = async () => {
     clearSelection();
   });
 };
+
 const handleSizeChange = (size: number) => {
   pagination.size = size;
   pagination.current = 1;
   clearSelection();
-  loadData();
+  void loadData();
 };
+
 const handleCurrentChange = (page: number) => {
   pagination.current = page;
   clearSelection();
-  loadData();
+  void loadData();
 };
+
 const handleSearch = () => {
   pagination.current = 1;
   clearSelection();
-  loadData();
+  void loadData();
 };
 
 const handleExportCommand = (command: string) => {
@@ -654,41 +604,44 @@ const handleExportCommand = (command: string) => {
     channel_code: row.channel_code,
     name: row.name,
     path_prefix: row.path_prefix,
-    cost_price: row.cost_price || "0",
+    cost_price: formatCostPrice(row.cost_price),
     qps_limit: row.qps_limit,
     status: row.status,
   }));
   exportResourceCsv(
     csvRows,
-    channelExportColumns,
+    channelExportColumns.value,
     `channels-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
+
 const openCreate = async () => {
-  await loadSuppliers();
+  await checkHasActiveSupplier();
   if (!canCreateChannel.value) {
     ElMessage.warning($t("channels.messages.createSupplierFirst"));
     return;
   }
-  resetForm();
-  dialogVisible.value = true;
+  editingChannel.value = null;
+  formVisible.value = true;
 };
+
+const openEdit = (row: Channel) => {
+  editingChannel.value = row;
+  formVisible.value = true;
+};
+
 const handleView = (row: Channel) => {
-  router.push({ name: "ChannelDetail", params: { id: row.id } });
+  activeChannelId.value = row.id;
+  detailVisible.value = true;
 };
-const submitForm = async () => {
-  const valid = await formRef.value?.validate().catch(() => false);
-  if (!valid) {
-    return;
+
+const handleFormSuccess = () => {
+  void loadData();
+  if (detailVisible.value && activeChannelId.value) {
+    void detailDrawerRef.value?.reload();
   }
-  await runWithLoading(submitting, async () => {
-    const { status: _status, ...payload } = form;
-    await createChannel(payload);
-    dialogVisible.value = false;
-    ElMessage.success($t("common.feedback.saveSuccess"));
-    loadData();
-  });
 };
+
 const handleDelete = async (row: Channel) => {
   await ElMessageBox.confirm(
     $t("channels.messages.deleteConfirm", { name: row.name }),
@@ -697,20 +650,53 @@ const handleDelete = async (row: Channel) => {
   );
   await deleteChannel(row.id);
   ElMessage.success($t("common.feedback.deleteSuccess"));
-  loadData();
+  if (activeChannelId.value === row.id) {
+    detailVisible.value = false;
+  }
+  void loadData();
 };
+
+const resolveSupplierByCode = async (
+  supplierCode: string,
+  cache: Map<string, Supplier>,
+): Promise<Supplier | undefined> => {
+  const cached = cache.get(supplierCode);
+  if (cached) {
+    return cached;
+  }
+  const res = await fetchSuppliers({
+    status: "active",
+    page: 1,
+    page_size: 20,
+    q: supplierCode,
+  });
+  const match = (res.suppliers ?? []).find(
+    (item) => item.supplier_code === supplierCode,
+  );
+  if (match) {
+    cache.set(supplierCode, match);
+  }
+  return match;
+};
+
 const handleChannelImport = async (items: Record<string, unknown>[]) => {
+  const supplierCache = new Map<string, Supplier>();
   await runResourceCsvImport<ChannelImportRow>(items, async (row) => {
-    const supplier = resolveSupplier(row.supplier_code);
+    const supplier = await resolveSupplierByCode(
+      row.supplier_code,
+      supplierCache,
+    );
     if (!supplier) {
-      throw new Error("supplier not found");
+      throw new Error(
+        `${$t("channels.fields.supplier")}: ${row.supplier_code}`,
+      );
     }
     const created = await createChannel({
       supplier_id: supplier.id,
       channel_code: row.channel_code,
       name: row.name,
       path_prefix: row.path_prefix,
-      cost_price: row.cost_price || "0",
+      cost_price: row.cost_price || "0.00",
       qps_limit: row.qps_limit,
     });
     if (row.status !== "active") {
@@ -718,34 +704,35 @@ const handleChannelImport = async (items: Record<string, unknown>[]) => {
     }
   });
 };
+
 const openImport = async () => {
-  await loadSuppliers();
+  await checkHasActiveSupplier();
   if (!canCreateChannel.value) {
     ElMessage.warning($t("channels.messages.createSupplierFirst"));
     return;
   }
-  await loadChannelImportRows();
   importVisible.value = true;
 };
+
+watch(
+  () => props.activeTab,
+  (val) => {
+    if (val === "channels") {
+      void checkHasActiveSupplier();
+    }
+  },
+);
+
 onMounted(() => {
-  loadData();
-  loadSuppliers();
+  void loadData();
+  void checkHasActiveSupplier();
 });
+
+defineExpose({ loadData, checkHasActiveSupplier });
 </script>
 
 <style scoped lang="scss">
-.channel-action-trigger {
-  display: inline-block;
-}
-
-.qps-limit-field {
-  width: 100%;
-
-  .field-hint {
-    margin: 6px 0 0;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--el-text-color-secondary);
-  }
+.channel-page {
+  padding: 0;
 }
 </style>

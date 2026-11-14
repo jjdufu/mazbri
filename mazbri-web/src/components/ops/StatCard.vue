@@ -18,15 +18,16 @@
         unit
       }}</span>
     </div>
-    <span v-if="hint" class="ops-stat-card__hint" :title="hint">{{
-      hint
-    }}</span>
+    <template v-if="hint" #footer>
+      <span class="ops-stat-card__hint" :title="hint">{{ hint }}</span>
+    </template>
   </MetricSummaryCard>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import MetricSummaryCard from "@/components/common/metric-summary-card/index.vue";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 
 const emit = defineEmits<{ click: [MouseEvent] }>();
 
@@ -43,7 +44,7 @@ const props = withDefaults(
     /** 可下钻时显示指针；无交互时不冒充可点。 */
     interactive?: boolean;
     digits?: number;
-    /** 值为空时展示文案（默认 N/A） */
+    /** 值为空时展示文案（默认 —） */
     emptyText?: string;
   }>(),
   {
@@ -56,7 +57,7 @@ const props = withDefaults(
     loading: false,
     interactive: false,
     digits: 2,
-    emptyText: "N/A",
+    emptyText: EMPTY_PLACEHOLDER,
   },
 );
 
@@ -113,9 +114,10 @@ function onCardClick(event: MouseEvent) {
 }
 .ops-stat-card__hint {
   display: block;
-  margin-top: 4px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

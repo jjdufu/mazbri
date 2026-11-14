@@ -13,6 +13,7 @@ use std::time::Duration;
 pub const CONFIG_CHANGED_CHANNEL: &str = "mazbri_config_changed";
 pub const PRODUCT_DETAIL_VERSION_KEY: &str = "product_detail_version";
 pub const AUTH_WHITELIST_VERSION_KEY: &str = "auth_whitelist_version";
+pub const AUTH_API_KEY_VERSION_KEY: &str = "auth_api_key_version";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,6 +95,54 @@ pub async fn fetch_config_version(pool: &PgPool, key: &str) -> Result<Option<i64
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|row| row.get("version")))
+}
+
+/// 幂等补齐版本表初始种子行（适用于不重跑 `init-dbs` 的运行态热升级环境）。
+///
+/// # Errors
+///
+/// 数据库写入失败时返回错误。
+pub async fn ensure_config_version_seeded(pool: &PgPool, key: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO route_sync_metadata (key, version, updated_at)
+        VALUES ($1, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (key) DO NOTHING
+        ",
+    )
+    .bind(key)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// 幂等递增配置版本号并发送 `pg_notify` 广播唤醒监听进程。
+///
+/// 若目标行尚不存在则直接写入版本 `2`（与已按初始版本 `1` 对齐的监听端形成版本跳变）。
+///
+/// # Errors
+///
+/// 数据库写入或通知发送失败时返回错误。
+pub async fn bump_config_version_and_notify(pool: &PgPool, key: &str) -> Result<i64, sqlx::Error> {
+    let version: i64 = sqlx::query_scalar(
+        r"
+        INSERT INTO route_sync_metadata (key, version, updated_at)
+        VALUES ($1, 2, CURRENT_TIMESTAMP)
+        ON CONFLICT (key) DO UPDATE
+        SET version = route_sync_metadata.version + 1,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING version
+        ",
+    )
+    .bind(key)
+    .fetch_one(pool)
+    .await?;
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(CONFIG_CHANGED_CHANNEL)
+        .bind(key)
+        .execute(pool)
+        .await?;
+    Ok(version)
 }
 
 pub fn spawn_config_watch<F, Fut>(

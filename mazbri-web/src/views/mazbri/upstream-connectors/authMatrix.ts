@@ -34,7 +34,7 @@ export const AUTH_PROFILES = [
   "hawk",
 ] as const;
 
-export const AUTH_PICKER_IDS = ["inherit", ...AUTH_PROFILES] as const;
+export const AUTH_PICKER_IDS = ["inherit", "skip", ...AUTH_PROFILES] as const;
 
 export type AuthPickerId = (typeof AUTH_PICKER_IDS)[number];
 export type AuthProfileId = (typeof AUTH_PROFILES)[number];
@@ -56,6 +56,7 @@ export function authFieldGroup(picker: AuthPickerId): AuthFieldGroup {
   switch (picker) {
     case "none":
     case "inherit":
+    case "skip":
       return "empty";
     case "basic":
       return "basic";
@@ -83,10 +84,29 @@ export function authFieldGroup(picker: AuthPickerId): AuthFieldGroup {
   }
 }
 
-export function visibleAuthPickers(flowEnabled: boolean): AuthPickerId[] {
+export function sessionProfileLabel(profile: string | undefined | null): string {
+  const p = String(profile || "").trim();
+  if (!p || p === "none" || p === "skip") return "";
+  return p;
+}
+
+export function isSessionHttpAuthActive(
+  flowEnabled: boolean,
+  sessionProfile?: string | null,
+): boolean {
+  if (!flowEnabled) return false;
+  if (sessionProfile === undefined) return true;
+  return Boolean(sessionProfileLabel(sessionProfile));
+}
+
+export function visibleAuthPickers(
+  flowEnabled: boolean,
+  sessionProfile?: string | null,
+): AuthPickerId[] {
+  const active = isSessionHttpAuthActive(flowEnabled, sessionProfile);
   return AUTH_PICKER_IDS.filter((id) => {
-    if (id === "inherit") return flowEnabled;
-    if (id === "none") return !flowEnabled;
+    if (id === "inherit" || id === "skip") return active;
+    if (id === "none") return !active;
     return true;
   });
 }
@@ -94,24 +114,22 @@ export function visibleAuthPickers(flowEnabled: boolean): AuthPickerId[] {
 export function authPickerFromState(
   profile: string | undefined | null,
   flowEnabled: boolean,
+  sessionProfile?: string | null,
 ): AuthPickerId {
+  const active = isSessionHttpAuthActive(flowEnabled, sessionProfile);
   const p = String(profile || "none").trim() || "none";
-  if (p === "none") return flowEnabled ? "inherit" : "none";
+  if (p === "skip") return active ? "skip" : "none";
+  if (p === "none") return active ? "inherit" : "none";
   if ((AUTH_PROFILES as readonly string[]).includes(p) && p !== "none") {
     return p as AuthPickerId;
   }
-  return flowEnabled ? "inherit" : "none";
+  return active ? "inherit" : "none";
 }
 
 export function authProfileFromPicker(picker: AuthPickerId): string {
   if (picker === "inherit" || picker === "none") return "none";
+  if (picker === "skip") return "skip";
   return picker;
-}
-
-export function sessionProfileLabel(profile: string | undefined | null): string {
-  const p = String(profile || "").trim();
-  if (!p || p === "none") return "";
-  return p;
 }
 
 export function ensureCredentialKeys(
@@ -220,6 +238,12 @@ export function sanitizeAuthSpec(spec: AuthSpecDraft | null | undefined): AuthSp
   const profile = String(spec.profile || "none").trim() || "none";
   if (profile === "none" || profile === "") return null;
   const out: AuthSpecDraft = { profile };
+  if (profile === "skip") {
+    if (spec.invalidation && typeof spec.invalidation === "object") {
+      out.invalidation = spec.invalidation;
+    }
+    return out;
+  }
   const copyIf = (key: string) => {
     if (spec[key] != null && !emptyStr(spec[key])) out[key] = spec[key];
   };

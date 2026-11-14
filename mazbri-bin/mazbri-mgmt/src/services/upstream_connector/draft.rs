@@ -161,7 +161,7 @@ pub async fn update_draft(
 }
 
 /// Persist workbench JSON without publish-time semantic checks (`token_url`, SSRF, …).
-fn config_json_for_draft(
+pub(super) fn config_json_for_draft(
     raw: &serde_json::Value,
     existing: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, ApiError> {
@@ -188,7 +188,7 @@ fn config_json_for_draft(
         .map_err(|e| ApiError::validation(e.to_string()))
 }
 
-async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<DraftDto, ApiError> {
+pub(super) async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<DraftDto, ApiError> {
     let env = parse_workbench_env(&row.workbench_env);
     let cfg = SupplierConfig::parse_and_validate(&row.config).ok();
     let recent = repo::list_recent_gate_runs(pool, row.id, GATE_TTL_HOURS)

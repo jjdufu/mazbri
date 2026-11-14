@@ -40,6 +40,7 @@ import { importConfigs, updateConfig } from "@/api/config-center";
 import EditDialog from "@/components/common/EditDialog.vue";
 import FilePicker from "@/components/common/file-picker/index.vue";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
 
 interface Props {
@@ -113,6 +114,9 @@ const handleImport = async () => {
           imported++;
         }
       } catch (error: unknown) {
+        if (isMfaStepUpCancelled(error)) {
+          return;
+        }
         failed++;
         const apiError = error as {
           message?: string;

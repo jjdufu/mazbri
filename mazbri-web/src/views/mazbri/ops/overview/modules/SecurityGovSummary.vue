@@ -17,7 +17,7 @@
           >
             <span class="sec-gov__left">
               <span class="sec-gov__rank" :data-top="idx < 3">{{ idx + 1 }}</span>
-              <span class="sec-gov__dim">{{ row.dim_value || "N/A" }}</span>
+              <span class="sec-gov__dim">{{ row.dim_value || EMPTY_PLACEHOLDER }}</span>
             </span>
             <span class="sec-gov__fails">{{ row.fail_count }}</span>
           </button>
@@ -46,7 +46,7 @@
           >
             <span class="sec-gov__left">
               <span class="sec-gov__rank" :data-top="idx < 3">{{ idx + 1 }}</span>
-              <span class="sec-gov__dim">{{ row.dim_value || "N/A" }}</span>
+              <span class="sec-gov__dim">{{ row.dim_value || EMPTY_PLACEHOLDER }}</span>
             </span>
             <span class="sec-gov__fails">{{ row.fail_count }}</span>
           </button>
@@ -68,6 +68,7 @@ import { useRouter } from "vue-router";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import EmptyState from "@/components/common/empty-state/index.vue";
 import { postOlapQuery } from "@/api/olap";
+import { EMPTY_PLACEHOLDER } from "@/utils/format";
 import { buildCallsRoute } from "@/utils/ops/opsRoutes";
 import { logger } from "@/utils/sys";
 

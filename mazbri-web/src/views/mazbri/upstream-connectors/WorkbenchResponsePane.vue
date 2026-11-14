@@ -31,7 +31,7 @@
 
     <template v-else>
       <ElTabs v-model="tab" class="wb-res__tabs">
-        <ElTabPane :label="$t('upstreamConnector.bodyTab')" name="body">
+        <ElTabPane :label="$t('upstreamConnector.responseBodyTab')" name="body">
           <div class="wb-res__body">
             <div class="wb-res__body-bar">
               <button
@@ -177,8 +177,15 @@ const rawBody = computed(() => {
   if (body.trim()) return body;
   return engineErrorText.value;
 });
+const responseContentType = computed(() => {
+  const hdrs = view.value.headers || {};
+  for (const [k, v] of Object.entries(hdrs)) {
+    if (k.toLowerCase() === "content-type") return v;
+  }
+  return "";
+});
 const bodyKind = computed(() =>
-  detectResponseBodyKind(rawBody.value, props.adapter),
+  detectResponseBodyKind(rawBody.value, props.adapter, responseContentType.value),
 );
 const parsedJson = computed(() => tryParseJsonValue(rawBody.value));
 const jsonTooLarge = computed(
@@ -201,7 +208,7 @@ const rawText = computed(() => displayBody.value);
 const rawLang = computed(() => {
   if (bodyKind.value === "xml") return "XML";
   if (bodyKind.value === "json") return "JSON";
-  return "JSON";
+  return "TEXT";
 });
 const bodyBytes = computed(() => byteSizeOf(rawBody.value));
 const downloadName = computed(() => {
@@ -219,12 +226,18 @@ const asserts = computed(() =>
 );
 
 const STAGE_I18N: Record<string, string> = {
-  validate: "validate",
-  ssrf: "ssrf",
-  auth: "auth",
-  request_transform: "request_transform",
-  upstream: "upstream",
-  response_transform: "response_transform",
+  validate: "校验",
+  ssrf: "SSRF 安全校验",
+  auth: "鉴权",
+  request_transform: "请求变换",
+  crypto_encrypt: "请求加签加密",
+  upstream: "上游调用",
+  crypto_decrypt: "响应验签解密",
+  response_transform: "响应变换",
+  assertions: "响应断言",
+  bypass_mgmt_probe: "管理探针直连",
+  validate_contract: "契约校验",
+  tcp_connect: "TCP 连通性",
 };
 
 function stageLabel(name: string) {

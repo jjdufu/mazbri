@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
-use super::{ApiError, DraftGateItem, inherit_requires_session_profile, merge_auth_from_supplier};
+use super::{ApiError, DraftGateItem, merge_auth_from_supplier};
 
 /// PR2: leftover workbench `{{ident}}` on `WORKBENCH_ENV_SURFACE` is 4xx.
 const FAIL_ON_UNRESOLVED_VARS: bool = true;
@@ -472,10 +472,6 @@ fn assemble_spec(
     let spec = spec_json_from_endpoint(ep, upstream_url)?;
     let mut spec: ChannelEgressSpec = serde_json::from_value(spec)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    let ep_profile = spec.auth.as_ref().map_or("", |a| a.profile.as_str());
-    if inherit_requires_session_profile(supplier, Some(ep_profile)) {
-        return Err(ApiError::validation("请设置会话鉴权类型".to_string()));
-    }
     if let Some(cfg) = supplier {
         merge_auth_from_supplier(&mut spec, cfg);
     }
@@ -491,9 +487,15 @@ fn strip_inject_key(spec: &mut ChannelEgressSpec, supplier: Option<&SupplierConf
         .auth
         .as_ref()
         .and_then(|a| mazbri_core::AuthProfile::parse(&a.profile).ok());
+    if matches!(profile, Some(mazbri_core::AuthProfile::Skip)) {
+        return;
+    }
     let flow = supplier
         .and_then(|c| c.auth_flow.as_ref())
         .filter(|f| f.enabled);
+    if spec.auth.is_none() && flow.is_none() {
+        return;
+    }
     let inject_key = spec
         .auth
         .as_ref()
@@ -1323,18 +1325,43 @@ mod tests {
     }
 
     #[test]
-    fn inherit_without_session_profile_is_rejected() {
-        let ep = serde_json::json!({ "method": "GET", "path": "/", "body_encoding": "json" });
-        let cfg = SupplierConfig {
+    fn inherit_vault_only_session_allows_no_http_auth_and_skip_bypasses_session() {
+        let ep = serde_json::json!({ "method": "POST", "path": "/sm4", "body_encoding": "json" });
+        let vault_only_cfg = SupplierConfig {
             auth_flow: Some(AuthFlowConfig {
                 enabled: true,
+                credentials: HashMap::from([("crypto_data_key".into(), "secret".into())]),
                 ..Default::default()
             }),
             ..Default::default()
         };
-        let err = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
-            .expect_err("inherit without profile");
-        assert!(err.to_string().contains("请设置会话鉴权类型"), "{err}");
+        let built = build_workbench_spec(&ep, &empty_env(), Some(&vault_only_cfg), "https://up.example")
+            .expect("vault-only session must not deadlock on session auth profile");
+        assert!(built.spec.auth.is_none());
+
+        let skip_ep = serde_json::json!({
+            "method": "GET",
+            "path": "/public-health",
+            "body_encoding": "json",
+            "auth": { "profile": "skip" }
+        });
+        let oauth_cfg = SupplierConfig {
+            auth_flow: Some(AuthFlowConfig {
+                enabled: true,
+                profile: Some("oauth_cc_form".into()),
+                token_url: "https://idp.example/token".into(),
+                inject_key: "Authorization".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let skipped = build_workbench_spec(&skip_ep, &empty_env(), Some(&oauth_cfg), "https://up.example")
+            .expect("skip endpoint must bypass session oauth");
+        assert_eq!(
+            skipped.spec.auth.as_ref().map(|a| a.profile.as_str()),
+            Some("skip")
+        );
+        assert!(skipped.spec.auth.as_ref().unwrap().token_url.is_none());
     }
 
     #[test]
@@ -1375,5 +1402,31 @@ mod tests {
         let auth = built.spec.auth.expect("auth");
         assert_eq!(auth.profile, "basic");
         assert!(auth.token_url.is_none());
+    }
+
+    #[test]
+    fn custom_authorization_header_preserved_when_http_auth_disabled() {
+        let ep = serde_json::json!({
+            "method": "GET",
+            "path": "/custom-auth",
+            "body_encoding": "json",
+            "headers": {
+                "Authorization": "CustomScheme tok-123",
+                "X-Trace": "t1"
+            }
+        });
+        let built = build_workbench_spec(&ep, &empty_env(), None, "https://up.example")
+            .expect("build without auth");
+        assert!(built.spec.auth.is_none());
+        assert_eq!(
+            built
+                .spec
+                .request
+                .headers
+                .as_ref()
+                .and_then(|h| h.get("Authorization"))
+                .map(String::as_str),
+            Some("CustomScheme tok-123")
+        );
     }
 }

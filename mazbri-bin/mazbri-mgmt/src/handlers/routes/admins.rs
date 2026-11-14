@@ -26,10 +26,6 @@ pub fn routes() -> Router<AppState> {
             put(admin_management::set_admin_status),
         )
         .route(
-            "/admins/{id}/force-password-reset",
-            put(admin_management::force_password_reset),
-        )
-        .route(
             "/admins/{id}/reset-mfa",
             post(admin_management::reset_admin_mfa),
         )

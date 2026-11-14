@@ -7,6 +7,7 @@ const UNIT_KEYS: Record<string, string> = {
   "ops/s": "ops.units.perSec",
   tps: "ops.units.perSec",
   count: "ops.units.times",
+  cores: "ops.units.cores",
   s: "ops.units.seconds",
   days: "ops.units.days",
   ms: "ops.units.ms",

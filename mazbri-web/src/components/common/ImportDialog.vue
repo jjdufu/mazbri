@@ -172,7 +172,7 @@ interface Props {
 
   formatHint?: string;
   uniqueKey: string;
-  existingData: Record<string, unknown>[];
+  existingData?: Record<string, unknown>[];
   validator?: (row: Record<string, string>) => {
     valid: boolean;
     reason?: string;
@@ -185,6 +185,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   formatHint: "",
+  existingData: () => [],
   validator: undefined,
 });
 const emit = defineEmits<{

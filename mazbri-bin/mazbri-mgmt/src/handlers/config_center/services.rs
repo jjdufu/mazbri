@@ -29,13 +29,24 @@ pub async fn list_services(
     ))
 }
 
-/// 规范服务名单一真源：前端选择器与配置中心均以此为准。
-pub async fn list_canonical_service_names() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+fn canonical_service_names_value() -> serde_json::Value {
+    serde_json::json!({
         "services": mazbri_core::ServiceName::all_names(),
         "mtls_services": mazbri_core::ServiceName::mtls_names(),
         "global": mazbri_core::GLOBAL_CONFIG_NAME,
-    }))
+    })
+}
+
+/// 规范服务名单一真源：前端选择器与配置中心均以此为准（仅超级管理员可访问）。
+///
+/// # Errors
+///
+/// 非超级管理员访问时返回 `ApiError::Forbidden`。
+pub async fn list_canonical_service_names(
+    Extension(claims): Extension<AdminClaims>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    super::require_config_admin(&claims)?;
+    Ok(Json(canonical_service_names_value()))
 }
 
 #[cfg(test)]
@@ -43,9 +54,9 @@ mod tests {
     use super::*;
     use mazbri_core::{CANONICAL_SERVICES, GLOBAL_CONFIG_NAME};
 
-    #[tokio::test]
-    async fn canonical_names_match_core_order() {
-        let Json(body) = list_canonical_service_names().await;
+    #[test]
+    fn canonical_names_match_core_order() {
+        let body = canonical_service_names_value();
         let names: Vec<&str> = body["services"]
             .as_array()
             .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())

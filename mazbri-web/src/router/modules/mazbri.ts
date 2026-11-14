@@ -1,7 +1,7 @@
 import type { AppRouteRecord } from "@/types/router";
 import {
   RUNTIME_PATH,
-  TRACES_PATH,
+  TRAFFIC_PATH,
 } from "@/utils/ops/opsRoutes";
 export const mazbriRoutes: AppRouteRecord[] = [
   {
@@ -15,19 +15,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
       isHide: true,
       keepAlive: false,
       roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-    },
-  },
-  {
-    path: "/finance/overview",
-    name: "FinanceOverview",
-    component: "/mazbri/ops/finance/index",
-    meta: {
-      title: "menus.mazbri.financeOverview",
-      icon: "ri:line-chart-line",
-      order: 2,
-      isHide: true,
-      keepAlive: false,
-      roles: ["R_ADMIN", "R_FINANCE"],
     },
   },
   {
@@ -61,7 +48,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:building-line",
           isHide: true,
           activePath: "/operations/tenants",
-          keepAlive: true,
+          keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
@@ -85,7 +72,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:apps-line",
           isHide: true,
           activePath: "/operations/product-authorization",
-          keepAlive: true,
+          keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
         },
       },
@@ -128,45 +115,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "upstream-supply/suppliers/:id/edit",
-        name: "SupplierEdit",
-        component: "/mazbri/suppliers/[id]/edit",
-        meta: {
-          title: "supplier.form.editTitle",
-          icon: "ri:building-4-line",
-          isHide: true,
-          activePath: "/operations/upstream-supply",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
-        path: "upstream-supply/channels/:id",
-        name: "ChannelDetail",
-        component: "/mazbri/channels/[id]/index",
-        meta: {
-          title: "channels.detail.pageTitle",
-          icon: "ri:building-4-line",
-          isHide: true,
-          activePath: "/operations/upstream-supply",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "upstream-supply/channels/:id/edit",
-        name: "ChannelEdit",
-        component: "/mazbri/channels/[id]/edit",
-        meta: {
-          title: "channels.dialog.editTitle",
-          icon: "ri:building-4-line",
-          isHide: true,
-          activePath: "/operations/upstream-supply",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      {
         path: "callbacks",
         name: "CallbackMonitor",
         component: "/mazbri/operations/callbacks/index",
@@ -182,7 +130,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
         name: "BillList",
         component: "/mazbri/billing/bills/index",
         meta: {
-          title: "menus.mazbri.billList",
+          title: "menus.mazbri.billsAndReconciliation",
           icon: "ri:file-list-3-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
@@ -202,25 +150,14 @@ export const mazbriRoutes: AppRouteRecord[] = [
     },
     children: [
       {
-        path: "calls",
-        name: "OpsCalls",
-        component: "/mazbri/ops/calls/index",
+        path: "traffic",
+        name: "OpsTraffic",
+        component: "/mazbri/ops/traffic/index",
         meta: {
-          title: "menus.mazbri.opsCalls",
-          icon: "ri:search-eye-line",
+          title: "menus.mazbri.opsTraffic",
+          icon: "ri:route-line",
           keepAlive: false,
           roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
-        path: "traces",
-        name: "OpsTraces",
-        component: "/mazbri/ops/traces/search",
-        meta: {
-          title: "menus.mazbri.opsTraces",
-          icon: "ri:node-tree",
-          keepAlive: false,
-          roles: ["R_ADMIN"],
         },
       },
       {
@@ -231,7 +168,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.opsTraceDetail",
           icon: "ri:node-tree",
           isHide: true,
-          activePath: TRACES_PATH,
+          activePath: TRAFFIC_PATH,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },
@@ -259,30 +196,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "billing",
-        name: "OpsBilling",
-        component: "/mazbri/ops/billing/index",
-        meta: {
-          title: "menus.mazbri.opsBilling",
-          icon: "ri:bill-line",
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE"],
-        },
-      },
-      // 旧书签临时 redirect（非业务双实现）；侧栏不可见
-      {
-        path: "services",
-        name: "OpsServicesRedirect",
-        redirect: { path: "/ops/runtime", query: { tab: "apps" } },
-        meta: {
-          title: "menus.mazbri.opsRuntime",
-          icon: "ri:heart-pulse-line",
-          isHide: true,
-          keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
-        },
-      },
-      {
         path: "services/:service",
         name: "OpsServiceDetail",
         component: "/mazbri/ops/services/detail",
@@ -291,18 +204,6 @@ export const mazbriRoutes: AppRouteRecord[] = [
           icon: "ri:heart-pulse-line",
           isHide: true,
           activePath: RUNTIME_PATH,
-          keepAlive: false,
-          roles: ["R_ADMIN"],
-        },
-      },
-      {
-        path: "infra",
-        name: "OpsInfraRedirect",
-        redirect: { path: "/ops/runtime", query: { tab: "middleware" } },
-        meta: {
-          title: "menus.mazbri.opsRuntime",
-          icon: "ri:server-line",
-          isHide: true,
           keepAlive: false,
           roles: ["R_ADMIN"],
         },

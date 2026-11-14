@@ -66,6 +66,10 @@ impl AuthTarpcService {
         Arc::clone(self.auth_service.ip_whitelist())
     }
 
+    pub fn api_key_validator(&self) -> Arc<mazbri_auth::ApiKeyValidator> {
+        Arc::clone(self.auth_service.api_key_validator())
+    }
+
     async fn get_tenant_context_from_db(
         &self,
         tenant_id: &str,

@@ -11,10 +11,16 @@ import {
 import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
 import {
   HSPLIT_DEFAULT_LEFT,
+  SPLIT_DEFAULT_RATIO,
+  SPLIT_DEFAULT_RIGHT,
   VSPLIT_DEFAULT_BOTTOM,
+  autoChannelsFromEndpoints,
+  detectResponseBodyKind,
   ensureEndpointAdapterFields,
+  isPersistedDraftId,
   listMissingAdapterFields,
   parseHSplitState,
+  parseSplitLayoutState,
   parseVSplitState,
 } from "../workbenchHelpers";
 import type { ConnectorEndpoint } from "@/api/upstream-connectors";
@@ -23,6 +29,7 @@ import type { ConnectorEndpoint } from "@/api/upstream-connectors";
 const groups: Record<string, string> = {
   none: "empty",
   inherit: "empty",
+  skip: "empty",
   basic: "basic",
   api_key: "api_key",
   oauth_cc_form: "ticket",
@@ -41,10 +48,13 @@ for (const id of AUTH_PICKER_IDS) {
 }
 
 assert.equal(authProfileFromPicker("inherit"), "none");
+assert.equal(authProfileFromPicker("skip"), "skip");
 assert.equal(authProfileFromPicker("basic"), "basic");
-assert.equal(authPickerFromState("none", true), "inherit");
+assert.equal(authPickerFromState("none", true, "bearer"), "inherit");
+assert.equal(authPickerFromState("none", true, "none"), "none");
+assert.equal(authPickerFromState("skip", true, "bearer"), "skip");
 assert.equal(authPickerFromState("none", false), "none");
-assert.equal(authPickerFromState("basic", true), "basic");
+assert.equal(authPickerFromState("basic", true, "bearer"), "basic");
 
 const flow = {
   enabled: false,
@@ -91,6 +101,9 @@ assert.equal(sanitizedBasic?.token_url, undefined);
 assert.equal(sanitizedBasic?.inject, undefined);
 
 assert.equal(sanitizeAuthSpec({ profile: "none", token_url: "https://x" }), null);
+assert.deepEqual(sanitizeAuthSpec({ profile: "skip", token_url: "https://x" }), {
+  profile: "skip",
+});
 
 const oauth = sanitizeAuthSpec({
   profile: "oauth_cc_form",
@@ -139,15 +152,55 @@ assert.deepEqual(parseHSplitState(JSON.stringify({ left: -1, collapsed: true }))
   collapsed: true,
 });
 
-// VSplit defaults unchanged (collapsed=true when missing storage)
+// VSplit defaults expanded (collapsed=false when missing storage)
 assert.deepEqual(parseVSplitState(null), {
   bottom: VSPLIT_DEFAULT_BOTTOM,
-  collapsed: true,
+  collapsed: false,
 });
 assert.equal(
-  parseVSplitState(JSON.stringify({ bottom: 300, collapsed: false })).collapsed,
-  false,
+  parseVSplitState(JSON.stringify({ bottom: 300, collapsed: true })).collapsed,
+  true,
 );
+assert.deepEqual(parseSplitLayoutState(null), {
+  direction: "horizontal",
+  ratio: SPLIT_DEFAULT_RATIO,
+  bottom: VSPLIT_DEFAULT_BOTTOM,
+  right: SPLIT_DEFAULT_RIGHT,
+  collapsed: false,
+});
+assert.deepEqual(
+  parseSplitLayoutState(
+    JSON.stringify({ direction: "vertical", ratio: 0.42, right: 480, collapsed: false }),
+  ),
+  {
+    direction: "vertical",
+    ratio: 0.42,
+    bottom: VSPLIT_DEFAULT_BOTTOM,
+    right: 480,
+    collapsed: false,
+  },
+);
+
+assert.equal(detectResponseBodyKind('{"ok":true}'), "json");
+assert.equal(detectResponseBodyKind("error sending request for url (...)"), "raw");
+assert.equal(detectResponseBodyKind("42"), "raw");
+assert.equal(detectResponseBodyKind("42", "http_json", "application/json"), "json");
+assert.equal(detectResponseBodyKind("<Envelope/>"), "xml");
+
+const autoCh = autoChannelsFromEndpoints([
+  {
+    id: "ep-1",
+    name: "SM4",
+    method: "POST",
+    path: "/sm4",
+    channel_code: "CH-SM4",
+    path_prefix: "/gw/sm4",
+    cost_price: "0.025",
+    qps_limit: 50,
+  },
+]);
+assert.equal(autoCh[0]?.cost_price, "0.025");
+assert.equal(autoCh[0]?.qps_limit, 50);
 
 console.log("workbenchHelpers HSplit/VSplit persist parse ok");
 
@@ -223,5 +276,10 @@ console.log("workbenchHelpers HSplit/VSplit persist parse ok");
   assert.ok(miss.includes("job_poll.job_id_jsonpath"), String(miss));
   assert.ok(!miss.includes("job_poll.status_jsonpath"), String(miss));
 }
+
+assert.equal(isPersistedDraftId(null), false);
+assert.equal(isPersistedDraftId("local-new"), false);
+assert.equal(isPersistedDraftId("00000000-0000-0000-0000-000000000000"), false);
+assert.equal(isPersistedDraftId("5ef59d80-f105-4b37-9ff8-f4f6947f28eb"), true);
 
 console.log("workbenchHelpers adapter required fields ok");

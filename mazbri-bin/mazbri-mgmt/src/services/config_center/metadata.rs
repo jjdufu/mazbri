@@ -1,10 +1,9 @@
-use super::{cert_service_request, dependency_internal_error};
+use super::{ConfigCenterCtx, cert_service_request, dependency_internal_error};
 use crate::error::ApiError;
-use crate::handlers::AppState;
 use crate::handlers::config_center::ServiceListParams;
 const MAX_SERVICE_FILTER_CONFIGS: usize = 1000;
 pub async fn list_services(
-    state: &AppState,
+    ctx: ConfigCenterCtx<'_>,
     _params: &ServiceListParams,
     client_ip: Option<String>,
     request_id: &str,
@@ -12,7 +11,7 @@ pub async fn list_services(
 ) -> Result<serde_json::Value, ApiError> {
     let url_path = format!("/configs/search?limit={MAX_SERVICE_FILTER_CONFIGS}&offset=0");
     let resp = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::GET,
         &url_path,
         None,

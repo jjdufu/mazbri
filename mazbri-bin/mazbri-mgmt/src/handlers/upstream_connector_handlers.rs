@@ -18,7 +18,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 fn require_connector_writer(claims: &AdminClaims) -> Result<(), ApiError> {
-    // 财务 / 观察者对工作台只读；写与发布仅超级管理员。
+    // 观察者 R_VIEWER 对工作台只读；写与发布允许业务读写角色（R_ADMIN / R_FINANCE）。
     if !can_write_upstream_connector(claims) {
         return Err(ApiError::Forbidden);
     }
@@ -277,6 +277,27 @@ pub async fn import_openapi(
     Ok(crate::response::created(data))
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftFromSupplierQuery {
+    #[serde(default)]
+    pub force_resync: bool,
+}
+
+/// 只读反开供应商视图（所有已登录管理员角色均可查看，不写入草稿表）。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn preview_draft_from_supplier(
+    State(state): State<AppState>,
+    _: Extension<AdminClaims>,
+    Path(supplier_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let data = svc::preview_draft_from_supplier(&state.db, supplier_id).await?;
+    Ok(ApiResponse::ok(data))
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -284,9 +305,17 @@ pub async fn draft_from_supplier(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(supplier_id): Path<Uuid>,
+    Query(query): Query<DraftFromSupplierQuery>,
+    body: axum::body::Bytes,
 ) -> Result<Response, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::draft_from_supplier(&state.db, supplier_id, &claims.sub).await?;
+    let mut force_resync = query.force_resync;
+    if !force_resync && !body.is_empty() {
+        let parsed: DraftFromSupplierQuery = serde_json::from_slice(&body)
+            .map_err(|e| ApiError::validation(format!("请求参数格式错误: {e}")))?;
+        force_resync = parsed.force_resync;
+    }
+    let data = svc::draft_from_supplier(&state.db, supplier_id, force_resync, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
 
@@ -298,7 +327,7 @@ pub async fn export_postman(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // 导出与导入/删同属工作台写面：仅超级管理员。
+    // 导出与导入/删同属工作台写面：业务读写角色（R_ADMIN / R_FINANCE）。
     require_connector_writer(&claims)?;
     let data = svc::export_postman(&state.db, id).await?;
     Ok(ApiResponse::ok(data))

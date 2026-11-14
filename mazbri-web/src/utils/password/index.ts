@@ -164,3 +164,42 @@ export function resolvePasswordPolicyPayload(
       : response;
   return isPasswordPolicy(raw) ? raw : null;
 }
+
+/**
+ * 基于后端动态密码策略（或兜底最小长度 8）校验密码复杂度。
+ */
+export function validatePasswordAgainstPolicy(
+  value: string,
+  policy: PasswordPolicy | null,
+  t: PasswordPolicyTranslate,
+): string | null {
+  if (!value) return null;
+  const minLen = policy?.min_length ?? 8;
+  const maxLen = policy?.max_length ?? 128;
+  if (value.length < minLen || value.length > maxLen) {
+    return t("userManagement.passwordValidation.lengthRange", {
+      min: minLen,
+      max: maxLen,
+    });
+  }
+  if (!policy) return null;
+  if (policy.require_uppercase && !/[A-Z]/.test(value)) {
+    return t("userManagement.passwordValidation.requireUppercase");
+  }
+  if (policy.require_lowercase && !/[a-z]/.test(value)) {
+    return t("userManagement.passwordValidation.requireLowercase");
+  }
+  if (policy.require_digit && !/[0-9]/.test(value)) {
+    return t("userManagement.passwordValidation.requireDigit");
+  }
+  if (policy.require_special_char) {
+    const allowed = policy.special_chars || DEFAULT_SPECIAL;
+    const hasSpecial = Array.from(value).some((ch) => allowed.includes(ch));
+    if (!hasSpecial) {
+      return t("userManagement.passwordValidation.requireSpecial", {
+        chars: allowed,
+      });
+    }
+  }
+  return null;
+}

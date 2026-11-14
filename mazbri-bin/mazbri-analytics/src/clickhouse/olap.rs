@@ -104,7 +104,11 @@ pub const OLAP_MAX_SECS: i64 = 31 * 24 * 60 * 60;
 
 impl QueryWindow {
     /// 校验绝对时间窗；非法时返回明确错误文案（禁止静默钳制）。
-    fn try_new(start: i64, end: i64) -> Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// 当 `end <= start` 或窗口时长超出 `[OLAP_MIN_SECS, OLAP_MAX_SECS]` 时返回 `OlapError::InvalidQuery`。
+    pub fn try_new(start: i64, end: i64) -> Result<Self> {
         if end <= start {
             return Err(invalid("start 必须小于 end".into()));
         }

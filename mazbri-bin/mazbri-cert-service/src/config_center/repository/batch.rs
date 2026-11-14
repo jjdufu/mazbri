@@ -3,9 +3,7 @@ use super::super::models::{
     BatchError, BatchFilters, BatchOperation, BatchResult, ConfigEntry, ConfigEntrySummary,
 };
 use super::super::validator::{compute_batch_content_hash, validate_batch_toml};
-use mazbri_core::num::SaturatingFrom;
 use std::fmt::Write as _;
-use uuid::Uuid;
 impl super::super::ConfigRepository {
     /// # Errors
     ///
@@ -28,49 +26,6 @@ impl super::super::ConfigRepository {
         }
         let entries = sql_query.fetch_all(&*self.db).await?;
         Ok(entries)
-    }
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn batch_delete(
-        &self,
-        filters: &BatchFilters,
-        dry_run: bool,
-    ) -> ConfigResult<BatchResult> {
-        let entries = self.query_by_filters(filters).await?;
-        if entries.is_empty() {
-            return Ok(BatchResult {
-                success: true,
-                affected_count: 0,
-                affected_entries: vec![],
-                errors: vec![],
-            });
-        }
-        let entry_ids: Vec<Uuid> = entries.iter().map(|e| e.id).collect();
-        if dry_run {
-            return Ok(BatchResult {
-                success: true,
-                affected_count: entries.len(),
-                affected_entries: entries.iter().map(ConfigEntrySummary::from).collect(),
-                errors: vec![],
-            });
-        }
-        let deleted_count = sqlx::query(
-            r"
-            DELETE FROM config_entries
-            WHERE id = ANY($1)
-            ",
-        )
-        .bind(&entry_ids)
-        .execute(&*self.db)
-        .await?
-        .rows_affected();
-        Ok(BatchResult {
-            success: true,
-            affected_count: usize::saturating_from(deleted_count),
-            affected_entries: entries.iter().map(ConfigEntrySummary::from).collect(),
-            errors: vec![],
-        })
     }
     /// # Errors
     ///

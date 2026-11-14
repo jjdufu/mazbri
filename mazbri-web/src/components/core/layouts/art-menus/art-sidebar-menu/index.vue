@@ -146,7 +146,7 @@ import { useMenuStore } from "@/store/modules/menu";
 import { isIframe } from "@/utils/navigation";
 import { handleMenuJump } from "@/utils/navigation";
 import SidebarSubmenu from "./widget/SidebarSubmenu.vue";
-import { useCommon } from "@/hooks/core/useCommon";
+import { DASHBOARD_PATH } from "@/utils/ops/opsRoutes";
 import { useWindowSize, useTimeoutFn } from "@vueuse/core";
 defineOptions({ name: "ArtSidebarMenu" });
 const MOBILE_BREAKPOINT = 800;
@@ -230,9 +230,8 @@ const findIframeMenuList = (currentPath: string, menuList: any[]) => {
   }
   return [];
 };
-const { homePath } = useCommon();
 const navigateToHome = (): void => {
-  router.push(homePath.value);
+  router.push(DASHBOARD_PATH);
 };
 const toggleMenuVisibility = (): void => {
   settingStore.setMenuOpen(!menuOpen.value);

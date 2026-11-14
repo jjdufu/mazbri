@@ -1,23 +1,32 @@
 <template>
   <div v-loading="loading" class="ops-multi-series-chart">
-    <div
+    <EmptyState
       v-if="!loading && isEmpty"
-      class="ops-multi-series-chart__empty"
-    >
-      {{ emptyText }}
-    </div>
-    <div v-show="!isEmpty" ref="chartRef" class="ops-multi-series-chart__canvas"></div>
+      compact
+      :description="emptyText"
+    />
+    <div
+      v-show="!isEmpty"
+      ref="chartRef"
+      class="ops-multi-series-chart__canvas"
+    ></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
 import type { MetricSeries } from "@/types/api/monitoring";
 import {
   OPS_CHART_GRID,
   bindOpsChartResize,
+  formatOpsMetricValue,
+  getOpsChartThemeTokens,
+  inferOpsChartUnitType,
+  useOpsChartTheme,
+  type OpsChartUnitType,
 } from "@/composables/ops/useOpsChartHost";
 import { formatDateTime } from "@/utils/format";
 import { formatAxisTime } from "@/utils/ops/time-range";
@@ -51,6 +60,8 @@ const props = withDefaults(
     window?: { start: number; end: number } | null;
     /** y 轴单位覆盖（缺省用后端 unit）。 */
     unit?: string;
+    /** 坐标轴与 Tooltip 数值格式化规范（缺省按后端 unit 与 metric 自动推断）。 */
+    unitType?: OpsChartUnitType;
   }>(),
   {
     series: null,
@@ -60,13 +71,16 @@ const props = withDefaults(
     onPointClick: undefined,
     window: null,
     unit: undefined,
+    unitType: undefined,
   },
 );
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const chartRef = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let unbindResize: (() => void) | null = null;
+
+const { isDark } = useOpsChartTheme(() => render());
 
 const pointCount = computed(() => {
   const seriesList = props.series?.series ?? [];
@@ -76,7 +90,17 @@ const isEmpty = computed(() => pointCount.value === 0);
 const fewPoints = computed(() => pointCount.value > 0 && pointCount.value <= 2);
 const emptyText = computed(() => t("ops.charts.empty"));
 
+const resolvedUnitType = computed<OpsChartUnitType>(
+  () =>
+    props.unitType ??
+    inferOpsChartUnitType(
+      props.unit ?? props.series?.unit,
+      props.series?.metric,
+    ),
+);
+
 function buildOption(data: MetricSeries | null): EChartsOption {
+  const tokens = getOpsChartThemeTokens(isDark.value);
   const seriesList = data?.series ?? [];
   const legend = seriesList.map((s, i) =>
     seriesLegendName(s, i, seriesList.length, data?.label || data?.metric || ""),
@@ -86,42 +110,112 @@ function buildOption(data: MetricSeries | null): EChartsOption {
   const spanSecs = win
     ? win.end - win.start
     : spanOfPoints(seriesList.flatMap((s) => s.points || []));
-  const unit = localizeUnit(props.unit ?? data?.unit ?? "", t);
+  const rawUnit = props.unit ?? data?.unit ?? "";
+  const isBinaryUpMetric =
+    data?.metric === "pg_up" || data?.metric === "redis_up";
+  const unit = isBinaryUpMetric ? "" : localizeUnit(rawUnit, t);
+  const uType = resolvedUnitType.value;
+  const allValues = seriesList.flatMap((s) =>
+    (s.points || []).map((p) => Math.abs(p.value)),
+  );
+  const maxAbs = allValues.length > 0 ? Math.max(...allValues) : 0;
+  const yAxisName =
+    uType === "cores" && maxAbs > 0 && maxAbs < 0.1 ? "mCPU" : unit;
+  const formatBinaryState = (v: number, forAxis: boolean) => {
+    const rounded = Math.round(v);
+    if (rounded === 1) {
+      return forAxis
+        ? `1 (${t("ops.infra.onlineLabel")})`
+        : `1 · ${t("ops.infra.onlineLabel")}`;
+    }
+    if (rounded === 0) {
+      return forAxis
+        ? `0 (${t("ops.infra.offlineLabel")})`
+        : `0 · ${t("ops.infra.offlineLabel")}`;
+    }
+    return String(rounded);
+  };
+
   return {
     tooltip: {
       trigger: "axis",
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.titleColor },
       axisPointer: {
-        label: { formatter: (p: { value: unknown }) => formatDateTime(Number(p.value)) },
+        lineStyle: { color: tokens.axisLineColor },
+        label: {
+          formatter: (p: { value: unknown }) => formatDateTime(Number(p.value)),
+        },
       },
       valueFormatter: (v: unknown) =>
         typeof v === "number"
-          ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(v)}${unit ? ` ${unit}` : ""}`
+          ? isBinaryUpMetric
+            ? formatBinaryState(v, false)
+            : formatOpsMetricValue(v, uType, unit, locale.value, false)
           : String(v ?? "—"),
     },
-    legend: { data: legend, type: "scroll", top: 0 },
+    legend: {
+      show: legend.length > 0,
+      data: legend,
+      type: "scroll",
+      top: 0,
+      right: 0,
+      left: 84,
+      icon: "circle",
+      itemWidth: 8,
+      itemHeight: 8,
+      padding: [2, 0, 2, 0],
+      textStyle: { color: tokens.textColor, fontSize: 12 },
+      pageTextStyle: { color: tokens.textColor },
+      pageIconColor: tokens.titleColor,
+      pageIconInactiveColor: tokens.axisLineColor,
+    },
     grid: { ...OPS_CHART_GRID },
     xAxis: {
       type: "time",
       ...(win ? { min: win.start * 1000, max: win.end * 1000 } : {}),
+      axisLine: { lineStyle: { color: tokens.axisLineColor } },
+      axisTick: { lineStyle: { color: tokens.axisLineColor } },
+      splitLine: { show: false },
       axisLabel: {
+        color: tokens.textColor,
         hideOverlap: true,
         formatter: (v: number) => formatAxisTime(v, spanSecs),
       },
     },
     yAxis: {
       type: "value",
-      name: unit,
-      // 单点/稀点禁止 scale 夸张放大；固定从 0 起。
+      name: yAxisName,
+      nameGap: 12,
+      nameTextStyle: {
+        color: tokens.textColor,
+        align: "left",
+      },
+      // 单点/稀点禁止 scale 夸张放大；固定从 0 起；离散计数强制整数刻度。
       min: 0,
+      ...(isBinaryUpMetric ? { max: 1, minInterval: 1 } : {}),
       scale: false,
-      axisLabel: { hideOverlap: true },
+      ...(uType === "count" ? { minInterval: 1 } : {}),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { lineStyle: { color: tokens.splitLineColor } },
+      axisLabel: {
+        color: tokens.textColor,
+        hideOverlap: true,
+        formatter: (v: number) =>
+          isBinaryUpMetric
+            ? formatBinaryState(v, true)
+            : formatOpsMetricValue(v, uType, unit, locale.value, true),
+      },
     },
     series: seriesList.map((s, i) => {
       const base: Record<string, unknown> = {
         name: legend[i],
         type: "line",
+        symbol: "circle",
         showSymbol: sparse,
-        symbolSize: sparse ? 8 : 4,
+        symbolSize: sparse ? 7 : 5,
         smooth: !sparse,
         data: (s.points || []).map((p) => [p.timestamp * 1000, p.value]),
       };
@@ -129,6 +223,7 @@ function buildOption(data: MetricSeries | null): EChartsOption {
         base.markLine = {
           symbol: "none",
           label: {
+            color: tokens.textColor,
             formatter: (p: { name?: string }) => p.name || "",
             position: "insideEndTop",
           },
@@ -197,7 +292,7 @@ function render() {
   }
   const instance = ensureChart();
   if (!instance) return;
-  instance.setOption(buildOption(props.series), true);
+  instance.setOption(buildOption(props.series), { notMerge: true });
 }
 
 onMounted(() => {
@@ -212,7 +307,15 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [props.series, isEmpty.value, props.window, props.unit] as const,
+  () =>
+    [
+      props.series,
+      isEmpty.value,
+      props.window,
+      props.unit,
+      props.unitType,
+      locale.value,
+    ] as const,
   () => render(),
   { deep: true },
 );
@@ -221,6 +324,9 @@ watch(
 <style scoped>
 .ops-multi-series-chart {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: v-bind(height);
   min-height: 200px;
@@ -229,14 +335,5 @@ watch(
 .ops-multi-series-chart__canvas {
   width: 100%;
   height: 100%;
-}
-.ops-multi-series-chart__empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
 }
 </style>

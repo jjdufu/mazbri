@@ -187,6 +187,7 @@ pub struct SystemSettingsUpdate {
     /// 租户调用的 API 网关根地址（向导 curl / 联调示例，非管理后台 URL）
     pub tenant_gateway_url: Option<String>,
     pub enable_audit_log: Option<bool>,
+    pub watermark_visible: Option<bool>,
     pub session_timeout: Option<i64>,
     pub max_upload_size: Option<i64>,
 }
@@ -261,7 +262,8 @@ pub struct CreateAdminRequest {
 fn default_force_password_reset() -> bool {
     true
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts", optional_fields)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateAdminRequest {
     pub display_name: Option<String>,
@@ -271,17 +273,16 @@ pub struct UpdateAdminRequest {
     pub mfa_required: Option<bool>,
     pub force_password_reset: Option<bool>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts", optional_fields)]
 #[serde(deny_unknown_fields)]
 pub struct ResetPasswordRequest {
     pub new_password: String,
+    #[serde(default)]
+    pub force_password_reset: Option<bool>,
 }
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ForcePasswordResetRequest {
-    pub force_password_reset: bool,
-}
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts")]
 #[serde(deny_unknown_fields)]
 pub struct SetAdminStatusRequest {
     pub is_active: bool,
@@ -301,8 +302,6 @@ pub struct MfaSetupResponse {
 #[serde(deny_unknown_fields)]
 pub struct MfaEnableRequest {
     pub totp_code: String,
-    #[serde(default)]
-    pub totp_issuer: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -338,4 +337,49 @@ pub struct LoginResponse {
 #[derive(Debug, Serialize)]
 pub struct RegenerateBackupCodesResponse {
     pub backup_codes: Vec<String>,
+}
+
+/// 查询时间窗（相对当前时刻），与 OLAP 模板的 `range` 取值一致。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[ts(export_to = "billing_ops.ts")]
+pub enum OpsRange {
+    #[serde(rename = "15m")]
+    M15,
+    #[default]
+    #[serde(rename = "1h")]
+    H1,
+    #[serde(rename = "6h")]
+    H6,
+    #[serde(rename = "24h")]
+    H24,
+    #[serde(rename = "7d")]
+    D7,
+    #[serde(rename = "30d")]
+    D30,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[ts(export_to = "billing_ops.ts")]
+#[serde(rename_all = "snake_case")]
+pub enum FailureQueueKind {
+    Failures,
+    DeadLetters,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "billing_ops.ts", optional_fields)]
+#[serde(deny_unknown_fields)]
+pub struct OpsFailuresQuery {
+    #[serde(default)]
+    pub range: OpsRange,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub offset: Option<u32>,
+    #[serde(default)]
+    pub failed_offset: Option<u32>,
+    #[serde(default)]
+    pub dlq_offset: Option<u32>,
+    #[serde(default)]
+    pub queue: Option<FailureQueueKind>,
 }

@@ -78,9 +78,9 @@ pub async fn update_settings(
         db,
         repo::UpdateMfaSettingsParams {
             totp_issuer: input.totp_issuer.as_ref().map(|s| s.trim().to_string()),
-            totp_digits: Some(6),
-            totp_period: Some(30),
-            backup_codes_count: Some(10),
+            totp_digits: input.totp_digits,
+            totp_period: input.totp_period,
+            backup_codes_count: input.backup_codes_count,
             updated_by,
         },
     )

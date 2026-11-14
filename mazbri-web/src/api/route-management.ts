@@ -16,6 +16,21 @@ export interface RouteRule {
   created_at: string;
   updated_at: string;
 }
+export interface ChannelBoundRoute {
+  binding_id: string;
+  route_rule_id: string;
+  product_uuid: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  tenant_id?: string | null;
+  tenant_code?: string | null;
+  tenant_name?: string | null;
+  priority: number;
+  channel_order: number;
+  status: string;
+  switch_condition: Record<string, unknown>;
+  created_at: string;
+}
 export interface Channel {
   id: string;
   supplier_id: string;
@@ -30,6 +45,7 @@ export interface Channel {
   config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  routes?: ChannelBoundRoute[];
 }
 export interface RouteBinding {
   id: string;
@@ -139,12 +155,6 @@ export async function fetchChannels(params?: {
 export function fetchChannelById(id: string) {
   return request.get<Channel>({
     url: `${API_BASE_PATH}/channels/${id}`,
-  });
-}
-export async function fetchNextChannelCode() {
-  return request.get<{ channel_code: string }>({
-    url: `${API_BASE_PATH}/channels/next-code`,
-    showErrorMessage: false,
   });
 }
 export interface CreateChannelRequest {

@@ -1,9 +1,87 @@
 use super::{
     AnalyticsHttpClient, BillGenerationSummary, BillingAdjustmentListResponse, BillingError,
     DateTime, Decimal, PgPool, ReconciliationAuditResult, ReconciliationDiscrepancyListResponse,
-    UpstreamBillScope, Utc, error, generate_upstream_bill, repo, validate_limit,
+    UpstreamBillScope, Utc, error, floor_to_utc_hour, generate_upstream_bill, repo,
+    sync_upstream_cost_settlements, validate_limit,
 };
 use mazbri_core::num::SaturatingFrom;
+use std::sync::Arc;
+use tracing::{info, warn};
+
+/// 启动后台上游通道小时成本自动结算同步任务：
+/// - 启动时立即回填近 90 日整点窗口（覆盖经营分析最长 90 日周期）并刷新 `mv_daily_revenue_cost`；
+/// - 随后每 5 分钟增量幂等同步近 2 小时整点窗口并刷新物化视图。
+pub fn spawn_upstream_cost_settlement_sync(
+    billing_db: Arc<PgPool>,
+    platform_db: Arc<PgPool>,
+    analytics_client: Arc<AnalyticsHttpClient>,
+) {
+    tokio::spawn(async move {
+        let mut startup_ok = false;
+        for attempt in 1..=5_u8 {
+            let now = Utc::now();
+            let window_start = floor_to_utc_hour(now - chrono::Duration::days(90));
+            let window_end = floor_to_utc_hour(now) + chrono::Duration::hours(1);
+            match sync_upstream_cost_settlements(
+                billing_db.as_ref(),
+                platform_db.as_ref(),
+                analytics_client.as_ref(),
+                window_start,
+                window_end,
+                true,
+            )
+            .await
+            {
+                Ok(buckets) => {
+                    info!(
+                        buckets,
+                        "initial upstream cost settlement sync & mv_daily_revenue_cost refresh completed"
+                    );
+                    startup_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    warn!(
+                        attempt,
+                        error = %e,
+                        "initial upstream cost settlement sync failed; retrying shortly"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+        if !startup_ok {
+            warn!("initial upstream cost settlement sync exhausted retries; continuing periodic sync");
+        }
+
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(300));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            let now = Utc::now();
+            let window_start = floor_to_utc_hour(now) - chrono::Duration::hours(2);
+            let window_end = floor_to_utc_hour(now) + chrono::Duration::hours(1);
+            match sync_upstream_cost_settlements(
+                billing_db.as_ref(),
+                platform_db.as_ref(),
+                analytics_client.as_ref(),
+                window_start,
+                window_end,
+                false,
+            )
+            .await
+            {
+                Ok(buckets) => {
+                    info!(buckets, "periodic upstream cost settlement sync completed");
+                }
+                Err(e) => {
+                    warn!(error = %e, "periodic upstream cost settlement sync failed");
+                }
+            }
+        }
+    });
+}
 
 /// # Errors
 ///

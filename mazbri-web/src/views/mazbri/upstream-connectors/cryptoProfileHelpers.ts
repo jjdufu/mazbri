@@ -53,11 +53,13 @@ export interface SlotSpecDraft {
 
 export interface SignSpecDraft {
   alg: string;
+  key_slot?: string;
   encoding?: WireEncodingJson | null;
 }
 
 export interface CryptSpecDraft {
   alg: string;
+  key_slot?: string;
   encoding?: WireEncodingJson | null;
   fields?: string[];
 }
@@ -190,8 +192,12 @@ function parseSign(raw: unknown): SignSpecDraft | null {
   if (!obj) return null;
   const alg = String(obj.alg || "").trim();
   if (!alg) return null;
+  const keySlot = String(obj.key_slot || "").trim();
   const encoding = parseWireEncoding(obj.encoding);
-  return encoding ? { alg, encoding } : { alg };
+  const out: SignSpecDraft = { alg };
+  if (keySlot) out.key_slot = keySlot;
+  if (encoding) out.encoding = encoding;
+  return out;
 }
 
 function parseCrypt(raw: unknown): CryptSpecDraft | null {
@@ -199,11 +205,13 @@ function parseCrypt(raw: unknown): CryptSpecDraft | null {
   if (!obj) return null;
   const alg = String(obj.alg || "").trim();
   if (!alg) return null;
+  const keySlot = String(obj.key_slot || "").trim();
   const encoding = parseWireEncoding(obj.encoding);
   const fields = Array.isArray(obj.fields)
     ? obj.fields.map((f) => String(f).trim()).filter(Boolean)
     : [];
   const out: CryptSpecDraft = { alg, fields };
+  if (keySlot) out.key_slot = keySlot;
   if (encoding) out.encoding = encoding;
   return out;
 }
@@ -297,11 +305,13 @@ export function serializeCryptoProfile(
 
   if (needsSign && profile.sign?.alg) {
     const sign: Record<string, unknown> = { alg: profile.sign.alg };
+    if (profile.sign.key_slot?.trim()) sign.key_slot = profile.sign.key_slot.trim();
     if (profile.sign.encoding) sign.encoding = profile.sign.encoding;
     out.sign = sign;
   }
   if (needsCrypt && profile.crypt?.alg) {
     const crypt: Record<string, unknown> = { alg: profile.crypt.alg };
+    if (profile.crypt.key_slot?.trim()) crypt.key_slot = profile.crypt.key_slot.trim();
     if (profile.crypt.encoding) crypt.encoding = profile.crypt.encoding;
     const fields = (profile.crypt.fields || []).map((f) => f.trim()).filter(Boolean);
     if (fields.length) crypt.fields = fields;
@@ -321,6 +331,9 @@ export function serializeCryptoProfile(
   }
   if (profile.response_crypt?.alg) {
     const resp: Record<string, unknown> = { alg: profile.response_crypt.alg };
+    if (profile.response_crypt.key_slot?.trim()) {
+      resp.key_slot = profile.response_crypt.key_slot.trim();
+    }
     if (profile.response_crypt.encoding) resp.encoding = profile.response_crypt.encoding;
     const fields = (profile.response_crypt.fields || [])
       .map((f) => f.trim())

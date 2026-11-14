@@ -108,7 +108,7 @@ fn factor_error(error: &FactorError) -> Response {
         FactorError::NotEnabled => error_response(
             StatusCode::FORBIDDEN,
             "MFA_NOT_ENABLED",
-            "此操作需要 MFA 二次验证，请先在「账号安全」页面绑定并启用 MFA",
+            "此操作需要 MFA 二次验证，请先在「个人账号与安全」中绑定并启用 MFA",
             &serde_json::json!({ "setup_path": crate::handlers::mfa_guard::MFA_SETUP_PATH }),
         ),
         FactorError::Unavailable => error_response(

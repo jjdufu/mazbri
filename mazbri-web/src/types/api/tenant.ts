@@ -246,6 +246,7 @@ export interface TenantProduct {
 export interface TenantProductListQuery {
   page?: number;
   page_size?: number;
+  q?: string;
 }
 export interface TenantProductListResponse {
   tenant_id: string;

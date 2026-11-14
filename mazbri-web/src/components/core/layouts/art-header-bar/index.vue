@@ -121,6 +121,7 @@ import { triggerLockScreen } from "@/utils/sys/global-ui";
 import { useCommon } from "@/hooks/core/useCommon";
 import { useHeaderBar } from "@/hooks/core/useHeaderBar";
 import { useTheme } from "@/hooks/core/useTheme";
+import { DASHBOARD_PATH } from "@/utils/ops/opsRoutes";
 import ArtUserMenu from "./widget/ArtUserMenu.vue";
 defineOptions({ name: "ArtHeaderBar" });
 const router = useRouter();
@@ -140,7 +141,7 @@ const { menuOpen, menuType, isDark, tabStyle } = storeToRefs(settingStore);
 const { siteName } = storeToRefs(settingStore);
 const { language } = storeToRefs(userStore);
 const { menuList } = storeToRefs(menuStore);
-const { switchThemeStylesAndPersist } = useTheme();
+const { switchThemeStyles } = useTheme();
 const isLeftMenu = computed(() => menuType.value === MenuTypeEnum.LEFT);
 const isDualMenu = computed(() => menuType.value === MenuTypeEnum.DUAL_MENU);
 const isTopMenu = computed(() => menuType.value === MenuTypeEnum.TOP);
@@ -151,10 +152,9 @@ onMounted(() => {
 const visibleMenu = (): void => {
   settingStore.setMenuOpen(!menuOpen.value);
 };
-const { homePath } = useCommon();
 const { refresh } = useCommon();
 const toHome = (): void => {
-  router.push(homePath.value);
+  router.push(DASHBOARD_PATH);
 };
 const handleThemeToggle = (): void => {
   const currentTheme = document.documentElement.classList.contains("dark")
@@ -166,11 +166,11 @@ const handleThemeToggle = (): void => {
       : SystemThemeEnum.DARK;
   if (document.startViewTransition) {
     document.startViewTransition(() => {
-      void switchThemeStylesAndPersist(nextTheme);
+      switchThemeStyles(nextTheme);
     });
     return;
   }
-  void switchThemeStylesAndPersist(nextTheme);
+  switchThemeStyles(nextTheme);
 };
 const reload = (time: number = 0): void => {
   setTimeout(() => {

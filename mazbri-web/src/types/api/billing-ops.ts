@@ -1,5 +1,10 @@
-/** 计费运维相对时间档（非 OLAP；OLAP 仅用绝对 start/end）。 */
-export type OpsRange = "15m" | "1h" | "6h" | "24h" | "7d" | "30d";
+import type {
+  FailureQueueKind,
+  OpsFailuresQuery,
+  OpsRange,
+} from "./generated/billing_ops";
+
+export type { FailureQueueKind, OpsFailuresQuery, OpsRange };
 
 /** 漏斗/管道健康模式：平线无失败为 sync_pass_through（展示无堆积），有跌落/失败为 async_funnel。 */
 export type BillingFunnelMode = "sync_pass_through" | "async_funnel";
@@ -54,18 +59,15 @@ export interface DeadLetterRow {
   created_at: string | null;
 }
 
+export type BillingFailuresQuery = OpsFailuresQuery;
+
 export interface BillingFailures {
   limit: number;
   offset: number;
+  failed_offset?: number;
+  dlq_offset?: number;
   failures_total: number;
   dead_letters_total: number;
   failures: ChargeFailureRow[];
   dead_letters: DeadLetterRow[];
-}
-
-export interface SupplierCostRow {
-  supplier_code: string;
-  channel_code: string;
-  total_calls: number;
-  settlement_amount: string;
 }

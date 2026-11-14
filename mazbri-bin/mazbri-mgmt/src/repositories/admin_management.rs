@@ -330,32 +330,16 @@ pub async fn update_password(
     pool: &PgPool,
     id: uuid::Uuid,
     password_hash: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-            "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = false, auth_epoch = auth_epoch + 1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(password_hash)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_force_password_reset(
-    pool: &PgPool,
-    id: uuid::Uuid,
-    force_reset: bool,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE admin_users SET force_password_reset = $1, auth_epoch = CASE WHEN force_password_reset = false AND $1 = true THEN auth_epoch + 1 ELSE auth_epoch END, updated_at = NOW() WHERE id = $2",
+    force_password_reset: Option<bool>,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = COALESCE($3, force_password_reset), auth_epoch = auth_epoch + 1, updated_at = NOW() WHERE id = $2 RETURNING force_password_reset",
     )
-    .bind(force_reset)
+    .bind(password_hash)
     .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
+    .bind(force_password_reset)
+    .fetch_one(pool)
+    .await
 }
 /// # Errors
 ///

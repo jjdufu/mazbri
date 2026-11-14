@@ -371,7 +371,10 @@ export const usersCatalog: ResourceFilterCatalog = {
       ops: ENUM_OPS,
       label_key: "userManagement.list.columns.status",
       enum_values: ["active", "inactive"],
-      enum_label_keys: ["common.status.active", "common.status.disabled"],
+      enum_label_keys: [
+        "userManagement.status.active",
+        "userManagement.status.inactive",
+      ],
     },
     {
       field: "mfa_enabled",

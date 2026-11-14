@@ -7,7 +7,11 @@
       <span v-if="source" class="wb-auth-inv__source">
         {{ $t("upstreamConnector.invalidationSource") }}: {{ sourceLabel }}
       </span>
-      <ElSwitch v-model="form.enabled" :disabled="disabled" />
+      <ElSwitch
+        v-model="form.enabled"
+        :disabled="disabled"
+        :aria-label="$t('upstreamConnector.invalidation')"
+      />
     </div>
     <p class="wb-auth__hint">{{ $t("upstreamConnector.invalidationDesc") }}</p>
     <p v-if="source === 'channel'" class="wb-auth__warn">
@@ -26,6 +30,7 @@
         default-first-option
         :reserve-keyword="false"
         :disabled="disabled"
+        :aria-label="$t('upstreamConnector.invalidationHttpStatus')"
         :placeholder="$t('upstreamConnector.invalidationHttpStatusDesc')"
         class="wb-auth-inv__full"
         @change="normalizeNumbers('http_status')"
@@ -50,6 +55,7 @@
           default-first-option
           :reserve-keyword="false"
           :disabled="disabled"
+          :aria-label="$t('upstreamConnector.invalidationJsonrpcCodes')"
           :placeholder="$t('upstreamConnector.invalidationJsonrpcCodesDesc')"
           class="wb-auth-inv__full"
           @change="normalizeNumbers('jsonrpc_codes')"
@@ -67,10 +73,16 @@
         :key="i"
         class="wb-auth-inv__row"
       >
-        <ElInput v-model="row.path" placeholder="$.code" :disabled="disabled" />
+        <ElInput
+          v-model="row.path"
+          placeholder="$.code"
+          :aria-label="$t('upstreamConnector.invalidationBodyMatch')"
+          :disabled="disabled"
+        />
         <ElInput
           v-model="row.equals"
           placeholder='"TOKEN_EXPIRED", 40101'
+          :aria-label="$t('upstreamConnector.invalidationBodyMatch')"
           :disabled="disabled"
         />
         <ElButton
@@ -94,7 +106,7 @@
       <div v-if="fields.wsClose" class="wb-auth-inv__switch">
         <ElSwitch
           v-model="form.ws_close_before_reply"
-         
+          :aria-label="$t('upstreamConnector.invalidationWsClose')"
           :disabled="disabled"
         />
         <span>{{ $t("upstreamConnector.invalidationWsClose") }}</span>
