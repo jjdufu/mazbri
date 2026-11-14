@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.3](https://github.com/jjdufu/mazbri/compare/v0.5.2...v0.5.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **core,mgmt,auth,gateway:** 移除 route_sync_metadata 热升级补种兼容层，收敛至 init-dbs 单真源 ([ad0b5c4](https://github.com/jjdufu/mazbri/commit/ad0b5c44297dc0fac934fd181c15397c7dbc46e5))
+* **core,mgmt,auth,gateway:** 移除 route_sync_metadata 热升级补种兼容层，收敛至 init-dbs 单真源 ([1e758ac](https://github.com/jjdufu/mazbri/commit/1e758aca234af02ec883fce40a70fc5dc6508fc9))
+
 ## [0.5.2](https://github.com/jjdufu/mazbri/compare/v0.5.1...v0.5.2) (2026-11-14)
 
 
