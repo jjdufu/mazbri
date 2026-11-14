@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.5.2](https://github.com/jjdufu/mazbri/compare/v0.5.1...v0.5.2) (2026-11-14)
+
+
+### Features
+
+* **admin:** 完成管理后台 16 步 UI/UX 重构、架构收敛与全链路审计闭环 ([937baf8](https://github.com/jjdufu/mazbri/commit/937baf8b3a4eca9d21b79ff184a6d3347892aed8))
+* **web,mgmt,analytics,core,service:** [Step 09/16] 整合调用与分布式链路视图并根治探针噪音与瀑布流越界 ([98366bf](https://github.com/jjdufu/mazbri/commit/98366bf89c2d675620e192bc8c5e408bbc2a77bb))
+* **web,mgmt,analytics,core,service:** [Step 10/16] 重构运行指标与服务详情并修复连接池虚高负载与告警分页 ([ad6f62a](https://github.com/jjdufu/mazbri/commit/ad6f62a184aa88b3a9109ae25982ec241c26b0be))
+* **web,mgmt,analytics:** [Step 04/16] 收敛总览与经营概览入口并补齐零调用分页及小时成本自动结算 ([ce113a8](https://github.com/jjdufu/mazbri/commit/ce113a82b7c64fb73c0b661385446b284eb2d674))
+* **web,mgmt,auth,gateway:** [Step 05/16] 重构租户详情页壳并补齐密钥归属隔离、无损轮换与真服务端分页 ([a364ebc](https://github.com/jjdufu/mazbri/commit/a364ebcb9afe4a4a81b19bd8ee75966df5229e45))
+* **web,mgmt,cert:** [Step 13/16] 重构证书管理抽屉与按需私钥提权并根除客户端全量拉库 ([67c7a61](https://github.com/jjdufu/mazbri/commit/67c7a617eb1a455884600e9763127e2dd080bc84))
+* **web,mgmt,cert:** [Step 14/16] 治理审计日志轮询自刷屏噪音并重构详情宽抽屉与跨服务关联展示 ([1de95eb](https://github.com/jjdufu/mazbri/commit/1de95eb2b8f3c2cb51554917d590b72bc970e4f1))
+* **web,mgmt,cert:** [Step 15/16] 重构配置中心按需MFA脱敏与核心防删护栏并修复编辑弹窗及版本历史抽屉 ([8ccdf9d](https://github.com/jjdufu/mazbri/commit/8ccdf9def1faeebe3045c365c9b9c3bc267d97af))
+* **web,mgmt,core,runtime:** [Step 16/16] 重构免代码接入工作台交互、供应商无损反开与鉴权密钥仓解耦 ([5075363](https://github.com/jjdufu/mazbri/commit/5075363c7832c0d3574c8c0c2fabb686b01ea122))
+* **web,mgmt,product:** [Step 06/16] 重构产品详情 3-Tab 壳层并修复编码预占复用与真服务端分页 ([89ff002](https://github.com/jjdufu/mazbri/commit/89ff0022092fcba457dac845c75204a022923059))
+* **web,mgmt:** [Step 07/16] 收敛上游供给通道抽屉弹窗并重构微服务接入与回调订阅 ([c0a50c2](https://github.com/jjdufu/mazbri/commit/c0a50c2d6a9002582ed9b454a86aad5582616b6e))
+* **web,mgmt:** [Step 08/16] 收敛账单与对账三视图并迁移计费管道监控与根治壳套壳 ([c9e2e10](https://github.com/jjdufu/mazbri/commit/c9e2e10b014d501242285cac782c8007540e01de))
+* **web,mgmt:** [Step 11/16] 解耦个人安全抽屉与重构平台设置三标签并下线运行时外观接口 ([7e17cfb](https://github.com/jjdufu/mazbri/commit/7e17cfbec475e6d8318ca6cea148e4d7495cd130))
+* **web,mgmt:** [Step 12/16] 重构用户管理单页抽屉闭环并修复编辑启停契约与密码重置交互 ([f85c5a5](https://github.com/jjdufu/mazbri/commit/f85c5a549e79a32f003dddaabbff4ae95585cfdc))
+
+
+### Bug Fixes
+
+* **web,mgmt,cert,core:** 闭环收口管理后台 16 步重构审计尾项、边界缺陷与冗余死代码 ([5f6ee5d](https://github.com/jjdufu/mazbri/commit/5f6ee5df64f6d7198eb556d6bf37ddb3c1114497))
+* **web,mgmt:** [Step 01/16] 废除 1200px 定宽容器并修复自适应列宽与表格弹性高度 ([8b81dd4](https://github.com/jjdufu/mazbri/commit/8b81dd4e4fe79d833235d4bd9b5f892a9a7a0f68))
+* **web,mgmt:** [Step 02/16] 解耦个人亮暗主题偏好并根治路由与监控并发请求风暴 ([995c8a7](https://github.com/jjdufu/mazbri/commit/995c8a7e4bc81ec490a4d93f5d25dcf71834eae3))
+* **web,mgmt:** [Step 03/16] 清零暗黑模式硬编码色值并规范化 ECharts 主题与单位体系 ([5c9242e](https://github.com/jjdufu/mazbri/commit/5c9242e0805932d106ce0acd82e578657767be50))
+
 ## [0.5.1](https://github.com/jjdufu/mazbri/compare/v0.5.0...v0.5.1) (2026-11-11)
 
 
