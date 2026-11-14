@@ -109,7 +109,9 @@ pub fn classify(method: &Method, path: &str) -> Option<(RouteSpec, Option<String
             (critical(spec("authorization.import", AUTHZ, true)), None)
         }
         ("GET", ["authorizations", "root", "current", "materials"]) => {
-            (spec("authorization.root_material_read", AUTHZ, false), None)
+            let mut s = spec("authorization.root_material_read", AUTHZ, false);
+            s.failures_only = true;
+            (s, None)
         }
         ("POST", ["configs", "batch", "update"]) => {
             (spec("config_center.update", CONFIG, true), None)
@@ -198,6 +200,10 @@ mod tests {
         }
         let (verify, _) = classify(&Method::POST, "/verify").expect("verify");
         assert!(verify.failures_only);
+        let (root_materials, _) =
+            classify(&Method::GET, "/authorizations/root/current/materials")
+                .expect("root materials");
+        assert!(root_materials.failures_only);
     }
 
     #[test]

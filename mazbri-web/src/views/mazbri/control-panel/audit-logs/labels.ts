@@ -385,3 +385,296 @@ export function diffChanges(before: unknown, after: unknown): ChangeDiffRow[] {
     };
   });
 }
+
+/** 审计扩展字段 → i18n key。 */
+export const DETAIL_LABELS: Record<string, string> = {
+  reason: "auditLogs.detailLabels.reason",
+  operator: "auditLogs.detailLabels.operator",
+  operator_id: "auditLogs.detailLabels.operatorId",
+  ip_address: "auditLogs.detailLabels.ipAddress",
+  selected_channel_id: "auditLogs.detailLabels.selectedChannelId",
+  route_rule_id: "auditLogs.detailLabels.routeRuleId",
+  channel_id: "auditLogs.detailLabels.channelId",
+  binding_id: "auditLogs.detailLabels.bindingId",
+  old_route: "auditLogs.detailLabels.oldRoute",
+  new_route: "auditLogs.detailLabels.newRoute",
+  route_rule: "auditLogs.detailLabels.routeRule",
+  bindings: "auditLogs.detailLabels.bindings",
+  route: "auditLogs.detailLabels.route",
+  message: "auditLogs.detailLabels.message",
+  status: "auditLogs.detailLabels.status",
+  name: "auditLogs.detailLabels.name",
+  id: "auditLogs.detailLabels.id",
+  created_at: "auditLogs.detailLabels.createdAt",
+  updated_at: "auditLogs.detailLabels.updatedAt",
+  expires_at: "auditLogs.detailLabels.expiresAt",
+  product_id: "auditLogs.detailLabels.productId",
+  tenant_id: "auditLogs.detailLabels.tenantId",
+  tenant_code: "auditLogs.detailLabels.tenantCode",
+  priority: "auditLogs.detailLabels.priority",
+  metadata: "auditLogs.detailLabels.metadata",
+  switch_condition: "auditLogs.detailLabels.switchCondition",
+  channel_order: "auditLogs.detailLabels.channelOrder",
+  description: "auditLogs.detailLabels.description",
+  enabled: "auditLogs.detailLabels.enabled",
+  request: "auditLogs.detailLabels.request",
+  product: "auditLogs.detailLabels.product",
+  reservation: "auditLogs.detailLabels.reservation",
+  reservation_id: "auditLogs.detailLabels.reservationId",
+  active_reservation_id: "auditLogs.detailLabels.activeReservationId",
+  reserved_by: "auditLogs.detailLabels.reservedBy",
+  reserved_at: "auditLogs.detailLabels.reservedAt",
+  upstream_url: "auditLogs.detailLabels.upstreamUrl",
+  timeout_secs: "auditLogs.detailLabels.timeoutSecs",
+  bill_id: "auditLogs.detailLabels.billId",
+  bill_kind: "auditLogs.detailLabels.billKind",
+  transaction_id: "auditLogs.detailLabels.transactionId",
+  amount: "auditLogs.detailLabels.amount",
+  direction: "auditLogs.detailLabels.direction",
+  ip_addresses: "auditLogs.detailLabels.ipAddresses",
+  total_added: "auditLogs.detailLabels.totalAdded",
+  total_errors: "auditLogs.detailLabels.totalErrors",
+  algorithm: "auditLogs.detailLabels.algorithm",
+  max_daily: "auditLogs.detailLabels.maxDaily",
+  max_concurrent: "auditLogs.detailLabels.maxConcurrent",
+  max_bandwidth_mbps: "auditLogs.detailLabels.maxBandwidthMbps",
+  api_limits: "auditLogs.detailLabels.apiLimits",
+  burst_size: "auditLogs.detailLabels.burstSize",
+  client_ip_qps: "auditLogs.detailLabels.clientIpQps",
+  client_ip_burst: "auditLogs.detailLabels.clientIpBurst",
+  window_duration_secs: "auditLogs.detailLabels.windowDurationSecs",
+  expected_updated_at: "auditLogs.detailLabels.expectedUpdatedAt",
+  default_ttl: "auditLogs.detailLabels.defaultTtl",
+  max_cache_size: "auditLogs.detailLabels.maxCacheSize",
+  api_ttl: "auditLogs.detailLabels.apiTtl",
+  tenant_isolated: "auditLogs.detailLabels.tenantIsolated",
+  warmup_enabled: "auditLogs.detailLabels.warmupEnabled",
+  warmup_keys: "auditLogs.detailLabels.warmupKeys",
+  scope: "auditLogs.detailLabels.scope",
+  changes: "auditLogs.detailLabels.changes",
+  site_name: "auditLogs.detailLabels.siteName",
+  site_url: "auditLogs.detailLabels.siteUrl",
+  tenant_gateway_url: "auditLogs.detailLabels.tenantGatewayUrl",
+  enable_notifications: "auditLogs.detailLabels.enableNotifications",
+  enable_audit_log: "auditLogs.detailLabels.enableAuditLog",
+  session_timeout: "auditLogs.detailLabels.sessionTimeout",
+  max_upload_size: "auditLogs.detailLabels.maxUploadSize",
+  username: "auditLogs.detailLabels.username",
+  first_login: "auditLogs.detailLabels.firstLogin",
+  language: "auditLogs.detailLabels.language",
+  email: "auditLogs.detailLabels.email",
+  encryption_mode: "auditLogs.detailLabels.encryptionMode",
+  require_signature: "auditLogs.detailLabels.requireSignature",
+  nonce_ttl_seconds: "auditLogs.detailLabels.nonceTtlSeconds",
+  clock_skew_seconds: "auditLogs.detailLabels.clockSkewSeconds",
+  current_key_version: "auditLogs.detailLabels.currentKeyVersion",
+  key_version: "auditLogs.detailLabels.keyVersion",
+  mode: "auditLogs.detailLabels.mode",
+  manifest: "auditLogs.detailLabels.manifest",
+  checked: "auditLogs.detailLabels.checked",
+  verified: "auditLogs.detailLabels.verified",
+  failed_count: "auditLogs.detailLabels.failedCount",
+  path: "auditLogs.detailLabels.path",
+  operation: "auditLogs.detailLabels.operation",
+  authorization_type: "auditLogs.detailLabels.authorizationType",
+  activate_now: "auditLogs.detailLabels.activateNow",
+  delivery_log_id: "auditLogs.detailLabels.deliveryLogId",
+  category: "auditLogs.detailLabels.category",
+  mfa: "auditLogs.detailLabels.mfa",
+  step_up_opened_at: "auditLogs.detailLabels.stepUpOpenedAt",
+  step_up_expires_at: "auditLogs.detailLabels.stepUpExpiresAt",
+  step_up_method: "auditLogs.detailLabels.stepUpMethod",
+  ttl_secs: "auditLogs.detailLabels.ttlSecs",
+  sid: "auditLogs.detailLabels.sid",
+  method: "auditLogs.detailLabels.method",
+  opened_at: "auditLogs.detailLabels.openedAt",
+  remaining_secs: "auditLogs.detailLabels.remainingSecs",
+  content_type: "auditLogs.detailLabels.contentType",
+  content_length: "auditLogs.detailLabels.contentLength",
+  body_keys: "auditLogs.detailLabels.bodyKeys",
+  body_type: "auditLogs.detailLabels.bodyType",
+  items: "auditLogs.detailLabels.items",
+  error_code: "auditLogs.detailLabels.errorCode",
+  login_stage: "auditLogs.detailLabels.loginStage",
+  stage: "auditLogs.detailLabels.stage",
+  required_roles: "auditLogs.detailLabels.requiredRoles",
+  refresh_identity_updated: "auditLogs.detailLabels.refreshIdentityUpdated",
+  role_changed: "auditLogs.detailLabels.roleChanged",
+  username_changed: "auditLogs.detailLabels.usernameChanged",
+  additional_events: "auditLogs.detailLabels.additionalEvents",
+  service_name: "auditLogs.detailLabels.serviceName",
+  version: "auditLogs.detailLabels.version",
+  target_version: "auditLogs.detailLabels.targetVersion",
+  is_sensitive: "auditLogs.detailLabels.isSensitive",
+  subject: "auditLogs.detailLabels.subject",
+  cert_type: "auditLogs.detailLabels.certType",
+  fingerprint: "auditLogs.detailLabels.fingerprint",
+  dns_names: "auditLogs.detailLabels.dnsNames",
+  display_name: "auditLogs.detailLabels.displayName",
+  role: "auditLogs.detailLabels.role",
+  is_active: "auditLogs.detailLabels.isActive",
+  mfa_required: "auditLogs.detailLabels.mfaRequired",
+  force_password_reset: "auditLogs.detailLabels.forcePasswordReset",
+  key_prefix: "auditLogs.detailLabels.keyPrefix",
+  value: "auditLogs.detailLabels.value",
+  actor_issuer: "auditLogs.detailLabels.actorIssuer",
+  actor_mode: "auditLogs.detailLabels.actorMode",
+  actor_verification: "auditLogs.detailLabels.actorVerification",
+  auth_epoch_bumped: "auditLogs.detailLabels.authEpochBumped",
+  caller: "auditLogs.detailLabels.caller",
+  caller_generation: "auditLogs.detailLabels.callerGeneration",
+  change_summary: "auditLogs.detailLabels.changeSummary",
+  contact_email: "auditLogs.detailLabels.contactEmail",
+  contact_person: "auditLogs.detailLabels.contactPerson",
+  contact_phone: "auditLogs.detailLabels.contactPhone",
+  mfa_verified: "auditLogs.detailLabels.mfaVerified",
+  peer_ip: "auditLogs.detailLabels.peerIp",
+  released: "auditLogs.detailLabels.released",
+  route_version: "auditLogs.detailLabels.routeVersion",
+  supplier_id: "auditLogs.detailLabels.supplierId",
+  token_expiration_secs: "auditLogs.detailLabels.tokenExpirationSecs",
+  upstream_type: "auditLogs.detailLabels.upstreamType",
+  used_backup_code: "auditLogs.detailLabels.usedBackupCode",
+  config_count: "auditLogs.detailLabels.configCount",
+  imported: "auditLogs.detailLabels.imported",
+  skipped: "auditLogs.detailLabels.skipped",
+  errors: "auditLogs.detailLabels.errors",
+  rollback_version: "auditLogs.detailLabels.rollbackVersion",
+  retry_after_secs: "auditLogs.detailLabels.retryAfterSecs",
+  setup_path: "auditLogs.detailLabels.setupPath",
+};
+
+/** MFA 提权分类 → i18n key。 */
+export const MFA_CATEGORY_LABELS: Record<string, string> = {
+  certificate: "auditLogs.mfaCategories.certificate",
+  platform: "auditLogs.mfaCategories.platform",
+  admin: "auditLogs.mfaCategories.admin",
+  key: "auditLogs.mfaCategories.key",
+  finance: "auditLogs.mfaCategories.finance",
+  security: "auditLogs.mfaCategories.security",
+};
+
+/** MFA 二次验证方式 → i18n key。 */
+export const MFA_METHOD_LABELS: Record<string, string> = {
+  totp: "auditLogs.mfaMethods.totp",
+  backup_code: "auditLogs.mfaMethods.backup_code",
+};
+
+/** 判断扩展属性键名是否为时间戳字段（如 `step_up_opened_at`、`expires_at`）。 */
+export function isAuditTimestampKey(key?: string): boolean {
+  if (!key) return false;
+  const k = key.toLowerCase();
+  return (
+    k.endsWith("_at") ||
+    k.endsWith("_time") ||
+    k === "timestamp" ||
+    k === "until" ||
+    k.endsWith("_until")
+  );
+}
+
+/** 判断扩展属性键名是否为秒级时长字段（如 `ttl_secs`、`remaining_secs`）。 */
+export function isAuditDurationSecondsKey(key?: string): boolean {
+  if (!key) return false;
+  const k = key.toLowerCase();
+  return k.endsWith("_secs") || k.endsWith("_seconds") || k === "default_ttl" || k === "api_ttl";
+}
+
+export type GroupedAuditRow<T> = T & {
+  chainServices: string[];
+  mirrorChildren: T[];
+  chainExpanded: boolean;
+  isMirrorChild: boolean;
+};
+
+/** 格式化代理链路徽标编码（如 `mgmt ➔ cert`）。 */
+export function formatChainFlowCode(services: readonly string[]): string {
+  return services.join(" ➔ ");
+}
+
+/**
+ * 将同页具有相同 `request_id` 的跨服务代理链路记录（如 `mgmt` + `cert`）聚合折叠：
+ * - 优先以入口层 `mgmt` 记录为主行，底层服务记录收折为 `mirrorChildren`；
+ * - 当 `expandedRequestIds` 包含该 `request_id` 时，在主行下方紧邻展开底层服务镜像子行。
+ */
+export function groupAuditLogsByRequestId<
+  T extends { id: string; request_id?: string | null; service: string },
+>(logs: readonly T[], expandedRequestIds: ReadonlySet<string>): GroupedAuditRow<T>[] {
+  const byRequestId = new Map<string, T[]>();
+  for (const log of logs) {
+    const reqId = log.request_id?.trim();
+    if (!reqId) continue;
+    const bucket = byRequestId.get(reqId);
+    if (bucket) {
+      bucket.push(log);
+    } else {
+      byRequestId.set(reqId, [log]);
+    }
+  }
+
+  const emittedRequestIds = new Set<string>();
+  const result: GroupedAuditRow<T>[] = [];
+
+  for (const log of logs) {
+    const reqId = log.request_id?.trim();
+    if (!reqId) {
+      result.push({
+        ...log,
+        chainServices: [],
+        mirrorChildren: [],
+        chainExpanded: false,
+        isMirrorChild: false,
+      });
+      continue;
+    }
+
+    const group = byRequestId.get(reqId) ?? [log];
+    const uniqueServices = new Set(group.map((item) => item.service));
+    if (group.length < 2 || uniqueServices.size < 2) {
+      result.push({
+        ...log,
+        chainServices: [],
+        mirrorChildren: [],
+        chainExpanded: false,
+        isMirrorChild: false,
+      });
+      continue;
+    }
+
+    if (emittedRequestIds.has(reqId)) {
+      continue;
+    }
+    emittedRequestIds.add(reqId);
+
+    const primaryIdx = group.findIndex((item) => item.service === "mgmt");
+    const primary = primaryIdx >= 0 ? group[primaryIdx] : group[0];
+    const mirrorChildren = group.filter((item) => item.id !== primary.id);
+    const chainServices: string[] = [primary.service];
+    for (const child of mirrorChildren) {
+      if (!chainServices.includes(child.service)) {
+        chainServices.push(child.service);
+      }
+    }
+    const expanded = expandedRequestIds.has(reqId);
+    result.push({
+      ...primary,
+      chainServices,
+      mirrorChildren,
+      chainExpanded: expanded,
+      isMirrorChild: false,
+    });
+    if (expanded) {
+      for (const child of mirrorChildren) {
+        result.push({
+          ...child,
+          chainServices: [],
+          mirrorChildren: [],
+          chainExpanded: false,
+          isMirrorChild: true,
+        });
+      }
+    }
+  }
+
+  return result;
+}

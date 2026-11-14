@@ -40,6 +40,7 @@ export interface AuditLogListQuery {
   tenant_id?: string;
   action?: string;
   resource_type?: string;
+  resource_id?: string;
   actor_id?: string;
   q?: string;
 
@@ -48,6 +49,7 @@ export interface AuditLogListQuery {
   end_time?: number;
   status?: AuditStatus;
   service?: AuditService;
+  include_self_audit?: boolean;
 }
 export interface AuditLogDetail extends AuditLog {
   changes?: {

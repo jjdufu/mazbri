@@ -5,9 +5,8 @@
   >
     <ResourceTableShell
       v-model:columns="columns"
-      :title="$t('auditLogs.list.title')"
       :loading="loading"
-      :data="tableData"
+      :data="displayTableData"
       :pagination="artPagination"
       :empty-text="emptyDescription"
       stripe
@@ -31,10 +30,13 @@
           value-format="x"
           @change="handleSearch"
         />
-        <ElButton @click="openChangeCharts">
-          <template #icon><ArtSvgIcon icon="ri:line-chart-line" /></template>
-          {{ $t("ops.overview.changeCharts") }}
-        </ElButton>
+        <ElCheckbox
+          v-model="searchForm.includeSelfAudit"
+          class="audit-self-toggle"
+          @change="handleSearch"
+        >
+          {{ $t("auditLogs.filters.includeSelfAudit") }}
+        </ElCheckbox>
         <TableExportDropdown
           :items="exportItems"
           :label="$t('common.actions.export')"
@@ -63,7 +65,41 @@
         </StatusIndicator>
       </template>
       <template #service="{ row }">
-        <ElTag size="small" type="info">{{ formatService(row.service) }}</ElTag>
+        <ElTooltip
+          v-if="row.chainServices.length >= 2 && row.request_id"
+          :content="chainTooltipText(row)"
+          placement="top"
+        >
+          <button
+            type="button"
+            class="audit-chain-badge"
+            :aria-expanded="row.chainExpanded"
+            @click.stop="toggleChainExpand(row.request_id)"
+          >
+            <span class="audit-chain-badge__code">{{
+              formatChainFlowCode(row.chainServices)
+            }}</span>
+            <ArtSvgIcon
+              :icon="
+                row.chainExpanded
+                  ? 'ri:arrow-up-s-line'
+                  : 'ri:arrow-down-s-line'
+              "
+              class="audit-chain-badge__icon"
+            />
+          </button>
+        </ElTooltip>
+        <span v-else-if="row.isMirrorChild" class="audit-mirror-cell">
+          <span class="audit-mirror-prefix">{{
+            $t("auditLogs.chain.mirrorPrefix")
+          }}</span>
+          <ElTag size="small" type="info">{{
+            formatService(row.service)
+          }}</ElTag>
+        </span>
+        <ElTag v-else size="small" type="info">{{
+          formatService(row.service)
+        }}</ElTag>
       </template>
       <template #failure_reason="{ row }">
         {{ formatFailureReason(row.failure_reason) }}
@@ -85,196 +121,254 @@
       </template>
     </ResourceTableShell>
 
-    <CenteredDialog
+    <AdaptiveDrawer
       v-model="detailVisible"
-      :title="$t('auditLogs.detail.title')"
-      width="600px"
+      size="760px"
+      destroy-on-close
+      @closed="handleDrawerClosed"
     >
-      <ElDescriptions :column="2" border>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.timestamp')">{{
-          formatDate(currentLog?.timestamp || "")
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorName')">{{
-          currentLog ? formatActorName(currentLog) : EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.actorRole')">{{
-          currentLog?.actor_role || EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.action')">{{
-          formatAction(currentLog?.action || "")
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem
-          :label="$t('auditLogs.detail.fields.resourceType')"
-          >{{
-            formatResourceType(currentLog?.resource_type || "")
-          }}</ElDescriptionsItem
+      <template #header>
+        <CommonDrawerHeader
+          :title="drawerActionTitle"
+          :subtitle="currentLog?.request_id || ''"
+        />
+      </template>
+
+      <div v-loading="detailLoading" class="audit-detail-body">
+        <div
+          v-if="relatedChainRecords.length > 1"
+          class="audit-related-bar mb-3"
         >
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.resourceId')">
-          <CopyableText
-            :value="currentLog?.resource_id"
-            :label="$t('auditLogs.detail.fields.resourceId')"
-          />
-        </ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.status')">
-          <ElTag :type="statusTagType(currentLog?.status || '')">
-            {{ $t(statusLabelKey(currentLog?.status || "")) }}
-          </ElTag>
-        </ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">
-          <CopyableText
-            v-if="currentLog?.ip_address?.trim()"
-            :value="currentLog.ip_address"
-            :label="$t('auditLogs.detail.fields.ipAddress')"
-          />
-          <span v-else>{{ formatIpAddress(currentLog?.ip_address) }}</span>
-        </ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.service')">{{
-          formatService(currentLog?.service)
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">
-          <CopyableText
-            :value="currentLog?.request_id"
-            :label="$t('auditLogs.detail.fields.requestId')"
-          />
-        </ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.method')">{{
-          currentLog?.method || EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.path')">{{
-          currentLog?.path || EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.statusCode')">{{
-          currentLog?.status_code ?? EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem :label="$t('auditLogs.detail.fields.durationMs')">{{
-          currentLog?.duration_ms ?? EMPTY_PLACEHOLDER
-        }}</ElDescriptionsItem>
-        <ElDescriptionsItem
-          :label="$t('auditLogs.detail.fields.failureReason')"
-          >{{
-            formatFailureReason(currentLog?.failure_reason)
-          }}</ElDescriptionsItem
+          <span class="audit-related-bar__label">
+            {{ $t("auditLogs.chain.detailTitle") }}
+          </span>
+          <div class="audit-related-bar__items">
+            <ElButton
+              v-for="item in relatedChainRecords"
+              :key="item.id"
+              size="small"
+              :type="item.id === currentLog?.id ? 'primary' : 'default'"
+              :plain="item.id !== currentLog?.id"
+              @click="showDetails(item)"
+            >
+              {{ formatService(item.service) }} ·
+              {{ formatAction(item.action) }}
+            </ElButton>
+          </div>
+        </div>
+
+        <ElDescriptions
+          :column="2"
+          border
+          :label-width="detailLabelWidth"
+          class="audit-main-descriptions"
         >
-        <ElDescriptionsItem
-          :label="$t('auditLogs.detail.fields.userAgent')"
-          :span="2"
-          >{{ currentLog?.user_agent || EMPTY_PLACEHOLDER }}</ElDescriptionsItem
-        >
-        <ElDescriptionsItem
-          v-if="currentLog?.request_summary"
-          :label="$t('auditLogs.detail.fields.requestSummary')"
-          :span="2"
-          >{{
-            formatDetailValue(currentLog?.request_summary)
-          }}</ElDescriptionsItem
-        >
-        <ElDescriptionsItem
-          v-if="currentLog?.error_message"
-          :label="$t('auditLogs.detail.fields.errorMessage')"
-          :span="2"
-        >
-          <ElAlert type="error">{{ currentLog?.error_message }}</ElAlert>
-        </ElDescriptionsItem>
-      </ElDescriptions>
-      <div v-if="auditDetailRows.length" class="mt-4">
-        <h4 class="mb-2">{{ $t("auditLogs.detail.moreTitle") }}</h4>
-        <ElDescriptions :column="1" border>
           <ElDescriptionsItem
-            v-for="item in auditDetailRows"
-            :key="item.label"
-            :label="item.label"
+            :label="$t('auditLogs.detail.fields.timestamp')"
+            ><span class="audit-nowrap-val">{{
+              formatDate(currentLog?.timestamp || "")
+            }}</span></ElDescriptionsItem
           >
-            {{ item.value }}
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.status')">
+            <ElTag size="small" :type="statusTagType(currentLog?.status || '')">
+              {{ $t(statusLabelKey(currentLog?.status || "")) }}
+            </ElTag>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.actorName')"
+            >{{
+              currentLog ? formatActorName(currentLog) : EMPTY_PLACEHOLDER
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.actorRole')"
+            >{{ currentLog?.actor_role || EMPTY_PLACEHOLDER }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.action')">{{
+            formatAction(currentLog?.action || "")
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.service')">{{
+            formatService(currentLog?.service)
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.resourceType')"
+            >{{
+              formatResourceType(currentLog?.resource_type || "")
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.resourceId')"
+          >
+            <CopyableText
+              :value="currentLog?.resource_id"
+              :label="$t('auditLogs.detail.fields.resourceId')"
+            />
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.ipAddress')">
+            <CopyableText
+              v-if="currentLog?.ip_address?.trim()"
+              :value="currentLog.ip_address"
+              :label="$t('auditLogs.detail.fields.ipAddress')"
+            />
+            <span v-else>{{ formatIpAddress(currentLog?.ip_address) }}</span>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.requestId')">
+            <CopyableText
+              :value="currentLog?.request_id"
+              :label="$t('auditLogs.detail.fields.requestId')"
+            />
+          </ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('auditLogs.detail.fields.method')">{{
+            currentLog?.method || EMPTY_PLACEHOLDER
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.statusCode')"
+            >{{ currentLog?.status_code ?? EMPTY_PLACEHOLDER }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.durationMs')"
+            >{{
+              currentLog?.duration_ms === null ||
+              currentLog?.duration_ms === undefined
+                ? EMPTY_PLACEHOLDER
+                : `${currentLog.duration_ms} ms`
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.failureReason')"
+            >{{
+              formatFailureReason(currentLog?.failure_reason)
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.path')"
+            :span="2"
+            >{{ currentLog?.path || EMPTY_PLACEHOLDER }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            :label="$t('auditLogs.detail.fields.userAgent')"
+            :span="2"
+            >{{
+              currentLog?.user_agent || EMPTY_PLACEHOLDER
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            v-if="currentLog?.request_summary"
+            :label="$t('auditLogs.detail.fields.requestSummary')"
+            :span="2"
+            >{{
+              formatDetailValue(currentLog?.request_summary)
+            }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem
+            v-if="currentLog?.error_message"
+            :label="$t('auditLogs.detail.fields.errorMessage')"
+            :span="2"
+          >
+            <ElAlert type="error" :closable="false">{{
+              currentLog?.error_message
+            }}</ElAlert>
           </ElDescriptionsItem>
         </ElDescriptions>
-      </div>
-      <div v-if="changeRows.length" class="mt-4">
-        <h4 class="mb-2">{{ $t("auditLogs.detail.changesTitle") }}</h4>
-        <ElTable :data="changeRows" border size="small">
-          <ElTableColumn
-            prop="label"
-            :label="$t('auditLogs.detail.changesField')"
-            min-width="120"
-          />
-          <ElTableColumn
-            :label="$t('auditLogs.detail.changesBefore')"
-            min-width="160"
-          >
-            <template #default="{ row }">
-              <span :class="{ 'audit-changed': row.changed }">{{
-                row.before
-              }}</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn
-            :label="$t('auditLogs.detail.changesAfter')"
-            min-width="160"
-          >
-            <template #default="{ row }">
-              <span :class="{ 'audit-changed': row.changed }">{{
-                row.after
-              }}</span>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </div>
-    </CenteredDialog>
 
-    <AdaptiveDrawer
-      v-model="chartsOpen"
-      :title="$t('ops.overview.changeCharts')"
-      destroy-on-close
-      size="640px"
-    >
-      <div class="audit-change-charts">
-        <OpsCard :title="$t('ops.assets.routeReload')">
-          <MultiSeriesChart
-            :series="routeSeries"
-            :loading="chartsLoading"
-            :annotations="chartAnnotations"
-            :window="chartWindow"
-            height="200px"
-          />
-        </OpsCard>
-        <OpsCard :title="$t('ops.assets.connectorPublish')">
-          <MultiSeriesChart
-            :series="publishSeries"
-            :loading="chartsLoading"
-            :annotations="chartAnnotations"
-            :window="chartWindow"
-            height="200px"
-          />
-        </OpsCard>
+        <div v-if="auditDetailRows.length" class="mt-4">
+          <h4 class="audit-section-title mb-2">
+            {{ $t("auditLogs.detail.moreTitle") }}
+          </h4>
+          <ElDescriptions
+            :column="1"
+            border
+            :label-width="extDetailLabelWidth"
+            class="audit-ext-descriptions"
+          >
+            <ElDescriptionsItem
+              v-for="item in auditDetailRows"
+              :key="item.key"
+              :label="item.label"
+            >
+              {{ item.value }}
+            </ElDescriptionsItem>
+          </ElDescriptions>
+        </div>
+
+        <div v-if="changeRows.length" class="mt-4">
+          <h4 class="audit-section-title mb-2">
+            {{ $t("auditLogs.detail.changesTitle") }}
+          </h4>
+          <ElTable :data="changeRows" border size="small">
+            <ElTableColumn
+              prop="label"
+              :label="$t('auditLogs.detail.changesField')"
+              min-width="140"
+            />
+            <ElTableColumn
+              :label="$t('auditLogs.detail.changesBefore')"
+              min-width="200"
+            >
+              <template #default="{ row }">
+                <span :class="{ 'audit-changed': row.changed }">{{
+                  row.before
+                }}</span>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn
+              :label="$t('auditLogs.detail.changesAfter')"
+              min-width="200"
+            >
+              <template #default="{ row }">
+                <span :class="{ 'audit-changed': row.changed }">{{
+                  row.after
+                }}</span>
+              </template>
+            </ElTableColumn>
+          </ElTable>
+        </div>
+
+        <ElCollapse
+          v-if="hasRawJsonPayload"
+          v-model="rawJsonPanels"
+          class="audit-raw-collapse mt-4"
+        >
+          <ElCollapseItem name="raw">
+            <template #title>
+              <div class="audit-raw-header">
+                <span>{{ $t("auditLogs.detail.rawJsonTitle") }}</span>
+                <ElButton
+                  link
+                  type="primary"
+                  size="small"
+                  @click.stop="handleCopyRawJson"
+                >
+                  <template #icon
+                    ><ArtSvgIcon icon="ri:file-copy-line"
+                  /></template>
+                  {{ $t("auditLogs.detail.copyRawJson") }}
+                </ElButton>
+              </div>
+            </template>
+            <pre class="audit-raw-pre">{{ rawJsonText }}</pre>
+          </ElCollapseItem>
+        </ElCollapse>
       </div>
     </AdaptiveDrawer>
   </ControlPanelPageShell>
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import CopyableText from "@/components/common/copyable-text/index.vue";
-import { ref } from "vue";
+import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import type { ListFilter } from "@/types/list-query";
 import { auditLogsCatalog } from "@/list-catalog/common-resources";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import TableHeaderDatePickerPopover from "@/components/common/table-header-date-picker-popover/index.vue";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
-import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonInlineRow from "@/components/common/inline-row/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
-import OpsCard from "@/components/ops/OpsCard.vue";
-import MultiSeriesChart from "@/components/ops/MultiSeriesChart.vue";
-import { resolveStep } from "@/composables/ops/useStep";
-import { fetchMetricTimeseries } from "@/api/monitoring";
-import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
-import type { MetricSeries } from "@/types/api/monitoring";
-import {
-  buildChangeAnnotations,
-  normalizeChangeEvents,
-  takeChangeTop,
-} from "@/utils/ops/changes";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { exportResourceCsv } from "@/composables/useResourceCsvImportExport";
 import type {
@@ -291,35 +385,51 @@ import { logger } from "@/utils/sys";
 import { EMPTY_PLACEHOLDER, formatDateTime as formatDate } from "@/utils/format";
 import { downloadCsv } from "@/utils/csv";
 import { stripUrlScheme } from "@/utils/sensitive";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { $t } from "@/locales";
 import {
   ACTION_LABELS,
+  DETAIL_LABELS,
   FAILURE_REASON_LABELS,
+  MFA_CATEGORY_LABELS,
+  MFA_METHOD_LABELS,
   RESOURCE_TYPE_LABELS,
   SERVICE_LABELS,
   diffChanges,
+  formatChainFlowCode,
+  groupAuditLogsByRequestId,
   guardCsvFormula,
+  isAuditDurationSecondsKey,
+  isAuditTimestampKey,
   statusLabelKey,
   statusTagType,
+  type GroupedAuditRow,
 } from "./labels";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
+
 defineOptions({ name: "AuditLogs" });
+
 type ExportCommand = "all" | "selected";
 type AuditLogCsvRow = Record<string, string>;
+
+const { t, locale } = useI18n();
 const loading = ref(false);
+const detailLoading = ref(false);
 const tableData = ref<AuditLog[]>([]);
-const selectedRows = ref<AuditLog[]>([]);
+const selectedRows = ref<GroupedAuditRow<AuditLog>[]>([]);
+const expandedRequestIds = ref<Set<string>>(new Set());
 const detailVisible = ref(false);
 const currentLog = ref<AuditLogDetail | null>(null);
-const chartsOpen = ref(false);
-const chartsLoading = ref(false);
-const routeSeries = ref<MetricSeries | null>(null);
-const publishSeries = ref<MetricSeries | null>(null);
-const changeEvents = ref<ChangeEvent[]>([]);
-const chartWindow = ref<{ start: number; end: number } | null>(null);
-const chartAnnotations = computed(() =>
-  buildChangeAnnotations(changeEvents.value),
+const rawJsonPanels = ref<string[]>([]);
+
+const isEnLocale = computed(() => String(locale.value).startsWith("en"));
+const detailLabelWidth = computed(() =>
+  isEnLocale.value ? "136px" : "116px",
 );
+const extDetailLabelWidth = computed(() =>
+  isEnLocale.value ? "196px" : "148px",
+);
+
 const ACTION_VERB_LABELS: Record<string, string> = {
   login: "auditLogs.verbs.login",
   logout: "auditLogs.verbs.logout",
@@ -340,23 +450,26 @@ const ACTION_VERB_LABELS: Record<string, string> = {
   change: "auditLogs.verbs.change",
   reset: "auditLogs.verbs.reset",
 };
+
 const formatService = (service?: string | null) => {
   if (!service) {
-    return "-";
+    return EMPTY_PLACEHOLDER;
   }
   return SERVICE_LABELS[service] ? $t(SERVICE_LABELS[service]) : service;
 };
+
 const formatResourceType = (type: string) => {
   if (!type) {
-    return "-";
+    return EMPTY_PLACEHOLDER;
   }
   return RESOURCE_TYPE_LABELS[type]
     ? $t(RESOURCE_TYPE_LABELS[type])
     : type.replaceAll("_", " ");
 };
+
 const formatAction = (action: string) => {
   if (!action) {
-    return "-";
+    return EMPTY_PLACEHOLDER;
   }
   if (ACTION_LABELS[action]) {
     return $t(ACTION_LABELS[action]);
@@ -371,187 +484,169 @@ const formatAction = (action: string) => {
   }
   return action.replaceAll(".", " / ").replaceAll("_", " ");
 };
+
+const drawerActionTitle = computed(() => {
+  if (!currentLog.value) {
+    return $t("auditLogs.detail.title");
+  }
+  return formatAction(currentLog.value.action);
+});
+
 const timeRange = ref<[number, number] | null>(null);
 const listFilters = ref<ListFilter[]>([]);
 const searchForm = reactive({
   q: "",
+  includeSelfAudit: false,
 });
+
 const hasActiveSearch = computed(
   () =>
     Boolean(searchForm.q?.trim()) ||
     listFilters.value.length > 0 ||
     Boolean(timeRange.value?.length === 2),
 );
+
 const emptyDescription = computed(() =>
   hasActiveSearch.value
     ? $t("auditLogs.empty.filtered")
     : $t("auditLogs.empty.default"),
 );
-const DETAIL_LABELS: Record<string, string> = {
-  reason: "auditLogs.detailLabels.reason",
-  operator: "auditLogs.detailLabels.operator",
-  operator_id: "auditLogs.detailLabels.operatorId",
-  ip_address: "auditLogs.detailLabels.ipAddress",
-  selected_channel_id: "auditLogs.detailLabels.selectedChannelId",
-  route_rule_id: "auditLogs.detailLabels.routeRuleId",
-  channel_id: "auditLogs.detailLabels.channelId",
-  binding_id: "auditLogs.detailLabels.bindingId",
-  old_route: "auditLogs.detailLabels.oldRoute",
-  new_route: "auditLogs.detailLabels.newRoute",
-  route_rule: "auditLogs.detailLabels.routeRule",
-  bindings: "auditLogs.detailLabels.bindings",
-  route: "auditLogs.detailLabels.route",
-  message: "auditLogs.detailLabels.message",
-  status: "auditLogs.detailLabels.status",
-  name: "auditLogs.detailLabels.name",
-  id: "auditLogs.detailLabels.id",
-  created_at: "auditLogs.detailLabels.createdAt",
-  updated_at: "auditLogs.detailLabels.updatedAt",
-  expires_at: "auditLogs.detailLabels.expiresAt",
-  product_id: "auditLogs.detailLabels.productId",
-  tenant_id: "auditLogs.detailLabels.tenantId",
-  tenant_code: "auditLogs.detailLabels.tenantCode",
-  priority: "auditLogs.detailLabels.priority",
-  metadata: "auditLogs.detailLabels.metadata",
-  switch_condition: "auditLogs.detailLabels.switchCondition",
-  channel_order: "auditLogs.detailLabels.channelOrder",
-  description: "auditLogs.detailLabels.description",
-  enabled: "auditLogs.detailLabels.enabled",
-  request: "auditLogs.detailLabels.request",
-  product: "auditLogs.detailLabels.product",
-  reservation: "auditLogs.detailLabels.reservation",
-  reservation_id: "auditLogs.detailLabels.reservationId",
-  active_reservation_id: "auditLogs.detailLabels.activeReservationId",
-  reserved_by: "auditLogs.detailLabels.reservedBy",
-  reserved_at: "auditLogs.detailLabels.reservedAt",
-  upstream_url: "auditLogs.detailLabels.upstreamUrl",
-  timeout_secs: "auditLogs.detailLabels.timeoutSecs",
-  bill_id: "auditLogs.detailLabels.billId",
-  bill_kind: "auditLogs.detailLabels.billKind",
-  transaction_id: "auditLogs.detailLabels.transactionId",
-  amount: "auditLogs.detailLabels.amount",
-  direction: "auditLogs.detailLabels.direction",
-  ip_addresses: "auditLogs.detailLabels.ipAddresses",
-  total_added: "auditLogs.detailLabels.totalAdded",
-  total_errors: "auditLogs.detailLabels.totalErrors",
-  algorithm: "auditLogs.detailLabels.algorithm",
-  max_daily: "auditLogs.detailLabels.maxDaily",
-  max_concurrent: "auditLogs.detailLabels.maxConcurrent",
-  max_bandwidth_mbps: "auditLogs.detailLabels.maxBandwidthMbps",
-  api_limits: "auditLogs.detailLabels.apiLimits",
-  burst_size: "auditLogs.detailLabels.burstSize",
-  window_duration_secs: "auditLogs.detailLabels.windowDurationSecs",
-  expected_updated_at: "auditLogs.detailLabels.expectedUpdatedAt",
-  default_ttl: "auditLogs.detailLabels.defaultTtl",
-  max_cache_size: "auditLogs.detailLabels.maxCacheSize",
-  api_ttl: "auditLogs.detailLabels.apiTtl",
-  tenant_isolated: "auditLogs.detailLabels.tenantIsolated",
-  warmup_enabled: "auditLogs.detailLabels.warmupEnabled",
-  warmup_keys: "auditLogs.detailLabels.warmupKeys",
-  scope: "auditLogs.detailLabels.scope",
-  changes: "auditLogs.detailLabels.changes",
-  site_name: "auditLogs.detailLabels.siteName",
-  site_url: "auditLogs.detailLabels.siteUrl",
-  tenant_gateway_url: "auditLogs.detailLabels.tenantGatewayUrl",
-  enable_notifications: "auditLogs.detailLabels.enableNotifications",
-  enable_audit_log: "auditLogs.detailLabels.enableAuditLog",
-  session_timeout: "auditLogs.detailLabels.sessionTimeout",
-  max_upload_size: "auditLogs.detailLabels.maxUploadSize",
-  username: "auditLogs.detailLabels.username",
-  first_login: "auditLogs.detailLabels.firstLogin",
-  language: "auditLogs.detailLabels.language",
-  email: "auditLogs.detailLabels.email",
-  encryption_mode: "auditLogs.detailLabels.encryptionMode",
-  require_signature: "auditLogs.detailLabels.requireSignature",
-  nonce_ttl_seconds: "auditLogs.detailLabels.nonceTtlSeconds",
-  clock_skew_seconds: "auditLogs.detailLabels.clockSkewSeconds",
-  current_key_version: "auditLogs.detailLabels.currentKeyVersion",
-  key_version: "auditLogs.detailLabels.keyVersion",
-  mode: "auditLogs.detailLabels.mode",
-  manifest: "auditLogs.detailLabels.manifest",
-  checked: "auditLogs.detailLabels.checked",
-  verified: "auditLogs.detailLabels.verified",
-  failed_count: "auditLogs.detailLabels.failedCount",
-  path: "auditLogs.detailLabels.path",
-  operation: "auditLogs.detailLabels.operation",
-  authorization_type: "auditLogs.detailLabels.authorizationType",
-  activate_now: "auditLogs.detailLabels.activateNow",
-  delivery_log_id: "auditLogs.detailLabels.deliveryLogId",
-};
+
 const pagination = reactive({
   page: 1,
   limit: 10,
   total: 0,
 });
-const columns = ref<ColumnOption<AuditLog>[]>([
-  { type: "selection", width: 55 },
-  {
-    prop: "timestamp",
-    label: $t("auditLogs.columns.timestamp"),
-    width: 180,
-    useSlot: true,
-  },
-  {
-    prop: "actor_name",
-    label: $t("auditLogs.columns.actorName"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "action",
-    label: $t("auditLogs.columns.action"),
-    minWidth: 120,
-    useSlot: true,
-  },
-  {
-    prop: "resource_type",
-    label: $t("auditLogs.columns.resourceType"),
-    minWidth: 96,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("auditLogs.columns.status"),
-    width: 80,
-    useSlot: true,
-  },
-  {
-    prop: "service",
-    label: $t("auditLogs.columns.service"),
-    width: 104,
-    useSlot: true,
-  },
-  {
-    prop: "failure_reason",
-    label: $t("auditLogs.columns.failureReason"),
-    minWidth: 112,
-    useSlot: true,
-  },
-  {
-    prop: "ip_address",
-    label: $t("auditLogs.columns.ipAddress"),
-    minWidth: 112,
-    useSlot: true,
-  },
-  {
-    prop: "details",
-    label: $t("auditLogs.columns.details"),
-    width: 88,
-    align: "center",
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+
+const buildAuditColumns = (): ColumnOption<GroupedAuditRow<AuditLog>>[] => {
+  const isEn = String(locale.value).startsWith("en");
+  return [
+    { type: "selection", width: 48 },
+    {
+      prop: "timestamp",
+      label: t("auditLogs.columns.timestamp"),
+      minWidth: 160,
+      useSlot: true,
+    },
+    {
+      prop: "actor_name",
+      label: t("auditLogs.columns.actorName"),
+      minWidth: 88,
+      useSlot: true,
+    },
+    {
+      prop: "action",
+      label: t("auditLogs.columns.action"),
+      minWidth: 124,
+      useSlot: true,
+    },
+    {
+      prop: "resource_type",
+      label: t("auditLogs.columns.resourceType"),
+      minWidth: 88,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: t("auditLogs.columns.status"),
+      width: isEn ? 92 : 76,
+      useSlot: true,
+    },
+    {
+      prop: "service",
+      label: t("auditLogs.columns.service"),
+      minWidth: isEn ? 140 : 128,
+      useSlot: true,
+    },
+    {
+      prop: "failure_reason",
+      label: t("auditLogs.columns.failureReason"),
+      minWidth: 96,
+      useSlot: true,
+    },
+    {
+      prop: "ip_address",
+      label: t("auditLogs.columns.ipAddress"),
+      minWidth: 112,
+      useSlot: true,
+    },
+    {
+      prop: "details",
+      label: t("common.fields.operations"),
+      width: isEn ? 88 : 76,
+      align: "center",
+      fixed: "right",
+      useSlot: true,
+    },
+  ];
+};
+
+const columns = ref<ColumnOption<GroupedAuditRow<AuditLog>>[]>(
+  buildAuditColumns(),
+);
+watch(locale, () => {
+  const prev = new Map(
+    columns.value.map((col) => [String(col.prop ?? col.type ?? ""), col]),
+  );
+  columns.value = buildAuditColumns().map((col) => {
+    const existing = prev.get(String(col.prop ?? col.type ?? ""));
+    return existing
+      ? {
+          ...col,
+          visible: existing.visible ?? col.visible,
+          checked: existing.checked ?? col.checked,
+        }
+      : col;
+  });
+});
+
+const displayTableData = computed<GroupedAuditRow<AuditLog>[]>(() =>
+  groupAuditLogsByRequestId(tableData.value, expandedRequestIds.value),
+);
+
+const toggleChainExpand = (requestId?: string | null) => {
+  const key = requestId?.trim();
+  if (!key) return;
+  const next = new Set(expandedRequestIds.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedRequestIds.value = next;
+};
+
+const chainTooltipText = (row: GroupedAuditRow<AuditLog>): string => {
+  const flow = row.chainServices.map((svc) => formatService(svc)).join(" ➔ ");
+  return row.chainExpanded
+    ? $t("auditLogs.chain.collapseTooltip", { flow })
+    : $t("auditLogs.chain.expandTooltip", {
+        flow,
+        count: row.mirrorChildren.length + 1,
+      });
+};
+
+const relatedChainRecords = computed<AuditLog[]>(() => {
+  const reqId = currentLog.value?.request_id?.trim();
+  if (!reqId) return [];
+  const matches = tableData.value.filter(
+    (item) => item.request_id?.trim() === reqId,
+  );
+  const uniqueServices = new Set(matches.map((item) => item.service));
+  return matches.length >= 2 && uniqueServices.size >= 2 ? matches : [];
+});
+
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.page,
   size: pagination.limit,
   total: pagination.total,
 }));
+
 const exportItems = computed(() => [
   {
     command: "all",
     label: $t("common.actions.exportAll"),
-    disabled: tableData.value.length === 0,
+    disabled: displayTableData.value.length === 0,
   },
   {
     command: "selected",
@@ -561,27 +656,70 @@ const exportItems = computed(() => [
     disabled: selectedRows.value.length === 0,
   },
 ]);
+
 const formatIpAddress = (ip?: string) => {
   return ip && ip.trim() ? ip : $t("auditLogs.detail.notRecorded");
 };
+
 const getRecord = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
 };
+
 const formatDetailLabel = (key: string) => {
   return DETAIL_LABELS[key] ? $t(DETAIL_LABELS[key]) : key.replaceAll("_", " ");
 };
+
 const SENSITIVE_DETAIL_KEYS = new Set(["endpoint_url", "upstream_url"]);
-const formatDetailValue = (value: unknown): string => {
-  if (value === null || value === undefined || value === "")
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+const formatDetailValue = (value: unknown, key?: string): string => {
+  if (value === null || value === undefined || value === "") {
     return EMPTY_PLACEHOLDER;
-  if (typeof value === "boolean")
+  }
+  if (typeof value === "boolean") {
     return value ? $t("auditLogs.values.yes") : $t("auditLogs.values.no");
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return stripUrlScheme(value);
+  }
+  if (typeof value === "number") {
+    if (isAuditTimestampKey(key)) {
+      return formatDate(value);
+    }
+    if (key === "content_length") {
+      return `${value} B`;
+    }
+    if (isAuditDurationSecondsKey(key)) {
+      return `${value}s`;
+    }
+    return String(value);
+  }
+  if (typeof value === "string") {
+    if (
+      (key === "category" || key === "mfa") &&
+      MFA_CATEGORY_LABELS[value]
+    ) {
+      return $t(MFA_CATEGORY_LABELS[value]);
+    }
+    if (
+      (key === "step_up_method" || key === "method") &&
+      MFA_METHOD_LABELS[value]
+    ) {
+      return $t(MFA_METHOD_LABELS[value]);
+    }
+    if (isAuditTimestampKey(key)) {
+      const asNum = Number(value);
+      if (Number.isFinite(asNum) && value.trim() !== "") {
+        return formatDate(asNum);
+      }
+      return formatDate(value);
+    }
+    if (ISO_DATETIME_RE.test(value)) {
+      return formatDate(value);
+    }
+    return stripUrlScheme(value);
+  }
   if (Array.isArray(value)) {
     if (!value.length) return $t("auditLogs.values.none");
-    return value.map(formatDetailValue).join("、");
+    return value.map((item) => formatDetailValue(item, key)).join("、");
   }
   const record = getRecord(value);
   const routeConfig = getRecord(record.route_config);
@@ -596,36 +734,38 @@ const formatDetailValue = (value: unknown): string => {
   }
   const summary = Object.entries(record)
     .filter(([, item]) => item !== null && item !== undefined && item !== "")
-    .slice(0, 6)
-    .map(([key, item]) => {
-      const value =
-        SENSITIVE_DETAIL_KEYS.has(key) && typeof item === "string"
+    .slice(0, 8)
+    .map(([subKey, item]) => {
+      const formatted =
+        SENSITIVE_DETAIL_KEYS.has(subKey) && typeof item === "string"
           ? stripUrlScheme(item)
-          : formatDetailValue(item);
-      return `${formatDetailLabel(key)}：${value}`;
+          : formatDetailValue(item, subKey);
+      return `${formatDetailLabel(subKey)}：${formatted}`;
     });
   return summary.length ? summary.join("；") : EMPTY_PLACEHOLDER;
 };
+
 const formatRouteConfig = (config: Record<string, unknown>) => {
   const lines = [
     config.purpose_label
-      ? `${$t("auditLogs.routeConfig.purpose")}${formatDetailValue(config.purpose_label)}`
+      ? `${$t("auditLogs.routeConfig.purpose")}${formatDetailValue(config.purpose_label, "purpose_label")}`
       : "",
     config.change_reason
-      ? `${$t("auditLogs.routeConfig.changeReason")}${formatDetailValue(config.change_reason)}`
+      ? `${$t("auditLogs.routeConfig.changeReason")}${formatDetailValue(config.change_reason, "change_reason")}`
       : "",
     Array.isArray(config.tags) && config.tags.length
-      ? `${$t("auditLogs.routeConfig.tags")}${formatDetailValue(config.tags)}`
+      ? `${$t("auditLogs.routeConfig.tags")}${formatDetailValue(config.tags, "tags")}`
       : "",
     config.effective_mode === "window"
-      ? `${$t("auditLogs.routeConfig.effectiveWindow")}${formatDetailValue(config.effective_start_at)} ${$t("auditLogs.routeConfig.to")} ${formatDetailValue(config.effective_end_at)}`
+      ? `${$t("auditLogs.routeConfig.effectiveWindow")}${formatDetailValue(config.effective_start_at, "effective_start_at")} ${$t("auditLogs.routeConfig.to")} ${formatDetailValue(config.effective_end_at, "effective_end_at")}`
       : $t("auditLogs.routeConfig.effectiveNow"),
     config.description
-      ? `${$t("auditLogs.routeConfig.description")}${formatDetailValue(config.description)}`
+      ? `${$t("auditLogs.routeConfig.description")}${formatDetailValue(config.description, "description")}`
       : "",
   ].filter(Boolean);
   return lines.join("；");
 };
+
 const formatSwitchCondition = (condition: Record<string, unknown>) => {
   const timeoutMs =
     typeof condition.timeout_ms === "number" ? condition.timeout_ms : 3000;
@@ -633,7 +773,9 @@ const formatSwitchCondition = (condition: Record<string, unknown>) => {
     typeof condition.max_retries === "number" ? condition.max_retries : 1;
   const failoverEnabled = condition.failover_enabled !== false;
   const failureTypes = Array.isArray(condition.failure_types)
-    ? condition.failure_types.map(formatDetailValue).join("、")
+    ? condition.failure_types
+        .map((item) => formatDetailValue(item))
+        .join("、")
     : $t("auditLogs.routeConfig.defaultFailureTypes");
   return $t("auditLogs.routeConfig.switchCondition", {
     timeoutMs,
@@ -644,65 +786,121 @@ const formatSwitchCondition = (condition: Record<string, unknown>) => {
       : $t("auditLogs.routeConfig.noSwitch"),
   });
 };
+
 const formatRouteSnapshot = (snapshot: Record<string, unknown>) => {
   const routeRule = getRecord(snapshot.route_rule);
   const bindings = Array.isArray(snapshot.bindings) ? snapshot.bindings : [];
   const firstBinding = getRecord(bindings[0]);
   const parts = [
     routeRule.product_id
-      ? `${$t("auditLogs.routeSnapshot.productId")}${formatDetailValue(routeRule.product_id)}`
+      ? `${$t("auditLogs.routeSnapshot.productId")}${formatDetailValue(routeRule.product_id, "product_id")}`
       : "",
     routeRule.tenant_id
-      ? `${$t("auditLogs.routeSnapshot.tenantId")}${formatDetailValue(routeRule.tenant_id)}`
+      ? `${$t("auditLogs.routeSnapshot.tenantId")}${formatDetailValue(routeRule.tenant_id, "tenant_id")}`
       : $t("auditLogs.routeSnapshot.defaultRoute"),
     routeRule.priority
-      ? `${$t("auditLogs.routeSnapshot.priority")}${formatDetailValue(routeRule.priority)}`
+      ? `${$t("auditLogs.routeSnapshot.priority")}${formatDetailValue(routeRule.priority, "priority")}`
       : "",
     routeRule.status
-      ? `${$t("auditLogs.routeSnapshot.status")}${formatDetailValue(routeRule.status)}`
+      ? `${$t("auditLogs.routeSnapshot.status")}${formatDetailValue(routeRule.status, "status")}`
       : "",
     bindings.length
       ? `${$t("auditLogs.routeSnapshot.candidateCount")}${bindings.length}`
       : "",
     firstBinding.channel_id
-      ? `${$t("auditLogs.routeSnapshot.firstChannel")}${formatDetailValue(firstBinding.channel_id)}`
+      ? `${$t("auditLogs.routeSnapshot.firstChannel")}${formatDetailValue(firstBinding.channel_id, "channel_id")}`
       : "",
   ].filter(Boolean);
   return parts.join("；");
 };
+
 const formatActorName = (log: AuditLog) => {
   if (log.actor_name) return log.actor_name;
   return log.actor_type === "anonymous"
     ? $t("auditLogs.values.anonymous")
     : EMPTY_PLACEHOLDER;
 };
+
 const formatFailureReason = (reason?: string | null) => {
   if (!reason) return EMPTY_PLACEHOLDER;
   return FAILURE_REASON_LABELS[reason]
     ? $t(FAILURE_REASON_LABELS[reason])
     : reason.replaceAll("_", " ");
 };
+
 const changeRows = computed(() => {
   const changes = currentLog.value?.changes;
-  if (!changes) return [];
-  return diffChanges(changes.before, changes.after).map((row) => ({
+  const details = currentLog.value?.details || {};
+  const beforeSource =
+    changes && (changes.before !== undefined || changes.after !== undefined)
+      ? changes.before
+      : details.before;
+  const afterSource =
+    changes && (changes.before !== undefined || changes.after !== undefined)
+      ? changes.after
+      : details.after;
+  if (beforeSource === undefined && afterSource === undefined) {
+    return [];
+  }
+  return diffChanges(beforeSource, afterSource).map((row) => ({
     label: formatDetailLabel(row.key),
-    before: formatDetailValue(row.before),
-    after: formatDetailValue(row.after),
+    before: formatDetailValue(row.before, row.key),
+    after: formatDetailValue(row.after, row.key),
     changed: row.changed,
   }));
 });
+
 const auditDetailRows = computed(() => {
   const details = currentLog.value?.details || {};
+  const hasExplicitChanges = Boolean(currentLog.value?.changes);
   return Object.entries(details)
-    .filter(
-      ([, value]) => value !== null && value !== undefined && value !== "",
-    )
+    .filter(([key, value]) => {
+      if (value === null || value === undefined || value === "") return false;
+      if (key === "mfa" && details.category === value) return false;
+      if (!hasExplicitChanges && (key === "before" || key === "after")) {
+        return false;
+      }
+      return true;
+    })
     .map(([key, value]) => ({
+      key,
       label: formatDetailLabel(key),
-      value: formatDetailValue(value),
+      value: formatDetailValue(value, key),
     }));
 });
+
+const rawPayloadObject = computed(() => {
+  if (!currentLog.value) return null;
+  const payload: Record<string, unknown> = {};
+  if (
+    currentLog.value.details &&
+    Object.keys(currentLog.value.details).length > 0
+  ) {
+    payload.details = currentLog.value.details;
+  }
+  if (currentLog.value.changes) {
+    payload.changes = currentLog.value.changes;
+  }
+  if (currentLog.value.request_summary) {
+    payload.request_summary = currentLog.value.request_summary;
+  }
+  return Object.keys(payload).length > 0 ? payload : null;
+});
+
+const hasRawJsonPayload = computed(() => Boolean(rawPayloadObject.value));
+const rawJsonText = computed(() =>
+  rawPayloadObject.value ? JSON.stringify(rawPayloadObject.value, null, 2) : "",
+);
+
+const handleCopyRawJson = async () => {
+  if (!rawJsonText.value) return;
+  await copyWithFeedback(rawJsonText.value);
+};
+
+const handleDrawerClosed = () => {
+  rawJsonPanels.value = [];
+};
+
 const buildQueryParams = (includePagination = true) => {
   const keyword = searchForm.q?.trim() || "";
   const params: AuditLogListQuery = {};
@@ -720,20 +918,25 @@ const buildQueryParams = (includePagination = true) => {
     params.start_time = Math.floor(Number(timeRange.value[0]) / 1000);
     params.end_time = Math.floor(Number(timeRange.value[1]) / 1000);
   }
+  if (searchForm.includeSelfAudit) {
+    params.include_self_audit = true;
+  }
   return params;
 };
+
 const loadData = async () => {
   const params = buildQueryParams();
   await runWithLoading(loading, async () => {
-    // 后端默认排除 /admin/preferences 个人偏好噪音（route_map 治本 + 查询侧清存量）。
     const res = await fetchAuditLogList(params);
     tableData.value = res.logs;
     pagination.total = res.total;
     selectedRows.value = [];
+    expandedRequestIds.value = new Set();
   }).catch((error) => {
     logger.error("Failed to load audit logs:", error);
   });
 };
+
 const handleSearch = () => {
   pagination.page = 1;
   loadData();
@@ -741,72 +944,40 @@ const handleSearch = () => {
 
 const handleResetFilters = () => {
   searchForm.q = "";
+  searchForm.includeSelfAudit = false;
   listFilters.value = [];
   timeRange.value = null;
   pagination.page = 1;
   loadData();
 };
+
 const handlePageSizeChange = (size: number) => {
   pagination.limit = size;
   pagination.page = 1;
   loadData();
 };
+
 const handlePageCurrentChange = (page: number) => {
   pagination.page = page;
   loadData();
 };
-const handleSelectionChange = (selection: AuditLog[]) => {
+
+const handleSelectionChange = (selection: GroupedAuditRow<AuditLog>[]) => {
   selectedRows.value = selection;
 };
+
 const showDetails = async (row: AuditLog) => {
+  detailVisible.value = true;
+  detailLoading.value = true;
   try {
     currentLog.value = await fetchAuditLogById(row.id);
-    detailVisible.value = true;
   } catch (error) {
     logger.error("Failed to load audit log detail:", error);
-  }
-};
-const resolveChartWindow = (): { start: number; end: number } => {
-  if (timeRange.value?.length === 2) {
-    const start = Math.floor(Number(timeRange.value[0]) / 1000);
-    const end = Math.floor(Number(timeRange.value[1]) / 1000);
-    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-      return { start, end };
-    }
-  }
-  const end = Math.floor(Date.now() / 1000);
-  return { start: end - 6 * 3600, end };
-};
-const openChangeCharts = async () => {
-  chartsOpen.value = true;
-  const win = resolveChartWindow();
-  chartWindow.value = win;
-  chartsLoading.value = true;
-  try {
-    const step = resolveStep(win.end - win.start);
-    const [changesRes, route, publish] = await Promise.all([
-      fetchOpsChanges({ ...win, limit: 50 }).catch(() => null),
-      fetchMetricTimeseries({
-        metric: "route_reload_total",
-        ...win,
-        step,
-      }).catch(() => null),
-      fetchMetricTimeseries({
-        metric: "connector_publish_total",
-        ...win,
-        step,
-      }).catch(() => null),
-    ]);
-    changeEvents.value = takeChangeTop(
-      normalizeChangeEvents(changesRes?.events),
-      50,
-    );
-    routeSeries.value = route;
-    publishSeries.value = publish;
   } finally {
-    chartsLoading.value = false;
+    detailLoading.value = false;
   }
 };
+
 const handleExport = async (command: string) => {
   try {
     const exportCommand = command as ExportCommand;
@@ -881,19 +1052,145 @@ const handleExport = async (command: string) => {
     logger.error("Failed to export audit logs:", error);
   }
 };
+
 onMounted(() => {
   loadData();
 });
 </script>
 
 <style scoped>
+.audit-self-toggle {
+  height: 32px;
+  margin-right: 0;
+}
+
+.audit-chain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 4px;
+  background-color: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.audit-chain-badge:hover {
+  background-color: var(--el-color-primary-light-8);
+}
+
+.audit-chain-badge__code {
+  font-family: var(--el-font-family-mono, monospace);
+}
+
+.audit-chain-badge__icon {
+  font-size: 14px;
+}
+
+.audit-mirror-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.audit-mirror-prefix {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.audit-detail-body {
+  min-height: 160px;
+}
+
+.audit-related-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background-color: var(--el-fill-color-lighter);
+}
+
+.audit-related-bar__label {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.audit-related-bar__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audit-section-title {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.audit-main-descriptions :deep(.el-descriptions__table),
+.audit-ext-descriptions :deep(.el-descriptions__table) {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.audit-main-descriptions :deep(.el-descriptions__cell),
+.audit-ext-descriptions :deep(.el-descriptions__cell) {
+  padding: 6px 10px;
+  line-height: 22px;
+}
+
+.audit-main-descriptions :deep(.el-descriptions__label),
+.audit-ext-descriptions :deep(.el-descriptions__label) {
+  white-space: nowrap;
+}
+
+.audit-main-descriptions :deep(.el-descriptions__content),
+.audit-ext-descriptions :deep(.el-descriptions__content) {
+  word-break: break-word;
+}
+
+.audit-nowrap-val {
+  white-space: nowrap;
+}
+
 .audit-changed {
   font-weight: 600;
   color: var(--el-color-warning);
 }
-.audit-change-charts {
+
+.audit-raw-header {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.audit-raw-pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 280px;
+  overflow: auto;
+  border-radius: 6px;
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

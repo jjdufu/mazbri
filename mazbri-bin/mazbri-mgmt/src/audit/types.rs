@@ -251,6 +251,9 @@ pub struct AuditLogQuery {
     pub status: Option<String>,
     /// 写入服务（`mgmt` / `cert` / `ratelimit`）。
     pub service: Option<String>,
+    /// 是否回显审计日志自查阅记录（`audit.list` / `audit.view`），默认 `false`。
+    #[serde(default)]
+    pub include_self_audit: Option<bool>,
     #[serde(default = "default_page")]
     pub page: u32,
     #[serde(default = "default_limit")]
