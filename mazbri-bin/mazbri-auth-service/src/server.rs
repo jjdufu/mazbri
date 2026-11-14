@@ -50,14 +50,6 @@ pub async fn serve(
             },
         );
         info!("IP whitelist config watch started");
-        if let Err(error) = mazbri_core::config_watch::ensure_config_version_seeded(
-            &platform_pool,
-            mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
-        )
-        .await
-        {
-            tracing::warn!(error = %error, "Failed to seed auth_api_key_version in route_sync_metadata");
-        }
         mazbri_core::config_watch::spawn_config_watch(
             platform_pool,
             platform_db_cfg,
