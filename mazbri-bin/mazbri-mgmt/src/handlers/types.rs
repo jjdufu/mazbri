@@ -262,7 +262,8 @@ pub struct CreateAdminRequest {
 fn default_force_password_reset() -> bool {
     true
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts", optional_fields)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateAdminRequest {
     pub display_name: Option<String>,
@@ -272,17 +273,21 @@ pub struct UpdateAdminRequest {
     pub mfa_required: Option<bool>,
     pub force_password_reset: Option<bool>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts", optional_fields)]
 #[serde(deny_unknown_fields)]
 pub struct ResetPasswordRequest {
     pub new_password: String,
+    #[serde(default)]
+    pub force_password_reset: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForcePasswordResetRequest {
     pub force_password_reset: bool,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts")]
 #[serde(deny_unknown_fields)]
 pub struct SetAdminStatusRequest {
     pub is_active: bool,

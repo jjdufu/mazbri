@@ -800,7 +800,6 @@
       "title": "Mazbri Management",
       "users": "User Management",
       "userManagement": "User Management",
-      "userDetail": "User Detail",
       "tenants": "Tenant Management",
       "opsManagement": "Operations Center",
       "opsMonitoring": "Ops Monitoring",
@@ -2309,6 +2308,21 @@
     "page": {
       "title": "User Management"
     },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "mfaBound": "Bound",
+      "mfaUnbound": "Unbound",
+      "policyOn": "Enabled",
+      "policyOff": "Disabled"
+    },
+    "passwordValidation": {
+      "lengthRange": "Password length must be between {min} and {max} characters",
+      "requireUppercase": "Password must contain at least one uppercase letter",
+      "requireLowercase": "Password must contain at least one lowercase letter",
+      "requireDigit": "Password must contain at least one digit",
+      "requireSpecial": "Password must contain a special character ({chars})"
+    },
     "list": {
       "title": "System User List",
       "addUser": "Add User",
@@ -2345,7 +2359,8 @@
         "role": "Please select a role"
       },
       "actions": {
-        "regeneratePassword": "Regenerate Password"
+        "regeneratePassword": "Generate strong password matching policy",
+        "copyPassword": "Copy password"
       },
       "tips": {
         "passwordGenerated": "Generated automatically based on the password policy",
@@ -2370,12 +2385,19 @@
     },
     "resetPasswordDialog": {
       "title": "Reset Password",
-      "alert": "Reset password for administrator {username}",
+      "alert": "Resetting login password for {username}",
       "fields": {
         "newPassword": "New Password"
       },
       "placeholders": {
         "newPassword": "Please enter a new password"
+      },
+      "actions": {
+        "regeneratePassword": "Generate strong password matching policy",
+        "copyPassword": "Copy password"
+      },
+      "tips": {
+        "passwordGenerated": "Generated based on the platform password policy; copy and share securely"
       },
       "forceReset": "Require the user to change the password on next login",
       "validation": {
@@ -2386,24 +2408,45 @@
     "detail": {
       "title": "Administrator Details",
       "userTitle": "User Details",
-      "basicInfo": "Basic Info",
-      "editTitle": "Edit Administrator Info",
-      "editUserTitle": "Edit User Info",
-      "resetPassword": "Reset Password",
+      "basicInfo": "Account Attributes",
+      "securitySection": "Security & Controls",
+      "editAction": "Edit Profile",
+      "editTitle": "Edit Administrator Profile",
+      "editUserTitle": "Edit User Profile",
+      "resetPassword": "Reset Login Password",
+      "resetMfa": "Reset Two-Factor MFA",
       "deleteAdmin": "Delete Administrator",
       "deleteUser": "Delete User",
+      "controls": {
+        "statusTitle": "Account Active Status",
+        "statusHint": "Deactivating immediately revokes active sessions and blocks sign-in",
+        "statusProtectedHint": "Super administrators and your own signed-in account cannot be deactivated here",
+        "passwordTitle": "Login Password Control",
+        "passwordHint": "Reset password and atomically update the force-change-on-login flag",
+        "passwordProtectedHint": "Manage super administrator password via Personal Account & Security in the top bar",
+        "mfaTitle": "Two-Factor Authentication (MFA) Control",
+        "mfaHint": "Unbind a lost authenticator device so the user re-enrolls on next sign-in",
+        "mfaUnboundHint": "This user has not bound an MFA authenticator yet",
+        "mfaProtectedHint": "Manage super administrator MFA via Personal Account & Security in the top bar",
+        "dangerTitle": "Delete Account",
+        "dangerHint": "Permanently remove this admin user account; this action cannot be undone"
+      },
       "labels": {
-        "id": "ID",
+        "id": "User ID",
         "username": "Username",
+        "displayName": "Display Name",
         "email": "Email",
         "role": "Role",
-        "status": "Status",
-        "mfaStatus": "MFA Status",
-        "forcePasswordReset": "Force Password Reset",
-        "lastLogin": "Last Login",
+        "status": "Account Status",
+        "mfaStatus": "MFA Binding",
+        "forcePasswordReset": "Force Reset on Next Login",
+        "passwordChangedAt": "Password Changed At",
+        "lastLogin": "Last Login At",
         "mfaRequired": "Require MFA"
       },
       "validation": {
+        "displayNameRequired": "Please enter a display name",
+        "displayNameLength": "Display name cannot exceed 100 characters",
         "emailRequired": "Please enter an email",
         "emailInvalid": "Please enter a valid email address",
         "roleRequired": "Please select a role"
@@ -2419,8 +2462,8 @@
     "messages": {
       "resetMfaTitle": "Reset MFA",
       "resetMfaConfirm": "Reset MFA for “{username}”? Re-binding will be required.",
-      "deleteSystemAdminBlocked": "The system administrator account cannot be deleted",
-      "systemAdminDeleteBlocked": "The system administrator account cannot be deleted",
+      "deleteSystemAdminBlocked": "Super administrator accounts cannot be deleted",
+      "systemAdminDeleteBlocked": "Super administrator accounts cannot be deleted",
       "deleteUserConfirm": "Are you sure you want to delete user \"{username}\"?",
       "deleteAdminConfirm": "Are you sure you want to delete administrator \"{username}\"?"
     }
@@ -4143,7 +4186,7 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "MFA is enabled. Sensitive actions require category verification; manage 2FA in Personal Account & Security.",
+    "enabled": "Sensitive actions require administrator two-factor authentication (MFA) confirmation",
     "notEnabled": "This operation requires MFA, which is not enabled for your account.",
     "goToSetup": "Set up MFA"
   },

@@ -28,19 +28,6 @@ export const controlPanelRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "user/:id",
-        name: "UserDetail",
-        component: "/mazbri/control-panel/users/[id]/index",
-        meta: {
-          title: "menus.mazbri.userDetail",
-          icon: "ri:user-line",
-          isHide: true,
-          activePath: "/control-panel/users",
-          keepAlive: false,
-          roles: [...ROLES_ADMIN],
-        },
-      },
-      {
         path: "certificates",
         name: "CertificateList",
         component: "/mazbri/control-panel/certificates/index",

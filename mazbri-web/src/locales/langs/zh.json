@@ -800,7 +800,6 @@
       "title": "Mazbri 管理",
       "users": "用户管理",
       "userManagement": "用户管理",
-      "userDetail": "用户详情",
       "tenants": "租户管理",
       "opsManagement": "运营中心",
       "opsMonitoring": "运维监控",
@@ -2309,6 +2308,21 @@
     "page": {
       "title": "用户管理"
     },
+    "status": {
+      "active": "启用",
+      "inactive": "停用",
+      "mfaBound": "已绑定",
+      "mfaUnbound": "未绑定",
+      "policyOn": "已开启",
+      "policyOff": "未开启"
+    },
+    "passwordValidation": {
+      "lengthRange": "密码长度需在 {min} 到 {max} 位之间",
+      "requireUppercase": "密码必须包含至少一个大写字母",
+      "requireLowercase": "密码必须包含至少一个小写字母",
+      "requireDigit": "密码必须包含至少一个数字",
+      "requireSpecial": "密码必须包含特殊字符（{chars}）"
+    },
     "list": {
       "title": "系统用户列表",
       "addUser": "新建",
@@ -2345,7 +2359,8 @@
         "role": "请选择角色"
       },
       "actions": {
-        "regeneratePassword": "随机生成"
+        "regeneratePassword": "随机生成符合策略的强密码",
+        "copyPassword": "复制密码"
       },
       "tips": {
         "passwordGenerated": "已根据密码策略自动生成",
@@ -2370,12 +2385,19 @@
     },
     "resetPasswordDialog": {
       "title": "重置密码",
-      "alert": "为管理员 {username} 重置密码",
+      "alert": "正在为用户 {username} 重置登录密码",
       "fields": {
         "newPassword": "新密码"
       },
       "placeholders": {
         "newPassword": "请输入新密码"
+      },
+      "actions": {
+        "regeneratePassword": "随机生成符合策略的强密码",
+        "copyPassword": "复制密码"
+      },
+      "tips": {
+        "passwordGenerated": "已按当前平台密码策略生成强密码，请复制后妥善告知用户"
       },
       "forceReset": "要求用户下次登录时修改密码",
       "validation": {
@@ -2386,24 +2408,45 @@
     "detail": {
       "title": "管理员详情",
       "userTitle": "用户详情",
-      "basicInfo": "基本信息",
-      "editTitle": "编辑管理员基本信息",
-      "editUserTitle": "编辑用户基本信息",
-      "resetPassword": "重置密码",
+      "basicInfo": "账户属性",
+      "securitySection": "安全与管控",
+      "editAction": "编辑资料",
+      "editTitle": "编辑管理员资料",
+      "editUserTitle": "编辑用户资料",
+      "resetPassword": "重置登录密码",
+      "resetMfa": "重置两步验证 MFA",
       "deleteAdmin": "删除",
-      "deleteUser": "删除",
+      "deleteUser": "删除用户",
+      "controls": {
+        "statusTitle": "账号启用状态",
+        "statusHint": "停用后立即阻断该用户当前会话与后续登录",
+        "statusProtectedHint": "超级管理员或当前登录本人账号不可在此停用",
+        "passwordTitle": "登录密码管控",
+        "passwordHint": "重置密码并同步更新下次登录强制改密策略",
+        "passwordProtectedHint": "超级管理员密码请通过顶栏「个人账号与安全」自助修改",
+        "mfaTitle": "两步验证（MFA）管控",
+        "mfaHint": "解绑丢失或损坏的验证器设备，下次登录需重新绑定",
+        "mfaUnboundHint": "该用户尚未绑定两步验证设备",
+        "mfaProtectedHint": "超级管理员 MFA 请通过顶栏「个人账号与安全」自助管理",
+        "dangerTitle": "删除账号",
+        "dangerHint": "永久移除该后台用户账号，操作不可恢复"
+      },
       "labels": {
-        "id": "ID",
+        "id": "用户 ID",
         "username": "用户名",
+        "displayName": "显示名称",
         "email": "邮箱",
         "role": "角色",
-        "status": "状态",
-        "mfaStatus": "MFA 状态",
-        "forcePasswordReset": "强制改密",
-        "lastLogin": "最后登录",
-        "mfaRequired": "强制 MFA"
+        "status": "账号状态",
+        "mfaStatus": "MFA 绑定状态",
+        "forcePasswordReset": "下次登录强制改密",
+        "passwordChangedAt": "最近改密时间",
+        "lastLogin": "最后登录时间",
+        "mfaRequired": "强制绑定 MFA"
       },
       "validation": {
+        "displayNameRequired": "请输入显示名称",
+        "displayNameLength": "显示名称最长 100 个字符",
         "emailRequired": "请输入邮箱",
         "emailInvalid": "请输入正确的邮箱地址",
         "roleRequired": "请选择角色"
@@ -2419,8 +2462,8 @@
     "messages": {
       "resetMfaTitle": "重置 MFA",
       "resetMfaConfirm": "确定重置 “{username}” 的 MFA 吗？需重新绑定。",
-      "deleteSystemAdminBlocked": "无法删除系统管理员账号",
-      "systemAdminDeleteBlocked": "无法删除系统管理员账号",
+      "deleteSystemAdminBlocked": "无法删除超级管理员账号",
+      "systemAdminDeleteBlocked": "无法删除超级管理员账号",
       "deleteUserConfirm": "确定要删除用户 \"{username}\" 吗？",
       "deleteAdminConfirm": "确定要删除管理员 \"{username}\" 吗？"
     }
@@ -4143,7 +4186,7 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "已启用 MFA。敏感操作需要对应类别的有效验证，可在顶栏「个人账号与安全」中管理。",
+    "enabled": "敏感操作需通过管理员两步验证（MFA）二次确认",
     "notEnabled": "此操作需要 MFA 验证，当前账号尚未启用 MFA。",
     "goToSetup": "前往绑定"
   },

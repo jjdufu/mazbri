@@ -496,6 +496,25 @@ mod tests {
             .expect("password precheck");
         let reset_mfa = reset_password.find("require_category(").expect("reset mfa");
         assert!(precheck < reset_mfa);
+        for (src_file, fn_name, precheck_name) in [
+            (crud, "create_admin", "precheck_create_admin"),
+            (crud, "delete_admin", "precheck_delete_admin"),
+            (
+                password,
+                "force_password_reset",
+                "precheck_force_password_reset",
+            ),
+            (status, "set_admin_status", "precheck_set_status"),
+            (admin_mfa, "reset_admin_mfa", "precheck_mfa_reset"),
+        ] {
+            let src = handler_source(src_file, fn_name);
+            let pre_pos = src.find(precheck_name).expect("admin precheck");
+            let mfa_pos = src.find("require_category(").expect("admin mfa");
+            assert!(
+                pre_pos < mfa_pos,
+                "{fn_name} must run {precheck_name} before MFA step-up"
+            );
+        }
     }
 
     #[test]

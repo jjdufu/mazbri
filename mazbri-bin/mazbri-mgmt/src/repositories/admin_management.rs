@@ -330,15 +330,16 @@ pub async fn update_password(
     pool: &PgPool,
     id: uuid::Uuid,
     password_hash: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-            "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = false, auth_epoch = auth_epoch + 1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(password_hash)
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    force_password_reset: Option<bool>,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>(
+        "UPDATE admin_users SET password_hash = $1, password_changed_at = NOW(), force_password_reset = COALESCE($3, force_password_reset), auth_epoch = auth_epoch + 1, updated_at = NOW() WHERE id = $2 RETURNING force_password_reset",
+    )
+    .bind(password_hash)
+    .bind(id)
+    .bind(force_password_reset)
+    .fetch_one(pool)
+    .await
 }
 /// # Errors
 ///

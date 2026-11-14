@@ -65,6 +65,7 @@ pub async fn force_password_reset(
     Path(id): Path<uuid::Uuid>,
     Json(req): Json<ForcePasswordResetRequest>,
 ) -> Result<Response, ApiError> {
+    svc::precheck_force_password_reset(&state.admin_db, &claims, id).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,

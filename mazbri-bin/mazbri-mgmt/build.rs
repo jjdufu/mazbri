@@ -67,4 +67,10 @@ fn export_bindings(workspace_root: &Path) {
         .expect("failed to export UpdateApiKeyRequest bindings");
     api_types::AdminUser::export_all(&cfg).expect("failed to export AdminUser bindings");
     api_types::LoginResponse::export_all(&cfg).expect("failed to export LoginResponse bindings");
+    api_types::UpdateAdminRequest::export_all(&cfg)
+        .expect("failed to export UpdateAdminRequest bindings");
+    api_types::ResetPasswordRequest::export_all(&cfg)
+        .expect("failed to export ResetPasswordRequest bindings");
+    api_types::SetAdminStatusRequest::export_all(&cfg)
+        .expect("failed to export SetAdminStatusRequest bindings");
 }

@@ -2,29 +2,30 @@
   <span
     v-if="loaded"
     class="mfa-required-hint"
-    :class="{ 'is-block': block }"
+    :class="{ 'is-block': block, 'is-warning': !mfaEnabled }"
   >
     <ArtSvgIcon
       :icon="mfaEnabled ? 'ri:shield-keyhole-line' : 'ri:error-warning-line'"
       class="mfa-required-hint__icon"
-      :class="mfaEnabled ? 'is-muted' : 'is-warning'"
     />
-    <span :class="mfaEnabled ? 'is-muted' : 'is-warning'">
-      {{
-        mfaEnabled
-          ? $t("mfaRequiredHint.enabled")
-          : $t("mfaRequiredHint.notEnabled")
-      }}
+    <span class="mfa-required-hint__body">
+      <span>
+        {{
+          mfaEnabled
+            ? $t("mfaRequiredHint.enabled")
+            : $t("mfaRequiredHint.notEnabled")
+        }}
+      </span>
+      <ElLink
+        v-if="!mfaEnabled"
+        type="primary"
+        underline="never"
+        class="mfa-required-hint__link"
+        @click="goToSetup"
+      >
+        {{ $t("mfaRequiredHint.goToSetup") }}
+      </ElLink>
     </span>
-    <ElLink
-      v-if="!mfaEnabled"
-      type="primary"
-      underline="never"
-      class="mfa-required-hint__link"
-      @click="goToSetup"
-    >
-      {{ $t("mfaRequiredHint.goToSetup") }}
-    </ElLink>
   </span>
 </template>
 
@@ -53,33 +54,48 @@ function goToSetup(): void {
 </script>
 
 <style scoped lang="scss">
+/* [不可更改] 盾牌图标固定左列 + 右侧弹性文本流，严禁 flex-wrap: wrap 导致盾牌单独断行占一行 */
 .mfa-required-hint {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--el-border-radius-base);
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.5;
 
   &.is-block {
-    display: flex;
+    width: 100%;
+    box-sizing: border-box;
   }
-}
 
-.mfa-required-hint__icon {
-  flex-shrink: 0;
-  font-size: 14px;
-}
+  &__icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 14px;
+    color: var(--el-color-primary);
+  }
 
-.mfa-required-hint__link {
-  font-size: 12px;
-}
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
 
-.is-muted {
-  color: var(--el-text-color-secondary);
-}
+  &__link {
+    margin-left: 4px;
+    font-size: 12px;
+    vertical-align: baseline;
+  }
 
-.is-warning {
-  color: var(--el-color-warning);
+  &.is-warning {
+    color: var(--el-color-warning);
+
+    .mfa-required-hint__icon {
+      color: var(--el-color-warning);
+    }
+  }
 }
 </style>

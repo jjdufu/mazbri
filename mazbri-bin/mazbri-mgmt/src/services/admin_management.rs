@@ -82,15 +82,13 @@ pub async fn list_admins(
 }
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn create_admin(
+/// 无权限、角色不合法、密码策略不符或用户名已存在时返回错误。
+pub async fn precheck_create_admin(
     pool: &PgPool,
-    audit: &AuditService,
     password_policy_cache: &PasswordPolicyCache,
     claims: &AdminClaims,
     req: &CreateAdminRequest,
-    client_ip: Option<String>,
-) -> Result<serde_json::Value, ApiError> {
+) -> Result<(), ApiError> {
     helpers::validate_manage_admins(claims)?;
     helpers::validate_assignable_role(claims, &req.role)?;
     helpers::validate_password_strength(password_policy_cache, &req.password).await?;
@@ -106,6 +104,21 @@ pub async fn create_admin(
         info!("Username already exists: {}", req.username);
         return Err(ApiError::validation("用户名已存在".to_string()));
     }
+    Ok(())
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn create_admin(
+    pool: &PgPool,
+    audit: &AuditService,
+    password_policy_cache: &PasswordPolicyCache,
+    claims: &AdminClaims,
+    req: &CreateAdminRequest,
+    client_ip: Option<String>,
+) -> Result<serde_json::Value, ApiError> {
+    precheck_create_admin(pool, password_policy_cache, claims, req).await?;
     let password_hash = helpers::hash_password(&req.password).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
         ApiError::internal("处理密码失败".to_string())
@@ -190,6 +203,14 @@ pub async fn admin_update_lifts_mfa_requirement(
 ) -> Result<bool, ApiError> {
     if !can_manage_admins(claims) {
         return Err(ApiError::Forbidden);
+    }
+    let has_updates = req.display_name.is_some()
+        || req.email.is_some()
+        || req.role.is_some()
+        || req.mfa_required.is_some()
+        || req.force_password_reset.is_some();
+    if !has_updates {
+        return Err(ApiError::validation("没有要更新的字段".to_string()));
     }
     let current = repo::find_edit_state(pool, id)
         .await
@@ -327,6 +348,30 @@ pub async fn update_admin(
     });
     Ok(admin_row_to_json(&row))
 }
+/// # Errors
+///
+/// 无权限、自删除或目标不存在/受保护时返回错误。
+pub async fn precheck_delete_admin(
+    pool: &PgPool,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+) -> Result<(), ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    if claims.user_id == id.to_string() {
+        return Err(ApiError::validation("不能删除自己的账户".to_string()));
+    }
+    let current = repo::find_role_by_id(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check admin: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&current.role)
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -467,12 +512,13 @@ pub async fn reset_password(
     if let Some(reuse_error) = policy.check_password_reuse(pool, id, &password_hash).await {
         return Err(ApiError::validation(reuse_error));
     }
-    repo::update_password(pool, id, &password_hash)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to update password: {}", e);
-            ApiError::internal("更新密码失败".to_string())
-        })?;
+    let effective_force_reset =
+        repo::update_password(pool, id, &password_hash, req.force_password_reset)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to update password: {}", e);
+                ApiError::internal("更新密码失败".to_string())
+            })?;
     if let Err(e) = policy
         .record_password_history(pool, id, &password_hash)
         .await
@@ -491,6 +537,7 @@ pub async fn reset_password(
         resource_id: Some(id.to_string()),
         details: Some(serde_json::json!({
             "username": admin.username,
+            "force_password_reset": effective_force_reset,
             "auth_epoch_bumped": true,
         })),
         ip_address: client_ip,
@@ -498,6 +545,27 @@ pub async fn reset_password(
     });
     Ok(serde_json::json!({ "message" : "密码已重置" }))
 }
+/// # Errors
+///
+/// 无权限或目标不存在/受保护时返回错误。
+pub async fn precheck_force_password_reset(
+    pool: &PgPool,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+) -> Result<(), ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    let admin = repo::find_edit_state(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check admin: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -568,6 +636,31 @@ pub async fn force_password_reset(
         "已禁用强制重置密码" } }
     ))
 }
+/// # Errors
+///
+/// 无权限、自禁用或目标不存在/受保护时返回错误。
+pub async fn precheck_set_status(
+    pool: &PgPool,
+    claims: &AdminClaims,
+    id: uuid::Uuid,
+    req: &SetAdminStatusRequest,
+) -> Result<(), ApiError> {
+    if !can_manage_admins(claims) {
+        return Err(ApiError::Forbidden);
+    }
+    if claims.user_id == id.to_string() && !req.is_active {
+        return Err(ApiError::validation("不能禁用自己的账户".to_string()));
+    }
+    let admin = repo::find_status_by_id(pool, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check admin: {}", e);
+            ApiError::internal("检查管理员失败".to_string())
+        })?
+        .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
+    helpers::ensure_not_super_admin_target(&admin.role)
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
