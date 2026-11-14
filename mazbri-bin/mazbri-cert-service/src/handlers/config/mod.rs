@@ -1,4 +1,5 @@
 use crate::config_center::ConfigRepository;
+use crate::node_registry::NodeRegistryRepository;
 use mazbri_core::error_codes;
 use serde::Deserialize;
 use std::fmt::Display;
@@ -13,6 +14,7 @@ pub mod write;
 #[derive(Clone)]
 pub struct ConfigState {
     pub repo: Arc<ConfigRepository>,
+    pub node_repo: Arc<NodeRegistryRepository>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,9 +25,21 @@ pub struct ListQuery {
 pub const NOT_FOUND_MESSAGE: &str = "资源未找到";
 pub const VALIDATION_ERROR_MESSAGE: &str = "请求参数校验失败";
 pub const INTERNAL_SERVER_ERROR_MESSAGE: &str = "内部服务器错误";
+pub const CORE_SERVICE_CONFIG_PROTECTED: &str = "CORE_SERVICE_CONFIG_PROTECTED";
+pub const CONFIG_IN_USE: &str = "CONFIG_IN_USE";
+
+/// 判断是否为受保护的平台核心内置配置（`"global"` 或 `mazbri_core::ServiceName`）。
+#[must_use]
+pub fn is_core_protected_config(service: &str) -> bool {
+    mazbri_core::validate_config_target(service).is_ok()
+}
+
 fn severity_for_error_code(error_code: &str) -> &'static str {
     match error_code {
-        error_codes::NOT_FOUND | error_codes::VALIDATION_ERROR => "warn",
+        error_codes::NOT_FOUND
+        | error_codes::VALIDATION_ERROR
+        | CORE_SERVICE_CONFIG_PROTECTED
+        | CONFIG_IN_USE => "warn",
         _ => "error",
     }
 }

@@ -884,33 +884,42 @@ pub static ROUTES: &[RouteAudit] = &[
     secure("DELETE", "/alerts/inhibits/{id}", A::AlertInhibitDelete, R::Alert, None),
     // ---- config center ----
     read("/config-center/configs", R::ConfigCenter),
-    write(
+    secure(
         "POST",
         "/config-center/configs",
         A::ConfigCenterCreate,
         R::ConfigCenter,
         None,
     ),
-    read("/config-center/configs/{service_name}", R::ConfigCenter),
-    write(
+    sensitive(
+        "/config-center/configs/{service_name}",
+        A::ConfigCenterView,
+        R::ConfigCenter,
+        SERVICE,
+        true,
+    ),
+    secure(
         "PUT",
         "/config-center/configs/{service_name}",
         A::ConfigCenterUpdate,
         R::ConfigCenter,
         SERVICE,
     ),
-    write(
+    secure(
         "DELETE",
         "/config-center/configs/{service_name}",
         A::ConfigCenterDelete,
         R::ConfigCenter,
         SERVICE,
     ),
-    read(
+    sensitive(
         "/config-center/configs/{service_name}/history",
+        A::ConfigCenterViewHistory,
         R::ConfigCenter,
+        SERVICE,
+        true,
     ),
-    write(
+    secure(
         "POST",
         "/config-center/configs/{service_name}/rollback/{version}",
         A::ConfigCenterRollback,
@@ -926,7 +935,7 @@ pub static ROUTES: &[RouteAudit] = &[
         None,
         true,
     ),
-    write(
+    secure(
         "POST",
         "/config-center/import",
         A::ConfigCenterImport,
@@ -1214,6 +1223,8 @@ mod tests {
             "/tenants/{code}/api-keys",
             "/tenants/{code}/crypto",
             "/tenants/{code}/request-keys",
+            "/config-center/configs/{service_name}",
+            "/config-center/configs/{service_name}/history",
             "/config-center/export",
             "/tenant-crypto/export",
             "/upstream-connectors/drafts/{id}/export/postman",

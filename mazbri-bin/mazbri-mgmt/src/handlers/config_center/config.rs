@@ -38,13 +38,31 @@ pub async fn get_config(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_config_exists(
+        &state,
+        &service_name,
+        client_ip.clone(),
+        &request_id,
+        &trace_id,
+    )
+    .await?;
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     Ok(Json(
         service::get_config(&state, &service_name, client_ip, &request_id, &trace_id).await?,
-    ))
+    )
+    .into_response())
 }
 /// # Errors
 ///
@@ -56,6 +74,11 @@ pub async fn create_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<CreateConfigRequest>,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_create_config(&state, &payload, client_ip.clone(), &request_id, &trace_id)
+        .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -65,9 +88,6 @@ pub async fn create_config(
     {
         return Ok(*response);
     }
-    super::require_config_admin(&claims)?;
-    let client_ip = extract_client_ip(&headers, Some(addr));
-    let (request_id, trace_id) = request_ids(&headers);
     let data = service::create_config(&state, &claims, &payload, client_ip, &request_id, &trace_id)
         .await?;
     Ok((StatusCode::CREATED, Json(data)).into_response())
@@ -83,6 +103,18 @@ pub async fn update_config(
     Path(service_name): Path<String>,
     Json(payload): Json<UpdateConfigRequest>,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_update_config(
+        &state,
+        &service_name,
+        &payload,
+        client_ip.clone(),
+        &request_id,
+        &trace_id,
+    )
+    .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -92,9 +124,6 @@ pub async fn update_config(
     {
         return Ok(*response);
     }
-    super::require_config_admin(&claims)?;
-    let client_ip = extract_client_ip(&headers, Some(addr));
-    let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
         service::update_config(
             &state,
@@ -119,6 +148,17 @@ pub async fn delete_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_delete_config(
+        &state,
+        &service_name,
+        client_ip.clone(),
+        &request_id,
+        &trace_id,
+    )
+    .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -128,9 +168,6 @@ pub async fn delete_config(
     {
         return Ok(*response);
     }
-    super::require_config_admin(&claims)?;
-    let client_ip = extract_client_ip(&headers, Some(addr));
-    let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
         service::delete_config(
             &state,

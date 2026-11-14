@@ -22,10 +22,27 @@ pub async fn get_history(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(service_name): Path<String>,
     Query(params): Query<HistoryQueryParams>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_config_exists(
+        &state,
+        &service_name,
+        client_ip.clone(),
+        &request_id,
+        &trace_id,
+    )
+    .await?;
+    if let Err(response) = crate::handlers::mfa_guard::require_category(
+        &state,
+        &claims,
+        crate::services::mfa::Category::Platform,
+    )
+    .await
+    {
+        return Ok(*response);
+    }
     Ok(Json(
         service::get_history(
             &state,
@@ -36,7 +53,8 @@ pub async fn get_history(
             &trace_id,
         )
         .await?,
-    ))
+    )
+    .into_response())
 }
 /// # Errors
 ///
@@ -48,6 +66,18 @@ pub async fn rollback(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path((service_name, version)): Path<(String, i32)>,
 ) -> Result<Response, ApiError> {
+    super::require_config_admin(&claims)?;
+    let client_ip = extract_client_ip(&headers, Some(addr));
+    let (request_id, trace_id) = request_ids(&headers);
+    service::precheck_rollback(
+        &state,
+        &service_name,
+        version,
+        client_ip.clone(),
+        &request_id,
+        &trace_id,
+    )
+    .await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -57,9 +87,6 @@ pub async fn rollback(
     {
         return Ok(*response);
     }
-    super::require_config_admin(&claims)?;
-    let client_ip = extract_client_ip(&headers, Some(addr));
-    let (request_id, trace_id) = request_ids(&headers);
     Ok(Json(
         service::rollback(
             &state,

@@ -75,6 +75,9 @@ export const ACTION_LABELS: Record<string, string> = {
   "config_center.rollback": "auditLogs.explicitActions.configCenterRollback",
   "config_center.export": "auditLogs.explicitActions.configCenterExport",
   "config_center.import": "auditLogs.explicitActions.configCenterImport",
+  "config_center.view": "auditLogs.explicitActions.configCenterView",
+  "config_center.view_history":
+    "auditLogs.explicitActions.configCenterViewHistory",
   "appearance.update": "auditLogs.explicitActions.appearanceUpdate",
   "appearance.reset": "auditLogs.explicitActions.appearanceReset",
   "mfa_settings.update": "auditLogs.explicitActions.mfaSettingsUpdate",

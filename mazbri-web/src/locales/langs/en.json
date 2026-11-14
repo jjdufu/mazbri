@@ -1407,6 +1407,8 @@
       "configCenterRollback": "Rollback Config",
       "configCenterExport": "Export Config",
       "configCenterImport": "Import Config",
+      "configCenterView": "View Config Details",
+      "configCenterViewHistory": "View Config History",
       "appearanceUpdate": "Update Appearance Settings",
       "appearanceReset": "Reset Appearance Settings",
       "mfaSettingsUpdate": "Update MFA Settings",
@@ -1899,8 +1901,8 @@
       "import": "Import",
       "export": "Export",
       "create": "Create Config",
-      "edit": "Edit",
-      "history": "History"
+      "edit": "Edit Config",
+      "history": "Version History"
     },
     "columns": {
       "serviceName": "Service Name",
@@ -1943,6 +1945,15 @@
         "create": "Create Config",
         "edit": "Edit Config"
       },
+      "tabs": {
+        "toml": "TOML Source",
+        "cors": "CORS Quick Setup"
+      },
+      "cors": {
+        "allowedOrigins": "Allowed Origins",
+        "allowedOriginsTip": "Wildcard * is allowed in development; production must specify trusted origins (e.g., https://console.example.com)",
+        "allowCredentials": "Allow Credentials"
+      },
       "fields": {
         "serviceName": "Service Name",
         "content": "Config Content"
@@ -1964,10 +1975,12 @@
     "historyDrawer": {
       "title": "Version History",
       "actions": {
-        "rollback": "Rollback"
+        "rollback": "Rollback",
+        "rollbackToSelected": "Roll Back to This Version"
       },
       "compare": {
-        "title": "Version Comparison",
+        "title": "Compare Against",
+        "currentActive": "Current Active",
         "versionLabel": "Version {version}"
       },
       "columns": {
@@ -1975,7 +1988,8 @@
         "updatedBy": "Updated By",
         "createdAt": "Time"
       },
-      "empty": "Select a version to view details",
+      "initialVersionNotice": "Current initial active version (historical snapshots will be recorded automatically after updates)",
+      "activeConfigTitle": "Current Active Config",
       "confirmTitle": "Confirm Rollback",
       "confirmMessage": "Are you sure you want to roll back to version {version}?",
       "messages": {
@@ -1984,15 +1998,11 @@
     },
     "diffViewer": {
       "version": "Version {version}",
+      "currentActive": "Current Active Config",
       "noChanges": "The two versions have identical content"
     },
     "messages": {
-      "selectConfigToDelete": "Please select configuration entries to delete",
-      "deleteConfirmTitle": "Delete confirmation",
-      "confirmDelete": "Confirm delete",
-      "deleteManyConfirm": "Delete {count} configuration entries?",
-      "deleteManySuccess": "Successfully deleted {count} configuration entries",
-      "deleteManyFailed": "Batch delete failed",
+      "coreProtectedDeleteTip": "Core platform configurations are protected and cannot be deleted. Please edit or roll back instead.",
       "deleteServiceConfigConfirm": "Delete config for service “{serviceName}”?"
     }
   },

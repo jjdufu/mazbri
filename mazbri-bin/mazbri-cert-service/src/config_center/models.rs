@@ -39,7 +39,7 @@ pub struct CreateConfigRequest {
 pub struct UpdateConfigRequest {
     pub content: String,
     #[serde(default)]
-    pub is_sensitive: bool,
+    pub is_sensitive: Option<bool>,
     pub updated_by: String,
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -47,13 +47,6 @@ pub struct UpdateConfigRequest {
 pub struct RollbackRequest {
     pub version: i32,
     pub updated_by: String,
-}
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BatchDeleteRequest {
-    pub filters: BatchFilters,
-    #[serde(default)]
-    pub dry_run: bool,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

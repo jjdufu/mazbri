@@ -14,7 +14,7 @@ pub use validation::validate_toml_endpoint;
 /// 配置中心保存各服务的完整运行配置（含数据库、上游等连接参数），读写均仅限管理员。
 ///
 /// 集中式访问控制表（`middleware::route_access`）已按同一规则拦截，此处作为处理器内的第二道防线。
-fn require_config_admin(
+pub(crate) fn require_config_admin(
     claims: &crate::middleware::auth::AdminClaims,
 ) -> Result<(), crate::error::ApiError> {
     if crate::middleware::auth::is_admin(claims) {

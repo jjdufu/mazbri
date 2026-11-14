@@ -5,15 +5,17 @@
       'is-readonly': readonly,
       'has-error': !!validationError,
     }"
+    :style="{ '--toml-editor-height': height }"
   >
     <Codemirror
       v-model="localContent"
       class="toml-editor__instance"
       :extensions="extensions"
-      :autofocus="true"
+      :autofocus="!readonly"
       :indent-with-tab="true"
       :tab-size="2"
       :disabled="readonly"
+      @ready="handleReady"
       @change="handleChange"
     />
 
@@ -29,34 +31,43 @@
 </template>
 
 <script setup lang="ts">
+import { ref, shallowRef, watch } from "vue";
 import { Codemirror } from "vue-codemirror";
 import { StreamLanguage } from "@codemirror/language";
 import { toml as tom } from "@codemirror/legacy-modes/mode/toml";
 import { drawSelection, EditorView } from "@codemirror/view";
+
 interface Props {
   content: string;
   readonly?: boolean;
   validationError?: string | null;
+  height?: string;
 }
+
 const props = withDefaults(defineProps<Props>(), {
   content: "",
   readonly: false,
   validationError: null,
+  height: "420px",
 });
+
 const emit = defineEmits<{
   change: [content: string];
 }>();
+
 const localContent = ref(props.content);
+const editorView = shallowRef<EditorView | null>(null);
+
 const extensions = [
   StreamLanguage.define(tom),
   drawSelection(),
   EditorView.lineWrapping,
   EditorView.theme({
     "&": {
-      height: "420px",
+      height: "var(--toml-editor-height, 420px)",
       width: "100%",
       border: "1px solid var(--art-card-border)",
-      borderRadius: "0",
+      borderRadius: "var(--el-border-radius-base)",
       fontSize: "14px",
       backgroundColor: "var(--default-box-color)",
       color: "var(--art-gray-900)",
@@ -70,11 +81,11 @@ const extensions = [
         '"Fira Code", "SF Mono", Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
       fontSize: "14px",
       lineHeight: "1.7",
-      padding: "0 16px",
-      caretColor: "var(--el-color-primary, #409eff)",
+      padding: "0 8px",
+      caretColor: "var(--el-color-primary)",
     },
     ".cm-line": {
-      padding: "2px 0",
+      padding: "2px 10px",
     },
     ".cm-gutters": {
       minWidth: "48px",
@@ -96,7 +107,7 @@ const extensions = [
       boxShadow: "inset 2px 0 0 var(--el-color-primary-light-5)",
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "var(--el-color-primary, #409eff)",
+      borderLeftColor: "var(--el-color-primary)",
       borderLeftWidth: "2px",
     },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
@@ -119,15 +130,29 @@ const extensions = [
     },
   }),
 ];
+
 watch(
   () => props.content,
   (newContent) => {
     localContent.value = newContent;
   },
 );
+
+const handleReady = (payload: { view: EditorView }) => {
+  editorView.value = payload.view;
+};
+
 const handleChange = (value: string) => {
   emit("change", value);
 };
+
+const requestMeasure = () => {
+  editorView.value?.requestMeasure();
+};
+
+defineExpose({
+  requestMeasure,
+});
 </script>
 
 <style scoped lang="scss">

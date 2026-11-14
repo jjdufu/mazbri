@@ -1407,6 +1407,8 @@
       "configCenterRollback": "回滚配置",
       "configCenterExport": "导出配置",
       "configCenterImport": "导入配置",
+      "configCenterView": "查看配置详情",
+      "configCenterViewHistory": "查看配置历史",
       "appearanceUpdate": "更新外观设置",
       "appearanceReset": "重置外观设置",
       "mfaSettingsUpdate": "更新 MFA 设置",
@@ -1899,8 +1901,8 @@
       "import": "导入",
       "export": "导出",
       "create": "新建",
-      "edit": "编辑",
-      "history": "历史"
+      "edit": "编辑配置",
+      "history": "版本历史"
     },
     "columns": {
       "serviceName": "服务名",
@@ -1943,6 +1945,15 @@
         "create": "新建配置",
         "edit": "编辑配置"
       },
+      "tabs": {
+        "toml": "TOML 配置源码",
+        "cors": "CORS 跨域快捷配置"
+      },
+      "cors": {
+        "allowedOrigins": "允许跨域域名",
+        "allowedOriginsTip": "开发环境可填写 *，生产环境必须配置具体的受信任域名（如 https://console.example.com）",
+        "allowCredentials": "允许携带凭证"
+      },
       "fields": {
         "serviceName": "服务名",
         "content": "配置内容"
@@ -1964,10 +1975,12 @@
     "historyDrawer": {
       "title": "版本历史",
       "actions": {
-        "rollback": "回滚"
+        "rollback": "回滚",
+        "rollbackToSelected": "回滚至此版本"
       },
       "compare": {
-        "title": "版本对比",
+        "title": "对比基准",
+        "currentActive": "当前生效配置",
         "versionLabel": "版本 {version}"
       },
       "columns": {
@@ -1975,7 +1988,8 @@
         "updatedBy": "操作人",
         "createdAt": "时间"
       },
-      "empty": "选择一个版本查看详情",
+      "initialVersionNotice": "当前为初始生效版本（修改保存后将自动记录历史变更快照）",
+      "activeConfigTitle": "当前生效配置",
       "confirmTitle": "确认回滚",
       "confirmMessage": "确定要回滚到版本 {version} 吗？",
       "messages": {
@@ -1984,15 +1998,11 @@
     },
     "diffViewer": {
       "version": "版本 {version}",
+      "currentActive": "当前生效配置",
       "noChanges": "两个版本内容相同"
     },
     "messages": {
-      "selectConfigToDelete": "请先选择要删除的数据",
-      "deleteConfirmTitle": "删除确认",
-      "confirmDelete": "确定删除",
-      "deleteManyConfirm": "确定删除 {count} 条配置吗？",
-      "deleteManySuccess": "成功删除 {count} 条配置",
-      "deleteManyFailed": "批量删除失败",
+      "coreProtectedDeleteTip": "平台核心配置受保护不可删除，请使用编辑或版本回滚",
       "deleteServiceConfigConfirm": "确定删除服务 “{serviceName}” 的配置吗？"
     }
   },

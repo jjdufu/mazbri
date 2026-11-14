@@ -17,6 +17,12 @@ pub enum ApiError {
     /// 目标是超级管理员：不允许经由账号管理接口重置密码 / MFA、改角色或停用。
     #[error("超级管理员账号受保护")]
     SuperAdminProtected,
+    /// 平台核心内置配置（`global` 及核心微服务）受保护不可删除。
+    #[error("平台核心配置受保护不可删除，请使用编辑配置或历史版本回滚")]
+    CoreServiceConfigProtected,
+    /// 自定义扩展服务仍存在活跃心跳运行节点，禁止删除生效配置。
+    #[error("该服务仍存在在线运行实例，禁止删除生效配置")]
+    ConfigInUse,
 }
 impl ApiError {
     pub fn internal(msg: impl Into<String>) -> Self {
@@ -42,6 +48,7 @@ impl ErrorResponse for ApiError {
             ApiError::Forbidden
             | ApiError::LicenseIssuanceNotAllowed
             | ApiError::SuperAdminProtected => StatusCode::FORBIDDEN,
+            ApiError::CoreServiceConfigProtected | ApiError::ConfigInUse => StatusCode::CONFLICT,
         }
     }
     fn error_code(&self) -> &'static str {
@@ -51,6 +58,8 @@ impl ErrorResponse for ApiError {
             ApiError::Forbidden => error_codes::PERMISSION_DENIED,
             ApiError::LicenseIssuanceNotAllowed => "license_issuance_not_allowed",
             ApiError::SuperAdminProtected => "super_admin_protected",
+            ApiError::CoreServiceConfigProtected => "CORE_SERVICE_CONFIG_PROTECTED",
+            ApiError::ConfigInUse => "CONFIG_IN_USE",
         }
     }
     fn detail(&self) -> Option<String> {
@@ -63,6 +72,12 @@ impl ErrorResponse for ApiError {
                 "超级管理员账号受保护：不能通过账号管理重置其密码或 MFA、修改角色或停用"
                     .to_string(),
             ),
+            ApiError::CoreServiceConfigProtected => {
+                Some("平台核心配置受保护不可删除，请使用编辑配置或历史版本回滚".to_string())
+            }
+            ApiError::ConfigInUse => {
+                Some("该服务仍存在在线运行实例，禁止删除生效配置".to_string())
+            }
             _ => None,
         }
     }

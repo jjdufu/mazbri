@@ -88,6 +88,24 @@ impl NodeRegistryRepository {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn has_online_node(&self, service_name: &str) -> Result<bool, sqlx::Error> {
+        let cutoff = Utc::now() - Duration::seconds(HEARTBEAT_TIMEOUT_SECONDS);
+        sqlx::query_scalar::<_, bool>(
+            r"
+            SELECT EXISTS(
+                SELECT 1 FROM registered_nodes
+                WHERE service_name = $1 AND last_heartbeat_at > $2
+            )
+            ",
+        )
+        .bind(service_name)
+        .bind(cutoff)
+        .fetch_one(&*self.db)
+        .await
+    }
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn cleanup_offline(&self) -> Result<u64, sqlx::Error> {
         let cutoff = Utc::now() - Duration::seconds(HEARTBEAT_TIMEOUT_SECONDS);
         let result = sqlx::query("DELETE FROM registered_nodes WHERE last_heartbeat_at < $1")

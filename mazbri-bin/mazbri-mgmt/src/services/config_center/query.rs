@@ -1,10 +1,20 @@
-use super::{cert_service_request, dependency_internal_error, not_found_error};
+use super::{ConfigCenterCtx, cert_service_request, dependency_internal_error, not_found_error};
 use crate::error::ApiError;
-use crate::handlers::AppState;
 use crate::handlers::config_center::{ConfigListParams, MAX_PAGE_SIZE};
 use std::fmt::Write as _;
+
+/// 剥离配置列表项中的明文/密文正文与哈希，仅返回列表所需的公开元数据摘要。
+#[must_use]
+pub fn sanitize_config_summary(mut item: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = item.as_object_mut() {
+        obj.remove("content");
+        obj.remove("content_hash");
+    }
+    item
+}
+
 pub async fn list_configs(
-    state: &AppState,
+    ctx: ConfigCenterCtx<'_>,
     client_ip: Option<String>,
     request_id: &str,
     trace_id: &str,
@@ -81,7 +91,7 @@ pub async fn list_configs(
         let _ = write!(url_path, "&updated_before={}", urlencoding::encode(lte));
     }
     let resp = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::GET,
         &url_path,
         None,
@@ -90,9 +100,13 @@ pub async fn list_configs(
         trace_id,
     )
     .await?;
-    let configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
+    let raw_configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
         dependency_internal_error("config_center_list_failed", request_id, trace_id, &e)
     })?;
+    let configs: Vec<serde_json::Value> = raw_configs
+        .into_iter()
+        .map(sanitize_config_summary)
+        .collect();
     let count = configs.len();
     let total = if count < page_size as usize {
         offset as usize + count
@@ -128,8 +142,46 @@ fn filter_value_as_pair(v: &crate::list_query::FilterValue) -> Option<(String, S
         _ => None,
     }
 }
+pub async fn precheck_config_exists(
+    ctx: ConfigCenterCtx<'_>,
+    service_name: &str,
+    client_ip: Option<String>,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<(), ApiError> {
+    let url_path = format!("/configs/{}", urlencoding::encode(service_name));
+    let resp = cert_service_request(
+        ctx,
+        reqwest::Method::GET,
+        &url_path,
+        None,
+        client_ip,
+        request_id,
+        trace_id,
+    )
+    .await?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(not_found_error(
+            "config_center_get_not_found",
+            "config",
+            service_name.to_string(),
+            request_id,
+            trace_id,
+        ));
+    }
+    if !resp.status().is_success() {
+        return Err(dependency_internal_error(
+            "config_center_precheck_exists_failed",
+            request_id,
+            trace_id,
+            &format!("cert-service returned status {}", resp.status()),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn get_config(
-    state: &AppState,
+    ctx: ConfigCenterCtx<'_>,
     service_name: &str,
     client_ip: Option<String>,
     request_id: &str,
@@ -137,7 +189,7 @@ pub async fn get_config(
 ) -> Result<serde_json::Value, ApiError> {
     let url_path = format!("/configs/{}", urlencoding::encode(service_name));
     let resp = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::GET,
         &url_path,
         None,
@@ -155,12 +207,23 @@ pub async fn get_config(
             trace_id,
         ));
     }
+    if !resp.status().is_success() {
+        return Err(dependency_internal_error(
+            "config_center_get_failed",
+            request_id,
+            trace_id,
+            &format!("cert-service returned status {}", resp.status()),
+        ));
+    }
+    let plaintext = resp.text().await.map_err(|e| {
+        dependency_internal_error("config_center_get_body_failed", request_id, trace_id, &e)
+    })?;
     let search_path = format!(
         "/configs/search?service_name_eq={}&limit=1",
         urlencoding::encode(service_name)
     );
     let search_resp = cert_service_request(
-        state,
+        ctx,
         reqwest::Method::GET,
         &search_path,
         None,
@@ -172,7 +235,10 @@ pub async fn get_config(
     let mut results: Vec<serde_json::Value> = search_resp.json().await.map_err(|e| {
         dependency_internal_error("config_center_get_failed", request_id, trace_id, &e)
     })?;
-    if let Some(config) = results.pop() {
+    if let Some(mut config) = results.pop() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("content".to_string(), serde_json::Value::String(plaintext));
+        }
         Ok(config)
     } else {
         Err(not_found_error(

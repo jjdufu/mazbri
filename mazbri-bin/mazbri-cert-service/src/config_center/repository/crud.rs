@@ -55,6 +55,10 @@ impl super::super::repository::ConfigRepository {
         is_sensitive: bool,
     ) -> ConfigResult<ConfigEntry> {
         validate_toml(content)?;
+        let existing = self.get_by_service(service_name, true).await?;
+        if existing.content == content && existing.is_sensitive == is_sensitive {
+            return Ok(existing);
+        }
         let (stored_content, content_hash) = if is_sensitive {
             let enc = self.encryption.lock().await;
             let encrypted = enc.encrypt(content).await?;

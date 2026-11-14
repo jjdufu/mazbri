@@ -1,35 +1,31 @@
 import { fetchConfigList } from "@/api/config-center";
 import type {
-  ConfigEntry,
   ConfigListQuery,
+  ConfigSummary,
 } from "@/types/api/config-center";
 import { logger } from "@/utils/sys";
 import type { Ref } from "vue";
 import { runWithLoading } from "@/composables/useAsyncState";
+
 interface RefreshState {
   loading: Ref<boolean>;
-  tableData: Ref<ConfigEntry[]>;
-  selectedRows: Ref<ConfigEntry[]>;
+  tableData: Ref<ConfigSummary[]>;
   searchForm: Partial<ConfigListQuery>;
   pagination: {
     current: number;
     size: number;
     total: number;
   };
-  clearSelection: () => void;
 }
+
 interface RefreshOptions {
   silent?: boolean;
   resetPage?: boolean;
   resetSearch?: boolean;
-  reloadServices?: boolean;
-  clearSelection?: boolean;
 }
+
 export function useConfigCenterRefresh(state: RefreshState) {
   const loadDataCore = async () => {
-    const previousSelection = new Set(
-      state.selectedRows.value.map((row) => row.service_name),
-    );
     const filteredSearch = Object.fromEntries(
       Object.entries(state.searchForm).filter(
         ([_, value]) => value !== undefined && value !== "",
@@ -42,10 +38,8 @@ export function useConfigCenterRefresh(state: RefreshState) {
     });
     state.tableData.value = res.configs;
     state.pagination.total = res.total;
-    state.selectedRows.value = state.tableData.value.filter((row) =>
-      previousSelection.has(row.service_name),
-    );
   };
+
   const loadData = async (silent = false) => {
     if (silent) {
       try {
@@ -59,6 +53,7 @@ export function useConfigCenterRefresh(state: RefreshState) {
       logger.error("Failed to load config list:", error);
     });
   };
+
   const refresh = async (options: RefreshOptions = {}) => {
     if (options.resetSearch) {
       state.searchForm.q = undefined;
@@ -68,26 +63,28 @@ export function useConfigCenterRefresh(state: RefreshState) {
       state.pagination.current = 1;
     }
     await loadData(options.silent);
-    if (options.clearSelection) {
-      state.clearSelection();
-    }
   };
+
   const handleSearch = async () => {
     state.pagination.current = 1;
     await loadData();
   };
+
   const handleSizeChange = async (size: number) => {
     state.pagination.size = size;
     state.pagination.current = 1;
     await loadData();
   };
+
   const handleCurrentChange = async (current: number) => {
     state.pagination.current = current;
     await loadData();
   };
+
   const initialize = async () => {
     await loadData();
   };
+
   return {
     loadData,
     refresh,

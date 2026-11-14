@@ -129,6 +129,8 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("settings.update", "更新系统设置"),
     ("password_policy.update", "更新密码策略"),
     ("config_center.create", "创建配置"),
+    ("config_center.view", "查看配置详情"),
+    ("config_center.view_history", "查看配置历史"),
     ("config_center.update", "更新配置"),
     ("config_center.delete", "删除配置"),
     ("config_center.rollback", "回滚配置"),

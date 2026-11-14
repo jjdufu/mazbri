@@ -1,29 +1,39 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
-import type { ConfigEntry, ConfigListQuery } from "@/types/api/config-center";
+import { fetchCanonicalServiceNames } from "@/api/service-names";
+import type { ConfigListQuery, ConfigSummary } from "@/types/api/config-center";
 import type { ColumnOption } from "@/types/component";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
-export function useConfigCenterPage() {
-  const columns = ref<ColumnOption[]>([
-    { type: "selection", width: 55 },
+import {
+  FALLBACK_CORE_CONFIG_NAMES,
+  isCoreProtectedConfigName,
+} from "../helpers";
+
+function buildColumns(
+  prev?: ColumnOption<ConfigSummary>[],
+): ColumnOption<ConfigSummary>[] {
+  const prevByProp = new Map(prev?.map((col) => [col.prop, col]) ?? []);
+  const defs: ColumnOption<ConfigSummary>[] = [
     {
       prop: "service_name",
       label: $t("configCenter.columns.serviceName"),
-      minWidth: 180,
+      minWidth: 220,
       useSlot: true,
     },
     {
       prop: "updated_by",
       label: $t("configCenter.columns.updatedBy"),
-      minWidth: 120,
+      minWidth: 140,
       useSlot: true,
     },
     {
       prop: "updated_at",
       label: $t("configCenter.columns.updatedAt"),
-      minWidth: 170,
+      minWidth: 180,
       useSlot: true,
     },
     {
@@ -33,11 +43,26 @@ export function useConfigCenterPage() {
       fixed: "right",
       useSlot: true,
     },
-  ]);
+  ];
+  return defs.map((def) => {
+    const existing = prevByProp.get(def.prop);
+    return existing ? { ...existing, label: def.label } : def;
+  });
+}
+
+export function useConfigCenterPage() {
+  const { locale } = useI18n();
+  const columns = ref<ColumnOption<ConfigSummary>[]>(buildColumns());
+  watch(locale, () => {
+    columns.value = buildColumns(columns.value);
+  });
+
   const loading = ref(false);
-  const tableData = ref<ConfigEntry[]>([]);
-  const currentConfig = ref<ConfigEntry | null>(null);
-  const selectedRows = ref<ConfigEntry[]>([]);
+  const tableData = ref<ConfigSummary[]>([]);
+  const currentConfig = ref<ConfigSummary | null>(null);
+  const coreProtectedSet = ref<Set<string>>(
+    new Set(FALLBACK_CORE_CONFIG_NAMES),
+  );
   const searchForm = reactive<Partial<ConfigListQuery>>({
     q: undefined,
   });
@@ -46,64 +71,35 @@ export function useConfigCenterPage() {
     size: 20,
     total: 0,
   });
+
   const existingServiceNames = computed(() =>
     tableData.value.map((item) => item.service_name),
   );
-  const handleSelectionChange = (selection: ConfigEntry[]) => {
-    selectedRows.value = selection;
+
+  const loadCoreProtectedNames = async () => {
+    try {
+      const data = await fetchCanonicalServiceNames();
+      coreProtectedSet.value = new Set([
+        ...FALLBACK_CORE_CONFIG_NAMES,
+        data.global,
+        ...data.services,
+      ]);
+    } catch (error) {
+      logger.error("Failed to load canonical service names:", error);
+    }
   };
-  const clearSelection = () => {
-    selectedRows.value = [];
-  };
-  const confirmDeleteMany = async (
-    items: ConfigEntry[],
-    deleteApi: (row: ConfigEntry) => Promise<void>,
+
+  const isCoreProtectedService = (serviceName: string): boolean =>
+    isCoreProtectedConfigName(serviceName, coreProtectedSet.value);
+
+  const handleDeleteRow = async (
+    row: ConfigSummary,
+    deleteApi: (row: ConfigSummary) => Promise<void>,
     onDeleteSuccess: () => Promise<void> | void,
   ) => {
-    if (items.length === 0) {
-      ElMessage.warning($t("configCenter.messages.selectConfigToDelete"));
+    if (isCoreProtectedService(row.service_name)) {
       return;
     }
-    await ElMessageBox.confirm(
-      $t("configCenter.messages.deleteManyConfirm", { count: items.length }),
-      $t("configCenter.messages.deleteConfirmTitle"),
-      {
-        confirmButtonText: $t("configCenter.messages.confirmDelete"),
-        cancelButtonText: $t("common.cancel"),
-        type: "warning",
-      },
-    );
-    await Promise.all(items.map((item) => deleteApi(item)));
-    ElMessage.success(
-      $t("configCenter.messages.deleteManySuccess", { count: items.length }),
-    );
-    clearSelection();
-    await onDeleteSuccess();
-  };
-  const handleDeleteCommand = async (
-    type: "all" | "selected",
-    allData: ConfigEntry[],
-    deleteApi: (row: ConfigEntry) => Promise<void>,
-    onDeleteSuccess: () => Promise<void> | void,
-  ) => {
-    try {
-      await confirmDeleteMany(
-        type === "all" ? allData : selectedRows.value,
-        deleteApi,
-        onDeleteSuccess,
-      );
-    } catch (error: unknown) {
-      if (error !== "cancel") {
-        logger.error("Failed to batch delete config entries:", error);
-        ElMessage.error($t("configCenter.messages.deleteManyFailed"));
-      }
-    }
-  };
-  const handleDeleteRow = async (
-    row: ConfigEntry,
-    deleteApi: (row: ConfigEntry) => Promise<void>,
-    onDeleteSuccess: () => Promise<void> | void,
-  ) => {
     try {
       await ElMessageBox.confirm(
         $t("configCenter.messages.deleteServiceConfigConfirm", {
@@ -120,24 +116,23 @@ export function useConfigCenterPage() {
       ElMessage.success($t("common.feedback.deleteSuccess"));
       await onDeleteSuccess();
     } catch (error: unknown) {
-      if (error !== "cancel") {
+      if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
         logger.error("Failed to delete config:", error);
       }
     }
   };
+
   return {
     columns,
     loading,
     tableData,
     currentConfig,
-    selectedRows,
     searchForm,
     pagination,
     existingServiceNames,
     formatDate,
-    handleSelectionChange,
-    clearSelection,
-    handleDeleteCommand,
+    loadCoreProtectedNames,
+    isCoreProtectedService,
     handleDeleteRow,
   };
 }

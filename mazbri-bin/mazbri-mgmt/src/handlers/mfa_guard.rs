@@ -629,9 +629,11 @@ mod tests {
         let upstream = include_str!("upstream_connector_handlers.rs");
         assert_category(
             &[
+                (cc_config, "get_config"),
                 (cc_config, "create_config"),
                 (cc_config, "update_config"),
                 (cc_config, "delete_config"),
+                (cc_history, "get_history"),
                 (cc_history, "rollback"),
                 (cc_import, "import_configs"),
                 (cc_import, "export_configs"),
@@ -643,6 +645,25 @@ mod tests {
             ],
             "Category::Platform",
         );
+        assert!(!handler_source(cc_config, "list_configs").contains("require_category("));
+        for (src_file, fn_name, precheck_name) in [
+            (cc_config, "get_config", "precheck_config_exists"),
+            (cc_config, "create_config", "precheck_create_config"),
+            (cc_config, "update_config", "precheck_update_config"),
+            (cc_config, "delete_config", "precheck_delete_config"),
+            (cc_history, "get_history", "precheck_config_exists"),
+            (cc_history, "rollback", "precheck_rollback"),
+            (cc_import, "import_configs", "precheck_import_configs"),
+        ] {
+            let src = handler_source(src_file, fn_name);
+            let role_pos = src.find("require_config_admin").expect("config admin");
+            let pre_pos = src.find(precheck_name).expect("config precheck");
+            let mfa_pos = src.find("require_category(").expect("config mfa");
+            assert!(
+                role_pos < pre_pos && pre_pos < mfa_pos,
+                "{fn_name} must check admin role and {precheck_name} before MFA step-up"
+            );
+        }
         let publish = handler_source(upstream, "publish_draft");
         assert!(publish.contains("force_publish") && publish.contains("Category::Platform"));
         let export_configs = handler_source(cc_import, "export_configs");

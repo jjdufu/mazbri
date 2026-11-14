@@ -74,6 +74,8 @@ audit_actions! {
     SettingsUpdate => "settings.update",
     PasswordPolicyUpdate => "password_policy.update",
     ConfigCenterCreate => "config_center.create",
+    ConfigCenterView => "config_center.view",
+    ConfigCenterViewHistory => "config_center.view_history",
     ConfigCenterUpdate => "config_center.update",
     ConfigCenterDelete => "config_center.delete",
     ConfigCenterRollback => "config_center.rollback",

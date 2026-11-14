@@ -556,3 +556,14 @@ fn authorization_paths_do_not_rewrite_tokens() {
         assert!(!text.contains("static_tokens"), "{rel}");
     }
 }
+
+#[tokio::test]
+async fn batch_delete_endpoint_is_retired() {
+    let app = build_app(ScopeMode::Enforce, ActorMode::Lenient);
+    let (status, _) = call(
+        &app,
+        request("POST", "/configs/batch/delete", Some(MASTER), b"{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
