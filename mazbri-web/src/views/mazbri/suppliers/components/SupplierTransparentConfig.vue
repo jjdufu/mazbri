@@ -23,11 +23,12 @@
         />
       </ElSelect>
     </ElFormItem>
-    <div :class="{ 'disabled-section-content': !config.auth_flow.enabled }">
+    <div>
       <AuthProfileFields
         :picker="supplierPicker"
         :flow="config.auth_flow"
         :disabled="!config.auth_flow.enabled"
+        :vault-disabled="false"
         :seed-json="seedJson"
       />
     </div>
@@ -148,7 +149,11 @@ if (!Array.isArray(config.value.auth_flow.headers)) {
 const sessionProfiles = AUTH_PROFILES.filter((id) => id !== "none");
 
 const supplierPicker = computed(() =>
-  authPickerFromState(config.value.auth_flow.profile, config.value.auth_flow.enabled),
+  authPickerFromState(
+    config.value.auth_flow.profile,
+    config.value.auth_flow.enabled,
+    config.value.auth_flow.profile,
+  ),
 );
 
 function profileLabel(id: string): string {

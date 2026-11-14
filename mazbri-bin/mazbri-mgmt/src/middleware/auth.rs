@@ -422,13 +422,12 @@ pub fn get_role_level(role: &str) -> u8 {
 pub fn is_read_only(claims: &AdminClaims) -> bool {
     claims.role == ROLE_VIEWER
 }
-/// 上游免代码工作台写权限：仅超级管理员（`R_ADMIN`）。
+/// 上游免代码工作台写权限：业务读写角色（`R_ADMIN` / `R_FINANCE`），与上游供给/通道/路由写权一致。
 ///
-/// 财务（`R_FINANCE`）与观察者（`R_VIEWER`）对工作台统一只读，
-/// **不**沿用全局 [`is_business_admin`]（后者仍含财务的其他业务写权）。
+/// 观察者（`R_VIEWER`）对工作台与草稿箱统一只读。
 #[must_use]
 pub fn can_write_upstream_connector(claims: &AdminClaims) -> bool {
-    is_admin(claims)
+    is_business_admin(claims)
 }
 fn unauthorized(error: &str, message: &str) -> Response {
     let mut response = (
@@ -663,9 +662,10 @@ mod role_helper_tests {
     }
 
     #[test]
-    fn upstream_connector_write_is_super_admin_only() {
+    fn upstream_connector_write_allows_biz_and_denies_viewer() {
         assert!(can_write_upstream_connector(&claims(ROLE_SUPER_ADMIN)));
-        for role in [ROLE_ADMIN, ROLE_VIEWER, "R_OPERATOR", ""] {
+        assert!(can_write_upstream_connector(&claims(ROLE_ADMIN)));
+        for role in [ROLE_VIEWER, "R_OPERATOR", ""] {
             assert!(
                 !can_write_upstream_connector(&claims(role)),
                 "{role} must not write upstream connector workbench"

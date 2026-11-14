@@ -9,6 +9,7 @@
         :append-to="appendTo"
         :disabled="disabled"
         :placeholder="placeholder"
+        :aria-label="label"
         list-all-when-exact
         @update:model-value="onSelectDraft"
         @select="onSelectPick"
@@ -19,6 +20,7 @@
         :type="kind === 'number' ? 'number' : 'text'"
         :value="modelValue ?? ''"
         :placeholder="placeholder"
+        :aria-label="label"
         :disabled="disabled"
         :min="min"
         :step="step"

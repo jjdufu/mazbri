@@ -225,30 +225,44 @@
               <ElSwitch
                 v-if="editing"
                 v-model="form.config.auth_flow.enabled"
+                :aria-label="$t('supplier.detail.authSectionTitle')"
               />
+              <ElTag
+                v-else-if="hasActiveHttpAuth"
+                size="small"
+                type="success"
+              >
+                {{ $t("supplier.detail.enabled") }}
+              </ElTag>
+              <ElTag
+                v-else-if="isVaultOnly"
+                size="small"
+                type="info"
+                effect="plain"
+              >
+                {{
+                  $t("upstreamConnector.authVaultOnlyTag", {
+                    n: credentialEntries.length,
+                  })
+                }}
+              </ElTag>
               <ElTag
                 v-else
                 size="small"
-                :type="authEnabled ? 'success' : 'info'"
+                type="info"
               >
-                {{
-                  authEnabled
-                    ? $t("supplier.detail.enabled")
-                    : $t("supplier.detail.disabled")
-                }}
+                {{ $t("supplier.detail.disabled") }}
               </ElTag>
             </div>
           </div>
 
           <div
-            v-if="editing || authEnabled"
-            :class="{
-              'section-body': true,
-              'is-disabled': editing && !form.config.auth_flow.enabled,
-            }"
+            v-if="editing || hasActiveHttpAuth || isVaultOnly"
+            class="section-body"
           >
             <ElDescriptions class="detail-descriptions" :column="2" border>
               <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
                 :label="$t('supplier.config.tokenUrl')"
                 :span="2"
               >
@@ -267,6 +281,7 @@
 
 
               <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
                 :label="$t('supplier.config.method')"
                 :span="2"
               >
@@ -284,7 +299,11 @@
 
 
               <ElDescriptionsItem
-                :label="$t('supplier.config.credentials')"
+                :label="
+                  isVaultOnly && !editing
+                    ? $t('upstreamConnector.authVaultSection')
+                    : $t('supplier.config.credentials')
+                "
                 :span="2"
               >
                 <template v-if="editing">
@@ -305,7 +324,6 @@
                           <ElInput
                             v-model="scope.row.key"
                             placeholder="key"
-                            :disabled="!form.config.auth_flow.enabled"
                           />
                         </template>
                       </ElTableColumn>
@@ -319,7 +337,6 @@
                             type="password"
                             show-password
                             placeholder="value"
-                            :disabled="!form.config.auth_flow.enabled"
                           />
                         </template>
                       </ElTableColumn>
@@ -332,7 +349,6 @@
                           <ElButton
                             type="danger"
                             link
-                            :disabled="!form.config.auth_flow.enabled"
                             @click="removeCredential(scope.$index)"
                           >
                             <ArtSvgIcon icon="ri:delete-bin-line" />
@@ -344,7 +360,6 @@
                       <ElButton
                         link
                         type="primary"
-                        :disabled="!form.config.auth_flow.enabled"
                         @click="addCredential"
                       >
                         <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
@@ -368,6 +383,7 @@
 
 
               <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
                 :label="$t('supplier.config.requestBodyTpl')"
                 :span="2"
               >
@@ -385,7 +401,10 @@
                 }}</pre>
               </ElDescriptionsItem>
 
-              <ElDescriptionsItem :label="$t('supplier.config.tokenJsonpath')">
+              <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
+                :label="$t('supplier.config.tokenJsonpath')"
+              >
                 <ElInput
                   v-if="editing"
                   v-model="form.config.auth_flow.token_jsonpath"
@@ -394,7 +413,10 @@
                 />
                 <span v-else>{{ authFlow?.token_jsonpath || "—" }}</span>
               </ElDescriptionsItem>
-              <ElDescriptionsItem :label="$t('supplier.config.expiryJsonpath')">
+              <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
+                :label="$t('supplier.config.expiryJsonpath')"
+              >
                 <ElInput
                   v-if="editing"
                   v-model="form.config.auth_flow.expiry_jsonpath"
@@ -404,7 +426,10 @@
                 <span v-else>{{ authFlow?.expiry_jsonpath || "—" }}</span>
               </ElDescriptionsItem>
 
-              <ElDescriptionsItem :label="$t('supplier.config.injectKey')">
+              <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
+                :label="$t('supplier.config.injectKey')"
+              >
                 <div
                   v-if="editing"
                   class="inject-field-combo"
@@ -431,7 +456,10 @@
                   {{ authFlow?.inject_key || "—" }}
                 </span>
               </ElDescriptionsItem>
-              <ElDescriptionsItem :label="$t('supplier.config.injectFormat')">
+              <ElDescriptionsItem
+                v-if="editing || hasActiveHttpAuth"
+                :label="$t('supplier.config.injectFormat')"
+              >
                 <ElInput
                   v-if="editing"
                   v-model="form.config.auth_flow.inject_value_format"
@@ -549,7 +577,6 @@ const contractId = computed(
       ?.contract_id || "",
 );
 const authFlow = computed(() => supplier.value?.config?.auth_flow);
-const authEnabled = computed(() => Boolean(authFlow.value?.enabled));
 const credentialEntries = computed(() => {
   const creds = authFlow.value?.credentials;
   if (!creds || typeof creds !== "object") return [] as [string, string][];
@@ -557,6 +584,15 @@ const credentialEntries = computed(() => {
     ([k, v]) => [k, String(v)] as [string, string],
   );
 });
+const hasActiveHttpAuth = computed(() => {
+  if (!authFlow.value?.enabled) return false;
+  const p = String(authFlow.value.profile || "").trim();
+  if (p && p !== "none" && p !== "skip") return true;
+  return Boolean(authFlow.value.token_url?.trim());
+});
+const isVaultOnly = computed(
+  () => !hasActiveHttpAuth.value && credentialEntries.value.length > 0,
+);
 
 const rules = computed<FormRules>(() => {
   const baseRules: FormRules = {

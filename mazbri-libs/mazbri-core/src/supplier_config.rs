@@ -286,10 +286,23 @@ impl SupplierConfig {
 
     #[must_use]
     pub fn normalize_disabled_sections(mut self) -> Self {
-        if let Some(ref auth) = self.auth_flow
+        if let Some(ref mut auth) = self.auth_flow
             && !auth.enabled
         {
-            self.auth_flow = None;
+            if auth.credentials.is_empty() {
+                self.auth_flow = None;
+            } else {
+                auth.profile = Some("none".to_string());
+                auth.token_url.clear();
+                auth.token_path = None;
+                auth.headers.clear();
+                auth.request_body_tpl.clear();
+                auth.jwt = None;
+                auth.digest = None;
+                auth.aws = None;
+                auth.hawk = None;
+                auth.invalidation = None;
+            }
         }
         self
     }
@@ -745,5 +758,83 @@ mod tests {
             cfg.validate_upstream_url_for_type("https://partner.example.com/api")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn disabled_auth_flow_preserves_vault_credentials_and_idempotently_encrypts() {
+        let cfg = SupplierConfig {
+            upstream_type: UPSTREAM_TYPE_TRANSPARENT.into(),
+            auth_flow: Some(AuthFlowConfig {
+                enabled: false,
+                profile: Some("oauth_cc_form".into()),
+                token_url: "https://old.example/token".into(),
+                credentials: HashMap::from([
+                    ("crypto_data_key".into(), "0123456789abcdef".into()),
+                    ("crypto_mac_key".into(), "fedcba9876543210".into()),
+                ]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .normalize_disabled_sections();
+
+        let flow = cfg
+            .auth_flow
+            .as_ref()
+            .expect("vault credentials must be preserved when auth_flow.enabled == false");
+        assert!(!flow.enabled);
+        assert_eq!(flow.profile.as_deref(), Some("none"));
+        assert_eq!(flow.token_url, "");
+        assert_eq!(flow.credentials.len(), 2);
+
+        let encrypted_once = cfg.encrypt_credentials_for_storage().unwrap();
+        let cipher = encrypted_once
+            .auth_flow
+            .as_ref()
+            .unwrap()
+            .credentials
+            .get("crypto_data_key")
+            .unwrap()
+            .clone();
+        assert!(cipher.starts_with("enc:v2:"));
+
+        let encrypted_twice = encrypted_once
+            .clone()
+            .normalize_disabled_sections()
+            .encrypt_credentials_for_storage()
+            .unwrap();
+        assert_eq!(
+            encrypted_twice
+                .auth_flow
+                .as_ref()
+                .unwrap()
+                .credentials
+                .get("crypto_data_key"),
+            Some(&cipher),
+            "already-encrypted credentials must be skipped idempotently"
+        );
+
+        let decrypted = encrypted_twice.decrypt_credentials_for_runtime().unwrap();
+        assert_eq!(
+            decrypted
+                .auth_flow
+                .as_ref()
+                .unwrap()
+                .credentials
+                .get("crypto_data_key")
+                .map(String::as_str),
+            Some("0123456789abcdef")
+        );
+
+        let empty_disabled = SupplierConfig {
+            upstream_type: UPSTREAM_TYPE_TRANSPARENT.into(),
+            auth_flow: Some(AuthFlowConfig {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .normalize_disabled_sections();
+        assert!(empty_disabled.auth_flow.is_none());
     }
 }

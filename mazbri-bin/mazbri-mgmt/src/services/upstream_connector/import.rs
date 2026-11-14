@@ -1,8 +1,13 @@
 use super::{
-    ApiError, Arc, CreateDraftRequest, CurlImportRequest, DraftDto, Duration, ExecuteMode,
+    ApiError, Arc, CreateDraftRequest, CurlImportRequest, Decimal, DraftDto, Duration, ExecuteMode,
     ExecuteOptions, HashMap, InvokeInput, OpenApiImportRequest, PgPool, PostmanImportRequest, Row,
-    RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec, create_draft,
-    endpoint_by_id, get_draft, parse_workbench_env, repo, workbench_endpoint_key,
+    RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec, config_json_for_draft,
+    create_draft, endpoint_by_id, get_draft, parse_workbench_env, repo, with_gate,
+    workbench_endpoint_key,
+};
+use mazbri_core::{
+    ADAPTER_HTTP_JSON, BodyEncoding, ChannelEgressSpec, parse_channel_config_egress,
+    profile_is_undeclared,
 };
 
 // ---------- Import ----------
@@ -436,12 +441,393 @@ pub async fn import_openapi(
     .await
 }
 
+/// 供反开工作台使用的渠道行快照。
+#[derive(Debug, Clone)]
+pub(crate) struct LiveChannelRow {
+    pub channel_code: String,
+    pub name: String,
+    pub path_prefix: String,
+    pub cost_price: Decimal,
+    pub qps_limit: i32,
+    pub config: serde_json::Value,
+}
+
+/// 格式化 `NUMERIC(18,6)` 成本单价字符串：保留有效小数位并去除冗余尾零，最少保留 2 位小数。
+pub(crate) fn format_cost_price_decimal(value: Decimal) -> String {
+    let raw = value.normalize().to_string();
+    if let Some((int_part, frac_part)) = raw.split_once('.') {
+        if frac_part.len() >= 2 {
+            format!("{int_part}.{frac_part}")
+        } else {
+            format!("{int_part}.{frac_part:0<2}")
+        }
+    } else {
+        format!("{raw}.00")
+    }
+}
+
+/// 规范化供应商线上 `config` 以供工作台反开：
+/// 原样保留加密密钥，且将“仅存有业务密钥仓、未声明任何 HTTP 换票/鉴权类型”的旧配置归一为 `enabled = false, profile = "none"`。
+pub(crate) fn normalize_supplier_config_for_workbench(mut config: serde_json::Value) -> serde_json::Value {
+    if let Some(auth_obj) = config
+        .as_object_mut()
+        .and_then(|o| o.get_mut("auth_flow"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        let profile_raw = auth_obj.get("profile").and_then(serde_json::Value::as_str);
+        let token_url = auth_obj
+            .get("token_url")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let has_creds = auth_obj
+            .get("credentials")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|m| !m.is_empty());
+        if profile_is_undeclared(profile_raw) && token_url.is_empty() && has_creds {
+            auth_obj.insert("enabled".to_string(), serde_json::Value::Bool(false));
+            auth_obj.insert(
+                "profile".to_string(),
+                serde_json::Value::String("none".to_string()),
+            );
+        }
+    }
+    config
+}
+
+fn sorted_kv_entries_and_map(
+    src: Option<&HashMap<String, String>>,
+) -> (Vec<serde_json::Value>, serde_json::Map<String, serde_json::Value>) {
+    let mut pairs: Vec<(&String, &String)> = src.map_or_else(Vec::new, |m| m.iter().collect());
+    pairs.sort_by_key(|(a, _)| *a);
+    let mut entries = Vec::with_capacity(pairs.len());
+    let mut map = serde_json::Map::new();
+    for (k, v) in pairs {
+        entries.push(serde_json::json!({
+            "key": k,
+            "value": v,
+            "enabled": true,
+        }));
+        map.insert(k.clone(), serde_json::Value::String(v.clone()));
+    }
+    (entries, map)
+}
+
+fn insert_optional_serialized<T: serde::Serialize>(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val: Option<&T>,
+) {
+    if let Some(v) = val
+        && let Ok(jv) = serde_json::to_value(v)
+        && !jv.is_null()
+    {
+        obj.insert(key.to_string(), jv);
+    }
+}
+
+/// 从单条线上 `channels` 记录（含 `config.egress`）完整还原工作台 `ConnectorEndpoint` JSON。
+pub(crate) fn channel_row_to_workbench_endpoint(ch: &LiveChannelRow) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "id".into(),
+        serde_json::Value::String(ch.channel_code.to_lowercase()),
+    );
+    obj.insert("name".into(), serde_json::Value::String(ch.name.clone()));
+    obj.insert(
+        "channel_code".into(),
+        serde_json::Value::String(ch.channel_code.clone()),
+    );
+    obj.insert(
+        "path_prefix".into(),
+        serde_json::Value::String(ch.path_prefix.clone()),
+    );
+    obj.insert(
+        "cost_price".into(),
+        serde_json::Value::String(format_cost_price_decimal(ch.cost_price)),
+    );
+    obj.insert("qps_limit".into(), serde_json::json!(ch.qps_limit));
+
+    if let Ok(spec) = parse_channel_config_egress(&ch.config) {
+        apply_egress_spec_to_endpoint(&mut obj, &spec, &ch.path_prefix);
+    } else {
+        obj.insert("method".into(), serde_json::Value::String("POST".into()));
+        obj.insert(
+            "path".into(),
+            serde_json::Value::String(if ch.path_prefix.trim().is_empty() {
+                "/".into()
+            } else {
+                ch.path_prefix.clone()
+            }),
+        );
+        obj.insert(
+            "adapter".into(),
+            serde_json::Value::String(ADAPTER_HTTP_JSON.into()),
+        );
+        obj.insert(
+            "body_encoding".into(),
+            serde_json::Value::String("json".into()),
+        );
+        obj.insert(
+            "body_content_type".into(),
+            serde_json::Value::String("json".into()),
+        );
+        obj.insert("body".into(), serde_json::json!({}));
+    }
+
+    obj.insert(
+        "assertions".into(),
+        serde_json::json!([{"type": "status_range", "min": 200, "max": 399}]),
+    );
+    obj.insert("gate".into(), serde_json::Value::Bool(true));
+    serde_json::Value::Object(obj)
+}
+
+fn apply_egress_spec_to_endpoint(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    spec: &ChannelEgressSpec,
+    fallback_path: &str,
+) {
+    let method = if spec.request.method.trim().is_empty() {
+        "POST".to_string()
+    } else {
+        spec.request.method.trim().to_uppercase()
+    };
+    let path = if spec.request.path.trim().is_empty() {
+        if fallback_path.trim().is_empty() {
+            "/".to_string()
+        } else {
+            fallback_path.to_string()
+        }
+    } else {
+        spec.request.path.clone()
+    };
+    let encoding_str = spec.request.body_encoding.as_str().to_string();
+    obj.insert("method".into(), serde_json::Value::String(method));
+    obj.insert("path".into(), serde_json::Value::String(path));
+    obj.insert(
+        "adapter".into(),
+        serde_json::Value::String(if spec.adapter.trim().is_empty() {
+            ADAPTER_HTTP_JSON.into()
+        } else {
+            spec.adapter.clone()
+        }),
+    );
+    let l1_body_type = if spec.request.body_encoding == BodyEncoding::None {
+        "none"
+    } else {
+        "json"
+    };
+    obj.insert(
+        "body_encoding".into(),
+        serde_json::Value::String(encoding_str),
+    );
+    obj.insert(
+        "body_content_type".into(),
+        serde_json::Value::String(l1_body_type.into()),
+    );
+    if let Some(ref ct) = spec.request.content_type
+        && !ct.trim().is_empty()
+    {
+        obj.insert("content_type".into(), serde_json::Value::String(ct.clone()));
+    }
+    let (header_entries, headers_map) = sorted_kv_entries_and_map(spec.request.headers.as_ref());
+    if !header_entries.is_empty() {
+        obj.insert(
+            "header_entries".into(),
+            serde_json::Value::Array(header_entries),
+        );
+        obj.insert("headers".into(), serde_json::Value::Object(headers_map));
+    }
+    let (query_entries, query_map) = sorted_kv_entries_and_map(spec.request.query.as_ref());
+    if !query_entries.is_empty() {
+        obj.insert(
+            "query_entries".into(),
+            serde_json::Value::Array(query_entries),
+        );
+        obj.insert("query".into(), serde_json::Value::Object(query_map));
+    }
+    let sample_body = if spec.request.body_encoding == BodyEncoding::None {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!({})
+    };
+    obj.insert("body".into(), sample_body);
+
+    if let Some(ref wrap) = spec.request.wrap
+        && !wrap.trim().is_empty()
+    {
+        obj.insert("wrap".into(), serde_json::Value::String(wrap.clone()));
+    }
+    if let Some(unwrap) = spec.response.as_ref().and_then(|r| r.unwrap.as_deref())
+        && !unwrap.trim().is_empty()
+    {
+        obj.insert(
+            "unwrap".into(),
+            serde_json::Value::String(unwrap.to_string()),
+        );
+    }
+    if let Some(ref op) = spec.operation
+        && !op.trim().is_empty()
+    {
+        obj.insert("operation".into(), serde_json::Value::String(op.clone()));
+    }
+    if let Some(ref aid) = spec.artifact_id
+        && !aid.trim().is_empty()
+    {
+        obj.insert("artifact_id".into(), serde_json::Value::String(aid.clone()));
+    }
+    if let Some(ms) = spec.timeout_ms {
+        obj.insert("timeout_ms".into(), serde_json::json!(ms));
+    }
+    insert_optional_serialized(obj, "auth", spec.auth.as_ref());
+    insert_optional_serialized(obj, "crypto", spec.crypto.as_ref());
+    insert_optional_serialized(obj, "graphql", spec.graphql.as_ref());
+    insert_optional_serialized(obj, "job_poll", spec.job_poll.as_ref());
+    insert_optional_serialized(obj, "sign_form", spec.sign_form.as_ref());
+    insert_optional_serialized(obj, "soap", spec.soap.as_ref());
+    insert_optional_serialized(obj, "ws", spec.ws.as_ref());
+}
+
+fn overlay_snapshot_metadata(
+    endpoints: &mut [serde_json::Value],
+    snapshot: Option<&serde_json::Value>,
+) {
+    let Some(snap_arr) = snapshot.and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    for ep in endpoints {
+        let Some(ep_obj) = ep.as_object_mut() else {
+            continue;
+        };
+        let ch_code = ep_obj
+            .get("channel_code")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let ep_id = ep_obj
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let matched = snap_arr.iter().find(|s| {
+            let sc = s
+                .get("channel_code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            let sid = s.get("id").and_then(serde_json::Value::as_str).unwrap_or("");
+            (!ch_code.is_empty() && sc.eq_ignore_ascii_case(ch_code))
+                || (!ep_id.is_empty() && sid.eq_ignore_ascii_case(ep_id))
+        });
+        let Some(snap_ep) = matched else {
+            continue;
+        };
+        if let Some(snap_id) = snap_ep.get("id").and_then(serde_json::Value::as_str)
+            && !snap_id.trim().is_empty()
+        {
+            ep_obj.insert("id".into(), serde_json::Value::String(snap_id.to_string()));
+        }
+        if ep_obj.get("body").is_some_and(|b| b == &serde_json::json!({}))
+            && let Some(snap_body) = snap_ep.get("body")
+            && !snap_body.is_null()
+        {
+            ep_obj.insert("body".into(), snap_body.clone());
+        }
+        if let Some(assertions) = snap_ep.get("assertions")
+            && assertions.is_array()
+        {
+            ep_obj.insert("assertions".into(), assertions.clone());
+        }
+        if let Some(gate) = snap_ep.get("gate").and_then(serde_json::Value::as_bool) {
+            ep_obj.insert("gate".into(), serde_json::Value::Bool(gate));
+        }
+        if let Some(desc) = snap_ep.get("description").and_then(serde_json::Value::as_str)
+            && !desc.trim().is_empty()
+        {
+            ep_obj.insert(
+                "description".into(),
+                serde_json::Value::String(desc.to_string()),
+            );
+        }
+    }
+}
+
+async fn load_supplier_channels(
+    pool: &PgPool,
+    supplier_id: Uuid,
+) -> Result<Vec<LiveChannelRow>, ApiError> {
+    let rows = sqlx::query(
+        r"
+        SELECT channel_code, name, path_prefix, cost_price, qps_limit, config
+        FROM channels
+        WHERE supplier_id = $1
+        ORDER BY channel_code
+        ",
+    )
+    .bind(supplier_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("list channels: {e}")))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| LiveChannelRow {
+            channel_code: r.get("channel_code"),
+            name: r.get("name"),
+            path_prefix: r.get("path_prefix"),
+            cost_price: r.get("cost_price"),
+            qps_limit: r.get("qps_limit"),
+            config: r.get("config"),
+        })
+        .collect())
+}
+
+async fn build_supplier_endpoints_value(
+    pool: &PgPool,
+    supplier_id: Uuid,
+) -> Result<serde_json::Value, ApiError> {
+    let channels = load_supplier_channels(pool, supplier_id).await?;
+    let latest_ver = repo::get_latest_version_for_supplier(pool, supplier_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("latest version: {e}")))?;
+
+    let mut endpoints: Vec<serde_json::Value> = channels
+        .iter()
+        .map(channel_row_to_workbench_endpoint)
+        .collect();
+    overlay_snapshot_metadata(
+        &mut endpoints,
+        latest_ver.as_ref().map(|v| &v.endpoints_snapshot),
+    );
+    if endpoints.is_empty() {
+        if let Some(snap_arr) = latest_ver
+            .as_ref()
+            .and_then(|v| v.endpoints_snapshot.as_array())
+            .filter(|a| !a.is_empty())
+        {
+            endpoints.clone_from(snap_arr);
+        } else {
+            endpoints.push(serde_json::json!({
+                "id": "ep-1",
+                "name": "默认接口",
+                "method": "POST",
+                "path": "/",
+                "body_encoding": "json",
+                "body_content_type": "json",
+                "body": {},
+                "assertions": [{"type": "status_range", "min": 200, "max": 399}],
+                "gate": true
+            }));
+        }
+    }
+    Ok(serde_json::Value::Array(endpoints))
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn draft_from_supplier(
     pool: &PgPool,
     supplier_id: Uuid,
+    force_resync: bool,
     actor: &str,
 ) -> Result<DraftDto, ApiError> {
     let row = sqlx::query(
@@ -456,51 +842,60 @@ pub async fn draft_from_supplier(
     .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
     .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
 
+    let existing_draft = repo::find_active_draft_for_supplier(pool, supplier_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("find active draft: {e}")))?;
+    if !force_resync
+        && let Some(existing) = existing_draft
+    {
+        return with_gate(pool, existing).await;
+    }
+
     let code: String = row.get("supplier_code");
     let name: String = row.get("name");
     let upstream_url: String = row.get("upstream_url");
-    let config: serde_json::Value = row.get("config");
+    let raw_config: serde_json::Value = row.get("config");
+    let config = normalize_supplier_config_for_workbench(raw_config);
     let upstream_type = config
         .get("upstream_type")
         .and_then(|v| v.as_str())
         .unwrap_or("transparent")
         .to_string();
+    let endpoints_value = build_supplier_endpoints_value(pool, supplier_id).await?;
 
-    let channels: Vec<(String, String, String)> = sqlx::query_as::<_, (String, String, String)>(
-        "SELECT channel_code, name, path_prefix FROM channels WHERE supplier_id = $1 ORDER BY channel_code",
-    )
-    .bind(supplier_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| ApiError::internal(format!("list channels: {e}")))?;
-
-    let endpoints: Vec<serde_json::Value> = channels
-        .into_iter()
-        .map(|(cc, cn, pp)| {
-            serde_json::json!({
-                "id": cc.to_lowercase(),
-                "name": cn,
-                "method": "GET",
-                "path": pp,
-                "channel_code": cc,
-                "path_prefix": pp,
-                "assertions": [{"type":"status_range","min":200,"max":399}],
-                "gate": true
-            })
-        })
-        .collect();
+    if let Some(existing) = existing_draft {
+        let config_value = config_json_for_draft(&config, Some(&existing.config))?;
+        let updated = repo::update_draft(
+            pool,
+            repo::DraftUpdate {
+                id: existing.id,
+                name: Some(&name),
+                description: Some(&format!("反开自供应商 {code}")),
+                upstream_type: Some(&upstream_type),
+                upstream_url: Some(&upstream_url),
+                config: Some(&config_value),
+                endpoints: Some(&endpoints_value),
+                workbench_env: None,
+                status: Some("draft"),
+            },
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("resync draft: {e}")))?
+        .ok_or_else(|| ApiError::not_found("draft".into(), existing.id.to_string()))?;
+        return with_gate(pool, updated).await;
+    }
 
     let draft_code = format!("from-{code}-{}", &Uuid::new_v4().to_string()[..6]);
     let mut dto = create_draft(
         pool,
         CreateDraftRequest {
             draft_code,
-            name: format!("{name} (from live)"),
+            name,
             description: Some(format!("反开自供应商 {code}")),
             upstream_type,
             upstream_url,
             config: Some(config),
-            endpoints: Some(serde_json::Value::Array(endpoints)),
+            endpoints: Some(endpoints_value),
             workbench_env: None,
             source: Some("supplier".into()),
         },
@@ -508,12 +903,179 @@ pub async fn draft_from_supplier(
     )
     .await?;
 
-    // link
     repo::set_draft_linked_supplier(pool, dto.id, supplier_id, "draft")
         .await
         .map_err(|e| ApiError::internal(format!("link supplier: {e}")))?;
     dto.linked_supplier_id = Some(supplier_id);
     Ok(dto)
+}
+
+fn extract_enabled_kv_items(
+    ep: &serde_json::Value,
+    entries_key: &str,
+    map_key: &str,
+) -> Vec<(String, String, Option<String>)> {
+    if let Some(arr) = ep.get(entries_key).and_then(serde_json::Value::as_array) {
+        let mut out = Vec::new();
+        for row in arr {
+            if row.get("enabled").and_then(serde_json::Value::as_bool) == Some(false) {
+                continue;
+            }
+            let Some(k) = row
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let v = row
+                .get("value")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let desc = row
+                .get("desc")
+                .or_else(|| row.get("description"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string);
+            out.push((k.to_string(), v, desc));
+        }
+        return out;
+    }
+    if let Some(map) = ep.get(map_key).and_then(serde_json::Value::as_object) {
+        let mut pairs: Vec<(&String, &serde_json::Value)> = map.iter().collect();
+        pairs.sort_by_key(|(a, _)| *a);
+        return pairs
+            .into_iter()
+            .filter(|(k, _)| !k.trim().is_empty())
+            .map(|(k, v)| {
+                let s = v
+                    .as_str()
+                    .map_or_else(|| v.to_string(), ToString::to_string);
+                (k.clone(), s, None)
+            })
+            .collect();
+    }
+    Vec::new()
+}
+
+fn kv_items_to_postman(items: Vec<(String, String, Option<String>)>) -> Vec<serde_json::Value> {
+    items
+        .into_iter()
+        .map(|(k, v, desc)| {
+            let mut m = serde_json::Map::new();
+            m.insert("key".into(), serde_json::Value::String(k));
+            m.insert("value".into(), serde_json::Value::String(v));
+            if let Some(d) = desc {
+                m.insert("description".into(), serde_json::Value::String(d));
+            }
+            serde_json::Value::Object(m)
+        })
+        .collect()
+}
+
+fn build_postman_body(method: &str, ep: &serde_json::Value) -> Option<serde_json::Value> {
+    let encoding = ep
+        .get("body_encoding")
+        .or_else(|| ep.get("body_content_type"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("json");
+    if encoding == "none" || matches!(method, "GET" | "HEAD") {
+        return None;
+    }
+    if encoding == "form" {
+        let mut form_items = Vec::new();
+        if let Some(body_obj) = ep.get("body").and_then(serde_json::Value::as_object) {
+            for (k, v) in body_obj {
+                let s = v
+                    .as_str()
+                    .map_or_else(|| v.to_string(), ToString::to_string);
+                form_items.push(serde_json::json!({
+                    "key": k,
+                    "value": s,
+                    "type": "text"
+                }));
+            }
+        }
+        return Some(serde_json::json!({
+            "mode": "urlencoded",
+            "urlencoded": form_items
+        }));
+    }
+    let body_val = ep.get("body").filter(|v| !v.is_null())?;
+    let raw_body = match body_val {
+        serde_json::Value::String(s) => s.clone(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    };
+    Some(serde_json::json!({
+        "mode": "raw",
+        "raw": raw_body,
+        "options": { "raw": { "language": "json" } }
+    }))
+}
+
+pub(crate) fn export_postman_item(upstream_url: &str, ep: &serde_json::Value) -> serde_json::Value {
+    let method = ep
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("GET")
+        .to_uppercase();
+    let path = ep
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("/");
+    let name = ep
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(path);
+    let headers = kv_items_to_postman(extract_enabled_kv_items(ep, "header_entries", "headers"));
+
+    let query_items = extract_enabled_kv_items(ep, "query_entries", "query");
+    let base_url = format!("{}{}", upstream_url.trim_end_matches('/'), path);
+    let raw_url = if query_items.is_empty() {
+        base_url
+    } else {
+        let qs: String = query_items
+            .iter()
+            .map(|(k, v, _)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        format!("{base_url}?{qs}")
+    };
+    let pm_query = kv_items_to_postman(query_items);
+
+    let mut url_obj = serde_json::Map::new();
+    url_obj.insert("raw".into(), serde_json::Value::String(raw_url));
+    if !pm_query.is_empty() {
+        url_obj.insert("query".into(), serde_json::Value::Array(pm_query));
+    }
+
+    let mut request = serde_json::Map::new();
+    request.insert("method".into(), serde_json::Value::String(method.clone()));
+    request.insert("header".into(), serde_json::Value::Array(headers));
+    request.insert("url".into(), serde_json::Value::Object(url_obj));
+    if let Some(desc) = ep
+        .get("description")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        request.insert(
+            "description".into(),
+            serde_json::Value::String(desc.to_string()),
+        );
+    }
+    if let Some(body) = build_postman_body(&method, ep) {
+        request.insert("body".into(), body);
+    }
+
+    serde_json::json!({
+        "name": name,
+        "request": serde_json::Value::Object(request),
+    })
 }
 
 /// # Errors
@@ -524,17 +1086,7 @@ pub async fn export_postman(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
     let mut items = Vec::new();
     if let Some(arr) = d.endpoints.as_array() {
         for ep in arr {
-            let method = ep.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
-            let path = ep.get("path").and_then(|v| v.as_str()).unwrap_or("/");
-            let name = ep.get("name").and_then(|v| v.as_str()).unwrap_or(path);
-            items.push(serde_json::json!({
-                "name": name,
-                "request": {
-                    "method": method,
-                    "header": [],
-                    "url": format!("{}{}", d.upstream_url.trim_end_matches('/'), path)
-                }
-            }));
+            items.push(export_postman_item(&d.upstream_url, ep));
         }
     }
     Ok(serde_json::json!({
@@ -608,4 +1160,145 @@ pub async fn transform_preview(
         "ok": result.ok,
         "stages": result.stages,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn sample_sm4_live_channel() -> LiveChannelRow {
+        LiveChannelRow {
+            channel_code: "UPUPT-ENV-SC-SM4-DEFAULT".to_string(),
+            name: "国密SM4信封通道".to_string(),
+            path_prefix: "/".to_string(),
+            cost_price: Decimal::from_str("0.002500").unwrap(),
+            qps_limit: 50,
+            config: serde_json::json!({
+                "egress": {
+                    "adapter": "http_envelope",
+                    "operation": "queryOrder",
+                    "base_url": "https://partner.example.com",
+                    "request": {
+                        "method": "POST",
+                        "path": "/sm4",
+                        "body_encoding": "json",
+                        "headers": { "X-Partner": "mazbri" },
+                        "query": { "ver": "2" },
+                        "wrap": "method_biz_content"
+                    },
+                    "response": { "unwrap": "$.data" },
+                    "crypto": {
+                        "version": 1,
+                        "order": "encrypt_then_sign",
+                        "canon": "sorted_kv",
+                        "encodings": {
+                            "payload": { "hex": { "case": "lower" } },
+                            "signature": "base64",
+                            "iv": "base64"
+                        },
+                        "slots": [
+                            { "role": "sign", "location": "json", "name": "sign" },
+                            { "role": "cipher", "location": "json", "name": "biz_content" }
+                        ],
+                        "iv": "random",
+                        "scope": "whole_body",
+                        "allow_insecure": false,
+                        "crypt": { "alg": "sm4-cbc-pkcs7" },
+                        "sign": { "alg": "hmac-sm3" }
+                    }
+                }
+            }),
+        }
+    }
+
+    #[test]
+    fn reverse_import_restores_sm4_envelope_and_roundtrips_spec() {
+        let live_channel = sample_sm4_live_channel();
+
+        let mut endpoints = vec![channel_row_to_workbench_endpoint(&live_channel)];
+        let snapshot = serde_json::json!([
+            {
+                "channel_code": "UPUPT-ENV-SC-SM4-DEFAULT",
+                "body": { "orderNo": "ORD-001" }
+            }
+        ]);
+        overlay_snapshot_metadata(&mut endpoints, Some(&snapshot));
+        let ep = &endpoints[0];
+        assert_eq!(ep["method"], "POST");
+        assert_eq!(ep["path"], "/sm4");
+        assert_eq!(ep["path_prefix"], "/");
+        assert_eq!(ep["cost_price"], "0.0025");
+        assert_eq!(ep["qps_limit"], 50);
+        assert_eq!(ep["adapter"], "http_envelope");
+        assert_eq!(ep["operation"], "queryOrder");
+        assert_eq!(ep["wrap"], "method_biz_content");
+        assert_eq!(ep["unwrap"], "$.data");
+        assert_eq!(ep["crypto"]["crypt"]["alg"], "sm4-cbc-pkcs7");
+        assert_eq!(ep["crypto"]["sign"]["alg"], "hmac-sm3");
+        assert_eq!(ep["crypto"]["slots"][1]["name"], "biz_content");
+        assert_eq!(ep["body"]["orderNo"], "ORD-001");
+
+        let raw_supplier_cfg = serde_json::json!({
+            "upstream_type": "transparent",
+            "auth_flow": {
+                "enabled": true,
+                "credentials": {
+                    "crypto_data_key": "enc:v2:aes-256-gcm:demo1",
+                    "crypto_mac_key": "enc:v2:aes-256-gcm:demo2"
+                }
+            }
+        });
+        let normalized_cfg = normalize_supplier_config_for_workbench(raw_supplier_cfg);
+        assert_eq!(normalized_cfg["auth_flow"]["enabled"], false);
+        assert_eq!(normalized_cfg["auth_flow"]["profile"], "none");
+        assert_eq!(
+            normalized_cfg["auth_flow"]["credentials"]["crypto_data_key"],
+            "enc:v2:aes-256-gcm:demo1"
+        );
+
+        let parsed_cfg = SupplierConfig::parse_and_validate(&normalized_cfg).expect("valid config");
+        let rebuilt = build_workbench_spec(
+            ep,
+            &HashMap::new(),
+            Some(&parsed_cfg),
+            "https://partner.example.com",
+        )
+        .expect("rebuilt spec must succeed without auth deadlock");
+        assert_eq!(rebuilt.spec.request.method, "POST");
+        assert_eq!(rebuilt.spec.request.path, "/sm4");
+        assert_eq!(rebuilt.spec.adapter, "http_envelope");
+        assert!(rebuilt.spec.crypto.is_some());
+        assert!(rebuilt.spec.auth.is_none());
+    }
+
+    #[test]
+    fn export_postman_item_serializes_headers_query_and_body() {
+        let ep = serde_json::json!({
+            "name": "查询订单",
+            "description": "SM4 查询接口",
+            "method": "POST",
+            "path": "/sm4",
+            "body_encoding": "json",
+            "header_entries": [
+                { "key": "X-App", "value": "demo", "description": "应用标识", "enabled": true },
+                { "key": "X-Disabled", "value": "no", "enabled": false }
+            ],
+            "query_entries": [
+                { "key": "v", "value": "1", "enabled": true }
+            ],
+            "body": { "orderId": "1001" }
+        });
+        let item = export_postman_item("https://partner.example.com/", &ep);
+        assert_eq!(item["name"], "查询订单");
+        assert_eq!(item["request"]["method"], "POST");
+        assert_eq!(item["request"]["description"], "SM4 查询接口");
+        assert_eq!(
+            item["request"]["url"]["raw"],
+            "https://partner.example.com/sm4?v=1"
+        );
+        assert_eq!(item["request"]["header"].as_array().unwrap().len(), 1);
+        assert_eq!(item["request"]["header"][0]["key"], "X-App");
+        assert_eq!(item["request"]["body"]["mode"], "raw");
+    }
 }

@@ -23,6 +23,12 @@ pub enum ApiError {
     /// 自定义扩展服务仍存在活跃心跳运行节点，禁止删除生效配置。
     #[error("该服务仍存在在线运行实例，禁止删除生效配置")]
     ConfigInUse,
+    /// 发布草稿时通道编码已归属其他供应商，禁止跨供应商覆盖。
+    #[error("通道编码 '{0}' 已归属其他供应商，禁止覆盖")]
+    ChannelCodeOwnedByOtherSupplier(String),
+    /// 发布草稿时路由优先级或同产品活跃路由与其他规则冲突。
+    #[error("{0}")]
+    RouteConflict(String),
 }
 impl ApiError {
     pub fn internal(msg: impl Into<String>) -> Self {
@@ -48,7 +54,10 @@ impl ErrorResponse for ApiError {
             ApiError::Forbidden
             | ApiError::LicenseIssuanceNotAllowed
             | ApiError::SuperAdminProtected => StatusCode::FORBIDDEN,
-            ApiError::CoreServiceConfigProtected | ApiError::ConfigInUse => StatusCode::CONFLICT,
+            ApiError::CoreServiceConfigProtected
+            | ApiError::ConfigInUse
+            | ApiError::ChannelCodeOwnedByOtherSupplier(_)
+            | ApiError::RouteConflict(_) => StatusCode::CONFLICT,
         }
     }
     fn error_code(&self) -> &'static str {
@@ -60,6 +69,8 @@ impl ErrorResponse for ApiError {
             ApiError::SuperAdminProtected => "super_admin_protected",
             ApiError::CoreServiceConfigProtected => "CORE_SERVICE_CONFIG_PROTECTED",
             ApiError::ConfigInUse => "CONFIG_IN_USE",
+            ApiError::ChannelCodeOwnedByOtherSupplier(_) => "CHANNEL_CODE_OWNED_BY_OTHER_SUPPLIER",
+            ApiError::RouteConflict(_) => "ROUTE_CONFLICT",
         }
     }
     fn detail(&self) -> Option<String> {
@@ -78,6 +89,10 @@ impl ErrorResponse for ApiError {
             ApiError::ConfigInUse => {
                 Some("该服务仍存在在线运行实例，禁止删除生效配置".to_string())
             }
+            ApiError::ChannelCodeOwnedByOtherSupplier(code) => Some(format!(
+                "通道编码 '{code}' 已归属其他供应商，请更换通道编码后再发布"
+            )),
+            ApiError::RouteConflict(msg) => Some(msg.clone()),
             _ => None,
         }
     }

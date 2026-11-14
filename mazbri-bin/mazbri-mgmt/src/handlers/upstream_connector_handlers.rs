@@ -277,6 +277,13 @@ pub async fn import_openapi(
     Ok(crate::response::created(data))
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftFromSupplierQuery {
+    #[serde(default)]
+    pub force_resync: bool,
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -284,9 +291,17 @@ pub async fn draft_from_supplier(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(supplier_id): Path<Uuid>,
+    Query(query): Query<DraftFromSupplierQuery>,
+    body: axum::body::Bytes,
 ) -> Result<Response, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::draft_from_supplier(&state.db, supplier_id, &claims.sub).await?;
+    let mut force_resync = query.force_resync;
+    if !force_resync && !body.is_empty() {
+        let parsed: DraftFromSupplierQuery = serde_json::from_slice(&body)
+            .map_err(|e| ApiError::validation(format!("请求参数格式错误: {e}")))?;
+        force_resync = parsed.force_resync;
+    }
+    let data = svc::draft_from_supplier(&state.db, supplier_id, force_resync, &claims.sub).await?;
     Ok(crate::response::created(data))
 }
 

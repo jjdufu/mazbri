@@ -90,6 +90,12 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
     });
   }
 
+  const rawProfile = String(supplier.config?.auth_flow?.profile || "");
+  const rawTokenUrl = String(supplier.config?.auth_flow?.token_url || "");
+  const activeHttpAuth =
+    Boolean(supplier.config?.auth_flow?.enabled) &&
+    Boolean((rawProfile && rawProfile !== "none" && rawProfile !== "skip") || rawTokenUrl.trim());
+
   return {
     supplier_code: supplier.supplier_code,
     name: supplier.name,
@@ -106,9 +112,9 @@ export function supplierToForm(supplier: Supplier): SupplierFormModel {
         "",
       auth_flow: {
         ...createEmptyAuthFlow(),
-        enabled: supplier.config?.auth_flow?.enabled || false,
-        profile: String(supplier.config?.auth_flow?.profile || ""),
-        token_url: supplier.config?.auth_flow?.token_url || "",
+        enabled: activeHttpAuth,
+        profile: rawProfile === "none" ? "" : rawProfile,
+        token_url: rawTokenUrl,
         token_path: String(
           (supplier.config?.auth_flow as { token_path?: string } | undefined)?.token_path || "",
         ),
@@ -206,11 +212,14 @@ export function buildSupplierUpdatePayload(form: SupplierFormModel) {
     }
   });
 
+  const hasCreds = Object.keys(credsMap).length > 0;
   const configPayload: Record<string, unknown> = {
     upstream_type: form.upstream_type,
     auth_flow: form.config.auth_flow.enabled
       ? serializeAuthFlow(form.config.auth_flow, credsMap)
-      : null,
+      : hasCreds
+        ? { enabled: false, profile: "none", credentials: credsMap }
+        : null,
   };
   if (form.upstream_type === "microservice") {
     configPayload.contract_id = (form.config.contract_id || "").trim();

@@ -319,6 +319,50 @@ pub async fn set_draft_linked_supplier(
     Ok(())
 }
 
+/// 查询某供应商当前未发布的关联草稿（按最近更新时间倒序取最新一条）。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn find_active_draft_for_supplier(
+    pool: &PgPool,
+    supplier_id: Uuid,
+) -> Result<Option<DraftRow>, sqlx::Error> {
+    sqlx::query_as::<_, DraftRow>(
+        r"
+        SELECT * FROM upstream_connector_drafts
+        WHERE linked_supplier_id = $1 AND status = 'draft'
+        ORDER BY updated_at DESC
+        LIMIT 1
+        ",
+    )
+    .bind(supplier_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// 查询某供应商最近一次发布的连接器版本快照。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn get_latest_version_for_supplier(
+    pool: &PgPool,
+    supplier_id: Uuid,
+) -> Result<Option<VersionRow>, sqlx::Error> {
+    sqlx::query_as::<_, VersionRow>(
+        r"
+        SELECT * FROM upstream_connector_versions
+        WHERE supplier_id = $1
+        ORDER BY version_no DESC
+        LIMIT 1
+        ",
+    )
+    .bind(supplier_id)
+    .fetch_optional(pool)
+    .await
+}
+
 /// Postgres JSON/JSONB rejects `\u0000`. gRPC frames and other binary
 /// previews can carry NULs after `from_utf8_lossy`.
 fn strip_json_nuls(value: &mut JsonValue) {

@@ -74,6 +74,7 @@
             :options="assertTypeOptions"
             :append-to="appendTo"
             placeholder="status_range"
+            :aria-label="$t('upstreamConnector.fields.assertType')"
             @update:model-value="a.type = $event"
           />
         </div>
@@ -86,6 +87,7 @@
               max="599"
               :value="a.min"
               placeholder="200"
+              aria-label="status_range min"
               @input="a.min = num($event)"
             />
           </div>
@@ -97,6 +99,7 @@
               max="599"
               :value="a.max"
               placeholder="299"
+              aria-label="status_range max"
               @input="a.max = num($event)"
             />
           </div>
@@ -106,6 +109,7 @@
             class="wb-assert__input"
             :value="(a.values || []).join(',')"
             placeholder="200,201"
+            aria-label="status_in values"
             @input="setValues(idx, str($event))"
           />
         </div>
@@ -115,6 +119,7 @@
             type="number"
             min="0"
             :value="Number(a.value || 0)"
+            aria-label="latency_ms_lte"
             @input="a.value = num($event)"
           />
         </div>
@@ -127,6 +132,7 @@
               class="wb-assert__input"
               :value="a.path"
               placeholder="$.data.id"
+              aria-label="jsonpath"
               @input="a.path = str($event)"
             />
           </div>
@@ -135,6 +141,7 @@
               class="wb-assert__input"
               :value="expectedText(a)"
               placeholder="expected"
+              aria-label="jsonpath expected"
               @input="setExpected(idx, str($event))"
             />
           </div>
@@ -143,6 +150,7 @@
               class="wb-assert__input"
               :value="a.pattern"
               placeholder="pattern"
+              aria-label="jsonpath pattern"
               @input="a.pattern = str($event)"
             />
           </div>
@@ -155,6 +163,7 @@
             class="wb-assert__input"
             :value="String(a.value ?? a.expected ?? '')"
             placeholder="substring"
+            aria-label="body substring"
             @input="a.value = str($event)"
           />
         </div>
@@ -164,6 +173,7 @@
               class="wb-assert__input"
               :value="a.key || a.path"
               placeholder="Header-Name"
+              aria-label="header name"
               @input="a.key = str($event)"
             />
           </div>
@@ -172,6 +182,7 @@
               class="wb-assert__input"
               :value="String(a.value ?? a.expected ?? '')"
               placeholder="value"
+              aria-label="header value"
               @input="a.value = str($event)"
             />
           </div>

@@ -31,6 +31,8 @@ export interface ConnectorEndpoint {
   content_type?: string;
   channel_code?: string;
   path_prefix?: string;
+  cost_price?: string;
+  qps_limit?: number;
   assertions?: AssertionSpec[];
   gate?: boolean;
   adapter?: string;
@@ -368,9 +370,14 @@ export function importOpenApi(data: {
   });
 }
 
-export function draftFromSupplier(supplierId: string) {
+export function draftFromSupplier(
+  supplierId: string,
+  opts?: { force_resync?: boolean },
+) {
   return request.post<ConnectorDraft>({
     url: `${BASE}/drafts/from-supplier/${supplierId}`,
+    params: opts?.force_resync ? { force_resync: true } : undefined,
+    data: opts?.force_resync ? { force_resync: true } : undefined,
   });
 }
 

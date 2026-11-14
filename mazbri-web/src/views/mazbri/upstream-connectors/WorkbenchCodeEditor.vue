@@ -79,14 +79,17 @@ watch(
 );
 
 function languageMode() {
+  if (props.langLabel === "TEXT") return null;
   if (props.langLabel === "XML") return xmlMode;
   if (props.langLabel === "JSON") return jsonMode;
   return javascript;
 }
 
-const extensions = computed(() => [
-  StreamLanguage.define(languageMode()),
-  drawSelection(),
+const extensions = computed(() => {
+  const mode = languageMode();
+  return [
+    ...(mode ? [StreamLanguage.define(mode)] : []),
+    drawSelection(),
   EditorView.lineWrapping,
   EditorView.theme({
     "&": {
@@ -122,7 +125,8 @@ const extensions = computed(() => [
   }),
   EditorState.readOnly.of(props.readonly),
   EditorView.editable.of(!props.readonly),
-]);
+  ];
+});
 
 function onChange(val: string) {
   local.value = val;

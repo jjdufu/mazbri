@@ -1,18 +1,18 @@
 <template>
-  <div v-if="group === 'empty'" class="wb-auth__empty">
-    <template v-if="picker === 'inherit'">
-      {{ $t("upstreamConnector.authInheritHint") }}
-      <div class="wb-auth__readonly">
-        {{ $t("upstreamConnector.authSessionDefault") }}:
-        {{ sessionLabel }}
-      </div>
-    </template>
-    <template v-else>
-      {{ $t("upstreamConnector.authNoneEmpty") }}
-    </template>
-  </div>
+  <div class="wb-auth-body">
+    <div v-if="group === 'empty'" class="wb-auth__empty">
+      <template v-if="picker === 'inherit'">
+        {{ $t("upstreamConnector.authInheritDesc", { profile: sessionLabel }) }}
+      </template>
+      <template v-else-if="picker === 'skip'">
+        {{ $t("upstreamConnector.authSkipEmpty") }}
+      </template>
+      <template v-else>
+        {{ $t("upstreamConnector.authNoneEmpty") }}
+      </template>
+    </div>
 
-  <div v-else class="wb-auth__fields">
+    <div v-else class="wb-auth__fields">
     <p class="wb-auth__hint">{{ hintText }}</p>
 
     <template v-if="group === 'basic' || group === 'digest'">
@@ -285,6 +285,7 @@
         <textarea
           class="wb-ghost__input wb-auth__pem"
           :value="cred('jwt_private_key')"
+          :aria-label="$t('upstreamConnector.authJwtPrivateKey')"
           :disabled="disabled"
           rows="4"
           @input="
@@ -365,21 +366,39 @@
       />
     </template>
 
-    <div class="wb-section wb-section--nested">
+      <AuthInvalidationFields
+        v-if="group === 'ticket' || group === 'jwt'"
+        :model-value="flow.invalidation"
+        :adapter="adapter"
+        :source="invalidationSource"
+        :disabled="disabled"
+        @update:model-value="flow.invalidation = $event"
+      />
+    </div>
+
+    <div class="wb-section wb-section--nested wb-section--vault">
       <button
         type="button"
         class="wb-section__head is-toggle"
         @click="rawOpen = !rawOpen"
       >
-        <span class="wb-section__title">{{
-          $t("upstreamConnector.authRawCredentials")
-        }}</span>
+        <span class="wb-section__title">
+          {{ $t("upstreamConnector.authVaultSection") }}
+          <span v-if="nonEmptyCredCount > 0" class="wb-section__count">
+            ({{ nonEmptyCredCount }})
+          </span>
+        </span>
+        <ArtSvgIcon
+          :icon="rawOpen ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'"
+          class="wb-section__caret"
+        />
       </button>
       <div v-show="rawOpen" class="wb-section__body">
         <WorkbenchKvRows
           v-model="credRows"
           secret-values
           empty-compact
+          :disabled="vaultDisabled"
           :title="$t('supplier.config.credentials')"
           :add-title="$t('supplier.config.addCredential')"
           :clear-title="$t('upstreamConnector.clearKv')"
@@ -388,15 +407,6 @@
         />
       </div>
     </div>
-
-    <AuthInvalidationFields
-      v-if="group === 'ticket' || group === 'jwt'"
-      :model-value="flow.invalidation"
-      :adapter="adapter"
-      :source="invalidationSource"
-      :disabled="disabled"
-      @update:model-value="flow.invalidation = $event"
-    />
   </div>
 </template>
 
@@ -432,6 +442,7 @@ const props = withDefaults(
     seedJson?: string;
     appendTo?: HTMLElement | string;
     disabled?: boolean;
+    vaultDisabled?: boolean;
   }>(),
   {
     adapter: "",
@@ -440,6 +451,7 @@ const props = withDefaults(
     seedJson: "",
     appendTo: undefined,
     disabled: false,
+    vaultDisabled: false,
   },
 );
 
@@ -549,20 +561,49 @@ const credRows = computed({
   },
 });
 
+const nonEmptyCredCount = computed(
+  () => (props.flow.credentials || []).filter((r) => r.key?.trim()).length,
+);
+
 const bodyOpen = ref(false);
-const rawOpen = ref(false);
+const rawOpen = ref(
+  group.value === "empty" &&
+    (props.flow.credentials || []).some((r) => Boolean(r.key?.trim())),
+);
+
+watch(
+  () => [group.value, nonEmptyCredCount.value] as const,
+  ([g, count]) => {
+    if (g === "empty" && count > 0) {
+      rawOpen.value = true;
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped lang="scss">
+.wb-auth-body {
+  display: flex;
+  flex-direction: column;
+}
 .wb-auth__empty {
-  padding: 32px 16px;
+  padding: 20px 16px;
   text-align: center;
   font-size: 13px;
-  color: var(--wb-text-faint, var(--el-text-color-placeholder));
+  color: var(--wb-text-muted, var(--el-text-color-secondary));
 }
-.wb-auth__readonly {
-  margin-top: 8px;
-  font-size: 12px;
+.wb-section--vault {
+  border-top: 1px solid var(--wb-divider-light, var(--el-border-color-extra-light));
+}
+.wb-section__count {
+  font-weight: 500;
+  color: var(--el-color-primary);
+  margin-left: 4px;
+}
+.wb-section__caret {
+  margin-left: auto;
+  color: var(--el-text-color-secondary);
 }
 .wb-auth__fields {
   display: flex;

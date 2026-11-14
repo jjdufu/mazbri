@@ -1,25 +1,18 @@
 <template>
-  <div
-    v-if="modelValue"
-    class="wb-keys"
-    role="dialog"
-    aria-modal="true"
-    :aria-label="$t('upstreamConnector.shortcutsTitle')"
-    @keydown.esc.stop.prevent="close"
+  <CenteredDialog
+    v-model="visible"
+    :title="$t('upstreamConnector.shortcutsTitle')"
+    width="460px"
+    dialog-class="wb-keys-dialog"
+    @opened="focusInput"
   >
-    <button type="button" class="wb-keys__backdrop" tabindex="-1" @click="close" />
     <div class="wb-keys__panel">
-      <div class="wb-keys__head">
-        <span>{{ $t("upstreamConnector.shortcutsTitle") }}</span>
-        <button type="button" class="wb-hopp-icon" @click="close">
-          <ArtSvgIcon icon="ri:close-line" />
-        </button>
-      </div>
       <input
         ref="inputEl"
         v-model="q"
         class="wb-keys__search"
         :placeholder="$t('upstreamConnector.shortcutsSearch')"
+        :aria-label="$t('upstreamConnector.shortcutsSearch')"
         spellcheck="false"
       />
       <div class="wb-keys__list">
@@ -32,22 +25,20 @@
         </div>
       </div>
     </div>
-  </div>
+  </CenteredDialog>
 </template>
 
 <script setup lang="ts">
+import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import { $t } from "@/locales";
 
 export type ShortcutRow = { id: string; label: string; keys: string };
 
 const props = defineProps<{
-  modelValue: boolean;
   rows: ShortcutRow[];
 }>();
 
-const emit = defineEmits<{
-  "update:modelValue": [boolean];
-}>();
+const visible = defineModel<boolean>({ required: true });
 
 const q = ref("");
 const inputEl = ref<HTMLInputElement | null>(null);
@@ -60,65 +51,40 @@ const filtered = computed(() => {
   );
 });
 
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (!open) return;
-    q.value = "";
-    void nextTick(() => inputEl.value?.focus());
-  },
-);
+watch(visible, (open) => {
+  if (!open) return;
+  q.value = "";
+  void nextTick(focusInput);
+});
 
-function close() {
-  emit("update:modelValue", false);
+function focusInput() {
+  inputEl.value?.focus();
 }
 </script>
 
 <style scoped lang="scss">
-.wb-keys {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-.wb-keys__backdrop {
-  position: absolute;
-  inset: 0;
-  border: none;
-  background: rgb(0 0 0 / 32%);
-}
 .wb-keys__panel {
-  position: relative;
-  z-index: 1;
-  width: min(420px, calc(100% - 32px));
-  margin: 12vh auto 0;
-  background: var(--wb-surface, var(--el-bg-color));
-  border: 1px solid var(--wb-divider, var(--el-border-color));
-  border-radius: 8px;
-  overflow: hidden;
-}
-.wb-keys__head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  flex-direction: column;
+  gap: 8px;
 }
 .wb-keys__search {
-  width: calc(100% - 24px);
-  margin: 0 12px 8px;
+  width: 100%;
   height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
-  border-radius: 4px;
-  background: var(--wb-surface-input, var(--el-fill-color-light));
-  color: var(--wb-text, var(--el-text-color-primary));
+  padding: 0 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--art-form-control-radius);
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+  font-size: 13px;
   outline: none;
+  &:focus {
+    border-color: var(--el-color-primary);
+  }
 }
 .wb-keys__list {
   max-height: 280px;
   overflow: auto;
-  padding: 0 12px 12px;
 }
 .wb-keys__row {
   display: flex;
@@ -127,16 +93,17 @@ function close() {
   gap: 12px;
   padding: 8px 0;
   font-size: 13px;
-  border-bottom: 1px solid var(--wb-divider-light, var(--el-border-color-extra-light));
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color-extra-light);
   kbd {
     font-size: 11px;
-    color: var(--wb-text-muted, var(--el-text-color-secondary));
+    color: var(--el-text-color-secondary);
   }
 }
 .wb-keys__empty {
   padding: 16px 0;
   font-size: 12px;
-  color: var(--wb-text-muted, var(--el-text-color-secondary));
+  color: var(--el-text-color-secondary);
   text-align: center;
 }
 </style>

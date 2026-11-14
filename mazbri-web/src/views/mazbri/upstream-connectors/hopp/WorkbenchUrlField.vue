@@ -1,11 +1,12 @@
 <template>
-  <div class="wb-url-field" role="textbox">
+  <div class="wb-url-field">
     <WorkbenchEnvText
       ref="envRef"
       compact
       :model-value="modelValue"
       :env="env"
       :placeholder="placeholder"
+      :aria-label="placeholder || $t('upstreamConnector.fields.upstreamUrl')"
       @update:model-value="emit('update:modelValue', $event)"
       @focus="emit('focus', $event)"
       @blur="emit('blur', $event)"
@@ -16,6 +17,7 @@
 </template>
 
 <script setup lang="ts">
+import { $t } from "@/locales";
 import type { ParsedImport } from "../workbenchHelpers";
 import { tryParseCurlPaste } from "../workbenchHelpers";
 import WorkbenchEnvText from "./WorkbenchEnvText.vue";

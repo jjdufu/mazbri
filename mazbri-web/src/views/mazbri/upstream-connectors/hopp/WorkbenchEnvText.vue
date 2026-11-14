@@ -1,74 +1,108 @@
 <template>
   <div class="wb-env-wrap">
-  <HoppMenu
-    :visible="suggestOpen"
-    :trigger="[]"
-    :append-to="suggestAppendTo"
-    placement="bottom-start"
-  >
-    <template #trigger>
-      <div
-        class="wb-env"
-        :class="{ 'is-empty': !modelValue, 'is-compact': compact, 'is-secret': secret }"
-      >
-        <div ref="overlayEl" class="wb-env__overlay" aria-hidden="true">
-          <span class="wb-env__track">
-            <template v-for="(seg, i) in segments" :key="i">
-              <span
-                v-if="seg.kind === 'var'"
-                :class="seg.found ? 'wb-env-ok' : 'wb-env-miss'"
-                >{{ seg.raw }}</span
-              >
-              <span v-else>{{ seg.text }}</span>
-            </template>
-          </span>
-        </div>
-        <input
-          ref="inputEl"
-          class="wb-env__input"
-          :type="secret ? 'password' : 'text'"
-          :value="modelValue"
-          :placeholder="placeholder"
-          :disabled="disabled"
-          :list="list"
-          :spellcheck="false"
-          autocomplete="off"
-          @input="onInput"
-          @scroll="syncScroll"
-          @focus="onFocus($event)"
-          @blur="onBlur($event)"
-          @keydown="onKeydown"
-          @keyup="refreshSuggest"
-          @click="refreshSuggest"
-          @paste="emit('paste', $event)"
-          @compositionstart="composing = true"
-          @compositionend="onCompositionEnd"
-        />
-      </div>
-    </template>
-    <button
-      v-for="(k, i) in suggestions"
-      :key="k"
-      type="button"
-      class="hopp-menu-item wb-env-suggest"
-      :class="{ 'is-current': i === activeIdx }"
-      @mousedown.prevent
-      @click="pick(k)"
+    <HoppMenu
+      :visible="suggestOpen"
+      :trigger="[]"
+      :append-to="suggestAppendTo"
+      placement="bottom-start"
     >
-      <span>{{ k }}</span>
-      <span class="wb-env-suggest__val">{{ env[k] }}</span>
-    </button>
-  </HoppMenu>
+      <template #trigger>
+        <ElPopover
+          placement="bottom-start"
+          :width="280"
+          trigger="hover"
+          :disabled="!varTokens.length || suggestOpen || secret"
+          :show-after="120"
+        >
+          <div class="wb-env-preview">
+            <div
+              v-for="v in varTokens"
+              :key="v.name"
+              class="wb-env-preview__row"
+            >
+              <code class="wb-env-preview__name" :class="{ miss: !v.found }">
+                {{ v.raw }}
+              </code>
+              <span v-if="v.found" class="wb-env-preview__val">
+                {{ env[v.name] || "∅" }}
+              </span>
+              <span v-else class="wb-env-preview__undef">
+                {{ $t("upstreamConnector.envUndefined") }}
+              </span>
+            </div>
+          </div>
+          <template #reference>
+            <div
+              class="wb-env"
+              :class="{
+                'is-empty': !modelValue,
+                'is-compact': compact,
+                'is-secret': secret,
+              }"
+            >
+              <div ref="overlayEl" class="wb-env__overlay" aria-hidden="true">
+                <span class="wb-env__track">
+                  <template v-for="(seg, i) in segments" :key="i">
+                    <span
+                      v-if="seg.kind === 'var'"
+                      :class="seg.found ? 'wb-env-ok' : 'wb-env-miss'"
+                      >{{ seg.raw }}</span
+                    >
+                    <span v-else>{{ seg.text }}</span>
+                  </template>
+                </span>
+              </div>
+              <input
+                ref="inputEl"
+                class="wb-env__input"
+                :type="secret ? 'password' : 'text'"
+                :value="modelValue"
+                :placeholder="placeholder"
+                :aria-label="ariaLabel || placeholder || 'input'"
+                :disabled="disabled"
+                :list="list"
+                :spellcheck="false"
+                autocomplete="off"
+                @input="onInput"
+                @scroll="syncScroll"
+                @focus="onFocus($event)"
+                @blur="onBlur($event)"
+                @keydown="onKeydown"
+                @keyup="refreshSuggest"
+                @click="refreshSuggest"
+                @paste="emit('paste', $event)"
+                @compositionstart="composing = true"
+                @compositionend="onCompositionEnd"
+              />
+            </div>
+          </template>
+        </ElPopover>
+      </template>
+      <button
+        v-for="(k, i) in suggestions"
+        :key="k"
+        type="button"
+        class="hopp-menu-item wb-env-suggest"
+        :class="{ 'is-current': i === activeIdx }"
+        @mousedown.prevent
+        @click="pick(k)"
+      >
+        <span>{{ k }}</span>
+        <span class="wb-env-suggest__val">{{ env[k] }}</span>
+      </button>
+    </HoppMenu>
   </div>
 </template>
 
 <script setup lang="ts">
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
+import { $t } from "@/locales";
 import {
   applyEnvVarCompletion,
   filterEnvKeys,
   incompleteEnvVar,
   splitEnvText,
+  type EnvTextSegment,
 } from "../workbenchHelpers";
 
 const props = withDefaults(
@@ -76,6 +110,7 @@ const props = withDefaults(
     modelValue: string;
     env?: Record<string, string>;
     placeholder?: string;
+    ariaLabel?: string;
     disabled?: boolean;
     list?: string;
     compact?: boolean;
@@ -84,6 +119,7 @@ const props = withDefaults(
   {
     env: () => ({}),
     placeholder: "",
+    ariaLabel: "",
     disabled: false,
     list: undefined,
     compact: false,
@@ -113,6 +149,17 @@ const segments = computed(() => {
     return props.modelValue ? [{ kind: "text" as const, text: props.modelValue }] : [];
   }
   return splitEnvText(props.modelValue || "", props.env);
+});
+
+const varTokens = computed(() => {
+  const seen = new Set<string>();
+  const out: Extract<EnvTextSegment, { kind: "var" }>[] = [];
+  for (const seg of segments.value) {
+    if (seg.kind !== "var" || seen.has(seg.name)) continue;
+    seen.add(seg.name);
+    out.push(seg);
+  }
+  return out;
 });
 
 function onInput(ev: Event) {
@@ -321,5 +368,34 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.wb-env-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.wb-env-preview__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wb-env-preview__name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--el-color-success);
+  &.miss {
+    color: var(--el-color-danger);
+  }
+}
+.wb-env-preview__val {
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-env-preview__undef {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 </style>

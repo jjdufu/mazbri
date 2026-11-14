@@ -1,59 +1,14 @@
 <template>
   <div class="wb-eps">
-    <div class="wb-eps__session">
-      <div class="wb-eps__session-row">
-        <ElInput
-          v-if="editingSession"
-          ref="sessionInputRef"
-          :model-value="sessionName"
-          size="small"
-          class="wb-eps__session-input"
-          :placeholder="$t('upstreamConnector.fields.name')"
-          @update:model-value="emit('update:sessionName', $event)"
-          @keydown.enter.prevent="editingSession = false"
-          @blur="editingSession = false"
-        />
-        <button
-          v-else
-          type="button"
-          class="wb-eps__session-name"
-          :title="$t('upstreamConnector.fields.name')"
-          :disabled="readOnly"
-          @click="!readOnly && startSessionEdit()"
-        >
-          {{ sessionName?.trim() || $t("upstreamConnector.untitledName") }}
-        </button>
-        <HoppMenu v-if="!readOnly" placement="bottom-end" @click.stop>
-          <template #trigger>
-            <button
-              type="button"
-              class="wb-eps__session-more"
-              :title="$t('upstreamConnector.sessionActions')"
-              @click.stop
-            >
-              <ArtSvgIcon icon="ri:more-2-fill" />
-            </button>
-          </template>
-          <button
-            type="button"
-            class="hopp-menu-item"
-            @click="emit('session-action', 'import')"
-          >
-            {{ $t("upstreamConnector.import") }}
-          </button>
-          <button
-            type="button"
-            class="hopp-menu-item"
-            @click="emit('session-action', 'export')"
-          >
-            {{ $t("common.actions.export") }}
-          </button>
-        </HoppMenu>
-      </div>
-    </div>
     <div class="wb-eps__head">
       <span class="wb-eps__title">{{ $t("upstreamConnector.endpoints") }}</span>
-      <ElButton v-if="!readOnly" link type="primary" @click="emit('add')">
+      <ElButton
+        v-if="!readOnly"
+        link
+        type="primary"
+        :aria-label="$t('common.actions.add')"
+        @click="emit('add')"
+      >
         <ArtSvgIcon icon="ri:add-circle-line" />
       </ElButton>
     </div>
@@ -61,6 +16,7 @@
       v-model="q"
       size="small"
       clearable
+      :aria-label="$t('upstreamConnector.searchEndpoints')"
       :placeholder="$t('upstreamConnector.searchEndpoints')"
       class="wb-eps__search"
     >
@@ -107,6 +63,7 @@
               v-model="ep.name"
               size="small"
               class="wb-eps__name-input"
+              :aria-label="$t('upstreamConnector.fields.epName')"
               :placeholder="$t('upstreamConnector.fields.epName')"
               @click.stop
               @keydown.enter.prevent="stopRename"
@@ -142,6 +99,7 @@
               <button
                 type="button"
                 class="wb-eps__more"
+                :aria-label="$t('upstreamConnector.sessionActions')"
                 @click.stop
               >
                 <ArtSvgIcon icon="ri:more-2-fill" />
@@ -176,23 +134,40 @@
           class="wb-eps__map"
           @click.stop
         >
-          <input
-            ref="mapCodeRef"
-            v-model="ep.channel_code"
-            class="wb-eps__map-input"
-            :disabled="readOnly"
-            :placeholder="suggestChannelCode(ep, originalIndex(ep))"
-            :title="$t('upstreamConnector.fields.channelCode')"
-            spellcheck="false"
-          />
-          <input
-            v-model="ep.path_prefix"
-            class="wb-eps__map-input"
-            :disabled="readOnly"
-            :placeholder="ep.path || '/'"
-            :title="$t('upstreamConnector.fields.pathPrefix')"
-            spellcheck="false"
-          />
+          <label class="wb-eps__map-row">
+            <span class="wb-eps__map-label">{{
+              $t("upstreamConnector.fields.channelCode")
+            }}</span>
+            <input
+              ref="mapCodeRef"
+              v-model="ep.channel_code"
+              class="wb-eps__map-input"
+              :disabled="readOnly"
+              :placeholder="suggestChannelCode(ep, originalIndex(ep))"
+              :aria-label="$t('upstreamConnector.fields.channelCode')"
+              :title="$t('upstreamConnector.fields.channelCode')"
+              spellcheck="false"
+            />
+          </label>
+          <label class="wb-eps__map-row">
+            <ElTooltip
+              :content="$t('upstreamConnector.pathPrefixTooltip')"
+              placement="top"
+            >
+              <span class="wb-eps__map-label is-help">{{
+                $t("upstreamConnector.gatewayPrefixLabel")
+              }}</span>
+            </ElTooltip>
+            <input
+              v-model="ep.path_prefix"
+              class="wb-eps__map-input"
+              :disabled="readOnly"
+              :placeholder="ep.path || '/'"
+              :aria-label="$t('upstreamConnector.fields.pathPrefix')"
+              :title="$t('upstreamConnector.pathPrefixTooltip')"
+              spellcheck="false"
+            />
+          </label>
         </div>
       </div>
       </template>
@@ -231,7 +206,7 @@
           :class="{ active: activeRunId === r.id }"
           @click="emit('select-run', r)"
         >
-          <span class="mode">{{ r.mode }}</span>
+          <span class="mode">{{ runModeLabel(r) }}</span>
           <span class="ep">{{ r.endpoint_key || "—" }}</span>
           <span class="ms">{{ r.latency_ms ?? "—" }}ms</span>
         </button>
@@ -244,11 +219,13 @@
 import type { InputInstance } from "element-plus";
 import { VueDraggable } from "vue-draggable-plus";
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
+import { $t } from "@/locales";
 import type {
   ConnectorEndpoint,
   ConnectorRun,
 } from "@/api/upstream-connectors";
 import {
+  BYPASS_MGMT_PROBE_PATH,
   displayMethodBadge,
   methodTone,
   suggestChannelCode,
@@ -263,11 +240,11 @@ const props = withDefaults(
     gate: { ok: number; total: number };
     runs?: ConnectorRun[];
     activeRunId?: string | null;
-    sessionName: string;
-    /** 财务 / 观察者只读：隐藏导入导出、增删改与拖拽。 */
+    sessionName?: string;
+    /** 观察者只读：隐藏导入导出、增删改与拖拽。 */
     readOnly?: boolean;
   }>(),
-  { runs: () => [], activeRunId: null, readOnly: false },
+  { runs: () => [], activeRunId: null, sessionName: "", readOnly: false },
 );
 
 const emit = defineEmits<{
@@ -285,10 +262,17 @@ const runsOpen = ref(true);
 
 const q = ref("");
 const editingName = ref<number | null>(null);
-const editingSession = ref(false);
 const nameInputRef = ref<InputInstance | null>(null);
-const sessionInputRef = ref<InputInstance | null>(null);
 const mapCodeRef = ref<HTMLInputElement | null>(null);
+
+function runModeLabel(r: ConnectorRun): string {
+  if (r.mode === "live" && r.probe_path === BYPASS_MGMT_PROBE_PATH) {
+    return $t("upstreamConnector.modeBadge.business");
+  }
+  const key = `upstreamConnector.modeBadge.${r.mode}`;
+  const t = $t(key);
+  return t === key ? r.mode : t;
+}
 
 const filtered = computed(() => {
   const s = q.value.trim().toLowerCase();
@@ -335,15 +319,6 @@ function gateOk(ep: ConnectorEndpoint) {
   const id = ep.id;
   const hit = props.gateItems.find((g) => g.id === id || g.name === ep.name);
   return hit?.ok;
-}
-
-function startSessionEdit() {
-  if (props.readOnly) return;
-  editingSession.value = true;
-  void nextTick(() => {
-    sessionInputRef.value?.focus();
-    sessionInputRef.value?.input?.select();
-  });
 }
 
 function startRename(idx: number) {
@@ -474,20 +449,32 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: 6px;
   padding: 8px 6px;
   border-radius: var(--wb-radius, var(--art-form-control-radius));
+  border-left: 3px solid transparent;
   cursor: pointer;
   margin-bottom: 2px;
   min-width: 0;
+  color: var(--el-text-color-primary);
   &.active {
-    background: var(--el-color-primary-light-9);
+    background: color-mix(
+      in srgb,
+      var(--el-color-primary) 14%,
+      var(--el-bg-color-overlay)
+    );
+    border-left-color: var(--el-color-primary);
+    color: var(--el-text-color-primary);
   }
   &:hover {
     background: var(--el-fill-color-light);
   }
   &.active:hover {
-    background: var(--el-color-primary-light-9);
+    background: color-mix(
+      in srgb,
+      var(--el-color-primary) 18%,
+      var(--el-bg-color-overlay)
+    );
   }
   &:hover .wb-eps__grip {
     opacity: 1;
@@ -573,6 +560,8 @@ watch(
 }
 .wb-eps__name {
   font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -585,7 +574,7 @@ watch(
 }
 .wb-eps__path {
   font-size: var(--wb-fs-tiny, 11px);
-  color: var(--el-text-color-placeholder);
+  color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -593,26 +582,43 @@ watch(
 .wb-eps__map {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-left: 54px;
+  gap: 4px;
+  padding-left: 8px;
   min-width: 0;
 }
-.wb-eps__item:has(.wb-eps__grip) .wb-eps__map {
-  padding-left: 70px;
+.wb-eps__map-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wb-eps__map-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  &.is-help {
+    border-bottom: 1px dashed var(--el-border-color);
+    cursor: help;
+  }
 }
 .wb-eps__map-input {
+  flex: 1;
   width: 100%;
   min-width: 0;
-  border: none;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 3px;
   outline: none;
-  background: transparent;
+  background: var(--el-fill-color-blank);
   font-size: var(--wb-fs-tiny, 11px);
-  line-height: 16px;
-  padding: 2px 0;
-  color: var(--wb-text, var(--el-text-color-primary));
-  border-bottom: 1px solid var(--wb-divider-light, var(--el-border-color-extra-light));
+  line-height: 18px;
+  padding: 2px 6px;
+  color: var(--el-text-color-primary);
+  &:focus {
+    border-color: var(--el-color-primary);
+  }
   &::placeholder {
-    color: var(--wb-text-faint, var(--el-text-color-placeholder));
+    color: var(--el-text-color-placeholder);
   }
 }
 .wb-eps__gate {

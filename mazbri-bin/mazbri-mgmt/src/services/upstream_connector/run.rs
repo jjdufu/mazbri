@@ -39,6 +39,7 @@ pub async fn validate_draft(
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
         if let Some(ref auth) = cfg.auth_flow
             && auth.enabled
+            && !auth.token_url.trim().is_empty()
         {
             ssrf::validate_public_http_url(checker, &auth.token_url)
                 .await
@@ -815,7 +816,7 @@ async fn prepare_bypass_probe_from_draft(
     let token_url_for_ssrf = cfg
         .auth_flow
         .as_ref()
-        .filter(|a| a.enabled)
+        .filter(|a| a.enabled && !a.token_url.trim().is_empty())
         .map(|a| a.token_url.clone());
 
     let expanded_url = if built.spec.base_url.trim().is_empty() {

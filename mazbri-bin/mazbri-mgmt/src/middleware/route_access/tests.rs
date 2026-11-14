@@ -209,11 +209,11 @@ fn table_mirrors_existing_handler_checks() {
         ("DELETE", "/tenants/{code}", BIZ),
         ("POST", "/tenants/{code}/ratelimit/commands", BIZ),
         ("GET", "/tenants/{code}/ratelimit/commands", BIZ),
-        ("POST", "/upstream-connectors/drafts/{id}/publish", ADMIN),
+        ("POST", "/upstream-connectors/drafts/{id}/publish", BIZ),
         (
             "POST",
             "/upstream-connectors/suppliers/{supplier_id}/rollback",
-            ADMIN,
+            BIZ,
         ),
         ("GET", "/certificates/{id}/full", ADMIN),
         ("PUT", "/settings/mfa", ADMIN),
@@ -659,8 +659,8 @@ fn viewer_is_denied_on_biz_write_routes() {
 }
 
 #[test]
-fn upstream_connector_writes_are_super_admin_only() {
-    // 免代码工作台：财务 / 观察者只读；写 / 发布 / 导入导出 / 试跑仅 R_ADMIN。
+fn upstream_connector_writes_allow_biz_and_deny_viewer() {
+    // 免代码工作台：R_ADMIN 与 R_FINANCE 可编辑草稿与发布；观察者 R_VIEWER 只读。
     for (method, path) in [
         ("POST", "/upstream-connectors/drafts"),
         ("PATCH", "/upstream-connectors/drafts/{id}"),
@@ -680,21 +680,21 @@ fn upstream_connector_writes_are_super_admin_only() {
     ] {
         assert_eq!(
             access_of(method, path),
-            Access::Roles(ADMIN),
-            "{method} {path} must be ADMIN-only"
+            Access::Roles(BIZ),
+            "{method} {path} must be BIZ write"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_FINANCE")),
-            Err(Denial::Role(ADMIN)),
-            "FINANCE must be denied for {method} {path}"
+            decide(Some(Access::Roles(BIZ)), Some("R_FINANCE")),
+            Ok(()),
+            "FINANCE must be allowed for {method} {path}"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_VIEWER")),
-            Err(Denial::Role(ADMIN)),
+            decide(Some(Access::Roles(BIZ)), Some("R_VIEWER")),
+            Err(Denial::Role(BIZ)),
             "VIEWER must be denied for {method} {path}"
         );
         assert_eq!(
-            decide(Some(Access::Roles(ADMIN)), Some("R_ADMIN")),
+            decide(Some(Access::Roles(BIZ)), Some("R_ADMIN")),
             Ok(()),
             "ADMIN must be allowed for {method} {path}"
         );

@@ -14,6 +14,7 @@
           v-model="importCurlText"
           type="textarea"
           :rows="10"
+          aria-label="cURL"
           placeholder="curl -X GET 'https://api.example.com/posts' ..."
         />
       </ElTabPane>
@@ -22,6 +23,7 @@
           v-model="importJsonText"
           type="textarea"
           :rows="10"
+          aria-label="Postman JSON"
           placeholder="Paste Postman Collection v2.1 JSON"
         />
       </ElTabPane>
@@ -30,12 +32,20 @@
           v-model="importJsonText"
           type="textarea"
           :rows="10"
+          aria-label="OpenAPI JSON"
           placeholder="Paste OpenAPI 3 JSON"
         />
       </ElTabPane>
     </ElTabs>
     <div class="wb-import__file">
-      <input ref="fileRef" type="file" accept=".json,.txt,.curl" hidden @change="onFile" />
+      <input
+        ref="fileRef"
+        type="file"
+        accept=".json,.txt,.curl"
+        :aria-label="$t('upstreamConnector.importFile')"
+        hidden
+        @change="onFile"
+      />
       <ElButton @click="fileRef?.click()">
         <ArtSvgIcon icon="ri:upload-line" class="mr-1" />
         {{ $t("upstreamConnector.importFile") }}

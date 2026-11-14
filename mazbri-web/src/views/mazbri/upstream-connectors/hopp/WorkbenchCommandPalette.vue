@@ -1,19 +1,18 @@
 <template>
-  <div
-    v-if="modelValue"
-    class="wb-cmd"
-    role="dialog"
-    aria-modal="true"
-    :aria-label="$t('upstreamConnector.commandPalette')"
-    @keydown.esc.stop.prevent="close"
+  <CenteredDialog
+    v-model="visible"
+    :title="$t('upstreamConnector.commandPalette')"
+    width="520px"
+    dialog-class="wb-cmd-dialog"
+    @opened="focusInput"
   >
-    <button type="button" class="wb-cmd__backdrop" tabindex="-1" @click="close" />
     <div ref="panelEl" class="wb-cmd__panel" @keydown="onPanelKey">
       <input
         ref="inputEl"
         v-model="q"
         class="wb-cmd__input"
         :placeholder="$t('upstreamConnector.commandPalettePlaceholder')"
+        :aria-label="$t('upstreamConnector.commandPalettePlaceholder')"
         spellcheck="false"
         @keydown.enter.prevent="runActive"
       />
@@ -37,10 +36,11 @@
         </div>
       </div>
     </div>
-  </div>
+  </CenteredDialog>
 </template>
 
 <script setup lang="ts">
+import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import { $t } from "@/locales";
 
 export type WorkbenchCommand = {
@@ -51,12 +51,12 @@ export type WorkbenchCommand = {
 };
 
 const props = defineProps<{
-  modelValue: boolean;
   commands: WorkbenchCommand[];
 }>();
 
+const visible = defineModel<boolean>({ required: true });
+
 const emit = defineEmits<{
-  "update:modelValue": [boolean];
   run: [string];
 }>();
 
@@ -74,22 +74,23 @@ const filtered = computed(() => {
   });
 });
 
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (!open) return;
-    q.value = "";
-    active.value = 0;
-    void nextTick(() => inputEl.value?.focus());
-  },
-);
+watch(visible, (open) => {
+  if (!open) return;
+  q.value = "";
+  active.value = 0;
+  void nextTick(focusInput);
+});
 
 watch(filtered, () => {
   active.value = 0;
 });
 
+function focusInput() {
+  inputEl.value?.focus();
+}
+
 function close() {
-  emit("update:modelValue", false);
+  visible.value = false;
 }
 
 function run(cmd: WorkbenchCommand) {
@@ -120,43 +121,31 @@ function onPanelKey(e: KeyboardEvent) {
 </script>
 
 <style scoped lang="scss">
-.wb-cmd {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-.wb-cmd__backdrop {
-  position: absolute;
-  inset: 0;
-  border: none;
-  background: rgb(0 0 0 / 32%);
-}
 .wb-cmd__panel {
-  position: relative;
-  z-index: 1;
-  width: min(520px, calc(100% - 32px));
-  margin: 12vh auto 0;
-  background: var(--wb-surface, var(--el-bg-color));
-  border: 1px solid var(--wb-divider, var(--el-border-color));
-  border-radius: 8px;
-  box-shadow: var(--el-box-shadow-light);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .wb-cmd__input {
   width: 100%;
-  height: 44px;
-  padding: 0 14px;
-  border: none;
-  border-bottom: 1px solid var(--wb-divider-subtle, var(--el-border-color-extra-light));
-  background: transparent;
-  color: var(--wb-text, var(--el-text-color-primary));
-  font-size: 14px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--art-form-control-radius);
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+  font-size: 13px;
   outline: none;
+  &:focus {
+    border-color: var(--el-color-primary);
+  }
 }
 .wb-cmd__list {
   max-height: 320px;
   overflow: auto;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .wb-cmd__item {
   display: flex;
@@ -168,23 +157,23 @@ function onPanelKey(e: KeyboardEvent) {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: var(--wb-text, var(--el-text-color-primary));
+  color: var(--el-text-color-primary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
   kbd {
     font-size: 11px;
-    color: var(--wb-text-muted, var(--el-text-color-secondary));
+    color: var(--el-text-color-secondary);
   }
   &.is-active,
   &:hover {
-    background: var(--wb-surface-hover, var(--el-fill-color));
+    background: var(--el-fill-color);
   }
 }
 .wb-cmd__empty {
   padding: 16px 8px;
   font-size: 12px;
-  color: var(--wb-text-muted, var(--el-text-color-secondary));
+  color: var(--el-text-color-secondary);
   text-align: center;
 }
 </style>

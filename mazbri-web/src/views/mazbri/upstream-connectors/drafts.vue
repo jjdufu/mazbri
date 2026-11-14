@@ -21,17 +21,22 @@
         <ResourceTableActionBar
           v-model="searchParams.q"
           :search-placeholder="$t('supplier.list.searchPlaceholder')"
+          :show-primary="true"
+          :primary-label="$t('upstreamConnector.codeFreeAccess')"
+          primary-icon="ri:add-line"
+          :primary-roles="[...ROLES_BIZ]"
           :show-import="true"
           :import-label="$t('common.actions.import')"
-          :import-roles="[...ROLES_ADMIN]"
+          :import-roles="[...ROLES_BIZ]"
           :show-export="true"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
-          :export-roles="[...ROLES_ADMIN]"
+          :export-roles="[...ROLES_BIZ]"
           :show-delete="true"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
-          :delete-roles="[...ROLES_ADMIN]"
+          :delete-roles="[...ROLES_BIZ]"
+          @primary="goWorkbench"
           @search="handleSearch"
           @import="openImport"
           @export="handleExportCommand"
@@ -42,7 +47,9 @@
         {{ Array.isArray(row.endpoints) ? row.endpoints.length : 0 }}
       </template>
       <template #status="{ row }">
-        <StatusIndicator :type="row.status === 'published' ? 'success' : 'info'">
+        <StatusIndicator
+          :type="row.status === 'published' || row.status === 'ready' ? 'success' : 'info'"
+        >
           {{ statusLabel(row.status) }}
         </StatusIndicator>
       </template>
@@ -59,7 +66,7 @@
             }}
           </ElButton>
           <ElButton
-            v-roles="ROLES_ADMIN"
+            v-roles="ROLES_BIZ"
             link
             type="danger"
             @click="handleDelete(row)"
@@ -104,7 +111,7 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { $t } from "@/locales";
-import { ROLES_ADMIN, canWriteUpstreamConnector } from "@/utils/ops/roles";
+import { ROLES_BIZ, canWriteUpstreamConnector } from "@/utils/ops/roles";
 import { useUserStore } from "@/store/modules/user";
 import { formatDateTime } from "@/utils/format";
 import WorkbenchImportDialog from "./WorkbenchImportDialog.vue";
@@ -210,9 +217,15 @@ const exportItems = computed(() => [
 ]);
 
 function statusLabel(status: string) {
-  if (status === "published") return $t("upstreamConnector.statusPublished");
+  if (status === "published" || status === "ready") {
+    return $t("upstreamConnector.statusPublished");
+  }
   if (status === "draft") return $t("upstreamConnector.statusDraft");
   return status;
+}
+
+function goWorkbench() {
+  void router.push({ name: "UpstreamConnectorWorkbench" });
 }
 
 async function loadData() {

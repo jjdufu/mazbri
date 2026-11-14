@@ -6,6 +6,7 @@
         type="search"
         class="wb-json__filter-input"
         :placeholder="$t('upstreamConnector.jsonFilterPlaceholder')"
+        :aria-label="$t('upstreamConnector.jsonFilterPlaceholder')"
         spellcheck="false"
       />
     </div>

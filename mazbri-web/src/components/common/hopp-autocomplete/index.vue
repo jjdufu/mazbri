@@ -10,6 +10,7 @@
       :class="inputClass"
       :value="modelValue"
       :placeholder="placeholder"
+      :aria-label="ariaLabel || placeholder || 'input'"
       :disabled="disabled"
       :spellcheck="false"
       autocomplete="off"
@@ -83,6 +84,7 @@ const props = withDefaults(
     modelValue: string;
     options: HoppAutoCompleteOption[];
     placeholder?: string;
+    ariaLabel?: string;
     disabled?: boolean;
     inputClass?: string | string[] | Record<string, boolean>;
     appendTo?: string | HTMLElement;
@@ -90,6 +92,7 @@ const props = withDefaults(
   }>(),
   {
     placeholder: "",
+    ariaLabel: "",
     disabled: false,
     inputClass: undefined,
     appendTo: undefined,
