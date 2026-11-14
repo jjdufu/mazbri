@@ -16,16 +16,15 @@
 
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import { useUserStore } from "@/store/modules/user";
-import { ACCOUNT_SECURITY_PATH } from "@/utils/http/mfa-dialog-service";
+import { usePersonalSecurityStore } from "@/store/modules/personal-security";
 defineOptions({ name: "ArtUserMenu" });
 const { t } = useI18n();
-const router = useRouter();
 const userStore = useUserStore();
+const personalSecurityStore = usePersonalSecurityStore();
 const goToAccountSecurity = (): void => {
-  void router.push(ACCOUNT_SECURITY_PATH);
+  personalSecurityStore.openDrawer("mfa");
 };
 const loginOut = (): void => {
   ElMessageBox.confirm(t("common.logOutTips"), t("common.tips"), {

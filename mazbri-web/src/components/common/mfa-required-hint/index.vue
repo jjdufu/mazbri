@@ -30,17 +30,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useMfaStepUpStore } from "@/store/modules/mfa-step-up";
-import { ACCOUNT_SECURITY_PATH } from "@/utils/http/mfa-dialog-service";
+import { usePersonalSecurityStore } from "@/store/modules/personal-security";
 
 defineOptions({ name: "MfaRequiredHint" });
 
 withDefaults(defineProps<{ block?: boolean }>(), { block: false });
 
-const router = useRouter();
 const stepUpStore = useMfaStepUpStore();
+const personalSecurityStore = usePersonalSecurityStore();
 const { mfaEnabled: enabled, loaded } = storeToRefs(stepUpStore);
 const mfaEnabled = computed(() => enabled.value);
 
@@ -49,7 +48,7 @@ onMounted(() => {
 });
 
 function goToSetup(): void {
-  void router.push(ACCOUNT_SECURITY_PATH);
+  personalSecurityStore.openDrawer("mfa");
 }
 </script>
 

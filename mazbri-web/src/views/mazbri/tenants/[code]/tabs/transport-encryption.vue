@@ -518,7 +518,7 @@ const loadData = async () => {
 };
 
 const goToRootPackagePage = () => {
-  router.push({ path: "/control-panel/authorizations" });
+  router.push({ path: "/control-panel/system", query: { tab: "license" } });
 };
 
 const showSecret = (key: TenantCryptoKeyCreateResponse) => {

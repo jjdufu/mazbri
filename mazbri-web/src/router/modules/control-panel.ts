@@ -1,11 +1,8 @@
 import type { AppRouteRecord } from "@/types/router";
-import { ROLES_ADMIN, ROLES_ALL } from "@/utils/ops/roles";
+import { ROLES_ADMIN } from "@/utils/ops/roles";
 
 /**
- * 控制面板。
- * - 父级对全部角色可见，以便 Finance/Viewer 能看到「账号安全」。
- * - 其余管理子项仍仅 R_ADMIN；侧栏按子项 roles 过滤，非超管不会看到用户/证书等。
- * - 「账号安全」与隐藏路由 `/account/security` 共用同一页面组件（后者是 MFA setup_path）。
+ * 控制面板（仅对超级管理员 R_ADMIN 开放；个人账号与安全统一由顶栏 PersonalSecurityDrawer 承载）。
  */
 export const controlPanelRoutes: AppRouteRecord[] = [
   {
@@ -16,20 +13,9 @@ export const controlPanelRoutes: AppRouteRecord[] = [
       title: "menus.mazbri.controlPanel",
       icon: "ri:admin-line",
       order: 30,
-      roles: [...ROLES_ALL],
+      roles: [...ROLES_ADMIN],
     },
     children: [
-      {
-        path: "account-security",
-        name: "ControlPanelAccountSecurity",
-        component: "/mazbri/account/security/index",
-        meta: {
-          title: "menus.mazbri.accountSecurity",
-          icon: "ri:shield-user-line",
-          keepAlive: false,
-          roles: [...ROLES_ALL],
-        },
-      },
       {
         path: "users",
         name: "UserList",
@@ -59,7 +45,7 @@ export const controlPanelRoutes: AppRouteRecord[] = [
         name: "CertificateList",
         component: "/mazbri/control-panel/certificates/index",
         meta: {
-          title: "menus.mazbri.certificateList",
+          title: "menus.mazbri.certificates",
           icon: "ri:award-line",
           keepAlive: false,
           roles: [...ROLES_ADMIN],
@@ -79,22 +65,11 @@ export const controlPanelRoutes: AppRouteRecord[] = [
         },
       },
       {
-        path: "authorizations",
-        name: "AuthorizationManagement",
-        component: "/mazbri/control-panel/authorizations/index",
-        meta: {
-          title: "menus.mazbri.authorizationManagement",
-          icon: "ri:shield-keyhole-line",
-          keepAlive: false,
-          roles: [...ROLES_ADMIN],
-        },
-      },
-      {
         path: "system",
         name: "SystemConfig",
         component: "/mazbri/control-panel/system/index",
         meta: {
-          title: "menus.mazbri.systemSettings",
+          title: "menus.mazbri.platformSettings",
           icon: "ri:settings-4-line",
           keepAlive: false,
           roles: [...ROLES_ADMIN],

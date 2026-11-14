@@ -185,7 +185,7 @@
       "unavailable": "提权窗口暂时无法打开，请刷新页面后重试。",
       "inputErrorMessage": "请输入正确位数的数字验证码，或 8 位备用码",
       "notEnabledTitle": "需要启用 MFA",
-      "notEnabledMessage": "此操作需要 MFA 二次验证，当前账号尚未启用 MFA。请先在「账号安全」页面绑定并启用 MFA 后再操作。",
+      "notEnabledMessage": "此操作需要 MFA 二次验证，当前账号尚未启用 MFA。请先在「个人账号与安全」中绑定并启用 MFA 后再操作。",
       "goToSetup": "前往绑定",
       "categories": {
         "certificate": "证书",
@@ -355,7 +355,7 @@
     },
     "save": "保存",
     "saveSuccess": "已保存",
-    "accountSecurity": "账号安全",
+    "accountSecurity": "个人账号与安全",
     "refresh": "刷新",
     "delete": "删除",
     "edit": "编辑",
@@ -373,7 +373,8 @@
       "screenLock": "锁屏",
       "fireworksEffect": "礼花效果",
       "watermarkEffect": "水印效果",
-      "mfaStepUpDialog": "MFA 提权"
+      "mfaStepUpDialog": "MFA 提权",
+      "personalSecurityDrawer": "个人账号与安全"
     },
     "headerBar": {
       "menuButton": "控制左侧菜单的展开/收起按钮",
@@ -819,7 +820,6 @@
       "certificates": "证书管理",
       "certificateList": "证书列表",
       "certificateDetail": "证书详情",
-      "authorizationManagement": "授权管理",
       "billsAndReconciliation": "账单与对账",
       "usageReconciliation": "用量对账",
       "analytics": "分析统计",
@@ -831,13 +831,10 @@
       "callbackList": "回调订阅",
       "auditLogs": "审计日志",
       "settings": "系统设置",
-      "systemSettings": "系统配置",
-      "appearanceSettings": "外观设置",
+      "platformSettings": "平台设置",
       "controlPanel": "控制面板",
       "configCenter": "配置中心",
       "connectorWorkbench": "免代码接入",
-      "account": "个人账号",
-      "accountSecurity": "账号安全",
       "opsOverview": "全局总览",
       "serviceHealth": "服务健康",
       "serviceDetail": "服务详情",
@@ -870,86 +867,47 @@
   },
   "systemSettings": {
     "page": {
-      "title": "系统设置",
-      "heading": "系统与外观设置"
+      "title": "平台设置",
+      "heading": "平台设置"
     },
     "sections": {
-      "basic": "基础设置"
+      "basic": "站点与网关地址",
+      "basicInfo": "配置管理后台名称、访问地址及租户 API 网关入口。",
+      "runtimeSecurity": "会话、上传与全局安全",
+      "runtimeSecurityInfo": "配置管理端会话有效期、上传体积上限、审计日志及全员防泄密水印。"
     },
     "tabs": {
-      "system": "系统设置",
-      "appearance": "外观设置"
+      "basic": "基础设置",
+      "security": "安全策略",
+      "license": "平台许可"
     },
     "form": {
       "siteName": "站点名称",
       "siteNamePlaceholder": "请输入站点名称",
-      "siteUrl": "站点 URL",
-      "siteUrlPlaceholder": "https://example.com",
+      "siteUrl": "管理端站点 URL",
+      "siteUrlPlaceholder": "https://admin.example.com",
       "tenantGatewayUrl": "租户网关地址",
       "tenantGatewayUrlPlaceholder": "http://<gateway-host>:8888",
       "tenantGatewayUrlHint": "租户 API 网关根地址。",
-      "adminEmail": "管理员邮箱",
-      "adminEmailPlaceholder": "admin{'@'}example.com",
       "sessionTimeout": "管理端会话超时（分钟）",
-      "saveSettings": "保存",
-      "resetToDefault": "恢复默认"
-    },
-    "theme": {
-      "title": "主题设置",
-      "themeMode": "主题模式",
-      "followSystem": "跟随系统",
-      "followSystemHint": "（自动适配系统浅色/深色主题）",
-      "systemThemeColor": "配色",
-      "darkThemeStyle": "色调风格",
-      "darkThemeObsidian": "极简主义",
-      "darkThemeGraphite": "石墨灰 (VS Code)",
-      "darkThemeOceanic": "深海蓝 (GitHub)",
-      "darkThemeNordic": "柔和黑 (GitHub Dimmed)"
-    },
-    "layout": {
-      "title": "布局设置",
-      "boxStyle": "盒子样式"
-    },
-    "display": {
-      "title": "显示设置",
-      "showBreadcrumb": "显示全局面包屑导航",
-      "showProgressBar": "显示顶部进度条",
-      "watermark": "全局水印",
-      "weakMode": "色弱模式",
-      "multiTab": "开启多标签栏",
-      "accordion": "侧边栏开启手风琴模式",
-      "collapseSidebar": "显示折叠侧边栏按钮",
-      "fastEnter": "显示快速入口",
-      "reloadPage": "显示重载页面按钮",
-      "language": "显示多语言选择"
-    },
-    "style": {
-      "title": "样式设置",
-      "menuWidth": "菜单宽度（像素）",
-      "tabStyle": "标签页",
-      "pageTransition": "切换动画",
-      "customRadius": "圆角（rem）"
+      "maxUploadSize": "最大上传限制（MB）",
+      "enableAuditLog": "启用全局审计日志",
+      "watermarkVisible": "开启全局防泄密水印",
+      "saveBasicSettings": "保存基础设置"
     },
     "validation": {
       "siteNameRequired": "请输入站点名称",
       "siteUrlRequired": "请输入站点 URL",
-      "siteUrlInvalid": "请输入有效的 URL",
-      "adminEmailRequired": "请输入管理员邮箱",
-      "adminEmailInvalid": "请输入有效的邮箱地址",
+      "siteUrlInvalid": "请输入有效的 URL（以 http:// 或 https:// 开头）",
       "tenantGatewayUrlInvalid": "租户网关地址必须以 http:// 或 https:// 开头"
     },
     "messages": {
-      "savedSuccess": "设置保存成功",
-      "appearanceSaved": "外观设置已保存",
-      "appearanceSavedLocally": "服务器同步失败，已保存到本地",
-      "resetConfirmTitle": "确认重置",
-      "resetConfirmMessage": "确定要将所有外观设置恢复为默认值吗？",
-      "appearanceResetSuccess": "外观设置已恢复默认值"
+      "savedSuccess": "基础设置已保存"
     }
   },
   "securityPolicy": {
     "actions": {
-      "savePolicy": "保存"
+      "savePolicy": "保存安全策略"
     },
     "sections": {
       "complexity": {
@@ -959,10 +917,11 @@
         "title": "过期与复用"
       },
       "loginProtection": {
-        "title": "登录保护"
+        "title": "登录防爆破保护"
       },
       "totp": {
         "title": "TOTP 参数",
+        "globalTitle": "全局 MFA 配置",
         "digitsPeriodWarning": "修改验证码位数或周期会使已绑定的验证器立即失配。请先确认备用码仍可使用，或准备重新绑定，否则窗口过期后可能无法再验证。"
       }
     },
@@ -994,15 +953,20 @@
       "totpPeriod30": "30 秒",
       "totpPeriod60": "60 秒"
     },
+    "units": {
+      "digits": "位",
+      "backupCodes": "个备用码"
+    },
     "messages": {
-      "savedSuccess": "设置已保存",
+      "savedSuccess": "安全策略已保存",
       "specialCharsRequired": "已要求特殊字符时，字符集不能为空。",
       "issuerRequired": "发行者名称不能为空。"
     },
     "hints": {
       "specialChars": "配置全平台密码长度与字符组合要求；开启特殊字符后，新密码须至少包含所列字符之一。",
       "lockThreshold": "连续登录失败达到阈值后自动锁定账号，锁定期内禁止登录。",
-      "expiration": "密码达到有效期后需强制改密（0 表示永不过期），历史密码检查可防止重复使用近期旧密码。"
+      "expiration": "密码达到有效期后需强制改密（0 表示永不过期），历史密码检查可防止重复使用近期旧密码。",
+      "totpIssuer": "配置全平台验证器显示的发行者名称（Issuer），个人扫码绑定时统一采用该名称。"
     }
   },
   "channels": {
@@ -1958,8 +1922,8 @@
         "subtitle": "导入许可证、导出申请。"
       },
       "sections": {
-        "import": "许可证",
-        "detail": "授权详情",
+        "import": "许可证导入与申请导出",
+        "detail": "当前许可证详情",
         "emptyDetail": "尚未导入授权文件，请先在左侧完成导入。"
       },
       "status": {
@@ -1971,8 +1935,10 @@
         "unconfigured": "未导入"
       },
       "license": {
-        "exportRequest": "导出申请",
-        "importLicense": "导入",
+        "exportRequest": "导出申请信息",
+        "importLicense": "导入激活",
+        "pasteLabel": "或粘贴许可证文本（可选）",
+        "pastePlaceholder": "粘贴平台签发的 .jws 许可证文本内容",
         "exportSuccess": "申请文件已导出",
         "importSuccess": "许可证已导入",
         "sequence": "序号",
@@ -1987,7 +1953,7 @@
         "remaining": "剩余时间",
         "expiredByDays": "已过期 {count} 天",
         "expiresInDays": "还剩 {count} 天",
-        "selectFile": "请选择许可证文件",
+        "selectFile": "请选择 .jws 许可证文件或粘贴许可证文本",
         "disabled": {
           "expired": "授权已过期，新签发已停止",
           "pending": "授权尚未生效",
@@ -1997,9 +1963,8 @@
       },
       "filePicker": {
         "title": "点击或拖拽选择许可证文件",
-        "hint": "接受 .jws 和文本文件。",
+        "hint": "支持导入平台签发的 .jws 授权文件或粘贴许可证文本",
         "selectedHint": "已选择文件，点击或拖拽可重新选择。",
-        "sizeHint": "文件越大，导入和校验时间会更长。",
         "selectedSize": "文件大小：{size}",
         "invalidType": "请选择 .jws 或文本许可证文件",
         "selected": "已选择",
@@ -4178,25 +4143,31 @@
     }
   },
   "mfaRequiredHint": {
-    "enabled": "已启用 MFA。敏感操作需要对应类别的有效验证，状态见账号安全页的两步验证。",
+    "enabled": "已启用 MFA。敏感操作需要对应类别的有效验证，可在顶栏「个人账号与安全」中管理。",
     "notEnabled": "此操作需要 MFA 验证，当前账号尚未启用 MFA。",
     "goToSetup": "前往绑定"
   },
   "accountSecurity": {
+    "drawer": {
+      "title": "个人账号与安全",
+      "subtitle": "管理当前登录账号的两步验证与登录密码",
+      "subtitleWithUser": "当前账号：{username} · 管理本人两步验证与登录密码"
+    },
     "page": {
-      "title": "账号安全"
+      "title": "个人账号与安全"
     },
     "mfa": {
       "title": "两步验证（MFA）",
       "statusEnabled": "已启用",
       "statusDisabled": "未启用",
-      "hint": "敏感操作需两步验证（默认 6 位 / 30 秒），验证通过后窗口期内免重复输入；连续输错将触发临时锁定。",
-      "userHint": "停用或重置 MFA 需由超级管理员在「用户管理」中操作。",
+      "hint": "敏感操作需两步验证，验证通过后窗口期内免重复输入；连续输错将触发临时锁定。",
+      "userHint": "当前账号如需停用或重置两步验证，请联系超级管理员在「用户管理」中处理。",
       "specLabel": "验证规格",
       "specValue": "TOTP 6 位 · 30 秒",
+      "specDigitsValue": "TOTP {digits} 位 · 30 秒",
       "changedAt": "变更时间",
       "backupCodesRemaining": "剩余备用码",
-      "forcedHint": "当前账号已开启强制 MFA 保护，需超级管理员解除后才可停用。"
+      "forcedHint": "当前账号已启用强制两步验证，如需重置请联系超级管理员。"
     },
     "setup": {
       "stepInstall": "在手机上安装 Google Authenticator、Microsoft Authenticator 等验证器应用。",
@@ -4253,8 +4224,9 @@
       "disable": "停用",
       "regenerateCodes": "重置备用码",
       "copy": "复制",
-      "copyAll": "复制",
-      "changePassword": "修改"
+      "copyAll": "复制全部",
+      "changePassword": "修改",
+      "confirmChangePassword": "确认修改"
     },
     "platformPolicy": {
       "description": "以下 TOTP 参数、登录保护与密码策略对全体用户生效，修改后点击右上角「保存」。",

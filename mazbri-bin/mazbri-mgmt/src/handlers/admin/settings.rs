@@ -33,6 +33,9 @@ pub async fn update_system_settings(
     headers: HeaderMap,
     Json(req): Json<SystemSettingsUpdate>,
 ) -> Result<Response, ApiError> {
+    if !can_access_settings(&claims) {
+        return Err(ApiError::Forbidden);
+    }
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
@@ -42,14 +45,11 @@ pub async fn update_system_settings(
     {
         return Ok(*response);
     }
-    if !can_access_settings(&claims) {
-        return Err(ApiError::Forbidden);
-    }
     info!("Updating system settings (by {})", claims.sub);
     let data = admin::update_system_settings(state.admin_db.clone(), &req).await?;
     // 审计开关变更立即生效，且变更本身始终作为安全事件落库。
     state.audit.invalidate_settings().await;
-    if req.enable_audit_log.is_some() {
+    if req.enable_audit_log.is_some() || req.watermark_visible.is_some() {
         crate::audit::mark_security_event();
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -66,6 +66,7 @@ pub async fn update_system_settings(
                 "site_url": req.site_url,
                 "tenant_gateway_url": req.tenant_gateway_url,
                 "enable_audit_log": req.enable_audit_log,
+                "watermark_visible": req.watermark_visible,
                 "session_timeout": req.session_timeout,
                 "max_upload_size": req.max_upload_size,
             }

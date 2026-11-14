@@ -6,7 +6,6 @@ pub mod analytics;
 pub mod call_semantics;
 pub mod analytics_window;
 pub mod api_key;
-pub mod appearance;
 pub mod billing;
 pub mod bypass_probe;
 pub mod billing_ops;

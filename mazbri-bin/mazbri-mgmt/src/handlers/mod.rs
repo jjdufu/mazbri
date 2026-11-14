@@ -4,7 +4,6 @@ pub mod alert_handlers;
 pub mod alert_ops_handlers;
 pub mod analytics_handlers;
 pub mod api_key_handlers;
-pub mod appearance_handlers;
 pub mod audit_handlers;
 pub mod billing_handlers;
 pub mod billing_ops_handlers;

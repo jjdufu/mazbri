@@ -40,9 +40,9 @@ test("classifyMfaError 只认带合法 category 的 MFA_REQUIRED", () => {
   assert.deepEqual(
     classifyMfaError({
       code: "MFA_NOT_ENABLED",
-      setup_path: "/account/security",
+      setup_path: "/?setupMfa=1",
     }),
-    { kind: "not_enabled", setupPath: "/account/security" },
+    { kind: "not_enabled", setupPath: "/?setupMfa=1" },
   );
 });
 

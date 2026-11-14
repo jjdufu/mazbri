@@ -84,7 +84,6 @@ export function getMfaSetup(currentPassword: string, signal?: AbortSignal) {
 export function enableMfa(
   data: {
     totp_code: string;
-    totp_issuer?: string;
   },
   signal?: AbortSignal,
 ) {

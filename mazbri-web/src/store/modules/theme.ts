@@ -101,6 +101,10 @@ export const useThemeStore = defineStore(
     };
   },
   {
-    persist: true,
+    persist: {
+      key: "themeStore",
+      storage: localStorage,
+      pick: ["systemThemeType", "systemThemeMode"],
+    },
   },
 );

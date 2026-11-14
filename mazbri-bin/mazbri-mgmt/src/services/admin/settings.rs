@@ -17,10 +17,14 @@ pub async fn get_system_settings(db: &PgPool) -> Result<serde_json::Value, ApiEr
         "site_url",
         "tenant_gateway_url",
         "enable_audit_log",
+        "watermark_visible",
         "session_timeout",
         "max_upload_size",
     ];
     settings.retain(|key, _| allowed_keys.contains(&key.as_str()));
+    settings
+        .entry("watermark_visible".to_string())
+        .or_insert(serde_json::Value::Bool(false));
 
     serde_json::to_value(settings)
         .map_err(|e| ApiError::internal(format!("Failed to serialize settings: {e}")))
@@ -53,6 +57,55 @@ fn normalize_tenant_gateway_url(raw: &str) -> Result<String, ApiError> {
     Ok(url)
 }
 
+fn collect_system_setting_entries(
+    req: &SystemSettingsUpdate,
+) -> Result<Vec<(&'static str, serde_json::Value, &'static str)>, ApiError> {
+    let mut entries = Vec::new();
+    if let Some(ref site_name) = req.site_name {
+        entries.push(("site_name", serde_json::json!(site_name), "general"));
+    }
+    if let Some(ref site_url) = req.site_url {
+        entries.push(("site_url", serde_json::json!(site_url), "general"));
+    }
+    if let Some(ref tenant_gateway_url) = req.tenant_gateway_url {
+        let normalized = normalize_tenant_gateway_url(tenant_gateway_url)?;
+        entries.push((
+            "tenant_gateway_url",
+            serde_json::json!(normalized),
+            "integration",
+        ));
+    }
+    if let Some(enable_audit_log) = req.enable_audit_log {
+        entries.push((
+            "enable_audit_log",
+            serde_json::json!(enable_audit_log),
+            "general",
+        ));
+    }
+    if let Some(watermark_visible) = req.watermark_visible {
+        entries.push((
+            "watermark_visible",
+            serde_json::json!(watermark_visible),
+            "security",
+        ));
+    }
+    if let Some(session_timeout) = req.session_timeout {
+        entries.push((
+            "session_timeout",
+            serde_json::json!(session_timeout),
+            "security",
+        ));
+    }
+    if let Some(max_upload_size) = req.max_upload_size {
+        entries.push((
+            "max_upload_size",
+            serde_json::json!(max_upload_size),
+            "security",
+        ));
+    }
+    Ok(entries)
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -61,78 +114,16 @@ pub async fn update_system_settings(
     req: &SystemSettingsUpdate,
 ) -> Result<serde_json::Value, ApiError> {
     info!("Updating system settings");
+    let entries = collect_system_setting_entries(req)?;
     let mut tx = db
         .begin()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
     let mut errors = Vec::new();
-    if let Some(ref site_name) = req.site_name
-        && let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "site_name",
-            &serde_json::json!(site_name),
-            "general",
-        )
-        .await
-    {
-        errors.push(format!("site_name: {e}"));
-    }
-    if let Some(ref site_url) = req.site_url
-        && let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "site_url",
-            &serde_json::json!(site_url),
-            "general",
-        )
-        .await
-    {
-        errors.push(format!("site_url: {e}"));
-    }
-    if let Some(ref tenant_gateway_url) = req.tenant_gateway_url {
-        let normalized = normalize_tenant_gateway_url(tenant_gateway_url)?;
-        if let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "tenant_gateway_url",
-            &serde_json::json!(normalized),
-            "integration",
-        )
-        .await
-        {
-            errors.push(format!("tenant_gateway_url: {e}"));
+    for (key, value, category) in &entries {
+        if let Err(e) = repo::upsert_system_setting(&mut tx, key, value, category).await {
+            errors.push(format!("{key}: {e}"));
         }
-    }
-    if let Some(enable_audit_log) = req.enable_audit_log
-        && let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "enable_audit_log",
-            &serde_json::json!(enable_audit_log),
-            "general",
-        )
-        .await
-    {
-        errors.push(format!("enable_audit_log: {e}"));
-    }
-    if let Some(session_timeout) = req.session_timeout
-        && let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "session_timeout",
-            &serde_json::json!(session_timeout),
-            "security",
-        )
-        .await
-    {
-        errors.push(format!("session_timeout: {e}"));
-    }
-    if let Some(max_upload_size) = req.max_upload_size
-        && let Err(e) = repo::upsert_system_setting(
-            &mut tx,
-            "max_upload_size",
-            &serde_json::json!(max_upload_size),
-            "security",
-        )
-        .await
-    {
-        errors.push(format!("max_upload_size: {e}"));
     }
     if !errors.is_empty() {
         let _ = tx.rollback().await;

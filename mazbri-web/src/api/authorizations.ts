@@ -37,6 +37,6 @@ export function importLicense(licenseFile: File, signal?: AbortSignal) {
     url: `${BASE_PATH}/license/import`,
     data: formData,
     signal,
-    showSuccessMessage: true,
+    showSuccessMessage: false,
   });
 }

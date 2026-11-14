@@ -84,11 +84,14 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     // 容量 / 压测 / SLO 列表 ADMIN；SLO 状态 AnyRole
     ("GET", "/stats/ops/slos", Access::Roles(ADMIN)),
     ("GET", "/stats/ops/slos/status", Access::AnyRole),
-    // 平台策略：读 AnyRole，写 ADMIN（账号安全页嵌入后仍不放宽写）
+    // 平台设置与安全策略：读 AnyRole，写 ADMIN；个人备用恢复码重置 SelfService
+    ("GET", "/settings/system", Access::AnyRole),
+    ("PUT", "/settings/system", Access::Roles(ADMIN)),
     ("GET", "/settings/mfa", Access::AnyRole),
     ("PUT", "/settings/mfa", Access::Roles(ADMIN)),
     ("GET", "/settings/password-policy", Access::AnyRole),
     ("PUT", "/settings/password-policy", Access::Roles(ADMIN)),
+    ("POST", "/auth/mfa/regenerate-codes", Access::SelfService),
     // Trace ADMIN；调用检索 AnyRole（观察者只读开放，写仍无对应路由）
     ("GET", "/stats/traces/search", Access::Roles(ADMIN)),
     ("GET", "/stats/traces/dependencies", Access::Roles(ADMIN)),

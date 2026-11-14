@@ -26,7 +26,7 @@ export const SETTING_DEFAULT_CONFIG = {
   refresh: false,
   holidayFireworksLoaded: false,
   boxBorderMode: false,
-  pageTransition: "fade",
+  pageTransition: "",
   tabStyle: "tab-default",
   customRadius: "0.25",
   darkThemeStyle: "obsidian",

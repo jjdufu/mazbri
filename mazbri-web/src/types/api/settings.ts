@@ -2,25 +2,22 @@ export interface SystemSettings {
   [key: string]: any;
   site_name?: string;
   site_url?: string;
-
   tenant_gateway_url?: string;
-  admin_email?: string;
   session_timeout?: number;
   max_upload_size?: number;
   enable_audit_log?: boolean;
+  watermark_visible?: boolean;
 }
 export interface UpdateSystemSettingsRequest {
   site_name?: string;
   site_url?: string;
   tenant_gateway_url?: string;
-  admin_email?: string;
-  default_tenant_plan?: string;
-  default_tenant_rate_limit?: number;
-  default_tenant_cache_ttl?: number;
   session_timeout_minutes?: number;
   session_timeout?: number;
-  enable_audit_log?: boolean;
+  max_upload_size_mb?: number;
   max_upload_size?: number;
+  enable_audit_log?: boolean;
+  watermark_visible?: boolean;
 }
 
 export interface UserSettings {

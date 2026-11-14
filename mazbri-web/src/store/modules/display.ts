@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { SETTING_DEFAULT_CONFIG } from "@/config/setting";
+
 export const useDisplayStore = defineStore("displayStore", () => {
   const showMenuButton = ref(SETTING_DEFAULT_CONFIG.showMenuButton);
   const showFastEnter = ref(SETTING_DEFAULT_CONFIG.showFastEnter);
@@ -38,27 +39,14 @@ export const useDisplayStore = defineStore("displayStore", () => {
   const setCrumbs = () => {
     showCrumbs.value = !showCrumbs.value;
   };
-  const setWorkTab = (show: boolean) => {
-    showWorkTab.value = show;
-  };
   const setLanguage = () => {
     showLanguage.value = !showLanguage.value;
   };
   const setNprogress = () => {
     showNprogress.value = !showNprogress.value;
   };
-  const setPageTransition = (transition: string) => {
-    pageTransition.value = transition;
-  };
-  const setTabStyle = (style: string) => {
-    tabStyle.value = style;
-  };
   const setWatermarkVisible = (visible: boolean) => {
     watermarkVisible.value = visible;
-  };
-  const setCustomRadius = (radius: string) => {
-    customRadius.value = radius;
-    applyRadiusToDom();
   };
   const setholidayFireworksLoaded = (isLoad: boolean) => {
     holidayFireworksLoaded.value = isLoad;
@@ -125,13 +113,9 @@ export const useDisplayStore = defineStore("displayStore", () => {
     setAutoClose,
     setShowRefreshButton,
     setCrumbs,
-    setWorkTab,
     setLanguage,
     setNprogress,
-    setPageTransition,
-    setTabStyle,
     setWatermarkVisible,
-    setCustomRadius,
     setholidayFireworksLoaded,
     setShowFestivalText,
     setFestivalDate,

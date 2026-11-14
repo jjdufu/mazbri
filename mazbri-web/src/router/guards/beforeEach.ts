@@ -22,7 +22,6 @@ import { logger } from "@/utils/sys/logger";
 import { ErrorCodes } from "@/constants/error-codes";
 import {
   MenuProcessor,
-  IframeRouteManager,
   RoutePermissionValidator,
 } from "../core";
 import { routeInitState } from "./routeInitState";
@@ -189,7 +188,6 @@ async function handleDynamicRoutes(
     menuStore.addRemoveRouteFns(
       routeInitState.getRouteRegistry()?.getRemoveRouteFns() || [],
     );
-    IframeRouteManager.getInstance().save();
     useWorktabStore().validateWorktabs(router);
     const { homePath } = useCommon();
     // 静态公共路由（登录/403/500/outside 等）不参与菜单 RBAC
@@ -267,7 +265,6 @@ async function fetchUserInfo(): Promise<void> {
 let pendingResetTimer: ReturnType<typeof setTimeout> | null = null;
 function clearRouterStateNow(): void {
   routeInitState.getRouteRegistry()?.unregister();
-  IframeRouteManager.getInstance().clear();
   const menuStore = useMenuStore();
   menuStore.removeAllDynamicRoutes();
   menuStore.setMenuList([]);
@@ -296,7 +293,12 @@ function handleRootPathRedirect(
   }
   const { homePath } = useCommon();
   if (homePath.value && homePath.value !== "/") {
-    next({ path: homePath.value, replace: true });
+    next({
+      path: homePath.value,
+      query: to.query,
+      hash: to.hash,
+      replace: true,
+    });
     return true;
   }
   return false;

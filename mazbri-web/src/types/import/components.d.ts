@@ -131,6 +131,7 @@ declare module 'vue' {
     OpsSection: typeof import('./../../components/ops/OpsSection.vue')['default']
     OpsTableWrap: typeof import('./../../components/ops/OpsTableWrap.vue')['default']
     OpsTabPage: typeof import('./../../components/ops/OpsTabPage.vue')['default']
+    PersonalSecurityDrawer: typeof import('./../../components/common/personal-security-drawer/index.vue')['default']
     PolicySection: typeof import('./../../components/common/policy-section/index.vue')['default']
     ResourceTableActionBar: typeof import('./../../components/common/resource-table-action-bar/index.vue')['default']
     ResourceTablePageShell: typeof import('./../../components/common/resource-table-page-shell/index.vue')['default']

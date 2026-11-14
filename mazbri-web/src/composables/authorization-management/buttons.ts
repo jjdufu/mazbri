@@ -5,7 +5,7 @@ import type { AuthorizationManagementContext } from "./state";
 export interface AuthorizationActionButton {
   key: string;
   label: string;
-  type: "primary" | "danger" | "warning";
+  type?: "primary" | "default" | "danger" | "warning";
   loading: boolean;
   disabled: boolean;
   onClick: () => void | Promise<void>;
@@ -20,20 +20,20 @@ export function useAuthorizationManagementButtons(options: {
 }) {
   return computed<AuthorizationActionButton[]>(() => [
     {
-      key: "export-request",
-      label: $t("certificate.authorizationManagement.license.exportRequest"),
-      type: "primary",
-      loading: options.state.refreshing.value,
-      disabled: false,
-      onClick: options.actions.handleExportRequest,
-    },
-    {
       key: "import-license",
       label: $t("certificate.authorizationManagement.license.importLicense"),
-      type: "warning",
+      type: "primary",
       loading: options.state.importing.value,
       disabled: options.state.importDisabled.value,
       onClick: options.actions.handleImportLicense,
+    },
+    {
+      key: "export-request",
+      label: $t("certificate.authorizationManagement.license.exportRequest"),
+      type: "default",
+      loading: options.state.refreshing.value,
+      disabled: false,
+      onClick: options.actions.handleExportRequest,
     },
   ]);
 }

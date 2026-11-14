@@ -24,9 +24,6 @@ export class ComponentLoader {
   loadLayout(): () => Promise<any> {
     return () => import("@/views/index/index.vue");
   }
-  loadIframe(): () => Promise<any> {
-    return () => import("@/views/outside/Iframe.vue");
-  }
   private createEmptyComponent(): () => Promise<any> {
     return () =>
       Promise.resolve({

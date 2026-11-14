@@ -93,15 +93,11 @@ async fn enable_and_disable_without_refresh_cookie_do_not_write() {
             deps.db.clone(),
             crate::config::MfaConfig::default(),
         )),
-        mfa_settings_cache: &std::sync::Arc::new(
-            crate::services::MfaSettingsCache::new(deps.db.clone()),
-        ),
         audit: &deps.audit,
         claims: &claims,
         jwt_secret: SECRET,
         access_ttl_fallback: 3600,
         totp_code: "000000",
-        totp_issuer: None,
         refresh_token: None,
         client_ip: None,
     })

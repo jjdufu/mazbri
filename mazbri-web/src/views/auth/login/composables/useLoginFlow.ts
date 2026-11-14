@@ -175,7 +175,7 @@ export function useLoginFlow() {
       await settingStore.loadFromServer(true);
     } catch (error) {
       logger.warn(
-        "[Login] Failed to load appearance settings; falling back to local config",
+        "[Login] Failed to load system settings; falling back to local config",
         {
           service: "mazbri-mgmt-web",
           event: "login_settings_load_fallback",

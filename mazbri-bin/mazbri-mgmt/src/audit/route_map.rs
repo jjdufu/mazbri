@@ -698,21 +698,6 @@ pub static ROUTES: &[RouteAudit] = &[
         R::User,
         None,
     ),
-    read("/settings/appearance", R::System),
-    secure(
-        "PUT",
-        "/settings/appearance",
-        A::AppearanceUpdate,
-        R::System,
-        None,
-    ),
-    secure(
-        "POST",
-        "/settings/appearance/reset",
-        A::AppearanceReset,
-        R::System,
-        None,
-    ),
     read("/settings/password-policy", R::System),
     secure(
         "PUT",
@@ -1250,15 +1235,16 @@ mod tests {
     }
 
     #[test]
-    fn user_settings_and_appearance_put_remain_write_audit() {
+    fn user_settings_put_remains_write_audit_and_legacy_routes_retired() {
         let user_settings = lookup("PUT", "/settings/user").expect("settings/user mapped");
         assert_eq!(user_settings.kind, RouteKind::Write);
         assert_eq!(
             user_settings.action.map(|a| a.as_str()),
             Some("user.settings_update")
         );
-        let appearance = lookup("PUT", "/settings/appearance").expect("appearance mapped");
-        assert_eq!(appearance.kind, RouteKind::Write);
+        assert!(lookup("GET", "/settings/appearance").is_none());
+        assert!(lookup("PUT", "/settings/appearance").is_none());
+        assert!(lookup("POST", "/settings/appearance/reset").is_none());
         assert!(lookup("PUT", "/admin/preferences").is_none());
         assert!(lookup("GET", "/admin/preferences").is_none());
     }

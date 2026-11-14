@@ -2,8 +2,8 @@
  * MFA 守卫响应相关的纯函数（不依赖 Vue/Element/i18n，便于单元测试）。
  */
 
-/** 账号安全页：自助绑定 MFA、修改密码；也是 `MFA_NOT_ENABLED` 的默认 setup_path。 */
-export const ACCOUNT_SECURITY_PATH = "/account/security";
+/** 个人安全抽屉唤起路由：`MFA_NOT_ENABLED` 的默认 setup_path（Hash 路由下对应 `/#/?setupMfa=1`）。 */
+export const MFA_SETUP_PATH = "/?setupMfa=1";
 
 const HTTP_FORBIDDEN = 403;
 
@@ -17,7 +17,7 @@ export function resolveMfaSetupPath(setupPath: unknown): string {
   ) {
     return setupPath;
   }
-  return ACCOUNT_SECURITY_PATH;
+  return MFA_SETUP_PATH;
 }
 
 /**

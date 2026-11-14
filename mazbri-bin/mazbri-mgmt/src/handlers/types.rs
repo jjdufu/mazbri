@@ -187,6 +187,7 @@ pub struct SystemSettingsUpdate {
     /// 租户调用的 API 网关根地址（向导 curl / 联调示例，非管理后台 URL）
     pub tenant_gateway_url: Option<String>,
     pub enable_audit_log: Option<bool>,
+    pub watermark_visible: Option<bool>,
     pub session_timeout: Option<i64>,
     pub max_upload_size: Option<i64>,
 }
@@ -301,8 +302,6 @@ pub struct MfaSetupResponse {
 #[serde(deny_unknown_fields)]
 pub struct MfaEnableRequest {
     pub totp_code: String,
-    #[serde(default)]
-    pub totp_issuer: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

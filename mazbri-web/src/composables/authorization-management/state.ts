@@ -1,5 +1,11 @@
-import { computed, onMounted, reactive, ref, type ComputedRef, type Ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import {
+  computed,
+  onMounted,
+  reactive,
+  ref,
+  type ComputedRef,
+  type Ref,
+} from "vue";
 import type { LicenseStatus } from "@/types/api/authorizations";
 import type { AuthorizationFormState } from "./actions";
 import { useAuthorizationManagementLabels } from "./labels";
@@ -30,11 +36,9 @@ export interface AuthorizationManagementContext {
 }
 
 export function useAuthorizationManagementState() {
-  const route = useRoute();
-  const router = useRouter();
   const form = reactive<AuthorizationFormState>({
     packageFile: null,
-    passphrase: "",
+    licenseText: "",
   });
   const importing = ref(false);
   const packageFile = computed({
@@ -43,16 +47,18 @@ export function useAuthorizationManagementState() {
       form.packageFile = file;
     },
   });
-  const { currentSummary, loadStatus, refreshing } = useAuthorizationManagementLoader();
+  const { currentSummary, loadStatus, refreshing } =
+    useAuthorizationManagementLoader();
   const { hasSummary, statusEmptyDescription, summaryRows } =
     useAuthorizationManagementSummary({ currentSummary });
-  const { importSectionTitle, detailSectionTitle } = useAuthorizationManagementLabels();
-  const importDisabled = computed(() => !form.packageFile || importing.value);
+  const { importSectionTitle, detailSectionTitle } =
+    useAuthorizationManagementLabels();
+  const importDisabled = computed(
+    () =>
+      (!form.packageFile && !form.licenseText.trim()) || importing.value,
+  );
 
   onMounted(() => {
-    if (route.query.type) {
-      void router.replace({ path: route.path, query: {} });
-    }
     void loadStatus();
   });
 

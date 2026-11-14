@@ -1,6 +1,5 @@
 <template>
   <SettingsCard
-    :id="PLATFORM_POLICY_ANCHOR"
     v-loading="loading"
     icon="ri:shield-check-line"
     :title="$t('securityPolicy.sections.complexity.title')"
@@ -59,10 +58,7 @@ import SettingsCard from "@/components/common/settings-card/index.vue";
 import SettingsToggleGrid from "@/components/common/settings-toggle-grid/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
 import CommonToggleTile from "@/components/common/toggle-tile/index.vue";
-import {
-  PLATFORM_POLICY_ANCHOR,
-  usePlatformSecurityPolicy,
-} from "./usePlatformSecurityPolicy";
+import { usePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "PasswordComplexityCard" });
 

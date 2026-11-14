@@ -13,8 +13,8 @@ use axum::{
 };
 use chrono::Utc;
 
-/// 未启用 MFA 时前端引导用户前往的自助绑定页面。
-pub const MFA_SETUP_PATH: &str = "/account/security";
+/// 未启用 MFA 时前端引导用户前往的自助绑定入口。
+pub const MFA_SETUP_PATH: &str = "/?setupMfa=1";
 
 /// 只证明当前会话的这一类窗口有效，不消费窗口。
 #[derive(Debug, Clone, Copy)]
@@ -127,7 +127,7 @@ fn unavailable() -> Response {
 }
 
 fn not_enabled() -> Response {
-    let message = "此操作需要 MFA 二次验证，请先在「账号安全」页面绑定并启用 MFA";
+    let message = "此操作需要 MFA 二次验证，请先在「个人账号与安全」中绑定并启用 MFA";
     json_error(
         StatusCode::FORBIDDEN,
         "MFA_NOT_ENABLED",
@@ -514,13 +514,13 @@ mod tests {
             .find("require_category(")
             .expect("disable category");
         assert!(disable_role < disable_mfa);
-        let backup_role = backup_codes
-            .find("仅超级管理员可重新生成备用码")
-            .expect("backup role");
+        let backup_precheck = backup_codes
+            .find("is_mfa_enabled")
+            .expect("backup precheck");
         let backup_mfa = backup_codes
             .find("require_category(")
             .expect("backup category");
-        assert!(backup_role < backup_mfa);
+        assert!(backup_precheck < backup_mfa);
         let settings_update = handler_source(mfa_settings, "update_mfa_settings");
         assert!(
             settings_update.contains("require_category(")
@@ -604,7 +604,6 @@ mod tests {
         let cc_history = include_str!("config_center/history.rs");
         let cc_import = include_str!("config_center/import_export.rs");
         let settings = include_str!("admin/settings.rs");
-        let appearance = include_str!("appearance_handlers.rs");
         let password_policy = include_str!("password_policy_handlers.rs");
         let tenants = include_str!("tenant_handlers.rs");
         let ratelimit = include_str!("ratelimit_command_handlers.rs");
@@ -618,8 +617,6 @@ mod tests {
                 (cc_import, "import_configs"),
                 (cc_import, "export_configs"),
                 (settings, "update_system_settings"),
-                (appearance, "update_appearance_settings"),
-                (appearance, "reset_appearance_settings"),
                 (password_policy, "update_password_policy"),
                 (upstream, "rollback"),
                 (ratelimit, "create_control_command"),
