@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.4](https://github.com/jjdufu/mazbri/compare/v0.5.3...v0.5.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **web,mgmt:** 修复配置中心首次批量导入 TOML/ZIP 404 报错并统一四字导航命名 ([dd4019d](https://github.com/jjdufu/mazbri/commit/dd4019d5114d9e22bb956edaa8064bc34b0ace89))
+* **web,mgmt:** 修复配置中心首次批量导入 TOML/ZIP 404 报错并统一四字导航命名 ([77cd925](https://github.com/jjdufu/mazbri/commit/77cd925d12bbb2f93cc892bb65d54ebb01218cd5))
+
 ## [0.5.3](https://github.com/jjdufu/mazbri/compare/v0.5.2...v0.5.3) (2026-11-14)
 
 
