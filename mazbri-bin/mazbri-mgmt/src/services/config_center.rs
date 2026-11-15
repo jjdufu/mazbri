@@ -461,11 +461,11 @@ pub async fn export_configs(
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn precheck_import_configs(
-    body: axum::body::Body,
+    request: axum::extract::Request,
     request_id: &str,
     trace_id: &str,
 ) -> Result<PreparedImport, ApiError> {
-    import_export::precheck_import_configs(body, request_id, trace_id).await
+    import_export::precheck_import_configs(request, request_id, trace_id).await
 }
 /// # Errors
 ///

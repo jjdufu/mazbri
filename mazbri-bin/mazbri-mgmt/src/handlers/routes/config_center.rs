@@ -2,8 +2,11 @@ use super::super::config_center as cc;
 use super::super::state::AppState;
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, post},
 };
+
+const MAX_IMPORT_BODY_BYTES: usize = 10 * 1024 * 1024;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -31,6 +34,9 @@ pub fn routes() -> Router<AppState> {
             get(cc::list_canonical_service_names),
         )
         .route("/config-center/export", get(cc::export_configs))
-        .route("/config-center/import", post(cc::import_configs))
+        .route(
+            "/config-center/import",
+            post(cc::import_configs).layer(DefaultBodyLimit::max(MAX_IMPORT_BODY_BYTES)),
+        )
         .route("/config-center/validate", post(cc::validate_toml_endpoint))
 }

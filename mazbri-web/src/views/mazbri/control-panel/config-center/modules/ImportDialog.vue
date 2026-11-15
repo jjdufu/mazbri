@@ -36,7 +36,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { $t } from "@/locales";
-import { importConfigs, updateConfig } from "@/api/config-center";
+import { importConfigs } from "@/api/config-center";
 import EditDialog from "@/components/common/EditDialog.vue";
 import FilePicker from "@/components/common/file-picker/index.vue";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
@@ -91,68 +91,46 @@ const handleImport = async () => {
   }
   if (files.value.length === 0) return;
   importing.value = true;
-  let imported = 0;
-  let failed = 0;
-  const errors: string[] = [];
   try {
-    for (const file of files.value) {
-      try {
-        if (file.name.endsWith(".zip")) {
-          const result = await importConfigs(file);
-          imported += result.imported;
-          failed += result.skipped;
-          if (result.errors?.length) {
-            errors.push(...result.errors);
-          }
-        } else {
-          const serviceName = file.name.replace(/\.toml$/, "");
-          const content = await file.text();
-          await updateConfig(serviceName, {
-            content,
-            updated_by: "admin",
-          });
-          imported++;
-        }
-      } catch (error: unknown) {
-        if (isMfaStepUpCancelled(error)) {
-          return;
-        }
-        failed++;
-        const apiError = error as {
-          message?: string;
-        };
-        errors.push(
-          `${file.name}: ${apiError.message || $t("configCenter.importDialog.messages.importFailed")}`,
-        );
-      }
-    }
+    const result = await importConfigs(files.value);
+    const imported = result.imported;
+    const failed = result.skipped;
+    const errors = result.errors ?? [];
     const parts: string[] = [];
-    if (imported > 0)
+    if (imported > 0) {
       parts.push(
         $t("configCenter.importDialog.messages.importedCount", {
           count: imported,
         }),
       );
-    if (failed > 0)
+    }
+    if (failed > 0) {
       parts.push(
         $t("configCenter.importDialog.messages.failedCount", { count: failed }),
       );
-    if (errors.length > 0) logger.error("Import errors");
+    }
+    if (errors.length > 0) {
+      logger.error("Import errors:", errors);
+    }
+    const summary = $t("configCenter.importDialog.messages.importCompleted", {
+      details: parts.join("，"),
+    });
     if (failed > 0 && imported === 0) {
-      ElMessage.warning(
-        $t("configCenter.importDialog.messages.importCompleted", {
-          details: parts.join("，"),
-        }),
-      );
+      ElMessage.warning(errors[0] ? `${summary}（${errors[0]}）` : summary);
+      return;
+    }
+    if (failed > 0) {
+      ElMessage.warning(errors[0] ? `${summary}（${errors[0]}）` : summary);
     } else {
-      ElMessage.success(
-        $t("configCenter.importDialog.messages.importCompleted", {
-          details: parts.join("，"),
-        }),
-      );
+      ElMessage.success(summary);
     }
     visible.value = false;
     emit("success");
+  } catch (error: unknown) {
+    if (isMfaStepUpCancelled(error)) {
+      return;
+    }
+    logger.error("Failed to import configs:", error);
   } finally {
     importing.value = false;
   }

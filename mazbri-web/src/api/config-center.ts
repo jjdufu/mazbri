@@ -75,13 +75,15 @@ export function exportConfigs(params: ExportQuery) {
     responseType: "blob",
   });
 }
-export function importConfigs(file: File) {
+export function importConfigs(files: File | File[]) {
   const formData = new FormData();
-  formData.append("file", file);
+  const fileList = Array.isArray(files) ? files : [files];
+  for (const file of fileList) {
+    formData.append("files", file, file.name);
+  }
   return request.post<ImportConfigsResult>({
     url: `${BASE_PATH}/import`,
     data: formData,
-    headers: { "Content-Type": "multipart/form-data" },
   });
 }
 export interface ValidateTomlResponse {

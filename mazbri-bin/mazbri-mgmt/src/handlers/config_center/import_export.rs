@@ -6,8 +6,7 @@ use crate::middleware::auth::AdminClaims;
 use crate::services::config_center as service;
 use axum::{
     Extension, Json,
-    body::Body,
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, Query, Request, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
@@ -46,12 +45,12 @@ pub async fn import_configs(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ImportParams>,
-    body: Body,
+    request: Request,
 ) -> Result<Response, ApiError> {
     super::require_config_admin(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let (request_id, trace_id) = request_ids(&headers);
-    let prepared = service::precheck_import_configs(body, &request_id, &trace_id).await?;
+    let prepared = service::precheck_import_configs(request, &request_id, &trace_id).await?;
     if let Err(response) = crate::handlers::mfa_guard::require_category(
         &state,
         &claims,
