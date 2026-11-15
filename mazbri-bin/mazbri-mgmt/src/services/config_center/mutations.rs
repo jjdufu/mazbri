@@ -125,6 +125,7 @@ pub async fn precheck_update_config(
     request_id: &str,
     trace_id: &str,
 ) -> Result<(), ApiError> {
+    ensure_service_name(service_name, request_id, trace_id)?;
     ensure_toml(&payload.content, request_id, trace_id)?;
     query::precheck_config_exists(ctx, service_name, client_ip, request_id, trace_id).await
 }

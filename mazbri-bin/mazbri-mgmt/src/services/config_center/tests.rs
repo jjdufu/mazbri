@@ -1,4 +1,4 @@
-use super::{ConfigCenterCtx, history, mutations, query, sanitize_config_summary};
+use super::{ConfigCenterCtx, history, import_export, mutations, query, sanitize_config_summary};
 use crate::audit::sink::{AuditSink, FallbackWriter, SinkOptions, testing::MemoryStore};
 use crate::audit::{
     AuditErrorInfo, AuditRecord, AuditService, AuditSettingsCache, AuditStatus, apply_audit_layers,
@@ -7,16 +7,16 @@ use crate::audit::{
 use crate::error::ApiError;
 use crate::handlers::CertServiceClientCfg;
 use crate::handlers::config_center::{
-    ConfigListParams, CreateConfigRequest, HistoryQueryParams, UpdateConfigRequest,
+    ConfigListParams, CreateConfigRequest, HistoryQueryParams, ImportParams, UpdateConfigRequest,
     require_config_admin,
 };
 use crate::middleware::auth::AdminClaims;
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{ConnectInfo, Path, Query, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State};
 use axum::http::{Request, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -423,6 +423,31 @@ async fn test_get_history(
     Ok(Json(data).into_response())
 }
 
+async fn test_import_configs(
+    State(st): State<TestRouterState>,
+    Query(params): Query<ImportParams>,
+    request: axum::extract::Request,
+) -> Result<Response, ApiError> {
+    let claims = st.claims();
+    set_actor(Some(st.user_id), Some(&claims.sub), Some(&claims.role));
+    require_config_admin(&claims)?;
+    let prepared = import_export::precheck_import_configs(request, "req-1", "trace-1").await?;
+    if let Err(resp) = st.check_platform_mfa() {
+        return Ok(*resp);
+    }
+    let data = import_export::import_configs(
+        st.ctx(),
+        &claims,
+        None,
+        &params,
+        prepared,
+        "req-1",
+        "trace-1",
+    )
+    .await?;
+    Ok(Json(data).into_response())
+}
+
 fn build_test_router(state: TestRouterState) -> Router {
     let audit = state.audit.clone();
     let inner = Router::new()
@@ -439,6 +464,10 @@ fn build_test_router(state: TestRouterState) -> Router {
         .route(
             "/config-center/configs/{service_name}/history",
             get(test_get_history),
+        )
+        .route(
+            "/config-center/import",
+            post(test_import_configs).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         )
         .with_state(state);
 
@@ -861,5 +890,170 @@ async fn custom_extension_config_lifecycle_and_delete_digest_audit() {
     assert_eq!(
         delete_rec.details.as_ref().and_then(|d| d["before_hash"].as_str()),
         Some(super::sha256_hex("port = 9100\n").as_str())
+    );
+}
+
+fn build_multipart_body(boundary: &str, parts: &[(&str, &str, &[u8])]) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (field_name, file_name, bytes) in parts {
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{file_name}\"\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    body
+}
+
+async fn send_multipart(
+    app: &Router,
+    uri: &str,
+    boundary: &str,
+    parts: &[(&str, &str, &[u8])],
+) -> (StatusCode, Value) {
+    let raw = build_multipart_body(boundary, parts);
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(raw))
+        .expect("request");
+    req.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 18085))));
+    let resp = app.clone().oneshot(req).await.expect("oneshot");
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), 65_536)
+        .await
+        .expect("read body");
+    let parsed = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
+    (status, parsed)
+}
+
+fn assert_configs_present(mock: &MockCertServer, names: &[&str]) {
+    let guard = mock.data.lock().expect("lock");
+    for expected in names {
+        assert!(guard.configs.contains_key(*expected), "missing {expected}");
+    }
+}
+
+fn build_test_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+    use zip::{ZipWriter, write::FileOptions};
+
+    let mut zip_writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, content) in entries {
+        zip_writer
+            .start_file(*name, FileOptions::default())
+            .expect("zip entry");
+        zip_writer.write_all(content).expect("zip write");
+    }
+    zip_writer.finish().expect("zip finish").into_inner()
+}
+
+#[tokio::test]
+async fn multipart_toml_and_zip_import_upserts_missing_core_services_with_mfa() {
+    let mock = MockCertServer::start().await;
+    let (audit, store, handle) = build_audit();
+    let mfa_verified = Arc::new(AtomicBool::new(false));
+    let mfa_calls = Arc::new(AtomicUsize::new(0));
+    let state = TestRouterState {
+        cert_cfg: Arc::new(CertServiceClientCfg {
+            url: mock.url.clone(),
+            token: "test-token".to_string(),
+        }),
+        http: reqwest::Client::new(),
+        audit,
+        mfa_verified: Arc::clone(&mfa_verified),
+        mfa_calls: Arc::clone(&mfa_calls),
+        role: "R_ADMIN".to_string(),
+        user_id: uuid::Uuid::new_v4(),
+    };
+    let app = build_test_router(state);
+    let boundary = "----MazbriConfigImportBoundary";
+
+    // Invalid service name / invalid TOML must fail with 400 BEFORE prompting MFA.
+    let (status, _) = send_multipart(
+        &app,
+        "/api/v1/mgmt/config-center/import",
+        boundary,
+        &[("files", "mazbri-cert-service.toml", b"port = 8888\n")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(mfa_calls.load(Ordering::SeqCst), 0);
+
+    // Valid brand-new core service TOMLs prompt Platform MFA first, then upsert cleanly.
+    let toml_parts: Vec<(&str, &str, &[u8])> = vec![
+        ("files", "mazbri-auth.toml", b"[auth]\napi_key_prefix_length = 8\n"),
+        ("files", "mazbri-billing.toml", b"[billing]\nenabled = true\n"),
+        ("files", "mazbri-ratelimit.toml", b"[rate_limit]\nenabled = true\n"),
+        ("files", "mazbri-gateway.toml", b"[cors]\nallowed_origins = [\"https://console.example.com\"]\n"),
+    ];
+    let (status, body) = send_multipart(
+        &app,
+        "/api/v1/mgmt/config-center/import",
+        boundary,
+        &toml_parts,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["code"], "MFA_REQUIRED");
+    assert_eq!(body["category"], "platform");
+
+    mfa_verified.store(true, Ordering::SeqCst);
+    let (status, body) = send_multipart(
+        &app,
+        "/api/v1/mgmt/config-center/import",
+        boundary,
+        &toml_parts,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "toml import failed: {body}");
+    assert_eq!(body["imported"], 4);
+    assert_eq!(body["skipped"], 0);
+
+    // Multipart ZIP archive upload must also strip multipart framing and upsert missing services.
+    let zip_bytes = build_test_zip(&[
+        ("mazbri-bypass.toml", b"[upstream]\ntimeout_secs = 15\n"),
+        ("mazbri-cache.toml", b"[cache]\ndefault_ttl = 300\n"),
+    ]);
+    let (status, zip_body) = send_multipart(
+        &app,
+        "/api/v1/mgmt/config-center/import",
+        boundary,
+        &[("files", "configs.zip", &zip_bytes)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "zip import failed: {zip_body}");
+    assert_eq!(zip_body["imported"], 2);
+    assert_eq!(zip_body["skipped"], 0);
+
+    assert_configs_present(
+        &mock,
+        &[
+            "mazbri-auth",
+            "mazbri-billing",
+            "mazbri-ratelimit",
+            "mazbri-bypass",
+            "mazbri-cache",
+        ],
+    );
+    drop(app);
+    handle.shutdown(Duration::from_secs(1)).await;
+    let records: Vec<AuditRecord> = store.rows();
+    assert!(
+        records
+            .iter()
+            .any(|r| r.action == "config_center.import" && r.status == AuditStatus::Success),
+        "missing config_center.import audit: {records:?}"
     );
 }

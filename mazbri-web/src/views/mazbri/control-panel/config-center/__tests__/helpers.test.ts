@@ -84,4 +84,19 @@ describe("config-center Step 15 helpers and contracts", () => {
     const en = JSON.parse(enRaw) as { configCenter: Record<string, unknown> };
     assert.deepEqual(collectKeys(zh.configCenter), collectKeys(en.configCenter));
   });
+
+  it("routes both .toml and .zip imports through unified batch /import without boundaryless multipart header", () => {
+    const dialogSrc = readFileSync(
+      resolve(import.meta.dirname, "../modules/ImportDialog.vue"),
+      "utf8",
+    );
+    const apiSrc = readFileSync(
+      resolve(import.meta.dirname, "../../../../../api/config-center.ts"),
+      "utf8",
+    );
+    assert.doesNotMatch(dialogSrc, /\bupdateConfig\b/);
+    assert.match(dialogSrc, /importConfigs\(files\.value\)/);
+    assert.doesNotMatch(apiSrc, /multipart\/form-data/);
+    assert.match(apiSrc, /formData\.append\("files"/);
+  });
 });

@@ -15,7 +15,7 @@ export interface OverviewDrillRole {
 }
 
 /**
- * 展示类子页已撤出侧栏：流量/错误 → 调用与链路；熔断 → 运行指标；限流 → 调用与链路；
+ * 展示类子页已撤出侧栏：流量/错误 → 调用链路；熔断 → 运行指标；限流 → 调用链路；
  * 计费管道监控 → 运行指标（数据与控制面管道 /ops/runtime?tab=pipeline）。
  */
 const BASE_TARGETS: Record<OverviewDrillId, OverviewDrillTarget> = {
@@ -29,7 +29,7 @@ const BASE_TARGETS: Record<OverviewDrillId, OverviewDrillTarget> = {
 
 /**
  * 按角色解析 Dashboard 下钻目标。
- * - 观察者：时延/错误仍可进调用与链路；禁止熔断/限流/计费。
+ * - 观察者：时延/错误仍可进调用链路；禁止熔断/限流/计费。
  * - 管理员(FINANCE)：限流/计费可点，熔断不可点。
  * - 超管：全部可点。
  * 返回 null 表示本角色不可下钻（UI 不应绑定点击）。

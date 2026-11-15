@@ -25,7 +25,7 @@ export interface CallsLinkOptions {
   filters?: Partial<Record<CallsFilterKey, string | number>>;
 }
 
-/** 调用与链路合一父路由（/ops/traffic）。 */
+/** 调用链路合一父路由（/ops/traffic）。 */
 export const TRAFFIC_PATH = "/ops/traffic";
 
 export function buildCallsRoute(options: CallsLinkOptions): RouteLocationRaw {
