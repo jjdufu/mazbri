@@ -25,7 +25,7 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessBillingFields, AccessHttpFields, AccessLogEvent, AccessNetworkFields,
     AccessOutcomeFields, AccessRouteFields, AccessTimingFields, AccessUpstreamMetaFields,
-    TraceContext, emit_access_log, normalize_upstream_host, parse_trace_context, resolve_client_ip,
+    TraceContext, emit_access_log, normalize_upstream_host, resolve_client_ip,
     response_flags_for_error, validate_tenant_id,
 };
 use mazbri_product::service::TenantProductDetail;
@@ -45,6 +45,7 @@ use super::state::GatewayRequestTiming;
 
 /// `unified_gateway_handler` 依次提取的请求扩展。
 type GatewayHandlerExtensions = (
+    Extension<TraceContext>,
     Extension<MazbriClaims>,
     Extension<GatewayRequestTiming>,
     Extension<GatewayRequestPayload>,
@@ -102,6 +103,7 @@ pub async fn unified_gateway_handler(
     // 元组提取器按元素顺序逐个提取，失败时返回该元素自己的拒绝响应，
     // 和拆成多个参数时的提取顺序、拒绝响应完全一致。
     (
+        Extension(trace_context),
         Extension(claims),
         Extension(mut timing),
         Extension(body_payload),
@@ -111,7 +113,6 @@ pub async fn unified_gateway_handler(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Result<Response, ProxyError> {
-    let trace_context = parse_trace_context(&headers);
     // Arc<str> clone is a refcount bump — avoid allocating a new String for the hot path.
     let request_id = Arc::clone(&trace_context.request_id);
     let tenant_validation_started_at = Instant::now();

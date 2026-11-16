@@ -110,6 +110,14 @@ impl ProxyError {
         }
     }
 }
+/// 本请求的请求 ID（与响应头 `x-request-id` 一致）；不在请求作用域内时生成新 UUID。
+fn current_request_id() -> String {
+    mazbri_core::current_request_trace().map_or_else(
+        || Uuid::new_v4().to_string(),
+        |trace| trace.request_id.to_string(),
+    )
+}
+
 /// Build a unified gateway JSON error envelope (`success/status/error/request_id`).
 /// Business error code of a gateway error response, carried as a response extension so the
 /// rejection access log records it without parsing the body.
@@ -151,7 +159,7 @@ pub fn gateway_error_response_with_retry(
     request_id: Option<String>,
     retry_after_secs: Option<u64>,
 ) -> Response {
-    let request_id = request_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let request_id = request_id.unwrap_or_else(current_request_id);
     let resp = ProxyResponse::<()> {
         success: false,
         data: None,
@@ -200,7 +208,7 @@ impl IntoResponse for ProxyError {
             }
             ProxyError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, None),
         };
-        let request_id = Uuid::new_v4().to_string();
+        let request_id = current_request_id();
         let error_code = self.error_code();
         if self.should_sanitize() {
             tracing::error!(

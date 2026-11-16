@@ -15,8 +15,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
-    AccessTimingFields, TraceContext, emit_access_log, parse_trace_context, resolve_client_ip,
-    response_flags_for_error,
+    AccessTimingFields, TraceContext, emit_access_log, resolve_client_ip, response_flags_for_error,
 };
 
 use super::metrics::classify_error_class;
@@ -79,7 +78,7 @@ pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Re
         .extensions()
         .get::<TraceContext>()
         .cloned()
-        .unwrap_or_else(|| parse_trace_context(req.headers()));
+        .unwrap_or_else(TraceContext::current);
     let headers = req.headers().clone();
     let client_ip = resolve_client_ip(
         &headers,

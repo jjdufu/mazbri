@@ -93,6 +93,8 @@ pub struct AccessLogEvent {
     pub host: String,
     pub instance_id: String,
     pub request_id: String,
+    /// 客户传入但不合规（非 `[A-Za-z0-9._-]{1,128}`）而被替换的原始 `X-Request-Id`（截断）；合规或未传时为空。
+    pub client_request_id: String,
     pub trace_id: String,
     pub span_id: String,
     pub parent_span_id: String,
@@ -157,6 +159,7 @@ pub struct AccessLogEventBuilder {
     host: String,
     instance_id: String,
     request_id: String,
+    client_request_id: String,
     trace_id: String,
     span_id: String,
     parent_span_id: String,
@@ -202,13 +205,14 @@ impl AccessLogEventBuilder {
     #[must_use]
     pub fn new(service: impl Into<String>) -> Self {
         let service = service.into();
-        let context = TraceContext::current();
+        let context = current_request_trace().unwrap_or_else(TraceContext::current);
         Self {
             message: "request_completed".to_string(),
             service,
             host: resolve_host(),
             instance_id: resolve_instance_id(),
             request_id: context.request_id.to_string(),
+            client_request_id: context.client_request_id.to_string(),
             trace_id: context.trace_id.to_string(),
             span_id: context.span_id.to_string(),
             parent_span_id: context.parent_span_id.to_string(),
@@ -260,6 +264,7 @@ impl AccessLogEventBuilder {
     #[must_use]
     pub fn trace_context(mut self, context: &TraceContext) -> Self {
         self.request_id = context.request_id.to_string();
+        self.client_request_id = context.client_request_id.to_string();
         self.trace_id = context.trace_id.to_string();
         self.span_id = context.span_id.to_string();
         self.parent_span_id = context.parent_span_id.to_string();
@@ -347,6 +352,7 @@ impl AccessLogEventBuilder {
             host: self.host,
             instance_id: self.instance_id,
             request_id: self.request_id,
+            client_request_id: self.client_request_id,
             trace_id: self.trace_id,
             span_id: self.span_id,
             parent_span_id: self.parent_span_id,
@@ -402,26 +408,38 @@ pub struct TraceContext {
     pub trace_id: Arc<str>,
     pub span_id: Arc<str>,
     pub parent_span_id: Arc<str>,
+    /// W3C `trace-flags` 的 sampled 位：本段 span 的真实采样决定（`ParentBased` 跟随入站父节点）。
+    pub sampled: bool,
+    /// 入站 `X-Request-Id` 不合规被替换时的原值（截断），否则为空；只在入口服务有值。
+    pub client_request_id: Arc<str>,
 }
 
 impl TraceContext {
     /// 以 `span` 的 OpenTelemetry 上下文作为本段链路 ID；`parent_span_id` 是远端父 span（无则为空）。
     ///
-    /// 仅当 OpenTelemetry 层未记录该 span（未启用 OTLP 导出）时，才退回随机 ID 以保证日志仍可关联。
+    /// 仅当 OpenTelemetry 层未记录该 span（未启用 OTLP 导出）时，才退回随机 ID 以保证日志仍可关联，
+    /// 此时没有任何 span 会被导出，sampled 为 `false`。
     #[must_use]
     pub fn for_span(request_id: Arc<str>, span: &tracing::Span, parent_span_id: Arc<str>) -> Self {
-        let (trace_id, span_id) = match crate::trace_propagation::span_context_of(span) {
+        let (trace_id, span_id, sampled) = match crate::trace_propagation::span_context_of(span) {
             Some(span_context) => (
                 span_context.trace_id().to_string(),
                 span_context.span_id().to_string(),
+                span_context.is_sampled(),
             ),
-            None => (Uuid::new_v4().simple().to_string(), current_span_id()),
+            None => (
+                Uuid::new_v4().simple().to_string(),
+                current_span_id(),
+                false,
+            ),
         };
         Self {
             request_id,
             trace_id: trace_id.into(),
             span_id: span_id.into(),
             parent_span_id,
+            sampled,
+            client_request_id: Arc::from(""),
         }
     }
 
@@ -435,15 +453,24 @@ impl TraceContext {
         )
     }
 
+    /// 记下被替换的入站原始请求 ID（见 [`inbound_request_id`]）。
+    #[must_use]
+    pub fn with_client_request_id(mut self, client_request_id: Arc<str>) -> Self {
+        self.client_request_id = client_request_id;
+        self
+    }
+
     /// 以本上下文为父节点的远端 OpenTelemetry span 上下文；ID 非法时返回 `None`。
     #[must_use]
     pub fn span_context(&self) -> Option<opentelemetry::trace::SpanContext> {
-        crate::trace_propagation::remote_span_context(&self.trace_id, &self.span_id, true)
+        crate::trace_propagation::remote_span_context(&self.trace_id, &self.span_id, self.sampled)
     }
 
+    /// W3C `traceparent`；trace-flags 如实反映 sampled 位（`01` / `00`）。
     #[must_use]
     pub fn traceparent_value(&self) -> String {
-        format!("00-{}-{}-01", self.trace_id, self.span_id)
+        let flags = if self.sampled { "01" } else { "00" };
+        format!("00-{}-{}-{flags}", self.trace_id, self.span_id)
     }
 
     /// Insert W3C/`x-*` correlation headers into an existing map (avoids an extra map alloc).
@@ -464,6 +491,21 @@ impl TraceContext {
         self.write_propagate_headers(&mut headers);
         headers
     }
+}
+
+tokio::task_local! {
+    static REQUEST_TRACE: TraceContext;
+}
+
+/// 在 `fut` 内把 `trace` 设为本请求的链路上下文（入口中间件调用），供错误响应与访问日志取真实请求 ID。
+pub async fn scope_request_trace<F: std::future::Future>(trace: TraceContext, fut: F) -> F::Output {
+    REQUEST_TRACE.scope(trace, fut).await
+}
+
+/// 当前任务所在请求的链路上下文；不在请求作用域内（后台任务等）时为 `None`。
+#[must_use]
+pub fn current_request_trace() -> Option<TraceContext> {
+    REQUEST_TRACE.try_with(Clone::clone).ok()
 }
 
 pub trait TraceHeaderSource {
@@ -490,35 +532,83 @@ impl<S: std::hash::BuildHasher> TraceHeaderSource for HashMap<String, String, S>
     }
 }
 
-/// Normalize a correlation id into a **hyphenated UUID** string when possible.
-///
-/// - Accepts standard UUID and 32-hex "simple" form
-/// - Always returns lowercase `8-4-4-4-12`
-/// - Empty / unparsable non-UUID values: generate a new UUID (empty) or keep raw
-///   opaque ids that are not UUID-shaped (rare custom clients)
+/// 请求 ID 最大长度；与字符集 `[A-Za-z0-9._-]` 一起构成对外协议（`docs/tenant-integration-protocol.md` §2.1）。
+pub const REQUEST_ID_MAX_LEN: usize = 128;
+/// 被替换的入站原始请求 ID 最多保留的字节数。
+pub const CLIENT_REQUEST_ID_MAX_LEN: usize = 256;
+
+/// 是否为合规请求 ID：`[A-Za-z0-9._-]{1,128}`。
 #[must_use]
-pub fn normalize_request_id_uuid(raw: &str) -> String {
+pub fn is_valid_request_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= REQUEST_ID_MAX_LEN
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+/// 合规则原样使用，否则（含空值）生成新 UUID。用于内部跳转收到的请求 ID。
+#[must_use]
+pub fn request_id_or_new(raw: &str) -> Arc<str> {
     let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Uuid::new_v4().to_string();
-    }
-    match Uuid::parse_str(trimmed) {
-        Ok(id) => id.to_string(),
-        Err(_) => trimmed.to_string(),
+    if is_valid_request_id(trimmed) {
+        trimmed.into()
+    } else {
+        Uuid::new_v4().to_string().into()
     }
 }
 
-/// 请求 ID：`x-request-id`（兼容 `request-id`/`request_id`），统一成带连字符的 UUID；缺失时新生成。
+/// 入口对 `X-Request-Id` 的判定结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboundRequestId {
+    /// 本次请求的请求 ID：合规的入站值原样保留，否则为新生成的 UUID。
+    pub request_id: Arc<str>,
+    /// 入站值不合规时的原值（按字节截断到 [`CLIENT_REQUEST_ID_MAX_LEN`]），否则为空。
+    pub client_request_id: Arc<str>,
+}
+
+/// 入口判定 `X-Request-Id`：合规（`[A-Za-z0-9._-]{1,128}`）原样保留；缺失则新生成 UUID；
+/// 不合规则替换为新 UUID，原值（含非 ASCII 字节，按 UTF-8 宽松解码）截断后另存。
+#[must_use]
+pub fn inbound_request_id(headers: &HeaderMap) -> InboundRequestId {
+    let raw = headers
+        .get("x-request-id")
+        .map(|value| String::from_utf8_lossy(value.as_bytes()).trim().to_string())
+        .filter(|value| !value.is_empty());
+    match raw {
+        Some(value) if is_valid_request_id(&value) => InboundRequestId {
+            request_id: value.into(),
+            client_request_id: Arc::from(""),
+        },
+        Some(value) => InboundRequestId {
+            request_id: Uuid::new_v4().to_string().into(),
+            client_request_id: truncate_utf8(&value, CLIENT_REQUEST_ID_MAX_LEN).into(),
+        },
+        None => InboundRequestId {
+            request_id: Uuid::new_v4().to_string().into(),
+            client_request_id: Arc::from(""),
+        },
+    }
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let mut end = max_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
+}
+
+/// 内部跳转读取 `x-request-id`（入口中间件已写回合规值）；缺失或不合规时新生成。
 #[must_use]
 pub fn request_id_from_headers<H: TraceHeaderSource>(headers: &H) -> Arc<str> {
-    let raw_request_id = headers
-        .header_value("x-request-id")
-        .or_else(|| headers.header_value("request-id"))
-        .or_else(|| headers.header_value("request_id"));
-    match raw_request_id {
-        Some(value) => normalize_request_id_uuid(&value).into(),
-        None => Uuid::new_v4().to_string().into(),
-    }
+    headers.header_value("x-request-id").map_or_else(
+        || Uuid::new_v4().to_string().into(),
+        |value| request_id_or_new(&value),
+    )
 }
 
 /// 读取入口中间件写回请求头的链路上下文（`traceparent` 即入口 span）。
@@ -535,11 +625,13 @@ pub fn parse_trace_context<H: TraceHeaderSource>(headers: &H) -> TraceContext {
         .as_deref()
         .and_then(parse_traceparent_value)
     {
-        Some((trace_id, span_id)) => TraceContext {
+        Some((trace_id, span_id, sampled)) => TraceContext {
             request_id,
             trace_id: trace_id.into(),
             span_id: span_id.into(),
             parent_span_id,
+            sampled,
+            client_request_id: Arc::from(""),
         },
         None => TraceContext::for_span(request_id, &tracing::Span::current(), parent_span_id),
     }
@@ -617,6 +709,7 @@ macro_rules! emit_access_log_for_target {
             host = %$event.host,
             instance_id = %$event.instance_id,
             request_id = %$event.request_id,
+            client_request_id = %$event.client_request_id,
             trace_id = %$event.trace_id,
             span_id = %$event.span_id,
             parent_span_id = %$event.parent_span_id,
@@ -685,6 +778,7 @@ fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
         host = %event.host,
         instance_id = %event.instance_id,
         request_id = %event.request_id,
+        client_request_id = %event.client_request_id,
         trace_id = %event.trace_id,
         span_id = %event.span_id,
         parent_span_id = %event.parent_span_id,
@@ -752,35 +846,88 @@ fn resolve_instance_id() -> String {
     process::id().to_string()
 }
 
-fn parse_traceparent_value(value: &str) -> Option<(String, String)> {
-    let mut parts = value.trim().split('-');
-    let (_version, trace_id, span_id, _flags) =
-        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
-    crate::trace_propagation::remote_span_context(trace_id, span_id, true).map(|span_context| {
+fn parse_traceparent_value(value: &str) -> Option<(String, String, bool)> {
+    crate::trace_spans::span_context_from_traceparent(value).map(|span_context| {
         (
             span_context.trace_id().to_string(),
             span_context.span_id().to_string(),
+            span_context.is_sampled(),
         )
     })
 }
 
 #[cfg(test)]
-mod request_id_uuid_tests {
-    use super::{TraceContext, normalize_request_id_uuid, parse_trace_context};
+mod request_id_tests {
+    use super::{
+        CLIENT_REQUEST_ID_MAX_LEN, TraceContext, current_request_trace, inbound_request_id,
+        is_valid_request_id, parse_trace_context, request_id_or_new, scope_request_trace,
+    };
+    use axum::http::{HeaderMap, HeaderValue};
     use std::collections::HashMap;
     use std::sync::Arc;
     use uuid::Uuid;
 
     #[test]
-    fn normalize_accepts_simple_and_hyphenated() {
-        let simple = "6e7f448edae94db78e5e9f87f1402eaa";
-        let hyphen = "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa";
-        assert_eq!(normalize_request_id_uuid(simple), hyphen);
-        assert_eq!(normalize_request_id_uuid(hyphen), hyphen);
-        assert_eq!(
-            normalize_request_id_uuid("6E7F448EDAE94DB78E5E9F87F1402EAA"),
-            hyphen
+    fn valid_request_id_charset_and_length() {
+        assert!(is_valid_request_id("6e7f448edae94db78e5e9f87f1402eaa"));
+        assert!(is_valid_request_id("probe-0193a1b2.c3_d4"));
+        assert!(is_valid_request_id(&"a".repeat(128)));
+        assert!(!is_valid_request_id(&"a".repeat(129)));
+        assert!(!is_valid_request_id(""));
+        assert!(!is_valid_request_id("has space"));
+        assert!(!is_valid_request_id("中文"));
+        assert!(!is_valid_request_id("a/b"));
+    }
+
+    #[test]
+    fn conforming_inbound_id_is_kept_verbatim() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-request-id",
+            HeaderValue::from_static("6E7F448EDAE94DB78E5E9F87F1402EAA"),
         );
+        let inbound = inbound_request_id(&headers);
+        assert_eq!(
+            inbound.request_id.as_ref(),
+            "6E7F448EDAE94DB78E5E9F87F1402EAA"
+        );
+        assert!(inbound.client_request_id.is_empty());
+    }
+
+    #[test]
+    fn non_conforming_inbound_id_is_replaced_and_original_kept() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-request-id", HeaderValue::from_static("order 42/abc"));
+        let inbound = inbound_request_id(&headers);
+        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert_eq!(inbound.client_request_id.as_ref(), "order 42/abc");
+
+        let long = "x".repeat(300);
+        headers.insert("x-request-id", HeaderValue::from_str(&long).expect("ascii"));
+        let inbound = inbound_request_id(&headers);
+        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert_eq!(inbound.client_request_id.len(), CLIENT_REQUEST_ID_MAX_LEN);
+
+        headers.insert(
+            "x-request-id",
+            HeaderValue::from_bytes("订单-1".as_bytes()).expect("opaque bytes"),
+        );
+        let inbound = inbound_request_id(&headers);
+        assert_eq!(inbound.client_request_id.as_ref(), "订单-1");
+    }
+
+    #[test]
+    fn missing_inbound_id_generates_uuid_without_client_id() {
+        let inbound = inbound_request_id(&HeaderMap::new());
+        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert!(inbound.client_request_id.is_empty());
+    }
+
+    #[test]
+    fn internal_hop_id_kept_or_regenerated() {
+        assert_eq!(request_id_or_new("abc-1").as_ref(), "abc-1");
+        assert!(Uuid::parse_str(&request_id_or_new("bad id")).is_ok());
+        assert!(Uuid::parse_str(&request_id_or_new("")).is_ok());
     }
 
     #[test]
@@ -790,11 +937,15 @@ mod request_id_uuid_tests {
         assert_eq!(ctx.request_id.len(), 36);
         assert_eq!(ctx.trace_id.len(), 32);
         assert_eq!(ctx.span_id.len(), 16);
+        assert!(
+            !ctx.sampled,
+            "nothing exports without an OpenTelemetry span"
+        );
         assert!(ctx.span_context().is_some());
     }
 
     #[test]
-    fn parse_reads_traceparent_and_normalizes_request_id() {
+    fn parse_reads_traceparent_flags_and_keeps_request_id() {
         let mut headers = HashMap::new();
         headers.insert(
             "x-request-id".to_string(),
@@ -802,20 +953,22 @@ mod request_id_uuid_tests {
         );
         headers.insert(
             "traceparent".to_string(),
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_string(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00".to_string(),
         );
         headers.insert(
             "x-parent-span-id".to_string(),
             "b7ad6b7169203331".to_string(),
         );
         let ctx = parse_trace_context(&headers);
-        assert_eq!(
-            ctx.request_id.as_ref(),
-            "6e7f448e-dae9-4db7-8e5e-9f87f1402eaa"
-        );
+        assert_eq!(ctx.request_id.as_ref(), "6e7f448edae94db78e5e9f87f1402eaa");
         assert_eq!(ctx.trace_id.as_ref(), "4bf92f3577b34da6a3ce929d0e0e4736");
         assert_eq!(ctx.span_id.as_ref(), "00f067aa0ba902b7");
         assert_eq!(ctx.parent_span_id.as_ref(), "b7ad6b7169203331");
+        assert!(!ctx.sampled);
+        assert_eq!(
+            ctx.traceparent_value(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"
+        );
     }
 
     #[test]
@@ -827,20 +980,39 @@ mod request_id_uuid_tests {
         assert_ne!(ctx.trace_id.as_ref(), "abc");
     }
 
-    #[test]
-    fn trace_context_span_context_round_trip() {
-        let ctx = TraceContext {
+    fn fixed_context(sampled: bool) -> TraceContext {
+        TraceContext {
             request_id: Arc::from("r"),
             trace_id: Arc::from("4bf92f3577b34da6a3ce929d0e0e4736"),
             span_id: Arc::from("00f067aa0ba902b7"),
             parent_span_id: Arc::from(""),
-        };
+            sampled,
+            client_request_id: Arc::from(""),
+        }
+    }
+
+    #[test]
+    fn trace_context_span_context_round_trip() {
+        let ctx = fixed_context(true);
         let span_context = ctx.span_context().expect("valid ids");
         assert_eq!(span_context.trace_id().to_string(), ctx.trace_id.as_ref());
         assert_eq!(span_context.span_id().to_string(), ctx.span_id.as_ref());
+        assert!(span_context.is_sampled());
         assert_eq!(
             ctx.traceparent_value(),
             "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
         );
+        let unsampled = fixed_context(false);
+        assert!(!unsampled.span_context().expect("valid ids").is_sampled());
+        assert!(unsampled.traceparent_value().ends_with("-00"));
+    }
+
+    #[tokio::test]
+    async fn request_trace_scope_is_visible_inside_only() {
+        assert!(current_request_trace().is_none());
+        let ctx = fixed_context(true);
+        let seen = scope_request_trace(ctx.clone(), async { current_request_trace() }).await;
+        assert_eq!(seen, Some(ctx));
+        assert!(current_request_trace().is_none());
     }
 }

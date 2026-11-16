@@ -40,7 +40,7 @@ pub fn request_context_values(request_id: Option<&str>, trace_id: Option<&str>) 
     let generated_span_id = generated.span_id.to_string();
     let generated_parent_span_id = generated.parent_span_id.to_string();
     let request_id = match request_id.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => crate::normalize_request_id_uuid(value),
+        Some(value) => crate::request_id_or_new(value).to_string(),
         None => generated.request_id.to_string(),
     };
     let trace_id = match trace_id.map(str::trim).filter(|value| !value.is_empty()) {

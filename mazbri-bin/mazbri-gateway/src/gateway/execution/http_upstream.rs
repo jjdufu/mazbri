@@ -277,6 +277,7 @@ fn build_invoke_request(
                 .cloned()
                 .unwrap_or_else(|| trace_context.span_id.to_string()),
             parent_span_id: trace_context.parent_span_id.to_string(),
+            sampled: trace_context.sampled,
         }),
         timeout_ms,
         payload_json,

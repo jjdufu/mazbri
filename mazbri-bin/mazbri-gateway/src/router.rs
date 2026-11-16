@@ -206,9 +206,7 @@ async fn init_product_service(
             }
         }
     } else {
-        tracing::info!(
-            "No cache_database configured; product snapshot cache_enabled stays false"
-        );
+        tracing::info!("No cache_database configured; product snapshot cache_enabled stays false");
         None
     };
     let product_service = Arc::new(ProductService::new(
@@ -665,6 +663,12 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         header::HeaderName::from_static("x-mazbri-signature-input"),
         header::HeaderName::from_static("x-mazbri-key-id"),
     ];
+    // 浏览器端可读的响应头：请求 ID 与链路上下文（协议 §2.1）。
+    let exposed = [
+        header::HeaderName::from_static("x-request-id"),
+        header::HeaderName::from_static("traceparent"),
+        header::RETRY_AFTER,
+    ];
 
     // Wildcard is allowed when credentials are off (enforced in CorsConfig::validate).
     // Never use CorsLayer::permissive() (it is overly open).
@@ -673,7 +677,8 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         return CorsLayer::new()
             .allow_origin(AllowOrigin::any())
             .allow_methods(methods)
-            .allow_headers(headers);
+            .allow_headers(headers)
+            .expose_headers(exposed);
     }
 
     let mut origins = Vec::new();
@@ -706,7 +711,8 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
     let mut cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
         .allow_methods(methods)
-        .allow_headers(headers);
+        .allow_headers(headers)
+        .expose_headers(exposed);
     if config.allow_credentials {
         cors = cors.allow_credentials(true);
     }
@@ -760,19 +766,24 @@ async fn concurrency_limit_middleware(
 /// Covers `RequestBodyLimit` 413, hyper/timeout 空 body 500/504 等，避免客户端
 /// 只看到 status 却解析不出 error 字段（G-16 收尾）。
 async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Response {
-    // Prefer already-normalized id from request_id_middleware (inner layer may
-    // not have run yet depending on stack order); always coerce UUID shape.
-    let request_id = req
+    let response = next.run(req).await;
+    // 本层在 request_id_middleware 外侧：请求 ID 取内层已回写的响应头，替换响应时原样带回关联头。
+    let request_id = response
         .headers()
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .filter(|s| !s.is_empty())
-        .map(mazbri_core::normalize_request_id_uuid);
-    let response = next.run(req).await;
+        .map(ToString::to_string);
     let status = response.status();
     if status == StatusCode::PAYLOAD_TOO_LARGE {
-        return ProxyError::PayloadTooLarge("Request body exceeds size limit".to_string())
-            .into_response();
+        let mut replaced = crate::gateway::response::gateway_error_response(
+            status,
+            ProxyError::PayloadTooLarge(String::new()).error_code(),
+            "Payload Too Large: Request body exceeds size limit",
+            request_id,
+        );
+        carry_trace_headers(response.headers(), replaced.headers_mut());
+        return replaced;
     }
     if !status.is_client_error() && !status.is_server_error() {
         return response;
@@ -815,7 +826,19 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
         original_body_len = bytes.len(),
         message = "Replaced empty/non-JSON error body with gateway envelope"
     );
-    crate::gateway::response::gateway_error_response(status, code, message, request_id)
+    let mut replaced =
+        crate::gateway::response::gateway_error_response(status, code, message, request_id);
+    carry_trace_headers(&parts.headers, replaced.headers_mut());
+    replaced
+}
+
+/// 替换错误响应时带回内层已写的关联头（`x-request-id`、`traceparent`）。
+fn carry_trace_headers(from: &axum::http::HeaderMap, to: &mut axum::http::HeaderMap) {
+    for name in ["x-request-id", "traceparent"] {
+        if let Some(value) = from.get(name) {
+            to.insert(name, value.clone());
+        }
+    }
 }
 
 fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {

@@ -156,6 +156,8 @@ impl BypassProbeClient {
                 trace_id: request_id.to_owned(),
                 span_id: uuid::Uuid::new_v4().to_string(),
                 parent_span_id: String::new(),
+                // 探针用于排障，总是采样。
+                sampled: true,
             },
             timeout_ms: params.timeout_ms,
             payload_json: params.payload_json.to_owned(),

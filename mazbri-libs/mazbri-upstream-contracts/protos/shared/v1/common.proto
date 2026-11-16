@@ -16,6 +16,8 @@ message TraceContext {
   string trace_id = 2;
   string span_id = 3;
   string parent_span_id = 4;
+  // W3C trace-flags sampled 位；下游按它决定是否导出 span（ParentBased），不得写死。
+  bool sampled = 5;
 }
 
 message UpstreamBody {

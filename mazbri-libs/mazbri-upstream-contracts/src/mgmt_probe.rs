@@ -41,6 +41,7 @@ pub struct ProbeTrace {
     pub trace_id: String,
     pub span_id: String,
     pub parent_span_id: String,
+    pub sampled: bool,
 }
 
 /// 探针响应体；由 proto [`InvokeResponse`] 转换而来。
@@ -85,12 +86,14 @@ impl From<ProbeTrace> for TraceContext {
             trace_id,
             span_id,
             parent_span_id,
+            sampled,
         } = t;
         Self {
             request_id,
             trace_id,
             span_id,
             parent_span_id,
+            sampled,
         }
     }
 }
@@ -200,6 +203,7 @@ mod tests {
                 trace_id: "tr".into(),
                 span_id: "sp".into(),
                 parent_span_id: String::new(),
+                sampled: true,
             },
             timeout_ms: 1500,
             payload_json: "{\"a\":1}".into(),

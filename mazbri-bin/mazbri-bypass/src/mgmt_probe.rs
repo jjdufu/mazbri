@@ -160,6 +160,7 @@ mod tests {
                 trace_id: "req-1".into(),
                 span_id: "span-1".into(),
                 parent_span_id: String::new(),
+                sampled: true,
             },
             timeout_ms: 1000,
             payload_json: "{}".into(),
