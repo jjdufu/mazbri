@@ -71,6 +71,11 @@ pub struct RequestLogRow {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
+    pub error_source: String,
+    pub retry_reasons: Vec<String>,
+    pub api_key_id: String,
+    pub client_request_id: String,
+    pub upstream_request_id: String,
     pub log_file: String,
     pub raw: String,
 }
@@ -120,6 +125,11 @@ impl From<RequestLogRow> for RequestLogEntry {
             error_code: row.error_code,
             error_stage: row.error_stage,
             response_flags: row.response_flags,
+            error_source: row.error_source,
+            retry_reasons: row.retry_reasons,
+            api_key_id: row.api_key_id,
+            client_request_id: row.client_request_id,
+            upstream_request_id: row.upstream_request_id,
             log_file: row.log_file,
             raw: row.raw,
         }

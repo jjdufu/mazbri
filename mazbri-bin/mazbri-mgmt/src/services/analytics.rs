@@ -472,6 +472,14 @@ pub struct CallMonitorItem {
     pub error_code: Option<String>,
     pub error_stage: String,
     pub response_flags: String,
+    /// 失败归因：`client` | `gateway` | `upstream`；成功为空串。
+    pub error_source: String,
+    /// 本次请求的内部重试次数（按台账计数）。
+    pub retry_count: u64,
+    /// 调用方 API Key 的凭证 ID。
+    pub api_key_id: String,
+    /// 上游返回的流水号（按渠道 `request_id_header` 提取）。
+    pub upstream_request_id: String,
     pub detail: serde_json::Value,
 }
 #[derive(Debug, serde::Serialize)]
@@ -1030,6 +1038,10 @@ fn map_call_monitor_item(
         error_code,
         error_stage: string_field(&row, "error_stage"),
         response_flags: string_field(&row, "response_flags"),
+        error_source: string_field(&row, "error_source"),
+        retry_count: u64_field(&row, "retry_count"),
+        api_key_id: string_field(&row, "api_key_id"),
+        upstream_request_id: string_field(&row, "upstream_request_id"),
         detail: row,
     }
 }

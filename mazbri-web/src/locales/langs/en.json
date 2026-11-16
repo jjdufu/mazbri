@@ -479,7 +479,11 @@
           "postResponseLatency": "Post-response",
           "statusCode": "Status Code",
           "requestIp": "Request IP",
-          "responseResult": "Response Result"
+          "responseResult": "Response Result",
+          "errorSource": "Error Source",
+          "retryCount": "Retries",
+          "apiKeyId": "API Key ID",
+          "upstreamRequestId": "Upstream Request ID"
         }
       },
       "placeholders": {
