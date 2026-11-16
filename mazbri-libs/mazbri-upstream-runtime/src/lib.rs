@@ -48,5 +48,5 @@ pub use token_cache::{CachedToken, StaleEvict, TokenCache};
 pub use types::{
     AuthRejectTrigger, AuthRejection, BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError,
     ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, RetryReason,
-    RetrySkip, StageResult, StageSummary, UpstreamMeta,
+    RetrySkip, StageResult, StageSummary, StageTiming, UpstreamMeta,
 };

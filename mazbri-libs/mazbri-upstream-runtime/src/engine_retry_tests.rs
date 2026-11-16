@@ -202,6 +202,22 @@ async fn rejected_then_refreshed_token_succeeds() {
     assert_eq!(up.api_hits(), 2);
     assert_eq!(up.token_hits(), 2, "initial fetch + one refresh");
     assert_eq!(*up.last_token.lock().unwrap(), "T2");
+    // 轻量阶段耗时总是采集（生产模式也有），重试轮带 `#retry` 后缀。
+    let stages: Vec<(&str, bool)> = result
+        .stage_timings
+        .iter()
+        .map(|t| (t.name.as_str(), t.ok))
+        .collect();
+    assert_eq!(
+        stages,
+        vec![
+            ("egress_build", true),
+            ("upstream_auth", true),
+            ("upstream_wire", false),
+            ("upstream_auth#retry", true),
+            ("upstream_wire#retry", true),
+        ]
+    );
 }
 
 #[tokio::test]

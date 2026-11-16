@@ -1,5 +1,6 @@
 use super::metrics::BALANCE_PRECHECK_TOTAL;
 use super::post_response::build_billing_calculator;
+use super::stage_log::stage_log;
 use crate::router::AppState;
 use axum::{
     extract::{Request, State},
@@ -9,7 +10,7 @@ use axum::{
 };
 use mazbri_auth::TenantContext;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::warn;
 
 use super::handler::PRODUCT_ACCESS_DENIED;
 use super::response::{ProxyError, gateway_error_response};
@@ -58,6 +59,7 @@ async fn skip_check(
 }
 
 struct StageTimes {
+    stage: super::stage_log::StageCtx,
     stage_start: Instant,
     product_detail_lookup_ms: u128,
     check_balance_started_at: Instant,
@@ -88,13 +90,18 @@ async fn reject_insufficient(
         .product(product_id)
         .failed()
         .record();
-    warn!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-        tenant_id = % tenant_context.tenant_id, product_id = % product_id,
+    stage_log!(
+        warn,
+        "gateway.stage",
+        &times.stage,
+        &stage_ids,
+        "balance_check",
+        bal_ms,
         product_detail_lookup_ms = times.product_detail_lookup_ms,
         check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),
-        allowed = false, cache_source, message = "Gateway balance check stage rejected request"
+        allowed = false,
+        cache_source,
+        message = "Gateway balance check stage rejected request",
     );
 }
 
@@ -118,13 +125,18 @@ fn log_infra_failure(
         .product(product_id)
         .failed()
         .record();
-    warn!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-        tenant_id = % tenant_context.tenant_id, product_id = % product_id,
+    stage_log!(
+        warn,
+        "gateway.stage",
+        &times.stage,
+        &stage_ids,
+        "balance_check",
+        bal_ms,
         product_detail_lookup_ms = times.product_detail_lookup_ms,
         check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),
-        allowed = fail_open, cache_source, message = "Gateway balance check stage failed"
+        allowed = fail_open,
+        cache_source,
+        message = "Gateway balance check stage failed",
     );
 }
 
@@ -136,24 +148,24 @@ fn estimate_cost(
         .amount
 }
 
-fn log_allowed(
-    tenant_context: &TenantContext,
-    product_id: &str,
-    cache_source: &'static str,
-    times: &StageTimes,
-) {
+fn log_allowed(product_id: &str, cache_source: &'static str, times: &StageTimes) {
     let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
     let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
         .product(product_id)
         .record();
     if super::stage_log::should_log_stage_info(bal_ms) {
-        info!(
-            target : "gateway.stage", service = "mazbri-gateway", stage_name =
-            "balance_check", stage_ms = bal_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-            tenant_id = % tenant_context.tenant_id, product_id = % product_id,
+        stage_log!(
+            info,
+            "gateway.stage",
+            &times.stage,
+            &stage_ids,
+            "balance_check",
+            bal_ms,
             product_detail_lookup_ms = times.product_detail_lookup_ms,
             check_balance_ms = times.check_balance_started_at.elapsed().as_millis(),
-            allowed = true, cache_source, message = "Gateway balance check stage completed"
+            allowed = true,
+            cache_source,
+            message = "Gateway balance check stage completed",
         );
     }
 }
@@ -275,7 +287,16 @@ pub async fn balance_check_middleware(
     )
     .await;
 
+    let request_id = mazbri_core::current_request_trace()
+        .map(|trace| trace.request_id.to_string())
+        .unwrap_or_default();
     let times = StageTimes {
+        stage: super::stage_log::StageCtx::from_extensions(
+            request.extensions(),
+            &request_id,
+            &tenant_context.tenant_id,
+            Some(product_id),
+        ),
         stage_start,
         product_detail_lookup_ms,
         check_balance_started_at,
@@ -294,7 +315,7 @@ pub async fn balance_check_middleware(
             request.extensions_mut().insert(product_detail);
             timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             request.extensions_mut().insert(timing);
-            log_allowed(&tenant_context, product_id, cache_source, &times);
+            log_allowed(product_id, cache_source, &times);
             Ok(next.run(request).await)
         }
         Ok((false, cache_source)) => {

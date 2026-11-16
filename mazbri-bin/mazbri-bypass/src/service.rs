@@ -13,7 +13,7 @@ use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
     pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
-    RuntimeOptions, SsrfChecker,
+    RuntimeOptions, SsrfChecker, StageTiming,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -252,10 +252,13 @@ impl MazbriBypassServiceImpl {
             channel_id = %req.channel_id
         );
         let trace_context = bypass_trace_context(&req, &span);
-        let (response, spec) = async {
+        let (response, spec, stages) = async {
             match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
-                Ok(spec) => (self.execute_once(&req, &spec).await, Some(spec)),
-                Err(error) => (invoke_error(error), None),
+                Ok(spec) => {
+                    let (response, stages) = self.execute_once(&req, &spec).await;
+                    (response, Some(spec), stages)
+                }
+                Err(error) => (invoke_error(error), None, Vec::new()),
             }
         }
         .instrument(span)
@@ -266,17 +269,16 @@ impl MazbriBypassServiceImpl {
             emit_config_cache_miss(&req, &trace_context, &response.error);
             return response;
         }
-        emit_bypass_access(
-            &AccessCtx {
-                service_name: self.service_name.as_ref(),
-                user_agent: self.user_agent.as_ref(),
-                req: &req,
-                trace_context: &trace_context,
-                spec: spec.as_ref(),
-                start_time,
-            },
-            &response,
-        );
+        let ctx = AccessCtx {
+            service_name: self.service_name.as_ref(),
+            user_agent: self.user_agent.as_ref(),
+            req: &req,
+            trace_context: &trace_context,
+            spec: spec.as_ref(),
+            start_time,
+        };
+        emit_bypass_access(&ctx, &response);
+        emit_bypass_stages(&ctx, &response, &stages);
         response
     }
 
@@ -290,26 +292,23 @@ impl MazbriBypassServiceImpl {
         })
     }
 
+    /// 执行一次上游调用，返回结果与各阶段耗时（运行时三段 + 本地 `response_decode`）。
     async fn execute_once(
         &self,
         req: &upstream_proto::InvokeRequest,
         spec: &ChannelEgressSpec,
-    ) -> upstream_proto::InvokeResponse {
+    ) -> (upstream_proto::InvokeResponse, Vec<StageTiming>) {
         let start_time = Instant::now();
         let config = match self
             .resolve_supplier_config(&req.supplier_config_hash, &req.supplier_config_json)
         {
             Ok(cfg) => cfg,
-            Err(error) => return invoke_error(error),
+            Err(error) => return (invoke_error(error), Vec::new()),
         };
 
-        let payload: serde_json::Value = if req.payload_json.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            match serde_json::from_str(&req.payload_json) {
-                Ok(v) => v,
-                Err(e) => return invoke_error(format!("invalid payload_json: {e}")),
-            }
+        let payload = match parse_payload(&req.payload_json) {
+            Ok(v) => v,
+            Err(error) => return (invoke_error(error), Vec::new()),
         };
 
         let timeout = if req.timeout_ms > 0 {
@@ -336,7 +335,7 @@ impl MazbriBypassServiceImpl {
         let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {
             Some(id) if !id.is_empty() => match self.load_artifact_bytes(id).await {
                 Ok(bytes) => bytes,
-                Err(error) => return invoke_error(error),
+                Err(error) => return (invoke_error(error), Vec::new()),
             },
             _ => None,
         };
@@ -365,7 +364,7 @@ impl MazbriBypassServiceImpl {
             cache_key: None,
         };
 
-        let result = {
+        let mut result = {
             let span = tracing::info_span!(
                 "upstream.http",
                 channel_id = %req.channel_id,
@@ -376,6 +375,8 @@ impl MazbriBypassServiceImpl {
         let duration = start_time.elapsed().as_secs_f64();
         let adapter = spec.adapter.as_str();
         let retries = InternalRetries::of(&result);
+        let mut stages = std::mem::take(&mut result.stage_timings);
+        let decode_start = Instant::now();
 
         let response = if let Some(ref code) = result.error_code {
             let err_msg = result
@@ -393,7 +394,12 @@ impl MazbriBypassServiceImpl {
         } else {
             invoke_success(result, &spec.adapter, duration)
         };
-        retries.attach(response)
+        stages.push(StageTiming {
+            name: "response_decode".into(),
+            ms: mazbri_core::num::millis_u64(decode_start.elapsed()),
+            ok: response.success,
+        });
+        (retries.attach(response), stages)
     }
 }
 
@@ -506,6 +512,14 @@ fn invoke_success(
     }
 }
 
+/// 解析调用载荷；空串视为 `{}`。
+fn parse_payload(payload_json: &str) -> Result<serde_json::Value, String> {
+    if payload_json.trim().is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+    serde_json::from_str(payload_json).map_err(|e| format!("invalid payload_json: {e}"))
+}
+
 fn proto_upstream_meta(meta: mazbri_upstream_runtime::UpstreamMeta) -> upstream_proto::InvokeUpstreamMeta {
     upstream_proto::InvokeUpstreamMeta {
         status: u32::from(meta.status),
@@ -605,6 +619,42 @@ fn emit_config_cache_miss(
         supplier_code = %req.supplier_code,
         "bypass.config_cache_miss"
     );
+}
+
+/// bypass 阶段日志（target `bypass.stage`，与网关阶段日志同表）：每次真正执行上游调用写
+/// `egress_build`、`upstream_auth`、`upstream_wire`、`response_decode` 各一行（认证重试轮另有
+/// `#retry` 行），维度与访问行一致，可按 `request_id` / `trace_id` 和网关阶段串起来。
+fn emit_bypass_stages(
+    ctx: &AccessCtx<'_>,
+    response: &upstream_proto::InvokeResponse,
+    stages: &[StageTiming],
+) {
+    let req = ctx.req;
+    let adapter = ctx.spec.map_or("", |s| s.adapter.as_str());
+    for stage in stages {
+        tracing::info!(
+            target: "bypass.stage",
+            service = %ctx.service_name,
+            stage_name = %stage.name,
+            stage_ms = stage.ms,
+            request_id = %ctx.trace_context.request_id,
+            trace_id = %ctx.trace_context.trace_id,
+            span_id = %ctx.trace_context.span_id,
+            tenant_id = %req.tenant_id,
+            tenant_code = %req.tenant_code,
+            product_id = %req.product_id,
+            supplier_id = %req.supplier_id,
+            supplier_code = %req.supplier_code,
+            channel_id = %req.channel_id,
+            channel_code = %req.channel_code,
+            attempt_order = req.attempt_order,
+            upstream_mode = %adapter,
+            result = if stage.ok { "ok" } else { "error" },
+            error_stage = if stage.ok { "" } else { stage.name.as_str() },
+            error_code = if stage.ok { "" } else { response.error.split(':').next().unwrap_or_default() },
+            message = "Bypass stage completed"
+        );
+    }
 }
 
 fn emit_bypass_access(ctx: &AccessCtx<'_>, response: &upstream_proto::InvokeResponse) {
@@ -745,6 +795,7 @@ mod retry_passthrough_tests {
                 -32001,
             ))],
             retry_skipped: None,
+            stage_timings: Vec::new(),
         }
     }
 

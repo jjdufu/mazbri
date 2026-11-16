@@ -99,3 +99,97 @@ impl StageSpan {
             .unwrap_or_default()
     }
 }
+
+/// 阶段日志的公共维度：每条 `gateway.stage` / `gateway.postpath` 行都带同一组租户、产品与路由字段，
+/// 未知的（如路由前的阶段没有渠道）记空串 / 0，不再各处手写、各处缺字段。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StageCtx {
+    pub request_id: String,
+    pub tenant_id: String,
+    pub tenant_code: String,
+    pub product_id: String,
+    pub supplier_code: String,
+    pub channel_id: String,
+    pub channel_code: String,
+    pub attempt_order: u32,
+}
+
+impl StageCtx {
+    #[must_use]
+    pub(crate) fn new(
+        request_id: &impl std::fmt::Display,
+        claims: &crate::auth::claims::MazbriClaims,
+        product_id: &str,
+    ) -> Self {
+        Self {
+            request_id: request_id.to_string(),
+            tenant_id: claims.tenant_id.clone(),
+            tenant_code: claims.tenant_code.clone(),
+            product_id: product_id.to_string(),
+            ..Self::default()
+        }
+    }
+
+    /// 从请求扩展取（鉴权之后的中间件用）：JWT claims 与当前请求 ID；缺 claims 时只带租户 ID。
+    #[must_use]
+    pub(crate) fn from_extensions(
+        extensions: &axum::http::Extensions,
+        request_id: &impl std::fmt::Display,
+        tenant_id: &impl std::fmt::Display,
+        product_id: Option<&str>,
+    ) -> Self {
+        let product_id = product_id.unwrap_or_default();
+        extensions
+            .get::<crate::auth::claims::MazbriClaims>()
+            .map_or_else(
+                || Self {
+                    request_id: request_id.to_string(),
+                    tenant_id: tenant_id.to_string(),
+                    product_id: product_id.to_string(),
+                    ..Self::default()
+                },
+                |claims| Self::new(request_id, claims, product_id),
+            )
+    }
+
+    /// 带上已选定的上游路由（供应商、渠道、第几个候选渠道）。
+    #[must_use]
+    pub(crate) fn route(mut self, route: Option<&super::execution::UpstreamRouteMetadata>) -> Self {
+        if let Some(route) = route {
+            self.supplier_code.clone_from(&route.supplier_code);
+            self.channel_id.clone_from(&route.channel_id);
+            self.channel_code.clone_from(&route.channel_code);
+            self.attempt_order = route.attempt_order;
+        }
+        self
+    }
+}
+
+/// 统一输出阶段日志：注入 `service`、`stage_name`、`stage_ms`、请求 / 链路 ID 与 [`StageCtx`] 的维度，
+/// 调用方只写本阶段特有的字段（不得再重复写上述字段）。
+///
+/// `stage_log!(info, "gateway.stage", &ctx, &stage_ids, "upstream", ms, result, message = "...")`
+macro_rules! stage_log {
+    ($level:ident, $target:literal, $ctx:expr, $ids:expr, $name:expr, $ms:expr, $($rest:tt)+) => {{
+        let ctx: &$crate::gateway::stage_log::StageCtx = $ctx;
+        let ids: &$crate::gateway::stage_log::StageSpanIds = $ids;
+        tracing::$level!(
+            target: $target,
+            service = "mazbri-gateway",
+            stage_name = $name,
+            stage_ms = $ms,
+            request_id = %ctx.request_id,
+            trace_id = %ids.trace_id,
+            span_id = %ids.span_id,
+            tenant_id = %ctx.tenant_id,
+            tenant_code = %ctx.tenant_code,
+            product_id = %ctx.product_id,
+            supplier_code = %ctx.supplier_code,
+            channel_id = %ctx.channel_id,
+            channel_code = %ctx.channel_code,
+            attempt_order = ctx.attempt_order,
+            $($rest)+
+        )
+    }};
+}
+pub(crate) use stage_log;

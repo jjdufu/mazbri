@@ -8,6 +8,7 @@ use super::metrics::{
 use super::request_binding::GatewayHttpPath;
 use super::response::ProxyError;
 use super::serializer::{SerializedProxyResponse, serialize_proxy_response};
+use super::stage_log::{StageCtx, stage_log};
 use super::validation::{GatewayRequest, GatewayRequestPayload, sanitize_input};
 use crate::auth::claims::MazbriClaims;
 use crate::crypto::{TenantCryptoProfile, TenantCryptoTiming};
@@ -32,7 +33,7 @@ use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 use uuid::Uuid;
 const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
 const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
@@ -225,14 +226,13 @@ fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
-    info!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name = "request_prepare",
-        stage_ms = tenant_validation_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id = %
-        claims.tenant_id, tenant_code = % claims.tenant_code, product_id = % req.product_id,
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id),
+        &stage_ids, "request_prepare", tenant_validation_ms,
         method = % req.method, path = % req.path, encrypted_request = request_was_encrypted,
-        tenant_id_validation_ms, request_validate_ms, idempotency_ms,
-        tenant_validation_ms, message =
-        "Gateway request preparation stage completed"
+        tenant_id_validation_ms, request_validate_ms, idempotency_ms, tenant_validation_ms,
+        message = "Gateway request preparation stage completed",
     );
 }
 
@@ -256,15 +256,15 @@ fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, fetched: &FetchedR
         stage = stage.failed();
     }
     let stage_ids = stage.record();
-    info!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name = "upstream",
-        stage_ms = upstream_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id = %
-        claims.tenant_id, tenant_code = % claims.tenant_code, product_id = % req.product_id,
-        method = % req.method, path = % req.path, upstream_service_time_ms =
-        upstream_ms, from_cache = fetched.from_cache, upstream_mode = %
-        route.map_or("", |r| r.upstream_mode.as_str()), contract_id = %
-        route.map_or("", |r| r.contract_id.as_str()), error_class = % error_class,
-        result, message = "Gateway upstream stage completed"
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id).route(route),
+        &stage_ids, "upstream", upstream_ms,
+        method = % req.method, path = % req.path, upstream_service_time_ms = upstream_ms,
+        from_cache = fetched.from_cache,
+        upstream_mode = % route.map_or("", |r| r.upstream_mode.as_str()),
+        contract_id = % route.map_or("", |r| r.contract_id.as_str()), error_class = % error_class,
+        result, message = "Gateway upstream stage completed",
     );
 }
 
@@ -307,31 +307,34 @@ fn log_transport_stage(
         .tenant(&claims.tenant_code)
         .record();
     if request_was_encrypted {
-        info!(
-            target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id =
-            % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
-            req.product_id, method = % req.method, path = % req.path, encrypted_request = true,
-            transport_profile_ms = crypto_timing.transport_profile, transport_total_ms =
-            crypto_timing.transport_total, crypto_total_ms = crypto_timing.transport_total,
-            crypto_profile_ms = crypto_timing.transport_profile, crypto_envelope_ms =
-            crypto_timing.envelope, crypto_preflight_ms = crypto_timing.preflight,
-            crypto_nonce_ms = crypto_timing.nonce, crypto_tenant_key_ms =
-            crypto_timing.tenant_key, crypto_tenant_key_db_ms = crypto_timing.tenant_key_db,
+        stage_log!(
+            info, "gateway.stage",
+            &StageCtx::new(&request_id, claims, &req.product_id),
+            &stage_ids, "transport", crypto_timing.transport_total,
+            method = % req.method, path = % req.path, encrypted_request = true,
+            transport_profile_ms = crypto_timing.transport_profile,
+            transport_total_ms = crypto_timing.transport_total,
+            crypto_total_ms = crypto_timing.transport_total,
+            crypto_profile_ms = crypto_timing.transport_profile,
+            crypto_envelope_ms = crypto_timing.envelope,
+            crypto_preflight_ms = crypto_timing.preflight, crypto_nonce_ms = crypto_timing.nonce,
+            crypto_tenant_key_ms = crypto_timing.tenant_key,
+            crypto_tenant_key_db_ms = crypto_timing.tenant_key_db,
             crypto_tenant_key_root_material_ms = crypto_timing.tenant_key_root_material,
             crypto_tenant_key_local_ms = crypto_timing.tenant_key_local,
-            crypto_signature_ms = crypto_timing.signature, crypto_decrypt_ms =
-            crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse, message =
-            "Gateway transport stage completed"
+            crypto_signature_ms = crypto_timing.signature,
+            crypto_decrypt_ms = crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse,
+            message = "Gateway transport stage completed",
         );
     } else {
-        info!(
-            target : "gateway.stage", service = "mazbri-gateway", stage_name = "transport",
-            stage_ms = crypto_timing.transport_total, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,  tenant_id =
-            % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
-            req.product_id, method = % req.method, path = % req.path, encrypted_request =
-            false, transport_profile_ms = crypto_timing.transport_profile,
-            transport_total_ms = crypto_timing.transport_total, message = "Gateway transport stage completed"
+        stage_log!(
+            info, "gateway.stage",
+            &StageCtx::new(&request_id, claims, &req.product_id),
+            &stage_ids, "transport", crypto_timing.transport_total,
+            method = % req.method, path = % req.path, encrypted_request = false,
+            transport_profile_ms = crypto_timing.transport_profile,
+            transport_total_ms = crypto_timing.transport_total,
+            message = "Gateway transport stage completed",
         );
     }
 }
@@ -382,22 +385,12 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
                 .product(&req.product_id)
                 .tenant(&claims.tenant_code)
                 .record();
-            info!(
-                target: "gateway.stage",
-                service = "mazbri-gateway",
-                stage_name = "idempotency",
-                stage_ms = idempotency_ms,
-                trace_id = %stage_ids.trace_id,
-                span_id = %stage_ids.span_id,
-                request_id = %request_id,
-                tenant_id = %claims.tenant_id,
-                tenant_code = %claims.tenant_code,
-                product_id = %req.product_id,
-                method = %req.method,
-                path = %req.path,
-                fingerprint = %fingerprint,
-                replay = true,
-                message = "Gateway idempotency replay of completed fingerprint"
+            stage_log!(
+                info, "gateway.stage",
+                &StageCtx::new(&request_id, claims, &req.product_id),
+                &stage_ids, "idempotency", idempotency_ms,
+                method = %req.method, path = %req.path, fingerprint = %fingerprint, replay = true,
+                message = "Gateway idempotency replay of completed fingerprint",
             );
             return replay_response(record).map(IdempotencyStage::Replay);
         }
@@ -413,22 +406,12 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
-    info!(
-        target: "gateway.stage",
-        service = "mazbri-gateway",
-        stage_name = "idempotency",
-        stage_ms = idempotency_ms,
-        trace_id = %stage_ids.trace_id,
-        span_id = %stage_ids.span_id,
-        request_id = %request_id,
-        tenant_id = %claims.tenant_id,
-        tenant_code = %claims.tenant_code,
-        product_id = %req.product_id,
-        method = %req.method,
-        path = %req.path,
-        fingerprint = %fingerprint,
-        acquired,
-        message = "Gateway idempotency stage completed"
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id),
+        &stage_ids, "idempotency", idempotency_ms,
+        method = %req.method, path = %req.path, fingerprint = %fingerprint, acquired,
+        message = "Gateway idempotency stage completed",
     );
     Ok(IdempotencyStage::Proceed {
         ms: idempotency_ms,
@@ -466,13 +449,13 @@ async fn resolve_product_detail(
         stage = stage.failed();
     }
     let stage_ids = stage.record();
-    info!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "product_detail_lookup", stage_ms = timing.product_detail_lookup_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, request_id =
-        % request_id, tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code,
-        product_id = % req.product_id, method = % req.method, path = % req.path,
-        product_detail_lookup_ms = timing.product_detail_lookup_ms, message =
-        "Gateway product detail lookup stage completed"
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id),
+        &stage_ids, "product_detail_lookup", timing.product_detail_lookup_ms,
+        method = % req.method, path = % req.path,
+        product_detail_lookup_ms = timing.product_detail_lookup_ms,
+        message = "Gateway product detail lookup stage completed",
     );
     tenant_product_detail.ok_or_else(|| {
         warn!(
@@ -515,18 +498,15 @@ async fn fetch_response(
         // Attach matched product route so customer-calls shows CB: + channel, not "-".
         let matched_route =
             super::execution::match_primary_route_metadata(&state.proxy_state, claims, req);
-        info!(
-            target: "gateway.stage",
-            service = "mazbri-gateway",
-            stage_name = "response_cache",
-            request_id = %request_id,
-            tenant_id = %claims.tenant_id,
-            product_id = %req.product_id,
-            path = %req.path,
-            cache_key = %cache_key,
-            channel_id = matched_route.as_ref().map_or("", |r| r.channel_id.as_str()),
-            channel_code = matched_route.as_ref().map_or("", |r| r.channel_code.as_str()),
-            message = "Gateway response cache hit"
+        let stage_ids = super::stage_log::stage_span("response_cache", cache_lookup_ms)
+            .product(&req.product_id)
+            .tenant(&claims.tenant_code)
+            .record();
+        stage_log!(
+            info, "gateway.stage",
+            &StageCtx::new(&request_id, claims, &req.product_id).route(matched_route.as_ref()),
+            &stage_ids, "response_cache", cache_lookup_ms,
+            path = %req.path, cache_key = %cache_key, message = "Gateway response cache hit",
         );
         return Ok(FetchedResponse {
             response: cached.into_upstream(),
@@ -613,14 +593,16 @@ fn serialize_stage(
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
-    info!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "response_serialize", stage_ms = response_serialize_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-        tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
-        req.product_id, method = % req.method, path = % req.path,  response_body_kind = serialized_response.body_kind,
-        response_body_encoding = serialized_response.body_encoding, payload_bytes_len =
-        response.body_bytes_len, encoded_bytes_len = serialized_response.response_bytes,
-        message = "Gateway response serialization stage completed"
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id),
+        &stage_ids, "response_serialize", response_serialize_ms,
+        method = % req.method, path = % req.path,
+        response_body_kind = serialized_response.body_kind,
+        response_body_encoding = serialized_response.body_encoding,
+        payload_bytes_len = response.body_bytes_len,
+        encoded_bytes_len = serialized_response.response_bytes,
+        message = "Gateway response serialization stage completed",
     );
     Ok(serialized_response)
 }
@@ -682,12 +664,12 @@ async fn encrypt_stage(
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
-    info!(
-        target : "gateway.stage", service = "mazbri-gateway", stage_name =
-        "response_encrypt", stage_ms = response_encrypt_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-        tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code, product_id = %
-        req.product_id, method = % req.method, path = % req.path, response_encrypt_ms,
-        message = "Gateway response encryption stage completed"
+    stage_log!(
+        info, "gateway.stage",
+        &StageCtx::new(&request_id, claims, &req.product_id),
+        &stage_ids, "response_encrypt", response_encrypt_ms,
+        method = % req.method, path = % req.path, response_encrypt_ms,
+        message = "Gateway response encryption stage completed",
     );
     Ok(Some(encrypted))
 }
@@ -727,6 +709,8 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         prepare_usage_event(ctx, done, service_total_ms);
     done.timing.billing_enqueue_ms =
         mazbri_core::num::millis_u64(billing_enqueue_started.elapsed());
+    let stage_ctx = StageCtx::new(&ctx.request_id, ctx.claims, &req.product_id)
+        .route(fetched.upstream_route.as_ref());
     spawn_post_response_tasks(
         ctx.state,
         PostResponseTaskArgs {
@@ -747,6 +731,7 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
             fingerprint: req.fingerprint.clone(),
             usage_event,
             usage_event_produced,
+            stage_ctx: stage_ctx.clone(),
         },
     );
     let timing = &*done.timing;
@@ -777,15 +762,13 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         .record();
     // 平台摘要全量保留，便于算 platform_ms
     if super::stage_log::always_log_stage() {
-        info!(
-            target: "gateway.stage",
-            service = "mazbri-gateway",
-            stage_name = "platform_summary",
-            stage_ms = customer_total_ms,
-            trace_id = %stage_ids.trace_id,
-            span_id = %stage_ids.span_id,
-            request_id = %ctx.request_id,
-            product_id = %req.product_id,
+        stage_log!(
+            info,
+            "gateway.stage",
+            &stage_ctx,
+            &stage_ids,
+            "platform_summary",
+            customer_total_ms,
             duration_ms = customer_total_ms,
             platform_local_ms = internal_ms,
             upstream_wait_ms = timing.upstream_ms,
@@ -799,7 +782,7 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
             bypass_hop_ms = timing.bypass_hop_ms,
             billing_enqueue_ms = timing.billing_enqueue_ms,
             nonce_ms = timing.nonce_ms,
-            message = "Gateway platform timing summary (upstream_ms = pure wire; internal_ms = total - upstream_ms)"
+            message = "Gateway platform timing summary (upstream_ms = pure wire; internal_ms = total - upstream_ms)",
         );
     }
     emit_gateway_access_log(
