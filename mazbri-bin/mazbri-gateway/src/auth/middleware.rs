@@ -357,6 +357,7 @@ pub async fn ratelimit_middleware(
             degraded,
             prepaid_request_bytes,
             bandwidth_enabled,
+            quota,
         } => {
             timing.bandwidth_prepaid = Some(BandwidthPrepaid {
                 policy_version,
@@ -378,7 +379,7 @@ pub async fn ratelimit_middleware(
                     message = "Gateway rate limit stage completed"
                 );
             }
-            Ok(next.run(req).await)
+            Ok(with_ratelimit_headers(next.run(req).await, quota))
         }
         LocalRateLimitDecision::Deny {
             policy_version,
@@ -386,6 +387,7 @@ pub async fn ratelimit_middleware(
             reason,
             snapshot_age_ms,
             degraded,
+            quota,
         } => {
             let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms)
@@ -402,6 +404,7 @@ pub async fn ratelimit_middleware(
             Err(rate_limit_error_response(
                 i32::saturating_from((retry_after_ms / 1000).max(1)),
                 &reason,
+                quota,
             )
             .into())
         }
@@ -454,7 +457,32 @@ fn record_rejection_scope(
     });
 }
 
-fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
+/// 按 IETF draft-ietf-httpapi-ratelimit-headers 回写租户请求配额：
+/// `RateLimit-Policy: "tenant";q=<桶容量>;w=<补满秒数>`、`RateLimit: "tenant";r=<剩余>;t=<补满还需秒数>`。
+fn with_ratelimit_headers(
+    mut response: Response,
+    quota: Option<crate::ratelimit::QuotaState>,
+) -> Response {
+    let Some(quota) = quota else {
+        return response;
+    };
+    let headers = response.headers_mut();
+    for (name, value) in [
+        ("ratelimit-policy", quota.policy_header()),
+        ("ratelimit", quota.ratelimit_header()),
+    ] {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&value) {
+            headers.insert(name, value);
+        }
+    }
+    response
+}
+
+fn rate_limit_error_response(
+    retry_after: i32,
+    reason: &str,
+    quota: Option<crate::ratelimit::QuotaState>,
+) -> Response {
     let error_message = if reason == "bandwidth" {
         "带宽超过限制"
     } else {
@@ -481,7 +509,7 @@ fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
         .insert(crate::gateway::response::GatewayErrorCode(
             "E4290".to_string(),
         ));
-    response
+    with_ratelimit_headers(response, quota)
 }
 fn current_request_id(headers: &axum::http::HeaderMap) -> String {
     parse_trace_context(headers).request_id.to_string()

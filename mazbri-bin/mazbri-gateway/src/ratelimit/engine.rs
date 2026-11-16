@@ -42,6 +42,41 @@ struct UsagePush {
     bytes_out: i64,
 }
 
+/// 租户请求配额的当前状态，按 IETF draft-ietf-httpapi-ratelimit-headers 回写
+/// `RateLimit-Policy` / `RateLimit` 响应头。令牌桶语义：`limit` 为桶容量（突发上限），
+/// `window_secs` 为空桶补满所需秒数，`reset_secs` 为当前补满还需的秒数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuotaState {
+    pub limit: u64,
+    pub window_secs: u64,
+    pub remaining: u64,
+    pub reset_secs: u64,
+}
+
+impl QuotaState {
+    /// 策略名（响应头里的 policy item key）。
+    pub const POLICY: &'static str = "tenant";
+
+    /// `RateLimit-Policy` 头的值，例：`"tenant";q=1000;w=1`。
+    #[must_use]
+    pub fn policy_header(&self) -> String {
+        format!("\"{}\";q={};w={}", Self::POLICY, self.limit, self.window_secs)
+    }
+
+    /// `RateLimit` 头的值，例：`"tenant";r=998;t=1`。
+    #[must_use]
+    pub fn ratelimit_header(&self) -> String {
+        format!("\"{}\";r={};t={}", Self::POLICY, self.remaining, self.reset_secs)
+    }
+}
+
+/// 单个令牌桶检查通过后的余量。
+#[derive(Debug, Clone, Copy)]
+struct BucketQuota {
+    remaining: u64,
+    reset_secs: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct LocalRateLimitInput {
     pub tenant_id: Uuid,
@@ -86,6 +121,8 @@ pub enum LocalRateLimitDecision {
         degraded: bool,
         prepaid_request_bytes: u64,
         bandwidth_enabled: bool,
+        /// 租户请求配额（策略关闭等未经过令牌桶的放行为 `None`）。
+        quota: Option<QuotaState>,
     },
     Deny {
         policy_version: i64,
@@ -93,7 +130,28 @@ pub enum LocalRateLimitDecision {
         reason: String,
         snapshot_age_ms: u64,
         degraded: bool,
+        /// 租户请求配额（仅租户 QPS 拒绝时有值，`remaining=0`）。
+        quota: Option<QuotaState>,
     },
+}
+
+impl LocalRateLimitDecision {
+    #[must_use]
+    fn with_quota(mut self, value: QuotaState) -> Self {
+        match &mut self {
+            Self::Allow { quota, .. } | Self::Deny { quota, .. } => *quota = Some(value),
+        }
+        self
+    }
+
+    /// 本次判定携带的租户配额（中间件直接解构字段，这里供单测断言）。
+    #[cfg(test)]
+    #[must_use]
+    pub fn quota(&self) -> Option<QuotaState> {
+        match self {
+            Self::Allow { quota, .. } | Self::Deny { quota, .. } => *quota,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,9 +187,12 @@ impl BucketCell {
         self.last_seen = now;
     }
 
-    fn allow_or_retry_after(&mut self, amount: u64, now: Instant) -> Result<(), u64> {
+    fn allow_or_retry_after(&mut self, amount: u64, now: Instant) -> Result<BucketQuota, u64> {
         if self.bucket.try_consume(amount, now) {
-            Ok(())
+            Ok(BucketQuota {
+                remaining: self.bucket.remaining(),
+                reset_secs: self.bucket.secs_to_full(),
+            })
         } else {
             Err(self.bucket.retry_after_ms(amount, now))
         }
@@ -220,7 +281,7 @@ impl LocalRateLimitEngine {
         spec: BucketSpec,
         amount: u64,
         now: Instant,
-    ) -> Result<(), u64> {
+    ) -> Result<BucketQuota, u64> {
         let dimension = key
             .split_once(':')
             .map_or_else(|| "unknown".to_string(), |(d, _)| d.to_string());
@@ -234,7 +295,7 @@ impl LocalRateLimitEngine {
         result
     }
 
-    fn check_bucket(&self, key: String, spec: BucketSpec, now: Instant) -> Result<(), u64> {
+    fn check_bucket(&self, key: String, spec: BucketSpec, now: Instant) -> Result<BucketQuota, u64> {
         self.check_bucket_amount(key, spec, 1, now)
     }
 
@@ -316,6 +377,7 @@ impl LocalRateLimitEngine {
             reason: reason.to_string(),
             snapshot_age_ms: meta.snapshot_age_ms,
             degraded,
+            quota: None,
         }
     }
 
@@ -363,6 +425,7 @@ impl LocalRateLimitEngine {
                 degraded,
                 prepaid_request_bytes: 0,
                 bandwidth_enabled: false,
+                quota: None,
             });
         }
         if snapshot.is_stale() {
@@ -387,7 +450,7 @@ impl LocalRateLimitEngine {
         snapshot: &TenantPolicySnapshot,
         meta: DecisionMeta,
         degraded: bool,
-    ) -> Result<(), LocalRateLimitDecision> {
+    ) -> Result<QuotaState, LocalRateLimitDecision> {
         let multiplier = self
             .commands
             .quota_multiplier(input.tenant_id)
@@ -396,13 +459,25 @@ impl LocalRateLimitEngine {
         let tenant_qps = Self::scaled(snapshot.tenant_qps, multiplier);
         let tenant_burst = Self::scaled(snapshot.tenant_burst, multiplier);
         let tenant_key = Self::bucket_key("tenant", input.tenant_id, "");
-        if let Err(retry_after_ms) = self.check_bucket(
-            tenant_key,
-            Self::build_spec(tenant_burst, tenant_qps),
-            Instant::now(),
-        ) {
-            return Err(self.deny(input, meta, degraded, "tenant_qps", retry_after_ms));
-        }
+        let tenant_spec = Self::build_spec(tenant_burst, tenant_qps);
+        let quota_of = |bucket: BucketQuota| QuotaState {
+            limit: tenant_spec.capacity,
+            window_secs: tenant_spec.capacity.div_ceil(tenant_qps.max(1)).max(1),
+            remaining: bucket.remaining,
+            reset_secs: bucket.reset_secs,
+        };
+        let quota = match self.check_bucket(tenant_key, tenant_spec, Instant::now()) {
+            Ok(bucket) => quota_of(bucket),
+            Err(retry_after_ms) => {
+                let quota = quota_of(BucketQuota {
+                    remaining: 0,
+                    reset_secs: retry_after_ms.div_ceil(1000).max(1),
+                });
+                return Err(self
+                    .deny(input, meta, degraded, "tenant_qps", retry_after_ms)
+                    .with_quota(quota));
+            }
+        };
         // Skip api dimension when no matching override — avoids api_qps noise at plan QPS.
         if let Some(rule) = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint) {
             let api_qps = Self::scaled(rule.effective_qps(tenant_qps), multiplier);
@@ -435,7 +510,7 @@ impl LocalRateLimitEngine {
         ) {
             return Err(self.deny(input, meta, degraded, "client_ip_qps", retry_after_ms));
         }
-        Ok(())
+        Ok(quota)
     }
 
     /// Bandwidth prepay of request bytes; returns prepaid bytes or the final decision.
@@ -484,6 +559,7 @@ impl LocalRateLimitEngine {
             degraded: true,
             prepaid_request_bytes: 0,
             bandwidth_enabled: true,
+            quota: None,
         })
     }
 
@@ -501,11 +577,14 @@ impl LocalRateLimitEngine {
             Ok(degraded) => degraded,
             Err(decision) => return decision,
         };
-        if let Err(decision) = self.check_qps_buckets(input, &snapshot, meta, degraded) {
-            return decision;
-        }
+        let quota = match self.check_qps_buckets(input, &snapshot, meta, degraded) {
+            Ok(quota) => quota,
+            Err(decision) => return decision,
+        };
         let prepaid_request_bytes = match self.check_bandwidth(input, &snapshot, meta, degraded) {
             Ok(bytes) => bytes,
+            // 带宽观察模式放行：请求配额照常回写；带宽拒绝不带请求配额。
+            Err(decision @ LocalRateLimitDecision::Allow { .. }) => return decision.with_quota(quota),
             Err(decision) => return decision,
         };
         // U3: keep QPS allowed_count here; bytes filled by record_transfer at response path.
@@ -528,6 +607,7 @@ impl LocalRateLimitEngine {
             degraded,
             prepaid_request_bytes,
             bandwidth_enabled: snapshot.bandwidth_enabled(),
+            quota: Some(quota),
         }
     }
 
@@ -852,6 +932,32 @@ mod tests {
             }
             LocalRateLimitDecision::Allow { .. } => panic!("expected tenant_qps deny"),
         }
+    }
+
+    /// N4：放行带租户配额（余量递减），租户 QPS 拒绝时余量为 0、`t` 至少 1 秒。
+    #[test]
+    fn tenant_quota_is_reported_for_ratelimit_headers() {
+        let eng = engine();
+        let tenant = Uuid::new_v4();
+        eng.replace_snapshots_for_test(vec![snapshot_plan(tenant, 1, 2)]);
+        let first = eng.check(&input(tenant, 0)).quota();
+        assert_eq!(
+            first,
+            Some(QuotaState {
+                limit: 2,
+                window_secs: 2,
+                remaining: 1,
+                reset_secs: 1
+            })
+        );
+        assert_eq!(first.map(|q| q.policy_header()).as_deref(), Some("\"tenant\";q=2;w=2"));
+        assert_eq!(first.map(|q| q.ratelimit_header()).as_deref(), Some("\"tenant\";r=1;t=1"));
+        assert_eq!(eng.check(&input(tenant, 0)).quota().map(|q| q.remaining), Some(0));
+        let denied = eng.check(&input(tenant, 0));
+        assert!(matches!(denied, LocalRateLimitDecision::Deny { .. }));
+        let quota = denied.quota().expect("tenant_qps deny carries quota");
+        assert_eq!(quota.remaining, 0);
+        assert!(quota.reset_secs >= 1);
     }
 
     /// P2-4: explicit override still enforces `api_qps` when tighter than plan.

@@ -126,10 +126,26 @@ Content-Type: application/json
   （入站 `-00` 回 `-00`，绝不写死 `-01`）。
 
 **浏览器跨域**：允许的请求头含 `X-Request-Id`、`traceparent`；可读响应头（`Access-Control-Expose-Headers`）含 `X-Request-Id`、
-`traceparent`、`Retry-After`。
+`traceparent`、`Retry-After`、`RateLimit-Policy`、`RateLimit`。
 
 实现：`mazbri-libs/mazbri-core/src/logging/access.rs`（`inbound_request_id`、`TraceContext::traceparent_value`）、
 `mazbri-libs/mazbri-service/src/middleware.rs`（`request_id_middleware`）、`mazbri-bin/mazbri-gateway/src/router.rs`（CORS）。
+
+### 2.2 限流配额响应头
+
+经过租户限流判定的网关请求（含 429），响应带 IETF `draft-ietf-httpapi-ratelimit-headers` 格式的两个头，描述租户请求配额：
+
+```
+RateLimit-Policy: "tenant";q=1000;w=1
+RateLimit: "tenant";r=998;t=1
+```
+
+- `q`：配额上限（令牌桶容量，即允许的突发请求数）；`w`：空桶补满所需秒数。
+- `r`：本次请求之后的剩余配额；`t`：补满还需的秒数（已满为 0）。
+- 租户 QPS 超限的 429 里 `r=0`，`t` 与 `Retry-After` 同量级（至少 1 秒）；带宽超限的 429 和未启用限流策略的租户不带这两个头。
+- 两个头只用于客户端自适应降速，配额以平台配置为准；按渠道、按 IP 的限流不在这两个头里体现。
+
+实现：`mazbri-bin/mazbri-gateway/src/ratelimit/engine.rs`（`QuotaState`）、`auth/middleware.rs`（`ratelimit_middleware`）。
 
 ## 3. 传输加密（profile 与信封）
 
@@ -319,7 +335,7 @@ profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input
 | `E4040` | 404 | 产品/路由不存在 |
 | `E4090` | 409 | 信封 nonce 重复；同 fingerprint 请求仍在处理 |
 | `E4130` | 413 | 请求体超限 |
-| `E4290` | 429 | 限流，带 `Retry-After` |
+| `E4290` | 429 | 限流，带 `Retry-After`（租户 QPS 超限另带 `RateLimit-Policy` / `RateLimit`，§2.2） |
 | `E5000` | 500 | 内部错误 |
 | `E5020` | 502 | 上游不可用 |
 | `E5030` | 503 | 服务暂不可用，带 `Retry-After` |

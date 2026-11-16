@@ -663,11 +663,13 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         header::HeaderName::from_static("x-mazbri-signature-input"),
         header::HeaderName::from_static("x-mazbri-key-id"),
     ];
-    // 浏览器端可读的响应头：请求 ID 与链路上下文（协议 §2.1）。
+    // 浏览器端可读的响应头：请求 ID 与链路上下文（协议 §2.1）、限流配额（协议 §2.2）。
     let exposed = [
         header::HeaderName::from_static("x-request-id"),
         header::HeaderName::from_static("traceparent"),
         header::RETRY_AFTER,
+        header::HeaderName::from_static("ratelimit-policy"),
+        header::HeaderName::from_static("ratelimit"),
     ];
 
     // Wildcard is allowed when credentials are off (enforced in CorsConfig::validate).
