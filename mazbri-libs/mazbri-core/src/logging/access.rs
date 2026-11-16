@@ -17,6 +17,8 @@ pub struct AccessRouteFields {
     pub channel_id: Option<String>,
     pub channel_code: Option<String>,
     pub attempt_order: Option<u32>,
+    /// 调用方 API Key ID（网关取自 JWT claim `api_key_id`）；无调用方上下文时为 `None`。
+    pub api_key_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -49,7 +51,11 @@ pub struct AccessNetworkFields {
     pub xff: Option<String>,
     pub cache_hit: bool,
     pub fallback_used: bool,
-    pub retry_count: u32,
+    /// 本次请求的每一次重发各记一个原因（`channel_switch` / `config_cache_miss` / `transport` /
+    /// `auth_rejected:*` …）；访问日志 `retry_count` 即其长度。
+    pub retry_reasons: Vec<String>,
+    /// 上游响应回来的流水号（bypass 按渠道 egress spec `response.request_id_header` 读取）。
+    pub upstream_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -57,6 +63,8 @@ pub struct AccessOutcomeFields {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
+    /// 错误来源：`client` | `gateway` | `upstream`；成功为空。见 [`classify_outcome`]。
+    pub error_source: String,
     /// 与 metrics `result` 对齐：ok | timeout | `upstream_error` | ssrf | …
     #[serde(default)]
     pub error_class: String,
@@ -106,6 +114,7 @@ pub struct AccessLogEvent {
     pub channel_id: String,
     pub channel_code: String,
     pub attempt_order: u32,
+    pub api_key_id: String,
     pub method: String,
     pub protocol: String,
     pub host_header: String,
@@ -127,9 +136,13 @@ pub struct AccessLogEvent {
     pub cache_hit: bool,
     pub fallback_used: bool,
     pub retry_count: u32,
+    /// 逗号分隔，长度（项数）等于 `retry_count`。
+    pub retry_reasons: String,
+    pub upstream_request_id: String,
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
+    pub error_source: String,
     pub upstream_mode: String,
     pub contract_id: String,
     pub error_class: String,
@@ -171,6 +184,7 @@ pub struct AccessLogEventBuilder {
     channel_id: Option<String>,
     channel_code: Option<String>,
     attempt_order: Option<u32>,
+    api_key_id: Option<String>,
     method: String,
     protocol: String,
     host_header: Option<String>,
@@ -191,10 +205,12 @@ pub struct AccessLogEventBuilder {
     user_agent: Option<String>,
     cache_hit: bool,
     fallback_used: bool,
-    retry_count: u32,
+    retry_reasons: Vec<String>,
+    upstream_request_id: Option<String>,
     error_code: String,
     error_stage: String,
     response_flags: String,
+    error_source: String,
     upstream_mode: String,
     contract_id: String,
     error_class: String,
@@ -224,6 +240,7 @@ impl AccessLogEventBuilder {
             channel_id: None,
             channel_code: None,
             attempt_order: None,
+            api_key_id: None,
             method: String::new(),
             protocol: String::new(),
             host_header: None,
@@ -244,10 +261,12 @@ impl AccessLogEventBuilder {
             user_agent: None,
             cache_hit: false,
             fallback_used: false,
-            retry_count: 0,
+            retry_reasons: Vec::new(),
+            upstream_request_id: None,
             error_code: String::new(),
             error_stage: String::new(),
             response_flags: "-".to_string(),
+            error_source: String::new(),
             upstream_mode: String::new(),
             contract_id: String::new(),
             error_class: String::new(),
@@ -281,6 +300,7 @@ impl AccessLogEventBuilder {
         self.channel_id = fields.channel_id;
         self.channel_code = fields.channel_code;
         self.attempt_order = fields.attempt_order;
+        self.api_key_id = fields.api_key_id;
         self
     }
 
@@ -316,7 +336,8 @@ impl AccessLogEventBuilder {
         self.xff = fields.xff;
         self.cache_hit = fields.cache_hit;
         self.fallback_used = fields.fallback_used;
-        self.retry_count = fields.retry_count;
+        self.retry_reasons = fields.retry_reasons;
+        self.upstream_request_id = fields.upstream_request_id;
         self
     }
 
@@ -325,6 +346,7 @@ impl AccessLogEventBuilder {
         self.error_code = fields.error_code;
         self.error_stage = fields.error_stage;
         self.response_flags = fields.response_flags;
+        self.error_source = fields.error_source;
         if !fields.error_class.is_empty() {
             self.error_class = fields.error_class;
         }
@@ -364,6 +386,7 @@ impl AccessLogEventBuilder {
             channel_id: self.channel_id.unwrap_or_default(),
             channel_code: self.channel_code.unwrap_or_default(),
             attempt_order: self.attempt_order.unwrap_or_default(),
+            api_key_id: self.api_key_id.unwrap_or_default(),
             method: self.method,
             protocol: self.protocol,
             host_header: self.host_header.unwrap_or_default(),
@@ -384,10 +407,13 @@ impl AccessLogEventBuilder {
             user_agent: self.user_agent.unwrap_or_default(),
             cache_hit: self.cache_hit,
             fallback_used: self.fallback_used,
-            retry_count: self.retry_count,
+            retry_count: u32::try_from(self.retry_reasons.len()).unwrap_or(u32::MAX),
+            retry_reasons: self.retry_reasons.join(","),
+            upstream_request_id: self.upstream_request_id.unwrap_or_default(),
             error_code: self.error_code,
             error_stage: self.error_stage,
             response_flags: self.response_flags,
+            error_source: self.error_source,
             upstream_mode: self.upstream_mode,
             contract_id: self.contract_id,
             error_class: self.error_class,
@@ -665,29 +691,111 @@ pub fn normalize_upstream_host(url_or_addr: &str) -> Option<String> {
     }
 }
 
+/// 访问日志的错误来源（对标 Kong `source`、Apigee `policy_error` / `target_error`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorSource {
+    /// 成功（或 3xx），不记来源。
+    None,
+    /// 请求本身的问题：参数非法、凭据无效 / 无权限、路由不存在、请求体过大、幂等冲突。
+    Client,
+    /// 平台策略或平台自身：限流、余额不足、过载、熔断、配置错误、内部错误。
+    Gateway,
+    /// 上游：连接失败、超时、上游返回错误或拒绝凭据。
+    Upstream,
+}
+
+impl ErrorSource {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Client => "client",
+            Self::Gateway => "gateway",
+            Self::Upstream => "upstream",
+        }
+    }
+}
+
+/// 一次请求结果的分类：Envoy 标准 response flags 缩写 + 错误来源。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutcomeClass {
+    /// Envoy `%RESPONSE_FLAGS%` 缩写（`UAEX` / `RL` / `NR` / `UT` / `UF` / `UH` / `UO` / `DC`），
+    /// 没有对应标志时为 `-`。
+    pub response_flags: &'static str,
+    pub error_source: ErrorSource,
+}
+
+impl OutcomeClass {
+    #[must_use]
+    pub const fn new(response_flags: &'static str, error_source: ErrorSource) -> Self {
+        Self {
+            response_flags,
+            error_source,
+        }
+    }
+
+    pub const OK: Self = Self::new("-", ErrorSource::None);
+}
+
+/// 按业务错误码、出错阶段和 HTTP 状态把一次请求归类为 Envoy 标准 response flag 与错误来源。
+///
+/// 优先看错误码（网关 `E4xxx` / `E5xxx` 与 bypass 的 `UPSTREAM_*` / `CONFIG_ERROR` 等），
+/// 再看阶段，最后按状态码兜底；无法对应 Envoy 标志的记 `-`，不再一律兜底成 `UF`。
+/// 同一错误码对应多种原因时（如 `E5020` 既可能是连接失败也可能是熔断），由产生错误的一方
+/// 直接给出 [`OutcomeClass`]，不走本函数。
 #[must_use]
-pub fn response_flags_for_error(error_code: &str, stage: &str, status_code: u16) -> String {
-    if error_code.trim().is_empty() || (200..400).contains(&status_code) {
-        return "-".to_string();
-    }
+pub fn classify_outcome(error_code: &str, stage: &str, status_code: u16) -> OutcomeClass {
+    use ErrorSource::{Client, Gateway, Upstream};
     let code = error_code.trim().to_ascii_uppercase();
+    if code.is_empty() && status_code < 400 {
+        return OutcomeClass::OK;
+    }
+    if status_code == 408 {
+        // 客户端发送请求超时（网关复用 E5040 错误码），不是上游超时。
+        return OutcomeClass::new("-", Client);
+    }
     let stage = stage.trim().to_ascii_lowercase();
+    let by_code = match code.as_str() {
+        "E4010" | "E4030" | "E4031" => Some(OutcomeClass::new("UAEX", Client)),
+        "E4040" => Some(OutcomeClass::new("NR", Client)),
+        "E4000" | "E4090" | "E4130" => Some(OutcomeClass::new("-", Client)),
+        "E4020" => Some(OutcomeClass::new("-", Gateway)),
+        "E4290" => Some(OutcomeClass::new("RL", Gateway)),
+        "E5000" | "E5030" | "IDEMPOTENCY_UNAVAILABLE" | "CONFIG_ERROR" | "SSRF_BLOCKED" => {
+            Some(OutcomeClass::new("-", Gateway))
+        }
+        "E5020" | "UPSTREAM_ERROR" => Some(OutcomeClass::new("UF", Upstream)),
+        "E5021" | "AUTH_ERROR" => Some(OutcomeClass::new("-", Upstream)),
+        "E5040" | "UPSTREAM_TIMEOUT" => Some(OutcomeClass::new("UT", Upstream)),
+        _ => None,
+    };
+    if let Some(class) = by_code {
+        return class;
+    }
     if code.contains("TIMEOUT") || stage.contains("timeout") {
-        return "UT".to_string();
+        return OutcomeClass::new("UT", Upstream);
     }
-    if code.contains("RATE_LIMIT") {
-        return "RL".to_string();
+    if code.contains("RATE_LIMIT") || stage == "ratelimit" {
+        return OutcomeClass::new("RL", Gateway);
     }
-    if code.contains("CIRCUIT") {
-        return "CB".to_string();
+    if stage == "auth" {
+        return OutcomeClass::new("UAEX", Client);
     }
-    if code.contains("BAD_GATEWAY") || code.contains("UPSTREAM") || stage.contains("upstream") {
-        return "UF".to_string();
+    if stage == "upstream" || stage == "cbpro_fallback" {
+        // 上游返回了响应（非 2xx 或业务错误）：Envoy 不打标志，状态码本身说明问题。
+        return OutcomeClass::new("-", Upstream);
     }
-    if code.contains("INVALID") || stage.contains("validation") {
-        return "IP".to_string();
+    match status_code {
+        401 | 403 => OutcomeClass::new("UAEX", Client),
+        404 => OutcomeClass::new("NR", Client),
+        429 => OutcomeClass::new("RL", Gateway),
+        402 => OutcomeClass::new("-", Gateway),
+        499 => OutcomeClass::new("DC", Client),
+        400..=499 => OutcomeClass::new("-", Client),
+        502 => OutcomeClass::new("UF", Upstream),
+        504 => OutcomeClass::new("UT", Upstream),
+        _ => OutcomeClass::new("-", Gateway),
     }
-    "UF".to_string()
 }
 
 pub fn emit_access_log(target: &str, event: &AccessLogEvent) {
@@ -721,6 +829,7 @@ macro_rules! emit_access_log_for_target {
             channel_id = %$event.channel_id,
             channel_code = %$event.channel_code,
             attempt_order = $event.attempt_order,
+            api_key_id = %$event.api_key_id,
             method = %$event.method,
             protocol = %$event.protocol,
             host_header = %$event.host_header,
@@ -742,9 +851,12 @@ macro_rules! emit_access_log_for_target {
             cache_hit = $event.cache_hit,
             fallback_used = $event.fallback_used,
             retry_count = $event.retry_count,
+            retry_reasons = %$event.retry_reasons,
+            upstream_request_id = %$event.upstream_request_id,
             error_code = %$event.error_code,
             error_stage = %$event.error_stage,
             response_flags = %$event.response_flags,
+            error_source = %$event.error_source,
             upstream_mode = %$event.upstream_mode,
             contract_id = %$event.contract_id,
             error_class = %$event.error_class,
@@ -790,6 +902,7 @@ fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
         channel_id = %event.channel_id,
         channel_code = %event.channel_code,
         attempt_order = event.attempt_order,
+        api_key_id = %event.api_key_id,
         method = %event.method,
         protocol = %event.protocol,
         host_header = %event.host_header,
@@ -811,9 +924,12 @@ fn emit_access_log_generic(target: &str, event: &AccessLogEvent) {
         cache_hit = event.cache_hit,
         fallback_used = event.fallback_used,
         retry_count = event.retry_count,
+        retry_reasons = %event.retry_reasons,
+        upstream_request_id = %event.upstream_request_id,
         error_code = %event.error_code,
         error_stage = %event.error_stage,
         response_flags = %event.response_flags,
+        error_source = %event.error_source,
         upstream_mode = %event.upstream_mode,
         contract_id = %event.contract_id,
         error_class = %event.error_class,
@@ -1014,5 +1130,53 @@ mod request_id_tests {
         let seen = scope_request_trace(ctx.clone(), async { current_request_trace() }).await;
         assert_eq!(seen, Some(ctx));
         assert!(current_request_trace().is_none());
+    }
+}
+
+#[cfg(test)]
+mod classify_outcome_tests {
+    use super::{ErrorSource, OutcomeClass, classify_outcome};
+
+    fn class(code: &str, stage: &str, status: u16) -> (&'static str, &'static str) {
+        let c = classify_outcome(code, stage, status);
+        (c.response_flags, c.error_source.as_str())
+    }
+
+    #[test]
+    fn success_has_no_flag_and_no_source() {
+        assert_eq!(classify_outcome("", "", 200), OutcomeClass::OK);
+        assert_eq!(class("", "", 304), ("-", ""));
+    }
+
+    #[test]
+    fn gateway_rejections_use_envoy_flags() {
+        assert_eq!(class("E4010", "auth", 401), ("UAEX", "client"));
+        assert_eq!(class("E4031", "auth", 403), ("UAEX", "client"));
+        assert_eq!(class("E4040", "routing", 404), ("NR", "client"));
+        assert_eq!(class("E4290", "ratelimit", 429), ("RL", "gateway"));
+        assert_eq!(class("E4020", "balance", 402), ("-", "gateway"));
+        assert_eq!(class("E4000", "request", 400), ("-", "client"));
+        assert_eq!(class("E5000", "gateway", 500), ("-", "gateway"));
+    }
+
+    #[test]
+    fn upstream_failures_are_attributed_to_upstream() {
+        assert_eq!(class("E5020", "upstream", 502), ("UF", "upstream"));
+        assert_eq!(class("E5040", "upstream", 504), ("UT", "upstream"));
+        assert_eq!(class("E5021", "upstream", 502), ("-", "upstream"));
+        assert_eq!(
+            class("UPSTREAM_TIMEOUT", "upstream", 504),
+            ("UT", "upstream")
+        );
+        assert_eq!(class("UPSTREAM_BIZ", "upstream", 400), ("-", "upstream"));
+    }
+
+    #[test]
+    fn unknown_errors_no_longer_default_to_uf() {
+        assert_eq!(class("SOMETHING", "", 500), ("-", "gateway"));
+        assert_eq!(class("SOMETHING", "", 418), ("-", "client"));
+        assert_eq!(class("", "", 408), ("-", "client"));
+        assert_eq!(class("CONFIG_ERROR", "upstream", 502), ("-", "gateway"));
+        assert_eq!(ErrorSource::None.as_str(), "");
     }
 }

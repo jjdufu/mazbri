@@ -63,6 +63,9 @@ pub struct ValidateApiKeyResponse {
     pub tenant_id: String,
     #[serde(default)]
     pub api_key_prefix: String,
+    /// `api_keys.id`：调用方凭证 ID，网关写进 JWT claim `api_key_id` 并记入访问日志。
+    #[serde(default)]
+    pub api_key_id: String,
     /// Scopes configured on the API key (e.g. `read`, `write`, `admin` or `api:*`).
     #[serde(default)]
     pub scopes: Vec<String>,

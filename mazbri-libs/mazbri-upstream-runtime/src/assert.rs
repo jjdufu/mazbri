@@ -287,6 +287,7 @@ mod tests {
             final_url: "https://example.com/x".into(),
             method: "GET".into(),
             path: "/x".into(),
+            protocol: "HTTP/1.1".into(),
         }
     }
 

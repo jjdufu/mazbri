@@ -4,6 +4,7 @@ pub mod metrics;
 pub mod request_binding;
 pub mod response;
 pub mod response_cache;
+pub mod retry_ledger;
 pub mod serializer;
 pub mod stage_log;
 pub mod validation;

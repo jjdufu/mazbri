@@ -447,6 +447,7 @@ fn record_rejection_scope(
     slot.set(crate::gateway::rejection_log::RejectionScope {
         tenant_id: Some(claims.tenant_id.clone()),
         tenant_code: Some(claims.tenant_code.clone()),
+        api_key_id: Some(claims.api_key_id.clone()).filter(|id| !id.is_empty()),
         product_id,
         method,
         path,

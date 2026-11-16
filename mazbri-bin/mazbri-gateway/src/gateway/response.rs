@@ -3,6 +3,7 @@ use axum::{
     Json,
     response::{IntoResponse, Response},
 };
+use mazbri_core::{ErrorSource, OutcomeClass};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +35,12 @@ pub enum ProxyError {
         retry_after_secs: u64,
     },
     GatewayTimeout(String),
+    /// 上游连接 / 传输失败（Envoy `UF`）。
     BadGateway(String),
+    /// 熔断器打开，没有发往上游（Envoy `UO`）。对外仍是 502 `E5020`。
+    CircuitOpen(String),
+    /// 候选渠道全部失败或被跳过，没有可用上游（Envoy `UH`）。对外仍是 502 `E5020`。
+    NoHealthyUpstream(String),
     /// 上游按认证失效规则拒绝了凭据（bypass 已按配置换票重试）：502，不计费，计入熔断，
     /// 按 `switch_on_bad_gateway` 切换渠道；访问日志 `error_class=upstream_auth`。
     UpstreamAuthRejected(String),
@@ -60,9 +66,10 @@ impl std::fmt::Display for ProxyError {
                 "Idempotency store unavailable; retry the request with the same idempotency key later"
             ),
             ProxyError::GatewayTimeout(msg) => write!(f, "Gateway Timeout: {msg}"),
-            ProxyError::BadGateway(msg) | ProxyError::UpstreamAuthRejected(msg) => {
-                write!(f, "Bad Gateway: {msg}")
-            }
+            ProxyError::BadGateway(msg)
+            | ProxyError::CircuitOpen(msg)
+            | ProxyError::NoHealthyUpstream(msg)
+            | ProxyError::UpstreamAuthRejected(msg) => write!(f, "Bad Gateway: {msg}"),
             ProxyError::InternalError(msg) => write!(f, "Internal Error: {msg}"),
         }
     }
@@ -80,7 +87,9 @@ impl ProxyError {
             ProxyError::ServiceUnavailable(_) => "E5030",
             ProxyError::IdempotencyUnavailable { .. } => "IDEMPOTENCY_UNAVAILABLE",
             ProxyError::GatewayTimeout(_) => "E5040",
-            ProxyError::BadGateway(_) => "E5020",
+            ProxyError::BadGateway(_)
+            | ProxyError::CircuitOpen(_)
+            | ProxyError::NoHealthyUpstream(_) => "E5020",
             ProxyError::UpstreamAuthRejected(_) => UPSTREAM_AUTH_REJECTED_CODE,
             ProxyError::InternalError(_) => "E5000",
         }
@@ -91,6 +100,8 @@ impl ProxyError {
             self,
             ProxyError::InternalError(_)
                 | ProxyError::BadGateway(_)
+                | ProxyError::CircuitOpen(_)
+                | ProxyError::NoHealthyUpstream(_)
                 | ProxyError::UpstreamAuthRejected(_)
                 | ProxyError::GatewayTimeout(_)
         )
@@ -99,9 +110,10 @@ impl ProxyError {
     pub fn sanitized_message(&self) -> String {
         match self {
             ProxyError::InternalError(_) => "Internal Server Error".to_string(),
-            ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
-                "Upstream service unavailable".to_string()
-            }
+            ProxyError::BadGateway(_)
+            | ProxyError::CircuitOpen(_)
+            | ProxyError::NoHealthyUpstream(_)
+            | ProxyError::UpstreamAuthRejected(_) => "Upstream service unavailable".to_string(),
             // 对外稳定文案；内部细节仅写日志
             ProxyError::GatewayTimeout(_) => {
                 "Gateway Timeout: upstream or channel wait exceeded limit".to_string()
@@ -109,7 +121,34 @@ impl ProxyError {
             _ => self.to_string(),
         }
     }
+
+    /// 访问日志的 Envoy response flag 与错误来源。同为 502 `E5020` 的连接失败、熔断、
+    /// 无可用上游在这里区分开，不靠解析错误文本。
+    #[must_use]
+    pub fn outcome_class(&self) -> OutcomeClass {
+        use ErrorSource::{Client, Gateway, Upstream};
+        match self {
+            ProxyError::Forbidden(_) => OutcomeClass::new("UAEX", Client),
+            ProxyError::NotFound(_) => OutcomeClass::new("NR", Client),
+            ProxyError::BadRequest(_)
+            | ProxyError::Conflict(_)
+            | ProxyError::PayloadTooLarge(_) => OutcomeClass::new("-", Client),
+            ProxyError::TooManyRequests { .. } => OutcomeClass::new("RL", Gateway),
+            ProxyError::ServiceUnavailable(_)
+            | ProxyError::IdempotencyUnavailable { .. }
+            | ProxyError::InternalError(_) => OutcomeClass::new("-", Gateway),
+            ProxyError::GatewayTimeout(_) => OutcomeClass::new("UT", Upstream),
+            ProxyError::BadGateway(_) => OutcomeClass::new("UF", Upstream),
+            ProxyError::CircuitOpen(_) => OutcomeClass::new("UO", Gateway),
+            ProxyError::NoHealthyUpstream(_) => OutcomeClass::new("UH", Upstream),
+            ProxyError::UpstreamAuthRejected(_) => OutcomeClass::new("-", Upstream),
+        }
+    }
 }
+
+/// 网关错误响应的访问日志分类，作为响应扩展交给拒绝日志层（同 [`GatewayErrorCode`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatewayOutcome(pub OutcomeClass);
 /// 本请求的请求 ID（与响应头 `x-request-id` 一致）；不在请求作用域内时生成新 UUID。
 fn current_request_id() -> String {
     mazbri_core::current_request_trace().map_or_else(
@@ -203,9 +242,10 @@ impl IntoResponse for ProxyError {
                 (StatusCode::SERVICE_UNAVAILABLE, Some(*retry_after_secs))
             }
             ProxyError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, None),
-            ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
-                (StatusCode::BAD_GATEWAY, None)
-            }
+            ProxyError::BadGateway(_)
+            | ProxyError::CircuitOpen(_)
+            | ProxyError::NoHealthyUpstream(_)
+            | ProxyError::UpstreamAuthRejected(_) => (StatusCode::BAD_GATEWAY, None),
             ProxyError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, None),
         };
         let request_id = current_request_id();
@@ -227,12 +267,15 @@ impl IntoResponse for ProxyError {
                 _ => self.to_string(),
             }
         };
-        gateway_error_response_with_retry(
+        let outcome = self.outcome_class();
+        let mut response = gateway_error_response_with_retry(
             status,
             error_code,
             message,
             Some(request_id),
             retry_after_secs,
-        )
+        );
+        response.extensions_mut().insert(GatewayOutcome(outcome));
+        response
     }
 }

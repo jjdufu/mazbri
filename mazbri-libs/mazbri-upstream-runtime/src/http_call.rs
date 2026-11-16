@@ -99,6 +99,7 @@ pub async fn send_http(
     })?;
     let _elapsed = started.elapsed();
     let status_code = resp.status();
+    let protocol = http_version_label(resp.version()).to_string();
     let mut resp_headers = HashMap::new();
     for (key, val) in resp.headers() {
         if let Ok(str_val) = val.to_str() {
@@ -117,6 +118,7 @@ pub async fn send_http(
         final_url: call.url.to_string(),
         method: call.method.to_string(),
         path,
+        protocol,
     })
 }
 
@@ -185,6 +187,19 @@ pub fn auth_only_response(call: &HttpCall<'_>) -> OutboundResponse {
         final_url: call.url.to_string(),
         method: call.method.to_string(),
         path,
+        protocol: String::new(),
+    }
+}
+
+/// reqwest 响应的 HTTP 版本标签（访问日志 `protocol`）。
+#[must_use]
+pub fn http_version_label(version: reqwest::Version) -> &'static str {
+    match version {
+        reqwest::Version::HTTP_09 => "HTTP/0.9",
+        reqwest::Version::HTTP_10 => "HTTP/1.0",
+        reqwest::Version::HTTP_2 => "HTTP/2",
+        reqwest::Version::HTTP_3 => "HTTP/3",
+        _ => "HTTP/1.1",
     }
 }
 

@@ -49,12 +49,12 @@ pub static BYPASS_AUTH_TOKEN_FETCH_TOTAL: LazyLock<CounterVec> = LazyLock::new(|
     )
 });
 
-/// result: hit|miss|invalid
+/// kind: supplier|egress；result: hit|miss|invalid
 pub static BYPASS_CONFIG_CACHE_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "bypass_config_cache_total",
-        "Supplier config cache outcomes on bypass",
-        &["result"],
+        "Supplier config / egress spec cache outcomes on bypass",
+        &["kind", "result"],
     )
 });
 
@@ -228,8 +228,10 @@ impl UpstreamMetricsRecorder {
             .inc();
     }
 
-    pub fn record_config_cache(result: &str) {
-        BYPASS_CONFIG_CACHE_TOTAL.with_label_values(&[result]).inc();
+    pub fn record_config_cache(kind: &str, result: &str) {
+        BYPASS_CONFIG_CACHE_TOTAL
+            .with_label_values(&[kind, result])
+            .inc();
     }
 
     pub fn observe_duration(method: &str, result: &str, seconds: f64) {

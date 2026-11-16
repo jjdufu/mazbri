@@ -8,7 +8,7 @@ use mazbri_billing::{AccountBalance, AddFundsResult, UsageSummaryInfo};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
-    AccessTimingFields, emit_access_log, response_flags_for_error,
+    AccessTimingFields, classify_outcome, emit_access_log,
 };
 use mazbri_rpc::RpcError;
 use mazbri_rpc::billing::{
@@ -30,11 +30,7 @@ fn log_access(
     billing_service_duration_ms: Option<u64>,
 ) {
     let status_code = status_code.unwrap_or(0);
-    let response_flags = if status_code == 0 {
-        "-".to_string()
-    } else {
-        response_flags_for_error("", "", status_code)
-    };
+    let outcome = classify_outcome("", "", status_code);
     let event = AccessLogEvent::builder(service_name)
         .message("request_completed")
         .route(AccessRouteFields {
@@ -46,6 +42,7 @@ fn log_access(
             channel_id: None,
             channel_code: None,
             attempt_order: Some(1),
+            api_key_id: None,
         })
         .http(AccessHttpFields {
             method: method_name.to_string(),
@@ -72,12 +69,14 @@ fn log_access(
             xff: None,
             cache_hit: false,
             fallback_used: false,
-            retry_count: 0,
+            retry_reasons: Vec::new(),
+            upstream_request_id: None,
         })
         .outcome(AccessOutcomeFields {
             error_code: String::new(),
             error_stage: String::new(),
-            response_flags,
+            response_flags: outcome.response_flags.to_string(),
+            error_source: outcome.error_source.as_str().to_string(),
             error_class: String::new(),
         })
         .build();

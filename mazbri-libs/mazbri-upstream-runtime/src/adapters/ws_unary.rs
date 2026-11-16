@@ -359,6 +359,7 @@ fn closed_response(url: &str) -> OutboundResponse {
         final_url: url.to_string(),
         method: "WS".into(),
         path: url.to_string(),
+        protocol: "WebSocket".into(),
     }
 }
 
@@ -370,6 +371,7 @@ fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
         final_url: url.to_string(),
         method: "WS".into(),
         path: url.to_string(),
+        protocol: "WebSocket".into(),
     }
 }
 

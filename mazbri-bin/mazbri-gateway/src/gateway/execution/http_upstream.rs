@@ -61,6 +61,7 @@ pub(super) async fn execute_http_upstream_request(
             trace_context,
             config: &config,
             timeout_secs,
+            attempt_order: attempt.attempt_order,
         };
         let (bypass_addr, invoke_req) = build_invoke_request(&target, &mut headers)?;
         return invoke_bypass(
@@ -99,6 +100,8 @@ pub(super) async fn execute_http_upstream_request(
 pub(super) struct AttemptCtx<'a> {
     pub max_retries: u32,
     pub mode: &'a str,
+    /// 本请求内第几个候选渠道（从 1 起），透传给 bypass 访问日志。
+    pub attempt_order: u32,
 }
 
 /// 契约身份与业务 channel 分离：transparent 固定 BYPASS；microservice 读 `config.contract_id`。
@@ -130,6 +133,7 @@ struct TransparentTarget<'a> {
     trace_context: &'a TraceContext,
     config: &'a mazbri_core::SupplierConfig,
     timeout_secs: u64,
+    attempt_order: u32,
 }
 
 /// 增量下发：内容未变时只发 hash，bypass 缓存未命中再回退全量。
@@ -220,6 +224,7 @@ fn build_invoke_request(
         trace_context,
         config,
         timeout_secs,
+        attempt_order,
     } = *target;
     let egress = cached_egress(&channel.channel_id, &channel.channel_config)?;
     let spec = &egress.spec;
@@ -295,6 +300,9 @@ fn build_invoke_request(
         } else {
             String::new()
         },
+        attempt_order,
+        tenant_code: claims.tenant_code.clone(),
+        channel_code: channel.channel_code.clone(),
     };
     Ok((bypass_addr, invoke_req))
 }
@@ -328,7 +336,7 @@ async fn invoke_bypass(
             .execute_invoke(contract_id, bypass_addr, request.clone())
             .await;
         if let Ok(ref response) = response {
-            record_internal_retries(ctx.mode, response.internal_retries);
+            record_internal_retries(ctx.mode, response.internal_retries, &response.retry_reasons);
         }
         match response {
             Ok(response) if !response.success => {
@@ -385,6 +393,14 @@ fn force_full_config(
     Ok(())
 }
 
+fn upstream_request_id_of(response: &upstream_proto::InvokeResponse) -> String {
+    response
+        .upstream_meta
+        .as_ref()
+        .map(|m| m.upstream_request_id.clone())
+        .unwrap_or_default()
+}
+
 fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> UpstreamResponse {
     if let Some(ref biz) = response.biz_error {
         let fallback = || {
@@ -406,7 +422,7 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
             content_type: Some("application/json".into()),
             body_bytes_len: bytes_len,
             upstream_wire_ms: 0,
-            internal_retries: response.internal_retries,
+            upstream_request_id: upstream_request_id_of(response),
         };
     }
     let payload = if response.payload_json.is_empty() {
@@ -432,7 +448,7 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
         content_type: Some("application/json".into()),
         body_bytes_len: response.payload_json.len() as u64,
         upstream_wire_ms,
-        internal_retries: response.internal_retries,
+        upstream_request_id: upstream_request_id_of(response),
     }
 }
 
@@ -472,7 +488,7 @@ async fn execute_plain_request(
                     content_type,
                     body_bytes_len: data.body_bytes_len,
                     upstream_wire_ms: 0,
-                    internal_retries: 0,
+                    upstream_request_id: String::new(),
                 });
             }
             Err(error) => {
@@ -570,28 +586,18 @@ pub(super) fn is_client_ip_header(header_name: &str) -> bool {
 #[cfg(test)]
 mod internal_retries_tests {
     use super::*;
+    use crate::gateway::retry_ledger::scope_retry_ledger;
 
-    #[test]
-    fn bypass_internal_retries_are_carried() {
-        let ok = upstream_proto::InvokeResponse {
-            success: true,
-            payload_json: "{}".into(),
-            internal_retries: 1,
-            retry_reasons: vec!["auth_rejected:jsonrpc_code".into()],
-            ..Default::default()
-        };
-        assert_eq!(invoke_response_to_upstream(&ok).internal_retries, 1);
-
-        let biz = upstream_proto::InvokeResponse {
-            success: true,
-            biz_error: Some(upstream_proto::InvokeBizError {
-                code: "E".into(),
-                message: "m".into(),
-                details_json: String::new(),
-            }),
-            internal_retries: 2,
-            ..Default::default()
-        };
-        assert_eq!(invoke_response_to_upstream(&biz).internal_retries, 2);
+    #[tokio::test]
+    async fn bypass_internal_retries_land_in_request_ledger() {
+        let ((), ledger) = scope_retry_ledger(async {
+            record_internal_retries("transparent", 1, &["auth_rejected:jsonrpc_code".into()]);
+            record_retry("transparent", RetryReason::ConfigCacheMiss);
+        })
+        .await;
+        assert_eq!(
+            ledger.reasons(),
+            vec!["auth_rejected:jsonrpc_code", "config_cache_miss"]
+        );
     }
 }

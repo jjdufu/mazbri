@@ -58,6 +58,7 @@ Content-Type: application/json
 ```
 
   `expires_in` 单位秒，由租户配置决定；示例值仅示意。调用网关前须确认 token 未过期，过期后重新换取。
+  token 是不透明凭据，租户不应解析其内容。平台在 JWT 里记录签发它的 API Key ID（claim `api_key_id`，不含密钥本身），用于按凭证审计与统计；升级到带该 claim 的版本后，旧 token 校验失败（401），重新换取即可。
 
 - 失败：`{"success": false, "error": "<原因>"}`，HTTP 状态：
 

@@ -649,6 +649,10 @@ pub struct EgressResponseSpec {
     pub unwrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ok: Option<EgressOkSpec>,
+    /// 上游在哪个响应头里回流水号（如 `X-Ca-Request-Id`、`x-amzn-RequestId`）；缺省 `x-request-id`。
+    /// 读到的值记入访问日志 `upstream_request_id`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id_header: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -754,6 +758,17 @@ pub struct ChannelEgressSpec {
 }
 
 impl ChannelEgressSpec {
+    /// 上游流水号所在的响应头名；未配置时为 `x-request-id`。
+    #[must_use]
+    pub fn upstream_request_id_header(&self) -> &str {
+        self.response
+            .as_ref()
+            .and_then(|r| r.request_id_header.as_deref())
+            .map(str::trim)
+            .filter(|h| !h.is_empty())
+            .unwrap_or("x-request-id")
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

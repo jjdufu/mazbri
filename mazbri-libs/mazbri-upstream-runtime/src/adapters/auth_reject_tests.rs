@@ -23,6 +23,7 @@ fn outcome(status: u16, body: &[u8], biz_error: Option<BizError>) -> AdapterOutc
             final_url: "http://u/x".into(),
             method: "POST".into(),
             path: "/x".into(),
+            protocol: "HTTP/1.1".into(),
         },
         payload: serde_json::Value::Null,
         biz_error,

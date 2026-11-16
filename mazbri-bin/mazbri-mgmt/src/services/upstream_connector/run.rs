@@ -290,6 +290,7 @@ fn invoke_assert_response(
             final_url: String::new(),
             method: "POST".into(),
             path: "/".into(),
+            protocol: String::new(),
         });
         r.body = serde_json::to_vec(p).unwrap_or_default();
         if result.biz_error.is_some() {
@@ -752,6 +753,7 @@ fn run_bypass_assertions(
         final_url: outcome.url.clone().unwrap_or_default(),
         method: "POST".into(),
         path: "/".into(),
+        protocol: String::new(),
     };
     evaluate_assertions(&parsed, Some(&response), outcome.upstream_wire_ms)
 }

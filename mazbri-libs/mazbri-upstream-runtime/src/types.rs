@@ -111,6 +111,8 @@ pub struct OutboundResponse {
     pub final_url: String,
     pub method: String,
     pub path: String,
+    /// 实际出站协议：`HTTP/1.1` / `HTTP/2` / `WebSocket`；未真正发出时为空。
+    pub protocol: String,
 }
 
 /// Production / workbench invoke: tenant JSON object + channel egress spec.
@@ -149,6 +151,12 @@ pub struct UpstreamMeta {
     pub url: String,
     pub adapter: String,
     pub latency_ms: u64,
+    /// 实际出站 method / path / 协议（访问日志记真实出站值，而不是 gRPC hop 的值）。
+    pub method: String,
+    pub path: String,
+    pub protocol: String,
+    /// 上游响应回来的流水号，按 egress spec `response.request_id_header`（缺省 `x-request-id`）读取。
+    pub request_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

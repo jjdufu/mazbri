@@ -231,6 +231,7 @@ impl AuthService for AuthTarpcService {
                     valid: true,
                     tenant_id: key_auth.tenant_id.to_string(),
                     api_key_prefix: key_auth.api_key_prefix,
+                    api_key_id: key_auth.credential_id.to_string(),
                     scopes: key_auth.scopes,
                     error: None,
                 }
@@ -255,6 +256,7 @@ impl AuthService for AuthTarpcService {
                     valid: false,
                     tenant_id: String::new(),
                     api_key_prefix: String::new(),
+                    api_key_id: String::new(),
                     scopes: Vec::new(),
                     error: Some(rpc_err),
                 }

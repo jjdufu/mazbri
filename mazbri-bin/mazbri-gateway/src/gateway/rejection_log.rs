@@ -15,11 +15,13 @@ use axum::middleware::Next;
 use axum::response::Response;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
-    AccessTimingFields, TraceContext, emit_access_log, resolve_client_ip, response_flags_for_error,
+    AccessTimingFields, OutcomeClass, TraceContext, classify_outcome, emit_access_log,
+    resolve_client_ip,
 };
 
 use super::metrics::classify_error_class;
-use super::response::{GatewayErrorCode, status_error_code};
+use super::response::{GatewayErrorCode, GatewayOutcome, status_error_code};
+use super::retry_ledger::scope_retry_ledger;
 
 /// Response extension: the handler already emitted the full `gateway.access` line.
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +32,7 @@ pub struct AccessLogged;
 pub struct RejectionScope {
     pub tenant_id: Option<String>,
     pub tenant_code: Option<String>,
+    pub api_key_id: Option<String>,
     pub product_id: Option<String>,
     pub method: Option<String>,
     pub path: Option<String>,
@@ -90,7 +93,8 @@ pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Re
     let slot = RejectionSlot::default();
     req.extensions_mut().insert(slot.clone());
 
-    let response = next.run(req).await;
+    // 重试台账包住鉴权、限流与处理函数：成功访问行和下面的拒绝行读的是同一份。
+    let (response, ledger) = scope_retry_ledger(next.run(req)).await;
     let status = response.status();
     if response.extensions().get::<AccessLogged>().is_some()
         || !(status.is_client_error() || status.is_server_error())
@@ -100,6 +104,10 @@ pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Re
     let scope = slot.take();
     let error_code = rejection_error_code(&response);
     let error_stage = rejection_stage(status).to_string();
+    let outcome = response.extensions().get::<GatewayOutcome>().map_or_else(
+        || classify_outcome(&error_code, &error_stage, status.as_u16()),
+        |o| o.0,
+    );
     emit_rejection_log(&RejectionLog {
         trace_context: &trace_context,
         headers: &headers,
@@ -109,6 +117,8 @@ pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Re
         status: status.as_u16(),
         error_code,
         error_stage,
+        outcome,
+        retry_reasons: ledger.reasons(),
         duration_ms: mazbri_core::num::millis_u64(started_at.elapsed()),
     });
     response
@@ -123,6 +133,8 @@ struct RejectionLog<'a> {
     status: u16,
     error_code: String,
     error_stage: String,
+    outcome: OutcomeClass,
+    retry_reasons: Vec<String>,
     duration_ms: u64,
 }
 
@@ -145,6 +157,7 @@ fn emit_rejection_log(log: &RejectionLog<'_>) {
             tenant_id: log.scope.tenant_id.clone(),
             tenant_code: log.scope.tenant_code.clone(),
             product_id: log.scope.product_id.clone(),
+            api_key_id: log.scope.api_key_id.clone(),
             ..AccessRouteFields::default()
         })
         .http(AccessHttpFields {
@@ -174,10 +187,12 @@ fn emit_rejection_log(log: &RejectionLog<'_>) {
         .network(AccessNetworkFields {
             client_ip: Some(log.client_ip.clone()),
             xff: header_str("x-forwarded-for"),
+            retry_reasons: log.retry_reasons.clone(),
             ..AccessNetworkFields::default()
         })
         .outcome(AccessOutcomeFields {
-            response_flags: response_flags_for_error(&log.error_code, &log.error_stage, log.status),
+            response_flags: log.outcome.response_flags.to_string(),
+            error_source: log.outcome.error_source.as_str().to_string(),
             error_class: classify_error_class(log.status, false, &log.error_code),
             error_code: log.error_code.clone(),
             error_stage: log.error_stage.clone(),

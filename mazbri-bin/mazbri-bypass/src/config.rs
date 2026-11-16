@@ -148,8 +148,10 @@ fn default_connect_timeout_secs() -> u64 {
     3
 }
 
+/// 出站 UA 只标明 HTTP 客户端库（同 `OkHttp` 的 `okhttp/<版本>` 惯例），不带版本号，避免暴露
+/// 依赖版本（RFC 9110 §10.1.5：`product-version` 可省略）。
 fn default_user_agent() -> String {
-    "mazbri-bypass/0.1".to_string()
+    "reqwest".to_string()
 }
 
 fn default_ws_handshake_timeout_secs() -> u64 {

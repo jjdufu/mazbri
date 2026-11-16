@@ -722,6 +722,8 @@ struct Trace {
     adapter: String,
     /// 认证重试轮：阶段名加 `#retry` 后缀。
     retry_round: bool,
+    /// 上游流水号响应头（egress spec `response.request_id_header`，缺省 `x-request-id`）。
+    request_id_header: String,
 }
 
 impl Trace {
@@ -732,6 +734,7 @@ impl Trace {
             enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
             adapter: input.spec.adapter.clone(),
             retry_round: false,
+            request_id_header: input.spec.upstream_request_id_header().to_string(),
         }
     }
 
@@ -746,11 +749,21 @@ impl Trace {
     }
 
     fn upstream_meta(&self, response: &crate::types::OutboundResponse) -> UpstreamMeta {
+        let request_id = response
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(&self.request_id_header))
+            .map(|(_, v)| v.trim().to_string())
+            .unwrap_or_default();
         UpstreamMeta {
             status: response.status,
             url: response.final_url.clone(),
             adapter: self.adapter.clone(),
             latency_ms: elapsed_ms(self.start),
+            method: response.method.clone(),
+            path: response.path.clone(),
+            protocol: response.protocol.clone(),
+            request_id,
         }
     }
 

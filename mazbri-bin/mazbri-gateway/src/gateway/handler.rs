@@ -25,8 +25,8 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessBillingFields, AccessHttpFields, AccessLogEvent, AccessNetworkFields,
     AccessOutcomeFields, AccessRouteFields, AccessTimingFields, AccessUpstreamMetaFields,
-    TraceContext, emit_access_log, normalize_upstream_host, resolve_client_ip,
-    response_flags_for_error, validate_tenant_id,
+    TraceContext, classify_outcome, emit_access_log, normalize_upstream_host, resolve_client_ip,
+    validate_tenant_id,
 };
 use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
@@ -937,7 +937,7 @@ fn emit_gateway_access_log(
     let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
     let status = fetched.response.status;
     let (error_code, error_stage) = access_error_fields(done);
-    let response_flags = response_flags_for_error(&error_code, &error_stage, status);
+    let outcome = classify_outcome(&error_code, &error_stage, status);
     let error_class = classify_error_class(status, done.serialized.success, &error_code);
     let header_str = |name: &str| {
         done.headers
@@ -956,6 +956,7 @@ fn emit_gateway_access_log(
             channel_id: route.map(|r| r.channel_id.clone()),
             channel_code: route.map(|r| r.channel_code.clone()),
             attempt_order: route.map(|r| r.attempt_order),
+            api_key_id: Some(claims.api_key_id.clone()).filter(|id| !id.is_empty()),
         })
         .http(AccessHttpFields {
             method: req.method.clone(),
@@ -975,15 +976,15 @@ fn emit_gateway_access_log(
             upstream_host: route
                 .filter(|_| live_upstream)
                 .and_then(|r| normalize_upstream_host(&r.upstream_url)),
-            upstream_status_code: Some(status),
+            // 缓存 / CBPro 兜底没打到上游：上游状态记 0（对标 Envoy 未连上游时 `-`）。
+            upstream_status_code: Some(if live_upstream { status } else { 0 }),
             client_ip: Some(done.source_ip.to_string()),
             xff: header_str("x-forwarded-for"),
             cache_hit: fetched.from_cache,
             fallback_used: fetched.from_cbpro_fallback,
-            retry_count: access_retry_count(
-                route.filter(|_| live_upstream).map(|r| r.attempt_order),
-                fetched.response.internal_retries,
-            ),
+            retry_reasons: super::retry_ledger::current_retry_reasons(),
+            upstream_request_id: Some(fetched.response.upstream_request_id.clone())
+                .filter(|id| live_upstream && !id.is_empty()),
         })
         .upstream_meta(AccessUpstreamMetaFields {
             upstream_mode: route
@@ -994,38 +995,11 @@ fn emit_gateway_access_log(
         .outcome(AccessOutcomeFields {
             error_code,
             error_stage,
-            response_flags,
+            response_flags: outcome.response_flags.to_string(),
+            error_source: outcome.error_source.as_str().to_string(),
             error_class,
         })
         .build();
     emit_access_log("gateway.access", &event);
 }
 
-/// 访问日志 `retry_count`：渠道切换次数（`attempt_order - 1`）加 bypass 内部重试次数；
-/// 未调用实时上游（缓存 / CBPro）时为 0。
-fn access_retry_count(live_attempt_order: Option<u32>, internal_retries: u32) -> u32 {
-    live_attempt_order.map_or(0, |order| {
-        order.saturating_sub(1).saturating_add(internal_retries)
-    })
-}
-
-#[cfg(test)]
-mod access_retry_count_tests {
-    use super::access_retry_count;
-
-    #[test]
-    fn counts_switches_and_internal_retries() {
-        assert_eq!(access_retry_count(Some(1), 0), 0);
-        assert_eq!(access_retry_count(Some(1), 1), 1, "bypass internal retry");
-        assert_eq!(
-            access_retry_count(Some(2), 1),
-            2,
-            "one switch + one internal retry"
-        );
-        assert_eq!(
-            access_retry_count(None, 3),
-            0,
-            "cache / fallback: no live upstream"
-        );
-    }
-}

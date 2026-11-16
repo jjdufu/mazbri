@@ -167,6 +167,9 @@ impl BypassProbeClient {
             supplier_code: params.supplier_code.to_owned(),
             supplier_config_hash: hash_config_json(params.supplier_config_json),
             supplier_config_json: params.supplier_config_json.to_owned(),
+            attempt_order: 1,
+            tenant_code: String::new(),
+            channel_code: String::new(),
         };
         let url = format!("{}{MGMT_PROBE_INVOKE_PATH}", self.base_url);
         let response = self
@@ -365,6 +368,10 @@ mod tests {
                 url: "http://upstream.invalid/v3/gateway".into(),
                 adapter: "http_envelope".into(),
                 upstream_wire_ms,
+                upstream_request_id: String::new(),
+                method: "POST".into(),
+                path: "/v3/gateway".into(),
+                protocol: "HTTP/1.1".into(),
             }),
             internal_retries: 0,
             retry_reasons: Vec::new(),
