@@ -57,7 +57,7 @@ mazbri-auth = { version = "0.1.0", path = "../../mazbri-libs/mazbri-auth" }
 mazbri-cache = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cache" }
 mazbri-billing = { version = "0.1.0", path = "../../mazbri-libs/mazbri-billing" }
 sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
-uuid = {version = "1.21", features = ["v4", "v5", "serde"]}
+uuid = {version = "1.21", features = ["v4", "v5", "v7", "serde"]}
 
 jsonwebtoken = {version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"]}
 

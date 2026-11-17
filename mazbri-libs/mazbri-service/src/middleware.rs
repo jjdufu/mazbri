@@ -277,8 +277,18 @@ mod request_id_middleware_tests {
     async fn replaces_non_conforming_request_id_and_keeps_original() {
         let response = call("/ok", Some("bad id/1"), None).await;
         let echoed = header(&response, "x-request-id").to_string();
-        assert!(uuid::Uuid::parse_str(&echoed).is_ok());
+        let parsed = uuid::Uuid::parse_str(&echoed).expect("replaced request id is a uuid");
+        assert_eq!(parsed.get_version_num(), 7);
         assert_eq!(body_text(response).await, format!("{echoed}|bad id/1"));
+    }
+
+    #[tokio::test]
+    async fn missing_request_id_is_generated_as_uuid_v7() {
+        let response = call("/ok", None, None).await;
+        let echoed = header(&response, "x-request-id").to_string();
+        let parsed = uuid::Uuid::parse_str(&echoed).expect("generated request id is a uuid");
+        assert_eq!(parsed.get_version_num(), 7);
+        assert_eq!(body_text(response).await, format!("{echoed}|"));
     }
 
     #[tokio::test]

@@ -472,11 +472,7 @@ impl TraceContext {
     /// 当前 tracing span 的链路上下文，配一个新的 `request_id`。
     #[must_use]
     pub fn current() -> Self {
-        Self::for_span(
-            Uuid::new_v4().to_string().into(),
-            &tracing::Span::current(),
-            Arc::from(""),
-        )
+        Self::for_span(new_request_id(), &tracing::Span::current(), Arc::from(""))
     }
 
     /// 记下被替换的入站原始请求 ID（见 [`inbound_request_id`]）。
@@ -573,28 +569,34 @@ pub fn is_valid_request_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// 合规则原样使用，否则（含空值）生成新 UUID。用于内部跳转收到的请求 ID。
+/// 本服务新签发的请求流水号：`UUIDv7` 的带连字符标准字符串，按生成时间有序。
+#[must_use]
+fn new_request_id() -> Arc<str> {
+    Uuid::now_v7().to_string().into()
+}
+
+/// 合规则原样使用，否则（含空值）生成新的 `UUIDv7`。用于内部跳转收到的请求 ID。
 #[must_use]
 pub fn request_id_or_new(raw: &str) -> Arc<str> {
     let trimmed = raw.trim();
     if is_valid_request_id(trimmed) {
         trimmed.into()
     } else {
-        Uuid::new_v4().to_string().into()
+        new_request_id()
     }
 }
 
 /// 入口对 `X-Request-Id` 的判定结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InboundRequestId {
-    /// 本次请求的请求 ID：合规的入站值原样保留，否则为新生成的 UUID。
+    /// 本次请求的请求 ID：合规的入站值原样保留，否则为新生成的 `UUIDv7`。
     pub request_id: Arc<str>,
     /// 入站值不合规时的原值（按字节截断到 [`CLIENT_REQUEST_ID_MAX_LEN`]），否则为空。
     pub client_request_id: Arc<str>,
 }
 
-/// 入口判定 `X-Request-Id`：合规（`[A-Za-z0-9._-]{1,128}`）原样保留；缺失则新生成 UUID；
-/// 不合规则替换为新 UUID，原值（含非 ASCII 字节，按 UTF-8 宽松解码）截断后另存。
+/// 入口判定 `X-Request-Id`：合规（`[A-Za-z0-9._-]{1,128}`）原样保留；缺失则新生成 `UUIDv7`；
+/// 不合规则替换为新的 `UUIDv7`，原值（含非 ASCII 字节，按 UTF-8 宽松解码）截断后另存。
 #[must_use]
 pub fn inbound_request_id(headers: &HeaderMap) -> InboundRequestId {
     let raw = headers
@@ -607,11 +609,11 @@ pub fn inbound_request_id(headers: &HeaderMap) -> InboundRequestId {
             client_request_id: Arc::from(""),
         },
         Some(value) => InboundRequestId {
-            request_id: Uuid::new_v4().to_string().into(),
+            request_id: new_request_id(),
             client_request_id: truncate_utf8(&value, CLIENT_REQUEST_ID_MAX_LEN).into(),
         },
         None => InboundRequestId {
-            request_id: Uuid::new_v4().to_string().into(),
+            request_id: new_request_id(),
             client_request_id: Arc::from(""),
         },
     }
@@ -631,10 +633,9 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
 /// 内部跳转读取 `x-request-id`（入口中间件已写回合规值）；缺失或不合规时新生成。
 #[must_use]
 pub fn request_id_from_headers<H: TraceHeaderSource>(headers: &H) -> Arc<str> {
-    headers.header_value("x-request-id").map_or_else(
-        || Uuid::new_v4().to_string().into(),
-        |value| request_id_or_new(&value),
-    )
+    headers
+        .header_value("x-request-id")
+        .map_or_else(new_request_id, |value| request_id_or_new(&value))
 }
 
 /// 读取入口中间件写回请求头的链路上下文（`traceparent` 即入口 span）。
@@ -983,6 +984,11 @@ mod request_id_tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
+    fn assert_generated_v7(id: &str) {
+        let uuid = Uuid::parse_str(id).expect("generated request id is a uuid");
+        assert_eq!(uuid.get_version_num(), 7);
+    }
+
     #[test]
     fn valid_request_id_charset_and_length() {
         assert!(is_valid_request_id("6e7f448edae94db78e5e9f87f1402eaa"));
@@ -1015,13 +1021,13 @@ mod request_id_tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-request-id", HeaderValue::from_static("order 42/abc"));
         let inbound = inbound_request_id(&headers);
-        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert_generated_v7(&inbound.request_id);
         assert_eq!(inbound.client_request_id.as_ref(), "order 42/abc");
 
         let long = "x".repeat(300);
         headers.insert("x-request-id", HeaderValue::from_str(&long).expect("ascii"));
         let inbound = inbound_request_id(&headers);
-        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert_generated_v7(&inbound.request_id);
         assert_eq!(inbound.client_request_id.len(), CLIENT_REQUEST_ID_MAX_LEN);
 
         headers.insert(
@@ -1035,21 +1041,31 @@ mod request_id_tests {
     #[test]
     fn missing_inbound_id_generates_uuid_without_client_id() {
         let inbound = inbound_request_id(&HeaderMap::new());
-        assert!(Uuid::parse_str(&inbound.request_id).is_ok());
+        assert_generated_v7(&inbound.request_id);
         assert!(inbound.client_request_id.is_empty());
     }
 
     #[test]
     fn internal_hop_id_kept_or_regenerated() {
         assert_eq!(request_id_or_new("abc-1").as_ref(), "abc-1");
-        assert!(Uuid::parse_str(&request_id_or_new("bad id")).is_ok());
-        assert!(Uuid::parse_str(&request_id_or_new("")).is_ok());
+        assert_generated_v7(&request_id_or_new("bad id"));
+        assert_generated_v7(&request_id_or_new(""));
+    }
+
+    #[test]
+    fn generated_request_ids_are_uuid_v7() {
+        assert_generated_v7(&inbound_request_id(&HeaderMap::new()).request_id);
+        assert_generated_v7(&request_id_or_new("not valid"));
+        assert_generated_v7(&TraceContext::current().request_id);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-request-id", HeaderValue::from_static("bad/id"));
+        assert_generated_v7(&inbound_request_id(&headers).request_id);
     }
 
     #[test]
     fn current_without_otel_span_still_has_w3c_ids() {
         let ctx = TraceContext::current();
-        assert!(Uuid::parse_str(&ctx.request_id).is_ok());
+        assert_generated_v7(&ctx.request_id);
         assert_eq!(ctx.request_id.len(), 36);
         assert_eq!(ctx.trace_id.len(), 32);
         assert_eq!(ctx.span_id.len(), 16);

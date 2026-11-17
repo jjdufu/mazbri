@@ -149,10 +149,10 @@ impl ProxyError {
 /// 网关错误响应的访问日志分类，作为响应扩展交给拒绝日志层（同 [`GatewayErrorCode`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GatewayOutcome(pub OutcomeClass);
-/// 本请求的请求 ID（与响应头 `x-request-id` 一致）；不在请求作用域内时生成新 UUID。
+/// 本请求的请求 ID（与响应头 `x-request-id` 一致）；不在请求作用域内时生成新的 `UUIDv7`。
 fn current_request_id() -> String {
     mazbri_core::current_request_trace().map_or_else(
-        || Uuid::new_v4().to_string(),
+        || Uuid::now_v7().to_string(),
         |trace| trace.request_id.to_string(),
     )
 }

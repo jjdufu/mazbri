@@ -78,7 +78,7 @@ flate2 = "1.0"
 prometheus = "0.14"
 anyhow = "1.0"
 thiserror = "2.0"
-uuid = {version = "1.21", features = ["v4", "serde"]}
+uuid = {version = "1.21", features = ["v4", "v7", "serde"]}
 chrono = {version = "0.4", features = ["serde"]}
 rust_decimal = {version = "1.32", features = ["serde"]}
 dotenvy = "0.15"

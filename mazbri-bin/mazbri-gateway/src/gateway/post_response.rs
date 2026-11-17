@@ -133,7 +133,7 @@ pub(crate) fn build_usage_event(ctx: &UsageChargeContext<'_>) -> (UsageOutboxEve
     let billable = billing_code.default_billable();
     let calculator = build_billing_calculator(ctx.product_detail);
     let calc_result = calculator.calculate_call();
-    let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::new_v4());
+    let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::now_v7());
     // Fingerprint → deterministic event_id so outbox unique index dedupes transport retries.
     let event_id = if let Some(fp) = ctx.fingerprint {
         Uuid::new_v5(&Uuid::NAMESPACE_OID, fp.as_bytes())
