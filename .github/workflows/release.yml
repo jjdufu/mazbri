@@ -190,7 +190,7 @@ jobs:
             git diff --name-only "v$BASE" HEAD > /tmp/changed.txt
             cat /tmp/changed.txt
             git show "v$BASE:mazbri-bin/Cargo.lock" > /tmp/old.lock 2>/dev/null || : > /tmp/old.lock
-            python3 .github/scripts/detect.py /tmp/metadata.json /tmp/changed.txt /tmp/old.lock mazbri-bin/Cargo.lock > /tmp/plan.json
+            python3 .github/scripts/detect.py /tmp/metadata.json /tmp/changed.txt /tmp/old.lock mazbri-bin/Cargo.lock --base "v$BASE" > /tmp/plan.json
           else
             # rehearsal: base images exist in the registries but have no git tag
             echo "::warning::base v$BASE has no git tag; treating source as unchanged"
