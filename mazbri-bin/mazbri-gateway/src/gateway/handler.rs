@@ -510,7 +510,7 @@ async fn fetch_response(
         );
         return Ok(FetchedResponse {
             response: cached.into_upstream(),
-            interaction_event_id: Uuid::new_v4(),
+            interaction_event_id: Uuid::now_v7(),
             upstream_route: matched_route,
             from_cache: true,
             from_cbpro_fallback: false,

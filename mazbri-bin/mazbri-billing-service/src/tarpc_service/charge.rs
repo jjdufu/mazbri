@@ -23,7 +23,7 @@ pub(super) async fn handle_record_usage(
     service: &BillingTarpcService,
     req: RecordUsageRequest,
 ) -> RecordUsageResponse {
-    let billing_id = Uuid::new_v4().to_string();
+    let billing_id = Uuid::now_v7().to_string();
     match prepare_usage(service, req).await {
         Ok((tenant_id, account_id, usage_record_id, cost_value)) => {
             process_charge(

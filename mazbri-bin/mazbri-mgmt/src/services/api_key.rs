@@ -174,7 +174,7 @@ pub async fn create_api_key(
         .begin()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
-    let credential_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::now_v7();
     let metadata_json = serde_json::json!({ "created_by" : "mgmt-api", });
     let cred_result = repo::insert_credential(
         &mut tx,
@@ -192,7 +192,7 @@ pub async fn create_api_key(
             "Failed to insert credential: {e}"
         )));
     }
-    let api_key_id = uuid::Uuid::new_v4();
+    let api_key_id = uuid::Uuid::now_v7();
     let mut scopes_array: Vec<String> = Vec::new();
     for s in payload.scopes.as_slice() {
         let s = s.as_str().to_string();
@@ -482,7 +482,7 @@ async fn rotate_api_key_in_tx(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to deactivate previous credential: {e}")))?;
     let inherited_expires_at = compute_rotated_expiration(locked.expires_at, Utc::now());
-    let credential_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::now_v7();
     let metadata_json = serde_json::json!({
         "created_by": "mgmt-api-rotate",
         "rotated_from_prefix": old_prefix,
@@ -502,7 +502,7 @@ async fn rotate_api_key_in_tx(
     let key_info = repo::insert_api_key(
         tx,
         repo::InsertApiKeyParams {
-            api_key_id: uuid::Uuid::new_v4(),
+            api_key_id: uuid::Uuid::now_v7(),
             credential_id,
             prefix: &material.new_prefix,
             key_hash: &material.key_hash,

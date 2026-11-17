@@ -56,7 +56,7 @@ ts-rs = { version = "12.0", features = ["uuid-impl", "chrono-impl"] }
 
 url = "2"
 
-uuid = {version = "1.21", features = ["v4", "serde"]}
+uuid = {version = "1.21", features = ["v4", "v7", "serde"]}
 
 rand = {version = "0.10.0"}
 

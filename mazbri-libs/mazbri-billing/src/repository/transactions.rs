@@ -78,7 +78,7 @@ pub(crate) async fn deduct_balance(
             "Insufficient balance: required {amount}, tenant {tenant_id}"
         ))
     })?;
-    let transaction_id = Uuid::new_v4();
+    let transaction_id = Uuid::now_v7();
     let balance_before = new_balance + amount;
     sqlx::query(
         r"INSERT INTO transactions
@@ -143,7 +143,7 @@ pub(crate) async fn add_funds(
     })?;
     let account_id: Uuid = row.get("id");
     let new_balance: Decimal = row.get("balance");
-    let transaction_id = Uuid::new_v4();
+    let transaction_id = Uuid::now_v7();
     let now = Utc::now();
     let balance_before = new_balance - amount;
     sqlx::query(
@@ -443,7 +443,7 @@ pub(crate) async fn deduct_and_record(
         .await
         .map_err(PgBillingRepository::map_error)?;
     let (balance_before, balance_after) = debit_balance(&mut tx, tenant_id, amount).await?;
-    let transaction_id = Uuid::new_v4();
+    let transaction_id = Uuid::now_v7();
     record_usage_charge(
         &mut tx,
         &UsageCharge {
@@ -613,7 +613,7 @@ pub(crate) async fn deduct_and_record_batch(
         .map_err(PgBillingRepository::map_error)?;
     let (balance_before_batch, balance_after_final) =
         debit_balance(&mut tx, tenant_id, total).await?;
-    let (plan, cursor) = plan_batch_charges(balance_before_batch, items, Uuid::new_v4);
+    let (plan, cursor) = plan_batch_charges(balance_before_batch, items, Uuid::now_v7);
     if cursor != balance_after_final {
         return Err(CoreError::Validation(format!(
             "batch balance cursor mismatch: cursor {cursor} != db {balance_after_final}"
@@ -707,7 +707,7 @@ pub(crate) async fn create_adjustment(
         .execute(&mut *tx)
         .await
         .map_err(PgBillingRepository::map_error)?;
-    let transaction_id = Uuid::new_v4();
+    let transaction_id = Uuid::now_v7();
     sqlx::query(
             "INSERT INTO transactions (id, tenant_id, account_id, transaction_type, amount, balance_before, balance_after, status, description)
          VALUES ($1, $2, $3, 'adjustment', $4, $5, $6, 'completed', $7)",

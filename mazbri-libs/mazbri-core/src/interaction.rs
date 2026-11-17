@@ -43,7 +43,7 @@ impl InteractionEvent {
     #[must_use]
     pub fn new(request_id: &str, tenant_id: &str, product_id: &str) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             request_id: request_id.to_string(),
             tenant_id: tenant_id.to_string(),
             product_id: product_id.to_string(),
@@ -88,5 +88,16 @@ impl InteractionEvent {
     }
     pub fn mark_final(&mut self, status: &str) {
         self.final_status = Some(status.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InteractionEvent;
+
+    #[test]
+    fn new_event_id_is_uuid_v7() {
+        let event = InteractionEvent::new("rid", "tenant", "product");
+        assert_eq!(event.id.get_version_num(), 7);
     }
 }

@@ -40,7 +40,7 @@ tracing = {version = "0.1"}
 
 anyhow = {version = "1.0"}
 
-uuid = {version = "1.21", features = ["v4", "serde"]}
+uuid = {version = "1.21", features = ["v4", "v7", "serde"]}
 
 chrono = {version = "0.4", features = ["serde"]}
 

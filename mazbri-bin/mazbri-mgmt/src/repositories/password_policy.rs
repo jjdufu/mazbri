@@ -133,7 +133,7 @@ pub async fn insert_password_history(
         INSERT INTO password_history (id, user_id, password_hash, changed_at)
         VALUES ($1, $2, $3, NOW())
     ";
-    let history_id = uuid::Uuid::new_v4();
+    let history_id = uuid::Uuid::now_v7();
     sqlx::query(query)
         .bind(history_id)
         .bind(user_id)

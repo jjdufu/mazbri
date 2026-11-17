@@ -13,7 +13,7 @@ impl ProductService {
         product_id: &str,
         config: Option<&TenantProductConfig>,
     ) -> Result<TenantProduct> {
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         let now = Utc::now();
         let product_meta: Option<(Uuid, bool)> =
             sqlx::query_as("SELECT id, cb_pro_enabled FROM products WHERE product_id = $1")
