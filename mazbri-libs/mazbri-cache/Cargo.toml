@@ -27,7 +27,6 @@ lru = { workspace = true }
 
 prometheus = { workspace = true }
 dashmap = { workspace = true }
-redis = { workspace = true }
 
 [lints]
 workspace = true

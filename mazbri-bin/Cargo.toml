@@ -79,7 +79,6 @@ prometheus = { version = "0.14" }
 qrcode = { version = "0.14" }
 rand = { version = "0.10.0" }
 rcgen = { version = "0.13", features = ["x509-parser", "pem"] }
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager", "aio"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"] }
 rust-embed = { version = "8.7", features = ["interpolate-folder-path"] }
 rust_decimal = { version = "1.32", features = ["serde"] }

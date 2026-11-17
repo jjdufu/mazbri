@@ -6,8 +6,8 @@ use crate::redis::keys::{
     rate_limit_key,
 };
 use redis::AsyncCommands;
-use redis::aio::ConnectionManager;
-use redis::cluster::ClusterClient;
+use redis::aio::{ConnectionManager, ConnectionManagerConfig};
+use redis::cluster::{ClusterClient, ClusterClientBuilder};
 use redis::cluster_async::ClusterConnection;
 use std::future::Future;
 use std::sync::Arc;
@@ -56,6 +56,7 @@ impl redis::aio::ConnectionLike for InnerConnection {
 enum InnerClient {
     Standalone {
         client: Arc<redis::Client>,
+        manager_config: ConnectionManagerConfig,
         managers: Arc<[ConnectionManager]>,
         next_manager_index: Arc<AtomicUsize>,
     },
@@ -71,6 +72,16 @@ pub struct RedisClient {
     key_prefix: Arc<str>,
     connect_timeout: Duration,
     command_timeout: Duration,
+}
+
+/// redis 1.x 给异步连接加了库内默认超时（连接 1s、响应 500ms）。这里显式设成与
+/// `RedisConfig` 一致：连接超时 = `connect_timeout_ms`，响应超时 = `command_timeout_ms`，
+/// 后台重连同样受连接超时约束。外层 `tokio::time::timeout` 仍是权威截止时间，
+/// 库内超时与之等值，只作兜底，不会把配置的命令超时截短。
+fn manager_config(connect_timeout: Duration, command_timeout: Duration) -> ConnectionManagerConfig {
+    ConnectionManagerConfig::new()
+        .set_connection_timeout(Some(connect_timeout))
+        .set_response_timeout(Some(command_timeout))
 }
 
 fn redis_metric_op(op: &'static str) -> &'static str {
@@ -105,6 +116,7 @@ impl RedisClient {
         Ok(Self {
             inner: Arc::new(InnerClient::Standalone {
                 client,
+                manager_config: manager_config(Duration::from_secs(1), Duration::from_secs(1)),
                 managers: Arc::from(Vec::<ConnectionManager>::new()),
                 next_manager_index: Arc::new(AtomicUsize::new(0)),
             }),
@@ -151,23 +163,33 @@ impl RedisClient {
             let clean_url = url_str
                 .replace("redis+cluster://", "redis://")
                 .replace("rediss+cluster://", "rediss://");
-            let client = Arc::new(ClusterClient::new(vec![clean_url.as_str()])?);
+            let client = Arc::new(
+                ClusterClientBuilder::new(vec![clean_url.as_str()])
+                    .connection_timeout(connect_timeout)
+                    .response_timeout(command_timeout)
+                    .build()?,
+            );
             let connection = timeout(connect_timeout, client.get_async_connection())
                 .await
                 .map_err(|_| anyhow::anyhow!("redis cluster connection timed out"))??;
             InnerClient::Cluster { client, connection }
         } else {
             let client = Arc::new(redis::Client::open(url_str.as_str())?);
+            let manager_config = manager_config(connect_timeout, command_timeout);
             let pool_size = config.pool_max_size.clamp(1, 8);
             let mut managers = Vec::with_capacity(pool_size);
             for _ in 0..pool_size {
-                let manager = timeout(connect_timeout, ConnectionManager::new((*client).clone()))
-                    .await
-                    .map_err(|_| anyhow::anyhow!("redis connection timed out"))??;
+                let manager = timeout(
+                    connect_timeout,
+                    ConnectionManager::new_with_config((*client).clone(), manager_config.clone()),
+                )
+                .await
+                .map_err(|_| anyhow::anyhow!("redis connection timed out"))??;
                 managers.push(manager);
             }
             InnerClient::Standalone {
                 client,
+                manager_config,
                 managers: Arc::from(managers.into_boxed_slice()),
                 next_manager_index: Arc::new(AtomicUsize::new(0)),
             }
@@ -204,10 +226,14 @@ impl RedisClient {
 
     async fn fresh_connection(&self) -> Result<InnerConnection> {
         match &*self.inner {
-            InnerClient::Standalone { client, .. } => {
+            InnerClient::Standalone {
+                client,
+                manager_config,
+                ..
+            } => {
                 let conn = timeout(
                     self.connect_timeout,
-                    ConnectionManager::new((**client).clone()),
+                    ConnectionManager::new_with_config((**client).clone(), manager_config.clone()),
                 )
                 .await
                 .map_err(|_| RedisError::Timeout("CONNECT"))?
@@ -542,5 +568,21 @@ impl RedisClient {
             pipe.query_async(&mut conn).await
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::manager_config;
+    use std::time::Duration;
+
+    #[test]
+    fn manager_config_uses_configured_timeouts_not_library_defaults() {
+        let config = manager_config(Duration::from_millis(1500), Duration::from_millis(2000));
+        assert_eq!(
+            config.connection_timeout(),
+            Some(Duration::from_millis(1500))
+        );
+        assert_eq!(config.response_timeout(), Some(Duration::from_millis(2000)));
     }
 }

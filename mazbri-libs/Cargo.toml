@@ -107,7 +107,7 @@ sha2 = "0.10"
 parking_lot = "0.12"
 arc-swap = "1.7.1"
 hex = "0.4"
-redis = {version = "0.27", features = ["tokio-comp", "connection-manager", "aio", "cluster-async"]}
+redis = { version = "1.8", default-features = false, features = ["acl", "streams", "geospatial", "script", "tokio-comp", "connection-manager", "aio", "cluster-async"] }
 urlencoding = "2.1"
 totp-lite = "2.0"
 qrcode = "0.14"
