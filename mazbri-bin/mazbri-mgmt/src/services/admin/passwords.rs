@@ -411,18 +411,14 @@ pub async fn change_password(
     Ok(serde_json::json!({ "message" : "密码修改成功" }))
 }
 fn hash_new_password(password: &str) -> Result<String, ApiError> {
-    use argon2::{
-        Argon2, PasswordHasher,
-        password_hash::{SaltString, rand_core::OsRng},
-    };
-    let salt = SaltString::generate(&mut OsRng);
+    use argon2::{Argon2, PasswordHasher};
     let params = mazbri_auth::argon2_params().map_err(|e| {
         error!("Failed to create Argon2 params: {}", e);
         ApiError::internal("Argon2 参数初始化失败".to_string())
     })?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     argon2
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|e| {
             error!("Failed to hash password: {}", e);
             ApiError::internal("处理新密码失败".to_string())

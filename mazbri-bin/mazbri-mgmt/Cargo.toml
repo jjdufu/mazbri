@@ -72,7 +72,7 @@ jsonwebtoken = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
 prometheus = { workspace = true }
 
-totp-lite = { workspace = true }
+hmac = { workspace = true }
 qrcode = { workspace = true }
 hkdf = { workspace = true }
 base32 = { workspace = true }
@@ -87,8 +87,6 @@ mime_guess = { workspace = true }
 
 toml = { workspace = true }
 toml_edit = { workspace = true }
-
-md5 = { workspace = true }
 
 moka = { workspace = true, features = ["future"] }
 

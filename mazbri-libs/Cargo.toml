@@ -90,7 +90,7 @@ reqwest = {version = "0.13.2", default-features = false, features = ["json", "gz
 tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
 tonic-prost = "0.14.6"
 prost = "0.14.3"
-argon2 = "0.5"
+argon2 = "0.6"
 jsonwebtoken = {version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"]}
 governor = "0.10.4"
 async-trait = "0.1"
@@ -103,17 +103,16 @@ tokio-serde = {version = "0.9", features = ["bincode", "json"]}
 wincode = {version = "0.4.4", features = ["derive", "uuid"]}
 serde_urlencoded = "0.7"
 base64 = "0.22"
-sha2 = "0.10"
+sha2 = "0.11"
 parking_lot = "0.12"
 arc-swap = "1.7.1"
 hex = "0.4"
 redis = { version = "1.8", default-features = false, features = ["acl", "streams", "geospatial", "script", "tokio-comp", "connection-manager", "aio", "cluster-async"] }
 urlencoding = "2.1"
-totp-lite = "2.0"
 qrcode = "0.14"
 aes-gcm = "0.10"
-hkdf = "0.12"
-hmac = "0.12"
+hkdf = "0.13"
+hmac = "0.13"
 zeroize = { version = "1.8", features = ["derive"] }
 ed25519-dalek = { version = "3.0.0", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets"] }
@@ -130,20 +129,20 @@ aes = "0.8"
 cfb-mode = "0.8"
 cfb8 = "0.8"
 blake3 = "1.5"
-digest = "0.10"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
-p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
-rsa = { version = "0.9", default-features = false, features = ["std", "pem", "sha2", "getrandom", "hazmat"] }
-sm3 = "0.4"
+digest = "0.11"
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
+rsa = { version = "0.10", default-features = false, features = ["std", "encoding", "getrandom", "hazmat", "pkcs1v15"] }
+sm3 = "0.5"
 sm4 = "0.5"
 libsm = "0.6"
 des = "0.8"
-md-5 = "0.10"
+md-5 = "0.11"
 ecb = { version = "0.1", features = ["alloc"] }
-der = { version = "0.7", features = ["alloc", "pem", "oid"] }
-spki = { version = "0.7", features = ["alloc", "pem"] }
-pkcs8 = { version = "0.10", features = ["alloc", "pem"] }
-sec1 = { version = "0.7", features = ["der", "alloc"] }
+der = { version = "0.8", features = ["alloc", "pem", "oid"] }
+spki = { version = "0.8", features = ["alloc", "pem"] }
+pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
+sec1 = { version = "0.8", features = ["der", "alloc"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

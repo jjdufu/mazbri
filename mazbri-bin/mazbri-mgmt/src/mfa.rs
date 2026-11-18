@@ -1,18 +1,15 @@
 use crate::config::MfaConfig;
-use argon2::{
-    password_hash::{
-        SaltString,
-        rand_core::{OsRng, RngCore},
-    },
-    {PasswordHasher, PasswordVerifier},
-};
+use argon2::{PasswordHasher, PasswordVerifier};
 use base32::{Alphabet, decode as base32_decode, encode as base32_encode};
 use hkdf::Hkdf;
+use hmac::{Hmac, KeyInit, Mac};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_crypto::aead::AEAD_NONCE_LEN;
 use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use moka::future::Cache;
 use rand::RngExt;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use sha1::Sha1;
 use sha2::Sha256;
 use sqlx::{PgPool, Row};
@@ -20,7 +17,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 use thiserror::Error;
-use totp_lite::totp_custom;
 use tracing::{debug, info, warn};
 use zeroize::{Zeroize, Zeroizing};
 #[derive(Debug, Error)]
@@ -207,7 +203,9 @@ impl MfaKeyManager {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn rotate_salt(&self) -> Result<String, MfaError> {
         let mut new_salt = [0u8; 32];
-        OsRng.fill_bytes(&mut new_salt);
+        SysRng
+            .try_fill_bytes(&mut new_salt)
+            .map_err(|e| MfaError::Encryption(format!("system rng: {e}")))?;
         let new_salt_hex = hex::encode(new_salt);
         let query = r"
             UPDATE system_settings
@@ -278,7 +276,7 @@ impl MfaService {
     #[must_use]
     pub fn generate_secret(&self) -> String {
         let mut secret = [0u8; 20];
-        OsRng.fill_bytes(&mut secret);
+        rand::fill(&mut secret);
         base32_encode(Alphabet::Rfc4648 { padding: false }, &secret)
     }
     #[must_use]
@@ -326,12 +324,12 @@ impl MfaService {
                 continue;
             }
             let step_start = step.saturating_mul(i64::saturating_from(self.config.period));
-            let expected = totp_custom::<Sha1>(
+            let expected = totp_sha1(
                 self.config.period,
                 self.config.digits,
                 &secret_bytes,
                 u64::saturating_from(step_start),
-            );
+            )?;
             if expected.len() == code.len()
                 && bool::from(expected.as_bytes().ct_eq(code.as_bytes()))
             {
@@ -363,10 +361,9 @@ impl MfaService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn hash_backup_code(&self, code: &str) -> Result<String, MfaError> {
-        let salt = SaltString::generate(&mut OsRng);
         let argon2 = argon2::Argon2::default();
         argon2
-            .hash_password(code.as_bytes(), &salt)
+            .hash_password(code.as_bytes())
             .map(|hash| hash.to_string())
             .map_err(|e| MfaError::Encryption(format!("Failed to hash backup code: {e}")))
     }
@@ -396,7 +393,9 @@ impl MfaService {
     pub fn encrypt_secret(&self, secret: &str) -> Result<String, MfaError> {
         let key_ref = KeyRef::raw(KeyPurpose::DataEncryption, self.encryption_key.to_vec());
         let mut nonce_bytes = [0u8; AEAD_NONCE_LEN];
-        OsRng.fill_bytes(&mut nonce_bytes);
+        SysRng
+            .try_fill_bytes(&mut nonce_bytes)
+            .map_err(|e| MfaError::Encryption(format!("system rng: {e}")))?;
         let packed = AeadAlgorithm::Aes256Gcm
             .seal(&key_ref, &nonce_bytes, b"", secret.as_bytes())
             .map_err(|e| MfaError::Encryption(format!("Encryption failed: {e}")))?;
@@ -486,6 +485,26 @@ pub fn next_attempt_base(attempts: i32, locked_until_unix: Option<i64>, now_unix
     }
 }
 
+/// RFC 6238 TOTP（HMAC-SHA1，RFC 4226 动态截断），与原 `totp_lite::totp_custom::<Sha1>` 输出一致：
+/// 计数器 = `time / period`（8 字节大端），结果左补零到 `digits` 位。
+/// `period` 为 0 或 `digits` 过大时返回 `None`。
+fn totp_sha1(period: u64, digits: u32, secret: &[u8], time: u64) -> Option<String> {
+    let counter = time.checked_div(period)?;
+    let modulus = 10_u64.checked_pow(digits)?;
+    let mut mac = <Hmac<Sha1> as KeyInit>::new_from_slice(secret).ok()?;
+    mac.update(&counter.to_be_bytes());
+    let tag = mac.finalize().into_bytes();
+    let offset = usize::from(tag[tag.len() - 1] & 0x0f);
+    let bin = u32::from_be_bytes([
+        tag[offset],
+        tag[offset + 1],
+        tag[offset + 2],
+        tag[offset + 3],
+    ]) & 0x7fff_ffff;
+    let width = usize::try_from(digits).ok()?;
+    Some(format!("{:0width$}", u64::from(bin) % modulus))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,7 +529,7 @@ mod tests {
 
     fn code_at(period: u64, digits: u32, step_start: u64) -> String {
         let bytes = base32_decode(Alphabet::Rfc4648 { padding: false }, &secret()).expect("secret");
-        totp_custom::<Sha1>(period, digits, &bytes, step_start)
+        totp_sha1(period, digits, &bytes, step_start).expect("totp")
     }
 
     /// RFC 6238 附录 B 的 SHA-1 向量（8 位）及其 6 位截断。

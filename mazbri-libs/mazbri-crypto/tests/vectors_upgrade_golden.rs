@@ -38,7 +38,7 @@ fn sign_mac(alg: &str, key: &KeyRef, msg: &[u8]) -> Vec<u8> {
         "hmac-sha512" => MacAlgorithm::HmacSha512.sign(key, msg),
         "hmac-sm3" => MacAlgorithm::HmacSm3.sign(key, msg),
         "gm-hmac-sm3" => GmMacAlgorithm::HmacSm3.sign(key, msg),
-        "hmac-md5" => legacy_algs::hmac_md5_sign(true, key, msg).map(|t| t.to_vec()),
+        "hmac-md5" => legacy_algs::hmac_md5_sign(true, key, msg),
         other => panic!("unknown mac {other}"),
     }
     .unwrap_or_else(|e| panic!("{alg}: {e}"))

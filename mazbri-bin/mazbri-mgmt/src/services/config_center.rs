@@ -134,7 +134,7 @@ pub(super) fn sha256_hex(content: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 pub(super) async fn cert_service_request(
     ctx: ConfigCenterCtx<'_>,

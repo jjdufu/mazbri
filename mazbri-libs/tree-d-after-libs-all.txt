@@ -1,0 +1,1307 @@
+base64 v0.22.1
+├── axum v0.8.9
+│   ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin)
+│   │   └── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service)
+│   │       └── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth)
+│   │   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   │   └── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core)
+│   │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   │   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   │   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   │   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   │   ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   │   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry)
+│   │   │   └── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   │   ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   │   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls)
+│   │   │   └── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   │   └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   └── tonic v0.14.9
+│       ├── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+│       └── tonic-prost v0.14.9
+│           └── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+├── jsonwebtoken v10.4.0
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto)
+│   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── pem v3.0.6
+│   ├── jsonwebtoken v10.4.0 (*)
+│   └── rcgen v0.13.2
+│       └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+├── prost-reflect v0.16.5
+│   └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── rsasl v2.3.1
+│   └── rskafka v0.6.0
+│       └── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+├── sqlx-core v0.8.6
+│   ├── sqlx v0.8.6
+│   │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   │   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   │   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   │   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   │   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │   ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   │   └── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   ├── sqlx-macros v0.8.6 (proc-macro)
+│   │   └── sqlx v0.8.6 (*)
+│   ├── sqlx-macros-core v0.8.6
+│   │   └── sqlx-macros v0.8.6 (proc-macro) (*)
+│   ├── sqlx-postgres v0.8.6
+│   │   └── sqlx v0.8.6 (*)
+│   └── sqlx-postgres v0.8.6
+│       └── sqlx-macros-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+└── tonic v0.14.9 (*)
+[dev-dependencies]
+└── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+
+base64 v0.22.1
+└── sqlx-postgres v0.8.6 (*)
+
+base64 v0.23.1
+├── hyper-util v0.1.21
+│   ├── axum v0.8.9 (*)
+│   ├── hyper-rustls v0.27.10
+│   │   └── reqwest v0.13.5
+│   │       ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │       ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   │       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │       ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   │       ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   │       ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   │       ├── opentelemetry-http v0.32.0
+│   │       │   └── opentelemetry-otlp v0.32.0
+│   │       │       └── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │       └── opentelemetry-otlp v0.32.0 (*)
+│   ├── hyper-timeout v0.5.2
+│   │   └── tonic v0.14.9 (*)
+│   ├── reqwest v0.13.5 (*)
+│   └── tonic v0.14.9 (*)
+└── reqwest v0.13.5 (*)
+
+bitflags v1.3.2
+└── globwalk v0.8.1
+    └── rust-i18n-support v3.1.5
+        ├── rust-i18n v3.1.5
+        │   └── mazbri-i18n v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-i18n)
+        └── rust-i18n-macro v3.1.5 (proc-macro)
+            └── rust-i18n v3.1.5 (*)
+    [build-dependencies]
+    └── rust-i18n v3.1.5 (*)
+
+bitflags v2.13.2
+├── ron v0.12.3
+│   └── config v0.15.27
+│       └── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+├── sqlx-postgres v0.8.6 (*)
+└── tower-http v0.6.11
+    ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+    └── reqwest v0.13.5 (*)
+
+bitflags v2.13.2
+├── pulldown-cmark v0.13.6
+│   ├── prost-build v0.14.4
+│   │   └── tonic-prost-build v0.14.9
+│   │       [build-dependencies]
+│   │       └── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+│   └── pulldown-cmark-to-cmark v22.0.3
+│       └── prost-build v0.14.4 (*)
+├── rustix v1.1.6
+│   └── tempfile v3.27.0
+│       ├── prost-build v0.14.4 (*)
+│       └── tonic-prost-build v0.14.9 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+block-buffer v0.10.4
+└── digest v0.10.7
+    ├── hmac v0.12.1
+    │   ├── hkdf v0.12.4
+    │   │   ├── sqlx-postgres v0.8.6 (*)
+    │   │   └── sqlx-postgres v0.8.6 (*)
+    │   ├── rsasl v2.3.1 (*)
+    │   ├── sqlx-postgres v0.8.6 (*)
+    │   └── sqlx-postgres v0.8.6 (*)
+    ├── md-5 v0.10.6
+    │   ├── sqlx-postgres v0.8.6 (*)
+    │   └── sqlx-postgres v0.8.6 (*)
+    ├── pbkdf2 v0.12.2
+    │   └── rsasl v2.3.1 (*)
+    ├── rsasl v2.3.1 (*)
+    ├── sha1 v0.10.7
+    │   ├── axum v0.8.9 (*)
+    │   ├── tungstenite v0.28.0
+    │   │   └── tokio-tungstenite v0.28.0
+    │   │       ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+    │   │       └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    │   └── tungstenite v0.29.0
+    │       └── tokio-tungstenite v0.29.0
+    │           └── axum v0.8.9 (*)
+    └── sha2 v0.10.9
+        ├── rsasl v2.3.1 (*)
+        ├── sqlx-core v0.8.6 (*)
+        ├── sqlx-macros-core v0.8.6 (*)
+        ├── sqlx-postgres v0.8.6 (*)
+        └── sqlx-postgres v0.8.6 (*)
+
+block-buffer v0.12.1
+└── digest v0.11.3
+    ├── blake2 v0.11.0
+    │   └── argon2 v0.6.0
+    │       └── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    ├── curve25519-dalek v5.0.0
+    │   ├── ed25519-dalek v3.0.0
+    │   │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+    │   │   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    │   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   │   [dev-dependencies]
+    │   │   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    │   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   └── x25519-dalek v3.0.0
+    │       └── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    ├── ecdsa v0.17.0
+    │   ├── p256 v0.14.0
+    │   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   │   [dev-dependencies]
+    │   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   └── p384 v0.14.0
+    │       └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │       [dev-dependencies]
+    │       └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    ├── elliptic-curve v0.14.3
+    │   ├── ecdsa v0.17.0 (*)
+    │   ├── p256 v0.14.0 (*)
+    │   ├── p384 v0.14.0 (*)
+    │   └── primeorder v0.14.0
+    │       ├── p256 v0.14.0 (*)
+    │       └── p384 v0.14.0 (*)
+    ├── hmac v0.13.0
+    │   ├── hkdf v0.13.0
+    │   │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+    │   │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    │   │   └── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+    │   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+    │   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    │   ├── rfc6979 v0.6.0
+    │   │   └── ecdsa v0.17.0 (*)
+    │   └── rsa v0.10.0
+    │       └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │       [dev-dependencies]
+    │       └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    ├── md-5 v0.11.0
+    │   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    ├── rsa v0.10.0 (*)
+    ├── sha2 v0.11.1
+    │   ├── ed25519-dalek v3.0.0 (*)
+    │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+    │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    │   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+    │   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    │   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+    │   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    │   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+    │   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    │   ├── p256 v0.14.0 (*)
+    │   ├── p384 v0.14.0 (*)
+    │   └── rsa v0.10.0 (*)
+    ├── signature v3.0.0
+    │   ├── ecdsa v0.17.0 (*)
+    │   ├── ed25519 v3.0.0
+    │   │   └── ed25519-dalek v3.0.0 (*)
+    │   ├── ed25519-dalek v3.0.0 (*)
+    │   └── rsa v0.10.0 (*)
+    └── sm3 v0.5.0
+        └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+
+byteorder v1.5.0
+├── hdrhistogram v7.6.0
+│   └── tower v0.5.3
+│       ├── axum v0.8.9 (*)
+│       ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│       ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│       ├── reqwest v0.13.5 (*)
+│       ├── tonic v0.14.9 (*)
+│       └── tower-http v0.6.11 (*)
+├── libsm v0.6.1
+│   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   [dev-dependencies]
+│   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+└── sqlx-postgres v0.8.6 (*)
+
+byteorder v1.5.0
+└── sqlx-postgres v0.8.6 (*)
+
+chacha20 v0.9.1
+└── chacha20poly1305 v0.10.1
+    └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+
+chacha20 v0.10.2
+└── rand v0.10.3
+    ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+    ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+    ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+    ├── mazbri-routing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-routing)
+    ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    ├── redis v1.8.2
+    │   └── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+    └── tarpc v0.38.0
+        ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+        ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+        ├── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc)
+        │   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+        │   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+        │   └── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+        ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+        └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+
+chrono v0.4.45
+├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── rskafka v0.6.0 (*)
+├── sqlx-core v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+chrono v0.4.45
+└── sqlx-postgres v0.8.6 (*)
+
+cpufeatures v0.2.17
+├── aes v0.8.4
+│   ├── aes-gcm v0.10.3
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+├── chacha20 v0.9.1 (*)
+├── poly1305 v0.8.0
+│   └── chacha20poly1305 v0.10.1 (*)
+├── polyval v0.6.2
+│   └── ghash v0.5.1
+│       └── aes-gcm v0.10.3 (*)
+├── sha1 v0.10.7 (*)
+└── sha2 v0.10.9 (*)
+
+cpufeatures v0.3.1
+├── argon2 v0.6.0 (*)
+├── blake3 v1.8.7
+│   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+├── chacha20 v0.10.2 (*)
+├── curve25519-dalek v5.0.0 (*)
+└── sha2 v0.11.1 (*)
+
+crossbeam-epoch v0.9.21
+└── moka v0.12.16
+    ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+    └── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+
+crossbeam-epoch v0.9.21
+└── crossbeam-deque v0.8.8
+    └── ignore v0.4.34
+        └── globwalk v0.8.1 (*)
+
+crossbeam-utils v0.8.23
+├── crossbeam-channel v0.5.17
+│   ├── moka v0.12.16 (*)
+│   └── tracing-appender v0.2.5
+│       └── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+├── crossbeam-epoch v0.9.21 (*)
+├── crossbeam-queue v0.3.14
+│   └── sqlx-core v0.8.6 (*)
+├── dashmap v6.2.1
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   └── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+└── moka v0.12.16 (*)
+
+crossbeam-utils v0.8.23
+├── crossbeam-deque v0.8.8 (*)
+└── crossbeam-epoch v0.9.21 (*)
+
+crypto-common v0.1.7
+├── aead v0.5.2
+│   ├── aes-gcm v0.10.3 (*)
+│   └── chacha20poly1305 v0.10.1 (*)
+├── cipher v0.4.4
+│   ├── aes v0.8.4 (*)
+│   ├── aes-gcm v0.10.3 (*)
+│   ├── cbc v0.1.2
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── cfb-mode v0.8.2
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── cfb8 v0.8.1
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── chacha20 v0.9.1 (*)
+│   ├── chacha20poly1305 v0.10.1 (*)
+│   ├── ctr v0.9.2
+│   │   ├── aes-gcm v0.10.3 (*)
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── des v0.8.1
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── ecb v0.1.2
+│   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   └── sm4 v0.5.1
+│       └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+├── digest v0.10.7 (*)
+└── universal-hash v0.5.1
+    ├── poly1305 v0.8.0 (*)
+    └── polyval v0.6.2 (*)
+
+crypto-common v0.2.2
+├── digest v0.11.3 (*)
+├── elliptic-curve v0.14.3 (*)
+├── primefield v0.14.0
+│   ├── p256 v0.14.0 (*)
+│   ├── p384 v0.14.0 (*)
+│   ├── primeorder v0.14.0 (*)
+│   └── wnaf v0.14.1
+│       └── primeorder v0.14.0 (*)
+└── rsa v0.10.0 (*)
+
+digest v0.10.7 (*)
+
+digest v0.11.3 (*)
+
+fastrand v2.5.0
+└── backon v1.6.0
+    └── redis v1.8.2 (*)
+
+fastrand v2.5.0
+└── tempfile v3.27.0 (*)
+
+foldhash v0.1.5
+└── hashbrown v0.15.5
+    ├── hashlink v0.10.0
+    │   └── sqlx-core v0.8.6 (*)
+    ├── petgraph v0.8.3
+    │   └── prost-build v0.14.4 (*)
+    └── sqlx-core v0.8.6 (*)
+
+foldhash v0.2.0
+└── hashbrown v0.16.1
+    ├── hashlink v0.11.1
+    │   └── yaml-rust2 v0.11.1
+    │       └── config v0.15.27 (*)
+    └── lru v0.16.4
+        ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+        └── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+
+futures-channel v0.3.34
+├── futures v0.3.34
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   ├── rskafka v0.6.0 (*)
+│   └── tarpc v0.38.0 (*)
+├── futures-util v0.3.34
+│   ├── axum v0.8.9 (*)
+│   ├── futures v0.3.34 (*)
+│   ├── futures-executor v0.3.34
+│   │   ├── futures v0.3.34 (*)
+│   │   └── opentelemetry_sdk v0.32.1
+│   │       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │       ├── opentelemetry-otlp v0.32.0 (*)
+│   │       └── opentelemetry-proto v0.32.0
+│   │           └── opentelemetry-otlp v0.32.0 (*)
+│   ├── hyper-util v0.1.21 (*)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   ├── moka v0.12.16 (*)
+│   ├── multer v3.1.0
+│   │   └── axum v0.8.9 (*)
+│   ├── opentelemetry_sdk v0.32.1 (*)
+│   ├── redis v1.8.2 (*)
+│   ├── reqwest v0.13.5 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── tokio-tungstenite v0.28.0 (*)
+│   ├── tokio-tungstenite v0.29.0 (*)
+│   ├── tokio-util v0.7.20
+│   │   ├── combine v4.6.9
+│   │   │   └── redis v1.8.2 (*)
+│   │   ├── h2 v0.4.20
+│   │   │   ├── hyper v1.12.0
+│   │   │   │   ├── axum v0.8.9 (*)
+│   │   │   │   ├── hyper-rustls v0.27.10 (*)
+│   │   │   │   ├── hyper-timeout v0.5.2 (*)
+│   │   │   │   ├── hyper-util v0.1.21 (*)
+│   │   │   │   ├── reqwest v0.13.5 (*)
+│   │   │   │   └── tonic v0.14.9 (*)
+│   │   │   ├── reqwest v0.13.5 (*)
+│   │   │   └── tonic v0.14.9 (*)
+│   │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   │   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   │   ├── redis v1.8.2 (*)
+│   │   ├── tarpc v0.38.0 (*)
+│   │   ├── tonic v0.14.9 (*)
+│   │   ├── tower v0.5.3 (*)
+│   │   └── tower-http v0.6.11 (*)
+│   ├── tower v0.5.3 (*)
+│   └── tower-http v0.6.11 (*)
+├── hyper v1.12.0 (*)
+├── hyper-util v0.1.21 (*)
+├── opentelemetry_sdk v0.32.1 (*)
+├── redis v1.8.2 (*)
+├── reqwest v0.13.5 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+futures-channel v0.3.34
+└── sqlx-postgres v0.8.6 (*)
+
+futures-sink v0.3.34
+├── futures-channel v0.3.34 (*)
+└── futures-util v0.3.34
+    └── sqlx-postgres v0.8.6 (*)
+
+futures-sink v0.3.34
+├── futures v0.3.34 (*)
+├── futures-channel v0.3.34 (*)
+├── futures-util v0.3.34 (*)
+├── h2 v0.4.20 (*)
+├── opentelemetry v0.32.0
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── opentelemetry-http v0.32.0 (*)
+│   ├── opentelemetry-otlp v0.32.0 (*)
+│   ├── opentelemetry-proto v0.32.0 (*)
+│   ├── opentelemetry_sdk v0.32.1 (*)
+│   ├── tarpc v0.38.0 (*)
+│   └── tracing-opentelemetry v0.33.0
+│       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│       └── tarpc v0.38.0 (*)
+├── tokio-serde v0.9.0
+│   └── tarpc v0.38.0 (*)
+└── tokio-util v0.7.20 (*)
+
+futures-util v0.3.34 (*)
+
+futures-util v0.3.34 (*)
+
+getrandom v0.2.17
+├── const-random-macro v0.1.16 (proc-macro)
+│   └── const-random v0.1.18
+│       └── dlv-list v0.5.2
+│           └── ordered-multimap v0.7.3
+│               └── rust-ini v0.21.3
+│                   └── config v0.15.27 (*)
+├── rand_core v0.6.4
+│   ├── crypto-common v0.1.7 (*)
+│   ├── rand v0.8.8
+│   │   ├── rsasl v2.3.1 (*)
+│   │   ├── rskafka v0.6.0 (*)
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   ├── rand v0.8.8
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   └── rand_chacha v0.3.1
+│       ├── rand v0.8.8 (*)
+│       └── rand v0.8.8 (*)
+└── ring v0.17.14
+    ├── rcgen v0.13.2 (*)
+    ├── rustls v0.23.46
+    │   ├── hyper-rustls v0.27.10 (*)
+    │   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+    │   ├── reqwest v0.13.5 (*)
+    │   ├── rustls-platform-verifier v0.7.1
+    │   │   └── reqwest v0.13.5 (*)
+    │   ├── sqlx-core v0.8.6 (*)
+    │   ├── tokio-rustls v0.26.6
+    │   │   ├── hyper-rustls v0.27.10 (*)
+    │   │   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+    │   │   ├── reqwest v0.13.5 (*)
+    │   │   ├── tokio-tungstenite v0.28.0 (*)
+    │   │   └── tonic v0.14.9 (*)
+    │   ├── tokio-tungstenite v0.28.0 (*)
+    │   └── tungstenite v0.28.0 (*)
+    └── rustls-webpki v0.103.16
+        ├── rustls v0.23.46 (*)
+        └── rustls-platform-verifier v0.7.1 (*)
+
+getrandom v0.3.4
+└── rand_core v0.9.5
+    ├── rand v0.9.5
+    │   ├── libsm v0.6.1 (*)
+    │   ├── opentelemetry_sdk v0.32.1 (*)
+    │   ├── tungstenite v0.28.0 (*)
+    │   └── tungstenite v0.29.0 (*)
+    └── rand_chacha v0.9.0
+        └── rand v0.9.5 (*)
+
+getrandom v0.4.3
+└── tempfile v3.27.0 (*)
+
+getrandom v0.4.3
+├── crypto-bigint v0.7.11
+│   ├── crypto-primes v0.7.2
+│   │   └── rsa v0.10.0 (*)
+│   ├── elliptic-curve v0.14.3 (*)
+│   ├── primefield v0.14.0 (*)
+│   ├── rfc6979 v0.6.0 (*)
+│   └── rsa v0.10.0 (*)
+├── crypto-common v0.2.2 (*)
+├── password-hash v0.6.1
+│   └── argon2 v0.6.0 (*)
+├── phc v0.6.1
+│   └── password-hash v0.6.1 (*)
+├── rand v0.10.3 (*)
+└── uuid v1.29.0
+    ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+    ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+    ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+    ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+    ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+    ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+    ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+    ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+    ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+    ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+    ├── moka v0.12.16 (*)
+    ├── sqlx-core v0.8.6 (*)
+    └── sqlx-postgres v0.8.6 (*)
+
+hashbrown v0.14.5
+├── dashmap v6.2.1 (*)
+└── ordered-multimap v0.7.3 (*)
+
+hashbrown v0.15.5 (*)
+
+hashbrown v0.16.1 (*)
+
+hashbrown v0.17.1
+└── indexmap v2.14.2
+    ├── h2 v0.4.20 (*)
+    ├── petgraph v0.8.3 (*)
+    ├── serde_yaml v0.9.34+deprecated
+    │   ├── rust-i18n-macro v3.1.5 (proc-macro) (*)
+    │   └── rust-i18n-support v3.1.5 (*)
+    ├── sqlx-core v0.8.6 (*)
+    ├── toml_edit v0.22.27
+    │   └── toml v0.8.23
+    │       └── rust-i18n-support v3.1.5 (*)
+    └── tower v0.5.3 (*)
+
+hashlink v0.10.0 (*)
+
+hashlink v0.11.1 (*)
+
+hkdf v0.12.4 (*)
+
+hkdf v0.13.0 (*)
+
+hmac v0.12.1 (*)
+
+hmac v0.13.0 (*)
+
+itertools v0.11.0
+└── rust-i18n-support v3.1.5 (*)
+
+itertools v0.14.0
+├── prost-build v0.14.4 (*)
+└── prost-derive v0.14.4 (proc-macro)
+    ├── prost v0.14.4
+    │   ├── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+    │   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+    │   ├── opentelemetry-otlp v0.32.0 (*)
+    │   ├── opentelemetry-proto v0.32.0 (*)
+    │   ├── prost-reflect v0.16.5 (*)
+    │   └── tonic-prost v0.14.9 (*)
+    └── prost v0.14.4
+        ├── prost-build v0.14.4 (*)
+        └── prost-types v0.14.4
+            ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+            ├── prost-build v0.14.4 (*)
+            ├── prost-reflect v0.16.5 (*)
+            └── tonic-prost-build v0.14.9 (*)
+
+log v0.4.35
+├── globset v0.4.21
+│   └── ignore v0.4.34 (*)
+├── ignore v0.4.34 (*)
+├── prost-build v0.14.4 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+log v0.4.35
+├── redis v1.8.2 (*)
+├── reqwest v0.13.5 (*)
+├── rustls v0.23.46 (*)
+├── rustls-platform-verifier v0.7.1 (*)
+├── sqlx-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+├── tokio-tungstenite v0.28.0 (*)
+├── tokio-tungstenite v0.29.0 (*)
+├── tracing v0.1.44
+│   ├── axum v0.8.9 (*)
+│   ├── axum-core v0.5.6
+│   │   └── axum v0.8.9 (*)
+│   ├── h2 v0.4.20 (*)
+│   ├── hyper-util v0.1.21 (*)
+│   ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin) (*)
+│   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── mazbri-routing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-routing)
+│   ├── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+│   ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   ├── rskafka v0.6.0 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── tarpc v0.38.0 (*)
+│   ├── tonic v0.14.9 (*)
+│   ├── tower v0.5.3 (*)
+│   ├── tower-http v0.6.11 (*)
+│   ├── tracing-opentelemetry v0.33.0 (*)
+│   └── tracing-subscriber v0.3.23
+│       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│       ├── tracing-appender v0.2.5 (*)
+│       └── tracing-opentelemetry v0.33.0 (*)
+│       [dev-dependencies]
+│       └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+├── tracing-log v0.2.0
+│   ├── tracing-opentelemetry v0.33.0 (*)
+│   └── tracing-subscriber v0.3.23 (*)
+├── tungstenite v0.28.0 (*)
+└── tungstenite v0.29.0 (*)
+
+md-5 v0.10.6 (*)
+
+md-5 v0.11.0 (*)
+
+num-traits v0.2.19
+├── asn1-rs v0.6.2
+│   ├── der-parser v9.0.0
+│   │   └── x509-parser v0.16.0
+│   │       └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   ├── oid-registry v0.7.1
+│   │   └── x509-parser v0.16.0 (*)
+│   └── x509-parser v0.16.0 (*)
+├── chrono v0.4.45 (*)
+├── crypto-bigint v0.7.11 (*)
+├── der-parser v9.0.0 (*)
+├── hdrhistogram v7.6.0 (*)
+├── libsm v0.6.1 (*)
+├── num-bigint v0.4.8
+│   ├── der-parser v9.0.0 (*)
+│   ├── libsm v0.6.1 (*)
+│   ├── simple_asn1 v0.6.4
+│   │   └── jsonwebtoken v10.4.0 (*)
+│   └── yasna v0.6.0
+│       └── libsm v0.6.1 (*)
+├── num-integer v0.1.47
+│   ├── libsm v0.6.1 (*)
+│   └── num-bigint v0.4.8 (*)
+├── ordered-float v2.10.1
+│   └── serde-value v0.7.0
+│       └── prost-reflect v0.16.5 (*)
+├── rust_decimal v1.43.0
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── sqlx-core v0.8.6 (*)
+│   └── sqlx-postgres v0.8.6 (*)
+└── simple_asn1 v0.6.4 (*)
+
+num-traits v0.2.19
+├── atoi v2.0.0
+│   ├── sqlx-postgres v0.8.6 (*)
+│   └── sqlx-postgres v0.8.6 (*)
+├── chrono v0.4.45 (*)
+└── rust_decimal v1.43.0
+    └── sqlx-postgres v0.8.6 (*)
+
+prost v0.14.4 (*)
+
+prost v0.14.4 (*)
+
+rand v0.8.8 (*)
+
+rand v0.8.8 (*)
+
+rand v0.9.5 (*)
+
+rand v0.10.3 (*)
+
+rand_chacha v0.3.1 (*)
+
+rand_chacha v0.9.0 (*)
+
+rand_core v0.6.4 (*)
+
+rand_core v0.9.5 (*)
+
+rand_core v0.10.1
+├── chacha20 v0.10.2 (*)
+├── crypto-bigint v0.7.11 (*)
+├── crypto-common v0.2.2 (*)
+├── crypto-primes v0.7.2 (*)
+├── curve25519-dalek v5.0.0 (*)
+├── ed25519-dalek v3.0.0 (*)
+├── elliptic-curve v0.14.3 (*)
+├── ff v0.14.0
+│   ├── elliptic-curve v0.14.3 (*)
+│   ├── group v0.14.0
+│   │   ├── elliptic-curve v0.14.3 (*)
+│   │   └── wnaf v0.14.1 (*)
+│   ├── primefield v0.14.0 (*)
+│   └── wnaf v0.14.1 (*)
+├── getrandom v0.4.3 (*)
+├── group v0.14.0 (*)
+├── primefield v0.14.0 (*)
+├── rand v0.10.3 (*)
+├── rsa v0.10.0 (*)
+├── signature v3.0.0 (*)
+└── x25519-dalek v3.0.0 (*)
+
+regex-automata v0.4.18
+├── matchers v0.2.0
+│   └── tracing-subscriber v0.3.23 (*)
+└── tracing-subscriber v0.3.23 (*)
+
+regex-automata v0.4.18
+├── globset v0.4.21 (*)
+├── ignore v0.4.34 (*)
+└── regex v1.13.1
+    ├── prost-build v0.14.4 (*)
+    └── rust-i18n-support v3.1.5 (*)
+    [build-dependencies]
+    └── rust-i18n v3.1.5 (*)
+
+rust_decimal v1.43.0 (*)
+
+rust_decimal v1.43.0 (*)
+
+serde_core v1.0.229
+├── axum v0.8.9 (*)
+├── bitflags v2.13.2 (*)
+├── config v0.15.27 (*)
+├── erased-serde v0.4.11
+│   └── serde-untagged v0.1.9
+│       └── config v0.15.27 (*)
+├── serde v1.0.229
+│   ├── bincode v1.3.3
+│   │   └── tokio-serde v0.9.0 (*)
+│   │   [dev-dependencies]
+│   │   └── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+│   ├── chrono v0.4.45 (*)
+│   ├── either v1.19.0
+│   │   ├── itertools v0.11.0 (*)
+│   │   ├── itertools v0.14.0 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   └── sqlx-macros-core v0.8.6 (*)
+│   ├── ipnetwork v0.20.0
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   ├── json5 v1.3.7
+│   │   └── config v0.15.27 (*)
+│   ├── jsonwebtoken v10.4.0 (*)
+│   ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin) (*)
+│   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── mazbri-routing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-routing)
+│   ├── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+│   ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   ├── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+│   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   ├── prost-reflect v0.16.5 (*)
+│   ├── reqwest v0.13.5 (*)
+│   ├── ron v0.12.3 (*)
+│   ├── rsasl v2.3.1 (*)
+│   ├── rust-i18n-macro v3.1.5 (proc-macro) (*)
+│   ├── rust-i18n-support v3.1.5 (*)
+│   ├── rust_decimal v1.43.0 (*)
+│   ├── serde-value v0.7.0 (*)
+│   ├── serde_spanned v0.6.9
+│   │   ├── toml v0.8.23 (*)
+│   │   └── toml_edit v0.22.27 (*)
+│   ├── serde_urlencoded v0.7.1
+│   │   └── axum v0.8.9 (*)
+│   ├── serde_yaml v0.9.34+deprecated (*)
+│   ├── smallvec v1.16.4
+│   │   ├── hyper v1.12.0 (*)
+│   │   ├── icu_normalizer v2.4.0
+│   │   │   └── idna_adapter v1.2.2
+│   │   │       └── idna v1.1.0
+│   │   │           └── url v2.5.8
+│   │   │               ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   │   │               ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   │   │               ├── redis v1.8.2 (*)
+│   │   │               ├── reqwest v0.13.5 (*)
+│   │   │               ├── sqlx-core v0.8.6 (*)
+│   │   │               ├── sqlx-macros-core v0.8.6 (*)
+│   │   │               └── tower-http v0.6.11 (*)
+│   │   ├── idna v1.1.0 (*)
+│   │   ├── moka v0.12.16 (*)
+│   │   ├── parking_lot_core v0.9.12
+│   │   │   ├── dashmap v6.2.1 (*)
+│   │   │   └── parking_lot v0.12.5
+│   │   │       ├── futures-intrusive v0.5.0
+│   │   │       │   └── sqlx-core v0.8.6 (*)
+│   │   │       ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   │   │       ├── moka v0.12.16 (*)
+│   │   │       ├── prometheus v0.14.0
+│   │   │       │   ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin) (*)
+│   │   │       │   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   │   │       │   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   │   │       │   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │   │       │   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   │   │       │   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │   │       │   └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   │   │       ├── rskafka v0.6.0 (*)
+│   │   │       └── tokio v1.54.1
+│   │   │           ├── async-compression v0.4.52
+│   │   │           │   └── tower-http v0.6.11 (*)
+│   │   │           ├── axum v0.8.9 (*)
+│   │   │           ├── combine v4.6.9 (*)
+│   │   │           ├── h2 v0.4.20 (*)
+│   │   │           ├── hyper v1.12.0 (*)
+│   │   │           ├── hyper-rustls v0.27.10 (*)
+│   │   │           ├── hyper-timeout v0.5.2 (*)
+│   │   │           ├── hyper-util v0.1.21 (*)
+│   │   │           ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin) (*)
+│   │   │           ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   │   │           ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   │   │           ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   │   │           ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   │   │           ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   │   │           ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   │   │           ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   │   │           ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   │   │           ├── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+│   │   │           ├── mazbri-service v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-service) (*)
+│   │   │           ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   │   │           ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   │   │           ├── opentelemetry_sdk v0.32.1 (*)
+│   │   │           ├── redis v1.8.2 (*)
+│   │   │           ├── reqwest v0.13.5 (*)
+│   │   │           ├── rskafka v0.6.0 (*)
+│   │   │           ├── sqlx-core v0.8.6 (*)
+│   │   │           ├── tarpc v0.38.0 (*)
+│   │   │           ├── tokio-rustls v0.26.6 (*)
+│   │   │           ├── tokio-stream v0.1.19
+│   │   │           │   ├── opentelemetry_sdk v0.32.1 (*)
+│   │   │           │   ├── sqlx-core v0.8.6 (*)
+│   │   │           │   └── tonic v0.14.9 (*)
+│   │   │           ├── tokio-tungstenite v0.28.0 (*)
+│   │   │           ├── tokio-tungstenite v0.29.0 (*)
+│   │   │           ├── tokio-util v0.7.20 (*)
+│   │   │           ├── tonic v0.14.9 (*)
+│   │   │           ├── tower v0.5.3 (*)
+│   │   │           └── tower-http v0.6.11 (*)
+│   │   │           [dev-dependencies]
+│   │   │           ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   │   │           └── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   │   ├── rust-i18n v3.1.5 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   ├── tracing-opentelemetry v0.33.0 (*)
+│   │   └── tracing-subscriber v0.3.23 (*)
+│   ├── smallvec v1.16.4
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-macros-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── tarpc v0.38.0 (*)
+│   ├── tokio-serde v0.9.0 (*)
+│   ├── toml v0.8.23 (*)
+│   ├── toml_datetime v0.6.11
+│   │   ├── toml v0.8.23 (*)
+│   │   └── toml_edit v0.22.27 (*)
+│   ├── toml_edit v0.22.27 (*)
+│   ├── tracing-serde v0.2.0
+│   │   └── tracing-subscriber v0.3.23 (*)
+│   ├── tracing-subscriber v0.3.23 (*)
+│   └── triomphe v0.1.17
+│       └── rust-i18n-support v3.1.5 (*)
+├── serde-untagged v0.1.9 (*)
+├── serde_bytes v0.11.19
+│   └── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+├── serde_json v1.0.154
+│   ├── axum v0.8.9 (*)
+│   ├── config v0.15.27 (*)
+│   ├── jsonwebtoken v10.4.0 (*)
+│   ├── mazbri-admin v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-admin) (*)
+│   ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│   ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── mazbri-product v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-product)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── mazbri-routing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-routing)
+│   ├── mazbri-rpc v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-rpc) (*)
+│   ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│   ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│   ├── reqwest v0.13.5 (*)
+│   ├── rsasl v2.3.1 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── tokio-serde v0.9.0 (*)
+│   └── tracing-subscriber v0.3.23 (*)
+│   [dev-dependencies]
+│   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│   └── mazbri-upstream-contracts v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-contracts)
+├── serde_path_to_error v0.1.20
+│   └── axum v0.8.9 (*)
+├── serde_spanned v1.1.3
+│   └── toml v1.2.1+spec-1.1.0
+│       ├── config v0.15.27 (*)
+│       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│       ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│       └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+├── toml v1.2.1+spec-1.1.0 (*)
+├── toml_datetime v1.1.3+spec-1.1.0
+│   └── toml v1.2.1+spec-1.1.0 (*)
+└── uuid v1.29.0 (*)
+
+serde_core v1.0.229
+└── serde_json v1.0.154
+    ├── rust-i18n-macro v3.1.5 (proc-macro) (*)
+    ├── rust-i18n-support v3.1.5 (*)
+    ├── sqlx-macros-core v0.8.6 (*)
+    └── sqlx-postgres v0.8.6 (*)
+
+serde_json v1.0.154 (*)
+
+serde_json v1.0.154 (*)
+
+serde_spanned v0.6.9 (*)
+
+serde_spanned v1.1.3 (*)
+
+sha2 v0.10.9 (*)
+
+sha2 v0.11.1 (*)
+
+signature v2.2.0
+└── jsonwebtoken v10.4.0 (*)
+
+signature v3.0.0 (*)
+
+slab v0.4.12
+├── futures-util v0.3.34 (*)
+├── h2 v0.4.20 (*)
+├── tokio-util v0.7.20 (*)
+└── tower v0.5.3 (*)
+
+slab v0.4.12
+└── futures-util v0.3.34 (*)
+
+smallvec v1.16.4 (*)
+
+smallvec v1.16.4 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+syn v2.0.119
+├── asn1-rs-derive v0.5.1 (proc-macro)
+│   └── asn1-rs v0.6.2 (*)
+├── asn1-rs-impl v0.2.0 (proc-macro)
+│   └── asn1-rs v0.6.2 (*)
+├── async-stream-impl v0.3.6 (proc-macro)
+│   └── async-stream v0.3.6
+│       └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+├── axum-macros v0.5.1 (proc-macro)
+│   └── axum v0.8.9 (*)
+├── curve25519-dalek-derive v0.1.1 (proc-macro)
+│   └── curve25519-dalek v5.0.0 (*)
+├── educe v0.5.11 (proc-macro)
+│   └── tokio-serde v0.9.0 (*)
+├── pin-project-internal v1.1.13 (proc-macro)
+│   └── pin-project v1.1.13
+│       ├── tarpc v0.38.0 (*)
+│       ├── tokio-serde v0.9.0 (*)
+│       └── tonic v0.14.9 (*)
+├── prettyplease v0.2.37
+│   ├── prost-build v0.14.4 (*)
+│   ├── tonic-build v0.14.9
+│   │   └── tonic-prost-build v0.14.9 (*)
+│   └── tonic-prost-build v0.14.9 (*)
+├── prost-build v0.14.4 (*)
+├── prost-derive v0.14.4 (proc-macro) (*)
+├── rust-i18n-macro v3.1.5 (proc-macro) (*)
+├── sqlx-macros v0.8.6 (proc-macro) (*)
+├── sqlx-macros-core v0.8.6 (*)
+├── synstructure v0.13.2
+│   └── asn1-rs-derive v0.5.1 (proc-macro) (*)
+├── thiserror-impl v1.0.69 (proc-macro)
+│   └── thiserror v1.0.69
+│       ├── asn1-rs v0.6.2 (*)
+│       ├── protobuf v3.7.2
+│       │   └── prometheus v0.14.0 (*)
+│       ├── protobuf-support v3.7.2
+│       │   └── protobuf v3.7.2 (*)
+│       ├── rskafka v0.6.0 (*)
+│       └── x509-parser v0.16.0 (*)
+├── tonic-build v0.14.9 (*)
+├── tonic-prost-build v0.14.9 (*)
+├── tracing-attributes v0.1.31 (proc-macro)
+│   └── tracing v0.1.44 (*)
+└── zeroize_derive v1.5.0 (proc-macro)
+    └── zeroize v1.9.1
+        ├── aws-lc-rs v1.19.0
+        │   ├── jsonwebtoken v10.4.0 (*)
+        │   ├── rustls v0.23.46 (*)
+        │   └── rustls-webpki v0.103.16 (*)
+        ├── block-buffer v0.12.1 (*)
+        ├── chacha20poly1305 v0.10.1 (*)
+        ├── cipher v0.4.4 (*)
+        ├── crypto-bigint v0.7.11 (*)
+        ├── curve25519-dalek v5.0.0 (*)
+        ├── der v0.8.3
+        │   ├── ecdsa v0.17.0 (*)
+        │   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+        │   ├── pkcs1 v0.8.0
+        │   │   └── rsa v0.10.0 (*)
+        │   ├── pkcs8 v0.11.0
+        │   │   ├── ed25519 v3.0.0 (*)
+        │   │   ├── elliptic-curve v0.14.3 (*)
+        │   │   ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+        │   │   └── rsa v0.10.0 (*)
+        │   ├── sec1 v0.8.1
+        │   │   ├── elliptic-curve v0.14.3 (*)
+        │   │   └── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+        │   └── spki v0.8.1
+        │       ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+        │       ├── pkcs1 v0.8.0 (*)
+        │       ├── pkcs8 v0.11.0 (*)
+        │       └── rsa v0.10.0 (*)
+        ├── digest v0.11.3 (*)
+        ├── ecdsa v0.17.0 (*)
+        ├── ed25519-dalek v3.0.0 (*)
+        ├── elliptic-curve v0.14.3 (*)
+        ├── hybrid-array v0.4.15
+        │   ├── block-buffer v0.12.1 (*)
+        │   ├── crypto-bigint v0.7.11 (*)
+        │   ├── crypto-common v0.2.2 (*)
+        │   ├── elliptic-curve v0.14.3 (*)
+        │   ├── sec1 v0.8.1 (*)
+        │   └── wnaf v0.14.1 (*)
+        ├── jsonwebtoken v10.4.0 (*)
+        ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+        ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+        ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+        ├── primefield v0.14.0 (*)
+        ├── rsa v0.10.0 (*)
+        ├── rustls v0.23.46 (*)
+        ├── rustls-pki-types v1.15.1
+        │   ├── rcgen v0.13.2 (*)
+        │   ├── reqwest v0.13.5 (*)
+        │   ├── rustls v0.23.46 (*)
+        │   ├── rustls-native-certs v0.8.5
+        │   │   ├── rustls-platform-verifier v0.7.1 (*)
+        │   │   └── tokio-tungstenite v0.28.0 (*)
+        │   ├── rustls-pemfile v2.2.0
+        │   │   └── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+        │   ├── rustls-webpki v0.103.16 (*)
+        │   ├── tokio-tungstenite v0.28.0 (*)
+        │   ├── tungstenite v0.28.0 (*)
+        │   └── webpki-roots v1.0.11
+        │       └── webpki-roots v0.26.11
+        │           └── sqlx-core v0.8.6 (*)
+        └── sec1 v0.8.1 (*)
+
+syn v3.0.9
+├── async-trait v0.1.92 (proc-macro)
+│   ├── config v0.15.27 (*)
+│   ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│   ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│   ├── mazbri-cache v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cache)
+│   ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│   ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│   ├── opentelemetry-http v0.32.0 (*)
+│   └── tonic v0.14.9 (*)
+├── displaydoc v0.2.7 (proc-macro)
+│   ├── asn1-rs v0.6.2 (*)
+│   ├── der-parser v9.0.0 (*)
+│   ├── icu_collections v2.4.0
+│   │   ├── icu_normalizer v2.4.0 (*)
+│   │   └── icu_properties v2.4.0
+│   │       └── idna_adapter v1.2.2 (*)
+│   ├── icu_locale_core v2.4.0
+│   │   ├── icu_properties v2.4.0 (*)
+│   │   └── icu_provider v2.4.0
+│   │       ├── icu_normalizer v2.4.0 (*)
+│   │       └── icu_properties v2.4.0 (*)
+│   ├── icu_properties v2.4.0 (*)
+│   ├── icu_provider v2.4.0 (*)
+│   ├── tinystr v0.8.5
+│   │   └── icu_locale_core v2.4.0 (*)
+│   └── zerotrie v0.2.5
+│       ├── icu_properties v2.4.0 (*)
+│       └── icu_provider v2.4.0 (*)
+├── enum-ordinalize-derive v4.4.2 (proc-macro)
+│   └── enum-ordinalize v4.4.2
+│       └── educe v0.5.11 (proc-macro) (*)
+├── futures-macro v0.3.34 (proc-macro)
+│   └── futures-util v0.3.34 (*)
+├── serde_derive v1.0.229 (proc-macro)
+│   ├── ron v0.12.3 (*)
+│   └── serde v1.0.229 (*)
+├── synstructure v0.14.0
+│   ├── yoke-derive v0.8.4 (proc-macro)
+│   │   └── yoke v0.8.4
+│   │       ├── icu_collections v2.4.0 (*)
+│   │       ├── icu_provider v2.4.0 (*)
+│   │       ├── zerotrie v0.2.5 (*)
+│   │       └── zerovec v0.11.9
+│   │           ├── icu_collections v2.4.0 (*)
+│   │           ├── icu_locale_core v2.4.0 (*)
+│   │           ├── icu_normalizer v2.4.0 (*)
+│   │           ├── icu_properties v2.4.0 (*)
+│   │           ├── icu_provider v2.4.0 (*)
+│   │           ├── potential_utf v0.1.6
+│   │           │   └── icu_collections v2.4.0 (*)
+│   │           └── tinystr v0.8.5 (*)
+│   └── zerofrom-derive v0.1.8 (proc-macro)
+│       └── zerofrom v0.1.8
+│           ├── icu_collections v2.4.0 (*)
+│           ├── icu_provider v2.4.0 (*)
+│           ├── yoke v0.8.4 (*)
+│           ├── zerotrie v0.2.5 (*)
+│           └── zerovec v0.11.9 (*)
+├── tarpc-plugins v0.15.0 (proc-macro)
+│   └── tarpc v0.38.0 (*)
+├── thiserror-impl v2.0.21 (proc-macro)
+│   └── thiserror v2.0.21
+│       ├── mazbri-audit v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-audit)
+│       ├── mazbri-auth v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-auth) (*)
+│       ├── mazbri-billing v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-billing)
+│       ├── mazbri-callback v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-callback)
+│       ├── mazbri-cert v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-cert)
+│       ├── mazbri-core v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core) (*)
+│       ├── mazbri-crypto v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-crypto) (*)
+│       ├── mazbri-registry v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-registry) (*)
+│       ├── mazbri-tls v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-tls) (*)
+│       ├── mazbri-upstream-runtime v0.1.0 (/workspace/rust-proj/mazbri/mazbri-libs/mazbri-upstream-runtime)
+│       ├── opentelemetry v0.32.0 (*)
+│       ├── opentelemetry-otlp v0.32.0 (*)
+│       ├── opentelemetry_sdk v0.32.1 (*)
+│       ├── prometheus v0.14.0 (*)
+│       ├── rsasl v2.3.1 (*)
+│       ├── simple_asn1 v0.6.4 (*)
+│       ├── sqlx-core v0.8.6 (*)
+│       ├── sqlx-postgres v0.8.6 (*)
+│       ├── sqlx-postgres v0.8.6 (*)
+│       ├── tarpc v0.38.0 (*)
+│       ├── tracing-appender v0.2.5 (*)
+│       ├── tungstenite v0.28.0 (*)
+│       └── tungstenite v0.29.0 (*)
+├── tokio-macros v2.7.2 (proc-macro)
+│   └── tokio v1.54.1 (*)
+├── yoke-derive v0.8.4 (proc-macro) (*)
+├── zerofrom-derive v0.1.8 (proc-macro) (*)
+└── zerovec-derive v0.11.7 (proc-macro)
+    └── zerovec v0.11.9 (*)
+
+synstructure v0.13.2 (*)
+
+synstructure v0.14.0 (*)
+
+thiserror v1.0.69 (*)
+
+thiserror v2.0.21 (*)
+
+thiserror-impl v1.0.69 (proc-macro) (*)
+
+thiserror-impl v2.0.21 (proc-macro) (*)
+
+tokio v1.54.1 (*)
+
+tokio v1.54.1
+└── sqlx-macros-core v0.8.6 (*)
+
+tokio-tungstenite v0.28.0 (*)
+
+tokio-tungstenite v0.29.0 (*)
+
+toml v0.8.23 (*)
+
+toml v1.2.1+spec-1.1.0 (*)
+
+toml_datetime v0.6.11 (*)
+
+toml_datetime v1.1.3+spec-1.1.0 (*)
+
+tungstenite v0.28.0 (*)
+
+tungstenite v0.29.0 (*)
+
+untrusted v0.7.1
+└── aws-lc-rs v1.19.0 (*)
+
+untrusted v0.9.0
+├── ring v0.17.14 (*)
+└── rustls-webpki v0.103.16 (*)
+
+uuid v1.29.0 (*)
+
+uuid v1.29.0
+└── sqlx-postgres v0.8.6 (*)
+
+webpki-roots v0.26.11 (*)
+
+webpki-roots v1.0.11 (*)
+
+winnow v0.7.15
+└── toml_edit v0.22.27 (*)
+
+winnow v1.0.5
+├── config v0.15.27 (*)
+├── toml v1.2.1+spec-1.1.0 (*)
+└── toml_parser v1.1.5+spec-1.1.0
+    └── toml v1.2.1+spec-1.1.0 (*)
+
+yasna v0.5.2
+└── rcgen v0.13.2 (*)
+
+yasna v0.6.0 (*)

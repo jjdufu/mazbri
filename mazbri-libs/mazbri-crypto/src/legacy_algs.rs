@@ -8,11 +8,11 @@ use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit};
 use des::Des;
 use digest::Digest as DigestTrait;
-use hmac::{Hmac, Mac as HmacMac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac as HmacMac};
 use md5::Md5;
 use rsa::hazmat::{rsa_decrypt, rsa_encrypt};
 use rsa::traits::PublicKeyParts;
-use rsa::{BigUint, RsaPrivateKey, RsaPublicKey};
+use rsa::{BoxedUint, PrivateKey as RsaPrivateKey, PublicKey as RsaPublicKey};
 use subtle::ConstantTimeEq;
 
 use crate::id::AlgorithmId;
@@ -220,7 +220,7 @@ pub fn hmac_md5_sign(
 ) -> Result<Vec<u8>, CryptoError> {
     assert_not_legacy_or_allowed(AlgorithmId::HmacMd5, allow_insecure)?;
     let key_bytes = key.raw_bytes()?;
-    let mut mac = <HmacMd5 as HmacMac>::new_from_slice(key_bytes).map_err(|_| {
+    let mut mac = <HmacMd5 as HmacKeyInit>::new_from_slice(key_bytes).map_err(|_| {
         CryptoError::InvalidKey {
             reason: "hmac-md5 key init failed".to_owned(),
         }
@@ -286,8 +286,26 @@ fn pkcs1_type1_unpad(em: &[u8]) -> Result<Vec<u8>, CryptoError> {
     Ok(em[i + 1..].to_vec())
 }
 
-fn be_pad(n: &BigUint, k: usize) -> Result<Vec<u8>, CryptoError> {
-    let mut bytes = n.to_bytes_be();
+/// 大端字节转为与模数同精度的 `BoxedUint`（rsa 0.10 的 hazmat 要求精度一致），并要求小于模数。
+fn uint_below_modulus(bytes: &[u8], n: &BoxedUint) -> Result<BoxedUint, CryptoError> {
+    let value = BoxedUint::from_be_slice(bytes, n.bits_precision()).map_err(|_| {
+        CryptoError::InvalidInput {
+            reason: "RSA integer wider than modulus".to_owned(),
+        }
+    })?;
+    if value >= *n {
+        return Err(CryptoError::InvalidInput {
+            reason: "RSA integer not below modulus".to_owned(),
+        });
+    }
+    Ok(value)
+}
+
+/// 去掉前导零后左补零到 `k` 字节（与 rsa 0.9 `to_bytes_be` + 补齐的结果相同）。
+fn be_pad(n: &BoxedUint, k: usize) -> Result<Vec<u8>, CryptoError> {
+    let full = n.to_be_bytes();
+    let start = full.iter().position(|b| *b != 0).unwrap_or(full.len());
+    let mut bytes = full[start..].to_vec();
     if bytes.len() > k {
         return Err(CryptoError::OperationFailed {
             reason: "RSA integer wider than modulus".to_owned(),
@@ -319,9 +337,8 @@ pub fn rsa_pkcs1v15_private_encrypt(
     let sk = parse_rsa_private(private)?;
     let k = sk.size();
     let em = pkcs1_type1_pad(k, plaintext)?;
-    let m = BigUint::from_bytes_be(&em);
-    let mut rng = rsa::rand_core::OsRng;
-    let c = rsa_decrypt(Some(&mut rng), &sk, &m).map_err(|e| CryptoError::OperationFailed {
+    let m = uint_below_modulus(&em, sk.n().as_ref())?;
+    let c = rsa_decrypt(Some(&mut rand::rngs::SysRng), &sk, &m).map_err(|e| CryptoError::OperationFailed {
         reason: format!("rsa private-encrypt: {e}"),
     })?;
     be_pad(&c, k)
@@ -348,7 +365,7 @@ pub fn rsa_pkcs1v15_public_decrypt(
             ),
         });
     }
-    let c = BigUint::from_bytes_be(ciphertext);
+    let c = uint_below_modulus(ciphertext, pk.n().as_ref())?;
     let m = rsa_encrypt(&pk, &c).map_err(|e| CryptoError::OperationFailed {
         reason: format!("rsa public-decrypt: {e}"),
     })?;

@@ -24,6 +24,7 @@ tokio-util = { workspace = true }
 tarpc = { workspace = true }
 mazbri-rpc = { workspace = true }
 sha2 = { workspace = true }
+hex = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 

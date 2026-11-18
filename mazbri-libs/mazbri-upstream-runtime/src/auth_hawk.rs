@@ -3,7 +3,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 use mazbri_core::AuthHawkSpec;

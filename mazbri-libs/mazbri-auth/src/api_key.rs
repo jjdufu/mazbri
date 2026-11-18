@@ -1,8 +1,5 @@
 use super::{AuthResult, AuthServiceConfig, error::AuthError};
-use argon2::{
-    Argon2, PasswordHasher,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Argon2, PasswordHasher};
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Row, Transaction};
@@ -364,9 +361,9 @@ impl ApiKeyValidator {
         let prefix = self.generate_prefix(&mut tx).await?;
         let random_bytes: [u8; 32] = rand::random();
         let secret = hex::encode(random_bytes);
-        let salt = SaltString::generate(&mut OsRng);
+        // hash_password 自带 16 字节系统随机盐（与原 SaltString::generate 等长）。
         let password_hash = Argon2::default()
-            .hash_password(secret.as_bytes(), &salt)
+            .hash_password(secret.as_bytes())
             .map_err(|e| {
                 AuthError::Core(mazbri_core::CoreError::Internal(format!(
                     "Failed to hash password: {e}"

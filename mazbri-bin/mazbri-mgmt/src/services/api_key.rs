@@ -3,7 +3,6 @@ use crate::error::ApiError;
 use crate::handlers::types::{CreateApiKeyRequest, UpdateApiKeyRequest};
 use crate::repositories::api_key as repo;
 use ::chrono::TimeDelta;
-use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHasher};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
@@ -35,13 +34,12 @@ fn generate_api_key_material() -> Result<(String, String, String, String, String
     let random_bytes: [u8; 32] = rand::random();
     let secret: String = hex::encode(random_bytes);
     let full_api_key = format!("mazbri_{prefix}_{secret}");
-    let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(secret.as_bytes(), &salt);
+    let password_hash = argon2.hash_password(secret.as_bytes());
     let secret_hash = password_hash
         .map_err(|e| ApiError::internal(format!("Failed to hash API key: {e}")))?
         .to_string();
-    let key_hash = format!("{:x}", Sha256::digest(secret.as_bytes()));
+    let key_hash = hex::encode(Sha256::digest(secret.as_bytes()));
     let key_suffix = secret
         .chars()
         .rev()

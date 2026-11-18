@@ -5,12 +5,12 @@ use mazbri_crypto::{
     CryptoError, KeyPurpose, KeyRef,
 };
 use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-use rsa::rand_core::{OsRng, RngCore};
+use rand::TryRng;
+use rand::rngs::SysRng;
 
 fn rsa_keypair_pem() -> (String, String) {
-    let mut rng = OsRng;
-    let private = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
-    let public = rsa::RsaPublicKey::from(&private);
+    let private = rsa::PrivateKey::new(&mut SysRng, 2048).expect("rsa keygen");
+    let public = private.to_public_key();
     let sk = private
         .to_pkcs8_pem(LineEnding::LF)
         .expect("sk pem")
@@ -20,7 +20,7 @@ fn rsa_keypair_pem() -> (String, String) {
 }
 
 fn fill_rng(buf: &mut [u8]) {
-    OsRng.fill_bytes(buf);
+    SysRng.try_fill_bytes(buf).expect("system rng");
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn ecdsa_p256_raw_roundtrip() {
             && let Ok(sk) = SigningKey::from_bytes((&scalar).into())
         {
             let vk = sk.verifying_key();
-            let pk_bytes = vk.to_encoded_point(false).as_bytes().to_vec();
+            let pk_bytes = vk.to_sec1_point(false).as_bytes().to_vec();
             let alg = AsymSignAlgorithm::EcdsaP256Sha256;
             let msg = b"p256-msg";
             let sig = alg
@@ -97,7 +97,7 @@ fn ecdsa_p384_raw_roundtrip() {
             && let Ok(sk) = SigningKey::from_bytes((&scalar).into())
         {
             let vk = sk.verifying_key();
-            let pk_bytes = vk.to_encoded_point(false).as_bytes().to_vec();
+            let pk_bytes = vk.to_sec1_point(false).as_bytes().to_vec();
             let alg = AsymSignAlgorithm::EcdsaP384Sha384;
             let msg = b"p384-msg";
             let sig = alg

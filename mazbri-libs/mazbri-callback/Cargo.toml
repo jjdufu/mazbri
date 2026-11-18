@@ -29,7 +29,7 @@ uuid = { workspace = true }
 hex = "0.4"
 
 sha2 = { workspace = true }
-hmac = "0.12"
+hmac = { workspace = true }
 
 reqwest = { workspace = true }
 

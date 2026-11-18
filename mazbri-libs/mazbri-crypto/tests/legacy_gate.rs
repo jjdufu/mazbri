@@ -88,11 +88,9 @@ fn md5_and_hmac_md5_when_allowed() {
 #[test]
 fn rsa_private_encrypt_roundtrip_when_allowed() {
     use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-    use rsa::rand_core::OsRng;
 
-    let mut rng = OsRng;
-    let private = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
-    let public = rsa::RsaPublicKey::from(&private);
+    let private = rsa::PrivateKey::new(&mut rand::rngs::SysRng, 2048).expect("keygen");
+    let public = private.to_public_key();
     let sk = KeyRef::pem(
         KeyPurpose::AsymBox,
         private.to_pkcs8_pem(LineEnding::LF).expect("sk").to_string(),
