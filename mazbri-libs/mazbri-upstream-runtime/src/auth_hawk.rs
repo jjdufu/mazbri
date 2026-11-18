@@ -3,7 +3,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 use mazbri_core::AuthHawkSpec;
@@ -134,5 +134,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(auth, *call.headers.get("Authorization").expect("hawk2"));
+        // 金标准由 hmac 0.12 / sha2 0.10 生成；升级后 Hawk 头必须逐字节不变。
+        assert_eq!(
+            auth,
+            "Hawk id=\"dh37fgj492je\", ts=\"1577836800\", nonce=\"j4h3g2\", mac=\"z/4nX5cqcIQdaVeb6SdRq3p0cfPyTu5ju1tvsn+mWWc=\""
+        );
     }
 }

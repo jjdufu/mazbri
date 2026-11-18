@@ -58,6 +58,7 @@ Content-Type: application/json
 ```
 
   `expires_in` 单位秒，由租户配置决定；示例值仅示意。调用网关前须确认 token 未过期，过期后重新换取。
+  token 是不透明凭据，租户不应解析其内容。平台在 JWT 里记录签发它的 API Key ID（claim `api_key_id`，不含密钥本身），用于按凭证审计与统计；升级到带该 claim 的版本后，旧 token 校验失败（401），重新换取即可。
 
 - 失败：`{"success": false, "error": "<原因>"}`，HTTP 状态：
 
@@ -100,6 +101,51 @@ Content-Type: application/json
   请求体不可读 → 400；token 缺 `api:write` scope → 403。此三类响应体为 `{"success":false,"error":"...","status":<http>}`。
 
 实现：`mazbri-bin/mazbri-gateway/src/auth/middleware.rs`（`jwt_auth_middleware`）、`gateway/handler.rs`。
+
+### 2.1 请求标识与链路追踪
+
+**请求 ID（`X-Request-Id`）**
+
+- 可选请求头 `X-Request-Id`：租户自带的请求 ID，建议每个请求一个（UUID / UUIDv7 / 业务流水号均可）。
+- 合规值：`[A-Za-z0-9._-]{1,128}`（ASCII 字母、数字、`.`、`_`、`-`，1–128 字节）。合规值**原样**沿用（不改大小写、不改格式），
+  贯穿网关、上游转发（同名请求头）与调用日志。
+- 未带或为空：网关生成新的 UUID。
+- 不合规（含空格、`/`、非 ASCII、超长等）：网关**替换**为新的 UUID，不拒绝请求；原值截断到 256 字节后另存为调用日志的
+  `client_request_id`，可按原值向平台运营方查询。
+- 每个响应（成功、网关错误、401/403/429 等）都带响应头 `X-Request-Id`，值即本次请求的最终请求 ID；网关错误体里的 `request_id`
+  与之相同（§6）。排障时提供这个值即可。
+
+**链路追踪（W3C Trace Context）**
+
+- 可选请求头 `traceparent`（W3C Trace Context Level 1，`00-<32 位 hex trace-id>-<16 位 hex parent-id>-<2 位 hex trace-flags>`）
+  与 `tracestate`。合法的 `traceparent` 作为网关入口 span 的父节点，trace-id 沿用到全链路；非法或缺失时网关新开一条 trace。
+- `tracestate` 原样参与传播，网关不解析其内容。
+- 采样标志（trace-flags 的 sampled 位）：入站 `-01` 表示租户侧已采样，网关跟随采样并导出 span；入站 `-00` 表示不采样，网关不导出
+  span，但 trace-id 仍写入调用日志、可按 trace-id 检索。未带 `traceparent` 时按平台采样率决定。
+- 每个响应都带响应头 `traceparent`：trace-id 为本次链路，parent-id 为网关入口 span，trace-flags 如实反映网关的采样决定
+  （入站 `-00` 回 `-00`，绝不写死 `-01`）。
+
+**浏览器跨域**：允许的请求头含 `X-Request-Id`、`traceparent`；可读响应头（`Access-Control-Expose-Headers`）含 `X-Request-Id`、
+`traceparent`、`Retry-After`、`RateLimit-Policy`、`RateLimit`。
+
+实现：`mazbri-libs/mazbri-core/src/logging/access.rs`（`inbound_request_id`、`TraceContext::traceparent_value`）、
+`mazbri-libs/mazbri-service/src/middleware.rs`（`request_id_middleware`）、`mazbri-bin/mazbri-gateway/src/router.rs`（CORS）。
+
+### 2.2 限流配额响应头
+
+经过租户限流判定的网关请求（含 429），响应带 IETF `draft-ietf-httpapi-ratelimit-headers` 格式的两个头，描述租户请求配额：
+
+```
+RateLimit-Policy: "tenant";q=1000;w=1
+RateLimit: "tenant";r=998;t=1
+```
+
+- `q`：配额上限（令牌桶容量，即允许的突发请求数）；`w`：空桶补满所需秒数。
+- `r`：本次请求之后的剩余配额；`t`：补满还需的秒数（已满为 0）。
+- 租户 QPS 超限的 429 里 `r=0`，`t` 与 `Retry-After` 同量级（至少 1 秒）；带宽超限的 429 和未启用限流策略的租户不带这两个头。
+- 两个头只用于客户端自适应降速，配额以平台配置为准；按渠道、按 IP 的限流不在这两个头里体现。
+
+实现：`mazbri-bin/mazbri-gateway/src/ratelimit/engine.rs`（`QuotaState`）、`auth/middleware.rs`（`ratelimit_middleware`）。
 
 ## 3. 传输加密（profile 与信封）
 
@@ -275,8 +321,10 @@ profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input
 网关错误体（明文，`full` 模式也不加密）：
 
 ```json
-{"success": false, "data": null, "error": "[E4030] Forbidden: Invalid encrypted request signature", "status": 403, "request_id": "<uuid>"}
+{"success": false, "data": null, "error": "[E4030] Forbidden: Invalid encrypted request signature", "status": 403, "request_id": "<请求 ID>"}
 ```
+
+`request_id` 与响应头 `X-Request-Id` 相同（§2.1）。
 
 | 码 | HTTP | 典型原因 |
 |---|---|---|
@@ -287,7 +335,7 @@ profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input
 | `E4040` | 404 | 产品/路由不存在 |
 | `E4090` | 409 | 信封 nonce 重复；同 fingerprint 请求仍在处理 |
 | `E4130` | 413 | 请求体超限 |
-| `E4290` | 429 | 限流，带 `Retry-After` |
+| `E4290` | 429 | 限流，带 `Retry-After`（租户 QPS 超限另带 `RateLimit-Policy` / `RateLimit`，§2.2） |
 | `E5000` | 500 | 内部错误 |
 | `E5020` | 502 | 上游不可用 |
 | `E5030` | 503 | 服务暂不可用，带 `Retry-After` |
@@ -398,3 +446,4 @@ s.update(msg); byte[] rsaSig = s.sign();
 4. 签名用的 body 字节 = 发送的 body 字节。
 5. 先用本仓库的向量跑通示例，再联调。
 6. `full` 模式下：先判断 HTTP 状态与 body 是否为信封；信封先验 MAC 再解密，网关错误为明文。
+7. 自带 `X-Request-Id` 时只用 `[A-Za-z0-9._-]{1,128}`；记录每个响应头里的 `X-Request-Id`（与 `traceparent`）用于排障。

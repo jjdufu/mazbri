@@ -22,7 +22,7 @@ use crate::ssrf::SsrfChecker;
 use crate::token_cache::{StaleEvict, TokenCache};
 use crate::types::{
     AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult, RetryReason, RetrySkip,
-    StageResult, StageSummary, UpstreamMeta,
+    StageResult, StageSummary, StageTiming, UpstreamMeta,
 };
 
 /// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
@@ -258,6 +258,7 @@ impl RuntimeEngine {
         // 认证被拒说明上游未执行业务，换票后重放是安全的；只重试一次，不递归。
         retry_log.push(RetryReason::AuthRejected(rejection.trigger));
         trace.stages = std::mem::take(&mut first_result.stages);
+        trace.timings = std::mem::take(&mut first_result.stage_timings);
         trace.retry_round = true;
         let second = self
             .attempt(input, &base_url, &cache_key, &mut trace, retry_log)
@@ -427,6 +428,7 @@ impl RuntimeEngine {
                 )
             })?;
         }
+        trace.time("egress_build", v_start, true);
         trace.record(|| StageResult {
             name: "ssrf".into(),
             ok: true,
@@ -464,6 +466,7 @@ impl RuntimeEngine {
             Ok(a) => a,
             Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
         };
+        trace.time("upstream_auth", a_start, true);
         trace.record(|| auth_stage(input, &applied, a_start));
 
         let kind = match input.spec.adapter_kind() {
@@ -521,6 +524,11 @@ impl RuntimeEngine {
                 ..ResultParts::ok()
             }));
         }
+        trace.time(
+            "upstream_wire",
+            u_start,
+            outcome.biz_error.is_none() && (200..300).contains(&outcome.response.status),
+        );
         trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
         let rejection = outcome.auth_rejection;
         let meta = trace.upstream_meta(&outcome.response);
@@ -722,6 +730,10 @@ struct Trace {
     adapter: String,
     /// 认证重试轮：阶段名加 `#retry` 后缀。
     retry_round: bool,
+    /// 上游流水号响应头（egress spec `response.request_id_header`，缺省 `x-request-id`）。
+    request_id_header: String,
+    /// 轻量阶段耗时，总是采集（bypass 阶段日志）。
+    timings: Vec<StageTiming>,
 }
 
 impl Trace {
@@ -732,7 +744,23 @@ impl Trace {
             enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
             adapter: input.spec.adapter.clone(),
             retry_round: false,
+            request_id_header: input.spec.upstream_request_id_header().to_string(),
+            timings: Vec::new(),
         }
+    }
+
+    /// 记一个轻量阶段耗时（不受 `enabled` 影响）；认证重试轮加 `#retry` 后缀。
+    fn time(&mut self, name: &str, started: Instant, ok: bool) {
+        let name = if self.retry_round {
+            format!("{name}#retry")
+        } else {
+            name.to_string()
+        };
+        self.timings.push(StageTiming {
+            name,
+            ms: elapsed_ms(started),
+            ok,
+        });
     }
 
     fn record(&mut self, stage: impl FnOnce() -> StageResult) {
@@ -746,11 +774,20 @@ impl Trace {
     }
 
     fn upstream_meta(&self, response: &crate::types::OutboundResponse) -> UpstreamMeta {
+        let request_id = response
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(&self.request_id_header))
+            .map_or_default(|(_, v)| v.trim().to_string());
         UpstreamMeta {
             status: response.status,
             url: response.final_url.clone(),
             adapter: self.adapter.clone(),
             latency_ms: elapsed_ms(self.start),
+            method: response.method.clone(),
+            path: response.path.clone(),
+            protocol: response.protocol.clone(),
+            request_id,
         }
     }
 
@@ -769,6 +806,7 @@ impl Trace {
             internal_retries: 0,
             retry_reasons: Vec::new(),
             retry_skipped: None,
+            stage_timings: std::mem::take(&mut self.timings),
         }
     }
 
@@ -778,6 +816,12 @@ impl Trace {
             started,
             err,
         } = fail;
+        let timing_name = match stage {
+            "validate" | "ssrf" => "egress_build",
+            "auth" => "upstream_auth",
+            _ => "upstream_wire",
+        };
+        self.time(timing_name, started, false);
         self.record(|| StageResult {
             name: stage.into(),
             ok: false,

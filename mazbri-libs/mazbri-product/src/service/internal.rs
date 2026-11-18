@@ -52,7 +52,7 @@ impl ProductService {
         product_id: &str,
         req: &CreateProductRequest,
     ) -> std::result::Result<PgRow, ProductWriteError> {
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         let now = Utc::now();
         sqlx::query(
             r"
@@ -191,7 +191,7 @@ impl ProductService {
         product_id: &str,
         reserved_by: &str,
     ) -> std::result::Result<ProductIdReservation, ProductWriteError> {
-        let row_id = Uuid::new_v4();
+        let row_id = Uuid::now_v7();
         let reservation_id = Uuid::new_v4();
         let reserved_at = Utc::now();
         let expires_at = reserved_at + chrono::Duration::seconds(PRODUCT_ID_RESERVATION_TTL_SECS);

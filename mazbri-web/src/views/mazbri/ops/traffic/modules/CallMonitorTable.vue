@@ -260,6 +260,44 @@
                 >
                   {{ getCallMonitorResponseResult(currentDetail) }}
                 </ElDescriptionsItem>
+                <ElDescriptionsItem
+                  :label="$t('operations.monitoring.detail.labels.errorSource')"
+                >
+                  {{ currentDetail.error_source || EMPTY_PLACEHOLDER }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem
+                  :label="$t('operations.monitoring.detail.labels.retryCount')"
+                >
+                  {{ currentDetail.retry_count ?? 0 }}
+                </ElDescriptionsItem>
+                <ElDescriptionsItem
+                  v-if="props.mode === 'customer'"
+                  :label="$t('operations.monitoring.detail.labels.apiKeyId')"
+                >
+                  <CopyableText
+                    v-if="currentDetail.api_key_id"
+                    :value="currentDetail.api_key_id"
+                    :label="$t('operations.monitoring.detail.labels.apiKeyId')"
+                  />
+                  <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
+                </ElDescriptionsItem>
+                <ElDescriptionsItem
+                  v-if="props.mode === 'upstream'"
+                  :label="
+                    $t('operations.monitoring.detail.labels.upstreamRequestId')
+                  "
+                >
+                  <CopyableText
+                    v-if="currentDetail.upstream_request_id"
+                    :value="currentDetail.upstream_request_id"
+                    :label="
+                      $t(
+                        'operations.monitoring.detail.labels.upstreamRequestId',
+                      )
+                    "
+                  />
+                  <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
+                </ElDescriptionsItem>
               </ElDescriptions>
             </ElCard>
 

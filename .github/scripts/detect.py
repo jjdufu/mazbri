@@ -2,7 +2,7 @@
 """Compute which service images must be rebuilt for a release.
 
 Usage:
-  detect.py <cargo-metadata.json> <changed-files.txt> [<old Cargo.lock> <new Cargo.lock>]
+  detect.py <cargo-metadata.json> <changed-files.txt> [<old Cargo.lock> <new Cargo.lock>] [--base <git-rev>]
   detect.py <cargo-metadata.json> --all
 
 cargo-metadata.json comes from `cargo metadata --format-version 1 --locked`
@@ -10,13 +10,26 @@ run in mazbri-bin at HEAD. The dependency closure is computed from that graph
 (normal + build deps, dev-deps ignored), so the rules follow Cargo.toml rather
 than a hardcoded table. Errs on the side of rebuilding more, never fewer.
 
+Workspace root manifests (mazbri-bin/Cargo.toml, mazbri-libs/Cargo.toml) are
+diffed against `git show <base>:<path>` instead of forcing a full rebuild:
+anything outside [workspace.dependencies] (members, [workspace.package],
+lints, [profile*], [patch], ...) still rebuilds every image; a changed
+[workspace.dependencies] entry rebuilds only the services whose closure holds
+that crate. A version-only change is left to the Cargo.lock diff (the resolved
+version is what reaches the binary); features / default-features / path /
+package changes are not visible in Cargo.lock and are handled here. Without
+--base, or if the old manifest cannot be read/parsed, it falls back to a full
+rebuild.
+
 Prints {"build": [...], "reuse": [...]} where each entry is
 {"package", "image", "bin", "bootstrap"}; reasons go to stderr.
 """
 import json
 import os
 import re
+import subprocess
 import sys
+import tomllib
 
 # cargo package -> (image name, bootstrap prefix). Binary name == package name.
 SERVICES = {
@@ -34,14 +47,16 @@ SERVICES = {
 }
 # Any change here rebuilds every image.
 GLOBAL = [
-    r"^mazbri-bin/Cargo\.toml$",
-    r"^mazbri-libs/Cargo\.toml$",
     r"rust-toolchain",
     r"(^|/)\.cargo/",
     r"^docker/",
     r"^\.github/workflows/release",
     r"^\.github/scripts/",
 ]
+# Workspace root manifests: diffed section by section, see manifest_changes().
+WORKSPACE_MANIFESTS = ("mazbri-bin/Cargo.toml", "mazbri-libs/Cargo.toml")
+# Top-level keys under [workspace] that never reach a binary.
+WS_IGNORED_KEYS = ("dependencies", "metadata")
 # Never affects a release binary (Cargo.lock is handled by the lock diff).
 IGNORE = [r"\.md$", r"/tests?/", r"/benches/", r"/examples/", r"(^|/)Cargo\.lock$"]
 
@@ -51,7 +66,57 @@ def entry(pkg):
     return {"package": pkg, "image": image, "bin": pkg, "bootstrap": f"{boot}-bootstrap.toml"}
 
 
+def manifest_changes(old, new):
+    """Compare two parsed workspace manifests.
+
+    Returns (global_reason or None, {crate: "version"|"spec"}) where crate is
+    the real package name of every changed [workspace.dependencies] entry.
+    """
+    def rest(m):
+        m = dict(m)
+        ws = {k: v for k, v in m.pop("workspace", {}).items() if k not in WS_IGNORED_KEYS}
+        return m, ws
+    if rest(old) != rest(new):
+        o, n = rest(old), rest(new)
+        keys = sorted({k for k in set(o[0]) | set(n[0]) if o[0].get(k) != n[0].get(k)}
+                      | {f"workspace.{k}" for k in set(o[1]) | set(n[1]) if o[1].get(k) != n[1].get(k)})
+        return ",".join(keys) or "manifest", {}
+
+    def norm(v):
+        return {"version": v} if isinstance(v, str) else dict(v)
+    od = old.get("workspace", {}).get("dependencies", {})
+    nd = new.get("workspace", {}).get("dependencies", {})
+    out = {}
+    for k in set(od) | set(nd):
+        if od.get(k) == nd.get(k):
+            continue
+        kind = "spec"
+        if k in od and k in nd:
+            a, b = norm(od[k]), norm(nd[k])
+            a.pop("version", None)
+            b.pop("version", None)
+            if a == b:
+                kind = "version"
+        for e in (od.get(k), nd.get(k)):
+            name = norm(e).get("package", k) if e is not None else k
+            if out.get(name) != "spec":
+                out[name] = kind
+    return None, out
+
+
+def git_show(repo, rev, path):
+    r = subprocess.run(["git", "-C", repo, "show", f"{rev}:{path}"], capture_output=True)
+    return r.stdout.decode() if r.returncode == 0 else None
+
+
 def main():
+    argv = list(sys.argv)
+    base = None
+    if "--base" in argv:
+        i = argv.index("--base")
+        base = argv[i + 1]
+        del argv[i:i + 2]
+    sys.argv = argv
     meta = json.load(open(sys.argv[1]))
     pk = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
@@ -86,7 +151,31 @@ def main():
             add(s, "forced")
     else:
         files = [l.strip() for l in open(sys.argv[2]) if l.strip()]
+        have_lock = len(sys.argv) >= 5
         for f in files:
+            if f in WORKSPACE_MANIFESTS:
+                old = git_show(repo, base, f) if base else None
+                new_path = os.path.join(repo, f)
+                try:
+                    if old is None:
+                        raise ValueError("no --base" if not base else f"cannot read {base}:{f}")
+                    if not os.path.exists(new_path):
+                        raise ValueError("manifest deleted")
+                    reason, crates = manifest_changes(tomllib.loads(old),
+                                                      tomllib.load(open(new_path, "rb")))
+                except (ValueError, tomllib.TOMLDecodeError) as e:
+                    reason, crates = str(e), {}
+                if reason:
+                    for s in SERVICES:
+                        add(s, f"global:{f}:{reason}"[:120])
+                    continue
+                for c, kind in sorted(crates.items()):
+                    if kind == "version" and have_lock:
+                        continue  # resolved version change shows up in the Cargo.lock diff
+                    for s, cl in deps.items():
+                        if any(pk[x]["name"] == c for x in cl):
+                            add(s, f"{f}:workspace.dependencies.{c}")
+                continue
             if any(re.search(g, f) for g in GLOBAL):
                 for s in SERVICES:
                     add(s, f"global:{f}")
@@ -107,7 +196,7 @@ def main():
                         if i in cl:
                             add(s, f"{pk[i]['name']}:{f}")
 
-        if len(sys.argv) >= 5:  # third-party crate changes via Cargo.lock
+        if have_lock:  # third-party crate changes via Cargo.lock
             def parse(p):
                 txt = open(p).read() if os.path.exists(p) else ""
                 out = {}

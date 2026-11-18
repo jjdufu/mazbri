@@ -154,6 +154,7 @@ impl AuthService {
         tenant_id: &str,
         tenant_code: &str,
         tenant_name: &str,
+        api_key_id: &str,
         expiration_secs: usize,
         scopes: Vec<String>,
     ) -> Result<String, TokenError> {
@@ -170,6 +171,7 @@ impl AuthService {
             tenant_id: tenant_id.to_string(),
             tenant_code: tenant_code.to_string(),
             tenant_name: tenant_name.to_string(),
+            api_key_id: api_key_id.to_string(),
             account_type,
             scopes: normalize_scopes(scopes)?,
         };
@@ -256,6 +258,7 @@ impl AuthService {
             &tenant_id,
             &tenant_info.code,
             &tenant_info.name,
+            &response.api_key_id,
             expiration_secs,
             response.scopes,
         )?;

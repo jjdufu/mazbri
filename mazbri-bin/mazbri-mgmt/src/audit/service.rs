@@ -20,8 +20,7 @@ fn normalize_client_ip(raw: &str) -> Option<String> {
     let candidate = raw
         .split(',')
         .next()
-        .map(str::trim)
-        .unwrap_or_default()
+        .map_or_default(str::trim)
         .trim_matches('"');
     if candidate.is_empty() || candidate.eq_ignore_ascii_case("unknown") {
         return None;
@@ -29,8 +28,7 @@ fn normalize_client_ip(raw: &str) -> Option<String> {
     let candidate = candidate.strip_prefix("for=").map_or(candidate, |rest| {
         rest.split(';')
             .next()
-            .map(str::trim)
-            .unwrap_or_default()
+            .map_or_default(str::trim)
             .trim_matches('"')
     });
     let candidate = if candidate.starts_with('[') {

@@ -130,10 +130,16 @@ pub fn current_span_context() -> Option<SpanContext> {
     span_context_of(&tracing::Span::current())
 }
 
-/// 把远端 span 设为 `span` 的父节点；必须在 `span` 的子 span 创建之前调用。
+/// 把远端 span 设为 `span` 的父节点。
+///
+/// 必须在 `span` 被激活之前调用：进入（enter）、取 `context()` 或创建子 span 都会激活它，
+/// 激活后父节点已定，设置失败（只记 debug 日志）。`span` 未被 OpenTelemetry 层记录时同样不生效。
 pub fn set_remote_parent(span: &tracing::Span, parent: SpanContext) {
-    if parent.is_valid() {
-        span.set_parent(OtelContext::new().with_remote_span_context(parent));
+    if !parent.is_valid() {
+        return;
+    }
+    if let Err(error) = span.set_parent(OtelContext::new().with_remote_span_context(parent)) {
+        tracing::debug!(%error, "remote parent not applied");
     }
 }
 

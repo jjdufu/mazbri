@@ -299,11 +299,11 @@ where
         result
     }
 
-    fn shutdown_with_timeout(&mut self, timeout: Duration) -> OTelSdkResult {
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
         self.inner.shutdown_with_timeout(timeout)
     }
 
-    fn force_flush(&mut self) -> OTelSdkResult {
+    fn force_flush(&self) -> OTelSdkResult {
         self.inner.force_flush()
     }
 
@@ -418,7 +418,9 @@ mod tests {
             request_id = "r2",
             path = "/nodes/heartbeat"
         );
-        assert!(!should_export_otlp_span(probe_req.metadata().expect("meta")));
+        assert!(!should_export_otlp_span(
+            probe_req.metadata().expect("meta")
+        ));
 
         let rpc = info_span!(target: "tarpc::client", "CacheService.get");
         assert!(should_export_otlp_span(rpc.metadata().expect("meta")));
@@ -476,6 +478,7 @@ mod tests {
         SpanData {
             span_context: opentelemetry::trace::SpanContext::empty_context(),
             parent_span_id: opentelemetry::trace::SpanId::INVALID,
+            parent_span_is_remote: false,
             span_kind: opentelemetry::trace::SpanKind::Internal,
             name: "test".into(),
             start_time: std::time::SystemTime::now(),

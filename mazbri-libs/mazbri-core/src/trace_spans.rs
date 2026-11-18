@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tracing::Subscriber;
 use tracing::field::{Field, Visit};
-use tracing_opentelemetry::{OpenTelemetrySpanExt, OtelData, PreSampledTracer};
+use tracing_opentelemetry::{OpenTelemetrySpanExt, get_otel_context};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context as LayerContext;
 use tracing_subscriber::registry::LookupSpan;
@@ -214,23 +214,40 @@ fn table_name(word: &str) -> Option<String> {
     .then_some(name)
 }
 
+/// 当前线程的 tracing 分发器。`get_otel_context` 需要它来定位 OpenTelemetry 层。
+///
+/// 服务进程经 `try_init` 安装全局分发器，事件分发过程中嵌套调用也能取到它；
+/// 只有作用域分发器（如测试里的 `with_default`）嵌套调用时才会拿到空分发器，此时视为没有 `OTel` 上下文。
+fn current_dispatch() -> tracing::Dispatch {
+    tracing::dispatcher::get_default(Clone::clone)
+}
+
+/// span 链上第一个被 OpenTelemetry 层记录的 span 的上下文（由内向外）。
+///
+/// `get_otel_context` 会读取 span 的 extensions，调用方不得持有 `ExtensionsMut`。
+/// 被 OpenTelemetry 层过滤掉的 span 没有 `OTel` 数据，返回 `None`，继续找外层。
+fn first_otel_context<'a, R>(
+    scope: impl Iterator<Item = tracing_subscriber::registry::SpanRef<'a, R>>,
+    dispatch: &tracing::Dispatch,
+) -> Option<OtelContext>
+where
+    R: LookupSpan<'a> + 'a,
+{
+    scope
+        .into_iter()
+        .find_map(|span| get_otel_context(&span.id(), dispatch))
+}
+
 /// 事件所在 span 链上第一个被 OpenTelemetry 层记录的 span 的上下文。
 fn event_parent_context<S>(
     ctx: &LayerContext<'_, S>,
     event: &tracing::Event<'_>,
-    tracer: &Tracer,
 ) -> Option<OtelContext>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     let scope = ctx.event_scope(event)?;
-    for span in scope {
-        let mut extensions = span.extensions_mut();
-        if let Some(data) = extensions.get_mut::<OtelData>() {
-            return Some(tracer.sampled_context(data));
-        }
-    }
-    None
+    first_otel_context(scope, &current_dispatch())
 }
 
 #[derive(Default)]
@@ -262,7 +279,7 @@ impl Visit for SqlxQueryVisitor {
 /// - sqlx 每条语句结束时的 `sqlx::query` 事件 → `db.query` 子 span（`db.system`、`db.operation`、`db.sql.table`）；
 /// - tarpc client/server span → 补 `rpc.system=tarpc`、`rpc.service`、`rpc.method` 属性。
 ///
-/// 必须叠在 OpenTelemetry 层之后，`on_new_span` 才能拿到该层创建的 [`OtelData`]。
+/// 必须叠在 OpenTelemetry 层之后：`on_enter` 时该层已激活 span，补的属性才能写到 `OTel` span 上。
 pub struct DependencySpanLayer;
 
 impl DependencySpanLayer {
@@ -281,6 +298,33 @@ fn is_tarpc_span_target(target: &str) -> bool {
     target.starts_with("tarpc::client") || target.starts_with("tarpc::server")
 }
 
+/// tarpc span 的 RPC 名（`otel.name`，形如 `Service.method`）。
+///
+/// 客户端 span 创建时就带 `otel.name`；服务端 span 创建时为空，稍后才 `record`。
+/// 记到本层自己的 span 扩展里，首次进入且名字已知时补属性，补完即移除。
+struct PendingRpcAttrs {
+    name: Option<String>,
+}
+
+#[derive(Default)]
+struct OtelNameVisitor {
+    name: Option<String>,
+}
+
+impl Visit for OtelNameVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "otel.name" {
+            self.name = Some(value.to_string());
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "otel.name" {
+            self.name = Some(format!("{value:?}"));
+        }
+    }
+}
+
 impl<S> Layer<S> for DependencySpanLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
@@ -291,38 +335,77 @@ where
         id: &tracing::span::Id,
         ctx: LayerContext<'_, S>,
     ) {
-        let metadata = attrs.metadata();
-        if !is_tarpc_span_target(metadata.target()) {
+        if !is_tarpc_span_target(attrs.metadata().target()) {
             return;
         }
         let Some(span) = ctx.span(id) else {
             return;
         };
-        let mut extensions = span.extensions_mut();
-        let Some(data) = extensions.get_mut::<OtelData>() else {
+        let mut visitor = OtelNameVisitor::default();
+        attrs.record(&mut visitor);
+        span.extensions_mut()
+            .insert(PendingRpcAttrs { name: visitor.name });
+    }
+
+    fn on_record(
+        &self,
+        id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        ctx: LayerContext<'_, S>,
+    ) {
+        let Some(span) = ctx.span(id) else {
             return;
         };
-        let name = data.builder.name.to_string();
+        let mut visitor = OtelNameVisitor::default();
+        values.record(&mut visitor);
+        let Some(name) = visitor.name else {
+            return;
+        };
+        if let Some(pending) = span.extensions_mut().get_mut::<PendingRpcAttrs>() {
+            pending.name = Some(name);
+        }
+    }
+
+    /// OpenTelemetry 层在本层之前处理 `on_enter`（已激活 span），这里补的属性直接写到该 span 上。
+    fn on_enter(&self, id: &tracing::span::Id, ctx: LayerContext<'_, S>) {
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
+        let name = {
+            let mut extensions = span.extensions_mut();
+            let Some(name) = extensions
+                .get_mut::<PendingRpcAttrs>()
+                .and_then(|pending| pending.name.take())
+            else {
+                return;
+            };
+            extensions.remove::<PendingRpcAttrs>();
+            name
+        };
+        // `ExtensionsMut` 已释放；进入中的 span 就是当前 span。
+        let current = tracing::Span::current();
+        if current.id().as_ref() != Some(id) {
+            return;
+        }
         let (service, method) = name.split_once('.').unwrap_or(("", name.as_str()));
-        let attributes = data.builder.attributes.get_or_insert_with(Vec::new);
-        attributes.push(KeyValue::new("rpc.system", "tarpc"));
-        attributes.push(KeyValue::new("rpc.service", service.to_string()));
-        attributes.push(KeyValue::new("rpc.method", method.to_string()));
+        current.set_attribute("rpc.system", "tarpc");
+        current.set_attribute("rpc.service", service.to_string());
+        current.set_attribute("rpc.method", method.to_string());
     }
 
     fn on_event(&self, event: &tracing::Event<'_>, ctx: LayerContext<'_, S>) {
         if event.metadata().target() != SQLX_QUERY_TARGET {
             return;
         }
-        let Some(tracer) = TRACER.get() else {
+        if TRACER.get().is_none() {
             return;
-        };
+        }
         let mut visitor = SqlxQueryVisitor::default();
         event.record(&mut visitor);
         let Some(elapsed_secs) = visitor.elapsed_secs else {
             return;
         };
-        let Some(parent) = event_parent_context(&ctx, event, tracer) else {
+        let Some(parent) = event_parent_context(&ctx, event) else {
             return;
         };
         let sql = if visitor.statement.trim().is_empty() {
@@ -350,19 +433,11 @@ pub(crate) fn otel_ids_of<'a, R>(
 where
     R: LookupSpan<'a> + 'a,
 {
-    for span in scope {
-        let extensions = span.extensions();
-        if let Some(data) = extensions.get::<OtelData>() {
-            let trace_id = data
-                .builder
-                .trace_id
-                .unwrap_or_else(|| data.parent_cx.span().span_context().trace_id());
-            let span_id = data.builder.span_id?;
-            return (trace_id != TraceId::INVALID && span_id != SpanId::INVALID)
-                .then_some((trace_id, span_id));
-        }
-    }
-    None
+    let cx = first_otel_context(scope, &current_dispatch())?;
+    let span = cx.span();
+    let span_context = span.span_context();
+    (span_context.trace_id() != TraceId::INVALID && span_context.span_id() != SpanId::INVALID)
+        .then(|| (span_context.trace_id(), span_context.span_id()))
 }
 
 #[cfg(test)]

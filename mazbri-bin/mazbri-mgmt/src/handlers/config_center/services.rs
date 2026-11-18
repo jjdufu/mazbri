@@ -59,16 +59,14 @@ mod tests {
         let body = canonical_service_names_value();
         let names: Vec<&str> = body["services"]
             .as_array()
-            .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
-            .unwrap_or_default();
+            .map_or_default(|a| a.iter().filter_map(serde_json::Value::as_str).collect());
         let expected: Vec<&str> = CANONICAL_SERVICES.iter().map(|s| s.as_str()).collect();
         assert_eq!(names.len(), 11);
         assert_eq!(names, expected);
         assert_eq!(body["global"], GLOBAL_CONFIG_NAME);
         let mtls: Vec<&str> = body["mtls_services"]
             .as_array()
-            .map(|a| a.iter().filter_map(serde_json::Value::as_str).collect())
-            .unwrap_or_default();
+            .map_or_default(|a| a.iter().filter_map(serde_json::Value::as_str).collect());
         assert_eq!(mtls.len(), 8);
         for excluded in ["mazbri-cert", "mazbri-mgmt", "mazbri-analytics"] {
             assert!(!mtls.contains(&excluded), "{excluded}");

@@ -343,14 +343,12 @@ impl CbProExtRepository {
             .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("valid_until")
             .ok()
             .flatten()
-            .map(|dt| dt.timestamp_millis())
-            .unwrap_or_default();
+            .map_or_default(|dt| dt.timestamp_millis());
         let generated_at = row
             .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("generated_at")
             .ok()
             .flatten()
-            .map(|dt| dt.timestamp_millis())
-            .unwrap_or_default();
+            .map_or_default(|dt| dt.timestamp_millis());
         RuntimeDecision {
             cache_key: row.get("cache_key"),
             tenant_id: row.get("tenant_id"),

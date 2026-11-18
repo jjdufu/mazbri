@@ -116,7 +116,7 @@ bypass 指标：
 | `bypass_ws_stale_retry_total` | `result` | 陈旧连接重试结果 |
 | `bypass_retry_budget_exhausted_total` | `kind`（`auth` / `ws_stale`） | 预算耗尽跳过重试 |
 
-网关：`gateway_retry_total{reason="upstream_internal"}` 按 bypass 透传的内部重试次数计数；访问日志 `retry_count = (渠道尝试序号 - 1) + internal_retries`；认证失效最终失败时 `error_class=upstream_auth`。
+网关：`gateway_retry_total{reason="upstream_internal"}` 按 bypass 透传的内部重试次数计数。访问日志按请求级重试台账记 `retry_reasons`（每次重发一项：`channel_switch`、`config_cache_miss`、`transport`，以及 bypass 透传的 `auth_rejected:*`、`stale_connection` 等），`retry_count` 即其项数；成功行和网关拒绝行（如全部渠道失败的 502）都带。认证失效最终失败时 `error_class=upstream_auth`。
 
 日志事件（`target` 为 runtime 引擎）：`upstream.auth_rejected`（含 8 位十六进制 `token_fp` 令牌指纹，不输出令牌本身）、`upstream.auth_retry`、`upstream.ws_stale_retry`；预算耗尽告警每 10 秒最多一条。
 

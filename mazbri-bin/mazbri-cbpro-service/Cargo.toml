@@ -1,50 +1,48 @@
 [package]
 name = "mazbri-cbpro-service"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-authors = ["Mazbri Team"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mazbri-cbpro-service"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
-mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
-mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
-mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
-mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
-mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-core = { workspace = true }
+mazbri-registry = { workspace = true }
+mazbri-rpc = { workspace = true }
+mazbri-service = { workspace = true }
+mazbri-tls = { workspace = true }
+mazbri-admin = { workspace = true }
 
-tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
-tokio-serde = {version = "0.9", features = ["bincode", "json"]}
-futures = "0.3"
+tarpc = { workspace = true }
+tokio-serde = { workspace = true }
+futures = { workspace = true }
 
-tokio = {version = "1.35", features = ["full"]}
+tokio = { workspace = true }
 
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0"}
+serde = { workspace = true }
+serde_json = { workspace = true }
 
-config = {version = "0.15"}
-dotenvy = {version = "0.15"}
-clap = {version = "4", features = ["derive"]}
+dotenvy = { workspace = true }
 
-tracing = {version = "0.1"}
+tracing = { workspace = true }
 
-anyhow = {version = "1.0"}
-thiserror = {version = "2.0"}
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
-chrono = {version = "0.4", features = ["serde"]}
+chrono = { workspace = true }
 
-sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
+sqlx = { workspace = true, features = ["chrono", "json", "rust_decimal", "ipnetwork"] }
 
-hostname = "0.4"
-lru = {version = "0.16.3"}
-parking_lot = {version = "0.12"}
-sha2 = {version = "0.10"}
-hex = {version = "0.4"}
+hostname = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [lints]
 workspace = true

@@ -28,8 +28,6 @@ prometheus = { workspace = true }
 
 moka = { workspace = true, features = ["sync"] }
 
-lru = { workspace = true }
-
 futures = "0.3"
 
 hostname = "0.4"

@@ -31,6 +31,9 @@ pub struct ProbeInvokeRequest {
     pub supplier_code: String,
     pub supplier_config_hash: String,
     pub supplier_config_json: String,
+    pub attempt_order: u32,
+    pub tenant_code: String,
+    pub channel_code: String,
 }
 
 /// 链路上下文；字段与 proto [`TraceContext`] 一一对应。
@@ -41,6 +44,7 @@ pub struct ProbeTrace {
     pub trace_id: String,
     pub span_id: String,
     pub parent_span_id: String,
+    pub sampled: bool,
 }
 
 /// 探针响应体；由 proto [`InvokeResponse`] 转换而来。
@@ -76,6 +80,10 @@ pub struct ProbeUpstreamMeta {
     pub adapter: String,
     /// 纯上游耗时（reqwest 发送 + 读 body），不含 bypass 内部处理。
     pub upstream_wire_ms: u64,
+    pub upstream_request_id: String,
+    pub method: String,
+    pub path: String,
+    pub protocol: String,
 }
 
 impl From<ProbeTrace> for TraceContext {
@@ -85,12 +93,14 @@ impl From<ProbeTrace> for TraceContext {
             trace_id,
             span_id,
             parent_span_id,
+            sampled,
         } = t;
         Self {
             request_id,
             trace_id,
             span_id,
             parent_span_id,
+            sampled,
         }
     }
 }
@@ -111,6 +121,9 @@ impl From<ProbeInvokeRequest> for InvokeRequest {
             supplier_code,
             supplier_config_hash,
             supplier_config_json,
+            attempt_order,
+            tenant_code,
+            channel_code,
         } = r;
         Self {
             product_id,
@@ -126,6 +139,9 @@ impl From<ProbeInvokeRequest> for InvokeRequest {
             supplier_code,
             supplier_config_hash,
             supplier_config_json,
+            attempt_order,
+            tenant_code,
+            channel_code,
         }
     }
 }
@@ -152,12 +168,20 @@ impl From<InvokeUpstreamMeta> for ProbeUpstreamMeta {
             url,
             adapter,
             upstream_wire_ms,
+            upstream_request_id,
+            method,
+            path,
+            protocol,
         } = m;
         Self {
             status,
             url,
             adapter,
             upstream_wire_ms,
+            upstream_request_id,
+            method,
+            path,
+            protocol,
         }
     }
 }
@@ -200,6 +224,7 @@ mod tests {
                 trace_id: "tr".into(),
                 span_id: "sp".into(),
                 parent_span_id: String::new(),
+                sampled: true,
             },
             timeout_ms: 1500,
             payload_json: "{\"a\":1}".into(),
@@ -209,6 +234,9 @@ mod tests {
             supplier_code: "scode".into(),
             supplier_config_hash: "ch".into(),
             supplier_config_json: "{}".into(),
+            attempt_order: 1,
+            tenant_code: "tc".into(),
+            channel_code: "cc".into(),
         }
     }
 
@@ -227,6 +255,10 @@ mod tests {
                 url: "http://upstream.invalid/x".into(),
                 adapter: "http_json".into(),
                 upstream_wire_ms: 59,
+                upstream_request_id: "up-1".into(),
+                method: "POST".into(),
+                path: "/x".into(),
+                protocol: "HTTP/1.1".into(),
             }),
             internal_retries: 1,
             retry_reasons: vec!["auth_rejected:jsonrpc_code".into()],

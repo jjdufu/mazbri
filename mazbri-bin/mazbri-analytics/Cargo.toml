@@ -1,48 +1,44 @@
 [package]
 name = "mazbri-analytics"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-authors = ["Mazbri Team"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mazbri-analytics"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
-mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
-mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-core = { workspace = true }
+mazbri-admin = { workspace = true }
 
-tokio = {version = "1.35", features = ["full"]}
+tokio = { workspace = true }
 
-axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
-tower = {version = "0.5.3", features = ["full", "discover", "load"]}
-tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip"]}
+axum = { workspace = true, features = ["multipart", "tower-log", "ws"] }
+tower = { workspace = true, features = ["full", "discover", "load"] }
+tower-http = { workspace = true }
 
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0"}
-toml = {version = "0.8"}
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
 
-chrono = {version = "0.4", features = ["serde"]}
+chrono = { workspace = true }
 
-config = {version = "0.15"}
-clap = {version = "4", features = ["derive"]}
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
-tracing = {version = "0.1"}
-tracing-subscriber = {version = "0.3", features = ["env-filter", "json"]}
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
-anyhow = {version = "1.0"}
-thiserror = {version = "2.0"}
+prometheus = { workspace = true }
 
-prometheus = {version = "0.14"}
-
-reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"]}
-urlencoding = {version = "2.1"}
-clickhouse = { version = "0.12", features = ["lz4"] }
-uuid = {version = "1.21", features = ["v4", "serde"]}
-lettre = {version = "0.11.23", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"]}
+reqwest = { workspace = true }
+urlencoding = { workspace = true }
+clickhouse = { workspace = true }
+uuid = { workspace = true }
+lettre = { workspace = true }
 
 [lints]
 workspace = true

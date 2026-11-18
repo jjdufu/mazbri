@@ -44,14 +44,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
-  RUST_TOOLCHAIN: '1.99.1'
-  NODE_VERSION: '20.19.2'
-  PNPM_VERSION: '10.34.6'
+  NODE_VERSION: '26.13.1'
+  PNPM_VERSION: '12.21.0'
 
 jobs:
   changes:
     name: Detect changes / dedupe
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       run_frontend: ${{ steps.flags.outputs.run_frontend }}
@@ -68,15 +67,20 @@ jobs:
       # release-please PRs / RP merge onto main: keep prior skip behaviour.
       - name: Release-please short-circuit
         id: rp
+        # head_ref 是 PR 分支名（不可信），经 env 传入，不直接展开进脚本。
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          WORKFLOW_NAME: ${{ github.workflow }}
         run: |
           set -euo pipefail
           skip=false
-          if [ "${{ github.event_name }}" = "pull_request" ] && \
-             [[ "${{ github.head_ref }}" == release-please--* ]]; then
+          if [ "$EVENT_NAME" = "pull_request" ] && \
+             [[ "$HEAD_REF" == release-please--* ]]; then
             skip=true
           fi
-          if [ "${{ github.event_name }}" = "push" ] && \
-             [ "${{ github.workflow }}" = "CI" ]; then
+          if [ "$EVENT_NAME" = "push" ] && \
+             [ "$WORKFLOW_NAME" = "CI" ]; then
             msg=$(git log -1 --pretty=%B)
             if [[ "$msg" == chore\(main\):\ release* ]]; then
               skip=true
@@ -90,7 +94,7 @@ jobs:
       - name: Paths filter (pull_request only)
         id: filter
         if: github.event_name == 'pull_request' && steps.rp.outputs.skip != 'true'
-        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             web:
@@ -267,7 +271,7 @@ jobs:
     name: Frontend typecheck, build, test
     needs: changes
     if: needs.changes.outputs.run_frontend == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     defaults:
       run:
@@ -277,7 +281,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -316,19 +320,22 @@ jobs:
     name: mazbri-libs clippy -D warnings + test
     needs: changes
     if: needs.changes.outputs.run_libs == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+      # 工具链与组件只看仓库根 rust-toolchain.toml（channel + clippy/rustfmt）。
+      - name: Install Rust from rust-toolchain.toml
         run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
-          rustup default "$RUST_TOOLCHAIN"
+          set -euo pipefail
+          rustup toolchain install --profile minimal
+          rustc -vV
+          cargo -V
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: mazbri-libs
           shared-key: libs
@@ -353,7 +360,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.changes.outputs.run_bin == 'true' &&
       needs.frontend.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     steps:
       - name: Checkout
@@ -366,13 +373,16 @@ jobs:
           name: mazbri-web-dist
           path: mazbri-web/dist
 
-      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+      # 工具链与组件只看仓库根 rust-toolchain.toml（channel + clippy/rustfmt）。
+      - name: Install Rust from rust-toolchain.toml
         run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
-          rustup default "$RUST_TOOLCHAIN"
+          set -euo pipefail
+          rustup toolchain install --profile minimal
+          rustc -vV
+          cargo -V
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: mazbri-bin
           shared-key: bin-${{ needs.changes.outputs.bin_scope }}
@@ -409,7 +419,7 @@ jobs:
 
   smoke:
     name: Release metadata smoke check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -433,7 +443,7 @@ jobs:
     name: Always-on no-op
     # Keeps every run (including release-please PRs, whose other jobs are all
     # skipped) with at least one job, so GitHub never marks it as failed.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 1
     steps:
       - name: No-op
@@ -444,7 +454,7 @@ jobs:
     name: CI result
     if: always()
     needs: [changes, frontend, libs, bin, smoke, noop]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 1
     steps:
       - name: Evaluate job results

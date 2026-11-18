@@ -4,17 +4,15 @@ use crate::middleware::auth::{
 };
 use crate::services::PasswordPolicyCache;
 use argon2::PasswordHasher;
-use argon2::password_hash::{SaltString, rand_core::OsRng};
 pub(super) const MAX_PAGE_SIZE: u32 = 100;
 /// 可经由账号管理分配的角色：管理员（`R_FINANCE`）与只读用户；超级管理员全系统唯一，不可新建。
 const ASSIGNABLE_ROLES: &[&str] = &[ROLE_ADMIN, ROLE_VIEWER];
 pub(super) fn hash_password(password: &str) -> Result<String, String> {
-    let salt = SaltString::generate(&mut OsRng);
     let params = mazbri_auth::argon2_params()
         .map_err(|error| format!("Failed to create Argon2 params: {error}"))?;
     let hasher = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     let hash = hasher
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|error| format!("Failed to hash password: {error}"))?;
     Ok(hash.to_string())
 }

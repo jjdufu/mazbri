@@ -14,6 +14,99 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+authors = ["Mazbri Team"]
+license = "MIT"
+
+# 成员一律 `xxx = { workspace = true }`；成员特有的额外 features 在成员里用 `features = [...]` 追加。
+[workspace.dependencies]
+# 第一方库（mazbri-libs，path 依赖）
+mazbri-admin = { version = "0.1.0", path = "../mazbri-libs/mazbri-admin" }
+mazbri-audit = { version = "0.1.0", path = "../mazbri-libs/mazbri-audit" }
+mazbri-auth = { version = "0.1.0", path = "../mazbri-libs/mazbri-auth" }
+mazbri-billing = { version = "0.1.0", path = "../mazbri-libs/mazbri-billing" }
+mazbri-cache = { version = "0.1.0", path = "../mazbri-libs/mazbri-cache" }
+mazbri-callback = { version = "0.1.0", path = "../mazbri-libs/mazbri-callback" }
+mazbri-cert = { version = "0.1.0", path = "../mazbri-libs/mazbri-cert" }
+mazbri-core = { version = "0.1.0", path = "../mazbri-libs/mazbri-core" }
+mazbri-crypto = { version = "0.1.0", path = "../mazbri-libs/mazbri-crypto" }
+mazbri-i18n = { version = "0.1.0", path = "../mazbri-libs/mazbri-i18n" }
+mazbri-product = { version = "0.1.0", path = "../mazbri-libs/mazbri-product" }
+mazbri-registry = { version = "0.1.0", path = "../mazbri-libs/mazbri-registry" }
+mazbri-routing = { version = "0.1.0", path = "../mazbri-libs/mazbri-routing" }
+mazbri-rpc = { version = "0.1.0", path = "../mazbri-libs/mazbri-rpc" }
+mazbri-service = { version = "0.1.0", path = "../mazbri-libs/mazbri-service" }
+mazbri-tls = { version = "0.1.0", path = "../mazbri-libs/mazbri-tls" }
+mazbri-upstream-contracts = { version = "0.1.0", path = "../mazbri-libs/mazbri-upstream-contracts" }
+mazbri-upstream-runtime = { version = "0.1.0", path = "../mazbri-libs/mazbri-upstream-runtime" }
+
+# 第三方
+anyhow = { version = "1.0" }
+arc-swap = { version = "1.7.1" }
+argon2 = { version = "0.6" }
+async-trait = { version = "0.1" }
+axum = { version = "0.8.8", features = ["macros"] }
+base32 = { version = "0.5" }
+base64 = { version = "0.22" }
+bincode = { version = "1" }
+chrono = { version = "0.4", features = ["serde"] }
+clickhouse = { version = "0.12", features = ["lz4"] }
+dashmap = { version = "6.1.0" }
+dotenvy = { version = "0.15" }
+futures = { version = "0.3" }
+hex = { version = "0.4" }
+hkdf = { version = "0.13" }
+hmac = { version = "0.13" }
+hostname = { version = "0.4" }
+http = { version = "1.4.0" }
+http-body = { version = "1" }
+ipnetwork = { version = "0.20" }
+jsonwebtoken = { version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
+lru = { version = "0.16.3" }
+mimalloc = { version = "0.1", default-features = false }
+mime_guess = { version = "2.0" }
+moka = { version = "0.12", features = ["sync"] }
+parking_lot = { version = "0.12" }
+prometheus = { version = "0.14" }
+rand = { version = "0.10.0" }
+rcgen = { version = "0.13", features = ["x509-parser", "pem"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"] }
+rust-embed = { version = "8.7", features = ["interpolate-folder-path"] }
+rust_decimal = { version = "1.32", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+serde_urlencoded = { version = "0.7" }
+serde_yaml = { version = "0.9" }
+sha1 = { version = "0.11" }
+sha2 = { version = "0.11" }
+socket2 = { version = "0.5" }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
+subtle = { version = "2.6" }
+tarpc = { version = "0.38", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"] }
+thiserror = { version = "2.0" }
+time = { version = "=0.3.47" }
+tokio = { version = "1.35", features = ["full"] }
+tokio-serde = { version = "0.9", features = ["bincode", "json"] }
+toml = { version = "1.2" }
+toml_edit = { version = "0.25" }
+tonic = { version = "0.14.6", features = ["transport", "tls-aws-lc"] }
+tonic-prost = { version = "0.14.6" }
+tower = { version = "0.5.3" }
+tower-http = { version = "0.6.8", features = ["trace", "cors", "compression-gzip"] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
+ts-rs = { version = "12.0", features = ["uuid-impl", "chrono-impl"] }
+url = { version = "2.5" }
+urlencoding = { version = "2.1" }
+uuid = { version = "1.21", features = ["v4", "v7", "serde"] }
+x509-parser = { version = "0.16" }
+zeroize = { version = "1.8" }
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
 [workspace.lints.rust]
 unsafe_code = "warn"
 [workspace.lints.clippy]

@@ -45,11 +45,10 @@ env:
   HUB_NS: dex2all
   ACR_REGISTRY: crpi-wtjtitem0hw3am2j.cn-shanghai.personal.cr.aliyuncs.com
   ACR_NS: crpi-wtjtitem0hw3am2j.cn-shanghai.personal.cr.aliyuncs.com/dex2all
-  RUST_TOOLCHAIN: '1.99.1'
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
-  NODE_VERSION: '20.19.2'
-  PNPM_VERSION: '10.34.6'
+  NODE_VERSION: '26.13.1'
+  PNPM_VERSION: '12.21.0'
 
 concurrency:
   group: release
@@ -57,7 +56,7 @@ concurrency:
 
 jobs:
   meta:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -97,7 +96,7 @@ jobs:
   frontend:
     name: frontend dist
     needs: meta
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     defaults:
       run:
@@ -107,7 +106,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -151,7 +150,7 @@ jobs:
 
   plan:
     needs: meta
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       build: ${{ steps.plan.outputs.build }}
       reuse: ${{ steps.plan.outputs.reuse }}
@@ -190,7 +189,7 @@ jobs:
             git diff --name-only "v$BASE" HEAD > /tmp/changed.txt
             cat /tmp/changed.txt
             git show "v$BASE:mazbri-bin/Cargo.lock" > /tmp/old.lock 2>/dev/null || : > /tmp/old.lock
-            python3 .github/scripts/detect.py /tmp/metadata.json /tmp/changed.txt /tmp/old.lock mazbri-bin/Cargo.lock > /tmp/plan.json
+            python3 .github/scripts/detect.py /tmp/metadata.json /tmp/changed.txt /tmp/old.lock mazbri-bin/Cargo.lock --base "v$BASE" > /tmp/plan.json
           else
             # rehearsal: base images exist in the registries but have no git tag
             echo "::warning::base v$BASE has no git tag; treating source as unchanged"
@@ -255,9 +254,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
@@ -271,10 +270,13 @@ jobs:
           name: release-web-dist
           path: mazbri-web/dist
 
-      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+      # 工具链与组件只看仓库根 rust-toolchain.toml（channel + clippy/rustfmt）。
+      - name: Install Rust from rust-toolchain.toml
         run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
-          rustup default "$RUST_TOOLCHAIN"
+          set -euo pipefail
+          rustup toolchain install --profile minimal
+          rustc -vV
+          cargo -V
 
       - name: Runner info
         run: |
@@ -287,7 +289,7 @@ jobs:
 
       - name: Cache cargo
         id: cargo-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: mazbri-bin
           shared-key: release-${{ matrix.arch }}
@@ -375,7 +377,7 @@ jobs:
     # gate must pass before anything is pushed
     needs: [meta, gate, plan, compile]
     if: needs.plan.outputs.build_count != '0'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -412,14 +414,14 @@ jobs:
 
       - name: Login to Docker Hub
         if: inputs.push
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to Aliyun ACR
         if: inputs.push
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
@@ -474,7 +476,7 @@ jobs:
     name: retag ${{ matrix.svc.image }}
     needs: [meta, gate, plan]
     if: needs.plan.outputs.reuse_count != '0'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -486,14 +488,14 @@ jobs:
 
       - name: Login to Docker Hub
         if: inputs.push
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to Aliyun ACR
         if: inputs.push
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
@@ -535,7 +537,7 @@ jobs:
       needs.plan.result == 'success' &&
       (needs.image.result == 'success' || needs.image.result == 'skipped') &&
       (needs.retag.result == 'success' || needs.retag.result == 'skipped')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Render notes
         env:

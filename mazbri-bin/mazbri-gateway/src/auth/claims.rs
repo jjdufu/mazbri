@@ -11,6 +11,8 @@ pub struct MazbriClaims {
     pub tenant_id: String,
     pub tenant_code: String,
     pub tenant_name: String,
+    /// 换取本 token 的 API Key（`api_keys.id`）；不含密钥本身。访问日志按它做凭证维度统计。
+    pub api_key_id: String,
     pub account_type: AccountType,
     pub scopes: Vec<String>,
 }

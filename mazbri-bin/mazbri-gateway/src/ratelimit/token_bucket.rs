@@ -80,6 +80,23 @@ impl TokenBucket {
         (used / capacity).clamp(0.0, 1.0)
     }
 
+    /// 当前剩余整数令牌（向下取整，最后一次补充 / 扣减之后）。
+    #[must_use]
+    pub fn remaining(&self) -> u64 {
+        mazbri_core::num::f64_to_u64(self.tokens.max(0.0).floor())
+    }
+
+    /// 补满到容量还需的秒数（向上取整；已满为 0）。
+    #[must_use]
+    pub fn secs_to_full(&self) -> u64 {
+        let capacity = mazbri_core::num::u64_to_f64(self.capacity);
+        let missing = (capacity - self.tokens.max(0.0)).max(0.0);
+        if missing <= 0.0 || self.refill_per_sec <= 0.0 {
+            return 0;
+        }
+        mazbri_core::num::f64_to_u64((missing / self.refill_per_sec).ceil())
+    }
+
     pub fn retry_after_ms(&mut self, amount: u64, now: Instant) -> u64 {
         self.refill(now);
         if amount == 0 {
@@ -100,6 +117,19 @@ impl TokenBucket {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn remaining_and_secs_to_full_track_consumption() {
+        let now = Instant::now();
+        let mut bucket = TokenBucket::new(10, 5.0, now);
+        assert_eq!((bucket.remaining(), bucket.secs_to_full()), (10, 0));
+        assert!(bucket.try_consume(4, now));
+        assert_eq!(bucket.remaining(), 6);
+        // 缺 4 个令牌，每秒补 5 个：1 秒内补满（向上取整）。
+        assert_eq!(bucket.secs_to_full(), 1);
+        assert!(bucket.try_consume(6, now));
+        assert_eq!((bucket.remaining(), bucket.secs_to_full()), (0, 2));
+    }
 
     #[test]
     fn reject_when_amount_exceeds_capacity() {

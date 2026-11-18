@@ -35,7 +35,7 @@
    - 前端测试（全仓扫描，不止于 `pnpm test`）：除了 `pnpm test`，还必须保证 CI 扫描的全仓所有 `*.test.ts` 全部通过。
 5. **`ts-rs` 生成绑定与发版元数据零漂移**
    - 编译 `mazbri-mgmt` 后，`mazbri-web/src/types/api/generated` 不得出现未提交的 diff（`git diff --exit-code -- mazbri-web/src/types/api/generated`）；
-   - `VERSION` 与 `.release-please-manifest.json` 版本号必须保持一致；若增删 `mazbri-bin` 服务成员，必须同步更新 `detect.py:22-34` 的 `SERVICES` 表。
+   - `VERSION` 与 `.release-please-manifest.json` 版本号必须保持一致；若增删 `mazbri-bin` 服务成员，必须同步更新 `detect.py:35-47` 的 `SERVICES` 表。
 
 ---
 

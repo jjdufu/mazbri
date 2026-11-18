@@ -58,9 +58,7 @@ fn v2_signer(master: &str, ttl_secs: i64) -> ActorSigner {
 /// 当前请求的操作人；请求之外（后台任务）返回空身份，即系统操作。
 #[must_use]
 pub fn current_identity() -> ActorIdentity {
-    AuditScope::current()
-        .map(|scope| scope.actor_identity())
-        .unwrap_or_default()
+    AuditScope::current().map_or_default(|scope| scope.actor_identity())
 }
 
 /// 以当前请求的操作人身份发送到 cert-service。

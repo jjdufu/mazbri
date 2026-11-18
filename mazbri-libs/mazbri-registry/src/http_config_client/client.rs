@@ -118,7 +118,7 @@ impl HttpConfigClient {
             .text()
             .await
             .map_err(|e| HttpConfigClientError::RequestFailed(e.to_string()))?;
-        let content_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
         Ok(ConfigResponse {
             content,
             content_hash,

@@ -111,6 +111,8 @@ pub struct OutboundResponse {
     pub final_url: String,
     pub method: String,
     pub path: String,
+    /// 实际出站协议：`HTTP/1.1` / `HTTP/2` / `WebSocket`；未真正发出时为空。
+    pub protocol: String,
 }
 
 /// Production / workbench invoke: tenant JSON object + channel egress spec.
@@ -149,6 +151,12 @@ pub struct UpstreamMeta {
     pub url: String,
     pub adapter: String,
     pub latency_ms: u64,
+    /// 实际出站 method / path / 协议（访问日志记真实出站值，而不是 gRPC hop 的值）。
+    pub method: String,
+    pub path: String,
+    pub protocol: String,
+    /// 上游响应回来的流水号，按 egress spec `response.request_id_header`（缺省 `x-request-id`）读取。
+    pub request_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +188,9 @@ pub struct InvokeResult {
     /// 判定为认证被拒但未重试时的原因。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_skipped: Option<RetrySkip>,
+    /// 各阶段耗时（总是采集，不受 `collect_trace` 影响）。
+    #[serde(skip)]
+    pub stage_timings: Vec<StageTiming>,
 }
 
 /// 内部重试原因。
@@ -233,6 +244,17 @@ pub struct StageSummary {
     pub status: Option<u16>,
     pub extracted: Option<serde_json::Value>,
     pub detail: Option<String>,
+}
+
+/// 生产路径也采集的轻量阶段耗时（不含请求 / 响应摘要），bypass 据此写阶段日志。
+///
+/// 阶段：`egress_build`（规格校验 + SSRF）、`upstream_auth`（取 / 换票、签名）、`upstream_wire`
+/// （适配器组包、发送、收包与解包）；认证重试轮的阶段名带 `#retry` 后缀。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageTiming {
+    pub name: String,
+    pub ms: u64,
+    pub ok: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

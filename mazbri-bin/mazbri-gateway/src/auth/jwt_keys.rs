@@ -49,7 +49,6 @@ impl JwtHs256Keyring {
     fn current_secret(&self) -> &str {
         self.keys
             .get(&self.current_kid)
-            .map(String::as_str)
-            .unwrap_or_default()
+            .map_or_default(String::as_str)
     }
 }

@@ -16,6 +16,8 @@ message TraceContext {
   string trace_id = 2;
   string span_id = 3;
   string parent_span_id = 4;
+  // W3C trace-flags sampled 位；下游按它决定是否导出 span（ParentBased），不得写死。
+  bool sampled = 5;
 }
 
 message UpstreamBody {
@@ -79,6 +81,12 @@ message InvokeUpstreamMeta {
   string adapter = 3;
   // Pure upstream wire time (reqwest send + body read), not full Execute duration.
   uint64 upstream_wire_ms = 4;
+  // 上游响应回来的流水号（egress spec `response.request_id_header`，缺省 x-request-id）。
+  string upstream_request_id = 5;
+  // 实际出站 method / path / 协议（HTTP/1.1、HTTP/2、WebSocket）。
+  string method = 6;
+  string path = 7;
+  string protocol = 8;
 }
 
 message InvokeRequest {
@@ -95,6 +103,10 @@ message InvokeRequest {
   string supplier_code = 11;
   string supplier_config_hash = 12;
   string supplier_config_json = 13;
+  // 网关侧路由维度，bypass 访问日志原样记录：第几个候选渠道（从 1 起）、租户编码、渠道编码。
+  uint32 attempt_order = 14;
+  string tenant_code = 15;
+  string channel_code = 16;
 }
 
 message InvokeResponse {

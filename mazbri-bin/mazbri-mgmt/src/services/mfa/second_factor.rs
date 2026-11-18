@@ -75,13 +75,12 @@ pub fn exclusive_codes(
 fn backup_codes(value: Option<&serde_json::Value>) -> Vec<String> {
     value
         .and_then(serde_json::Value::as_array)
-        .map(|items| {
+        .map_or_default(|items| {
             items
                 .iter()
                 .filter_map(|item| item.as_str().map(str::to_string))
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 async fn record_invalid(

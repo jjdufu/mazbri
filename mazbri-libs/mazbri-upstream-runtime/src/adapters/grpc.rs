@@ -94,6 +94,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         final_url: url.clone(),
         method: "POST".into(),
         path: format!("/{operation}"),
+        protocol: "HTTP/2".into(),
     };
 
     if let Some(gs) = grpc_status_header {

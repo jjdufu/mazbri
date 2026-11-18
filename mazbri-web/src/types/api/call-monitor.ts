@@ -61,6 +61,14 @@ export interface CallMonitorItem {
   /** 失败规范化码；成功为 null */
   error_code?: string | null;
   error_stage?: string;
+  /** 失败归因：client | gateway | upstream；成功为空串 */
+  error_source?: string;
+  /** 请求级内部重试次数 */
+  retry_count?: number;
+  /** 调用方 API Key 凭证 ID */
+  api_key_id?: string;
+  /** 上游返回的流水号 */
+  upstream_request_id?: string;
   detail: Record<string, unknown>;
 }
 export interface CallMonitorResponse {

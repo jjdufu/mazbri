@@ -14,7 +14,7 @@ use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher};
 use ctr::Ctr128BE;
 use digest::Digest as DigestTrait;
-use hmac::{Hmac, Mac as HmacMac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac as HmacMac};
 use libsm::sm2::encrypt::{DecryptCtx, EncryptCtx};
 use libsm::sm2::signature::{SigCtx, Signature as Sm2Signature};
 use sm4::Sm4;
@@ -128,7 +128,7 @@ impl Mac for GmMacAlgorithm {
         let key_bytes = key.raw_bytes()?;
         match self {
             Self::HmacSm3 => {
-                let mut mac = <HmacSm3 as HmacMac>::new_from_slice(key_bytes).map_err(|_| {
+                let mut mac = <HmacSm3 as HmacKeyInit>::new_from_slice(key_bytes).map_err(|_| {
                     CryptoError::InvalidKey {
                         reason: "hmac-sm3 key init failed".to_owned(),
                     }
@@ -365,14 +365,15 @@ fn sm2_private_scalar_from_pem(pem: &str) -> Result<zeroize::Zeroizing<Vec<u8>>,
     if label != "PRIVATE KEY" {
         return Err(sm2_pem_error("private"));
     }
-    let info = pkcs8::PrivateKeyInfo::from_der(&doc).map_err(|_| sm2_pem_error("private"))?;
+    let info = pkcs8::PrivateKeyInfoRef::from_der(&doc).map_err(|_| sm2_pem_error("private"))?;
     let params = info
         .algorithm
         .parameters
         .map(der::AnyRef::decode_as::<der::asn1::ObjectIdentifier>)
         .transpose()
         .map_err(|_| sm2_pem_error("private"))?;
-    let ec = sec1::EcPrivateKey::from_der(info.private_key).map_err(|_| sm2_pem_error("private"))?;
+    let ec = sec1::EcPrivateKey::from_der(info.private_key.as_bytes())
+        .map_err(|_| sm2_pem_error("private"))?;
     let curve = params.or_else(|| ec.parameters.and_then(sec1::EcParameters::named_curve));
     ensure_sm2_algorithm(info.algorithm.oid, curve, "private")?;
     if ec.private_key.len() != SM2_PRIVATE_LEN {
@@ -431,14 +432,13 @@ pub fn sm2_private_key_to_pem(scalar: &[u8]) -> Result<zeroize::Zeroizing<String
     };
     let ec_der = zeroize::Zeroizing::new(ec.to_der().map_err(|_| sm2_pem_error("private"))?);
     let params = der::AnyRef::from(&SM2_CURVE_OID);
-    let info = pkcs8::PrivateKeyInfo {
-        algorithm: spki::AlgorithmIdentifierRef {
+    let info = pkcs8::PrivateKeyInfoRef::new(
+        spki::AlgorithmIdentifierRef {
             oid: EC_PUBLIC_KEY_OID,
             parameters: Some(params),
         },
-        private_key: &ec_der,
-        public_key: None,
-    };
+        der::asn1::OctetStringRef::new(&ec_der).map_err(|_| sm2_pem_error("private"))?,
+    );
     let doc = zeroize::Zeroizing::new(info.to_der().map_err(|_| sm2_pem_error("private"))?);
     der::pem::encode_string("PRIVATE KEY", der::pem::LineEnding::LF, &doc)
         .map(zeroize::Zeroizing::new)

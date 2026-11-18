@@ -47,6 +47,11 @@ pub struct RequestLogEntry {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
+    pub error_source: String,
+    pub retry_reasons: Vec<String>,
+    pub api_key_id: String,
+    pub client_request_id: String,
+    pub upstream_request_id: String,
     pub log_file: String,
     pub raw: String,
 }

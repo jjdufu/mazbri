@@ -3,7 +3,6 @@ use crate::error::ApiError;
 use crate::handlers::types::{CreateApiKeyRequest, UpdateApiKeyRequest};
 use crate::repositories::api_key as repo;
 use ::chrono::TimeDelta;
-use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHasher};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
@@ -35,13 +34,12 @@ fn generate_api_key_material() -> Result<(String, String, String, String, String
     let random_bytes: [u8; 32] = rand::random();
     let secret: String = hex::encode(random_bytes);
     let full_api_key = format!("mazbri_{prefix}_{secret}");
-    let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(secret.as_bytes(), &salt);
+    let password_hash = argon2.hash_password(secret.as_bytes());
     let secret_hash = password_hash
         .map_err(|e| ApiError::internal(format!("Failed to hash API key: {e}")))?
         .to_string();
-    let key_hash = format!("{:x}", Sha256::digest(secret.as_bytes()));
+    let key_hash = hex::encode(Sha256::digest(secret.as_bytes()));
     let key_suffix = secret
         .chars()
         .rev()
@@ -174,7 +172,7 @@ pub async fn create_api_key(
         .begin()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
-    let credential_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::now_v7();
     let metadata_json = serde_json::json!({ "created_by" : "mgmt-api", });
     let cred_result = repo::insert_credential(
         &mut tx,
@@ -192,7 +190,7 @@ pub async fn create_api_key(
             "Failed to insert credential: {e}"
         )));
     }
-    let api_key_id = uuid::Uuid::new_v4();
+    let api_key_id = uuid::Uuid::now_v7();
     let mut scopes_array: Vec<String> = Vec::new();
     for s in payload.scopes.as_slice() {
         let s = s.as_str().to_string();
@@ -482,7 +480,7 @@ async fn rotate_api_key_in_tx(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to deactivate previous credential: {e}")))?;
     let inherited_expires_at = compute_rotated_expiration(locked.expires_at, Utc::now());
-    let credential_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::now_v7();
     let metadata_json = serde_json::json!({
         "created_by": "mgmt-api-rotate",
         "rotated_from_prefix": old_prefix,
@@ -502,7 +500,7 @@ async fn rotate_api_key_in_tx(
     let key_info = repo::insert_api_key(
         tx,
         repo::InsertApiKeyParams {
-            api_key_id: uuid::Uuid::new_v4(),
+            api_key_id: uuid::Uuid::now_v7(),
             credential_id,
             prefix: &material.new_prefix,
             key_hash: &material.key_hash,

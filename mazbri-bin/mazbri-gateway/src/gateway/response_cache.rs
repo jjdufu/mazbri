@@ -101,7 +101,7 @@ impl CachedUpstreamResponse {
             content_type: self.content_type,
             body_bytes_len,
             upstream_wire_ms: 0,
-            internal_retries: 0,
+            upstream_request_id: String::new(),
         }
     }
 }
@@ -256,8 +256,7 @@ pub(crate) async fn try_put_cached_response(
             let msg = r
                 .error
                 .as_ref()
-                .map(mazbri_rpc::RpcError::message)
-                .unwrap_or_default();
+                .map_or_default(mazbri_rpc::RpcError::message);
             debug!(error = %msg, path = %path, "Proxy response cache set: service error (fail-open)");
         }
         Ok(_) => {

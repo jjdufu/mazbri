@@ -1,47 +1,44 @@
 [package]
 name = "mazbri-cbpro-ext-service"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-authors = ["Mazbri Team"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mazbri-cbpro-ext-service"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
-mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
-mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
-mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
-mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
-mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
+mazbri-core = { workspace = true }
+mazbri-registry = { workspace = true }
+mazbri-rpc = { workspace = true }
+mazbri-service = { workspace = true }
+mazbri-tls = { workspace = true }
+mazbri-admin = { workspace = true }
 
-tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
-tokio-serde = {version = "0.9", features = ["bincode", "json"]}
-futures = {version = "0.3"}
+tarpc = { workspace = true }
+tokio-serde = { workspace = true }
+futures = { workspace = true }
 
-tokio = {version = "1.35", features = ["full"]}
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0"}
-config = {version = "0.15"}
-dotenvy = {version = "0.15"}
-clap = {version = "4", features = ["derive"]}
-tracing = {version = "0.1"}
-anyhow = {version = "1.0"}
-thiserror = {version = "2.0"}
-chrono = {version = "0.4", features = ["serde"]}
-sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
-uuid = {version = "1.21", features = ["v4", "serde"]}
-reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"]}
-rand = {version = "0.10.0"}
-sha2 = {version = "0.10"}
-hex = {version = "0.4"}
-parking_lot = {version = "0.12"}
-moka = {version = "0.12", features = ["sync", "future"]}
-prometheus = {version = "0.14"}
-hostname = "0.4"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true, features = ["chrono", "json", "rust_decimal", "ipnetwork"] }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
+prometheus = { workspace = true }
+hostname = { workspace = true }
 
 [lints]
 workspace = true

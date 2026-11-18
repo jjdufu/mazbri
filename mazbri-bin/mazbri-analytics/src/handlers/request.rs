@@ -229,6 +229,11 @@ pub struct RequestLogItem {
     pub error_code: String,
     pub error_stage: String,
     pub response_flags: String,
+    pub error_source: String,
+    pub retry_reasons: Vec<String>,
+    pub api_key_id: String,
+    pub client_request_id: String,
+    pub upstream_request_id: String,
     pub log_file: String,
     pub raw: String,
 }
@@ -277,6 +282,11 @@ impl From<RequestLogEntry> for RequestLogItem {
             error_code: entry.error_code,
             error_stage: entry.error_stage,
             response_flags: entry.response_flags,
+            error_source: entry.error_source,
+            retry_reasons: entry.retry_reasons,
+            api_key_id: entry.api_key_id,
+            client_request_id: entry.client_request_id,
+            upstream_request_id: entry.upstream_request_id,
             log_file: entry.log_file,
             raw: entry.raw,
         }

@@ -20,8 +20,9 @@ pub fn validate_tenant_id(tenant_id: &str) -> Result<Uuid, TenantValidationError
 
 /// tarpc 链路透传。
 ///
-/// tarpc 0.35 依赖的 OpenTelemetry 版本与本仓库不同，它自己的 `Context::try_from(&Span)`
-/// 永远失败并退回 `new_child()`（随机 `span_id`）。这里在传输层修正：
+/// tarpc 自带的 RPC span 名固定为 `RPC`，不在 OTLP 导出范围内（见 `otlp::should_export_otlp_span`），
+/// OpenTelemetry 层不记录它，tarpc 自己的 `Context::try_from(&Span)` 因此取不到上下文并退回
+/// `new_child()`（随机 `span_id`）。这里在传输层修正：
 /// - 客户端：发送请求时 tarpc 已进入调用方 RPC span，用该 span 的 ID 覆盖 `trace_context`；
 /// - 服务端：收到请求时按 `(trace_id, deadline)` 记下远端父 span（`new_child` 只改 `span_id`，
 ///   这两个字段原样到达处理函数），在服务端 RPC span 内取回并设为父节点。

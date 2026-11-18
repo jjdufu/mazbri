@@ -89,7 +89,7 @@ pub(super) async fn try_cbpro_fallback(
         content_type: Some("application/json; charset=utf-8".to_string()),
         body_bytes_len,
         upstream_wire_ms: 0,
-        internal_retries: 0,
+        upstream_request_id: String::new(),
     })
 }
 pub(super) async fn resolve_runtime_decision(
@@ -234,16 +234,12 @@ pub(super) fn enqueue_cbpro_observation(state: &ProxyState, observation: Observa
     }
 }
 pub(super) fn build_fallback_cache_key(req: &GatewayRequest) -> String {
-    let query = req
-        .query
-        .as_ref()
-        .map(|query| {
-            query
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect::<BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
+    let query = req.query.as_ref().map_or_default(|query| {
+        query
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<BTreeMap<_, _>>()
+    });
     let body = request_body_as_json(req.body.as_ref()).unwrap_or(serde_json::Value::Null);
     serde_json::json!(
         { "method" : req.method, "path" : req.path, "query" : query, "body" : body, }

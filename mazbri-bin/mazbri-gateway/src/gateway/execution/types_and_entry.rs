@@ -24,8 +24,8 @@ pub(crate) struct UpstreamResponse {
     pub(crate) body_bytes_len: u64,
     /// Pure upstream wire time from bypass (`upstream_meta.upstream_wire_ms`); 0 if none.
     pub(crate) upstream_wire_ms: u64,
-    /// bypass 内部重试次数（认证换票、WS 换新连接）；非 bypass 来源为 0。
-    pub(crate) internal_retries: u32,
+    /// 上游回的流水号（bypass `upstream_meta.upstream_request_id`）；无则为空。
+    pub(crate) upstream_request_id: String,
 }
 #[derive(Debug, Clone)]
 pub(crate) enum ProxyBody {
@@ -253,6 +253,7 @@ fn classify_attempt_error(e: &ProxyError) -> &'static str {
         ProxyError::TooManyRequests { .. } => "ratelimit",
         ProxyError::Forbidden(_) => "authz",
         ProxyError::UpstreamAuthRejected(_) => "upstream_auth",
+        ProxyError::CircuitOpen(_) => "circuit_open",
         ProxyError::BadGateway(_)
             if err_s.contains("contract") || err_s.contains("contract_id") =>
         {
@@ -446,7 +447,7 @@ pub(crate) async fn execute_gateway_request_with_event(
     {
         return Err(denied.into_error());
     }
-    Err(ProxyError::BadGateway(
+    Err(ProxyError::NoHealthyUpstream(
         "All available channels exhausted".to_string(),
     ))
 }

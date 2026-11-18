@@ -4,6 +4,7 @@ use crate::gateway::GatewayRequestTiming;
 use crate::gateway::request_binding::{
     GatewayHttpPath, RequestBindingInput, enforce_request_binding, record_jwt_kid,
 };
+use crate::gateway::stage_log::{StageCtx, stage_log};
 use crate::gateway::validation::{GatewayRequest, GatewayRequestPayload, MAX_BODY_SIZE};
 use crate::ratelimit::{BandwidthPrepaid, LocalRateLimitDecision, LocalRateLimitInput};
 use crate::router::AppState;
@@ -26,7 +27,7 @@ use prometheus::{IntCounterVec, Opts};
 use std::net::SocketAddr;
 use std::sync::LazyLock;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::warn;
 pub static RATELIMIT_FAIL_CLOSED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     IntCounterVec::new(
         Opts::new(
@@ -181,10 +182,13 @@ fn log_auth_stage(
         .tenant(&claims.tenant_code)
         .record();
     if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
-        info!(
-            target : "gateway.stage", service = "mazbri-gateway", stage_name = "auth",
-            stage_ms = auth_stage_ms, request_id = % request_id, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id,
-            tenant_id = % claims.tenant_id, tenant_code = % claims.tenant_code,
+        stage_log!(
+            info,
+            "gateway.stage",
+            &StageCtx::new(request_id, claims, ""),
+            &stage_ids,
+            "auth",
+            auth_stage_ms,
             auth_mode = binding_outcome.auth_mode,
             kid = binding_outcome.kid.as_deref().unwrap_or(""),
             nonce = binding_outcome.nonce_trunc.as_deref().unwrap_or(""),
@@ -192,7 +196,7 @@ fn log_auth_stage(
             key_lookup_ms = binding_outcome.key_lookup_ms,
             verify_ms = binding_outcome.verify_ms,
             encrypted_request,
-            message = "Gateway auth stage completed"
+            message = "Gateway auth stage completed",
         );
     }
 }
@@ -357,6 +361,7 @@ pub async fn ratelimit_middleware(
             degraded,
             prepaid_request_bytes,
             bandwidth_enabled,
+            quota,
         } => {
             timing.bandwidth_prepaid = Some(BandwidthPrepaid {
                 policy_version,
@@ -369,16 +374,16 @@ pub async fn ratelimit_middleware(
             let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms).record();
             if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
-                info!(
-                    target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                    "ratelimit", stage_ms = rl_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, tenant_id
-                    = % tenant_context.tenant_id, api_endpoint = % api_endpoint, request_id =
-                    % request_id, policy_version, snapshot_age_ms, degraded, source = "local",
-                    decision = "allow", prepaid_request_bytes, bandwidth_enabled,
-                    message = "Gateway rate limit stage completed"
+                stage_log!(
+                    info, "gateway.stage",
+                    &StageCtx::from_extensions(req.extensions(), &request_id, &tenant_context.tenant_id, tenant_context.product_id.as_deref()),
+                    &stage_ids, "ratelimit", rl_ms,
+                    api_endpoint = % api_endpoint, policy_version, snapshot_age_ms, degraded,
+                    source = "local", decision = "allow", prepaid_request_bytes, bandwidth_enabled,
+                    message = "Gateway rate limit stage completed",
                 );
             }
-            Ok(next.run(req).await)
+            Ok(with_ratelimit_headers(next.run(req).await, quota))
         }
         LocalRateLimitDecision::Deny {
             policy_version,
@@ -386,22 +391,24 @@ pub async fn ratelimit_middleware(
             reason,
             snapshot_age_ms,
             degraded,
+            quota,
         } => {
             let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
             let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms)
                 .failed()
                 .record();
-            warn!(
-                target : "gateway.stage", service = "mazbri-gateway", stage_name =
-                "ratelimit", stage_ms = rl_ms, trace_id = % stage_ids.trace_id, span_id = % stage_ids.span_id, tenant_id
-                = % tenant_context.tenant_id, api_endpoint = % api_endpoint, request_id =
-                % request_id, policy_version, retry_after_ms, reason = % reason,
+            stage_log!(
+                warn, "gateway.stage",
+                &StageCtx::from_extensions(req.extensions(), &request_id, &tenant_context.tenant_id, tenant_context.product_id.as_deref()),
+                &stage_ids, "ratelimit", rl_ms,
+                api_endpoint = % api_endpoint, policy_version, retry_after_ms, reason = % reason,
                 snapshot_age_ms, degraded, source = "local", decision = "deny",
-                message = "Gateway rate limit stage rejected request"
+                message = "Gateway rate limit stage rejected request",
             );
             Err(rate_limit_error_response(
                 i32::saturating_from((retry_after_ms / 1000).max(1)),
                 &reason,
+                quota,
             )
             .into())
         }
@@ -447,13 +454,39 @@ fn record_rejection_scope(
     slot.set(crate::gateway::rejection_log::RejectionScope {
         tenant_id: Some(claims.tenant_id.clone()),
         tenant_code: Some(claims.tenant_code.clone()),
+        api_key_id: Some(claims.api_key_id.clone()).filter(|id| !id.is_empty()),
         product_id,
         method,
         path,
     });
 }
 
-fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
+/// 按 IETF draft-ietf-httpapi-ratelimit-headers 回写租户请求配额：
+/// `RateLimit-Policy: "tenant";q=<桶容量>;w=<补满秒数>`、`RateLimit: "tenant";r=<剩余>;t=<补满还需秒数>`。
+fn with_ratelimit_headers(
+    mut response: Response,
+    quota: Option<crate::ratelimit::QuotaState>,
+) -> Response {
+    let Some(quota) = quota else {
+        return response;
+    };
+    let headers = response.headers_mut();
+    for (name, value) in [
+        ("ratelimit-policy", quota.policy_header()),
+        ("ratelimit", quota.ratelimit_header()),
+    ] {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&value) {
+            headers.insert(name, value);
+        }
+    }
+    response
+}
+
+fn rate_limit_error_response(
+    retry_after: i32,
+    reason: &str,
+    quota: Option<crate::ratelimit::QuotaState>,
+) -> Response {
     let error_message = if reason == "bandwidth" {
         "带宽超过限制"
     } else {
@@ -480,7 +513,7 @@ fn rate_limit_error_response(retry_after: i32, reason: &str) -> Response {
         .insert(crate::gateway::response::GatewayErrorCode(
             "E4290".to_string(),
         ));
-    response
+    with_ratelimit_headers(response, quota)
 }
 fn current_request_id(headers: &axum::http::HeaderMap) -> String {
     parse_trace_context(headers).request_id.to_string()

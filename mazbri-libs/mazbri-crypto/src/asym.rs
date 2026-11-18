@@ -18,7 +18,7 @@ use p384::SecretKey as P384SecretKey;
 use rsa::pkcs1v15::{SigningKey as RsaSigningKey, VerifyingKey as RsaVerifyingKey};
 use rsa::sha2::{Sha256, Sha384, Sha512};
 use rsa::signature::{SignatureEncoding, Signer as RsaSigner, Verifier as RsaVerifier};
-use rsa::{Oaep, Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey};
+use rsa::{PrivateKey as RsaPrivateKey, PublicKey as RsaPublicKey};
 
 use crate::id::AlgorithmId;
 use crate::material::KeyRef;
@@ -143,13 +143,12 @@ pub(crate) fn parse_rsa_private(key: &KeyRef) -> Result<RsaPrivateKey, CryptoErr
 impl AsymBox for AsymBoxAlgorithm {
     fn seal(&self, recipient: &KeyRef, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let public = parse_rsa_public(recipient)?;
-        let mut rng = rsa::rand_core::OsRng;
         match self {
             Self::RsaOaepSha256 => public
-                .encrypt(&mut rng, Oaep::new::<Sha256>(), plaintext)
+                .oaep_encrypt::<Sha256>(plaintext)
                 .map_err(|e| map_rsa(&e)),
             Self::RsaPkcs1v15Encrypt => public
-                .encrypt(&mut rng, Pkcs1v15Encrypt, plaintext)
+                .pkcs1v15_encrypt(plaintext)
                 .map_err(|e| map_rsa(&e)),
         }
     }
@@ -158,10 +157,10 @@ impl AsymBox for AsymBoxAlgorithm {
         let private = parse_rsa_private(recipient_private)?;
         match self {
             Self::RsaOaepSha256 => private
-                .decrypt(Oaep::new::<Sha256>(), ciphertext)
+                .oaep_decrypt::<Sha256>(ciphertext)
                 .map_err(|e| map_rsa(&e)),
             Self::RsaPkcs1v15Encrypt => private
-                .decrypt(Pkcs1v15Encrypt, ciphertext)
+                .pkcs1v15_decrypt(ciphertext)
                 .map_err(|e| map_rsa(&e)),
         }
     }
@@ -197,18 +196,12 @@ pub(crate) fn parse_p256_verifying(key: &KeyRef) -> Result<P256VerifyingKey, Cry
             })
         }
         KeyRef::Raw { bytes, .. } => {
-            use p256::elliptic_curve::sec1::FromEncodedPoint;
-            use p256::{EncodedPoint, PublicKey};
-            let point = EncodedPoint::from_bytes(bytes.as_slice()).map_err(|_| {
+            // 非法 SEC1 编码、不在曲线上或无穷远点都会失败。
+            let public = p256::PublicKey::from_sec1_bytes(bytes.as_slice()).map_err(|_| {
                 CryptoError::InvalidKey {
-                    reason: "invalid P-256 SEC1 public key bytes".to_owned(),
+                    reason: "invalid P-256 SEC1 public key (bad encoding or not on curve)".to_owned(),
                 }
             })?;
-            let public = PublicKey::from_encoded_point(&point)
-                .into_option()
-                .ok_or_else(|| CryptoError::InvalidKey {
-                    reason: "P-256 public point not on curve".to_owned(),
-                })?;
             Ok(P256VerifyingKey::from(public))
         }
     }
@@ -248,18 +241,12 @@ pub(crate) fn parse_p384_verifying(key: &KeyRef) -> Result<P384VerifyingKey, Cry
             })
         }
         KeyRef::Raw { bytes, .. } => {
-            use p384::elliptic_curve::sec1::FromEncodedPoint;
-            use p384::{EncodedPoint, PublicKey};
-            let point = EncodedPoint::from_bytes(bytes.as_slice()).map_err(|_| {
+            // 非法 SEC1 编码、不在曲线上或无穷远点都会失败。
+            let public = p384::PublicKey::from_sec1_bytes(bytes.as_slice()).map_err(|_| {
                 CryptoError::InvalidKey {
-                    reason: "invalid P-384 SEC1 public key bytes".to_owned(),
+                    reason: "invalid P-384 SEC1 public key (bad encoding or not on curve)".to_owned(),
                 }
             })?;
-            let public = PublicKey::from_encoded_point(&point)
-                .into_option()
-                .ok_or_else(|| CryptoError::InvalidKey {
-                    reason: "P-384 public point not on curve".to_owned(),
-                })?;
             Ok(P384VerifyingKey::from(public))
         }
     }

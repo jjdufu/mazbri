@@ -1,5 +1,6 @@
 use super::execution::{ProxyBody, UpstreamRouteMetadata};
 use super::serializer::{proxy_body_encoding, proxy_body_to_json_value};
+use super::stage_log::stage_log;
 use crate::router::AppState;
 use axum::http::HeaderMap;
 use mazbri_billing::BillingService;
@@ -132,7 +133,7 @@ pub(crate) fn build_usage_event(ctx: &UsageChargeContext<'_>) -> (UsageOutboxEve
     let billable = billing_code.default_billable();
     let calculator = build_billing_calculator(ctx.product_detail);
     let calc_result = calculator.calculate_call();
-    let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::new_v4());
+    let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::now_v7());
     // Fingerprint → deterministic event_id so outbox unique index dedupes transport retries.
     let event_id = if let Some(fp) = ctx.fingerprint {
         Uuid::new_v5(&Uuid::NAMESPACE_OID, fp.as_bytes())
@@ -395,6 +396,8 @@ pub(crate) struct PostResponseTaskArgs {
     pub(crate) usage_event: Option<UsageOutboxEvent>,
     /// True when `usage_event` was durably produced to Redpanda before the response.
     pub(crate) usage_event_produced: bool,
+    /// 阶段日志公共维度（租户编码、路由渠道等），`post_response` 行用。
+    pub(crate) stage_ctx: super::stage_log::StageCtx,
 }
 /// Counts a running post-response task; decremented on drop (also on panic).
 struct InflightGuard;
@@ -455,16 +458,13 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
         let stage_ids = super::stage_log::stage_span("post_response", post_response_ms)
             .product(&args.req.product_id)
             .record_with_parent(&parent);
-        info!(
-            target : "gateway.postpath", service = "mazbri-gateway", stage_name =
-            "post_response", request_id = % request_id, trace_id = % stage_ids.trace_id,
-            span_id = % stage_ids.span_id, tenant_id = % args.tenant_id,
-            tenant_code = "", product_id = % args.req.product_id, method = % args.req.method,
-            path = % args.req.path, stage_ms = post_response_ms,
-            post_response_ms, billing_record_ms,
-            upstream_route = ? args.upstream_route.as_ref().map(|route| (& route.supplier_code,
-            & route.channel_code, & route.upstream_url)), message =
-            "Gateway post-response work completed"
+        stage_log!(
+            info, "gateway.postpath",
+            &args.stage_ctx,
+            &stage_ids, "post_response", post_response_ms,
+            method = % args.req.method, path = % args.req.path, post_response_ms, billing_record_ms,
+            upstream_route = ? args.upstream_route.as_ref().map(|route| (& route.supplier_code, & route.channel_code, & route.upstream_url)),
+            message = "Gateway post-response work completed",
         );
     });
 }

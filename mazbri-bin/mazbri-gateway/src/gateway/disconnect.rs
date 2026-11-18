@@ -145,8 +145,7 @@ fn extract_request_id(req: &Request<Body>) -> String {
     req.headers()
         .get(header::HeaderName::from_static("x-request-id"))
         .and_then(|v| v.to_str().ok())
-        .map(str::to_string)
-        .unwrap_or_default()
+        .map_or_default(str::to_string)
 }
 
 /// Middleware: observe client disconnect during handler and response write.

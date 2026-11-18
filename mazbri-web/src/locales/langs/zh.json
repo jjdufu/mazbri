@@ -479,7 +479,11 @@
           "postResponseLatency": "后置耗时",
           "statusCode": "返回码",
           "requestIp": "请求 IP",
-          "responseResult": "响应结果"
+          "responseResult": "响应结果",
+          "errorSource": "失败归因",
+          "retryCount": "重试次数",
+          "apiKeyId": "API Key ID",
+          "upstreamRequestId": "上游流水号"
         }
       },
       "placeholders": {

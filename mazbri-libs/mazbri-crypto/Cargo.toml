@@ -24,6 +24,7 @@ hmac = { workspace = true }
 digest = { workspace = true }
 blake3 = { workspace = true }
 subtle = { workspace = true }
+rand = { workspace = true }
 rsa = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }

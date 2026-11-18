@@ -39,7 +39,7 @@ impl<T> TomlConfigHandler<T> {
     }
 }
 fn compute_hash(content: &str) -> String {
-    format!("{:x}", Sha256::digest(content.as_bytes()))
+    hex::encode(Sha256::digest(content.as_bytes()))
 }
 #[async_trait]
 impl<T: DeserializeOwned + Clone + ValidateConfig + Send + Sync + 'static> ConfigHandler

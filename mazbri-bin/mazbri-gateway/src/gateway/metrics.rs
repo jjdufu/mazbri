@@ -135,25 +135,29 @@ impl RetryReason {
         match self {
             Self::Transport => "transport",
             Self::ConfigCacheMiss => "config_cache_miss",
-            Self::Switch => "switch",
+            Self::Switch => "channel_switch",
             Self::UpstreamInternal => "upstream_internal",
         }
     }
 }
 
+/// 计入 `gateway_retry_total` 并记进请求级重试台账（访问日志 `retry_reasons`）。
 pub fn record_retry(mode: &str, reason: RetryReason) {
     GATEWAY_RETRY_TOTAL
         .with_label_values(&[mode, reason.as_str()])
         .inc();
+    super::retry_ledger::note_retry(reason.as_str());
 }
 
-/// 按 bypass 透传的内部重试次数计入 `gateway_retry_total{reason="upstream_internal"}`。
-pub fn record_internal_retries(mode: &str, count: u32) {
+/// 按 bypass 透传的内部重试次数计入 `gateway_retry_total{reason="upstream_internal"}`，
+/// 原因明细（如 `auth_rejected:jsonrpc_code`）记进请求级重试台账。
+pub fn record_internal_retries(mode: &str, count: u32, reasons: &[String]) {
     if count > 0 {
         GATEWAY_RETRY_TOTAL
             .with_label_values(&[mode, RetryReason::UpstreamInternal.as_str()])
             .inc_by(f64::from(count));
     }
+    super::retry_ledger::note_internal_retries(count, reasons);
 }
 
 /// 未知/非法契约 ID。

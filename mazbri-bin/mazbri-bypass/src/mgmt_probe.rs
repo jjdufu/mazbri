@@ -142,6 +142,10 @@ mod tests {
                     url: "http://upstream.invalid/x".into(),
                     adapter: "http_json".into(),
                     upstream_wire_ms: 42,
+                    upstream_request_id: String::new(),
+                    method: "POST".into(),
+                    path: "/x".into(),
+                    protocol: "HTTP/1.1".into(),
                 }),
                 internal_retries: 0,
                 retry_reasons: Vec::new(),
@@ -160,6 +164,7 @@ mod tests {
                 trace_id: "req-1".into(),
                 span_id: "span-1".into(),
                 parent_span_id: String::new(),
+                sampled: true,
             },
             timeout_ms: 1000,
             payload_json: "{}".into(),
@@ -169,6 +174,9 @@ mod tests {
             supplier_code: "S".into(),
             supplier_config_hash: String::new(),
             supplier_config_json: "{}".into(),
+            attempt_order: 1,
+            tenant_code: String::new(),
+            channel_code: String::new(),
         }
     }
 

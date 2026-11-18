@@ -28,9 +28,9 @@ pub(super) fn spawn_persist_event_best_effort(state: &ProxyState, event: &Intera
 pub(super) fn should_switch(error: &ProxyError, condition: &SwitchCondition) -> bool {
     match error {
         ProxyError::GatewayTimeout(_) => condition.switch_on_timeout,
-        ProxyError::BadGateway(_) | ProxyError::UpstreamAuthRejected(_) => {
-            condition.switch_on_bad_gateway
-        }
+        ProxyError::BadGateway(_)
+        | ProxyError::CircuitOpen(_)
+        | ProxyError::UpstreamAuthRejected(_) => condition.switch_on_bad_gateway,
         ProxyError::InternalError(_) => condition.switch_on_internal_error,
         _ => false,
     }
@@ -64,7 +64,7 @@ pub(super) async fn execute_channel_attempt(
     let channel = attempt.channel;
     let (mode, _contract) = resolve_mode_and_contract_hint(channel);
     let span = upstream_attempt_span(attempt.order, channel, &mode);
-    let result = run_channel_attempt(state, req, channel, claims, request_id, trace_context, mode)
+    let result = run_channel_attempt(state, req, attempt, claims, request_id, trace_context, mode)
         .instrument(span.clone())
         .await;
     record_attempt_span(&span, &result);
@@ -111,12 +111,13 @@ fn record_attempt_span(span: &tracing::Span, result: &Result<UpstreamResponse, P
 async fn run_channel_attempt(
     state: &ProxyState,
     req: &GatewayRequest,
-    channel: &CandidateChannel,
+    attempt: ChannelAttempt<'_>,
     claims: &MazbriClaims,
     request_id: &str,
     trace_context: &TraceContext,
     mode: String,
 ) -> Result<UpstreamResponse, ProxyError> {
+    let channel = attempt.channel;
     let addr = channel.supplier_upstream_url.as_str();
     info!(
         "[{}] Attempting channel {} at {} for tenant [{}] mode={}",
@@ -137,6 +138,7 @@ async fn run_channel_attempt(
                 AttemptCtx {
                     max_retries: channel.switch_condition.max_retries,
                     mode: &mode,
+                    attempt_order: u32::try_from(attempt.order).unwrap_or(u32::MAX),
                 },
                 trace_context,
             )
@@ -166,7 +168,7 @@ async fn run_channel_attempt(
                     "circuit_breaker.rejected"
                 );
                 record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
-                Err(ProxyError::BadGateway(format!("服务暂时不可用: {reason}")))
+                Err(ProxyError::CircuitOpen(format!("服务暂时不可用: {reason}")))
             }
             CircuitResult::Failure { error } => {
                 warn!(

@@ -12,6 +12,6 @@ pub use channel_limit::{
 };
 pub use engine::{
     BandwidthPrepaid, LocalRateLimitDecision, LocalRateLimitEngine, LocalRateLimitInput,
-    TransferRecord,
+    QuotaState, TransferRecord,
 };
 pub use metrics::register_local_ratelimit_metrics;

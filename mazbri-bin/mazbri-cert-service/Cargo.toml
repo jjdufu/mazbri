@@ -1,78 +1,76 @@
 [package]
 name = "mazbri-cert-service"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-authors = ["Mazbri Team"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mazbri-cert-service"
 path = "src/main.rs"
 [dependencies]
-mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
-mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
-mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
-mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
-mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
-mazbri-cert = { version = "0.1.0", path = "../../mazbri-libs/mazbri-cert" }
-mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit" }
-mazbri-crypto = { version = "0.1.0", path = "../../mazbri-libs/mazbri-crypto" }
+mazbri-core = { workspace = true }
+mazbri-service = { workspace = true }
+mazbri-rpc = { workspace = true }
+mazbri-tls = { workspace = true }
+mazbri-admin = { workspace = true }
+mazbri-cert = { workspace = true }
+mazbri-audit = { workspace = true }
+mazbri-crypto = { workspace = true }
 
-tokio = {version = "1.35", features = ["full"]}
+tokio = { workspace = true }
 
-tarpc = {version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
+tarpc = { workspace = true }
 
-axum = {version = "0.8.8", features = ["macros", "multipart", "tower-log", "ws"]}
-tower = {version = "0.5.3", features = ["full", "discover", "load"]}
-tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip"]}
+axum = { workspace = true, features = ["multipart", "tower-log", "ws"] }
+tower = { workspace = true, features = ["full", "discover", "load"] }
+tower-http = { workspace = true }
 
-sqlx = {version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
+sqlx = { workspace = true, features = ["chrono", "json", "rust_decimal", "ipnetwork"] }
 
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0"}
+serde = { workspace = true }
+serde_json = { workspace = true }
 
-config = {version = "0.15"}
-dotenvy = {version = "0.15"}
+dotenvy = { workspace = true }
 
-tracing = {version = "0.1"}
+tracing = { workspace = true }
 
-anyhow = {version = "1.0"}
-thiserror = {version = "2.0"}
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
-uuid = {version = "1.21", features = ["v4", "serde"]}
+uuid = { workspace = true }
 
-chrono = {version = "0.4", features = ["serde"]}
-time = "=0.3.47"
+chrono = { workspace = true }
+time = { workspace = true }
 
-futures = {version = "0.3"}
+futures = { workspace = true }
 
-rcgen = { version = "0.13", features = ["x509-parser", "pem"] }
+rcgen = { workspace = true }
 
-x509-parser = "0.16"
+x509-parser = { workspace = true }
 
-hkdf = {version = "0.12"}
-hex = {version = "0.4"}
-sha2 = {version = "0.10"}
-base64 = "0.22"
-rand = {version = "0.10.0"}
-argon2 = {version = "0.5"}
-zeroize = "1.8"
-hmac = "0.12"
+hkdf = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
+hmac = { workspace = true }
 
-toml = "0.8"
-toml_edit = "0.22"
+toml = { workspace = true }
+toml_edit = { workspace = true }
 
-subtle = "2.6"
+subtle = { workspace = true }
 
-parking_lot = {version = "0.12"}
+parking_lot = { workspace = true }
 
-prometheus = {version = "0.14"}
+prometheus = { workspace = true }
 
 [dev-dependencies]
-mazbri-audit = { version = "0.1.0", path = "../../mazbri-libs/mazbri-audit", features = ["testing"] }
-serde_yaml = "0.9"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
+mazbri-audit = { workspace = true, features = ["testing"] }
+serde_yaml = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
 
 [lints]
 workspace = true

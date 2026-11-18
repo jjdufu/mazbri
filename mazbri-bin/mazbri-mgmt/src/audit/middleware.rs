@@ -498,8 +498,7 @@ async fn summarize_body(headers: &HeaderMap, body: Body) -> (Body, Option<serde_
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
-        .map(|value| truncate(value.trim(), 64).to_ascii_lowercase())
-        .unwrap_or_default();
+        .map_or_default(|value| truncate(value.trim(), 64).to_ascii_lowercase());
     let mut summary = serde_json::Map::new();
     summary.insert("content_type".to_string(), serde_json::json!(content_type));
     summary.insert("content_length".to_string(), serde_json::json!(length));

@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 mazbri-core = { workspace = true }
-mazbri-service = { workspace = true }
 
 tokio = { workspace = true }
 
@@ -29,7 +28,7 @@ uuid = { workspace = true }
 hex = "0.4"
 
 sha2 = { workspace = true }
-hmac = "0.12"
+hmac = { workspace = true }
 
 reqwest = { workspace = true }
 

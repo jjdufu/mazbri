@@ -1,56 +1,53 @@
 [package]
 name = "mazbri-bypass"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-authors = ["Mazbri Team"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mazbri-bypass"
 path = "src/main.rs"
 
 [dependencies]
-mazbri-admin = { version = "0.1.0", path = "../../mazbri-libs/mazbri-admin" }
-mazbri-core = { version = "0.1.0", path = "../../mazbri-libs/mazbri-core" }
-mazbri-registry = { version = "0.1.0", path = "../../mazbri-libs/mazbri-registry" }
-mazbri-upstream-contracts = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-contracts" }
-mazbri-upstream-runtime = { version = "0.1.0", path = "../../mazbri-libs/mazbri-upstream-runtime" }
-mazbri-rpc = { version = "0.1.0", path = "../../mazbri-libs/mazbri-rpc" }
-mazbri-service = { version = "0.1.0", path = "../../mazbri-libs/mazbri-service" }
-mazbri-tls = { version = "0.1.0", path = "../../mazbri-libs/mazbri-tls" }
+mazbri-admin = { workspace = true }
+mazbri-core = { workspace = true }
+mazbri-registry = { workspace = true }
+mazbri-upstream-contracts = { workspace = true }
+mazbri-upstream-runtime = { workspace = true }
+mazbri-rpc = { workspace = true }
+mazbri-service = { workspace = true }
+mazbri-tls = { workspace = true }
 
-anyhow = {version = "1.0"}
-chrono = {version = "0.4", features = ["serde"]}
-clap = {version = "4", features = ["derive"]}
-config = {version = "0.15"}
-dotenvy = {version = "0.15"}
-futures = {version = "0.3"}
-prometheus = {version = "0.14"}
-reqwest = {version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls", "http2"]}
-serde = {version = "1.0", features = ["derive"]}
-serde_json = {version = "1.0"}
-serde_urlencoded = {version = "0.7"}
-thiserror = {version = "2.0"}
-tokio = {version = "1.35", features = ["full"]}
-tracing = {version = "0.1"}
-tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
-tonic-prost = {version = "0.14.6"}
-http = {version = "1.4.0"}
-axum = {version = "0.8.8", features = ["macros"]}
-subtle = "2.6"
-tower = {version = "0.5.3"}
-url = "2.5"
-dns-lookup = "2.0"
-sha2 = { version = "0.10" }
-hex = { version = "0.4" }
-moka = { version = "0.12", features = ["sync"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
-uuid = { version = "1.21", features = ["v4"] }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+futures = { workspace = true }
+prometheus = { workspace = true }
+reqwest = { workspace = true, features = ["http2"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+http = { workspace = true }
+axum = { workspace = true }
+subtle = { workspace = true }
+tower = { workspace = true }
+url = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+moka = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
-toml = "0.8"
-tower = {version = "0.5.3", features = ["util"]}
+toml = { workspace = true }
+tower = { workspace = true, features = ["util"] }
 
 [lints]
 workspace = true

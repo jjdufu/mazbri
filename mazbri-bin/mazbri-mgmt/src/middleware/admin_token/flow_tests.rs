@@ -71,9 +71,9 @@ struct TestUser {
 }
 
 fn hash_password(password: &str) -> String {
-    use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
+    use argon2::PasswordHasher;
     argon2::Argon2::default()
-        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+        .hash_password(password.as_bytes())
         .expect("hash")
         .to_string()
 }
