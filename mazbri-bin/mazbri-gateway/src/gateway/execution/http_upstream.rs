@@ -397,8 +397,7 @@ fn upstream_request_id_of(response: &upstream_proto::InvokeResponse) -> String {
     response
         .upstream_meta
         .as_ref()
-        .map(|m| m.upstream_request_id.clone())
-        .unwrap_or_default()
+        .map_or_default(|m| m.upstream_request_id.clone())
 }
 
 fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> UpstreamResponse {

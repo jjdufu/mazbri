@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 mazbri-core = { workspace = true }
-mazbri-service = { workspace = true }
 
 tokio = { workspace = true }
 

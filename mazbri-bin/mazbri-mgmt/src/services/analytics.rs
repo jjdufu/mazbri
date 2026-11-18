@@ -976,8 +976,7 @@ fn map_call_monitor_item(
     let base_channel_name = first_non_empty(&[
         channel_meta
             .as_ref()
-            .map(|meta| meta.channel_name.clone())
-            .unwrap_or_default(),
+            .map_or_default(|meta| meta.channel_name.clone()),
         string_field(&row, "channel_name"),
         string_field(&row, "channel_code"),
     ]);
@@ -1003,16 +1002,14 @@ fn map_call_monitor_item(
         supplier: first_non_empty(&[
             channel_meta
                 .as_ref()
-                .map(|meta| meta.supplier_name.clone())
-                .unwrap_or_default(),
+                .map_or_default(|meta| meta.supplier_name.clone()),
             string_field(&row, "supplier_name"),
             string_field(&row, "supplier_code"),
             string_field(&row, "supplier_id"),
         ]),
         supplier_name: channel_meta
             .as_ref()
-            .map(|meta| meta.supplier_name.clone())
-            .unwrap_or_default(),
+            .map_or_default(|meta| meta.supplier_name.clone()),
         channel_id,
         channel_code,
         channel_name,

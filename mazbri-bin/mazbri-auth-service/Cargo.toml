@@ -29,9 +29,7 @@ sqlx = { workspace = true, features = ["chrono", "json", "rust_decimal", "ipnetw
 
 serde = { workspace = true }
 
-config = { workspace = true }
 dotenvy = { workspace = true }
-clap = { workspace = true }
 
 tracing = { workspace = true }
 

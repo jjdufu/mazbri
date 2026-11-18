@@ -57,19 +57,15 @@ impl AppliedAuth {
 }
 
 pub fn token_cache_key(supplier_id: &str, channel_id: &str, spec: &ChannelEgressSpec) -> String {
-    let fingerprint = spec
-        .auth
-        .as_ref()
-        .map(|a| {
-            format!(
-                "{}|{}|{}|{}",
-                a.profile,
-                a.token_url.as_deref().unwrap_or(""),
-                a.token_path.as_deref().unwrap_or(""),
-                a.token_jsonpath.as_deref().unwrap_or("")
-            )
-        })
-        .unwrap_or_default();
+    let fingerprint = spec.auth.as_ref().map_or_default(|a| {
+        format!(
+            "{}|{}|{}|{}",
+            a.profile,
+            a.token_url.as_deref().unwrap_or(""),
+            a.token_path.as_deref().unwrap_or(""),
+            a.token_jsonpath.as_deref().unwrap_or("")
+        )
+    });
     format!("{supplier_id}:{channel_id}:{fingerprint}")
 }
 

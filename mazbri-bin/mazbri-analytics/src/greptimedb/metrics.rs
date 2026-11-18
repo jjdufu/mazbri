@@ -755,21 +755,18 @@ impl GreptimeDBClient {
                 .json::<PrometheusEnvelope>()
                 .await?;
             ensure_prometheus_success(&envelope)?;
-            Ok(envelope
-                .data
-                .map(|data| {
-                    data.result
-                        .into_iter()
-                        .filter_map(|r| {
-                            let value = r
-                                .value
-                                .as_ref()
-                                .and_then(|(_, v)| parse_prometheus_number(v))?;
-                            Some((r.metric, value))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default())
+            Ok(envelope.data.map_or_default(|data| {
+                data.result
+                    .into_iter()
+                    .filter_map(|r| {
+                        let value = r
+                            .value
+                            .as_ref()
+                            .and_then(|(_, v)| parse_prometheus_number(v))?;
+                        Some((r.metric, value))
+                    })
+                    .collect()
+            }))
         })
         .await
     }
@@ -794,22 +791,19 @@ impl GreptimeDBClient {
             .json::<PrometheusEnvelope>()
             .await?;
         ensure_prometheus_success(&envelope)?;
-        Ok(envelope
-            .data
-            .map(|data| {
-                data.result
-                    .into_iter()
-                    .filter_map(|r| {
-                        let key = r.metric.get(label)?.clone();
-                        let value = r
-                            .value
-                            .as_ref()
-                            .and_then(|(_, v)| parse_prometheus_number(v))?;
-                        Some((key, value))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(envelope.data.map_or_default(|data| {
+            data.result
+                .into_iter()
+                .filter_map(|r| {
+                    let key = r.metric.get(label)?.clone();
+                    let value = r
+                        .value
+                        .as_ref()
+                        .and_then(|(_, v)| parse_prometheus_number(v))?;
+                    Some((key, value))
+                })
+                .collect()
+        }))
     }
     async fn prometheus_range_values(
         &self,
@@ -839,8 +833,7 @@ impl GreptimeDBClient {
         ensure_prometheus_success(&envelope)?;
         Ok(envelope
             .data
-            .map(|data| data.result.into_iter().map(range_series).collect())
-            .unwrap_or_default())
+            .map_or_default(|data| data.result.into_iter().map(range_series).collect()))
     }
 }
 fn range_series(result: PrometheusResult) -> MetricSeriesData {
@@ -2045,8 +2038,7 @@ fn label_filter_suffix(filter: &str) -> String {
     filter
         .strip_prefix('{')
         .and_then(|value| value.strip_suffix('}'))
-        .map(|value| format!(",{value}"))
-        .unwrap_or_default()
+        .map_or_default(|value| format!(",{value}"))
 }
 
 #[cfg(test)]

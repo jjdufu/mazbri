@@ -17,7 +17,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.100"
 authors = ["Mazbri Team"]
 license = "MIT"
 
@@ -53,11 +53,8 @@ base32 = { version = "0.5" }
 base64 = { version = "0.22" }
 bincode = { version = "1" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4", features = ["derive"] }
 clickhouse = { version = "0.12", features = ["lz4"] }
-config = { version = "0.15" }
 dashmap = { version = "6.1.0" }
-dns-lookup = { version = "2.0" }
 dotenvy = { version = "0.15" }
 futures = { version = "0.3" }
 hex = { version = "0.4" }
@@ -75,7 +72,6 @@ mime_guess = { version = "2.0" }
 moka = { version = "0.12", features = ["sync"] }
 parking_lot = { version = "0.12" }
 prometheus = { version = "0.14" }
-qrcode = { version = "0.14" }
 rand = { version = "0.10.0" }
 rcgen = { version = "0.13", features = ["x509-parser", "pem"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "gzip", "multipart", "rustls"] }

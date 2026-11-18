@@ -789,11 +789,7 @@ async fn persist_runtime_marks(
             )
             ",
         )
-        .bind(
-            row.last_seen_at
-                .map(|value| value.to_rfc3339())
-                .unwrap_or_default(),
-        )
+        .bind(row.last_seen_at.map_or_default(|value| value.to_rfc3339()))
         .fetch_one(pool)
         .await?;
         if !already {

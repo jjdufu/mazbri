@@ -778,8 +778,7 @@ impl Trace {
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(&self.request_id_header))
-            .map(|(_, v)| v.trim().to_string())
-            .unwrap_or_default();
+            .map_or_default(|(_, v)| v.trim().to_string());
         UpstreamMeta {
             status: response.status,
             url: response.final_url.clone(),

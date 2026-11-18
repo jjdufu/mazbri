@@ -109,8 +109,7 @@ pub async fn send_http(
     let body_bytes = resp.bytes().await.unwrap_or_default().to_vec();
     let path = url::Url::parse(call.url)
         .ok()
-        .map(|u| u.path().to_string())
-        .unwrap_or_default();
+        .map_or_default(|u| u.path().to_string());
     Ok(OutboundResponse {
         status: status_code.as_u16(),
         headers: resp_headers,
@@ -178,8 +177,7 @@ pub async fn send_http_with_digest(
 pub fn auth_only_response(call: &HttpCall<'_>) -> OutboundResponse {
     let path = url::Url::parse(call.url)
         .ok()
-        .map(|u| u.path().to_string())
-        .unwrap_or_default();
+        .map_or_default(|u| u.path().to_string());
     OutboundResponse {
         status: 204,
         headers: call.headers.clone(),

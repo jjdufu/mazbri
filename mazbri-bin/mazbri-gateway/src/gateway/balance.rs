@@ -287,9 +287,8 @@ pub async fn balance_check_middleware(
     )
     .await;
 
-    let request_id = mazbri_core::current_request_trace()
-        .map(|trace| trace.request_id.to_string())
-        .unwrap_or_default();
+    let request_id =
+        mazbri_core::current_request_trace().map_or_default(|trace| trace.request_id.to_string());
     let times = StageTimes {
         stage: super::stage_log::StageCtx::from_extensions(
             request.extensions(),

@@ -219,9 +219,9 @@ mod request_id_middleware_tests {
             .route(
                 "/ok",
                 get(|| async {
-                    mazbri_core::current_request_trace()
-                        .map(|trace| format!("{}|{}", trace.request_id, trace.client_request_id))
-                        .unwrap_or_default()
+                    mazbri_core::current_request_trace().map_or_default(|trace| {
+                        format!("{}|{}", trace.request_id, trace.client_request_id)
+                    })
                 }),
             )
             .route("/fail", get(|| async { StatusCode::UNAUTHORIZED }))

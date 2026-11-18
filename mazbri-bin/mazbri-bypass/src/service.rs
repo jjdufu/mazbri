@@ -660,7 +660,7 @@ fn emit_bypass_stages(
 fn emit_bypass_access(ctx: &AccessCtx<'_>, response: &upstream_proto::InvokeResponse) {
     let req = ctx.req;
     let duration_ms = mazbri_core::num::millis_u64(ctx.start_time.elapsed());
-    let route_template = ctx.spec.map(|s| s.request.path.clone()).unwrap_or_default();
+    let route_template = ctx.spec.map_or_default(|s| s.request.path.clone());
     let meta = response.upstream_meta.as_ref();
     let adapter = meta
         .map(|m| m.adapter.as_str())

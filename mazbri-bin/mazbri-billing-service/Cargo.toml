@@ -32,9 +32,7 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-config = { workspace = true }
 dotenvy = { workspace = true }
-clap = { workspace = true }
 
 tracing = { workspace = true }
 

@@ -75,9 +75,8 @@ impl AuditScope {
     #[must_use]
     pub fn actor_identity(&self) -> mazbri_audit::actor::ActorIdentity {
         let actor = self.lock().actor.clone();
-        let (user_id, username, role) = actor
-            .map(|actor| (actor.user_id, actor.username, actor.role))
-            .unwrap_or_default();
+        let (user_id, username, role) =
+            actor.map_or_default(|actor| (actor.user_id, actor.username, actor.role));
         mazbri_audit::actor::ActorIdentity {
             user_id,
             username,

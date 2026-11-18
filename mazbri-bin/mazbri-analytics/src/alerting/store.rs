@@ -336,15 +336,12 @@ fn parse_rule(row: &PgRow) -> Result<AlertRule, String> {
 
 /// 将 JSON 对象中的字符串值收集为有序标签表（非字符串值忽略）。
 fn string_map(value: &serde_json::Value) -> BTreeMap<String, String> {
-    value
-        .as_object()
-        .map(|object| {
-            object
-                .iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
-        })
-        .unwrap_or_default()
+    value.as_object().map_or_default(|object| {
+        object
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect()
+    })
 }
 
 #[cfg(test)]

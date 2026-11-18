@@ -258,9 +258,7 @@ fn fail(name: String, msg: &str) -> AssertionResult {
 }
 
 fn body_str(response: Option<&OutboundResponse>) -> String {
-    response
-        .map(|r| String::from_utf8_lossy(&r.body).to_string())
-        .unwrap_or_default()
+    response.map_or_default(|r| String::from_utf8_lossy(&r.body).to_string())
 }
 
 fn body_json(response: Option<&OutboundResponse>) -> Option<serde_json::Value> {

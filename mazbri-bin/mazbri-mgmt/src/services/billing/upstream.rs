@@ -98,16 +98,12 @@ pub(super) fn aggregate_hourly_settlement_rows(
         let pricing = pricing_map.get(&lookup_key);
         let channel_code = first_non_empty(&[
             raw_channel_code,
-            pricing
-                .map(|p| p.channel_code.clone())
-                .unwrap_or_default(),
+            pricing.map_or_default(|p| p.channel_code.clone()),
             lookup_key,
         ]);
         let supplier_code = first_non_empty(&[
             string_field(row, "supplier_code"),
-            pricing
-                .map(|p| p.supplier_code.clone())
-                .unwrap_or_default(),
+            pricing.map_or_default(|p| p.supplier_code.clone()),
         ]);
         if supplier_code.is_empty() || channel_code.is_empty() {
             continue;
@@ -244,17 +240,13 @@ fn build_upstream_drafts_from_pricing(
         let pricing = pricing_map.get(&channel_key);
         let supplier_code = first_non_empty(&[
             string_field(row, "supplier_code"),
-            pricing
-                .map(|p| p.supplier_code.clone())
-                .unwrap_or_default(),
+            pricing.map_or_default(|p| p.supplier_code.clone()),
         ]);
         let supplier_name =
             first_non_empty(&[string_field(row, "supplier_name"), supplier_code.clone()]);
         let channel_code = first_non_empty(&[
             string_field(row, "channel_code"),
-            pricing
-                .map(|p| p.channel_code.clone())
-                .unwrap_or_default(),
+            pricing.map_or_default(|p| p.channel_code.clone()),
             channel_key.clone(),
         ]);
         let channel_name =

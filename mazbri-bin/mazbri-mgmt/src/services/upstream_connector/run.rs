@@ -430,7 +430,7 @@ fn run_response_preview(
         serde_json::json!({
             "status": status,
             "body_preview": p.to_string().chars().take(4096).collect::<String>(),
-            "url": result.upstream_meta.as_ref().map(|m| m.url.clone()).unwrap_or_default(),
+            "url": result.upstream_meta.as_ref().map_or_default(|m| m.url.clone()),
             "adapter": result.upstream_meta.as_ref().map(|m| m.adapter.clone()),
             "biz_error": result.biz_error,
         })
@@ -744,8 +744,7 @@ fn run_bypass_assertions(
     let body = outcome
         .payload
         .as_ref()
-        .map(|p| serde_json::to_vec(p).unwrap_or_default())
-        .unwrap_or_default();
+        .map_or_default(|p| serde_json::to_vec(p).unwrap_or_default());
     let response = OutboundResponse {
         status: outcome.status.unwrap_or(if outcome.ok { 200 } else { 400 }),
         headers: HashMap::default(),
@@ -835,10 +834,7 @@ async fn prepare_bypass_probe_from_draft(
         timeout_ms,
         payload_json,
         egress_spec_json,
-        supplier_id: row
-            .linked_supplier_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
+        supplier_id: row.linked_supplier_id.map_or_default(|u| u.to_string()),
         supplier_code: format!("probe:{}", row.draft_code),
         supplier_config_json,
         endpoint_key,
@@ -909,10 +905,7 @@ async fn prepare_run_input(
     };
 
     let input = InvokeInput {
-        supplier_id: row
-            .linked_supplier_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
+        supplier_id: row.linked_supplier_id.map_or_default(|u| u.to_string()),
         supplier_code: format!("probe:{}", row.draft_code),
         channel_id: endpoint_key.clone().unwrap_or_else(|| row.id.to_string()),
         request_id: Uuid::new_v4().to_string(),

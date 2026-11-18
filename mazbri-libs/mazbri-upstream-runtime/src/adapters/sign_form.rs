@@ -23,8 +23,7 @@ fn resolve_sign_type(spec: &ChannelEgressSpec, profile: &UpstreamCryptoProfile) 
                 profile
                     .sign
                     .as_ref()
-                    .map(|s| s.alg.as_str().to_string())
-                    .unwrap_or_default()
+                    .map_or_default(|s| s.alg.as_str().to_string())
             },
             str::to_string,
         )

@@ -92,11 +92,10 @@ impl StageSpan {
             self.span
         };
         span.record(parent)
-            .map(|span_context| StageSpanIds {
+            .map_or_default(|span_context| StageSpanIds {
                 trace_id: span_context.trace_id().to_string(),
                 span_id: span_context.span_id().to_string(),
             })
-            .unwrap_or_default()
     }
 }
 

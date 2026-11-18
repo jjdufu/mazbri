@@ -119,7 +119,7 @@ pub(super) fn parse_curl(curl: &str) -> Result<ParsedCurl, ApiError> {
         "{}://{}{}",
         parsed.scheme(),
         parsed.host_str().unwrap_or(""),
-        parsed.port().map(|p| format!(":{p}")).unwrap_or_default()
+        parsed.port().map_or_default(|p| format!(":{p}"))
     );
     let path = if parsed.path().is_empty() {
         "/".into()
@@ -308,7 +308,7 @@ pub(super) fn parse_postman_url(
                 "{}://{}{}",
                 u.scheme(),
                 u.host_str().unwrap_or(""),
-                u.port().map(|p| format!(":{p}")).unwrap_or_default()
+                u.port().map_or_default(|p| format!(":{p}"))
             );
             path = if u.path().is_empty() {
                 "/".into()
@@ -1195,10 +1195,7 @@ pub async fn transform_preview(
     }
 
     let input = InvokeInput {
-        supplier_id: row
-            .linked_supplier_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
+        supplier_id: row.linked_supplier_id.map_or_default(|u| u.to_string()),
         supplier_code: format!("preview:{}", row.draft_code),
         channel_id: endpoint_key.unwrap_or_else(|| row.id.to_string()),
         request_id: Uuid::new_v4().to_string(),

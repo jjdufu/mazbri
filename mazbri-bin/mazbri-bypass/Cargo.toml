@@ -22,8 +22,6 @@ mazbri-tls = { workspace = true }
 
 anyhow = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true }
-config = { workspace = true }
 dotenvy = { workspace = true }
 futures = { workspace = true }
 prometheus = { workspace = true }
@@ -41,7 +39,6 @@ axum = { workspace = true }
 subtle = { workspace = true }
 tower = { workspace = true }
 url = { workspace = true }
-dns-lookup = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 moka = { workspace = true }

@@ -740,10 +740,7 @@ fn kv_from_json(v: Option<&Value>) -> HashMap<String, String> {
                 if k.is_empty() {
                     continue;
                 }
-                let val = item
-                    .get("value")
-                    .map(json_scalar_string)
-                    .unwrap_or_default();
+                let val = item.get("value").map_or_default(json_scalar_string);
                 out.insert(k.to_string(), val);
             }
         }
@@ -776,8 +773,7 @@ fn json_scalar_string(v: &Value) -> String {
 fn cred_keys_of(cfg: Option<&SupplierConfig>) -> Vec<String> {
     let mut keys: Vec<String> = cfg
         .and_then(|c| c.auth_flow.as_ref())
-        .map(|f| f.credentials.keys().cloned().collect())
-        .unwrap_or_default();
+        .map_or_default(|f| f.credentials.keys().cloned().collect());
     keys.sort();
     keys
 }
