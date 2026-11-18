@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.0](https://github.com/jjdufu/mazbri/compare/v0.5.4...v0.6.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **gateway,bypass,core:** 上游调用日志正确性与维度补齐：配置未命中不再记假 502、重试按台账计数、Envoy 标准 response flags 与 error_source、上游流水号与调用方 API Key 入日志、出站 UA 改为 reqwest
+* **core,service,gateway:** 请求标识与追踪协议：响应回写 X-Request-Id、入站请求 ID 校验替换、traceparent 采样标志如实回写
+
+### Features
+
+* **analytics,mgmt,web:** 调用监控返回并展示错误来源、重试、API Key 与上游流水号 ([deced65](https://github.com/jjdufu/mazbri/commit/deced6537bf47a218d62908ccd6bf83dd7a94759))
+* **billing,core,gateway,product,mgmt:** 计费 / 交互事件 / 产品等应用层主键改为 UUIDv7 ([68873c1](https://github.com/jjdufu/mazbri/commit/68873c122e489b951c4be8eff27fb61424e1a210))
+* **core,service,gateway:** 本服务签发的请求流水号改为 UUIDv7 ([64d6e6a](https://github.com/jjdufu/mazbri/commit/64d6e6aee020ca207988547743482b115935c224))
+* **core,service,gateway:** 请求标识与追踪协议：响应回写 X-Request-Id、入站请求 ID 校验替换、traceparent 采样标志如实回写 ([badb2fd](https://github.com/jjdufu/mazbri/commit/badb2fd477960bd0e2a04b647ef0970eeae8d8a7))
+* **gateway,bypass,runtime:** 阶段日志维度补齐，bypass 输出出站阶段日志 ([9db1241](https://github.com/jjdufu/mazbri/commit/9db1241704f0096e92430633ba0cd5c7d40e5e94))
+* **gateway:** 限流配额响应头：按 IETF RateLimit 草案回写 RateLimit-Policy / RateLimit ([5e0274b](https://github.com/jjdufu/mazbri/commit/5e0274b71e948adb5f79c145c2497252a702eaaf))
+
+
+### Bug Fixes
+
+* **gateway,bypass,core:** 上游调用日志正确性与维度补齐：配置未命中不再记假 502、重试按台账计数、Envoy 标准 response flags 与 error_source、上游流水号与调用方 API Key 入日志、出站 UA 改为 reqwest ([514faf2](https://github.com/jjdufu/mazbri/commit/514faf27f32eb7a3490a0db8d357f10c544ae62e))
+
 ## [0.5.4](https://github.com/jjdufu/mazbri/compare/v0.5.3...v0.5.4) (2026-11-15)
 
 
