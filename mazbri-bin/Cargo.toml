@@ -91,7 +91,7 @@ sha2 = { version = "0.10" }
 socket2 = { version = "0.5" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
 subtle = { version = "2.6" }
-tarpc = { version = "0.35", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"] }
+tarpc = { version = "0.38", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"] }
 thiserror = { version = "2.0" }
 time = { version = "=0.3.47" }
 tokio = { version = "1.35", features = ["full"] }
