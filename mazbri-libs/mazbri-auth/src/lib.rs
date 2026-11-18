@@ -135,3 +135,47 @@ impl AuthService {
         &self.ip_whitelist
     }
 }
+
+#[cfg(test)]
+mod argon2_golden_tests {
+    use super::{argon2_params, constant_time_argon2_verify};
+    use argon2::password_hash::SaltString;
+    use argon2::{Algorithm, Argon2, PasswordHasher, Version};
+
+    const PASSWORD: &[u8] = b"upg3-golden-password";
+    const SALT_B64: &str = "dXBnMy1nb2xkZW4tc2FsdA";
+    /// argon2 0.5 生成：管理员口令参数（`argon2_params`，m=65536,t=3,p=4）。
+    const ADMIN_PHC: &str = "$argon2id$v=19$m=65536,t=3,p=4$dXBnMy1nb2xkZW4tc2FsdA$5HG3l2UtlXrjU5Yh9KQGivM/zwrd9fWszuMmmn78REE";
+    /// argon2 0.5 生成：API Key 使用的 `Argon2::default()`（m=19456,t=2,p=1）。
+    const API_KEY_PHC: &str = "$argon2id$v=19$m=19456,t=2,p=1$dXBnMy1nb2xkZW4tc2FsdA$KimnAyS/e91roaggNYSQ+w2GytdjpDbz3nnmqCM3cR4";
+
+    fn salt() -> SaltString {
+        SaltString::from_b64(SALT_B64).expect("salt")
+    }
+
+    #[test]
+    fn hashes_with_fixed_salt_match_pre_upgrade_phc() {
+        let admin = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            argon2_params().expect("params"),
+        )
+        .hash_password(PASSWORD, &salt())
+        .expect("hash")
+        .to_string();
+        assert_eq!(admin, ADMIN_PHC);
+        let api_key = Argon2::default()
+            .hash_password(PASSWORD, &salt())
+            .expect("hash")
+            .to_string();
+        assert_eq!(api_key, API_KEY_PHC);
+    }
+
+    #[test]
+    fn pre_upgrade_phc_strings_still_verify() {
+        for phc in [ADMIN_PHC, API_KEY_PHC] {
+            constant_time_argon2_verify(PASSWORD, phc).expect("old hash verifies");
+            assert!(constant_time_argon2_verify(b"wrong-password", phc).is_err());
+        }
+    }
+}

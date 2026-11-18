@@ -269,6 +269,11 @@ mod tests {
             Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         );
         assert_eq!(h1.get("Authorization"), h2.get("Authorization"));
+        // 金标准由 hmac 0.12 / sha2 0.10 生成；升级后 SigV4 签名必须逐字节不变。
+        assert_eq!(
+            auth,
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=65f031d93b4631aedf16a8f7f830cdc8ce2bc5276c307b5a2cc2143d4b68e323"
+        );
         let with_body = signed_headers_for_test(SignedHeadersTestInput {
             method: "GET",
             url: "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",

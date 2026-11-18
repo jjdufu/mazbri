@@ -513,6 +513,39 @@ mod tests {
         totp_custom::<Sha1>(period, digits, &bytes, step_start)
     }
 
+    /// RFC 6238 附录 B 的 SHA-1 向量（8 位）及其 6 位截断。
+    #[test]
+    fn totp_sha1_matches_rfc6238_vectors() {
+        for (t, code8) in [
+            (59_u64, "94287082"),
+            (1_111_111_109, "07081804"),
+            (1_111_111_111, "14050471"),
+            (1_234_567_890, "89005924"),
+            (2_000_000_000, "69279037"),
+            (20_000_000_000, "65353130"),
+        ] {
+            assert_eq!(code_at(30, 8, t), code8, "t={t}");
+            assert_eq!(code_at(30, 6, t), code8[2..], "t={t}");
+        }
+    }
+
+    /// 金标准由 hkdf 0.12 / sha2 0.10 生成；与 cert-service 配置中心派生同源同值，
+    /// 升级后 MFA 种子加密密钥派生必须不变（否则库里已有 TOTP 种子无法解密）。
+    #[test]
+    fn derive_key_matches_pre_upgrade_golden() {
+        let material = MfaKeyMaterial {
+            master_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+                .to_owned(),
+            salt: "0102030405060708090a0b0c0d0e0f10".to_owned(),
+            context: "mazbri-mfa-v1".to_owned(),
+        };
+        let key = MfaKeyManager::derive_key(&material).expect("derive");
+        assert_eq!(
+            hex::encode(key.as_slice()),
+            "ad50b98e42ba9971258d977c1c71c90110ee34ecc8e33f925d72d856332af9b3"
+        );
+    }
+
     #[test]
     fn accepts_current_step_and_returns_step_start() {
         let period = 30;

@@ -208,3 +208,17 @@ pub fn unwrap_root_material(storage_password: &str, encrypted_secret: &str) -> C
         .map_err(|e| CertError::KeyEncryption(format!("Failed to unwrap root material: {e}")))?;
     Ok(plaintext)
 }
+
+#[cfg(test)]
+mod hkdf_golden_tests {
+    use super::derive_storage_key;
+
+    /// 金标准由 hkdf 0.12 / sha2 0.10 生成；升级后根证书包存储密钥派生必须不变。
+    #[test]
+    fn storage_key_matches_pre_upgrade_golden() {
+        assert_eq!(
+            hex::encode(derive_storage_key("root-storage-pw-upg3")),
+            "4d4c7c70f457dc38e08a141eab8b9f006dae779dc4bdc3473c9d7d82fa255449"
+        );
+    }
+}

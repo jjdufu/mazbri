@@ -155,3 +155,25 @@ impl ConfigEncryption {
         )
     }
 }
+
+#[cfg(test)]
+mod hkdf_golden_tests {
+    use super::{ConfigEncryption, KeyMaterial};
+
+    /// 金标准由 hkdf 0.12 / sha2 0.10 生成；与 mgmt `MfaKeyManager::derive_key` 同源同值，
+    /// 升级后配置中心加密密钥派生必须不变。
+    #[test]
+    fn derive_key_matches_pre_upgrade_golden() {
+        let material = KeyMaterial {
+            master_key: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+                .to_owned(),
+            salt: "0102030405060708090a0b0c0d0e0f10".to_owned(),
+            context: "mazbri-mfa-v1".to_owned(),
+        };
+        let key = ConfigEncryption::derive_key(&material).expect("derive");
+        assert_eq!(
+            hex::encode(key),
+            "ad50b98e42ba9971258d977c1c71c90110ee34ecc8e33f925d72d856332af9b3"
+        );
+    }
+}

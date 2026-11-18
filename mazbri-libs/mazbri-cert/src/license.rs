@@ -731,6 +731,17 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
     use mazbri_core::ErrorResponse;
 
+    /// 金标准由 hkdf 0.12 / sha2 0.10 生成；升级后许可证资产 CEK 派生必须不变。
+    #[test]
+    fn derive_cek_matches_pre_upgrade_golden() {
+        let shared: Vec<u8> = (0u8..32).collect();
+        let cek = derive_cek(&shared, &[0x11; 32], &[0x22; 32]).expect("cek");
+        assert_eq!(
+            hex::encode(cek),
+            "4a06f2269b50247792c4e6c9da64e6011b5c19fb4679fd22cb66a48bc4dfe764"
+        );
+    }
+
     fn dev_signing_key() -> SigningKey {
         let raw = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),

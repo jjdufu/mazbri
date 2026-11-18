@@ -35,3 +35,23 @@ pub fn validate_timestamp(timestamp: i64, max_drift_secs: i64) -> Result<(), &'s
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::generate_signature;
+
+    /// 金标准由 hmac 0.12 / sha2 0.10 生成；依赖升级后回调签名必须逐字节不变。
+    #[test]
+    fn signature_matches_pre_upgrade_golden() {
+        let sig = generate_signature(
+            r#"{"event":"call.completed","id":42}"#,
+            "cb-secret-upg3",
+            1_700_000_000,
+        )
+        .expect("sign");
+        assert_eq!(
+            sig,
+            "21c71e2841993d2e804db6983d80f0ffad7a11ae5179ffdfa4cc3dc84454eceb"
+        );
+    }
+}

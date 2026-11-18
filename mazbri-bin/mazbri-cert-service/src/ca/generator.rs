@@ -187,3 +187,17 @@ impl CaManager {
         key
     }
 }
+
+#[cfg(test)]
+mod hkdf_golden_tests {
+    use super::CaManager;
+
+    /// 金标准由 hkdf 0.12 / sha2 0.10 生成；升级后 CA 私钥加密密钥派生必须不变。
+    #[test]
+    fn derive_key_matches_pre_upgrade_golden() {
+        assert_eq!(
+            hex::encode(CaManager::derive_key("ca-pw-upg3")),
+            "f9798fccc20c816f865b6697555e6caee5c17a889d9ef308bd96cc9016c73998"
+        );
+    }
+}
