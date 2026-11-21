@@ -14,7 +14,7 @@ use axum::response::Response;
 use std::io::{Cursor, Write};
 use std::path::Path;
 use tracing::info;
-use zip::{ZipWriter, write::FileOptions};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 const MAX_IMPORT_REQUEST_BYTES: usize = 10 * 1024 * 1024;
 pub async fn export_configs(
@@ -56,7 +56,7 @@ pub async fn export_configs(
             continue;
         }
         let path = format!("{service_name}.toml");
-        if let Err(e) = zip.start_file(&path, FileOptions::default()) {
+        if let Err(e) = zip.start_file(&path, SimpleFileOptions::default()) {
             log_config_center_error(
                 "config_center_export_zip_entry_failed",
                 "INTERNAL_ERROR",
@@ -173,7 +173,22 @@ fn append_zip_entries<R: std::io::Read + std::io::Seek>(
                 continue;
             }
         };
-        let name = file.name().to_string();
+        let name = match file.name() {
+            Ok(n) => n.into_owned(),
+            Err(e) => {
+                log_config_center_error(
+                    "config_center_import_zip_entry_name_invalid",
+                    "VALIDATION_ERROR",
+                    request_id,
+                    trace_id,
+                    &e,
+                );
+                prepared
+                    .errors
+                    .push(format!("Invalid ZIP entry name at index {i}"));
+                continue;
+            }
+        };
         if is_ignored_archive_metadata(&name) {
             continue;
         }

@@ -214,6 +214,7 @@ impl MockCertServer {
             delete_calls: Arc::clone(&delete_calls),
         };
         let router = Router::new()
+            .route("/configs", get(mock_search_configs))
             .route("/configs/search", get(mock_search_configs))
             .route(
                 "/configs/{service}",
@@ -947,16 +948,106 @@ fn assert_configs_present(mock: &MockCertServer, names: &[&str]) {
 
 fn build_test_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     use std::io::{Cursor, Write};
-    use zip::{ZipWriter, write::FileOptions};
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     let mut zip_writer = ZipWriter::new(Cursor::new(Vec::new()));
     for (name, content) in entries {
         zip_writer
-            .start_file(*name, FileOptions::default())
+            .start_file(*name, SimpleFileOptions::default())
             .expect("zip entry");
         zip_writer.write_all(content).expect("zip write");
     }
     zip_writer.finish().expect("zip finish").into_inner()
+}
+
+/// 由升级前 `zip 0.6.6`（`FileOptions::default()` / `Deflated`）生成的归档金标准，
+/// 包含 `mazbri-bypass.toml` 与 `mazbri-cache.toml` 两个条目。
+const ZIP_06_ARCHIVE_GOLDEN_HEX: &str = "\
+504b030414000000080000002100c9810d1f1f0000001d000000120000006d617a6272692d6279706173732e746f6d6c\
+8b2e2d282e294a4dcc8de52ac9cc4dcd2f2d892f4e4d2e56b0553034e50200504b0304140000000800000021008a9c16\
+2d1c0000001a000000110000006d617a6272692d63616368652e746f6d6c8b4e4e4cce488de54a494d4b2ccd29892f29\
+c951b055303630e00200504b01022e0314000000080000002100c9810d1f1f0000001d00000012000000000000000000\
+0000a481000000006d617a6272692d6279706173732e746f6d6c504b01022e03140000000800000021008a9c162d1c00\
+00001a000000110000000000000000000000a4814f0000006d617a6272692d63616368652e746f6d6c504b0506000000\
+00020002007f0000009a0000000000";
+
+#[tokio::test]
+async fn zip_06_golden_archive_imports_and_export_uses_standard_deflate() {
+    let mock = MockCertServer::start().await;
+    let (audit, _store, handle) = build_audit();
+    let mfa_verified = Arc::new(AtomicBool::new(true));
+    let mfa_calls = Arc::new(AtomicUsize::new(0));
+    let state = TestRouterState {
+        cert_cfg: Arc::new(CertServiceClientCfg {
+            url: mock.url.clone(),
+            token: "test-token".to_string(),
+        }),
+        http: reqwest::Client::new(),
+        audit,
+        mfa_verified,
+        mfa_calls,
+        role: "R_ADMIN".to_string(),
+        user_id: uuid::Uuid::new_v4(),
+    };
+    let app = build_test_router(state.clone());
+    let boundary = "----MazbriZipGoldenBoundary";
+    let legacy_zip = hex::decode(ZIP_06_ARCHIVE_GOLDEN_HEX).expect("valid hex");
+
+    // 1. 旧版 zip 0.6.6 导出的归档可原样导入。
+    let (status, body) = send_multipart(
+        &app,
+        "/api/v1/mgmt/config-center/import",
+        boundary,
+        &[("files", "configs-v06.zip", &legacy_zip)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "legacy zip import failed: {body}");
+    assert_eq!(body["imported"], 2);
+    assert_eq!(body["skipped"], 0);
+
+    // 2. 新版导出的 ZIP 使用 PKZIP 2.0 标准 Deflate（version_needed <= 20，method == 8），
+    //    不包含 ZIP64 / Deflate64 扩展，可被旧版解析且内容与导入前逐字节一致。
+    let resp = import_export::export_configs(
+        state.ctx(),
+        &state.claims(),
+        None,
+        &crate::handlers::config_center::ExportParams {},
+        "req-1",
+        "trace-1",
+    )
+    .await
+    .expect("export resp");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let exported_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .expect("export bytes");
+    assert!(exported_bytes.starts_with(b"PK\x03\x04"));
+    let version_needed = u16::from_le_bytes([exported_bytes[4], exported_bytes[5]]);
+    let method = u16::from_le_bytes([exported_bytes[8], exported_bytes[9]]);
+    assert!(version_needed <= 20, "version_needed={version_needed}");
+    assert_eq!(method, 8, "expected standard Deflate (8), got {method}");
+
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(exported_bytes.as_ref())).expect("parse export");
+    let mut extracted = std::collections::BTreeMap::new();
+    for idx in 0..archive.len() {
+        let mut entry = archive.by_index(idx).expect("entry");
+        let entry_name = entry.name().expect("entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("read");
+        extracted.insert(entry_name, content);
+    }
+    assert_eq!(
+        extracted.get("mazbri-bypass.toml").map(Vec::as_slice),
+        Some(b"[upstream]\ntimeout_secs = 15\n".as_slice())
+    );
+    assert_eq!(
+        extracted.get("mazbri-cache.toml").map(Vec::as_slice),
+        Some(b"[cache]\ndefault_ttl = 300\n".as_slice())
+    );
+
+    drop(app);
+    handle.shutdown(Duration::from_secs(1)).await;
 }
 
 #[tokio::test]
