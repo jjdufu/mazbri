@@ -8,7 +8,7 @@ license = "MIT"
 description = "i18n internationalization support for Mazbri API responses"
 
 [dependencies]
-rust-i18n = "3"
+rust-i18n = { workspace = true }
 
 [lints]
 workspace = true

@@ -171,3 +171,99 @@ pub mod error {
         rust_i18n::t!("error.config_required").to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static LOCALE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn all_messages() -> Vec<(&'static str, String)> {
+        vec![
+            ("api.mfa.database_error", mfa::database_error()),
+            ("api.mfa.user_not_found", mfa::user_not_found()),
+            ("api.mfa.already_enabled_disable", mfa::already_enabled_disable()),
+            ("api.mfa.server_not_configured", mfa::server_not_configured()),
+            ("api.mfa.internal_error", mfa::internal_error()),
+            ("api.mfa.failed_setup", mfa::failed_setup()),
+            ("api.mfa.failed_store", mfa::failed_store()),
+            ("api.mfa.already_enabled_simple", mfa::already_enabled_simple()),
+            ("api.mfa.not_setup", mfa::not_setup()),
+            ("api.mfa.failed_verify", mfa::failed_verify()),
+            ("api.mfa.invalid_totp", mfa::invalid_totp()),
+            ("api.mfa.code_reused", mfa::code_reused()),
+            ("api.mfa.step_up_required", mfa::step_up_required()),
+            ("api.mfa.check_unavailable", mfa::check_unavailable()),
+            ("api.mfa.invalid_request", mfa::invalid_request()),
+            ("api.mfa.settings_rebind_warning", mfa::settings_rebind_warning()),
+            ("api.mfa.failed_enable", mfa::failed_enable()),
+            ("api.mfa.enabled_success", mfa::enabled_success()),
+            ("api.mfa.not_enabled", mfa::not_enabled()),
+            ("api.mfa.failed_disable", mfa::failed_disable()),
+            ("api.mfa.disabled_success", mfa::disabled_success()),
+            ("api.mfa.invalid_temp_token", mfa::invalid_temp_token()),
+            ("api.mfa.not_enabled_for_user", mfa::not_enabled_for_user()),
+            ("api.mfa.locked", mfa::locked()),
+            ("api.mfa.invalid_code", mfa::invalid_code()),
+            ("api.mfa.failed_generate_token", mfa::failed_generate_token()),
+            ("api.mfa.failed_backup_codes", mfa::failed_backup_codes()),
+            ("api.mfa.failed_update_backup", mfa::failed_update_backup()),
+            ("api.mfa.required_cannot_disable", mfa::required_cannot_disable()),
+            ("api.mfa.already_enabled", mfa::already_enabled()),
+            ("api.mfa.not_required", mfa::not_required()),
+            ("api.mfa.required_setup_needed", mfa::required_setup_needed()),
+            ("api.auth.missing_header", auth::missing_header()),
+            ("api.auth.invalid_key", auth::invalid_key()),
+            ("api.auth.service_error", auth::service_error()),
+            ("api.auth.service_unavailable", auth::service_unavailable()),
+            ("api.auth.tenant_not_found", auth::tenant_not_found()),
+            ("api.rate_limit.exceeded", rate_limit::exceeded(42)),
+            ("api.rate_limit.denied", rate_limit::denied()),
+            ("error.tls_required", error::tls_required()),
+            ("error.config_required", error::config_required()),
+        ]
+    }
+
+    #[test]
+    fn zh_cn_and_en_us_cover_all_keys_distinctly() {
+        let _guard = LOCALE_LOCK.lock().expect("locale lock");
+        let locales = rust_i18n::available_locales!();
+        assert!(locales.iter().any(|l| l == "zh-CN"), "locales={locales:?}");
+        assert!(locales.iter().any(|l| l == "en-US"), "locales={locales:?}");
+
+        rust_i18n::set_locale("zh-CN");
+        let zh = all_messages();
+        for (key, val) in &zh {
+            assert!(!val.is_empty(), "{key} empty in zh-CN");
+            assert_ne!(val, key, "{key} fell back to raw key in zh-CN");
+        }
+
+        rust_i18n::set_locale("en-US");
+        let en = all_messages();
+        for ((key, zh_val), (_, en_val)) in zh.iter().zip(en.iter()) {
+            assert!(!en_val.is_empty(), "{key} empty in en-US");
+            assert_ne!(en_val, key, "{key} fell back to raw key in en-US");
+            assert_ne!(zh_val, en_val, "{key} identical between zh-CN and en-US");
+        }
+
+        assert!(
+            en.iter()
+                .find(|(k, _)| *k == "api.rate_limit.exceeded")
+                .expect("exceeded")
+                .1
+                .contains("42"),
+            "en-US rate_limit::exceeded did not interpolate seconds: {en:?}"
+        );
+        assert!(
+            zh.iter()
+                .find(|(k, _)| *k == "api.rate_limit.exceeded")
+                .expect("exceeded")
+                .1
+                .contains("42"),
+            "zh-CN rate_limit::exceeded did not interpolate seconds: {zh:?}"
+        );
+
+        rust_i18n::set_locale("zh-CN");
+    }
+}
