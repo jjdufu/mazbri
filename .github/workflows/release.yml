@@ -251,12 +251,14 @@ jobs:
     if: needs.plan.outputs.build_count != '0'
     strategy:
       fail-fast: true
+      # 运行镜像为 debian:trixie-slim（glibc 2.41）；ubuntu-26.04 是 glibc 2.43，
+      # C 依赖可能链接 2.42/2.43 符号触发下方 GLIBC_2.41 守卫。编译机用 24.04（glibc 2.39）。
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-26.04
+            runner: ubuntu-24.04
           - arch: arm64
-            runner: ubuntu-26.04-arm
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
