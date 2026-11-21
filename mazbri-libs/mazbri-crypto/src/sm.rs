@@ -11,7 +11,7 @@
 //! [`CryptoError::Unsupported`]。
 
 use cbc::{Decryptor as CbcDecryptor, Encryptor as CbcEncryptor};
-use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher};
+use cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, KeyIvInit, StreamCipher, block_padding::Pkcs7};
 use ctr::Ctr128BE;
 use digest::Digest as DigestTrait;
 use hmac::{Hmac, KeyInit as HmacKeyInit, Mac as HmacMac};
@@ -208,7 +208,7 @@ fn encrypt_sm4_cbc(key: &[u8], iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, C
             reason: "sm4-cbc key/iv init failed".to_owned(),
         }
     })?;
-    Ok(encryptor.encrypt_padded_vec_mut::<Pkcs7>(plaintext))
+    Ok(encryptor.encrypt_padded_vec::<Pkcs7>(plaintext))
 }
 
 fn decrypt_sm4_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
@@ -218,7 +218,7 @@ fn decrypt_sm4_cbc(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, 
         }
     })?;
     decryptor
-        .decrypt_padded_vec_mut::<Pkcs7>(ciphertext)
+        .decrypt_padded_vec::<Pkcs7>(ciphertext)
         .map_err(|_| CryptoError::InvalidInput {
             reason: "sm4-cbc PKCS7 unpad failed".to_owned(),
         })
@@ -652,7 +652,7 @@ pub fn sm4_ecb_encrypt(
         reason: "sm4-ecb key length".to_owned(),
     })?;
     let encryptor = ecb::Encryptor::<Sm4>::new(&key_arr.into());
-    Ok(encryptor.encrypt_padded_vec_mut::<Pkcs7>(plaintext))
+    Ok(encryptor.encrypt_padded_vec::<Pkcs7>(plaintext))
 }
 
 /// SM4-ECB-PKCS7 解密（legacy）。
@@ -673,7 +673,7 @@ pub fn sm4_ecb_decrypt(
     })?;
     let decryptor = ecb::Decryptor::<Sm4>::new(&key_arr.into());
     decryptor
-        .decrypt_padded_vec_mut::<Pkcs7>(ciphertext)
+        .decrypt_padded_vec::<Pkcs7>(ciphertext)
         .map_err(|_| CryptoError::InvalidInput {
             reason: "sm4-ecb PKCS7 unpad failed".to_owned(),
         })

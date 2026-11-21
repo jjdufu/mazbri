@@ -1,5 +1,223 @@
 {
-  "_note": "upg3（RustCrypto digest 0.11 / rsa 0.10 / p256 0.14 升级）前用旧依赖（hmac 0.12、sha2 0.10、sm3 0.4、md-5 0.10、rsa 0.9、p256/p384 0.13）生成的线上格式金标准；私钥为仅供测试的一次性 OpenSSL 生成密钥。",
+  "_note": "upg3/upg5（RustCrypto digest 0.11 / rsa 0.10 / p256 0.14 / cipher 0.5 / aead 0.6 升级）前用旧依赖（hmac 0.12、sha2 0.10、sm3 0.4、md-5 0.10、rsa 0.9、p256/p384 0.13、cipher 0.4、aes 0.8、sm4 0.5、des 0.8、aes-gcm 0.10、chacha20poly1305 0.10）生成的线上格式金标准；私钥为仅供测试的一次性 OpenSSL 生成密钥。",
+  "aead": [
+    {
+      "aad_b64": "",
+      "alg": "aes-128-gcm",
+      "case": "empty",
+      "ciphertext_b64": "bQ7+/riepxty0magJOVT9w==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-128-gcm",
+      "case": "block16",
+      "ciphertext_b64": "26jNzX0Baj5XJD94ohc8corABUSkKyMuyQgmNizaPJ4=",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-128-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "hviFnDtdcWoGbTZ/s15pIY67n2asMSaxJoLxb1UKFQZWuFw0daMXHNO4aMl1/Auc+vMGr57hZ63WyhM=",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-128-gcm",
+      "case": "empty",
+      "ciphertext_b64": "RKClnenHZc+ZsldozXUxSg==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-128-gcm",
+      "case": "block16",
+      "ciphertext_b64": "26jNzX0Baj5XJD94ohc8cgAoWjYI22wlq5zbz/k61P8=",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-128-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "hviFnDtdcWoGbTZ/s15pIY67n2asMSaxJoLxb1UKFQZWuFw0daMXHNO4aNc3N3q0F5qq/qizZC8hJ4A=",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-192-gcm",
+      "case": "empty",
+      "ciphertext_b64": "tBHycHpPVNRfkP84tia3gg==",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-192-gcm",
+      "case": "block16",
+      "ciphertext_b64": "VcaRwWbUOFRjfBmYGW0oAjR9zVpLYS5ku+8VBIt6R5M=",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-192-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "CJbZkCCIIwAyNRCfCCR9Ud8mD2W6evg4+UxstpX85VUXHDL+10lw2W6Wy2JwEfiNke7KhwO79sulTKs=",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-192-gcm",
+      "case": "empty",
+      "ciphertext_b64": "xZ0YdWKJUZeDcxKu6CxKaw==",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-192-gcm",
+      "case": "block16",
+      "ciphertext_b64": "VcaRwWbUOFRjfBmYGW0oArrBLPxhJH0Ti4oPmBOqGoA=",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-192-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "CJbZkCCIIwAyNRCfCCR9Ud8mD2W6evg4+UxstpX85VUXHDL+10lw2W6Wy0k2Coif1go6RxazhHfuc+c=",
+      "key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-256-gcm",
+      "case": "empty",
+      "ciphertext_b64": "D8SVfnk5jKj+nTGTeedrRQ==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-256-gcm",
+      "case": "block16",
+      "ciphertext_b64": "3gJSVruLk3JrrDXahHXIvIJhEPmmqBv8uMPlBPv8+F0=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "aes-256-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "g1IaB/3XiCY65TzdlTyd71qLlCH1+RrJi9doc58OrxePw0NxztQvGxS1/Wvy+gspea1dNatspYDc+nE=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-256-gcm",
+      "case": "empty",
+      "ciphertext_b64": "r5QbLiikYJI6wivgh02cmA==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-256-gcm",
+      "case": "block16",
+      "ciphertext_b64": "3gJSVruLk3JrrDXahHXIvHPh0wna9zQYW92pLSjt948=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "aes-256-gcm",
+      "case": "unaligned43",
+      "ciphertext_b64": "g1IaB/3XiCY65TzdlTyd71qLlCH1+RrJi9doc58OrxePw0NxztQvGxS1/XabCzQjWOwjHwE5HWVttW4=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "chacha20-poly1305",
+      "case": "empty",
+      "ciphertext_b64": "TohahIAID79CAXNbMqkxwg==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "",
+      "alg": "chacha20-poly1305",
+      "case": "block16",
+      "ciphertext_b64": "mmDljISzasODTBiK1OVgEish7Fq+xwSU2lQP2ixJJT4=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "",
+      "alg": "chacha20-poly1305",
+      "case": "unaligned43",
+      "ciphertext_b64": "xzCt3cLvcZfSBRGNxaw1QWQN74OufpF9VutjBhNt4udLBsKZR/AsmV6vtRrbzjTUZ/z50h3shDwhe/U=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "chacha20-poly1305",
+      "case": "empty",
+      "ciphertext_b64": "ZXPvVwxb5pKXLdgMiB6uUw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": ""
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "chacha20-poly1305",
+      "case": "block16",
+      "ciphertext_b64": "mmDljISzasODTBiK1OVgElRVm9oH50v6uDe84uD8hc4=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "aad_b64": "bWF6YnJpLWFhZC12MQ==",
+      "alg": "chacha20-poly1305",
+      "case": "unaligned43",
+      "ciphertext_b64": "xzCt3cLvcZfSBRGNxaw1QWQN74OufpF9VutjBhNt4udLBsKZR/AsmV6vtRBCEncd6S6wQHJOm5MZbi4=",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "nonce_b64": "sLGys7S1tre4ubq7",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    }
+  ],
   "asym_box": [
     {
       "alg": "rsa-oaep-sha256",
@@ -185,6 +403,344 @@
       "private_pem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEILmnDW1KWwg/LIePN4sg8CM2Z9MANHnRfi/28xzKPWEZ\n-----END PRIVATE KEY-----\n",
       "public_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAEBky3GsnLaG/WrLAY0eewUwqemz7thLal5Mn4fxVGaA=\n-----END PUBLIC KEY-----\n",
       "signature_b64": "cXMd+XE6BhREx/Lj7xE+VTp5hMsBZlepfSjymRalx0WxTJIbewo7t34P4i4WWn0pGW6fcypTxHESh28jk9d+Ag=="
+    }
+  ],
+  "symmetric": [
+    {
+      "alg": "aes-128-cbc",
+      "case": "empty",
+      "ciphertext_b64": "07t6tkWes/lB2YdxIsvpUQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-128-cbc",
+      "case": "block16",
+      "ciphertext_b64": "Kc2o09pWm+iPndyJ9u/dTu8hLeY9Ufizj4i4y9aBPFM=",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-128-cbc",
+      "case": "unaligned43",
+      "ciphertext_b64": "zDWCXQOTjVEtFQFlk8bLOxUI2uSDpPTbK4DcrZl6L/kCoYqg/tBvFXE0KlB+9ucV",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-256-cbc",
+      "case": "empty",
+      "ciphertext_b64": "6/46U2bknvokpVtoOiYdaw==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-256-cbc",
+      "case": "block16",
+      "ciphertext_b64": "X8O2ENDA0Bgw9WXg8MqQZ/skBgHAaBwp31BASXAhMSM=",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-256-cbc",
+      "case": "unaligned43",
+      "ciphertext_b64": "l+BGFfgFnyibqMLDK1WRd8pRMY9pUE7mRQ9WOS80MnydMlCfhDhQUKoPbnPXO6nk",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-128-ctr",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-128-ctr",
+      "case": "block16",
+      "ciphertext_b64": "+SCRIdhBqpjzy/TshzF3TQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-128-ctr",
+      "case": "unaligned43",
+      "ciphertext_b64": "pHDZcJ4dscyigv3rlngiHmZKz3AjBH5Kps5ZF6Aor3F7oBJCnVzPLS00EA==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-256-ctr",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-256-ctr",
+      "case": "block16",
+      "ciphertext_b64": "vtinfywbhVmKuYQ7CDksnQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-256-ctr",
+      "case": "unaligned43",
+      "ciphertext_b64": "44jvLmpHng3b8I08GXB5zrKpDAwjalXrAYZlkPSEL5SdJUDXNUyKs+gYRw==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-128-cfb",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-128-cfb",
+      "case": "block16",
+      "ciphertext_b64": "+SCRIdhBqpjzy/TshzF3TQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-128-cfb",
+      "case": "unaligned43",
+      "ciphertext_b64": "pHDZcJ4dscyigv3rlngiHs1nCnRv+9JR/+q6CMzs1JweGZ1kSW9saGIupQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-256-cfb",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-256-cfb",
+      "case": "block16",
+      "ciphertext_b64": "vtinfywbhVmKuYQ7CDksnQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-256-cfb",
+      "case": "unaligned43",
+      "ciphertext_b64": "44jvLmpHng3b8I08GXB5ztVuQ2JCnrZvyWZUqgUdGRc9jfLkUN/NiKtSAg==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-128-cfb8",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-128-cfb8",
+      "case": "block16",
+      "ciphertext_b64": "+T1NNLOzl0F2TX96Kr6HPg==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-128-cfb8",
+      "case": "unaligned43",
+      "ciphertext_b64": "pAvBvoyXhhz4SBoCejnwNtfKKW0R2ub08Ne9bFagZm3Q+Gog9ur9M9KRZw==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-256-cfb8",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-256-cfb8",
+      "case": "block16",
+      "ciphertext_b64": "vv2MYxKEIm4USvuxqQVnPQ==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-256-cfb8",
+      "case": "unaligned43",
+      "ciphertext_b64": "4xcwfwyKN8xxz8IC2ZY/njYf/GGotBQ6Zwd81y8sIEPEdA7n8UVt6le2Ug==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "sm4-cbc-pkcs7",
+      "case": "empty",
+      "ciphertext_b64": "OD3xBfg9kkMWPayaTkZxJg==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "sm4-cbc-pkcs7",
+      "case": "block16",
+      "ciphertext_b64": "LIHyOt48NkVqOAXVkVycJ49nOmRBm4K2AxeZii12RaU=",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "sm4-cbc-pkcs7",
+      "case": "unaligned43",
+      "ciphertext_b64": "Dg2auAH3pJbdKOFP6KYidtWghO9gNawwBsdcpCcmEf6cjaRZK49Zfz5XMbPutBB4",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "sm4-ctr",
+      "case": "empty",
+      "ciphertext_b64": "",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "sm4-ctr",
+      "case": "block16",
+      "ciphertext_b64": "DEOtOoH454ggKYlv7FofNA==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "sm4-ctr",
+      "case": "unaligned43",
+      "ciphertext_b64": "URPla8ek/NxxYIBo/RNKZ0iRKX8wRsspwfcmpnyMNeGeexnXhMFIwAAP3A==",
+      "iv_b64": "oKGio6SlpqeoqaqrrK2urw==",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-128-ecb",
+      "case": "empty",
+      "ciphertext_b64": "zU35j2pLRVdgpSOvoGh9/A==",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-128-ecb",
+      "case": "block16",
+      "ciphertext_b64": "yCop0NUuPrkWXI0482xXIs1N+Y9qS0VXYKUjr6Boffw=",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-128-ecb",
+      "case": "unaligned43",
+      "ciphertext_b64": "LHOhrM11we9yUTg7yJdpG9zeDlR2zBmWXsUS5E7JUBeTzRERz46GDMkq6ap6/5ZH",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "aes-256-ecb",
+      "case": "empty",
+      "ciphertext_b64": "Yr3JFvejUcXnMR4sDMccdA==",
+      "iv_b64": "",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "aes-256-ecb",
+      "case": "block16",
+      "ciphertext_b64": "fK8efxhw3Vft03lc8gG+ZGK9yRb3o1HF5zEeLAzHHHQ=",
+      "iv_b64": "",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "aes-256-ecb",
+      "case": "unaligned43",
+      "ciphertext_b64": "InlMnR8ZVK6EPrIBt4D08AWwE0vucUIPjgBJDzTpClQPQIS9f/BmccuxD2rYb/rn",
+      "iv_b64": "",
+      "key_b64": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "sm4-ecb-pkcs7",
+      "case": "empty",
+      "ciphertext_b64": "VN0H5X4NvejiYFUKBsuTsg==",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "sm4-ecb-pkcs7",
+      "case": "block16",
+      "ciphertext_b64": "tKeYToGy9awnJg5FL0eapVTdB+V+Db3o4mBVCgbLk7I=",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "sm4-ecb-pkcs7",
+      "case": "unaligned43",
+      "ciphertext_b64": "a7Utn1RVcW31Mi9w9E61kVr8XRv966SCzW+MDpTPbZ+Tpwi4al5ujQwwUBavUNAe",
+      "iv_b64": "",
+      "key_b64": "EBESExQVFhcYGRobHB0eHw==",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
+    },
+    {
+      "alg": "des-cbc-pkcs5",
+      "case": "empty",
+      "ciphertext_b64": "ywt6z4qwtc4=",
+      "iv_b64": "wMHCw8TFxsc=",
+      "key_b64": "UFFSU1RVVlc=",
+      "plaintext_b64": ""
+    },
+    {
+      "alg": "des-cbc-pkcs5",
+      "case": "block16",
+      "ciphertext_b64": "JGylLVryZy6lbqsSXhtcm+92g/yjglKJ",
+      "iv_b64": "wMHCw8TFxsc=",
+      "key_b64": "UFFSU1RVVlc=",
+      "plaintext_b64": "MDEyMzQ1Njc4OWFiY2RlZg=="
+    },
+    {
+      "alg": "des-cbc-pkcs5",
+      "case": "unaligned43",
+      "ciphertext_b64": "MxHCnrbwzsfW01s6gZt1bpeKJpjMkLc5fK6uwS9onCerjNEBzThbU8RQ1NQpDrwI",
+      "iv_b64": "wMHCw8TFxsc=",
+      "key_b64": "UFFSU1RVVlc=",
+      "plaintext_b64": "bWF6YnJpLWNpcGhlci0wNS1nb2xkZW4tdmVjdG9yLXBheWxvYWQtNDNiIQ=="
     }
   ]
 }

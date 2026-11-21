@@ -84,32 +84,32 @@ sha2 = "0.11"
 parking_lot = "0.12"
 hex = "0.4"
 redis = { version = "1.8", default-features = false, features = ["acl", "streams", "geospatial", "script", "tokio-comp", "connection-manager", "aio", "cluster-async"] }
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 hkdf = "0.13"
 hmac = "0.13"
 zeroize = { version = "1.8", features = ["derive"] }
 ed25519-dalek = { version = "3.0.0", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets"] }
 
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 subtle = "2.6"
-cbc = { version = "0.1", features = ["alloc"] }
-cipher = "0.4"
-ctr = "0.9"
-aes = "0.8"
-cfb-mode = "0.8"
-cfb8 = "0.8"
+cbc = { version = "0.2", features = ["alloc", "block-padding"] }
+cipher = { version = "0.5", features = ["alloc", "block-padding"] }
+ctr = "0.10"
+aes = "0.9"
+cfb-mode = "0.9"
+cfb8 = "0.9"
 blake3 = "1.5"
 digest = "0.11"
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
 p384 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "pem"] }
 rsa = { version = "0.10", default-features = false, features = ["std", "encoding", "getrandom", "hazmat", "pkcs1v15"] }
 sm3 = "0.5"
-sm4 = "0.5"
+sm4 = "0.6"
 libsm = "0.6"
-des = "0.8"
+des = "0.9"
 md-5 = "0.11"
-ecb = { version = "0.1", features = ["alloc"] }
+ecb = { version = "0.2", features = ["alloc", "block-padding"] }
 der = { version = "0.8", features = ["alloc", "pem", "oid"] }
 spki = { version = "0.8", features = ["alloc", "pem"] }
 pkcs8 = { version = "0.11", features = ["alloc", "pem"] }

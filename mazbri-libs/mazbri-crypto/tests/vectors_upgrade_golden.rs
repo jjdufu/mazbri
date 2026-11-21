@@ -1,6 +1,7 @@
 //! 依赖升级回归：`tests/interop/upgrade_golden.json` 由升级前的旧依赖
-//! （hmac 0.12、sha2 0.10、sm3 0.4、md-5 0.10、rsa 0.9、p256/p384 0.13）生成，
-//! 这里断言新依赖算出的 MAC / 摘要 / 确定性签名与旧值逐字节一致，
+//! （hmac 0.12、sha2 0.10、sm3 0.4、md-5 0.10、rsa 0.9、p256/p384 0.13、
+//! cipher 0.4、aes 0.8、sm4 0.5、des 0.8、aes-gcm 0.10、chacha20poly1305 0.10）生成，
+//! 这里断言新依赖算出的 MAC / 摘要 / 确定性签名 / 对称与 AEAD 密文与旧值逐字节一致，
 //! 旧签名、旧密文仍能验签 / 解密，保证线上格式不变。
 
 use base64::Engine;
@@ -151,4 +152,74 @@ fn old_rsa_ciphertexts_still_decrypt() {
         legacy_algs::rsa_pkcs1v15_public_decrypt(true, &public, &old_ct).expect("pd"),
         plaintext
     );
+}
+
+#[test]
+fn symmetric_and_aead_ciphertexts_match_pre_upgrade_golden() {
+    use mazbri_crypto::{
+        AeadAlgorithm, AeadSeal, BlockCipher, CfbParams, Sm4Algorithm, SymmetricAlgorithm,
+        decrypt_cfb, encrypt_cfb, sm,
+    };
+
+    let f = fixture();
+    let aead_cases = f["aead"].as_array().expect("aead");
+    assert_eq!(aead_cases.len(), 24);
+    for case in aead_cases {
+        let alg_str = text(case, "alg");
+        let alg = AeadAlgorithm::from_id(alg_str.parse().expect("id")).expect("aead alg");
+        let kr = KeyRef::raw(KeyPurpose::DataEncryption, b64(case, "key_b64"));
+        let nonce = b64(case, "nonce_b64");
+        let aad = b64(case, "aad_b64");
+        let pt = b64(case, "plaintext_b64");
+        let expected_ct = b64(case, "ciphertext_b64");
+        assert_eq!(alg.seal(&kr, &nonce, &aad, &pt).expect("seal"), expected_ct, "{alg_str}");
+        assert_eq!(alg.open(&kr, &nonce, &aad, &expected_ct).expect("open"), pt, "{alg_str}");
+    }
+
+    let sym_cases = f["symmetric"].as_array().expect("symmetric");
+    assert_eq!(sym_cases.len(), 42);
+    for case in sym_cases {
+        let alg_str = text(case, "alg");
+        let case_name = text(case, "case");
+        let kr = KeyRef::raw(KeyPurpose::DataEncryption, b64(case, "key_b64"));
+        let iv = b64(case, "iv_b64");
+        let pt = b64(case, "plaintext_b64");
+        let expected_ct = b64(case, "ciphertext_b64");
+        let (encrypted, decrypted) = match alg_str {
+            "aes-128-cfb8" => (
+                encrypt_cfb(SymmetricAlgorithm::Aes128Cfb, &kr, &iv, &pt, CfbParams::eight_bit()).unwrap(),
+                decrypt_cfb(SymmetricAlgorithm::Aes128Cfb, &kr, &iv, &expected_ct, CfbParams::eight_bit()).unwrap(),
+            ),
+            "aes-256-cfb8" => (
+                encrypt_cfb(SymmetricAlgorithm::Aes256Cfb, &kr, &iv, &pt, CfbParams::eight_bit()).unwrap(),
+                decrypt_cfb(SymmetricAlgorithm::Aes256Cfb, &kr, &iv, &expected_ct, CfbParams::eight_bit()).unwrap(),
+            ),
+            "sm4-cbc-pkcs7" | "sm4-ctr" => {
+                let alg = Sm4Algorithm::from_id(alg_str.parse().unwrap()).unwrap();
+                (alg.encrypt(&kr, &iv, &pt).unwrap(), alg.decrypt(&kr, &iv, &expected_ct).unwrap())
+            }
+            "aes-128-ecb" => (
+                legacy_algs::aes128_ecb_encrypt(true, &kr, &pt).unwrap(),
+                legacy_algs::aes128_ecb_decrypt(true, &kr, &expected_ct).unwrap(),
+            ),
+            "aes-256-ecb" => (
+                legacy_algs::aes256_ecb_encrypt(true, &kr, &pt).unwrap(),
+                legacy_algs::aes256_ecb_decrypt(true, &kr, &expected_ct).unwrap(),
+            ),
+            "sm4-ecb-pkcs7" => (
+                sm::sm4_ecb_encrypt(true, &kr, &pt).unwrap(),
+                sm::sm4_ecb_decrypt(true, &kr, &expected_ct).unwrap(),
+            ),
+            "des-cbc-pkcs5" => (
+                legacy_algs::des_cbc_encrypt(true, &kr, &iv, &pt).unwrap(),
+                legacy_algs::des_cbc_decrypt(true, &kr, &iv, &expected_ct).unwrap(),
+            ),
+            other => {
+                let alg = SymmetricAlgorithm::from_id(other.parse().unwrap()).unwrap();
+                (alg.encrypt(&kr, &iv, &pt).unwrap(), alg.decrypt(&kr, &iv, &expected_ct).unwrap())
+            }
+        };
+        assert_eq!(encrypted, expected_ct, "{alg_str}/{case_name} encrypt mismatch");
+        assert_eq!(decrypted, pt, "{alg_str}/{case_name} decrypt mismatch");
+    }
 }
