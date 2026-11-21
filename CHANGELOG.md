@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/jjdufu/mazbri/compare/v0.6.0...v0.6.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** 升级 jsonwebtoken 10 -&gt; 12 与 base64 0.22 -&gt; 0.23 并拦截网关空密钥 ([60082dc](https://github.com/jjdufu/mazbri/commit/60082dc49e1d44e362d827ad7b407445593573e7))
+
 ## [0.6.0](https://github.com/jjdufu/mazbri/compare/v0.5.4...v0.6.0) (2026-11-18)
 
 
