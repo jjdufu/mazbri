@@ -46,27 +46,30 @@ pub struct AccountRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-const BILL_COLUMNS: &str = "\
-    b.id, b.tenant_id, \
-    b.party_name AS tenant_name, \
-    b.party_code AS tenant_code, \
-    b.bill_kind, \
-    b.party_type, \
-    b.party_id, \
-    b.party_code, \
-    b.party_name, \
-    b.billing_period_start AS period_start, \
-    b.billing_period_end AS period_end, \
-    b.status, \
-    b.base_amount AS subtotal, \
-    b.total_amount AS total, \
-    'CNY'::text AS currency, \
-    b.total_calls, \
-    b.total_data_bytes, \
-    (b.billing_period_end + INTERVAL '15 days') AS due_date, \
-    b.created_at, \
-    b.updated_at, \
-    b.paid_at";
+macro_rules! bill_columns {
+    () => {
+        "b.id, b.tenant_id, \
+         b.party_name AS tenant_name, \
+         b.party_code AS tenant_code, \
+         b.bill_kind, \
+         b.party_type, \
+         b.party_id, \
+         b.party_code, \
+         b.party_name, \
+         b.billing_period_start AS period_start, \
+         b.billing_period_end AS period_end, \
+         b.status, \
+         b.base_amount AS subtotal, \
+         b.total_amount AS total, \
+         'CNY'::text AS currency, \
+         b.total_calls, \
+         b.total_data_bytes, \
+         (b.billing_period_end + INTERVAL '15 days') AS due_date, \
+         b.created_at, \
+         b.updated_at, \
+         b.paid_at"
+    };
+}
 fn map_bill_row(row: &sqlx::postgres::PgRow) -> BillRow {
     BillRow {
         id: row.get("id"),
@@ -93,7 +96,7 @@ fn map_bill_row(row: &sqlx::postgres::PgRow) -> BillRow {
     }
 }
 fn push_bill_search_clause(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     pattern: &str,
     matched_tenant_ids: &[uuid::Uuid],
 ) {
@@ -121,7 +124,7 @@ fn push_bill_search_clause(
 }
 
 fn push_bill_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     tenant_id: Option<uuid::Uuid>,
     search: Option<&str>,
     matched_tenant_ids: &[uuid::Uuid],
@@ -169,8 +172,11 @@ pub async fn list_bills(
         limit,
         offset,
     } = params;
-    let mut builder: QueryBuilder<_> =
-        QueryBuilder::new(format!("SELECT {BILL_COLUMNS} FROM bills b WHERE 1=1"));
+    let mut builder: QueryBuilder<_> = QueryBuilder::new(concat!(
+        "SELECT ",
+        bill_columns!(),
+        " FROM bills b WHERE 1=1"
+    ));
     push_bill_scope(
         &mut builder,
         tenant_id,
@@ -215,8 +221,10 @@ pub async fn count_bills(
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_bill(pool: &PgPool, bill_id: uuid::Uuid) -> Result<Option<BillRow>, sqlx::Error> {
-    let row = sqlx::query(&format!(
-        "SELECT {BILL_COLUMNS} FROM bills b WHERE b.id = $1"
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        bill_columns!(),
+        " FROM bills b WHERE b.id = $1"
     ))
     .bind(bill_id)
     .fetch_optional(pool)
@@ -761,7 +769,7 @@ pub struct ListReconciliationDiscrepanciesParams<'a> {
 }
 
 fn push_recon_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     params: &ListReconciliationDiscrepanciesParams<'_>,
 ) -> Result<(), crate::list_query::ListQueryError> {
     if let Some(from) = params.from {

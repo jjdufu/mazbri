@@ -55,7 +55,7 @@ pub struct TenantEnabledRow {
     pub enabled: bool,
 }
 fn push_tenant_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     enabled: Option<bool>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],

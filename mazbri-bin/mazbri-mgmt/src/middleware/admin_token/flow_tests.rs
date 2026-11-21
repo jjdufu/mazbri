@@ -909,7 +909,7 @@ async fn refresh_is_denied_after_account_state_changes() {
         ));
     }
     let mut outcomes = Vec::new();
-    for (sql, expected) in &cases {
+    for &(sql, expected) in &cases {
         let (case_user, case_refresh) = user_with_refresh_token(&deps).await;
         sqlx::query(sql)
             .bind(case_user.id)
@@ -918,7 +918,7 @@ async fn refresh_is_denied_after_account_state_changes() {
             .expect("mutate user");
         let (result, draft) = refresh_via_service(&deps, &case_refresh).await;
         outcomes.push((
-            *expected,
+            expected,
             matches!(result, Err(crate::error::ApiError::Unauthorized)),
             draft.failure_reason,
         ));

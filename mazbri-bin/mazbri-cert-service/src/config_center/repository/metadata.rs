@@ -289,12 +289,7 @@ impl super::super::ConfigRepository {
         &self,
         query: &ConfigSearchQuery,
     ) -> ConfigResult<Vec<ConfigEntryWithMeta>> {
-        let (where_clause, mut param_idx) = search_where_clause(query);
-        param_idx += 1;
-        let limit_param = param_idx;
-        param_idx += 1;
-        let offset_param = param_idx;
-        let sql = format!(
+        let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
             r"
             WITH matched_entries AS (
                 SELECT ce.id, ce.service_name, ce.content,
@@ -302,9 +297,58 @@ impl super::super::ConfigRepository {
                        ce.created_at, ce.updated_at, ce.category_id
                 FROM config_entries ce
                 LEFT JOIN config_categories cc ON ce.category_id = cc.id
-                WHERE {where_clause}
-                ORDER BY ce.service_name
-                LIMIT ${limit_param} OFFSET ${offset_param}
+                WHERE 1 = 1",
+        );
+        if let Some(ref service_name) = query.service_name {
+            builder.push(" AND ce.service_name ILIKE ");
+            builder.push_bind(contains_pattern(service_name));
+        }
+        if let Some(ref service_name_eq) = query.service_name_eq {
+            builder.push(" AND ce.service_name = ");
+            builder.push_bind(service_name_eq);
+        }
+        if let Some(ref updated_by) = query.updated_by {
+            builder.push(" AND ce.updated_by ILIKE ");
+            builder.push_bind(contains_pattern(updated_by));
+        }
+        if let Some(ref gte) = query.updated_at_gte {
+            builder.push(" AND ce.updated_at >= ");
+            builder.push_bind(gte);
+            builder.push("::timestamptz");
+        }
+        if let Some(ref lte) = query.updated_at_lte {
+            builder.push(" AND ce.updated_at <= ");
+            builder.push_bind(lte);
+            builder.push("::timestamptz");
+        }
+        if let Some(ref q) = query.q {
+            let pat = contains_pattern(q);
+            builder.push(" AND (ce.service_name ILIKE ");
+            builder.push_bind(pat.clone());
+            builder.push(" OR ce.updated_by ILIKE ");
+            builder.push_bind(pat);
+            builder.push(")");
+        }
+        if let Some(ref category_name) = query.category {
+            builder.push(" AND cc.name = ");
+            builder.push_bind(category_name);
+        }
+        if let Some(ref tags) = query.tags
+            && !tags.is_empty()
+        {
+            builder.push(
+                " AND ce.id IN (SELECT config_entry_id FROM config_entry_tags \
+                 WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(",
+            );
+            builder.push_bind(tags);
+            builder.push(")))");
+        }
+        builder.push(" ORDER BY ce.service_name LIMIT ");
+        builder.push_bind(query.limit);
+        builder.push(" OFFSET ");
+        builder.push_bind(query.offset);
+        builder.push(
+            r"
             )
             SELECT me.*,
                    COALESCE(json_agg(DISTINCT jsonb_build_object(
@@ -320,92 +364,11 @@ impl super::super::ConfigRepository {
                      me.content_hash, me.is_sensitive, me.updated_by,
                      me.created_at, me.updated_at, me.category_id
             ORDER BY me.service_name
-            "
+            ",
         );
-        let mut sql_query = sqlx::query(&sql);
-        if let Some(ref service_name) = query.service_name {
-            sql_query = sql_query.bind(contains_pattern(service_name));
-        }
-        if let Some(ref service_name_eq) = query.service_name_eq {
-            sql_query = sql_query.bind(service_name_eq.clone());
-        }
-        if let Some(ref updated_by) = query.updated_by {
-            sql_query = sql_query.bind(contains_pattern(updated_by));
-        }
-        if let Some(ref gte) = query.updated_at_gte {
-            sql_query = sql_query.bind(gte.clone());
-        }
-        if let Some(ref lte) = query.updated_at_lte {
-            sql_query = sql_query.bind(lte.clone());
-        }
-        if let Some(ref q) = query.q {
-            sql_query = sql_query.bind(contains_pattern(q));
-        }
-        if let Some(ref category_name) = query.category {
-            sql_query = sql_query.bind(category_name);
-        }
-        if let Some(ref tags) = query.tags
-            && !tags.is_empty()
-        {
-            sql_query = sql_query.bind(tags);
-        }
-        sql_query = sql_query.bind(query.limit).bind(query.offset);
-        let rows = sql_query.fetch_all(&*self.db).await?;
+        let rows = builder.build().fetch_all(&*self.db).await?;
         Ok(rows.iter().map(row_to_entry_with_meta).collect())
     }
-}
-/// 构造 `search_configs` 的 WHERE 子句；返回已占用的参数序号。
-fn search_where_clause(query: &ConfigSearchQuery) -> (String, usize) {
-    let mut conditions: Vec<String> = Vec::new();
-    let mut param_idx = 0usize;
-    // service_name: contains (ILIKE) — mgmt list search uses this as free-text.
-    if query.service_name.is_some() {
-        param_idx += 1;
-        conditions.push(format!("ce.service_name ILIKE ${param_idx}"));
-    }
-    if query.service_name_eq.is_some() {
-        param_idx += 1;
-        conditions.push(format!("ce.service_name = ${param_idx}"));
-    }
-    if query.updated_by.is_some() {
-        param_idx += 1;
-        conditions.push(format!("ce.updated_by ILIKE ${param_idx}"));
-    }
-    if query.updated_at_gte.is_some() {
-        param_idx += 1;
-        conditions.push(format!("ce.updated_at >= ${param_idx}::timestamptz"));
-    }
-    if query.updated_at_lte.is_some() {
-        param_idx += 1;
-        conditions.push(format!("ce.updated_at <= ${param_idx}::timestamptz"));
-    }
-    if query.q.is_some() {
-        param_idx += 1;
-        conditions.push(format!(
-            "(ce.service_name ILIKE ${param_idx} OR ce.updated_by ILIKE ${param_idx})"
-        ));
-    }
-    if query.category.is_some() {
-        param_idx += 1;
-        conditions.push(format!("cc.name = ${param_idx}"));
-    }
-    if let Some(ref tags) = query.tags
-        && !tags.is_empty()
-    {
-        param_idx += 1;
-        conditions
-                .push(
-                    format!(
-                        "ce.id IN (SELECT config_entry_id FROM config_entry_tags WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(${param_idx})))"
-                    ),
-                );
-    }
-    let where_clause = if conditions.is_empty() {
-        "1 = 1".to_string()
-    } else {
-        conditions.join(" AND ")
-    };
-    (where_clause, param_idx)
 }
 
 fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {

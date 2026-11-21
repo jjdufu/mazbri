@@ -394,24 +394,33 @@ async fn rank_query(
     pool: &PgPool,
     since: NaiveDate,
     end: NaiveDate,
-    dim_sql: &str,
-    filter_sql: &str,
+    dim_sql: &'static str,
+    filter_sql: &'static str,
     limit: i64,
 ) -> Result<Vec<(String, Decimal, Decimal, bool)>, BillingError> {
-    let sql = format!(
-        "SELECT {dim_sql} AS key, \
-                COALESCE(SUM(revenue), 0)::numeric AS revenue, \
-                COALESCE(SUM(cost), 0)::numeric AS cost, \
-                COALESCE(BOOL_OR(has_cost), false) AS has_cost \
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+    builder.push(dim_sql);
+    builder.push(
+        " AS key, \
+         COALESCE(SUM(revenue), 0)::numeric AS revenue, \
+         COALESCE(SUM(cost), 0)::numeric AS cost, \
+         COALESCE(BOOL_OR(has_cost), false) AS has_cost \
          FROM mv_daily_revenue_cost \
-         WHERE day >= $1 AND day <= $2 {filter_sql} \
-         GROUP BY 1 HAVING {dim_sql} IS NOT NULL AND {dim_sql}::text <> '' \
-         ORDER BY SUM(revenue) DESC, SUM(cost) DESC NULLS LAST LIMIT $3"
+         WHERE day >= ",
     );
-    let rows = sqlx::query(&sql)
-        .bind(since)
-        .bind(end)
-        .bind(limit)
+    builder.push_bind(since);
+    builder.push(" AND day <= ");
+    builder.push_bind(end);
+    builder.push(" ");
+    builder.push(filter_sql);
+    builder.push(" GROUP BY 1 HAVING ");
+    builder.push(dim_sql);
+    builder.push(" IS NOT NULL AND ");
+    builder.push(dim_sql);
+    builder.push("::text <> '' ORDER BY SUM(revenue) DESC, SUM(cost) DESC NULLS LAST LIMIT ");
+    builder.push_bind(limit);
+    let rows = builder
+        .build()
         .fetch_all(pool)
         .await
         .map_err(db_err("finance ranks"))?;

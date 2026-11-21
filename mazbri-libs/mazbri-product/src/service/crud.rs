@@ -227,11 +227,11 @@ impl ProductService {
         mut apply_extra: F,
     ) -> Result<(Vec<Product>, i64)>
     where
-        F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
+        F: FnMut(&mut QueryBuilder<Postgres>) -> Result<(), String>,
     {
         let search_pattern = search.map(|value| format!("%{value}%"));
 
-        let mut count_builder: QueryBuilder<'_, Postgres> =
+        let mut count_builder: QueryBuilder<Postgres> =
             QueryBuilder::new("SELECT COUNT(*) FROM products WHERE 1=1");
         if let Some(ref p) = search_pattern {
             count_builder.push(" AND (name ILIKE ");
@@ -243,7 +243,7 @@ impl ProductService {
         apply_extra(&mut count_builder).map_err(|e| anyhow::anyhow!(e))?;
         let total: i64 = count_builder.build().fetch_one(&self.db).await?.get(0);
 
-        let mut list_builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+        let mut list_builder: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, product_id, name, description, \
              timeout_secs, enabled, cb_pro_enabled, \
              cb_failure_threshold, cb_success_threshold, cb_cooldown_secs, \

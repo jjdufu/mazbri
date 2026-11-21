@@ -19,7 +19,7 @@ use uuid::Uuid;
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn apply_pg_filters(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     filters: &[ValidatedFilter],
 ) -> Result<(), ListQueryError> {
     for f in filters {
@@ -29,7 +29,7 @@ pub fn apply_pg_filters(
 }
 
 fn apply_one(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     f: &ValidatedFilter,
 ) -> Result<(), ListQueryError> {
     let expr = f.sql_expr;
@@ -69,8 +69,8 @@ fn apply_one(
 }
 
 fn apply_string_like(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -132,8 +132,8 @@ fn apply_string_like(
 }
 
 fn apply_uuid(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -178,8 +178,8 @@ fn apply_uuid(
 }
 
 fn apply_bool(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -205,8 +205,8 @@ fn apply_bool(
 }
 
 fn apply_i64(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -271,8 +271,8 @@ fn apply_i64(
 }
 
 fn apply_decimal(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -354,8 +354,8 @@ fn apply_decimal(
 }
 
 fn apply_datetime(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    expr: &str,
+    builder: &mut QueryBuilder<Postgres>,
+    expr: &'static str,
     op: FilterOp,
     value: &FilterValue,
     field: &str,
@@ -714,10 +714,11 @@ mod tests {
             },
         ];
         let validated = validate_filters(&catalog, &filters).unwrap();
-        let mut builder: QueryBuilder<'_, Postgres> =
+        let mut builder: QueryBuilder<Postgres> =
             QueryBuilder::new("SELECT 1 FROM tenants WHERE 1=1");
         apply_pg_filters(&mut builder, &validated).unwrap();
         let sql = builder.sql();
+        let sql = sql.as_str();
         assert!(sql.contains("name ILIKE"));
         assert!(sql.contains("created_at >="));
         assert!(sql.contains("created_at <"));
@@ -732,10 +733,11 @@ mod tests {
             value: Some(FilterValue::String("CH-1".into())),
         }];
         let validated = validate_filters(&catalog, &filters).unwrap();
-        let mut builder: QueryBuilder<'_, Postgres> =
+        let mut builder: QueryBuilder<Postgres> =
             QueryBuilder::new("SELECT 1 FROM products WHERE 1=1");
         apply_pg_filters(&mut builder, &validated).unwrap();
         let sql = builder.sql();
+        let sql = sql.as_str();
         assert!(sql.contains("r.product_id = products.id"), "{sql}");
         assert!(sql.contains("LIMIT 1) = $1"), "{sql}");
     }

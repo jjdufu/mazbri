@@ -1,5 +1,5 @@
 use sqlx::{PgPool, QueryBuilder};
-type Qb<'a> = QueryBuilder<'a, sqlx::Postgres>;
+type Qb = QueryBuilder<sqlx::Postgres>;
 /// 平台规模（非时间窗）：租户总数、已启用租户数、已启用产品数。
 ///
 /// # Errors
@@ -25,11 +25,11 @@ pub async fn tenant_exists(db: &PgPool, tenant_id: uuid::Uuid) -> Result<i64, sq
 }
 #[must_use]
 pub fn build_usage_analytics_query(
-    sql_template: &str,
+    sql_template: &'static str,
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(sql_template);
     builder.push_bind(tenant_id);
     if let Some(start) = start_time {
@@ -50,7 +50,7 @@ pub fn build_top_endpoints_query(
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT api_endpoint, http_method, COUNT(*) AS request_count, AVG(billing_service_duration_ms) AS avg_billing_service_duration_ms, SUM(billable_amount) AS total_cost \
          FROM usage_records WHERE tenant_id = ",
@@ -74,7 +74,7 @@ pub fn build_status_distribution_query(
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT response_status, COUNT(*) AS count FROM usage_records WHERE tenant_id = ",
     );
@@ -94,11 +94,11 @@ pub fn build_status_distribution_query(
 }
 #[must_use]
 pub fn build_ratelimit_analytics_query(
-    sql_template: &str,
+    sql_template: &'static str,
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(sql_template);
     builder.push_bind(tenant_id);
     if let Some(start) = start_time {
@@ -119,7 +119,7 @@ pub fn build_denial_reasons_query(
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT reason, COUNT(*) AS count, COUNT(*) * 100.0 / NULLIF(SUM(COUNT(*)) OVER (), 0) AS percentage \
          FROM rate_limit_events WHERE tenant_id = ",
@@ -144,7 +144,7 @@ pub fn build_scope_breakdown_query(
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT scope, counter_type, COUNT(*) AS total_checks, \
          COUNT(*) FILTER (WHERE allowed = true) AS allowed_count, \
@@ -170,7 +170,7 @@ pub fn build_top_denied_apis_query(
     tenant_id: uuid::Uuid,
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT api_endpoint, COUNT(*) AS total_checks, \
          COUNT(*) FILTER (WHERE allowed = false) AS denied_count, \
@@ -196,7 +196,7 @@ pub fn build_top_denied_apis_query(
 pub fn build_ratelimit_platform_overall_query(
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT COUNT(*) AS total_checks, COUNT(*) FILTER (WHERE allowed = true) AS total_allowed, \
          COUNT(*) FILTER (WHERE allowed = false) AS total_denied, COUNT(DISTINCT tenant_id) AS active_tenants \
@@ -218,7 +218,7 @@ pub fn build_ratelimit_platform_overall_query(
 pub fn build_ratelimit_platform_top_tenants_query(
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT rle.tenant_id, t.name AS tenant_name, COUNT(*) AS total_checks, \
          COUNT(*) FILTER (WHERE rle.allowed = false) AS denied_count \
@@ -241,7 +241,7 @@ pub fn build_ratelimit_platform_top_tenants_query(
 pub fn build_ratelimit_platform_scope_dist_query(
     start_time: Option<i64>,
     end_time: Option<i64>,
-) -> Qb<'static> {
+) -> Qb {
     let mut builder = QueryBuilder::new(
         "SELECT scope, counter_type, COUNT(*) AS total_checks, COUNT(*) FILTER (WHERE allowed = false) AS denied_count \
          FROM rate_limit_events WHERE 1=1",

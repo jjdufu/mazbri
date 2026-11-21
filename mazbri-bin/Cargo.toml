@@ -63,7 +63,7 @@ hmac = { version = "0.13" }
 hostname = { version = "0.4" }
 http = { version = "1.4.0" }
 http-body = { version = "1" }
-ipnetwork = { version = "0.20" }
+ipnetwork = { version = "0.21" }
 jsonwebtoken = { version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
 lru = { version = "0.16.3" }
@@ -84,7 +84,7 @@ serde_yaml = { version = "0.9" }
 sha1 = { version = "0.11" }
 sha2 = { version = "0.11" }
 socket2 = { version = "0.5" }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "derive", "uuid"] }
 subtle = { version = "2.6" }
 tarpc = { version = "0.38", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"] }
 thiserror = { version = "2.0" }
@@ -123,9 +123,6 @@ strip = true
 panic = "unwind"
 
 # RSA / SM2 大数运算在 debug 下极慢（测试里的 keygen / 签名可达分钟级），仅对这些依赖开优化。
-[profile.dev.package.num-bigint-dig]
-opt-level = 3
-
 [profile.dev.package.rsa]
 opt-level = 3
 

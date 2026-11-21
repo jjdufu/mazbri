@@ -172,7 +172,7 @@ impl CertificateRepository {
         limit: i64,
         offset: i64,
     ) -> CertResult<Vec<CertificateSummary>> {
-        let mut builder: sqlx::QueryBuilder<'_, sqlx::Postgres> = sqlx::QueryBuilder::new(
+        let mut builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
             "SELECT id, subject, issued_at, expires_at, revoked, revoked_at, renewal_count, dns_names, fingerprint \
              FROM certificates WHERE 1=1",
         );
@@ -254,7 +254,7 @@ impl CertificateRepository {
         q: Option<&str>,
         filters: &[CertListFilter],
     ) -> CertResult<i64> {
-        let mut builder: sqlx::QueryBuilder<'_, sqlx::Postgres> =
+        let mut builder: sqlx::QueryBuilder<sqlx::Postgres> =
             sqlx::QueryBuilder::new("SELECT COUNT(*) FROM certificates WHERE 1=1");
         push_cert_list_scope(&mut builder, include_revoked, q, filters)?;
         let count: i64 = builder.build_query_scalar().fetch_one(&*self.db).await?;
@@ -353,7 +353,7 @@ impl CertificateRepository {
 const CERT_STATUS_SQL: &str = "CASE WHEN revoked THEN 'revoked' WHEN expires_at <= NOW() THEN 'expired' WHEN expires_at <= NOW() + INTERVAL '30 days' THEN 'expiring_soon' ELSE 'valid' END";
 
 fn push_cert_list_scope(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     include_revoked: bool,
     q: Option<&str>,
     filters: &[CertListFilter],
@@ -378,7 +378,7 @@ fn push_cert_list_scope(
 }
 
 fn push_cert_filter(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     f: &CertListFilter,
 ) -> CertResult<()> {
     let op = f.op.as_str();
@@ -418,8 +418,8 @@ fn filter_string(value: Option<&serde_json::Value>) -> CertResult<String> {
 }
 
 fn push_str_filter(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
-    expr: &str,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    expr: &'static str,
     op: &str,
     value: Option<&serde_json::Value>,
 ) -> CertResult<()> {
@@ -531,8 +531,8 @@ fn parse_dt(raw: &str) -> Option<DateTime<Utc>> {
 }
 
 fn push_datetime_filter(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
-    expr: &str,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    expr: &'static str,
     op: &str,
     value: Option<&serde_json::Value>,
 ) -> CertResult<()> {

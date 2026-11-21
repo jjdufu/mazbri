@@ -44,12 +44,15 @@ pub struct AdminMfaRow {
     pub role: String,
     pub mfa_enabled: bool,
 }
-const ADMIN_COLUMNS: &str = "\
-    id, username, display_name, email, role, is_active, \
-    password_changed_at, force_password_reset, mfa_enabled, mfa_required, \
-    created_at, updated_at, last_login_at";
+macro_rules! admin_columns {
+    () => {
+        "id, username, display_name, email, role, is_active, \
+         password_changed_at, force_password_reset, mfa_enabled, mfa_required, \
+         created_at, updated_at, last_login_at"
+    };
+}
 fn push_admin_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     role: Option<&str>,
     status: Option<&str>,
     search_pattern: Option<&str>,
@@ -112,8 +115,11 @@ pub async fn list_admins(
     page_size: i64,
     offset: i64,
 ) -> Result<Vec<AdminRow>, sqlx::Error> {
-    let mut builder: QueryBuilder<_> =
-        QueryBuilder::new(format!("SELECT {ADMIN_COLUMNS} FROM admin_users WHERE 1=1"));
+    let mut builder: QueryBuilder<_> = QueryBuilder::new(concat!(
+        "SELECT ",
+        admin_columns!(),
+        " FROM admin_users WHERE 1=1"
+    ));
     push_admin_scope(&mut builder, role, status, search_pattern, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
     builder.push(" ORDER BY created_at DESC LIMIT ");
@@ -149,14 +155,12 @@ pub async fn insert_admin(
     pool: &PgPool,
     params: InsertAdminParams<'_>,
 ) -> Result<AdminRow, sqlx::Error> {
-    let query = format!(
-        r"
-        INSERT INTO admin_users (username, display_name, email, password_hash, role, is_active, password_changed_at, force_password_reset, mfa_required)
-        VALUES ($1, $2, $3, $4, $5, true, NOW(), $6, $7)
-        RETURNING {ADMIN_COLUMNS}
-        "
-    );
-    sqlx::query_as::<_, AdminRow>(&query)
+    sqlx::query_as::<_, AdminRow>(concat!(
+        "INSERT INTO admin_users (username, display_name, email, password_hash, role, is_active, password_changed_at, force_password_reset, mfa_required) \
+         VALUES ($1, $2, $3, $4, $5, true, NOW(), $6, $7) \
+         RETURNING ",
+        admin_columns!()
+    ))
         .bind(params.username)
         .bind(params.display_name)
         .bind(params.email)
@@ -171,8 +175,11 @@ pub async fn insert_admin(
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn find_by_id(pool: &PgPool, id: uuid::Uuid) -> Result<Option<AdminRow>, sqlx::Error> {
-    let query = format!("SELECT {ADMIN_COLUMNS} FROM admin_users WHERE id = $1");
-    sqlx::query_as::<_, AdminRow>(&query)
+    sqlx::query_as::<_, AdminRow>(concat!(
+        "SELECT ",
+        admin_columns!(),
+        " FROM admin_users WHERE id = $1"
+    ))
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -309,7 +316,7 @@ pub async fn update_admin(pool: &PgPool, update: AdminUpdate<'_>) -> Result<Admi
     }
     builder.push(" WHERE id = ");
     builder.push_bind(id);
-    builder.push(format!(" RETURNING {ADMIN_COLUMNS}"));
+    builder.push(concat!(" RETURNING ", admin_columns!()));
     let row = builder.build().fetch_one(pool).await?;
     AdminRow::from_row(&row)
 }

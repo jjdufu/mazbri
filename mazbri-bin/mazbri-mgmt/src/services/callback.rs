@@ -84,7 +84,7 @@ pub struct PaginatedDeliveries {
 }
 
 fn push_subscription_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
 ) -> Result<(), crate::list_query::ListQueryError> {
@@ -271,7 +271,7 @@ pub async fn delete_subscription(
     Ok(())
 }
 fn push_delivery_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
 ) -> Result<(), crate::list_query::ListQueryError> {

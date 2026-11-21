@@ -2,12 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
 
-const PROFILE_RETURNING: &str = r"
-    tenant_id, encryption_mode, profile_version, suite, data_alg, mac_alg,
-    require_signature, allow_insecure, require_request_binding, signature_version,
-    current_key_version, nonce_ttl_seconds, clock_skew_seconds,
-    config, created_at, updated_at
-";
+macro_rules! profile_returning {
+    () => {
+        "tenant_id, encryption_mode, profile_version, suite, data_alg, mac_alg, \
+         require_signature, allow_insecure, require_request_binding, signature_version, \
+         current_key_version, nonce_ttl_seconds, clock_skew_seconds, \
+         config, created_at, updated_at"
+    };
+}
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct TenantCryptoProfileRow {
@@ -80,24 +82,26 @@ pub async fn upsert_profile_defaults(
     pool: &PgPool,
     tenant_id: uuid::Uuid,
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
-    let sql = format!(
-        r"
-        WITH inserted AS (
-            INSERT INTO tenant_crypto_profiles (tenant_id)
-            VALUES ($1)
-            ON CONFLICT (tenant_id) DO NOTHING
-            RETURNING {PROFILE_RETURNING}
-        )
-        SELECT {PROFILE_RETURNING} FROM inserted
-        UNION ALL
-        SELECT {PROFILE_RETURNING} FROM tenant_crypto_profiles
-        WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)
-        "
-    );
-    sqlx::query_as::<_, TenantCryptoProfileRow>(&sql)
-        .bind(tenant_id)
-        .fetch_one(pool)
-        .await
+    sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
+        "WITH inserted AS ( \
+            INSERT INTO tenant_crypto_profiles (tenant_id) \
+            VALUES ($1) \
+            ON CONFLICT (tenant_id) DO NOTHING \
+            RETURNING ",
+        profile_returning!(),
+        ") \
+         SELECT ",
+        profile_returning!(),
+        " FROM inserted \
+         UNION ALL \
+         SELECT ",
+        profile_returning!(),
+        " FROM tenant_crypto_profiles \
+         WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
+    ))
+    .bind(tenant_id)
+    .fetch_one(pool)
+    .await
 }
 
 pub struct UpdateCryptoProfileParams<'a> {
@@ -123,33 +127,31 @@ pub async fn update_profile(
     pool: &PgPool,
     params: UpdateCryptoProfileParams<'_>,
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
-    let sql = format!(
-        r"
-        INSERT INTO tenant_crypto_profiles (
-            tenant_id, encryption_mode, suite, data_alg, mac_alg,
-            require_signature, allow_insecure, require_request_binding, signature_version,
-            nonce_ttl_seconds, clock_skew_seconds, current_key_version,
-            created_by, updated_by
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
-        ON CONFLICT (tenant_id) DO UPDATE SET
-            encryption_mode = EXCLUDED.encryption_mode,
-            suite = EXCLUDED.suite,
-            data_alg = EXCLUDED.data_alg,
-            mac_alg = EXCLUDED.mac_alg,
-            require_signature = EXCLUDED.require_signature,
-            allow_insecure = EXCLUDED.allow_insecure,
-            require_request_binding = EXCLUDED.require_request_binding,
-            signature_version = EXCLUDED.signature_version,
-            nonce_ttl_seconds = EXCLUDED.nonce_ttl_seconds,
-            clock_skew_seconds = EXCLUDED.clock_skew_seconds,
-            current_key_version = EXCLUDED.current_key_version,
-            updated_by = EXCLUDED.updated_by,
-            updated_at = NOW()
-        RETURNING {PROFILE_RETURNING}
-        "
-    );
-    sqlx::query_as::<_, TenantCryptoProfileRow>(&sql)
+    sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
+        "INSERT INTO tenant_crypto_profiles ( \
+            tenant_id, encryption_mode, suite, data_alg, mac_alg, \
+            require_signature, allow_insecure, require_request_binding, signature_version, \
+            nonce_ttl_seconds, clock_skew_seconds, current_key_version, \
+            created_by, updated_by \
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13) \
+        ON CONFLICT (tenant_id) DO UPDATE SET \
+            encryption_mode = EXCLUDED.encryption_mode, \
+            suite = EXCLUDED.suite, \
+            data_alg = EXCLUDED.data_alg, \
+            mac_alg = EXCLUDED.mac_alg, \
+            require_signature = EXCLUDED.require_signature, \
+            allow_insecure = EXCLUDED.allow_insecure, \
+            require_request_binding = EXCLUDED.require_request_binding, \
+            signature_version = EXCLUDED.signature_version, \
+            nonce_ttl_seconds = EXCLUDED.nonce_ttl_seconds, \
+            clock_skew_seconds = EXCLUDED.clock_skew_seconds, \
+            current_key_version = EXCLUDED.current_key_version, \
+            updated_by = EXCLUDED.updated_by, \
+            updated_at = NOW() \
+        RETURNING ",
+        profile_returning!()
+    ))
         .bind(params.tenant_id)
         .bind(params.encryption_mode)
         .bind(params.suite)
@@ -273,23 +275,33 @@ pub async fn update_key_status(
     status: &str,
     actor_id: uuid::Uuid,
 ) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    let timestamp_column = match status {
-        "active" => "activated_at",
-        "deprecated" => "deprecated_at",
-        "disabled" => "disabled_at",
-        _ => "updated_at",
+    macro_rules! key_returning {
+        () => {
+            " WHERE tenant_id = $3 AND key_version = $4 \
+             RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id, \
+                 wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at, \
+                 activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata"
+        };
+    }
+    let sql = match status {
+        "active" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), activated_at = NOW()",
+            key_returning!()
+        ),
+        "deprecated" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), deprecated_at = NOW()",
+            key_returning!()
+        ),
+        "disabled" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), disabled_at = NOW()",
+            key_returning!()
+        ),
+        _ => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW()",
+            key_returning!()
+        ),
     };
-    let sql = format!(
-        r"
-        UPDATE tenant_crypto_keys
-        SET status = $1, updated_by = $2, updated_at = NOW(), {timestamp_column} = NOW()
-        WHERE tenant_id = $3 AND key_version = $4
-        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        "
-    );
-    sqlx::query_as::<_, TenantCryptoKeyRow>(&sql)
+    sqlx::query_as::<_, TenantCryptoKeyRow>(sql)
         .bind(status)
         .bind(actor_id)
         .bind(tenant_id)
@@ -398,16 +410,13 @@ pub async fn active_key_count(pool: &PgPool, tenant_id: uuid::Uuid) -> Result<i6
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_all_profiles(pool: &PgPool) -> Result<Vec<TenantCryptoProfileRow>, sqlx::Error> {
-    let sql = format!(
-        r"
-        SELECT {PROFILE_RETURNING}
-        FROM tenant_crypto_profiles
-        ORDER BY tenant_id
-        "
-    );
-    sqlx::query_as::<_, TenantCryptoProfileRow>(&sql)
-        .fetch_all(pool)
-        .await
+    sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
+        "SELECT ",
+        profile_returning!(),
+        " FROM tenant_crypto_profiles ORDER BY tenant_id"
+    ))
+    .fetch_all(pool)
+    .await
 }
 
 /// # Errors

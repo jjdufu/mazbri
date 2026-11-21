@@ -113,15 +113,60 @@ pub struct RouteBindingUpdate<'a> {
     pub channel_order: Option<i32>,
     pub switch_condition: Option<&'a serde_json::Value>,
 }
-const CHANNEL_COLUMNS: &str = "id, supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, status, config, created_at, updated_at";
-const ROUTE_RULE_COLUMNS: &str =
-    "id, tenant_id, product_id, priority, status, metadata, created_at, updated_at";
-const ROUTE_BINDING_COLUMNS: &str =
-    "id, route_rule_id, channel_id, channel_order, switch_condition, created_at, updated_at";
-pub const ROUTE_RULE_COLUMNS_FOR_SERVICE: &str = ROUTE_RULE_COLUMNS;
-pub const ROUTE_BINDING_COLUMNS_FOR_SERVICE: &str = ROUTE_BINDING_COLUMNS;
+macro_rules! channel_columns {
+    () => {
+        "id, supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, status, config, created_at, updated_at"
+    };
+}
+macro_rules! route_rule_columns {
+    () => {
+        "id, tenant_id, product_id, priority, status, metadata, created_at, updated_at"
+    };
+}
+macro_rules! route_binding_columns {
+    () => {
+        "id, route_rule_id, channel_id, channel_order, switch_condition, created_at, updated_at"
+    };
+}
+const CHANNEL_COLUMNS: &str = channel_columns!();
+const ROUTE_RULE_COLUMNS: &str = route_rule_columns!();
+const ROUTE_BINDING_COLUMNS: &str = route_binding_columns!();
+pub const INSERT_ROUTE_RULE_SQL: &str = concat!(
+    "INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata) \
+     VALUES ($1, $2, $3, $4, $5) \
+     RETURNING ",
+    route_rule_columns!()
+);
+pub const INSERT_ROUTE_BINDING_SQL: &str = concat!(
+    "INSERT INTO route_channel_bindings (route_rule_id, channel_id, channel_order, switch_condition) \
+     VALUES ($1, $2, $3, $4) \
+     RETURNING ",
+    route_binding_columns!()
+);
+pub const LOCK_ROUTE_RULE_SQL: &str = concat!(
+    "SELECT ",
+    route_rule_columns!(),
+    " FROM route_rules WHERE id = $1 FOR UPDATE"
+);
+pub const LOCK_ROUTE_BINDINGS_SQL: &str = concat!(
+    "SELECT ",
+    route_binding_columns!(),
+    " FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC FOR UPDATE"
+);
+pub const UPDATE_EMERGENCY_ROUTE_RULE_SQL: &str = concat!(
+    "UPDATE route_rules \
+     SET status = 'active', metadata = $2, updated_at = NOW() \
+     WHERE id = $1 \
+     RETURNING ",
+    route_rule_columns!()
+);
+pub const SELECT_ROUTE_BINDINGS_BY_RULE_SQL: &str = concat!(
+    "SELECT ",
+    route_binding_columns!(),
+    " FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC"
+);
 fn push_channel_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     status: Option<&str>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
@@ -212,8 +257,10 @@ pub async fn find_channel_by_id(
     pool: &PgPool,
     id: uuid::Uuid,
 ) -> Result<Option<ChannelRow>, sqlx::Error> {
-    sqlx::query_as::<_, ChannelRow>(&format!(
-        "SELECT {CHANNEL_COLUMNS} FROM channels WHERE id = $1"
+    sqlx::query_as::<_, ChannelRow>(concat!(
+        "SELECT ",
+        channel_columns!(),
+        " FROM channels WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -226,16 +273,12 @@ pub async fn insert_channel(
     pool: &PgPool,
     input: ChannelInsert<'_>,
 ) -> Result<ChannelRow, sqlx::Error> {
-    sqlx::query_as::<
-        _,
-        ChannelRow,
-    >(
-            &format!(
-                "INSERT INTO channels (supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, config)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING {CHANNEL_COLUMNS}"
-            ),
-        )
+    sqlx::query_as::<_, ChannelRow>(concat!(
+        "INSERT INTO channels (supplier_id, channel_code, name, path_prefix, cost_price, qps_limit, config) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         RETURNING ",
+        channel_columns!()
+    ))
         .bind(input.supplier_id)
         .bind(input.channel_code)
         .bind(input.name)
@@ -349,7 +392,7 @@ pub async fn list_routes_for_channel(
     .await
 }
 fn push_route_rule_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     tenant_id: Option<uuid::Uuid>,
     product_id: Option<uuid::Uuid>,
     search: Option<&str>,
@@ -414,8 +457,10 @@ pub async fn list_route_rules(
         page_size,
         offset,
     } = params;
-    let mut builder: QueryBuilder<_> = QueryBuilder::new(format!(
-        "SELECT {ROUTE_RULE_COLUMNS} FROM route_rules WHERE 1=1"
+    let mut builder: QueryBuilder<_> = QueryBuilder::new(concat!(
+        "SELECT ",
+        route_rule_columns!(),
+        " FROM route_rules WHERE 1=1"
     ));
     push_route_rule_scope(&mut builder, tenant_id, product_id, search, status, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
@@ -449,8 +494,10 @@ pub async fn find_route_rule_by_id(
     pool: &PgPool,
     id: uuid::Uuid,
 ) -> Result<Option<RouteRuleRow>, sqlx::Error> {
-    sqlx::query_as::<_, RouteRuleRow>(&format!(
-        "SELECT {ROUTE_RULE_COLUMNS} FROM route_rules WHERE id = $1"
+    sqlx::query_as::<_, RouteRuleRow>(concat!(
+        "SELECT ",
+        route_rule_columns!(),
+        " FROM route_rules WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -463,11 +510,7 @@ pub async fn insert_route_rule(
     pool: &PgPool,
     input: RouteRuleInsert<'_>,
 ) -> Result<RouteRuleRow, sqlx::Error> {
-    sqlx::query_as::<_, RouteRuleRow>(&format!(
-        "INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING {ROUTE_RULE_COLUMNS}"
-    ))
+    sqlx::query_as::<_, RouteRuleRow>(INSERT_ROUTE_RULE_SQL)
     .bind(input.tenant_id)
     .bind(input.product_id)
     .bind(input.priority)
@@ -529,9 +572,7 @@ pub async fn list_route_bindings(
     pool: &PgPool,
     route_rule_id: uuid::Uuid,
 ) -> Result<Vec<RouteChannelBindingRow>, sqlx::Error> {
-    sqlx::query_as::<_, RouteChannelBindingRow>(&format!(
-        "SELECT {ROUTE_BINDING_COLUMNS} FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC"
-    ))
+    sqlx::query_as::<_, RouteChannelBindingRow>(SELECT_ROUTE_BINDINGS_BY_RULE_SQL)
     .bind(route_rule_id)
     .fetch_all(pool)
     .await
@@ -543,8 +584,10 @@ pub async fn find_route_binding_by_id(
     pool: &PgPool,
     id: uuid::Uuid,
 ) -> Result<Option<RouteChannelBindingRow>, sqlx::Error> {
-    sqlx::query_as::<_, RouteChannelBindingRow>(&format!(
-        "SELECT {ROUTE_BINDING_COLUMNS} FROM route_channel_bindings WHERE id = $1"
+    sqlx::query_as::<_, RouteChannelBindingRow>(concat!(
+        "SELECT ",
+        route_binding_columns!(),
+        " FROM route_channel_bindings WHERE id = $1"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -557,16 +600,7 @@ pub async fn insert_route_binding(
     pool: &PgPool,
     input: RouteBindingInsert<'_>,
 ) -> Result<RouteChannelBindingRow, sqlx::Error> {
-    sqlx::query_as::<
-        _,
-        RouteChannelBindingRow,
-    >(
-            &format!(
-                "INSERT INTO route_channel_bindings (route_rule_id, channel_id, channel_order, switch_condition)
-         VALUES ($1, $2, $3, $4)
-         RETURNING {ROUTE_BINDING_COLUMNS}"
-            ),
-        )
+    sqlx::query_as::<_, RouteChannelBindingRow>(INSERT_ROUTE_BINDING_SQL)
         .bind(input.route_rule_id)
         .bind(input.channel_id)
         .bind(input.channel_order)

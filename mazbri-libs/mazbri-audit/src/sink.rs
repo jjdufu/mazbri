@@ -78,7 +78,7 @@ impl AuditStore for PgAuditStore {
             if records.is_empty() {
                 return Ok(());
             }
-            let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(
+            let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
                 "INSERT INTO audit_logs (created_at, user_id, actor_type, actor_username, \
                  actor_role, action, resource_type, resource_id, details, status, error_message, \
                  failure_reason, ip_address, user_agent, old_value, new_value, request_id, \

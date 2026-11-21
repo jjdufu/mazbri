@@ -119,56 +119,30 @@ impl BillingRepository for PgBillingRepository {
                 "page_size must not exceed {MAX_PAGE_SIZE}"
             )));
         }
-        let mut conditions = vec!["tenant_id = $1".to_string()];
-        let mut param_count = 1;
-        let start_filter = if let Some(start) = start_time {
-            param_count += 1;
-            conditions.push(format!("created_at >= to_timestamp(${param_count})"));
-            Some(start)
-        } else {
-            None
-        };
-        let end_filter = if let Some(end) = end_time {
-            param_count += 1;
-            conditions.push(format!("created_at <= to_timestamp(${param_count})"));
-            Some(end)
-        } else {
-            None
-        };
-        let status_filter = if let Some(s) = status {
-            if s.is_empty() {
-                None
-            } else {
-                param_count += 1;
-                conditions.push(format!("status = ${param_count}"));
-                Some(s.to_string())
-            }
-        } else {
-            None
-        };
-        param_count += 1;
-        let limit_param = param_count;
-        let query = format!(
-            "SELECT id, tenant_id, status, total_amount, created_at, paid_at
-             FROM bills
-             WHERE {}
-             ORDER BY created_at DESC
-             LIMIT ${}",
-            conditions.join(" AND "),
-            limit_param
+        let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            "SELECT id, tenant_id, status, total_amount, created_at, paid_at \
+             FROM bills \
+             WHERE tenant_id = ",
         );
-        let mut q = sqlx::query(&query).bind(tenant_id);
-        if let Some(start) = start_filter {
-            q = q.bind(start);
+        builder.push_bind(tenant_id);
+        if let Some(start) = start_time {
+            builder.push(" AND created_at >= to_timestamp(");
+            builder.push_bind(start);
+            builder.push(")");
         }
-        if let Some(end) = end_filter {
-            q = q.bind(end);
+        if let Some(end) = end_time {
+            builder.push(" AND created_at <= to_timestamp(");
+            builder.push_bind(end);
+            builder.push(")");
         }
-        if let Some(ref s) = status_filter {
-            q = q.bind(s);
+        if let Some(s) = status.filter(|s| !s.is_empty()) {
+            builder.push(" AND status = ");
+            builder.push_bind(s);
         }
-        q = q.bind(i64::from(page_size));
-        let rows = q
+        builder.push(" ORDER BY created_at DESC LIMIT ");
+        builder.push_bind(i64::from(page_size));
+        let rows = builder
+            .build()
             .fetch_all(&*self.read_pool)
             .await
             .map_err(Self::map_error)?;

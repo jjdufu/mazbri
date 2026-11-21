@@ -292,13 +292,21 @@ fn validate_olap_expr(expr: &str) -> Result<(), AlertError> {
     Ok(())
 }
 
-const RULE_COLUMNS: &str = "r.id, r.name, r.kind, r.expr, r.threshold, r.op, r.for_seconds, r.severity, \
-     r.labels, r.notify, r.enabled, r.created_at, r.updated_at, \
-     (SELECT count(*) FROM alert_events e WHERE e.rule_id = r.id AND e.status = 'firing') AS active_events";
+macro_rules! rule_columns {
+    () => {
+        "r.id, r.name, r.kind, r.expr, r.threshold, r.op, r.for_seconds, r.severity, \
+         r.labels, r.notify, r.enabled, r.created_at, r.updated_at, \
+         (SELECT count(*) FROM alert_events e WHERE e.rule_id = r.id AND e.status = 'firing') AS active_events"
+    };
+}
 
-const EVENT_COLUMNS: &str = "e.id, e.rule_id, r.name AS rule_name, e.fingerprint, e.status, e.severity, e.labels, \
-     e.value, r.threshold, r.op, r.for_seconds, e.started_at, e.resolved_at, \
-     e.trace_ids, e.silenced, e.inhibited, e.updated_at";
+macro_rules! event_columns {
+    () => {
+        "e.id, e.rule_id, r.name AS rule_name, e.fingerprint, e.status, e.severity, e.labels, \
+         e.value, r.threshold, r.op, r.for_seconds, e.started_at, e.resolved_at, \
+         e.trace_ids, e.silenced, e.inhibited, e.updated_at"
+    };
+}
 
 fn rule_from_row(row: &PgRow) -> Result<AlertRule, sqlx::Error> {
     Ok(AlertRule {
@@ -345,8 +353,10 @@ fn event_from_row(row: &PgRow) -> Result<AlertEvent, sqlx::Error> {
 ///
 /// 数据库查询失败时返回错误。
 pub async fn list_rules(pool: &PgPool) -> Result<Vec<AlertRule>, AlertError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {RULE_COLUMNS} FROM alert_rules r ORDER BY r.name"
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        rule_columns!(),
+        " FROM alert_rules r ORDER BY r.name"
     ))
     .fetch_all(pool)
     .await?;
@@ -357,8 +367,10 @@ pub async fn list_rules(pool: &PgPool) -> Result<Vec<AlertRule>, AlertError> {
 ///
 /// 规则不存在或数据库失败时返回错误。
 pub async fn get_rule(pool: &PgPool, id: Uuid) -> Result<AlertRule, AlertError> {
-    let row = sqlx::query(&format!(
-        "SELECT {RULE_COLUMNS} FROM alert_rules r WHERE r.id = $1"
+    let row = sqlx::query(concat!(
+        "SELECT ",
+        rule_columns!(),
+        " FROM alert_rules r WHERE r.id = $1"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -492,13 +504,18 @@ pub async fn list_events(
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(20).clamp(1, MAX_PAGE_SIZE);
     // include_seed=false 时剔除 labels 含 seed 键的演示/脏数据事件。
-    let filter = "($1::text IS NULL OR e.status = $1) \
-         AND ($2::text IS NULL OR e.severity = $2) \
-         AND ($3::uuid IS NULL OR e.rule_id = $3) \
-         AND ($4::uuid IS NULL OR e.id = $4) \
-         AND ($5::bool OR NOT (COALESCE(e.labels, '{}'::jsonb) ? 'seed'))";
-    let total: i64 = sqlx::query(&format!(
-        "SELECT count(*) AS total FROM alert_events e WHERE {filter}"
+    macro_rules! event_filter {
+        () => {
+            "($1::text IS NULL OR e.status = $1) \
+             AND ($2::text IS NULL OR e.severity = $2) \
+             AND ($3::uuid IS NULL OR e.rule_id = $3) \
+             AND ($4::uuid IS NULL OR e.id = $4) \
+             AND ($5::bool OR NOT (COALESCE(e.labels, '{}'::jsonb) ? 'seed'))"
+        };
+    }
+    let total: i64 = sqlx::query(concat!(
+        "SELECT count(*) AS total FROM alert_events e WHERE ",
+        event_filter!()
     ))
     .bind(query.status.as_deref())
     .bind(query.severity.as_deref())
@@ -508,9 +525,12 @@ pub async fn list_events(
     .fetch_one(pool)
     .await?
     .try_get("total")?;
-    let rows = sqlx::query(&format!(
-        "SELECT {EVENT_COLUMNS} FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id \
-         WHERE {filter} ORDER BY e.started_at DESC, e.id LIMIT $6 OFFSET $7"
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        event_columns!(),
+        " FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id WHERE ",
+        event_filter!(),
+        " ORDER BY e.started_at DESC, e.id LIMIT $6 OFFSET $7"
     ))
     .bind(query.status.as_deref())
     .bind(query.severity.as_deref())

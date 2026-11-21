@@ -623,12 +623,7 @@ pub async fn create_route_rule(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to begin transaction: {e}")))?;
 
-    let row = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
-        "INSERT INTO route_rules (tenant_id, product_id, priority, status, metadata)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING {}",
-        repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
-    ))
+    let row = sqlx::query_as::<_, repo::RouteRuleRow>(repo::INSERT_ROUTE_RULE_SQL)
     .bind(payload.tenant_id)
     .bind(payload.product_id)
     .bind(payload.priority)
@@ -643,12 +638,7 @@ pub async fn create_route_rule(
         "timeout_ms": payload.timeout_ms,
     });
 
-    sqlx::query_as::<_, repo::RouteChannelBindingRow>(&format!(
-        "INSERT INTO route_channel_bindings (route_rule_id, channel_id, channel_order, switch_condition)
-         VALUES ($1, $2, $3, $4)
-         RETURNING {}",
-        repo::ROUTE_BINDING_COLUMNS_FOR_SERVICE
-    ))
+    sqlx::query_as::<_, repo::RouteChannelBindingRow>(repo::INSERT_ROUTE_BINDING_SQL)
     .bind(row.id)
     .bind(payload.channel_id)
     .bind(1)
@@ -763,24 +753,13 @@ async fn lock_route_for_switch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     route_rule_id: uuid::Uuid,
 ) -> Result<(repo::RouteRuleRow, Vec<repo::RouteChannelBindingRow>), ApiError> {
-    let old_rule = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
-        "SELECT {} FROM route_rules WHERE id = $1 FOR UPDATE",
-        repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
-    ))
+    let old_rule = sqlx::query_as::<_, repo::RouteRuleRow>(repo::LOCK_ROUTE_RULE_SQL)
     .bind(route_rule_id)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| ApiError::internal(format!("Failed to lock route rule: {e}")))?
     .ok_or_else(|| ApiError::not_found("route_rule".to_string(), route_rule_id.to_string()))?;
-    let old_bindings = sqlx::query_as::<
-        _,
-        repo::RouteChannelBindingRow,
-    >(
-            &format!(
-                "SELECT {} FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC FOR UPDATE",
-                repo::ROUTE_BINDING_COLUMNS_FOR_SERVICE
-            ),
-        )
+    let old_bindings = sqlx::query_as::<_, repo::RouteChannelBindingRow>(repo::LOCK_ROUTE_BINDINGS_SQL)
         .bind(route_rule_id)
         .fetch_all(&mut **tx)
         .await
@@ -859,23 +838,17 @@ pub async fn emergency_switch_route(
         actor_name, "operator_id" : user_id, "switched_at" : chrono::Utc::now(), } }
     );
     let merged_metadata = merge_route_metadata(&old_rule.metadata, &emergency_metadata);
-    let new_rule = sqlx::query_as::<_, repo::RouteRuleRow>(&format!(
-        "UPDATE route_rules
-         SET status = 'active', metadata = $2, updated_at = NOW()
-         WHERE id = $1
-         RETURNING {}",
-        repo::ROUTE_RULE_COLUMNS_FOR_SERVICE
-    ))
+    let new_rule =
+        sqlx::query_as::<_, repo::RouteRuleRow>(repo::UPDATE_EMERGENCY_ROUTE_RULE_SQL)
     .bind(route_rule_id)
     .bind(&merged_metadata)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| ApiError::internal(format!("Failed to update route rule: {e}")))?;
     apply_emergency_binding_order(&mut tx, &old_bindings, payload).await?;
-    let new_bindings = sqlx::query_as::<_, repo::RouteChannelBindingRow>(&format!(
-        "SELECT {} FROM route_channel_bindings WHERE route_rule_id = $1 ORDER BY channel_order ASC",
-        repo::ROUTE_BINDING_COLUMNS_FOR_SERVICE
-    ))
+    let new_bindings = sqlx::query_as::<_, repo::RouteChannelBindingRow>(
+        repo::SELECT_ROUTE_BINDINGS_BY_RULE_SQL,
+    )
     .bind(route_rule_id)
     .fetch_all(&mut *tx)
     .await

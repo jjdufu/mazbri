@@ -316,19 +316,21 @@ static RESOURCE_TYPE_LABEL_SQL: LazyLock<String> = LazyLock::new(|| {
 const STATUS_LABEL_SQL: &str = "CASE status WHEN 'success' THEN '成功' WHEN 'failure' THEN '失败' WHEN 'denied' THEN '拒绝' ELSE status END";
 const CREATED_AT_SEARCH_SQL: &str =
     "to_char(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY/FMMM/FMDD HH24:MI:SS')";
-fn push_audit_keyword_filter(builder: &mut QueryBuilder<'_, Postgres>, keyword: &str) {
+fn push_audit_keyword_filter(builder: &mut QueryBuilder<Postgres>, keyword: &str) {
     let pattern = format!("%{keyword}%");
     builder.push(" AND (username ILIKE ");
     builder.push_bind(pattern.clone());
     builder.push(" OR action ILIKE ");
     builder.push_bind(pattern.clone());
     builder.push(" OR ");
+    // Safety: ACTION_LABEL_SQL 由编译期常量 ACTION_LABELS 构造（label_tests::labels_are_sql_safe 守卫无引号注入），无任何外部输入。
     builder.push(ACTION_LABEL_SQL.as_str());
     builder.push(" ILIKE ");
     builder.push_bind(pattern.clone());
     builder.push(" OR resource_type ILIKE ");
     builder.push_bind(pattern.clone());
     builder.push(" OR ");
+    // Safety: RESOURCE_TYPE_LABEL_SQL 由编译期常量 RESOURCE_TYPE_LABELS 构造（label_tests::labels_are_sql_safe 守卫无引号注入），无任何外部输入。
     builder.push(RESOURCE_TYPE_LABEL_SQL.as_str());
     builder.push(" ILIKE ");
     builder.push_bind(pattern.clone());
@@ -360,10 +362,16 @@ fn push_audit_keyword_filter(builder: &mut QueryBuilder<'_, Postgres>, keyword: 
     builder.push(")");
 }
 
-const SELECT_COLUMNS: &str = "id, user_id, username, actor_type, actor_role, action, \
-     resource_type, resource_id, details, status, error_message, failure_reason, \
-     ip_address, user_agent, old_value, new_value, request_id, method, path, \
-     status_code, duration_ms, request_summary, created_at, service";
+macro_rules! select_columns {
+    () => {
+        "id, user_id, username, actor_type, actor_role, action, \
+         resource_type, resource_id, details, status, error_message, failure_reason, \
+         ip_address, user_agent, old_value, new_value, request_id, method, path, \
+         status_code, duration_ms, request_summary, created_at, service"
+    };
+}
+#[cfg(test)]
+const SELECT_COLUMNS: &str = select_columns!();
 
 /// 审计服务：业务事件入口 + 查询。可廉价克隆。
 #[derive(Clone)]
@@ -470,8 +478,10 @@ impl AuditService {
     pub async fn list(&self, query: AuditLogQuery) -> Result<AuditLogListResponse, sqlx::Error> {
         let mut count_builder =
             sqlx::QueryBuilder::new("SELECT COUNT(*) FROM audit_logs_view WHERE 1=1");
-        let mut select_builder = sqlx::QueryBuilder::new(format!(
-            "SELECT {SELECT_COLUMNS} FROM audit_logs_view WHERE 1=1"
+        let mut select_builder = sqlx::QueryBuilder::new(concat!(
+            "SELECT ",
+            select_columns!(),
+            " FROM audit_logs_view WHERE 1=1"
         ));
         push_audit_where(&mut count_builder, &query)?;
         push_audit_where(&mut select_builder, &query)?;
@@ -497,8 +507,10 @@ impl AuditService {
         &self,
         id: uuid::Uuid,
     ) -> Result<Option<AuditLogDetailResponse>, sqlx::Error> {
-        let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM audit_logs_view WHERE id = $1"
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            select_columns!(),
+            " FROM audit_logs_view WHERE id = $1"
         ))
         .bind(id)
         .fetch_optional(&*self.db)
@@ -525,8 +537,10 @@ impl AuditService {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn export_csv(&self, query: AuditLogQuery) -> Result<String, sqlx::Error> {
-        let mut select_builder = sqlx::QueryBuilder::new(format!(
-            "SELECT {SELECT_COLUMNS} FROM audit_logs_view WHERE 1=1"
+        let mut select_builder = sqlx::QueryBuilder::new(concat!(
+            "SELECT ",
+            select_columns!(),
+            " FROM audit_logs_view WHERE 1=1"
         ));
         push_audit_where(&mut select_builder, &query)?;
         select_builder.push(" ORDER BY created_at DESC LIMIT ");
@@ -745,7 +759,7 @@ fn explicitly_filters_self_audit_action(
 
 /// list / count / export 共用的完整 WHERE 条件：显式字段 + `q` + `filters`。
 fn push_audit_where(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     query: &AuditLogQuery,
 ) -> Result<(), sqlx::Error> {
     let filters = crate::list_query::parse_and_validate_filters(
@@ -765,13 +779,13 @@ fn push_audit_where(
 }
 
 /// 从安全审计列表/导出中剔除个人 UI 偏好路径（含历史「更新用户设置」刷屏记录）。
-fn push_exclude_personal_preferences(builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+fn push_exclude_personal_preferences(builder: &mut sqlx::QueryBuilder<sqlx::Postgres>) {
     builder.push(" AND COALESCE(path, '') NOT LIKE '%/admin/preferences'");
 }
 
 /// 追加显式字段过滤条件。
 fn push_audit_conditions(
-    builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     query: &AuditLogQuery,
     keyword: Option<&str>,
 ) {
@@ -786,7 +800,7 @@ fn push_audit_conditions(
         builder.push_bind(tid);
         builder.push(")");
     }
-    let eq_filters = [
+    let eq_filters: [(&'static str, Option<&String>); 4] = [
         ("action", query.action.as_ref()),
         ("resource_type", query.resource_type.as_ref()),
         ("resource_id", query.resource_id.as_ref()),
@@ -794,7 +808,9 @@ fn push_audit_conditions(
     ];
     for (column, value) in eq_filters {
         if let Some(value) = value {
-            builder.push(format!(" AND {column} = "));
+            builder.push(" AND ");
+            builder.push(column);
+            builder.push(" = ");
             builder.push_bind(value.clone());
         }
     }
@@ -863,10 +879,10 @@ mod where_tests {
     use super::push_audit_where;
     use crate::audit::types::AuditLogQuery;
 
-    fn where_sql(query: &AuditLogQuery, head: &str) -> String {
+    fn where_sql(query: &AuditLogQuery, head: &'static str) -> String {
         let mut b = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
         push_audit_where(&mut b, query).unwrap();
-        b.sql().trim_start_matches(head).to_string()
+        b.sql().as_str().trim_start_matches(head).to_string()
     }
 
     #[test]
@@ -1192,7 +1208,7 @@ mod service_filter_tests {
         let head = "SELECT id FROM audit_logs_view WHERE 1=1";
         let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
         push_audit_where(&mut builder, &query).expect("where");
-        let sql = builder.sql().trim_start_matches(head).to_string();
+        let sql = builder.sql().as_str().trim_start_matches(head).to_string();
         assert!(sql.contains("AND service = $1"), "{sql}");
         assert!(
             !sql.contains("cert"),
@@ -1209,7 +1225,7 @@ mod service_filter_tests {
         let head = "SELECT id FROM audit_logs_view WHERE 1=1";
         let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(head);
         push_audit_where(&mut builder, &query).expect("where");
-        assert!(builder.sql().contains("service"));
+        assert!(builder.sql().as_str().contains("service"));
     }
 
     #[test]

@@ -18,7 +18,7 @@ const SUPPLIER_COLUMNS: &str =
     "id, supplier_code, name, upstream_url, status, config, created_at, updated_at";
 
 fn push_supplier_scope(
-    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    builder: &mut QueryBuilder<sqlx::Postgres>,
     status: Option<&str>,
     search_pattern: Option<&str>,
     filters: &[crate::list_query::ValidatedFilter],
@@ -51,9 +51,9 @@ pub async fn list_suppliers(
     page_size: i64,
     offset: i64,
 ) -> Result<Vec<SupplierRow>, sqlx::Error> {
-    let mut builder: QueryBuilder<_> = QueryBuilder::new(format!(
-        "SELECT {SUPPLIER_COLUMNS} FROM suppliers WHERE 1=1"
-    ));
+    let mut builder: QueryBuilder<_> = QueryBuilder::new("SELECT ");
+    builder.push(SUPPLIER_COLUMNS);
+    builder.push(" FROM suppliers WHERE 1=1");
     push_supplier_scope(&mut builder, status, search_pattern, filters)
         .map_err(|e| sqlx::Error::Protocol(e.message))?;
     builder.push(" ORDER BY created_at DESC LIMIT ");

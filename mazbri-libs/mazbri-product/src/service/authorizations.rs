@@ -24,7 +24,7 @@ fn normalized_ilike_pattern(search: Option<&str>) -> Option<String> {
 }
 
 fn push_product_tenants_scope(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     product_code: &str,
     pattern: Option<&str>,
 ) {
@@ -51,7 +51,7 @@ fn push_product_tenants_scope(
 fn build_product_tenants_count_query(
     product_code: &str,
     pattern: Option<&str>,
-) -> QueryBuilder<'static, Postgres> {
+) -> QueryBuilder<Postgres> {
     let mut builder = QueryBuilder::new("SELECT COUNT(*)");
     push_product_tenants_scope(&mut builder, product_code, pattern);
     builder
@@ -62,7 +62,7 @@ fn build_product_tenants_list_query(
     pattern: Option<&str>,
     limit: i64,
     offset: i64,
-) -> QueryBuilder<'static, Postgres> {
+) -> QueryBuilder<Postgres> {
     let mut builder = QueryBuilder::new(
         "SELECT \
             tp.id, \
@@ -99,17 +99,20 @@ impl ProductService {
         mut apply_extra: F,
     ) -> Result<(Vec<AuthorizationDetail>, i64)>
     where
-        F: FnMut(&mut QueryBuilder<'_, Postgres>) -> Result<(), String>,
+        F: FnMut(&mut QueryBuilder<Postgres>) -> Result<(), String>,
     {
-        const BASE_FROM: &str = "\
-            FROM tenant_products tp \
-            JOIN products p ON tp.product_id = p.id \
-            JOIN tenants t ON tp.tenant_id = t.id \
-            WHERE tp.enabled = true AND p.enabled = true";
+        macro_rules! auth_base_from {
+            () => {
+                "FROM tenant_products tp \
+                 JOIN products p ON tp.product_id = p.id \
+                 JOIN tenants t ON tp.tenant_id = t.id \
+                 WHERE tp.enabled = true AND p.enabled = true"
+            };
+        }
         let search_pattern = normalized_ilike_pattern(search);
 
-        let mut count_builder: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new(format!("SELECT COUNT(*) {BASE_FROM}"));
+        let mut count_builder: QueryBuilder<Postgres> =
+            QueryBuilder::new(concat!("SELECT COUNT(*) ", auth_base_from!()));
         if let Some(ref p) = search_pattern {
             count_builder.push(" AND (t.name ILIKE ");
             count_builder.push_bind(p.clone());
@@ -124,7 +127,7 @@ impl ProductService {
         apply_extra(&mut count_builder).map_err(|e| anyhow::anyhow!(e))?;
         let total: i64 = count_builder.build().fetch_one(&self.db).await?.get(0);
 
-        let mut list_builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(format!(
+        let mut list_builder: QueryBuilder<Postgres> = QueryBuilder::new(concat!(
             "SELECT \
                 tp.id, \
                 tp.tenant_id, \
@@ -140,8 +143,8 @@ impl ProductService {
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency, \
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback, \
                 tp.created_at, \
-                COALESCE(tp.updated_at, tp.created_at) AS updated_at \
-             {BASE_FROM}"
+                COALESCE(tp.updated_at, tp.created_at) AS updated_at ",
+            auth_base_from!()
         ));
         if let Some(ref p) = search_pattern {
             list_builder.push(" AND (t.name ILIKE ");
@@ -215,17 +218,20 @@ impl ProductService {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<TenantProductDetail>, i64)> {
-        const BASE_FROM: &str = "\
-            FROM tenant_products tp \
-            JOIN products p ON tp.product_id = p.id \
-            WHERE tp.tenant_id = ";
+        macro_rules! tenant_prod_base_from {
+            () => {
+                "FROM tenant_products tp \
+                 JOIN products p ON tp.product_id = p.id \
+                 WHERE tp.tenant_id = "
+            };
+        }
         let pattern = search
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(escape_ilike_pattern);
 
-        let mut count_builder: QueryBuilder<'_, Postgres> =
-            QueryBuilder::new(format!("SELECT COUNT(*) {BASE_FROM}"));
+        let mut count_builder: QueryBuilder<Postgres> =
+            QueryBuilder::new(concat!("SELECT COUNT(*) ", tenant_prod_base_from!()));
         count_builder.push_bind(tenant_id);
         count_builder.push(" AND tp.enabled = true AND p.enabled = true");
         if let Some(ref pat) = pattern {
@@ -237,7 +243,7 @@ impl ProductService {
         }
         let total: i64 = count_builder.build().fetch_one(&self.db).await?.get(0);
 
-        let mut list_builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(format!(
+        let mut list_builder: QueryBuilder<Postgres> = QueryBuilder::new(concat!(
             "SELECT \
                 tp.id, \
                 tp.product_id, \
@@ -255,8 +261,8 @@ impl ProductService {
                 COALESCE(tp.custom_config->>'currency', 'CNY') AS currency, \
                 COALESCE((tp.custom_config->>'cb_pro_fallback')::BOOLEAN, false) AS cb_pro_fallback, \
                 tp.created_at, \
-                COALESCE(tp.updated_at, tp.created_at) AS updated_at \
-             {BASE_FROM}"
+                COALESCE(tp.updated_at, tp.created_at) AS updated_at ",
+            tenant_prod_base_from!()
         ));
         list_builder.push_bind(tenant_id);
         list_builder.push(" AND tp.enabled = true AND p.enabled = true");
@@ -304,6 +310,7 @@ mod tests {
     fn product_tenants_page_builders_share_filters_and_bind_pagination() {
         let count_no_q = build_product_tenants_count_query("8000000001", None);
         let count_sql = count_no_q.sql();
+        let count_sql = count_sql.as_str();
         assert!(count_sql.contains("JOIN products p ON p.id = tp.product_id"));
         assert!(count_sql.contains("JOIN tenants t ON t.id = tp.tenant_id"));
         assert!(count_sql.contains("WHERE p.product_id = $1 AND tp.enabled = TRUE"));
@@ -316,14 +323,15 @@ mod tests {
         let pat = normalized_ilike_pattern(Some("JM5K26T6"));
         let count_with_q = build_product_tenants_count_query("8000000001", pat.as_deref());
         let list_with_q = build_product_tenants_list_query("8000000001", pat.as_deref(), 10, 20);
-        assert!(count_with_q.sql().contains("t.name ILIKE $2"));
-        assert!(count_with_q.sql().contains("t.tenant_code ILIKE $3"));
-        assert!(count_with_q.sql().contains("t.tenant_id ILIKE $4"));
-        assert!(list_with_q.sql().contains("t.name AS tenant_name"));
-        assert!(list_with_q.sql().contains("t.enabled AS tenant_enabled"));
+        assert!(count_with_q.sql().as_str().contains("t.name ILIKE $2"));
+        assert!(count_with_q.sql().as_str().contains("t.tenant_code ILIKE $3"));
+        assert!(count_with_q.sql().as_str().contains("t.tenant_id ILIKE $4"));
+        assert!(list_with_q.sql().as_str().contains("t.name AS tenant_name"));
+        assert!(list_with_q.sql().as_str().contains("t.enabled AS tenant_enabled"));
         assert!(
             list_with_q
                 .sql()
+                .as_str()
                 .contains("ORDER BY tp.created_at DESC, tp.id ASC LIMIT $5 OFFSET $6")
         );
     }

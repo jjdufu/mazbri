@@ -3,28 +3,25 @@ use super::super::models::{
     BatchError, BatchFilters, BatchOperation, BatchResult, ConfigEntry, ConfigEntrySummary,
 };
 use super::super::validator::{compute_batch_content_hash, validate_batch_toml};
-use std::fmt::Write as _;
 impl super::super::ConfigRepository {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn query_by_filters(&self, filters: &BatchFilters) -> ConfigResult<Vec<ConfigEntry>> {
-        let mut query = String::from("SELECT * FROM config_entries");
-        let mut param_count = 0;
+        let mut builder =
+            sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT * FROM config_entries");
         if let Some(ref service_names) = filters.service_names
             && !service_names.is_empty()
         {
-            param_count += 1;
-            let _ = write!(query, " WHERE service_name = ANY(${param_count})");
+            builder.push(" WHERE service_name = ANY(");
+            builder.push_bind(service_names);
+            builder.push(")");
         }
-        query.push_str(" ORDER BY service_name");
-        let mut sql_query = sqlx::query_as::<_, ConfigEntry>(&query);
-        if let Some(ref service_names) = filters.service_names
-            && !service_names.is_empty()
-        {
-            sql_query = sql_query.bind(service_names);
-        }
-        let entries = sql_query.fetch_all(&*self.db).await?;
+        builder.push(" ORDER BY service_name");
+        let entries = builder
+            .build_query_as::<ConfigEntry>()
+            .fetch_all(&*self.db)
+            .await?;
         Ok(entries)
     }
     /// # Errors

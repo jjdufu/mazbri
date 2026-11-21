@@ -33,18 +33,20 @@ pub struct CacheConfigRow {
 
 pub use super::tenant_helpers::tenant_exists;
 
-const RATE_LIMIT_SELECT: &str = r"
-    tenant_id,
-    tenant_qps AS max_concurrent,
-    (bandwidth_bps / 1000000)::integer AS max_bandwidth_mbps,
-    api_limits,
-    tenant_burst AS burst_size,
-    client_ip_qps,
-    client_ip_burst,
-    enabled,
-    created_at,
-    updated_at
-";
+macro_rules! rate_limit_select {
+    () => {
+        "tenant_id, \
+         tenant_qps AS max_concurrent, \
+         (bandwidth_bps / 1000000)::integer AS max_bandwidth_mbps, \
+         api_limits, \
+         tenant_burst AS burst_size, \
+         client_ip_qps, \
+         client_ip_burst, \
+         enabled, \
+         created_at, \
+         updated_at"
+    };
+}
 
 /// Write payload for tenant rate-limit policy rows.
 #[derive(Debug, Clone)]
@@ -65,12 +67,14 @@ pub async fn get_ratelimit_config(
     pool: &PgPool,
     tenant_id: uuid::Uuid,
 ) -> Result<Option<RateLimitConfigRow>, sqlx::Error> {
-    let sql =
-        format!("SELECT {RATE_LIMIT_SELECT} FROM rate_limit_tenant_policies WHERE tenant_id = $1");
-    sqlx::query_as::<_, RateLimitConfigRow>(&sql)
-        .bind(tenant_id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, RateLimitConfigRow>(concat!(
+        "SELECT ",
+        rate_limit_select!(),
+        " FROM rate_limit_tenant_policies WHERE tenant_id = $1"
+    ))
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await
 }
 
 /// # Errors
@@ -81,41 +85,39 @@ pub async fn upsert_ratelimit_config(
     tenant_id: uuid::Uuid,
     params: &RateLimitWriteParams<'_>,
 ) -> Result<RateLimitConfigRow, sqlx::Error> {
-    let sql = format!(
-        r"
-        INSERT INTO rate_limit_tenant_policies (
-            tenant_id, tenant_qps, tenant_burst,
-            bandwidth_bps, api_limits,
-            client_ip_qps, client_ip_burst, enabled
-        )
-        VALUES (
-            $1, $2, $3,
-            ($4::bigint * 1000000), $5,
-            $6, $7, $8
-        )
-        ON CONFLICT (tenant_id) DO UPDATE SET
-            tenant_qps = EXCLUDED.tenant_qps,
-            tenant_burst = EXCLUDED.tenant_burst,
-            bandwidth_bps = EXCLUDED.bandwidth_bps,
-            api_limits = EXCLUDED.api_limits,
-            client_ip_qps = EXCLUDED.client_ip_qps,
-            client_ip_burst = EXCLUDED.client_ip_burst,
-            enabled = EXCLUDED.enabled,
-            updated_at = NOW()
-        RETURNING {RATE_LIMIT_SELECT}
-        "
-    );
-    sqlx::query_as::<_, RateLimitConfigRow>(&sql)
-        .bind(tenant_id)
-        .bind(params.max_concurrent)
-        .bind(params.burst_size)
-        .bind(params.max_bandwidth_mbps)
-        .bind(params.api_limits)
-        .bind(params.client_ip_qps)
-        .bind(params.client_ip_burst)
-        .bind(params.enabled)
-        .fetch_one(pool)
-        .await
+    sqlx::query_as::<_, RateLimitConfigRow>(concat!(
+        "INSERT INTO rate_limit_tenant_policies ( \
+            tenant_id, tenant_qps, tenant_burst, \
+            bandwidth_bps, api_limits, \
+            client_ip_qps, client_ip_burst, enabled \
+        ) \
+        VALUES ( \
+            $1, $2, $3, \
+            ($4::bigint * 1000000), $5, \
+            $6, $7, $8 \
+        ) \
+        ON CONFLICT (tenant_id) DO UPDATE SET \
+            tenant_qps = EXCLUDED.tenant_qps, \
+            tenant_burst = EXCLUDED.tenant_burst, \
+            bandwidth_bps = EXCLUDED.bandwidth_bps, \
+            api_limits = EXCLUDED.api_limits, \
+            client_ip_qps = EXCLUDED.client_ip_qps, \
+            client_ip_burst = EXCLUDED.client_ip_burst, \
+            enabled = EXCLUDED.enabled, \
+            updated_at = NOW() \
+        RETURNING ",
+        rate_limit_select!()
+    ))
+    .bind(tenant_id)
+    .bind(params.max_concurrent)
+    .bind(params.burst_size)
+    .bind(params.max_bandwidth_mbps)
+    .bind(params.api_limits)
+    .bind(params.client_ip_qps)
+    .bind(params.client_ip_burst)
+    .bind(params.enabled)
+    .fetch_one(pool)
+    .await
 }
 
 /// # Errors
@@ -126,33 +128,31 @@ pub async fn insert_ratelimit_config(
     tenant_id: uuid::Uuid,
     params: &RateLimitWriteParams<'_>,
 ) -> Result<Option<RateLimitConfigRow>, sqlx::Error> {
-    let sql = format!(
-        r"
-        INSERT INTO rate_limit_tenant_policies (
-            tenant_id, tenant_qps, tenant_burst,
-            bandwidth_bps, api_limits,
-            client_ip_qps, client_ip_burst, enabled
-        )
-        VALUES (
-            $1, $2, $3,
-            ($4::bigint * 1000000), $5,
-            $6, $7, $8
-        )
-        ON CONFLICT (tenant_id) DO NOTHING
-        RETURNING {RATE_LIMIT_SELECT}
-        "
-    );
-    sqlx::query_as::<_, RateLimitConfigRow>(&sql)
-        .bind(tenant_id)
-        .bind(params.max_concurrent)
-        .bind(params.burst_size)
-        .bind(params.max_bandwidth_mbps)
-        .bind(params.api_limits)
-        .bind(params.client_ip_qps)
-        .bind(params.client_ip_burst)
-        .bind(params.enabled)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, RateLimitConfigRow>(concat!(
+        "INSERT INTO rate_limit_tenant_policies ( \
+            tenant_id, tenant_qps, tenant_burst, \
+            bandwidth_bps, api_limits, \
+            client_ip_qps, client_ip_burst, enabled \
+        ) \
+        VALUES ( \
+            $1, $2, $3, \
+            ($4::bigint * 1000000), $5, \
+            $6, $7, $8 \
+        ) \
+        ON CONFLICT (tenant_id) DO NOTHING \
+        RETURNING ",
+        rate_limit_select!()
+    ))
+    .bind(tenant_id)
+    .bind(params.max_concurrent)
+    .bind(params.burst_size)
+    .bind(params.max_bandwidth_mbps)
+    .bind(params.api_limits)
+    .bind(params.client_ip_qps)
+    .bind(params.client_ip_burst)
+    .bind(params.enabled)
+    .fetch_optional(pool)
+    .await
 }
 
 /// # Errors
@@ -164,33 +164,31 @@ pub async fn update_ratelimit_config_if_unchanged(
     params: &RateLimitWriteParams<'_>,
     expected_updated_at: DateTime<Utc>,
 ) -> Result<Option<RateLimitConfigRow>, sqlx::Error> {
-    let sql = format!(
-        r"
-        UPDATE rate_limit_tenant_policies
-        SET tenant_qps = $2,
-            tenant_burst = $3,
-            bandwidth_bps = ($4::bigint * 1000000),
-            api_limits = $5,
-            client_ip_qps = $6,
-            client_ip_burst = $7,
-            enabled = $8,
-            updated_at = NOW()
-        WHERE tenant_id = $1 AND updated_at = $9
-        RETURNING {RATE_LIMIT_SELECT}
-        "
-    );
-    sqlx::query_as::<_, RateLimitConfigRow>(&sql)
-        .bind(tenant_id)
-        .bind(params.max_concurrent)
-        .bind(params.burst_size)
-        .bind(params.max_bandwidth_mbps)
-        .bind(params.api_limits)
-        .bind(params.client_ip_qps)
-        .bind(params.client_ip_burst)
-        .bind(params.enabled)
-        .bind(expected_updated_at)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, RateLimitConfigRow>(concat!(
+        "UPDATE rate_limit_tenant_policies \
+         SET tenant_qps = $2, \
+             tenant_burst = $3, \
+             bandwidth_bps = ($4::bigint * 1000000), \
+             api_limits = $5, \
+             client_ip_qps = $6, \
+             client_ip_burst = $7, \
+             enabled = $8, \
+             updated_at = NOW() \
+         WHERE tenant_id = $1 AND updated_at = $9 \
+         RETURNING ",
+        rate_limit_select!()
+    ))
+    .bind(tenant_id)
+    .bind(params.max_concurrent)
+    .bind(params.burst_size)
+    .bind(params.max_bandwidth_mbps)
+    .bind(params.api_limits)
+    .bind(params.client_ip_qps)
+    .bind(params.client_ip_burst)
+    .bind(params.enabled)
+    .bind(expected_updated_at)
+    .fetch_optional(pool)
+    .await
 }
 
 /// # Errors
@@ -199,12 +197,13 @@ pub async fn update_ratelimit_config_if_unchanged(
 pub async fn list_enabled_ratelimit_configs(
     pool: &PgPool,
 ) -> Result<Vec<RateLimitConfigRow>, sqlx::Error> {
-    let sql = format!(
-        "SELECT {RATE_LIMIT_SELECT} FROM rate_limit_tenant_policies WHERE enabled = true ORDER BY updated_at DESC LIMIT 100"
-    );
-    sqlx::query_as::<_, RateLimitConfigRow>(&sql)
-        .fetch_all(pool)
-        .await
+    sqlx::query_as::<_, RateLimitConfigRow>(concat!(
+        "SELECT ",
+        rate_limit_select!(),
+        " FROM rate_limit_tenant_policies WHERE enabled = true ORDER BY updated_at DESC LIMIT 100"
+    ))
+    .fetch_all(pool)
+    .await
 }
 
 /// # Errors
