@@ -34,8 +34,10 @@ impl JwtHs256Keyring {
         &self.current_kid
     }
 
-    #[must_use]
-    pub fn encoding_key(&self) -> EncodingKey {
+    /// # Errors
+    ///
+    /// 当前密钥为空（无法用于 HMAC 签名）时返回错误。
+    pub fn encoding_key(&self) -> Result<EncodingKey, jsonwebtoken::errors::Error> {
         EncodingKey::from_secret(self.current_secret().as_bytes())
     }
 
@@ -43,12 +45,30 @@ impl JwtHs256Keyring {
     pub fn decoding_key(&self, kid: &str) -> Option<DecodingKey> {
         self.keys
             .get(kid)
-            .map(|secret| DecodingKey::from_secret(secret.as_bytes()))
+            .and_then(|secret| DecodingKey::from_secret(secret.as_bytes()).ok())
     }
 
     fn current_secret(&self) -> &str {
         self.keys
             .get(&self.current_kid)
             .map_or_default(String::as_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JwtHs256Keyring;
+
+    #[test]
+    fn empty_secret_rejected_and_valid_secret_accepted() {
+        let empty = JwtHs256Keyring::new("k0", "");
+        assert!(empty.encoding_key().is_err());
+        assert!(empty.decoding_key("k0").is_none());
+
+        let valid = JwtHs256Keyring::new("k1", "non-empty-secret")
+            .with_extra_keys(vec![("k-empty".to_string(), String::new())]);
+        assert!(valid.encoding_key().is_ok());
+        assert!(valid.decoding_key("k1").is_some());
+        assert!(valid.decoding_key("k-empty").is_none());
     }
 }

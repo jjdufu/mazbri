@@ -72,14 +72,14 @@ reqwest = {version = "0.13.2", default-features = false, features = ["json", "gz
 tonic = {version = "0.14.6", features = ["transport", "tls-aws-lc"]}
 prost = "0.14.3"
 argon2 = "0.6"
-jsonwebtoken = {version = "10.3.0", default-features = false, features = ["aws_lc_rs", "use_pem"]}
+jsonwebtoken = {version = "12.0.0", default-features = false, features = ["aws_lc_rs", "use_pem"]}
 async-trait = "0.1"
 dashmap = "6.1.0"
 lru = "0.16.3"
 moka = {version = "0.12", features = ["sync", "future"]}
 rand = "0.10.0"
 tarpc = {version = "0.38", features = ["tokio1", "serde-transport", "tcp", "serde-transport-bincode", "serde-transport-json"]}
-base64 = "0.22"
+base64 = "0.23"
 sha2 = "0.11"
 parking_lot = "0.12"
 hex = "0.4"

@@ -49,7 +49,7 @@ fn sign(claims: &AdminClaims, alg: Algorithm, secret: &str) -> String {
     encode(
         &Header::new(alg),
         claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes()).expect("test secret"),
     )
     .expect("encode test token")
 }
@@ -474,4 +474,15 @@ fn require_temporary_kind_accepts_only_stage_tokens() {
         let claims = claims_with(ISSUER, Some(kind.audience()), Some(kind.as_str()), 60);
         assert_eq!(require_temporary_kind(&claims), Ok(()));
     }
+}
+
+#[test]
+fn empty_secret_is_rejected_on_issue_and_decode() {
+    assert!(issue(TokenKind::Access, subject(), "", 3600).is_err());
+    let valid = issue_kind(TokenKind::Access);
+    assert_eq!(
+        decode_kind(&valid, "", TokenKind::Access).map(|_| ()),
+        Err(TokenRejection::Invalid)
+    );
+    assert!(peek_verified(&valid, "").is_none());
 }

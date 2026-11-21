@@ -177,7 +177,11 @@ impl AuthService {
         };
         let mut header = Header::new(jsonwebtoken::Algorithm::HS256);
         header.kid = Some(self.keyring.current_kid().to_string());
-        encode(&header, &claims, &self.keyring.encoding_key())
+        let key = self
+            .keyring
+            .encoding_key()
+            .map_err(|e| TokenError::InternalError(format!("JWT 密钥无效: {e}")))?;
+        encode(&header, &claims, &key)
             .map_err(|e| TokenError::InternalError(format!("JWT 编码失败: {e}")))
     }
     /// # Errors

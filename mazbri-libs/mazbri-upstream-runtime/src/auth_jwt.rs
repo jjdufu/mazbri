@@ -137,7 +137,8 @@ fn encoding_key(
             let secret = credential(credentials, &["jwt_secret", "secret"]).ok_or_else(|| {
                 ExecuteError::AuthTokenFailed("jwt HS* missing jwt_secret/secret".into())
             })?;
-            Ok(EncodingKey::from_secret(secret.as_bytes()))
+            EncodingKey::from_secret(secret.as_bytes())
+                .map_err(|e| ExecuteError::AuthTokenFailed(format!("jwt secret: {e}")))
         }
         Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 => {
             let pem =
@@ -164,7 +165,7 @@ mod tests {
     #[test]
     fn hs256_roundtrip() {
         let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
-        let key = EncodingKey::from_secret(b"s3cret");
+        let key = EncodingKey::from_secret(b"s3cret").unwrap();
         let token = encode_jwt(
             Algorithm::HS256,
             &key,
@@ -176,9 +177,21 @@ mod tests {
         .unwrap();
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_exp = false;
-        let data =
-            decode::<Value>(&token, &DecodingKey::from_secret(b"s3cret"), &validation).unwrap();
+        let data = decode::<Value>(
+            &token,
+            &DecodingKey::from_secret(b"s3cret").unwrap(),
+            &validation,
+        )
+        .unwrap();
         assert_eq!(data.claims["sub"], "mazbri");
         assert_eq!(data.claims["exp"], now.timestamp() + 300);
+    }
+
+    #[test]
+    fn empty_hmac_secret_is_rejected() {
+        assert!(EncodingKey::from_secret(b"").is_err());
+        assert!(DecodingKey::from_secret(b"").is_err());
+        let creds = HashMap::from([("jwt_secret".to_string(), String::new())]);
+        assert!(encoding_key(Algorithm::HS256, &creds).is_err());
     }
 }

@@ -454,7 +454,7 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
         sid: uuid::Uuid::new_v4().to_string(),
         sxp: None,
     };
-    let key = EncodingKey::from_secret(SECRET.as_bytes());
+    let key = EncodingKey::from_secret(SECRET.as_bytes()).expect("test secret");
     let legacy_access = encode(&Header::default(), &legacy, &key).expect("encode");
     assert_denied(
         &call(&app, "GET", "/admin-users", Cred::Bearer(&legacy_access)).await,
@@ -577,7 +577,7 @@ async fn expired_temp_token_is_rejected() {
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(SECRET.as_bytes()),
+        &EncodingKey::from_secret(SECRET.as_bytes()).expect("test secret"),
     )
     .expect("encode");
     assert_denied(

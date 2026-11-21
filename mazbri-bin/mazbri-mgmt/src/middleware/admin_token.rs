@@ -256,12 +256,10 @@ pub fn issue_at(
         sid: subject.binding.sid.clone(),
         sxp,
     };
-    let token = encode(
-        &Header::new(ALGORITHM),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .map_err(|e| format!("Failed to encode {} JWT: {e}", kind.as_str()))?;
+    let key = EncodingKey::from_secret(secret.as_bytes())
+        .map_err(|e| format!("Failed to init {} JWT key: {e}", kind.as_str()))?;
+    let token = encode(&Header::new(ALGORITHM), &claims, &key)
+        .map_err(|e| format!("Failed to encode {} JWT: {e}", kind.as_str()))?;
     Ok(IssuedToken {
         token,
         iat: issued_at,
@@ -300,7 +298,7 @@ fn validation(audience: Option<&str>, validate_exp: bool) -> Validation {
 /// 只校验签名、算法与 `iss`（不校验 `aud`/`exp`），用于审计归属与拒绝原因判定。
 #[must_use]
 pub fn peek_verified(token: &str, secret: &str) -> Option<AdminClaims> {
-    let key = DecodingKey::from_secret(secret.as_bytes());
+    let key = DecodingKey::from_secret(secret.as_bytes()).ok()?;
     decode::<AdminClaims>(token, &key, &validation(None, false))
         .ok()
         .map(|data| data.claims)
@@ -316,7 +314,7 @@ pub fn decode_kind(
     secret: &str,
     kind: TokenKind,
 ) -> Result<AdminClaims, TokenRejection> {
-    let key = DecodingKey::from_secret(secret.as_bytes());
+    let key = DecodingKey::from_secret(secret.as_bytes()).map_err(|_| TokenRejection::Invalid)?;
     match decode::<AdminClaims>(token, &key, &validation(Some(kind.audience()), true)) {
         Ok(data) if data.claims.token_type.as_deref() == Some(kind.as_str()) => {
             enforce_session(&data.claims, kind)
