@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/jjdufu/mazbri/compare/v0.6.1...v0.6.2) (2026-11-22)
+
+
+### Features
+
+* **workbench:** 重构免代码全屏多标签工作台并补全退出拦截与全局蓝色主题 ([#86](https://github.com/jjdufu/mazbri/issues/86)) ([3feab68](https://github.com/jjdufu/mazbri/commit/3feab688221343ecd247e73b54580deec95f9520))
+
 ## [0.6.1](https://github.com/jjdufu/mazbri/compare/v0.6.0...v0.6.1) (2026-11-21)
 
 
