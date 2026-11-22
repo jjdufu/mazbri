@@ -23,8 +23,16 @@ pub fn routes() -> Router<AppState> {
             post(upstream_connector_handlers::validate_draft),
         )
         .route(
+            "/upstream-connectors/transform-preview",
+            post(upstream_connector_handlers::ephemeral_transform_preview),
+        )
+        .route(
             "/upstream-connectors/drafts/{id}/transform-preview",
             post(upstream_connector_handlers::transform_preview),
+        )
+        .route(
+            "/upstream-connectors/runs",
+            post(upstream_connector_handlers::create_ephemeral_run),
         )
         .route(
             "/upstream-connectors/drafts/{id}/runs",

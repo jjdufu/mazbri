@@ -1,9 +1,10 @@
 use super::{
     ApiError, Arc, Assertion, AssertionResult, AuditAction, AuditLogRequest, AuditResourceType,
     AuditService, DEFAULT_RUN_LIMIT, Duration, ExecuteMode, ExecuteOptions, HashMap, InvokeInput,
-    OutboundResponse, PgPool, RunDto, RunRequest, RuntimeEngine, SsrfChecker, SupplierConfig,
-    UPSTREAM_TYPE_TRANSPARENT, Uuid, build_workbench_spec_with_captures, connector_metrics,
-    endpoint_by_id, evaluate_assertions, load_artifact_bytes, mask_config_credentials,
+    OutboundResponse, PgPool, RecentGateRun, RunDto, RunRequest, RuntimeEngine, SsrfChecker,
+    SupplierConfig, UPSTREAM_TYPE_TRANSPARENT, Uuid, build_workbench_spec_with_captures,
+    connector_metrics, endpoint_by_id, evaluate_assertions, evaluate_gate_items_for_row,
+    load_artifact_bytes, mask_config_credentials, materialize_snapshot_row,
     parse_workbench_env_with_id, repo, ssrf, workbench_endpoint_key,
 };
 use crate::services::bypass_probe::{
@@ -69,13 +70,37 @@ pub struct RunDraftParams<'a> {
     pub engine: &'a RuntimeEngine,
     /// business/live 经 bypass 隔离管理探针 HTTP（不经 gateway 计费）。
     pub bypass: &'a BypassProbeClient,
-    pub id: Uuid,
+    pub id: Option<Uuid>,
     pub req: RunRequest,
     pub actor: &'a str,
     pub user_id: Uuid,
+    pub is_super_admin: bool,
     pub client_ip: Option<String>,
     pub default_timeout_ms: u64,
     pub max_body_bytes: usize,
+}
+
+pub(super) async fn resolve_run_row(
+    pool: &PgPool,
+    id: Option<Uuid>,
+    req: &RunRequest,
+    is_super_admin: bool,
+) -> Result<repo::DraftRow, ApiError> {
+    if let Some(did) = id {
+        let existing = repo::get_draft(pool, did)
+            .await
+            .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
+            .ok_or_else(|| ApiError::not_found("draft".into(), did.to_string()))?;
+        if let Some(ref snap) = req.draft_snapshot {
+            return materialize_snapshot_row(snap, Some(&existing), is_super_admin);
+        }
+        return Ok(existing);
+    }
+    let snap = req
+        .draft_snapshot
+        .as_ref()
+        .ok_or_else(|| ApiError::validation("未保存草稿试调必须提供 draft_snapshot"))?;
+    materialize_snapshot_row(snap, None, is_super_admin)
 }
 
 /// # Errors
@@ -90,14 +115,12 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
         req,
         actor,
         user_id,
+        is_super_admin,
         client_ip,
         default_timeout_ms,
         max_body_bytes,
     } = params;
-    let row = repo::get_draft(pool, id)
-        .await
-        .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
-        .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
+    let row = resolve_run_row(pool, id, &req, is_super_admin).await?;
 
     // Microservice: connectivity / contract probe only (no HTTP auth/business pipeline).
     if row.upstream_type != UPSTREAM_TYPE_TRANSPARENT {
@@ -110,6 +133,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
             pool,
             ProbeMicroserviceParams {
                 audit,
+                draft_id: id,
                 row: &row,
                 req: &req,
                 actor,
@@ -168,6 +192,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
 /// `probe_microservice_draft` 的入参。
 pub(super) struct ProbeMicroserviceParams<'a> {
     pub(super) audit: &'a AuditService,
+    pub(super) draft_id: Option<Uuid>,
     pub(super) row: &'a repo::DraftRow,
     pub(super) req: &'a RunRequest,
     pub(super) actor: &'a str,
@@ -183,6 +208,7 @@ pub(super) async fn probe_microservice_draft(
 ) -> Result<RunDto, ApiError> {
     let ProbeMicroserviceParams {
         audit,
+        draft_id,
         row,
         req,
         actor,
@@ -220,7 +246,7 @@ pub(super) async fn probe_microservice_draft(
     let run_row = repo::insert_run(
         pool,
         repo::NewRun {
-            draft_id: Some(row.id),
+            draft_id,
             supplier_id: None,
             mode,
             ok: overall_ok,
@@ -247,7 +273,7 @@ pub(super) async fn probe_microservice_draft(
         user_id: Some(user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
-        resource_id: Some(row.id.to_string()),
+        resource_id: draft_id.map(|u| u.to_string()),
         details: Some(serde_json::json!({
             "run_id": run_row.id,
             "mode": mode,
@@ -260,7 +286,7 @@ pub(super) async fn probe_microservice_draft(
 
     Ok(RunDto {
         id: run_row.id,
-        draft_id: Some(row.id),
+        draft_id,
         supplier_id: None,
         mode: mode.into(),
         ok: overall_ok,
@@ -279,6 +305,7 @@ pub(super) async fn probe_microservice_draft(
         response_preview: None,
         spec_fingerprint: None,
         probe_path: None,
+        gate: Vec::new(),
     })
 }
 
@@ -330,6 +357,7 @@ pub async fn list_runs(pool: &PgPool, draft_id: Uuid) -> Result<Vec<RunDto>, Api
             response_preview: None,
             spec_fingerprint: r.spec_fingerprint,
             probe_path: r.probe_path,
+            gate: Vec::new(),
         })
         .collect())
 }
@@ -359,6 +387,7 @@ pub async fn get_run(pool: &PgPool, run_id: Uuid) -> Result<RunDto, ApiError> {
         response_preview: None,
         spec_fingerprint: r.spec_fingerprint,
         probe_path: r.probe_path,
+        gate: Vec::new(),
     })
 }
 
@@ -524,7 +553,7 @@ fn run_response_preview(
 struct LocalNonGateParams<'a> {
     audit: &'a AuditService,
     engine: &'a RuntimeEngine,
-    id: Uuid,
+    id: Option<Uuid>,
     row: &'a repo::DraftRow,
     req: &'a RunRequest,
     actor: &'a str,
@@ -570,7 +599,7 @@ async fn run_draft_local_non_gate(
     let run_row = repo::insert_run(
         pool,
         repo::NewRun {
-            draft_id: Some(id),
+            draft_id: id,
             supplier_id: None,
             mode: &req.mode,
             ok: overall_ok,
@@ -593,7 +622,7 @@ async fn run_draft_local_non_gate(
         user_id: Some(user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
-        resource_id: Some(id.to_string()),
+        resource_id: id.map(|u| u.to_string()),
         details: Some(serde_json::json!({
             "run_id": run_row.id,
             "mode": req.mode,
@@ -615,7 +644,7 @@ struct BypassRunParams<'a> {
     audit: &'a AuditService,
     bypass: &'a BypassProbeClient,
     ssrf: &'a SsrfChecker,
-    id: Uuid,
+    id: Option<Uuid>,
     row: &'a repo::DraftRow,
     req: &'a RunRequest,
     actor: &'a str,
@@ -687,7 +716,7 @@ async fn run_draft_via_bypass(
     };
     connector_metrics::record_run(&req.mode, overall_ok, error_code);
 
-    persist_bypass_run(PersistBypassRun {
+    let mut dto = persist_bypass_run(PersistBypassRun {
         pool,
         audit,
         draft_id: id,
@@ -705,13 +734,24 @@ async fn run_draft_via_bypass(
         client_ip,
         fingerprint: &prepared.fingerprint,
     })
-    .await
+    .await?;
+
+    let extra = if overall_ok {
+        vec![RecentGateRun {
+            endpoint_key: prepared.endpoint_key.clone(),
+            spec_fingerprint: Some(prepared.fingerprint.clone()),
+        }]
+    } else {
+        Vec::new()
+    };
+    dto.gate = evaluate_gate_items_for_row(pool, id, row, &extra).await?;
+    Ok(dto)
 }
 
 struct PersistBypassRun<'a> {
     pool: &'a PgPool,
     audit: &'a AuditService,
-    draft_id: Uuid,
+    draft_id: Option<Uuid>,
     mode: &'a str,
     overall_ok: bool,
     outcome: &'a ProbeOutcome,
@@ -731,7 +771,7 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
     let run_row = repo::insert_run(
         p.pool,
         repo::NewRun {
-            draft_id: Some(p.draft_id),
+            draft_id: p.draft_id,
             supplier_id: None,
             mode: p.mode,
             ok: p.overall_ok,
@@ -758,7 +798,7 @@ async fn persist_bypass_run(p: PersistBypassRun<'_>) -> Result<RunDto, ApiError>
         user_id: Some(p.user_id),
         action: AuditAction::ConnectorRun,
         resource_type: AuditResourceType::Supplier,
-        resource_id: Some(p.draft_id.to_string()),
+        resource_id: p.draft_id.map(|u| u.to_string()),
         details: Some(serde_json::json!({
             "run_id": run_row.id,
             "mode": p.mode,
@@ -906,7 +946,11 @@ async fn prepare_bypass_probe_from_draft(
         Some(&cfg),
         &row.upstream_url,
     )?;
-    let payload_json = built.payload.to_string();
+    let payload_json = if built.payload.is_null() {
+        String::new()
+    } else {
+        built.payload.to_string()
+    };
     if payload_json.len() > max_body_bytes {
         return Err(ApiError::validation(format!(
             "request body exceeds max_body_bytes ({max_body_bytes})"
@@ -1081,6 +1125,7 @@ pub(super) fn run_dto_from_row(
         response_preview,
         spec_fingerprint: run_row.spec_fingerprint,
         probe_path: run_row.probe_path,
+        gate: Vec::new(),
     }
 }
 

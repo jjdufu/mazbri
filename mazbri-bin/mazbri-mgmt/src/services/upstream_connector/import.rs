@@ -48,6 +48,7 @@ pub async fn import_curl(
             endpoints: Some(endpoint),
             workbench_env: None,
             source: Some("curl".into()),
+            claim_run_ids: Vec::new(),
         },
         actor,
         false,
@@ -221,6 +222,7 @@ pub async fn import_postman(
             endpoints: Some(serde_json::Value::Array(endpoints)),
             workbench_env: None,
             source: Some("postman".into()),
+            claim_run_ids: Vec::new(),
         },
         actor,
         false,
@@ -437,6 +439,7 @@ pub async fn import_openapi(
             endpoints: Some(serde_json::Value::Array(endpoints)),
             workbench_env: None,
             source: Some("openapi".into()),
+            claim_run_ids: Vec::new(),
         },
         actor,
         false,
@@ -1014,6 +1017,7 @@ pub async fn draft_from_supplier(
             endpoints: Some(endpoints_value),
             workbench_env: None,
             source: Some("supplier".into()),
+            claim_run_ids: Vec::new(),
         },
         actor,
         true,
@@ -1221,13 +1225,11 @@ pub async fn export_postman(pool: &PgPool, id: Uuid) -> Result<serde_json::Value
 pub async fn transform_preview(
     pool: &PgPool,
     engine: &RuntimeEngine,
-    id: Uuid,
+    id: Option<Uuid>,
     req: RunRequest,
+    is_super_admin: bool,
 ) -> Result<serde_json::Value, ApiError> {
-    let row = repo::get_draft(pool, id)
-        .await
-        .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
-        .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
+    let row = super::resolve_run_row(pool, id, &req, is_super_admin).await?;
 
     let mut cfg = SupplierConfig::parse_and_validate(&row.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;

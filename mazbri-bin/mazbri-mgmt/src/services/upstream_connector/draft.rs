@@ -1,8 +1,9 @@
 use super::{
-    ApiError, CreateDraftRequest, DraftDto, GATE_TTL_HOURS, PgPool, RecentGateRun, SupplierConfig,
-    UpdateDraftRequest, Uuid, draft_to_dto, encode_workbench_env_for_db, evaluate_endpoint_gates,
-    guard_supplier_tls_privilege, parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls,
-    strip_workbench_env_from_config, validate_workbench_env,
+    ApiError, CreateDraftRequest, DraftDto, DraftGateItem, DraftSnapshot, GATE_TTL_HOURS, PgPool,
+    RecentGateRun, SupplierConfig, UpdateDraftRequest, Uuid, draft_to_dto,
+    encode_workbench_env_for_db, evaluate_endpoint_gates, guard_supplier_tls_privilege,
+    parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls, strip_workbench_env_from_config,
+    validate_workbench_env,
 };
 
 // ---------- Draft CRUD ----------
@@ -68,6 +69,12 @@ pub async fn create_draft(
             ApiError::internal(format!("创建 draft 失败: {e}"))
         }
     })?;
+
+    if !req.claim_run_ids.is_empty() {
+        let _ = repo::claim_ephemeral_runs(pool, row.id, &req.claim_run_ids, actor)
+            .await
+            .map_err(|e| ApiError::internal(format!("claim runs: {e}")))?;
+    }
 
     with_gate(pool, row).await
 }
@@ -210,19 +217,88 @@ pub(super) fn config_json_for_draft(
         .map_err(|e| ApiError::validation(e.to_string()))
 }
 
-pub(super) async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<DraftDto, ApiError> {
+pub(super) fn materialize_snapshot_row(
+    snap: &DraftSnapshot,
+    existing: Option<&repo::DraftRow>,
+    is_super_admin: bool,
+) -> Result<repo::DraftRow, ApiError> {
+    let upstream_type = snap.upstream_type.clone();
+    let mut config = snap
+        .config
+        .clone()
+        .or_else(|| existing.map(|r| r.config.clone()))
+        .unwrap_or_else(|| serde_json::json!({}));
+    strip_workbench_env_from_config(&mut config);
+    guard_supplier_tls_privilege(&config, existing.map(|r| &r.config), is_super_admin)?;
+    if let Some(obj) = config.as_object_mut() {
+        obj.entry("upstream_type")
+            .or_insert_with(|| serde_json::Value::String(upstream_type.clone()));
+    }
+    let config_value = config_json_for_draft(&config, existing.map(|r| &r.config))?;
+
+    let endpoints = match snap.endpoints.as_ref() {
+        Some(raw_eps) => sanitize_and_encrypt_endpoints_tls(
+            raw_eps,
+            existing.map(|r| &r.endpoints),
+            is_super_admin,
+        )?,
+        None => existing.map_or_else(|| serde_json::json!([]), |r| r.endpoints.clone()),
+    };
+
+    let db_workbench_env = match snap.workbench_env.as_ref() {
+        Some(env) => {
+            validate_workbench_env(env)?;
+            encode_workbench_env_for_db(env)
+        }
+        None => existing.map_or_else(|| serde_json::json!([]), |r| r.workbench_env.clone()),
+    };
+
+    let now = chrono::Utc::now();
+    Ok(repo::DraftRow {
+        id: existing.map_or_else(Uuid::new_v4, |r| r.id),
+        draft_code: existing
+            .map_or_else(|| "ephemeral".to_string(), |r| r.draft_code.clone()),
+        name: snap
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| existing.map(|r| r.name.clone()))
+            .unwrap_or_else(|| "ephemeral".to_string()),
+        description: existing.and_then(|r| r.description.clone()),
+        upstream_type,
+        upstream_url: snap.upstream_url.clone(),
+        config: config_value,
+        endpoints,
+        workbench_env: db_workbench_env,
+        status: existing.map_or_else(|| "draft".to_string(), |r| r.status.clone()),
+        source: existing.map_or_else(|| "manual".to_string(), |r| r.source.clone()),
+        linked_supplier_id: existing.and_then(|r| r.linked_supplier_id),
+        created_by: existing.and_then(|r| r.created_by.clone()),
+        created_at: existing.map_or(now, |r| r.created_at),
+        updated_at: now,
+    })
+}
+
+pub(super) async fn evaluate_gate_items_for_row(
+    pool: &PgPool,
+    draft_id: Option<Uuid>,
+    row: &repo::DraftRow,
+    extra_runs: &[RecentGateRun],
+) -> Result<Vec<DraftGateItem>, ApiError> {
     let env = parse_workbench_env(&row.workbench_env);
     let cfg = SupplierConfig::parse_and_validate(&row.config).ok();
-    let recent = repo::list_recent_gate_runs(pool, row.id, GATE_TTL_HOURS)
-        .await
-        .map_err(|e| ApiError::internal(format!("gate runs: {e}")))?;
-    let recent: Vec<RecentGateRun> = recent
-        .into_iter()
-        .map(|r| RecentGateRun {
+    let mut recent: Vec<RecentGateRun> = extra_runs.to_vec();
+    if let Some(did) = draft_id {
+        let db_runs = repo::list_recent_gate_runs(pool, did, GATE_TTL_HOURS)
+            .await
+            .map_err(|e| ApiError::internal(format!("gate runs: {e}")))?;
+        recent.extend(db_runs.into_iter().map(|r| RecentGateRun {
             endpoint_key: r.endpoint_key,
             spec_fingerprint: r.spec_fingerprint,
-        })
-        .collect();
+        }));
+    }
     let eval = evaluate_endpoint_gates(
         &row.endpoints,
         &env,
@@ -230,8 +306,13 @@ pub(super) async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<Draf
         &row.upstream_url,
         &recent,
     );
+    Ok(eval.items)
+}
+
+pub(super) async fn with_gate(pool: &PgPool, row: repo::DraftRow) -> Result<DraftDto, ApiError> {
+    let items = evaluate_gate_items_for_row(pool, Some(row.id), &row, &[]).await?;
     let mut dto = draft_to_dto(row);
-    dto.gate = eval.items;
+    dto.gate = items;
     Ok(dto)
 }
 
@@ -246,4 +327,51 @@ pub async fn delete_draft(pool: &PgPool, id: Uuid) -> Result<(), ApiError> {
         return Err(ApiError::not_found("draft".into(), id.to_string()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn materialize_snapshot_row_builds_ephemeral_and_preserves_existing_id() {
+        let snap = DraftSnapshot {
+            name: Some("未保存调试".to_string()),
+            upstream_type: "rest".to_string(),
+            upstream_url: "https://api.example.com/v1/ping".to_string(),
+            config: Some(serde_json::json!({ "timeouts": { "total_ms": 5000 } })),
+            endpoints: Some(serde_json::json!([{
+                "key": "ep_ping",
+                "name": "ping",
+                "upstream_url": "https://api.example.com/v1/ping",
+                "http_method": "GET"
+            }])),
+            workbench_env: Some(serde_json::json!({
+                "version": 2,
+                "active_env_id": null,
+                "global": [{ "key": "token", "value": "abc", "enabled": true }],
+                "environments": []
+            })),
+        };
+
+        let fresh = materialize_snapshot_row(&snap, None, true).expect("ephemeral snapshot");
+        assert_eq!(fresh.draft_code, "ephemeral");
+        assert_eq!(fresh.name, "未保存调试");
+        assert_eq!(fresh.upstream_url, "https://api.example.com/v1/ping");
+
+        let mut existing = fresh.clone();
+        let fixed_id = Uuid::new_v4();
+        existing.id = fixed_id;
+        existing.draft_code = "DR-TEST-01".to_string();
+
+        let mut next_snap = snap;
+        next_snap.upstream_url = "https://api.example.com/v2/ping".to_string();
+        let merged =
+            materialize_snapshot_row(&next_snap, Some(&existing), true).expect("merged snapshot");
+        assert_eq!(merged.id, fixed_id);
+        assert_eq!(merged.draft_code, "DR-TEST-01");
+        assert_eq!(merged.upstream_url, "https://api.example.com/v2/ping");
+        // Original row remains untouched in memory.
+        assert_eq!(existing.upstream_url, "https://api.example.com/v1/ping");
+    }
 }

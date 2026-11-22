@@ -135,8 +135,29 @@ pub async fn transform_preview(
     let data = Box::pin(svc::transform_preview(
         &state.db,
         &state.connector_runtime,
-        id,
+        Some(id),
         payload,
+        is_admin(&claims),
+    ))
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn ephemeral_transform_preview(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_connector_writer(&claims)?;
+    let data = Box::pin(svc::transform_preview(
+        &state.db,
+        &state.connector_runtime,
+        None,
+        payload,
+        is_admin(&claims),
     ))
     .await?;
     Ok(ApiResponse::ok(data))
@@ -166,10 +187,48 @@ pub async fn create_run(
             audit: &state.audit,
             engine: &state.connector_runtime,
             bypass: &state.bypass_probe,
-            id,
+            id: Some(id),
             req: payload,
             actor: &claims.sub,
             user_id: extract_user_id(&claims)?,
+            is_super_admin: is_admin(&claims),
+            client_ip: extract_client_ip(&headers, Some(addr)),
+            default_timeout_ms: state.config.connector_probe.default_timeout_ms,
+            max_body_bytes: state.config.connector_probe.max_body_bytes,
+        },
+    ))
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn create_ephemeral_run(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_connector_writer(&claims)?;
+    if let Err(wait) = state.connector_run_limiter.try_acquire() {
+        return Err(ApiError::validation(format!(
+            "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
+            wait.as_secs().max(1)
+        )));
+    }
+    let data = Box::pin(svc::run_draft(
+        &state.db,
+        svc::RunDraftParams {
+            audit: &state.audit,
+            engine: &state.connector_runtime,
+            bypass: &state.bypass_probe,
+            id: None,
+            req: payload,
+            actor: &claims.sub,
+            user_id: extract_user_id(&claims)?,
+            is_super_admin: is_admin(&claims),
             client_ip: extract_client_ip(&headers, Some(addr)),
             default_timeout_ms: state.config.connector_probe.default_timeout_ms,
             max_body_bytes: state.config.connector_probe.max_body_bytes,

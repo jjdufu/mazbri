@@ -624,7 +624,7 @@
 import "splitpanes/dist/splitpanes.css";
 import { Pane, Splitpanes, type SplitpanesResizedPayload } from "splitpanes";
 import { useMediaQuery } from "@vueuse/core";
-import { ElMessageBox, ElMessage } from "element-plus";
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { $t } from "@/locales";
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
 import CryptoProfileEditor from "./CryptoProfileEditor.vue";
@@ -685,9 +685,8 @@ const {
   saving,
   saveBadge,
   isSupplierLinked,
-  leavePromptOpen,
   shouldGuardLeave,
-  saveDraft,
+  confirmDiscardIfDirty,
   saveDraftExplicit,
   resyncFromLiveSupplier,
   goBack,
@@ -1169,29 +1168,11 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 }
 
 onBeforeRouteLeave(async () => {
-  if (!shouldGuardLeave()) return true;
-  leavePromptOpen.value = true;
-  try {
-    await ElMessageBox.confirm(
-      $t("upstreamConnector.leaveUnsavedMessage"),
-      $t("upstreamConnector.leaveUnsavedTitle"),
-      {
-        type: "warning",
-        distinguishCancelAndClose: true,
-        confirmButtonText: $t("upstreamConnector.leaveSave"),
-        cancelButtonText: $t("upstreamConnector.leaveDiscard"),
-      },
-    );
-    await saveDraft({ silent: true, skipRouteSync: true });
-    return true;
-  } catch (action) {
-    if (action === "cancel") return true;
-    leavePromptOpen.value = false;
-    if (action !== "close") {
-      ElMessage.error($t("upstreamConnector.saveDraftFailed"));
-    }
-    return false;
-  }
+  return await confirmDiscardIfDirty();
+});
+
+onBeforeRouteUpdate(async () => {
+  return await confirmDiscardIfDirty();
 });
 
 onMounted(() => {

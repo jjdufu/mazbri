@@ -628,6 +628,37 @@ pub async fn list_test_cases(
     .await
 }
 
+/// 将未绑定 `draft_id` 的内存试调记录归属到新保存的草稿（仅匹配同一操作人）。
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn claim_ephemeral_runs(
+    pool: &PgPool,
+    draft_id: Uuid,
+    run_ids: &[Uuid],
+    actor: &str,
+) -> Result<u64, sqlx::Error> {
+    if run_ids.is_empty() {
+        return Ok(0);
+    }
+    let res = sqlx::query(
+        r"
+        UPDATE upstream_connector_runs
+        SET draft_id = $1
+        WHERE id = ANY($2)
+          AND draft_id IS NULL
+          AND actor = $3
+        ",
+    )
+    .bind(draft_id)
+    .bind(run_ids)
+    .bind(actor)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

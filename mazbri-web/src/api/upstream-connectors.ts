@@ -162,6 +162,7 @@ export interface ConnectorRun {
   spec_fingerprint?: string | null;
   /** bypass_mgmt_probe = 经 bypass 管理探针；可作 require_gate。缺省/其它不作门控。 */
   probe_path?: string | null;
+  gate?: DraftGateItem[];
   response_preview?: {
     status?: number;
     body_preview?: string;
@@ -260,6 +261,15 @@ export function listDrafts(params?: {
   });
 }
 
+export interface DraftSnapshotPayload {
+  name?: string;
+  upstream_type?: string;
+  upstream_url: string;
+  config?: Record<string, unknown>;
+  endpoints?: ConnectorEndpoint[];
+  workbench_env?: WorkbenchEnvValue;
+}
+
 export function createDraft(
   data: {
     draft_code: string;
@@ -271,6 +281,7 @@ export function createDraft(
     endpoints?: ConnectorEndpoint[];
     workbench_env?: WorkbenchEnvValue;
     source?: string;
+    claim_run_ids?: string[];
   },
   opts?: ConnectorRequestOpts,
 ) {
@@ -332,18 +343,20 @@ export function deleteDraft(id: string) {
 }
 
 export function runDraft(
-  id: string,
+  id: string | null | undefined,
   data: {
     mode?: string;
     endpoint_id?: string;
     assertions?: AssertionSpec[];
     env_id?: string | null;
     captures?: Record<string, string>;
+    draft_snapshot?: DraftSnapshotPayload;
   },
   opts?: ConnectorRequestOpts,
 ) {
+  const target = (id || "").trim();
   return request.post<ConnectorRun>({
-    url: `${BASE}/drafts/${id}/runs`,
+    url: target ? `${BASE}/drafts/${target}/runs` : `${BASE}/runs`,
     data,
     ...withConnectorOpts(opts),
   });
@@ -362,16 +375,20 @@ export function getRun(runId: string) {
 }
 
 export function transformPreview(
-  id: string,
+  id: string | null | undefined,
   data: {
     endpoint_id?: string;
     env_id?: string | null;
     captures?: Record<string, string>;
+    draft_snapshot?: DraftSnapshotPayload;
   },
   opts?: ConnectorRequestOpts,
 ) {
+  const target = (id || "").trim();
   return request.post<{ ok: boolean; stages: StageResult[] }>({
-    url: `${BASE}/drafts/${id}/transform-preview`,
+    url: target
+      ? `${BASE}/drafts/${target}/transform-preview`
+      : `${BASE}/transform-preview`,
     data,
     ...withConnectorOpts(opts),
   });

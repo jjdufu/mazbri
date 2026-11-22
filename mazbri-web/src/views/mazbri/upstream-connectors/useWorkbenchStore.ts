@@ -1,4 +1,3 @@
-import { watchDebounced } from "@vueuse/core";
 import { saveAs } from "file-saver";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
@@ -14,14 +13,13 @@ import {
   type ConnectorDraft,
   type ConnectorEndpoint,
   type ConnectorRun,
+  type DraftGateItem,
+  type DraftSnapshotPayload,
   type PublishResult,
   createDraft,
   draftFromSupplier,
   exportPostman,
   getDraft,
-  importCurl,
-  importOpenApi,
-  importPostman,
   listDrafts,
   listRuns,
   liveRun,
@@ -285,9 +283,10 @@ export function useWorkbenchStore() {
 
   const bootstrapping = ref(true);
   const saving = ref(false);
-  const dirty = ref(false);
-  const suppressDirty = ref(false);
-  const editGen = ref(0);
+  const savedSnapshotSig = ref("");
+  const ephemeralRunIds = ref<string[]>([]);
+  const passedStaticSigMap = ref<Record<string, string>>({});
+  const suppressRouteGuard = ref(false);
   const saveError = ref(false);
   const lastSavedAt = ref<Date | null>(null);
   const leavePromptOpen = ref(false);
@@ -408,6 +407,125 @@ export function useWorkbenchStore() {
     Boolean(draft.value?.linked_supplier_id || isEditMode.value),
   );
 
+  function projectEndpointsForPayload(): ConnectorEndpoint[] {
+    const activeId = activeEp.value?.id || "";
+    return endpoints.value.map((ep) => {
+      const isActive = Boolean(activeId) && ep.id === activeId;
+      const hRows = isActive
+        ? headerRows.value
+        : entriesToKv(ep.header_entries, ep.headers || {});
+      const qRows = isActive
+        ? queryRows.value
+        : entriesToKv(ep.query_entries, ep.query || {});
+      const tlsVal = isActive
+        ? tlsFormToSpec(endpointTlsForm.value)
+        : ep.tls ?? undefined;
+      const nextEp: ConnectorEndpoint = {
+        ...ep,
+        header_entries: hRows.map((r) => ({
+          key: r.key,
+          value: r.value,
+          desc: r.desc ?? "",
+          enabled: r.enabled !== false,
+        })),
+        query_entries: qRows.map((r) => ({
+          key: r.key,
+          value: r.value,
+          desc: r.desc ?? "",
+          enabled: r.enabled !== false,
+        })),
+        headers: kvToMap(hRows),
+        query: kvToMap(qRows),
+        tls: tlsVal,
+        captures: serializeCaptureList(ep.captures),
+        assertions: (ep.assertions || []).map(({ uid: _uid, ...rest }) => rest),
+      };
+      if (nextEp.adapter === "graphql") {
+        const vRows = isActive
+          ? gqlVarRows.value
+          : mapToKv(recordFromUnknown(ep.graphql?.variables_map));
+        const eRows = isActive
+          ? gqlEnumRows.value
+          : mapToKv(recordFromUnknown(ep.graphql?.enum_map));
+        nextEp.graphql = {
+          ...(ep.graphql || {}),
+          variables_map: kvToMap(vRows),
+          enum_map: kvToMap(eRows),
+        };
+      }
+      if (nextEp.auth) {
+        const nextAuth = sanitizeAuthSpec(
+          nextEp.auth as Record<string, unknown>,
+        );
+        nextEp.auth = nextAuth || { profile: "none" };
+      }
+      return nextEp;
+    });
+  }
+
+  function buildDraftSnapshotPayload(): DraftSnapshotPayload {
+    return {
+      name: draft.value?.name ?? "",
+      upstream_type: CODE_FREE_UPSTREAM_TYPE,
+      upstream_url: draft.value?.upstream_url ?? "",
+      config: formToApiConfig(configForm.value),
+      endpoints: projectEndpointsForPayload(),
+      workbench_env: serializeWorkbenchEnvDoc(envState.value),
+    };
+  }
+
+  const currentSnapshotSig = computed(() => {
+    if (!draft.value) return "";
+    return JSON.stringify(buildDraftSnapshotPayload());
+  });
+
+  const dirty = computed<boolean>(() => {
+    if (!canWriteWorkbench.value || !draft.value || bootstrapping.value) {
+      return false;
+    }
+    return currentSnapshotSig.value !== savedSnapshotSig.value;
+  });
+
+  function staticEndpointGateSig(ep: ConnectorEndpoint): string {
+    const {
+      captures: _c,
+      assertions: _a,
+      channel_code: _cc,
+      path_prefix: _pp,
+      cost_price: _cp,
+      qps_limit: _ql,
+      tag: _tg,
+      name: _nm,
+      ...staticRest
+    } = ep;
+    return JSON.stringify({
+      upstream_url: draft.value?.upstream_url ?? "",
+      config: formToApiConfig(configForm.value),
+      env: staticEnvMap.value,
+      ep: staticRest,
+    });
+  }
+
+  function recordPassedGateSigs(gateItems: DraftGateItem[] | undefined) {
+    const projected = projectEndpointsForPayload();
+    const nextMap: Record<string, string> = {};
+    projected.forEach((ep, i) => {
+      const id = ep.id || `ep-${i + 1}`;
+      const hit = (gateItems || []).find(
+        (g) =>
+          g.endpoint_key &&
+          (g.endpoint_key === ep.id ||
+            g.endpoint_key === ep.name ||
+            g.endpoint_key === ep.path ||
+            g.endpoint_key === id),
+      );
+      if (hit?.met) {
+        nextMap[id] = staticEndpointGateSig(ep);
+      }
+    });
+    passedStaticSigMap.value = nextMap;
+  }
+
   const saveBadge = computed(() => {
     if (saving.value) {
       return {
@@ -446,9 +564,28 @@ export function useWorkbenchStore() {
       isSuccessfulSend(lastRun.value),
   );
 
-  const gate = computed(() =>
-    gateViewFromServer(endpoints.value, draft.value?.gate),
-  );
+  const gate = computed(() => {
+    const projected = projectEndpointsForPayload();
+    const adjustedServer = (draft.value?.gate || []).map((g) => {
+      if (!g.met) return g;
+      const idx = projected.findIndex(
+        (ep, i) =>
+          g.endpoint_key === ep.id ||
+          g.endpoint_key === ep.name ||
+          g.endpoint_key === ep.path ||
+          g.endpoint_key === `ep-${i + 1}`,
+      );
+      if (idx < 0) return g;
+      const ep = projected[idx]!;
+      const id = ep.id || `ep-${idx + 1}`;
+      const passedSig = passedStaticSigMap.value[id];
+      if (passedSig && passedSig !== staticEndpointGateSig(ep)) {
+        return { ...g, met: false, reason: "spec_changed" as const };
+      }
+      return g;
+    });
+    return gateViewFromServer(endpoints.value, adjustedServer);
+  });
 
   const leftoverTokens = computed(() =>
     leftoverTokenHeaderNames({
@@ -759,13 +896,6 @@ export function useWorkbenchStore() {
     urlDraft.value = composedUrl();
   }
 
-  function markDirty() {
-    if (!suppressDirty.value) {
-      dirty.value = true;
-      editGen.value += 1;
-    }
-  }
-
   async function refreshSwitcherOptions() {
     switcherLoading.value = true;
     try {
@@ -794,22 +924,37 @@ export function useWorkbenchStore() {
       ) {
         return;
       }
-      await router.replace({
-        path: WORKBENCH_PATH,
-        query: { supplier_id: d.linked_supplier_id },
-      });
+      suppressRouteGuard.value = true;
+      try {
+        await router.replace({
+          path: WORKBENCH_PATH,
+          query: { supplier_id: d.linked_supplier_id },
+        });
+      } finally {
+        suppressRouteGuard.value = false;
+      }
       return;
     }
     if (!isPersistedDraftId(d.id)) {
       if (!route.query.session && !route.query.supplier_id) return;
-      await router.replace({ path: WORKBENCH_PATH });
+      suppressRouteGuard.value = true;
+      try {
+        await router.replace({ path: WORKBENCH_PATH });
+      } finally {
+        suppressRouteGuard.value = false;
+      }
       return;
     }
     if (route.query.session === d.id && !route.query.supplier_id) return;
-    await router.replace({
-      path: WORKBENCH_PATH,
-      query: { session: d.id },
-    });
+    suppressRouteGuard.value = true;
+    try {
+      await router.replace({
+        path: WORKBENCH_PATH,
+        query: { session: d.id },
+      });
+    } finally {
+      suppressRouteGuard.value = false;
+    }
   }
 
   function leaveForMicroservice(supplierId?: string | null) {
@@ -863,11 +1008,11 @@ export function useWorkbenchStore() {
       d = asCodeFreeDraft(d);
     }
     abortAllRuns();
-    suppressDirty.value = true;
     Object.keys(tabRuntimeMap).forEach((k) => {
       delete tabRuntimeMap[k];
     });
     capturedVars.value = {};
+    ephemeralRunIds.value = [];
     draft.value = {
       ...d,
       upstream_type: CODE_FREE_UPSTREAM_TYPE,
@@ -936,16 +1081,11 @@ export function useWorkbenchStore() {
       }
     }
 
+    recordPassedGateSigs(d.gate);
     await syncSessionRoute(d);
     void refreshSwitcherOptions();
     await nextTick();
-    dirty.value = coerced;
-    if (coerced) editGen.value += 1;
-    suppressDirty.value = false;
-    if (!coerced) {
-      await nextTick();
-      dirty.value = false;
-    }
+    savedSnapshotSig.value = coerced ? "" : currentSnapshotSig.value;
     return true;
   }
 
@@ -959,7 +1099,6 @@ export function useWorkbenchStore() {
   function openEndpointTab(epId: string) {
     if (!epId || epId === activeTabId.value) return;
     const prevEp = activeEp.value;
-    suppressDirty.value = true;
     flushKvToEndpoint(prevEp);
     if (!openTabIds.value.includes(epId)) {
       openTabIds.value = [...openTabIds.value, epId];
@@ -968,9 +1107,6 @@ export function useWorkbenchStore() {
     activeTabId.value = epId;
     syncKvFromActive();
     refreshUrlDraft();
-    void nextTick(() => {
-      suppressDirty.value = false;
-    });
   }
 
   function closeEndpointTab(epId: string) {
@@ -1050,13 +1186,9 @@ export function useWorkbenchStore() {
         !endpoints.value.some((e) => e.id === activeTabId.value)
       ) {
         const nextId = openTabIds.value[0] || endpoints.value[0]?.id || "";
-        suppressDirty.value = true;
         activeTabId.value = nextId;
         syncKvFromActive();
         refreshUrlDraft();
-        void nextTick(() => {
-          suppressDirty.value = false;
-        });
       }
     }
   }
@@ -1183,30 +1315,35 @@ export function useWorkbenchStore() {
     return msgs;
   }
 
-  function sessionHasPersistableContent(): boolean {
-    const d = draft.value;
-    if (!d) return false;
-    const untitled = $t("upstreamConnector.untitledName");
-    if (d.name.trim() && d.name.trim() !== untitled) return true;
-    if (d.upstream_url.trim()) return true;
-    if (envState.value.globalRows.some((row) => row.key.trim())) return true;
-    if (envState.value.environments.length > 0) return true;
-    if (endpoints.value.length > 1) return true;
-    const ep = endpoints.value[0];
-    if (!ep) return false;
-    if ((ep.path || "").trim()) return true;
-    if ((ep.name || "").trim() && !/^endpoint-\d+$/i.test(ep.name || "")) {
-      return true;
-    }
-    if ((ep.method || "GET").toUpperCase() !== "GET") return true;
-    return false;
-  }
-
   function shouldGuardLeave(): boolean {
+    if (suppressRouteGuard.value) return false;
     if (!canWriteWorkbench.value) return false;
     if (!draft.value || bootstrapping.value) return false;
-    if (!dirty.value) return false;
-    return isPersistedDraftId(draft.value.id) || sessionHasPersistableContent();
+    return dirty.value;
+  }
+
+  async function confirmDiscardIfDirty(): Promise<boolean> {
+    if (!shouldGuardLeave()) return true;
+    if (leavePromptOpen.value) return false;
+    leavePromptOpen.value = true;
+    try {
+      await ElMessageBox.confirm(
+        $t("upstreamConnector.leaveUnsavedMessage"),
+        $t("upstreamConnector.leaveUnsavedTitle"),
+        {
+          type: "warning",
+          confirmButtonText: $t("upstreamConnector.leaveConfirmExit"),
+          cancelButtonText: $t("common.cancel"),
+          confirmButtonClass: "el-button--danger",
+          closeOnClickModal: false,
+        },
+      );
+      return true;
+    } catch {
+      return false;
+    } finally {
+      leavePromptOpen.value = false;
+    }
   }
 
   async function saveDraft(opts?: {
@@ -1222,30 +1359,9 @@ export function useWorkbenchStore() {
       throw new Error(tlsMsgs[0]);
     }
     saving.value = true;
-    suppressDirty.value = true;
     try {
       flushKvToActive();
-      const serializedEndpoints = endpoints.value.map((ep) => {
-        const nextEp: ConnectorEndpoint = {
-          ...ep,
-          captures: serializeCaptureList(ep.captures),
-        };
-        if (nextEp.auth) {
-          const nextAuth = sanitizeAuthSpec(
-            nextEp.auth as Record<string, unknown>,
-          );
-          nextEp.auth = nextAuth || { profile: "none" };
-        }
-        return nextEp;
-      });
-      const body = {
-        name: draft.value.name,
-        upstream_url: draft.value.upstream_url,
-        upstream_type: CODE_FREE_UPSTREAM_TYPE,
-        config: formToApiConfig(configForm.value),
-        endpoints: serializedEndpoints,
-        workbench_env: serializeWorkbenchEnvDoc(envState.value),
-      };
+      const body = buildDraftSnapshotPayload();
       const reqOpts = {
         ...(opts?.signal ? { signal: opts.signal, ...RUN_HTTP } : {}),
         showErrorMessage: !opts?.silent,
@@ -1255,21 +1371,28 @@ export function useWorkbenchStore() {
         : await createDraft(
             {
               draft_code: draft.value.draft_code || genSessionCode(),
-              ...body,
+              name: body.name || $t("upstreamConnector.untitledName"),
+              upstream_type: CODE_FREE_UPSTREAM_TYPE,
+              upstream_url: body.upstream_url,
+              config: body.config,
+              endpoints: body.endpoints,
+              workbench_env: body.workbench_env,
               source: "manual",
+              claim_run_ids: ephemeralRunIds.value,
             },
             reqOpts,
           );
+      ephemeralRunIds.value = [];
       draft.value = {
         ...draft.value,
         ...updated,
         endpoints: endpoints.value,
         upstream_type: CODE_FREE_UPSTREAM_TYPE,
       };
-      const srvSupTls =
-        (updated.config?.tls as Record<string, unknown> | undefined) ?? null;
-      if (srvSupTls) {
-        supplierTlsForm.value = tlsSpecToForm(srvSupTls);
+      if (updated.config) {
+        configForm.value = apiConfigToForm(
+          updated.config as Record<string, unknown>,
+        );
       }
       if (Array.isArray(updated.endpoints)) {
         updated.endpoints.forEach((srvEp, i) => {
@@ -1277,52 +1400,23 @@ export function useWorkbenchStore() {
             endpoints.value[i]!.tls = srvEp.tls ?? undefined;
           }
         });
-        if (activeEp.value?.tls) {
-          endpointTlsForm.value = tlsSpecToForm(activeEp.value.tls);
-        }
+        endpointTlsForm.value = tlsSpecToForm(activeEp.value?.tls ?? null);
       }
-      dirty.value = false;
+      recordPassedGateSigs(updated.gate);
       saveError.value = false;
       lastSavedAt.value = new Date();
       await nextTick();
+      savedSnapshotSig.value = currentSnapshotSig.value;
       if (!opts?.skipRouteSync) await syncSessionRoute(draft.value);
+      void refreshSwitcherOptions();
       if (!opts?.silent) ElMessage.success($t("common.feedback.saveSuccess"));
     } catch (err) {
       saveError.value = true;
       throw err;
     } finally {
-      suppressDirty.value = false;
       saving.value = false;
     }
   }
-
-  watchDebounced(
-    editGen,
-    async () => {
-      if (!canWriteWorkbench.value) return;
-      if (
-        !dirty.value ||
-        bootstrapping.value ||
-        saving.value ||
-        leavePromptOpen.value ||
-        !draft.value
-      ) {
-        return;
-      }
-      if (
-        !isPersistedDraftId(draft.value.id) &&
-        !sessionHasPersistableContent()
-      ) {
-        return;
-      }
-      try {
-        await saveDraft({ silent: true });
-      } catch {
-        saveError.value = true;
-      }
-    },
-    { debounce: 900 },
-  );
 
   watch(
     () => activeEp.value?.adapter,
@@ -1347,25 +1441,6 @@ export function useWorkbenchStore() {
   watch(urlDraft, (v) => {
     if (v.trim()) urlMissing.value = false;
   });
-
-  watch(
-    [
-      endpoints,
-      () => draft.value?.name,
-      () => draft.value?.upstream_url,
-      configForm,
-      supplierTimeoutMs,
-      supplierTlsForm,
-      endpointTlsForm,
-      headerRows,
-      queryRows,
-      envState,
-      gqlVarRows,
-      gqlEnumRows,
-    ],
-    () => markDirty(),
-    { deep: true },
-  );
 
   function beginTabRun(epId: string): { signal: AbortSignal; gen: number } {
     responseCollapsed.value = false;
@@ -1486,23 +1561,35 @@ export function useWorkbenchStore() {
         return;
       }
     }
+    const tlsMsgs = tlsIssuesAll();
+    if (tlsMsgs.length) {
+      ElMessage.warning(tlsMsgs[0]!);
+      return;
+    }
     const epId = ep.id;
     const { signal, gen } = beginTabRun(epId);
     try {
-      await saveDraft({ silent: true, signal });
+      flushKvToActive();
       if (!appliedRequest()) return;
+      const persistedId = isPersistedDraftId(draft.value.id)
+        ? draft.value.id
+        : null;
       const r = await runDraft(
-        draft.value.id,
+        persistedId,
         {
           mode,
           endpoint_id: epId,
           assertions: ep.assertions as AssertionSpec[],
           env_id: envState.value.activeEnvId,
           captures: capturedVars.value,
+          draft_snapshot: buildDraftSnapshotPayload(),
         },
         { signal, ...RUN_HTTP },
       );
       ensureTabRuntime(epId).lastRun = r;
+      if (!persistedId && r.id && !ephemeralRunIds.value.includes(r.id)) {
+        ephemeralRunIds.value = [...ephemeralRunIds.value, r.id];
+      }
       if (r.response_preview?.captured) {
         capturedVars.value = {
           ...capturedVars.value,
@@ -1510,7 +1597,12 @@ export function useWorkbenchStore() {
         };
       }
       runs.value = [r, ...runs.value].slice(0, 50);
-      await refreshGate();
+      if (Array.isArray(r.gate)) {
+        draft.value = { ...draft.value, gate: r.gate };
+        recordPassedGateSigs(r.gate);
+      } else if (persistedId) {
+        await refreshGate();
+      }
       if (r.ok) ElMessage.success($t("upstreamConnector.runOk"));
       else {
         ElMessage.error(
@@ -1571,16 +1663,25 @@ export function useWorkbenchStore() {
     const ep = activeEp.value;
     if (!draft.value || !ep || !ep.id) return;
     if (blockIfUnresolved(unresolved.value)) return;
+    const tlsMsgs = tlsIssuesAll();
+    if (tlsMsgs.length) {
+      ElMessage.warning(tlsMsgs[0]!);
+      return;
+    }
     const epId = ep.id;
     const { signal, gen } = beginTabRun(epId);
     try {
-      await saveDraft({ silent: true, signal });
+      flushKvToActive();
+      const persistedId = isPersistedDraftId(draft.value.id)
+        ? draft.value.id
+        : null;
       const r = await transformPreview(
-        draft.value.id,
+        persistedId,
         {
           endpoint_id: epId,
           env_id: envState.value.activeEnvId,
           captures: capturedVars.value,
+          draft_snapshot: buildDraftSnapshotPayload(),
         },
         { signal, ...RUN_HTTP },
       );
@@ -1673,13 +1774,20 @@ export function useWorkbenchStore() {
     };
   }
 
+  async function initBlankSession() {
+    if (!canWriteWorkbench.value) return;
+    await openSession(buildLocalBlankDraft());
+  }
+
   async function createBlankSession() {
     if (!canWriteWorkbench.value) return;
+    if (!(await confirmDiscardIfDirty())) return;
     await openSession(buildLocalBlankDraft());
   }
 
   async function switchToDraft(draftId: string) {
     if (!draftId || draftId === draft.value?.id) return;
+    if (!(await confirmDiscardIfDirty())) return;
     bootstrapping.value = true;
     try {
       const d = await getDraft(draftId);
@@ -1695,6 +1803,7 @@ export function useWorkbenchStore() {
 
   async function switchToSupplier(supplierId: string) {
     if (!supplierId || supplierId === draft.value?.linked_supplier_id) return;
+    if (!(await confirmDiscardIfDirty())) return;
     bootstrapping.value = true;
     try {
       const sup = await fetchSupplierById(supplierId);
@@ -1778,15 +1887,15 @@ export function useWorkbenchStore() {
     if (!canWriteWorkbench.value) return;
     importing.value = true;
     try {
+      let parsed: ParsedImport;
+      if (importTab.value === "curl") {
+        parsed = parseCurl(importCurlText.value);
+      } else if (importTab.value === "postman") {
+        parsed = parsePostmanCollection(JSON.parse(importJsonText.value));
+      } else {
+        parsed = parseOpenApiDocument(JSON.parse(importJsonText.value));
+      }
       if (importMode.value === "merge" && draft.value) {
-        let parsed: ParsedImport;
-        if (importTab.value === "curl") {
-          parsed = parseCurl(importCurlText.value);
-        } else if (importTab.value === "postman") {
-          parsed = parsePostmanCollection(JSON.parse(importJsonText.value));
-        } else {
-          parsed = parseOpenApiDocument(JSON.parse(importJsonText.value));
-        }
         endpoints.value = mergeImportedEndpoints(
           endpoints.value,
           parsed.endpoints,
@@ -1806,16 +1915,24 @@ export function useWorkbenchStore() {
         );
         return;
       }
-      let d: ConnectorDraft;
-      if (importTab.value === "curl") {
-        d = await importCurl({ curl: importCurlText.value });
-      } else if (importTab.value === "postman") {
-        d = await importPostman({ collection: JSON.parse(importJsonText.value) });
-      } else {
-        d = await importOpenApi({ document: JSON.parse(importJsonText.value) });
+      if (!(await confirmDiscardIfDirty())) {
+        return;
       }
+      const blank = buildLocalBlankDraft();
       showImport.value = false;
-      await openSession(d);
+      await openSession(blank);
+      if (draft.value) {
+        draft.value.name = parsed.name || "Imported from cURL";
+        draft.value.upstream_url = parsed.upstream_url || "";
+        endpoints.value = (parsed.endpoints || []).map((ep, i) =>
+          normalizeWorkbenchEndpoint(ep as ConnectorEndpoint, i),
+        );
+        const firstId = endpoints.value[0]?.id || "";
+        openTabIds.value = firstId ? [firstId] : [];
+        activeTabId.value = firstId;
+        syncKvFromActive();
+        refreshUrlDraft();
+      }
       ElMessage.success($t("upstreamConnector.imported"));
     } catch (e) {
       ElMessage.error((e as Error)?.message || "Import failed");
@@ -1983,7 +2100,7 @@ export function useWorkbenchStore() {
         void refreshSwitcherOptions();
         return;
       }
-      await createBlankSession();
+      await initBlankSession();
     } catch (e) {
       draft.value = null;
       ElMessage.error(
@@ -2042,6 +2159,7 @@ export function useWorkbenchStore() {
     isSupplierLinked,
     leavePromptOpen,
     shouldGuardLeave,
+    confirmDiscardIfDirty,
     saveDraft,
     saveDraftExplicit,
     resyncFromLiveSupplier,
