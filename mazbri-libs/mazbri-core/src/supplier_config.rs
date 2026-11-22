@@ -17,7 +17,7 @@
 
 use crate::channel_egress::{
     AuthAwsSpec, AuthDigestSpec, AuthHawkSpec, AuthInvalidationSpec, AuthJwtSpec, AuthProfile,
-    validate_invalidation_rules,
+    UpstreamTlsSpec, mask_tls_in_json, merge_tls_secret_in_json, validate_invalidation_rules,
 };
 use crate::crypto::supplier_secrets::{
     SupplierSecretsError, decrypt_credentials_map, encrypt_credentials_map, supplier_secrets_key,
@@ -52,6 +52,10 @@ pub struct SupplierConfig {
     /// 透明上游动态鉴权（bypass 消费）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_flow: Option<AuthFlowConfig>,
+
+    /// 供应商级默认上游 TLS / 双向 mTLS 配置（含换票请求生效；可被渠道 `egress.tls` 覆盖）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<UpstreamTlsSpec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -262,6 +266,11 @@ impl SupplierConfig {
             validate_auth_flow(auth)?;
         }
 
+        if let Some(ref tls) = self.tls {
+            tls.validate("config.tls")
+                .map_err(ConfigValidationError::new)?;
+        }
+
         Ok(())
     }
 
@@ -304,31 +313,42 @@ impl SupplierConfig {
                 auth.invalidation = None;
             }
         }
+        self.tls = self.tls.take().and_then(UpstreamTlsSpec::normalized);
         self
     }
 
-    /// 写入 DB 前加密 credentials（G-05）。
+    /// 写入 DB 前加密 credentials 与 `tls.client_key`（G-05）。
     ///
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn encrypt_credentials_for_storage(mut self) -> Result<Self, ConfigValidationError> {
-        if let Some(ref mut auth) = self.auth_flow {
+        if self.auth_flow.is_some() || self.tls.is_some() {
             let key = supplier_secrets_key()?;
-            encrypt_credentials_map(&mut auth.credentials, key)?;
+            if let Some(ref mut auth) = self.auth_flow {
+                encrypt_credentials_map(&mut auth.credentials, key)?;
+            }
+            if let Some(ref mut tls) = self.tls {
+                tls.encrypt_for_storage(key)?;
+            }
         }
         Ok(self)
     }
 
-    /// 数据面出站前解密 credentials。
+    /// 数据面出站前解密 credentials 与 `tls.client_key`。
     ///
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn decrypt_credentials_for_runtime(mut self) -> Result<Self, ConfigValidationError> {
-        if let Some(ref mut auth) = self.auth_flow {
+        if self.auth_flow.is_some() || self.tls.is_some() {
             let key = supplier_secrets_key()?;
-            decrypt_credentials_map(&mut auth.credentials, key)?;
+            if let Some(ref mut auth) = self.auth_flow {
+                decrypt_credentials_map(&mut auth.credentials, key)?;
+            }
+            if let Some(ref mut tls) = self.tls {
+                tls.decrypt_for_runtime(key)?;
+            }
         }
         Ok(self)
     }
@@ -427,11 +447,14 @@ fn validate_timeout_field(
     Ok(())
 }
 
-/// 从可能含凭据掩码的新 config 与旧 config 合并 credentials。
+/// 从可能含凭据掩码的新 config 与旧 config 合并 credentials 与 `tls.client_key`。
 pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &serde_json::Value) {
     let Some(new_obj) = new_config.as_object_mut() else {
         return;
     };
+    if let Some(new_tls) = new_obj.get_mut("tls") {
+        merge_tls_secret_in_json(new_tls, old_config.get("tls"));
+    }
     let Some(new_auth) = new_obj.get_mut("auth_flow") else {
         return;
     };
@@ -466,17 +489,21 @@ pub fn merge_auth_credentials(new_config: &mut serde_json::Value, old_config: &s
     }
 }
 
-/// 脱敏 config 中 `auth_flow.credentials（列表/详情/审计用；密文也打码`）。
+/// 脱敏 config 中 `auth_flow.credentials` 与 `tls.client_key`（列表/详情/审计用；密文也打码）。
 #[must_use]
 pub fn mask_config_credentials(mut config: serde_json::Value) -> serde_json::Value {
-    if let Some(obj) = config.as_object_mut()
-        && let Some(auth_flow) = obj.get_mut("auth_flow")
-        && let Some(auth_flow_obj) = auth_flow.as_object_mut()
-        && let Some(credentials) = auth_flow_obj.get_mut("credentials")
-        && let Some(creds_obj) = credentials.as_object_mut()
-    {
-        for (_, val) in creds_obj.iter_mut() {
-            *val = serde_json::Value::String("••••••••".to_string());
+    if let Some(obj) = config.as_object_mut() {
+        if let Some(auth_flow) = obj.get_mut("auth_flow")
+            && let Some(auth_flow_obj) = auth_flow.as_object_mut()
+            && let Some(credentials) = auth_flow_obj.get_mut("credentials")
+            && let Some(creds_obj) = credentials.as_object_mut()
+        {
+            for (_, val) in creds_obj.iter_mut() {
+                *val = serde_json::Value::String("••••••••".to_string());
+            }
+        }
+        if let Some(tls) = obj.get_mut("tls") {
+            mask_tls_in_json(tls);
         }
     }
     config
@@ -836,5 +863,47 @@ mod tests {
         }
         .normalize_disabled_sections();
         assert!(empty_disabled.auth_flow.is_none());
+    }
+
+    #[test]
+    fn supplier_tls_encrypt_mask_merge_and_decrypt() {
+        let cfg = SupplierConfig {
+            upstream_type: UPSTREAM_TYPE_TRANSPARENT.into(),
+            tls: Some(UpstreamTlsSpec {
+                insecure_skip_verify: false,
+                ca_cert: Some("-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----".into()),
+                client_cert: Some(
+                    "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----".into(),
+                ),
+                client_key: Some(
+                    "-----BEGIN PRIVATE KEY-----\nSECRETKEY\n-----END PRIVATE KEY-----".into(),
+                ),
+            }),
+            ..Default::default()
+        };
+        cfg.validate().unwrap();
+        let stored = cfg.encrypt_credentials_for_storage().unwrap();
+        let raw_json = stored.to_json_value().unwrap();
+        assert!(
+            raw_json["tls"]["client_key"]
+                .as_str()
+                .unwrap()
+                .starts_with("enc:v2:")
+        );
+        let masked = mask_config_credentials(raw_json.clone());
+        assert_eq!(masked["tls"]["client_key"], "••••••••");
+
+        let mut update = masked;
+        merge_auth_credentials(&mut update, &raw_json);
+        assert_eq!(update["tls"]["client_key"], raw_json["tls"]["client_key"]);
+
+        let runtime_cfg = SupplierConfig::parse_and_validate(&update)
+            .unwrap()
+            .decrypt_credentials_for_runtime()
+            .unwrap();
+        assert_eq!(
+            runtime_cfg.tls.unwrap().client_key.as_deref(),
+            Some("-----BEGIN PRIVATE KEY-----\nSECRETKEY\n-----END PRIVATE KEY-----")
+        );
     }
 }

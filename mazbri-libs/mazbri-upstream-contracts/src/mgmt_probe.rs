@@ -10,6 +10,7 @@ use crate::shared::{
     InvokeBizError, InvokeRequest, InvokeResponse, InvokeUpstreamMeta, TraceContext,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// 管理探针唯一路由。
 pub const MGMT_PROBE_INVOKE_PATH: &str = "/v1/mgmt-probe/invoke";
@@ -47,7 +48,7 @@ pub struct ProbeTrace {
     pub sampled: bool,
 }
 
-/// 探针响应体；由 proto [`InvokeResponse`] 转换而来。
+/// 探针响应体；基础字段由 proto [`InvokeResponse`] 转换而来，管理探针额外回传脱敏流水线阶段、响应头与链路号。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProbeInvokeResponse {
@@ -60,6 +61,15 @@ pub struct ProbeInvokeResponse {
     pub internal_retries: u32,
     /// 每次内部重试的原因标签。
     pub retry_reasons: Vec<String>,
+    /// 上游返回的 HTTP 响应头（供工作台「响应头」视图与 `header_*` 断言评估）。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub response_headers: BTreeMap<String, String>,
+    /// 运行时脱敏后的阶段明细 JSON 数组（`Vec<StageResult>` 序列化）。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub stages_json: String,
+    /// 本次探针链路 `trace_id`（W3C 32-hex）。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub trace_id: String,
 }
 
 /// 业务错误；由 proto [`InvokeBizError`] 转换而来。
@@ -205,6 +215,9 @@ impl From<InvokeResponse> for ProbeInvokeResponse {
             upstream_meta: upstream_meta.map(Into::into),
             internal_retries,
             retry_reasons,
+            response_headers: BTreeMap::new(),
+            stages_json: String::new(),
+            trace_id: String::new(),
         }
     }
 }

@@ -1,10 +1,11 @@
 //! Core invoke pipeline: validate spec → ssrf → auth profile → adapter.invoke.
 use mazbri_core::num::SaturatingFrom;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mazbri_core::AdapterKind;
+use mazbri_core::{AdapterKind, UpstreamTlsSpec};
 use mazbri_crypto::AlgorithmRegistry;
 
 use crate::adapters::{
@@ -136,9 +137,30 @@ impl RuntimeOptions {
     }
 }
 
+const MAX_CACHED_TLS_CLIENTS: usize = 128;
+
+#[derive(Debug, Clone)]
+struct HttpClientDefaults {
+    user_agent: String,
+    connect_timeout: Duration,
+    timeout: Duration,
+}
+
+impl Default for HttpClientDefaults {
+    fn default() -> Self {
+        Self {
+            user_agent: "reqwest".to_string(),
+            connect_timeout: Duration::from_secs(3),
+            timeout: Duration::from_secs(15),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct RuntimeEngine {
     client: Arc<reqwest::Client>,
+    tls_clients: Arc<Mutex<HashMap<[u8; 32], Arc<reqwest::Client>>>>,
+    http_defaults: HttpClientDefaults,
     ssrf: SsrfChecker,
     token_cache: Arc<TokenCache>,
     options: RuntimeOptions,
@@ -156,6 +178,8 @@ impl RuntimeEngine {
         let ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         Self {
             client,
+            tls_clients: Arc::new(Mutex::new(HashMap::new())),
+            http_defaults: HttpClientDefaults::default(),
             ssrf,
             token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
             retry_budgets: Arc::new(options.retry_budgets()),
@@ -163,6 +187,90 @@ impl RuntimeEngine {
             ws_pool,
             observer: Arc::new(NoopObserver),
         }
+    }
+
+    /// 注入自定义 TLS 连接池构造时复用的基础 HTTP 参数（`User-Agent`、连接超时与请求超时）。
+    #[must_use]
+    pub fn with_http_client_defaults(
+        mut self,
+        user_agent: impl Into<String>,
+        connect_timeout: Duration,
+        timeout: Duration,
+    ) -> Self {
+        self.http_defaults = HttpClientDefaults {
+            user_agent: user_agent.into(),
+            connect_timeout,
+            timeout,
+        };
+        self
+    }
+
+    fn resolve_http_client(
+        &self,
+        tls: Option<&UpstreamTlsSpec>,
+    ) -> Result<Arc<reqwest::Client>, ExecuteError> {
+        let Some(spec) = tls.filter(|t| !t.is_empty()) else {
+            return Ok(self.client.clone());
+        };
+        let fp = spec.fingerprint_bytes();
+        if let Ok(guard) = self.tls_clients.lock()
+            && let Some(cached) = guard.get(&fp)
+        {
+            return Ok(cached.clone());
+        }
+
+        let mut builder = self.ssrf.configure_http_client(
+            reqwest::Client::builder()
+                .timeout(self.http_defaults.timeout)
+                .connect_timeout(self.http_defaults.connect_timeout)
+                .user_agent(&self.http_defaults.user_agent)
+                .pool_max_idle_per_host(32)
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_keepalive(Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none())
+                .danger_accept_invalid_certs(spec.insecure_skip_verify),
+        );
+
+        if let Some(ca_pem) = spec.ca_cert.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let certs = reqwest::Certificate::from_pem_bundle(ca_pem.as_bytes()).map_err(|e| {
+                ExecuteError::SpecInvalid(format!("invalid upstream CA PEM certificate: {e}"))
+            })?;
+            for cert in certs {
+                builder = builder.add_root_certificate(cert);
+            }
+        }
+
+        let cert_pem = spec
+            .client_cert
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let key_pem = spec
+            .client_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if let (Some(cert), Some(key)) = (cert_pem, key_pem) {
+            let combined = format!("{cert}\n{key}");
+            let identity = reqwest::Identity::from_pem(combined.as_bytes()).map_err(|e| {
+                ExecuteError::SpecInvalid(format!(
+                    "invalid upstream mTLS client certificate or key PEM: {e}"
+                ))
+            })?;
+            builder = builder.identity(identity);
+        }
+
+        let built = Arc::new(builder.build().map_err(|e| {
+            ExecuteError::SpecInvalid(format!("build upstream TLS HTTP client failed: {e}"))
+        })?);
+
+        if let Ok(mut guard) = self.tls_clients.lock() {
+            if guard.len() >= MAX_CACHED_TLS_CLIENTS {
+                guard.clear();
+            }
+            guard.insert(fp, built.clone());
+        }
+        Ok(built)
     }
 
     /// 注入内部事件观测者（服务据此记录指标）。
@@ -440,6 +548,31 @@ impl RuntimeEngine {
         Ok(base_url)
     }
 
+    fn resolve_attempt_clients(
+        &self,
+        input: &InvokeInput,
+    ) -> Result<(Arc<reqwest::Client>, Arc<reqwest::Client>), ExecuteError> {
+        let supplier_tls = input
+            .config
+            .as_deref()
+            .and_then(|c| c.tls.as_ref())
+            .filter(|t| !t.is_empty());
+        let endpoint_tls = input.spec.tls.as_ref().filter(|t| !t.is_empty());
+        let effective_tls = endpoint_tls.or(supplier_tls);
+        let endpoint_declares_ticket = input.spec.auth.as_ref().is_some_and(|a| {
+            a.token_url.as_deref().is_some_and(|s| !s.trim().is_empty())
+                || a.token_path.as_deref().is_some_and(|s| !s.trim().is_empty())
+        });
+        let auth_tls = if endpoint_declares_ticket {
+            effective_tls
+        } else {
+            supplier_tls.or(endpoint_tls)
+        };
+        let auth_client = self.resolve_http_client(auth_tls)?;
+        let adapter_client = self.resolve_http_client(effective_tls)?;
+        Ok((auth_client, adapter_client))
+    }
+
     /// One auth + adapter round（重试轮前被拒令牌已由 [`Self::auth_retry_gate`] 作废）。
     async fn attempt(
         &self,
@@ -450,8 +583,12 @@ impl RuntimeEngine {
         retry_log: &RetryLog,
     ) -> AttemptOutcome {
         let a_start = Instant::now();
+        let (auth_client, adapter_client) = match self.resolve_attempt_clients(input) {
+            Ok(pair) => pair,
+            Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
+        };
         let applied = match apply_auth(crate::auth::AuthApply {
-            client: &self.client,
+            client: &auth_client,
             ssrf: &self.ssrf,
             token_cache: &self.token_cache,
             spec: &input.spec,
@@ -494,7 +631,7 @@ impl RuntimeEngine {
         let invalidation = effective_invalidation(input);
         let stale_budget = self.retry_budgets.for_key(cache_key);
         let ctx = AdapterCtx {
-            client: &self.client,
+            client: &adapter_client,
             ssrf: &self.ssrf,
             input,
             base_url,
@@ -515,38 +652,49 @@ impl RuntimeEngine {
             Ok(o) => o,
             Err(e) => return AttemptOutcome::Failed(StageFail::new("upstream", u_start, e)),
         };
-        if auth_only {
-            let meta = trace.upstream_meta(&outcome.response);
-            return AttemptOutcome::done(trace.result(ResultParts {
-                upstream_meta: Some(meta),
-                token: applied.token,
-                response: Some(outcome.response),
-                ..ResultParts::ok()
-            }));
-        }
-        trace.time(
-            "upstream_wire",
-            u_start,
-            outcome.biz_error.is_none() && (200..300).contains(&outcome.response.status),
-        );
-        trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
-        let rejection = outcome.auth_rejection;
+        finalize_adapter_outcome(input, applied, outcome, auth_only, u_start, trace)
+    }
+}
+
+fn finalize_adapter_outcome(
+    input: &InvokeInput,
+    applied: AppliedAuth,
+    outcome: AdapterOutcome,
+    auth_only: bool,
+    u_start: Instant,
+    trace: &mut Trace,
+) -> AttemptOutcome {
+    if auth_only {
         let meta = trace.upstream_meta(&outcome.response);
-        let latency_ms = meta.latency_ms;
-        let mut result = trace.result(ResultParts {
-            ok: outcome.biz_error.is_none(),
-            payload: Some(outcome.payload),
-            biz_error: outcome.biz_error,
+        return AttemptOutcome::done(trace.result(ResultParts {
             upstream_meta: Some(meta),
             token: applied.token,
             response: Some(outcome.response),
             ..ResultParts::ok()
-        });
-        result.latency_ms = latency_ms;
-        match rejection {
-            Some(rejection) => AttemptOutcome::AuthRejected(rejection, Box::new(result)),
-            None => AttemptOutcome::done(result),
-        }
+        }));
+    }
+    trace.time(
+        "upstream_wire",
+        u_start,
+        outcome.biz_error.is_none() && (200..300).contains(&outcome.response.status),
+    );
+    trace.record(|| upstream_stage(input, &applied, &outcome, u_start));
+    let rejection = outcome.auth_rejection;
+    let meta = trace.upstream_meta(&outcome.response);
+    let latency_ms = meta.latency_ms;
+    let mut result = trace.result(ResultParts {
+        ok: outcome.biz_error.is_none(),
+        payload: Some(outcome.payload),
+        biz_error: outcome.biz_error,
+        upstream_meta: Some(meta),
+        token: applied.token,
+        response: Some(outcome.response),
+        ..ResultParts::ok()
+    });
+    result.latency_ms = latency_ms;
+    match rejection {
+        Some(rejection) => AttemptOutcome::AuthRejected(rejection, Box::new(result)),
+        None => AttemptOutcome::done(result),
     }
 }
 
@@ -912,5 +1060,31 @@ mod options_tests {
         assert_eq!(engine.options(), &opts);
         assert_eq!(engine.ws_pool().config().max_concurrent, 3);
         assert_eq!(engine.ws_pool().config().idle_ttl, Duration::from_secs(7));
+    }
+
+    #[test]
+    fn tls_client_cache_reuses_identical_fingerprint_and_rejects_bad_pem() {
+        let base = Arc::new(reqwest::Client::new());
+        let engine = RuntimeEngine::new(base.clone(), SsrfChecker::with_allow_private(true))
+            .with_http_client_defaults("reqwest", Duration::from_secs(3), Duration::from_secs(10));
+
+        let default_resolved = engine.resolve_http_client(None).unwrap();
+        assert!(Arc::ptr_eq(&default_resolved, &base));
+
+        let skip_tls = UpstreamTlsSpec {
+            insecure_skip_verify: true,
+            ..UpstreamTlsSpec::default()
+        };
+        let c1 = engine.resolve_http_client(Some(&skip_tls)).unwrap();
+        let c2 = engine.resolve_http_client(Some(&skip_tls)).unwrap();
+        assert!(!Arc::ptr_eq(&c1, &base));
+        assert!(Arc::ptr_eq(&c1, &c2));
+
+        let bad_ca = UpstreamTlsSpec {
+            insecure_skip_verify: false,
+            ca_cert: Some("-----BEGIN CERTIFICATE-----\nNOT_BASE64\n-----END CERTIFICATE-----".into()),
+            ..UpstreamTlsSpec::default()
+        };
+        assert!(engine.resolve_http_client(Some(&bad_ca)).is_err());
     }
 }
