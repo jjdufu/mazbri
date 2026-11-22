@@ -557,6 +557,7 @@ async function copyVal(val: string) {
 
 .wb-res__spin {
   font-size: 22px;
+  color: var(--wb-primary);
   animation: wb-res-spin 0.8s linear infinite;
 }
 
@@ -632,7 +633,7 @@ async function copyVal(val: string) {
 
   &.is-active {
     font-weight: 600;
-    color: var(--wb-text);
+    color: var(--wb-primary);
 
     &::after {
       position: absolute;

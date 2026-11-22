@@ -1258,7 +1258,7 @@ watch(
   position: absolute;
   inset: 0 0 0 44px;
   z-index: 30;
-  background: rgb(9 9 11 / 38%);
+  background: rgb(15 23 42 / 38%);
 }
 
 .wb-drawer-panel {
@@ -1313,7 +1313,8 @@ watch(
 
   &:focus-within {
     background: var(--wb-surface);
-    border-color: var(--wb-text-muted);
+    border-color: var(--wb-primary);
+    box-shadow: 0 0 0 2px var(--wb-primary-soft);
   }
 
   &.is-error {
@@ -1365,9 +1366,14 @@ watch(
   cursor: pointer;
   background: var(--wb-primary);
   border: none;
+  transition: background-color 140ms ease;
 
   &:hover {
-    opacity: 0.9;
+    background: var(--wb-primary-hover);
+  }
+
+  &:active {
+    background: var(--wb-primary-active);
   }
 }
 
@@ -1425,7 +1431,7 @@ watch(
 
   &.is-active {
     font-weight: 600;
-    color: var(--wb-text);
+    color: var(--wb-primary);
 
     &::after {
       position: absolute;

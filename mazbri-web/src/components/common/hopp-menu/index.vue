@@ -102,14 +102,14 @@ function onMenuClick(e: MouseEvent) {
 <style lang="scss">
 .el-popper.hopp-menu-popper {
   --hopp-menu-bg: #ffffff;
-  --hopp-menu-border: #d1d5db;
+  --hopp-menu-border: #dfe5f0;
   padding: 8px !important;
   margin: 0 !important;
   background: var(--hopp-menu-bg) !important;
   border: 1px solid var(--hopp-menu-border) !important;
   border-radius: var(--art-form-control-radius, 4px) !important;
   box-shadow: none !important;
-  filter: drop-shadow(0 8px 12px rgb(0 0 0 / 12%));
+  filter: drop-shadow(0 8px 12px rgb(15 23 42 / 10%));
   min-width: 0 !important;
   width: max-content !important;
   overflow: visible !important;
@@ -117,8 +117,8 @@ function onMenuClick(e: MouseEvent) {
 }
 
 html.dark .el-popper.hopp-menu-popper {
-  --hopp-menu-bg: #1b1b1b;
-  --hopp-menu-border: #3f3f46;
+  --hopp-menu-bg: #181e2b;
+  --hopp-menu-border: #2c364a;
   filter: drop-shadow(0 10px 16px rgb(0 0 0 / 45%));
 }
 
@@ -215,15 +215,18 @@ html.radius-zero .hopp-menu-item {
 }
 
 .hopp-menu-item:hover {
-  background: rgb(0 0 0 / 4%);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9, rgb(93 135 255 / 10%));
 }
 
 html.dark .hopp-menu-item:hover {
-  background: rgb(255 255 255 / 6%);
+  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary, #5d87ff) 16%, transparent);
 }
 
 .hopp-menu-item.is-current {
   font-weight: 700;
+  color: var(--el-color-primary);
 }
 
 .hopp-menu-item.is-danger {

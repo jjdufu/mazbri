@@ -11,20 +11,25 @@
   --wb-runbar-gap: 8px;
   --wb-bg: #fff;
   --wb-surface: #fff;
-  --wb-surface-subtle: #fafafa;
-  --wb-surface-input: #f4f4f5;
-  --wb-surface-hover: #f4f4f5;
-  --wb-surface-active: #e4e4e7;
-  --wb-primary: #18181b;
-  --wb-primary-fg: #fafafa;
-  --wb-accent: var(--el-color-primary);
-  --wb-accent-contrast: var(--el-color-white);
-  --wb-text: #09090b;
-  --wb-text-muted: #52525b;
-  --wb-text-faint: #a1a1aa;
-  --wb-divider: #e4e4e7;
-  --wb-divider-subtle: #e4e4e7;
-  --wb-divider-light: #f4f4f5;
+  --wb-surface-subtle: #f6f8fc;
+  --wb-surface-input: #f0f4fa;
+  --wb-surface-hover: #eaeff8;
+  --wb-primary: var(--el-color-primary, #5d87ff);
+  --wb-primary-hover: color-mix(in srgb, var(--el-color-primary, #5d87ff) 88%, #0f172a);
+  --wb-primary-active: var(--el-color-primary-dark-2, #4a6ccc);
+  --wb-primary-fg: var(--el-color-white, #fff);
+  --wb-primary-soft: var(--el-color-primary-light-9, #eef3ff);
+  --wb-primary-soft-hover: var(--el-color-primary-light-8, #dfe8ff);
+  --wb-primary-border: var(--el-color-primary-light-5, #aec3ff);
+  --wb-surface-active: var(--wb-primary-soft);
+  --wb-accent: var(--el-color-primary, #5d87ff);
+  --wb-accent-contrast: var(--el-color-white, #fff);
+  --wb-text: #111827;
+  --wb-text-muted: #4b5565;
+  --wb-text-faint: #8b95a7;
+  --wb-divider: #dfe5f0;
+  --wb-divider-subtle: #e5eaf3;
+  --wb-divider-light: #edf1f8;
   --wb-danger: #dc2626;
   --wb-success: #16a34a;
   --wb-warning: #d97706;
@@ -54,20 +59,25 @@
 }
 
 html.dark .connector-workbench-page {
-  --wb-bg: #09090b;
-  --wb-surface: #09090b;
-  --wb-surface-subtle: #0c0c0f;
-  --wb-surface-input: #141417;
-  --wb-surface-hover: #18181b;
-  --wb-surface-active: #27272a;
-  --wb-primary: #fafafa;
-  --wb-primary-fg: #09090b;
-  --wb-text: #fafafa;
-  --wb-text-muted: #a1a1aa;
-  --wb-text-faint: #71717a;
-  --wb-divider: #27272a;
-  --wb-divider-subtle: #222226;
-  --wb-divider-light: #1c1c20;
+  --wb-bg: #131720;
+  --wb-surface: #161b26;
+  --wb-surface-subtle: #12161f;
+  --wb-surface-input: #1c2230;
+  --wb-surface-hover: #212838;
+  --wb-primary: var(--el-color-primary, #5d87ff);
+  --wb-primary-hover: color-mix(in srgb, var(--el-color-primary, #5d87ff) 86%, #fff);
+  --wb-primary-active: var(--el-color-primary-dark-2, #4a6ccc);
+  --wb-primary-fg: var(--el-color-white, #fff);
+  --wb-primary-soft: color-mix(in srgb, var(--el-color-primary, #5d87ff) 16%, transparent);
+  --wb-primary-soft-hover: color-mix(in srgb, var(--el-color-primary, #5d87ff) 24%, transparent);
+  --wb-primary-border: color-mix(in srgb, var(--el-color-primary, #5d87ff) 45%, transparent);
+  --wb-surface-active: var(--wb-primary-soft);
+  --wb-text: #e6edf7;
+  --wb-text-muted: #9aa6bc;
+  --wb-text-faint: #68758d;
+  --wb-divider: #283142;
+  --wb-divider-subtle: #232b3a;
+  --wb-divider-light: #1e2534;
   --wb-danger: #f87171;
   --wb-success: #34d399;
   --wb-warning: #fbbf24;
@@ -151,7 +161,7 @@ html.radius-zero .connector-workbench-page {
 
 .connector-workbench-page .splitpanes.geist-splitter > .splitpanes__splitter:hover,
 .connector-workbench-page .splitpanes.geist-splitter > .splitpanes__splitter:active {
-  background-color: var(--wb-text-muted);
+  background-color: var(--wb-primary);
 }
 
 .connector-workbench-page,
@@ -259,8 +269,8 @@ html.radius-zero .connector-workbench-page {
 }
 
 .connector-workbench-page .wb-hopp-icon.is-on {
-  color: var(--wb-text);
-  background: var(--wb-surface-active);
+  color: var(--wb-primary);
+  background: var(--wb-primary-soft);
 }
 
 .connector-workbench-page .wb-hopp-action {

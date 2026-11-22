@@ -289,7 +289,7 @@ function onSupplierTimeout(ev: Event) {
 
   &:focus {
     background: var(--wb-surface);
-    border-color: var(--wb-divider);
+    border-color: var(--wb-primary);
   }
 }
 
@@ -385,7 +385,7 @@ function onSupplierTimeout(ev: Event) {
 
   &:focus {
     background: var(--wb-surface);
-    border-color: var(--wb-text-muted);
+    border-color: var(--wb-primary);
   }
 
   &::placeholder {

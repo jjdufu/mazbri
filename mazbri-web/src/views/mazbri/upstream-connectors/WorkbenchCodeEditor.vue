@@ -165,12 +165,16 @@ const extensions = computed<Extension[]>(() => {
           border: "none",
           outline: "none",
           fontSize: "12.5px",
-          backgroundColor: dark ? "#09090b" : "#ffffff",
-          color: dark ? "#fafafa" : "#09090b",
+          backgroundColor: "var(--wb-surface, #ffffff)",
+          color: "var(--wb-text, #111827)",
         },
         "&.cm-focused": { outline: "none" },
         "&.cm-focused .cm-cursor": {
-          borderLeftColor: dark ? "#fafafa" : "#09090b",
+          borderLeftColor: "var(--wb-primary, #5d87ff)",
+        },
+        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+          backgroundColor:
+            "color-mix(in srgb, var(--el-color-primary, #5d87ff) 22%, transparent) !important",
         },
         ".cm-scroller": {
           overflow: "auto",
@@ -180,28 +184,26 @@ const extensions = computed<Extension[]>(() => {
         },
         ".cm-content": {
           padding: "8px 0",
-          caretColor: dark ? "#fafafa" : "#09090b",
+          caretColor: "var(--wb-primary, #5d87ff)",
         },
         ".cm-line": {
           padding: "0 12px",
         },
         ".cm-gutters": {
-          backgroundColor: dark ? "#0c0c0f" : "#fafafa",
-          color: dark ? "#71717a" : "#a1a1aa",
+          backgroundColor: "var(--wb-surface-subtle, #f6f8fc)",
+          color: "var(--wb-text-faint, #8b95a7)",
           border: "none",
-          borderRight: dark ? "1px solid #27272a" : "1px solid #e4e4e7",
+          borderRight: "1px solid var(--wb-divider, #dfe5f0)",
           minWidth: "38px",
         },
         ".cm-activeLine": {
-          backgroundColor: dark
-            ? "rgba(255, 255, 255, 0.03)"
-            : "rgba(9, 9, 11, 0.025)",
+          backgroundColor:
+            "color-mix(in srgb, var(--el-color-primary, #5d87ff) 6%, transparent)",
         },
         ".cm-activeLineGutter": {
-          backgroundColor: dark
-            ? "rgba(255, 255, 255, 0.04)"
-            : "rgba(9, 9, 11, 0.04)",
-          color: dark ? "#d4d4d8" : "#52525b",
+          backgroundColor:
+            "color-mix(in srgb, var(--el-color-primary, #5d87ff) 10%, transparent)",
+          color: "var(--wb-primary, #5d87ff)",
         },
       },
       { dark },
@@ -234,7 +236,7 @@ async function copy() {
   min-height: 0;
   overflow: hidden;
   background: var(--wb-surface, #fff);
-  border: 1px solid var(--wb-divider, #e4e4e7);
+  border: 1px solid var(--wb-divider, #dfe5f0);
   border-radius: var(--wb-radius, 4px);
 }
 
@@ -249,15 +251,15 @@ async function copy() {
   justify-content: space-between;
   min-height: 30px;
   padding: 2px 8px 2px 12px;
-  background: var(--wb-surface-subtle, #fafafa);
-  border-bottom: 1px solid var(--wb-divider, #e4e4e7);
+  background: var(--wb-surface-subtle, #f6f8fc);
+  border-bottom: 1px solid var(--wb-divider, #dfe5f0);
 }
 
 .wb-code__lang {
   font-family: var(--wb-font-mono);
   font-size: 11px;
   font-weight: 600;
-  color: var(--wb-text-muted, #52525b);
+  color: var(--wb-text-muted, #4b5565);
   letter-spacing: 0.04em;
 }
 
@@ -275,15 +277,15 @@ async function copy() {
   padding: 0 8px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--wb-text-muted, #52525b);
+  color: var(--wb-text-muted, #4b5565);
   cursor: pointer;
   background: transparent;
   border: none;
   border-radius: var(--wb-radius, 4px);
 
   &:hover {
-    color: var(--wb-text, #09090b);
-    background: var(--wb-surface-hover, #f4f4f5);
+    color: var(--wb-text, #111827);
+    background: var(--wb-surface-hover, #eaeff8);
   }
 }
 

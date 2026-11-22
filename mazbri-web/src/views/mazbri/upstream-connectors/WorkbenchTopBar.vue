@@ -517,7 +517,7 @@ async function onEnvFilePicked(ev: Event) {
 
   &:focus:not(:read-only) {
     background: var(--wb-surface);
-    border-color: var(--wb-text-muted);
+    border-color: var(--wb-primary);
   }
 }
 
@@ -751,9 +751,18 @@ async function onEnvFilePicked(ev: Event) {
   background: var(--wb-primary);
   border: 1px solid var(--wb-primary);
   border-radius: var(--wb-radius);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
 
   &:hover:not(:disabled) {
-    opacity: 0.9;
+    background: var(--wb-primary-hover);
+    border-color: var(--wb-primary-hover);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--wb-primary-active);
+    border-color: var(--wb-primary-active);
   }
 
   &:disabled {
@@ -848,6 +857,11 @@ async function onEnvFilePicked(ev: Event) {
   border: 1px solid var(--wb-divider);
   border-radius: var(--wb-radius);
   outline: none;
+
+  &:focus {
+    background: var(--wb-surface);
+    border-color: var(--wb-primary);
+  }
 }
 
 .wb-env-menu__add {
@@ -861,6 +875,10 @@ async function onEnvFilePicked(ev: Event) {
   background: var(--wb-primary);
   border: none;
   border-radius: var(--wb-radius);
+
+  &:hover {
+    background: var(--wb-primary-hover);
+  }
 }
 
 .wb-env-peek {

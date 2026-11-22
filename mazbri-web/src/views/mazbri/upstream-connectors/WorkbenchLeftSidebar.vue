@@ -649,8 +649,12 @@ async function onEnvFile(ev: Event) {
   }
 
   &.is-active {
-    color: var(--wb-text);
-    background: var(--wb-surface-active);
+    color: var(--wb-primary);
+    background: var(--wb-primary-soft);
+
+    .wb-rail__badge {
+      color: var(--wb-primary);
+    }
 
     &::before {
       position: absolute;
@@ -844,8 +848,13 @@ async function onEnvFile(ev: Event) {
   }
 
   &.is-active {
-    background: var(--wb-surface-input);
+    background: var(--wb-primary-soft);
     border-left-color: var(--wb-primary);
+
+    .wb-ep-node__name {
+      font-weight: 600;
+      color: var(--wb-primary);
+    }
   }
 }
 
@@ -987,6 +996,11 @@ async function onEnvFile(ev: Event) {
   border: 1px solid var(--wb-divider);
   border-radius: var(--wb-radius);
   outline: none;
+
+  &:focus {
+    background: var(--wb-surface);
+    border-color: var(--wb-primary);
+  }
 }
 
 .wb-env-pills {
@@ -1004,6 +1018,11 @@ async function onEnvFile(ev: Event) {
   background: var(--wb-surface-subtle);
   border: 1px solid var(--wb-divider);
   border-radius: var(--wb-radius);
+
+  &:hover:not(.active) {
+    color: var(--wb-primary);
+    border-color: var(--wb-primary-border);
+  }
 
   &.active {
     font-weight: 600;
@@ -1120,7 +1139,7 @@ async function onEnvFile(ev: Event) {
   }
 
   &.is-active {
-    background: var(--wb-surface-input);
+    background: var(--wb-primary-soft);
   }
 }
 

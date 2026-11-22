@@ -183,7 +183,7 @@ function onTabKeydown(ev: KeyboardEvent, idx: number) {
 
   &.is-active {
     font-weight: 600;
-    color: var(--wb-text);
+    color: var(--wb-primary);
     background: var(--wb-surface);
 
     &::before {
@@ -279,7 +279,7 @@ function onTabKeydown(ev: KeyboardEvent, idx: number) {
 .wb-tabs__spin {
   flex-shrink: 0;
   font-size: 12px;
-  color: var(--wb-text-muted);
+  color: var(--wb-primary);
   animation: wb-tab-spin 0.8s linear infinite;
 }
 

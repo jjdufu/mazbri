@@ -195,7 +195,7 @@ const existingTags = computed(() => {
 
   &:focus {
     background: var(--wb-surface);
-    border-color: var(--wb-divider);
+    border-color: var(--wb-primary);
   }
 
   &::placeholder {
